@@ -18,13 +18,17 @@
 
 - **Stubs.** `QueryTableMethodTableField`, `QueryServiceTableField`, and `QueryServiceRecordField` entries in `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS`; dispatcher arms route to `stub(f)` which emits a method body that throws `UnsupportedOperationException`. The stubbed-variant validator (`GraphitronSchemaValidator.validateVariantIsImplemented`) already fails any schema that lands on these leaves at build time.
 
-- **Validator.** `validateQueryTableMethodTableField` checks cardinality. `validateQueryServiceTableField` and `validateQueryServiceRecordField` are empty.
+- **Validator.** `validateQueryTableMethodTableField` calls the shared `validateCardinality` — which is currently a no-op (see below). `validateQueryServiceTableField` and `validateQueryServiceRecordField` are empty.
 
 - **Neighbouring reference.** `QueryField.QueryTableField.buildQueryTableFetcher` is the closest existing shape: a synchronous root fetcher that declares a table local, optionally builds a condition, and runs a single `dsl.select(Type.$fields(...)).from(table)...fetch()`.
 
 - **Call-arg emission.** `ArgCallEmitter.buildCallArgs(List<CallParam>, String)` hardcodes `"table"` as the first arg and iterates `callParams()` (Arg + Context only, filtered via `MethodRef.callParams()`). This is a condition-method call shape — it cannot be reused verbatim for service/tableMethod calls, which need declaration-order iteration over `params()` with per-`ParamSource` emission. See "Emission → Call-arg emitter" below.
 
-- **Test fixtures.** `graphitron-rewrite-test-spec/src/main/resources/graphql/schema.graphqls` contains no `@service` or `@tableMethod` usages — fixtures must be added. `TestServiceStub` and `TestTableMethodStub` exist under `graphitron-rewrite/src/test/java/` for unit tests but are not on the test-spec classpath.
+- **Cardinality validator.** `GraphitronSchemaValidator.validateCardinality` is currently a no-op — its switch enumerates `Single`/`List`/`Connection` with empty arms (see the inline comment: "no per-variant validation is needed here"). Sixteen validators call it today, several of which (e.g. `validateQueryTableField`) legitimately accept `Connection`; its semantics cannot be tightened without breaking those. A separate helper is required for the three leaves in this plan. See Invariants §1 and Plan → Validator additions.
+
+- **Jooq table expression.** `GeneratorUtils.ResolvedTableNames` exposes `tablesClass()`, `jooqTableClass()`, and `typeClass()` — no helper today returns a `Tables.FOO` expression directly. The existing pattern (`declareTableLocal`, `GeneratorUtils.java:110-115`) builds it inline from `tablesClass()` + `tableRef.javaFieldName()` via JavaPoet `$T.$L`. This plan reuses that pattern; no new record method is required.
+
+- **Test fixtures.** `graphitron-rewrite-test/graphitron-rewrite-test-spec/src/main/resources/graphql/schema.graphqls` contains no `@service` or `@tableMethod` usages — fixtures must be added. `TestServiceStub` and `TestTableMethodStub` exist under `graphitron-rewrite/src/test/java/` for unit tests but are not on the test-spec classpath.
 
 ## Shape of emitted fetcher per leaf
 
@@ -44,11 +48,11 @@ public static Result<Record> films(DataFetchingEnvironment env) {
 }
 ```
 
-Argument list is emitted by walking `method().params()` in declaration order (see "Call-arg emitter" below). The `ParamSource.Table` slot is filled with the resolved table reference supplied by `GeneratorUtils.ResolvedTableNames.of(tableRef, returnTypeName).jooqTableField()` — the user may declare it at any position, not necessarily first. `ParamSource.Arg` / `ParamSource.Context` slots are emitted the same way condition-method calls handle them.
+Argument list is emitted by walking `method().params()` in declaration order (see "Call-arg emitter" below). The `ParamSource.Table` slot is filled with a `CodeBlock` of `Tables.FOO` built via JavaPoet `$T.$L` from `names.tablesClass()` and `tableRef.javaFieldName()` (the same pattern used by `GeneratorUtils.declareTableLocal`) — the user may declare it at any position, not necessarily first. `ParamSource.Arg` / `ParamSource.Context` slots are emitted the same way condition-method calls handle them.
 
 `ParamSource.DslContext`, `ParamSource.Sources`, `ParamSource.SourceTable`: unreachable for this leaf today — `reflectTableMethod` rejects the first (backlog-gated) and the other two never apply to tableMethods.
 
-Single cardinality: `fetchOne()` instead of `fetch()`, return type `Record`. List: `Result<Record>`. Connection: rejected at validate time (services/tableMethods don't produce connections; cardinality validator already catches this via `validateCardinality` for the table-method variant — extend to the two service variants).
+Single cardinality: `fetchOne()` instead of `fetch()`, return type `Record`. List: `Result<Record>`. Connection: rejected at validate time via the new `requireSingleOrList` helper in `GraphitronSchemaValidator` — see Invariants §1.
 
 ### `QueryServiceTableField`
 
@@ -80,7 +84,7 @@ Both shapes share the same argument-list emission (params-walk, with DSLContext 
 
 The three leaves share one invariant and two variant-specific ones:
 
-1. **Cardinality (all three).** Wrapper must be `Single` or `List`, not `Connection`. `validateCardinality` is already called for `QueryTableMethodTableField`; add the same call to the two service validators.
+1. **Cardinality (all three).** Wrapper must be `Single` or `List`, not `Connection`. The existing `validateCardinality` is a no-op (see "Cardinality validator" under Current state) and the call from `validateQueryTableMethodTableField` does not currently reject anything. Introduce a new `requireSingleOrList(fieldName, location, wrapper, leafKind, errors)` helper in `GraphitronSchemaValidator` that emits a `ValidationError` when `wrapper instanceof FieldWrapper.Connection` and is a no-op otherwise. Call it from all three leaf validators. Leave `validateCardinality` untouched — its other ~15 callers legitimately accept `Connection`. Message: `"<leafKind> at the root does not support Connection return types — use [T] or T instead"`.
 
 2. **No `Sourced` parameter at root (both service variants).** `ServiceCatalog.reflectServiceMethod` admits a `ParamSource.Sources` parameter when the method takes `List<RowN<?>>` / `List<RecordN<?>>` / `List<SomeClass>`. At the root, `parentPkColumns` is `List.of()`, so a `RowKeyed`/`RecordKeyed` param carries an empty key column list — the DataLoader batching semantics that shape presumes are not available. Reject at validate time with a message pointing at the batching requirement, rather than generating a method call with nonsensical arguments. Check: `field.method().params().stream().anyMatch(p -> p.source() instanceof ParamSource.Sources)` → validation error.
 
@@ -101,10 +105,12 @@ Add a new helper alongside the existing `ArgCallEmitter.buildCallArgs`:
 ```java
 public static CodeBlock buildMethodBackedCallArgs(
     MethodRef method,
-    String tableLocalName,       // the name of the already-declared Table<?> local; null for service calls
+    CodeBlock tableExpression,   // expression emitted at the ParamSource.Table slot; null for service calls
     String conditionsClassName   // target for TextMapLookup — see §Open decisions
 );
 ```
+
+`CodeBlock` (not `String`) because the expression at the `Table` slot is `Tables.FOO` with a class reference — JavaPoet needs to see the `ClassName` to emit the import. Passing a string would force the caller to construct an untyped literal.
 
 The helper iterates `method.params()` in **declaration order** and emits a comma-separated `CodeBlock` of per-slot expressions. One row per `ParamSource` variant:
 
@@ -113,7 +119,7 @@ The helper iterates `method.params()` in **declaration order** and emits a comma
 | `Arg(extraction)` | Delegates to the existing `buildArgExtraction(new CallParam(p.name(), extraction, false, p.typeName()), conditionsClassName)` — re-uses the five-way `CallSiteExtraction` switch (`Direct`, `EnumValueOf`, `TextMapLookup`, `ContextArg`, `JooqConvert`). |
 | `Context()`       | `graphitronContext(env).getContextArgument(env, "<p.name()>")` |
 | `DslContext()`    | Literal `dsl` — the per-leaf fetcher is responsible for declaring the local before calling the helper. |
-| `Table()`         | Literal `tableLocalName` — the per-leaf fetcher is responsible for declaring the local (or passing the `Tables.FOO` expression directly as the local name, see tableMethod fetcher below). |
+| `Table()`         | The supplied `tableExpression` `CodeBlock` (e.g. `CodeBlock.of("$T.$L", names.tablesClass(), tableRef.javaFieldName())` → emits `Tables.FILM`). |
 | `Sources(_)`      | `throw new IllegalStateException(…)` at emission time — caller must have validated this out via Invariants §2 before calling the helper. |
 | `SourceTable()`   | `throw new IllegalStateException(…)` at emission time — `SourceTable` is a child-field concept (join conditions) and is unreachable for root leaves. |
 
@@ -129,7 +135,7 @@ Unlike the existing `buildCallArgs`, there is no implicit `"table"` first argume
 Implement three new emitter methods in `TypeFetcherGenerator`, modelled on `buildQueryTableFetcher`:
 
 - **`buildQueryTableMethodFetcher(QueryTableMethodTableField)`** — the most involved of the three. Emits:
-  1. `var table = <MethodClass>.<methodName>(<buildMethodBackedCallArgs(method, tableLiteral, conditionsClass)>);` where `tableLiteral` is the resolved jOOQ table expression (e.g. `Tables.FILM`) supplied by `GeneratorUtils.ResolvedTableNames.of(tableRef, returnTypeName).jooqTableField()`. The `ParamSource.Table` slot resolves to this literal wherever the user declared it in the signature.
+  1. `var table = <MethodClass>.<methodName>(<buildMethodBackedCallArgs(method, tableExpression, conditionsClass)>);` where `tableExpression` is `CodeBlock.of("$T.$L", names.tablesClass(), tableRef.javaFieldName())` — the same `Tables.FOO` expression `GeneratorUtils.declareTableLocal` uses. `names` comes from `GeneratorUtils.ResolvedTableNames.of(tableRef, returnTypeName)`. The `ParamSource.Table` slot resolves to this expression wherever the user declared it in the signature.
   2. `var dsl = graphitronContext(env).getDslContext(env);`
   3. `return dsl.select(<TargetType>.$fields(env.getSelectionSet(), table, env)).from(table).<fetchOne()|fetch()>;`
 
@@ -139,7 +145,7 @@ Implement three new emitter methods in `TypeFetcherGenerator`, modelled on `buil
   - If yes: emit `var dsl = graphitronContext(env).getDslContext(env);`, then `return <ServiceClass>.<methodName>(<buildMethodBackedCallArgs(method, null, conditionsClass)>);`.
   - If no: single statement `return <ServiceClass>.<methodName>(<buildMethodBackedCallArgs(method, null, conditionsClass)>);`.
 
-  The `tableLocalName` argument is `null` — the helper's `Table()` arm is unreachable here because `reflectServiceMethod` never produces a `ParamSource.Table`. Return type: `Result<Record>` for list, `Record` for single.
+  The `tableExpression` argument is `null` — the helper's `Table()` arm is unreachable here because `reflectServiceMethod` never produces a `ParamSource.Table`. Return type: `Result<Record>` for list, `Record` for single.
 
 - **`buildQueryServiceRecordFetcher(QueryServiceRecordField)`** — same body shape as the service-table variant (DslContext local conditional on method signature). Return type `Object` to cover both the `ScalarReturnType` and `ResultReturnType` sub-cases (graphql-java coerces).
 
@@ -157,9 +163,13 @@ Switch arms in `generateTypeSpec` change from `stub(f)` to the new emitter calls
 
 `GraphitronSchemaValidator`:
 
-- `validateQueryServiceTableField` + `validateQueryServiceRecordField`: add `validateCardinality(...)` call and the `Sourced`-parameter rejection described in Invariants #2. Message: `"@service at the root does not support List<Row>/List<Record>/List<Object> batch parameters — the root has no parent context to batch against"`.
+- New helper: `requireSingleOrList(String fieldName, SourceLocation location, FieldWrapper wrapper, String leafKind, List<ValidationError> errors)` — emits a `ValidationError` iff `wrapper instanceof FieldWrapper.Connection`. `leafKind` is a human-readable label (`"@tableMethod"`, `"@service"`) used in the error message.
 
-- `validateQueryTableMethodTableField`: unchanged beyond what it already does.
+- `validateQueryServiceTableField` + `validateQueryServiceRecordField`: add the `requireSingleOrList(...)` call and the `Sourced`-parameter rejection described in Invariants #2. `Sourced`-rejection message: `"@service at the root does not support List<Row>/List<Record>/List<Object> batch parameters — the root has no parent context to batch against"`.
+
+- `validateQueryTableMethodTableField`: replace the existing no-op `validateCardinality(...)` call with a `requireSingleOrList(...)` call. (The `validateCardinality` call was aspirational — it doesn't actually reject `Connection` today.)
+
+- `validateCardinality`: left untouched. It remains a no-op exhaustiveness switch used by validators whose leaves legitimately accept all three wrappers.
 
 ### Structural tests
 
@@ -181,7 +191,7 @@ Body-string assertions stay minimal — structural properties only, per the test
 
 ### Execution tests
 
-Fixture additions to `graphitron-rewrite-test-spec`:
+Fixture additions to `graphitron-rewrite-test/graphitron-rewrite-test-spec`:
 
 - **Java service class** (new file under `src/main/java`): e.g. `SampleQueryService` with three methods — one returning `Table<?>` (for `@tableMethod`), one returning `Result<FilmRecord>` (for service-table), one returning a scalar (for service-record).
 
@@ -208,14 +218,14 @@ Fixture additions to `graphitron-rewrite-test-spec`:
 
 - **Federation `_service` / `_entities`** — covered by the federation-jvm transform plan.
 
-- **Polymorphic return types** — `@service` returning an interface/union is explicitly rejected at classify time (see `FieldBuilder.classifyQueryField`, `@service` + `PolymorphicReturnType` arm). Deferred to the interface/union stubs item (#3).
+- **Polymorphic return types** — `@service` returning an interface/union is explicitly rejected at classify time (see `FieldBuilder.classifyQueryField:1305-1306`, `@service` + `PolymorphicReturnType` arm) and surfaces as `UnclassifiedField` with the reason `"@service returning a polymorphic type is not yet supported"`. The existing `UnclassifiedField` error path handles reporting — no new validator code is needed for this case. Deferred to the interface/union stubs item (#3).
 
-- **Stub reason-string drift fix** — `QueryTableMethodTableField`'s reason string currently references `#1`, but the leaf now belongs under `#7` in the roadmap's "Generator stubs" list. The roadmap flagged this as "drift to fix when editing the generator next"; this plan naturally removes the entry, so the drift dissolves.
+- **Stub reason-string drift fix** — `QueryTableMethodTableField`'s reason string currently references `#1`, but the leaf now belongs under `#7` in the roadmap's "Generator stubs" list. This plan removes the entry from `NOT_IMPLEMENTED_REASONS` entirely as part of landing the fetcher, so the stale string is deleted outright — no separate drift fix needed.
 
 - **Lifting the `DSLContext`-on-`@tableMethod` gate.** Tracked as a separate Backlog item. Once lifted, `QueryTableMethodTableField`'s call-arg emission will fall out of the same `buildMethodBackedCallArgs` helper introduced here without additional changes — the `DslContext()` arm is already specified.
 
 ## Open decisions
 
-- **`TextMapLookup` on service-method args without a return-type `*Conditions` class.** Referenced from the `conditionsClassName resolution` subsection above. For `QueryServiceRecordField` (both `ScalarReturnType` and `ResultReturnType` sub-cases), the return type has no associated `*Conditions` class and thus no natural home for a text-map lookup field. Two options: (a) synthesise the map reference against the nearest `*Conditions` class the schema already has; (b) validate-time reject `TextMapLookup` on service-record args entirely and require the service to accept the raw enum. The service-table and tableMethod variants are unaffected — they resolve to the return type's `*Conditions` class. Defer the service-record call to implementation time when a fixture forces the question; most schemas are unlikely to hit this combination.
+- **`TextMapLookup` on service-method args without a return-type `*Conditions` class.** Referenced from the `conditionsClassName resolution` subsection above. For `QueryServiceRecordField` (both `ScalarReturnType` and `ResultReturnType` sub-cases), the return type has no associated `*Conditions` class and thus no natural home for a text-map lookup field. Two options: (a) synthesise the map reference against the nearest `*Conditions` class the schema already has; (b) validate-time reject `TextMapLookup` on service-record args entirely and require the service to accept the raw enum. The service-table and tableMethod variants are unaffected — they resolve to the return type's `*Conditions` class. **Tentative default: (b)** — rejecting at validate time is cheap, gives a clear error, and avoids guessing which `*Conditions` class is "nearest". Revisit when a fixture forces option (a). Implementer is free to escalate if the fixture set surfaces a concrete motivating case.
 
 - **Stub-reason-string reference for #7.** When the three entries leave `NOT_IMPLEMENTED_REASONS`, no other stub entry currently references `#7` in its message — so `#7`'s number in the roadmap stops being load-bearing. Nothing to do unless a future stub falls under #7.
