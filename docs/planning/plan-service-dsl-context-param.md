@@ -1,6 +1,6 @@
 # `DSLContext` parameters on `@service` methods
 
-> **Status:** In Review
+> **Status:** Done
 >
 > `ServiceCatalog.reflectServiceMethod` now recognises `org.jooq.DSLContext`
 > parameters by type and emits `MethodRef.Param.Typed` carrying

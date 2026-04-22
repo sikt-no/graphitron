@@ -10,7 +10,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|
 | Platform-id as synthesized NodeId | In Progress | [plan](legacy-platform-id.md) |
 | Implicit `@reference` path inference | In Review | [plan](plan-implicit-reference-inference.md) |
-| `DSLContext` params on `@service` methods | In Review | [plan](plan-service-dsl-context-param.md) |
 | Argument-resolution unification | In Review | [plan](argument-resolution.md) |
 | `BatchKey.ObjectBased` removal | Spec | [plan](plan-batchkey-remove-objectbased.md) |
 | Service-backed and method-backed root fetchers | Spec | [plan](plan-service-root-fetchers.md) |
@@ -75,6 +74,7 @@ Enumerated from `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS`. Priority numbers
 
 ## Done
 
+- `89dfea8` — `DSLContext` params on `@service` methods: `ServiceCatalog.reflectServiceMethod` classifies `org.jooq.DSLContext` parameters as `ParamSource.DslContext`; four `ServiceCatalogTest` cases + one `GraphitronSchemaBuilderTest` pipeline case. `reflectTableMethod` intentionally unchanged — tracked as backlog.
 - `3357928` — Sealed-switch dispatch: `TypeFetcherGenerator.generateTypeSpec` exhaustive over all `GraphitronField` leaves; stubbed leaves via `NOT_IMPLEMENTED_REASONS`.
 - `15f9f61e` — Variant-coverage Phase 1: `IMPLEMENTED_LEAVES` / `NOT_DISPATCHED_LEAVES` partition invariant enforced by `GeneratorCoverageTest`.
 - `1e48c4ee` — Argument-resolution Phase 1: VALUES + JOIN lookup emission for `QueryLookupTableField`.
