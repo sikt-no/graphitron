@@ -35,6 +35,7 @@ public class ProcessedDefinitionsValidator {
                 new ServiceValidator(schema, allFields),
                 new MutationValidator(schema, allFields),
                 new FieldDirectiveValidator(schema, allFields),
+                new InputDirectiveValidator(schema, allFields),
                 new NodeValidator(schema, allFields),
                 new PaginationValidator(schema, allFields),
                 new FederationValidator(schema, allFields)
