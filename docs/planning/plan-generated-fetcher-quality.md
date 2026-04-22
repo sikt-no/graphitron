@@ -1,6 +1,6 @@
 # Plan — Generated-fetcher quality pass
 
-> **Status:** In Progress
+> **Status:** In Review
 >
 > Four cleanups to the code `TypeFetcherGenerator` emits, motivated by the current
 > `filmsOrderedConnection` shape in `graphitron-rewrite-test-spec`. Emitted SQL,
