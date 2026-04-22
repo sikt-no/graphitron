@@ -40,6 +40,7 @@ Production parity gaps and architecture blockers, in rough order.
 - **`Set<T>` parent-keys on `@service` methods** **[Backlog]** — decide: require `List<T>` (predictable batching order, current direction) or broaden `BatchKey`; one known offender (`navnAlleSprak`).
 - **Rebalance test pyramid** **[Backlog]** — shift new test investment from per-variant structural tests toward SDL→classification→emission pipeline tests keyed off `graphitron-rewrite-test-fixtures`.
 - **Audit custom pagination-arg-name support** **[Backlog]** — decide: remove `PaginationSpec` plumbing for non-default `first`/`after` names (likely dead code) or document and add an execution fixture.
+- **Clarify `FkJoin` direction semantics** **[Backlog]** — `JoinStep.FkJoin.sourceTable` is written to the traversal-origin table in `BuildContext.synthesizeFkJoin:473` and `parsePathElement:559-560`, contradicting the docstring at `JoinStep.java:70-72` (which claims it resolves to the FK-holder table). Currently dead data — zero readers today — but was a bug magnet for the first candidate reader (see `plan-single-cardinality-split-query.md` §1a). Options: fix construction to match the docstring (low risk, field unread); rename to `originTable` and add a derived `fkOnSource()` / `parentHoldsFk()` helper; or remove the raw field altogether since no reader needs it. Add a construction-time invariant check whichever direction wins.
 
 ### Generator stubs
 

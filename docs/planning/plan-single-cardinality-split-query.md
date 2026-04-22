@@ -48,7 +48,6 @@ Verification: `Vurderingsmelding.person: Person @splitQuery` (or any parent-hold
 - **Condition-join paths.** `JoinPathEmitter.hasConditionJoin` still short-circuits to a stub for both list and single cardinality; classification-vocabulary item 5 owns that.
 - **Rekeying list cardinality by FK value.** The existing list-cardinality child-holds-FK path keeps parent-PK keying. Switching it would break DataLoader scatter semantics (list-cardinality needs one slot per parent, not one slot per shared FK value).
 - **Record-parent variants.** `RecordTableField` / `RecordLookupTableField` single-cardinality stubs at `SplitRowsMethodEmitter.java:224-235` and `:266-280` already use `firstHop.sourceColumns()` for the BatchKey (see `FieldBuilder.deriveBatchKeyForResultType` at `:1657-1666` — it picks source columns unconditionally). Unblocking them is a strictly smaller variant of this plan and can land in a follow-up — the emitter change here is reusable, but the record-parent projection wiring is separate (record-parent rows don't go through `TypeClassGenerator.$fields`).
-- **Self-referencing list cardinality** (e.g. `Employee.reports: [Employee] @splitQuery` with `employee.manager_id → employee.employee_id`). `BuildContext.synthesizeFkJoin` at `BuildContext.java:466-497` cannot disambiguate traversal direction when `fkSideTable == keySideTable`: the `sourceSqlName.equalsIgnoreCase(fkSideTable)` check at `:470` is trivially true, so the synthesized step always reports source=parent-table with `sourceColumns=[fk_column]`. The §1a helper's table-name comparison therefore always picks parent-holds-FK (FK-value keying) for self-reference, which is correct for single-cardinality (`manager: Employee`) but wrong for list-cardinality (`reports: [Employee]` — child holds FK to parent, parent-PK keying is correct). Self-reference list cardinality stays out of scope until the inference layer grows a direction signal (e.g. `@reference(path: [{name: "employee_ibfk_1", direction: reverse}])` or equivalent). Self-reference single cardinality works as a natural consequence of this plan but is not covered by a test fixture here; Sakila has no self-referencing tables.
 
 ## Implementation approach
 
@@ -56,29 +55,29 @@ Verification: `Vurderingsmelding.person: Person @splitQuery` (or any parent-hold
 
 **File:** `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java`
 
-**1a. BatchKey derivation.** At `:250` the parent-backed `@splitQuery` arm hardcodes `parentTableType.table().primaryKeyColumns()` into the BatchKey. Replace with a small helper that inspects the first FkJoin hop:
+**1a. BatchKey derivation.** At `:250` the parent-backed `@splitQuery` arm hardcodes `parentTableType.table().primaryKeyColumns()` into the BatchKey. That's correct for list cardinality but wrong for single cardinality, where the DataLoader should key by the FK column value on the parent row. Cardinality itself is the direction signal: the `@splitQuery` schema contract ties cardinality to FK direction (Single ⇒ parent-holds-FK; List ⇒ child-holds-FK), so the helper only needs `isList`:
 
 ```java
 // Sibling of deriveBatchKeyForResultType at :1657 — that helper is for record parents
 // and always uses fk.sourceColumns() because record parents never batch by parent PK.
-// This helper is for @table parents on a DataLoader-backed field: the parent-holds-FK
-// case mirrors the record-parent choice, but the child-holds-FK case must fall back
-// to parent PK (one key per parent slot, not per shared FK value).
+// This helper is for @table parents on a DataLoader-backed field; the choice is driven
+// entirely by the schema-side cardinality contract.
 //
 // The single-hop precondition is enforced by the caller (§1c) — this helper only
 // decides keying, not feasibility.
-private static BatchKey deriveSplitQueryBatchKey(TableRef parentTable, List<JoinStep> path) {
-    if (!path.isEmpty() && path.get(0) instanceof JoinStep.FkJoin fk
-            && fk.sourceTable().tableName().equalsIgnoreCase(parentTable.tableName())) {
-        return new BatchKey.RowKeyed(fk.sourceColumns());  // parent-holds-FK: key by FK column
+private static BatchKey deriveSplitQueryBatchKey(TableRef parentTable, List<JoinStep> path, boolean isList) {
+    if (!isList && !path.isEmpty() && path.get(0) instanceof JoinStep.FkJoin fk) {
+        return new BatchKey.RowKeyed(fk.sourceColumns());  // single = parent holds FK
     }
-    return new BatchKey.RowKeyed(parentTable.primaryKeyColumns());  // child-holds-FK: key by parent PK
+    return new BatchKey.RowKeyed(parentTable.primaryKeyColumns());  // list = child holds FK
 }
 ```
 
-Call from the two existing `parentBatchKey` construction sites (the `@splitQuery` and `@splitQuery @lookupKey` arms around `:250`). Pass the resolved `referencePath.elements()` — already in scope.
+Call from the two existing `parentBatchKey` construction sites (the `@splitQuery` and `@splitQuery @lookupKey` arms around `:250`). Pass the resolved `referencePath.elements()` and `returnType.wrapper().isList()` — both already in scope.
 
-Case-insensitive `equalsIgnoreCase` matches how `JooqCatalog.findForeignKeysBetweenTables` compares names (see `BuildContext.parsePath`'s inference branch from the preceding plan). SDL-vs-catalog casing drift is benign.
+**Why cardinality and not `FkJoin.sourceTable()` / table-name comparison.** `FkJoin.sourceTable` is currently written as the traversal-origin table (caller-provided `sourceSqlName`) in both `BuildContext.synthesizeFkJoin:473` and `parsePathElement:559-560`. For hop 0 that's always the parent, so a comparison like `fk.sourceTable().equalsIgnoreCase(parentTable.tableName())` would be trivially true for every FK — not a direction signal at all. The docstring at `JoinStep.java:70-72` claims `sourceTable` resolves to the FK-holder table, which would make the comparison work, but that claim doesn't match the construction code today. Grep confirms there are zero readers of `FkJoin.sourceTable()` — it's currently dead data — so we're the first consumer and the contradiction hasn't bitten anything yet. Don't load-bear on the ambiguous field; use cardinality, and file a Backlog item to resolve the docstring/code drift (see roadmap: "Clarify `FkJoin` direction semantics").
+
+Side-effect hygiene: update the `JoinStep.FkJoin` docstring in the same commit to reflect actual behaviour — one sentence — so the next reader isn't misled. Anything more structural (rename, derive `fkOnSource()`, swap sourceTable semantics) is scope creep; leave for the Backlog item.
 
 **1b. Single-cardinality `@splitQuery @lookupKey` rejection.** Add a cardinality check on the `hasSplitQuery && hasLookupKey` arm at `:251`, mirroring the existing `!hasSplitQuery && hasLookupKey` check at `:266-269`:
 
