@@ -1,0 +1,27 @@
+{
+    cityLookup(cityId: 244) {
+        id
+        addressByPostalCode {
+            __typename
+            mostSignificantAddressLine  # common interface field
+            city {                      # splitQuery, interface-level
+                id
+            }
+            cityAsSubquery {            # subquery, interface-level
+                id
+            }
+            ... on AddressInOneArea {
+                id
+                customers {             # splitQuery, implementing-type
+                    id
+                }
+                customersAsSubquery {   # subquery, implementing-type
+                    id
+                }
+            }
+            ... on AddressInAnotherArea {
+                id
+            }
+        }
+    }
+}

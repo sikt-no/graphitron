@@ -1,0 +1,43 @@
+{
+    "data": {
+        "cityLookup": [
+            {
+                "id": "Q2l0eVR5cGU6MjQ0",
+                "addressByPostalCode": [
+                    {
+                        "__typename": "AddressInAnotherArea",
+                        "mostSignificantAddressLine": null,
+                        "city": {
+                            "id": "Q2l0eVR5cGU6MjQ0"
+                        },
+                        "cityAsSubquery": {
+                            "id": "Q2l0eVR5cGU6MjQ0"
+                        },
+                        "id": "QV8yOjQ3Ng"
+                    },
+                    {
+                        "__typename": "AddressInOneArea",
+                        "mostSignificantAddressLine": "Example Street 1",
+                        "city": {
+                            "id": "Q2l0eVR5cGU6MjQ0"
+                        },
+                        "cityAsSubquery": {
+                            "id": "Q2l0eVR5cGU6MjQ0"
+                        },
+                        "id": "QV8xOjEwMDA",
+                        "customers": [
+                            {
+                                "id": "Q3VzdG9tZXI6MTAwMA"
+                            }
+                        ],
+                        "customersAsSubquery": [
+                            {
+                                "id": "Q3VzdG9tZXI6MTAwMA"
+                            }
+                        ]
+                    }
+                ]
+            }
+        ]
+    }
+}

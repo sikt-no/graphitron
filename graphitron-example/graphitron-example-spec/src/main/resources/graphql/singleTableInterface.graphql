@@ -1,5 +1,10 @@
 extend type Query {
     addressesByPostalCode: [AddressByPostalCode] @asConnection
+    cityLookup(cityId: Int! @lookupKey @field(name: "CITY_ID")): [City]
+}
+
+extend type City {
+    addressByPostalCode: [AddressByPostalCode] @splitQuery
 }
 
 interface AddressByPostalCode @table(name: "ADDRESS") @discriminate(on: "POSTAL_CODE") {
