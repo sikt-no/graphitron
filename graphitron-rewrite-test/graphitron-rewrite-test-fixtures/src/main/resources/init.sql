@@ -202,7 +202,9 @@ INSERT INTO staff (first_name, last_name, address_id, email, store_id, active, u
     ('Jon',  'Stephens', 2, 'jon.stephens@example.com',  2, true, 'jon');
 
 UPDATE store SET manager_staff_id = 1 WHERE store_id = 1;
-UPDATE store SET manager_staff_id = 2 WHERE store_id = 2;
+-- store_id = 2 intentionally left with manager_staff_id = NULL to exercise the
+-- null-FK short-circuit in single-cardinality @splitQuery fetchers; see
+-- plan-single-cardinality-split-query.md §4 and Store.manager in schema.graphqls.
 
 -- 3 active, 2 inactive customers
 INSERT INTO customer (store_id, first_name, last_name, email, address_id, activebool, active) VALUES

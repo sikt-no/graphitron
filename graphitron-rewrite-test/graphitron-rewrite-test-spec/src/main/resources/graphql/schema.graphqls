@@ -37,6 +37,12 @@ type Customer @table(name: "customer") {
         {key: "customer_store_id_fkey"},
         {key: "store_address_id_fkey"}
     ])
+    # plan-single-cardinality-split-query.md §5: single-cardinality @splitQuery
+    # (parent-holds-FK). DataLoader-batches address lookups keyed by customer.address_id;
+    # siblings sharing an address_id collapse to one rows-method invocation for that key.
+    # The FK column is NOT NULL on this table, so the §4 null-FK short-circuit never fires
+    # here — covered by Store.manager below.
+    addressSplit:  Address @splitQuery @reference(path: [{key: "customer_address_id_fkey"}])
 }
 
 type Address @table(name: "address") {
@@ -51,6 +57,19 @@ type Store @table(name: "store") {
     # the classifier infers the one-hop FK customer.store_id → store.store_id from the jOOQ
     # catalog because there is exactly one FK between the two tables.
     customers:  [Customer!]! @defaultOrder(primaryKey: true)
+    # plan-single-cardinality-split-query.md §5: single-cardinality @splitQuery with a
+    # NULLABLE FK (store.manager_staff_id). At least one store seeds manager_staff_id as
+    # NULL in init.sql, so the §4 null-FK short-circuit returns null for that store without
+    # dispatching a DataLoader round-trip. Two FKs exist between store and staff
+    # (store.manager_staff_id and staff.store_id), so inference would fail — explicit
+    # @reference is required.
+    manager:    Staff @splitQuery @reference(path: [{key: "store_manager_staff_id_fkey"}])
+}
+
+type Staff @table(name: "staff") {
+    staffId:   Int!    @field(name: "STAFF_ID")
+    firstName: String! @field(name: "FIRST_NAME")
+    lastName:  String! @field(name: "LAST_NAME")
 }
 
 type Category @table(name: "category") {

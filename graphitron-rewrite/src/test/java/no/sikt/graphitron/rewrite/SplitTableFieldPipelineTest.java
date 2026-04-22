@@ -171,6 +171,89 @@ class SplitTableFieldPipelineTest {
             .contains("scatterByIdx");
     }
 
+    // ===== single-cardinality @splitQuery (plan-single-cardinality-split-query.md §3–§4) =====
+
+    @Test
+    void splitQueryField_singleCardinality_producesFetcherAndRowsMethodReturningSingleRecord() {
+        // Customer.address @splitQuery — single-cardinality parent-holds-FK (customer.address_id).
+        // The fetcher returns CompletableFuture<Record>; the rows method returns List<Record>
+        // (one slot per key, null where no match). scatterSingleByIdx is emitted.
+        var schema = TestSchemaHelper.buildSchema("""
+            type Address @table(name: "address") { district: String }
+            type Customer @table(name: "customer") {
+                address: Address @splitQuery @reference(path: [{key: "customer_address_id_fkey"}])
+            }
+            type Query { customer: Customer }
+            """);
+
+        var customerFetchers = TypeFetcherGenerator.generate(schema).stream()
+            .filter(t -> t.name().equals("CustomerFetchers"))
+            .findFirst().orElseThrow();
+
+        var methodNames = customerFetchers.methodSpecs().stream().map(m -> m.name()).toList();
+        assertThat(methodNames).contains("address", "rowsAddress", "scatterSingleByIdx");
+        assertThat(methodNames).as("list-shape scatterByIdx not emitted when no list-cardinality Split* field present")
+            .doesNotContain("scatterByIdx");
+
+        var fetcherMethod = customerFetchers.methodSpecs().stream()
+            .filter(m -> m.name().equals("address")).findFirst().orElseThrow();
+        assertThat(fetcherMethod.returnType().toString())
+            .isEqualTo("java.util.concurrent.CompletableFuture<org.jooq.Record>");
+
+        var rowsMethod = customerFetchers.methodSpecs().stream()
+            .filter(m -> m.name().equals("rowsAddress")).findFirst().orElseThrow();
+        assertThat(rowsMethod.returnType().toString())
+            .isEqualTo("java.util.List<org.jooq.Record>");
+    }
+
+    @Test
+    void splitQueryField_singleCardinality_nullFkShortCircuitAppearsInFetcherBody() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Address @table(name: "address") { district: String }
+            type Customer @table(name: "customer") {
+                address: Address @splitQuery @reference(path: [{key: "customer_address_id_fkey"}])
+            }
+            type Query { customer: Customer }
+            """);
+
+        var fetcherMethod = TypeFetcherGenerator.generate(schema).stream()
+            .filter(t -> t.name().equals("CustomerFetchers"))
+            .findFirst().orElseThrow()
+            .methodSpecs().stream()
+            .filter(m -> m.name().equals("address"))
+            .findFirst().orElseThrow();
+
+        // The null-FK short-circuit extracts the FK column into fkVal0 and returns
+        // CompletableFuture.completedFuture(null) before loader.load when the parent's FK is NULL.
+        String body = fetcherMethod.toString();
+        assertThat(body)
+            .contains("Integer fkVal0")
+            .contains("if (fkVal0 == null)")
+            .contains("CompletableFuture.completedFuture(null)");
+    }
+
+    @Test
+    void mixedCardinality_bothScatterHelpersEmitted() {
+        // A class with both list and single Split* fields emits both scatterByIdx and
+        // scatterSingleByIdx — the helper gates are independent.
+        var schema = TestSchemaHelper.buildSchema("""
+            type Address @table(name: "address") { district: String }
+            type Customer @table(name: "customer") {
+                address: Address @splitQuery @reference(path: [{key: "customer_address_id_fkey"}])
+                rentals: [Rental!]! @splitQuery @reference(path: [{key: "rental_customer_id_fkey"}])
+            }
+            type Rental @table(name: "rental") { rentalId: Int }
+            type Query { customer: Customer }
+            """);
+
+        var customerFetchers = TypeFetcherGenerator.generate(schema).stream()
+            .filter(t -> t.name().equals("CustomerFetchers"))
+            .findFirst().orElseThrow();
+
+        var methodNames = customerFetchers.methodSpecs().stream().map(m -> m.name()).toList();
+        assertThat(methodNames).contains("scatterByIdx", "scatterSingleByIdx");
+    }
+
     @Test
     void noSplitFields_noScatterByIdxHelper() {
         var schema = TestSchemaHelper.buildSchema("""

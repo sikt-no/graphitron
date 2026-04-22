@@ -1,6 +1,42 @@
 # Single-cardinality `@splitQuery` support
 
-> **Status:** In Progress
+> **Status:** In Review
+>
+> **Shipped** — §1a `deriveSplitQueryBatchKey` helper (cardinality-driven); §1b
+> single-cardinality `@splitQuery @lookupKey` classifier rejection; §1c multi-hop
+> single-cardinality `@splitQuery` classifier rejection; `JoinStep.FkJoin` docstring
+> corrected. §2 `$fields` appends BatchKey columns of every Split* child on the type,
+> deduped against the selection-driven switch output. §3 `SplitRowsMethodEmitter.buildSingleMethod`
+> + `scatterSingleByIdx`; both `!isList` branches deleted from `unsupportedReason` overloads.
+> §4 null-FK short-circuit in `buildSplitQueryDataFetcher` via the new
+> `GeneratorUtils.buildKeyExtractionWithNullCheck`; scatter-helper emission gates split into
+> list-shape (`scatterByIdx`) and single-shape (`scatterSingleByIdx`).
+>
+> §5 test coverage: `Customer.addressSplit` and `Store.manager` fixtures added to
+> `graphitron-rewrite-test-spec` (schema + `init.sql` null-FK seed for store_id=2);
+> `GraphitronSchemaBuilderTest` gained `SPLIT_TABLE_SINGLE_CARDINALITY`,
+> `IMPLICIT_REFERENCE_SPLIT_TABLE_SINGLE_CARDINALITY`,
+> `SPLIT_LOOKUP_TABLE_SINGLE_CARDINALITY_REJECTED`, and
+> `SPLIT_TABLE_MULTI_HOP_SINGLE_CARDINALITY_REJECTED` cases plus the existing
+> `SPLIT_LOOKUP_TABLE_FIELD`/`IMPLICIT_REFERENCE_SPLIT_LOOKUP_TABLE` cases updated to
+> list cardinality; `SplitTableFieldValidationTest` rewrote the single-cardinality cases
+> to a positive `SINGLE_CARDINALITY_EMITTABLE`; `SplitTableFieldPipelineTest` gained
+> three structural assertions (`_singleCardinality_producesFetcherAndRowsMethod…`,
+> `_nullFkShortCircuitAppearsInFetcherBody`, `_mixedCardinality_bothScatterHelpersEmitted`);
+> `ScatterSingleByIdxTest` (new) covers empty/full/gap/duplicate-idx via reflection on
+> `CustomerFetchers.scatterSingleByIdx`; execution tests cover happy path, shared-FK
+> dedup (2 round-trips for 5 customers), null-FK short-circuit (1 round-trip for a
+> NULL-manager store), non-null happy path, and mixed NULL/non-NULL scatter alignment.
+> README `@splitQuery` section gained a "Cardinality" paragraph with a single-cardinality
+> example.
+>
+> Drive-by: fixed the path in `GeneratedSourcesLintTest` to include the `graphitron/`
+> subdirectory the maven-plugin writes under — the test was broken on trunk from commit
+> `f8df839` but never flagged because the assertion fired inside a non-existent directory.
+>
+> Results: `mvn test -pl :graphitron-rewrite` — 544 green; `mvn test -pl
+> :graphitron-rewrite-test-spec -Plocal-db` — 87 green. Shipped in one commit on top of
+> the In Progress marker.
 
 ## Overview
 

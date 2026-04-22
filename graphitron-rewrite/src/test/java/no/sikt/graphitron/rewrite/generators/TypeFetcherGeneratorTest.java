@@ -563,6 +563,12 @@ class TypeFetcherGeneratorTest {
     // Dropped connectionField_emitsBackwardFlag: Pattern 5 — backward semantics exercised by
     // the filmsConnection_backward_* execution tests.
 
+    // connectionField_emitsReverseOrderByHelper + siblings removed: fetcher-quality §1
+    // (commit 1900453) moved reverseOrderBy emission into ConnectionHelper.pageRequest, so
+    // the TypeFetcherGenerator no longer emits a reverseOrderBy helper on the fetcher class.
+    // The underlying behaviour is exercised by the filmsConnection_backward_* execution tests
+    // in graphitron-rewrite-test-spec.
+
     // Dropped connectionField_usesSingleExpressionSeek and connectionField_columnDrivenCursorDecode:
     // Pattern 5 — cursor decode + seek semantics exercised end-to-end by
     // filmsConnection_withAfterCursor_returnsNextPage and

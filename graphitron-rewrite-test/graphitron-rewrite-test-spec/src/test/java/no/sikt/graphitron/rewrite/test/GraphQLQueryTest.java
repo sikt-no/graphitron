@@ -797,6 +797,91 @@ class GraphQLQueryTest {
             assertThat((List<?>) f.get("actorsBySplitLookup")).isEmpty());
     }
 
+    // ===== single-cardinality @splitQuery (plan-single-cardinality-split-query.md) =====
+
+    @Test
+    void splitTableField_singleCardinality_returnsAddressPerCustomer() {
+        // Customer.addressSplit (SplitTableField, single cardinality, parent-holds-FK):
+        // each customer resolves to its own address. Seeded customer→address mapping:
+        //   c1→a1  c2→a2  c3→a3  c4→a1 (shared)  c5→a2 (shared)
+        Map<String, Object> data = execute(
+            "{ customers { customerId addressSplit { addressId } } }");
+        List<Map<String, Object>> customers = (List<Map<String, Object>>) data.get("customers");
+        var byId = customers.stream().collect(java.util.stream.Collectors.toMap(
+            c -> (Integer) c.get("customerId"),
+            c -> (Map<String, Object>) c.get("addressSplit")));
+        assertThat(byId.get(1).get("addressId")).isEqualTo(1);
+        assertThat(byId.get(2).get("addressId")).isEqualTo(2);
+        assertThat(byId.get(3).get("addressId")).isEqualTo(3);
+        assertThat(byId.get(4).get("addressId")).isEqualTo(1);  // shared with c1
+        assertThat(byId.get(5).get("addressId")).isEqualTo(2);  // shared with c2
+    }
+
+    @Test
+    void splitTableField_singleCardinality_dedupesSharedFk_oneBatchRoundTrip() {
+        // Five customers hit the addressSplit DataLoader; caching-enabled dedup collapses the
+        // 5 loads to 3 distinct keys (addresses 1, 2, 3). Total round-trips: 1 (customers root)
+        // + 1 (batched addressSplit rows method) = 2. An un-batched scatter would fire 1 + 5 = 6.
+        QUERY_COUNT.set(0);
+        Map<String, Object> data = execute(
+            "{ customers { customerId addressSplit { addressId district } } }");
+        assertThat(QUERY_COUNT.get()).isEqualTo(2);
+        List<Map<String, Object>> customers = (List<Map<String, Object>>) data.get("customers");
+        assertThat(customers).hasSize(5);
+        // Customers 1 and 4 share address 1 → the same district value resolves for both.
+        var byId = customers.stream().collect(java.util.stream.Collectors.toMap(
+            c -> (Integer) c.get("customerId"),
+            c -> (Map<String, Object>) c.get("addressSplit")));
+        assertThat(byId.get(1).get("district")).isEqualTo(byId.get(4).get("district"));
+        assertThat(byId.get(2).get("district")).isEqualTo(byId.get(5).get("district"));
+    }
+
+    @Test
+    void splitTableField_singleCardinality_nullFk_shortCircuitsWithoutLoaderDispatch() {
+        // Store 2 has manager_staff_id = NULL in init.sql. The §4 null-FK short-circuit in
+        // StoreFetchers.manager returns CompletableFuture.completedFuture(null) before
+        // dispatching to the DataLoader, so no rows-method round-trip fires for that store.
+        QUERY_COUNT.set(0);
+        Map<String, Object> data = execute(
+            "{ storeById(store_id: [2]) { storeId manager { staffId } } }");
+        // Parent query only — null-FK short-circuit eliminates the child round-trip entirely.
+        assertThat(QUERY_COUNT.get()).isEqualTo(1);
+        List<Map<String, Object>> stores = (List<Map<String, Object>>) data.get("storeById");
+        assertThat(stores).hasSize(1);
+        assertThat(stores.get(0).get("storeId")).isEqualTo(2);
+        assertThat(stores.get(0).get("manager")).isNull();
+    }
+
+    @Test
+    void splitTableField_singleCardinality_nonNullFk_resolvesManager() {
+        // Store 1 has manager_staff_id = 1 → Mike Hillyer. Covers the happy path for
+        // Store.manager alongside the null-FK test above.
+        Map<String, Object> data = execute(
+            "{ storeById(store_id: [1]) { storeId manager { staffId firstName } } }");
+        List<Map<String, Object>> stores = (List<Map<String, Object>>) data.get("storeById");
+        assertThat(stores).hasSize(1);
+        Map<String, Object> manager = (Map<String, Object>) stores.get(0).get("manager");
+        assertThat(manager).isNotNull();
+        assertThat(manager.get("staffId")).isEqualTo(1);
+        assertThat(manager.get("firstName")).isEqualTo("Mike");
+    }
+
+    @Test
+    void splitTableField_singleCardinality_mixedNullAndNonNullFk_scatterAlignsByIdx() {
+        // Both stores queried in one batch: store 1 (manager_staff_id=1), store 2 (NULL).
+        // Store 2's null short-circuit fires before loader.load, so only store 1 reaches the
+        // DataLoader — 1 parent + 1 batched child (for keys=[Row(1)]) = 2 round-trips.
+        QUERY_COUNT.set(0);
+        Map<String, Object> data = execute(
+            "{ storeById(store_id: [1, 2]) { storeId manager { staffId } } }");
+        assertThat(QUERY_COUNT.get()).isEqualTo(2);
+        List<Map<String, Object>> stores = (List<Map<String, Object>>) data.get("storeById");
+        var byId = stores.stream().collect(java.util.stream.Collectors.toMap(
+            s -> (Integer) s.get("storeId"), s -> s));
+        assertThat(((Map<String, Object>) byId.get(1).get("manager")).get("staffId")).isEqualTo(1);
+        assertThat(byId.get(2).get("manager")).isNull();
+    }
+
     // ===== argres Phase 3 — composite-key @lookupKey via @table input type =====
 
     @Test
