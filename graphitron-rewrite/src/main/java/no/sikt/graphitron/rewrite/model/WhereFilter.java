@@ -27,7 +27,7 @@ import java.util.List;
  */
 public sealed interface WhereFilter permits GeneratedConditionFilter, ConditionFilter {
 
-    /** Fully qualified class name of the condition method (e.g. {@code "com.example.rewrite.types.FilmConditions"}). */
+    /** Fully qualified class name of the condition method (e.g. {@code "com.example.rewrite.conditions.FilmConditions"}). */
     String className();
 
     /** Name of the condition method (e.g. {@code "filmsCondition"}). */

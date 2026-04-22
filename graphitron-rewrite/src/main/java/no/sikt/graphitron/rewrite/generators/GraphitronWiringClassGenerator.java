@@ -62,7 +62,7 @@ public class GraphitronWiringClassGenerator {
     public static TypeSpec generate(List<String> fetcherClassNames,
                                      List<ConnectionWiring> connectionWirings,
                                      List<NestedTypeWiring> nestedTypeWirings) {
-        var typesPackage = RewriteConfig.outputPackage() + ".rewrite.types";
+        var fetchersPackage = RewriteConfig.outputPackage() + ".rewrite.fetchers";
         var rewritePackage = RewriteConfig.outputPackage() + ".rewrite";
         var builderType = ClassName.get("graphql.schema.idl", "RuntimeWiring", "Builder");
 
@@ -78,7 +78,7 @@ public class GraphitronWiringClassGenerator {
         } else {
             body.indent();
             for (var className : fetcherClassNames) {
-                var fetcherClass = ClassName.get(typesPackage, className);
+                var fetcherClass = ClassName.get(fetchersPackage, className);
                 body.add("\n.type($T.wiring())", fetcherClass);
             }
 

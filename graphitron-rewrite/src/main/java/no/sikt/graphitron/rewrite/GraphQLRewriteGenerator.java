@@ -101,8 +101,8 @@ public class GraphQLRewriteGenerator {
         write(ConnectionHelperClassGenerator.generate(),          "rewrite");
         write(OrderByResultClassGenerator.generate(),             "rewrite");
         write(TypeClassGenerator.generate(schema),                "rewrite.types");
-        write(TypeConditionsGenerator.generate(schema),           "rewrite.types");
-        write(fetcherClasses,                                      "rewrite.types");
+        write(TypeConditionsGenerator.generate(schema),           "rewrite.conditions");
+        write(fetcherClasses,                                      "rewrite.fetchers");
         write(List.of(GraphitronWiringClassGenerator.generate(fetcherClassNames, connectionWirings, nestedTypeWirings)), "rewrite");
     }
 

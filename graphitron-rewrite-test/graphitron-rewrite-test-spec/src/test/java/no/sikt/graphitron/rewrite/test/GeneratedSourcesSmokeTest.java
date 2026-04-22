@@ -21,10 +21,10 @@ class GeneratedSourcesSmokeTest {
         // Wiring entry point
         PKG + ".GraphitronWiring",
         // Fetcher classes — one per GraphQL object type
-        PKG + ".types.QueryFetchers",
-        PKG + ".types.FilmFetchers",
-        PKG + ".types.CustomerFetchers",
-        PKG + ".types.LanguageFetchers",
+        PKG + ".fetchers.QueryFetchers",
+        PKG + ".fetchers.FilmFetchers",
+        PKG + ".fetchers.CustomerFetchers",
+        PKG + ".fetchers.LanguageFetchers",
         // Table classes — one per distinct SQL table referenced by a @table type
         PKG + ".types.Film",
         PKG + ".types.Customer",
