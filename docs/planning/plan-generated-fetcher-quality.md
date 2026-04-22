@@ -213,11 +213,12 @@ no longer touches `CallParam.extraction()` for filter args.
   `DataFetchingEnvironment` with known arg values, invoke, inspect the returned
   `Condition`. Today the env-aware composition is only reachable through execution
   tests.
-- **Invariant enforcement.** Import-scan assertion on the entity-scoped `*Conditions`
-  family (e.g. `FilmConditions`) — must not import
-  `graphql.schema.DataFetchingEnvironment` nor any other `graphql.*` type. Today this
-  contract lives only in the `TypeConditionsGenerator` javadoc; with the env-aware
-  layer isolated in `QueryConditions`, violations become a test failure.
+- **Invariant enforcement.** Pipeline lint over
+  `graphitron-rewrite-test-spec/target/generated-sources/**/*Conditions.java` (excluding
+  `QueryConditions.java`) — must not import `graphql.schema.DataFetchingEnvironment` nor
+  any other `graphql.*` type. Today this contract lives only in the
+  `TypeConditionsGenerator` javadoc; with the env-aware layer isolated in
+  `QueryConditions`, violations become a test failure.
 - **Regression floor.** Existing execution tests unchanged.
 
 ---
@@ -266,9 +267,14 @@ share a simple name, the importer cannot import both — the declaration falls b
 the fully-qualified `no.sikt.graphitron.rewrite.test.jooq.tables.Film table = Tables.FILM`.
 
 **Change.** Rename the emitted local from `"table"` to `<entityName>Table`, derived
-from `ResolvedTableNames.typeClass().simpleName()` (lowercased first letter):
-`filmTable`, `languageTable`, `categoryTable`. Threads through every fetcher body that
-references the local:
+from `ResolvedTableNames.jooqTableClass().simpleName()` (lowercased first letter):
+`filmTable`, `languageTable`, `categoryTable`. `jooqTableClass` — not `typeClass` — is
+the source of truth: the local variable *is* a jOOQ table alias and
+`declareTableLocal` already uses `jooqTableClass` as the declaration's static type,
+so both ends of the declaration draw from the same field. Their simple names coincide
+by construction (the rename exists precisely because of this collision), so the choice
+of source is about which field the implementation depends on, not the emitted value.
+Threads through every fetcher body that references the local:
 
 - Every `"table"` literal inside `TypeFetcherGenerator.buildQueryConnectionFetcher`
   (declaration, `.from(table)`, `.$fields(..., table, env)`, condition-call wiring)
