@@ -177,43 +177,37 @@ through the model.
 
 ---
 
-## 7. `ArgCallEmitter.buildCallArgs` hardcodes `"table"` as the first argument
+## 7. `InlineTableFieldEmitter.buildInnerSelect` passes wrong alias to `@condition(filter:)` methods
 
-`buildCallArgs` (`generators/ArgCallEmitter.java:29-36`) emits `"table"` as the literal first
-argument of every filter-method call:
+**Scope of this item.** The `ArgCallEmitter.buildCallArgs` signature change (adding an
+explicit source-alias parameter) is **owned by item 4 of
+[plan-generated-fetcher-quality.md](plan-generated-fetcher-quality.md)** — it falls out of
+the `table` → `<entity>Table` rename. This item is the downstream consumer: fix the
+inline-subquery caller once the signature is available. It can land independently if the
+fetcher-quality plan hasn't landed yet, in which case it owns the signature change itself.
 
-```java
-public static CodeBlock buildCallArgs(List<CallParam> params, String conditionsClassName) {
-    var args = CodeBlock.builder();
-    args.add("table");
-    ...
-}
-```
+**Current state.** `buildCallArgs` emits `"table"` as the literal first argument of every
+filter-method call. On the fetcher path this is correct — `TypeFetcherGenerator`'s
+generated methods receive `table` as a parameter naming the row table. On the G5
+inline-subquery path, `"table"` is the **parent** alias (the outer `$fields(sel, table,
+env)` parameter), not the terminal/target alias inside the correlated subquery.
+`InlineTableFieldEmitter.buildInnerSelect`'s user-filter loop over `tf.filters()` calls
+`ArgCallEmitter.buildCallArgs` and so passes the parent alias to each `@condition(filter:)`
+method — almost certainly not what users intend, since filters typically operate on the
+target table.
 
-On the fetcher path this is correct — `TypeFetcherGenerator`'s generated methods receive
-`table` as a parameter naming the row table. On the G5 inline-subquery path, `"table"` is the
-**parent** alias (the outer `$fields(sel, table, env)` parameter), not the terminal/target
-alias inside the correlated subquery. `InlineTableFieldEmitter.buildInnerSelect`'s user-filter
-loop (`tf.filters()`, lines 137-141) calls `ArgCallEmitter.buildCallArgs` and so passes the
-parent alias to each `@condition(filter:)` method — almost certainly not what users intend,
-since filters typically operate on the target table.
+No G5 fixture exercises `@condition(filter:)` on an inline `TableField`, so this latent
+bug is untested. It will surface the first time an inline reference field carries
+`@condition(filter:)`.
 
-No G5 fixture exercises `@condition(filter:)` on an inline `TableField`, so this latent bug is
-untested. It will surface the first time an inline reference field carries `@condition(filter:)`.
+**Change.** Once `ArgCallEmitter.buildCallArgs` takes an explicit source-alias parameter,
+update the inline-subquery caller to pass the terminal alias of the correlated subquery
+instead of the hardcoded `"table"`. Add an `InlineTableFieldEmitter` pipeline test with
+a filter method to lock the wiring down.
 
-**Change.** Add a required `srcAlias` parameter to `ArgCallEmitter.buildCallArgs`:
-
-```java
-public static CodeBlock buildCallArgs(List<CallParam> params, String conditionsClassName, String srcAlias)
-```
-
-Fetcher callers pass `"table"` unchanged; the inline-subquery caller passes the terminal alias
-of the correlated subquery. Add an `InlineTableFieldEmitter` pipeline test with a filter method
-to lock the wiring down.
-
-**Related.** Whether the "source" for an inline-subquery filter is the terminal alias or the
-step-0 source alias is a design call — item 5's condition-method signature work decides this
-for condition joins; the same answer likely applies here.
+**Related.** Whether the "source" for an inline-subquery filter is the terminal alias or
+the step-0 source alias is a design call — item 5's condition-method signature work
+decides this for condition joins; the same answer likely applies here.
 
 ---
 
