@@ -70,6 +70,37 @@ class GeneratedSourcesLintTest {
     }
 
     @Test
+    void entityConditionsClassesHaveNoGraphqlJavaImports() throws IOException {
+        Path conditionsRoot = GENERATED_REWRITE_ROOT.resolve("conditions");
+        assertThat(conditionsRoot).exists();
+        var offenders = new ArrayList<String>();
+        try (Stream<Path> paths = Files.walk(conditionsRoot)) {
+            paths.filter(p -> p.toString().endsWith("Conditions.java"))
+                .filter(p -> !p.getFileName().toString().equals("QueryConditions.java"))
+                .filter(p -> !p.getFileName().toString().equals("MutationConditions.java"))
+                .forEach(p -> {
+                    try {
+                        for (String line : Files.readAllLines(p)) {
+                            String trimmed = line.trim();
+                            if (trimmed.startsWith("import graphql.")
+                                    || trimmed.startsWith("import static graphql.")) {
+                                offenders.add(p.getFileName() + "  " + trimmed);
+                            }
+                        }
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                });
+        }
+        assertThat(offenders)
+            .as("Entity-scoped *Conditions classes (FilmConditions, LanguageConditions, …)\n"
+                + "are pure functions — they must not depend on graphql-java runtime types.\n"
+                + "Env-aware argument extraction and composition live in QueryConditions /\n"
+                + "MutationConditions (the env-aware shim layer), not inside the entity classes.")
+            .isEmpty();
+    }
+
+    @Test
     void fetcherBodiesDoNotFullyQualifyJooqTables() throws IOException {
         Path fetchersRoot = GENERATED_REWRITE_ROOT.resolve("fetchers");
         assertThat(fetchersRoot).exists();

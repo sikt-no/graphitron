@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite;
 import no.sikt.graphitron.javapoet.JavaFile;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.generators.GraphitronWiringClassGenerator;
+import no.sikt.graphitron.rewrite.generators.QueryConditionsGenerator;
 import no.sikt.graphitron.rewrite.generators.TypeClassGenerator;
 import no.sikt.graphitron.rewrite.generators.TypeConditionsGenerator;
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
@@ -102,6 +103,7 @@ public class GraphQLRewriteGenerator {
         write(OrderByResultClassGenerator.generate(),             "rewrite");
         write(TypeClassGenerator.generate(schema),                "rewrite.types");
         write(TypeConditionsGenerator.generate(schema),           "rewrite.conditions");
+        write(QueryConditionsGenerator.generate(schema),          "rewrite.conditions");
         write(fetcherClasses,                                      "rewrite.fetchers");
         write(List.of(GraphitronWiringClassGenerator.generate(fetcherClassNames, connectionWirings, nestedTypeWirings)), "rewrite");
     }

@@ -28,7 +28,10 @@ class GeneratedSourcesSmokeTest {
         // Table classes — one per distinct SQL table referenced by a @table type
         PKG + ".types.Film",
         PKG + ".types.Customer",
-        PKG + ".types.Language"
+        PKG + ".types.Language",
+        // Query-root condition orchestrator (env-aware shim layer over the entity-scoped
+        // *Conditions classes). Generated whenever a root Query has any QueryTableField.
+        PKG + ".conditions.QueryConditions"
     })
     void generatedClassIsPresent(String className) {
         assertThatCode(() -> Class.forName(className))

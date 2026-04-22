@@ -493,20 +493,14 @@ public class TypeFetcherGenerator {
     }
 
     private static CodeBlock buildConditionCall(QueryField.QueryTableField qtf, String srcAlias) {
-        var code = CodeBlock.builder();
-        code.addStatement("$T condition = $T.noCondition()", CONDITION, DSL);
-        for (var filter : qtf.filters()) {
-            for (var param : filter.callParams()) {
-                if (param.extraction() instanceof CallSiteExtraction.JooqConvert && param.list()) {
-                    code.addStatement("$T<$T> $L = env.getArgument($S)",
-                        LIST, String.class, toCamelCase(param.name()) + "Keys", param.name());
-                }
-            }
-            var callArgs = ArgCallEmitter.buildCallArgs(filter.callParams(), filter.className(), srcAlias);
-            code.addStatement("condition = condition.and($T.$L($L))",
-                ClassName.bestGuess(filter.className()), filter.methodName(), callArgs);
-        }
-        return code.build();
+        var queryConditionsClass = ClassName.get(
+            RewriteConfig.outputPackage() + ".rewrite.conditions",
+            qtf.parentTypeName() + QueryConditionsGenerator.CLASS_NAME_SUFFIX);
+        return CodeBlock.builder()
+            .addStatement("$T condition = $T.$L($L, env)",
+                CONDITION, queryConditionsClass,
+                QueryConditionsGenerator.conditionMethodName(qtf.name()), srcAlias)
+            .build();
     }
 
     /**
