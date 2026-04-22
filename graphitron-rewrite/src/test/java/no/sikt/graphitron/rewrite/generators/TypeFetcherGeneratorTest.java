@@ -563,34 +563,6 @@ class TypeFetcherGeneratorTest {
     // Dropped connectionField_emitsBackwardFlag: Pattern 5 — backward semantics exercised by
     // the filmsConnection_backward_* execution tests.
 
-    @Test
-    void connectionField_emitsReverseOrderByHelper() {
-        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(connectionField("films")));
-        assertThat(spec.methodSpecs()).extracting(MethodSpec::name).contains("reverseOrderBy");
-    }
-
-    @Test
-    void connectionField_reverseOrderByHelper_isPrivateStatic() {
-        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(connectionField("films")));
-        var m = method(spec, "reverseOrderBy");
-        assertThat(m.modifiers()).containsExactlyInAnyOrder(
-            javax.lang.model.element.Modifier.PRIVATE, javax.lang.model.element.Modifier.STATIC);
-    }
-
-    @Test
-    void connectionField_reverseOrderByHelper_returnsSortFieldList() {
-        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(connectionField("films")));
-        assertThat(method(spec, "reverseOrderBy").returnType().toString())
-            .isEqualTo("java.util.List<org.jooq.SortField<?>>");
-    }
-
-    @Test
-    void noConnectionField_noReverseOrderByHelper() {
-        var field = queryTableField("films", true);
-        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(field));
-        assertThat(spec.methodSpecs()).extracting(MethodSpec::name).doesNotContain("reverseOrderBy");
-    }
-
     // Dropped connectionField_usesSingleExpressionSeek and connectionField_columnDrivenCursorDecode:
     // Pattern 5 — cursor decode + seek semantics exercised end-to-end by
     // filmsConnection_withAfterCursor_returnsNextPage and

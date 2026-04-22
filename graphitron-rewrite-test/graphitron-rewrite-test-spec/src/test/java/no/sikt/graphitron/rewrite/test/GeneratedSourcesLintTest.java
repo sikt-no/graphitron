@@ -29,7 +29,7 @@ class GeneratedSourcesLintTest {
 
     /** Emitted by {@code graphitron-maven-plugin} into this package path. */
     private static final Path GENERATED_REWRITE_ROOT = Paths.get(
-        "target", "generated-sources",
+        "target", "generated-sources", "graphitron",
         "no", "sikt", "graphitron", "rewrite", "test", "generated", "rewrite");
 
     private static final Pattern VAR_DECLARATION = Pattern.compile("\\bvar\\b\\s+\\w+");
