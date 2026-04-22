@@ -20,11 +20,13 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.indentIfMultiline;
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.inResolverKeysBlock;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.keyAsTableRecordWithQueryHelper;
 import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeyForResolverFieldOrThrow;
 import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeySetForResolverFields;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_ITERATOR;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_ORDER_FIELDS;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_RECORD_ITERATOR;
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.internalPrefix;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphql.naming.GraphQLReservedName.NODE_TYPE;
@@ -58,6 +60,12 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
     }
 
     private CodeBlock getCode(ObjectField target, List<ObjectDefinition> implementations) {
+        return target.createsDataFetcher()
+                ? getSplitQueryCode(target, implementations)
+                : getRootCode(target, implementations);
+    }
+
+    private CodeBlock getRootCode(ObjectField target, List<ObjectDefinition> implementations) {
         var context = new FetchContext(processedSchema, target, getLocalObject(), false);
         var overriddenFields = getFieldsOverriddenByType(processedSchema.getInterface(target), implementations);
         var selectCode = generateSelectRow(context, target, implementations, overriddenFields);
@@ -77,6 +85,41 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
                 .addIf(!orderFields.isEmpty(), ".orderBy($L)", VAR_ORDER_FIELDS)
                 .addIf(target.hasForwardPagination(), this::createSeekAndLimitBlock)
                 .add(fetchAndMap)
+                .build();
+    }
+
+    private CodeBlock getSplitQueryCode(ObjectField target, List<ObjectDefinition> implementations) {
+        var context = new FetchContext(processedSchema, target, getLocalObject(), false);
+        var refContext = context.nextContext(target);
+        var overriddenFields = getFieldsOverriddenByType(processedSchema.getInterface(target), implementations);
+
+        var innerSelectRow = generateSelectRow(refContext, target, implementations, overriddenFields);
+        var innerWhere = formatWhereContents(refContext, false);
+        var innerSubquery = CodeBlock.builder()
+                .add("$T.select($L)", DSL.className, indentIfMultiline(innerSelectRow))
+                .add("\n.from($L)\n", refContext.getTargetAlias())
+                .add(innerWhere)
+                .add(".orderBy($L)", VAR_ORDER_FIELDS)
+                .build();
+        var multisetBlock = wrapInMultiset(innerSubquery);
+
+        var outerSelect = CodeBlock.builder()
+                .add(getInitialKey(context))
+                .add(multisetBlock)
+                .build();
+        var outerFrom = context.renderQuerySource(getLocalTable());
+        var orderFields = createOrderFieldsDeclarationBlock(target, refContext.getTargetAlias(), refContext.getTargetTableName());
+
+        var fetchMapBlock = buildSplitQueryFetchMap(target, implementations, refContext.getTargetAlias(), overriddenFields, refContext);
+
+        return CodeBlock.builder()
+                .add(createAliasDeclarations(context.getAliasSet()))
+                .add(orderFields)
+                .add("return $N.select($L)", VariableNames.VAR_CONTEXT, indentIfMultiline(outerSelect))
+                .add("\n.from($L)\n", outerFrom)
+                .add(createSelectJoins(context.getJoinSet()))
+                .add(".where($L)\n", inResolverKeysBlock(resolverKeyParamName, context))
+                .add(fetchMapBlock)
                 .build();
     }
 
@@ -183,11 +226,45 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
     }
 
     private CodeBlock fetchAndMap(ObjectField target, List<ObjectDefinition> implementations, String querySource, HashMap<String, Set<String>> overriddenFields, FetchContext context) {
+        var returnInsideIfBlock = !target.hasForwardPagination();
+        var lambda = CodeBlock.builder()
+                .indent()
+                .add(buildDiscriminatorMappingLambda(target, implementations, querySource, overriddenFields, context, returnInsideIfBlock))
+                .unindent()
+                .build();
+
+        return CodeBlock.of("\n.$L(\n$L\n);",
+                target.isIterableWrapped() || target.hasForwardPagination() ? "fetch" : "fetchOne",
+                lambda);
+    }
+
+    private CodeBlock buildSplitQueryFetchMap(
+            ObjectField target,
+            List<ObjectDefinition> implementations,
+            String querySource,
+            HashMap<String, Set<String>> overriddenFields,
+            FetchContext context) {
+        var lambda = buildDiscriminatorMappingLambda(target, implementations, querySource, overriddenFields, context, true);
+        return CodeBlock.builder()
+                .add("\n.fetchMap(\n")
+                .indent()
+                .add("$T::value1,\n", RECORD2.className)
+                .add("$N -> $N.value2().map($L)\n", VAR_RECORD_ITERATOR, VAR_RECORD_ITERATOR, lambda)
+                .unindent()
+                .add(");")
+                .build();
+    }
+
+    private CodeBlock buildDiscriminatorMappingLambda(
+            ObjectField target,
+            List<ObjectDefinition> implementations,
+            String querySource,
+            HashMap<String, Set<String>> overriddenFields,
+            FetchContext context,
+            boolean returnInsideIfBlock) {
         var interfaceDefinition = processedSchema.getInterface(target);
 
-        var returnInsideIfBlock = !target.hasForwardPagination();
         var mapping = CodeBlock.builder()
-                .indent()
                 .beginControlFlow("$N -> ", VAR_ITERATOR)
                 .declare(
                         DISCRIMINATOR_VALUE,
@@ -249,12 +326,9 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
                         DISCRIMINATOR_VALUE)
                 .endControlFlow()
                 .addStatementIf(target.hasForwardPagination(), "return $T.of($N, $N)", PAIR.className, TOKEN, DATA)
-                .endControlFlow()
-                .unindent();
+                .endControlFlow();
 
-        return CodeBlock.of("\n.$L(\n$L\n);",
-                target.isIterableWrapped() || target.hasForwardPagination() ? "fetch" : "fetchOne",
-                mapping.build());
+        return mapping.build();
     }
 
     private static @NotNull String getOverriddenFieldAlias(ObjectDefinition implementation, String it) {

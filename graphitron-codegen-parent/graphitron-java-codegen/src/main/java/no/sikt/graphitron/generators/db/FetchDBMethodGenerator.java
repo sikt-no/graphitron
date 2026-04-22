@@ -672,7 +672,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             // Discriminator condition for single table interface
             conditionList.add(
                     CodeBlock.of("$L.$L.in($L)",
-                            context.renderQuerySource(getLocalTable()),
+                            context.getTargetAlias(),
                             processedSchema.getInterface(context.getReferenceObjectField()).getDiscriminatorFieldName(),
                             CodeBlock.join(
                                     ", ", processedSchema
