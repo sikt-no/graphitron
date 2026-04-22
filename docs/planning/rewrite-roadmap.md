@@ -9,7 +9,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | Item | Status | Plan |
 |---|---|---|
 | Platform-id as synthesized NodeId | In Progress | [plan](legacy-platform-id.md) |
-| Implicit `@reference` path inference | In Progress | [plan](plan-implicit-reference-inference.md) |
+| Implicit `@reference` path inference | In Review | [plan](plan-implicit-reference-inference.md) |
 | `DSLContext` params on `@service` methods | In Review | [plan](plan-service-dsl-context-param.md) |
 | Argument-resolution unification | In Review | [plan](argument-resolution.md) |
 | `BatchKey.ObjectBased` removal | Spec | [plan](plan-batchkey-remove-objectbased.md) |

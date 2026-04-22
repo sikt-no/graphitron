@@ -47,8 +47,10 @@ type Address @table(name: "address") {
 
 type Store @table(name: "store") {
     storeId:    Int!     @field(name: "STORE_ID")
-    # G5: single-hop inline TableField list — customer.store_id → store.store_id
-    customers:  [Customer!]! @reference(path: [{key: "customer_store_id_fkey"}]) @defaultOrder(primaryKey: true)
+    # G5 + implicit-reference-inference: single-hop inline TableField list with no @reference —
+    # the classifier infers the one-hop FK customer.store_id → store.store_id from the jOOQ
+    # catalog because there is exactly one FK between the two tables.
+    customers:  [Customer!]! @defaultOrder(primaryKey: true)
 }
 
 type Category @table(name: "category") {

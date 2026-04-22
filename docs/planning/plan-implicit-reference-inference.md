@@ -1,6 +1,6 @@
 # Implicit `@reference` path inference
 
-> **Status:** Ready
+> **Status:** In Review
 
 ## Overview
 
@@ -187,3 +187,21 @@ All new pipeline cases assert the error message via substring `contains`, matchi
 - Error messages reused verbatim from `GraphitronSchemaValidator.validateNodeIdReferenceField` (lines 340-354).
 - Canonical explicit-`@reference` fixtures (for patterning new tests): `graphitron-rewrite/src/test/java/no/sikt/graphitron/rewrite/SplitTableFieldPipelineTest.java`, `graphitron-rewrite-test/graphitron-rewrite-test-spec/src/main/resources/graphql/schema.graphqls:115-118` (Film.actors — two-hop junction) and `:122-125` (Film.actorsBySplitLookup — two-hop split).
 - Closes the empty-`joinPath` stub arms in `SplitRowsMethodEmitter` — the last remaining gap in Phase 2b C1/C2 scope beyond `CARDINALITY` (single-cardinality) and `CONDITION_JOIN` (classification-vocabulary item 5).
+
+## Implementation deviations from the plan
+
+The plan's test-fixture choices assumed `film ↔ language` was a single-FK pair, but `init.sql` declares two FKs (`film.language_id` and `film.original_language_id`, both pointing at `language`). `JooqCatalog.findForeignKeysBetweenTables` is direction-agnostic, so inference correctly reports "multiple foreign keys" for this pair. The following fixture choices deviated from §5:
+
+- **`GraphitronSchemaBuilderTest.SPLIT_QUERY` / `SPLIT_LOOKUP_TABLE_FIELD`** — migrated to `Store ↔ Customer` (single FK `customer_store_id_fkey`) instead of `Language ↔ Film`.
+- **`GraphitronSchemaBuilderTest.TableFieldCase.SINGLE_RETURN_TYPE`** — migrated to `City ↔ Country` (single FK `city_country_id_fkey`). Now asserts a one-hop inferred path instead of empty.
+- **`LIST_RETURN_TYPE` / `CONNECTION_STRUCTURE_REJECTED` / `AS_CONNECTION_*` / `TABLE_FIELD_*` (ArgumentParsingCase)** — migrated from `Film.actors` (zero FK) to `Store ↔ Customer` and `FilmActor ↔ Actor` so the downstream classifier checks (connection rejection, etc.) remain reachable after parsePath succeeds.
+- **`DEFAULT_ORDER_*`** — migrated to `FilmActor ↔ Actor` (single FK `film_actor_actor_id_fkey`) so `idx_actor_last_name` coverage is preserved.
+- **`InterfaceUnionFieldCase.TABLE_INTERFACE_FIELD`** — migrated from `Actor.media` to `Inventory.media` (single FK `inventory_film_id_fkey`).
+- **`NodeIdReferenceFieldCase.RESOLVED`** — migrated to `City.countryId` (single FK). Now asserts a one-hop inferred FkJoin joinPath instead of empty.
+- **`LookupTableFieldPipelineTest`** — existing cases that used `Film.actors` without `@reference` now carry the explicit two-hop junction path so the tests remain about their original subject (e.g. single-cardinality `@lookupKey` rejection, `@asConnection` rejection) rather than FK resolution.
+- **`TypeFetcherGeneratorTest.splitQueryField`** — unit-level fixture that constructed a `SplitTableField` with `List.of()` as `joinPath` now includes a one-hop `FkJoin` to satisfy the new `SplitRowsMethodEmitter` invariant (`path.get(0)` must be a non-null `FkJoin`).
+- **Test-spec execution fixture** — dropped `@reference` on `Store.customers` (single FK) instead of `Language.films` (multi-FK; that site still requires the explicit path).
+
+`IMPLICIT_REFERENCE_MULTIPLE_FK` in `NodeIdReferenceFieldCase` / `TableFieldCase` continues to use the `film ↔ language` pair as the plan suggested — that's the genuinely multi-FK case the error is designed to surface.
+
+One validator tweak: `GraphitronSchemaValidator.validateReferenceLeadsToType` now short-circuits on an empty path. The classifier still guarantees a non-empty path for `NodeIdReferenceField` in normal flow, but the existing variant-stub validation tests construct `NodeIdReferenceField` directly with an empty joinPath to exercise the "variant not yet implemented" branch; without the guard those unit tests crash on `path.getLast()`.
