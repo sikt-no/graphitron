@@ -1,6 +1,6 @@
 # Plan — Docs as an Index into the Classification Tests
 
-> **Status:** Approved
+> **Status:** Ready
 >
 > Steps 1-2 shipped on `claude/review-docs-plan-adYJW`. Step 5 is superseded by the variant-coverage meta-test — `GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus` + `VariantCoverageTest.everySealedLeafHasAClassificationCase`. Steps 3-4 remain, deferred until the sealed hierarchy stabilises (Active work and Stubs still in motion).
 

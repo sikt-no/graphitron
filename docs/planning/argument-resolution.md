@@ -1,6 +1,6 @@
 # Argument Resolution — Phase 4
 
-> **Status:** Pending Review
+> **Status:** In Review
 >
 > Phases 1–3 have shipped. Phase 4 (`@condition` on `INPUT_FIELD_DEFINITION`) remains deferred. This plan now covers Phase 4 only.
 

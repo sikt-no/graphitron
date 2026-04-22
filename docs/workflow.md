@@ -1,143 +1,86 @@
 # Development Workflow
 
-Every code change in this repo moves through a fixed pipeline. This doc
-is the source of truth for state transitions, reviewer independence,
-and what "publish" means.
-
-## States
-
-Every unit of work sits in exactly one state at a time. The roadmap
+Every code change in this repo moves through a fixed pipeline. The roadmap
 (`planning/rewrite-roadmap.md`) is the single ledger that tracks state per item.
 
+## States and transitions
+
+```mermaid
+stateDiagram-v2
+    direction LR
+    state "In Progress" as InProgress
+    state "In Review" as InReview
+    [*] --> Backlog
+    Backlog --> Spec        : pick / create plan-*.md
+    Spec --> Spec           : revise [reviewer ≠ last committer]
+    Spec --> Ready          : sign off [reviewer ≠ last committer]
+    Ready --> InProgress    : start work / roadmap marker only
+    InProgress --> InReview : land implementation / update plan
+    InReview --> Ready      : rework [reviewer ≠ implementer] / update plan
+    InReview --> Done       : approve [reviewer ≠ implementer] / delete plan
+    Done --> [*]
 ```
-Unplanned → Draft → Approved → In Progress → Pending Review → Done
-                                                                │
-                             ┌──────────────────────────────────┘
-                             ▼
-                        (plan deleted, removed from roadmap)
-```
 
-Two reverse transitions are legal:
-
-- **Draft → Draft** (iterate): reviewer finds weaknesses or missing
-  pieces; plan is revised. The default expectation is the reviewer
-  commits the revision directly (see "What review is for" below).
-- **Pending Review → Approved** (rework): reviewer finds further work is
-  needed before calling the implementation complete. The plan is
-  updated to capture the remaining work; the item goes back to Approved
-  and a new implementation cycle starts on that leftover.
-
-## Transitions
-
-| From | To | Trigger | Required outputs |
-|------|----|---------|------------------|
-| Unplanned | Draft | Someone picks the item | New `docs/planning/plan-<slug>.md` with `> **Status:** Draft`; roadmap item gains `[Draft]` marker + link to plan; commit + push |
-| Draft | Draft | Review identifies weaknesses or improvements | Reviewer commits revisions directly in place (default) or hands back a feedback list for the author to apply (fallback); push; roadmap unchanged |
-| Draft | Approved | Reviewer (≠ most recent Draft committer) signs off | Plan front-matter changes to `> **Status:** Approved`; roadmap marker changes to `[Approved]`; commit + push |
-| Approved | In Progress | Implementer starts work | Roadmap marker changes to `[In Progress]` (plan status unchanged); push |
-| In Progress | Pending Review | Implementation commits landed | Plan updated: remove what shipped, keep what remains or was discovered; plan status becomes `> **Status:** Pending Review`; roadmap marker becomes `[Pending Review]`; implementation commits + plan update in the same branch; push |
-| Pending Review | Approved | Reviewer (≠ implementer) requests more work | Plan updated to capture the remaining work; status back to `Approved`; roadmap back to `[Approved]`; push |
-| Pending Review | Done | Reviewer (≠ implementer) approves | Plan file deleted; roadmap item deleted (or moved to a short "Done since…" line if it documents a milestone); push |
-
-## Reviewer independence
-
-- **Draft → Approved** must be signed off by someone other than the
-  most recent Draft committer.
-- **Pending Review → Done** must be signed off by someone other than
-  the implementer. (The implementer may also have been the plan's
-  author; that's fine. What matters is that the reviewer is a third
-  party to the implementation.)
-
-In Claude Code sessions, the human user is the usual reviewer. An
-independent Claude session (a fresh agent with no prior context on the
-work) can also review — it has no shared context and must evaluate on
-the artifact alone.
-
-"Author" means the most recent committer of the plan file in Draft
-state, not a fixed identity. A reviewer who lands substantive edits
-disqualifies themselves from approving that revision; another party
-must sign off.
+**Reviewer rule:** the guards on `Spec → Ready` and `In Review → Done` require a
+different party from the one who last changed the artifact. In Claude Code sessions,
+the human user is the usual reviewer; an independent agent session (no prior context
+on the work) can also serve. A reviewer who lands substantive edits disqualifies
+themselves from approving that revision — another party must sign off.
 
 ## Plan file conventions
 
 - Location: `docs/planning/plan-<slug>.md`. Slug describes the work, not the
   phase (`plan-variant-coverage-meta-test.md`, not `plan-phase-2.md`).
 - First non-heading line is the status front-matter, verbatim:
-  `> **Status:** Draft | Approved | Pending Review`
-- Plans may be multi-phase. When a phase ships, the implementation
-  commit updates the plan to mark that phase done (typically by
-  collapsing its section into a one-line "shipped at <sha>" note and
-  capturing any learnings). The overall plan's status tracks what's
-  next — if more phases remain, status stays `Approved`; if only the
-  just-shipped phase is pending review, status is `Pending Review`.
-- Plans describe *what* to do, not *how many commits* to land it in.
-  Implementation commit structure is the implementer's judgment —
-  split when the seams add review value, keep unified when they
-  don't. A plan that pre-enumerates "C1 / C2 / C3" with commit-bounded
-  scope is prescribing past its usefulness: the natural seams are only
-  visible once the code exists, and locking them in up front forces
-  premature predictions (e.g. writing C1-scope tests against C2-scope
-  expectations). Plans *may* discuss logical units of work where that
-  aids review, but without fixing them to commits.
-- A plan deleted on Done has its file removed outright. Git history
-  preserves it; leaving a tombstone file encourages staleness.
+  `> **Status:** Spec | Ready | In Review`
+- Plans may be multi-phase. When a phase ships, the implementation commit updates
+  the plan to mark that phase done (typically by collapsing its section into a
+  one-line "shipped at `<sha>`" note and capturing any learnings). The overall
+  plan's status tracks what's next — if more phases remain, status stays `Ready`;
+  if only the just-shipped phase is pending review, status is `In Review`.
+- Plans describe *what* to do, not *how many commits* to land it in. Implementation
+  commit structure is the implementer's judgment — split when the seams add review
+  value, keep unified when they don't.
+- A plan deleted on Done has its file removed outright. Git history preserves it;
+  leaving a tombstone file encourages staleness.
 
 ## Roadmap conventions
 
 Each roadmap item gets a status suffix and, if a plan exists, a link:
 
-- `1. **Title.** Description. [Approved] ([plan-slug.md](plan-slug.md))`
-- `7. **Title.** Description. [Unplanned]`
+- `- **Title** **[Ready]** — description ([plan-slug.md](plan-slug.md))`
+- `- **Title** **[Backlog]**`
 
-Use `[Done]` only for milestones worth keeping as history (e.g.,
-"Sealed-switch dispatch landed at <sha>"); routine completions
-disappear from the roadmap entirely.
+Use `[Done]` only for milestones worth keeping as history (e.g. "Sealed-switch
+dispatch landed at `3357928`"); routine completions disappear entirely.
 
-The roadmap is the source of truth for state. A plan file's status
-front-matter mirrors the roadmap; drift is caught because both move
-together in the same commit.
+The roadmap is the source of truth for state. A plan file's status front-matter
+mirrors the roadmap; drift is caught because both move together in the same commit.
 
 ## Publishing
 
-"Publish" = commit + push. A change that lives only in your working
-copy doesn't exist for the rest of the workflow. The trunk-push rule
-from `CLAUDE.md` applies: any push to your branch must be followed by
-a fast-forward to `claude/graphitron-rewrite`.
+"Publish" = commit + push. A change that lives only in your working copy doesn't
+exist for the rest of the workflow. The trunk-push rule from `CLAUDE.md` applies:
+any push to your branch must be followed by a fast-forward to
+`claude/graphitron-rewrite`.
 
 ## Adding to the roadmap
 
-Any session can add items to the roadmap at any time. Opportunities
-spotted during review, implementation, or unrelated work all land
-here as `[Unplanned]` items. The expectation is that they're
-substantive enough to justify eventual planning — not every passing
-thought.
+Any session can add items to the roadmap at any time. Opportunities spotted during
+review, implementation, or unrelated work all land here as `[Backlog]` items. The
+expectation is that they're substantive enough to justify eventual planning — not
+every passing thought.
 
-## Canonical path (example)
+## Canonical path
 
-Taking a feature from idea to Done. Minimum of four commits by at
-least two parties; typical paths are longer because review involves
-iteration:
+Taking a feature from idea to Done. Minimum four commits by at least two parties;
+typical paths are five to six when reviews involve iteration:
 
-1. **Author** picks an `[Unplanned]` roadmap item, drafts
-   `docs/planning/plan-foo.md`, sets roadmap to `[Draft]`. One commit.
-2. **Reviewer (not the author)** reads the plan, finds weaknesses
-   and opportunities, and either commits improvements directly (plan
-   stays Draft; another reviewer then approves) or — if the plan is
-   already in good shape — signs off (status → Approved). In practice
-   most reviews involve at least one revision commit before sign-off.
-3. **Implementer** writes code, updates the plan (remove shipped,
-   keep pending), sets roadmap to `[Pending Review]`. One or more
-   commits at the implementer's judgment; the last one carries the
-   plan-status + roadmap update.
-4. **Reviewer (not the implementer)** reads the diff and the plan's
-   remaining content. If improvements are needed, either commits them
-   directly or updates the plan to capture remaining work (roadmap back
-   to `[Approved]`; new implementation cycle). If the work is complete,
-   approves (plan deleted; roadmap item deleted or moved to a short
-   "Done since" note). One commit.
-
-The typical path is five-to-six commits when reviews involve
-iteration — author draft, reviewer iteration(s), approval,
-implementation, reviewer iteration(s) on the implementation,
-done-approval. Nothing shorter preserves the checks; nothing longer
-means something is actually being improved each round.
+1. **Author** picks a `[Backlog]` item, drafts `docs/planning/plan-foo.md`, sets
+   roadmap to `[Spec]`.
+2. **Reviewer (≠ author)** reads the plan, revises if needed (stays `[Spec]`),
+   then signs off (`[Ready]`).
+3. **Implementer** writes code, updates the plan (remove shipped, keep pending),
+   sets roadmap to `[In Review]`.
+4. **Reviewer (≠ implementer)** approves (`[Done]`, plan deleted) or requests more
+   work (`[Ready]`, new cycle).

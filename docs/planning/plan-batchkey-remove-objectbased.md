@@ -1,6 +1,6 @@
 # `BatchKey.ObjectBased` — remove the variant, reject DTO-parent service batching
 
-> **Status:** Draft
+> **Status:** Spec
 >
 > Collapses `BatchKey` to two variants (`RowKeyed`, `RecordKeyed`). The only remaining
 > producer of `ObjectBased` is `ServiceCatalog.classifySourcesType` — a DTO parent

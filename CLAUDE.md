@@ -46,7 +46,7 @@ Prefer many small `Edit` calls over one large `Write` when trimming or rewriting
 
 ## Development Workflow
 
-Every change moves Unplanned → Draft → Approved → In Progress → Pending Review → Done, tracked per item in `docs/planning/rewrite-roadmap.md` with inline `[Status]` markers. Plans live at `docs/planning/plan-<slug>.md` and carry a `> **Status:** ...` front-matter that mirrors the roadmap. Reviewer must be a different party than the author (for Draft → Approved) and the implementer (for Pending Review → Done). Any session can add `[Unplanned]` items to the roadmap.
+Every change moves Backlog → Spec → Ready → In Progress → In Review → Done, tracked per item in `docs/planning/rewrite-roadmap.md` with inline `[Status]` markers. Plans live at `docs/planning/plan-<slug>.md` and carry a `> **Status:** ...` front-matter that mirrors the roadmap. Reviewer must be a different party than the author (for Spec → Ready) and the implementer (for In Review → Done). Any session can add `[Backlog]` items to the roadmap.
 
 Full spec — state table, file conventions, canonical path: [`docs/workflow.md`](docs/workflow.md). Read it once; it's short.
 

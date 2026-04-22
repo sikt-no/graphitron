@@ -1,6 +1,6 @@
 # KjerneJooqGenerator Rewrite — Emit NodeId Metadata Constants
 
-> **Status:** Draft
+> **Status:** Spec
 >
 > Rewrite Sikt's externally-owned `KjerneJooqGenerator` so every platform-id table class additionally emits two public static finals — `__NODE_TYPE_ID` and `__NODE_KEY_COLUMNS` — that [legacy-platform-id.md](legacy-platform-id.md) reflects on. Scratch-only in this repo (proposed location: `scratch/kjerne-jooq/`); final sources move to Sikt's external repo and the rewrite picks up a released jar.
 

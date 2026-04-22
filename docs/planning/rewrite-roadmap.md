@@ -10,14 +10,14 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|
 | Platform-id as synthesized NodeId | In Progress | [plan](legacy-platform-id.md) |
 | Implicit `@reference` path inference | In Progress | [plan](plan-implicit-reference-inference.md) |
-| `DSLContext` params on `@service` methods | Pending Review | [plan](plan-service-dsl-context-param.md) |
-| Argument-resolution unification | Pending Review | [plan](argument-resolution.md) |
-| `BatchKey.ObjectBased` removal | Draft | [plan](plan-batchkey-remove-objectbased.md) |
-| Service-backed and method-backed root fetchers | Draft | [plan](plan-service-root-fetchers.md) |
-| `IdReferenceField` input filter variant | Draft | [plan](plan-id-reference-input-field.md) |
-| Faceted search on `@asConnection` | Draft | [plan](plan-faceted-search.md) |
-| Classification vocabulary follow-ups | Draft | [plan](plan-classification-vocabulary-followups.md) |
-| KjerneJooqGenerator — emit NodeId metadata constants | Draft | [plan](plan-kjerne-jooq-generator.md) |
+| `DSLContext` params on `@service` methods | In Review | [plan](plan-service-dsl-context-param.md) |
+| Argument-resolution unification | In Review | [plan](argument-resolution.md) |
+| `BatchKey.ObjectBased` removal | Spec | [plan](plan-batchkey-remove-objectbased.md) |
+| Service-backed and method-backed root fetchers | Spec | [plan](plan-service-root-fetchers.md) |
+| `IdReferenceField` input filter variant | Spec | [plan](plan-id-reference-input-field.md) |
+| Faceted search on `@asConnection` | Spec | [plan](plan-faceted-search.md) |
+| Classification vocabulary follow-ups | Spec | [plan](plan-classification-vocabulary-followups.md) |
+| KjerneJooqGenerator — emit NodeId metadata constants | Spec | [plan](plan-kjerne-jooq-generator.md) |
 
 **Notes:** KjerneJooqGenerator is an external Sikt repo change (scratch-only here); unblocks Platform-id steps 2–6 at release time. Classification vocabulary follow-ups covers five independent cleanups — none is a release blocker.
 
@@ -31,15 +31,15 @@ Pick an item, draft a plan, move to Active.
 
 Production parity gaps and architecture blockers, in rough order.
 
-- **`BatchKey` lifter directive** **[Unplanned]** — mechanism for schema authors to supply a DTO→key conversion, enabling DataLoader batching on DTO parents; feeds the existing column-keyed path once `BatchKey.ObjectBased` removal lands.
-- **Decompose `FieldBuilder`** **[Unplanned]** — split 1,750-line builder along field taxonomy; blocked on Argument-resolution unification. Proposed split: `QueryFieldBuilder`, `MutationFieldBuilder`, `ChildFieldBuilder` + shared argument-classification module.
-- **Lift `@asConnection` rejection on `@splitQuery` fields** **[Unplanned]** — emit `ROW_NUMBER() OVER (PARTITION BY fk)` envelope to support per-parent Relay pagination inside DataLoader batches; scope: `SplitTableField` and `SplitLookupTableField`.
-- **Composite-key `@lookupKey` on list-of-input-object arguments** **[Unplanned]** — add `ArgumentRef.CompositeLookupArg` carrying `(input-field-name, target-column)` pairs resolved from `@field(name:)` directives; `buildInputRowsMethod` already handles arbitrary-arity VALUES + JOIN.
-- **Apollo Federation via federation-jvm transform** **[Unplanned]** — replace `QueryEntityField` stub with a `GraphitronSchemaBuilder` post-step wrapping the Graphitron schema via `Federation.transform`; deletes the stub after migration.
-- **`DSLContext` on `@condition` / `@tableMethod` methods** **[Unplanned]** — lift `reflectTableMethod` gate; requires `ArgCallEmitter` to walk `params()` instead of `callParams()` so the injected DSLContext lands at its declaration-index slot.
-- **`Set<T>` parent-keys on `@service` methods** **[Unplanned]** — decide: require `List<T>` (predictable batching order, current direction) or broaden `BatchKey`; one known offender (`navnAlleSprak`).
-- **Rebalance test pyramid** **[Unplanned]** — shift new test investment from per-variant structural tests toward SDL→classification→emission pipeline tests keyed off `graphitron-rewrite-test-fixtures`.
-- **Audit custom pagination-arg-name support** **[Unplanned]** — decide: remove `PaginationSpec` plumbing for non-default `first`/`after` names (likely dead code) or document and add an execution fixture.
+- **`BatchKey` lifter directive** **[Backlog]** — mechanism for schema authors to supply a DTO→key conversion, enabling DataLoader batching on DTO parents; feeds the existing column-keyed path once `BatchKey.ObjectBased` removal lands.
+- **Decompose `FieldBuilder`** **[Backlog]** — split 1,750-line builder along field taxonomy; blocked on Argument-resolution unification. Proposed split: `QueryFieldBuilder`, `MutationFieldBuilder`, `ChildFieldBuilder` + shared argument-classification module.
+- **Lift `@asConnection` rejection on `@splitQuery` fields** **[Backlog]** — emit `ROW_NUMBER() OVER (PARTITION BY fk)` envelope to support per-parent Relay pagination inside DataLoader batches; scope: `SplitTableField` and `SplitLookupTableField`.
+- **Composite-key `@lookupKey` on list-of-input-object arguments** **[Backlog]** — add `ArgumentRef.CompositeLookupArg` carrying `(input-field-name, target-column)` pairs resolved from `@field(name:)` directives; `buildInputRowsMethod` already handles arbitrary-arity VALUES + JOIN.
+- **Apollo Federation via federation-jvm transform** **[Backlog]** — replace `QueryEntityField` stub with a `GraphitronSchemaBuilder` post-step wrapping the Graphitron schema via `Federation.transform`; deletes the stub after migration.
+- **`DSLContext` on `@condition` / `@tableMethod` methods** **[Backlog]** — lift `reflectTableMethod` gate; requires `ArgCallEmitter` to walk `params()` instead of `callParams()` so the injected DSLContext lands at its declaration-index slot.
+- **`Set<T>` parent-keys on `@service` methods** **[Backlog]** — decide: require `List<T>` (predictable batching order, current direction) or broaden `BatchKey`; one known offender (`navnAlleSprak`).
+- **Rebalance test pyramid** **[Backlog]** — shift new test investment from per-variant structural tests toward SDL→classification→emission pipeline tests keyed off `graphitron-rewrite-test-fixtures`.
+- **Audit custom pagination-arg-name support** **[Backlog]** — decide: remove `PaginationSpec` plumbing for non-default `first`/`after` names (likely dead code) or document and add an execution fixture.
 
 ### Generator stubs
 
@@ -54,19 +54,19 @@ Enumerated from `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS`. Priority numbers
 
 ### Cleanup
 
-- **Unify `rowsMethodName()`** **[Unplanned]** — lift `"rows" + capitalize(name())` copy-paste from four `BatchKeyField` leaves to a default method on the interface.
-- **Collapse `TableTargetField` structural redundancy** **[Unplanned]** — six `Table*Field` variants share identical components; evaluate sealed intermediates (`StandardTableField`, `RecordBoundField`).
-- **Shared interface for `QueryField` / `ChildField` table-bound parallels** **[Unplanned]** — root variants drop `joinPath` but share `filters · orderBy · pagination`.
-- **`JoinConditionRef` wrapper** **[Unplanned]** — distinguish `ConditionJoin`/`FkJoin` calling convention from `ConditionFilter` at the type level.
-- **Paginated-fields transform coexistence** **[Unplanned]** — document or wire `defaultPageSize` loss when `@asConnection` strip precedes the builder.
-- **Selection parser audit** **[Unplanned]** — `selection/` hand-rolls ~500 LOC; audit whether re-parsing is needed given what graphql-java already provides.
-- **`GraphitronContext` extension-point docs** **[Unplanned]** — document what belongs in `GraphitronContext` vs jOOQ `ExecuteListener` vs schema directive.
-- **Drop `graphitron-common` build dependency from `graphitron-rewrite`** **[Unplanned]** — inline `MultiSourceReader` + auto-inject `directives.graphqls`; emitted code runtime dependency unchanged.
-- **Consolidate rewrite modules under `graphitron-rewrite/`** **[Unplanned]** — move four root-level modules under a single submodule tree to eliminate the fixtures-jar-clobber footgun; schedule after legacy-rewrite parity stabilises.
+- **Unify `rowsMethodName()`** **[Backlog]** — lift `"rows" + capitalize(name())` copy-paste from four `BatchKeyField` leaves to a default method on the interface.
+- **Collapse `TableTargetField` structural redundancy** **[Backlog]** — six `Table*Field` variants share identical components; evaluate sealed intermediates (`StandardTableField`, `RecordBoundField`).
+- **Shared interface for `QueryField` / `ChildField` table-bound parallels** **[Backlog]** — root variants drop `joinPath` but share `filters · orderBy · pagination`.
+- **`JoinConditionRef` wrapper** **[Backlog]** — distinguish `ConditionJoin`/`FkJoin` calling convention from `ConditionFilter` at the type level.
+- **Paginated-fields transform coexistence** **[Backlog]** — document or wire `defaultPageSize` loss when `@asConnection` strip precedes the builder.
+- **Selection parser audit** **[Backlog]** — `selection/` hand-rolls ~500 LOC; audit whether re-parsing is needed given what graphql-java already provides.
+- **`GraphitronContext` extension-point docs** **[Backlog]** — document what belongs in `GraphitronContext` vs jOOQ `ExecuteListener` vs schema directive.
+- **Drop `graphitron-common` build dependency from `graphitron-rewrite`** **[Backlog]** — inline `MultiSourceReader` + auto-inject `directives.graphqls`; emitted code runtime dependency unchanged.
+- **Consolidate rewrite modules under `graphitron-rewrite/`** **[Backlog]** — move four root-level modules under a single submodule tree to eliminate the fixtures-jar-clobber footgun; schedule after legacy-rewrite parity stabilises.
 
 ### Deferred
 
-- **Docs-as-index stabilization** **[Approved — deferred]** — [plan](plan-docs-as-index-into-tests.md). Steps 1–2 shipped; steps 3–4 (re-section renames + doc rewire) deferred until sealed hierarchy stabilises.
+- **Docs-as-index stabilization** **[Ready — deferred]** — [plan](plan-docs-as-index-into-tests.md). Steps 1–2 shipped; steps 3–4 (re-section renames + doc rewire) deferred until sealed hierarchy stabilises.
 
 ---
 

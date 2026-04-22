@@ -1,6 +1,6 @@
 # `DSLContext` parameters on `@service` methods
 
-> **Status:** Pending Review
+> **Status:** In Review
 >
 > `ServiceCatalog.reflectServiceMethod` now recognises `org.jooq.DSLContext`
 > parameters by type and emits `MethodRef.Param.Typed` carrying
@@ -33,13 +33,13 @@ new variant is visible to future emitters via `params()`.
 ## Out of scope / follow-ups
 
 - **`@condition` / `@tableMethod` methods accepting DSLContext** —
-  `[Unplanned]`. `reflectTableMethod` still rejects DSLContext with the
+  `[Backlog]`. `reflectTableMethod` still rejects DSLContext with the
   existing "not a Table<?>, not a GraphQL argument, and not a context
   key" message. Lifting that gate requires
   `ArgCallEmitter.buildCallArgs` to walk `params()` rather than
   `callParams()` so it can inject DSLContext at the correct positional
   slot. File when a real schema needs it.
-- **`Set<T>` parent-keys on `@service` methods** — `[Unplanned]`. The
+- **`Set<T>` parent-keys on `@service` methods** — `[Backlog]`. The
   `java.util.Set<...Record>` error from the same validator run is a
   batch-key design question (migrate the service signature to `List<T>`
   vs. grow `BatchKey` / `classifySourcesType` to accept `Set`). Track

@@ -1,6 +1,6 @@
 # Service-backed and method-backed root fetchers
 
-> **Status:** Draft
+> **Status:** Spec
 >
 > Lift three root-`Query` leaves out of `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS`:
 > `QueryField.QueryTableMethodTableField`, `QueryField.QueryServiceTableField`,

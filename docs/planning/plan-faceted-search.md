@@ -1,6 +1,6 @@
 # Faceted search on `@asConnection` — `@facet` directive
 
-> **Status:** Draft
+> **Status:** Spec
 >
 > Add a `@facet` directive for filter-input fields. The schema-transform stage
 > expands each `@asConnection` field's Connection type with a `facets` object
@@ -64,7 +64,7 @@ type StringFacetValue     { value: String!     count: Int! }
 > filter, and gives up GraphQL's primary safety guarantee. This plan
 > uses `value: <same scalar as the filter field>` — e.g.
 > `BooleanFacetValue.value: Boolean!`. Confirm with the ticket author
-> during Draft → Approved review.
+> during Spec → Ready review.
 
 At runtime, any selection under `facets` triggers **one extra SQL
 statement** — a `UNION ALL` of per-facet `GROUP BY` arms, one arm per
@@ -942,7 +942,7 @@ reviewers can confirm the v1 design does not foreclose it.
   overrides the literal GG-335 text** (which shows
   `BooleanFacetValue.value: String` — read as ticket-writing
   shorthand rather than considered design). Flag for confirmation
-  during Draft → Approved review.
+  during Spec → Ready review.
 - **Hierarchical shape (Phase 6).** Flat response +
   `includeChildrenOf: [<parent value type>]` argument +
   `parentValue` pointer typed to match. No nested query structures
