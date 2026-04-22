@@ -398,7 +398,7 @@ class FieldBuilder {
         String typeName = baseTypeName(fieldDef);
         if (ctx.isConnectionType(typeName)) {
             boolean itemNullable = ctx.connectionItemNullable(typeName);
-            return new FieldWrapper.Connection(outerNullable, itemNullable, 100, typeName);
+            return new FieldWrapper.Connection(outerNullable, itemNullable, FieldWrapper.DEFAULT_PAGE_SIZE, typeName);
         }
 
         return new FieldWrapper.Single(outerNullable);
@@ -1209,13 +1209,13 @@ class FieldBuilder {
 
     private static int resolveDefaultFirstValue(GraphQLFieldDefinition fieldDef) {
         var dir = fieldDef.getAppliedDirective(DIR_AS_CONNECTION);
-        if (dir == null) return 100;
+        if (dir == null) return FieldWrapper.DEFAULT_PAGE_SIZE;
         var arg = dir.getArgument(ARG_DEFAULT_FIRST_VALUE);
-        if (arg == null || arg.getValue() == null) return 100;
+        if (arg == null || arg.getValue() == null) return FieldWrapper.DEFAULT_PAGE_SIZE;
         Object val = arg.getValue();
         if (val instanceof graphql.language.IntValue iv) return iv.getValue().intValueExact();
         if (val instanceof Number n) return n.intValue();
-        return 100;
+        return FieldWrapper.DEFAULT_PAGE_SIZE;
     }
 
     // ===== Field classification =====

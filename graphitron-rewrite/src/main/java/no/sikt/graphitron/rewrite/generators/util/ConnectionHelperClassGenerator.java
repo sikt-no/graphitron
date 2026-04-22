@@ -104,7 +104,7 @@ public class ConnectionHelperClassGenerator {
             .returns(ArrayTypeName.of(fieldWildcard))
             .addParameter(String.class, "cursor")
             .addParameter(listOfField, "orderByColumns")
-            .addStatement("$T[] seekFields = new $T[orderByColumns.size()]", JOOQ_FIELD, JOOQ_FIELD)
+            .addStatement("$T[] seekFields = new $T[orderByColumns.size()]", fieldWildcard, fieldWildcard)
             .addCode("if (cursor == null) {\n")
             .addCode("    for (int i = 0; i < orderByColumns.size(); i++)\n")
             .addCode("        seekFields[i] = $T.noField(orderByColumns.get(i));\n", DSL)

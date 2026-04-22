@@ -22,6 +22,14 @@ package no.sikt.graphitron.rewrite.model;
 public sealed interface FieldWrapper
         permits FieldWrapper.Single, FieldWrapper.List, FieldWrapper.Connection {
 
+    /**
+     * Fallback page size used when a {@code @asConnection} field omits
+     * {@code defaultFirstValue}. Referenced by {@link FieldWrapper.Connection}'s
+     * structural-detection constructor and by the classifier's default-page-size
+     * resolution, so all four fallback sites agree on the same literal.
+     */
+    int DEFAULT_PAGE_SIZE = 100;
+
     /** Returns {@code true} for {@link List} and {@link Connection}, {@code false} for {@link Single}. */
     default boolean isList() { return !(this instanceof Single); }
 
@@ -70,7 +78,7 @@ public sealed interface FieldWrapper
 
         /** Convenience constructor for structural detection (pre-expanded connection types). */
         public Connection(boolean connectionNullable, boolean itemNullable) {
-            this(connectionNullable, itemNullable, 100, null);
+            this(connectionNullable, itemNullable, DEFAULT_PAGE_SIZE, null);
         }
     }
 }

@@ -524,6 +524,7 @@ public class TypeFetcherGenerator {
             RewriteConfig.outputPackage() + ".rewrite", ConnectionHelperClassGenerator.CLASS_NAME);
         var conn = (FieldWrapper.Connection) qtf.returnType().wrapper();
         var JOOQ_FIELD = ClassName.get("org.jooq", "Field");
+        var fieldWildcard = ParameterizedTypeName.get(JOOQ_FIELD, WildcardTypeName.subtypeOf(Object.class));
 
         var builder = MethodSpec.methodBuilder(qtf.name())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -557,7 +558,7 @@ public class TypeFetcherGenerator {
         builder.addStatement("String cursor = backward ? before : after");
 
         // Column-driven cursor decode: returns Field<?>[] — DSL.noField() per column when cursor is null (seek no-op)
-        builder.addStatement("$T[] seekFields = $T.decodeCursor(cursor, extraFields)", JOOQ_FIELD, connectionHelperClass);
+        builder.addStatement("$T[] seekFields = $T.decodeCursor(cursor, extraFields)", fieldWildcard, connectionHelperClass);
 
         // Reverse sort direction for backward pagination
         builder.addStatement("$T effectiveOrderBy = backward ? reverseOrderBy(orderBy) : orderBy", SORT_FIELD_LIST);
