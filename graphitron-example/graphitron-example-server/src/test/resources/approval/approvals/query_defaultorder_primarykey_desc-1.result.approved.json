@@ -3,6 +3,16 @@
         "customersDefaultOrderPrimaryKeyDesc": {
             "edges": [
                 {
+                    "cursor": "WzEwMDBd",
+                    "node": {
+                        "id": "Q3VzdG9tZXI6MTAwMA",
+                        "name": {
+                            "firstName": "Example",
+                            "lastName": "Customer"
+                        }
+                    }
+                },
+                {
                     "cursor": "WzU5OV0",
                     "node": {
                         "id": "Q3VzdG9tZXI6NTk5",
@@ -54,7 +64,7 @@
                 }
             ],
             "pageInfo": {
-                "startCursor": "WzU5OV0",
+                "startCursor": "WzEwMDBd",
                 "endCursor": "WzU5NV0",
                 "hasNextPage": true
             }

@@ -15,6 +15,12 @@
                     }
                 },
                 {
+                    "email": "EXAMPLE.CUSTOMER@example.com",
+                    "address": {
+                        "id": "QWRkcmVzczoxMDAw"
+                    }
+                },
+                {
                     "email": "Mike.Hillyer@sakilastaff.com",
                     "address": {
                         "id": "QWRkcmVzczoz"

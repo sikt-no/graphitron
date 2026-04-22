@@ -4,13 +4,13 @@
             "edges": [
                 {
                     "node": {
-                        "email": "WADE.DELVALLE@sakilacustomer.org",
+                        "email": "AUSTIN.CINTRON@sakilacustomer.org",
                         "__typename": "CustomerWithEmail"
                     }
                 },
                 {
                     "node": {
-                        "email": "AUSTIN.CINTRON@sakilacustomer.org",
+                        "email": "EXAMPLE.CUSTOMER@example.com",
                         "__typename": "CustomerWithEmail"
                     }
                 },
