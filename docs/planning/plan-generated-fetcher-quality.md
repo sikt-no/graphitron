@@ -88,7 +88,8 @@ public record PageRequest(
     String before,
     List<SortField<?>> effectiveOrderBy,
     Field<?>[] seekFields,
-    List<Field<?>> selectFields           // selection ∪ extraFields (name-deduped)
+    List<Field<?>> selectFields,          // selection ∪ extraFields (name-deduped)
+    List<Field<?>> extraFields            // preserved for ConnectionResult/cursor encoding
 ) { }
 
 public static PageRequest pageRequest(
@@ -115,8 +116,13 @@ ConnectionHelper.PageRequest page = ConnectionHelper.pageRequest(
 The four `env.getArgument` calls stay on the fetcher side so the helper has no
 graphql-java dependency, matching the existing split for `*Conditions` classes (see the
 purity contract in `TypeConditionsGenerator`'s javadoc). `ConnectionResult` construction
-takes the `PageRequest` directly (`new ConnectionResult(result, page)`), deleting three
-of its six parameters — they already live on the record.
+takes the `PageRequest` directly (`new ConnectionResult(result, page)`), replacing four
+of its six constructor parameters (`pageSize`, `afterCursor`, `beforeCursor`, `backward`)
+with the single `page` reference. The remaining constructor params are `result` (the
+jOOQ fetch result, not on the record) and `orderByColumns` (sourced from
+`page.extraFields()` — kept distinct from `selectFields` on the record because
+`ConnectionResult` needs the pure extra-ordering list for cursor encoding, not the
+selection-merged list).
 
 **Shape: record, not builder.** The record form keeps the fetcher's terminal
 `dsl.select(...)...fetch()` chain readable and lets `ConnectionResult` accept the request
@@ -196,8 +202,12 @@ no longer touches `CallParam.extraction()` for filter args.
   `(Table, DataFetchingEnvironment) → Condition`.
 - **Fetcher-body assertion.** Emitted fetcher contains
   `QueryConditions.<name>Condition(<tableLocal>, env)` and does NOT contain
-  `DSL.noCondition()` or raw `env.getArgument("<filter-arg>")` for condition-bound
-  filter args (those extractions now live inside `QueryConditions`).
+  `DSL.noCondition()` or `env.getArgument(...)` for any condition-bound filter arg
+  name (those extractions now live inside `QueryConditions`). Pagination-arg
+  extraction (`env.getArgument("first" | "last" | "after" | "before")` or the
+  custom names from `qtf.pagination()`) correctly remains in the fetcher body and
+  must not trip this assertion — scope the grep to filter-arg names pulled from
+  `qtf.filters()`, not to `env.getArgument` in general.
 - **New unit seam.** `QueryConditions.<name>Condition(table, env)` is directly
   unit-testable without running a DataLoader or round-trip: construct a
   `DataFetchingEnvironment` with known arg values, invoke, inspect the returned
@@ -265,14 +275,27 @@ references the local:
 - `GeneratorUtils.declareTableLocal` — shared helper used by the `QueryTableField`,
   `QueryConnectionField`, and service/method-table arms
 
-**`ArgCallEmitter.buildCallArgs` signature change — owned by this item.**
-`buildCallArgs` currently hardcodes `"table"` as the literal first argument string.
-Rename-safety requires threading an explicit source-alias parameter through the
-signature:
+**`ArgCallEmitter` signature changes — owned by this item.** Both public entry points
+hardcode `"table"`:
+
+- `buildCallArgs` at `ArgCallEmitter.java:31` starts the arg list with a literal
+  `args.add("table")`.
+- `buildArgExtraction` at `:55-59` uses `table.$L.getDataType()` inside the
+  `JooqConvert` branch (both the list and scalar variants).
+
+Thread `srcAlias` through both signatures; `buildCallArgs` passes its alias down to
+each `buildArgExtraction` call:
 
 ```java
 public static CodeBlock buildCallArgs(List<CallParam> params, String conditionsClassName, String srcAlias)
+public static CodeBlock buildArgExtraction(CallParam param, String conditionsClassName, String srcAlias)
 ```
+
+Missing the `buildArgExtraction` side would leave `JooqConvert`-extracted filter args
+referencing a non-existent `table` local after the fetcher rename — the `JooqConvert`
+branch only fires on filter args that are list-of-keys or jOOQ-converted scalars, so
+the failure mode is silent on the simpler schemas and visible only once the call path
+exercises that extraction shape.
 
 Fetcher-path callers pass the new `<entity>Table` local. This also unblocks item 7 of
 [plan-classification-vocabulary-followups.md](plan-classification-vocabulary-followups.md),
@@ -296,17 +319,25 @@ fetcher body is always an import-hygiene bug).
 
 These are cheap to carry in the same implementation cycle:
 
-- **Named constant for default page size.** The literal `100` inside
-  `FieldBuilder.resolveDefaultFirstValue` (three return sites) is the fallback when no
-  `@asConnection(defaultPageSize:)` is set. Extract to a
-  `public static final int DEFAULT_PAGE_SIZE = 100` on a suitable rewrite-side class
-  (`FieldWrapper` or a new `PaginationDefaults`) and reference symbolically at emit
-  time.
+- **Named constant for default page size.** The literal `100` appears at four sites
+  in `FieldBuilder`, all the fallback when no `@asConnection(defaultPageSize:)` is set:
+  three return sites inside `resolveDefaultFirstValue` (`:1212`, `:1214`, `:1218`) plus
+  one outside it at `:401` (`new FieldWrapper.Connection(..., 100, typeName)`). Extract
+  to a `public static final int DEFAULT_PAGE_SIZE = 100` on a suitable rewrite-side
+  class (`FieldWrapper` or a new `PaginationDefaults`) and reference symbolically at
+  all four sites.
 
-- **Raw `Field[]` → `Field<?>[]`.** The cursor-decode return type emitted by
-  `TypeFetcherGenerator` (and declared on `ConnectionHelper.decodeCursor`) uses a raw
-  array type; tighten to `Field<?>[]` both in the emitted code and in the helper
-  signature.
+- **Raw `Field[]` → `Field<?>[]`.** The declared return type of
+  `ConnectionHelper.decodeCursor` is already `Field<?>[]` (verified at
+  `ConnectionHelperClassGenerator.java:104` — `.returns(ArrayTypeName.of(fieldWildcard))`
+  where `fieldWildcard = Field<? extends Object>`). Two sites remain raw:
+
+  - Fetcher-side local: `TypeFetcherGenerator.java:560` emits
+    `Field[] seekFields = $T.decodeCursor(...)` using the raw `JOOQ_FIELD` constant.
+  - `decodeCursor` body at `ConnectionHelperClassGenerator.java:107`:
+    `Field[] seekFields = new Field[...]`.
+
+  Tighten both to `Field<?>[]`.
 
 ---
 
