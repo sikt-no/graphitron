@@ -2,11 +2,23 @@
 
 > **Status:** Spec
 >
-> Four independent cleanups to the code `TypeFetcherGenerator` emits, motivated by the
-> current `filmsOrderedConnection` shape in `graphitron-rewrite-test-spec`. None is a
-> behaviour change — each trims boilerplate, removes a name collision, or tightens
-> generated-code style. Items can land in any order; the pagination-helper and
-> QueryConditions items are the biggest wins, the other two are smaller-scoped.
+> Four cleanups to the code `TypeFetcherGenerator` emits, motivated by the current
+> `filmsOrderedConnection` shape in `graphitron-rewrite-test-spec`. Emitted SQL,
+> round-trip count, and cursor encoding are unchanged; items 1–2 add new surfaces
+> (`ConnectionHelper.pageRequest` on the runtime side, `QueryConditions` as a parallel
+> generated class) but preserve fetcher behaviour. Items can land in any order; the
+> pagination-helper and QueryConditions items are the biggest wins, the other two are
+> smaller-scoped.
+>
+> **Why this is more than boilerplate reduction.** Each change moves logic out of
+> generated fetcher bodies into surfaces that are individually unit-testable: a
+> hand-written helper for pagination, an isolated generated class for condition
+> orchestration, and explicit emitted types that keep grep-based structural assertions
+> reliable. This is a concrete instance of the **"Rebalance test pyramid"** backlog
+> item — coverage for pagination branching and condition composition stops scaling
+> with the number of `@asConnection` fields once their logic lives in one place, and
+> invariants currently defended by javadoc (e.g. "`*Conditions` has no graphql-java
+> dependency") become structurally enforceable.
 
 ## Reference snippet
 
@@ -103,11 +115,19 @@ graphql-java dependency, matching the existing split for `*Conditions` classes
 `PageRequest` directly (`new ConnectionResult(result, page)`), deleting three of its
 six parameters — they already live on the record.
 
-**Test hook.** Existing `filmsOrderedConnection` / `filmsConnection` execution tests in
-`graphitron-rewrite-test-spec` must continue to pass unchanged — same SQL, same
-round-trip count, same cursor encoding. Pipeline test gains a check that the emitted
-body contains exactly one `ConnectionHelper.pageRequest(...)` call and no
-`backward ?`/`seek(`/`reverseOrderBy(` literals.
+**Test hooks.**
+- **Regression floor.** Existing `filmsOrderedConnection` / `filmsConnection` execution
+  tests in `graphitron-rewrite-test-spec` must continue to pass unchanged — same SQL,
+  same round-trip count, same cursor encoding.
+- **Pipeline assertion.** Emitted body contains exactly one
+  `ConnectionHelper.pageRequest(...)` call and no `backward ?`/`seek(`/
+  `reverseOrderBy(` literals.
+- **New unit seam.** `ConnectionHelper.pageRequest(...)` becomes directly unit-testable
+  as a plain Java method: first/last mutual exclusion, default-page-size fallback,
+  cursor routing (`after` on forward vs. `before` on backward), reverse-ordering, and
+  extra-field dedup each get one test on the helper. Today these branches are only
+  exercisable per-fetcher through the execution tier; after item 1, per-variant
+  execution tests no longer need to re-prove pagination branching.
 
 ---
 
@@ -153,9 +173,25 @@ Layering:
 494–505` (via `ArgCallEmitter.buildCallArgs`) moves to the `QueryConditionsGenerator`
 emitter. The fetcher no longer touches `CallParam.extraction()` for filter args.
 
-**Test hook.** Structural test asserting a `QueryConditions` class exists per root-query
-type that has any `@condition`-bearing field, and that its method signature is
-`(Table, DataFetchingEnvironment) → Condition`. Existing execution tests unchanged.
+**Test hooks.**
+- **Structural.** A `QueryConditions` class exists per root-query type that has any
+  `@condition`-bearing field, with method signature
+  `(Table, DataFetchingEnvironment) → Condition`.
+- **Fetcher-body assertion.** Emitted fetcher contains
+  `QueryConditions.<name>Condition(<tableLocal>, env)` and does NOT contain
+  `DSL.noCondition()` or raw `env.getArgument("<filter-arg>")` for condition-bound
+  filter args (those extractions now live inside `QueryConditions`).
+- **New unit seam.** `QueryConditions.<name>Condition(table, env)` is directly
+  unit-testable without running a DataLoader or round-trip: construct a
+  `DataFetchingEnvironment` with known arg values, invoke, inspect the returned
+  `Condition`. Today the env-aware composition is only reachable through execution
+  tests.
+- **Invariant enforcement.** Import-scan assertion on the entity-scoped `*Conditions`
+  family (e.g. `FilmConditions`) — must not import
+  `graphql.schema.DataFetchingEnvironment` nor any other `graphql.*` type. Today this
+  contract lives only in the javadoc at `TypeConditionsGenerator.java:30`; with the
+  env-aware layer isolated in `QueryConditions`, violations become a test failure.
+- **Regression floor.** Existing execution tests unchanged.
 
 ---
 
@@ -164,10 +200,12 @@ type that has any `@condition`-bearing field, and that its method signature is
 **Rationale.** Generated code is read in review and by developers debugging resolver
 output. Explicit types give grep-ability and make type-inference surprises visible at
 emission time rather than compile time. The generator always knows the type — writing
-it out costs nothing.
+it out costs nothing. Also: pipeline-level structural assertions over emitted source
+(grep for a concrete type name, or for the absence of one) become reliable — a `var`
+on the left-hand side otherwise hides the type from the assertion.
 
 **Sites** (from grep over `graphitron-rewrite/src/main/java`):
-- `TypeFetcherGenerator.java:466, 478, 567, 568, 570, 572, 661, 852, 853`
+- `TypeFetcherGenerator.java:466, 478, 567, 568, 570, 572, 578, 610, 661, 852, 853, 854`
 - `SplitRowsMethodEmitter.java:338`
 - `LookupValuesJoinEmitter.java:320`
 - `ConnectionResultClassGenerator.java:105, 107`
