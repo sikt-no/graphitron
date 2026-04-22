@@ -461,9 +461,10 @@ public class TypeFetcherGenerator {
         builder.addCode(GeneratorUtils.declareTableLocal(names, tableRef));
         builder.addCode(buildConditionCall(qtf));
 
+        var dslContextClass = ClassName.get("org.jooq", "DSLContext");
         if (isList) {
             builder.addCode(buildOrderByCode(qtf.orderBy(), qtf.name()));
-            builder.addStatement("var dsl = graphitronContext(env).getDslContext(env)");
+            builder.addStatement("$T dsl = graphitronContext(env).getDslContext(env)", dslContextClass);
             builder.addCode(CodeBlock.builder()
                 .add("return dsl\n")
                 .indent()
@@ -475,7 +476,7 @@ public class TypeFetcherGenerator {
                 .unindent()
                 .build());
         } else {
-            builder.addStatement("var dsl = graphitronContext(env).getDslContext(env)");
+            builder.addStatement("$T dsl = graphitronContext(env).getDslContext(env)", dslContextClass);
             builder.addCode(CodeBlock.builder()
                 .add("return dsl\n")
                 .indent()
@@ -565,18 +566,22 @@ public class TypeFetcherGenerator {
 
         // Build select list from $fields; merge extra ordering columns by name to avoid
         // dependence on Field.equals() identity (avoids missed deduplication if Field instances differ)
-        builder.addStatement("var dsl = graphitronContext(env).getDslContext(env)");
-        builder.addStatement("var fields = new $T<>($T.$$fields(env.getSelectionSet(), table, env))",
-            ARRAY_LIST, names.typeClass());
-        builder.addStatement("var selectedNames = fields.stream().map($T::getName).collect($T.toSet())",
-            JOOQ_FIELD, ClassName.get("java.util.stream", "Collectors"));
-        builder.addCode("for (var extra : extraFields) {\n");
+        var dslContextClass = ClassName.get("org.jooq", "DSLContext");
+        var setOfString = ParameterizedTypeName.get(ClassName.get("java.util", "Set"), ClassName.get(String.class));
+        builder.addStatement("$T dsl = graphitronContext(env).getDslContext(env)", dslContextClass);
+        builder.addStatement("$T<$T> fields = new $T<>($T.$$fields(env.getSelectionSet(), table, env))",
+            ARRAY_LIST, fieldWildcard, ARRAY_LIST, names.typeClass());
+        builder.addStatement("$T selectedNames = fields.stream().map($T::getName).collect($T.toSet())",
+            setOfString, JOOQ_FIELD, ClassName.get("java.util.stream", "Collectors"));
+        builder.addCode("for ($T extra : extraFields) {\n", fieldWildcard);
         builder.addCode("    if (!selectedNames.contains(extra.getName())) fields.add(extra);\n");
         builder.addCode("}\n");
 
         // Single-expression paginated query — seek is a no-op when seekFields are noField()
+        var resultOfRecord = ParameterizedTypeName.get(
+            ClassName.get("org.jooq", "Result"), ClassName.get("org.jooq", "Record"));
         builder.addCode(CodeBlock.builder()
-            .add("var result = dsl\n")
+            .add("$T result = dsl\n", resultOfRecord)
             .indent()
             .add(".select(fields)\n")
             .add(".from(table)\n")
@@ -608,7 +613,7 @@ public class TypeFetcherGenerator {
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .returns(SORT_FIELD_LIST)
             .addParameter(SORT_FIELD_LIST, "orderBy")
-            .addStatement("var reversed = new $T<$T<?>>(orderBy.size())", ARRAY_LIST, SORT_FIELD)
+            .addStatement("$T<$T<?>> reversed = new $T<>(orderBy.size())", ARRAY_LIST, SORT_FIELD, ARRAY_LIST)
             .addCode("for ($T<?> sf : orderBy) {\n", SORT_FIELD)
             .addCode("    // $$field() and $$sortOrder() are jOOQ model-API accessors (stable since 3.17).\n")
             .addCode("    reversed.add(sf.$$field().sort(\n")
@@ -659,7 +664,9 @@ public class TypeFetcherGenerator {
             }
             case OrderBySpec.Argument arg -> {
                 // Single dispatch: OrderByResult carries both sort fields and cursor columns.
-                code.addStatement("var ordering = $LOrderBy(env)", fieldName);
+                var orderByResultClass = ClassName.get(
+                    RewriteConfig.outputPackage() + ".rewrite", OrderByResultClassGenerator.CLASS_NAME);
+                code.addStatement("$T ordering = $LOrderBy(env)", orderByResultClass, fieldName);
                 code.addStatement("$T orderBy = ordering.sortFields()", SORT_FIELD_LIST);
                 code.addStatement("$T extraFields = ordering.columns()", listOfField);
             }
@@ -850,9 +857,9 @@ public class TypeFetcherGenerator {
         code.addStatement("$T<$T<$T, $T>> orderArgs = env.getArgument($S)",
             LIST, MAP, String.class, Object.class, arg.name());
         code.add("if (orderArgs == null || orderArgs.isEmpty()) return $L;\n", baseExpr);
-        code.addStatement("var sortParts = new $T<$T<?>>()", ARRAY_LIST, SORT_FIELD);
-        code.addStatement("var colParts = new $T<$T>()", ARRAY_LIST, WILDCARD_FIELD);
-        code.add("for (var entry : orderArgs) {\n");
+        code.addStatement("$T<$T<?>> sortParts = new $T<>()", ARRAY_LIST, SORT_FIELD, ARRAY_LIST);
+        code.addStatement("$T<$T> colParts = new $T<>()", ARRAY_LIST, WILDCARD_FIELD, ARRAY_LIST);
+        code.add("for ($T<$T, $T> entry : orderArgs) {\n", MAP, String.class, Object.class);
         code.indent();
         code.addStatement("$T f = ($T) entry.get($S)", String.class, String.class, arg.sortFieldName());
         code.addStatement("$T d = ($T) entry.get($S)", String.class, String.class, arg.directionFieldName());

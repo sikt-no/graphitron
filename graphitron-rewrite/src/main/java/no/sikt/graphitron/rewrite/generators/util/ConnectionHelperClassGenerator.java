@@ -87,7 +87,9 @@ public class ConnectionHelperClassGenerator {
             .returns(String.class)
             .addParameter(RECORD, "record")
             .addParameter(listOfField, "orderByColumns")
-            .addStatement("var sb = new $T()", ClassName.get("java.lang", "StringBuilder"))
+            .addStatement("$T sb = new $T()",
+                ClassName.get("java.lang", "StringBuilder"),
+                ClassName.get("java.lang", "StringBuilder"))
             .addCode("for (int i = 0; i < orderByColumns.size(); i++) {\n")
             .addCode("    if (i > 0) sb.append(\"\\u0000\");\n")
             .addCode("    Object val = record.get(orderByColumns.get(i));\n")
@@ -122,6 +124,8 @@ public class ConnectionHelperClassGenerator {
             .addStatement("return seekFields")
             .build();
 
+        var listOfRecord = ParameterizedTypeName.get(LIST_CLASS, RECORD);
+
         // --- edges(DataFetchingEnvironment) → List<Edge> ---
         var edgeClassName = ClassName.get("", "Edge");
         var listOfEdge = ParameterizedTypeName.get(LIST_CLASS, edgeClassName);
@@ -131,8 +135,8 @@ public class ConnectionHelperClassGenerator {
             .returns(listOfEdge)
             .addParameter(ENV, "env")
             .addStatement("$T cr = env.getSource()", connectionResultClass)
-            .addStatement("var trimmed = cr.trimmedResult()")
-            .addStatement("var edges = new $T<Edge>(trimmed.size())", ARRAY_LIST)
+            .addStatement("$T trimmed = cr.trimmedResult()", listOfRecord)
+            .addStatement("$T<Edge> edges = new $T<>(trimmed.size())", ARRAY_LIST, ARRAY_LIST)
             .addCode("for ($T record : trimmed) {\n", RECORD)
             .addCode("    edges.add(new Edge(record, encodeCursor(record, cr.orderByColumns())));\n")
             .addCode("}\n")
@@ -140,8 +144,6 @@ public class ConnectionHelperClassGenerator {
             .build();
 
         // --- nodes(DataFetchingEnvironment) → List<Record> ---
-        var listOfRecord = ParameterizedTypeName.get(LIST_CLASS, RECORD);
-
         var nodesMethod = MethodSpec.methodBuilder("nodes")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(listOfRecord)
@@ -159,10 +161,10 @@ public class ConnectionHelperClassGenerator {
             .returns(mapStringObject)
             .addParameter(ENV, "env")
             .addStatement("$T cr = env.getSource()", connectionResultClass)
-            .addStatement("var trimmed = cr.trimmedResult()")
+            .addStatement("$T trimmed = cr.trimmedResult()", listOfRecord)
             .addStatement("String startCursor = trimmed.isEmpty() ? null : encodeCursor(trimmed.get(0), cr.orderByColumns())")
             .addStatement("String endCursor = trimmed.isEmpty() ? null : encodeCursor(trimmed.get(trimmed.size() - 1), cr.orderByColumns())")
-            .addStatement("var info = new $T<String, Object>()", hashMap)
+            .addStatement("$T<String, Object> info = new $T<>()", hashMap, hashMap)
             .addStatement("info.put(\"hasNextPage\", cr.hasNextPage())")
             .addStatement("info.put(\"hasPreviousPage\", cr.hasPreviousPage())")
             .addStatement("info.put(\"startCursor\", startCursor)")

@@ -317,7 +317,8 @@ final class LookupValuesJoinEmitter {
 
         return CodeBlock.builder()
             .addStatement("$T rows = $L(env, table)", rowArrayType, inputRowsMethodName(field))
-            .addStatement("var dsl = graphitronContext(env).getDslContext(env)")
+            .addStatement("$T dsl = graphitronContext(env).getDslContext(env)",
+                ClassName.get("org.jooq", "DSLContext"))
             .add("if (rows.length == 0) return dsl.newResult();\n")
             .addStatement("$T input = $T.values(rows).as($L)", inputTableType, DSL, aliasArgs.build())
             .add("return dsl\n")

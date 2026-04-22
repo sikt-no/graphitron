@@ -335,7 +335,8 @@ public final class SplitRowsMethodEmitter {
         body.addStatement("return $T.of()", LIST);
         body.endControlFlow();
 
-        body.addStatement("var dsl = graphitronContext(env).getDslContext(env)");
+        body.addStatement("$T dsl = graphitronContext(env).getDslContext(env)",
+            ClassName.get("org.jooq", "DSLContext"));
 
         // Parent-input VALUES rows — fully typed. One Row<N+1><Integer, pkType1, …> per key[i].
         // Generic array creation is the one unavoidable unchecked cast: Java forbids

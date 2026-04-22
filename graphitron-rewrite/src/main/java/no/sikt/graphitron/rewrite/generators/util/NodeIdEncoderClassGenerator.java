@@ -44,7 +44,7 @@ public class NodeIdEncoderClassGenerator {
             .addParameter(String.class, "typeId")
             .addParameter(Object[].class, "values")
             .varargs(true)
-            .addStatement("var sb = new StringBuilder(typeId).append(':')")
+            .addStatement("$T sb = new StringBuilder(typeId).append(':')", StringBuilder.class)
             .beginControlFlow("for (int i = 0; i < values.length; i++)")
                 .addStatement("Object v = values[i]")
                 .addStatement("if (v == null) return null")

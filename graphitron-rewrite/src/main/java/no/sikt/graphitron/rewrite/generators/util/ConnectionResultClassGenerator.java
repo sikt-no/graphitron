@@ -102,9 +102,10 @@ public class ConnectionResultClassGenerator {
         var trimmedResult = MethodSpec.methodBuilder("trimmedResult")
             .addModifiers(Modifier.PUBLIC)
             .returns(listOfRecord)
-            .addStatement("var raw = result.size() <= pageSize ? result : result.subList(0, pageSize)")
+            .addStatement("$T raw = result.size() <= pageSize ? result : result.subList(0, pageSize)", listOfRecord)
             .addCode("if (!backward) return raw;\n")
-            .addStatement("var rev = new java.util.ArrayList<$T>(raw.size())", RECORD)
+            .addStatement("$T<$T> rev = new $T<>(raw.size())",
+                ClassName.get("java.util", "ArrayList"), RECORD, ClassName.get("java.util", "ArrayList"))
             .addCode("for (int i = raw.size() - 1; i >= 0; i--) rev.add(raw.get(i));\n")
             .addStatement("return rev")
             .build();
