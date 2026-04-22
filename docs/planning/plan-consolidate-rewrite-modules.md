@@ -2,7 +2,7 @@
 
 > **Status:** Spec
 
-Gather the three rewrite modules under a single root directory so that "the rewrite world" is one `cd` away and the aggregator pom can host shared properties and profiles. Pure structural refactor — no behaviour change, no new code, no new dependencies.
+Gather the three rewrite modules — and the rewrite-specific subset of `docs/` — under a single root directory so that "the rewrite world" is one `cd` away and the aggregator pom can host shared properties and profiles. Pure structural refactor — no behaviour change, no new code, no new dependencies, no rewritten doc prose.
 
 Roadmap reference: `docs/planning/rewrite-roadmap.md` — "Consolidate rewrite modules under `graphitron-rewrite/`".
 
@@ -177,12 +177,77 @@ Grep gate: `grep -rn "graphitron-rewrite-test-fixtures\|graphitron-rewrite-test-
 
 ---
 
+## Step 5 — Documentation relocation
+
+Same "rewrite world is one `cd` away" logic applies to docs: most of `docs/` is rewrite-specific and would sit better under `graphitron-rewrite/docs/`. Done alongside the module moves so cross-references settle in one coherent change.
+
+### What moves (`docs/` → `graphitron-rewrite/docs/`)
+
+- `claude-code-web-environment.md` — rewrite-build mechanics
+- `code-generation-triggers.md` — classification pipeline; its "Source Map" points into rewrite sources
+- `rewrite-design-principles.md` / `rewrite-model.md` — explicitly rewrite
+- `runtime-extension-points.md` — generated code's runtime extension surface
+- `workflow.md` — process doc; only exercised by rewrite work and references `planning/`
+- `planning/` — entire subtree (roadmap, plans, research notes)
+
+### What stays at top-level `docs/`
+
+- `README.md` — docs index (restructured as a split — see below)
+- `vision-and-goal.md`, `graphitron-principles.md`, `dependencies.md`, `security.md` — project-wide
+
+### Link-fanout work
+
+**Intra-bundle links stay valid** — everything moves together, relative paths unchanged. Spot examples: `rewrite-design-principles.md` → `planning/argument-resolution.md`; `rewrite-model.md` → `planning/rewrite-roadmap.md`; `workflow.md` → `plan-slug.md`; every plan's cross-plan reference.
+
+**Bundle → outside-world links** need one extra `../` because the bundle sits one directory deeper than before:
+
+| Old (from `docs/`) | New (from `graphitron-rewrite/docs/`) |
+| --- | --- |
+| `graphitron-principles.md`, `security.md` (project-wide docs) | `../../docs/<name>.md` |
+| `../graphitron-common/README.md`, `../graphitron-example/...`, `../graphitron-codegen-parent/...` (sibling modules) | `../../graphitron-common/...`, `../../graphitron-example/...`, `../../graphitron-codegen-parent/...` |
+
+Known hits to fix: `rewrite-design-principles.md` → `graphitron-principles.md`; `runtime-extension-points.md` → `security.md` (×2) + `../graphitron-common/README.md` + `../graphitron-example/...`; `code-generation-triggers.md` → `../graphitron-codegen-parent/graphitron-java-codegen/README.md`.
+
+**Outside-bundle → bundle links** get a `graphitron-rewrite/` prefix:
+
+- `CLAUDE.md` (repo root) — refs to `docs/claude-code-web-environment.md`, `docs/rewrite-design-principles.md`, `docs/planning/rewrite-roadmap.md`, `docs/workflow.md` → `graphitron-rewrite/docs/...`.
+- `docs/README.md` — the sections pointing at moved docs (Rewrite Development, planning-subtree bullets) retarget to `graphitron-rewrite/docs/...`. Simpler split: keep the top-level `README.md` as a short project-wide index plus a "Rewrite development" pointer to `graphitron-rewrite/docs/README.md` (new file), which holds the current rewrite-dev sections verbatim.
+
+**String path references** (not markdown links, prose paths):
+
+- `code-generation-triggers.md:240` — "All source lives under `graphitron-rewrite/src/main/java/...`" — after move, shorten to `../src/main/java/...` so the path is still a valid traversal from the doc's new location. Alternatively, keep the repo-root-relative form and note explicitly that it's repo-root-relative.
+
+**Canonical-path text** in procedural docs — rewrite semantic references, not line numbers:
+
+- `CLAUDE.md` — "Plans live at `docs/planning/plan-<slug>.md`" → `graphitron-rewrite/docs/planning/plan-<slug>.md`.
+- `workflow.md` — every `docs/planning/...` inline reference (currently repo-root-relative) goes stale after move; rewrite to the bundle-relative `planning/...` form since the two are siblings in the new location.
+
+### Sequencing
+
+Doc relocation is a separate commit from the Step 2 pom/module commit — no interdependency. Preference: docs after modules, so the module build is unambiguously green before anyone eyes the doc churn.
+
+### Verification
+
+After the move:
+
+```bash
+# Any relative-from-root reference to a moved file that didn't get a graphitron-rewrite/ prefix
+grep -rn '](docs/\(claude-code-web-environment\|code-generation-triggers\|rewrite-[a-z-]*\|runtime-extension-points\|workflow\|planning/\)' .
+# Any intra-bundle link that accidentally kept a stale docs/ prefix
+grep -rn '](docs/' graphitron-rewrite/docs/
+```
+
+Both should return zero matches. Supplement with a manual click-through of `CLAUDE.md`, `docs/README.md`, and `graphitron-rewrite/docs/README.md`.
+
+---
+
 ## What we're NOT doing
 
 - **Fixing the fixtures-jar-clobber footgun.** The roadmap entry mentions the clobber as motivation, but the clobber persists until either (a) `-Plocal-db` is made default, (b) the TestContainers default is removed, or (c) a pre-install sanity check refuses to publish a fixtures jar with an empty jOOQ catalog. All three are their own decisions with their own trade-offs — outside this plan's scope. Backlog follow-up to add: "Make fixtures default profile non-destructive" once this lands.
 - **Changing runtime artifact coordinates for the generator.** `no.sikt:graphitron-rewrite` keeps its groupId/artifactId/version. Downstream consumers need zero changes.
 - **Maven Central publish exclusions.** The root pom `excludeArtifacts` list covers only `graphitron-example-*`. The rewrite fixtures + test modules were already publishable under their old names and remain so under new names. Whether they *should* publish is a separate question — note it and let a future plan decide.
 - **Changing test content or fixtures.** Source files move by `git mv` with zero content edits. Any `package` declarations stay on their Java path (package is driven by source-root-relative path, which doesn't change when the module root relocates).
+- **Rewriting doc prose.** Step 5 is a relocation, not an edit pass. Content moves by `git mv`; only the link paths and a handful of path-in-prose references change. Reshaping `docs/README.md` into a top-level / rewrite-bundle split is the one structural edit in Step 5 — everything else is mechanical.
 
 ---
 
@@ -192,12 +257,12 @@ POM surgery before filesystem moves would leave the tree in a non-buildable stat
 
 ## Estimate
 
-Half a day end-to-end: POM edits + doc sweep + verification builds. No test authoring. Main risk is a stray reference to an old artifactId slipping through — the grep gate at the end of Step 4 catches that.
+A full day end-to-end: POM edits + module moves (half a day, Steps 1–4) + doc relocation and link fanout (half a day, Step 5) + verification builds. No test authoring. Two categories of risk: a stray reference to an old artifactId (grep gate at end of Step 4) and a broken markdown link after relocation (grep gate + click-through at end of Step 5).
 
 ---
 
 ## References
 
-- `docs/planning/rewrite-roadmap.md` line 68 — Backlog entry being promoted.
+- `docs/planning/rewrite-roadmap.md` — Consolidate-rewrite-modules entry.
 - `docs/claude-code-web-environment.md` — fixtures-jar-clobber footgun context.
 - `graphitron-codegen-parent/pom.xml` — precedent for directory/artifactId divergence on aggregator poms.
