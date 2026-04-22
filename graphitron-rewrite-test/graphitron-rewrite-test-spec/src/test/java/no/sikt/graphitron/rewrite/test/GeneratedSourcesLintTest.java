@@ -27,7 +27,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class GeneratedSourcesLintTest {
 
-    /** Emitted by {@code graphitron-maven-plugin} into this package path. */
+    /** Emitted by {@code graphitron-maven-plugin} into this package path. The plugin
+     *  writes under {@code target/generated-sources/graphitron/} — note the
+     *  {@code graphitron/} source-folder segment that precedes the Java package path. */
     private static final Path GENERATED_REWRITE_ROOT = Paths.get(
         "target", "generated-sources", "graphitron",
         "no", "sikt", "graphitron", "rewrite", "test", "generated", "rewrite");
@@ -51,7 +53,8 @@ class GeneratedSourcesLintTest {
                     for (int i = 0; i < lines.size(); i++) {
                         String line = lines.get(i);
                         if (isCommentLine(line)) continue;
-                        Matcher m = VAR_DECLARATION.matcher(line);
+                        String codeOnly = stripInlineComment(line);
+                        Matcher m = VAR_DECLARATION.matcher(codeOnly);
                         while (m.find()) {
                             offenders.add(p.getFileName() + ":" + (i + 1) + "  " + line.trim());
                         }
@@ -118,7 +121,8 @@ class GeneratedSourcesLintTest {
                         }
                         if (inImports) continue;
                         if (isCommentLine(line)) continue;
-                        if (line.contains(JOOQ_TABLES_PACKAGE_PREFIX)) {
+                        String codeOnly = stripInlineComment(line);
+                        if (codeOnly.contains(JOOQ_TABLES_PACKAGE_PREFIX)) {
                             offenders.add(p.getFileName() + ":" + (i + 1) + "  " + trimmed);
                         }
                     }
@@ -139,5 +143,14 @@ class GeneratedSourcesLintTest {
     private static boolean isCommentLine(String line) {
         String trimmed = line.trim();
         return trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*");
+    }
+
+    /** Strips a trailing {@code //}-style comment so a mid-line comment can't trip a
+     *  regex match (e.g. {@code foo(); // some var bar}). Doesn't attempt to handle
+     *  {@code //} inside a string literal — generator-emitted code doesn't produce
+     *  string literals with a {@code //} sequence today. */
+    private static String stripInlineComment(String line) {
+        int idx = line.indexOf("//");
+        return idx < 0 ? line : line.substring(0, idx);
     }
 }

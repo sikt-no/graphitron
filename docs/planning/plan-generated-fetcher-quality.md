@@ -1,6 +1,13 @@
 # Plan — Generated-fetcher quality pass
 
-> **Status:** In Review
+> **Status:** Done
+>
+> §1 (pagination helper), §2 (QueryConditions), §3 (no `var`), §4 (table-local
+> rename), and the smaller cleanups (DEFAULT_PAGE_SIZE, Field<?>[] tightening) all
+> shipped. Three lint ratchets over emitted source
+> (`GeneratedSourcesLintTest.emittedSourcesDoNotUseVar` / `fetcherBodiesDoNotFullyQualifyJooqTables`
+> / `entityConditionsClassesHaveNoGraphqlJavaImports`) promote the plan's structural
+> invariants from javadoc to test failures.
 >
 > Four cleanups to the code `TypeFetcherGenerator` emits, motivated by the current
 > `filmsOrderedConnection` shape in `graphitron-rewrite-test-spec`. Emitted SQL,
