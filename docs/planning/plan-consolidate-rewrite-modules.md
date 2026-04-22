@@ -199,14 +199,20 @@ Same "rewrite world is one `cd` away" logic applies to docs: most of `docs/` is 
 
 **Intra-bundle links stay valid** — everything moves together, relative paths unchanged. Spot examples: `rewrite-design-principles.md` → `planning/argument-resolution.md`; `rewrite-model.md` → `planning/rewrite-roadmap.md`; `workflow.md` → `plan-slug.md`; every plan's cross-plan reference.
 
-**Bundle → outside-world links** need one extra `../` because the bundle sits one directory deeper than before:
+**Bundle → outside-world links** need one extra `../` because the bundle sits one directory deeper than before. The rule is depth-agnostic, but concrete examples differ by source-file depth — `docs/foo.md` and `docs/planning/plan-foo.md` both need the same one-level adjustment, just applied to their respective starting points:
 
-| Old (from `docs/`) | New (from `graphitron-rewrite/docs/`) |
-| --- | --- |
-| `graphitron-principles.md`, `security.md` (project-wide docs) | `../../docs/<name>.md` |
-| `../graphitron-common/README.md`, `../graphitron-example/...`, `../graphitron-codegen-parent/...` (sibling modules) | `../../graphitron-common/...`, `../../graphitron-example/...`, `../../graphitron-codegen-parent/...` |
+| Source file depth | Old link | New link |
+| --- | --- | --- |
+| `docs/foo.md` → project-wide doc (stays) | `graphitron-principles.md` | `../../docs/graphitron-principles.md` |
+| `docs/foo.md` → sibling module | `../graphitron-common/README.md` | `../../graphitron-common/README.md` |
+| `docs/planning/plan-foo.md` → project-wide doc (stays) | `../graphitron-principles.md` | `../../../docs/graphitron-principles.md` |
+| `docs/planning/plan-foo.md` → sibling module | `../../graphitron-codegen-parent/...` | `../../../graphitron-codegen-parent/...` |
 
-Known hits to fix: `rewrite-design-principles.md` → `graphitron-principles.md`; `runtime-extension-points.md` → `security.md` (×2) + `../graphitron-common/README.md` + `../graphitron-example/...`; `code-generation-triggers.md` → `../graphitron-codegen-parent/graphitron-java-codegen/README.md`.
+Known hits to fix (grep-confirmed at time of writing):
+- `rewrite-design-principles.md` → `graphitron-principles.md` (project-wide)
+- `runtime-extension-points.md` → `security.md` (×2), `../graphitron-common/README.md`, `../graphitron-example/graphitron-example-server` (sibling modules)
+- `code-generation-triggers.md` → `../graphitron-codegen-parent/graphitron-java-codegen/README.md` (sibling module)
+- `planning/plan-classification-vocabulary-followups.md:115` → `../../graphitron-codegen-parent/graphitron-java-codegen/README.md` (sibling module, planning-depth)
 
 **Outside-bundle → bundle links** get a `graphitron-rewrite/` prefix:
 
@@ -228,16 +234,31 @@ Doc relocation is a separate commit from the Step 2 pom/module commit — no int
 
 ### Verification
 
-After the move:
+After the move, three checks. First two are fast greps:
 
 ```bash
-# Any relative-from-root reference to a moved file that didn't get a graphitron-rewrite/ prefix
+# (a) Any outside-bundle reference to a moved file that didn't get a graphitron-rewrite/ prefix.
 grep -rn '](docs/\(claude-code-web-environment\|code-generation-triggers\|rewrite-[a-z-]*\|runtime-extension-points\|workflow\|planning/\)' .
-# Any intra-bundle link that accidentally kept a stale docs/ prefix
+# (b) Any intra-bundle link that accidentally kept a stale docs/ prefix.
 grep -rn '](docs/' graphitron-rewrite/docs/
 ```
 
-Both should return zero matches. Supplement with a manual click-through of `CLAUDE.md`, `docs/README.md`, and `graphitron-rewrite/docs/README.md`.
+Third is an end-to-end link resolver — catches stale `../../...` depths that the prefix-based greps miss (most important for `graphitron-rewrite/docs/planning/` files whose refs to non-moving siblings now need one more `../`):
+
+```bash
+# (c) Resolve every markdown relative-link against its file's directory. Report broken ones.
+find . -name '*.md' -not -path './**/target/*' -not -path './.git/*' -print0 |
+  while IFS= read -r -d '' md; do
+    dir=$(dirname "$md")
+    grep -oE '\]\([^)#][^)]*\)' "$md" | sed -E 's/^\]\(([^)#]+).*/\1/' |
+      grep -Ev '^(https?|mailto):' |
+      while read -r link; do
+        [ -e "$dir/$link" ] || echo "BROKEN $md → $link"
+      done
+  done
+```
+
+All three should return zero matches. Supplement with a manual click-through of `CLAUDE.md`, `docs/README.md`, and `graphitron-rewrite/docs/README.md`.
 
 ---
 
