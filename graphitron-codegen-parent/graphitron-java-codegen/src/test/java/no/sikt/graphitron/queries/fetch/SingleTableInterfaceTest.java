@@ -159,4 +159,6 @@ public class SingleTableInterfaceTest extends InterfaceTest {
     void splitQuery() {
         assertGeneratedContentMatches("splitQuery");
     }
+
+    // TODO: med input, @condition, @asConnection, @reference via tabell
 }

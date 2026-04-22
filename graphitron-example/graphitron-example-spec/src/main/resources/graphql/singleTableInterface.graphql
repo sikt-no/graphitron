@@ -5,6 +5,7 @@ extend type Query {
 
 extend type City {
     addressByPostalCode: [AddressByPostalCode] @splitQuery
+    # TODO: med input, @condition, @asConnection, @reference via tabell
 }
 
 interface AddressByPostalCode @table(name: "ADDRESS") @discriminate(on: "POSTAL_CODE") {
