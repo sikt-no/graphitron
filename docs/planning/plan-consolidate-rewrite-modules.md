@@ -78,7 +78,7 @@ Replace the two rewrite entries in `<modules>` with a single `graphitron-rewrite
 
 Module order matters for reactor: fixtures → generator → test. Maven reorders based on `<dependency>` edges, so listing order is cosmetic, but keep generator before test for readability.
 
-`jooqPackage` migrates verbatim from the deleted `graphitron-rewrite-test/pom.xml`.
+`jooqPackage` migrates verbatim from the deleted `graphitron-rewrite-test/pom.xml`. The `.test.` segment in its value (`no.sikt.graphitron.rewrite.test.jooq`) is deliberately preserved: it's the generated-code FQN for the fixtures jOOQ catalog and is a soft contract with the test-spec consumer; churning it would be coord noise, not a naming fix.
 
 ### `graphitron-rewrite/graphitron-rewrite/pom.xml` (MOVED from root `graphitron-rewrite/pom.xml`) — edit
 
@@ -97,6 +97,7 @@ Module order matters for reactor: fixtures → generator → test. Maven reorder
 - `<artifactId>`: `graphitron-rewrite-test-spec` → `graphitron-rewrite-test`.
 - `<parent>`: `graphitron-rewrite-test` → `graphitron-rewrite-parent`.
 - Two dependency rewrites `graphitron-rewrite-test-fixtures` → `graphitron-rewrite-fixtures`: the main `<dependencies>` block, and the plugin-local `<dependencies>` under `graphitron-maven-plugin`.
+- `<outputPackage>` property stays put: it's local to this module (only consumed by the plugin execution in this same pom) and has no reason to hoist to the aggregator.
 - Everything else (Java-17 ratchet, local-db profile, graphitron-maven-plugin wiring) unchanged.
 
 ### `graphitron-rewrite-test/pom.xml` (old aggregator) — delete
@@ -162,12 +163,11 @@ Build the graph fresh to confirm the aggregator wires everything. Run from insid
 
 ```bash
 (cd graphitron-rewrite && mvn install -Plocal-db)
-(cd graphitron-rewrite && mvn test    -pl :graphitron-rewrite)
-(cd graphitron-rewrite && mvn compile -pl :graphitron-rewrite-test -Plocal-db)
-(cd graphitron-rewrite && mvn test    -pl :graphitron-rewrite-test -Plocal-db)
 ```
 
-(`-pl :aggregator -am` does *not* descend into aggregator modules — `-am` pulls dependencies, not `<modules>` children. Hence the `cd` rather than the tempting one-liner.)
+That single command runs the full lifecycle (compile + test + install) across fixtures → generator → test across the three children in reactor order. No separate `-pl :graphitron-rewrite-test …` re-run is needed; `install` already runs the test phase on every module in the reactor.
+
+(`-pl :aggregator -am` does *not* descend into aggregator modules — `-am` pulls dependencies, not `<modules>` children. Hence the `cd` rather than the tempting root-level one-liner.)
 
 Full-build parity check: `mvn clean install -Pquick` (root) must still succeed end-to-end.
 
@@ -221,7 +221,7 @@ Known hits to fix (grep-confirmed at time of writing):
 
 **String path references** (not markdown links, prose paths):
 
-- `code-generation-triggers.md:240` — "All source lives under `graphitron-rewrite/src/main/java/...`" — after move, shorten to `../src/main/java/...` so the path is still a valid traversal from the doc's new location. Alternatively, keep the repo-root-relative form and note explicitly that it's repo-root-relative.
+- `code-generation-triggers.md:240` contains prose "All source lives under `graphitron-rewrite/src/main/java/...`". After the consolidation the generator source lives two directories deep at `graphitron-rewrite/graphitron-rewrite/src/main/java/...` (aggregator-dir / generator-module-dir / src-tree). From the doc's new location `graphitron-rewrite/docs/code-generation-triggers.md`, the correct relative path is `../graphitron-rewrite/src/main/java/...`. Repo-root-relative alternative: `graphitron-rewrite/graphitron-rewrite/src/main/java/...`, noted explicitly as repo-root-relative. Do NOT shorten to `../src/main/java/...`; that resolves to the aggregator dir, not the generator source.
 
 **Canonical-path text** in procedural docs — rewrite semantic references, not line numbers:
 
