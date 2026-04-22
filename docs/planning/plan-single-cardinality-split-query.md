@@ -8,6 +8,8 @@ Lift the runtime-stub error that fires on single-cardinality `@splitQuery` field
 
 **Approach:** key the DataLoader by the *parent's FK column value* rather than by parent PK. For parent-holds-FK fields, that value is already sitting on the parent record at projection time; the rows method becomes structurally symmetrical to the list-cardinality case. No extra joins, no parent-table round-trip through the rows SQL.
 
+**Decision — FK-value keying (A) vs parent-PK + bridge-join (B).** This plan commits to A. Option B would keep the BatchKey as parent PK and add the parent table to the FROM chain of the rows method (`parent.pk = parentInput.pk AND parent.fk_col = terminal.pk`), preserving emitter structure at the cost of one extra join per batch and zero cross-parent dedup. A wins on runtime (fewer round-trips when siblings share FK values) and on emitter symmetry (rows-method shape matches list cardinality). B's only advantage — easier emission of parent-side WHERE filters — is hypothetical; no current requirement needs it, and if it arises, filters on the *parent* of a split-query field are already an anti-pattern since the parent's selection context doesn't reach the rows method. Revisit only if a concrete B use case surfaces.
+
 **Dependencies and sequencing.** This plan composes with `plan-implicit-reference-inference.md` (In Review) but does not block on it. If inference lands first, the trigger field `Vurderingsmelding.person` and the `Customer.address` test fixture compile with no `@reference` directive. If this plan ships first, both carry an explicit `@reference` until inference lands. Either order works — the ownership of `firstHop.sourceColumns()` / `firstHop.sourceTable()` metadata is shared by design, and neither plan's classifier edits touch the other's.
 
 **Test-tier shift.** Extracting the new scatter helper (§3) makes the single-cardinality scatter semantics directly unit-testable without a database round-trip — a seam the list-cardinality path already benefits from via `scatterByIdx`. The execution-test evidence of DataLoader deduplication (two sibling parents share one rows invocation) is the end-to-end proof; the unit test is the fast feedback loop when scatter logic changes. This fits the "Rebalance test pyramid" backlog framing.
@@ -33,7 +35,7 @@ Parent-holds-FK `@splitQuery` fields classify and emit end-to-end.
 - **Parent projection** must carry the BatchKey columns so `buildKeyExtraction` can read them off the parent record. `TypeClassGenerator.$fields` today is purely selection-driven — it projects a column only when the GraphQL query names the corresponding field (`emitSelectionSwitch` at `TypeClassGenerator.java:209-257`; the sole exception is `NodeIdField`, which projects its node-key columns at `:227-233`). The list-cardinality `@splitQuery` path works today **only because fixtures happen to select the parent PK** (see `GraphQLQueryTest.java:684` — `{ languageByKey(language_id: [1]) { languageId films { filmId } } }` explicitly requests `languageId`); drop that and `buildKeyExtraction` reads an absent column. This plan fixes that latent gap as a side effect: extend `$fields` with a required-projection set containing the BatchKey columns of every `@splitQuery` / DataLoader-backed child, unioned with the selection-derived columns. After this change, list-cardinality (child-holds-FK) becomes robust to PK-omitted selections, and single-cardinality (parent-holds-FK) starts working for the first time.
 - **Rows method** becomes structurally identical to the list-cardinality case: `parentInput` is a VALUES table of `(idx, fk_col…)`, the JOIN is `terminal.pk = parentInput.fk_col`. No parent table in the FROM chain.
 - **Single-cardinality return shape.** Rows method returns `List<Record>` indexed 1:1 with `keys` (one record per key, `null` when no match) instead of `List<List<Record>>`. New scatter helper `scatterSingleByIdx`; fetcher returns `CompletableFuture<Record>` (reusing the shape already in place for `ServiceTableField` single-return).
-- **DataLoader deduplication** transparently coalesces sibling parents that share an FK value into one batch slot — already what DataLoader does for any repeated key, given that `DataLoader`'s default cache-enabled mode is in effect (confirm at implementation time that the `env.getDataLoaderRegistry().computeIfAbsent(...)` registration path in `TypeFetcherGenerator` does not disable caching; default is on). Because the coalescing happens *within* one DataLoader instance (scoped to one `(type, field)` pair) and GraphQL selection-merging guarantees all invocations of a same-name field in one operation share arguments and selection set, the FK-value keying does not cross-contaminate across paths with different args or selections. Different parent types with their own `person` fields get their own fetchers, their own DataLoaders, and never merge.
+- **DataLoader deduplication** transparently coalesces sibling parents that share an FK value into one batch slot — already what DataLoader does for any repeated key, given that `DataLoader`'s default cache-enabled mode is in effect. Verified: `TypeFetcherGenerator.java:1025,1119,1188` registers DataLoaders via `newDataLoaderWithContext($L)` / `newDataLoader($L)` with no option overrides, and java-dataloader defaults `cachingEnabled=true`. Because the coalescing happens *within* one DataLoader instance (scoped to one `(type, field)` pair) and GraphQL selection-merging guarantees all invocations of a same-name field in one operation share arguments and selection set, the FK-value keying does not cross-contaminate across paths with different args or selections. Different parent types with their own `person` fields get their own fetchers, their own DataLoaders, and never merge.
 - **Null-FK parents.** A parent row with NULL in the FK column takes a short-circuit path in the fetcher (see §4) — the fetcher returns `CompletableFuture.completedFuture(null)` without invoking the DataLoader, since `terminal.pk = parentInput.fk_col` can never match under ANSI NULL semantics. Correct for `Person @splitQuery` (nullable). A non-null `Person! @splitQuery` on a row with a NULL FK is a schema-author error that surfaces as a GraphQL non-null violation at runtime; flagged for a follow-on validator check (warn when `@splitQuery` targets a non-null field while the inferred FK column is nullable).
 - **Validator** deletes the `!isList` branches in both `SplitRowsMethodEmitter.unsupportedReason` overloads. §1b (below) adds a classifier-level rejection for single-cardinality `@splitQuery @lookupKey` so the `SplitLookupTableField` emitter branch deletion is safe.
 
@@ -41,7 +43,7 @@ Verification: `Vurderingsmelding.person: Person @splitQuery` (or any parent-hold
 
 ## What we're NOT doing
 
-- **Multi-hop paths.** Scope is one-hop FK: first step `FkJoin` whose source or target table equals the parent. Two-hop junction paths on single cardinality (rare — would usually indicate a modelling mistake; `@splitQuery @lookupKey` covers the junction case via `LookupMapping`) stay stubbed. The `path.size() == 1` guard is explicit; longer paths continue to fall through to the CARDINALITY stub.
+- **Multi-hop paths.** Scope is one-hop FK: the single `FkJoin` whose source table equals the parent. Two-hop junction paths on single cardinality (rare — would usually indicate a modelling mistake; `@splitQuery @lookupKey` covers the junction case via `LookupMapping`) stay stubbed. Today's `!isList` branches in `unsupportedReason` catch multi-hop single-cardinality by accident; §3 deletes them, so §1a's helper takes responsibility for the `path.size() == 1` invariant (see §1a below — the helper returns the parent-PK fallback whenever single-hop parent-holds-FK doesn't match, and §1 adds a parallel classifier-level rejection for single-cardinality multi-hop so the emitter never sees one).
 - **Merging `@splitQuery` with `@lookupKey` on single cardinality.** Single-cardinality `@splitQuery @lookupKey` remains stubbed. Note: the existing scalar-return rejection at `FieldBuilder.java:266-269` only fires on the `!hasSplitQuery && hasLookupKey` arm — the `hasSplitQuery && hasLookupKey` arm at `:251-260` has no cardinality check today. This plan adds a parallel rejection at the `hasSplitQuery && hasLookupKey` arm (see §1 below) so the single-cardinality `@splitQuery @lookupKey` case is caught at classifier time rather than falling through to a runtime stub in the emitter.
 - **Condition-join paths.** `JoinPathEmitter.hasConditionJoin` still short-circuits to a stub for both list and single cardinality; classification-vocabulary item 5 owns that.
 - **Rekeying list cardinality by FK value.** The existing list-cardinality child-holds-FK path keeps parent-PK keying. Switching it would break DataLoader scatter semantics (list-cardinality needs one slot per parent, not one slot per shared FK value).
@@ -49,7 +51,7 @@ Verification: `Vurderingsmelding.person: Person @splitQuery` (or any parent-hold
 
 ## Implementation approach
 
-### 1. Classifier — parent-holds-FK BatchKey + single-cardinality `@splitQuery @lookupKey` rejection
+### 1. Classifier — parent-holds-FK BatchKey, single-hop guard, and single-cardinality `@splitQuery @lookupKey` rejection
 
 **File:** `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java`
 
@@ -61,6 +63,9 @@ Verification: `Vurderingsmelding.person: Person @splitQuery` (or any parent-hold
 // This helper is for @table parents on a DataLoader-backed field: the parent-holds-FK
 // case mirrors the record-parent choice, but the child-holds-FK case must fall back
 // to parent PK (one key per parent slot, not per shared FK value).
+//
+// The single-hop precondition is enforced by the caller (§1c) — this helper only
+// decides keying, not feasibility.
 private static BatchKey deriveSplitQueryBatchKey(TableRef parentTable, List<JoinStep> path) {
     if (!path.isEmpty() && path.get(0) instanceof JoinStep.FkJoin fk
             && fk.sourceTable().tableName().equalsIgnoreCase(parentTable.tableName())) {
@@ -88,6 +93,19 @@ if (hasSplitQuery && hasLookupKey) {
 ```
 
 This keeps cardinality validation at classifier time instead of letting single-cardinality `@splitQuery @lookupKey` flow through to the now-deleted `!isList` branch in `SplitRowsMethodEmitter.unsupportedReason(ChildField.SplitLookupTableField)`. Without this rejection, §3's removal of both `!isList` branches would let the classifier produce a `SplitLookupTableField` with single cardinality that the emitter has no body for.
+
+**1c. Multi-hop single-cardinality `@splitQuery` rejection.** Today both the `!isList` branches in `SplitRowsMethodEmitter.unsupportedReason` (`:148-158`, `:187-203`) catch all single-cardinality cases, including multi-hop paths, as a side effect of rejecting single cardinality outright. §3 deletes those branches, so multi-hop single cardinality loses its guard. Add a classifier-level check on the `hasSplitQuery && !hasLookupKey` arm around `:250`:
+
+```java
+if (hasSplitQuery && returnType.wrapper() instanceof FieldWrapper.Single
+        && referencePath.elements().size() != 1) {
+    return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+        "Single-cardinality @splitQuery requires a single-hop parent-holds-FK reference path; "
+        + "multi-hop paths are not yet supported on single cardinality");
+}
+```
+
+The guard lives in the classifier (not the emitter) so the rejection surfaces as a build error rather than a runtime stub — consistent with §1b. §1a's helper takes the second (parent-PK fallback) arm for child-holds-FK list cardinality, which is correct and unchanged; single-cardinality child-holds-FK is rare-to-impossible (FK uniqueness on the child side would make it list cardinality ≤1 by schema design, not a separate case). If such a field ever slips through classification, §1a's helper still picks parent-PK keying and §3's `buildSingleMethod` falls back to the list-cardinality JOIN shape — not useful in practice but not a crash.
 
 ### 2. Parent projection — always project BatchKey columns
 
@@ -123,13 +141,18 @@ private static List<Record> scatterSingleByIdx(Result<Record> flat, int keyCount
     Record[] out = new Record[keyCount];
     for (Record r : flat) {
         int idx = r.get(IDX_COLUMN, Integer.class);
-        out[idx] = r;  // at most one row per idx by construction (single-cardinality contract)
+        if (out[idx] != null) {
+            throw new IllegalStateException(
+                "scatterSingleByIdx: two rows at idx " + idx
+                + " — single-cardinality @splitQuery contract requires ≤1 terminal row per key");
+        }
+        out[idx] = r;
     }
-    return java.util.Arrays.asList(out);  // nulls preserved where no match
+    return java.util.Arrays.asList(out);  // nulls preserved where no match; Arrays.asList (not List.of) to permit nulls
 }
 ```
 
-The "at most one row per idx" invariant holds because the terminal table's PK equals the FK value keyed by idx — so `terminal.pk = parentInput.fk_col` yields ≤1 terminal row per idx. Add a defensive `IllegalStateException` if a second assignment to the same idx happens (cheap runtime check).
+The "at most one row per idx" invariant holds because the terminal table's PK equals the FK value keyed by idx — so `terminal.pk = parentInput.fk_col` yields ≤1 terminal row per idx. The defensive check is cheap (one null-compare per row) and surfaces misconfigurations (e.g. a future caller forgetting to constrain the JOIN to PK) at test time rather than silently discarding rows. §5's unit test asserts the `IllegalStateException` on duplicate-idx input.
 
 ### 4. Fetcher — scatter-helper emission gate
 
@@ -162,12 +185,14 @@ This locks down scatter semantics without the rewrite→compile→DB round-trip 
 - `Customer.address` happy path: query two customers sharing the same `address_id`, assert both resolve to the same Address, assert exactly one rows-method invocation for that key via the existing JDBC round-trip counter pattern from the Language.films tests.
 - `Store.manager` null-FK path: after the `init.sql` fix above, query a store with NULL `manager_staff_id` and assert the resolver returns `null` rather than throwing. Cross-check that no DataLoader round-trip happens for that key (the short-circuit fires before `loader.load`).
 
-**Test-spec schema additions.**
+**Test-spec schema additions.** Add to `graphitron-rewrite-test-spec/src/main/resources/graphql/schema.graphqls`:
 ```graphql
 type Customer @table(name: "customer") { ... address: Address @splitQuery }
 type Store    @table(name: "store")    { ... manager: Staff   @splitQuery }
 ```
 Inference picks up the single FK; no `@reference` needed once `plan-implicit-reference-inference.md` lands. If this plan ships first, both fields carry an explicit `@reference` until inference lands (see Dependencies and sequencing).
+
+**User-facing docs.** `graphitron-codegen-parent/graphitron-java-codegen/README.md` §"Split database queries with @splitQuery" (`:229-249`) is the canonical reference and today implicitly assumes list cardinality (all worked examples in the file — `:436`, `:462`, `:517` — are lists; the one single-cardinality example at `:481` is a doc fragment for path syntax, not a compile claim). Add a short paragraph to that section noting that parent-holds-FK single-cardinality `@splitQuery` is supported (one-hop, nullable or non-null target) with a one-line example (`address: Address @splitQuery` on `Customer`). Updating the existing single-cardinality fragment at `:481` to note cardinality support is optional — the fragment documents path syntax, not cardinality.
 
 ## Success criteria
 
@@ -184,9 +209,7 @@ Inference picks up the single FK; no `@reference` needed once `plan-implicit-ref
 
 ## Open questions
 
-1. **BatchKey keying strategy — Option A (FK value) vs Option B (parent PK + bridge join).** This plan commits to A. Option B — keep the BatchKey as parent PK and add the parent table to the FROM chain of the rows method so the bridging join `parent.pk = parentInput.pk … parent.fk_col = terminal.pk` lives inside SQL — preserves the existing emitter structure at the cost of one extra join per batch and no cross-parent dedup. A wins on runtime (fewer round trips when siblings share FKs) and on emitter symmetry (rows method shape matches list cardinality). B wins if we later want to bundle single-cardinality fields with complex parent-side filter conditions that are easier to emit as WHERE clauses on the parent table than to propagate into the DataLoader key. Default: A unless review surfaces a concrete B use case.
-
-2. **DataLoader DFE selection across merged loads — inherited, non-blocking.** When two loads for the same key arrive with different DFEs, the batch lambda picks `getKeyContextsList().get(0)`'s DFE for `$fields` projection. GraphQL selection-merging guarantees all DFEs for a same-name field in one operation share args and selection set, so picking any one is safe. This behaviour exists today for list cardinality and is unchanged here — **but** this plan *increases* cross-parent coalescing within one DataLoader slot: parents with distinct PKs but shared FK values now share a key slot, where they would have been separate slots under the list-cardinality keying. The "shared selection set and args" invariant is now load-bearing in both directions (same-slot dedup relied on it already; now more parents end up same-slot). If a fragment-with-different-`@skip`/`@include` edge case turns out to break the invariant, the fix applies equally to both cardinalities and is a separate roadmap item. Does **not** block this plan; flagged for reviewer awareness.
+1. **DataLoader DFE selection across merged loads — inherited, non-blocking.** When two loads for the same key arrive with different DFEs, the batch lambda picks `getKeyContextsList().get(0)`'s DFE for `$fields` projection. GraphQL selection-merging guarantees all DFEs for a same-name field in one operation share args and selection set, so picking any one is safe. This behaviour exists today for list cardinality and is unchanged here — **but** this plan *increases* cross-parent coalescing within one DataLoader slot: parents with distinct PKs but shared FK values now share a key slot, where they would have been separate slots under the list-cardinality keying. The "shared selection set and args" invariant is now load-bearing in both directions (same-slot dedup relied on it already; now more parents end up same-slot). If a fragment-with-different-`@skip`/`@include` edge case turns out to break the invariant, the fix applies equally to both cardinalities and is a separate roadmap item. Does **not** block this plan; flagged for reviewer awareness.
 
 ## References
 
