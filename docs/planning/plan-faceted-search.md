@@ -1,10 +1,10 @@
-# Faceted search on `@asConnection` — `@facet` directive
+# Faceted search on `@asConnection` — `@asFacet` directive
 
 > **Status:** Spec
 >
-> Add a `@facet` directive for filter-input fields. A pre-classifier pass in
+> Add a `@asFacet` directive for filter-input fields. A pre-classifier pass in
 > `graphitron-rewrite` expands each `@asConnection` field's Connection type
-> with a `facets` object whose fields mirror the `@facet`-marked filter inputs;
+> with a `facets` object whose fields mirror the `@asFacet`-marked filter inputs;
 > the rewrite classifier and fetcher emit one `UNION ALL` aggregate query per
 > Connection request, with each arm computing one facet's counts under its
 > filter-minus-self predicate. Phase 1 spike confirmed this shape over
@@ -24,7 +24,7 @@ the explicit deferral *"Denne er avsluttet da graphitron vil håndtere dette for
 oss via GG-335."*
 
 A schema author marks fields inside a `@asConnection` field's filter input with
-`@facet`:
+`@asFacet`:
 
 ```graphql
 type Query {
@@ -32,8 +32,8 @@ type Query {
 }
 
 input FilmFilter {
-    rating:   [MpaaRating!] @field(name: "RATING")        @facet
-    category: [String!]     @field(name: "CATEGORY_NAME") @facet
+    rating:   [MpaaRating!] @field(name: "RATING")        @asFacet
+    category: [String!]     @field(name: "CATEGORY_NAME") @asFacet
     title:    String        @field(name: "TITLE")
 }
 ```
@@ -88,7 +88,7 @@ have landed:
 
 1. **Rewrite owns schema loading + directive auto-injection** — rewrite
    reads its own `directives.graphqls` from module-local resources.
-   This is where the `@facet` directive declaration lives (Phase 2
+   This is where the `@asFacet` directive declaration lives (Phase 2
    below).
 2. **Rewrite owns `@asConnection` → Connection synthesis** — the
    registry-level pre-pass currently in
@@ -97,7 +97,7 @@ have landed:
 3. **Rewrite owns directive stripping in the emitted client SDL** —
    rewrite's own strip list (replacing the `GenerationDirective` enum)
    is the single source of truth for "which directives don't ship to
-   clients." Adding `@facet` to it is a one-line append.
+   clients." Adding `@asFacet` to it is a one-line append.
 4. **Rewrite emits the client SDL as generated output** — rewrite
    writes `schema.graphql` under `target/generated-sources/...`
    alongside generated Java, packaged as a classpath resource for
@@ -130,7 +130,7 @@ scope stays focused.
   `ColumnReferenceField`, `PlatformIdField`, `NestingField`). None of
   them carries a facet flag. `InputField.IdReferenceField` is a
   pending sibling from [plan-id-reference-input-field.md]; if it
-  lands first, Phase 3's `@facet` rejection list must rule on it (see
+  lands first, Phase 3's `@asFacet` rejection list must rule on it (see
   Non-goals).
 - `BuildContext` lists every directive the rewrite reads in its
   `DIR_*` constant block; there is no `DIR_FACET`. Rewrite's
@@ -166,12 +166,12 @@ scope stays focused.
 
 ## Desired End State
 
-- New `@facet` directive declared in rewrite's own directive resource
+- New `@asFacet` directive declared in rewrite's own directive resource
   (`graphitron-rewrite/src/main/resources/directives.graphqls`
   post-migration); registered in rewrite's client-SDL strip list so
   it doesn't ship to clients.
 - A new registry-level `FacetExpansion` pass runs between Connection
-  synthesis and `@notGenerated` removal; it expands `@facet`-marked
+  synthesis and `@notGenerated` removal; it expands `@asFacet`-marked
   input fields into a `facets` field on the generated Connection type
   and synthesizes one `*ConnectionFacets` type plus one reusable
   `*FacetValue` type per distinct value scalar encountered.
@@ -192,10 +192,10 @@ scope stays focused.
 ### Verification
 
 1. New pipeline test in `GraphitronSchemaBuilderTest` classifies a schema with
-   `@facet` into a `FieldWrapper.Connection` whose `facets()` is non-empty.
+   `@asFacet` into a `FieldWrapper.Connection` whose `facets()` is non-empty.
 2. New execution test in `graphitron-rewrite-test-spec` asserts facet counts
    match a hand-written jOOQ aggregate over the same filter.
-3. Existing `filmsConnection*` tests unchanged (no `@facet` in their filters).
+3. Existing `filmsConnection*` tests unchanged (no `@asFacet` in their filters).
 
 ## What We're NOT Doing (v1)
 
@@ -206,7 +206,7 @@ scope stays focused.
   omits it. We follow GG-335 in v1.
 - **Facets on non-`@asConnection` list fields.** Connection-only; the whole
   filter-↔-facets contract assumes a projectable aggregate shape.
-- **Facets on `@facet` fields bound to `@reference` paths, `@condition` joins,
+- **Facets on `@asFacet` fields bound to `@reference` paths, `@condition` joins,
   or composite/`[ID!]` reference fields.** Classifier rejects these at
   validate time; loosening is a follow-up. If `InputField.IdReferenceField`
   (pending in [plan-id-reference-input-field.md]) lands before this plan,
@@ -225,19 +225,19 @@ scope stays focused.
   schema-loading + directive injection, (b) type-extension merging,
   (c) Connection synthesis, (d) `@notGenerated` / element removal.
   The facet-synthesis pass slots in between (c) and (d): it reads
-  `@asConnection` fields + their `@facet`-marked filter inputs and
+  `@asConnection` fields + their `@asFacet`-marked filter inputs and
   adds `facets` + `*Facets` + `{Scalar}FacetValue` to the registry.
   Classifier runs against the fully expanded registry; SDL emission
   writes the post-strip view as `schema.graphql`. One code-owner
   end-to-end.
-- **Single directive-declaration file.** `@facet` is declared in
+- **Single directive-declaration file.** `@asFacet` is declared in
   rewrite's own `directives.graphqls` (under
   `graphitron-rewrite/src/main/resources/`, post-migration). The
   directive-loading pass injects it into the registry before
   classification.
 - **Single strip list.** Rewrite's internal client-SDL strip list
   (replacing the old `GenerationDirective` enum) is the one place
-  to register `@facet` as a generator-only directive. One-line
+  to register `@asFacet` as a generator-only directive. One-line
   append; no cross-module enum sync.
 - **`FieldWrapper.Connection` is a record** with no public builders;
   adding a `facets` member means every construction site — the
@@ -287,10 +287,10 @@ in lock-step.
   them because they carry no generator directives.
 - New field: `XConnection.facets: XConnectionFacets`. Surfaces
   unconditionally.
-- `@facet` directive on input fields: **stripped from the client
-  schema** by rewrite's strip pass once `@facet` is registered in
+- `@asFacet` directive on input fields: **stripped from the client
+  schema** by rewrite's strip pass once `@asFacet` is registered in
   the strip list. Clients see the input field unchanged (same type,
-  same name). Omitting the strip-list entry leaks `@facet` onto
+  same name). Omitting the strip-list entry leaks `@asFacet` onto
   client-visible input fields, which is both noisy and couples
   client consumers to a generator-only concept — required, not
   optional.
@@ -300,8 +300,8 @@ in lock-step.
 
 **Feature-flag policy for `facets`.** `facets` is *not*
 feature-flagged in v1 — its presence on a given Connection is driven
-entirely by whether the filter input has any `@facet` fields.
-Connections whose filter inputs carry no `@facet` emit identical SDL
+entirely by whether the filter input has any `@asFacet` fields.
+Connections whose filter inputs carry no `@asFacet` emit identical SDL
 to today; the Connection type has no `facets` field and no generated
 `*Facets` / `*FacetValue` types reference it. A flag can be added in
 a follow-up if a consumer needs to hide facets from a specific
@@ -326,7 +326,7 @@ facets after v1 lands.
 | Phase | Module / artefact | What lands |
 |---|---|---|
 | 1 | `docs/planning/plan-faceted-search.md` + hand-written SQL | Spike — benchmark SQL strategies against Sakila; confirm or swap v1 default; resolve NULL + ordering Open Questions |
-| 2 | `graphitron-rewrite` (directive + synthesis pass) | `@facet` directive definition + strip-list entry; new `FacetExpansion` registry-level pass synthesizes `*Facets` and `*FacetValue` types and adds the `facets` field on the Connection |
+| 2 | `graphitron-rewrite` (directive + synthesis pass) | `@asFacet` directive definition + strip-list entry; new `FacetExpansion` registry-level pass synthesizes `*Facets` and `*FacetValue` types and adds the `facets` field on the Connection |
 | 3 | `graphitron-rewrite` (classifier) | `FieldWrapper.Connection` carries `FacetSpec`; validator rejects misuse |
 | 4 | `graphitron-rewrite` (emitter) | Fetcher emits the spike-chosen aggregate shape; helper + wiring expose the new field |
 | 5 | `graphitron-rewrite-test-spec` | Execution tests against Sakila |
@@ -523,7 +523,7 @@ Key findings:
   faster than A and 1.8–3.5× faster than C on warm wall-clock, with
   identical cold reads to A (1 × table). Constraint: every facet
   value must be known at emit time (enums ✓, small FKs ✓ via
-  `@facet(values:)` or catalog pre-query, open-ended text ✗). Not
+  `@asFacet(values:)` or catalog pre-query, open-ended text ✗). Not
   adopted for v1 because it doesn't generalise; kept as a post-v1
   emitter-internal swap when every selected facet is bounded-domain.
   (Spike report labels this shape E; plan's strategy comparison
@@ -564,11 +564,11 @@ together with the plan on Done.
 
 ### Overview
 
-Declare `@facet` in rewrite's own directives resource; add a
+Declare `@asFacet` in rewrite's own directives resource; add a
 registry-level pass, run immediately after Connection synthesis, that
-expands each `@asConnection` field's `@facet`-bearing filter inputs
+expands each `@asConnection` field's `@asFacet`-bearing filter inputs
 into `facets` + `*Facets` + `{Scalar}FacetValue` types on the
-expanded Connection; register `@facet` in rewrite's client-SDL strip
+expanded Connection; register `@asFacet` in rewrite's client-SDL strip
 list so it doesn't leak to clients.
 
 ### Changes
@@ -583,7 +583,7 @@ auto-injection" prerequisite):
 """
 Marks a filter-input field as a facet on the enclosing `@asConnection`
 field's generated Connection type. The Connection type gains a
-`facets: XConnectionFacets` field; each `@facet`-marked input field
+`facets: XConnectionFacets` field; each `@asFacet`-marked input field
 becomes an entry there, returning `[XFacetValue!]!` with per-value
 counts.
 
@@ -592,20 +592,20 @@ Only valid on fields of an input type used as the filter input of an
 column via `@field(name:)` (reference / condition / composite-key
 bindings are rejected in v1).
 """
-directive @facet on INPUT_FIELD_DEFINITION
+directive @asFacet on INPUT_FIELD_DEFINITION
 ```
 
 #### Client-SDL strip list
 
-Register `@facet` in rewrite's internal strip list (the successor to
+Register `@asFacet` in rewrite's internal strip list (the successor to
 the old `GenerationDirective` enum — location finalized by the
 "Rewrite owns directive stripping in the emitted client SDL"
-prerequisite). Without it, `@facet` leaks onto client-visible input
+prerequisite). Without it, `@asFacet` leaks onto client-visible input
 fields.
 
 ```java
 // Roughly, depending on how the strip list is organized post-migration:
-static final String DIR_FACET = "facet";
+static final String DIR_FACET = "asFacet";
 // …added to the strip set consumed by the client-SDL emitter.
 ```
 
@@ -627,7 +627,7 @@ rewrite adopts post-migration (mirrors
 For each field annotated `@asConnection`, look up the generated
 Connection type (already in the registry — Connection synthesis ran
 first), find the filter input argument, and for every input field
-carrying `@facet`:
+carrying `@asFacet`:
 
 1. Resolve the value scalar (the GraphQL type of the input field,
    stripped of list/non-null). For scalar/enum leaves, this is the
@@ -648,25 +648,25 @@ carrying `@facet`:
    for the derived type name, shared between this pass and the
    classifier (Phase 3).
 3. Build a `{ConnectionName}Facets` type with one non-null list field
-   per `@facet` input, field name matching the input field name.
+   per `@asFacet` input, field name matching the input field name.
 4. Add `facets: {ConnectionName}Facets` to the Connection type.
 
 If the wrapped field has no filter input, or the filter input has no
-`@facet` fields, emit the Connection unchanged. No error, no
+`@asFacet` fields, emit the Connection unchanged. No error, no
 warning.
 
 ### Success Criteria
 
 - [ ] `mvn test -pl :graphitron-rewrite -Pquick` — new
-      `FacetExpansionTest` feeds an SDL with `@facet` through
+      `FacetExpansionTest` feeds an SDL with `@asFacet` through
       `FacetExpansion.transform()` + the preceding Connection-synthesis
       pass and asserts: Connection type has a `facets` field,
-      `{Name}Facets` type exists with one list field per `@facet`, one
+      `{Name}Facets` type exists with one list field per `@asFacet`, one
       `{Scalar}FacetValue` type per distinct value scalar, each with
       `value` + `count` fields.
 - [ ] Client-SDL strip test: classify the same SDL end-to-end, capture
       the emitted `schema.graphql`, and assert that input fields no
-      longer carry `@facet` but the `facets` field + `*Facets` /
+      longer carry `@asFacet` but the `facets` field + `*Facets` /
       `*FacetValue` types survive unchanged. Catches any future
       strip-list drift.
 - [ ] Existing Connection-synthesis fixtures unchanged.
@@ -688,7 +688,7 @@ warning.
 
 The rewrite classifier currently flattens `@asConnection` into a
 `FieldWrapper.Connection` with only pagination metadata. Phase 3 teaches
-it to *also* read the filter input's `@facet` directives and carry the
+it to *also* read the filter input's `@asFacet` directives and carry the
 resulting specs on the wrapper, so the emitter (Phase 4) has everything
 it needs without re-parsing SDL.
 
@@ -699,7 +699,7 @@ it needs without re-parsing SDL.
 Add to the `DIR_*` constant block:
 
 ```java
-static final String DIR_FACET = "facet";
+static final String DIR_FACET = "asFacet";
 ```
 
 #### `model/FieldWrapper.java`
@@ -712,7 +712,7 @@ record Connection(
     boolean itemNullable,
     int defaultPageSize,
     String connectionName,
-    java.util.List<FacetSpec> facets   // empty when no @facet fields
+    java.util.List<FacetSpec> facets   // empty when no @asFacet fields
 ) implements FieldWrapper { ... }
 ```
 
@@ -740,11 +740,11 @@ what `*FacetValue` object type to instantiate.
 
 When building a `FieldWrapper.Connection`, walk the wrapped field's
 arguments; for each argument whose type is an input type containing
-`@facet`-marked fields:
+`@asFacet`-marked fields:
 
-1. Each `@facet` field must also carry `@field(name:)` (rejected
+1. Each `@asFacet` field must also carry `@field(name:)` (rejected
    otherwise with `UnclassifiedField` + a message naming the field).
-2. Each `@facet` field's GraphQL leaf scalar/enum is its `valueTypeName`.
+2. Each `@asFacet` field's GraphQL leaf scalar/enum is its `valueTypeName`.
 3. Derive `facetValueTypeName` via the shared
    `FacetNaming.facetValueTypeName(scalar)` helper introduced in Phase 2.
    Both the synthesis pass and the classifier call through the same
@@ -752,9 +752,9 @@ arguments; for each argument whose type is an input type containing
 
 Reject at classify time:
 
-- `@facet` on a non-`@field`-bound input field (reference path,
+- `@asFacet` on a non-`@field`-bound input field (reference path,
   condition, nesting) → `UnclassifiedField`.
-- `@facet` on a field whose enclosing input type is not reached via an
+- `@asFacet` on a field whose enclosing input type is not reached via an
   `@asConnection` field → `UnclassifiedField` (the expanded `facets`
   field is dead schema otherwise).
 
@@ -768,10 +768,10 @@ now reachable from a classified field.
 ### Success Criteria
 
 - [ ] `mvn test -pl :graphitron-rewrite -Pquick` — existing tests pass.
-- [ ] New pipeline test: schema with two `@facet` inputs on a filter →
+- [ ] New pipeline test: schema with two `@asFacet` inputs on a filter →
       classified `Connection.facets()` has two entries with correct
       column names and value types.
-- [ ] New pipeline test: `@facet` on a `@reference`-bound input field
+- [ ] New pipeline test: `@asFacet` on a `@reference`-bound input field
       → `UnclassifiedField` with a specific error message.
 - [ ] `VariantCoverageTest` still passes — no new sealed leaf added
       (this phase only extends an existing record).
@@ -854,7 +854,7 @@ subset of `conn.facets()` that the client actually asked for.
    - Build a **base condition** equal to the full filter's condition
      applied to *every non-facet field*. The cleanest route is to
      emit a second method on the per-query `QueryConditions` class —
-     `applyNonFacet(table, filter)` — that skips every `@facet`-marked
+     `applyNonFacet(table, filter)` — that skips every `@asFacet`-marked
      input field when building `condition`. The existing
      `applyFull(...)` method continues to back the edges/nodes
      query. (Pre-quality-plan variant: teach `TypeConditionsGenerator`
@@ -962,10 +962,10 @@ type registration is required so GraphQL-Java knows the type exists.
 ### Success Criteria
 
 - [ ] `mvn verify -Pquick` on the whole tree.
-- [ ] Schemas *without* `@facet` emit unchanged fetchers (structural
-      diff test: classify pre- and post-patch SDL with no `@facet`,
+- [ ] Schemas *without* `@asFacet` emit unchanged fetchers (structural
+      diff test: classify pre- and post-patch SDL with no `@asFacet`,
       assert identical `TypeSpec` for the fetcher method).
-- [ ] Wiring test: a Connection with `@facet` fields has a `facets`
+- [ ] Wiring test: a Connection with `@asFacet` fields has a `facets`
       dataFetcher registered; the `*FacetValue` types exist in the
       wiring's known type set.
 
@@ -976,7 +976,7 @@ type registration is required so GraphQL-Java knows the type exists.
 ### Overview
 
 Add a Sakila-backed execution fixture combining `@asConnection` with a
-`@facet`-bearing filter input. Prove per-facet counts match direct jOOQ
+`@asFacet`-bearing filter input. Prove per-facet counts match direct jOOQ
 aggregates and that selecting one facet value leaves other facet counts
 unchanged.
 
@@ -994,8 +994,8 @@ type Query {
 }
 
 input FilmFacetFilter @table(name: "film") {
-    rating:       [MpaaRating!] @field(name: "RATING")          @facet
-    languageName: [String!]     @field(name: "LANGUAGE_NAME")   @facet
+    rating:       [MpaaRating!] @field(name: "RATING")          @asFacet
+    languageName: [String!]     @field(name: "LANGUAGE_NAME")   @asFacet
 }
 ```
 
@@ -1079,7 +1079,7 @@ inkluderes og gir flate resultat."*
 ### Why this is Phase 6, not v1
 
 1. Requires modelling a facet's parent relation — either via a new
-   `@facet(parent: "<otherFacetField>")` arg or by inferring from the
+   `@asFacet(parent: "<otherFacetField>")` arg or by inferring from the
    referenced column's FK path. Both call for schema-design alignment
    with the supergraph team (ticket explicitly notes this).
 2. Requires the `*FacetValue` shape to grow
@@ -1118,19 +1118,19 @@ reviewers can confirm the v1 design does not foreclose it.
 
 - **Unit:** none required — no new reflection / catalog probes.
 - **Pipeline (expansion pass):** `FacetExpansionTest` covers expansion of
-  `@facet` into `Facets` + `FacetValue` types, and no-op when no
-  `@facet` is present.
-- **Pipeline (strip list):** `FacetStripTest` asserts `@facet` is
+  `@asFacet` into `Facets` + `FacetValue` types, and no-op when no
+  `@asFacet` is present.
+- **Pipeline (strip list):** `FacetStripTest` asserts `@asFacet` is
   removed from the emitted client SDL while the synthesized types
   survive.
 - **Pipeline (classifier):** two new `GraphitronSchemaBuilderTest` cases —
-  `@facet` classification success and `@facet` rejection on non-`@field`
+  `@asFacet` classification success and `@asFacet` rejection on non-`@field`
   bindings.
 - **Wiring:** assert `facets` dataFetcher and `*FacetValue` type
   registrations in the generated wiring class.
 - **Execution:** three Sakila cases as above.
 - **Regression:** existing `filmsConnection*` tests unchanged; structural
-  diff confirms fetcher output is byte-identical when `@facet` is absent.
+  diff confirms fetcher output is byte-identical when `@asFacet` is absent.
 
 ## Resolved design decisions
 
@@ -1194,7 +1194,7 @@ reviewers can confirm the v1 design does not foreclose it.
    warm-clock speedup at 5M rows with identical cold-read cost
    (`spike-faceted-search-sql.md` §v2 re-measurement). Requires value
    enumeration per facet — achievable from the jOOQ catalog for enum
-   columns and from an optional `@facet(values: [...])` argument or a
+   columns and from an optional `@asFacet(values: [...])` argument or a
    compile-time query on the referenced table for small FKs. Design
    constraint for v1: keep `FacetSpec` + `FieldWrapper.Connection`
    permissive enough that the C-vs-F choice lives entirely inside
@@ -1204,7 +1204,7 @@ reviewers can confirm the v1 design does not foreclose it.
    routinely exceed `shared_buffers` by >10×.
 
 3. **Facets on columns reached through FK joins.** v1 rejects
-   `@facet` on `@reference`-bound input fields. GG-335's Studieprogram
+   `@asFacet` on `@reference`-bound input fields. GG-335's Studieprogram
    hierarchical example implies faceting over a joined parent
    (Fakultet → Institutt). Lifting this restriction is entangled with
    Phase 6; confirm it can stay rejected until then.
@@ -1223,7 +1223,7 @@ reviewers can confirm the v1 design does not foreclose it.
   equivalent and the new `FacetExpansion` pass.
 - `graphitron-rewrite/src/main/resources/directives.graphqls`
   (to-be-created, from the schema-loading prerequisite) — target for
-  the `@facet` directive declaration.
+  the `@asFacet` directive declaration.
 - `graphitron-rewrite/.../FieldBuilder.buildWrapper` —
   `FieldWrapper.Connection` construction sites (both arms).
 - `graphitron-rewrite/.../TypeFetcherGenerator.buildQueryConnectionFetcher` —
