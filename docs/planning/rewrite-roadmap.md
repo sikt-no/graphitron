@@ -9,7 +9,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | Item | Status | Plan |
 |---|---|---|
 | Platform-id as synthesized NodeId | In Progress | [plan](legacy-platform-id.md) |
-| Implicit `@reference` path inference | In Review | [plan](plan-implicit-reference-inference.md) |
 | Argument-resolution unification | In Review | [plan](argument-resolution.md) |
 | `BatchKey.ObjectBased` removal | Spec | [plan](plan-batchkey-remove-objectbased.md) |
 | Service-backed and method-backed root fetchers | Spec | [plan](plan-service-root-fetchers.md) |
@@ -56,6 +55,7 @@ Enumerated from `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS`. Priority numbers
 
 - **Generated-fetcher quality pass** **[Spec]** — four cleanups to `TypeFetcherGenerator` connection-fetcher emission: extract pagination boilerplate to a `ConnectionHelper.pageRequest(...)` helper, extract condition orchestration into a new generated `QueryConditions` class, never emit `var` in generated code, and rename the local jOOQ-table variable from `table` to `<entity>Table` to break the mapper/table name collision. ([plan-generated-fetcher-quality.md](plan-generated-fetcher-quality.md))
 - **Unify `rowsMethodName()`** **[Backlog]** — lift `"rows" + capitalize(name())` copy-paste from four `BatchKeyField` leaves to a default method on the interface.
+- **Unify `FkJoin` construction in `parsePathElement`** **[Backlog]** — `{key:}` branch at `BuildContext.java:557-564` hand-builds `FkJoin`; delegate to `synthesizeFkJoin` for the source-validated success path, keeping the null-source fallback and connectivity-error arms bespoke.
 - **Collapse `TableTargetField` structural redundancy** **[Backlog]** — six `Table*Field` variants share identical components; evaluate sealed intermediates (`StandardTableField`, `RecordBoundField`).
 - **Shared interface for `QueryField` / `ChildField` table-bound parallels** **[Backlog]** — root variants drop `joinPath` but share `filters · orderBy · pagination`.
 - **`JoinConditionRef` wrapper** **[Backlog]** — distinguish `ConditionJoin`/`FkJoin` calling convention from `ConditionFilter` at the type level.
@@ -89,3 +89,4 @@ Enumerated from `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS`. Priority numbers
 - `d33ace9` — Variant-coverage Phase 2: `ClassificationCase` interface; 26 enums retrofitted with `variants()` sets.
 - Java-17 output ratchet: `graphitron-rewrite-test-spec` compile goal pinned to `release=17`.
 - `0b2e4e9` + `49d7879` — Nesting-field emission: `ChildField.NestingField` out of stubs; eight execution tests.
+- `1abc31ed` + `0c449fef` + `a3afd651` — Implicit `@reference` path inference: `BuildContext.parsePath` synthesizes single-hop `FkJoin` from the jOOQ catalog when `@reference` is absent; deletes four `SplitRowsMethodEmitter` EMPTY_PATH stub branches and the duplicate FK-count logic in `GraphitronSchemaValidator`.
