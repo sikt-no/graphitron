@@ -119,9 +119,9 @@ git rm graphitron-rewrite-test/pom.xml
 rmdir graphitron-rewrite-test
 ```
 
-Write the new aggregator `graphitron-rewrite/pom.xml` after the moves (can't exist before — the first `git mv` needs a clean `graphitron-rewrite` path).
+Write the new aggregator `graphitron-rewrite/pom.xml` after the moves as a `git add` of a new file (it has no predecessor to `git mv` from — the old `graphitron-rewrite-test/pom.xml` is deleted, not relocated, since its contents are subsumed by the new aggregator).
 
-Commit the move as a single commit so `git log --follow` reads cleanly on every file.
+Commit the move as a single commit so `git log --follow` reads cleanly on every file. The moved poms get small edits (1–2 lines: artifactId rename, parent switch) in the same commit; those edits stay well below git's default rename-detection similarity threshold, so follow still traverses the move.
 
 ---
 
@@ -134,38 +134,46 @@ Commit the move as a single commit so `git log --follow` reads cleanly on every 
 
 ### Planning documents
 
-All references flagged by `grep -rn "graphitron-rewrite-test-fixtures\|graphitron-rewrite-test-spec\|:graphitron-rewrite-test\b" docs/`:
+Treat this as a mechanical pass. The substitution table:
 
-- `rewrite-roadmap.md:41` (`-test-fixtures` fixture reference), `:91` (`-test-spec` in the Java-17 ratchet Done line) — substitute per rename.
-- `plan-batchkey-remove-objectbased.md:264`, `plan-faceted-search.md:996` — the `mvn install -pl :graphitron-rewrite-test,:graphitron-rewrite-test-fixtures,:graphitron-rewrite-test-spec -Plocal-db` pattern collapses to `mvn install -pl :graphitron-rewrite-parent -am -Plocal-db` (one coordinate, reactor pulls both children). Other hits in these files are path references under `-test-spec/src/main/resources/...` — substitute path.
-- `plan-classification-vocabulary-followups.md:116, :133`, `plan-single-cardinality-split-query.md:184, :188, :202`, `plan-service-root-fetchers.md:27, :180, :184`, `plan-generated-fetcher-quality.md:6, :135, :217`, `plan-faceted-search.md:166, :313, :948`, `plan-nestingfield-multiparent-tablefield.md:100, :102, :111`, `legacy-platform-id.md:222` — path/coordinate substitutions per the rename table.
+| Old | New |
+| --- | --- |
+| `graphitron-rewrite-test/graphitron-rewrite-test-fixtures` (path) | `graphitron-rewrite/graphitron-rewrite-fixtures` |
+| `graphitron-rewrite-test/graphitron-rewrite-test-spec` (path) | `graphitron-rewrite/graphitron-rewrite-test` |
+| `:graphitron-rewrite-test-fixtures` (coord) | `:graphitron-rewrite-fixtures` |
+| `:graphitron-rewrite-test-spec` (coord) | `:graphitron-rewrite-test` |
+| `:graphitron-rewrite-test` (old aggregator coord) | drop — no replacement; the old thin aggregator is gone |
 
-Treat this as a mechanical pass: one `sed`-style substitution table applied across `docs/`, then grep to confirm zero remaining matches.
+One special case: the `mvn install -pl :graphitron-rewrite-test,:graphitron-rewrite-test-fixtures,:graphitron-rewrite-test-spec -Plocal-db` recipe (several plans use it) collapses to `(cd graphitron-rewrite && mvn install -Plocal-db)`. Running Maven from the aggregator directory builds the aggregator and all its `<modules>` in dependency order — simpler than keeping a hand-maintained `-pl` list. Apply the same collapse to the `mvn test` / `mvn verify` variants.
+
+Apply the substitution across `docs/`, then grep to confirm zero remaining matches. Callers are numerous (53 hits at time of writing across roadmap, plans, and environment docs); the grep gate in §Step 4 is the authoritative completeness check.
 
 ### Roadmap
 
-Line 68 Backlog entry: `[Backlog]` → `[Spec]` with link to this plan. Line 41 and line 91 get path/coord substitutions.
+The Backlog → Spec promotion already landed in the commit that introduced this plan. The remaining roadmap work is the substitution pass above, applied to every `-test-fixtures` / `-test-spec` occurrence — notably the Java-17 ratchet Done line (`-test-spec` coord) and the "Rebalance test pyramid" Backlog entry (`-test-fixtures` path).
 
-On Done: delete the plan file, add a one-liner under Done referencing the landing SHA (match the `Consolidate rewrite modules under graphitron-rewrite/ shipped at <sha>` style of existing Done entries).
+On Done: delete the plan file, flip the roadmap entry `[Spec]` → `[Done]`, and add a one-liner under the Done section referencing the landing SHA (match the `Consolidate rewrite modules under graphitron-rewrite/ shipped at <sha>` style of existing Done entries).
 
 ---
 
 ## Step 4 — Verification
 
-Build the graph fresh to confirm the aggregator wires everything:
+Build the graph fresh to confirm the aggregator wires everything. Run from inside the aggregator directory — Maven then processes the `<modules>` list in dependency order without needing a hand-maintained `-pl` enumeration:
 
 ```bash
-mvn install -pl :graphitron-rewrite-parent -am -Plocal-db
-mvn test    -pl :graphitron-rewrite
-mvn compile -pl :graphitron-rewrite-test -Plocal-db
-mvn test    -pl :graphitron-rewrite-test -Plocal-db
+(cd graphitron-rewrite && mvn install -Plocal-db)
+(cd graphitron-rewrite && mvn test    -pl :graphitron-rewrite)
+(cd graphitron-rewrite && mvn compile -pl :graphitron-rewrite-test -Plocal-db)
+(cd graphitron-rewrite && mvn test    -pl :graphitron-rewrite-test -Plocal-db)
 ```
+
+(`-pl :aggregator -am` does *not* descend into aggregator modules — `-am` pulls dependencies, not `<modules>` children. Hence the `cd` rather than the tempting one-liner.)
 
 Full-build parity check: `mvn clean install -Pquick` (root) must still succeed end-to-end.
 
 Git-history spot check: `git log --follow graphitron-rewrite/graphitron-rewrite-fixtures/src/main/resources/init.sql` should traverse the move into `graphitron-rewrite-test/graphitron-rewrite-test-fixtures/...` without gaps.
 
-Grep gate: `grep -rn "graphitron-rewrite-test-fixtures\|graphitron-rewrite-test-spec" -- .` returns zero matches outside of generated-source directories and `.m2` caches.
+Grep gate: `grep -rn "graphitron-rewrite-test-fixtures\|graphitron-rewrite-test-spec" .` returns zero matches outside of generated-source directories and `.m2` caches.
 
 ---
 
