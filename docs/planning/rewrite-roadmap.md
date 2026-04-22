@@ -27,6 +27,39 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 Pick an item, draft a plan, move to Active.
 
+### Production impact snapshot (2026-04-22)
+
+Distinct occurrence counts of rewrite rejections observed in production, mapped to the roadmap entry that would close them. Treat this as a prioritization signal for Backlog → Active promotion, not as a scoreboard; a zero-count stub may still block a known consumer. User-facing schema errors (bad `@lookupKey`, unresolvable columns, etc.) are listed separately because the fix is author-side, not generator-side.
+
+Tracked in **Active**:
+- Single-cardinality `@splitQuery` — 280 → *Single-cardinality `@splitQuery` support* (In Review)
+- `RecordTableField`/`RecordLookupTableField` missing FK join path + typed backing class — 32 → *`BatchKey.ObjectBased` removal* (plus *`BatchKey` lifter directive* below for DTO parents)
+- `@splitQuery` with condition-join step — 16 → *Classification vocabulary follow-ups* §5
+- `QueryServiceRecordField` — 0 → *Service-backed and method-backed root fetchers*
+- Nested type shared across parents with `TableField` — 3 → *Multi-parent NestingField sharing — `TableField` arm*
+
+Tracked in **Backlog Priority**:
+- `@asConnection` on `@splitQuery` — 68 → *Lift `@asConnection` rejection on `@splitQuery` fields*
+- `QueryEntityField` — 0 → *Apollo Federation via federation-jvm transform*
+
+Tracked in **Generator stubs**:
+- #4 Mutation bodies — update 45, `MutationServiceRecordField` 44, delete 23, insert 19 (aggregate 131)
+- #8 Non-table / scalar / reference child leaves — `ColumnReferenceField` 41, `ComputedField` 21
+- #3 Interface / union — `QueryTableInterfaceField` 20, `QueryInterfaceField` 1
+- #6 `QueryNodeField` — 0 (blocked on Platform-id)
+
+Not yet tracked:
+- `SplitTableField` under `NestingField` — 12 → added as backlog item below. (Note: `GraphitronSchemaValidator.validateVariantIsSupportedAtNestedDepth:425-430` currently points readers to roadmap `#8`, but `SplitTableField` is a `BatchKeyField`, not a #8 leaf — fix the pointer when the item is picked up.)
+
+User-facing schema errors (diagnostics, not generator gaps) — listed so high-volume author-side pain gets visibility even though no roadmap work closes it:
+- `@lookupKey` declared but no argument resolved — 32
+- `@condition` parameter is not a `Table<?>` / argument / context key — 7
+- service method reference incomplete — 4
+- no FK between tables — 2
+- type mapped to `@table` has unresolvable fields — 2
+- column not in jOOQ table (typo-suggest) — 1
+- argument's column unresolvable — 1
+
 ### Priority
 
 Production parity gaps and architecture blockers, in rough order.
@@ -44,7 +77,8 @@ Production parity gaps and architecture blockers, in rough order.
 - **`BatchKey` lifter directive** **[Backlog]** — mechanism for schema authors to supply a DTO→key conversion, enabling DataLoader batching on DTO parents; feeds the existing column-keyed path once `BatchKey.ObjectBased` removal lands.
 - **Decompose `FieldBuilder`** **[Backlog]** — split 1,750-line builder along field taxonomy; blocked on Argument-resolution unification. Proposed split: `QueryFieldBuilder`, `MutationFieldBuilder`, `ChildFieldBuilder` + shared argument-classification module.
 - **Extract semantic-check helpers from `classifyQueryField`** **[Backlog]** — the codebase rejects malformed fields at classifier time by returning `UnclassifiedField` (polymorphic `@service` at `FieldBuilder.java:1305-1306`; single-cardinality `@splitQuery @lookupKey` and multi-hop single-cardinality `@splitQuery` per `plan-single-cardinality-split-query.md` §1b/§1c; Connection / Sourced-param rejection on `@service` / `@tableMethod` per `plan-service-root-fetchers.md` §Classifier additions). The pattern is consistent and better than validator-time rejection for the "emitter sees only well-formed leaves" property, but it means `classifyQueryField` accumulates semantic checks alongside shape dispatch. Refactor: extract per-directive helpers like `rejectInvalidService(fieldDef, svcResult) → Optional<UnclassifiedField>` and `rejectInvalidTableMethod(fieldDef, tb) → Optional<UnclassifiedField>`, so each classifier arm reads as "run semantic gates, then dispatch to the leaf". Orthogonal to "Decompose `FieldBuilder`" above — that splits by field taxonomy; this refactors within each arm. Not urgent; do it when a new rejection would push the file past a readability threshold.
-- **Lift `@asConnection` rejection on `@splitQuery` fields** **[Backlog]** — emit `ROW_NUMBER() OVER (PARTITION BY fk)` envelope to support per-parent Relay pagination inside DataLoader batches; scope: `SplitTableField` and `SplitLookupTableField`.
+- **Lift `@asConnection` rejection on `@splitQuery` fields** **[Backlog]** — emit `ROW_NUMBER() OVER (PARTITION BY fk)` envelope to support per-parent Relay pagination inside DataLoader batches; scope: `SplitTableField` and `SplitLookupTableField`. Production impact: 68.
+- **`SplitTableField` under `NestingField`** **[Backlog]** — add `SplitTableField` (and, by symmetry, `SplitLookupTableField`) to `GraphitronSchemaValidator.NESTED_WIREABLE_LEAVES` and extend the nested-depth emitter in `TypeClassGenerator` to wire a split-query rows-method call into the parent multiset. Today rejected generically at `GraphitronSchemaValidator:425-430` with a pointer to roadmap `#8`, but `SplitTableField` is a `BatchKeyField`, not a non-table/scalar/reference leaf — update the rejection pointer (or remove it) when this item lands. Production impact: 12.
 - **Composite-key `@lookupKey` on list-of-input-object arguments** **[Backlog]** — add `ArgumentRef.CompositeLookupArg` carrying `(input-field-name, target-column)` pairs resolved from `@field(name:)` directives; `buildInputRowsMethod` already handles arbitrary-arity VALUES + JOIN.
 - **Apollo Federation via federation-jvm transform** **[Backlog]** — replace `QueryEntityField` stub with a `GraphitronSchemaBuilder` post-step wrapping the Graphitron schema via `Federation.transform`; deletes the stub after migration.
 - **`DSLContext` on `@condition` / `@tableMethod` methods** **[Backlog]** — lift `reflectTableMethod` gate; requires `ArgCallEmitter` to walk `params()` instead of `callParams()` so the injected DSLContext lands at its declaration-index slot.
