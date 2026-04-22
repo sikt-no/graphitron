@@ -15,6 +15,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `BatchKey.ObjectBased` removal | Spec | [plan](plan-batchkey-remove-objectbased.md) |
 | Service-backed and method-backed root fetchers | Spec | [plan](plan-service-root-fetchers.md) |
 | `IdReferenceField` input filter variant | Spec | [plan](plan-id-reference-input-field.md) |
+| Single-cardinality `@splitQuery` support | Spec | [plan](plan-single-cardinality-split-query.md) |
 | Classification vocabulary follow-ups | Spec | [plan](plan-classification-vocabulary-followups.md) |
 | KjerneJooqGenerator — emit NodeId metadata constants | Spec | [plan](plan-kjerne-jooq-generator.md) |
 
