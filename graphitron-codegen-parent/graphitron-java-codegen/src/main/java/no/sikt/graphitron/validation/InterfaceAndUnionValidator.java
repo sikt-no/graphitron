@@ -253,13 +253,13 @@ class InterfaceAndUnionValidator extends AbstractSchemaValidator {
                                     .ofNullable(schema.getObjectOrConnectionNode(typeName))
                                     .map(AbstractObjectDefinition::getName)
                                     .orElse(typeName);
-                            var isSingleTable = schema.isSingleTableInterface(field);
-                            if (!field.isRootField() && (isSingleTable || name.equals(NODE_TYPE.getName()))) {
-                                addErrorMessage("interface (%s) returned in non root object. This is not fully " +
-                                        "supported. Use with care", name);
-                            }
 
                             if (name.equalsIgnoreCase(NODE_TYPE.getName())) {
+                                isTrue(
+                                        field.isRootField(),
+                                        "interface (%s) returned in non root object. This is not fully " +
+                                                "supported. Use with care", name
+                                );
                                 isTrue(
                                         field.getArguments().size() == 1,
                                         "Only exactly one input field is currently supported for fields returning the '%s' interface. " +
@@ -276,7 +276,7 @@ class InterfaceAndUnionValidator extends AbstractSchemaValidator {
                                         .stream()
                                         .filter(it -> it.implementsInterface(schema.getInterface(name).getName()))
                                         .forEach(implementation -> {
-                                            if (!implementation.hasTable() && isSingleTable) {
+                                            if (!implementation.hasTable() && schema.isSingleTableInterface(field)) {
                                                 addErrorMessage("Interface '%s' is returned in field '%s', but type '%s' " +
                                                         "implementing '%s' does not have table set. This is not supported.", name, field.getName(), implementation.getName(), name);
                                             } else if (implementation.hasTable() && !tableHasPrimaryKey(implementation.getTable().getName())) {

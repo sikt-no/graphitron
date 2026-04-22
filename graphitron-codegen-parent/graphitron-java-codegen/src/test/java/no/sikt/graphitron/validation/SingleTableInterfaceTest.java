@@ -137,9 +137,4 @@ public class SingleTableInterfaceTest extends ValidationTest {
                         "Field 'customer' occurs in two or more types implementing interface 'Address', but there is a mismatch between the configuration of the 'reference' directive.");
     }
 
-    @Test
-    @DisplayName("Single table interface is used as type for a split query")
-    void splitQuery() {
-        assertErrorsContain("splitQuery", "interface (AddressInterface) returned in non root object. This is not fully supported. ");
-    }
 }
