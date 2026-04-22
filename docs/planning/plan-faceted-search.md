@@ -1,6 +1,6 @@
 # Faceted search on `@asConnection` — `@facet` directive
 
-> **Status:** Spec
+> **Status:** Spec — deferred (parked pre-review; see roadmap Deferred section)
 >
 > Add a `@facet` directive for filter-input fields. The schema-transform stage
 > expands each `@asConnection` field's Connection type with a `facets` object
