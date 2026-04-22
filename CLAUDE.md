@@ -31,6 +31,10 @@ mvn clean install -Pquick    # Fast build, skips tests + javadocs
 
 Full pipeline (build-fixtures → test → compile-spec → execute-spec) and recovery from the fixtures-jar clobber: [`docs/claude-code-web-environment.md`](docs/claude-code-web-environment.md). Test-tier conventions (no code-string assertions on generated bodies; unit vs pipeline vs compilation vs execution): [`docs/rewrite-design-principles.md`](docs/rewrite-design-principles.md).
 
+## Writing style
+
+Do not use em dashes (—) in documentation. Use a comma, semicolon, colon, or restructure the sentence instead.
+
 ## Editing large files
 
 Prefer many small `Edit` calls over one large `Write` when trimming or rewriting a long file. Full-file writes on plans/docs of ~300+ lines tend to time out mid-response and leave the file half-written. Sequence of targeted `Edit` calls (remove section A, remove section B, replace section C) is both safer and faster.
