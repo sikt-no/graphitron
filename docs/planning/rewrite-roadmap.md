@@ -33,7 +33,6 @@ Rewrite rejections observed in production, ranked by distinct-occurrence count. 
 
 | Count | Rejection | Closes via |
 |---:|---|---|
-| 280 | Single-cardinality `@splitQuery` | Active: *Single-cardinality `@splitQuery` support* (Done) |
 | 68 | `@asConnection` on `@splitQuery` | Priority #1: *Lift `@asConnection` rejection on `@splitQuery` fields* |
 | 45 | Mutation update | Stubs #4 |
 | 44 | `MutationServiceRecordField` | Stubs #4 |
