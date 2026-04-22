@@ -1,6 +1,6 @@
 # Single-cardinality `@splitQuery` support
 
-> **Status:** Ready
+> **Status:** In Progress
 
 ## Overview
 
