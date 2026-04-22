@@ -499,7 +499,7 @@ public final class SplitRowsMethodEmitter {
         for (WhereFilter f : filters) {
             where.add(".and($T.$L($L))",
                 ClassName.bestGuess(f.className()), f.methodName(),
-                ArgCallEmitter.buildCallArgs(f.callParams(), f.className()));
+                ArgCallEmitter.buildCallArgs(f.callParams(), f.className(), terminalAlias));
         }
         sel.add(".where($L)\n", where.build());
         sel.add(".fetch();\n");

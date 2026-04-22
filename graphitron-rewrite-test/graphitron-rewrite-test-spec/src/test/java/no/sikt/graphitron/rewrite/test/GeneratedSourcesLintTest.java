@@ -34,6 +34,12 @@ class GeneratedSourcesLintTest {
 
     private static final Pattern VAR_DECLARATION = Pattern.compile("\\bvar\\b\\s+\\w+");
 
+    /** The jOOQ tables package for the test fixtures. Full-package qualification of any
+     *  class under this prefix inside an emitted fetcher body indicates an importer
+     *  collision (two classes share a simple name) that the local-variable rename in
+     *  {@code §4} is meant to prevent. */
+    private static final String JOOQ_TABLES_PACKAGE_PREFIX = "no.sikt.graphitron.rewrite.test.jooq.tables.";
+
     @Test
     void emittedSourcesDoNotUseVar() throws IOException {
         assertThat(GENERATED_REWRITE_ROOT).exists();
@@ -60,6 +66,42 @@ class GeneratedSourcesLintTest {
                 + "Explicit types keep emitted code searchable and make inference\n"
                 + "surprises visible at emission time. Replace with the JavaPoet $T\n"
                 + "substitution using the known type.")
+            .isEmpty();
+    }
+
+    @Test
+    void fetcherBodiesDoNotFullyQualifyJooqTables() throws IOException {
+        Path fetchersRoot = GENERATED_REWRITE_ROOT.resolve("fetchers");
+        assertThat(fetchersRoot).exists();
+        var offenders = new ArrayList<String>();
+        try (Stream<Path> paths = Files.walk(fetchersRoot)) {
+            paths.filter(p -> p.toString().endsWith(".java")).forEach(p -> {
+                try {
+                    List<String> lines = Files.readAllLines(p);
+                    boolean inImports = true;
+                    for (int i = 0; i < lines.size(); i++) {
+                        String line = lines.get(i);
+                        String trimmed = line.trim();
+                        if (trimmed.startsWith("class ") || trimmed.contains(" class ")) {
+                            inImports = false;
+                        }
+                        if (inImports) continue;
+                        if (isCommentLine(line)) continue;
+                        if (line.contains(JOOQ_TABLES_PACKAGE_PREFIX)) {
+                            offenders.add(p.getFileName() + ":" + (i + 1) + "  " + trimmed);
+                        }
+                    }
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            });
+        }
+        assertThat(offenders)
+            .as("Fetcher bodies must not fully-qualify jOOQ table classes.\n"
+                + "Full-package qualification inside a method body always means the\n"
+                + "importer could not import the jOOQ table class because a sibling\n"
+                + "simple-name (the generated mapper class) already occupies that slot.\n"
+                + "The table-local rename to <entity>Table disambiguates the two.")
             .isEmpty();
     }
 

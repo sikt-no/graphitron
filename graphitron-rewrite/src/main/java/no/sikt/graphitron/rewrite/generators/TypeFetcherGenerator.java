@@ -459,17 +459,18 @@ public class TypeFetcherGenerator {
             .addParameter(ENV, "env");
 
         builder.addCode(GeneratorUtils.declareTableLocal(names, tableRef));
-        builder.addCode(buildConditionCall(qtf));
+        String tableLocal = names.tableLocalName();
+        builder.addCode(buildConditionCall(qtf, tableLocal));
 
         var dslContextClass = ClassName.get("org.jooq", "DSLContext");
         if (isList) {
-            builder.addCode(buildOrderByCode(qtf.orderBy(), qtf.name()));
+            builder.addCode(buildOrderByCode(qtf.orderBy(), qtf.name(), tableLocal));
             builder.addStatement("$T dsl = graphitronContext(env).getDslContext(env)", dslContextClass);
             builder.addCode(CodeBlock.builder()
                 .add("return dsl\n")
                 .indent()
-                .add(".select($T.$$fields(env.getSelectionSet(), table, env))\n", names.typeClass())
-                .add(".from(table)\n")
+                .add(".select($T.$$fields(env.getSelectionSet(), $L, env))\n", names.typeClass(), tableLocal)
+                .add(".from($L)\n", tableLocal)
                 .add(".where(condition)\n")
                 .add(".orderBy(orderBy)\n")
                 .add(".fetch();\n")
@@ -480,8 +481,8 @@ public class TypeFetcherGenerator {
             builder.addCode(CodeBlock.builder()
                 .add("return dsl\n")
                 .indent()
-                .add(".select($T.$$fields(env.getSelectionSet(), table, env))\n", names.typeClass())
-                .add(".from(table)\n")
+                .add(".select($T.$$fields(env.getSelectionSet(), $L, env))\n", names.typeClass(), tableLocal)
+                .add(".from($L)\n", tableLocal)
                 .add(".where(condition)\n")
                 .add(".fetchOne();\n")
                 .unindent()
@@ -491,7 +492,7 @@ public class TypeFetcherGenerator {
         return builder.build();
     }
 
-    private static CodeBlock buildConditionCall(QueryField.QueryTableField qtf) {
+    private static CodeBlock buildConditionCall(QueryField.QueryTableField qtf, String srcAlias) {
         var code = CodeBlock.builder();
         code.addStatement("$T condition = $T.noCondition()", CONDITION, DSL);
         for (var filter : qtf.filters()) {
@@ -501,7 +502,7 @@ public class TypeFetcherGenerator {
                         LIST, String.class, toCamelCase(param.name()) + "Keys", param.name());
                 }
             }
-            var callArgs = ArgCallEmitter.buildCallArgs(filter.callParams(), filter.className());
+            var callArgs = ArgCallEmitter.buildCallArgs(filter.callParams(), filter.className(), srcAlias);
             code.addStatement("condition = condition.and($T.$L($L))",
                 ClassName.bestGuess(filter.className()), filter.methodName(), callArgs);
         }
@@ -532,11 +533,13 @@ public class TypeFetcherGenerator {
             .returns(connectionResultClass)
             .addParameter(ENV, "env");
 
-        builder.addStatement("$T table = $T.$L", names.jooqTableClass(), names.tablesClass(), tableRef.javaFieldName());
-        builder.addCode(buildConditionCall(qtf));
+        String tableLocal = names.tableLocalName();
+        builder.addStatement("$T $L = $T.$L",
+            names.jooqTableClass(), tableLocal, names.tablesClass(), tableRef.javaFieldName());
+        builder.addCode(buildConditionCall(qtf, tableLocal));
         // Single dispatch produces both orderBy (for SQL) and extraFields (for cursor columns),
         // keeping them in sync when the client picks a dynamic named order.
-        builder.addCode(buildConnectionOrderingBlock(qtf.orderBy(), qtf.name(), names));
+        builder.addCode(buildConnectionOrderingBlock(qtf.orderBy(), qtf.name(), names, tableLocal));
 
         // Extract all four Relay pagination arguments using arg names from the model
         var pagination = qtf.pagination();
@@ -569,8 +572,8 @@ public class TypeFetcherGenerator {
         var dslContextClass = ClassName.get("org.jooq", "DSLContext");
         var setOfString = ParameterizedTypeName.get(ClassName.get("java.util", "Set"), ClassName.get(String.class));
         builder.addStatement("$T dsl = graphitronContext(env).getDslContext(env)", dslContextClass);
-        builder.addStatement("$T<$T> fields = new $T<>($T.$$fields(env.getSelectionSet(), table, env))",
-            ARRAY_LIST, fieldWildcard, ARRAY_LIST, names.typeClass());
+        builder.addStatement("$T<$T> fields = new $T<>($T.$$fields(env.getSelectionSet(), $L, env))",
+            ARRAY_LIST, fieldWildcard, ARRAY_LIST, names.typeClass(), tableLocal);
         builder.addStatement("$T selectedNames = fields.stream().map($T::getName).collect($T.toSet())",
             setOfString, JOOQ_FIELD, ClassName.get("java.util.stream", "Collectors"));
         builder.addCode("for ($T extra : extraFields) {\n", fieldWildcard);
@@ -584,7 +587,7 @@ public class TypeFetcherGenerator {
             .add("$T result = dsl\n", resultOfRecord)
             .indent()
             .add(".select(fields)\n")
-            .add(".from(table)\n")
+            .add(".from($L)\n", tableLocal)
             .add(".where(condition)\n")
             .add(".orderBy(effectiveOrderBy.toArray(new $T[0]))\n", SORT_FIELD)
             .add(".seek(seekFields)\n")
@@ -637,7 +640,7 @@ public class TypeFetcherGenerator {
      * </ul>
      */
     private static CodeBlock buildConnectionOrderingBlock(
-            OrderBySpec orderBy, String fieldName, GeneratorUtils.ResolvedTableNames names) {
+            OrderBySpec orderBy, String fieldName, GeneratorUtils.ResolvedTableNames names, String srcAlias) {
         var code = CodeBlock.builder();
         var JOOQ_FIELD = ClassName.get("org.jooq", "Field");
         var WILDCARD_FIELD = ParameterizedTypeName.get(JOOQ_FIELD,
@@ -655,8 +658,8 @@ public class TypeFetcherGenerator {
                     for (int i = 0; i < fixed.columns().size(); i++) {
                         var col = fixed.columns().get(i);
                         if (i > 0) { sortParts.add(", "); colParts.add(", "); }
-                        sortParts.add("table.$L.$L()", col.column().javaName(), fixed.jooqMethodName());
-                        colParts.add("table.$L", col.column().javaName());
+                        sortParts.add("$L.$L.$L()", srcAlias, col.column().javaName(), fixed.jooqMethodName());
+                        colParts.add("$L.$L", srcAlias, col.column().javaName());
                     }
                     code.addStatement("$T orderBy = $T.of($L)", SORT_FIELD_LIST, LIST, sortParts.build());
                     code.addStatement("$T extraFields = $T.of($L)", listOfField, LIST, colParts.build());
@@ -685,7 +688,7 @@ public class TypeFetcherGenerator {
      * emits a call to the {@code <fieldName>OrderBy} helper method. Otherwise, inlines the
      * fixed or empty list.
      */
-    private static CodeBlock buildOrderByCode(OrderBySpec orderBy, String fieldName) {
+    private static CodeBlock buildOrderByCode(OrderBySpec orderBy, String fieldName, String srcAlias) {
         var code = CodeBlock.builder();
         switch (orderBy) {
             case OrderBySpec.Fixed fixed -> {
@@ -696,7 +699,7 @@ public class TypeFetcherGenerator {
                     for (int i = 0; i < fixed.columns().size(); i++) {
                         var col = fixed.columns().get(i);
                         if (i > 0) parts.add(", ");
-                        parts.add("table.$L.$L()", col.column().javaName(), fixed.jooqMethodName());
+                        parts.add("$L.$L.$L()", srcAlias, col.column().javaName(), fixed.jooqMethodName());
                     }
                     code.addStatement("$T<$T<?>> orderBy = $T.of($L)", LIST, SORT_FIELD, LIST, parts.build());
                 }
@@ -706,18 +709,13 @@ public class TypeFetcherGenerator {
                     // Helper now returns OrderByResult; extract just the sort fields for non-connection fetchers
                     code.addStatement("$T orderBy = $LOrderBy(env).sortFields()", SORT_FIELD_LIST, fieldName);
                 } else {
-                    code.add(buildOrderByCode(arg.base(), null));
+                    code.add(buildOrderByCode(arg.base(), null, srcAlias));
                 }
             }
             case OrderBySpec.None none ->
                 code.addStatement("$T<$T<?>> orderBy = $T.of()", LIST, SORT_FIELD, LIST);
         }
         return code.build();
-    }
-
-    /** Convenience overload — no helper method available; falls back to base for {@link OrderBySpec.Argument}. */
-    private static CodeBlock buildOrderByCode(OrderBySpec orderBy) {
-        return buildOrderByCode(orderBy, null);
     }
 
     // -----------------------------------------------------------------------
@@ -747,12 +745,13 @@ public class TypeFetcherGenerator {
             .addParameter(ENV, "env");
 
         builder.addCode(GeneratorUtils.declareTableLocal(names, tableRef));
+        String tableLocal = names.tableLocalName();
 
-        var baseExpr = buildBaseReturnExpr(arg.base());
+        var baseExpr = buildBaseReturnExpr(arg.base(), tableLocal);
         if (arg.list()) {
-            builder.addCode(buildListArgOrderByBody(arg, baseExpr));
+            builder.addCode(buildListArgOrderByBody(arg, baseExpr, tableLocal));
         } else {
-            builder.addCode(buildSingleArgOrderByBody(arg, baseExpr));
+            builder.addCode(buildSingleArgOrderByBody(arg, baseExpr, tableLocal));
         }
 
         return builder.build();
@@ -763,7 +762,7 @@ public class TypeFetcherGenerator {
      * or {@code new OrderByResult(List.of(), List.of())}) used when no {@code @orderBy} argument is
      * supplied at runtime.
      */
-    private static CodeBlock buildBaseReturnExpr(OrderBySpec base) {
+    private static CodeBlock buildBaseReturnExpr(OrderBySpec base, String srcAlias) {
         var orderByResultClass = ClassName.get(
             RewriteConfig.outputPackage() + ".rewrite", OrderByResultClassGenerator.CLASS_NAME);
         return switch (base) {
@@ -773,8 +772,8 @@ public class TypeFetcherGenerator {
                 for (int i = 0; i < fixed.columns().size(); i++) {
                     if (i > 0) { sortParts.add(", "); colParts.add(", "); }
                     var col = fixed.columns().get(i);
-                    sortParts.add("table.$L.$L()", col.column().javaName(), fixed.jooqMethodName());
-                    colParts.add("table.$L", col.column().javaName());
+                    sortParts.add("$L.$L.$L()", srcAlias, col.column().javaName(), fixed.jooqMethodName());
+                    colParts.add("$L.$L", srcAlias, col.column().javaName());
                 }
                 yield CodeBlock.of("new $T($T.of($L), $T.of($L))",
                     orderByResultClass, LIST, sortParts.build(), LIST, colParts.build());
@@ -798,7 +797,7 @@ public class TypeFetcherGenerator {
      * };
      * }</pre>
      */
-    private static CodeBlock buildSingleArgOrderByBody(OrderBySpec.Argument arg, CodeBlock baseExpr) {
+    private static CodeBlock buildSingleArgOrderByBody(OrderBySpec.Argument arg, CodeBlock baseExpr, String srcAlias) {
         var code = CodeBlock.builder();
         var orderByResultClass = ClassName.get(
             RewriteConfig.outputPackage() + ".rewrite", OrderByResultClassGenerator.CLASS_NAME);
@@ -815,10 +814,10 @@ public class TypeFetcherGenerator {
             for (int i = 0; i < cols.size(); i++) {
                 if (i > 0) { sortParts.add(", "); colParts.add(", "); }
                 var col = cols.get(i);
-                sortParts.add("$S.equals(dir) ? table.$L.desc() : table.$L.$L()",
-                    "DESC", col.column().javaName(), col.column().javaName(),
+                sortParts.add("$S.equals(dir) ? $L.$L.desc() : $L.$L.$L()",
+                    "DESC", srcAlias, col.column().javaName(), srcAlias, col.column().javaName(),
                     namedOrder.order().jooqMethodName());
-                colParts.add("table.$L", col.column().javaName());
+                colParts.add("$L.$L", srcAlias, col.column().javaName());
             }
             code.add("case $S -> new $T($T.of($L), $T.of($L));\n",
                 namedOrder.name(), orderByResultClass, LIST, sortParts.build(), LIST, colParts.build());
@@ -847,7 +846,7 @@ public class TypeFetcherGenerator {
      * return parts;
      * }</pre>
      */
-    private static CodeBlock buildListArgOrderByBody(OrderBySpec.Argument arg, CodeBlock baseExpr) {
+    private static CodeBlock buildListArgOrderByBody(OrderBySpec.Argument arg, CodeBlock baseExpr, String srcAlias) {
         var code = CodeBlock.builder();
         var JOOQ_FIELD = ClassName.get("org.jooq", "Field");
         var WILDCARD_FIELD = ParameterizedTypeName.get(JOOQ_FIELD,
@@ -870,10 +869,10 @@ public class TypeFetcherGenerator {
             code.add("case $S -> {\n", namedOrder.name());
             code.indent();
             for (var col : cols) {
-                code.addStatement("sortParts.add($S.equals(d) ? table.$L.desc() : table.$L.$L())",
-                    "DESC", col.column().javaName(), col.column().javaName(),
+                code.addStatement("sortParts.add($S.equals(d) ? $L.$L.desc() : $L.$L.$L())",
+                    "DESC", srcAlias, col.column().javaName(), srcAlias, col.column().javaName(),
                     namedOrder.order().jooqMethodName());
-                code.addStatement("colParts.add(table.$L)", col.column().javaName());
+                code.addStatement("colParts.add($L.$L)", srcAlias, col.column().javaName());
             }
             code.unindent();
             code.add("}\n");
@@ -943,6 +942,7 @@ public class TypeFetcherGenerator {
             .addParameter(ENV, "env");
 
         builder.addCode(GeneratorUtils.declareTableLocal(names, tableRef));
+        String tableLocal = names.tableLocalName();
 
         // Declare the WHERE condition for non-key filters (field-level @condition or per-arg
         // @condition). Post-C1 lookup-key args flow through LookupValuesJoinEmitter and never
@@ -957,13 +957,14 @@ public class TypeFetcherGenerator {
                         LIST, String.class, toCamelCase(param.name()) + "Keys", param.name());
                 }
             }
-            var callArgs = ArgCallEmitter.buildCallArgs(filter.callParams(), filter.className());
+            var callArgs = ArgCallEmitter.buildCallArgs(filter.callParams(), filter.className(), tableLocal);
             builder.addStatement("condition = condition.and($T.$L($L))",
                 ClassName.bestGuess(filter.className()), filter.methodName(), callArgs);
         }
 
-        var typeFieldsCall = CodeBlock.of("$T.$$fields(env.getSelectionSet(), table, env)", names.typeClass());
-        builder.addCode(LookupValuesJoinEmitter.buildFetcherBody(field, typeFieldsCall));
+        var typeFieldsCall = CodeBlock.of("$T.$$fields(env.getSelectionSet(), $L, env)",
+            names.typeClass(), tableLocal);
+        builder.addCode(LookupValuesJoinEmitter.buildFetcherBody(field, typeFieldsCall, tableLocal));
         return builder.build();
     }
 

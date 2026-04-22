@@ -148,7 +148,7 @@ public final class InlineTableFieldEmitter {
         for (WhereFilter f : tf.filters()) {
             where.add(".and($T.$L($L))",
                 ClassName.bestGuess(f.className()), f.methodName(),
-                ArgCallEmitter.buildCallArgs(f.callParams(), f.className()));
+                ArgCallEmitter.buildCallArgs(f.callParams(), f.className(), terminalAlias));
         }
         sel.add("\n        .where($L)", where.build());
 

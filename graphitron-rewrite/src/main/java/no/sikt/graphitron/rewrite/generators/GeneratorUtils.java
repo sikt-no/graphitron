@@ -79,6 +79,22 @@ class GeneratorUtils {
                 ClassName.get(RewriteConfig.getGeneratedJooqPackage() + ".tables", tableRef.javaClassName()),
                 null);
         }
+
+        /**
+         * The name of the jOOQ table-alias local variable declared in the emitted fetcher
+         * body (e.g. {@code filmTable}, {@code languageTable}). Derived from the simple
+         * name of {@link #jooqTableClass} with the first character lowered so a Java
+         * identifier is produced. Using {@code jooqTableClass} as the source keeps both
+         * ends of the emitted declaration ({@code <JooqTableClass> <alias> = Tables.X})
+         * referencing the same field. The rename exists because the jOOQ table class and
+         * the generated mapper class typically share a simple name; keeping the local
+         * entity-prefixed ({@code filmTable}, not {@code table}) lets the importer import
+         * both without qualifying either.
+         */
+        String tableLocalName() {
+            var simple = jooqTableClass.simpleName();
+            return Character.toLowerCase(simple.charAt(0)) + simple.substring(1) + "Table";
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -97,20 +113,21 @@ class GeneratorUtils {
     }
 
     /**
-     * Returns a {@link CodeBlock} that declares a local {@code table} variable from the
-     * jOOQ {@code Tables} constants class:
+     * Returns a {@link CodeBlock} that declares a local entity-specific table variable
+     * (e.g. {@code filmTable}) from the jOOQ {@code Tables} constants class:
      * <pre>{@code
-     * JooqTableClass table = Tables.TABLE_FIELD;
+     * JooqTableClass filmTable = Tables.FILM;
      * }</pre>
      *
-     * <p>Used by every SQL-generating method that needs a table alias. Pass the
-     * {@link ResolvedTableNames} already constructed for the method alongside the
-     * originating {@link TableRef} for the field name.
+     * <p>The local name comes from {@link ResolvedTableNames#tableLocalName()} — the
+     * entity-prefixed form disambiguates the import between the jOOQ table class and the
+     * generated mapper class (which usually share a simple name).
      */
     static CodeBlock declareTableLocal(ResolvedTableNames names, TableRef tableRef) {
         return CodeBlock.builder()
-            .addStatement("$T table = $T.$L",
-                names.jooqTableClass(), names.tablesClass(), tableRef.javaFieldName())
+            .addStatement("$T $L = $T.$L",
+                names.jooqTableClass(), names.tableLocalName(),
+                names.tablesClass(), tableRef.javaFieldName())
             .build();
     }
 

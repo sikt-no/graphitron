@@ -22,20 +22,24 @@ public final class ArgCallEmitter {
     private ArgCallEmitter() {}
 
     /**
-     * Builds the argument list for one condition method call: {@code table} first, then one arg
-     * per {@link CallParam}. The {@code conditionsClassName} is used by
-     * {@link CallSiteExtraction.TextMapLookup} to reference a static map field on the class.
+     * Builds the argument list for one condition method call: the table-alias local
+     * first, then one arg per {@link CallParam}. The {@code conditionsClassName} is used
+     * by {@link CallSiteExtraction.TextMapLookup} to reference a static map field on the
+     * class. {@code srcAlias} is the name of the jOOQ table-alias local variable in the
+     * caller's scope (e.g. {@code filmTable}) — passed through to
+     * {@link #buildArgExtraction} so the {@code JooqConvert} branch resolves the same
+     * local.
      */
-    public static CodeBlock buildCallArgs(List<CallParam> params, String conditionsClassName) {
+    public static CodeBlock buildCallArgs(List<CallParam> params, String conditionsClassName, String srcAlias) {
         var args = CodeBlock.builder();
-        args.add("table");
+        args.add("$L", srcAlias);
         for (var param : params) {
-            args.add(", $L", buildArgExtraction(param, conditionsClassName));
+            args.add(", $L", buildArgExtraction(param, conditionsClassName, srcAlias));
         }
         return args.build();
     }
 
-    public static CodeBlock buildArgExtraction(CallParam param, String conditionsClassName) {
+    public static CodeBlock buildArgExtraction(CallParam param, String conditionsClassName, String srcAlias) {
         return switch (param.extraction()) {
             case CallSiteExtraction.Direct ignored ->
                 CodeBlock.of("env.getArgument($S)", param.name());
@@ -53,10 +57,10 @@ public final class ArgCallEmitter {
             case CallSiteExtraction.ContextArg ignored ->
                 CodeBlock.of("graphitronContext(env).getContextArgument(env, $S)", param.name());
             case CallSiteExtraction.JooqConvert jc -> param.list()
-                ? CodeBlock.of("$L.stream().map(table.$L.getDataType()::convert).toList()",
-                    toCamelCase(param.name()) + "Keys", jc.columnJavaName())
-                : CodeBlock.of("table.$L.getDataType().convert((String) env.getArgument($S))",
-                    jc.columnJavaName(), param.name());
+                ? CodeBlock.of("$L.stream().map($L.$L.getDataType()::convert).toList()",
+                    toCamelCase(param.name()) + "Keys", srcAlias, jc.columnJavaName())
+                : CodeBlock.of("$L.$L.getDataType().convert((String) env.getArgument($S))",
+                    srcAlias, jc.columnJavaName(), param.name());
         };
     }
 }

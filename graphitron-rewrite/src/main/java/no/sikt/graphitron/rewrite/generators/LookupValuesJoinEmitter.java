@@ -290,7 +290,7 @@ final class LookupValuesJoinEmitter {
      * @param field                the lookup field
      * @param typeFieldsCallStatic the JavaPoet expression for {@code <TypeName>.$fields(env.getSelectionSet(), table, env)}.
      */
-    static CodeBlock buildFetcherBody(LookupField field, CodeBlock typeFieldsCall) {
+    static CodeBlock buildFetcherBody(LookupField field, CodeBlock typeFieldsCall, String srcAlias) {
         List<LookupMapping.LookupColumn> columns = field.lookupMapping().columns();
         String alias = inputTableAlias(field);
         TypeName[] typeArgs = rowTypeArgs(columns);
@@ -312,11 +312,11 @@ final class LookupValuesJoinEmitter {
         var usingArgs = CodeBlock.builder();
         for (int i = 0; i < columns.size(); i++) {
             if (i > 0) usingArgs.add(", ");
-            usingArgs.add("table.$L", columns.get(i).targetColumn().javaName());
+            usingArgs.add("$L.$L", srcAlias, columns.get(i).targetColumn().javaName());
         }
 
         return CodeBlock.builder()
-            .addStatement("$T rows = $L(env, table)", rowArrayType, inputRowsMethodName(field))
+            .addStatement("$T rows = $L(env, $L)", rowArrayType, inputRowsMethodName(field), srcAlias)
             .addStatement("$T dsl = graphitronContext(env).getDslContext(env)",
                 ClassName.get("org.jooq", "DSLContext"))
             .add("if (rows.length == 0) return dsl.newResult();\n")
@@ -324,7 +324,7 @@ final class LookupValuesJoinEmitter {
             .add("return dsl\n")
             .indent()
             .add(".select($L)\n", typeFieldsCall)
-            .add(".from(table)\n")
+            .add(".from($L)\n", srcAlias)
             .add(".join(input).using($L)\n", usingArgs.build())
             .add(".where(condition)\n")
             .add(".orderBy(input.field($S))\n", "idx")
