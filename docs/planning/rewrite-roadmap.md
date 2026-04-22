@@ -56,7 +56,7 @@ Rewrite rejections observed in production, ranked by distinct-occurrence count. 
 
 Ranked by production impact first (see snapshot above), then by architectural / structural concerns. Numbered prefixes `#1`/`#2` tie rows to the snapshot.
 
-- **#1 (prod: 68) — Lift `@asConnection` rejection on `@splitQuery` fields** **[Backlog]** — emit `ROW_NUMBER() OVER (PARTITION BY fk)` envelope to support per-parent Relay pagination inside DataLoader batches; scope: `SplitTableField` and `SplitLookupTableField`.
+- **#1 (prod: 68) — Lift `@asConnection` rejection on `@splitQuery` fields** **[Spec]** — emit `ROW_NUMBER() OVER (PARTITION BY fk)` envelope to support per-parent Relay pagination inside DataLoader batches; scope: `SplitTableField` and `SplitLookupTableField` ([plan-split-query-connection.md](plan-split-query-connection.md)).
 - **#2 (prod: 12) — `SplitTableField` under `NestingField`** **[Backlog]** — add `SplitTableField` (and, by symmetry, `SplitLookupTableField`) to `GraphitronSchemaValidator.NESTED_WIREABLE_LEAVES` and extend the nested-depth emitter in `TypeClassGenerator` to wire a split-query rows-method call into the parent multiset. Today rejected generically at `GraphitronSchemaValidator:425-430` with a pointer to roadmap `#8`, but `SplitTableField` is a `BatchKeyField`, not a non-table/scalar/reference leaf — update the rejection pointer (or remove it) when this item lands.
 
 Architecture / structural (no direct production-count attribution; ordered by rough dependency):
