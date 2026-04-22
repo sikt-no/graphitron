@@ -29,40 +29,38 @@ Pick an item, draft a plan, move to Active.
 
 ### Production impact snapshot (2026-04-22)
 
-Distinct occurrence counts of rewrite rejections observed in production, mapped to the roadmap entry that would close them. Treat this as a prioritization signal for Backlog → Active promotion, not as a scoreboard; a zero-count stub may still block a known consumer. User-facing schema errors (bad `@lookupKey`, unresolvable columns, etc.) are listed separately because the fix is author-side, not generator-side.
+Rewrite rejections observed in production, ranked by distinct-occurrence count. The roadmap item in the right column is what closes that rejection; where multiple counts map to the same item, the top-ranked row is authoritative for prioritization. Schema-author errors (bad `@lookupKey`, unresolvable columns, etc.) are listed separately at the bottom — no generator work closes them; they are a diagnostics-UX signal only.
 
-Tracked in **Active**:
-- Single-cardinality `@splitQuery` — 280 → *Single-cardinality `@splitQuery` support* (Done)
-- `RecordTableField`/`RecordLookupTableField` missing FK join path + typed backing class — 32 → *`BatchKey.ObjectBased` removal* (plus *`BatchKey` lifter directive* below for DTO parents)
-- `@splitQuery` with condition-join step — 16 → *Classification vocabulary follow-ups* §5
-- `QueryServiceRecordField` — 0 → *Service-backed and method-backed root fetchers*
-- Nested type shared across parents with `TableField` — 3 → *Multi-parent NestingField sharing — `TableField` arm*
+| Count | Rejection | Closes via |
+|---:|---|---|
+| 280 | Single-cardinality `@splitQuery` | Active: *Single-cardinality `@splitQuery` support* (Done) |
+| 68 | `@asConnection` on `@splitQuery` | Priority #1: *Lift `@asConnection` rejection on `@splitQuery` fields* |
+| 45 | Mutation update | Stubs #4 |
+| 44 | `MutationServiceRecordField` | Stubs #4 |
+| 41 | `ColumnReferenceField` | Stubs #8 |
+| 32 | `RecordTableField` / `RecordLookupTableField` missing FK path + typed backing class | Active: *`BatchKey.ObjectBased` removal* (+ *`BatchKey` lifter directive* for DTO parents) |
+| 23 | Mutation delete | Stubs #4 |
+| 21 | `ComputedField` | Stubs #8 |
+| 20 | `QueryTableInterfaceField` | Stubs #3 |
+| 19 | Mutation insert | Stubs #4 |
+| 16 | `@splitQuery` with condition-join step | Active: *Classification vocabulary follow-ups* §5 |
+| 12 | `SplitTableField` under `NestingField` | Priority #2: *`SplitTableField` under `NestingField`* (new) |
+| 3 | Nested type shared across parents with `TableField` | Active: *Multi-parent NestingField sharing — `TableField` arm* |
+| 1 | `QueryInterfaceField` | Stubs #3 |
+| 0 | `QueryServiceRecordField`, `QueryNodeField`, `QueryEntityField`, `@asConnection` on inline `TableField`, service-method unrecognized-sources param, `key does not connect`, `_Service` return type, and other nil-count stubs | various (no consumer pressure today) |
 
-Tracked in **Backlog Priority**:
-- `@asConnection` on `@splitQuery` — 68 → *Lift `@asConnection` rejection on `@splitQuery` fields*
-- `QueryEntityField` — 0 → *Apollo Federation via federation-jvm transform*
+**By area aggregate (close-with-one-plan totals):** Mutation bodies 131 (Stubs #4) · non-table / scalar child leaves 62 (Stubs #8) · interface / union 21 (Stubs #3) · split-query pain 360 (`@splitQuery` Active + Priority #1 + Priority #2 together).
 
-Tracked in **Generator stubs**:
-- #4 Mutation bodies — update 45, `MutationServiceRecordField` 44, delete 23, insert 19 (aggregate 131)
-- #8 Non-table / scalar / reference child leaves — `ColumnReferenceField` 41, `ComputedField` 21
-- #3 Interface / union — `QueryTableInterfaceField` 20, `QueryInterfaceField` 1
-- #6 `QueryNodeField` — 0 (blocked on Platform-id)
-
-Not yet tracked:
-- `SplitTableField` under `NestingField` — 12 → added as backlog item below. (Note: `GraphitronSchemaValidator.validateVariantIsSupportedAtNestedDepth:425-430` currently points readers to roadmap `#8`, but `SplitTableField` is a `BatchKeyField`, not a #8 leaf — fix the pointer when the item is picked up.)
-
-User-facing schema errors (diagnostics, not generator gaps) — listed so high-volume author-side pain gets visibility even though no roadmap work closes it:
-- `@lookupKey` declared but no argument resolved — 32
-- `@condition` parameter is not a `Table<?>` / argument / context key — 7
-- service method reference incomplete — 4
-- no FK between tables — 2
-- type mapped to `@table` has unresolvable fields — 2
-- column not in jOOQ table (typo-suggest) — 1
-- argument's column unresolvable — 1
+**Schema-author errors (diagnostics UX, not generator gaps):** `@lookupKey` with no resolved argument 32 · `@condition` parameter unresolvable 7 · service method reference incomplete 4 · no FK between tables 2 · type mapped to `@table` has unresolvable fields 2 · column not in jOOQ table (typo-suggest) 1 · argument's column unresolvable 1.
 
 ### Priority
 
-Production parity gaps and architecture blockers, in rough order.
+Ranked by production impact first (see snapshot above), then by architectural / structural concerns. Numbered prefixes `#1`/`#2` tie rows to the snapshot.
+
+- **#1 (prod: 68) — Lift `@asConnection` rejection on `@splitQuery` fields** **[Backlog]** — emit `ROW_NUMBER() OVER (PARTITION BY fk)` envelope to support per-parent Relay pagination inside DataLoader batches; scope: `SplitTableField` and `SplitLookupTableField`.
+- **#2 (prod: 12) — `SplitTableField` under `NestingField`** **[Backlog]** — add `SplitTableField` (and, by symmetry, `SplitLookupTableField`) to `GraphitronSchemaValidator.NESTED_WIREABLE_LEAVES` and extend the nested-depth emitter in `TypeClassGenerator` to wire a split-query rows-method call into the parent multiset. Today rejected generically at `GraphitronSchemaValidator:425-430` with a pointer to roadmap `#8`, but `SplitTableField` is a `BatchKeyField`, not a non-table/scalar/reference leaf — update the rejection pointer (or remove it) when this item lands.
+
+Architecture / structural (no direct production-count attribution; ordered by rough dependency):
 
 - **Dissolve `graphitron-schema-transform` module** **[Backlog]** — fold the transform pipeline into `graphitron-rewrite` so every schema pass has a single code-owner; retire the standalone module. Trigger: the faceted-search plan would otherwise split facet synthesis (schema-transform) and facet classification + emission (rewrite) across two modules, reintroducing the "two places must agree on `{Scalar}FacetValue` naming" class of problem this umbrella exists to prevent. Sub-items below are independently shippable in rough dependency order; the existing "Drop `graphitron-common` build dependency from `graphitron-rewrite`" (Cleanup) item and the "Apollo Federation via federation-jvm transform" item above both land as part of this effort. LOC figures are schema-transform source only, excluding tests.
   - **Rewrite owns schema loading + directive auto-injection** — inline `SchemaReader` equivalent, pulling `directives.graphqls` from rewrite's own resources (~80 LOC). Prerequisite for every item below; unblocks dropping the `graphitron-common` dep.
@@ -74,11 +72,9 @@ Production parity gaps and architecture blockers, in rough order.
   - **Rewrite owns feature-flag SDL splits** — migrate `FeatureConfiguration` + `SchemaFeatureFilter` + `splitFeatures` + the Mojo's `<outputSchemas>` plumbing (~500 LOC; the biggest item in the umbrella).
   - **Rewrite owns federation SDL integration** — migrate `Federation.transform` + `KeyFilter` + `reloadSchema`; bundled with the "Apollo Federation via federation-jvm transform" item above.
   - **Retire `graphitron-schema-transform` + `TransformMojo` + `SchemaTransformRunner`** — landing marker once the above have shipped and no non-rewrite consumer remains (confirm the legacy generator path at retirement time).
-- **`BatchKey` lifter directive** **[Backlog]** — mechanism for schema authors to supply a DTO→key conversion, enabling DataLoader batching on DTO parents; feeds the existing column-keyed path once `BatchKey.ObjectBased` removal lands.
+- **`BatchKey` lifter directive** **[Backlog]** — mechanism for schema authors to supply a DTO→key conversion, enabling DataLoader batching on DTO parents; feeds the existing column-keyed path once `BatchKey.ObjectBased` removal lands. (Co-closes the 32-count `RecordTableField` / `RecordLookupTableField` missing-FK-path rejection for DTO parents.)
 - **Decompose `FieldBuilder`** **[Backlog]** — split 1,750-line builder along field taxonomy; blocked on Argument-resolution unification. Proposed split: `QueryFieldBuilder`, `MutationFieldBuilder`, `ChildFieldBuilder` + shared argument-classification module.
 - **Extract semantic-check helpers from `classifyQueryField`** **[Backlog]** — the codebase rejects malformed fields at classifier time by returning `UnclassifiedField` (polymorphic `@service` at `FieldBuilder.java:1305-1306`; single-cardinality `@splitQuery @lookupKey` and multi-hop single-cardinality `@splitQuery` per `plan-single-cardinality-split-query.md` §1b/§1c; Connection / Sourced-param rejection on `@service` / `@tableMethod` per `plan-service-root-fetchers.md` §Classifier additions). The pattern is consistent and better than validator-time rejection for the "emitter sees only well-formed leaves" property, but it means `classifyQueryField` accumulates semantic checks alongside shape dispatch. Refactor: extract per-directive helpers like `rejectInvalidService(fieldDef, svcResult) → Optional<UnclassifiedField>` and `rejectInvalidTableMethod(fieldDef, tb) → Optional<UnclassifiedField>`, so each classifier arm reads as "run semantic gates, then dispatch to the leaf". Orthogonal to "Decompose `FieldBuilder`" above — that splits by field taxonomy; this refactors within each arm. Not urgent; do it when a new rejection would push the file past a readability threshold.
-- **Lift `@asConnection` rejection on `@splitQuery` fields** **[Backlog]** — emit `ROW_NUMBER() OVER (PARTITION BY fk)` envelope to support per-parent Relay pagination inside DataLoader batches; scope: `SplitTableField` and `SplitLookupTableField`. Production impact: 68.
-- **`SplitTableField` under `NestingField`** **[Backlog]** — add `SplitTableField` (and, by symmetry, `SplitLookupTableField`) to `GraphitronSchemaValidator.NESTED_WIREABLE_LEAVES` and extend the nested-depth emitter in `TypeClassGenerator` to wire a split-query rows-method call into the parent multiset. Today rejected generically at `GraphitronSchemaValidator:425-430` with a pointer to roadmap `#8`, but `SplitTableField` is a `BatchKeyField`, not a non-table/scalar/reference leaf — update the rejection pointer (or remove it) when this item lands. Production impact: 12.
 - **Composite-key `@lookupKey` on list-of-input-object arguments** **[Backlog]** — add `ArgumentRef.CompositeLookupArg` carrying `(input-field-name, target-column)` pairs resolved from `@field(name:)` directives; `buildInputRowsMethod` already handles arbitrary-arity VALUES + JOIN.
 - **Apollo Federation via federation-jvm transform** **[Backlog]** — replace `QueryEntityField` stub with a `GraphitronSchemaBuilder` post-step wrapping the Graphitron schema via `Federation.transform`; deletes the stub after migration.
 - **`DSLContext` on `@condition` / `@tableMethod` methods** **[Backlog]** — lift `reflectTableMethod` gate; requires `ArgCallEmitter` to walk `params()` instead of `callParams()` so the injected DSLContext lands at its declaration-index slot.
@@ -89,14 +85,14 @@ Production parity gaps and architecture blockers, in rough order.
 
 ### Generator stubs
 
-Enumerated from `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS`. Priority numbers `#3`–`#4` are referenced by emitted reason strings and must stay stable. Items marked **[Tracked]** already have an Active plan.
+Enumerated from `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS`. Priority numbers `#3`–`#4` are referenced by emitted reason strings and must stay stable. Aggregate production counts from the snapshot are listed where applicable; ordering within this section should follow those counts (highest-impact first) once an item is promoted to Active.
 
-3. **Interface / union fetchers** — `QueryField.QueryInterfaceField`, `QueryTableInterfaceField`, `QueryUnionField`, `ChildField.InterfaceField`, `UnionField`, `TableInterfaceField`.
-4. **Mutation bodies** — `MutationInsertTableField`, `MutationUpdateTableField`, `MutationDeleteTableField`, `MutationUpsertTableField`, `MutationServiceTableField`, `MutationServiceRecordField`.
-5. **Apollo Federation `_entities` resolver** — `QueryField.QueryEntityField`; superseded by "Apollo Federation via federation-jvm transform" in Priority above.
-6. **Relay `Query.node` resolver** — `QueryField.QueryNodeField`; blocked on Platform-id as synthesized NodeId (Active).
-7. **Service-backed and method-backed root fetchers** **[Tracked]** — `QueryServiceTableField`, `QueryServiceRecordField`, `QueryTableMethodTableField`. Plan: [plan-service-root-fetchers.md](plan-service-root-fetchers.md).
-8. **Non-table / scalar / reference child leaves** — `ChildField.ColumnReferenceField`, `NodeIdReferenceField` (blocked on Platform-id), `ComputedField`, `TableMethodField`, `ServiceRecordField`, `MultitableReferenceField`.
+3. **Interface / union fetchers** (prod: 21 — `QueryTableInterfaceField` 20 + `QueryInterfaceField` 1) — `QueryField.QueryInterfaceField`, `QueryTableInterfaceField`, `QueryUnionField`, `ChildField.InterfaceField`, `UnionField`, `TableInterfaceField`.
+4. **Mutation bodies** (prod: 131 aggregate — update 45, `MutationServiceRecordField` 44, delete 23, insert 19) — `MutationInsertTableField`, `MutationUpdateTableField`, `MutationDeleteTableField`, `MutationUpsertTableField`, `MutationServiceTableField`, `MutationServiceRecordField`.
+5. **Apollo Federation `_entities` resolver** (prod: 0) — `QueryField.QueryEntityField`; superseded by "Apollo Federation via federation-jvm transform" in Priority above.
+6. **Relay `Query.node` resolver** (prod: 0) — `QueryField.QueryNodeField`; blocked on Platform-id as synthesized NodeId (Active).
+7. **Service-backed and method-backed root fetchers** **[Tracked]** (prod: 0) — `QueryServiceTableField`, `QueryServiceRecordField`, `QueryTableMethodTableField`. Plan: [plan-service-root-fetchers.md](plan-service-root-fetchers.md).
+8. **Non-table / scalar / reference child leaves** (prod: 62 — `ColumnReferenceField` 41 + `ComputedField` 21) — `ChildField.ColumnReferenceField`, `NodeIdReferenceField` (blocked on Platform-id), `ComputedField`, `TableMethodField`, `ServiceRecordField`, `MultitableReferenceField`.
 
 ### Cleanup
 
