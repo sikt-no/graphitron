@@ -79,6 +79,88 @@ public class ConnectionHelperClassGenerator {
 
         var fieldWildcard = ParameterizedTypeName.get(JOOQ_FIELD, WildcardTypeName.subtypeOf(Object.class));
         var listOfField = ParameterizedTypeName.get(LIST_CLASS, fieldWildcard);
+        var sortField = ClassName.get("org.jooq", "SortField");
+        var sortFieldWildcard = ParameterizedTypeName.get(sortField, WildcardTypeName.subtypeOf(Object.class));
+        var listOfSortField = ParameterizedTypeName.get(LIST_CLASS, sortFieldWildcard);
+        var fieldArray = ArrayTypeName.of(fieldWildcard);
+
+        // --- PageRequest nested class ---
+        // Carries the resolved pagination state from pageRequest(...) back to the fetcher body
+        // and onward to ConnectionResult. Two field lists deliberately coexist:
+        //   - selectFields: selection ∪ extraFields, name-deduped — drives .select(...)
+        //   - extraFields:  the pure extra-ordering columns — drives cursor encoding in
+        //     ConnectionResult (which must hash only the ordering columns, not the whole selection)
+        // Emitted as a class with accessors (not a Java record) because the project's JavaPoet
+        // fork does not yet expose recordBuilder.
+        var pageRequestClass = buildPageRequestClass(listOfField, listOfSortField, fieldArray);
+
+        // --- reverseOrderBy(List<SortField<?>>) → List<SortField<?>> ---
+        // Private helper used only by pageRequest(...) for backward pagination. Uses jOOQ's
+        // $field() and $sortOrder() model-API accessors (stable since 3.17) — the only way to
+        // flip a SortField's direction without losing its expression. Moved here from per-
+        // fetcher-class emission so every connection fetcher shares one implementation.
+        var sortOrderClass = ClassName.get("org.jooq", "SortOrder");
+        var reverseOrderBy = MethodSpec.methodBuilder("reverseOrderBy")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(listOfSortField)
+            .addParameter(listOfSortField, "orderBy")
+            .addStatement("$T<$T<?>> reversed = new $T<>(orderBy.size())", ARRAY_LIST, sortField, ARRAY_LIST)
+            .addCode("for ($T<?> sf : orderBy) {\n", sortField)
+            .addCode("    reversed.add(sf.$$field().sort(\n")
+            .addCode("        sf.$$sortOrder() == $T.DESC ? $T.ASC : $T.DESC));\n",
+                sortOrderClass, sortOrderClass, sortOrderClass)
+            .addCode("}\n")
+            .addStatement("return reversed")
+            .build();
+
+        // --- pageRequest(Integer first, Integer last, String after, String before,
+        //                 int defaultPageSize, List<SortField<?>> orderBy,
+        //                 List<Field<?>> extraFields, List<Field<?>> selection) → PageRequest ---
+        // Collapses every line of pagination boilerplate the fetcher used to inline:
+        //   - first/last mutual-exclusion guard
+        //   - backward/pageSize/cursor derivation
+        //   - column-driven cursor decode (delegates to decodeCursor)
+        //   - reverse ordering for backward pagination (delegates to reverseOrderBy)
+        //   - name-based merge of extraFields into the selection (avoids Field.equals identity
+        //     dependence — a name-matching column is treated as already selected).
+        // Has no graphql-java dependency (four env-arg extractions stay on the fetcher side),
+        // matching the purity contract on the entity-scoped *Conditions classes.
+        var integer = ClassName.get(Integer.class);
+        var pageRequestRef = ClassName.get("", "PageRequest");
+        var pageRequest = MethodSpec.methodBuilder("pageRequest")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(pageRequestRef)
+            .addParameter(integer, "first")
+            .addParameter(integer, "last")
+            .addParameter(String.class, "after")
+            .addParameter(String.class, "before")
+            .addParameter(int.class, "defaultPageSize")
+            .addParameter(listOfSortField, "orderBy")
+            .addParameter(listOfField, "extraFields")
+            .addParameter(listOfField, "selection")
+            .addCode("if (first != null && last != null)\n")
+            .addCode("    throw new $T($S);\n",
+                IllegalArgumentException.class, "first and last must not both be specified")
+            .addStatement("boolean backward = last != null")
+            .addStatement("int pageSize = backward ? last : (first != null ? first : defaultPageSize)")
+            .addStatement("String cursor = backward ? before : after")
+            .addStatement("$T seekFields = decodeCursor(cursor, extraFields)", fieldArray)
+            .addStatement("$T effectiveOrderBy = backward ? reverseOrderBy(orderBy) : orderBy", listOfSortField)
+            // Name-based merge: copy selection, then append every extra-ordering column not
+            // already present. Matching on name avoids Field.equals identity mismatches when
+            // the same column arrives through different jOOQ Field instances (e.g. $fields vs.
+            // the ordering path).
+            .addStatement("$T<$T> selectFields = new $T<>(selection)", ARRAY_LIST, fieldWildcard, ARRAY_LIST)
+            .addStatement("$T<String> selectedNames = new $T<>()",
+                ClassName.get("java.util", "HashSet"), ClassName.get("java.util", "HashSet"))
+            .addCode("for ($T f : selection) selectedNames.add(f.getName());\n", fieldWildcard)
+            .addCode("for ($T extra : extraFields) {\n", fieldWildcard)
+            .addCode("    if (!selectedNames.contains(extra.getName())) selectFields.add(extra);\n")
+            .addCode("}\n")
+            .addStatement("return new $T(pageSize + 1, pageSize, backward, after, before,\n"
+                + "            effectiveOrderBy, seekFields, selectFields, extraFields)",
+                pageRequestRef)
+            .build();
 
         // --- encodeCursor(Record, List<Field<?>>) ---
         // Column-driven: each value serialised via DataType (no hand-rolled type tags).
@@ -191,8 +273,11 @@ public class ConnectionHelperClassGenerator {
         var spec = TypeSpec.classBuilder(CLASS_NAME)
             .addModifiers(Modifier.PUBLIC)
             .addType(edgeClass)
+            .addType(pageRequestClass)
             .addMethod(encodeCursor)
             .addMethod(decodeCursor)
+            .addMethod(reverseOrderBy)
+            .addMethod(pageRequest)
             .addMethod(edgesMethod)
             .addMethod(nodesMethod)
             .addMethod(pageInfoMethod)
@@ -201,5 +286,72 @@ public class ConnectionHelperClassGenerator {
             .build();
 
         return List.of(spec);
+    }
+
+    private static TypeSpec buildPageRequestClass(
+            ParameterizedTypeName listOfField,
+            ParameterizedTypeName listOfSortField,
+            ArrayTypeName fieldArray) {
+        var cls = TypeSpec.classBuilder("PageRequest")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .addField(int.class, "limit", Modifier.PRIVATE, Modifier.FINAL)
+            .addField(int.class, "pageSize", Modifier.PRIVATE, Modifier.FINAL)
+            .addField(boolean.class, "backward", Modifier.PRIVATE, Modifier.FINAL)
+            .addField(String.class, "after", Modifier.PRIVATE, Modifier.FINAL)
+            .addField(String.class, "before", Modifier.PRIVATE, Modifier.FINAL)
+            .addField(listOfSortField, "effectiveOrderBy", Modifier.PRIVATE, Modifier.FINAL)
+            .addField(fieldArray, "seekFields", Modifier.PRIVATE, Modifier.FINAL)
+            .addField(listOfField, "selectFields", Modifier.PRIVATE, Modifier.FINAL)
+            .addField(listOfField, "extraFields", Modifier.PRIVATE, Modifier.FINAL);
+
+        cls.addMethod(MethodSpec.constructorBuilder()
+            .addModifiers(Modifier.PUBLIC)
+            .addParameter(int.class, "limit")
+            .addParameter(int.class, "pageSize")
+            .addParameter(boolean.class, "backward")
+            .addParameter(String.class, "after")
+            .addParameter(String.class, "before")
+            .addParameter(listOfSortField, "effectiveOrderBy")
+            .addParameter(fieldArray, "seekFields")
+            .addParameter(listOfField, "selectFields")
+            .addParameter(listOfField, "extraFields")
+            .addStatement("this.limit = limit")
+            .addStatement("this.pageSize = pageSize")
+            .addStatement("this.backward = backward")
+            .addStatement("this.after = after")
+            .addStatement("this.before = before")
+            .addStatement("this.effectiveOrderBy = effectiveOrderBy")
+            .addStatement("this.seekFields = seekFields")
+            .addStatement("this.selectFields = selectFields")
+            .addStatement("this.extraFields = extraFields")
+            .build());
+
+        accessor(cls, "limit",            int.class);
+        accessor(cls, "pageSize",         int.class);
+        accessor(cls, "backward",         boolean.class);
+        accessor(cls, "after",            String.class);
+        accessor(cls, "before",           String.class);
+        accessor(cls, "effectiveOrderBy", listOfSortField);
+        accessor(cls, "seekFields",       fieldArray);
+        accessor(cls, "selectFields",     listOfField);
+        accessor(cls, "extraFields",      listOfField);
+
+        return cls.build();
+    }
+
+    private static void accessor(TypeSpec.Builder cls, String name, Class<?> type) {
+        cls.addMethod(MethodSpec.methodBuilder(name)
+            .addModifiers(Modifier.PUBLIC)
+            .returns(type)
+            .addStatement("return $L", name)
+            .build());
+    }
+
+    private static void accessor(TypeSpec.Builder cls, String name, no.sikt.graphitron.javapoet.TypeName type) {
+        cls.addMethod(MethodSpec.methodBuilder(name)
+            .addModifiers(Modifier.PUBLIC)
+            .returns(type)
+            .addStatement("return $L", name)
+            .build());
     }
 }

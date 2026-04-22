@@ -398,14 +398,6 @@ public class TypeFetcherGenerator {
             }
         }
 
-        // Emit reverseOrderBy helper whenever any connection field is present
-        boolean hasConnectionField = fields.stream().anyMatch(f ->
-            f instanceof QueryField.QueryTableField qtf &&
-            qtf.returnType().wrapper() instanceof FieldWrapper.Connection);
-        if (hasConnectionField) {
-            builder.addMethod(buildReverseOrderByHelper());
-        }
-
         // Emit scatterByIdx helper whenever any Split* or record-backed batched field is present —
         // shared across all SplitRowsMethodEmitter-emitted rows methods in this class.
         boolean hasSplitField = fields.stream().anyMatch(f ->
@@ -519,8 +511,6 @@ public class TypeFetcherGenerator {
         var connectionHelperClass = ClassName.get(
             RewriteConfig.outputPackage() + ".rewrite", ConnectionHelperClassGenerator.CLASS_NAME);
         var conn = (FieldWrapper.Connection) qtf.returnType().wrapper();
-        var JOOQ_FIELD = ClassName.get("org.jooq", "Field");
-        var fieldWildcard = ParameterizedTypeName.get(JOOQ_FIELD, WildcardTypeName.subtypeOf(Object.class));
 
         var builder = MethodSpec.methodBuilder(qtf.name())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -547,77 +537,39 @@ public class TypeFetcherGenerator {
         builder.addStatement("String after = env.getArgument($S)", afterArgName);
         builder.addStatement("String before = env.getArgument($S)", beforeArgName);
 
-        // Relay spec: clients must not supply both first and last
-        builder.addCode("if (first != null && last != null)\n");
-        builder.addCode("    throw new IllegalArgumentException(\"first and last must not both be specified\");\n");
+        // Pagination resolved in one call — first/last guard, backward/pageSize/cursor derivation,
+        // cursor decode, backward-ordering reversal, and name-based selection+extraFields merge
+        // all live inside ConnectionHelper.pageRequest. The fetcher keeps the four env.getArgument
+        // calls above so pageRequest itself has no graphql-java dependency.
+        var pageRequestClass = ClassName.get(
+            RewriteConfig.outputPackage() + ".rewrite", "ConnectionHelper", "PageRequest");
+        builder.addStatement(
+            "$T page = $T.pageRequest(first, last, after, before, $L, orderBy, extraFields, "
+                + "$T.$$fields(env.getSelectionSet(), $L, env))",
+            pageRequestClass, connectionHelperClass, conn.defaultPageSize(), names.typeClass(), tableLocal);
 
-        builder.addStatement("boolean backward = last != null");
-        builder.addStatement("int pageSize = backward ? last : (first != null ? first : $L)", conn.defaultPageSize());
-        builder.addStatement("String cursor = backward ? before : after");
-
-        // Column-driven cursor decode: returns Field<?>[] — DSL.noField() per column when cursor is null (seek no-op)
-        builder.addStatement("$T[] seekFields = $T.decodeCursor(cursor, extraFields)", fieldWildcard, connectionHelperClass);
-
-        // Reverse sort direction for backward pagination
-        builder.addStatement("$T effectiveOrderBy = backward ? reverseOrderBy(orderBy) : orderBy", SORT_FIELD_LIST);
-
-        // Build select list from $fields; merge extra ordering columns by name to avoid
-        // dependence on Field.equals() identity (avoids missed deduplication if Field instances differ)
         var dslContextClass = ClassName.get("org.jooq", "DSLContext");
-        var setOfString = ParameterizedTypeName.get(ClassName.get("java.util", "Set"), ClassName.get(String.class));
         builder.addStatement("$T dsl = graphitronContext(env).getDslContext(env)", dslContextClass);
-        builder.addStatement("$T<$T> fields = new $T<>($T.$$fields(env.getSelectionSet(), $L, env))",
-            ARRAY_LIST, fieldWildcard, ARRAY_LIST, names.typeClass(), tableLocal);
-        builder.addStatement("$T selectedNames = fields.stream().map($T::getName).collect($T.toSet())",
-            setOfString, JOOQ_FIELD, ClassName.get("java.util.stream", "Collectors"));
-        builder.addCode("for ($T extra : extraFields) {\n", fieldWildcard);
-        builder.addCode("    if (!selectedNames.contains(extra.getName())) fields.add(extra);\n");
-        builder.addCode("}\n");
 
-        // Single-expression paginated query — seek is a no-op when seekFields are noField()
+        // Single-expression paginated query — seek is a no-op when page.seekFields() are noField()
         var resultOfRecord = ParameterizedTypeName.get(
             ClassName.get("org.jooq", "Result"), ClassName.get("org.jooq", "Record"));
         builder.addCode(CodeBlock.builder()
             .add("$T result = dsl\n", resultOfRecord)
             .indent()
-            .add(".select(fields)\n")
+            .add(".select(page.selectFields())\n")
             .add(".from($L)\n", tableLocal)
             .add(".where(condition)\n")
-            .add(".orderBy(effectiveOrderBy.toArray(new $T[0]))\n", SORT_FIELD)
-            .add(".seek(seekFields)\n")
-            .add(".limit(pageSize + 1)\n")
+            .add(".orderBy(page.effectiveOrderBy().toArray(new $T[0]))\n", SORT_FIELD)
+            .add(".seek(page.seekFields())\n")
+            .add(".limit(page.limit())\n")
             .add(".fetch();\n")
             .unindent()
             .build());
 
-        builder.addStatement("return new $T(result, pageSize, after, before, backward, extraFields)",
-            connectionResultClass);
+        builder.addStatement("return new $T(result, page)", connectionResultClass);
 
         return builder.build();
-    }
-
-    /**
-     * Generates the private {@code reverseOrderBy(List<SortField<?>>)} helper used by
-     * backward-paginating connection fetchers to flip sort directions.
-     *
-     * <p>Uses jOOQ's {@code $field()} and {@code $sortOrder()} model-API accessors (stable
-     * since jOOQ 3.17) — the only way to flip a {@code SortField}'s direction without losing
-     * its expression.
-     */
-    private static MethodSpec buildReverseOrderByHelper() {
-        var SORT_ORDER = ClassName.get("org.jooq", "SortOrder");
-        return MethodSpec.methodBuilder("reverseOrderBy")
-            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
-            .returns(SORT_FIELD_LIST)
-            .addParameter(SORT_FIELD_LIST, "orderBy")
-            .addStatement("$T<$T<?>> reversed = new $T<>(orderBy.size())", ARRAY_LIST, SORT_FIELD, ARRAY_LIST)
-            .addCode("for ($T<?> sf : orderBy) {\n", SORT_FIELD)
-            .addCode("    // $$field() and $$sortOrder() are jOOQ model-API accessors (stable since 3.17).\n")
-            .addCode("    reversed.add(sf.$$field().sort(\n")
-            .addCode("        sf.$$sortOrder() == $T.DESC ? $T.ASC : $T.DESC));\n", SORT_ORDER, SORT_ORDER, SORT_ORDER)
-            .addCode("}\n")
-            .addStatement("return reversed")
-            .build();
     }
 
     /**

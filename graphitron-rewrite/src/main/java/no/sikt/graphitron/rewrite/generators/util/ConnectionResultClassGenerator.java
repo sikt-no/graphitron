@@ -6,6 +6,7 @@ import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
+import no.sikt.graphitron.rewrite.RewriteConfig;
 
 import javax.lang.model.element.Modifier;
 import java.util.List;
@@ -58,6 +59,20 @@ public class ConnectionResultClassGenerator {
             .addStatement("this.beforeCursor = beforeCursor")
             .addStatement("this.backward = backward")
             .addStatement("this.orderByColumns = orderByColumns")
+            .build();
+
+        // Convenience constructor accepting a PageRequest from ConnectionHelper.pageRequest(...).
+        // Takes the pure extra-ordering list (orderByColumns) off page.extraFields(), not
+        // page.selectFields() — cursor encoding must hash only the ordering columns, not the
+        // selection-merged list.
+        var pageRequestRef = ClassName.get(
+            RewriteConfig.outputPackage() + ".rewrite", "ConnectionHelper", "PageRequest");
+        var pageConstructor = MethodSpec.constructorBuilder()
+            .addModifiers(Modifier.PUBLIC)
+            .addParameter(resultOfRecord, "result")
+            .addParameter(pageRequestRef, "page")
+            .addStatement("this(result, page.pageSize(), page.after(), page.before(),"
+                + " page.backward(), page.extraFields())")
             .build();
 
         // Accessors
@@ -133,6 +148,7 @@ public class ConnectionResultClassGenerator {
             .addField(backwardField)
             .addField(orderByColumnsField)
             .addMethod(constructor)
+            .addMethod(pageConstructor)
             .addMethod(getResult)
             .addMethod(getPageSize)
             .addMethod(getAfterCursor)
