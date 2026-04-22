@@ -140,7 +140,7 @@ public class TypeConditionsGenerator {
             first = false;
         }
         return FieldSpec.builder(mapType, tl.mapFieldName())
-            .addModifiers(Modifier.STATIC, Modifier.FINAL)
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
             .initializer("$T.of($L)", MAP, mapEntries.build())
             .build();
     }
