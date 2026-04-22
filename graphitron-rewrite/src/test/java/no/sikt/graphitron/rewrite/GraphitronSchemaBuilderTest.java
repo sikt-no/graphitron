@@ -426,21 +426,22 @@ class GraphitronSchemaBuilderTest {
 
     enum NodeIdReferenceFieldCase implements ClassificationCase {
         RESOLVED(
-            "typeName pointing to a @node type resolves to NodeIdReferenceField with a WithNode and empty joinPath",
+            "typeName pointing to a @node type with a single FK between tables → NodeIdReferenceField with a one-hop inferred joinPath",
             """
-            type Language @table(name: "language") @node(keyColumns: ["language_id"]) {
+            type Country @table(name: "country") @node(keyColumns: ["country_id"]) {
               id: ID! @nodeId
             }
-            type Film @table(name: "film") {
-              languageId: ID! @nodeId(typeName: "Language")
+            type City @table(name: "city") {
+              countryId: ID! @nodeId(typeName: "Country")
             }
-            type Query { film: Film }
+            type Query { city: City }
             """,
             schema -> {
-                var ref = (NodeIdReferenceField) schema.field("Film", "languageId");
-                assertThat(ref.typeName()).isEqualTo("Language");
+                var ref = (NodeIdReferenceField) schema.field("City", "countryId");
+                assertThat(ref.typeName()).isEqualTo("Country");
                 assertThat(ref.nodeKeyColumns()).isNotEmpty();
-                assertThat(ref.joinPath()).isEmpty();
+                assertThat(ref.joinPath()).hasSize(1);
+                assertThat(ref.joinPath().get(0)).isInstanceOf(JoinStep.FkJoin.class);
             }),
 
         UNRESOLVED_TYPE_HAS_NO_NODE(
@@ -480,6 +481,38 @@ class GraphitronSchemaBuilderTest {
                 var ref = (NodeIdReferenceField) schema.field("Film", "languageId");
                 assertThat(ref.joinPath()).hasSize(1);
                 assertThat(ref.joinPath().get(0)).isInstanceOf(JoinStep.FkJoin.class);
+            }),
+
+        IMPLICIT_REFERENCE_ZERO_FK(
+            "no @reference on @nodeId with no direct FK between parent and target tables → UnclassifiedField",
+            """
+            type Actor @table(name: "actor") @node(keyColumns: ["actor_id"]) { id: ID! @nodeId }
+            type Film @table(name: "film") { actorId: ID! @nodeId(typeName: "Actor") }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var f = schema.field("Film", "actorId");
+                assertThat(f).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) f).reason())
+                    .contains("no foreign key found")
+                    .contains("'film'")
+                    .contains("'actor'");
+            }),
+
+        IMPLICIT_REFERENCE_MULTIPLE_FK(
+            "no @reference on @nodeId with multiple FKs between parent and target tables → UnclassifiedField",
+            """
+            type Language @table(name: "language") @node(keyColumns: ["language_id"]) { id: ID! @nodeId }
+            type Film @table(name: "film") { languageId: ID! @nodeId(typeName: "Language") }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var f = schema.field("Film", "languageId");
+                assertThat(f).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) f).reason())
+                    .contains("multiple foreign keys found")
+                    .contains("'film'")
+                    .contains("'language'");
             });
 
         final String sdl;
@@ -507,40 +540,41 @@ class GraphitronSchemaBuilderTest {
      */
     enum TableFieldCase implements ClassificationCase {
         SINGLE_RETURN_TYPE(
-            "@table return type (default) → TableField (Single cardinality, empty joinPath)",
+            "@table return type (default) → TableField (Single cardinality, one-hop inferred joinPath)",
             """
-            type Language @table(name: "language") { name: String }
-            type Film @table(name: "film") { language: Language }
-            type Query { film: Film }
+            type Country @table(name: "country") { name: String }
+            type City @table(name: "city") { country: Country }
+            type Query { city: City }
             """,
             schema -> {
-                var tf = (TableField) schema.field("Film", "language");
+                var tf = (TableField) schema.field("City", "country");
                 assertThat(tf.returnType().wrapper()).isInstanceOf(FieldWrapper.Single.class);
                 assertThat(tf.filters()).isEmpty();
-                assertThat(tf.joinPath()).isEmpty();
+                assertThat(tf.joinPath()).hasSize(1);
+                assertThat(tf.joinPath().get(0)).isInstanceOf(JoinStep.FkJoin.class);
             }),
 
         LIST_RETURN_TYPE(
             "list @table return type → TableField (List cardinality)",
             """
-            type Actor @table(name: "actor") { name: String }
-            type Film @table(name: "film") { actors: [Actor!]! }
-            type Query { film: Film }
+            type Customer @table(name: "customer") { firstName: String }
+            type Store @table(name: "store") { customers: [Customer!]! }
+            type Query { store: Store }
             """,
-            schema -> assertThat(((TableField) schema.field("Film", "actors")).returnType().wrapper())
+            schema -> assertThat(((TableField) schema.field("Store", "customers")).returnType().wrapper())
                 .isInstanceOf(FieldWrapper.List.class)),
 
         CONNECTION_STRUCTURE_REJECTED(
             "edges.node connection structure on inline TableField → UnclassifiedField (requires @splitQuery)",
             """
-            type Actor @table(name: "actor") { name: String }
-            type ActorEdge { node: Actor cursor: String }
-            type ActorConnection { edges: [ActorEdge] }
-            type Film @table(name: "film") { actors: ActorConnection }
-            type Query { film: Film }
+            type Customer @table(name: "customer") { firstName: String }
+            type CustomerEdge { node: Customer cursor: String }
+            type CustomerConnection { edges: [CustomerEdge] }
+            type Store @table(name: "store") { customers: CustomerConnection }
+            type Query { store: Store }
             """,
             schema -> {
-                var f = schema.field("Film", "actors");
+                var f = schema.field("Store", "customers");
                 assertThat(f).isInstanceOf(UnclassifiedField.class);
                 assertThat(((UnclassifiedField) f).reason())
                     .contains("@asConnection on inline (non-@splitQuery) TableField is not supported")
@@ -550,12 +584,12 @@ class GraphitronSchemaBuilderTest {
         AS_CONNECTION_REJECTED_NO_SPLIT(
             "@asConnection without @splitQuery on inline TableField → UnclassifiedField",
             """
-            type Actor @table(name: "actor") { name: String }
-            type Film @table(name: "film") { actors: [Actor!]! @asConnection @defaultOrder(primaryKey: true) }
-            type Query { film: Film }
+            type Customer @table(name: "customer") { firstName: String }
+            type Store @table(name: "store") { customers: [Customer!]! @asConnection @defaultOrder(primaryKey: true) }
+            type Query { store: Store }
             """,
             schema -> {
-                var f = schema.field("Film", "actors");
+                var f = schema.field("Store", "customers");
                 assertThat(f).isInstanceOf(UnclassifiedField.class);
                 assertThat(((UnclassifiedField) f).reason())
                     .contains("@asConnection on inline (non-@splitQuery) TableField is not supported");
@@ -565,13 +599,13 @@ class GraphitronSchemaBuilderTest {
             "@asConnection @splitQuery → UnclassifiedField (per-parent pagination inside DataLoader "
             + "batch requires window-function partitioning, deferred to a follow-up plan; argres 2b C3)",
             """
-            type Actor @table(name: "actor") { name: String }
-            type Film @table(name: "film") { actors: [Actor!]! @asConnection @splitQuery @defaultOrder(primaryKey: true) }
-            type Query { film: Film }
+            type Customer @table(name: "customer") { firstName: String }
+            type Store @table(name: "store") { customers: [Customer!]! @asConnection @splitQuery @defaultOrder(primaryKey: true) }
+            type Query { store: Store }
             """,
             schema -> {
-                assertThat(schema.field("Film", "actors")).isInstanceOf(UnclassifiedField.class);
-                assertThat(((UnclassifiedField) schema.field("Film", "actors")).reason())
+                assertThat(schema.field("Store", "customers")).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) schema.field("Store", "customers")).reason())
                     .contains("@asConnection on @splitQuery fields is not supported")
                     .contains("window-function partitioning")
                     .contains("deferred to a follow-up plan");
@@ -581,15 +615,15 @@ class GraphitronSchemaBuilderTest {
             "@asConnection @splitQuery + @lookupKey → UnclassifiedField (same rejection as "
             + "SplitTableField — per-parent pagination inside a DataLoader batch is out of scope)",
             """
-            type Actor @table(name: "actor") { name: String }
-            type Film @table(name: "film") {
-                actorsByKey(actor_id: [Int!]! @lookupKey): [Actor!]! @asConnection @splitQuery @defaultOrder(primaryKey: true)
+            type Customer @table(name: "customer") { firstName: String }
+            type Store @table(name: "store") {
+                customersByKey(customer_id: [Int!]! @lookupKey): [Customer!]! @asConnection @splitQuery @defaultOrder(primaryKey: true)
             }
-            type Query { film: Film }
+            type Query { store: Store }
             """,
             schema -> {
-                assertThat(schema.field("Film", "actorsByKey")).isInstanceOf(UnclassifiedField.class);
-                assertThat(((UnclassifiedField) schema.field("Film", "actorsByKey")).reason())
+                assertThat(schema.field("Store", "customersByKey")).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) schema.field("Store", "customersByKey")).reason())
                     .contains("@asConnection on @splitQuery fields is not supported")
                     .contains("window-function partitioning")
                     .contains("deferred to a follow-up plan");
@@ -598,24 +632,24 @@ class GraphitronSchemaBuilderTest {
         SPLIT_QUERY(
             "@splitQuery (no @lookupKey) on @table parent → SplitTableField",
             """
-            type Actor @table(name: "actor") { name: String }
-            type Film @table(name: "film") { actors: [Actor!]! @splitQuery }
-            type Query { film: Film }
+            type Customer @table(name: "customer") { firstName: String }
+            type Store @table(name: "store") { customers: [Customer!]! @splitQuery }
+            type Query { store: Store }
             """,
-            schema -> assertThat(schema.field("Film", "actors")).isInstanceOf(SplitTableField.class)) {
+            schema -> assertThat(schema.field("Store", "customers")).isInstanceOf(SplitTableField.class)) {
             @Override public Set<Class<?>> variants() { return Set.of(SplitTableField.class); }
         },
 
         SPLIT_LOOKUP_TABLE_FIELD(
             "@splitQuery + @lookupKey on @table parent → SplitLookupTableField",
             """
-            type Actor @table(name: "actor") { name: String }
-            type Film @table(name: "film") {
-                actor(actor_id: ID! @lookupKey): Actor @splitQuery
+            type Customer @table(name: "customer") { firstName: String }
+            type Store @table(name: "store") {
+                customer(customer_id: ID! @lookupKey): Customer @splitQuery
             }
-            type Query { film: Film }
+            type Query { store: Store }
             """,
-            schema -> assertThat(schema.field("Film", "actor")).isInstanceOf(SplitLookupTableField.class)) {
+            schema -> assertThat(schema.field("Store", "customer")).isInstanceOf(SplitLookupTableField.class)) {
             @Override public Set<Class<?>> variants() { return Set.of(SplitLookupTableField.class); }
         },
 
@@ -632,6 +666,66 @@ class GraphitronSchemaBuilderTest {
                 var tf = (TableField) schema.field("Film", "language");
                 assertThat(tf.joinPath()).hasSize(1);
                 assertThat(tf.joinPath().get(0)).isInstanceOf(JoinStep.FkJoin.class);
+            }),
+
+        IMPLICIT_REFERENCE_SPLIT_TABLE(
+            "no @reference on @splitQuery with single FK between parent and target tables → SplitTableField with one inferred FkJoin",
+            """
+            type Customer @table(name: "customer") { firstName: String }
+            type Store @table(name: "store") { customers: [Customer!]! @splitQuery }
+            type Query { store: Store }
+            """,
+            schema -> {
+                var f = (SplitTableField) schema.field("Store", "customers");
+                assertThat(f.joinPath()).hasSize(1);
+                assertThat(f.joinPath().get(0)).isInstanceOf(JoinStep.FkJoin.class);
+            }),
+
+        IMPLICIT_REFERENCE_SPLIT_LOOKUP_TABLE(
+            "no @reference on @splitQuery + @lookupKey with single FK → SplitLookupTableField with one inferred FkJoin",
+            """
+            type Customer @table(name: "customer") { firstName: String }
+            type Store @table(name: "store") {
+                customer(customer_id: ID! @lookupKey): Customer @splitQuery
+            }
+            type Query { store: Store }
+            """,
+            schema -> {
+                var f = (SplitLookupTableField) schema.field("Store", "customer");
+                assertThat(f.joinPath()).hasSize(1);
+                assertThat(f.joinPath().get(0)).isInstanceOf(JoinStep.FkJoin.class);
+            }),
+
+        IMPLICIT_REFERENCE_ZERO_FK(
+            "no @reference on @splitQuery with no direct FK between parent and target → UnclassifiedField",
+            """
+            type Actor @table(name: "actor") { name: String }
+            type Film @table(name: "film") { actors: [Actor!]! @splitQuery }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var f = schema.field("Film", "actors");
+                assertThat(f).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) f).reason())
+                    .contains("no foreign key found")
+                    .contains("'film'")
+                    .contains("'actor'");
+            }),
+
+        IMPLICIT_REFERENCE_MULTIPLE_FK(
+            "no @reference on @splitQuery with multiple FKs between parent and target → UnclassifiedField",
+            """
+            type Language @table(name: "language") { name: String }
+            type Film @table(name: "film") { languages: [Language!]! @splitQuery }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var f = schema.field("Film", "languages");
+                assertThat(f).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) f).reason())
+                    .contains("multiple foreign keys found")
+                    .contains("'film'")
+                    .contains("'language'");
             }),
 
         MULTI_STEP_REFERENCE_PATH(
@@ -661,13 +755,13 @@ class GraphitronSchemaBuilderTest {
             "@defaultOrder(index:) resolves index columns — columns from idx_actor_last_name",
             """
             type Actor @table(name: "actor") { name: String }
-            type Film @table(name: "film") {
+            type FilmActor @table(name: "film_actor") {
                 actors: [Actor!]! @defaultOrder(index: "idx_actor_last_name")
             }
-            type Query { film: Film }
+            type Query { filmActor: FilmActor }
             """,
             schema -> {
-                var order = (OrderBySpec.Fixed) ((TableField) schema.field("Film", "actors")).orderBy();
+                var order = (OrderBySpec.Fixed) ((TableField) schema.field("FilmActor", "actors")).orderBy();
                 assertThat(order).isNotNull();
                 assertThat(order.direction()).isEqualTo("ASC");
                 assertThat(order.columns()).hasSize(1);
@@ -678,13 +772,13 @@ class GraphitronSchemaBuilderTest {
             "@defaultOrder(primaryKey: true) resolves PK columns — actor_id",
             """
             type Actor @table(name: "actor") { name: String }
-            type Film @table(name: "film") {
+            type FilmActor @table(name: "film_actor") {
                 actors: [Actor!]! @defaultOrder(primaryKey: true)
             }
-            type Query { film: Film }
+            type Query { filmActor: FilmActor }
             """,
             schema -> {
-                var order = (OrderBySpec.Fixed) ((TableField) schema.field("Film", "actors")).orderBy();
+                var order = (OrderBySpec.Fixed) ((TableField) schema.field("FilmActor", "actors")).orderBy();
                 assertThat(order).isNotNull();
                 assertThat(order.columns()).hasSize(1);
                 assertThat(order.columns().get(0).column().sqlName()).isEqualToIgnoringCase("actor_id");
@@ -694,13 +788,13 @@ class GraphitronSchemaBuilderTest {
             "@defaultOrder(fields:) resolves column names and preserves collations",
             """
             type Actor @table(name: "actor") { name: String }
-            type Film @table(name: "film") {
+            type FilmActor @table(name: "film_actor") {
                 actors: [Actor!]! @defaultOrder(fields: [{name: "last_name", collate: "C"}, {name: "first_name"}])
             }
-            type Query { film: Film }
+            type Query { filmActor: FilmActor }
             """,
             schema -> {
-                var order = (OrderBySpec.Fixed) ((TableField) schema.field("Film", "actors")).orderBy();
+                var order = (OrderBySpec.Fixed) ((TableField) schema.field("FilmActor", "actors")).orderBy();
                 assertThat(order.columns()).hasSize(2);
                 assertThat(order.columns().get(0).column().sqlName()).isEqualToIgnoringCase("last_name");
                 assertThat(order.columns().get(0).collation()).isEqualTo("C");
@@ -712,13 +806,13 @@ class GraphitronSchemaBuilderTest {
             "@defaultOrder(direction: DESC) stores the direction in the Fixed order",
             """
             type Actor @table(name: "actor") { name: String }
-            type Film @table(name: "film") {
+            type FilmActor @table(name: "film_actor") {
                 actors: [Actor!]! @defaultOrder(primaryKey: true, direction: DESC)
             }
-            type Query { film: Film }
+            type Query { filmActor: FilmActor }
             """,
             schema -> {
-                var order = (OrderBySpec.Fixed) ((TableField) schema.field("Film", "actors")).orderBy();
+                var order = (OrderBySpec.Fixed) ((TableField) schema.field("FilmActor", "actors")).orderBy();
                 assertThat(order.direction()).isEqualTo("DESC");
             }),
 
@@ -730,24 +824,24 @@ class GraphitronSchemaBuilderTest {
             type Actor @table(name: "actor") { name: String }
             type ActorEdge { node: Actor cursor: String }
             type ActorConnection { edges: [ActorEdge] }
-            type Film @table(name: "film") {
+            type FilmActor @table(name: "film_actor") {
                 actors: ActorConnection @splitQuery @defaultOrder(index: "idx_actor_last_name")
             }
-            type Query { film: Film }
+            type Query { filmActor: FilmActor }
             """,
-            schema -> assertThat(schema.field("Film", "actors")).isInstanceOf(UnclassifiedField.class)),
+            schema -> assertThat(schema.field("FilmActor", "actors")).isInstanceOf(UnclassifiedField.class)),
 
         NO_DEFAULT_ORDER_PK_FALLBACK(
             "no @defaultOrder on PK table → TableField with PK columns auto-filled as Fixed order",
             """
             type Actor @table(name: "actor") { name: String }
-            type Film @table(name: "film") {
+            type FilmActor @table(name: "film_actor") {
                 actors: [Actor!]!
             }
-            type Query { film: Film }
+            type Query { filmActor: FilmActor }
             """,
             schema -> {
-                var order = (OrderBySpec.Fixed) ((TableField) schema.field("Film", "actors")).orderBy();
+                var order = (OrderBySpec.Fixed) ((TableField) schema.field("FilmActor", "actors")).orderBy();
                 assertThat(order).isNotNull();
                 assertThat(order.direction()).isEqualTo("ASC");
                 assertThat(order.columns()).hasSize(1);
@@ -1064,10 +1158,10 @@ class GraphitronSchemaBuilderTest {
             """
             interface MediaItem @table(name: "film") @discriminate(on: "kind") { title: String }
             type Film implements MediaItem @table(name: "film") @discriminator(value: "film") { title: String }
-            type Actor @table(name: "actor") { media: MediaItem }
-            type Query { actor: Actor }
+            type Inventory @table(name: "inventory") { media: MediaItem }
+            type Query { inventory: Inventory }
             """,
-            schema -> assertThat(schema.field("Actor", "media")).isInstanceOf(TableInterfaceField.class)) {
+            schema -> assertThat(schema.field("Inventory", "media")).isInstanceOf(TableInterfaceField.class)) {
             @Override public Set<Class<?>> variants() { return Set.of(TableInterfaceField.class); }
         },
 
@@ -1256,6 +1350,43 @@ class GraphitronSchemaBuilderTest {
             @Override public Set<Class<?>> variants() { return Set.of(RecordLookupTableField.class); }
         },
 
+        IMPLICIT_REFERENCE_RECORD_TABLE(
+            "JooqTableRecordType @record parent + @table return with single FK → RecordTableField with one inferred FkJoin",
+            """
+            type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) {
+              inventories: [Inventory!]!
+            }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var f = (RecordTableField) schema.field("FilmDetails", "inventories");
+                assertThat(f.joinPath()).hasSize(1);
+                assertThat(f.joinPath().get(0)).isInstanceOf(JoinStep.FkJoin.class);
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
+        },
+
+        IMPLICIT_REFERENCE_RECORD_LOOKUP_TABLE(
+            "JooqTableRecordType @record parent + @table return + @lookupKey with single FK → RecordLookupTableField with one inferred FkJoin",
+            """
+            type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) {
+              inventories(inventory_id: [Int!] @lookupKey): [Inventory!]!
+            }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var f = (RecordLookupTableField) schema.field("FilmDetails", "inventories");
+                assertThat(f.joinPath()).hasSize(1);
+                assertThat(f.joinPath().get(0)).isInstanceOf(JoinStep.FkJoin.class);
+                assertThat(f.batchKey()).isInstanceOf(no.sikt.graphitron.rewrite.model.BatchKey.RowKeyed.class);
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(RecordLookupTableField.class); }
+        },
+
         RECORD_FIELD(
             "@record parent + non-table object return type → RecordField",
             """
@@ -1396,11 +1527,11 @@ class GraphitronSchemaBuilderTest {
             "TableField with no arguments — empty filters list",
             """
             type Actor @table(name: "actor") { name: String }
-            type Film @table(name: "film") { actors: [Actor!]! }
-            type Query { film: Film }
+            type FilmActor @table(name: "film_actor") { actors: [Actor!]! }
+            type Query { filmActor: FilmActor }
             """,
             schema -> {
-                var f = (no.sikt.graphitron.rewrite.model.ChildField.TableField) schema.field("Film", "actors");
+                var f = (no.sikt.graphitron.rewrite.model.ChildField.TableField) schema.field("FilmActor", "actors");
                 assertThat(f.filters()).isEmpty();
             }),
 
@@ -1408,13 +1539,13 @@ class GraphitronSchemaBuilderTest {
             "TableField with two column arguments — one GeneratedConditionFilter with two BodyParams",
             """
             type Actor @table(name: "actor") { name: String }
-            type Film @table(name: "film") {
+            type FilmActor @table(name: "film_actor") {
                 actors(actor_id: ID!, first_name: [String!]): [Actor!]!
             }
-            type Query { film: Film }
+            type Query { filmActor: FilmActor }
             """,
             schema -> {
-                var f = (no.sikt.graphitron.rewrite.model.ChildField.TableField) schema.field("Film", "actors");
+                var f = (no.sikt.graphitron.rewrite.model.ChildField.TableField) schema.field("FilmActor", "actors");
                 assertThat(f.filters()).hasSize(1);
                 var gcf = (GeneratedConditionFilter) f.filters().get(0);
                 assertThat(gcf.bodyParams()).hasSize(2);
@@ -1429,13 +1560,13 @@ class GraphitronSchemaBuilderTest {
             "@lookupKey on a child-field argument (no @splitQuery) — field classified as LookupTableField; key flows through LookupMapping",
             """
             type Actor @table(name: "actor") { name: String }
-            type Film @table(name: "film") {
+            type FilmActor @table(name: "film_actor") {
                 actors(actor_id: [Int!]! @lookupKey): [Actor!]!
             }
-            type Query { film: Film }
+            type Query { filmActor: FilmActor }
             """,
             schema -> {
-                var f = (no.sikt.graphitron.rewrite.model.ChildField.LookupTableField) schema.field("Film", "actors");
+                var f = (no.sikt.graphitron.rewrite.model.ChildField.LookupTableField) schema.field("FilmActor", "actors");
                 // @lookupKey args are emitted via VALUES+JOIN from LookupMapping, not as filters.
                 assertThat(f.filters()).isEmpty();
                 assertThat(f.lookupMapping().columns()).hasSize(1);
@@ -1451,13 +1582,13 @@ class GraphitronSchemaBuilderTest {
             enum Direction { ASC DESC }
             input ActorOrder { sortField: ActorOrderField! direction: Direction! }
             type Actor @table(name: "actor") { name: String }
-            type Film @table(name: "film") {
+            type FilmActor @table(name: "film_actor") {
                 actors(order: ActorOrder @orderBy): [Actor!]!
             }
-            type Query { film: Film }
+            type Query { filmActor: FilmActor }
             """,
             schema -> {
-                var f = (no.sikt.graphitron.rewrite.model.ChildField.TableField) schema.field("Film", "actors");
+                var f = (no.sikt.graphitron.rewrite.model.ChildField.TableField) schema.field("FilmActor", "actors");
                 assertThat(f.filters()).isEmpty();
                 assertThat(f.orderBy()).isInstanceOf(OrderBySpec.Argument.class);
                 var orderBy = (OrderBySpec.Argument) f.orderBy();
@@ -1473,13 +1604,13 @@ class GraphitronSchemaBuilderTest {
             enum Direction { ASC DESC }
             input ActorOrder { sortField: ActorOrderField! direction: Direction! }
             type Actor @table(name: "actor") { name: String }
-            type Film @table(name: "film") {
+            type FilmActor @table(name: "film_actor") {
                 actors(order: ActorOrder @orderBy): [Actor!]!
             }
-            type Query { film: Film }
+            type Query { filmActor: FilmActor }
             """,
             schema -> {
-                var f = (no.sikt.graphitron.rewrite.model.ChildField.TableField) schema.field("Film", "actors");
+                var f = (no.sikt.graphitron.rewrite.model.ChildField.TableField) schema.field("FilmActor", "actors");
                 assertThat(f.orderBy()).isInstanceOf(OrderBySpec.Argument.class);
                 var orderBy = (OrderBySpec.Argument) f.orderBy();
                 assertThat(orderBy.namedOrders()).hasSize(1);

@@ -38,6 +38,7 @@ class LookupTableFieldPipelineTest {
             type Actor @table(name: "actor") { name: String }
             type Film @table(name: "film") {
                 actors(actor_id: [Int!]! @lookupKey): [Actor!]!
+                    @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
             }
             type Query { film: Film }
             """);
@@ -59,6 +60,7 @@ class LookupTableFieldPipelineTest {
             type Actor @table(name: "actor") { name: String }
             type Film @table(name: "film") {
                 actors(actor_id: [Int!]! @lookupKey): [Actor!]!
+                    @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
             }
             type Query { film: Film }
             """);
@@ -80,6 +82,7 @@ class LookupTableFieldPipelineTest {
             type Actor @table(name: "actor") { name: String }
             type Film @table(name: "film") {
                 actors(actor_id: [Int!]! @lookupKey, first: Int, after: String): ActorConnection @asConnection
+                    @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
             }
             type ActorConnection { edges: [ActorEdge!]! }
             type ActorEdge { node: Actor! cursor: String! }
@@ -124,6 +127,7 @@ class LookupTableFieldPipelineTest {
             type Actor @table(name: "actor") { name: String }
             type Film @table(name: "film") {
                 actor(actor_id: ID! @lookupKey): Actor
+                    @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
             }
             type Query { film: Film }
             """);

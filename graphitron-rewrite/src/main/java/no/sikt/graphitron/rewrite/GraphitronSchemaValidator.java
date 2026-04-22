@@ -319,6 +319,7 @@ public class GraphitronSchemaValidator {
     }
 
     private void validateReferenceLeadsToType(String fieldName, SourceLocation location, List<JoinStep> path, String typeName, no.sikt.graphitron.rewrite.model.TableRef targetTable, List<ValidationError> errors) {
+        if (path.isEmpty()) return; // classifier guarantees non-empty for this variant; skip in isolated validator unit tests
         var lastStep = path.getLast();
         switch (lastStep) {
             case JoinStep.FkJoin fk -> {

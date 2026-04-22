@@ -292,7 +292,10 @@ class TypeFetcherGeneratorTest {
     private static GraphitronField splitQueryField(String parentType, String name) {
         return new ChildField.SplitTableField(parentType, name, null,
             tableBoundFilm(nonNullList()),
-            List.of(), List.of(), new OrderBySpec.None(), null,
+            List.of(new no.sikt.graphitron.rewrite.model.JoinStep.FkJoin(
+                "film_language_id_fkey", "", LANGUAGE_TABLE, List.of(),
+                FILM_TABLE, List.of(), null, name + "_0")),
+            List.of(), new OrderBySpec.None(), null,
             new BatchKey.RowKeyed(List.of(languageIdCol())));
     }
 
