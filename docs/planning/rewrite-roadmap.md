@@ -55,6 +55,7 @@ Enumerated from `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS`. Priority numbers
 
 ### Cleanup
 
+- **Generated-fetcher quality pass** **[Spec]** — four cleanups to `TypeFetcherGenerator` connection-fetcher emission: extract pagination boilerplate to a `ConnectionHelper.pageRequest(...)` helper, extract condition orchestration into a new generated `QueryConditions` class, never emit `var` in generated code, and rename the local jOOQ-table variable from `table` to `<entity>Table` to break the mapper/table name collision. ([plan-generated-fetcher-quality.md](plan-generated-fetcher-quality.md))
 - **Unify `rowsMethodName()`** **[Backlog]** — lift `"rows" + capitalize(name())` copy-paste from four `BatchKeyField` leaves to a default method on the interface.
 - **Collapse `TableTargetField` structural redundancy** **[Backlog]** — six `Table*Field` variants share identical components; evaluate sealed intermediates (`StandardTableField`, `RecordBoundField`).
 - **Shared interface for `QueryField` / `ChildField` table-bound parallels** **[Backlog]** — root variants drop `joinPath` but share `filters · orderBy · pagination`.
