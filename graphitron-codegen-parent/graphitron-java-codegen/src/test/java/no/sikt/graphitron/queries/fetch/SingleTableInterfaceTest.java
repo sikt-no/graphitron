@@ -153,4 +153,10 @@ public class SingleTableInterfaceTest extends InterfaceTest {
                 "return _iv_it.into(AddressInDistrictTwo.class);"
         );
     }
+
+    @Test
+    @DisplayName("SplitQuery on field returning single-table interface outside root")
+    void splitQuery() {
+        assertGeneratedContentMatches("splitQuery");
+    }
 }
