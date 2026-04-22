@@ -17,6 +17,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | Classification vocabulary follow-ups | Spec | [plan](plan-classification-vocabulary-followups.md) |
 | KjerneJooqGenerator — emit NodeId metadata constants | Spec | [plan](plan-kjerne-jooq-generator.md) |
 | Multi-parent NestingField sharing — `TableField` arm | Spec | [plan](plan-nestingfield-multiparent-tablefield.md) |
+| Faceted search on `@asConnection` | Spec | [plan](plan-faceted-search.md), [spike](spike-faceted-search-sql.md) |
 
 **Notes:** KjerneJooqGenerator is an external Sikt repo change (scratch-only here); unblocks Platform-id steps 2–6 at release time. Classification vocabulary follow-ups covers five independent cleanups — none is a release blocker.
 
@@ -68,7 +69,6 @@ Enumerated from `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS`. Priority numbers
 ### Deferred
 
 - **Docs-as-index stabilization** **[Ready — deferred]** — [plan](plan-docs-as-index-into-tests.md). Steps 1–2 shipped; steps 3–4 (re-section renames + doc rewire) deferred until sealed hierarchy stabilises.
-- **Faceted search on `@asConnection`** **[Spec — deferred]** — [plan](plan-faceted-search.md), [spike report](spike-faceted-search-sql.md). `@facet` directive for filter-input fields; `UNION ALL` aggregate query per Connection request. Phase 1 SQL-strategy spike landed (v1 200k rows + v2 5M-row re-measure with Buffers): v1 default = shape C; shape F documented as post-v1 optimisation in Open Question #3. Covers Jira GG-335; resolves SOPP-141. Parked pre–Spec → Ready review; resumable from Phase 2 when prioritised.
 
 ---
 
