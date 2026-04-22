@@ -1,6 +1,6 @@
 # Plan — Generated-fetcher quality pass
 
-> **Status:** Ready
+> **Status:** In Progress
 >
 > Four cleanups to the code `TypeFetcherGenerator` emits, motivated by the current
 > `filmsOrderedConnection` shape in `graphitron-rewrite-test-spec`. Emitted SQL,
@@ -249,8 +249,11 @@ with the JavaPoet `$T` substitution using the known type.
 
 **Test hook.** Add a simple lint-style check to the generator test module:
 recursively scan emitted `.java` files in the test-spec `target/generated-sources`
-directory and fail on any `\bvar\s+\w+\s*=` match. Cheaper than auditing sites
-one-by-one over time.
+directory and fail on any `\bvar\b\s+\w+` match (the loosened form —
+`\bvar\s+\w+\s*=` would miss `for (var extra : extraFields)` at
+`TypeFetcherGenerator.java:572`, which is a for-loop variable with no `=`).
+The initial sweep must convert that site along with the assignment-LHS sites.
+Cheaper than auditing sites one-by-one over time.
 
 **Scope.** Restricted to code emitted *into user projects*. Generator-implementation
 `var` usage (in `graphitron-rewrite/src/main/java` itself) is unaffected — Java 21 is
@@ -303,11 +306,23 @@ branch only fires on filter args that are list-of-keys or jOOQ-converted scalars
 the failure mode is silent on the simpler schemas and visible only once the call path
 exercises that extraction shape.
 
-Fetcher-path callers pass the new `<entity>Table` local. This also unblocks item 7 of
-[plan-classification-vocabulary-followups.md](plan-classification-vocabulary-followups.md),
-which depends on the same signature change to fix a latent inline-subquery bug in
-`InlineTableFieldEmitter.buildInnerSelect` — that item can ride on top of this one
-independently.
+Fetcher-path callers pass the new `<entity>Table` local. Caller enumeration —
+both `ArgCallEmitter.buildCallArgs` callers need the new alias parameter:
+
+- `TypeFetcherGenerator` fetcher-building path — passes the new `<entity>Table` local.
+- `InlineTableFieldEmitter.buildInnerSelect` at `:151` — currently passes through
+  without an alias, which is the latent inline-subquery bug also tracked as item 7 of
+  [plan-classification-vocabulary-followups.md](plan-classification-vocabulary-followups.md).
+  That item rides on top of this one independently; for this plan, pass the inner
+  subquery's `terminalAlias`.
+
+**Companion lift at `TypeFetcherGenerator.java:498-501`.** Independent of the §2
+`QueryConditions` extraction, the pre-call-args emission for `JooqConvert && list`
+params (emits `List<String> <name>Keys = env.getArgument(...)` before the call-args)
+uses the arg-name but not `table` — so this site doesn't break from §4 on its own.
+However, item 2 moves arg-unpacking into `QueryConditions`, and this pre-lift is the
+one piece of call-args emission that §2 does not otherwise touch. Move it together
+with the rest of the arg-coercion emission into `QueryConditionsGenerator`.
 
 **Import hygiene follow-through.** With the mapper/table name collision broken, the
 importer for the fetcher class should import both `Film` (mapper) and the jOOQ-side
