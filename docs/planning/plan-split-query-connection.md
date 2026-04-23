@@ -3,8 +3,9 @@
 > **Status:** In Review
 >
 > §1 (SplitTableField + Connection) shipped at `3821842`. Awaiting reviewer
-> sign-off to close, after which §2 (SplitLookupTableField + Connection) and §3
-> (scope closure) remain.
+> sign-off to close. `@asConnection` + `@lookupKey` is permanently invalid (not
+> a deferred scope), so the only possible §2 follow-up is dynamic `@orderBy` on
+> Split+Connection, gated on whether any consumer needs it.
 
 ## Problem
 
@@ -110,14 +111,14 @@ applied inside the windowed CTE.
 - `SplitRowsMethodEmitter.buildRuntimeStub` handles the Connection wrapper's
   `List<ConnectionResult>` return type alongside the existing List/Single cases.
 
-**§2 still pending:**
-- `FieldBuilder:252-256`: delete the `hasSplitQuery && hasLookupKey && Connection`
-  rejection; message currently points at this plan's §2.
-- `GraphitronSchemaValidator.validateSplitLookupTableField:346-351`:
-  defense-in-depth rejection on `Connection` wrapper must go.
-- `SplitRowsMethodEmitter.buildConnectionMethod`: extend to handle the
-  `lookupMapping != null` branch (reuse the lookup-input VALUES JOIN from
-  `buildListMethod`).
+**Permanent rejections (no further work):**
+- `FieldBuilder:252-257` and `:266-271`: `@asConnection` + `@lookupKey` rejected
+  at classifier time as an invalid schema (not a deferred feature). `@lookupKey`
+  establishes a positional input-list↔output-list correspondence, which
+  pagination would break. Holds whether or not `@splitQuery` is present.
+  Message instructs the schema author to drop one directive.
+- `GraphitronSchemaValidator` rejections of `Connection` on `LookupTableField` /
+  `SplitLookupTableField` stay as defence-in-depth.
 
 **No new shared classes.** `ConnectionHelper.edges/nodes/pageInfo`,
 `ConnectionHelper.encodeCursor/decodeCursor/reverseOrderBy`, and
@@ -128,10 +129,11 @@ applied inside the windowed CTE.
 - **Single-cardinality `@splitQuery` + `@asConnection`**: nonsensical (a single
   result isn't paginable). Classifier keeps rejecting; message updated to drop
   the "follow-up plan" caveat.
-- **`SplitLookupTableField` + `@asConnection`**: §2. Semantics of "paginate the
-  cartesian of per-parent × per-lookup-key" need a design pass. §1 ships with
-  `SplitLookupTableField + Connection` rejected at classifier time with an
-  updated message pointing at §2.
+- **`@asConnection` + `@lookupKey` (any form)**: invalid schema, rejected at
+  classifier time. `@lookupKey` contracts a 1:1 positional mapping between the
+  input key list and the output list; pagination would break that contract.
+  Not a "deferred" generator gap, it is permanently incompatible. The rejection
+  message instructs the schema author to drop one directive.
 - **Dynamic `@orderBy` on `SplitTableField` + `@asConnection`**: rejected at
   validator time. The existing `<fieldName>OrderBy(env)` helper emitted by
   `TypeFetcherGenerator.buildOrderByHelperMethod` hard-codes the canonical
@@ -140,7 +142,8 @@ applied inside the windowed CTE.
   referencing the wrong jOOQ table instance, which jOOQ would flag at SQL
   generation. Lifting the gate needs either a Split-specific OrderBy helper that
   accepts the terminal-aliased Table, or a broader refactor threading the alias
-  through all OrderBy helpers. Plausible §2 scope; not §1.
+  through all OrderBy helpers. Possible §2, gated on whether any consumer asks
+  for it.
 - **Condition-join hops**: unsupportedReason already gates these; unchanged.
 - **Custom pagination-arg names**: the plan uses `first/last/after/before`
   literal names in the emitted rows method (the same shortcut the root connection
@@ -172,21 +175,15 @@ backward last-page (reversed ordering + client-side re-reverse). Learnings:
   synthesizing a jOOQ Result. Root connection emission still compiles because
   `Result<Record>` is-a `List<Record>`.
 
-**§2: SplitLookupTableField + Connection** (defer until §1 lands + reviewed)
-- Requires a decision on per-lookup-key pagination semantics. Options:
-  (a) paginate per `(parent, lookup-key)` pair (row_number partitions over the
-  combined key); (b) paginate per parent, concatenating all lookup-key matches
-  (row_number partitions over parent only); (c) reject until a consumer hits it.
-- Dynamic `@orderBy` on Split+Connection lands here too (needs the
-  terminal-alias OrderBy helper refactor).
-- Emitter: `buildConnectionMethod` handles the `lookupMapping != null` branch; the
-  lookup-input JOIN stays, partition clause varies by the option chosen.
-- Classifier: delete `FieldBuilder:252-256` rejection.
+**§2 (conditional): dynamic `@orderBy` on SplitTableField + Connection.**
+Gated on a consumer request. Needs the `<fieldName>OrderBy(env)` helper to
+accept the FK-chain terminal-aliased Table instead of baking in the canonical
+`tableLocal` alias. Either a Split-specific helper variant or a cross-cutting
+refactor that threads the alias through every OrderBy helper. If no consumer
+hits it, keep the validator rejection and close this plan at §1.
 
-**§3: Scope closure**
-- Remove the "deferred to a follow-up plan" caveat from any remaining rejection
-  messages (single-cardinality, condition-join).
-- Roadmap: mark item Done, delete this file.
+**§3: Scope closure.** Delete this file once §1 is approved, assuming §2 is not
+pursued. If §2 lands, its own closure commit handles the file deletion.
 
 ## Test coverage
 
@@ -205,18 +202,16 @@ backward last-page (reversed ordering + client-side re-reverse). Learnings:
   full-qualified jOOQ tables, and graphql-java imports on entity-scoped
   `*Conditions` classes. The new emitter avoids all three.
 
-§2 will need its own pipeline + execution coverage once the per-lookup-key
-semantics decision lands.
+§2, if pursued, needs a pipeline + execution test for dynamic-orderBy on
+Split+Connection. Classifier case
+`AS_CONNECTION_LOOKUP_REJECTED` in `GraphitronSchemaBuilderTest` already pins
+the `@asConnection` + `@lookupKey` rejection as a permanent invariant.
 
 ## Open questions
 
-1. **Phase 2 scope gate**: if no in-tree consumer needs `@splitQuery @lookupKey`
-   with a connection return, drop §2 from this plan entirely and leave the
-   rejection with a permanent "not supported" message. Worth checking the
-   `graphitron-rewrite-test-fixtures` schemas + any known downstream users before
-   committing to §2 design. The same scope check should sweep for any
-   in-production schemas that want dynamic `@orderBy` on Split+Connection, since
-   that's now co-located in §2.
+1. **§2 trigger**: does any in-tree or downstream schema want dynamic `@orderBy`
+   on `@splitQuery @asConnection`? If yes, §2 is worth doing and the alias-threading
+   refactor is its focus. If no, §1 closes the plan.
 
 ### Decided during §1
 

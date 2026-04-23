@@ -92,7 +92,8 @@ class LookupTableFieldPipelineTest {
         var field = schema.field("Film", "actors");
         assertThat(field).isInstanceOf(GraphitronField.UnclassifiedField.class);
         assertThat(((GraphitronField.UnclassifiedField) field).reason())
-            .contains("@asConnection on inline (non-@splitQuery) LookupTableField");
+            .contains("@asConnection on @lookupKey fields is invalid")
+            .contains("positional correspondence");
     }
 
     @Test

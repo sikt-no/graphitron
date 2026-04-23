@@ -252,8 +252,9 @@ class FieldBuilder {
             if (hasSplitQuery && hasLookupKey) {
                 if (returnType.wrapper() instanceof FieldWrapper.Connection) {
                     return new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                        "@asConnection on @splitQuery @lookupKey fields is not supported; per-parent-per-lookup-key "
-                        + "pagination semantics need their own design pass (plan §2).");
+                        "@asConnection on @lookupKey fields is invalid: @lookupKey establishes a positional "
+                        + "correspondence between the input key list and the output list (one entry per key), "
+                        + "which pagination would break. Drop @asConnection or drop @lookupKey.");
                 }
                 if (returnType.wrapper() instanceof FieldWrapper.Single) {
                     return new UnclassifiedField(parentTypeName, name, location, fieldDef,
@@ -266,7 +267,9 @@ class FieldBuilder {
             if (!hasSplitQuery && hasLookupKey) {
                 if (returnType.wrapper() instanceof FieldWrapper.Connection) {
                     return new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                        "@asConnection on inline (non-@splitQuery) LookupTableField is not supported; add @splitQuery for batched connection semantics");
+                        "@asConnection on @lookupKey fields is invalid: @lookupKey establishes a positional "
+                        + "correspondence between the input key list and the output list (one entry per key), "
+                        + "which pagination would break. Drop @asConnection or drop @lookupKey.");
                 }
                 if (returnType.wrapper() instanceof FieldWrapper.Single) {
                     return new UnclassifiedField(parentTypeName, name, location, fieldDef,

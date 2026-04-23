@@ -611,9 +611,10 @@ class GraphitronSchemaBuilderTest {
                     .isInstanceOf(FieldWrapper.Connection.class);
             }),
 
-        AS_CONNECTION_SPLIT_LOOKUP_REJECTED(
-            "@asConnection @splitQuery + @lookupKey → UnclassifiedField (SplitLookupTableField + "
-            + "Connection is §2 scope, held until per-lookup-key pagination semantics are nailed down)",
+        AS_CONNECTION_LOOKUP_REJECTED(
+            "@asConnection + @lookupKey → UnclassifiedField: @lookupKey establishes a positional "
+            + "input-list↔output-list correspondence, which pagination breaks. Invalid schema, not "
+            + "a generator gap. Holds whether or not @splitQuery is also present.",
             """
             type Customer @table(name: "customer") { firstName: String }
             type Store @table(name: "store") {
@@ -624,8 +625,8 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 assertThat(schema.field("Store", "customersByKey")).isInstanceOf(UnclassifiedField.class);
                 assertThat(((UnclassifiedField) schema.field("Store", "customersByKey")).reason())
-                    .contains("@asConnection on @splitQuery @lookupKey fields is not supported")
-                    .contains("plan §2");
+                    .contains("@asConnection on @lookupKey fields is invalid")
+                    .contains("positional correspondence");
             }),
 
         SPLIT_QUERY(
