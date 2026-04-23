@@ -1013,9 +1013,9 @@ class FieldBuilder {
      * {@link ArgumentRef.UnclassifiedArg} and {@link ArgumentRef.ScalarArg.UnboundArg} add to
      * {@code errors}. For {@link ArgumentRef.InputTypeArg} variants the arg-level and
      * input-field-level {@code @condition} predicates are emitted via
-     * {@link #walkInputFieldConditions}; auto-column binding from a {@code @table} input's
-     * non-condition fields is pending under
-     * {@code docs/planning/plan-auto-column-binding.md}. Returns {@code null}
+     * {@link #walkInputFieldConditions}; implicit column conditions for a
+     * {@code @table} input's un-annotated fields are pending under
+     * {@code docs/planning/plan-implicit-input-conditions.md}. Returns {@code null}
      * when any filter classification fails.
      *
      * <p>All column-bound scalar args are grouped into a single {@link GeneratedConditionFilter}
@@ -1032,8 +1032,8 @@ class FieldBuilder {
                 case ArgumentRef.OrderByArg ignored -> {}                     // handled by projectOrderBySpec
                 case ArgumentRef.PaginationArgRef ignored -> {}               // handled by projectPaginationSpec
                 case ArgumentRef.InputTypeArg.TableInputArg tia -> {
-                    // Auto-column binding for @table input types is pending; see
-                    // docs/planning/plan-auto-column-binding.md.
+                    // Implicit column conditions for @table input types are pending; see
+                    // docs/planning/plan-implicit-input-conditions.md.
                     // Arg-level and field-level @condition predicates are emitted now.
                     tia.argCondition().ifPresent(ac -> argConditions.add(ac.filter()));
                     walkInputFieldConditions(tia.fields(), tia.name(), List.of(), argConditions);
@@ -1089,10 +1089,10 @@ class FieldBuilder {
      * <p>Only {@link InputField.ColumnField}, {@link InputField.ColumnReferenceField}, and
      * {@link InputField.NestingField} carry a {@code condition} optional. {@code NestingField}
      * children are recursed into with a path prefix extended by the nesting field's name.
-     * Auto-predicates derived from a {@code @table} input's non-condition fields are pending
-     * under {@code docs/planning/plan-auto-column-binding.md}; that plan adds a
-     * {@code boolean enclosingOverride} accumulator to this recursion so auto-predicates
-     * are suppressed under an ancestor's {@code override: true}.
+     * Implicit column conditions derived from a {@code @table} input's un-annotated fields
+     * are pending under {@code docs/planning/plan-implicit-input-conditions.md}; that plan
+     * adds a {@code boolean enclosingOverride} accumulator to this recursion so implicit
+     * predicates are suppressed under an ancestor's {@code override: true}.
      *
      * <p>{@code outerArgName} is the top-level field-argument name (e.g. {@code "filter"}).
      * {@code pathPrefix} is the list of Map keys from {@code outerArgName} down to the parent of

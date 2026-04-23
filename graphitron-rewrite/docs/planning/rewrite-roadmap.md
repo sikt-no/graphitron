@@ -9,7 +9,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | Item | Status | Plan |
 |---|---|---|
 | Platform-id as synthesized NodeId | Ready | [plan](legacy-platform-id.md) |
-| Auto-column binding for `@table` input types | Spec | [plan](plan-auto-column-binding.md) |
+| Implicit column conditions for `@table` input types | Spec | [plan](plan-implicit-input-conditions.md) |
 | `BatchKey.ObjectBased` removal | Spec | [plan](plan-batchkey-remove-objectbased.md) |
 | Service-backed and method-backed root fetchers | Spec | [plan](plan-service-root-fetchers.md) |
 | `IdReferenceField` input filter variant | Spec | [plan](plan-id-reference-input-field.md) |

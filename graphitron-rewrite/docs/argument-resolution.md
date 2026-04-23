@@ -45,10 +45,11 @@ not committed to trunk) counted 62 plain inputs carrying inner
 `@condition`, 3 of them under an outer field-level
 `@condition(override: true)` (`Query.emner`, `Query.emnerV2`,
 `Query.studenter`). Zero `@table` inputs carry inner `@condition`
-because `@table` inputs on alf rely on *implicit auto-column binding*
-instead (63 distinct call sites). Auto-column binding is tracked
-separately under [`planning/plan-auto-column-binding.md`](planning/plan-auto-column-binding.md)
-and is required for legacy parity on the 63 `@table` call sites.
+because `@table` inputs on alf rely on *implicit column conditions*
+instead (63 distinct call sites). Implicit column conditions are
+tracked separately under
+[`planning/plan-implicit-input-conditions.md`](planning/plan-implicit-input-conditions.md)
+and are required for legacy parity on the 63 `@table` call sites.
 
 ## Design
 
@@ -202,13 +203,13 @@ fields carry their own explicit `@condition` methods.** The rewrite's
 proposed rule preserves inner explicit methods across the boundary. That is
 a **deliberate divergence** from legacy.
 
-**Rationale for diverging.** The legacy behavior couples auto-predicates and
-explicit methods into a single "outer owns everything" toggle, which means a
-schema author can't declaratively compose an outer replacement condition with
-inner explicit side-conditions. The rewrite treats each level's `override`
-flag as affecting only that level's auto-predicate, which lets
-`@condition(override: true)` replace auto-binding without also silencing
-explicit input-field conditions written by the schema author.
+**Rationale for diverging.** The legacy behavior couples implicit predicates
+and explicit methods into a single "outer owns everything" toggle, which means
+a schema author can't declaratively compose an outer replacement condition
+with inner explicit side-conditions. The rewrite treats each level's
+`override` flag as affecting only that level's implicit predicate, which lets
+`@condition(override: true)` replace the implicit condition without also
+silencing explicit input-field conditions written by the schema author.
 
 **Divergence-pinning tests.** Two execution tests pin the rewrite against
 legacy's total-replace rule:
@@ -424,13 +425,13 @@ code.
 - **`PlatformIdField` with `@condition`.** Platform IDs are legacy
   accessors; if a real schema surfaces this we'll promote it to its own
   backlog item.
-- **Auto-column binding for `@table` input types, and the
-  override-propagation accumulator that goes with it.** A required
+- **Implicit column conditions for `@table` input types, and the
+  override-propagation accumulator that goes with them.** A required
   sibling feature for legacy parity: 63 `@table` input call sites on alf
-  rely on implicit column binding. Tracked as an active work item in
-  [`planning/plan-auto-column-binding.md`](planning/plan-auto-column-binding.md).
-  That plan lands the auto-predicate emission and the `enclosingOverride`
-  accumulator together (one recursion-parameter delta in
-  `walkInputFieldConditions`, plus the truth-table rows it enables); the
-  6-row truth table in §Truth table and the §Override propagation /
+  rely on implicit column conditions. Tracked as an active work item in
+  [`planning/plan-implicit-input-conditions.md`](planning/plan-implicit-input-conditions.md).
+  That plan lands the implicit-predicate emission and the
+  `enclosingOverride` accumulator together (one recursion-parameter delta
+  in `walkInputFieldConditions`, plus the truth-table rows it enables);
+  the 6-row truth table in §Truth table and the §Override propagation /
   §Legacy behavior reference blocks here are its design reference.
