@@ -138,7 +138,7 @@ public class GenerateMojo extends AbstractMojo {
     private String outputDirectory;
     @Parameter(required = true) private String outputPackage;
     @Parameter(required = true) private String jooqPackage;
-    @Parameter private List<ExternalRefBinding> externalReferences;
+    @Parameter private List<NamedReferenceBinding> namedReferences;
     @Parameter private List<ScalarBinding> scalars;
     @Parameter(defaultValue = "1000") private int maxAllowedPageSize;
 
@@ -169,7 +169,7 @@ public record RewriteContext(
     Path outputDirectory,
     String outputPackage,
     String jooqPackage,
-    Map<String, String> externalReferences,
+    Map<String, String> namedReferences,
     List<ScalarMapping> scalars,
     int maxAllowedPageSize
 ) {
@@ -223,13 +223,37 @@ Three small POJOs that Maven populates from XML:
 - `SchemaInputBinding`: fields `pattern`, `tag`, `descriptionNote`.
   Converted to `SchemaInput` (from the sibling plan) inside
   `RewriteContext.from(...)`.
-- `ExternalRefBinding`: fields `name`, `className`. Replaces
-  legacy's `ExternalMojoClassReference`, flattened (legacy has an
-  `imports` list that was underused).
-- `ScalarBinding`: fields `name`, `className`. Replaces legacy's
-  reuse of `ExternalMojoClassReference` for scalar types.
+- `NamedReferenceBinding`: fields `name`, `className`. Collapses into
+  a `Map<String, String>` on the context. Renamed from legacy's
+  `<externalReferences>` / `ExternalMojoClassReference(name, fullyQualifiedClassName)`
+  to match rewrite's own internal terminology (`BuildContext` /
+  `RewriteConfig.namedReferences`). `fullyQualifiedClassName` shortens
+  to `className`; one-time consumer XML edit.
+- `ScalarBinding`: fields `scalarName`, `className`. Dedicated type
+  rather than reusing the named-reference POJO; scalar names are
+  GraphQL schema identifiers and deserve a distinct field name.
 
 Deliberate: one POJO per concept. No shared base class.
+
+### Dropped legacy config elements
+
+Beyond the Mojo-level cuts in §Current state, three
+extension-point knobs also drop because rewrite does not consume
+them:
+
+- `<externalReferenceImports>`: flat `Set<String>` on
+  `AbstractGraphitronMojo`. Referenced only in legacy
+  `GeneratorConfig`; no reader in `graphitron-rewrite/`. JavaPoet's
+  import computation from `ClassName` objects covers what this
+  Set was manually tracking.
+- `<globalRecordTransforms>`: legacy-only; rewrite has no reader.
+- `<recordValidation>` / `<codeGenerationThresholds>` /
+  `<optionalSelect>` / `<useJdbcBatchingForDeletes>` /
+  `<useJdbcBatchingForInserts>` / `<validateOverlappingInputFields>` /
+  `<failOnMerge>`: also legacy-only; rewrite has no reader. Listed
+  together because they share a migration note: consumers who need
+  the same behaviour under rewrite open a roadmap item for that
+  specific capability.
 
 ### Lifecycle and packaging
 
@@ -243,9 +267,25 @@ Deliberate: one POJO per concept. No shared base class.
 
 ## Migration
 
-Consumers currently running rewrite via `graphitron-maven-plugin`
-with `<enableRewrite>true</enableRewrite>` + `<disableLegacy>true</disableLegacy>`
-switch to the new plugin in one diff:
+One-time consumer migration. Every rewrite-mode consumer edits their
+pom.xml when switching to the new plugin; we simplify aggressively and
+don't preserve legacy config names.
+
+Full rename table:
+
+| Legacy element                    | New element          | Notes |
+|-----------------------------------|----------------------|-------|
+| `<enableRewrite>` / `<disableLegacy>` | (removed)        | plugin is rewrite-only |
+| `<schemaFiles>` / `<userSchemaFiles>` | `<schemaInputs>` | sibling plan |
+| `<outputPath>`                    | `<outputDirectory>`  | standard Maven naming |
+| `<outputPackage>`                 | `<outputPackage>`    | unchanged, now required |
+| `<jooqGeneratedPackage>`          | `<jooqPackage>`      | shorter |
+| `<externalReferences>` (`<externalReference><name/><fullyQualifiedClassName/>`) | `<namedReferences>` (`<namedReference><name/><className/>`) | matches rewrite's own `namedReferences` terminology; field shortens |
+| `<externalReferenceImports>`      | (removed)            | not consumed by rewrite |
+| `<scalars>` (reuses ExternalMojoClassReference) | `<scalars>` (`<scalar><scalarName/><className/>`) | dedicated POJO; `scalarName` replaces reused `name` |
+| `<transform>` (nested block)      | (removed)            | tagging now via `<schemaInputs>` |
+| `<maxAllowedPageSize>`            | `<maxAllowedPageSize>` | unchanged |
+| `<globalRecordTransforms>` / `<recordValidation>` / `<codeGenerationThresholds>` / `<optionalSelect>` / `<useJdbcBatchingForDeletes>` / `<useJdbcBatchingForInserts>` / `<validateOverlappingInputFields>` / `<failOnMerge>` / `<makeNodeStrategy>` / `<experimental_requireTypeIdOnNode>` | (removed) | legacy-only; no rewrite reader |
 
 Before:
 ```xml
@@ -259,6 +299,12 @@ Before:
     <outputPath>...</outputPath>
     <outputPackage>...</outputPackage>
     <jooqGeneratedPackage>...</jooqGeneratedPackage>
+    <externalReferences>
+      <externalReference>
+        <name>AccessControl</name>
+        <fullyQualifiedClassName>no.sikt.AccessControl</fullyQualifiedClassName>
+      </externalReference>
+    </externalReferences>
   </configuration>
 </plugin>
 ```
@@ -271,22 +317,21 @@ After:
   <configuration>
     <schemaInputs>...</schemaInputs>
     <outputDirectory>...</outputDirectory>
-    <outputPackage>...</outputPackage>
-    <jooqPackage>...</jooqPackage>
+    <outputPackage>no.sikt.example.graphql</outputPackage>
+    <jooqPackage>no.sikt.example.jooq</jooqPackage>
+    <namedReferences>
+      <namedReference>
+        <name>AccessControl</name>
+        <className>no.sikt.AccessControl</className>
+      </namedReference>
+    </namedReferences>
   </configuration>
 </plugin>
 ```
 
-Parameter renames (kept intentional; the legacy names carried the
-warts):
-- `outputPath` → `outputDirectory` (match standard Maven naming).
-- `jooqGeneratedPackage` → `jooqPackage` (shorter; less
-  implementation-detail).
-- `schemaFiles` / `userSchemaFiles` → `schemaInputs` (sibling plan).
-
-No migration for consumers still on legacy-only (`enableRewrite=false`).
-They keep using `graphitron-maven-plugin` until the legacy retirement
-landing marker fires.
+No migration for consumers still on legacy-only
+(`enableRewrite=false`). They keep using `graphitron-maven-plugin`
+until the legacy retirement landing marker fires.
 
 ## Tests
 
@@ -329,15 +374,15 @@ explicit `<goalPrefix>graphitron-rewrite</goalPrefix>` in the plugin
 pom (see §Goal-prefix note); consumers invoke
 `mvn graphitron-rewrite:generate` / `mvn graphitron-rewrite:validate`.
 
-**D2. Keep `externalReferences` + `scalars` as Mojo `@Parameter` fields?**
-Legacy plugin's namedReference + ScalarConfig shapes are
-generator-internal leaks (the consumer writes config in terms of the
-generator's own extension point types). Alternative: move to a
-resource file (`graphitron.yaml` or `graphitron.json` at project root)
-and make the Mojo config one line (`<configFile>`). Cleaner; one-way
-door though; switching later is a breaking change. Recommend keeping
-as `@Parameter` for now; revisit if a third generator-extension
-concept lands and the Mojo grows bloated.
+**D2. Extension-point config shape.** Resolved: keep as nested
+`@Parameter` XML elements; simplify aggressively (no backwards
+compatibility with legacy XML). Renamed to `<namedReferences>` (from
+`<externalReferences>`) to match rewrite's internal vocabulary; inner
+POJO field shortens to `className` (from `fullyQualifiedClassName`);
+scalars get their own POJO (`<scalar><scalarName/><className/>`)
+rather than reusing the namedReference type. `<externalReferenceImports>`
+drops entirely; no rewrite reader. Consumer migration is one-time
+and covered by the §Migration table.
 
 **D3. `validate` goal.** Resolved: included as a separate Mojo at
 phase `VALIDATE` (see §Design: Goals). Shares the `RewriteContext`
@@ -351,7 +396,7 @@ revisiting without concrete consumer ask.
 Resolved: require explicit. Both are `required = true`; omitting
 either fails the build with Maven's standard "parameter not set"
 error. No Sikt-flavoured default, no `${project.groupId}`-derived
-default — consumers know their own package layout.
+default; consumers know their own package layout.
 
 **D6. Java release target.** Resolved: plugin code is Java 21; the
 generator's existing `release=17` ratchet pins output. No
