@@ -1932,7 +1932,7 @@ class FieldBuilder {
             String typeName = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(fieldDef.getType())).getName();
             // Path 2 — synthesized NodeIdField. `@nodeId`, `@reference`, and `@field` are already
             // excluded above (`@nodeId` by the directive check, `@reference` by its own block, and
-            // `@field` via the exclusion here). See plan: docs/planning/legacy-platform-id.md.
+            // `@field` via the exclusion here). See plan: docs/planning/plan-nodeid-directives.md.
             if (tableType instanceof NodeType nodeType
                     && "ID".equals(typeName)
                     && !isList

@@ -36,7 +36,7 @@ public class Bar extends TableImpl<BarRecord> {
     /**
      * Node-identity metadata emitted by the custom {@code KjerneJooqGenerator}. The rewrite reads
      * these two constants via reflection to synthesize {@code NodeType} classification for
-     * platform-id tables; see the plan at {@code docs/planning/legacy-platform-id.md}.
+     * platform-id tables; see the plan at {@code docs/planning/plan-nodeid-directives.md}.
      */
     public static final String __NODE_TYPE_ID = "Bar";
 

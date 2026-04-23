@@ -9,4 +9,4 @@ You're implementing generators, adding field variants, or fixing bugs in the rew
 8. **[Rewrite Roadmap](planning/rewrite-roadmap.md)** — Remaining generator work. Full set of in-flight plans lives under [planning/](planning/).
 
 Active implementation plans (read when you're working on the specific feature):
-- **[Legacy PlatformId](planning/legacy-platform-id.md)** — Classifying legacy `id: ID!` mutation input fields that bind to composite platform keys via record-level `getId`/`setId`.
+- **[`@nodeId` + `@node` directive support](planning/plan-nodeid-directives.md)** — Relay node identity: `@node` on types, `@nodeId` on fields / arguments, `NodeType` synthesis from KjerneJooqGenerator metadata (absorbs legacy platform-id), `Query.node` resolver, `NodeIdReferenceField`.

@@ -1,12 +1,14 @@
-# Platform-id as synthesized NodeId
+# `@nodeId` + `@node` directive support
 
 > **Status:** Ready
 >
-> Pivot: KjerneJooqGenerator will be extended to emit `__NODE_TYPE_ID` + `__NODE_KEY_COLUMNS` constants on every platform-id table class. The rewrite reads them, synthesizes a `NodeType` classification, and routes all downstream work (projection, filter, mutation binding) through the same `@nodeId` paths. `PlatformIdField` sum-type variants are deleted. Supersedes the previous four-item plan (`getId`/`hasId`/`hasIds`-driven classification and emission).
+> Scope: the rewrite supports Relay node identity through two directives, `@node` on types (carries `typeId` + `keyColumns`) and `@nodeId` on fields / arguments (marks an `ID` as a composite-key encoding). Platform-id tables participate as a *synthesis trigger*: KjerneJooqGenerator emits `__NODE_TYPE_ID` + `__NODE_KEY_COLUMNS` constants on each platform-id table, the rewrite reads them and synthesizes `NodeType` unconditionally, then routes projection, filter, mutation binding, and `Query.node` resolution through the same `@nodeId` paths. `PlatformIdField` sum-type variants are deleted; `NodeIdReferenceField` and `QueryField.QueryNodeField` land as terminal consumers of the same machinery. Supersedes the previous platform-id-centric plan (parallel `getId`/`hasId`/`hasIds`-driven classification).
 
-## Why the pivot
+## Why one umbrella, not four
 
-The earlier plan classified platform-id as its own sum-type variant (`InputField.PlatformIdField`, `ChildField.PlatformIdField`), reflected on per-table `getId()`/`setId()`/`hasId()`/`hasIds()` methods emitted by `KjerneJooqGenerator`, and would have introduced a parallel filter-emission path (`PlatformIdArg`, `PlatformIdMapping`, platform-id arm in `LookupValuesJoinEmitter`). Two things make that wrong:
+Earlier roadmap snapshots had platform-id migration, `@nodeId` infrastructure, `NodeIdReferenceField` emission, and the `Query.node` resolver as separate items. After the pivot below, all four resolve to the same sum-type variants (`NodeType`, `ChildField.NodeIdField`, `InputField.NodeIdField`, `NodeIdArg`, `NodeIdMapping`) and share one helper (`NodeIdStrategy`). Keeping them as separate roadmap rows made the dependency graph look wider than it is; consolidating keeps planning aligned with the code.
+
+An earlier plan classified platform-id as its own sum-type variant (`InputField.PlatformIdField`, `ChildField.PlatformIdField`), reflected on per-table `getId()`/`setId()`/`hasId()`/`hasIds()` methods emitted by `KjerneJooqGenerator`, and would have introduced a parallel filter-emission path (`PlatformIdArg`, `PlatformIdMapping`, platform-id arm in `LookupValuesJoinEmitter`). Two things make that wrong:
 
 - **It invents a parallel type system for something already classified.** Platform-id tables are structurally composite-key node types. The rewrite already has `NodeType` / `ChildField.NodeIdField` (plus the planned input-side and emitter work for `@nodeId`) carrying exactly the metadata a composite key needs: `typeId` + `nodeKeyColumns`. Reflecting on `getId()` to re-derive the same information via method naming + return-type matching is the model-metadata-over-parallel-type-systems anti-pattern, applied twice.
 - **Sikt owns KjerneJooqGenerator.** The generator can expose the underlying metadata directly. With `__NODE_TYPE_ID` + `__NODE_KEY_COLUMNS` constants, every place the rewrite would have called `table.hasIds(set)` instead calls `NodeIdStrategy.hasIds(typeId, set, keyColumns)` — the same helper `@nodeId` fields use. One code path, one set of tests.

@@ -8,9 +8,10 @@ package no.sikt.graphitron.rewrite.model;
  * lookup scenario where an input record carries several key columns passed together.
  *
  * <p>Canonical shape shared across plans: argument-resolution uses it on
- * {@code ArgumentRef.TableInputArg.fieldBindings}, and the legacy platform-id plan uses it to
- * map composite-platform-key inputs to record-level accessor columns. See
- * {@code docs/argument-resolution.md#cross-plan-ownership} and {@code docs/legacy-platform-id.md}.
+ * {@code ArgumentRef.TableInputArg.fieldBindings}, and the {@code @nodeId} + {@code @node}
+ * directive-support plan uses it to map composite-platform-key inputs to record-level accessor
+ * columns. See {@code docs/argument-resolution.md#cross-plan-ownership} and
+ * {@code docs/planning/plan-nodeid-directives.md}.
  *
  * <p>{@code inputFieldName} is the GraphQL field name (e.g. {@code "filmId"}).
  * {@code targetColumn} is the resolved column on the target table.

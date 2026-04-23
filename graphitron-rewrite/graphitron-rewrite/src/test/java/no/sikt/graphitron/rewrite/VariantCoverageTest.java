@@ -33,9 +33,9 @@ class VariantCoverageTest {
      */
     private static final Map<Class<?>, String> NO_CASE_REQUIRED = Map.of(
         ChildField.PlatformIdField.class,
-            "Scheduled for deletion in legacy-platform-id plan after NodeType synthesis migration.",
+            "Scheduled for deletion in plan-nodeid-directives after NodeType synthesis migration.",
         InputField.PlatformIdField.class,
-            "Scheduled for deletion in legacy-platform-id plan after NodeType synthesis migration.",
+            "Scheduled for deletion in plan-nodeid-directives after NodeType synthesis migration.",
         GraphitronType.JooqRecordType.class,
             "No plain jOOQ Record<?> (non-TableRecord) fixture class in the test classpath; "
             + "add a case when a suitable fixture is introduced.",
