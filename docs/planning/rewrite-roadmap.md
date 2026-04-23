@@ -18,7 +18,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | Multi-parent NestingField sharing — `TableField` arm | Spec | [plan](plan-nestingfield-multiparent-tablefield.md) |
 | Faceted search on `@asConnection` | Spec | [plan](plan-faceted-search.md), [spike](spike-faceted-search-sql.md) |
 | Rewrite emitter + classifier hygiene sweep | Spec | [plan](plan-rewrite-hygiene-sweep.md) |
-| Per-type `*Wiring` classes | In Review | [plan](plan-per-type-wiring-classes.md) |
 | Consolidate rewrite modules under `graphitron-rewrite/` | Ready | [plan](plan-consolidate-rewrite-modules.md) |
 | Docs as an index into classification tests | Ready (deferred) | [plan](plan-docs-as-index-into-tests.md) |
 
@@ -109,6 +108,7 @@ Enumerated from `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS`. Priority numbers
 
 ## Done
 
+- Per-type `*Wiring` classes (`cadab36` + `2c366bb`): `WiringClassGenerator` at `no.sikt.graphitron.rewrite.generators` emits one `<TypeName>Wiring` class per GraphQL type to `<outputPackage>.rewrite.wiring`, covering five categories (regular, nested with `BatchKeyField` leaves, nested without, Connection, Edge); `ConnectionWiring` / `NestedTypeWiring` are private records inside the generator and the public entry is schema-only (`generate(GraphitronSchema)`). `TypeFetcherGenerator` lost `wiring()`, `emitWiring`, `buildWiringEntry`, `buildPropertyOrRecordFetcherEntry`, `buildWiringMethod`; `GraphitronWiringClassGenerator` shrank to a pure aggregator (`.type(XxxWiring.wiring())` per class name, alphabetically sorted). Lint ratchet `GeneratedSourcesLintTest.wiringAggregatorDoesNotInlineTypeWiring` pins `GraphitronWiring.java` free of any `newTypeWiring(` call so future categories can't quietly re-inline. Follow-up `2c366bb` fixed five raw-type warnings surfaced by the refactor (threading `ParameterizedTypeName` + `WildcardTypeName` through `$T` substitution and broadening two `@SuppressWarnings`) and added two `[Backlog]` Cleanup items (PageInfo wiring decision, `TypeResolver` wiring for interface/union).
 - `89dfea8` — `DSLContext` params on `@service` methods: `ServiceCatalog.reflectServiceMethod` classifies `org.jooq.DSLContext` parameters as `ParamSource.DslContext`; four `ServiceCatalogTest` cases + one `GraphitronSchemaBuilderTest` pipeline case. `reflectTableMethod` intentionally unchanged — tracked as backlog.
 - `3357928` — Sealed-switch dispatch: `TypeFetcherGenerator.generateTypeSpec` exhaustive over all `GraphitronField` leaves; stubbed leaves via `NOT_IMPLEMENTED_REASONS`.
 - `15f9f61e` — Variant-coverage Phase 1: `IMPLEMENTED_LEAVES` / `NOT_DISPATCHED_LEAVES` partition invariant enforced by `GeneratorCoverageTest`.
