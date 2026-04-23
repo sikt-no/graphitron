@@ -14,28 +14,36 @@
 >
 > Depends on "Rewrite owns schema loading + directive auto-injection"
 > landing first; this transform runs inside the same
-> `GraphQLRewriteGenerator` step that plan introduces. Also depends on
+> `GraphQLRewriteGenerator` step that plan introduces. Lands before
 > the "Rewrite-owned Maven plugin" plan
-> ([plan-rewrite-maven-plugin.md](plan-rewrite-maven-plugin.md)) for
-> the `<schemaInputs>` config surface and the `SchemaInputBinding`
-> POJO; `RewriteContext.schemaInputs()` is the source this transform
-> reads from.
+> ([plan-rewrite-maven-plugin.md](plan-rewrite-maven-plugin.md))
+> without touching `graphitron-maven-plugin`: this plan ships
+> rewrite-core code only and deletes the legacy plugin's
+> `enableRewrite` path in the process. No `<schemaInputs>` XML
+> surface exists until the new plugin lands; rewrite's pipeline is
+> test-driven during the transitional window. `graphitron-maven-plugin`
+> as a whole retires with the Maven-plugin plan.
 
 ## Goal
 
-Give the rewrite Mojo an explicit `<schemaInputs>` list where each
-entry matches one or more schema files by glob pattern and optionally
-attaches:
+Give rewrite a first-class `SchemaInput` concept: each input is a
+glob pattern plus optional tag and optional description note, and
+rewrite's pipeline attaches:
 
 - a **tag** applied as `@tag(name: "<tag>")` to in-scope elements
   defined in the matched files, and
 - a **description note** appended (with a blank-line separator) to
   the description of those elements.
 
-One tag per entry, one note per entry. No implicit folder convention;
-the Maven config is the only source of truth. Two build-time errors,
-both owned by rewrite with precise messages: an entry whose pattern
-matches zero files, and a file matched by two or more entries.
+One tag per entry, one note per entry. No implicit folder
+convention; the list of `SchemaInput` records driving the pipeline
+is the only source of truth. Two build-time errors, both owned by
+rewrite with precise messages: an entry whose pattern matches zero
+files, and a file matched by two or more entries.
+
+The XML surface (Maven `<schemaInputs>` config, `SchemaInputBinding`
+POJO, Mojo parameter) lands with the Maven-plugin plan; this plan
+ships rewrite core and its tests.
 
 Out of scope: the `@feature(flags: [...])` directive, the
 `<outputSchemas>` feature-flag splits, `SchemaFeatureFilter`. Those
@@ -86,24 +94,26 @@ Key legacy behaviours the rewrite port preserves:
 
 Key legacy behaviours this port changes:
 
-- **No folder convention.** Tag and note come from Maven config, not
-  from the source file's folder path. Any file anywhere can be tagged.
-  Consumers migrate by translating each `features/<name>/` directory
-  into a `<schemaInput><pattern>features/<name>/**</pattern><tag><name></tag>...` entry.
-- **No `description-suffix.md`.** The note is a literal string in the
-  Maven config. Consumers migrating from legacy can inline the file's
-  contents or keep them in a `<![CDATA[ ... ]]>` block.
+- **No folder convention.** Tag and note come from the `SchemaInput`
+  list (populated by Maven config when the new plugin lands), not
+  from the source file's folder path. Any file anywhere can be
+  tagged. Consumers eventually migrate by translating each
+  `features/<name>/` directory into one `SchemaInput` entry.
+- **No `description-suffix.md`.** The note is a literal string on
+  the `SchemaInput` record; the Maven-plugin plan surfaces it as a
+  `<descriptionNote>` element. Consumers migrating from legacy
+  inline the file's contents or keep them in a `<![CDATA[ ... ]]>`
+  block.
 - **Decouple note from `@feature`.** Legacy applies the suffix only
   when `@feature` is added; rewrite applies the note whenever a
   matching entry declares one, independent of `@tag`.
-- **Federation import check drops.** Legacy guards `@tag` on
-  `@link(import: [...])` containing `"@tag"`. Rewrite requires the
-  `@tag` directive to be declared in the schema; if it isn't, the
-  build fails with a pointer to the offending `<schemaInput>` entry.
-- **Overlap is an error.** Legacy silently let arbitrary glob /
-  folder logic decide. Rewrite fails the build if a single file
-  matches two `<schemaInput>` patterns, naming both rules in the
-  message.
+- **Federation import auto-handled.** Legacy guards `@tag` on
+  `@link(import: [...])` containing `"@tag"`. Rewrite's `TagApplier`
+  auto-injects a `@tag` directive declaration when the registry has
+  none; see §3 and D3.
+- **Overlap is an error.** Legacy silently let arbitrary folder
+  logic decide. Rewrite fails the build if a single file matches two
+  entries, naming both patterns in the message.
 - **Operate on `TypeDefinitionRegistry`**, not on the built schema.
   `SourceLocation` is preserved per `Definition`, so source-file
   attribution flows through without a built-schema round-trip.
@@ -120,11 +130,13 @@ public record SchemaInput(
 ) {}
 ```
 
-Carried through `RewriteContext.schemaInputs()` (the per-invocation
-config object introduced by the Maven-plugin plan). The new plugin
-has no `<schemaFiles>` element at all; `<schemaInputs>` is the sole
-input mechanism, so there is no parallel attribution-less path to
-keep in sync.
+Held on a new minimal `RewriteContext` record introduced by this
+plan (fields: `List<SchemaInput> schemaInputs`, `Path basedir`), in
+package `no.sikt.graphitron.rewrite`. `GraphQLRewriteGenerator`
+accepts `RewriteContext` in its constructor; the Maven-plugin plan
+expands the record with the remaining plugin knobs (output paths,
+named references, scalars, etc.) without moving or renaming it.
+Tests construct a `RewriteContext` directly.
 
 ### 2. Resolver (`SchemaInputResolver`)
 
@@ -204,6 +216,11 @@ schema   = GraphitronSchemaBuilder.build(registry)
 GraphitronSchemaValidator.validate(schema)
 ```
 
+`ctx` is the `RewriteContext` instance passed into
+`GraphQLRewriteGenerator`'s constructor. No Mojo currently
+constructs one; tests are the only callers until the Maven-plugin
+plan lands.
+
 Both appliers mutate the registry in place (registry is mutable; AST
 `Definition` nodes are immutable, so mutation is "replace each
 transformed definition"). Order between them is independent; note
@@ -211,69 +228,53 @@ application does not depend on tag application or vice versa.
 
 ## Config surface
 
-Maven plugin gains one new element, `<schemaInputs>`, on the rewrite
-Mojo. The new `graphitron-rewrite-maven` plugin has no
-`<schemaFiles>`; `<schemaInputs>` is the only declared input
-mechanism (see [plan-rewrite-maven-plugin.md](plan-rewrite-maven-plugin.md)).
-The POM-level binding POJO is `SchemaInputBinding` (owned by the
-Maven-plugin plan); this plan owns the `SchemaInput.fromBinding(...)`
-converter, the resolver that turns a list of `SchemaInput` records
-into a source-keyed map, and the two appliers that consume it.
+None. This plan ships rewrite-core code with no Maven wiring. The
+`<schemaInputs>` XML surface, its `SchemaInputBinding` POJO, and the
+Mojo-to-`SchemaInput` conversion all land with the Maven-plugin plan
+(see [plan-rewrite-maven-plugin.md](plan-rewrite-maven-plugin.md)),
+which is the only thing that will ever construct `RewriteContext`
+instances carrying real schema inputs.
 
-```xml
-<schemaInputs>
-  <schemaInput>
-    <pattern>schema/common/**/*.graphqls</pattern>
-    <!-- no tag, no note: loaded plain -->
-  </schemaInput>
-  <schemaInput>
-    <pattern>schema/enrollment/**/*.graphqls</pattern>
-    <tag>enrollment</tag>
-    <descriptionNote><![CDATA[Part of the enrollment feature. See https://docs.example/enrollment for details.]]></descriptionNote>
-  </schemaInput>
-  <schemaInput>
-    <pattern>schema/grading/**/*.graphqls</pattern>
-    <tag>grading</tag>
-  </schemaInput>
-</schemaInputs>
-```
-
-Each `<schemaInput>` has:
-
-- **`<pattern>`** (required): Ant-style glob relative to the project
-  basedir. `**` spans directories; `*` spans one path segment.
-- **`<tag>`** (optional): string. When present, `@tag(name: "<tag>")`
-  is applied to every in-scope element defined in a matched file.
-- **`<descriptionNote>`** (optional): literal string, may be wrapped
-  in `<![CDATA[ ... ]]>` for multi-line / special-character content.
-  When present, appended to the description of every in-scope
-  element defined in a matched file.
-
-`RewriteContext` exposes the parsed list as `List<SchemaInput>
-schemaInputs()`. No other configuration.
+Legacy-plugin cleanup as part of this plan: delete the
+`enableRewrite=true` branch from `graphitron-maven-plugin`'s
+`GenerateMojo` and its associated `RewriteConfig.setProperties(...)`
+call. Legacy plugin reverts to legacy-only; rewrite has no
+Maven entry point until the new plugin lands. Consumers are not
+running rewrite in production yet, so there is no regression to
+smooth.
 
 ## Implementation
 
 New package `no.sikt.graphitron.rewrite.schema.input`, landing
 alongside `RewriteSchemaLoader` (created by the schema-loading plan).
 
-1. `SchemaInput.java`: record above, plus `static SchemaInput fromBinding(SchemaInputBinding)`
-   which maps POM fields to the record (the explicit handoff between
-   the Maven-plugin module and rewrite core). ~20 LOC.
-2. `SchemaInputResolver.java`: `static Map<String, SchemaInput> resolve(List<SchemaInput>, Path basedir)`
+All rewrite-core. Maven plugin untouched except for the
+`enableRewrite` deletion at step 7.
+
+1. `no.sikt.graphitron.rewrite.schema.input.SchemaInput`: record
+   (pattern, Optional<tag>, Optional<descriptionNote>). ~15 LOC.
+2. `SchemaInputResolver`: `static Map<String, SchemaInput> resolve(List<SchemaInput>, Path basedir)`
    plus the two fail-fast checks, ~110 LOC.
-3. `TagApplier.java`: `static void apply(TypeDefinitionRegistry, Map<String, SchemaInput>)`,
+3. `TagApplier`: `static void apply(TypeDefinitionRegistry, Map<String, SchemaInput>)`,
    including the synthetic `@tag` directive declaration when the
    registry has none, ~90 LOC.
-4. `DescriptionNoteApplier.java`: `static void apply(TypeDefinitionRegistry, Map<String, SchemaInput>)`, ~70 LOC.
-5. Call sites added in `GraphQLRewriteGenerator.generate()`.
-6. `RewriteContext.schemaInputs()` populated by calling
-   `SchemaInput.fromBinding(...)` per element of `mojo.schemaInputs`
-   inside `RewriteContext.from(mojo, project)`. `SchemaInputBinding`
-   is defined by [plan-rewrite-maven-plugin.md](plan-rewrite-maven-plugin.md);
-   the conversion is this plan's.
+4. `DescriptionNoteApplier`: `static void apply(TypeDefinitionRegistry, Map<String, SchemaInput>)`, ~70 LOC.
+5. `no.sikt.graphitron.rewrite.RewriteContext`: minimal record
+   (`List<SchemaInput> schemaInputs`, `Path basedir`). The
+   Maven-plugin plan expands the record; this plan introduces the
+   type so the generator signature stays stable across both
+   landings. ~15 LOC.
+6. `GraphQLRewriteGenerator`: constructor now takes `RewriteContext`;
+   `generate()` reads `ctx.schemaInputs()` + `ctx.basedir()`
+   for the resolver call, otherwise unchanged from the
+   schema-loading plan's shape.
+7. `graphitron-maven-plugin`: delete the `enableRewrite=true`
+   branch from `GenerateMojo`, the `RewriteConfig.setProperties(...)`
+   wiring, and the `ValidateMojo.failOnRewriteValidationError`
+   path. Rewrite has no Mojo entry until the new plugin lands.
 
-Expected diff: ~300 LOC added, plus tests.
+Expected diff: ~350 LOC added in rewrite core; ~50 LOC deleted in
+the legacy plugin. Tests exercise everything.
 
 ### Element walking
 
@@ -358,13 +359,11 @@ to "Rewrite emits the client SDL as generated output" (umbrella item).
 
 ## Open decisions
 
-**D1. `<schemaInputs>` vs. `<schemaFiles>`.** Resolved by the
-Maven-plugin plan: the new `graphitron-rewrite-maven` plugin has no
-`<schemaFiles>` element at all, so `<schemaInputs>` is necessarily
-the only input mechanism. Consumers migrate to the new plugin and
-its `<schemaInputs>` configuration in one diff; see
-[plan-rewrite-maven-plugin.md](plan-rewrite-maven-plugin.md)'s
-Migration table.
+**D1. `<schemaInputs>` vs. `<schemaFiles>`.** Resolved: this plan
+adds no XML at all. `<schemaInputs>` lives only on the new plugin
+when the Maven-plugin plan lands; `<schemaFiles>` and
+`<userSchemaFiles>` never migrate (they belong to the retiring
+legacy plugin).
 
 **D2. Note element scope.** Legacy applies description changes only
 to fields / input fields / enum values / arguments / unions. Rewrite
@@ -389,13 +388,14 @@ build; (b) detect and skip when the element already carries the note
 suffix. Recommend (a) unless a concrete duplicate-run failure
 appears.
 
-**D5. Legacy compatibility window.** Does this plan's landing touch
-legacy's `FeatureConfiguration` / `<outputSchemas>`? No: legacy path
-is unchanged. Schemas that still use legacy's `features/<name>/`
-convention keep working on the legacy Mojo. Rewrite Mojo consumers
-adopt `<schemaInputs>` when they migrate. The umbrella's "Retire
-`graphitron-schema-transform`" landing marker closes the legacy
-path later.
+**D5. Legacy compatibility window.** Legacy's `FeatureConfiguration` /
+`<outputSchemas>` / `features/<name>/` folder convention stay
+intact on the legacy-only path. This plan does delete the
+`enableRewrite=true` branch from legacy's `GenerateMojo`, so any
+consumer currently wiring rewrite through the legacy plugin loses
+that entry point and waits for the new plugin. The umbrella's
+"Retire `graphitron-schema-transform`" landing marker closes the
+legacy transform path later.
 
 ## Roadmap integration
 

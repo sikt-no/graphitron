@@ -171,13 +171,14 @@ Replace the static import and the call site:
 
 `RewriteSchemaLoader.load(Collection<String>)` is agnostic to where
 the path list comes from; today it reads `RewriteConfig.generatorSchemaFiles()`
-(the static singleton populated by legacy's two-stage Mojo wiring). Once
-[plan-rewrite-maven-plugin.md](plan-rewrite-maven-plugin.md) lands, the
-caller becomes `RewriteContext` (a per-invocation record threaded
-through the constructor), with the file list derived from the
-`<schemaInputs>` resolver; see
-[plan-tagged-schema-inputs.md](plan-tagged-schema-inputs.md). Neither
-downstream plan alters `RewriteSchemaLoader`'s public API.
+(the static singleton populated by legacy's two-stage Mojo wiring).
+The next umbrella item
+([plan-tagged-schema-inputs.md](plan-tagged-schema-inputs.md))
+refactors `GraphQLRewriteGenerator` to take a `RewriteContext` record
+in its constructor and derives the file list from its
+`SchemaInputResolver`; the Maven-plugin plan then fills in the rest
+of the `RewriteContext` shape. Neither downstream plan alters
+`RewriteSchemaLoader`'s public API.
 
 ### 4. Stop the legacy pre-injection for rewrite
 
@@ -294,13 +295,14 @@ Post-landing, update the roadmap:
   section.
 - Delete the Cleanup-section entry "Drop `graphitron-common` build
   dependency from `graphitron-rewrite`" (absorbed).
-- The next two umbrella sub-items are already in Spec: "Rewrite-owned
-  Maven plugin" ([plan-rewrite-maven-plugin.md](plan-rewrite-maven-plugin.md))
-  and "Rewrite owns pattern-matched `@tag` + description notes"
-  ([plan-tagged-schema-inputs.md](plan-tagged-schema-inputs.md)); both
-  reference this plan's `RewriteSchemaLoader` and can move to Ready
-  once this lands. "Rewrite owns type-extension merging" is the next
-  Backlog item to promote.
+- The next umbrella sub-item in Spec is "Rewrite owns pattern-matched
+  `@tag` + description notes"
+  ([plan-tagged-schema-inputs.md](plan-tagged-schema-inputs.md)),
+  which depends on this plan's `RewriteSchemaLoader` and can move
+  to Ready once this lands. The "Rewrite-owned Maven plugin"
+  ([plan-rewrite-maven-plugin.md](plan-rewrite-maven-plugin.md))
+  lands after tagged-inputs. "Rewrite owns type-extension merging"
+  is the next Backlog item to promote.
 
 ## Open decisions
 

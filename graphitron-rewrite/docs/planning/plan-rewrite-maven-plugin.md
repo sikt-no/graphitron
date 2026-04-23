@@ -3,15 +3,22 @@
 > **Status:** Spec
 >
 > Sub-item of the "Dissolve `graphitron-schema-transform` module"
-> umbrella. Introduces a new, rewrite-only Maven plugin artifact that
-> starts from a clean config schema and a per-invocation context
-> object, leaving `graphitron-maven-plugin`'s organic-growth warts
-> behind entirely.
+> umbrella. Lands last in the umbrella's rewrite-plumbing arc, after
+> [plan-rewrite-owns-schema-loading.md](plan-rewrite-owns-schema-loading.md)
+> and [plan-tagged-schema-inputs.md](plan-tagged-schema-inputs.md).
+> By the time this plan runs: `RewriteSchemaLoader`, `SchemaInput`,
+> `SchemaInputResolver`, the tag/note appliers, and a minimal
+> `RewriteContext` record all exist in rewrite core; the legacy
+> plugin has already lost its `enableRewrite` entry point, so
+> rewrite has no Mojo surface to relocate, only to introduce.
+> This plan is pure introduction: new artifact, clean config
+> schema, full `RewriteContext`, all the organic-growth warts of
+> the retiring legacy plugin left behind.
 >
-> Drives simplification for the surrounding umbrella work: the
-> `<schemaInputs>` plan, the `<outputSchemas>` plan, and the eventual
-> retirement of `graphitron-schema-transform` all land on this plugin,
-> not on the legacy one.
+> Drives simplification for the remaining umbrella work: the
+> `<outputSchemas>` plan and the final retirement of
+> `graphitron-schema-transform` land on this plugin, not on the
+> legacy one.
 
 ## Goal
 
@@ -33,23 +40,31 @@ migrated.
 - New artifact `graphitron-rewrite-maven` at
   `graphitron-rewrite/graphitron-rewrite-maven/`.
 - Two Mojos (`generate`, `validate`) driving the rewrite pipeline
-  via a per-invocation context object (no static singletons).
-- Minimal config schema, anchored on `<schemaInputs>` (sibling plan).
+  via the `RewriteContext` record (no static singletons).
+- `<schemaInputs>` XML surface and its `SchemaInputBinding` POJO,
+  introduced in this plan (tagged-inputs left the config layer to
+  this plan on purpose).
 - Plugin packaging, lifecycle bindings, `plugin.xml` descriptor,
   integration test harness.
-- Migration documentation for consumers already running rewrite via
-  `graphitron-maven-plugin`'s `enableRewrite` flag.
+- Expansion of the minimal `RewriteContext` (introduced by
+  tagged-inputs with `schemaInputs` + `basedir`) with the remaining
+  plugin knobs: output paths, packages, named references, scalars,
+  page-size cap.
+- Deletion of `RewriteConfig` statics entirely once all readers
+  migrate to `RewriteContext`.
+- Migration documentation: what consumer POMs look like before vs.
+  after.
 
 **Out of scope**
 
-- Implementing `<schemaInputs>` resolver + appliers (covered by
+- The resolver + appliers themselves (landed by
   [plan-tagged-schema-inputs.md](plan-tagged-schema-inputs.md);
-  this plugin consumes the resolver, doesn't own it).
+  this plan just constructs the `RewriteContext` they consume).
 - Implementing `<outputSchemas>` (future umbrella sub-item; plugin
   grows an element when that plan ships).
 - Decommissioning `graphitron-maven-plugin` (the umbrella's "Retire
   `graphitron-schema-transform`" landing marker; legacy plugin keeps
-  running until then).
+  running until then for its legacy-only path).
 - Any classifier / emitter / validator refactor inside
   `graphitron-rewrite` proper. This plan is strictly the Maven-plugin
   boundary and the config object that flows through it.
@@ -58,7 +73,10 @@ migrated.
 
 Audit of `graphitron-maven-plugin` surfaced seven concrete warts that
 the new plugin does not inherit. Each is tied to a file + line in the
-legacy code so the cut is unambiguous.
+legacy code so the cut is unambiguous. Warts 4 and part of 5
+(`ValidateMojo.failOnRewriteValidationError`, `enableRewrite` branch)
+are already gone by the time this plan runs; tagged-inputs removed
+them. Listed here for the full historical justification.
 
 1. **Static config singletons.** `GeneratorConfig` (`graphitron-codegen-parent/.../GeneratorConfig.java`)
    and `RewriteConfig` (`graphitron-rewrite/.../RewriteConfig.java`) are
@@ -74,14 +92,13 @@ legacy code so the cut is unambiguous.
 
 3. **Schema-file intent collapsed into two overlapping parameters.**
    `AbstractGraphitronMojo.schemaFiles` (default: transform output)
-   vs. `GenerateMojo.userSchemaFiles` (user-provided). The sibling
-   `<schemaInputs>` plan subsumes both.
+   vs. `GenerateMojo.userSchemaFiles` (user-provided). Neither
+   migrates; `<schemaInputs>` takes their place.
 
-4. **Rewrite / legacy gating toggles.** `enableRewrite` (default
-   `false`) and `disableLegacy` (default `false`) at `GenerateMojo.java:114,123`
-   gate which generator runs. `ValidateMojo.failOnRewriteValidationError`
-   (default `true`) lets consumers downgrade rewrite errors. The new
-   plugin is rewrite-only; no gates.
+4. **Rewrite / legacy gating toggles.** `enableRewrite` / `disableLegacy`
+   at `GenerateMojo.java:114,123`; `ValidateMojo.failOnRewriteValidationError`.
+   Already deleted by tagged-inputs. The new plugin is rewrite-only
+   from day one; no gates.
 
 5. **Embedded transform logic.** `GenerateMojo` optionally invokes
    `SchemaTransformRunner` inline (`GenerateMojo.java:138-141`) while
@@ -157,11 +174,13 @@ inherits the same eight via a small shared abstract base
 `<schemaInputs>` resolution need the full input set. Everything else
 from the legacy audit is dropped (see §Current state).
 
-### `RewriteContext`: replaces static config
+### `RewriteContext`: expanded to carry full plugin config
 
-Immutable record + derived fields, constructed once per Mojo
-execution. Replaces `GeneratorConfig` + `RewriteConfig` for the
-rewrite path.
+Tagged-inputs already put `RewriteContext` in
+`no.sikt.graphitron.rewrite` with two fields (`schemaInputs`,
+`basedir`). This plan expands the record with the remaining knobs;
+the generator signature stays `new GraphQLRewriteGenerator(ctx)`
+across both landings.
 
 ```java
 public record RewriteContext(
@@ -174,9 +193,9 @@ public record RewriteContext(
     List<ScalarMapping> scalars,
     int maxAllowedPageSize
 ) {
-    static RewriteContext from(GenerateMojo mojo, MavenProject project) {
+    public static RewriteContext from(GenerateMojo mojo, MavenProject project) {
         return new RewriteContext(
-            mojo.schemaInputs.stream().map(SchemaInput::fromBinding).toList(),
+            mojo.schemaInputs.stream().map(SchemaInputBinding::toSchemaInput).toList(),
             project.getBasedir().toPath(),
             Path.of(mojo.outputDirectory),
             mojo.outputPackage,
@@ -189,16 +208,12 @@ public record RewriteContext(
 }
 ```
 
-Passed by constructor into `GraphQLRewriteGenerator`, which threads it
-down rather than reading statics. No thread-safety concerns, no
-two-stage population, no subset leak.
-
-`basedir` is on the record so `SchemaInputResolver.resolve(...)` has
-the project root without threading `MavenProject` any further. The
-`SchemaInput::fromBinding` converter is owned by
-[plan-tagged-schema-inputs.md](plan-tagged-schema-inputs.md); the
-two small static helpers for named-references and scalars live
-inside `RewriteContext`.
+The `SchemaInputBinding.toSchemaInput()` converter is owned by this
+plan (binding lives in the plugin module, record lives in rewrite
+core, the conversion happens at the plugin boundary). Small static
+helpers for named-references and scalars live inside
+`RewriteContext`. `RewriteConfig` deletes once all readers migrate;
+no new statics are introduced.
 
 ### Goals (the final list)
 
@@ -237,11 +252,13 @@ Consumers invoke goals as `mvn graphitron-rewrite:generate` /
 
 ### Config bindings (POM → Java)
 
-Three small POJOs that Maven populates from XML:
+Three small POJOs that Maven populates from XML, all new in this
+plan (rewrite core has `SchemaInput` but no XML binding yet):
 
 - `SchemaInputBinding`: fields `pattern`, `tag`, `descriptionNote`.
-  Converted to `SchemaInput` (from the sibling plan) inside
-  `RewriteContext.from(...)`.
+  Carries a `toSchemaInput()` method that returns a rewrite-core
+  `SchemaInput` record; this is the only bridge between the plugin
+  module and rewrite core for schema-input config.
 - `NamedReferenceBinding`: fields `name`, `className`. Collapses into
   a `Map<String, String>` on the context. Renamed from legacy's
   `<externalReferences>` / `ExternalMojoClassReference(name, fullyQualifiedClassName)`
@@ -295,7 +312,7 @@ Full rename table:
 | Legacy element                    | New element          | Notes |
 |-----------------------------------|----------------------|-------|
 | `<enableRewrite>` / `<disableLegacy>` | (removed)        | plugin is rewrite-only |
-| `<schemaFiles>` / `<userSchemaFiles>` | `<schemaInputs>` | sibling plan |
+| `<schemaFiles>` / `<userSchemaFiles>` | `<schemaInputs>` | resolver/appliers landed via tagged-inputs; XML binding introduced here |
 | `<outputPath>`                    | `<outputDirectory>`  | standard Maven naming |
 | `<outputPackage>`                 | `<outputPackage>`    | unchanged, now required |
 | `<jooqGeneratedPackage>`          | `<jooqPackage>`      | shorter |
@@ -423,25 +440,17 @@ plugin-level knob.
 
 ## Roadmap integration
 
-New sub-item on the "Dissolve `graphitron-schema-transform` module"
-umbrella, inserted immediately after "Rewrite owns schema loading +
-directive auto-injection" (the prerequisite) and before
-"Rewrite owns type-extension merging":
+Roadmap sub-item sequence under the "Dissolve `graphitron-schema-transform`
+module" umbrella:
 
-```
-- **Rewrite-owned Maven plugin** **[Spec]** — new
-  `graphitron-rewrite-maven` artifact with `generate` + `validate`
-  goals and a per-invocation `RewriteContext` replacing the
-  `GeneratorConfig` + `RewriteConfig` static singletons. Eight
-  `@Parameter` fields vs. legacy's 18+; no legacy gating toggles,
-  no `@Execute` trickery, no embedded transform logic. Drops
-  `transform` + `watch` goals; `introspect` ports separately
-  (sibling item). ([plan](plan-rewrite-maven-plugin.md))
-```
+1. Rewrite owns schema loading + directive auto-injection
+2. Rewrite owns pattern-matched `@tag` + description notes
+3. **Rewrite-owned Maven plugin (this plan)**
+4. Port `introspect` goal to `graphitron-rewrite-maven`
 
 The `<schemaInputs>` plan's D1 (replace vs. coexist with
 `<schemaFiles>`) is resolved by this plan: the new plugin has no
-`<schemaFiles>`, so the coexist option evaporates.
+`<schemaFiles>`, so the coexist option never materialises.
 
 On landing, move this plan's entry to `## Done` with a one-line
 summary citing the commit sha(s) and the IT fixture location.
