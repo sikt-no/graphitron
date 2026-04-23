@@ -1,6 +1,6 @@
 # Implicit column conditions for `@table` input types
 
-> **Status:** Ready
+> **Status:** In Review
 >
 > Legacy-parity feature for `@table` input types used as query arguments.
 > A `@table` input field without `@condition` / `@lookupKey` today classifies
