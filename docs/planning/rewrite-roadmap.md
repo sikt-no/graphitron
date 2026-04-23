@@ -18,6 +18,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | Multi-parent NestingField sharing — `TableField` arm | Spec | [plan](plan-nestingfield-multiparent-tablefield.md) |
 | Faceted search on `@asConnection` | Spec | [plan](plan-faceted-search.md), [spike](spike-faceted-search-sql.md) |
 | Rewrite emitter + classifier hygiene sweep | Spec | [plan](plan-rewrite-hygiene-sweep.md) |
+| Per-type `*Wiring` classes | Spec | [plan](plan-per-type-wiring-classes.md) |
 | Consolidate rewrite modules under `graphitron-rewrite/` | Ready | [plan](plan-consolidate-rewrite-modules.md) |
 | Docs as an index into classification tests | Ready (deferred) | [plan](plan-docs-as-index-into-tests.md) |
 
