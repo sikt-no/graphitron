@@ -140,6 +140,17 @@ class GeneratedSourcesLintTest {
             .isEmpty();
     }
 
+    @Test
+    void wiringAggregatorDoesNotInlineTypeWiring() throws IOException {
+        Path wiringFile = GENERATED_REWRITE_ROOT.resolve("GraphitronWiring.java");
+        assertThat(wiringFile).exists();
+        String source = Files.readString(wiringFile);
+        assertThat(source)
+            .as("GraphitronWiring.java must only reference *Wiring.wiring() calls, "
+                + "never inline newTypeWiring() blocks. Move per-type wiring into dedicated *Wiring classes.")
+            .doesNotContain("newTypeWiring(");
+    }
+
     private static boolean isCommentLine(String line) {
         String trimmed = line.trim();
         return trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*");

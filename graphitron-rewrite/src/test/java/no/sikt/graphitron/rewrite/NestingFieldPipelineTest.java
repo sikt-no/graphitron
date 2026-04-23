@@ -1,18 +1,14 @@
 package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.javapoet.TypeSpec;
-import no.sikt.graphitron.rewrite.generators.GraphitronWiringClassGenerator;
 import no.sikt.graphitron.rewrite.generators.TypeClassGenerator;
-import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
+import no.sikt.graphitron.rewrite.generators.WiringClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions;
-import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ChildField.NestingField;
-import no.sikt.graphitron.rewrite.model.TableRef;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Set;
 
@@ -23,13 +19,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * SDL → generated {@link TypeSpec} pipeline tests for {@link NestingField}. Covers the three
  * emission sides affected by nesting:
  * <ul>
- *   <li>{@code FilmFetchers.wiring()} — outer {@code .dataFetcher("details", env -> env.getSource())}
+ *   <li>{@code FilmWiring.wiring()} — outer {@code .dataFetcher("details", env -> env.getSource())}
  *       passthrough (lambda kind).</li>
  *   <li>{@code Film.$fields(...)} — switch arm for {@code details} recurses into nested column
  *       names.</li>
- *   <li>{@code GraphitronWiring.build()} — one {@code TypeRuntimeWiring.newTypeWiring("FilmDetails")}
- *       per nested type, collected from {@code GraphQLRewriteGenerator.collectNestedTypes} and
- *       passed to {@link GraphitronWiringClassGenerator}.</li>
+ *   <li>{@code FilmDetailsWiring.wiring()} — one {@code TypeRuntimeWiring.newTypeWiring("FilmDetails")}
+ *       per nested type, produced by {@link WiringClassGenerator}.</li>
  * </ul>
  */
 class NestingFieldPipelineTest {
@@ -51,72 +46,66 @@ class NestingFieldPipelineTest {
         """;
 
     @Test
-    void outerFetchersClass_wiresNestingFieldAsLambda() {
-        var fetchers = findFetcher("FilmFetchers", SCALAR_NESTING_SDL);
-        assertThat(TypeSpecAssertions.wiringFor(fetchers, "details"))
+    void outerWiringClass_wiresNestingFieldAsLambda() {
+        var wirings = buildWiringClasses(SCALAR_NESTING_SDL);
+        var filmWiring = findWiring("Film", wirings);
+        assertThat(TypeSpecAssertions.wiringFor(filmWiring, "details"))
             .contains(TypeSpecAssertions.DataFetcherKind.LAMBDA);
     }
 
     @Test
     void outerTypeClass_fieldsSwitchProjectsNestingArm() {
         var filmType = findType("Film", SCALAR_NESTING_SDL);
-        // The outer switch contains a case for "details" that recurses into the nested selection.
         assertThat(TypeSpecAssertions.hasFieldsArm(filmType, "details")).isTrue();
     }
 
     @Test
     void outerTypeClass_fieldsSwitchProjectsNestedScalar() {
         var filmType = findType("Film", SCALAR_NESTING_SDL);
-        // The nested emitSelectionSwitch adds a case "title" at depth=1 reading from the same
-        // outer table alias (nesting is transparent to the projection).
         assertThat(TypeSpecAssertions.hasFieldsArm(filmType, "title")).isTrue();
     }
 
     @Test
-    void wiringClass_emitsOneTypeRuntimeWiringPerNestedType() {
-        var wiring = buildWiring(SCALAR_NESTING_SDL);
-        String body = wiringBuildBody(wiring);
+    void wiringClass_emitsOneWiringClassPerNestedType() {
+        var wirings = buildWiringClasses(SCALAR_NESTING_SDL);
+        var filmDetailsWiring = findWiring("FilmDetails", wirings);
+        String body = wiringMethodBody(filmDetailsWiring);
         assertThat(body).contains("newTypeWiring(\"FilmDetails\")");
         assertThat(body).contains(".dataFetcher(\"title\"");
     }
 
     @Test
-    void wiringClass_noNestingField_noNestedTypeWiring() {
-        // Control: without a NestingField nothing shows up in the wiring.
-        var wiring = buildWiring("""
+    void wiringClass_noNestingField_noNestedTypeWiringClass() {
+        var wirings = buildWiringClasses("""
             type Film @table(name: "film") { title: String }
             type Query { film: Film }
             """);
-        assertThat(wiringBuildBody(wiring)).doesNotContain("FilmDetails");
+        assertThat(wirings.stream().map(TypeSpec::name)).doesNotContain("FilmDetailsWiring");
     }
 
     @Test
-    void wiringClass_multiLevelNesting_emitsWiringForEveryNestedType() {
-        // FilmDetails contains a further NestingField (meta: FilmMeta) — the aggregator walks
-        // nestedFields recursively, producing wiring for both nested types.
-        var wiring = buildWiring("""
+    void wiringClass_multiLevelNesting_emitsWiringClassForEveryNestedType() {
+        var wirings = buildWiringClasses("""
             type Film @table(name: "film") { details: FilmDetails }
             type FilmDetails { title: String, meta: FilmMeta }
             type FilmMeta { title: String }
             type Query { film: Film }
             """);
-        String body = wiringBuildBody(wiring);
-        assertThat(body).contains("newTypeWiring(\"FilmDetails\")");
-        assertThat(body).contains("newTypeWiring(\"FilmMeta\")");
+        assertThat(wirings.stream().map(TypeSpec::name))
+            .contains("FilmDetailsWiring", "FilmMetaWiring");
     }
 
     @Test
     void wiringClass_sharedNestedType_emittedOnlyOnce() {
-        // Two @table parents reference the same nested type — dedupe via LinkedHashMap in
-        // collectNestedTypes means FilmDetails wiring appears exactly once.
-        var wiring = buildWiring("""
+        var wirings = buildWiringClasses("""
             type Film @table(name: "film") { details: FilmDetails }
             type FilmList @table(name: "film") { details: FilmDetails }
             type FilmDetails { title: String }
             type Query { film: Film }
             """);
-        String body = wiringBuildBody(wiring);
-        long occurrences = body.lines().filter(l -> l.contains("newTypeWiring(\"FilmDetails\")")).count();
+        long occurrences = wirings.stream()
+            .filter(t -> t.name().equals("FilmDetailsWiring"))
+            .count();
         assertThat(occurrences).isEqualTo(1L);
     }
 
@@ -132,17 +121,15 @@ class NestingFieldPipelineTest {
 
     @Test
     void wiringClass_nestedSplitField_referencesNestedFetchersClass() {
-        var wiring = buildWiring(SPLIT_NESTING_SDL);
-        String body = wiringBuildBody(wiring);
+        var wirings = buildWiringClasses(SPLIT_NESTING_SDL);
+        String body = wiringMethodBody(findWiring("FilmInfo", wirings));
         assertThat(body).contains("newTypeWiring(\"FilmInfo\")");
         assertThat(body).contains("FilmInfoFetchers::cast");
     }
 
     @Test
     void wiringClass_nestedSplitField_inlineLeavesInSameTypeStillWireInline() {
-        // If FilmInfo also has a scalar column, that scalar still wires via ColumnFetcher,
-        // not via the Fetchers class.
-        var wiring = buildWiring("""
+        var wirings = buildWiringClasses("""
             type Actor @table(name: "actor") { name: String }
             type FilmInfo {
                 title: String
@@ -152,7 +139,7 @@ class NestingFieldPipelineTest {
             type Film @table(name: "film") { info: FilmInfo }
             type Query { film: Film }
             """);
-        String body = wiringBuildBody(wiring);
+        String body = wiringMethodBody(findWiring("FilmInfo", wirings));
         assertThat(body).contains("ColumnFetcher");
         assertThat(body).contains("FilmInfoFetchers::cast");
     }
@@ -170,13 +157,6 @@ class NestingFieldPipelineTest {
 
     // ===== Helpers =====
 
-    private static TypeSpec findFetcher(String className, String sdl) {
-        return TypeFetcherGenerator.generate(TestSchemaHelper.buildSchema(sdl)).stream()
-            .filter(t -> t.name().equals(className))
-            .findFirst()
-            .orElseThrow(() -> new AssertionError("Fetcher class not found: " + className));
-    }
-
     private static TypeSpec findType(String className, String sdl) {
         return TypeClassGenerator.generate(TestSchemaHelper.buildSchema(sdl)).stream()
             .filter(t -> t.name().equals(className))
@@ -184,43 +164,22 @@ class NestingFieldPipelineTest {
             .orElseThrow(() -> new AssertionError("Type class not found: " + className));
     }
 
-    /**
-     * Mirrors the nested-type collection loop in {@link GraphQLRewriteGenerator#generate()} — the
-     * wiring aggregator is fed from this walk. Kept private and local so a signature drift in the
-     * production aggregator path trips this test at compile time.
-     */
-    private static TypeSpec buildWiring(String sdl) {
-        var schema = TestSchemaHelper.buildSchema(sdl);
-        // Mirrors GraphQLRewriteGenerator: exclude nested Fetchers (no wiring() method) from the
-        // fetcherClassNames list so the wiring builder doesn't reference a non-existent method.
-        var fetcherClassNames = TypeFetcherGenerator.generate(schema).stream()
-            .filter(t -> t.methodSpecs().stream().anyMatch(m -> m.name().equals("wiring")))
-            .map(TypeSpec::name).toList();
-        var nestedTypeMap = new LinkedHashMap<String, GraphitronWiringClassGenerator.NestedTypeWiring>();
-        schema.fields().values().forEach(f -> collectNestedTypes(f, nestedTypeMap));
-        return GraphitronWiringClassGenerator.generate(fetcherClassNames, List.of(),
-            List.copyOf(nestedTypeMap.values()));
+    private static List<TypeSpec> buildWiringClasses(String sdl) {
+        return WiringClassGenerator.generate(TestSchemaHelper.buildSchema(sdl));
     }
 
-    private static void collectNestedTypes(no.sikt.graphitron.rewrite.model.GraphitronField field,
-            java.util.Map<String, GraphitronWiringClassGenerator.NestedTypeWiring> out) {
-        if (!(field instanceof NestingField nf)) {
-            return;
-        }
-        var nestedTypeName = nf.returnType().returnTypeName();
-        TableRef parentTable = nf.returnType().table();
-        out.putIfAbsent(nestedTypeName,
-            new GraphitronWiringClassGenerator.NestedTypeWiring(nestedTypeName, nf.nestedFields(), parentTable));
-        for (ChildField nested : nf.nestedFields()) {
-            collectNestedTypes(nested, out);
-        }
-    }
-
-    private static String wiringBuildBody(TypeSpec wiring) {
-        return wiring.methodSpecs().stream()
-            .filter(m -> m.name().equals("build"))
+    private static TypeSpec findWiring(String typeName, List<TypeSpec> wirings) {
+        return wirings.stream()
+            .filter(t -> t.name().equals(typeName + "Wiring"))
             .findFirst()
-            .orElseThrow(() -> new AssertionError("build() method not found on GraphitronWiring"))
+            .orElseThrow(() -> new AssertionError("Wiring class not found: " + typeName + "Wiring"));
+    }
+
+    private static String wiringMethodBody(TypeSpec wiring) {
+        return wiring.methodSpecs().stream()
+            .filter(m -> m.name().equals("wiring"))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("wiring() method not found on " + wiring.name()))
             .code().toString();
     }
 }

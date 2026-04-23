@@ -7,23 +7,18 @@ import no.sikt.graphitron.rewrite.generators.QueryConditionsGenerator;
 import no.sikt.graphitron.rewrite.generators.TypeClassGenerator;
 import no.sikt.graphitron.rewrite.generators.TypeConditionsGenerator;
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
+import no.sikt.graphitron.rewrite.generators.WiringClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ColumnFetcherClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ConnectionHelperClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ConnectionResultClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.GraphitronValuesClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.OrderByResultClassGenerator;
-import no.sikt.graphitron.rewrite.model.ChildField;
-import no.sikt.graphitron.rewrite.model.FieldWrapper;
-import no.sikt.graphitron.rewrite.model.GraphitronField;
-import no.sikt.graphitron.rewrite.model.SqlGeneratingField;
-import no.sikt.graphitron.rewrite.model.TableRef;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.List;
 
 import static no.sikt.graphql.schema.SchemaReadingHelper.getTypeDefinitionRegistry;
@@ -66,40 +61,9 @@ public class GraphQLRewriteGenerator {
         }
 
         var fetcherClasses = TypeFetcherGenerator.generate(schema);
-        // Nested plain-object Fetchers classes have no wiring() method (wiring is handled by
-        // GraphitronWiringClassGenerator's nestedTypeWirings loop). Exclude them from the
-        // fetcherClassNames list so the wiring builder doesn't emit a FilmInfoFetchers.wiring() call.
-        var fetcherClassNames = fetcherClasses.stream()
-            .filter(t -> t.methodSpecs().stream().anyMatch(m -> m.name().equals("wiring")))
-            .map(TypeSpec::name)
-            .toList();
-
-        // Collect one wiring entry per distinct Connection type referenced by any field.
-        // Multiple fields may return the same Connection type; TypeRuntimeWiring is per-type.
-        var connectionTypeMap = new java.util.LinkedHashMap<String, String>();
-        schema.fields().forEach((coords, field) -> {
-            if (field instanceof SqlGeneratingField sgf
-                    && sgf.returnType().wrapper() instanceof FieldWrapper.Connection conn) {
-                String parentType = coords.getTypeName();
-                String fieldName = coords.getFieldName();
-                String connName = conn.connectionName() != null
-                    ? conn.connectionName()
-                    : parentType + capitalize(fieldName) + "Connection";
-                connectionTypeMap.putIfAbsent(connName, connName.replace("Connection", "Edge"));
-            }
-        });
-        var connectionWirings = connectionTypeMap.entrySet().stream()
-            .map(e -> new GraphitronWiringClassGenerator.ConnectionWiring(e.getKey(), e.getValue()))
-            .toList();
-
-        // Collect one wiring entry per distinct nested object type reached through a NestingField.
-        // SDL iteration order is preserved by the schema's LinkedHashMap — the first parent seen
-        // becomes the representative, and its table is used to resolve nested ColumnField Fs at
-        // generation time. Multi-parent compatibility relies on jOOQ's name-based fallback in
-        // Record.get(Field), so the generation-time choice doesn't constrain runtime sources.
-        var nestedTypeMap = new java.util.LinkedHashMap<String, GraphitronWiringClassGenerator.NestedTypeWiring>();
-        schema.fields().values().forEach(field -> collectNestedTypes(field, nestedTypeMap));
-        var nestedTypeWirings = List.copyOf(nestedTypeMap.values());
+        var wiringClasses  = WiringClassGenerator.generate(schema);
+        var aggregator     = GraphitronWiringClassGenerator.generate(
+            wiringClasses.stream().map(TypeSpec::name).toList());
 
         write(GraphitronValuesClassGenerator.generate(),          "rewrite");
         write(ColumnFetcherClassGenerator.generate(),             "rewrite");
@@ -111,27 +75,8 @@ public class GraphQLRewriteGenerator {
         write(TypeConditionsGenerator.generate(schema),           "rewrite.conditions");
         write(QueryConditionsGenerator.generate(schema),          "rewrite.conditions");
         write(fetcherClasses,                                      "rewrite.fetchers");
-        write(List.of(GraphitronWiringClassGenerator.generate(fetcherClassNames, connectionWirings, nestedTypeWirings)), "rewrite");
-    }
-
-    /**
-     * Walks one classified field, registering any {@link ChildField.NestingField} it reaches
-     * (recursively through nested children) into {@code out} — first occurrence wins. The nested
-     * type's wiring is attached to its schema type name; deeper nestings reached through the same
-     * outer NestingField contribute their own {@code NestedTypeWiring} entries.
-     */
-    private static void collectNestedTypes(GraphitronField field,
-            java.util.Map<String, GraphitronWiringClassGenerator.NestedTypeWiring> out) {
-        if (!(field instanceof ChildField.NestingField nf)) {
-            return;
-        }
-        var nestedTypeName = nf.returnType().returnTypeName();
-        TableRef parentTable = nf.returnType().table();
-        out.putIfAbsent(nestedTypeName,
-            new GraphitronWiringClassGenerator.NestedTypeWiring(nestedTypeName, nf.nestedFields(), parentTable));
-        for (var nested : nf.nestedFields()) {
-            collectNestedTypes(nested, out);
-        }
+        write(wiringClasses,                                       "rewrite.wiring");
+        write(List.of(aggregator),                                 "rewrite");
     }
 
     private static void write(List<TypeSpec> specs, String subPackage) {
@@ -145,9 +90,5 @@ public class GraphQLRewriteGenerator {
             }
         });
         LOGGER.info("Rewrite: generated sources to: {}", packageName);
-    }
-
-    private static String capitalize(String s) {
-        return s.isEmpty() ? s : Character.toUpperCase(s.charAt(0)) + s.substring(1);
     }
 }

@@ -4,8 +4,6 @@ import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.RewriteConfig;
 import no.sikt.graphitron.rewrite.TestFixtures;
-import no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions;
-import no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions.DataFetcherKind;
 import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.BodyParam;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
@@ -80,9 +78,10 @@ class TypeFetcherGeneratorTest {
     }
 
     @Test
-    void generate_alwaysHasWiringMethod() {
+    void generate_hasNoWiringMethod() {
+        // Wiring is now emitted by WiringClassGenerator, not TypeFetcherGenerator.
         var spec = TypeFetcherGenerator.generateTypeSpec("Film", null, List.of());
-        assertThat(spec.methodSpecs()).extracting(MethodSpec::name).contains("wiring");
+        assertThat(spec.methodSpecs()).extracting(MethodSpec::name).doesNotContain("wiring");
     }
 
     // ===== ColumnField with null parentTable → classifier invariant violated (D4) =====
@@ -107,11 +106,11 @@ class TypeFetcherGeneratorTest {
     }
 
     @Test
-    void columnFetcher_withParentTable_onlyWiringMethod() {
+    void columnFetcher_withParentTable_hasNoMethods() {
+        // ColumnField wiring is handled by WiringClassGenerator; the Fetchers class has no methods.
         var spec = TypeFetcherGenerator.generateTypeSpec("Film", FILM_TABLE,
             List.of(columnField("title", "title", "TITLE", "java.lang.String")));
-        assertThat(spec.methodSpecs()).extracting(MethodSpec::name)
-            .containsExactly("wiring");
+        assertThat(spec.methodSpecs()).isEmpty();
     }
 
     // ===== QueryTableField =====
@@ -146,49 +145,6 @@ class TypeFetcherGeneratorTest {
     // GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus's four-way
     // partition — any leaf in IMPLEMENTED_LEAVES or PROJECTED_LEAVES is guaranteed not to
     // route through stub(f).
-
-    // ===== wiring() method =====
-
-    @Test
-    void wiring_signature() {
-        var spec = TypeFetcherGenerator.generateTypeSpec("Film", null, List.of());
-        assertThat(method(spec, "wiring").returnType().toString())
-            .isEqualTo("graphql.schema.idl.TypeRuntimeWiring.Builder");
-    }
-
-    @Test
-    void wiring_noFields_noDataFetchers() {
-        var spec = TypeFetcherGenerator.generateTypeSpec("Film", null, List.of());
-        assertThat(TypeSpecAssertions.hasNoDataFetchers(spec)).isTrue();
-    }
-
-    @Test
-    void wiring_columnField_usesColumnFetcher() {
-        var spec = TypeFetcherGenerator.generateTypeSpec("Film", FILM_TABLE,
-            List.of(columnField("title", "title", "TITLE", "java.lang.String")));
-        assertThat(TypeSpecAssertions.wiringFor(spec, "title"))
-            .contains(DataFetcherKind.COLUMN_FETCHER);
-        // The specific column reference (Tables.FILM.TITLE vs wrong column) is body-content —
-        // compile tier against real jOOQ catches it, execution tier catches wrong values.
-    }
-
-    @Test
-    void wiring_queryField_usesPlainMethodReference() {
-        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null,
-            List.of(queryTableField("films", true)));
-        assertThat(TypeSpecAssertions.wiringFor(spec, "films"))
-            .contains(DataFetcherKind.METHOD_REFERENCE);
-    }
-
-    @Test
-    void wiring_registersAllFields() {
-        var fields = List.<GraphitronField>of(
-            columnField("title", "title", "TITLE", "java.lang.String"),
-            columnField("releaseYear", "release_year", "RELEASE_YEAR", "java.lang.Integer"));
-        var spec = TypeFetcherGenerator.generateTypeSpec("Film", FILM_TABLE, fields);
-        assertThat(TypeSpecAssertions.wiringFor(spec, "title")).isPresent();
-        assertThat(TypeSpecAssertions.wiringFor(spec, "releaseYear")).isPresent();
-    }
 
     // ===== QueryLookupTableField =====
 

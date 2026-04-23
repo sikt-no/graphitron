@@ -6,6 +6,7 @@ import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.RewriteConfig;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions;
+import no.sikt.graphitron.rewrite.generators.WiringClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions.DataFetcherKind;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -89,53 +90,56 @@ class FetcherPipelineTest {
 
     @Test
     void propertyField_onRecordType_hasWiringEntry() {
-        var fetchers = findSpec("ContainerFetchers", """
+        var sdl = """
             type Container @record { value: String }
             type Query { dummy: String }
-            """);
-        assertThat(TypeSpecAssertions.wiringFor(fetchers, "value")).isPresent();
+            """;
+        var wiring = findWiring("ContainerWiring", sdl);
+        assertThat(TypeSpecAssertions.wiringFor(wiring, "value")).isPresent();
     }
 
     @Test
-    void propertyField_onRecordType_noPerFieldMethod() {
+    void propertyField_onRecordType_fetchersHasNoMethods() {
         var fetchers = findSpec("ContainerFetchers", """
             type Container @record { value: String }
             type Query { dummy: String }
             """);
-        // PropertyField wired inline — only wiring() is generated, no per-field method
-        assertThat(fetchers.methodSpecs()).extracting(MethodSpec::name).containsOnly("wiring");
+        // PropertyField wired in ContainerWiring — the Fetchers class has no methods.
+        assertThat(fetchers.methodSpecs()).isEmpty();
     }
 
     @Test
     void propertyField_untypedPojo_usesPropertyFetcher() {
         // @record with no backing class → PojoResultType(null) → PropertyDataFetcher.fetching(...)
-        var fetchers = findSpec("ContainerFetchers", """
+        var sdl = """
             type Container @record { value: String }
             type Query { dummy: String }
-            """);
-        assertThat(TypeSpecAssertions.wiringFor(fetchers, "value"))
+            """;
+        var wiring = findWiring("ContainerWiring", sdl);
+        assertThat(TypeSpecAssertions.wiringFor(wiring, "value"))
             .contains(DataFetcherKind.PROPERTY_FETCHER);
     }
 
     @Test
     void recordField_onRecordType_hasWiringEntry() {
-        var fetchers = findSpec("FilmDetailsFetchers", """
+        var sdl = """
             type FilmStats @record { count: Int }
             type FilmDetails @record { stats: FilmStats }
             type Query { dummy: String }
-            """);
-        assertThat(TypeSpecAssertions.wiringFor(fetchers, "stats")).isPresent();
+            """;
+        var wiring = findWiring("FilmDetailsWiring", sdl);
+        assertThat(TypeSpecAssertions.wiringFor(wiring, "stats")).isPresent();
     }
 
     @Test
-    void recordField_onRecordType_noPerFieldMethod() {
+    void recordField_onRecordType_fetchersHasNoMethods() {
         var fetchers = findSpec("FilmDetailsFetchers", """
             type FilmStats @record { count: Int }
             type FilmDetails @record { stats: FilmStats }
             type Query { dummy: String }
             """);
-        // RecordField wired inline — only wiring() is generated
-        assertThat(fetchers.methodSpecs()).extracting(MethodSpec::name).containsOnly("wiring");
+        // RecordField wired in FilmDetailsWiring — the Fetchers class has no methods.
+        assertThat(fetchers.methodSpecs()).isEmpty();
     }
 
     // ===== @record parent — RecordTableField =====
@@ -217,11 +221,11 @@ class FetcherPipelineTest {
 
     @Test
     void wiring_columnField_usesColumnFetcher() {
-        var fetchers = findSpec("FilmFetchers", """
+        var sdl = """
             type Film @table(name: "film") { title: String }
             type Query { dummy: String }
-            """);
-        assertThat(TypeSpecAssertions.wiringFor(fetchers, "title"))
+            """;
+        assertThat(TypeSpecAssertions.wiringFor(findWiring("FilmWiring", sdl), "title"))
             .contains(DataFetcherKind.COLUMN_FETCHER);
     }
 
@@ -232,12 +236,13 @@ class FetcherPipelineTest {
 
     @Test
     void notGeneratedField_isExcluded() {
-        var fetchers = findSpec("FilmFetchers", """
+        var sdl = """
             type Film @table(name: "film") { title: String, hidden: String @notGenerated }
             type Query { dummy: String }
-            """);
-        assertThat(TypeSpecAssertions.wiringFor(fetchers, "title")).isPresent();
-        assertThat(TypeSpecAssertions.wiringFor(fetchers, "hidden")).isEmpty();
+            """;
+        var filmWiring = findWiring("FilmWiring", sdl);
+        assertThat(TypeSpecAssertions.wiringFor(filmWiring, "title")).isPresent();
+        assertThat(TypeSpecAssertions.wiringFor(filmWiring, "hidden")).isEmpty();
     }
 
     // ===== Root query table fields =====
@@ -351,31 +356,31 @@ class FetcherPipelineTest {
         assertThat(languageFetchers.methodSpecs()).extracting(MethodSpec::name).contains("loadFilms");
     }
 
-    // ===== GraphitronWiring =====
+    // ===== GraphitronWiring aggregator =====
 
     @Test
-    void wiringClass_referencesAllFetcherClasses() {
+    void wiringAggregator_buildsFromWiringClassNames() {
         var schema = buildSchema("""
             type Film @table(name: "film") { title: String }
             type Customer @table(name: "customer") { firstName: String @field(name: "first_name") }
             type Query { dummy: String }
             """);
-        var fetcherClassNames = TypeFetcherGenerator.generate(schema).stream()
+        var wiringClassNames = WiringClassGenerator.generate(schema).stream()
             .map(TypeSpec::name).toList();
-        var wiring = GraphitronWiringClassGenerator.generate(fetcherClassNames);
+        var aggregator = GraphitronWiringClassGenerator.generate(wiringClassNames);
 
-        assertThat(wiring.name()).isEqualTo("GraphitronWiring");
-        var build = wiring.methodSpecs().stream()
+        assertThat(aggregator.name()).isEqualTo("GraphitronWiring");
+        var build = aggregator.methodSpecs().stream()
             .filter(m -> m.name().equals("build")).findFirst().orElseThrow();
         assertThat(build.returnType().toString())
             .isEqualTo("graphql.schema.idl.RuntimeWiring.Builder");
     }
 
     @Test
-    void wiringClass_noTypes_stillGenerates() {
-        var wiring = GraphitronWiringClassGenerator.generate(List.of());
-        assertThat(wiring.name()).isEqualTo("GraphitronWiring");
-        assertThat(wiring.methodSpecs()).extracting(MethodSpec::name).contains("build");
+    void wiringAggregator_noTypes_stillGenerates() {
+        var aggregator = GraphitronWiringClassGenerator.generate(List.of());
+        assertThat(aggregator.name()).isEqualTo("GraphitronWiring");
+        assertThat(aggregator.methodSpecs()).extracting(MethodSpec::name).contains("build");
     }
 
     // ===== Helpers =====
@@ -398,6 +403,13 @@ class FetcherPipelineTest {
             .filter(m -> m.name().equals(name))
             .findFirst()
             .orElseThrow(() -> new AssertionError("Method not found: " + name));
+    }
+
+    private TypeSpec findWiring(String wiringClassName, String sdl) {
+        return WiringClassGenerator.generate(buildSchema(sdl)).stream()
+            .filter(t -> t.name().equals(wiringClassName))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("Wiring class not found: " + wiringClassName));
     }
 
     private GraphitronSchema buildSchema(String schemaText) {
