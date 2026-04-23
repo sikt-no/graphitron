@@ -1,6 +1,6 @@
 # Plan: `SplitTableField` under `NestingField`
 
-> **Status:** Spec
+> **Status:** Ready
 >
 > Lift the validator rejection that blocks `@splitQuery` fields inside plain-object
 > `NestingField` wrappers. Scope: `SplitTableField` and `SplitLookupTableField`.
@@ -67,19 +67,29 @@ Split BatchKey columns flow through.
 **Validator** in `GraphitronSchemaValidator.java`:
 - `:427-433`: add `ChildField.SplitTableField.class` and
   `ChildField.SplitLookupTableField.class` to `NESTED_WIREABLE_LEAVES`.
+- `:424` (comment above `NESTED_WIREABLE_LEAVES`): update the note that says
+  "Expanding this set is a one-line edit paired with adding a
+  className-independent arm to `buildWiringEntry`" — this plan uses a
+  Fetchers-class approach instead, so the comment is stale after §1.
 - No change to the `:443` rejection message; it continues to catch genuinely
   unsupported leaves with the existing `#8` pointer.
 
 **Fetcher class generation** in `TypeFetcherGenerator.java`:
-- `:67-76` (`generate(schema)`): extend the type filter to also include
-  plain-object types whose classified fields include any `BatchKeyField` leaf.
-  Enumerate those by walking `NestingField.nestedFields()` recursively from
-  each `TableBackedType` root, tracking nested type names with Split fields.
-- `:238-253` (`generateTypeSpec`): accept a nested-type invocation where
-  `parentTable` is the enclosing `@table` parent's table (threaded through
-  `NestingField` classification in `FieldBuilder.java:339`), not the nested
-  type's own. No algorithmic change — the current body already reads parent
-  table from the argument.
+- `:67-76` (`generate(schema)`): after the existing stream over `schema.types()`,
+  add a separate walk: for every `TableBackedType` root, recurse into its
+  `NestingField` descendants via `NestingField.nestedFields()`, collect each
+  nested type name that contains at least one `BatchKeyField` leaf, and
+  generate a Fetchers class for it. Plain-object nesting types are not entries
+  in `schema.types()`, so they cannot be reached by extending the existing
+  filter; the walk is a second pipeline added after it.
+- `:238-253` (`generateTypeSpec`): call directly from the new walk, passing
+  the `NestingField.nestedFields()` list pre-filtered to `BatchKeyField`
+  variants as the `fields` argument, and `NestingField.returnType().table()`
+  (the enclosing `@table` parent's table, threaded through `NestingField`
+  classification in `FieldBuilder.java:339`) as `parentTable`. Do not go
+  through `generateForType`, which reads `schema.fieldsOf` (empty for
+  non-classified nesting types). No algorithmic change to `generateTypeSpec`
+  itself — the current body already reads parent table from the argument.
 - New arm (or gate) to suppress non-Split method emission for nested-type
   Fetchers classes: inline leaves continue to wire via `buildWiringEntry`, so
   emitting their data fetcher methods would be dead code. Simplest: filter
@@ -111,7 +121,9 @@ Split BatchKey columns flow through.
 
 **§1: Mechanism.** `NESTED_WIREABLE_LEAVES` extension; nested-type Fetchers class
 emission gated on "any BatchKeyField leaf"; wiring-generator className
-threading; `requiredProjectionColumns` recursion into `NestingField.nestedFields()`.
+threading; `requiredProjectionColumns` recursion into `NestingField.nestedFields()`;
+validator check that no plain-object type shares a name with a `@table` type
+(prevents silent Fetchers-class overwrite — see Open Question 1).
 Ship with a `SplitTableField`-only fixture to keep §1 focused.
 
 **§2: `SplitLookupTableField` arm.** Adding the composite-keyed variant. The
@@ -178,11 +190,9 @@ actors resolve correctly (film 1 → [1, 2]; film 2 → [1, 3]).
 
 ## Open questions
 
-1. **Nested-type Fetchers class naming.** `<NestedTypeName>Fetchers` is the
-   obvious choice and matches the top-level convention, but collides if a
-   plain-object type shares a name with a `@table` type in the same package.
-   Recommend: require naming distinctness in the schema validator (cheap,
-   catches the collision at build time).
+1. **Nested-type Fetchers class naming.** Resolved: use `<NestedTypeName>Fetchers`
+   (matches top-level convention); add a schema validator check that no
+   plain-object type shares a name with a `@table` type. Assigned to §1.
 2. **Class-emission gate: "any `BatchKeyField` leaf" vs "any non-inline leaf".**
    The former is surgical; the latter is more forward-compatible if more nested
    leaves ever need class-scoped methods. Recommend: start with `BatchKeyField`
