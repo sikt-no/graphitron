@@ -5,11 +5,17 @@
 ## Goal
 
 Replace the emitted `Graphitron.java` facade's SDL + `RuntimeWiring`
-assembly path with a prebuilt `GraphQLSchema` that the application gets
-ready to use. Apps stop calling `SchemaGenerator.makeExecutableSchema`,
-stop assembling a `RuntimeWiring.Builder`, stop carrying the SDL
-resource on the runtime classpath. `Graphitron.getSchema()` returns a
-fully wired `GraphQLSchema` with every fetcher attached at construction.
+assembly path with a prebuilt `GraphQLSchema`. Apps stop calling
+`SchemaGenerator.makeExecutableSchema`, stop assembling a
+`RuntimeWiring.Builder`, stop carrying the SDL resource on the runtime
+classpath. `Graphitron.buildSchema(customizer)` returns a fully wired
+`GraphQLSchema` with every fetcher attached at construction.
+
+Secondary goal: emitted code depends on jOOQ and graphql-java only.
+The `no.sikt.graphql.GraphitronContext` interface (currently retrieved
+by every generated fetcher from `graphitron-common`) goes away.
+Fetchers read `DSLContext`, tenant identifier, and context-argument
+values directly from `env.getGraphQlContext()` using documented keys.
 
 The SDL stays a build-time artifact for federation composition and
 client documentation. It is generated from the programmatic schema via
@@ -69,44 +75,36 @@ registry, plus `RuntimeWiring` assembly, plus
 
 ```java
 public class Graphitron {
-    /** Returns the prebuilt schema with all generator-emitted fetchers attached. */
-    public static GraphQLSchema getSchema() { ... }
-
-    /** Returns the schema SDL, for federation composition and client docs. */
-    public static String getSdl() { ... }
-
     /**
-     * Power tool. Exposes the underlying {@code GraphQLSchema.Builder} for
-     * adding scalars, additional types, or custom directives before the schema
-     * is built. Use additive methods only (see javadoc on the parameter).
+     * Builds the schema with all generator-emitted fetchers attached.
+     * The customizer receives the underlying {@code GraphQLSchema.Builder}
+     * for adding scalars, additional types, or custom directives before
+     * {@code .build()} is called. Use additive methods only; do not call
+     * {@code .query()}, {@code .mutation()}, {@code .subscription()}, or
+     * {@code .clearDirectives()} on the builder.
      */
     public static GraphQLSchema buildSchema(Consumer<GraphQLSchema.Builder> customizer) { ... }
 
     /**
-     * Recommended plumbing. App-scoped factory: builds the schema, applies
-     * scalars, applies instrumentations, returns the native {@code GraphQL}
-     * execution engine. Call once at startup.
+     * Returns the schema SDL, for federation composition and client docs.
+     * Built lazily on first call from the no-customization schema and cached.
      */
-    public static EngineBuilder newEngine() { ... }
-
-    /**
-     * Request-scoped helper. Returns an {@code ExecutionInput.Builder} with
-     * the {@code GraphitronContext} key pre-populated. Call once per request.
-     */
-    public static ExecutionInput.Builder execution(GraphitronContext context) { ... }
+    public static String getSdl() { ... }
 }
 ```
 
-The split keeps the two lifecycle scopes separated: `newEngine()` is
-app-scoped (called once at startup); `execution(ctx)` is
-request-scoped (called per incoming request with a resolved
-`GraphitronContext`, which typically carries request-bound state like
-a connection-pooled `DSLContext`).
+Two methods, no hidden state beyond the lazy SDL cache (§D4). Apps
+construct the graphql-java `GraphQL` engine and per-request
+`ExecutionInput` themselves using stock graphql-java APIs; runtime
+values they need to pass into fetchers go through the documented
+`GraphQLContext` keys in §Runtime context plumbing.
 
 New emitted surface:
 
 - `<TypeName>Fetchers` classes: unchanged; hold DataFetcher
-  implementations.
+  implementations. Body changes only where `GraphitronContext` calls
+  are replaced by direct `env.getGraphQlContext()` reads (§Runtime
+  context plumbing).
 - `<TypeName>Type` classes (rename from `<TypeName>Wiring`): expose a
   single `public static GraphQLObjectType type()` that builds a typed
   `GraphQLObjectType` with fetchers attached via a shared
@@ -115,9 +113,7 @@ New emitted surface:
   assembler that wires each `<TypeName>Type` into a top-level
   `GraphQLSchema.Builder`, registers the code registry, and builds the
   schema once. Scalars, extra types, and extra directives are applied
-  by the user's `Consumer<GraphQLSchema.Builder>` (when they use the
-  power tool) or by `EngineBuilder` accumulating scalars into
-  `additionalType` calls before invoking the assembler (factory path).
+  by the user's `Consumer<GraphQLSchema.Builder>` before `.build()`.
 - `GraphitronSdl`: emits the SDL string via
   `SchemaPrinter(SchemaPrinter.Options)` against the built schema,
   stripping generator-only directives. Built once on first call to
@@ -127,8 +123,11 @@ Removed artifacts:
 
 - `TypeRegistry` class: no runtime SDL parse, no need.
 - `Wiring` aggregator in its current form.
-- `SchemaReadingHelper` runtime dependency path: gone. The
-  `graphitron-common` runtime dep for emitted code drops away with it.
+- `SchemaReadingHelper` runtime dependency path: gone.
+- `no.sikt.graphql.GraphitronContext` interface reference from emitted
+  fetchers: gone. The `graphitron-common` runtime dep for emitted code
+  drops away. Emitted fetchers depend only on `graphql-java` and
+  `org.jooq`.
 - Client SDL resource on the runtime classpath: optional. Emitted to
   `target/generated-sources/...` for federation composition and docs,
   but `Graphitron.getSdl()` can produce it from the programmatic schema
@@ -146,21 +145,20 @@ emission strategies living side by side.
   `GraphQLObjectType`. Types reference each other via
   `GraphQLTypeReference.typeRef("OtherType")` to sidestep topological
   ordering.
-- New aggregator `GraphitronSchemaAssembler` builds the
-  `GraphQLSchema`, walks all emitted `<TypeName>Type` classes, wires
-  `GraphQLCodeRegistry` with fetcher coordinates, attaches type
-  resolvers for generator-produced interfaces / unions. Exposes the
+- New aggregator `GraphitronSchema` builds the `GraphQLSchema`, walks
+  all emitted `<TypeName>Type` classes, wires `GraphQLCodeRegistry`
+  with fetcher coordinates, attaches type resolvers for
+  generator-produced interfaces / unions. Exposes the
   `GraphQLSchema.Builder` for user customization before calling
   `.build()`.
-- New `EngineBuilder` class in the emitted facade package: fluent
-  builder that collects scalars and instrumentations, calls the
-  assembler, and returns the `GraphQL` engine.
 - New generator `GraphitronSdl` emits the client SDL via
   `SchemaPrinter(SchemaPrinter.Options)` against the built schema,
   stripping generator-only directives.
-- `Graphitron.java` facade surface becomes `getSchema()`,
-  `getSdl()`, `buildSchema(Consumer<GraphQLSchema.Builder>)`,
-  `newEngine()`, `execution(GraphitronContext)`.
+- `Graphitron.java` facade surface becomes `buildSchema(Consumer)` and
+  `getSdl()`.
+- Emitted fetchers replace every `graphitronContext(env).getXxx(...)`
+  call with a direct `env.getGraphQlContext().get(...)` read; see
+  §Runtime context plumbing for the key conventions.
 - New `graphitron-rewrite/docs/getting-started.md`. See §Getting
   started document as API quality gate for the intended shape and
   why it's a constraint on the API, not just a deliverable.
@@ -171,21 +169,28 @@ emission strategies living side by side.
 - `GraphitronWiring` aggregator.
 - `TypeRegistry` emission.
 - `Graphitron.getTypeRegistry()`, `getRuntimeWiringBuilder()`,
-  `getRuntimeWiring()` facade methods.
+  `getRuntimeWiring()`, `getSchema()` facade methods.
 - Runtime SDL resource loading from the generated JAR.
-- The `graphitron-common` runtime dependency on emitted code.
+- `GraphitronContext` interface references from emitted fetcher code
+  (the per-class `graphitronContext(env)` helper and every call
+  through it). The `graphitron-common` dep on emitted code drops away.
 
-**Consumer impact.** Apps on the rewrite pipeline adapt their startup
-wiring to call `Graphitron.getSchema()` in place of the
-`makeExecutableSchema` assembly. The release notes call out the
-breaking change and include a three-line before/after example.
-Documented in a CHANGELOG entry alongside the release.
+**Consumer impact.** Apps on the rewrite pipeline change in two
+places: (1) startup wiring calls `Graphitron.buildSchema(b -> {...})`
+in place of the `makeExecutableSchema` assembly (scalars move from
+`RuntimeWiring.Builder.scalar(...)` to `b.additionalType(...)`); (2)
+the request pipeline populates `ExecutionInput.graphQLContext` with
+the `DSLContext` and any tenant / context-argument entries the
+generated fetchers read (§Runtime context plumbing). Apps that
+previously implemented `GraphitronContext` replace that with an
+inline `graphQLContext` population step. Documented in a CHANGELOG
+entry alongside the release with a before/after example.
 
 Exit criteria: every execution test in `graphitron-rewrite-test-spec`
 passes against the new path; the `Graphitron.java` emitted surface is
-exactly the three methods above; no `SchemaReadingHelper` references
-remain in generated code; no `RuntimeWiring` references remain in
-generated code.
+exactly the two methods in §Target state; no `SchemaReadingHelper`,
+`RuntimeWiring`, or `no.sikt.graphql.GraphitronContext` references
+remain in emitted code.
 ## Federation integration
 
 `com.apollographql.federation:federation-graphql-java-support` accepts
@@ -193,7 +198,7 @@ a `GraphQLSchema` directly: `Federation.transform(builtSchema)`. Apps
 compose:
 
 ```java
-GraphQLSchema base = Graphitron.getSchema();
+GraphQLSchema base = Graphitron.buildSchema(b -> {});
 GraphQLSchema federated = Federation.transform(base)
     .resolveEntityType(resolver)
     .fetchEntities(entityFetcher)
@@ -251,16 +256,9 @@ method, no extension point needed.
 **Custom scalars.** The user's SDL today declares scalars like `UUID`,
 `LocalDate`, `JSON` and the app registers `GraphQLScalarType` instances
 against them via `RuntimeWiring.Builder.scalar(...)`. Under this plan,
-apps register via the factory (recommended) or the power tool:
+apps register via the customizer:
 
 ```java
-// Factory: one call covers scalars + instrumentation + engine setup.
-GraphQL engine = Graphitron.newEngine()
-    .scalar(ExtendedScalars.UUID)
-    .scalar(ExtendedScalars.Date)
-    .build();
-
-// Power tool: full GraphQLSchema.Builder access.
 GraphQLSchema schema = Graphitron.buildSchema(b -> b
     .additionalType(ExtendedScalars.UUID)
     .additionalType(ExtendedScalars.Date));
@@ -278,7 +276,7 @@ types.
 `GraphQLUnionType.Builder` for interfaces and unions that have
 generated discrimination logic (via `@discriminate` / `@discriminator`).
 For user-defined interfaces the app mutates the code registry
-additively through the power tool:
+additively through the customizer:
 
 ```java
 GraphQLSchema schema = Graphitron.buildSchema(b -> b
@@ -288,11 +286,60 @@ GraphQLSchema schema = Graphitron.buildSchema(b -> b
 Ties into the backlog item "TypeResolver wiring for interface/union
 types" (Cleanup §).
 
-**Code registry.** Internal to `GraphitronSchemaAssembler`. Fetchers
-attach by `FieldCoordinates.coordinates(typeName, fieldName)`; the
-generator produces the coordinates alongside each `GraphQLFieldDefinition`
-it emits. End result is one `GraphQLCodeRegistry` attached to the
-final `GraphQLSchema`. Apps never see the code registry directly.
+**Code registry.** Internal to `GraphitronSchema`. Fetchers attach by
+`FieldCoordinates.coordinates(typeName, fieldName)`; the generator
+produces the coordinates alongside each `GraphQLFieldDefinition` it
+emits. End result is one `GraphQLCodeRegistry` attached to the final
+`GraphQLSchema`. Apps never see the code registry directly.
+
+## Runtime context plumbing
+
+Generated fetchers need three things at request time: a `DSLContext`,
+an optional tenant identifier, and values for any `@condition` /
+`@tableMethod` `contextArguments`. Today these are brokered through
+the `GraphitronContext` interface and retrieved from
+`env.getGraphQlContext().get("graphitronContext")`. Under this plan
+the interface goes away and fetchers read directly from
+`env.getGraphQlContext()`.
+
+**Conventions:**
+
+| Value                    | Key                        | Access in fetcher |
+|--------------------------|----------------------------|-------------------|
+| `DSLContext`             | `DSLContext.class`         | `env.getGraphQlContext().get(DSLContext.class)` |
+| Tenant identifier        | `"graphitron.tenant"`      | `env.getGraphQlContext().getOrDefault("graphitron.tenant", "")` |
+| Context-argument value   | `"graphitron.arg.<name>"`  | `env.getGraphQlContext().get("graphitron.arg." + name)` |
+
+Class-keyed for `DSLContext` (type-safe, zero collision risk with
+user code, jOOQ is an allowed dep). String-keyed with a
+`graphitron.` namespace for the two other values so consumer keys
+never collide.
+
+**App wire-up (per request):**
+
+```java
+DSLContext dsl = buildRequestDsl(req); // may set tenant session vars
+ExecutionInput input = ExecutionInput.newExecutionInput(query)
+    .graphQLContext(ctx -> ctx
+        .of(DSLContext.class, dsl)
+        .of("graphitron.tenant", req.tenantId())
+        .of("graphitron.arg.userId", req.userId()))
+    .build();
+engine.executeAsync(input);
+```
+
+Apps that previously overrode `GraphitronContext.getDslContext(env)`
+to inspect the DFE (e.g. to pick a tenant-scoped pool) do that
+inspection before building the `ExecutionInput` instead. Every piece
+of information those overrides used is available from the HTTP
+request or equivalent entry point; the DFE itself carries nothing a
+request filter does not already have.
+
+**Codegen impact:** `TypeFetcherGenerator.buildGraphitronContextHelper`
+and all `graphitronContext(env).getXxx(...)` call-site emissions
+switch to the direct `env.getGraphQlContext().get(...)` form. The
+`GRAPHITRON_CONTEXT` `ClassName` constant in `GeneratorUtils` is
+removed.
 ## SDL as build artifact
 
 SDL is produced from the built `GraphQLSchema` via graphql-java's
@@ -326,23 +373,32 @@ Ships alongside the code: `graphitron-rewrite/docs/getting-started.md`.
 Starting point: the reader has already run the legacy Maven plugin
 and has generated sources on their classpath. The doc picks up from
 "you have generated code, now what" and covers only the runtime
-wiring side: call `Graphitron.getSchema()`, hand it to the HTTP
-layer, done. Maven plugin configuration is out of scope until the
-rewrite owns its own Mojo; legacy-plugin docs stay where they are.
+wiring side: build the schema, construct the engine, wire the
+per-request `ExecutionInput`. Maven plugin configuration is out of
+scope until the rewrite owns its own Mojo; legacy-plugin docs stay
+where they are.
 
 The document is also a design constraint. If any of the following
-cases doesn't fit in a few lines each, that's a signal the API is
-wrong and we iterate on `Graphitron` / `EngineBuilder`, not on the
-doc:
+cases does not fit in a few lines each, that is a signal the API is
+wrong and we iterate on `Graphitron` and on the §Runtime context
+plumbing keys, not on the doc:
 
-- "Hello world": instantiate, serve one query.
-- Custom scalar: register one `GraphQLScalarType`.
-- Federation: wrap the schema.
+- **Hello world.** `Graphitron.buildSchema(b -> {})`, one
+  `GraphQL.newGraphQL(schema).build()`, one `ExecutionInput` that
+  puts a `DSLContext` in `graphQLContext`, done.
+- **Custom scalar.** `Graphitron.buildSchema(b -> b.additionalType(ExtendedScalars.UUID))`.
+- **Federation.** `Federation.transform(Graphitron.buildSchema(b -> {})).build()`.
+- **Tenant-scoped DSLContext.** Request filter builds a
+  tenant-configured `DSLContext` (e.g. via `SET LOCAL app.tenant_id`)
+  and stuffs it under `DSLContext.class`.
+- **Context arguments.** App reads `userId` from the JWT and puts
+  it under `"graphitron.arg.userId"` before executing.
 
-This flips the usual relationship. The doc is not a crutch to explain
-an awkward API; it is a test that the API didn't become awkward. A
-reviewer who finds a section growing past a few lines should push
-back on the API, not on the prose.
+The last two cases are what point (5) above rides on: if the wire-up
+demo for tenant DSLContext or context arguments runs long, that is
+direct evidence the three-key convention is wrong and we revise it,
+not the prose. Reviewer who finds a section growing past a few lines
+should push back on the keys, not on the doc.
 
 ## Prerequisites
 
@@ -384,14 +440,10 @@ Items the umbrella reshapes or absorbs under B:
 against the new path, unchanged in intent. These are the functional
 regression net: they already assert query response shapes and round-trip
 counts; they pass iff the programmatic schema is semantically equal to
-what the old path produced.
-
-**SDL semantic-equality test.** `GraphitronSdl.emit(schema)` is parsed
-back via `SchemaParser` + `SchemaGenerator.makeExecutableSchema`; the
-resulting schema is compared to the original for structural equality
-(types, fields, directives, argument definitions). Byte equality is
-not asserted. Covers the federation concern: whatever `SchemaPrinter`
-produces, federation-jvm can consume equivalently.
+what the old path produced. They also double as the proof-of-life for
+the `GraphQLContext` key conventions; the test harness populates
+`DSLContext.class`, `"graphitron.tenant"`, and
+`"graphitron.arg.<name>"` the same way real apps will.
 
 **`@notGenerated` rejection test.** An SDL fixture with one
 `@notGenerated` field; validator produces an error with the field's
@@ -399,47 +451,49 @@ coordinates and a clear message. Mirror case: an SDL with no
 `@notGenerated` usage passes validation.
 
 **Federation integration test.** A small SDL with `@key`, `@external`,
-`@shareable`; wrap `Graphitron.getSchema()` via `Federation.transform`;
-execute an `_entities` query; assert the response. Pins the contract
-that federation-jvm consumes a programmatically-built schema.
+`@shareable`; wrap `Graphitron.buildSchema(b -> {})` via
+`Federation.transform`; execute an `_entities` query; assert the
+response. Pins the contract that federation-jvm consumes a
+programmatically-built schema.
 
 **Lint ratchet.** `GeneratedSourcesLintTest` asserts no
-`RuntimeWiring`, `TypeRuntimeWiring`, `SchemaGenerator`, or
-`SchemaReadingHelper` imports appear in emitted code. Prevents
-regression into the old shape.
+`RuntimeWiring`, `TypeRuntimeWiring`, `SchemaGenerator`,
+`SchemaReadingHelper`, or `no.sikt.graphql.GraphitronContext` imports
+appear in emitted code. Prevents regression into the old shape and
+enforces the zero-runtime-dep invariant.
 ## Open decisions
 
-**D1.** API shape for app customization. **Resolved.** Three-method
-surface on `Graphitron`: `buildSchema(Consumer<GraphQLSchema.Builder>)`
-power tool, `newEngine()` app-scoped factory,
-`execution(GraphitronContext)` request-scoped helper. No
+**D1.** API shape for app customization. **Resolved.** Two-method
+facade on `Graphitron`: `buildSchema(Consumer<GraphQLSchema.Builder>)`
+and `getSdl()`. No engine factory, no execution helper, no
 `GraphitronConfig` abstraction; graphql-java's native
-`GraphQLSchema.Builder` is exposed directly. Safe-surface guidance
-goes in javadoc on the `Consumer` parameter ("use additive methods
-only; do not call `.query()`, `.mutation()`, `.subscription()`,
-`.clearDirectives()`"). Factory and execution helper are split by
-lifecycle scope so request-scoped `GraphitronContext` never leaks into
-application-scoped setup.
+`GraphQLSchema.Builder`, `GraphQL.newGraphQL(...)`, and
+`ExecutionInput.newExecutionInput(...)` are the composition surface.
+Runtime values the fetchers need (DSLContext, tenant id, context
+arguments) travel through `ExecutionInput.graphQLContext` under the
+keys documented in §Runtime context plumbing. Rationale: keeps the
+emitted code dep-free (jOOQ + graphql-java only), avoids inventing
+parallel APIs for problems graphql-java already solves, and lets the
+"getting started" examples stay at a few lines each. Safe-surface
+guidance for the customizer goes in javadoc on the `Consumer`
+parameter ("use additive methods only; do not call `.query()`,
+`.mutation()`, `.subscription()`, `.clearDirectives()`").
 
 **D2.** Package for generated `<TypeName>Type` classes. **Resolved.**
 New `<outputPackage>.rewrite.schema` package. Keeps the graphql-java
 builder classes away from the existing `<outputPackage>.rewrite.types`
 carriers and groups schema-building artifacts
-(`<TypeName>Type`, `GraphitronSchemaAssembler`, `GraphitronSdl`,
-`EngineBuilder`) under one roof.
+(`<TypeName>Type`, `GraphitronSchema`, `GraphitronSdl`) under one
+roof.
 
-**D3.** `<TypeName>Type` class naming. **Resolved.** `<TypeName>Type`
-mirrors graphql-java's own type-hierarchy naming
-(`GraphQLObjectType`, `GraphQLInterfaceType`). The `Type` suffix
-differentiates from the emitted `<TypeName>Fetchers` class and from
-the user's SDL type name. Method-level entry point stays short:
-`FilmType.type()` returns a `GraphQLObjectType`.
+**D3.** `<TypeName>Type` class naming. **Resolved.** See §Target
+state: `<TypeName>Type` mirrors graphql-java's own type-hierarchy
+naming; method-level entry point is `FilmType.type()` returning a
+`GraphQLObjectType`.
 
 **D4.** `getSdl()` caching. **Resolved.** Lazy + cached in a
-`static volatile` field. Apps that never call `getSdl()` pay
-nothing; apps that do (federation composition, tooling endpoints)
-pay the `SchemaPrinter` cost on the first call and get a field read
-every subsequent call. The schema is app-scoped and immutable after
-first build, so a single cached SDL is safe for the process
-lifetime.
+`static volatile` field. Eventually consistent, safe because the SDL
+is deterministic from the immutable schema: a rare startup-time race
+results in two concurrent `SchemaPrinter` invocations producing the
+same string. Apps that never call `getSdl()` pay nothing.
 
