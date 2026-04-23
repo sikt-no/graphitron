@@ -646,22 +646,16 @@ class FieldBuilder {
     /**
      * Classifies every GraphQL argument on the field into an {@link ArgumentRef} variant in one
      * pass. Projection into {@link WhereFilter} / {@link OrderBySpec} / {@link PaginationSpec} /
-     * {@code LookupMapping} happens in dedicated projector methods (step 3+), not here.
+     * {@code LookupMapping} happens in dedicated projector methods, not here.
      *
      * <p>The intent of this method is to localise the "what is this argument for" decision so
      * multiple projections can read the same classification. See
-     * {@code docs/argument-resolution.md}.
+     * {@code docs/planning/argument-resolution.md}.
      *
-     * <p>Step 2 scope: structural classification only. {@code @condition} on arguments is still
-     * rejected by {@link #buildFilters}; this method emits {@link ArgumentRef.UnclassifiedArg}
-     * for such args with a "deferred to step 4" reason. Once step 4 lands, it will populate
-     * {@link ArgConditionRef} on the corresponding {@link ArgumentRef.ScalarArg.ColumnArg}
-     * (or input-type variant) instead.
-     *
-     * <p>Errors append to {@code errors} but never cause a {@code null} return — every arg maps
+     * <p>Errors append to {@code errors} but never cause a {@code null} return: every arg maps
      * to a variant. Variants like {@link ArgumentRef.ScalarArg.UnboundArg} and
-     * {@link ArgumentRef.UnclassifiedArg} carry a {@code reason} so step 10 can turn them into
-     * validation errors.
+     * {@link ArgumentRef.UnclassifiedArg} carry a {@code reason} that {@link #projectFilters}
+     * surfaces into the field-level {@code errors} list.
      *
      * <p>{@code rt} is the target {@link TableRef} used to resolve scalar column args; every
      * current caller passes the field's resolved table, so this method does not accept
@@ -725,9 +719,10 @@ class FieldBuilder {
         var columnRef = new ColumnRef(col.get().sqlName(), col.get().javaName(), col.get().columnClass());
         String enumClassName = validateEnumFilter(typeName, columnRef, errors);
         if (enumClassName != null && enumClassName.isEmpty()) {
-            // Enum validation failed; error already appended. Emit UnclassifiedArg so step 10 can
-            // surface the structural failure (even though the enum-value-mismatch is already an
-            // error — keeping this consistent keeps the classify-never-returns-null invariant).
+            // Enum validation failed; error already appended. Emit UnclassifiedArg so
+            // projectFilters surfaces the structural failure (even though the enum-value-mismatch
+            // is already an error; keeping this consistent keeps the classify-never-returns-null
+            // invariant).
             return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
                 "enum filter validation failed for column '" + columnRef.sqlName() + "'");
         }
@@ -919,7 +914,7 @@ class FieldBuilder {
      * {@link #classifyArguments} output as the single source of truth about each argument.
      * Replaces the legacy three-pass model ({@code buildFilters} / {@code buildOrderBySpec} /
      * {@code buildPaginationSpec}) with one classification + one projection step. See
-     * {@code docs/argument-resolution.md}.
+     * {@code docs/planning/argument-resolution.md}.
      */
     private TableFieldComponents projectForFilter(List<ArgumentRef> refs, GraphQLFieldDefinition fieldDef,
                                                   TableRef rt, String returnTypeName, List<String> errors) {
@@ -1045,7 +1040,7 @@ class FieldBuilder {
                 }
                 case ArgumentRef.InputTypeArg.PlainInputArg pia -> {
                     // Plain input types are silently skipped unless paired with @condition;
-                    // see the out-of-scope note in docs/argument-resolution.md.
+                    // see the out-of-scope note in docs/planning/argument-resolution.md.
                     pia.argCondition().ifPresent(ac -> argConditions.add(ac.filter()));
                     walkInputFieldConditions(pia.fields(), pia.name(), List.of(), argConditions);
                 }
@@ -1062,7 +1057,7 @@ class FieldBuilder {
                         || (ca.argCondition().isPresent() && ca.argCondition().get().override());
                     // Lookup-key args are consumed by projectForLookup → LookupMapping and
                     // emitted via VALUES+JOIN by LookupValuesJoinEmitter. They must not appear
-                    // as GeneratedConditionFilter bodyParams (per docs/argument-resolution.md Phase 1).
+                    // as GeneratedConditionFilter bodyParams (per docs/planning/argument-resolution.md Phase 1).
                     if (!autoSuppressed && !ca.isLookupKey()) {
                         String javaType = javaTypeFor(ca.extraction(), ca.column());
                         bodyParams.add(new BodyParam(ca.name(), ca.column(), javaType, ca.nonNull(), ca.list(), ca.extraction()));

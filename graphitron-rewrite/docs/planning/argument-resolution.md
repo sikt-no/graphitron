@@ -1,13 +1,13 @@
 # Argument Resolution: Phase 4
 
-> **Status:** In Review
+> **Status:** Done
 >
-> Foundation + Phases 1–3 shipped. Phase 4a (classification, projection
-> wiring, validator, pipeline tests) shipped in `9cf83463`. Phase 4b
-> (runtime nested-arg access, divergence-pinning execution tests) shipped
-> in `11dc670a` and `745a2a15`. `@condition` on `INPUT_FIELD_DEFINITION`
-> is feature-complete for the currently-implemented argument-resolution
-> pipeline; ready for reviewer sign-off.
+> Phase 4a (classification, projection wiring, validator, pipeline tests)
+> shipped in `9cf83463`. Phase 4b (runtime nested-arg access,
+> divergence-pinning execution tests) shipped in `11dc670a` and `745a2a15`.
+> Auto-column binding for `@table` input types and the override-propagation
+> accumulator land separately under [`plan-auto-column-binding.md`](plan-auto-column-binding.md);
+> this plan's scope (`@condition` on `INPUT_FIELD_DEFINITION`) is complete.
 
 ## Shipped (context)
 

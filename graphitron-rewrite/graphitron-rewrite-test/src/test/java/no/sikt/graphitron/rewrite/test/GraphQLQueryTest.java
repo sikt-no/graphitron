@@ -1344,9 +1344,10 @@ class GraphQLQueryTest {
     @SuppressWarnings("unchecked")
     void inputFieldCondition_tableInput_overrideFlagOnRealColumn_explicitMethodStillFires() {
         // FilmConditionInputWithOverrideField.filmId carries @condition(override:true).
-        // The override flag is inert at projection today (auto-predicate suppression is
-        // deferred to step 9); the explicit method still fires. Runtime effect: identical
-        // to a non-override @condition — filter by the passed filmId.
+        // The override flag is inert at projection today (auto-predicate suppression lands
+        // with auto-column binding; see plan-auto-column-binding.md). The explicit method
+        // still fires. Runtime effect: identical to a non-override @condition, filter by
+        // the passed filmId.
         Map<String, Object> data = execute(
             "{ filmsWithInputFieldOverride(filter: {filmId: \"3\"}) { filmId } }");
         List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmsWithInputFieldOverride");

@@ -35,8 +35,8 @@ type Query {
     filmsByPlainInput(filter: PlainFilmIdInput): [Film!]!
     languagesByPlainInput(filter: PlainFilmIdInput): [Language!]!
     # argres Phase 4b: input-field @condition(override: true) on a real column. The
-    # override flag is inert at projection today (auto-predicate suppression arrives
-    # with step 9), so the runtime effect is identical to a non-override @condition:
+    # override flag is inert at projection today (auto-predicate suppression lands with
+    # auto-column binding), so the runtime effect is identical to a non-override @condition:
     # filmIdCondition fires and filters by the passed value. Locks in that
     # override:true parses, classifies, and projects an explicit method call.
     filmsWithInputFieldOverride(filter: FilmConditionInputWithOverrideField): [Film!]!
@@ -375,7 +375,7 @@ input PlainFilmIdInput {
 
 # argres Phase 4b: @table input whose field carries @condition(override: true).
 # The override flag is currently inert at projection (auto-predicates for @table
-# inputs are deferred to step 9), but the directive must still parse and flow
+# inputs land with plan-auto-column-binding.md), but the directive must still parse and flow
 # the explicit method through projection. Exercises the (Yes outer, Present
 # override:true, Suppressed auto-predicate, Emitted explicit) truth-table row
 # as far as the current projection supports it.
