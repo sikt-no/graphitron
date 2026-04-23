@@ -57,7 +57,7 @@ Rewrite rejections observed in production, ranked by distinct-occurrence count. 
 
 Backlog items ranked by production impact first (see snapshot above), then by architectural / structural concerns. Items that have been promoted past Backlog live in the Active table at the top of this doc. Numbered prefix `#1` ties the row to the snapshot.
 
-- **#1 (prod: 12) — `SplitTableField` under `NestingField`** **[Ready]** — lift the `GraphitronSchemaValidator.NESTED_WIREABLE_LEAVES` gate for `SplitTableField` / `SplitLookupTableField`; emit a nested-type `<NestedTypeName>Fetchers` class carrying the DataLoader-backed rows method; thread the class name through `GraphitronWiringClassGenerator` so the wiring's `$L::$L` fallback reaches it; walk `NestingField.nestedFields()` when collecting `$fields` BatchKey columns so nested Split leaves project the outer parent's PK into the SELECT ([plan-splittablefield-nestingfield.md](plan-splittablefield-nestingfield.md)).
+- **#1 (prod: 12) — `SplitTableField` under `NestingField`** **[Done]** — lift the `GraphitronSchemaValidator.NESTED_WIREABLE_LEAVES` gate for `SplitTableField` / `SplitLookupTableField`; emit a nested-type `<NestedTypeName>Fetchers` class carrying the DataLoader-backed rows method; thread the class name through `GraphitronWiringClassGenerator` so the wiring's `$L::$L` fallback reaches it; walk `NestingField.nestedFields()` when collecting `$fields` BatchKey columns so nested Split leaves project the outer parent's PK into the SELECT ([plan-splittablefield-nestingfield.md](plan-splittablefield-nestingfield.md)).
 
 Architecture / structural (no direct production-count attribution; ordered by rough dependency):
 

@@ -1,6 +1,6 @@
 # Plan: `SplitTableField` under `NestingField`
 
-> **Status:** Ready
+> **Status:** Done
 >
 > Lift the validator rejection that blocks `@splitQuery` fields inside plain-object
 > `NestingField` wrappers. Scope: `SplitTableField` and `SplitLookupTableField`.
