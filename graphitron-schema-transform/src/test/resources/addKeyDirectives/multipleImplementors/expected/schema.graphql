@@ -1,0 +1,27 @@
+directive @key(fields: federation__FieldSet!, resolvable: Boolean = true) repeatable on INTERFACE | OBJECT
+scalar federation__FieldSet
+
+interface Node {
+  id: ID!
+}
+
+type Query {
+  first: FirstType
+  second: SecondType
+  plain: PlainType
+}
+
+type FirstType implements Node @key(fields: "id") {
+  id: ID!
+  field: String!
+}
+
+type SecondType implements Node @key(fields: "id") {
+  id: ID!
+  other: Int
+}
+
+type PlainType {
+  id: ID!
+  name: String
+}

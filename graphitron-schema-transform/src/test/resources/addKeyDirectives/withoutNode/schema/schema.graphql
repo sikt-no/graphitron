@@ -1,0 +1,11 @@
+directive @key(fields: federation__FieldSet!, resolvable: Boolean = true) repeatable on INTERFACE | OBJECT
+scalar federation__FieldSet
+
+type Query {
+  someType(param: String!): [SomeType]
+}
+
+type SomeType {
+  id: ID!
+  field: String!
+}

@@ -1,137 +1,72 @@
 package no.fellesstudentsystem.schema_transformer.transform;
 
-import graphql.schema.GraphqlTypeComparatorRegistry;
-import graphql.schema.idl.SchemaParser;
-import graphql.schema.idl.SchemaPrinter;
-import graphql.schema.idl.UnExecutableSchemaGenerator;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static no.fellesstudentsystem.schema_transformer.SchemaTransformer.assembleSchema;
+import static no.fellesstudentsystem.schema_transformer.schema.SchemaReader.getTypeDefinitionRegistry;
 
-class AddKeyDirectivesTest {
+public class AddKeyDirectivesTest extends AbstractTest {
+
+    private static final String BASE = "addKeyDirectives/";
+
     @Test
-    public void testWithoutNode() {
-        var registry = new SchemaParser().parse("""
-                directive @key(fields: federation__FieldSet!, resolvable: Boolean = true) repeatable on INTERFACE | OBJECT
-                scalar federation__FieldSet
-
-                type Query {
-                    someType(
-                        param: String!
-                    ): [SomeType]
-                }
-
-                type SomeType {
-                    id: ID!
-                    field: String!
-                }
-                """);
+    @DisplayName("No-op when no type implements Node")
+    void withoutNode() {
+        var path = BASE + "withoutNode";
+        var registry = getTypeDefinitionRegistry(findSchemas(path + "/schema"));
         AddKeyDirectives.transform(registry);
-
-        var actual = new SchemaPrinter(SchemaPrinter.Options.defaultOptions()
-                .includeDirectiveDefinitions(false)
-                .setComparators(GraphqlTypeComparatorRegistry.AS_IS_REGISTRY))
-                .print(UnExecutableSchemaGenerator.makeUnExecutableSchema(registry));
-
-        assertEquals("""
-                type Query {
-                  someType(param: String!): [SomeType]
-                }
-
-                type SomeType {
-                  id: ID!
-                  field: String!
-                }
-
-                scalar federation__FieldSet
-                """, actual);
+        var schema = assembleSchema(registry);
+        var expected = makeExpectedSchema(path);
+        assertTransformedSchemaMatches(schema, expected);
+        assertDirectives(schema, expected);
     }
 
     @Test
-    public void testTransform() {
-        var registry = new SchemaParser().parse("""
-                directive @key(fields: federation__FieldSet!, resolvable: Boolean = true) repeatable on INTERFACE | OBJECT
-                scalar federation__FieldSet
-
-                interface Node { id: ID! }
-
-                type Query {
-                    someType(
-                        param: String!
-                    ): [SomeType]
-                }
-
-                type SomeType implements Node {
-                    id: ID!
-                    field: String!
-                }
-                """);
+    @DisplayName("Adds @key(fields: \"id\") to types implementing Node")
+    void addsKeyToNode() {
+        var path = BASE + "addsKeyToNode";
+        var registry = getTypeDefinitionRegistry(findSchemas(path + "/schema"));
         AddKeyDirectives.transform(registry);
-
-        var actual = new SchemaPrinter(SchemaPrinter.Options.defaultOptions()
-                .includeDirectiveDefinitions(false)
-                .setComparators(GraphqlTypeComparatorRegistry.AS_IS_REGISTRY))
-                .print(UnExecutableSchemaGenerator.makeUnExecutableSchema(registry));
-
-        assertEquals("""
-                interface Node {
-                  id: ID!
-                }
-
-                type Query {
-                  someType(param: String!): [SomeType]
-                }
-
-                type SomeType implements Node @key(fields : "id", resolvable : true) {
-                  id: ID!
-                  field: String!
-                }
-
-                scalar federation__FieldSet
-                """, actual);
+        var schema = assembleSchema(registry);
+        var expected = makeExpectedSchema(path);
+        assertTransformedSchemaMatches(schema, expected);
+        assertDirectives(schema, expected);
     }
 
     @Test
-    public void testDuplicateKeyTransform() {
-        var registry = new SchemaParser().parse("""
-                directive @key(fields: federation__FieldSet!, resolvable: Boolean = true) repeatable on INTERFACE | OBJECT
-                scalar federation__FieldSet
-
-                interface Node { id: ID! }
-
-                type Query {
-                    someType(
-                        param: String!
-                    ): [SomeType]
-                }
-
-                type SomeType implements Node @key(fields: "id") {
-                    id: ID!
-                    field: String!
-                }
-                """);
+    @DisplayName("Does not duplicate @key(fields: \"id\") when already present")
+    void skipsExistingKey() {
+        var path = BASE + "skipsExistingKey";
+        var registry = getTypeDefinitionRegistry(findSchemas(path + "/schema"));
         AddKeyDirectives.transform(registry);
+        var schema = assembleSchema(registry);
+        var expected = makeExpectedSchema(path);
+        assertTransformedSchemaMatches(schema, expected);
+        assertDirectives(schema, expected);
+    }
 
-        var actual = new SchemaPrinter(SchemaPrinter.Options.defaultOptions()
-                .includeDirectiveDefinitions(false)
-                .setComparators(GraphqlTypeComparatorRegistry.AS_IS_REGISTRY))
-                .print(UnExecutableSchemaGenerator.makeUnExecutableSchema(registry));
+    @Test
+    @DisplayName("Adds @key to every type implementing Node and leaves non-Node types alone")
+    void multipleImplementors() {
+        var path = BASE + "multipleImplementors";
+        var registry = getTypeDefinitionRegistry(findSchemas(path + "/schema"));
+        AddKeyDirectives.transform(registry);
+        var schema = assembleSchema(registry);
+        var expected = makeExpectedSchema(path);
+        assertTransformedSchemaMatches(schema, expected);
+        assertDirectives(schema, expected);
+    }
 
-        assertEquals("""
-                interface Node {
-                  id: ID!
-                }
-
-                type Query {
-                  someType(param: String!): [SomeType]
-                }
-
-                type SomeType implements Node @key(fields : "id", resolvable : true) {
-                  id: ID!
-                  field: String!
-                }
-
-                scalar federation__FieldSet
-                """, actual);
+    @Test
+    @DisplayName("Adds @key(fields: \"id\") alongside an existing @key with different fields and preserves other directives")
+    void preservesOtherKey() {
+        var path = BASE + "preservesOtherKey";
+        var registry = getTypeDefinitionRegistry(findSchemas(path + "/schema"));
+        AddKeyDirectives.transform(registry);
+        var schema = assembleSchema(registry);
+        var expected = makeExpectedSchema(path);
+        assertTransformedSchemaMatches(schema, expected);
+        assertDirectives(schema, expected);
     }
 }

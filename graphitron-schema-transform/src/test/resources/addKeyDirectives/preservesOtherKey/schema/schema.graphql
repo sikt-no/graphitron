@@ -1,0 +1,16 @@
+directive @key(fields: federation__FieldSet!, resolvable: Boolean = true) repeatable on INTERFACE | OBJECT
+directive @shareable on OBJECT | FIELD_DEFINITION
+scalar federation__FieldSet
+
+interface Node {
+  id: ID!
+}
+
+type Query {
+  user: User
+}
+
+type User implements Node @shareable @key(fields: "email") {
+  id: ID!
+  email: String!
+}
