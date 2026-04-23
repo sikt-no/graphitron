@@ -1,11 +1,11 @@
 # Plan: Lift `@asConnection` rejection on `@splitQuery` fields
 
-> **Status:** Spec
+> **Status:** Ready
 >
-> Design proposal for per-parent Relay pagination inside DataLoader batches via
+> Design for per-parent Relay pagination inside DataLoader batches via
 > a `ROW_NUMBER() OVER (PARTITION BY <parent-fk>)` envelope. Lifts the four
 > classifier rejections in `FieldBuilder` and the two validator rejections in
-> `GraphitronSchemaValidator`. Needs reviewer sign-off before `[Ready]`.
+> `GraphitronSchemaValidator`.
 
 ## Problem
 
@@ -52,6 +52,16 @@ For backward pagination (`last`/`before`), the emitter inverts the ORDER BY insi
 `ROW_NUMBER()` (reuses `ConnectionHelper.reverseOrderBy`), fetches top N+1 per
 partition, and the per-parent `ConnectionResult.trimmedResult()` re-reverses at
 read time. Identical mechanics to the root connection fetcher.
+
+## Batching key
+
+DataLoader batches are keyed on `(parentKey, selectionSet, paginationArgs)` so every
+member of a batch shares the same selection, page size, and cursor. Two concurrent
+resolvers paginating two parents with different `after` cursors go to separate
+batches; two resolvers asking for the first page of different parents batch
+together (the common case). This collapses the per-row cursor-splicing problem
+to a single shared `WHERE (o1, o2) > (:o1_after, :o2_after)` inside the windowed
+CTE, which is what the SQL shape above already draws.
 
 ## Per-parent `ConnectionResult`
 
