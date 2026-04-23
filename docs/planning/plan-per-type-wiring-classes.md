@@ -62,10 +62,9 @@ Interface and union object types are out of scope for this refactor: they are cu
 ### New generator
 
 - `WiringClassGenerator` (singular, in `no.sikt.graphitron.rewrite.generators`), emits one `TypeSpec` per GraphQL object type. Takes:
-  - The `GraphitronSchema` (for regular and nested-via-NestingField types, and for iterating declared fields in SDL order).
-  - Connection-type and Edge-type collections already derived in `GraphQLRewriteGenerator` (move the collection logic from `GraphQLRewriteGenerator:78-102` into this generator or keep it as caller-side input).
+  - The `GraphitronSchema`; walks `schema.fields()` to collect Connection types (the `SqlGeneratingField` + `FieldWrapper.Connection` scan currently at `GraphQLRewriteGenerator:80-93`) and `schema.fields().values()` recursively to collect nested types reached through `NestingField` (currently at `:117-135`). Both scans move inside this generator; the current `GraphQLRewriteGenerator.collectNestedTypes` helper and the in-place connection-map building go with them.
   - `TypeFetcherGenerator.buildWiringEntry` moves here and becomes the per-field entry point (it's already `static` and takes a `ChildField` plus optional `parentTable` / `resultType`); `TypeFetcherGenerator.buildWiringMethod` folds into this generator as its core `wiring()` emitter for the regular-type path.
-- Single public entry point. **Open question 4** below covers the signature: the touch points here name `WiringClassGenerator.generate(GraphitronSchema, List<ConnectionWiring>, List<NestedTypeWiring>) → List<TypeSpec>`, but the `GraphQLRewriteGenerator` simplification snippet uses `WiringClassGenerator.generate(schema)` — a schema-only form that derives connection and nested types internally. The two are mutually exclusive; both code blocks must reflect the same choice before implementation. If the collection logic moves inside this generator, `ConnectionWiring` and `NestedTypeWiring` become private implementation records and are removed from the public signature. If they stay as caller-side inputs, the simplified caller snippet is wrong and both records stay public. Returns one `TypeSpec` per type across all five categories.
+- Single public entry point: `WiringClassGenerator.generate(GraphitronSchema) → List<TypeSpec>`. Returns one `TypeSpec` per type across all five categories. `ConnectionWiring` and `NestedTypeWiring` become private implementation records; they are not part of the public API.
 
 ### `GraphitronWiringClassGenerator` shrinks
 
@@ -84,9 +83,9 @@ public static TypeSpec generate(List<String> wiringClassNames) {
 }
 ```
 
-`ConnectionWiring` and `NestedTypeWiring` records move to `WiringClassGenerator` (they're implementation detail of per-type wiring emission, not of the aggregator). This applies if the schema-only entry point is chosen (open question 4); if the lists stay as caller-side inputs the records remain on the aggregator or become a shared data package.
+`ConnectionWiring` and `NestedTypeWiring` records move to `WiringClassGenerator` as private records (they're implementation detail of per-type wiring emission, not of the aggregator).
 
-The aggregator receives a flat list of `*Wiring` class names. **Open question 5** covers the ordering. See below.
+The aggregator receives a flat list of `*Wiring` class names, ordered alphabetically by class name. Matches the existing `fetcherClassNames` order (`TypeFetcherGenerator.java:73` and `:83`) and keeps generated-source diffs stable independent of SDL edit order.
 
 ### `TypeFetcherGenerator` trims
 
@@ -111,7 +110,7 @@ write(wiringClasses,  "rewrite.wiring");
 write(List.of(aggregator), "rewrite");
 ```
 
-This snippet uses the schema-only form of `WiringClassGenerator.generate()`, which implies the collection logic moves inside `WiringClassGenerator`. See open question 4.
+The `wiringClasses.stream().map(TypeSpec::name).toList()` call produces an alphabetical list because `WiringClassGenerator.generate(schema)` sorts its output internally, consistent with the ordering decision above.
 
 ### Emitted-source surface
 
@@ -124,7 +123,7 @@ Per the rewrite test-tier conventions in `docs/rewrite-design-principles.md`, co
 - **Smoke test.** Extend `GeneratedSourcesSmokeTest.PKG_QUALIFIED_CLASSES` (`graphitron-rewrite-test-spec`) to include one `*Wiring` class from each of the five categories, confirming every expected `*Wiring` class is emitted and compiles.
 - **Pipeline tests.** No new tests needed; existing `GraphitronSchemaBuilderTest` / `*PipelineTest` cases remain unchanged. The refactor is behaviour-preserving at the schema-builder / classifier / emitter seam.
 - **Execution tests.** `GraphQLQueryTest` already uses `GraphitronWiring.build()` (`GraphQLQueryTest.java:75`); the existing end-to-end tests exercise every category of wiring at runtime. The refactor passes iff those tests stay green.
-- **Lint ratchet.** A `GeneratedSourcesLintTest` assertion that `GraphitronWiring.java` contains no `newTypeWiring(` calls (only `.wiring()` references) locks in the aggregator-only contract. Cheap and directly enforces the invariant this refactor establishes; see open question 3 for whether to add it now or defer.
+- **Lint ratchet.** Add a `GeneratedSourcesLintTest` assertion that `GraphitronWiring.java` contains no `newTypeWiring(` calls (only `.wiring()` references). One-line assertion that directly encodes the aggregator-only invariant this refactor establishes. If a future change ever legitimately needs to inline a wiring fragment, flipping the assertion off is a trivial cost; absent that, the ratchet prevents quiet regressions.
 
 ## Alternatives considered
 
@@ -140,10 +139,12 @@ Single substantive risk: cross-class method references to `*Fetchers::methodName
 
 Secondary note: the `collectNestedTypes` helper in `GraphQLRewriteGenerator` (`:123-135`) uses first-occurrence-wins semantics when a nested type is shared across multiple parents, capturing the first-seen `representativeParentTable`. The `ColumnField` branch in `buildWiringEntry` (`:1349-1356`) emits a typed `ColumnFetcher<>(Tables.X.COL)` using that table. This is correct as long as shared nested types always resolve against the same underlying jOOQ table — which holds for the current `NestingField` sharing semantics — but implementers should confirm the invariant still holds once the Active item "Multi-parent NestingField sharing — `TableField` arm" lands.
 
-## Open questions
+## Design decisions
 
-1. **Do we keep the `<outputPackage>.rewrite.wiring` subpackage name, or use something like `rewrite.runtimewiring` to avoid collision with the graphql-java `RuntimeWiring` concept?** The subpackage name is only visible in generated `import` statements; `rewrite.wiring` is shorter and the collision is weak (the package contains *producers of* `RuntimeWiring` fragments, not `RuntimeWiring` itself). Recommendation: `rewrite.wiring`.
-2. **Do we extract `ConnectionHelper::edges` / `::edgeNode` into per-connection helper methods so `QueryFilmsConnectionWiring` calls `QueryFilmsConnectionWiring::edges` instead?** No; `ConnectionHelper` methods are type-agnostic by design (they operate on the `ConnectionResult` / `Edge` carriers, not on the specific Connection type). Keeping the cross-class method references is correct.
-3. **Add the lint ratchet now, or defer?** The ratchet directly enforces the invariant this refactor establishes, and the one-line assertion is low maintenance. The objection is that a future wiring category that legitimately inlines into the aggregator would be blocked — but the design intent is that no such category should exist. Recommendation pending: resolve before implementation so the test plan is complete.
-4. **Schema-only entry point, or caller passes the derived lists?** `WiringClassGenerator.generate(schema)` vs. `WiringClassGenerator.generate(schema, connections, nestedTypes)`. The "New generator" section and the `GraphQLRewriteGenerator` simplification snippet currently describe opposite choices. If the schema-only form is used, `ConnectionWiring` / `NestedTypeWiring` become private records inside `WiringClassGenerator` and the generator walks `schema.fields()` to collect Connection types (the `SqlGeneratingField` + `FieldWrapper.Connection` scan from `GraphQLRewriteGenerator:80-93`) and `schema.fields().values()` recursively via `collectNestedTypes` equivalent (`:117-135`); the simplified caller code is then correct. If the lists are kept as inputs, the simplified caller snippet needs a correction and the records remain public. Pick one.
-5. **What ordering should the aggregator use for the flat list of `*Wiring` class names?** The current `fetcherClassNames` list is alphabetical by class name (`.sorted()` at `TypeFetcherGenerator.java:73` and `Map.Entry.comparingByKey()` at `:83`; verified against the generated `GraphitronWiring.java`: `Actor, Address, Category, Customer, Film, FilmActor, FilmDetails, Language, Query, Store`). Options: (a) alphabetical across all five categories, for stable diffs regardless of SDL order (matches the existing convention); (b) alphabetical for schema types, with synthesized types (Connection, Edge, nested-without-fetcher) interleaved alphabetically or grouped at the end; (c) SDL declaration order, with synthesized types inserted immediately after the type that introduces them, so related types stay adjacent. Recommendation: (a). The existing order is alphabetical, so matching it is the lowest-churn choice and stable-diff is the most defensible property for generated code.
+The following were left open during Spec; resolved during Ready revisions.
+
+1. **Subpackage name.** `<outputPackage>.rewrite.wiring`. Parallels existing `rewrite.fetchers` / `rewrite.conditions` / `rewrite.types`; the collision with graphql-java's `RuntimeWiring` concept is weak (the package contains *producers of* `RuntimeWiring` fragments, not `RuntimeWiring` itself).
+2. **`ConnectionHelper` binding shape.** Keep as cross-class method references (`ConnectionHelper::edges`, `::edgeNode`, etc.), not per-Connection helper methods. `ConnectionHelper` methods are type-agnostic by design (they operate on `ConnectionResult` / `Edge` carriers, not on a specific Connection type); wrapping them per-connection would duplicate code without adding specialization.
+3. **Lint ratchet.** Add now. One-line `GeneratedSourcesLintTest` assertion encoding the aggregator-only invariant; trivial to flip off later if a future change legitimately needs to inline a wiring fragment. See Test coverage for the specific assertion.
+4. **Entry point signature.** Schema-only: `WiringClassGenerator.generate(GraphitronSchema) → List<TypeSpec>`. Connection and nested-type collection is an implementation detail of wiring emission, not something `GraphQLRewriteGenerator` should know about. `ConnectionWiring` / `NestedTypeWiring` become private records inside `WiringClassGenerator`.
+5. **Aggregator ordering.** Alphabetical by class name, across all five categories. Matches the existing `fetcherClassNames` order at `TypeFetcherGenerator.java:73` and `:83`; keeps generated-source diffs stable regardless of SDL edit order.
