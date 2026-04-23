@@ -21,7 +21,7 @@ import java.util.List;
  * Unit tests for {@link TypeClassGenerator}. Tests verify structural properties of the generated
  * TypeSpec (method names, return types, parameter signatures) — not the generated code body.
  * Code correctness is verified by compiling the generated output against real jOOQ classes in
- * the {@code graphitron-rewrite-test-spec} module.
+ * the {@code graphitron-rewrite-test} module.
  */
 class TypeClassGeneratorTest {
 
@@ -101,7 +101,7 @@ class TypeClassGeneratorTest {
             List.of());
         assertThat(TypeSpecAssertions.hasFieldsArm(spec, "personId")).isTrue();
         // Accessor selection (table.getPersonId() vs table.getId()) is a body-content question.
-        // Compile tier catches the wrong accessor via graphitron-rewrite-test-spec; execution
+        // Compile tier catches the wrong accessor via graphitron-rewrite-test; execution
         // tier catches wrong values via PlatformIdPipelineTest fixtures.
     }
 

@@ -339,7 +339,7 @@ descendants. No new emitter shape.
 ## Landed in 9cf83463 (Phase 4a)
 
 The following shipped as a single commit and is the current state on trunk.
-All 105 `graphitron-rewrite-test-spec` tests pass.
+All 105 `graphitron-rewrite-test` tests pass.
 
 1. **Data model.** `model/InputField.java`: `ColumnField`, `ColumnReferenceField`,
    `NestingField` carry `Optional<ArgConditionRef> condition`. `model/ArgumentRef.java`:

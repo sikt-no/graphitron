@@ -56,7 +56,7 @@ sibling reduces to a body-only body.
 assert the emitted method signatures and shape invariants (idx column,
 scatter helper gates). No new tests needed; the refactor passes iff the
 existing tests stay green. One review-level check: skim the generated
-sources in `graphitron-rewrite-test-spec/target/generated-sources` before
+sources in `graphitron-rewrite/graphitron-rewrite-test/target/generated-sources` before
 and after, confirm identical output.
 
 **Risk.** Low. The extraction mechanical; the prelude really is identical

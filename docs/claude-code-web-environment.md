@@ -33,7 +33,7 @@ pg_ctlcluster 16 main start
 sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'postgres';"
 sudo -u postgres psql -c "CREATE DATABASE rewrite_test;"
 sudo -u postgres psql -d rewrite_test \
-  -f graphitron-rewrite-test/graphitron-rewrite-test-fixtures/src/main/resources/init.sql
+  -f graphitron-rewrite/graphitron-rewrite-fixtures/src/main/resources/init.sql
 ```
 
 The `ALTER USER` step is required because JDBC connects via 127.0.0.1 using scram-sha-256
@@ -45,10 +45,10 @@ uses `postgres`/`postgres` credentials.
 Run these commands in order from the repository root:
 
 ```bash
-# 1. Build graphitron-common, graphitron-javapoet, and graphitron-rewrite-test-fixtures.
+# 1. Build graphitron-common, graphitron-javapoet, and graphitron-rewrite-fixtures.
 #    -am (also-make) builds all upstream dependencies automatically.
 #    -Plocal-db switches jooq codegen in test-fixtures from TestContainers to native Postgres.
-mvn install -pl :graphitron-rewrite-test-fixtures -am -Plocal-db
+mvn install -pl :graphitron-rewrite-fixtures -am -Plocal-db
 
 # 2. Build graphitron-common, graphitron-javapoet, graphitron-java-codegen,
 #    graphitron-schema-transform, graphitron-rewrite, and graphitron-maven-plugin.
@@ -64,15 +64,15 @@ mvn install -pl :graphitron-java-codegen,:graphitron-maven-plugin -am \
 mvn test -pl :graphitron-rewrite
 
 # 4. Compilation test — generated code compiles against real jOOQ classes
-mvn compile -pl :graphitron-rewrite-test-spec -Plocal-db
+mvn compile -pl :graphitron-rewrite-test -Plocal-db
 
 # 5. Execution tests — generated code runs against native PostgreSQL
-mvn test -pl :graphitron-rewrite-test-spec -Plocal-db
+mvn test -pl :graphitron-rewrite-test -Plocal-db
 ```
 
 ### Notes
 
-- The `local-db` profile is defined in `graphitron-rewrite-test-fixtures/pom.xml` and switches
+- The `local-db` profile is defined in `graphitron-rewrite-fixtures/pom.xml` and switches
   jOOQ codegen from `ContainerDatabaseDriver` to `org.postgresql.Driver` at `localhost:5432/rewrite_test`.
 - `-Djooq.codegen.skip=true` skips the Docker-backed jOOQ test source generation in
   `graphitron-java-codegen` (configured via the `jooq.codegen.skip` property in its pom.xml).
@@ -82,15 +82,15 @@ mvn test -pl :graphitron-rewrite-test-spec -Plocal-db
 
 A cascade of `*PipelineTest` / `GraphitronSchemaBuilderTest` failures with `UnclassifiedType`,
 `NoSuchElement`, or `table … could not be resolved in the jOOQ catalog` means the
-`graphitron-rewrite-test-fixtures` jar in `~/.m2` is missing `DefaultCatalog` — it was installed
+`graphitron-rewrite-fixtures` jar in `~/.m2` is missing `DefaultCatalog` — it was installed
 before the database was up, or re-installed without `-Plocal-db`. Don't bisect trunk; it's your
 local repo. Recover with:
 
 ```bash
-mvn install -pl :graphitron-rewrite-test-fixtures -Plocal-db
+mvn install -pl :graphitron-rewrite-fixtures -Plocal-db
 ```
 
-**Footgun:** any later `mvn install` that hits `graphitron-rewrite-test-fixtures` without
+**Footgun:** any later `mvn install` that hits `graphitron-rewrite-fixtures` without
 `-Plocal-db` — e.g. `mvn install -pl X -am` that transitively rebuilds fixtures, or a full-tree
 install — silently re-emits the jar with an empty jOOQ catalog and re-triggers the cascade. After
 any broad install, re-run the `-Plocal-db` fixtures install as a final step before testing.

@@ -6,11 +6,11 @@
 
     <parent>
         <groupId>no.sikt</groupId>
-        <artifactId>graphitron-rewrite-test</artifactId>
+        <artifactId>graphitron-rewrite-parent</artifactId>
         <version>${revision}${changelist}</version>
     </parent>
 
-    <artifactId>graphitron-rewrite-test-spec</artifactId>
+    <artifactId>graphitron-rewrite-test</artifactId>
     <name>${project.groupId}:${project.artifactId}</name>
 
     <properties>
@@ -20,7 +20,7 @@
     <dependencies>
         <dependency>
             <groupId>no.sikt</groupId>
-            <artifactId>graphitron-rewrite-test-fixtures</artifactId>
+            <artifactId>graphitron-rewrite-fixtures</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>
@@ -157,7 +157,7 @@
                 <dependencies>
                     <dependency>
                         <groupId>no.sikt</groupId>
-                        <artifactId>graphitron-rewrite-test-fixtures</artifactId>
+                        <artifactId>graphitron-rewrite-fixtures</artifactId>
                         <version>${revision}${changelist}</version>
                     </dependency>
                 </dependencies>

@@ -100,7 +100,7 @@ class TablePipelineTest {
             type Query { dummy: String }
             """);
         // Which SQL columns back which GraphQL fields is a $fields body-content question;
-        // compile tier (graphitron-rewrite-test-spec) catches a wrong Tables.FILM.TITLE reference,
+        // compile tier (graphitron-rewrite-test) catches a wrong Tables.FILM.TITLE reference,
         // execution tier catches wrong values. Here we only verify the arms are present for each
         // declared GraphQL field.
         assertThat(TypeSpecAssertions.hasFieldsArm(filmSpec, "title")).isTrue();

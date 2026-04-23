@@ -261,7 +261,7 @@ classification-failure path. Rename to `DTO_SOURCES_REJECTED` for clarity.
 - [ ] All new cases pass.
 - [ ] `ServiceFieldValidationTest` passes with rewritten `DTO_SOURCES_REJECTED` case.
 - [ ] `mvn test -pl graphitron-rewrite -Pquick` — zero failures.
-- [ ] `mvn install -pl :graphitron-rewrite-test,:graphitron-rewrite-test-fixtures,:graphitron-rewrite-test-spec -Plocal-db`
+- [ ] `(cd graphitron-rewrite && mvn install -Plocal-db)`
       — no regressions on execution suite (no `ObjectBased` execution coverage today).
 
 ---
@@ -282,7 +282,7 @@ classification-failure path. Rename to `DTO_SOURCES_REJECTED` for clarity.
 
 ### Compilation + execution
 
-- `graphitron-rewrite-test-spec` compile must pass — catches any stray `BatchKey`
+- `graphitron-rewrite-test` compile must pass — catches any stray `BatchKey`
   switch that wasn't updated.
 - Execution suite runs unchanged — there are no `ObjectBased` execution tests today.
 

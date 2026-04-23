@@ -10,7 +10,7 @@
 > invariants from javadoc to test failures.
 >
 > Four cleanups to the code `TypeFetcherGenerator` emits, motivated by the current
-> `filmsOrderedConnection` shape in `graphitron-rewrite-test-spec`. Emitted SQL,
+> `filmsOrderedConnection` shape in `graphitron-rewrite-test`. Emitted SQL,
 > round-trip count, and cursor encoding are unchanged; items 1–2 add new surfaces
 > (`ConnectionHelper.pageRequest` on the runtime side, `QueryConditions` as a parallel
 > generated class) but preserve fetcher behaviour. Items can land in any order; the
@@ -139,7 +139,7 @@ record form forces awkward temporaries in the fetcher body.
 
 **Test hooks.**
 - **Regression floor.** Existing `filmsOrderedConnection` / `filmsConnection` execution
-  tests in `graphitron-rewrite-test-spec` must continue to pass unchanged — same SQL,
+  tests in `graphitron-rewrite-test` must continue to pass unchanged — same SQL,
   same round-trip count, same cursor encoding.
 - **Pipeline assertion.** Emitted body contains exactly one
   `ConnectionHelper.pageRequest(...)` call and no `backward ?`/`seek(`/
@@ -221,7 +221,7 @@ no longer touches `CallParam.extraction()` for filter args.
   `Condition`. Today the env-aware composition is only reachable through execution
   tests.
 - **Invariant enforcement.** Pipeline lint over
-  `graphitron-rewrite-test-spec/target/generated-sources/**/*Conditions.java` (excluding
+  `graphitron-rewrite/graphitron-rewrite-test/target/generated-sources/**/*Conditions.java` (excluding
   `QueryConditions.java`) — must not import `graphql.schema.DataFetchingEnvironment` nor
   any other `graphql.*` type. Today this contract lives only in the
   `TypeConditionsGenerator` javadoc; with the env-aware layer isolated in

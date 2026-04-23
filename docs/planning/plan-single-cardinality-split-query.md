@@ -13,7 +13,7 @@
 > list-shape (`scatterByIdx`) and single-shape (`scatterSingleByIdx`).
 >
 > §5 test coverage: `Customer.addressSplit` and `Store.manager` fixtures added to
-> `graphitron-rewrite-test-spec` (schema + `init.sql` null-FK seed for store_id=2);
+> `graphitron-rewrite-test` (schema + `init.sql` null-FK seed for store_id=2);
 > `GraphitronSchemaBuilderTest` gained `SPLIT_TABLE_SINGLE_CARDINALITY`,
 > `IMPLICIT_REFERENCE_SPLIT_TABLE_SINGLE_CARDINALITY`,
 > `SPLIT_LOOKUP_TABLE_SINGLE_CARDINALITY_REJECTED`, and
@@ -35,7 +35,7 @@
 > `f8df839` but never flagged because the assertion fired inside a non-existent directory.
 >
 > Results: `mvn test -pl :graphitron-rewrite` — 544 green; `mvn test -pl
-> :graphitron-rewrite-test-spec -Plocal-db` — 87 green. Shipped in one commit on top of
+> :graphitron-rewrite-test -Plocal-db` — 87 green. Shipped in one commit on top of
 > the In Progress marker.
 
 ## Overview
@@ -217,11 +217,11 @@ This locks down scatter semantics without the rewrite→compile→DB round-trip 
 - `GraphitronSchemaBuilderTest` — add `SPLIT_TABLE_SINGLE_CARDINALITY` classification case using a real single-FK pair (positive), plus `SPLIT_LOOKUP_TABLE_SINGLE_CARDINALITY_REJECTED` (negative: asserts the new classifier-level rejection from §1b). `Customer.address: Address` is a good fit for the positive case. Both cases should cover explicit `@reference(path: [...])` and absent-`@reference` inference, since the BatchKey derivation runs on the resolved `referencePath.elements()` regardless of how the path was produced.
 - `SplitTableFieldPipelineTest` — add structural assertions for the fetcher + rows method shapes in the single-cardinality case (mirror the list-cardinality assertions, swap `List<List<Record>>` → `List<Record>` and `scatterByIdx` → `scatterSingleByIdx`). Assert the null-FK short-circuit branch appears in the emitted fetcher body.
 
-**Execution tests.** In `graphitron-rewrite-test-spec/src/test/java/.../GraphQLQueryTest.java`:
+**Execution tests.** In `graphitron-rewrite/graphitron-rewrite-test/src/test/java/.../GraphQLQueryTest.java`:
 - `Customer.address` happy path: query two customers sharing the same `address_id`, assert both resolve to the same Address, assert exactly one rows-method invocation for that key via the existing JDBC round-trip counter pattern from the Language.films tests.
 - `Store.manager` null-FK path: after the `init.sql` fix above, query a store with NULL `manager_staff_id` and assert the resolver returns `null` rather than throwing. Cross-check that no DataLoader round-trip happens for that key (the short-circuit fires before `loader.load`).
 
-**Test-spec schema additions.** Add to `graphitron-rewrite-test-spec/src/main/resources/graphql/schema.graphqls`:
+**Test-spec schema additions.** Add to `graphitron-rewrite/graphitron-rewrite-test/src/main/resources/graphql/schema.graphqls`:
 ```graphql
 type Customer @table(name: "customer") { ... address: Address @splitQuery }
 type Store    @table(name: "store")    { ... manager: Staff   @splitQuery }
@@ -235,7 +235,7 @@ Inference picks up the single FK (already landed); no `@reference` needed.
 ### Automated
 
 - `mvn test -pl :graphitron-rewrite` passes.
-- `mvn test -pl :graphitron-rewrite-test-spec -Plocal-db` passes with the new `Customer.address @splitQuery` (or equivalent) execution test.
+- `mvn test -pl :graphitron-rewrite-test -Plocal-db` passes with the new `Customer.address @splitQuery` (or equivalent) execution test.
 - Two sibling parents pointing at the same child invoke the rows method exactly once for that key — assert via the existing JDBC round-trip counter pattern.
 - Grepping `SplitRowsMethodEmitter.java` for `"not yet supported; list cardinality is the Phase 2b"` returns zero hits (both `SplitTableField` and `SplitLookupTableField` single-cardinality stubs deleted).
 

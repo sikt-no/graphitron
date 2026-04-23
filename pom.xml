@@ -19,7 +19,6 @@
         <module>graphitron-example</module>
         <module>graphitron-maven-plugin</module>
         <module>graphitron-rewrite</module>
-        <module>graphitron-rewrite-test</module>
         <module>graphitron-servlet-parent</module>
         <module>graphitron-schema-transform</module>
     </modules>

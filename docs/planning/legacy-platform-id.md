@@ -219,7 +219,7 @@ Mutation binding (previous Item 3) remains gated on argres Phase 3 and lands via
 
 ## Compile-tier coverage
 
-`graphitron-rewrite-test-spec` compiles against a real jOOQ catalog, so emitted code should type-check against a real jOOQ table class: Step 3's `DataFetcher` body (`r.get(Tables.X.COL)` + `NodeIdEncoder.encode(...)`) on the output side, and `hasIds(...)` / `setId(...)` on the Step 4 input side.
+`graphitron-rewrite-test` compiles against a real jOOQ catalog, so emitted code should type-check against a real jOOQ table class: Step 3's `DataFetcher` body (`r.get(Tables.X.COL)` + `NodeIdEncoder.encode(...)`) on the output side, and `hasIds(...)` / `setId(...)` on the Step 4 input side.
 
 Step 1 took the do-nothing fallback — the test-spec has no metadata-carrying table today, so real-jOOQ compile/execution coverage for platform-id waits on KjerneJooqGenerator X.Y shipping. The synthetic `platformidfixture` covers pipeline-level classification in the interim. If a pre-X.Y stopgap becomes worth the cost, the archived recipe is copy-and-edit: copy a leaf-table jOOQ class into `src/main/java/...`, add a jOOQ-plugin `<excludes>` entry, hand-edit the constants, revert post-X.Y. Rejected initially because non-leaf tables drag `Keys.java` into scope and the one-file estimate tends to grow.
 

@@ -72,7 +72,7 @@ The rule extends beyond stubbed variants: when a classifier introduces a new inv
 
 Behaviour is asserted at the SDL → classified model → generated `TypeSpec` pipeline layer — not at the per-variant unit tier. Per-variant structural tests (method names, return types, which methods exist) are bookkeeping; the primary signal that a feature works is that a realistic SDL produces a realistic `TypeSpec` end-to-end through the classifier. New features earn a pipeline test first; unit tests cover structural invariants that pipeline coverage would make repetitive.
 
-Complementary tiers layered above: compilation of `graphitron-rewrite-test-spec` against real jOOQ classes (type correctness); execution of the generated code against real PostgreSQL (behaviour correctness). Code-string assertions on generated method bodies are banned at every tier — they test implementation, not behaviour, and break on every refactor.
+Complementary tiers layered above: compilation of `graphitron-rewrite-test` against real jOOQ classes (type correctness); execution of the generated code against real PostgreSQL (behaviour correctness). Code-string assertions on generated method bodies are banned at every tier — they test implementation, not behaviour, and break on every refactor.
 
 ## Documentation names only live tests/code
 
@@ -80,7 +80,7 @@ Javadoc, plan prose, and README references that name a test, method, or class mu
 
 ## Compilation against real jOOQ is a test tier
 
-`mvn compile -pl :graphitron-rewrite-test-spec -Plocal-db` against a real jOOQ catalog is the primary check that generated emission is type-correct. Unit tests assert structure; pipeline tests assert SDL → TypeSpec shape; compilation catches "the `Field<Record4<Int,Str,Int,Str>>` parameter doesn't line up with the emitted DSL call" without a hand-written assertion. Every generator change must pass `-Plocal-db` compile before merging.
+`mvn compile -pl :graphitron-rewrite-test -Plocal-db` against a real jOOQ catalog is the primary check that generated emission is type-correct. Unit tests assert structure; pipeline tests assert SDL → TypeSpec shape; compilation catches "the `Field<Record4<Int,Str,Int,Str>>` parameter doesn't line up with the emitted DSL call" without a hand-written assertion. Every generator change must pass `-Plocal-db` compile before merging.
 
 The complementary tier above it — execution against a real PostgreSQL via the same fixture database — is the behaviour check. Together, compile + execute replace the body-content assertions that the "generation-thinking" principle bans.
 

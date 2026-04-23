@@ -193,7 +193,7 @@ scope stays focused.
 
 1. New pipeline test in `GraphitronSchemaBuilderTest` classifies a schema with
    `@asFacet` into a `FieldWrapper.Connection` whose `facets()` is non-empty.
-2. New execution test in `graphitron-rewrite-test-spec` asserts facet counts
+2. New execution test in `graphitron-rewrite-test` asserts facet counts
    match a hand-written jOOQ aggregate over the same filter.
 3. Existing `filmsConnection*` tests unchanged (no `@asFacet` in their filters).
 
@@ -329,7 +329,7 @@ facets after v1 lands.
 | 2 | `graphitron-rewrite` (directive + synthesis pass) | `@asFacet` directive definition + strip-list entry; new `FacetExpansion` registry-level pass synthesizes `*Facets` and `*FacetValue` types and adds the `facets` field on the Connection |
 | 3 | `graphitron-rewrite` (classifier) | `FieldWrapper.Connection` carries `FacetSpec`; validator rejects misuse |
 | 4 | `graphitron-rewrite` (emitter) | Fetcher emits the spike-chosen aggregate shape; helper + wiring expose the new field |
-| 5 | `graphitron-rewrite-test-spec` | Execution tests against Sakila |
+| 5 | `graphitron-rewrite-test` | Execution tests against Sakila |
 | 6 | deferred | Hierarchical facets (`includeChildrenOf` + `parentValue`) |
 
 ---
@@ -982,7 +982,7 @@ unchanged.
 
 ### Changes
 
-#### `graphitron-rewrite-test-spec/.../graphql/schema.graphqls`
+#### `graphitron-rewrite/graphitron-rewrite-test/.../graphql/schema.graphqls`
 
 Add (alongside existing `filmsConnection`):
 
@@ -1030,7 +1030,7 @@ the selection set, the aggregate is skipped: one round-trip.
 ### Success Criteria
 
 - [ ] All three execution cases pass against PostgreSQL Sakila.
-- [ ] `mvn verify -pl :graphitron-rewrite-test,:graphitron-rewrite-test-fixtures,:graphitron-rewrite-test-spec -Plocal-db`
+- [ ] `(cd graphitron-rewrite && mvn verify -Plocal-db)`
       clean.
 - [ ] JDBC round-trip count matches the expected value per case: 2
       when any facet is selected (edges + single aggregate), 1 when

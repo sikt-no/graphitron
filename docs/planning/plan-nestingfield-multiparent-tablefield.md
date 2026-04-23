@@ -97,9 +97,9 @@ Add to Backlog (Priority or Cleanup, implementer's call):
 
 **No negative shape-equality test.** Per "Desired end state", a return-type mismatch between the two sides is unreachable from SDL (the shared nested type declares each field exactly once, and `returnType()` derives from that single declaration). The existing class-equality error at the top of `compareNestedFieldsShape` is already covered; no new negative case is authored here.
 
-**Execution test** (`graphitron-rewrite-test-spec/src/main/resources/graphql/schema.graphqls`): add a two-parent fixture mirroring a real Sakila shape. **Concrete candidate:** `customer`, `staff`, and `store` all FK to `address`. Pick two of them (e.g. `Customer` and `Staff`) with a shared nested type exposing `address: Address` as a `TableField`. Verify via `GraphQLQueryTest` that a query against either parent returns the correct `address` record, exercising each parent's FK-inferred joinPath to `address` independently.
+**Execution test** (`graphitron-rewrite/graphitron-rewrite-test/src/main/resources/graphql/schema.graphqls`): add a two-parent fixture mirroring a real Sakila shape. **Concrete candidate:** `customer`, `staff`, and `store` all FK to `address`. Pick two of them (e.g. `Customer` and `Staff`) with a shared nested type exposing `address: Address` as a `TableField`. Verify via `GraphQLQueryTest` that a query against either parent returns the correct `address` record, exercising each parent's FK-inferred joinPath to `address` independently.
 
-*Before landing:* confirm the chosen pair of Sakila tables is already present in the `graphitron-rewrite-test-spec` schema (or add them), and that the shared-nested-type shape fits the existing `$fields` pipeline without requiring new directive plumbing.
+*Before landing:* confirm the chosen pair of Sakila tables is already present in the `graphitron-rewrite-test` schema (or add them), and that the shared-nested-type shape fits the existing `$fields` pipeline without requiring new directive plumbing.
 
 **No unit test for `compareNestedFieldsShape`** — the method is private and tested transitively through `GraphitronSchemaBuilderTest`. Consistent with how other validator rules are covered.
 
@@ -108,7 +108,7 @@ Add to Backlog (Priority or Cleanup, implementer's call):
 ### Automated
 
 - `mvn test -pl :graphitron-rewrite` passes; includes the new `MULTIPARENT_NESTING_TABLEFIELD` pipeline-test case.
-- `mvn test -pl :graphitron-rewrite-test,:graphitron-rewrite-test-fixtures,:graphitron-rewrite-test-spec -Plocal-db` passes; includes the new execution-test fixture. `-Plocal-db` is required — see CLAUDE.md's fixtures-clobber note.
+- `(cd graphitron-rewrite && mvn test -Plocal-db)` passes; includes the new execution-test fixture. `-Plocal-db` is required — see CLAUDE.md's fixtures-clobber note.
 - Grepping for the old `#8` pointer in the validator returns zero hits.
 - Roadmap has the new Backlog entry.
 

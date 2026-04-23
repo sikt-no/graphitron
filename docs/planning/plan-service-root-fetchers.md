@@ -28,7 +28,7 @@
 
 - **Jooq table expression.** `GeneratorUtils.ResolvedTableNames` exposes `tablesClass()`, `jooqTableClass()`, and `typeClass()` — no helper today returns a `Tables.FOO` expression directly. The existing pattern (`declareTableLocal`, `GeneratorUtils.java:110-115`) builds it inline from `tablesClass()` + `tableRef.javaFieldName()` via JavaPoet `$T.$L`. This plan reuses that pattern; no new record method is required.
 
-- **Test fixtures.** `graphitron-rewrite-test/graphitron-rewrite-test-spec/src/main/resources/graphql/schema.graphqls` contains no `@service` or `@tableMethod` usages — fixtures must be added. `TestServiceStub` and `TestTableMethodStub` exist under `graphitron-rewrite/src/test/java/` for unit tests but are not on the test-spec classpath.
+- **Test fixtures.** `graphitron-rewrite/graphitron-rewrite/graphitron-rewrite-test/src/main/resources/graphql/schema.graphqls` contains no `@service` or `@tableMethod` usages — fixtures must be added. `TestServiceStub` and `TestTableMethodStub` exist under `graphitron-rewrite/src/test/java/` for unit tests but are not on the test-spec classpath.
 
 ## Shape of emitted fetcher per leaf
 
@@ -194,11 +194,11 @@ Body-string assertions stay minimal — structural properties only, per the test
 
 ### Compile gate
 
-`mvn compile -pl :graphitron-rewrite-test-spec -Plocal-db` must succeed with the new fixtures present. This catches argument-type mismatches, wrong package references, and generic-bound errors against real jOOQ classes.
+`mvn compile -pl :graphitron-rewrite-test -Plocal-db` must succeed with the new fixtures present. This catches argument-type mismatches, wrong package references, and generic-bound errors against real jOOQ classes.
 
 ### Execution tests
 
-Fixture additions to `graphitron-rewrite-test/graphitron-rewrite-test-spec`:
+Fixture additions to `graphitron-rewrite-test/graphitron-rewrite-test`:
 
 - **Java service class** (new file under `src/main/java`): e.g. `SampleQueryService` with three methods — one returning `Table<?>` (for `@tableMethod`), one returning `Result<FilmRecord>` (for service-table), one returning a scalar (for service-record).
 

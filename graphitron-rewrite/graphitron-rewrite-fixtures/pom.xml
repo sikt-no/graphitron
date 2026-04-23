@@ -6,11 +6,11 @@
 
     <parent>
         <groupId>no.sikt</groupId>
-        <artifactId>graphitron-rewrite-test</artifactId>
+        <artifactId>graphitron-rewrite-parent</artifactId>
         <version>${revision}${changelist}</version>
     </parent>
 
-    <artifactId>graphitron-rewrite-test-fixtures</artifactId>
+    <artifactId>graphitron-rewrite-fixtures</artifactId>
     <name>${project.groupId}:${project.artifactId}</name>
 
     <properties>
