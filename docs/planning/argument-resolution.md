@@ -78,16 +78,16 @@ resolution tables differ:
   `TypeBuilder.buildInputField` (TypeBuilder.java:562-652) against the
   input's own `@table(name:)`.
 - **Plain inputs.** Classified per call site by
-  `FieldBuilder.classifyArgument` (FieldBuilder.java:683-741) against the
+  `FieldBuilder.classifyArgument` (FieldBuilder.java:681-739) against the
   enclosing query field's target table (`rt`). Same plain input used at N
   call sites classifies N times, one per resolved table. Classification
   is cheap; reclassification is simpler than caching and a per-site cache
   would complicate invalidation without a measured need.
 
 **Shared per-field classifier.** Extract the column / @reference / nesting
-decision tree from `TypeBuilder.buildInputField:569-651` into a helper
-method (name suggestion: `classifyInputField(field, tableRef, expandingTypes,
-errors) -> InputFieldResolution`) accessible from both `TypeBuilder` and
+decision tree from `TypeBuilder.buildInputField:567-652` into a helper
+method (name suggestion: `classifyInputField(field, parentTypeName, tableRef,
+expandingTypes, errors) -> InputField`) accessible from both `TypeBuilder` and
 `FieldBuilder`. `TypeBuilder` calls it with the input type's declared
 table; `FieldBuilder` calls it with the call-site's `rt` when it
 encounters a plain-input arg. No semantic change to the existing
@@ -98,10 +98,10 @@ argument.
 
 **Condition helper.** Add `buildInputFieldCondition(GraphQLInputObjectField
 field, String inputFieldName, List<String> errors) -> Optional<ArgConditionRef>`,
-modeled on `FieldBuilder.buildArgCondition` (FieldBuilder.java:849-863):
+modeled on `FieldBuilder.buildArgCondition` (FieldBuilder.java:847-861):
 
 - Delegate directive parsing to `readConditionDirective`, already
-  `GraphQLDirectiveContainer`-generic (FieldBuilder.java:825-841), so
+  `GraphQLDirectiveContainer`-generic (FieldBuilder.java:823-839), so
   `GraphQLInputObjectField` works without modification.
 - Reflect via `ServiceCatalog.reflectTableMethod(className, method,
   Set.of(inputFieldName), Set.copyOf(contextArguments))`. The method's
@@ -112,8 +112,9 @@ modeled on `FieldBuilder.buildArgCondition` (FieldBuilder.java:849-863):
   mirroring the `buildArgCondition` error contract.
 
 The helper is agnostic to `@table` vs. plain source; both paths call it
-with the same shape. It lives alongside `classifyInputField` in whichever
-home D1 picks.
+with the same shape. Both `classifyInputField` and `buildInputFieldCondition`
+live in `BuildContext` alongside `readConditionDirective`; callers in
+`TypeBuilder` and `FieldBuilder` reach them via `ctx`.
 
 **Constructor call sites to update.** Three constructor call sites
 (TypeBuilder.java:582, 621, 629) extended to pass the optional ref as
@@ -125,7 +126,7 @@ D1 (resolved below) it moves to `BuildContext` so both `FieldBuilder`,
 
 ### Projection: threading conditions to the call site
 
-`FieldBuilder.projectFilters` (FieldBuilder.java:1034-1088) currently handles
+`FieldBuilder.projectFilters` (FieldBuilder.java:1032-1086) currently handles
 only outer-arg-level `@condition` on both `TableInputArg` and `PlainInputArg`:
 
 ```java
@@ -308,7 +309,9 @@ count with an execution test (see §Test strategy).
 own fields against the parent's table. A condition on the nesting field is
 reflected with the nesting field's SDL name as the sole arg (same shape as a
 scalar input field's condition); projection walks `NestingField.fields`
-recursively to pick up inner conditions. No new emitter shape.
+recursively to pick up inner conditions, threading a `boolean enclosingOverride`
+accumulator: any level's `override: true` flips it to `true` for all
+descendants. No new emitter shape.
 
 ### Validator
 
@@ -354,14 +357,14 @@ Bisectable via the touched-files list below if a regression surfaces later.
      `graphitron-rewrite` package via grep.
 
 2. **Classification.**
-   - Extract `TypeBuilder.buildInputField` (TypeBuilder.java:563-651) into a
+   - Extract `TypeBuilder.buildInputField` (TypeBuilder.java:562-652) into a
      shared helper `classifyInputField(field, parentTypeName, tableRef,
-     expandingTypes, errors) -> InputFieldResolution`. The existing method
+     expandingTypes, errors) -> InputField`. The existing method
      already takes `resolvedTable` as a parameter and accesses only `ctx` and
      `svc` state, so extraction is mechanical: move the body, adjust call
      sites at TypeBuilder.java:582, 621, 629 to pass through.
    - Add `buildInputFieldCondition(...)` modelled on
-     `FieldBuilder.buildArgCondition` (FieldBuilder.java:849-863). Invoked
+     `FieldBuilder.buildArgCondition` (FieldBuilder.java:847-861). Invoked
      inside `classifyInputField` for each field; the returned
      `Optional<ArgConditionRef>` populates the new record field.
    - `readConditionDirective` (currently private in `FieldBuilder`) moves to
@@ -374,7 +377,7 @@ Bisectable via the touched-files list below if a regression surfaces later.
      `UnclassifiedArg` for the whole arg (D5).
 
 3. **Projection.**
-   - `FieldBuilder.projectFilters` (FieldBuilder.java:1034-1088): extend
+   - `FieldBuilder.projectFilters` (FieldBuilder.java:1032-1086): extend
      both the `TableInputArg` and `PlainInputArg` cases to walk their
      `fields` lists and apply the 6-row truth table from §Override
      propagation. Any enclosing override (field, arg, or nesting-field
