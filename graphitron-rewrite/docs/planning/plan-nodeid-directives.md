@@ -6,7 +6,7 @@
 
 ## Why one umbrella, not four
 
-Earlier roadmap snapshots had platform-id migration, `@nodeId` infrastructure, `NodeIdReferenceField` emission, and the `Query.node` resolver as separate items. After the pivot below, all four resolve to the same sum-type variants (`NodeType`, `ChildField.NodeIdField`, `InputField.NodeIdField`, `NodeIdArg`, `NodeIdMapping`) and share one helper (`NodeIdStrategy`). Keeping them as separate roadmap rows made the dependency graph look wider than it is; consolidating keeps planning aligned with the code.
+Earlier roadmap snapshots had platform-id migration, `@nodeId` infrastructure, `NodeIdReferenceField` emission, and the `Query.node` resolver as separate items. After the pivot below, all four resolve to the same sum-type variants (`NodeType`, `ChildField.NodeIdField`, `ChildField.NodeIdReferenceField`, `InputField.NodeIdField`, `InputField.NodeIdReferenceField`, `NodeIdArg`, `NodeIdMapping`) and share one helper (`NodeIdStrategy`). Keeping them as separate roadmap rows made the dependency graph look wider than it is; consolidating keeps planning aligned with the code.
 
 An earlier plan classified platform-id as its own sum-type variant (`InputField.PlatformIdField`, `ChildField.PlatformIdField`), reflected on per-table `getId()`/`setId()`/`hasId()`/`hasIds()` methods emitted by `KjerneJooqGenerator`, and would have introduced a parallel filter-emission path (`PlatformIdArg`, `PlatformIdMapping`, platform-id arm in `LookupValuesJoinEmitter`). Two things make that wrong:
 
@@ -14,6 +14,23 @@ An earlier plan classified platform-id as its own sum-type variant (`InputField.
 - **Sikt owns KjerneJooqGenerator.** The generator can expose the underlying metadata directly. With `__NODE_TYPE_ID` + `__NODE_KEY_COLUMNS` constants, every place the rewrite would have called `table.hasIds(set)` instead calls `NodeIdStrategy.hasIds(typeId, set, keyColumns)` — the same helper `@nodeId` fields use. One code path, one set of tests.
 
 Trade-off: a KjerneJooqGenerator release is required before the rewrite can depend on the metadata. Sikt controls the release cadence; we coordinate rather than maintain a reflection-based fallback forever. See **Migration** below.
+
+---
+
+## Model
+
+Four terminal variants carry node-identity classification, symmetric across the output and input sides:
+
+| Side | Variant | Trigger | Emission |
+|---|---|---|---|
+| Output | `ChildField.NodeIdField` | scalar `ID` on a `NodeType` parent; bare `@nodeId` or synthesized | project `nodeKeyColumns`; encode via `NodeIdEncoder.encode(typeId, …)` |
+| Output | `ChildField.NodeIdReferenceField` | scalar `ID` with `@nodeId(typeName:)` pointing at another `NodeType`; `joinPath` resolved to that type's table | project target's `nodeKeyColumns` through `joinPath`; encode via `NodeIdEncoder.encode(typeId, …)` |
+| Input | `InputField.NodeIdField` | scalar `ID` on a `@table` input whose own table is a `NodeType`; bare `@nodeId` or synthesized | decode via `NodeIdStrategy.unpackIdValues` / `hasIds` / `hasId`; each unpacked value binds to its own-table column |
+| Input | `InputField.NodeIdReferenceField` | scalar `ID` on a `@table` input with `@nodeId(typeName:)` pointing at another `NodeType`; `joinPath` resolved to that type's table | decode via `NodeIdStrategy.unpackIdValues`; each unpacked value binds to the reachable column on the target table, reached through `joinPath` (direct FK-bind when the input's own table mirrors the target's key columns) |
+
+Shared runtime helpers: `NodeIdStrategy` (decode / `hasIds` / `hasId` / `setId` / `createId`) and `NodeIdEncoder` (encode). Both input variants carry the same shape fields as their output counterparts plus `nonNull`, `list`, and the optional `ArgConditionRef condition` every `InputField` already carries — except `list`, which is fixed `false` by the classifier (the scalar gate is load-bearing on both sides).
+
+`PlatformIdField` variants on both `ChildField` and `InputField` are deleted. Every former platform-id classification site routes through one of the four rows above; every former `PlatformIdField` emission site routes through `NodeIdStrategy` + `NodeIdEncoder`.
 
 ---
 
@@ -43,6 +60,12 @@ The existing method emissions (`getId()`, `hasId`, `hasIds`) can stay — harmle
 
 `ChildField.NodeIdField` is populated either by the existing bare-`@nodeId` directive path or by the synthesized Path-2 trigger in `FieldBuilder` (scalar non-list `ID` on a `NodeType` parent, no `@nodeId`/`@reference`/`@field`, no real column). `TypeClassGenerator.$fields` projects the raw key columns; `TypeFetcherGenerator` wires a lambda calling a generated `NodeIdEncoder.encode(typeId, …)` utility with URL-safe base64 no-pad + `,`→`%2C` encoding so IDs round-trip against `NodeIdStrategy.unpackIdValues` / `hasIds`.
 
+### Output-side `NodeIdReferenceField` (classifier shipped; emission stubbed)
+
+`ChildField.NodeIdReferenceField` carries `(typeName, targetType, parentTable, nodeTypeId, nodeKeyColumns, joinPath)` and is populated by `FieldBuilder` when a scalar `ID` field declares `@nodeId(typeName: "X")` where `X` resolves to a `NodeType`. The classifier resolves `joinPath` to reach that type's table and pulls `nodeTypeId` + `nodeKeyColumns` off the resolved `NodeType`.
+
+Emission is currently stubbed (tracked as Generator stub #8; the stub reason lives at `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS` for `NodeIdReferenceField`). Step 6 lands it: `TypeClassGenerator.$fields` JOINs through `joinPath` and projects the target's `nodeKeyColumns` under an alias; `TypeFetcherGenerator` wires a lambda that reads the aliased values off the record and calls the same `NodeIdEncoder.encode(typeId, …)` that `NodeIdField` uses.
+
 ### Input-side `NodeIdField` (new variant)
 
 `InputField` today permits `ColumnField`, `ColumnReferenceField`, `PlatformIdField`, `NestingField`. Add:
@@ -65,6 +88,29 @@ record NodeIdField(
 - `input FooLookup { id: ID! @nodeId }` (declared) → same `NodeIdField` classification.
 
 Both paths produce the same variant carrying `(typeId, keyColumns)`; the declared-`@nodeId` path is added as part of Step 4 (classifier + argument side land together).
+
+### Input-side `NodeIdReferenceField` (new variant)
+
+Parallel shape on the input side, added to the `InputField` sealed permits alongside `NodeIdField`:
+
+```java
+record NodeIdReferenceField(
+    String parentTypeName,
+    String name,
+    SourceLocation location,
+    String typeName,
+    boolean nonNull,
+    TableRef parentTable,
+    String nodeTypeId,
+    List<ColumnRef> nodeKeyColumns,
+    List<JoinStep> joinPath,
+    Optional<ArgConditionRef> condition
+) implements InputField {}
+```
+
+Classified when a scalar `ID` field on a `@table` input declares `@nodeId(typeName: "X")` where `X` is a `NodeType` reachable from the input's own table via `joinPath` (resolved by the same reference-path parser `InputField.ColumnReferenceField` uses). `list` is fixed `false` by the classifier — list inputs collapse the containing `TableInputType` to `UnclassifiedType` per the existing list-gate rule.
+
+Emission (Step 5): decode via `NodeIdStrategy.unpackIdValues`, then bind each unpacked value to its column on the reachable target table. In WHERE contexts (filter / lookup), the bind sits inside a JOIN-through `joinPath` before `hasIds` / `hasId` fires; in FK-mirror cases where the input's own table carries columns congruent with the target's key columns, the bind collapses to a direct same-table column assignment and no JOIN is needed. The dispatch between the two shapes lives in the same emitter arm as `InputField.NodeIdField`.
 
 ### Argument side — `NodeIdArg`
 
@@ -105,7 +151,7 @@ This permit is intentionally narrow and independent of argres Phase 3's `InputCo
 
 ## Generators
 
-Platform-id stops existing as a separate emission path. Projection and read-back shipped in Step 3 (raw key-column projection + `NodeIdEncoder.encode` in the DataFetcher). Remaining Step 4/5 emission:
+Platform-id stops existing as a separate emission path. Projection and read-back shipped in Step 3 (raw key-column projection + `NodeIdEncoder.encode` in the DataFetcher). Remaining Step 4–6 emission:
 
 ### Filter — lookup path
 
@@ -150,7 +196,19 @@ NodeIdBinding  →  nodeIdStrategy.setId(record, input.getId(), typeId, keyField
 
 Uses `NodeIdStrategy.setId(UpdatableRecordImpl, String, String, Field<?>...)` — already lives in `graphitron-common`. Same helper for platform-id and declared `@nodeId` inputs.
 
+`InputColumnBinding` carries one `NodeIdBinding` sum variant that serves both `InputField.NodeIdField` (direct own-table bind) and `InputField.NodeIdReferenceField` (bind via `joinPath` or FK-mirror). The mutation generator dispatches on the binding variant, not on the `InputField` subtype, so the two classifier outputs converge on one emission path.
+
 Blocked on the same argres Phase 3 the previous plan's Item 3 was blocked on.
+
+### Output reference — `ChildField.NodeIdReferenceField`
+
+`TypeClassGenerator.$fields` emits a JOIN-through `joinPath` and projects the target's `nodeKeyColumns` under an alias per step of the join. `TypeFetcherGenerator` wires a lambda that reads the aliased values off the record and calls `NodeIdEncoder.encode(typeId, …)` — the same encoder `NodeIdField` uses. Closes the `NodeIdReferenceField` slot in Generator stub #8; the other leaves in stub #8 (`ColumnReferenceField`, `ComputedField`, etc.) stay out-of-scope for this plan.
+
+### Input reference — `InputField.NodeIdReferenceField`
+
+Filter / lookup bind: decode via `NodeIdStrategy.unpackIdValues`, emit a JOIN through `joinPath` if the target isn't the input's own table (or collapse to direct column assignment when the own-table mirrors the target's key columns), then bind each unpacked value to its target column inside the JOIN. Both shapes reuse the `hasIds` / `hasId` helpers introduced for `InputField.NodeIdField`; the `LookupValuesJoinEmitter` `NodeIdMapping` arm extends to carry a `joinPath` alongside `nodeKeyColumns` for the reference variant.
+
+Mutation bind for the reference variant lands through the same argres Phase 3 `InputColumnBinding` channel as `InputField.NodeIdField`; the `NodeIdBinding` variant covers both dispatch arms.
 
 ---
 
@@ -170,9 +228,9 @@ After the migration lands, these go away:
 
 ## Pipeline-test fixture
 
-Synthetic fixture shipped: `Bar` carries `__NODE_TYPE_ID="Bar"` + `__NODE_KEY_COLUMNS={BAR.ID_1, BAR.ID_2}`; `Qux` carries none (negative case). Step 4 adds input-side cases to `PlatformIdFieldValidationTest` / `PlatformIdPipelineTest`:
+Synthetic fixture shipped: `Bar` carries `__NODE_TYPE_ID="Bar"` + `__NODE_KEY_COLUMNS={BAR.ID_1, BAR.ID_2}`; `Qux` carries none (negative case). Steps 4–5 add input-side cases to `PlatformIdFieldValidationTest` / `PlatformIdPipelineTest`:
 
-Output-side cases (synthesized + declared-`@node` + collision + list-gate + negative) shipped in Steps 2–3; `PlatformIdPipelineTest` covers them. Step 4 adds the input-side cases below.
+Output-side cases (synthesized + declared-`@node` + collision + list-gate + negative) shipped in Steps 2–3; `PlatformIdPipelineTest` covers them. Steps 4–5 add the input-side cases below; Step 6 adds the output-reference execution case.
 
 **Input side** (`TypeBuilder.resolveInputField`; same disagreement and list-gate rules):
 
@@ -184,13 +242,24 @@ Output-side cases (synthesized + declared-`@node` + collision + list-gate + nega
 | `input FooLookup @table(name: "bar") { id: [ID!]! }` | `UnclassifiedType` — one unresolved field collapses the `TableInputType` |
 | `input FooLookup @table(name: "qux") { id: ID! }` | `UnclassifiedType` — no metadata on `qux` |
 
+**Input reference side** (Step 5; `InputField.NodeIdReferenceField`):
+
+| SDL | Expected outcome |
+|-----|-----------------|
+| `input FooLookup @table(name: "bar") { relatedId: ID! @nodeId(typeName: "Qux") }` with `bar → qux` reference resolvable | `InputField.NodeIdReferenceField(nodeTypeId="Qux", nodeKeyColumns=[QUX.ID], joinPath=[bar→qux])` |
+| same as above but `typeName: "Qux"` not a `NodeType` (no metadata, no `@node`) | Classifier error — "referenced type is not a NodeType" |
+| same but `[ID!]!` | `UnclassifiedType` — list-gate applies |
+| same but no resolvable FK path from `bar` to `qux` | `UnclassifiedType` — reference-path parser rejects |
+
+**Output reference side** (Step 6; `ChildField.NodeIdReferenceField` emission test-spec cases): at least one real-jOOQ execution case covering projection + encoding through a single-hop FK path on the test-spec Sakila schema (e.g. `Film.languageNodeId: ID! @nodeId(typeName: "Language")` resolving through `film.language_id → language.language_id`).
+
 ---
 
 ## Migration
 
 Consumers regenerate jOOQ classes with the new KjerneJooqGenerator release before their rewrite build finds the metadata. During the transition window:
 
-- **Preferred path — hard cut-over.** The rewrite requires the new metadata. Tables that were platform-id under the old generator but lack the constants classify as `TableType` (no synthesized NodeId) — any schema using `id: ID!` on them lands on `UnclassifiedField` with a diagnostic pointing at "regenerate jOOQ classes with KjerneJooqGenerator ≥ X.Y". Clean, simple, discoverable. Step 5 replaces the current column-not-found diagnostic at `FieldBuilder.java:1627-1630` with the regenerate-jOOQ phrasing; on the input side, `TypeBuilder.java:646-648`'s `"no accessor methods (…) found on record class"` is swapped for the same message. The "regenerate jOOQ classes with KjerneJooqGenerator ≥ X.Y" literal is the canonical diagnostic — every platform-id migration failure produces this exact phrase so consumers can grep for it in build logs.
+- **Preferred path — hard cut-over.** The rewrite requires the new metadata. Tables that were platform-id under the old generator but lack the constants classify as `TableType` (no synthesized NodeId) — any schema using `id: ID!` on them lands on `UnclassifiedField` with a diagnostic pointing at "regenerate jOOQ classes with KjerneJooqGenerator ≥ X.Y". Clean, simple, discoverable. Step 7 replaces the current column-not-found diagnostic at `FieldBuilder.java:1627-1630` with the regenerate-jOOQ phrasing; on the input side, `TypeBuilder.java:646-648`'s `"no accessor methods (…) found on record class"` is swapped for the same message. The "regenerate jOOQ classes with KjerneJooqGenerator ≥ X.Y" literal is the canonical diagnostic — every platform-id migration failure produces this exact phrase so consumers can grep for it in build logs.
 - **Fallback — not chosen.** Keeping the old `hasPlatformIdAccessors` detection alongside the new path for N releases would drag the platform-id-specific classification infrastructure through a deprecation window. Avoid unless coordination breaks down.
 
 Because Sikt owns both the generator and the consuming rewrite, the hard cut-over is realistic.
@@ -208,20 +277,22 @@ Skipping step 2 before step 4 fails loudly: every `id: ID!` on a (formerly) plat
 
 ## Scheduling
 
-Five commits, roughly in order. Each lands independently and green.
+Commits, roughly in order. Each lands independently and green.
 
 Steps 1–3 shipped on trunk (probe + metadata-driven `NodeType` synthesis + `ChildField.NodeIdField` projection/DataFetcher). Remaining:
 
-4. **`NodeIdArg` + `LookupMapping` sum type + emitter branches** — classifier produces `NodeIdArg` for scalar ID args targeting NodeType; declared-`@nodeId`-on-input folds in here; `projectForLookup` produces `NodeIdMapping`; `LookupValuesJoinEmitter` dispatches on variant; non-lookup filter path handles the same. Pipeline-test coverage for both lookup and non-lookup shapes. **Test migration:** the `InputField.PlatformIdField` assertions in `PlatformIdFieldValidationTest` flip to `InputField.NodeIdField`. New execution test for a lookup query using platform-id keys.
-5. **Delete `PlatformIdField` sum-type variants + supporting catalog methods** — the variant records, the `FieldBuilder`/`TypeBuilder` fallbacks, `hasPlatformIdAccessors`, `platformIdOutputMethodNames`, `sqlToAccessorSuffix` (if no other caller), `IMPLEMENTED_LEAVES` entries, `ChildPlatformIdFieldValidationTest` / `PlatformIdFieldValidationTest`. Partition invariants in the variant-coverage meta-test resolve automatically since the record no longer exists. **Test migration:** the two variant-specific test classes are deleted; no replacements needed — pipeline coverage for `NodeIdField` outcomes shipped in steps 2-4.
+4. **`InputField.NodeIdField` + `NodeIdArg` + `LookupMapping` sum type + emitter branches** — classifier produces `InputField.NodeIdField` for scalar `ID` fields on `@table` inputs whose own table is a `NodeType`; classifier produces `NodeIdArg` for scalar `ID` args targeting `NodeType`; declared-`@nodeId` on both input fields and args folds in here; `projectForLookup` produces `NodeIdMapping`; `LookupValuesJoinEmitter` dispatches on variant; non-lookup filter path handles the same. Pipeline-test coverage for both lookup and non-lookup shapes. **Test migration:** the `InputField.PlatformIdField` assertions in `PlatformIdFieldValidationTest` flip to `InputField.NodeIdField`. New execution test for a lookup query using platform-id keys.
+5. **`InputField.NodeIdReferenceField` + reference-aware emitter branch** — add the sum-type permit, the classifier path for scalar `ID` with `@nodeId(typeName:)` on `@table` inputs that resolves to a reachable `NodeType` (joinPath resolved by the existing reference-path parser), and the `LookupValuesJoinEmitter` / filter-path dispatch that JOINs through `joinPath` before `hasIds` / `hasId` (or collapses to direct column assignment in the FK-mirror shape). Pipeline-test coverage for reference-variant lookup and non-lookup shapes.
+6. **`ChildField.NodeIdReferenceField` emission** — `TypeClassGenerator.$fields` projects target-table key columns via the resolved JOIN; `TypeFetcherGenerator` wires the encode lambda. Remove the `NOT_IMPLEMENTED_REASONS` entry at `TypeFetcherGenerator.java:247-248` and the `stub(f)` dispatch arm at `:358`. Closes the `NodeIdReferenceField` slot in Generator stub #8. Execution-test coverage against the real-jOOQ test-spec.
+7. **Delete `PlatformIdField` sum-type variants + supporting catalog methods** — the variant records, the `FieldBuilder`/`TypeBuilder` fallbacks, `hasPlatformIdAccessors`, `platformIdOutputMethodNames`, `sqlToAccessorSuffix` (if no other caller), `IMPLEMENTED_LEAVES` entries, `ChildPlatformIdFieldValidationTest` / `PlatformIdFieldValidationTest`. Partition invariants in the variant-coverage meta-test resolve automatically since the record no longer exists. **Test migration:** the two variant-specific test classes are deleted; no replacements needed — pipeline coverage for `NodeIdField` + `NodeIdReferenceField` outcomes shipped in steps 2-6.
 
-Mutation binding (previous Item 3) remains gated on argres Phase 3 and lands via that plan — but as a `NodeIdField` input variant, not `PlatformIdField`.
+Mutation binding (input-side `setId` / column-bind) remains gated on argres Phase 3 and lands via that plan — as a unified `NodeIdBinding` in `InputColumnBinding`, with one dispatch arm serving both `InputField.NodeIdField` and `InputField.NodeIdReferenceField`.
 
 ---
 
 ## Compile-tier coverage
 
-`graphitron-rewrite-test` compiles against a real jOOQ catalog, so emitted code should type-check against a real jOOQ table class: Step 3's `DataFetcher` body (`r.get(Tables.X.COL)` + `NodeIdEncoder.encode(...)`) on the output side, and `hasIds(...)` / `setId(...)` on the Step 4 input side.
+`graphitron-rewrite-test` compiles against a real jOOQ catalog, so emitted code should type-check against a real jOOQ table class: Step 3's `DataFetcher` body (`r.get(Tables.X.COL)` + `NodeIdEncoder.encode(...)`) on the output side; `hasIds(...)` / `setId(...)` on the Step 4–5 input side; and the JOIN-projection + encode pair on the Step 6 output-reference side.
 
 Step 1 took the do-nothing fallback — the test-spec has no metadata-carrying table today, so real-jOOQ compile/execution coverage for platform-id waits on KjerneJooqGenerator X.Y shipping. The synthetic `platformidfixture` covers pipeline-level classification in the interim. If a pre-X.Y stopgap becomes worth the cost, the archived recipe is copy-and-edit: copy a leaf-table jOOQ class into `src/main/java/...`, add a jOOQ-plugin `<excludes>` entry, hand-edit the constants, revert post-X.Y. Rejected initially because non-leaf tables drag `Keys.java` into scope and the one-file estimate tends to grow.
 
