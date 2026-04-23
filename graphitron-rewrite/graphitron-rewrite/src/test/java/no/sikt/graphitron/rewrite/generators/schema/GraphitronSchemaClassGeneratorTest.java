@@ -1,0 +1,139 @@
+package no.sikt.graphitron.rewrite.generators.schema;
+
+import no.sikt.graphitron.javapoet.TypeSpec;
+import no.sikt.graphitron.rewrite.RewriteConfig;
+import no.sikt.graphitron.rewrite.TestSchemaHelper;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import javax.lang.model.element.Modifier;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+class GraphitronSchemaClassGeneratorTest {
+
+    @BeforeEach
+    void setUp() {
+        RewriteConfig.setProperties(Set.of(), "/tmp", "com.example", "com.example.jooq", Map.of());
+    }
+
+    @AfterEach
+    void tearDown() {
+        RewriteConfig.clear();
+    }
+
+    @Test
+    void generate_returnsExactlyOneClassNamedGraphitronSchema() {
+        var schema = TestSchemaHelper.buildBundle("type Query { x: String }").assembled();
+        List<TypeSpec> result = GraphitronSchemaClassGenerator.generate(schema);
+        assertThat(result).hasSize(1);
+        var spec = result.get(0);
+        assertThat(spec.name()).isEqualTo("GraphitronSchema");
+        assertThat(spec.modifiers()).contains(Modifier.PUBLIC, Modifier.FINAL);
+    }
+
+    @Test
+    void build_methodIsPublicStaticReturningGraphQLSchema_withCustomizerParameter() {
+        var spec = generate("type Query { x: String }");
+        assertThat(spec.methodSpecs()).extracting(m -> m.name()).containsExactly("build");
+        var method = spec.methodSpecs().get(0);
+        assertThat(method.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
+        assertThat(method.returnType().toString()).isEqualTo("graphql.schema.GraphQLSchema");
+        assertThat(method.parameters()).hasSize(1);
+        assertThat(method.parameters().get(0).name()).isEqualTo("customizer");
+        assertThat(method.parameters().get(0).type().toString())
+            .isEqualTo("java.util.function.Consumer<graphql.schema.GraphQLSchema.Builder>");
+    }
+
+    @Test
+    void build_routesQueryThroughQueryEntryPoint() {
+        var body = buildBody("type Query { x: String }");
+        assertThat(body).contains(".query(com.example.rewrite.schema.QueryType.type())");
+    }
+
+    @Test
+    void build_routesMutationThroughMutationEntryPoint() {
+        var body = buildBody("""
+            type Query { x: String }
+            type Mutation { createFilm: String }
+            """);
+        assertThat(body).contains(".mutation(com.example.rewrite.schema.MutationType.type())");
+    }
+
+    @Test
+    void build_routesSubscriptionThroughSubscriptionEntryPoint() {
+        var body = buildBody("""
+            schema { query: Query, subscription: Subscription }
+            type Query { x: String }
+            type Subscription { counter: Int }
+            """);
+        assertThat(body).contains(".subscription(com.example.rewrite.schema.SubscriptionType.type())");
+    }
+
+    @Test
+    void build_registersNonRootTypesViaAdditionalType() {
+        var body = buildBody("""
+            type Query { film: Film }
+            type Film { id: ID! }
+            """);
+        assertThat(body).contains(".additionalType(com.example.rewrite.schema.FilmType.type())");
+    }
+
+    @Test
+    void build_includesEnumsAndInputsAsAdditionalTypes() {
+        var body = buildBody("""
+            type Query { x: String }
+            enum Status { A B }
+            input FilterInput { q: String }
+            """);
+        assertThat(body).contains(".additionalType(com.example.rewrite.schema.StatusType.type())");
+        assertThat(body).contains(".additionalType(com.example.rewrite.schema.FilterInputType.type())");
+    }
+
+    @Test
+    void build_skipsDirectiveSupportInputTypes() {
+        var body = buildBody("type Query { x: String }");
+        InputDirectiveInputTypes.NAMES.forEach(name ->
+            assertThat(body)
+                .as("internal directive input %s must not be added", name)
+                .doesNotContain(name + "Type.type()"));
+    }
+
+    @Test
+    void build_attachesCodeRegistryAndInvokesCustomizerBeforeBuild() {
+        var body = buildBody("type Query { x: String }");
+        assertThat(body).contains("var codeRegistry = graphql.schema.GraphQLCodeRegistry.newCodeRegistry()");
+        assertThat(body).contains(".codeRegistry(codeRegistry.build())");
+        int customizerIdx = body.indexOf("customizer.accept(schemaBuilder)");
+        int buildIdx = body.indexOf("return schemaBuilder.build()");
+        assertThat(customizerIdx).isGreaterThan(0).isLessThan(buildIdx);
+    }
+
+    @Test
+    void planFor_preservesRootAndAlphabeticalOrder() {
+        var schema = TestSchemaHelper.buildBundle("""
+            type Query { x: String }
+            type Mutation { y: String }
+            type Zebra { id: ID! }
+            type Alpha { id: ID! }
+            """).assembled();
+        var plan = GraphitronSchemaClassGenerator.planFor(schema);
+        assertThat(plan.hasQuery()).isTrue();
+        assertThat(plan.hasMutation()).isTrue();
+        assertThat(plan.hasSubscription()).isFalse();
+        assertThat(plan.additionalTypeNames()).containsSubsequence("Alpha", "Zebra");
+    }
+
+    private static TypeSpec generate(String sdl) {
+        var schema = TestSchemaHelper.buildBundle(sdl).assembled();
+        return GraphitronSchemaClassGenerator.generate(schema).get(0);
+    }
+
+    private static String buildBody(String sdl) {
+        return generate(sdl).methodSpecs().get(0).code().toString();
+    }
+}
