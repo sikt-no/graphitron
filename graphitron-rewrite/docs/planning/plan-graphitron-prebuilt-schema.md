@@ -21,9 +21,15 @@ DFE-aware so advanced consumers can continue to pick a
 `DataFetchingEnvironment` at call time. See §Runtime context
 plumbing.
 
-The SDL stays a build-time artifact for federation composition and
-client documentation. It is generated from the programmatic schema via
-`SchemaPrinter`, not consumed at runtime.
+SDL emission (both the build-time `schema.graphql` artifact and a
+runtime `getSdl()` accessor) is **out of scope for this plan** and
+deferred to a follow-up. The programmatic schema is the only
+generator output under this plan; the §Directive emission strategy
+invariant (generator-only directives never enter the programmatic
+schema) leaves it in a clean state for a follow-up SDL emitter that
+calls `SchemaPrinter` against it. Apps that need an SDL today can
+call `SchemaPrinter` themselves against the built schema in a few
+lines.
 ## Context
 
 Outcome of an explicit A / B / C tradeoff exploration:
@@ -37,10 +43,6 @@ B was selected on three signals: (1) a clear UX win, apps call one
 method and start serving, (2) zero `SchemaDirectiveWiring` in any known
 consumer app, (3) `@notGenerated` drops to a validator rejection in
 the same commit, so there is no escape-hatch regression to worry about.
-Federation
-SDL sort-order differences are acceptable as long as the emitted SDL is
-semantically equal to what federation-jvm would serialize from the
-built schema.
 ## Current state
 
 Rewrite emits the following application-facing surface, matching the
@@ -91,20 +93,15 @@ public class Graphitron {
      * supported extension point for additional type resolvers).
      */
     public static GraphQLSchema buildSchema(Consumer<GraphQLSchema.Builder> customizer) { ... }
-
-    /**
-     * Returns the schema SDL, for federation composition and client docs.
-     * Built lazily on first call from the no-customization schema and cached.
-     */
-    public static String getSdl() { ... }
 }
 ```
 
-Two methods, no hidden state beyond the lazy SDL cache (§D4). Apps
-construct the graphql-java `GraphQL` engine and per-request
-`ExecutionInput` themselves using stock graphql-java APIs; runtime
-values they need to pass into fetchers go through the documented
-`GraphQLContext` keys in §Runtime context plumbing.
+One method, no hidden state. Apps construct the graphql-java `GraphQL`
+engine and per-request `ExecutionInput` themselves using stock
+graphql-java APIs; runtime values they need to pass into fetchers go
+through the documented `GraphQLContext` keys in §Runtime context
+plumbing. SDL emission is deferred (see §Goal); apps that need an SDL
+today call `SchemaPrinter` against the built schema.
 
 New emitted surface:
 
@@ -130,10 +127,6 @@ New emitted surface:
   `GraphQLSchema.Builder`, registers the code registry, and builds the
   schema once. Scalars, extra types, and extra directives are applied
   by the user's `Consumer<GraphQLSchema.Builder>` before `.build()`.
-- `GraphitronSdl`: emits the SDL string via
-  `SchemaPrinter(SchemaPrinter.Options)` against the built schema,
-  stripping generator-only directives. Built once on first call to
-  `getSdl()`; cached.
 
 Removed artifacts:
 
@@ -146,10 +139,11 @@ Removed artifacts:
   `graphitron-common` runtime dep for emitted code drops away.
   Emitted fetchers depend only on `graphql-java`, `org.jooq`, and
   types the app's own build produces.
-- Client SDL resource on the runtime classpath: optional. Emitted to
-  `target/generated-sources/...` for federation composition and docs,
-  but `Graphitron.getSdl()` can produce it from the programmatic schema
-  on demand.
+- Client SDL resource on the runtime classpath: gone, with no
+  replacement in this plan. Build-time SDL emission and a runtime
+  `getSdl()` accessor are both deferred to a follow-up (§Goal);
+  consumers that need an SDL today call `SchemaPrinter` against the
+  built schema themselves.
 ## Approach
 
 Single breaking change; no parallel path, no deprecation cycle. The
@@ -179,11 +173,8 @@ emission strategies living side by side.
   for generator-produced interfaces / unions, and exposes the
   `GraphQLSchema.Builder` for user customization before calling
   `.build()`.
-- New generator `GraphitronSdl` emits the client SDL via
-  `SchemaPrinter(SchemaPrinter.Options)` against the built schema,
-  stripping generator-only directives.
-- `Graphitron.java` facade surface becomes `buildSchema(Consumer)` and
-  `getSdl()`.
+- `Graphitron.java` facade surface becomes a single
+  `buildSchema(Consumer<GraphQLSchema.Builder>)` method.
 - New generator emits `<outputPackage>.rewrite.schema.GraphitronContext`
   as the per-app DFE-aware extension point (§Runtime context
   plumbing). The emitted `graphitronContext(env)` helper in each
@@ -221,7 +212,7 @@ CHANGELOG entry alongside the release with a before/after example.
 
 Exit criteria: every execution test in `graphitron-rewrite-test-spec`
 passes against the new path; the `Graphitron.java` emitted surface is
-exactly the two methods in §Target state; no `SchemaReadingHelper`,
+exactly the single method in §Target state; no `SchemaReadingHelper`,
 `RuntimeWiring`, or `no.sikt.graphql.GraphitronContext` references
 remain in emitted code.
 ## Federation integration
@@ -241,24 +232,21 @@ GraphQLSchema federated = Federation.transform(base)
 Two concrete decisions fall out:
 
 **`_Service.sdl` content.** Federation's entity-exposing `_Service.sdl`
-field needs an SDL string. Two sources:
-- (a) Federation-jvm serializes the programmatic schema back to SDL.
-  Sort order and formatting may differ from our emitted SDL, which is
-  fine per the scope statement.
-- (b) Apps pass our emitted SDL explicitly via
-  `Federation.transform(schema, sdl).build()` to pin the exact output.
-
-Recommend (a): one fewer moving part, semantic equality is guaranteed
-because the SDL is derived from the same schema object. If a
-consumer ever needs byte-stable SDL output for supergraph compose
-testing, (b) is available as an escape hatch.
+field needs an SDL string. Federation-jvm serializes the programmatic
+schema back to SDL on demand; that's the only path under this plan,
+because Graphitron itself no longer emits SDL (§Goal). If a consumer
+ever needs byte-stable SDL output for supergraph compose testing,
+they produce it by calling `SchemaPrinter` against the built schema
+themselves and passing the result via
+`Federation.transform(schema, sdl).build()`.
 
 **Federation-only directives in the emitted schema.** `@key`,
 `@external`, `@provides`, `@requires`, `@shareable`, `@override`,
-`@tag` must survive to the SDL output for supergraph composition. See
-§Directive emission strategy for how the `<TypeName>Type` emitter
-places these on `GraphQLObjectType` / `GraphQLFieldDefinition` /
-argument / input-field builders via `GraphQLDirective.newDirective()`.
+`@tag` must survive to any downstream SDL for supergraph composition,
+which means they must reach the programmatic schema. See §Directive
+emission strategy for how the `<TypeName>Type` emitter places these on
+`GraphQLObjectType` / `GraphQLFieldDefinition` / argument /
+input-field builders via `GraphQLDirective.newDirective()`.
 ## `@notGenerated` handling
 
 Dropped as part of this plan. The directive declaration stays in
@@ -421,10 +409,10 @@ don't call into).
 Two classes of directives in the schema today:
 
 1. **Survivors** — must reach the programmatic schema (and, via
-   `SchemaPrinter`, the SDL output). Federation directives (`@key`,
-   `@external`, `@provides`, `@requires`, `@shareable`, `@override`,
-   `@tag`) and user-declared custom directives (`@deprecated`, app
-   directives).
+   `SchemaPrinter`, any downstream SDL output a future SDL-emitter
+   plan produces). Federation directives (`@key`, `@external`,
+   `@provides`, `@requires`, `@shareable`, `@override`, `@tag`) and
+   user-declared custom directives (`@deprecated`, app directives).
 2. **Generator-only** — consumed at build time, never emitted.
    `@table`, `@field`, `@condition`, `@lookupKey`, `@reference`,
    `@splitQuery`, `@asConnection`, `@service`, `@tableMethod`,
@@ -441,29 +429,13 @@ Directive-argument values (scalars, lists, object literals, defaults)
 go through graphql-java's standard value-translation path.
 
 Consequence: generator-only directives never enter the programmatic
-schema, so `SchemaPrinter.Options` needs no stripping pass — it just
-preserves what's there. The "directive stripping" umbrella item
-collapses to a survivors registry plus a single "known directive
-names" check in the emitter. No cross-module enum to keep in sync.
+schema. A future SDL-emitter plan can call `SchemaPrinter` against the
+built schema with `SchemaPrinter.Options.includeDirectives(true)` and
+get exactly the survivors in the output — no stripping pass, no
+cross-module enum to keep in sync. The "directive stripping" umbrella
+item collapses to a survivors registry plus a single "known directive
+names" check in this emitter.
 
-## SDL as build artifact
-
-SDL is produced from the built `GraphQLSchema` via graphql-java's
-`SchemaPrinter` with `SchemaPrinter.Options.includeDirectives(true)`.
-Because the programmatic schema already carries only survivor
-directives (see §Directive emission strategy), the printer output
-contains exactly what clients and federation need, nothing more.
-
-Two consumption paths:
-
-- **Build-time emission:** generator writes `target/generated-sources/.../schema.graphql`
-  alongside generated Java. This is what the faceted-search plan and
-  the "Rewrite emits the client SDL as generated output" umbrella item
-  describe; B makes it strictly simpler because the source of truth is
-  the programmatic schema.
-- **Runtime via `Graphitron.getSdl()`:** for apps that want to expose
-  the SDL at an operational endpoint (e.g. `/schema.graphql`) without
-  loading a resource. The method builds the SDL once and caches.
 ## Getting started document as API quality gate
 
 Ships alongside the code: `graphitron-rewrite/docs/getting-started.md`.
@@ -530,15 +502,20 @@ Items the umbrella reshapes or absorbs under B:
   fields for a removal pass to operate on. The umbrella item closes
   without migration work.
 - **Rewrite owns directive stripping in the emitted client SDL.**
-  Collapses into `SchemaPrinter.Options`; see §SDL as build artifact.
-- **Rewrite emits the client SDL as generated output.** Still wanted;
-  this plan supplies the mechanism (`GraphitronSdl`).
+  Reshaped: this plan makes the stripping pass unnecessary (§Directive
+  emission strategy); a follow-up SDL emitter consumes the already-clean
+  programmatic schema.
+- **Rewrite emits the client SDL as generated output.** Still wanted,
+  deferred to a follow-up plan. This plan leaves the programmatic
+  schema in a clean state (survivor directives only) so the follow-up
+  is a thin `SchemaPrinter` wrapper plus Mojo plumbing for the output
+  path.
 - **Rewrite owns feature-flag SDL splits.** Unchanged in concept, but
   now operates on the classification model rather than SDL. Likely
   needs its own plan revision after B lands.
 - **Rewrite owns federation SDL integration.** Simplified: federation
-  wraps the prebuilt schema; no separate SDL integration pass needed
-  unless a consumer insists on byte-stable `_Service.sdl` output.
+  wraps the prebuilt schema; federation-jvm serializes `_Service.sdl`
+  on demand from it.
 ## Tests
 
 **Execution suite.** Every test in `graphitron-rewrite-test-spec` runs
@@ -569,9 +546,9 @@ appear in emitted code. Prevents regression into the old shape and
 enforces the zero-runtime-dep invariant.
 ## Open decisions
 
-**D1.** API shape for app customization. **Resolved.** Two-method
-facade on `Graphitron`: `buildSchema(Consumer<GraphQLSchema.Builder>)`
-and `getSdl()`. No engine factory, no execution helper, no
+**D1.** API shape for app customization. **Resolved.** Single-method
+facade on `Graphitron`: `buildSchema(Consumer<GraphQLSchema.Builder>)`.
+No engine factory, no execution helper, no SDL accessor, no
 `GraphitronConfig` abstraction; graphql-java's native
 `GraphQLSchema.Builder`, `GraphQL.newGraphQL(...)`, and
 `ExecutionInput.newExecutionInput(...)` are the composition surface.
@@ -592,17 +569,13 @@ additional type resolvers").
 New `<outputPackage>.rewrite.schema` package. Keeps the graphql-java
 builder classes away from the existing `<outputPackage>.rewrite.types`
 carriers and groups schema-building artifacts
-(`<TypeName>Type`, `GraphitronSchema`, `GraphitronSdl`) under one
-roof.
+(`<TypeName>Type`, `GraphitronSchema`) under one roof.
 
 **D3.** `<TypeName>Type` class naming. **Resolved.** See §Target
 state: `<TypeName>Type` mirrors graphql-java's own type-hierarchy
 naming; method-level entry point is `FilmType.type()` returning a
 `GraphQLObjectType`.
 
-**D4.** `getSdl()` caching. **Resolved.** Lazy + cached in a
-`static volatile` field. Eventually consistent, safe because the SDL
-is deterministic from the immutable schema: a rare startup-time race
-results in two concurrent `SchemaPrinter` invocations producing the
-same string. Apps that never call `getSdl()` pay nothing.
+**D4.** *(Withdrawn.)* Previously covered `getSdl()` caching; SDL
+emission is now out of scope for this plan (§Goal).
 
