@@ -30,9 +30,20 @@
 
 Support `@condition` at the third legal position per `directives.graphqls`
 (already listed on the directive declaration): `INPUT_FIELD_DEFINITION`.
-Each `@condition`-carrying field *inside* a `@table` input type contributes its
-own predicate when the input is used at a call site. Nested input-field
+Each `@condition`-carrying field *inside* an input type contributes its own
+predicate when the input is used at a call site. Nested input-field
 conditions compose. Outer-level overrides propagate downward.
+
+**Scope:** both `@table`-annotated input types (primary case) and plain
+input types used under the legacy "implicit-table" heuristic, where the
+input's fields resolve against the enclosing query field's target table.
+The scope increase is motivated by a divergence-scan of alf's production
+schema (`alf/graphitron-rewrite:graphitron-rewrite/generator-schema.graphql`,
+not committed to trunk): zero `@table` inputs carry inner `@condition` on
+that schema, while 62 plain inputs do, 3 of them under an outer field-level
+`@condition(override: true)` (`Query.emner`, `Query.emnerV2`,
+`Query.studenter`). Restricting Phase 4 to `@table` inputs would leave the
+feature with no real-world usage on the one schema we checked.
 
 ## Design
 
@@ -46,65 +57,102 @@ Extend three `InputField` variants
 - `InputField.ColumnReferenceField` (line 51)
 - `InputField.NestingField` (line 91)
 
+The same variants cover both resolution sources: `@table`-input fields
+(classified at type-build time against the input's own declared table) and
+plain-input fields (classified at argument-classify time against the
+enclosing query field's target table). The variant doesn't need to know
+which source produced it; the carrying argument record (`TableInputArg` or
+`PlainInputArg`) remembers that.
+
 `PlatformIdField` is intentionally excluded; see Out of Scope. `ArgConditionRef`
 is reused verbatim; its `override` flag becomes the input-field-level override
 (matching legacy semantics: `override: true` on an input field replaces that
 field's auto-predicate with the explicit method).
 
-### Classification: reading the directive at type-build time
+### Classification: reading the directive at type-build and call-site time
 
-`TypeBuilder.buildInputField` (TypeBuilder.java:562-652) is the single
-construction site for all four `InputField` variants. Add:
+`@table` inputs and plain inputs classify at different times because their
+resolution tables differ:
 
-1. A new helper `buildInputFieldCondition(GraphQLInputObjectField field,
-   String inputFieldName, List<String> errors) -> Optional<ArgConditionRef>`,
-   modeled on `FieldBuilder.buildArgCondition` (FieldBuilder.java:849-863):
-   - Delegate directive parsing to `readConditionDirective`, already
-     `GraphQLDirectiveContainer`-generic (FieldBuilder.java:825-841), so
-     `GraphQLInputObjectField` works without modification.
-   - Reflect via `ServiceCatalog.reflectTableMethod(className, method,
-     Set.of(inputFieldName), Set.copyOf(contextArguments))`. The method's
-     primary argument is the single input-field value, named after the
-     SDL field name (matches legacy; see `withListedInputConditions`
-     fixture: `customerString(table, input.getId())`).
-   - On reflection failure, append to `errors` and return `Optional.empty()`,
-     mirroring the `buildArgCondition` error contract.
+- **`@table` inputs.** Classified once at type-build time by
+  `TypeBuilder.buildInputField` (TypeBuilder.java:562-652) against the
+  input's own `@table(name:)`.
+- **Plain inputs.** Classified per call site by
+  `FieldBuilder.classifyArgument` (FieldBuilder.java:683-741) against the
+  enclosing query field's target table (`rt`). Same plain input used at N
+  call sites classifies N times, one per resolved table. Classification
+  is cheap; reclassification is simpler than caching and a per-site cache
+  would complicate invalidation without a measured need.
 
-2. Three constructor call sites (TypeBuilder.java:582, 621, 629) extended to
-   pass the optional ref as the final argument.
+**Shared per-field classifier.** Extract the column / @reference / nesting
+decision tree from `TypeBuilder.buildInputField:569-651` into a helper
+method (name suggestion: `classifyInputField(field, tableRef, expandingTypes,
+errors) -> InputFieldResolution`) accessible from both `TypeBuilder` and
+`FieldBuilder`. `TypeBuilder` calls it with the input type's declared
+table; `FieldBuilder` calls it with the call-site's `rt` when it
+encounters a plain-input arg. No semantic change to the existing
+`NestingField` handling: a plain input nested inside a `@table` input
+still resolves against the parent `@table`'s table via the existing
+recursive call. The new path is plain input used directly as a field
+argument.
 
-`readConditionDirective` currently lives in `FieldBuilder` (private). Promote
-it to a package-private static utility (e.g. `ConditionDirectives.read(...)`)
-or relocate to `BuildContext` so both `FieldBuilder` and `TypeBuilder` reach it
-without duplication. **Open decision**; see below.
+**Condition helper.** Add `buildInputFieldCondition(GraphQLInputObjectField
+field, String inputFieldName, List<String> errors) -> Optional<ArgConditionRef>`,
+modeled on `FieldBuilder.buildArgCondition` (FieldBuilder.java:849-863):
+
+- Delegate directive parsing to `readConditionDirective`, already
+  `GraphQLDirectiveContainer`-generic (FieldBuilder.java:825-841), so
+  `GraphQLInputObjectField` works without modification.
+- Reflect via `ServiceCatalog.reflectTableMethod(className, method,
+  Set.of(inputFieldName), Set.copyOf(contextArguments))`. The method's
+  primary argument is the single input-field value, named after the
+  SDL field name (matches legacy; see `withListedInputConditions`
+  fixture: `customerString(table, input.getId())`).
+- On reflection failure, append to `errors` and return `Optional.empty()`,
+  mirroring the `buildArgCondition` error contract.
+
+The helper is agnostic to `@table` vs. plain source; both paths call it
+with the same shape. It lives alongside `classifyInputField` in whichever
+home D1 picks.
+
+**Constructor call sites to update.** Three constructor call sites
+(TypeBuilder.java:582, 621, 629) extended to pass the optional ref as
+the final argument.
+
+`readConditionDirective` currently lives in `FieldBuilder` (private). Per
+D1 (resolved below) it moves to `BuildContext` so both `FieldBuilder`,
+`TypeBuilder`, and the new shared classifier reach it via `ctx`.
 
 ### Projection: threading conditions to the call site
 
 `FieldBuilder.projectFilters` (FieldBuilder.java:1034-1088) currently handles
-only outer-arg-level `@condition` on `TableInputArg`:
+only outer-arg-level `@condition` on both `TableInputArg` and `PlainInputArg`:
 
 ```java
 case ArgumentRef.InputTypeArg.TableInputArg tia -> {
     tia.argCondition().ifPresent(ac -> argConditions.add(ac.filter()));
 }
+case ArgumentRef.InputTypeArg.PlainInputArg pia -> {
+    pia.argCondition().ifPresent(ac -> argConditions.add(ac.filter()));
+}
 ```
 
-Extend this case to also walk the input type's classified `InputField` records
-and append each present condition, with override propagation (below).
+Extend both cases to also walk the input's classified `InputField` records
+and append each present condition, applying the override-propagation rule.
+The walking logic is identical; differences live in the carrying record.
 
-**How projection reaches the `InputField` list.** `TableInputArg.fieldBindings`
-is `@lookupKey`-only, insufficient since condition-carrying fields aren't
-necessarily lookup keys. Two options:
+**Data model: both variants carry a classified field list.** Per D2
+(resolved below), `TableInputArg` gains `List<InputField> fields` populated
+at classify time. Apply the same extension to `PlainInputArg` (new field,
+also `List<InputField> fields`). `TableInputArg.fieldBindings` is
+`@lookupKey`-only, insufficient since condition-carrying fields aren't
+necessarily lookup keys; `PlainInputArg` has no prior field structure, so
+this is an additive extension in both cases.
 
-- **(A)** Add `List<InputField> fields` to `TableInputArg`, populated at
-  classify time from the `TableInputType` registered in `ctx`.
-- **(B)** Look up the `TableInputType` from the registry at projection time
-  and read `fields()` there.
-
-Recommend (A): keeps projection a pure function of `List<ArgumentRef>`
-(the intent behind the classify/project split in `docs/argument-resolution.md`).
-The registry lookup in (B) re-couples projection to builder context. One-line
-classifier addition; one-line field in the record.
+The alternative was to read the field list out of a registry at projection
+time. Rejected: re-couples projection to builder context, breaks the
+"projection is a pure function of `List<ArgumentRef>`" invariant from
+`docs/argument-resolution.md`.
 
 ### Override propagation
 
@@ -255,48 +303,71 @@ recursively to pick up inner conditions. No new emitter shape.
    return true when the input type itself has any field with
    `@condition(override: true)`. Preserves the "skip table-column
    validation when overridden" escape hatch for per-field overrides.
+   Plain inputs do not pass through `isUsedWithOverrideCondition` (it
+   gates table-column validation for `@table` inputs), so no plain-input
+   branch is needed; the per-call-site classifier handles plain-input
+   column resolution directly against the outer field's table with the
+   existing `catalog.findColumn` + `@field(name:)` path.
 
 2. **`GraphitronSchemaValidator`.** No new structural validation:
    graphql-java enforces `on INPUT_FIELD_DEFINITION` placement at
    schema-parse time. Reflection errors surface through the existing
    `errors` list in `TypeBuilder.buildInputField` → `UnclassifiedType`
-   fallback, same as arg-level `@condition` errors today.
+   fallback for `@table` inputs, and through the per-call-site
+   classifier's `errors` list for plain inputs (same `UnclassifiedArg`
+   fallback already used for other classify-time failures).
 
 ## Sub-items
 
-- **4a.** `InputField` records + classification (Data model + Classification
-  §). One commit: `model/InputField.java` (three record extensions),
-  `TypeBuilder.java` (new helper + three constructor-call updates),
+- **4a.** `InputField` records + shared per-field classifier (Data model +
+  Classification §). One commit: `model/InputField.java` (three record
+  extensions), `TypeBuilder.java` (extract `classifyInputField` helper
+  usable by both callers; three constructor-call updates),
   `readConditionDirective` relocated to `BuildContext` (see D1). Tests:
   `InputFieldClassificationTest`, one case per variant with and without
-  `@condition`; reflection-failure case producing `UnclassifiedType`.
+  `@condition`; reflection-failure case producing `UnclassifiedType` (for
+  `@table` inputs) and `UnclassifiedArg` (for plain inputs).
 
-- **4b.** Projection + truth table (Projection + Override §). One commit:
-  `ArgumentRef.TableInputArg` gains `List<InputField> fields` (see D2);
-  `FieldBuilder.classifyArguments` populates it; `FieldBuilder.projectFilters`
-  walks the list applying the 6-row truth table. Tests: `ProjectFiltersTest`,
-  one classification-tier case per row of the truth table, validating the
-  produced `List<WhereFilter>`.
+- **4b.** Projection + plain-input argument classification (Projection +
+  Override §). One commit: `ArgumentRef.TableInputArg` and
+  `ArgumentRef.PlainInputArg` both gain `List<InputField> fields` (see D2);
+  `FieldBuilder.classifyArguments` populates `TableInputArg.fields` from the
+  registry as before, and populates `PlainInputArg.fields` by invoking
+  `classifyInputField` per call site against the enclosing field's `rt`.
+  `FieldBuilder.projectFilters` extends both cases to walk their `fields`
+  lists applying the 6-row truth table. Tests: `ProjectFiltersTest`, one
+  classification-tier case per row of the truth table, validating the
+  produced `List<WhereFilter>` for each variant.
 
 - **4c.** Validator extension + execution coverage. One commit:
   `TypeBuilder.isUsedWithOverrideCondition` update; one
-  `GraphitronSchemaBuilderTest` pipeline case exercising the override
-  short-circuit; **four execution-tier tests** against the PostgreSQL
-  fixture schema:
-  - Single-level: `@condition` on a `ColumnField` inside a `@table` input,
-    list-typed outer arg, asserts correct WHERE clause at runtime.
-  - Input-field override: `@condition(override: true)` on one field, plain
-    on another, asserts auto-predicate suppression for the override-carrying
-    field only.
-  - Outer-override composition (divergence-pinning; see §Legacy behavior
-    reference): outer field-level `@condition(override: true)` over a
-    `@table` input whose field carries `@condition` with no input-field
-    override. Asserts three things: the inner explicit method runs (not
-    suppressed by the outer override), the inner auto-column binding is
-    suppressed by the outer override, and the outer explicit method runs
-    alongside. Documents the delta from legacy total-replace semantics.
-  - Nested: two-level input nesting with a condition at each level, asserts
-    both run and composite cardinality is correct.
+  `GraphitronSchemaBuilderTest` pipeline case per input variant
+  (`@table` input, plain input) exercising the override short-circuit;
+  **six execution-tier tests** against the PostgreSQL fixture schema:
+  - `@table` single-level: `@condition` on a `ColumnField` inside a
+    `@table` input, list-typed outer arg, asserts correct WHERE clause
+    at runtime.
+  - `@table` input-field override: `@condition(override: true)` on one
+    field, plain on another, asserts auto-predicate suppression for the
+    override-carrying field only.
+  - `@table` outer-override composition (divergence-pinning; see §Legacy
+    behavior reference): outer field-level `@condition(override: true)`
+    over a `@table` input whose field carries `@condition` with no
+    input-field override. Asserts the inner explicit method runs (not
+    suppressed), the inner auto-column binding is suppressed, and the
+    outer explicit method runs alongside. Documents the delta from
+    legacy total-replace semantics.
+  - `@table` nested: two-level input nesting with a condition at each
+    level, asserts both run and composite cardinality is correct.
+  - Plain input single-level: `@condition` on a field inside a plain
+    (non-`@table`) input type used directly as a query arg, asserts
+    correct WHERE clause at runtime under implicit-table resolution
+    against the outer field's target table.
+  - Plain input outer-override composition: outer field-level
+    `@condition(override: true)` over a plain input whose field carries
+    `@condition`. Assertions mirror the `@table` outer-override case;
+    models the three alf-schema call sites (`Query.emner`,
+    `Query.emnerV2`, `Query.studenter`).
 
 ## Test strategy
 
@@ -308,18 +379,22 @@ assertions on emitted methods):
   Phase 4. `InputFieldClassificationTest` exercises the record-shape and
   `ArgConditionRef` population; `ProjectFiltersTest` exercises the 6-row truth
   table at the `List<WhereFilter>` level.
-- **Pipeline (SDL → classification).** One `GraphitronSchemaBuilderTest` case
-  per variant (`ColumnField`, `ColumnReferenceField`, `NestingField`) with
-  `@condition`, asserting the resolved `TableInputType` carries the expected
-  per-field refs. One case for validator short-circuit.
-- **Execution.** Four tests in `graphitron-rewrite-test-spec` against the
+- **Pipeline (SDL → classification).** One `GraphitronSchemaBuilderTest`
+  case per variant (`ColumnField`, `ColumnReferenceField`, `NestingField`)
+  with `@condition` on a `@table` input, asserting the resolved
+  `TableInputType` carries the expected per-field refs. One additional
+  case for a plain input used as a direct field arg, asserting
+  `PlainInputArg.fields` is populated via the call-site classifier. One
+  case for validator short-circuit.
+- **Execution.** Six tests in `graphitron-rewrite-test-spec` against the
   Sakila PostgreSQL schema (see §4c). Assert:
   - JDBC round-trip count matches expectation (catches spurious extra queries).
   - Returned row IDs match the hand-authored expected set.
   - WHERE-clause shape via a jOOQ `ExecuteListener` capturing the generated
     SQL (not via string match; compare tokens/structure).
 
-Fixture extension: add a `@condition`-carrying `@table` input to
+Fixture extension: add a `@condition`-carrying `@table` input and a
+`@condition`-carrying plain input to
 `graphitron-rewrite-test/graphitron-rewrite-test-spec/src/main/resources/graphql/schema.graphqls`
 (around line 16 where `FilmActorKey` lives today). The conditions fixture
 directory already exists at
@@ -327,7 +402,10 @@ directory already exists at
 with `CategoryConditions.java` as the existing template; add a new
 sibling class (suggested name: `InputFieldConditionFixtures`) carrying the
 condition methods referenced by the test SDL. `RewriteConfig.namedReferences`
-is the existing indirection for schema → class; no new plumbing.
+is the existing indirection for schema → class; no new plumbing. One
+condition-method implementation serves both the `@table` and plain-input
+paths; the two fixtures differ only in whether the input type carries
+`@table`.
 
 ## Open decisions
 
@@ -342,13 +420,18 @@ is the existing indirection for schema → class; no new plumbing.
   `ctx` handle.
 
 - **D2. Projection access to `InputField` list. Resolved: Option (A);
-  carry `List<InputField> fields` on `TableInputArg`.** Alternative (B)
-  was to look up the `TableInputType` from the registry at projection
-  time. (A) preserves the "projection is a pure function of
-  `List<ArgumentRef>`" invariant from `docs/argument-resolution.md` and
-  keeps `projectFilters` registry-free. The change to `ArgumentRef` is a
-  single field addition with no consumers outside the rewrite package
-  (verified via `grep -rn TableInputArg graphitron-rewrite/`).
+  carry `List<InputField> fields` on both `TableInputArg` and
+  `PlainInputArg`.** Alternative (B) was to look up the input type
+  from the registry at projection time. (A) preserves the "projection is
+  a pure function of `List<ArgumentRef>`" invariant from
+  `docs/argument-resolution.md` and keeps `projectFilters` registry-free.
+  For `PlainInputArg` there is no registry entry to read from anyway; per
+  §Classification, plain-input fields are classified per call site against
+  the outer field's `rt`, so (A) is the only coherent option there.
+  Change to `ArgumentRef` is a single field addition on each variant,
+  with no consumers outside the rewrite package (verified via
+  `grep -rn TableInputArg graphitron-rewrite/` and
+  `grep -rn PlainInputArg graphitron-rewrite/`).
 
 - **D3. Condition-method signature for nested `NestingField` conditions.
   Provisionally resolved: single arg named after the SDL field** (mirrors
@@ -368,11 +451,39 @@ is the existing indirection for schema → class; no new plumbing.
   failure is a caller-fixable error, not a schema-structural one, so it
   should not invalidate the input type's other fields.
 
+- **D5. Plain-input classification failure fallback.** When the per-call-site
+  classifier fails to resolve a plain input's field against the outer
+  field's table (e.g., column not found, `@reference` path invalid),
+  options are:
+  - (A) Mark that one field `UnclassifiedField`, append error, let the
+    rest of the plain input's fields classify; the `PlainInputArg` is
+    still constructed with the partially-resolved `fields` list.
+  - (B) Fail the entire argument: produce `UnclassifiedArg` for the
+    whole plain-input arg, which short-circuits the whole field per
+    `projectFilters`'s existing `UnclassifiedArg` error path.
+  - (C) Hybrid: silently drop unresolvable fields (legacy implicit-table
+    was lenient about fields that didn't correspond to columns).
+  **Lean: (B).** Consistent with `@table` input behaviour today, where
+  a single unresolvable field promotes the whole `TableInputType` to
+  `UnclassifiedType` (TypeBuilder.java:608-619 coalesces failures and
+  returns `Unresolved`). Divergence from (D4)'s "mirror arg-level"
+  pattern is intentional: column resolution failure is structural (the
+  SDL is wrong), not a caller-fixable runtime issue. (A) would leave a
+  half-classified argument in an inconsistent state and violates the
+  classify-never-returns-null invariant in spirit. (C) was legacy's
+  behaviour and is the behaviour `GraphitronSchemaValidator` was
+  created to flag; reproducing the silent-drop would undo that
+  improvement. Needs reviewer confirmation before 4b lands.
+
 ## Out of Scope
 
 - **Mutations.** Input-type arguments for DML use a different mapping.
   Mutations get their own plan.
-- **Non-`@table` input types with columns.** The legacy "implicit-table"
-  heuristic is not reproduced. Inputs must carry `@table`.
 - **`PlatformIdField` with `@condition`.** Platform IDs are legacy accessors; if
   a real schema surfaces this we'll promote it to its own backlog item.
+
+(Plain / non-`@table` input types were previously out of scope. That
+exclusion was removed after a divergence-scan on alf's production schema
+showed 62 plain inputs with inner `@condition` versus zero `@table`
+inputs; see §Goal and §Classification for the call-site resolution
+approach.)
