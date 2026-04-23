@@ -2,8 +2,8 @@
 
 > **Status:** Spec
 >
-> Three independent cleanups surfaced during `plan-split-query-connection.md`
-> §1+§2 implementation. Each phase is shippable on its own; the plan groups
+> Three independent cleanups surfaced during the split-query-connection
+> work (shipped at `3821842` §1 + `62b51c3` §2). Each phase is shippable on its own; the plan groups
 > them because the pressure came from the same observation pass and because
 > they share a "make the seam explicit before the next variant copies the
 > seamless version" motivation.
@@ -74,8 +74,8 @@ own.** Land the rule as a comment near the top of each emitter; fix any
 violations.
 
 **Audit targets.**
-- `TypeFetcherGenerator.buildOrderByHelperMethod`: fixed in
-  `plan-split-query-connection.md` §2 (commit `62b51c3`). Already compliant.
+- `TypeFetcherGenerator.buildOrderByHelperMethod`: fixed in the
+  split-query-connection §2 work at commit `62b51c3`. Already compliant.
 - `QueryConditionsGenerator.conditionMethodName` / the per-RootType
   `QueryConditions` class: takes Table as parameter per fetcher-quality §2.
   Compliant; skim to confirm.
