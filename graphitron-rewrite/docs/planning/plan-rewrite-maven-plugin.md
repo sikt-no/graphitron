@@ -348,18 +348,14 @@ cover the dev-loop case; no Maven-goal file watcher ships. Not
 revisiting without concrete consumer ask.
 
 **D5. `@Parameter` defaults for `outputPackage` / `jooqPackage`.**
-Legacy defaults `outputPackage` to `no.sikt.graphql`: opinionated
-about Sikt-ness. The new plugin could drop the default (require
-explicit), ship with a Sikt-flavoured default, or read from
-`project.groupId + ".graphql"`. Recommend require-explicit; consumers
-know their package better than the plugin does, and the required-
-parameter error is clear.
+Resolved: require explicit. Both are `required = true`; omitting
+either fails the build with Maven's standard "parameter not set"
+error. No Sikt-flavoured default, no `${project.groupId}`-derived
+default — consumers know their own package layout.
 
-**D6. Java release target.** Plugin code itself is Java 21 (generator
-is). The generated output is Java 17, pinned by the generator's own
-`release=17` ratchet (per CLAUDE.md). No plugin-level knob needed;
-call this out explicitly in the plan so it doesn't resurface as a
-feature request.
+**D6. Java release target.** Resolved: plugin code is Java 21; the
+generator's existing `release=17` ratchet pins output. No
+plugin-level knob.
 
 ## Roadmap integration
 
