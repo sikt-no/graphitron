@@ -84,8 +84,11 @@ public class Graphitron {
      * The customizer receives the underlying {@code GraphQLSchema.Builder}
      * for adding scalars, additional types, or custom directives before
      * {@code .build()} is called. Use additive methods only; do not call
-     * {@code .query()}, {@code .mutation()}, {@code .subscription()}, or
-     * {@code .clearDirectives()} on the builder.
+     * {@code .query()}, {@code .mutation()}, {@code .subscription()},
+     * {@code .clearDirectives()}, or the replace overload
+     * {@code .codeRegistry(GraphQLCodeRegistry)} (the
+     * {@code .codeRegistry(UnaryOperator)} overload is fine, and is the
+     * supported extension point for additional type resolvers).
      */
     public static GraphQLSchema buildSchema(Consumer<GraphQLSchema.Builder> customizer) { ... }
 
@@ -116,9 +119,12 @@ New emitted surface:
   DFE-aware methods (`getDslContext`, `getContextArgument`,
   `getTenantId`). Apps implement this generated type.
 - `<TypeName>Type` classes (rename from `<TypeName>Wiring`): expose a
-  single `public static GraphQLObjectType type()` that builds a typed
-  `GraphQLObjectType` with fetchers attached via a shared
-  `GraphQLCodeRegistry.Builder`.
+  single `public static GraphQLObjectType type(GraphQLCodeRegistry.Builder codeRegistry)`
+  that builds a typed `GraphQLObjectType` and registers its fetchers
+  on the passed-in code registry. The aggregator (`GraphitronSchema`)
+  owns the single shared `GraphQLCodeRegistry.Builder` instance and
+  hands it to each type in turn; `type(...)` cannot be called in
+  isolation because the code registry is required for correctness.
 - `GraphitronSchema` (rename from `GraphitronWiring`): internal
   assembler that wires each `<TypeName>Type` into a top-level
   `GraphQLSchema.Builder`, registers the code registry, and builds the
@@ -157,10 +163,20 @@ emission strategies living side by side.
   `GraphQLObjectType`. Types reference each other via
   `GraphQLTypeReference.typeRef("OtherType")` to sidestep topological
   ordering.
-- New aggregator `GraphitronSchema` builds the `GraphQLSchema`, walks
-  all emitted `<TypeName>Type` classes, wires `GraphQLCodeRegistry`
-  with fetcher coordinates, attaches type resolvers for
-  generator-produced interfaces / unions. Exposes the
+- New survivor-directive sub-pass in the `<TypeName>Type` emitter.
+  For every directive application the classification model carries on
+  a type / field / argument / input-field, the emitter checks the
+  directive name against the survivors registry (federation set +
+  user-declared custom directives; see §Directive emission strategy)
+  and, on a hit, translates the application to a
+  `GraphQLDirective.newDirective()` call on the matching graphql-java
+  builder. Directive-argument values (scalar, list, object-literal,
+  default) route through graphql-java's standard value translation.
+  Generator-only directives are never emitted.
+- New aggregator `GraphitronSchema` builds the `GraphQLSchema`, owns
+  the shared `GraphQLCodeRegistry.Builder`, passes it to each
+  `<TypeName>Type.type(codeRegistry)` in turn, attaches type resolvers
+  for generator-produced interfaces / unions, and exposes the
   `GraphQLSchema.Builder` for user customization before calling
   `.build()`.
 - New generator `GraphitronSdl` emits the client SDL via
@@ -239,13 +255,10 @@ testing, (b) is available as an escape hatch.
 
 **Federation-only directives in the emitted schema.** `@key`,
 `@external`, `@provides`, `@requires`, `@shareable`, `@override`,
-`@tag` must survive to the SDL output for supergraph composition.
-Under B, these directives are declared on `GraphQLObjectType` /
-`GraphQLFieldDefinition` builders at construction time using
-`GraphQLDirective`s that the generator emits. The client SDL output
-then contains them by default. The directive-stripping concern from
-the schema-transform umbrella simplifies: we keep what we want in the
-programmatic schema and strip the rest at SDL-emission time.
+`@tag` must survive to the SDL output for supergraph composition. See
+§Directive emission strategy for how the `<TypeName>Type` emitter
+places these on `GraphQLObjectType` / `GraphQLFieldDefinition` /
+argument / input-field builders via `GraphQLDirective.newDirective()`.
 ## `@notGenerated` handling
 
 Dropped as part of this plan. The directive declaration stays in
@@ -403,17 +416,43 @@ unchanged because the three methods match by signature
 (minus `getDataLoaderName`, which rewrite-targeted apps already
 don't call into).
 
+## Directive emission strategy
+
+Two classes of directives in the schema today:
+
+1. **Survivors** — must reach the programmatic schema (and, via
+   `SchemaPrinter`, the SDL output). Federation directives (`@key`,
+   `@external`, `@provides`, `@requires`, `@shareable`, `@override`,
+   `@tag`) and user-declared custom directives (`@deprecated`, app
+   directives).
+2. **Generator-only** — consumed at build time, never emitted.
+   `@table`, `@field`, `@condition`, `@lookupKey`, `@reference`,
+   `@splitQuery`, `@asConnection`, `@service`, `@tableMethod`,
+   `@discriminate`, `@discriminator`, `@notGenerated`,
+   `@externalField`.
+
+Implementation: the `<TypeName>Type` emitter reads each schema
+element's directive applications off the classification model; for
+every application whose directive name is in the survivors set, the
+emitter translates it to `GraphQLDirective.newDirective()` on the
+`GraphQLObjectType` / `GraphQLFieldDefinition` / argument /
+input-field builder. Generator-only applications are skipped.
+Directive-argument values (scalars, lists, object literals, defaults)
+go through graphql-java's standard value-translation path.
+
+Consequence: generator-only directives never enter the programmatic
+schema, so `SchemaPrinter.Options` needs no stripping pass — it just
+preserves what's there. The "directive stripping" umbrella item
+collapses to a survivors registry plus a single "known directive
+names" check in the emitter. No cross-module enum to keep in sync.
+
 ## SDL as build artifact
 
 SDL is produced from the built `GraphQLSchema` via graphql-java's
-`SchemaPrinter`, with options tuned to:
-
-- Include federation-relevant directives (`@key`, `@external`, etc.)
-  and user-declared ones (`@deprecated`, app custom directives).
-- Strip generator-only directives (`@table`, `@field`, `@condition`,
-  `@lookupKey`, `@reference`, `@splitQuery`, `@asConnection`,
-  `@service`, `@tableMethod`, etc.). These are implementation detail
-  and must not leak to clients or federation.
+`SchemaPrinter` with `SchemaPrinter.Options.includeDirectives(true)`.
+Because the programmatic schema already carries only survivor
+directives (see §Directive emission strategy), the printer output
+contains exactly what clients and federation need, nothing more.
 
 Two consumption paths:
 
@@ -425,11 +464,6 @@ Two consumption paths:
 - **Runtime via `Graphitron.getSdl()`:** for apps that want to expose
   the SDL at an operational endpoint (e.g. `/schema.graphql`) without
   loading a resource. The method builds the SDL once and caches.
-
-The "directive stripping" umbrella item collapses into a single
-`SchemaPrinter.Options` configuration inside `GraphitronSdl`. No
-separate SDL-transformation pass, no cross-module enum to keep in
-sync.
 ## Getting started document as API quality gate
 
 Ships alongside the code: `graphitron-rewrite/docs/getting-started.md`.
@@ -549,7 +583,10 @@ parallel APIs for problems graphql-java already solves, and lets the
 "getting started" examples stay at a few lines each. Safe-surface
 guidance for the customizer goes in javadoc on the `Consumer`
 parameter ("use additive methods only; do not call `.query()`,
-`.mutation()`, `.subscription()`, `.clearDirectives()`").
+`.mutation()`, `.subscription()`, `.clearDirectives()`, or the
+replace overload `.codeRegistry(GraphQLCodeRegistry)` — the
+`UnaryOperator` overload is the supported extension point for
+additional type resolvers").
 
 **D2.** Package for generated `<TypeName>Type` classes. **Resolved.**
 New `<outputPackage>.rewrite.schema` package. Keeps the graphql-java
