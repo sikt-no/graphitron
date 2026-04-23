@@ -1,0 +1,7 @@
+type Query {
+    test(in: TestInput): ID @notGenerated
+}
+
+input TestInput @table(name: "ADDRESS") @record(record: {className: "no.sikt.graphitron.codereferences.records.CustomerJavaRecord"}) {
+    someID: ID
+}
