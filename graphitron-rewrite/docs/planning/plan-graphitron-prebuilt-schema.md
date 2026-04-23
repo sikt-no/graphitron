@@ -111,55 +111,49 @@ Removed artifacts:
   on demand.
 ## Approach
 
-Phased migration; each phase is independently shippable and leaves the
-generator green. Phases stay in the same plan because they share a
-single end state and invalidate each other if reordered.
+Single breaking change; no parallel path, no deprecation cycle. The
+rewrite pipeline is still pre-release, consumers track it on a known
+cadence, and the generator stays easier to reason about without two
+emission strategies living side by side.
 
-### Phase 1: Parallel `getSchemaV2()` path
+**What lands in one commit:**
 
-Add the programmatic-schema machinery alongside the existing emission.
-Do not remove anything.
-
-- New generator: `TypeClassGenerator` equivalent that emits
-  `<TypeName>Type` classes producing `GraphQLObjectType`. Types
-  reference each other via `GraphQLTypeReference.typeRef("OtherType")`
-  to sidestep the topological-ordering problem.
-- New aggregator: `GraphitronSchemaAssembler` builds the
+- New generator emits `<TypeName>Type` classes producing
+  `GraphQLObjectType`. Types reference each other via
+  `GraphQLTypeReference.typeRef("OtherType")` to sidestep topological
+  ordering.
+- New aggregator `GraphitronSchemaAssembler` builds the
   `GraphQLSchema`, walks all emitted `<TypeName>Type` classes, wires
-  `GraphQLCodeRegistry` with fetcher coordinates.
-- `Graphitron.java` facade gains `public static GraphQLSchema getSchemaV2()`
-  returning the prebuilt schema. Existing methods unchanged.
-- Execution tests gain a variant using `getSchemaV2()` to exercise the
-  new path; the suite passes on both paths.
+  `GraphQLCodeRegistry` with fetcher coordinates, registers custom
+  scalars from `GraphitronConfig`, attaches type resolvers for
+  interfaces / unions.
+- New generator `GraphitronSdl` emits the client SDL via
+  `SchemaPrinter(SchemaPrinter.Options)` against the built schema,
+  stripping generator-only directives.
+- `Graphitron.java` facade surface becomes `getSchema()`,
+  `getSdl()`, `buildSchema(GraphitronConfig)`.
+
+**What is removed in the same commit:**
+
+- `<TypeName>Wiring` emission.
+- `GraphitronWiring` aggregator.
+- `TypeRegistry` emission.
+- `Graphitron.getTypeRegistry()`, `getRuntimeWiringBuilder()`,
+  `getRuntimeWiring()` facade methods.
+- Runtime SDL resource loading from the generated JAR.
+- The `graphitron-common` runtime dependency on emitted code.
+
+**Consumer impact.** Apps on the rewrite pipeline adapt their startup
+wiring to call `Graphitron.getSchema()` in place of the
+`makeExecutableSchema` assembly. The release notes call out the
+breaking change and include a three-line before/after example.
+Documented in a CHANGELOG entry alongside the release.
 
 Exit criteria: every execution test in `graphitron-rewrite-test-spec`
-passes against `getSchemaV2()` with byte-for-byte identical query
-responses as the `getSchema()` baseline.
-
-### Phase 2: Switch default, deprecate old methods
-
-- Rename `getSchemaV2()` to `getSchema()`.
-- Rename existing `getSchema()` to `getSchemaLegacy()`, mark
-  `@Deprecated(forRemoval = true)`. Same for
-  `getRuntimeWiringBuilder()`, `getRuntimeWiring()`,
-  `getTypeRegistry()`.
-- Docs and example apps updated to the new default.
-
-Exit criteria: every consumer-facing example in `docs/` and every
-integration example uses the new default; deprecated methods produce
-deprecation warnings at caller compile sites.
-
-### Phase 3: Remove legacy path
-
-- Delete the `*Wiring` emission, `TypeRegistry` emission, deprecated
-  facade methods.
-- Delete the runtime SDL resource unless an app still needs it (audit
-  before landing this phase).
-- Drop the runtime `graphitron-common` dependency on emitted code.
-
-Exit criteria: rewrite emits no `SchemaReadingHelper` references in
-generated code; `Graphitron.java` surface is `getSchema() + getSdl() +
-buildSchema(config)`.
+passes against the new path; the `Graphitron.java` emitted surface is
+exactly the three methods above; no `SchemaReadingHelper` references
+remain in generated code; no `RuntimeWiring` references remain in
+generated code.
 ## Federation integration
 
 `com.apollographql.federation:federation-graphql-java-support` accepts
@@ -330,34 +324,33 @@ Items the umbrella reshapes or absorbs under B:
   unless a consumer insists on byte-stable `_Service.sdl` output.
 ## Tests
 
-Three tiers:
+**Execution suite.** Every test in `graphitron-rewrite-test-spec` runs
+against the new path, unchanged in intent. These are the functional
+regression net: they already assert query response shapes and round-trip
+counts; they pass iff the programmatic schema is semantically equal to
+what the old path produced.
 
-**Phase-1 parallel-path tests.** Every execution test in
-`graphitron-rewrite-test-spec` runs twice: once against
-`Graphitron.getSchema()` (legacy path), once against
-`Graphitron.getSchemaV2()` (programmatic path). Both must return
-byte-identical GraphQL response JSON for the same query. A
-parameterized test runner keyed on the schema factory is the simplest
-shape. This tier catches semantic divergence between the two paths
-before phase 2 flips the default.
-
-**SDL semantic-equality test.** `GraphitronSdl.emit(schema)` is
-parsed back into a `GraphQLSchema` via `SchemaParser` +
-`SchemaGenerator.makeExecutableSchema`; the resulting schema is
-compared to the original for structural equality (types, fields,
-directives, argument definitions). Byte equality is not asserted.
-Covers the federation concern: whatever `SchemaPrinter` produces,
-federation-jvm can consume equivalently.
+**SDL semantic-equality test.** `GraphitronSdl.emit(schema)` is parsed
+back via `SchemaParser` + `SchemaGenerator.makeExecutableSchema`; the
+resulting schema is compared to the original for structural equality
+(types, fields, directives, argument definitions). Byte equality is
+not asserted. Covers the federation concern: whatever `SchemaPrinter`
+produces, federation-jvm can consume equivalently.
 
 **`@notGenerated` transitional hatch test.** An SDL fixture with one
-`@notGenerated` field; build fails with a clear error when no
-fetcher is registered; build succeeds and the query returns the
-registered fetcher's result when one is registered.
+`@notGenerated` field; build fails with a clear error when no fetcher
+is registered via `GraphitronConfig`; build succeeds and the query
+returns the registered fetcher's result when one is registered.
 
 **Federation integration test.** A small SDL with `@key`, `@external`,
 `@shareable`; wrap `Graphitron.getSchema()` via `Federation.transform`;
 execute an `_entities` query; assert the response. Pins the contract
 that federation-jvm consumes a programmatically-built schema.
+
+**Lint ratchet.** `GeneratedSourcesLintTest` asserts no
+`RuntimeWiring`, `TypeRuntimeWiring`, `SchemaGenerator`, or
+`SchemaReadingHelper` imports appear in emitted code. Prevents
+regression into the old shape.
 ## Open decisions
 
 **D1.** `GraphitronConfig` vs. lambda customizer vs. subclass hook.
@@ -379,28 +372,21 @@ for clarity.
 `<TypeName>Type` mirroring graphql-java's own type-hierarchy naming
 (`GraphQLObjectType`, `GraphQLInterfaceType`).
 
-**D4.** Phase-1 duration. How long do we keep the parallel path alive?
-Options: (a) until every known consumer has migrated, verified via
-integration testing; (b) one release cycle with deprecation warnings;
-(c) rip the bandaid in the same release once phase 1 lands. Recommend
-(b): deprecation warnings give consumers one release to adapt while
-keeping the generator honest.
-
-**D5.** `getSdl()` caching. Options: build on every call, build once
+**D4.** `getSdl()` caching. Options: build on every call, build once
 and cache in a `static volatile`, build at class-init time. Recommend
 lazy + cached: no work for apps that don't call it, one-time cost
 when they do.
 
-**D6.** `GraphitronConfig` lives where. The rewrite module (closest
+**D5.** `GraphitronConfig` lives where. The rewrite module (closest
 to generation) or a new `graphitron-rewrite-runtime` module (separate
 from the generator, ships only runtime-facing types). Recommend
-keeping it in rewrite for phase 1 and 2; revisit module extraction
-after phase 3 if the runtime surface grows.
+keeping it in rewrite; revisit module extraction later if the runtime
+surface grows.
 
-**D7.** Does `@notGenerated` phase-out ship in this plan or as a
-follow-up? It could land in phase 3 (delete the directive at the
-same time the transitional hatch goes away) or as a separate plan
-after this one lands. Recommend separate plan: keeps this plan's
-scope on the wiring-shape change; phase-out is its own risk surface
-with its own test matrix (scanning source schemas, migration
-guidance for consumers).
+**D6.** Does `@notGenerated` phase-out ship in this plan or as a
+follow-up? It could land in the same commit (delete the directive
+alongside the wiring-shape change) or as a separate plan after this
+one lands. Recommend separate plan: keeps this plan's scope on the
+wiring-shape change; phase-out is its own risk surface with its own
+test matrix (scanning source schemas, migration guidance for
+consumers).
