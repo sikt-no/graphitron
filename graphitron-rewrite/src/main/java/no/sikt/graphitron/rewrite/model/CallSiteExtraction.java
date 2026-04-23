@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.model;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -7,7 +8,7 @@ import java.util.Map;
  *
  * <p>Used in {@link CallParam} to tell the fetcher generator exactly what code to emit for each
  * argument passed to a condition or ordering method. The generator switches on this type once and
- * emits the corresponding expression — no other decisions are made at generation time.
+ * emits the corresponding expression, no other decisions are made at generation time.
  *
  * <ul>
  *   <li>{@link Direct} — {@code env.getArgument("name")}</li>
@@ -17,12 +18,15 @@ import java.util.Map;
  *       null-guarded when the argument is nullable. The map is a generated {@code static final}
  *       field on the {@code *Conditions} class.</li>
  *   <li>{@link ContextArg} — {@code graphitronContext(env).getContextArgument(env, "name")}</li>
+ *   <li>{@link NestedInputField} — traverse a nested input-object graph starting from a
+ *       top-level argument Map and descending through {@code path} keys, null-safe at every
+ *       level; used for {@code @condition} on {@code INPUT_FIELD_DEFINITION}.</li>
  * </ul>
  */
 public sealed interface CallSiteExtraction
         permits CallSiteExtraction.Direct, CallSiteExtraction.EnumValueOf,
                 CallSiteExtraction.TextMapLookup, CallSiteExtraction.ContextArg,
-                CallSiteExtraction.JooqConvert {
+                CallSiteExtraction.JooqConvert, CallSiteExtraction.NestedInputField {
 
     /** Pass the argument directly: {@code env.getArgument("name")}. */
     record Direct() implements CallSiteExtraction {}
@@ -69,4 +73,36 @@ public sealed interface CallSiteExtraction
      * </ul>
      */
     record JooqConvert(String columnJavaName) implements CallSiteExtraction {}
+
+    /**
+     * Traverse a nested input-object graph starting from the top-level argument named
+     * {@code outerArgName} and descending through {@code path} keys to retrieve a value stored
+     * inside the argument Map. Used by {@code @condition} on {@code INPUT_FIELD_DEFINITION}:
+     * the condition method's parameter is the field value, but the field is not a top-level
+     * argument, so the generator must emit Map traversal from the outer arg down to the leaf.
+     *
+     * <p>{@code path} is the ordered list of keys from the outer argument Map to the leaf value.
+     * Non-empty; the last element is the SDL input-field name whose condition is being evaluated
+     * (matches {@link CallParam#name()}).
+     *
+     * <p>Traversal is null-safe: if any intermediate step is not a {@code Map} or is
+     * {@code null}, the result is {@code null}. The condition method is still invoked; if it
+     * receives {@code null}, it is responsible for returning a no-op filter.
+     *
+     * <p>Examples:
+     * <ul>
+     *   <li>{@code outerArgName="filter"}, {@code path=["filmId"]} for a direct
+     *       {@code ColumnField.filmId} condition on a top-level input arg.</li>
+     *   <li>{@code outerArgName="filter"}, {@code path=["where", "filmId"]} for a
+     *       {@code ColumnField.filmId} inside a {@code NestingField.where}.</li>
+     * </ul>
+     */
+    record NestedInputField(String outerArgName, List<String> path) implements CallSiteExtraction {
+        public NestedInputField {
+            if (path == null || path.isEmpty()) {
+                throw new IllegalArgumentException("NestedInputField path must be non-empty");
+            }
+            path = List.copyOf(path);
+        }
+    }
 }

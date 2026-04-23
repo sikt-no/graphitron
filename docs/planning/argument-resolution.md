@@ -385,18 +385,17 @@ The shipped slice wires the classifier and emits `ConditionFilter` method
 calls, but the runtime values passed to those methods are `null` for nested
 input fields, so no real filter executes. Closing Phase 4 requires:
 
-1. **Runtime nested-arg extraction (core blocker).** `ArgCallEmitter.buildArgExtraction`
-   (ArgCallEmitter.java:42) emits `env.getArgument(param.name())` for every
-   `CallSiteExtraction` variant. This resolves against top-level args only;
-   for an input-field condition, the value lives at
-   `((Map) env.getArgument(outerArgName)).get(fieldName)` (or deeper for
-   `NestingField`-nested conditions). Work:
-   - Carry outer-arg path on the condition's `CallParam` or via a new
-     `CallSiteExtraction` variant (see D6).
-   - Projection step annotates input-field-condition `CallParam`s with the
-     path from the field argument to the leaf.
-   - Emitter generates the map traversal, null-safe, typed via
-     `env.<Map<String, Object>>getArgument(outerArgName)`.
+1. ~~**Runtime nested-arg extraction (core blocker).**~~ **Landed.**
+   `CallSiteExtraction.NestedInputField(String outerArgName, List<String> path)`
+   added (D6 resolution: option A). `FieldBuilder.walkInputFieldConditions` now
+   threads `(outerArgName, pathPrefix)` through the recursion; when it finds a
+   condition, `rewrapForNested` replaces each `ParamSource.Arg` param's
+   extraction with `NestedInputField(outerArgName, prefix + [fieldName])`.
+   `ArgCallEmitter.buildArgExtraction` emits a null-safe nested
+   `instanceof Map<?, ?>` chain to traverse from the top-level argument Map
+   down to the leaf value. `InputFieldConditionFixtures.filmIdCondition` now
+   returns a real `table.field(Film.FILM_ID).eq(?)` predicate; the three
+   shipped execution tests assert on filtered results (not just wiring).
 
 2. **Override propagation accumulator.** `walkInputFieldConditions` currently
    always appends explicit-method filters. Once auto-column binding for
@@ -408,7 +407,7 @@ input fields, so no real filter executes. Closing Phase 4 requires:
 
 3. **Remaining execution tests (four of the six originally planned).**
    With nested-arg extraction working and `filmIdCondition` returning a
-   real predicate (e.g. `Film.FILM.FILM_ID.eq(...)`):
+   real predicate, the remaining tests are:
    - `@table` input-field override (originally test #2).
    - `@table` outer-override composition, divergence-pinning (originally
      test #3). Coverage requirement before Done; pins the delta from
@@ -419,9 +418,8 @@ input fields, so no real filter executes. Closing Phase 4 requires:
      production shape).
 
    The three tests already on trunk (`filmsWithInputFieldCondition`,
-   `filmsByPlainInput`, `languagesByPlainInput`) gain real filter
-   assertions (JDBC round-trip count + row-ID match) once the fixture
-   returns an actual condition.
+   `filmsByPlainInput`, `languagesByPlainInput`) now assert on filtered
+   results (row-ID match), not just wiring.
 
 4. **Unit tests missing from the landed slice.** Plan's §Deliverable
    originally called for:
@@ -439,18 +437,20 @@ input fields, so no real filter executes. Closing Phase 4 requires:
    unit-test requirement from this section instead of shipping redundant
    coverage.
 
-5. **Fixture update.** `InputFieldConditionFixtures.filmIdCondition`
-   switches from `DSL.noCondition()` to
-   `Film.FILM.FILM_ID.eq(Integer.parseInt(filmId))` (or equivalent)
-   once #1 is in place. Enables the existing three execution tests to
-   assert filtering, not just wiring.
+5. ~~**Fixture update.**~~ **Landed alongside #1.**
+   `InputFieldConditionFixtures.filmIdCondition` returns
+   `table.field(Film.FILM.FILM_ID).eq(Integer.parseInt(filmId))` for
+   non-null `filmId` (null maps to `DSL.noCondition()`). Using
+   `table.field(...)` rather than `Film.FILM.FILM_ID` directly anchors
+   the predicate in the caller's aliased table.
 
 **Sequencing.**
 
-- Commit 1: item #1 (ArgCallEmitter nested-arg) + item #5 (fixture returns
+- ~~Commit 1: item #1 (ArgCallEmitter nested-arg) + item #5 (fixture returns
   real condition) + retrofit real-filter assertions on the three existing
-  execution tests. Unlocks runtime filtering end-to-end.
-- Commit 2: item #3 (four remaining execution tests). Depends on commit 1.
+  execution tests.~~ **Landed.**
+- Commit 2 (next): item #3 (four remaining execution tests). Depends on
+  commit 1.
 - Item #4 (unit tests): orthogonal to runtime; can land alongside either
   commit, or be dropped entirely if the pipeline cases are judged
   sufficient (the plan's original §Deliverable unit-test requirement

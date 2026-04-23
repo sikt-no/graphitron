@@ -8,10 +8,10 @@ import org.jooq.impl.DSL;
 /**
  * Condition-method stubs for Phase 4 ({@code @condition} on {@code INPUT_FIELD_DEFINITION}) spec fixtures.
  *
- * <p>Phase 4 limitation: the generator emits {@code env.getArgument(<fieldName>)} for nested input
- * fields, which returns {@code null} because the field is not a top-level argument. Methods here
- * return {@code DSL.noCondition()} (a no-op filter) so execution tests pass while verifying that
- * the condition method is reflected, wired up, and called without errors.
+ * <p>Phase 4b: nested-arg extraction is wired, so {@code filmId} arrives as the actual value
+ * passed in the GraphQL input. Methods here return real jOOQ predicates so execution tests can
+ * assert filtering behavior. A {@code null} input still maps to {@code noCondition()} to match
+ * the "absent value == unconstrained" semantics of optional GraphQL input fields.
  */
 public final class InputFieldConditionFixtures {
 
@@ -22,11 +22,15 @@ public final class InputFieldConditionFixtures {
 
     /**
      * Input-field {@code @condition} for a {@code filmId} field. Used on {@code FilmConditionInput}
-     * (a {@code @table} input) and {@code PlainFilmIdInput} (a plain input). At runtime {@code filmId}
-     * is {@code null} because nested-arg access is deferred; returns {@code noCondition()} to let
-     * all rows through.
+     * (a {@code @table} input) and {@code PlainFilmIdInput} (a plain input). Produces
+     * {@code filmTable.film_id = ?} for non-null {@code filmId}, {@code noCondition()} otherwise.
+     * Resolving through {@code table.field(Film.FILM.FILM_ID)} keeps the predicate anchored in
+     * the caller's aliased table so jOOQ renders the WHERE against the aliased FROM correctly.
      */
     public static Condition filmIdCondition(Table<?> table, String filmId) {
-        return DSL.noCondition();
+        if (filmId == null) {
+            return DSL.noCondition();
+        }
+        return table.field(Film.FILM.FILM_ID).eq(Integer.parseInt(filmId));
     }
 }

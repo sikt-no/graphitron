@@ -1005,6 +1005,8 @@ class FieldBuilder {
             case CallSiteExtraction.JooqConvert ignored -> column.columnClass();
             case CallSiteExtraction.Direct ignored -> column.columnClass();
             case CallSiteExtraction.ContextArg ignored -> column.columnClass();
+            case CallSiteExtraction.NestedInputField ignored ->
+                throw new IllegalStateException("NestedInputField extraction should not appear on a column-bound body param");
         };
     }
 
@@ -1035,13 +1037,13 @@ class FieldBuilder {
                     // Auto-column binding for @table input types is deferred to step 9.
                     // Arg-level and field-level @condition predicates are emitted now.
                     tia.argCondition().ifPresent(ac -> argConditions.add(ac.filter()));
-                    walkInputFieldConditions(tia.fields(), argConditions);
+                    walkInputFieldConditions(tia.fields(), tia.name(), List.of(), argConditions);
                 }
                 case ArgumentRef.InputTypeArg.PlainInputArg pia -> {
                     // Plain input types are silently skipped unless paired with @condition;
                     // see the out-of-scope note in docs/argument-resolution.md.
                     pia.argCondition().ifPresent(ac -> argConditions.add(ac.filter()));
-                    walkInputFieldConditions(pia.fields(), argConditions);
+                    walkInputFieldConditions(pia.fields(), pia.name(), List.of(), argConditions);
                 }
                 case ArgumentRef.UnclassifiedArg u -> {
                     errors.add("argument '" + u.name() + "': " + u.reason());
@@ -1081,23 +1083,60 @@ class FieldBuilder {
     }
 
     /**
-     * Recursively collects explicit {@code @condition} filters from a list of {@link InputField}s.
-     * Only {@link InputField.ColumnField}, {@link InputField.ColumnReferenceField}, and
+     * Recursively collects explicit {@code @condition} filters from a list of {@link InputField}s
+     * and rewrites each filter's {@link ParamSource.Arg} params to extract their value from the
+     * enclosing {@code DataFetchingEnvironment} argument Map, not from a top-level argument.
+     *
+     * <p>Only {@link InputField.ColumnField}, {@link InputField.ColumnReferenceField}, and
      * {@link InputField.NestingField} carry a {@code condition} optional. {@code NestingField}
-     * children are recursed into. Auto-predicates for input type fields remain deferred to step 9.
+     * children are recursed into with a path prefix extended by the nesting field's name.
+     * Auto-predicates for input type fields remain deferred to step 9.
+     *
+     * <p>{@code outerArgName} is the top-level field-argument name (e.g. {@code "filter"}).
+     * {@code pathPrefix} is the list of Map keys from {@code outerArgName} down to the parent of
+     * {@code fields}; empty at the top level. The leaf path for a field {@code f} is
+     * {@code pathPrefix + [f.name()]}: the input-field {@code @condition} method's single arg
+     * (per D3) is named after the SDL input-field name, matching the leaf path segment.
      */
-    private void walkInputFieldConditions(List<InputField> fields, List<ConditionFilter> out) {
+    private void walkInputFieldConditions(
+            List<InputField> fields, String outerArgName, List<String> pathPrefix,
+            List<ConditionFilter> out) {
         for (var f : fields) {
+            var leafPath = new ArrayList<>(pathPrefix);
+            leafPath.add(f.name());
             switch (f) {
-                case InputField.ColumnField cf -> cf.condition().ifPresent(c -> out.add(c.filter()));
-                case InputField.ColumnReferenceField rf -> rf.condition().ifPresent(c -> out.add(c.filter()));
+                case InputField.ColumnField cf ->
+                    cf.condition().ifPresent(c -> out.add(rewrapForNested(c.filter(), outerArgName, leafPath)));
+                case InputField.ColumnReferenceField rf ->
+                    rf.condition().ifPresent(c -> out.add(rewrapForNested(c.filter(), outerArgName, leafPath)));
                 case InputField.NestingField nf -> {
-                    nf.condition().ifPresent(c -> out.add(c.filter()));
-                    walkInputFieldConditions(nf.fields(), out);
+                    nf.condition().ifPresent(c -> out.add(rewrapForNested(c.filter(), outerArgName, leafPath)));
+                    walkInputFieldConditions(nf.fields(), outerArgName, leafPath, out);
                 }
                 case InputField.PlatformIdField ignored -> {}
             }
         }
+    }
+
+    /**
+     * Rebuilds a {@link ConditionFilter} whose {@link ParamSource.Arg} params need to be extracted
+     * from a nested position inside the enclosing input argument Map rather than from a top-level
+     * argument. Each {@code Arg} param's {@link CallSiteExtraction} is replaced with a
+     * {@link CallSiteExtraction.NestedInputField} carrying the path down from {@code outerArgName}
+     * to the leaf value. {@link ParamSource.Context} params and implicit
+     * {@link ParamSource.Table} params are left untouched.
+     */
+    private ConditionFilter rewrapForNested(ConditionFilter src, String outerArgName, List<String> leafPath) {
+        var rewritten = new ArrayList<MethodRef.Param>();
+        for (var p : src.params()) {
+            if (p.source() instanceof ParamSource.Arg) {
+                rewritten.add(new MethodRef.Param.Typed(p.name(), p.typeName(),
+                    new ParamSource.Arg(new CallSiteExtraction.NestedInputField(outerArgName, leafPath))));
+            } else {
+                rewritten.add(p);
+            }
+        }
+        return new ConditionFilter(src.className(), src.methodName(), List.copyOf(rewritten));
     }
 
     /**

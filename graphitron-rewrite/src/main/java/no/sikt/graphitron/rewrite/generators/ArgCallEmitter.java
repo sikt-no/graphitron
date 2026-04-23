@@ -2,10 +2,12 @@ package no.sikt.graphitron.rewrite.generators;
 
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.model.CallParam;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 
 import java.util.List;
+import java.util.Map;
 
 import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.toCamelCase;
 
@@ -61,6 +63,55 @@ public final class ArgCallEmitter {
                     toCamelCase(param.name()) + "Keys", srcAlias, jc.columnJavaName())
                 : CodeBlock.of("$L.$L.getDataType().convert((String) env.getArgument($S))",
                     srcAlias, jc.columnJavaName(), param.name());
+            case CallSiteExtraction.NestedInputField nif ->
+                buildNestedInputFieldExtraction(nif.outerArgName(), nif.path(), param.typeName());
         };
+    }
+
+    /**
+     * Emits a null-safe nested-Map traversal expression for
+     * {@link CallSiteExtraction.NestedInputField}. For {@code path = [k1, k2, ..., kN]} the
+     * generated expression is a chain of {@code instanceof Map<?,?>} ternaries:
+     *
+     * <pre>
+     *     env.getArgument("outer") instanceof Map&lt;?, ?&gt; _m1
+     *         ? (_m1.get("k1") instanceof Map&lt;?, ?&gt; _m2
+     *             ? (... ? (LeafType) _mN.get("kN") : null)
+     *             : null)
+     *         : null
+     * </pre>
+     *
+     * <p>Pattern-variable bindings {@code _m1..._mN} are scoped to the ternary's "then" branch,
+     * so peer expressions in the same method call (multiple condition args) may reuse the same
+     * binding names without conflict.
+     *
+     * <p>The leaf cast uses the raw component of {@code leafTypeName} (everything up to the first
+     * {@code <}) so generic type parameters do not appear in the cast target. Since
+     * {@code Map.get(Object)} returns {@code Object} and the condition method signature expects
+     * the declared type, an unchecked raw-type cast is acceptable; if a parameterized leaf type
+     * ever requires it, callers can suppress warnings at the enclosing method.
+     */
+    private static CodeBlock buildNestedInputFieldExtraction(String outerArgName, List<String> path, String leafTypeName) {
+        TypeName leafType = ClassName.bestGuess(rawComponent(leafTypeName));
+        CodeBlock root = CodeBlock.of("env.getArgument($S)", outerArgName);
+        return buildMapChain(root, path, 0, leafType);
+    }
+
+    private static CodeBlock buildMapChain(CodeBlock currentExpr, List<String> path, int depth, TypeName leafType) {
+        String binding = "_m" + (depth + 1);
+        String key = path.get(depth);
+        boolean isLeaf = depth == path.size() - 1;
+        if (isLeaf) {
+            return CodeBlock.of("$L instanceof $T<?, ?> $L ? ($T) $L.get($S) : null",
+                currentExpr, Map.class, binding, leafType, binding, key);
+        }
+        CodeBlock next = CodeBlock.of("$L.get($S)", binding, key);
+        return CodeBlock.of("$L instanceof $T<?, ?> $L ? ($L) : null",
+            currentExpr, Map.class, binding, buildMapChain(next, path, depth + 1, leafType));
+    }
+
+    private static String rawComponent(String typeName) {
+        int lt = typeName.indexOf('<');
+        return lt < 0 ? typeName : typeName.substring(0, lt);
     }
 }

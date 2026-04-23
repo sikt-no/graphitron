@@ -1304,28 +1304,28 @@ class GraphQLQueryTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void inputFieldCondition_tableInput_conditionWiredAsNoOp_returnsAllFilms() {
+    void inputFieldCondition_tableInput_filtersByFilmId() {
         // FilmConditionInput.filmId carries @condition → condition is classified, wired,
-        // and called at runtime. In Phase 4, filmId arrives as null (ArgCallEmitter emits
-        // env.getArgument("filmId") which is null for a nested field), so filmIdCondition
-        // returns noCondition() and the WHERE clause is effectively empty.
+        // and called at runtime. Phase 4b threads nested-arg extraction through ArgCallEmitter,
+        // so filmId arrives as the actual String passed in the Map; filmIdCondition builds a
+        // real Film.FILM_ID = ? predicate. Expect exactly one row matching filmId == 1.
         Map<String, Object> data = execute(
             "{ filmsWithInputFieldCondition(filter: {filmId: \"1\"}) { filmId } }");
         List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmsWithInputFieldCondition");
-        assertThat(films).isNotEmpty();
+        assertThat(films).extracting(f -> f.get("filmId")).containsExactly(1);
     }
 
     @Test
     @SuppressWarnings("unchecked")
-    void inputFieldCondition_plainInput_filmTable_fieldResolved_conditionWired_returnsAllFilms() {
-        // PlainFilmIdInput is used on Film and Language queries → two return tables →
-        // conflict → PojoInputType → PlainInputArg at each call site. For the Film call
-        // site, filmId resolves against film → ColumnField with condition is classified;
-        // walkInputFieldConditions collects it. At runtime the condition is a no-op.
+    void inputFieldCondition_plainInput_filmTable_filtersByFilmId() {
+        // PlainFilmIdInput is used on Film and Language queries → conflict → PojoInputType →
+        // PlainInputArg at each call site. For the Film call site, filmId resolves against
+        // film → ColumnField with condition is classified, walkInputFieldConditions collects
+        // it, and nested-arg extraction delivers the value to filmIdCondition.
         Map<String, Object> data = execute(
-            "{ filmsByPlainInput(filter: {filmId: \"1\"}) { filmId } }");
+            "{ filmsByPlainInput(filter: {filmId: \"2\"}) { filmId } }");
         List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmsByPlainInput");
-        assertThat(films).isNotEmpty();
+        assertThat(films).extracting(f -> f.get("filmId")).containsExactly(2);
     }
 
     @Test
