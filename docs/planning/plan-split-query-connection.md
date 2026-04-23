@@ -3,7 +3,7 @@
 > **Status:** In Review
 >
 > §1 (SplitTableField + Connection with fixed ordering) shipped at `3821842`.
-> §2 (dynamic `@orderBy`) shipped at `<PENDING>` after production-schema audit
+> §2 (dynamic `@orderBy`) shipped at `62b51c3` after production-schema audit
 > surfaced 5 real consumers. `@asConnection` + `@lookupKey` is permanently
 > invalid, not a deferred scope. Awaiting reviewer sign-off to close.
 
@@ -110,7 +110,7 @@ applied inside the windowed CTE.
 - `SplitRowsMethodEmitter.buildRuntimeStub` handles the Connection wrapper's
   `List<ConnectionResult>` return type alongside the existing List/Single cases.
 
-**§2 (shipped at `<PENDING>`):**
+**§2 (shipped at `62b51c3`):**
 - `TypeFetcherGenerator.buildOrderByHelperMethod`: dropped the internal
   `declareTableLocal`; the aliased Table is now a parameter, so one helper shape
   serves root callers (canonical `tableLocal`) and Split+Connection callers
@@ -177,7 +177,7 @@ backward last-page (reversed ordering + client-side re-reverse). Learnings:
   synthesizing a jOOQ Result. Root connection emission still compiles because
   `Result<Record>` is-a `List<Record>`.
 
-**§2: dynamic `@orderBy` on SplitTableField + Connection:** shipped at `<PENDING>`.
+**§2: dynamic `@orderBy` on SplitTableField + Connection:** shipped at `62b51c3`.
 Production-schema audit of `alf/graphitron-rewrite:graphitron-rewrite/generator-schema.graphql`
 surfaced 5 consumer fields, so the feature was in scope. Fixture:
 `Film.actorsOrderedConnection(order: [ActorOrderBy] @orderBy, ...)` with a new
