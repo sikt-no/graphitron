@@ -166,6 +166,7 @@ rewrite path.
 ```java
 public record RewriteContext(
     List<SchemaInput> schemaInputs,
+    Path basedir,
     Path outputDirectory,
     String outputPackage,
     String jooqPackage,
@@ -173,13 +174,31 @@ public record RewriteContext(
     List<ScalarMapping> scalars,
     int maxAllowedPageSize
 ) {
-    static RewriteContext from(GenerateMojo mojo, MavenProject project) { ... }
+    static RewriteContext from(GenerateMojo mojo, MavenProject project) {
+        return new RewriteContext(
+            mojo.schemaInputs.stream().map(SchemaInput::fromBinding).toList(),
+            project.getBasedir().toPath(),
+            Path.of(mojo.outputDirectory),
+            mojo.outputPackage,
+            mojo.jooqPackage,
+            toNamedReferenceMap(mojo.namedReferences),
+            toScalarMappings(mojo.scalars),
+            mojo.maxAllowedPageSize
+        );
+    }
 }
 ```
 
 Passed by constructor into `GraphQLRewriteGenerator`, which threads it
 down rather than reading statics. No thread-safety concerns, no
 two-stage population, no subset leak.
+
+`basedir` is on the record so `SchemaInputResolver.resolve(...)` has
+the project root without threading `MavenProject` any further. The
+`SchemaInput::fromBinding` converter is owned by
+[plan-tagged-schema-inputs.md](plan-tagged-schema-inputs.md); the
+two small static helpers for named-references and scalars live
+inside `RewriteContext`.
 
 ### Goals (the final list)
 

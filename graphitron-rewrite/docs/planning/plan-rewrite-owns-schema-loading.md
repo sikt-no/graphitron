@@ -182,37 +182,15 @@ downstream plan alters `RewriteSchemaLoader`'s public API.
 ### 4. Stop the legacy pre-injection for rewrite
 
 `GeneratorConfig.loadProperties` appends `GENERATOR_DIRECTIVES_PATH.getPath()`
-to the schema file set at legacy-module level. Once rewrite injects its
-own directives, the legacy pre-injection still happens (legacy needs
-it) and rewrite would double-parse the legacy directives file.
-Mitigation: filter it out when rewrite receives the file set.
+to the schema file set at legacy-module level; once rewrite injects
+its own directives, rewrite would double-parse the legacy file.
 
-Two options:
-
-- **(a)** `RewriteConfig.setProperties` filters any path whose basename
-  equals `directives.graphqls` before storing it. Simple, defensive,
-  survives a future rename in the legacy module.
-- **(b)** `GenerateMojo.java:192-198` computes the rewrite schema-file
-  set from the unmodified `mojo.getSchemaFiles()` list (pre-pre-injection),
-  rather than reading `GeneratorConfig.generatorSchemaFiles()`.
-
-Option (a) is less invasive and keeps the Mojo wiring symmetric with
-the legacy path. Recommend (a). Call out in the filter's Javadoc: "The
-legacy path pre-injects its own `directives.graphqls`; rewrite injects
-its own via `RewriteSchemaLoader` and must not double-parse."
-
-Transitional scope. This filter exists only while rewrite runs under
-`graphitron-maven-plugin` via `enableRewrite=true`. The new
-`graphitron-rewrite-maven` plugin
-([plan-rewrite-maven-plugin.md](plan-rewrite-maven-plugin.md)) does
-not thread through `GeneratorConfig.loadProperties`, so the
-pre-injection never happens for that plugin's invocations. When the
-legacy plugin's rewrite path retires, the filter lines delete as
-dead code; no other caller feeds `RewriteConfig` from outside that
-Mojo.
-
-Either option is local to the Mojo-wiring layer; neither changes the
-public API of `RewriteConfig` or `RewriteSchemaLoader`.
+Fix: at `GenerateMojo.java:192-198`, populate
+`RewriteConfig.generatorSchemaFiles` from the unmodified
+`mojo.getSchemaFiles()` list rather than from `GeneratorConfig.generatorSchemaFiles()`.
+One-line change; rewrite's file set never sees the legacy directives
+path. Legacy continues to read `GeneratorConfig.generatorSchemaFiles()`
+unchanged.
 
 ### 5. Update `TestSchemaHelper`
 
@@ -296,8 +274,9 @@ One commit covering six regions:
    (copied verbatim from `graphitron-common/src/main/resources/directives.graphqls`).
 2. Add `RewriteSchemaLoader.java` + `RewriteSchemaLoaderTest.java`.
 3. Switch `GraphQLRewriteGenerator.java` to the new loader.
-4. Filter out `directives.graphqls` in `RewriteConfig.setProperties`
-   (option (a) above) with Javadoc explaining the pre-injection delta.
+4. `GenerateMojo` populates `RewriteConfig.generatorSchemaFiles`
+   from `mojo.getSchemaFiles()` (pre-pre-injection), not from
+   `GeneratorConfig.generatorSchemaFiles()`.
 5. Switch `TestSchemaHelper.loadDirectives()` to the rewrite resource.
 6. Remove the Maven dep from `graphitron-rewrite/graphitron-rewrite/pom.xml`;
    update Javadoc in `ValidationError.java` and `BuildWarning.java`.
@@ -325,19 +304,13 @@ Post-landing, update the roadmap:
 
 ## Open decisions
 
-**D1.** Filter approach in step 4. Recommend (a): in-Mojo filter on
-basename match; see §4 for the tradeoff. The filter is transitional:
-it exists only while rewrite runs under `graphitron-maven-plugin`,
-and deletes when [plan-rewrite-maven-plugin.md](plan-rewrite-maven-plugin.md)
-lands and consumers migrate to the new plugin.
-
-**D2.** Where does the rewrite copy of `directives.graphqls` live?
+**D1.** Where does the rewrite copy of `directives.graphqls` live?
 Recommend `graphitron-rewrite/graphitron-rewrite/src/main/resources/no/sikt/graphitron/rewrite/schema/directives.graphqls`
 to match the package-aligned classpath lookup pattern. Alternative:
 root classpath as `directives.graphqls`. Package-scoped avoids the
 collision risk on shared classpaths and is cheap to maintain.
 
-**D3.** Does `RewriteSchemaLoader` belong in `no.sikt.graphitron.rewrite.schema`
+**D2.** Does `RewriteSchemaLoader` belong in `no.sikt.graphitron.rewrite.schema`
 or in the existing `no.sikt.graphitron.rewrite` top-level package?
 Recommend a new `schema` sub-package so the future migrations
 (`MergeExtensions`, `MakeConnections`, `ElementRemovalFilter`,
@@ -345,7 +318,7 @@ Recommend a new `schema` sub-package so the future migrations
 first citizen of what will become rewrite's schema-pre-processing
 module boundary.
 
-**D4.** Keep the sync-check between graphitron-common's and rewrite's
+**D3.** Keep the sync-check between graphitron-common's and rewrite's
 `directives.graphqls`? Options: (i) leave it manual for the migration
 window, (ii) add a build-time diff assertion, (iii) have rewrite's
 resource be a symlink or a generated copy. Recommend (i) for the

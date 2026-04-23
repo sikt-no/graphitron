@@ -130,8 +130,10 @@ keep in sync.
 
 Expands each `SchemaInput.pattern` to a concrete set of file paths
 using `java.nio.file.FileSystem.getPathMatcher("glob:...")` rooted at
-the project basedir. Produces a `Map<Path, SchemaInput>` attribution
-map.
+the project basedir. Returns `Map<String, SchemaInput>` keyed by
+canonical source-name (the same string value `RewriteSchemaLoader.load(...)`
+receives and `SourceLocation.getSourceName()` returns at applier
+time). No wrapper record; the map itself is the contract.
 
 Fail-fast checks, in order:
 
@@ -139,22 +141,31 @@ Fail-fast checks, in order:
    `"<schemaInput pattern='...'> matched no files"`.
 2. **Overlap.** A file matched by two entries is an error:
    `"schema file X is matched by two <schemaInput> patterns: '<A>' and '<B>'. Each file must belong to exactly one entry."`
-3. **Missing `@tag` declaration.** If any entry has a `tag` but the
-   loaded registry has no `@tag` directive definition, fail:
-   `"<schemaInput> declares tag 'enrollment' but the @tag directive is not defined in the schema. Import it via federation's @link or add an explicit `directive @tag(name: String!) repeatable on ...`."`
+
+Missing `@tag` declaration is not an error: the `TagApplier` injects
+a synthetic declaration if any `<tag>` entry is configured and the
+registry carries no prior `@tag` definition (see §3).
 
 The resolver runs once, before `RewriteSchemaLoader.load(...)`. Its
-output is both the file set passed to the loader and the attribution
-map consumed by the two appliers.
+keyset is the file set handed to the loader; the map itself is
+consumed by the two appliers.
 
 ### 3. `TagApplier`
 
+Before walking: if any `SchemaInput` carries a `tag` and the registry
+has no `@tag` directive definition, add one:
+`directive @tag(name: String!) repeatable on FIELD_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE | ARGUMENT_DEFINITION | UNION`.
+This matches the Apollo federation shape without requiring consumers
+to import `@link` or hand-declare the directive. If the schema
+already declares `@tag` (federation import or explicit), use the
+existing declaration.
+
 Walks the `TypeDefinitionRegistry`; for every in-scope element
 (`FieldDefinition` / `InputValueDefinition` / `EnumValueDefinition` /
-`UnionTypeDefinition`) whose `SourceLocation.getSourceName()` resolves
-to a file with a `tag` in the attribution map, appends
-`@tag(name: "<tag>")` to the element's directives, unless the element
-already declares `@tag` explicitly.
+`UnionTypeDefinition`) whose `SourceLocation.getSourceName()` matches
+a source-name key in the map whose `SchemaInput` has a `tag`,
+appends `@tag(name: "<tag>")` to the element's directives, unless the
+element already declares `@tag` explicitly.
 
 Operates on AST `Definition` nodes via `.transform(builder -> ...)`;
 `TypeDefinitionRegistry` is mutable and we replace each transformed
@@ -162,15 +173,15 @@ definition in place.
 
 ### 4. `DescriptionNoteApplier`
 
-Same walk; for every in-scope element defined in a file with a
-`descriptionNote`, sets description to
+Same walk; for every in-scope element defined in a file whose
+`SchemaInput` carries a `descriptionNote`, sets description to
 `existing.strip() + "\n\n" + note.strip()` when an existing
 description is present, or `note` alone when not. Identical
 element-kind scope as `TagApplier` (see D2 for whether to widen to
 type declarations).
 
-No state; attribution map is the sole input. Applier order is
-independent; both walks read the same pre-computed map.
+No state; resolver map is the sole input. Applier order is
+independent; both walks read the same map.
 
 ## Placement in the pipeline
 
@@ -185,11 +196,11 @@ GraphitronSchemaValidator.validate(schema)
 After this plan:
 
 ```
-attribution = SchemaInputResolver.resolve(ctx.schemaInputs(), ctx.basedir())  // new; fails on empty/overlap
-registry    = RewriteSchemaLoader.load(attribution.forSource().keySet())
-TagApplier.apply(registry, attribution)                                         // new
-DescriptionNoteApplier.apply(registry, attribution)                             // new
-schema      = GraphitronSchemaBuilder.build(registry)
+bySource = SchemaInputResolver.resolve(ctx.schemaInputs(), ctx.basedir())  // new; fails on empty/overlap
+registry = RewriteSchemaLoader.load(bySource.keySet())
+TagApplier.apply(registry, bySource)                                        // new
+DescriptionNoteApplier.apply(registry, bySource)                            // new
+schema   = GraphitronSchemaBuilder.build(registry)
 GraphitronSchemaValidator.validate(schema)
 ```
 
@@ -205,9 +216,9 @@ Mojo. The new `graphitron-rewrite-maven` plugin has no
 `<schemaFiles>`; `<schemaInputs>` is the only declared input
 mechanism (see [plan-rewrite-maven-plugin.md](plan-rewrite-maven-plugin.md)).
 The POM-level binding POJO is `SchemaInputBinding` (owned by the
-Maven-plugin plan); this plan owns the resolver that turns a list of
-bindings into an `Attribution` map and the two appliers that consume
-it.
+Maven-plugin plan); this plan owns the `SchemaInput.fromBinding(...)`
+converter, the resolver that turns a list of `SchemaInput` records
+into a source-keyed map, and the two appliers that consume it.
 
 ```xml
 <schemaInputs>
@@ -246,20 +257,23 @@ schemaInputs()`. No other configuration.
 New package `no.sikt.graphitron.rewrite.schema.input`, landing
 alongside `RewriteSchemaLoader` (created by the schema-loading plan).
 
-1. `SchemaInput.java`: record above, ~15 LOC.
-2. `SchemaInputResolver.java`: `static Attribution resolve(List<SchemaInput>, Path basedir)` plus the three fail-fast checks, ~120 LOC.
-3. `Attribution.java`: immutable record with `Map<String, SchemaInput> forSource()`. Keyed by canonical source-name string (the same value `RewriteSchemaLoader.load(Collection<String>)` receives and `SourceLocation.getSourceName()` returns), so appliers look up directly without Path round-tripping, and the loader call is `load(attribution.forSource().keySet())`. ~20 LOC.
-4. `TagApplier.java`: `static void apply(TypeDefinitionRegistry, Attribution)`, ~80 LOC.
-5. `DescriptionNoteApplier.java`: `static void apply(TypeDefinitionRegistry, Attribution)`, ~70 LOC.
-6. Call sites added in `GraphQLRewriteGenerator.generate()`.
-7. `RewriteContext.schemaInputs()` populated from the Mojo's
-   `<schemaInputs>` elements via `SchemaInputBinding` (the POM
-   binding POJO defined by
-   [plan-rewrite-maven-plugin.md](plan-rewrite-maven-plugin.md);
-   this plan owns the conversion from binding to `SchemaInput` inside
-   `RewriteContext.from(...)`).
+1. `SchemaInput.java`: record above, plus `static SchemaInput fromBinding(SchemaInputBinding)`
+   which maps POM fields to the record (the explicit handoff between
+   the Maven-plugin module and rewrite core). ~20 LOC.
+2. `SchemaInputResolver.java`: `static Map<String, SchemaInput> resolve(List<SchemaInput>, Path basedir)`
+   plus the two fail-fast checks, ~110 LOC.
+3. `TagApplier.java`: `static void apply(TypeDefinitionRegistry, Map<String, SchemaInput>)`,
+   including the synthetic `@tag` directive declaration when the
+   registry has none, ~90 LOC.
+4. `DescriptionNoteApplier.java`: `static void apply(TypeDefinitionRegistry, Map<String, SchemaInput>)`, ~70 LOC.
+5. Call sites added in `GraphQLRewriteGenerator.generate()`.
+6. `RewriteContext.schemaInputs()` populated by calling
+   `SchemaInput.fromBinding(...)` per element of `mojo.schemaInputs`
+   inside `RewriteContext.from(mojo, project)`. `SchemaInputBinding`
+   is defined by [plan-rewrite-maven-plugin.md](plan-rewrite-maven-plugin.md);
+   the conversion is this plan's.
 
-Expected diff: ~350 LOC added, plus tests.
+Expected diff: ~300 LOC added, plus tests.
 
 ### Element walking
 
@@ -282,7 +296,7 @@ parser was given. The resolver pre-normalises each matched file to a
 canonical source-name (e.g. `Path.toAbsolutePath().normalize().toString()`
 for filesystem matches, classpath-resource name for classpath matches)
 and hands that same string both to `RewriteSchemaLoader.load(...)` and
-into the `Attribution` map key. Because the loader passes the source
+into the resolver's map key. Because the loader passes the source
 string through untouched, `SourceLocation.getSourceName()` at applier
 time matches the map key byte-for-byte; no per-applier renormalisation
 step.
@@ -291,17 +305,14 @@ step.
 
 ### Unit: `SchemaInputResolverTest`
 
-- Pattern matches one file; tag + note both present: attribution map
+- Pattern matches one file; tag + note both present: resolver map
   carries the file with the entry.
-- Pattern matches three files; attribution map has three entries, all
-  pointing at the same `SchemaInput`.
+- Pattern matches three files; map has three entries, all pointing
+  at the same `SchemaInput`.
 - Pattern matches zero files: resolver throws
   `SchemaInputException` with the pattern text in the message.
 - Two patterns match the same file: throws with both pattern strings
   and the offending file path in the message.
-- Entry with `tag` but registry missing `@tag` directive: throws
-  with the tag name and a pointer to federation `@link` or an
-  explicit `directive @tag ...` as remedies.
 - Path normalisation: pattern `./schema/*.graphqls` matches a
   project-relative entry `schema/foo.graphqls`; lookup resolves.
 
@@ -316,6 +327,10 @@ step.
   unions (one test per kind).
 - Object / interface / enum / input type declarations themselves are
   untouched (parity with legacy).
+- `@tag` directive auto-inject: registry without `@tag` gains the
+  synthetic declaration when any entry has a `tag`; registry with a
+  prior `@tag` declaration keeps the original untouched.
+- No entry carries a `tag`: no synthetic declaration added.
 
 ### Unit: `DescriptionNoteApplierTest`
 
@@ -358,13 +373,14 @@ enum, input, union). Widening makes documentation more useful;
 narrowing keeps parity with legacy. Recommend widen; call it out in
 the roadmap Done entry.
 
-**D3. Missing `@tag` directive declaration.** Fail fast during
-resolver (current proposal) vs. auto-inject a default declaration
-(`directive @tag(name: String!) repeatable on FIELD_DEFINITION | ...`)
-vs. silent no-op. Auto-injection is friendly but hides a real config
-hole; silent no-op hides it worse. Recommend fail fast; the error
-message points at federation `@link` import or an explicit directive
-declaration.
+**D3. Missing `@tag` directive declaration.** Resolved: `TagApplier`
+auto-injects a default declaration
+(`directive @tag(name: String!) repeatable on FIELD_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE | ARGUMENT_DEFINITION | UNION`)
+when the registry has none and any entry carries a `tag`. Matches
+Apollo federation's shape; consumers don't have to hand-declare or
+import via `@link` for rewrite's tagging feature to work. If the
+schema already declares `@tag` (via federation `@link` or explicit
+declaration), the existing definition wins.
 
 **D4. Idempotency.** If resolver/appliers run twice (e.g. Maven
 re-executes the Mojo in a multi-module build), notes duplicate.
