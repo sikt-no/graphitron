@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.test.conditions;
 
+import no.sikt.graphitron.rewrite.test.jooq.tables.Category;
 import org.jooq.Condition;
 import org.jooq.Table;
 import org.jooq.impl.DSL;
@@ -18,6 +19,14 @@ import org.jooq.impl.DSL;
  * {@code @reference(path: [{condition: {…}}])} can classify without the builder rejecting.
  */
 public final class CategoryConditions {
+
+    /**
+     * Unused at runtime. Holds a typed reference to a generated table so this file fails
+     * to compile if the jOOQ catalog is empty or missing, rather than letting the module
+     * install a fixtures jar with no table classes.
+     */
+    @SuppressWarnings("unused")
+    private static final Table<?> CATEGORY_CATALOG_GUARD = Category.CATEGORY;
 
     private CategoryConditions() {}
 
