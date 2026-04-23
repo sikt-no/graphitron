@@ -11,6 +11,7 @@ import no.sikt.graphitron.rewrite.generators.WiringClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ColumnFetcherClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ConnectionHelperClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ConnectionResultClassGenerator;
+import no.sikt.graphitron.rewrite.generators.util.GraphitronContextInterfaceGenerator;
 import no.sikt.graphitron.rewrite.generators.util.GraphitronValuesClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.OrderByResultClassGenerator;
@@ -71,6 +72,7 @@ public class GraphQLRewriteGenerator {
         write(ConnectionResultClassGenerator.generate(),          "rewrite");
         write(ConnectionHelperClassGenerator.generate(),          "rewrite");
         write(OrderByResultClassGenerator.generate(),             "rewrite");
+        write(GraphitronContextInterfaceGenerator.generate(),     "rewrite.schema");
         write(TypeClassGenerator.generate(schema),                "rewrite.types");
         write(TypeConditionsGenerator.generate(schema),           "rewrite.conditions");
         write(QueryConditionsGenerator.generate(schema),          "rewrite.conditions");

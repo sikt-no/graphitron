@@ -1247,11 +1247,12 @@ public class TypeFetcherGenerator {
     // -----------------------------------------------------------------------
 
     private static MethodSpec buildGraphitronContextHelper() {
+        var ctxType = graphitronContext();
         return MethodSpec.methodBuilder("graphitronContext")
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
-            .returns(GRAPHITRON_CONTEXT)
+            .returns(ctxType)
             .addParameter(ENV, "env")
-            .addStatement("return env.getGraphQlContext().get($S)", "graphitronContext")
+            .addStatement("return env.getGraphQlContext().get($T.class)", ctxType)
             .build();
     }
 

@@ -43,8 +43,10 @@ class GeneratorUtils {
     static final ClassName ENV              = ClassName.get("graphql.schema", "DataFetchingEnvironment");
     /** {@code graphql.schema.SelectedField} */
     static final ClassName SELECTED_FIELD   = ClassName.get("graphql.schema", "SelectedField");
-    /** {@code no.sikt.graphql.GraphitronContext} */
-    static final ClassName GRAPHITRON_CONTEXT = ClassName.get("no.sikt.graphql", "GraphitronContext");
+    /** {@code <outputPackage>.rewrite.schema.GraphitronContext} — generated per build; see {@link no.sikt.graphitron.rewrite.generators.util.GraphitronContextInterfaceGenerator}. */
+    static ClassName graphitronContext() {
+        return ClassName.get(RewriteConfig.outputPackage() + ".rewrite.schema", "GraphitronContext");
+    }
 
     // -----------------------------------------------------------------------
     // ResolvedTableNames
