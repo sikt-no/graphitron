@@ -95,6 +95,10 @@ public final class InputTypeGenerator {
         if (field.getDescription() != null && !field.getDescription().isEmpty()) {
             block.add(".description($S)", field.getDescription());
         }
+        if (field.hasSetDefaultValue()) {
+            Object defaultValue = graphql.schema.GraphQLInputObjectField.getInputFieldDefaultValue(field);
+            block.add(".defaultValueProgrammatic(").add(GraphQLValueEmitter.emit(defaultValue)).add(")");
+        }
         if (field.isDeprecated()) {
             block.add(".deprecate($S)", field.getDeprecationReason());
         }
