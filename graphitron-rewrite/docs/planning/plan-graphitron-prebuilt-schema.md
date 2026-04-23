@@ -4,8 +4,33 @@
 >
 > **In flight.** Roadmap is `[In Progress]`. Commit A landed at
 > `81fa607`: `GraphitronContext` emitted into `<outputPackage>.rewrite.schema`,
-> helper retargeted, class-keyed lookup, 562 rewrite tests green.
-> Commits B and C remain (§Approach).
+> helper retargeted, class-keyed lookup.
+>
+> Commit B landed across six sub-commits (`5b4ecce` -> `7437fd0`): directive
+> survivor registry, enum / input / object / interface / union `<TypeName>Type`
+> emitters, `GraphitronSchema` assembler, `Graphitron` facade, all wired into
+> `GraphQLRewriteGenerator.generate()` alongside the legacy emitters. 618
+> rewrite unit tests green (57 new). Legacy `<TypeName>Wiring`,
+> `GraphitronWiring`, `TypeRegistry`, and the SDL runtime resource remain in
+> place until Commit C deletes them.
+>
+> **Outstanding inside Commit B** (before execution-tier verification):
+> - Fetcher registration: per-class
+>   `<TypeName>Type.registerFetchers(GraphQLCodeRegistry.Builder)` and the
+>   matching call chain in `GraphitronSchema.build(...)`. Today the emitted
+>   code registry is empty, so the new path returns a schema without any
+>   working fetchers. This is what makes the execution tests pass.
+> - Survivor directive definitions via `schemaBuilder.additionalDirective(...)`
+>   and per-element directive applications on `<TypeName>Type` builders
+>   (§Directive emission strategy). Required for federation; today an SDL with
+>   `@key` produces a schema without `@key` on the programmatic types.
+> - Default argument values (`first: Int = 100`) and default input-field
+>   values. Today these round-trip to `null` because the emitters skip the
+>   translation pass.
+>
+> **Commit C remains unchanged**: remove legacy emitters, add
+> `@notGenerated` validator rejection, add lint ratchet, write
+> `graphitron-rewrite/docs/getting-started.md`.
 
 ## Goal
 
