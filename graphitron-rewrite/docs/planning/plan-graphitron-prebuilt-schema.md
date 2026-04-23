@@ -132,6 +132,9 @@ emission strategies living side by side.
   stripping generator-only directives.
 - `Graphitron.java` facade surface becomes `getSchema()`,
   `getSdl()`, `buildSchema(GraphitronConfig)`.
+- New `graphitron-rewrite/docs/getting-started.md`. See §Getting
+  started document as API quality gate for the intended shape and
+  why it's a constraint on the API, not just a deliverable.
 
 **What is removed in the same commit:**
 
@@ -288,6 +291,29 @@ The "directive stripping" umbrella item collapses into a single
 `SchemaPrinter.Options` configuration inside `GraphitronSdl`. No
 separate SDL-transformation pass, no cross-module enum to keep in
 sync.
+## Getting started document as API quality gate
+
+Ships alongside the code: `graphitron-rewrite/docs/getting-started.md`.
+Covers the minimum path from a fresh project to a running GraphQL
+server: add the Maven dependency, configure the Mojo, call
+`Graphitron.getSchema()` in startup, wire it to the HTTP layer. One
+page, code-first.
+
+The document is also a design constraint. If any of the following
+cases doesn't fit in a few lines each, that's a signal the API is
+wrong and we iterate on `Graphitron` / `GraphitronConfig`, not on the
+doc:
+
+- "Hello world": fetch a simple query.
+- Custom scalar: register one `GraphQLScalarType`.
+- Federation: wrap the schema.
+- One `@notGenerated` field: register one fetcher (transitional).
+
+This flips the usual relationship. The doc is not a crutch to explain
+an awkward API; it is a test that the API didn't become awkward. A
+reviewer who finds a section growing past a few lines should push
+back on the API, not on the prose.
+
 ## Prerequisites
 
 Ordered dependencies from the schema-transform umbrella:
