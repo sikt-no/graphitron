@@ -621,7 +621,7 @@ public class TypeFetcherGenerator {
             .add(".select(page.selectFields())\n")
             .add(".from($L)\n", tableLocal)
             .add(".where(condition)\n")
-            .add(".orderBy(page.effectiveOrderBy().toArray(new $T[0]))\n", SORT_FIELD)
+            .add(".orderBy(page.effectiveOrderBy())\n")
             .add(".seek(page.seekFields())\n")
             .add(".limit(page.limit())\n")
             .add(".fetch();\n")

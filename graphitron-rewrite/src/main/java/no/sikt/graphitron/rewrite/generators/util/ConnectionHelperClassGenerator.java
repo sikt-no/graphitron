@@ -196,7 +196,7 @@ public class ConnectionHelperClassGenerator {
             .addCode("}\n")
             .addStatement("String[] tokens = new String($T.getDecoder().decode(cursor), java.nio.charset.StandardCharsets.UTF_8).split(\"\\u0000\", -1)", BASE64)
             .addCode("for (int i = 0; i < orderByColumns.size(); i++) {\n")
-            .addCode("    $T col = orderByColumns.get(i);\n", JOOQ_FIELD)
+            .addCode("    $T col = orderByColumns.get(i);\n", fieldWildcard)
             .addCode("    if (\"\\u0001\".equals(tokens[i])) {\n")
             .addCode("        seekFields[i] = $T.val((Object) null, col.getDataType());\n", DSL)
             .addCode("    } else {\n")

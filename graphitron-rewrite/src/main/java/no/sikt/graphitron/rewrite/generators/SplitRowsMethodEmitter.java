@@ -339,7 +339,7 @@ public final class SplitRowsMethodEmitter {
         // DSL.row(Field<T1>, Field<T2>, …) picks the typed Row<N> overload (not Row(Object...)
         // which would return untyped RowN), so we keep type info from DSL.inline(i) and
         // k.fieldJ() all the way into parentRows[i].
-        body.add("@$T($S)\n", ClassName.get("java.lang", "SuppressWarnings"), "unchecked");
+        body.add("@$T({$S, $S})\n", ClassName.get("java.lang", "SuppressWarnings"), "unchecked", "rawtypes");
         body.addStatement("$T[] parentRows = ($T[]) new $T[keys.size()]",
             parentRowType, parentRowType, rowClass(parentRowArity));
         body.beginControlFlow("for (int i = 0; i < keys.size(); i++)");
@@ -574,7 +574,7 @@ public final class SplitRowsMethodEmitter {
         body.addStatement("$T dsl = graphitronContext(env).getDslContext(env)",
             ClassName.get("org.jooq", "DSLContext"));
 
-        body.add("@$T($S)\n", ClassName.get("java.lang", "SuppressWarnings"), "unchecked");
+        body.add("@$T({$S, $S})\n", ClassName.get("java.lang", "SuppressWarnings"), "unchecked", "rawtypes");
         body.addStatement("$T[] parentRows = ($T[]) new $T[keys.size()]",
             parentRowType, parentRowType, rowClass(parentRowArity));
         body.beginControlFlow("for (int i = 0; i < keys.size(); i++)");
@@ -749,7 +749,7 @@ public final class SplitRowsMethodEmitter {
             ClassName.get("org.jooq", "DSLContext"));
 
         // parentInput VALUES — identical shape to buildListMethod.
-        body.add("@$T($S)\n", ClassName.get("java.lang", "SuppressWarnings"), "unchecked");
+        body.add("@$T({$S, $S})\n", ClassName.get("java.lang", "SuppressWarnings"), "unchecked", "rawtypes");
         body.addStatement("$T[] parentRows = ($T[]) new $T[keys.size()]",
             parentRowType, parentRowType, rowClass(parentRowArity));
         body.beginControlFlow("for (int i = 0; i < keys.size(); i++)");

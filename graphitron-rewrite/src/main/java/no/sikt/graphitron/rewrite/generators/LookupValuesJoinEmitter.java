@@ -237,7 +237,7 @@ final class LookupValuesJoinEmitter {
         // RowN), so Field<Integer> from DSL.inline(i) and Field<ColType> from
         // DSL.val(v, table.COL.getDataType()) flow into rows[i]. When n == 0 the loop is a no-op
         // and we return an empty typed array — callers branch on rows.length == 0.
-        builder.addCode("@$T($S)\n", SUPPRESS_WARNINGS, "unchecked");
+        builder.addCode("@$T({$S, $S})\n", SUPPRESS_WARNINGS, "unchecked", "rawtypes");
         builder.addStatement("$T[] rows = ($T[]) new $T[n]", rowType, rowType, rawRowClass);
         builder.beginControlFlow("for (int i = 0; i < n; i++)");
 

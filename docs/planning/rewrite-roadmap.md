@@ -102,6 +102,8 @@ Enumerated from `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS`. Priority numbers
 - **Selection parser audit** **[Backlog]** — `selection/` hand-rolls ~500 LOC; audit whether re-parsing is needed given what graphql-java already provides.
 - **`GraphitronContext` extension-point docs** **[Backlog]** — document what belongs in `GraphitronContext` vs jOOQ `ExecuteListener` vs schema directive.
 - **Drop `graphitron-common` build dependency from `graphitron-rewrite`** **[Backlog]** — inline `MultiSourceReader` + auto-inject `directives.graphqls`; emitted code runtime dependency unchanged.
+- **`PageInfo` wiring design decision** **[Backlog]** — `WiringClassGenerator` currently emits no `PageInfoWiring` class; `PageInfo` fields (`hasNextPage`, `hasPreviousPage`, `startCursor`, `endCursor`) resolve via graphql-java's default property fetcher against whatever object `ConnectionHelper.pageInfo()` returns. This works by convention today. Decision: document "PageInfo always uses default property fetching" explicitly in the generator, or emit an explicit `PageInfoWiring` that pins the property names. Choose before a schema adds complex `PageInfo` fields.
+- **`TypeResolver` wiring for interface/union types** **[Backlog]** — `WiringClassGenerator` emits `DataFetcher` wiring only; GraphQL interface and union types also require a `TypeResolver` registered via `TypeRuntimeWiring.newTypeWiring("MyInterface").typeResolver(...)`. Currently no `TypeResolver` is wired for any interface or union type, so runtime would get `Can't resolve type for object` errors. Companion to stub #3 (Interface / union fetchers): the fetcher stub covers `QueryField` / `ChildField` variants; this item covers the `WiringClassGenerator` side.
 
 ---
 

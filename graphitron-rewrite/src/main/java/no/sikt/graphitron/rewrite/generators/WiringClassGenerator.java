@@ -3,7 +3,9 @@ package no.sikt.graphitron.rewrite.generators;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
+import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
+import no.sikt.graphitron.javapoet.WildcardTypeName;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.RewriteConfig;
 import no.sikt.graphitron.rewrite.generators.util.ColumnFetcherClassGenerator;
@@ -238,9 +240,10 @@ public class WiringClassGenerator {
             if (single) {
                 var recordClass = ClassName.get("org.jooq", "Record");
                 var resultClass = ClassName.get("org.jooq", "Result");
+                var resultWildcard = ParameterizedTypeName.get(resultClass, WildcardTypeName.subtypeOf(Object.class));
                 return CodeBlock.of(
-                    "\n.dataFetcher($S, env -> { $T r = (($T) env.getSource()).get($S, $T.class); return r == null || r.isEmpty() ? null : r.get(0); })",
-                    field.name(), resultClass, recordClass, field.name(), resultClass);
+                    "\n.dataFetcher($S, env -> { Object raw = (($T) env.getSource()).get($S, $T.class); return raw instanceof $T r && !r.isEmpty() ? r.get(0) : null; })",
+                    field.name(), recordClass, field.name(), resultClass, resultWildcard);
             }
             var columnFetcherClass = ClassName.get(RewriteConfig.outputPackage() + ".rewrite",
                 ColumnFetcherClassGenerator.CLASS_NAME);
