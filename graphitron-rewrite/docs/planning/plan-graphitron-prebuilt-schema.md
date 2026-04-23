@@ -1,6 +1,11 @@
 # Plan: Graphitron emits a prebuilt programmatic GraphQLSchema
 
 > **Status:** Ready
+>
+> **In flight.** Roadmap is `[In Progress]`. Commit A landed at
+> `81fa607`: `GraphitronContext` emitted into `<outputPackage>.rewrite.schema`,
+> helper retargeted, class-keyed lookup, 562 rewrite tests green.
+> Commits B and C remain (§Approach).
 
 ## Goal
 
@@ -153,56 +158,94 @@ Removed artifacts:
   built schema themselves.
 ## Approach
 
-Single breaking change; no parallel path, no deprecation cycle. The
-rewrite pipeline is still pre-release, consumers track it on a known
-cadence, and the generator stays easier to reason about without two
-emission strategies living side by side.
+Breaking change landing across a small number of commits (three in
+flight). Each commit compiles and keeps the rewrite unit-test suite
+green; the old path stays fully functional until Commit C deletes it.
+Rewrite is pre-release so we don't owe a parallel path.
 
-**What lands in one commit:**
+### Commit A: `GraphitronContext` retargeting (landed `81fa607`)
 
-- New generator emits `<TypeName>Type` classes producing
-  `GraphQLObjectType`. Types reference each other via
-  `GraphQLTypeReference.typeRef("OtherType")` to sidestep topological
-  ordering.
-- New survivor-directive sub-pass in the `<TypeName>Type` emitter.
-  For every directive application the classification model carries on
-  a type / field / argument / input-field, the emitter checks the
-  directive name against the survivors registry (federation set +
-  user-declared custom directives; see §Directive emission strategy)
-  and, on a hit, translates the application to a
-  `GraphQLDirective.newDirective()` call on the matching graphql-java
-  builder. Directive-argument values (scalar, list, object-literal,
-  default) route through graphql-java's standard value translation.
-  Generator-only directives are never emitted.
-- New aggregator `GraphitronSchema` builds the `GraphQLSchema`, owns
-  the shared `GraphQLCodeRegistry.Builder`, passes it to each
-  `<TypeName>Type.type(codeRegistry)` in turn, attaches type resolvers
-  for generator-produced interfaces / unions, and exposes the
-  `GraphQLSchema.Builder` for user customization before calling
-  `.build()`.
-- `Graphitron.java` facade surface becomes a single
-  `buildSchema(Consumer<GraphQLSchema.Builder>)` method.
-- New generator emits `<outputPackage>.rewrite.schema.GraphitronContext`
-  as the per-app DFE-aware extension point (§Runtime context
-  plumbing). The emitted `graphitronContext(env)` helper in each
-  Fetchers class retargets to this generated type, keyed by
-  `GraphitronContext.class` in `env.getGraphQlContext()`.
-- New `graphitron-rewrite/docs/getting-started.md`. See §Getting
-  started document as API quality gate for the intended shape and
-  why it's a constraint on the API, not just a deliverable.
+New `GraphitronContextInterfaceGenerator` emits the interface into
+`<outputPackage>.rewrite.schema.GraphitronContext`. `GeneratorUtils`
+exposes `graphitronContext()` (a method, not a constant, because the
+`ClassName` depends on `RewriteConfig.outputPackage()` which isn't
+available at class-init; matches the existing `ResolvedTableNames.of(...)`
+pattern). `TypeFetcherGenerator.buildGraphitronContextHelper` returns
+the retargeted type and keys on `GraphitronContext.class`.
+`getDataLoaderName` from the legacy interface dropped; rewrite
+computes the name itself. 562 rewrite tests green.
 
-**What is removed in the same commit:**
+### Commit B: new emission path
 
-- `<TypeName>Wiring` emission.
-- `GraphitronWiring` aggregator.
-- `TypeRegistry` emission.
-- `Graphitron.getTypeRegistry()`, `getRuntimeWiringBuilder()`,
-  `getRuntimeWiring()`, `getSchema()` facade methods.
-- Runtime SDL resource loading from the generated JAR.
-- Imports of `no.sikt.graphql.GraphitronContext` from emitted fetcher
-  code (retargeted to the locally-emitted
-  `<outputPackage>.rewrite.schema.GraphitronContext`). The
-  `graphitron-common` dep on emitted code drops away.
+**What lands.**
+
+- New `<TypeName>Type` generator emitting one class per GraphQL type
+  in `<outputPackage>.rewrite.schema`. Class name convention
+  `<TypeName>Type`; two static methods per D-resolution:
+  `public static <GraphQLObjectType|Interface|Union|InputObject|Enum> type()`
+  (pure, returns the graphql-java type) and
+  `public static void registerFetchers(GraphQLCodeRegistry.Builder codeRegistry)`
+  (side effect, attaches fetcher references by
+  `FieldCoordinates.coordinates(typeName, fieldName)`). Fetcher
+  references target the existing `<TypeName>Fetchers` class, unchanged.
+- Cross-type references use `GraphQLTypeReference.typeRef("OtherType")`
+  to sidestep topological ordering.
+- Survivor-directive registry as a small registry class (constants
+  for federation set; accepts user-declared custom directives detected
+  from the classifier output). `<TypeName>Type` emitters read directive
+  applications off the classification model and translate each survivor
+  to a `GraphQLDirective.newDirective()` call on the matching builder.
+  Generator-only applications are skipped (§Directive emission strategy).
+  Definitions get added to the schema via
+  `schemaBuilder.additionalDirective(...)` in the assembler.
+- New `GraphitronSchema` aggregator: owns the shared
+  `GraphQLCodeRegistry.Builder`, walks `<TypeName>Type` classes in a
+  stable order, identifies root types (`Query`, `Mutation`,
+  `Subscription`) by name and routes them through
+  `schemaBuilder.query(...)/mutation(...)/subscription(...)`
+  instead of `additionalType(...)`, invokes the user's
+  `Consumer<GraphQLSchema.Builder>`, and calls `.build()`.
+- New `Graphitron.java` facade: single public static
+  `buildSchema(Consumer<GraphQLSchema.Builder>)` method that delegates
+  to `GraphitronSchema`.
+- `GraphQLRewriteGenerator.generate()` writes the new artifacts.
+
+**What stays temporarily.** Legacy `<TypeName>Wiring`,
+`GraphitronWiring`, `TypeRegistry`, and the legacy `Graphitron` facade
+stay emitted. This keeps the generated-sources tree compilable during
+Commit B and lets `graphitron-rewrite-test` (execution-tier) continue
+to work against the old shape until Commit C.
+
+**Build-order notes.**
+1. Schema-directive registry (small standalone class). Exercise with
+   a unit test asserting survivor set.
+2. Input/enum `<TypeName>Type` generators first (leaf types, no
+   cross-references, smallest surface). Output: two small generators
+   + unit tests pinning emitted type shape.
+3. Object/interface/union `<TypeName>Type` generators. Output:
+   structurally similar to the existing `<TypeName>Wiring` emitters;
+   the difference is building a `GraphQLObjectType` vs. a
+   `TypeRuntimeWiring.Builder`. Reuse field-definition emission
+   helpers where they already exist.
+4. `GraphitronSchema` aggregator. Reuse patterns from
+   `GraphitronWiringClassGenerator` for root discovery. Unit test
+   asserts emitted Java compiles and calls the expected methods.
+5. `Graphitron.java` facade. Small.
+6. Wire all of this into `GraphQLRewriteGenerator.generate()` with
+   `write(..., "rewrite.schema")` alongside the interface.
+
+### Commit C: removal + validator + lint + docs
+
+- Delete `WiringClassGenerator`, `GraphitronWiringClassGenerator`,
+  `TypeRegistryMethodGenerator`, and their call sites in
+  `GraphQLRewriteGenerator.generate()`.
+- Delete the legacy `Graphitron.java` facade generator.
+- `GraphitronSchemaValidator`: reject `@notGenerated` applications on
+  `FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION` with
+  the error message in §`@notGenerated` handling.
+- Add lint ratchet per §Tests.
+- Write `graphitron-rewrite/docs/getting-started.md` per §Getting
+  started document as API quality gate.
 
 **Consumer impact.** Apps on the rewrite pipeline change in two
 places: (1) startup wiring calls `Graphitron.buildSchema(b -> {...})`
@@ -392,14 +435,16 @@ Object userId = graphitronContext(env).getContextArgument(env, "userId");
 String tenant = graphitronContext(env).getTenantId(env);
 ```
 
-**Codegen impact:** `GRAPHITRON_CONTEXT` in
-`GeneratorUtils` (currently `ClassName.get("no.sikt.graphql", "GraphitronContext")`)
-re-targets to `ClassName.get(outputPackage + ".rewrite.schema", "GraphitronContext")`.
-`TypeFetcherGenerator.buildGraphitronContextHelper` changes only the
-key expression (`.get("graphitronContext")` becomes
-`.get(GraphitronContext.class)`). A new small generator emits the
-`GraphitronContext.java` interface file into the schema package
-once per build.
+**Codegen impact (landed in Commit A, `81fa607`):**
+`GeneratorUtils.GRAPHITRON_CONTEXT` the constant became
+`GeneratorUtils.graphitronContext()` the method, so the `ClassName`
+can read `RewriteConfig.outputPackage()` at call time; class-init
+constants see the config as null. Matches the existing
+`ResolvedTableNames.of(...)` pattern.
+`TypeFetcherGenerator.buildGraphitronContextHelper` returns the
+method-computed type and keys on `$T.class` (where `$T` is the
+retargeted class). A new `GraphitronContextInterfaceGenerator` in
+`generators/util/` emits the interface file once per build.
 
 **Migration for consumers.** Apps that already implement
 `no.sikt.graphql.GraphitronContext` change one import
@@ -585,6 +630,33 @@ Match is on the FQN, not the simple name, so the generated
 `<outputPackage>.rewrite.schema.GraphitronContext` is not affected.
 Prevents regression into the old shape and enforces the
 zero-legacy-dep invariant on emitted code.
+
+## Environment notes
+
+Unit-tier tests (under `graphitron-rewrite/src/test/`) run without
+Docker; use these during Commit B construction. 562 tests green
+after Commit A is the baseline to beat.
+
+Execution-tier tests (`graphitron-rewrite-test-spec` and
+`graphitron-rewrite-test`) require Docker for legacy jOOQ codegen
+and thus cannot run in the Claude Code web sandbox. Plan is to
+verify these in a Docker-enabled environment before flipping the
+roadmap In Progress -> In Review.
+
+Web-sandbox setup for fixtures-jar (if it gets clobbered):
+
+```
+pg_ctlcluster 16 main start
+sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'postgres';"
+sudo -u postgres psql -c "CREATE DATABASE rewrite_test;"
+PGPASSWORD=postgres psql -h localhost -U postgres -d rewrite_test \
+    -f graphitron-rewrite/graphitron-rewrite-fixtures/src/main/resources/init.sql
+mvn install -pl :graphitron-rewrite-fixtures -am -Plocal-db -DskipTests -q
+```
+
+See `graphitron-rewrite/docs/claude-code-web-environment.md` for
+the detailed web-sandbox playbook.
+
 ## Open decisions
 
 **D1.** API shape for app customization. **Resolved.** Single-method
