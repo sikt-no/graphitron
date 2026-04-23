@@ -31,11 +31,29 @@ import static no.sikt.graphitron.rewrite.BuildContext.*;
 public class GraphitronSchemaBuilder {
 
     /**
+     * Pairs the classified {@link GraphitronSchema} with the raw {@link GraphQLSchema} the
+     * classifier built internally. The Commit B emitters read raw type structure (argument
+     * default values, nested list/non-null wrapping, directive applications) off the assembled
+     * schema and don't need the reclassification to carry it all, so we just surface both
+     * together. Production callers use {@link #buildBundle(TypeDefinitionRegistry)}; tests that
+     * only need the classified model continue to call {@link #build(TypeDefinitionRegistry)}.
+     */
+    public record Bundle(GraphitronSchema model, graphql.schema.GraphQLSchema assembled) {}
+
+    /**
      * Classifies all types and fields in {@code registry} and returns the resulting
      * {@link GraphitronSchema}. The registry must already include the Graphitron directive
      * definitions.
      */
     public static GraphitronSchema build(TypeDefinitionRegistry registry) {
+        return buildBundle(registry).model();
+    }
+
+    /**
+     * Classifies {@code registry} and returns both the classified model and the assembled
+     * {@link GraphQLSchema}. See {@link Bundle}.
+     */
+    public static Bundle buildBundle(TypeDefinitionRegistry registry) {
         var runtimeWiring = EchoingWiringFactory.newEchoingWiring(wiring ->
             registry.scalars().forEach((name, v) -> {
                 if (!ScalarInfo.isGraphqlSpecifiedScalar(name)) {
@@ -49,7 +67,7 @@ public class GraphitronSchemaBuilder {
         ctx.svc = svc;
         var typeBuilder = new TypeBuilder(ctx, svc);
         var fieldBuilder = new FieldBuilder(ctx, svc);
-        return buildSchema(ctx, typeBuilder, fieldBuilder);
+        return new Bundle(buildSchema(ctx, typeBuilder, fieldBuilder), assembled);
     }
 
     private static GraphitronSchema buildSchema(BuildContext ctx, TypeBuilder typeBuilder, FieldBuilder fieldBuilder) {

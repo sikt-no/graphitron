@@ -23,6 +23,11 @@ public final class TestSchemaHelper {
         return GraphitronSchemaBuilder.build(registry);
     }
 
+    public static GraphitronSchemaBuilder.Bundle buildBundle(String schemaText) {
+        TypeDefinitionRegistry registry = new SchemaParser().parse(DIRECTIVES + "\n" + schemaText);
+        return GraphitronSchemaBuilder.buildBundle(registry);
+    }
+
     private static String loadDirectives() {
         try (InputStream is = TestSchemaHelper.class.getClassLoader().getResourceAsStream("directives.graphqls")) {
             if (is == null) throw new IllegalStateException("directives.graphqls not found on classpath");
