@@ -1,6 +1,6 @@
 # Plan: Graphitron emits a prebuilt programmatic GraphQLSchema
 
-> **Status:** Spec
+> **Status:** Ready
 
 ## Goal
 
