@@ -25,8 +25,9 @@ Outcome of an explicit A / B / C tradeoff exploration:
 
 B was selected on three signals: (1) a clear UX win, apps call one
 method and start serving, (2) zero `SchemaDirectiveWiring` in any known
-consumer app, (3) `@notGenerated` is on a phase-out trajectory so its
-escape-hatch regression under B is not a long-term concern. Federation
+consumer app, (3) `@notGenerated` drops to a validator rejection in
+the same commit, so there is no escape-hatch regression to worry about.
+Federation
 SDL sort-order differences are acceptable as long as the emitted SDL is
 semantically equal to what federation-jvm would serialize from the
 built schema.
@@ -76,7 +77,7 @@ public class Graphitron {
 
     /**
      * Builds a schema with application customization (custom scalars,
-     * federation entity resolvers, interim @notGenerated overrides).
+     * federation entity resolvers).
      */
     public static GraphQLSchema buildSchema(GraphitronConfig config) { ... }
 }
@@ -197,38 +198,26 @@ the schema-transform umbrella simplifies: we keep what we want in the
 programmatic schema and strip the rest at SDL-emission time.
 ## `@notGenerated` handling
 
-Long-term direction: phase out the directive. The alf production
-schema (post-legacy-`ElementRemovalFilter`) shows zero usages; the
-source schema requires verification but is expected to be low or zero
-as well.
+Dropped as part of this plan. The directive declaration stays in
+`directives.graphqls` so existing schema documents keep parsing, but
+any use of `@notGenerated` on a field, argument, or input field is
+rejected at validator time with a clear error: "`@notGenerated` is
+not supported by the rewrite pipeline; the field must be fully
+described by the schema."
 
-For the migration window, option B needs a transitional extension
-point so any remaining `@notGenerated` fields stay wireable. Concrete
-mechanism:
+Signals informing this call: alf's production schema
+(post-legacy-`ElementRemovalFilter`) shows zero usages, and we may
+never bring the escape hatch back. Adding a config-level extension
+point for a directive we don't intend to support would be work that
+gets deleted.
 
-```java
-GraphQLSchema schema = Graphitron.buildSchema(GraphitronConfig.builder()
-    .notGeneratedFetcher("Foo", "bar", myFetcher)
-    .build());
-```
-
-Internally this populates a `Map<FieldCoordinates, DataFetcher>` that
-the assembler consumes when wiring the code registry. Fields marked
-`@notGenerated` in the schema get their DataFetcher from the map
-rather than from the generator. If an app fails to register a fetcher
-for a `@notGenerated` field, the schema builder throws at
-build time, not lazily at query time. Improvement over today's silent
-`PropertyDataFetcher` fallback.
-
-Once the phase-out lands (tracked as a separate roadmap item), the
-`notGeneratedFetcher(...)` config method is removed and the directive
-is rejected at classifier time. The migration-window hatch has no
-long-term cost because `GraphitronConfig` is a versioned API surface.
-
-`@externalField` (20 production usages, 0 direct-schema-author
-escape-hatch-ness) is unaffected by this plan. Those fields get fully
-generated fetchers that dispatch to the user's static method; no
-extension point needed.
+Consumer migration path: authors with remaining `@notGenerated`
+fields either (a) describe the field fully via generator-supported
+directives, or (b) switch to `@externalField` for the
+"manually-implemented field" shape. `@externalField` (20 production
+usages) is unaffected by this plan and keeps working: those fields
+get fully generated fetchers that dispatch to the user's static
+method, no extension point needed.
 ## Custom scalars, type resolvers, code registry
 
 **Custom scalars.** The user's SDL today declares scalars like `UUID`,
@@ -309,7 +298,6 @@ doc:
 - "Hello world": instantiate, serve one query.
 - Custom scalar: register one `GraphQLScalarType`.
 - Federation: wrap the schema.
-- One `@notGenerated` field: register one fetcher (transitional).
 
 This flips the usual relationship. The doc is not a crutch to explain
 an awkward API; it is a test that the API didn't become awkward. A
@@ -335,11 +323,11 @@ Ordered dependencies from the schema-transform umbrella:
 
 Items the umbrella reshapes or absorbs under B:
 
-- **Rewrite owns `@notGenerated` element removal.** Redundant under B:
-  `@notGenerated` fields still get a `GraphQLFieldDefinition` in the
-  programmatic schema, but with a DataFetcher from the user's config
-  or (post phase-out) rejected at classifier time. No SDL-level
-  removal pass needed.
+- **Rewrite owns `@notGenerated` element removal.** Obsolete under
+  this plan: the directive becomes a validator error in the same
+  commit, so there is never an SDL with surviving `@notGenerated`
+  fields for a removal pass to operate on. The umbrella item closes
+  without migration work.
 - **Rewrite owns directive stripping in the emitted client SDL.**
   Collapses into `SchemaPrinter.Options`; see §SDL as build artifact.
 - **Rewrite emits the client SDL as generated output.** Still wanted;
@@ -365,10 +353,10 @@ resulting schema is compared to the original for structural equality
 not asserted. Covers the federation concern: whatever `SchemaPrinter`
 produces, federation-jvm can consume equivalently.
 
-**`@notGenerated` transitional hatch test.** An SDL fixture with one
-`@notGenerated` field; build fails with a clear error when no fetcher
-is registered via `GraphitronConfig`; build succeeds and the query
-returns the registered fetcher's result when one is registered.
+**`@notGenerated` rejection test.** An SDL fixture with one
+`@notGenerated` field; validator produces an error with the field's
+coordinates and a clear message. Mirror case: an SDL with no
+`@notGenerated` usage passes validation.
 
 **Federation integration test.** A small SDL with `@key`, `@external`,
 `@shareable`; wrap `Graphitron.getSchema()` via `Federation.transform`;
@@ -411,10 +399,3 @@ from the generator, ships only runtime-facing types). Recommend
 keeping it in rewrite; revisit module extraction later if the runtime
 surface grows.
 
-**D6.** Does `@notGenerated` phase-out ship in this plan or as a
-follow-up? It could land in the same commit (delete the directive
-alongside the wiring-shape change) or as a separate plan after this
-one lands. Recommend separate plan: keeps this plan's scope on the
-wiring-shape change; phase-out is its own risk surface with its own
-test matrix (scanning source schemas, migration guidance for
-consumers).
