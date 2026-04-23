@@ -1341,6 +1341,59 @@ class GraphQLQueryTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void inputFieldCondition_tableInput_overrideFlagOnRealColumn_explicitMethodStillFires() {
+        // FilmConditionInputWithOverrideField.filmId carries @condition(override:true).
+        // The override flag is inert at projection today (auto-predicate suppression is
+        // deferred to step 9); the explicit method still fires. Runtime effect: identical
+        // to a non-override @condition — filter by the passed filmId.
+        Map<String, Object> data = execute(
+            "{ filmsWithInputFieldOverride(filter: {filmId: \"3\"}) { filmId } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmsWithInputFieldOverride");
+        assertThat(films).extracting(f -> f.get("filmId")).containsExactly(3);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void inputFieldCondition_tableInput_outerOverride_preservesInnerExplicitMethod() {
+        // Divergence-pinning: outer @condition(override:true) composed with inner
+        // @condition on FilmConditionInput.filmId. Legacy "outer owns everything" would
+        // drop filmIdCondition and return films 2..5 (outerOverrideMethod is film_id >= 2).
+        // Rewrite preserves inner explicit methods across the boundary, producing
+        // (film_id >= 2) AND (film_id = 1) → no rows. A regression to legacy semantics
+        // would make films non-empty and break this test by name.
+        Map<String, Object> data = execute(
+            "{ filmsOuterOverrideTableInput(filter: {filmId: \"1\"}) { filmId } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmsOuterOverrideTableInput");
+        assertThat(films).isEmpty();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void inputFieldCondition_nestedTwoLevel_pathWalksThroughNestingField() {
+        // NestedFilmInput (outer @table) contains NestingField 'inner' (plain InnerFilmInput);
+        // InnerFilmInput.filmId carries @condition. walkInputFieldConditions recurses with
+        // leafPath=["inner", "filmId"]; ArgCallEmitter emits a two-level instanceof-Map
+        // ternary chain to reach env.getArgument("filter").get("inner").get("filmId").
+        Map<String, Object> data = execute(
+            "{ filmsNestedInput(filter: {inner: {filmId: \"3\"}}) { filmId } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmsNestedInput");
+        assertThat(films).extracting(f -> f.get("filmId")).containsExactly(3);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void inputFieldCondition_plainInput_outerOverride_preservesInnerExplicitMethod() {
+        // alf production shape: outer @condition(override:true) composed with a plain
+        // (non-@table) input whose field carries @condition. Same divergence-pinning
+        // assertion as the @table case: (film_id >= 2) AND (film_id = 1) → no rows.
+        Map<String, Object> data = execute(
+            "{ filmsOuterOverridePlainInput(filter: {filmId: \"1\"}) { filmId } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmsOuterOverridePlainInput");
+        assertThat(films).isEmpty();
+    }
+
+    @Test
     void splitLookupTableField_nestedUnderNestingField_batchesPerOuterParent() {
         // FilmInfo.castByKey exercises the SplitLookupTableField arm under NestingField:
         // classifier, emitter, and wiring all route via BatchKeyField uniformly, so

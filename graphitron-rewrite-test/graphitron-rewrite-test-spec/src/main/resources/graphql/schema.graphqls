@@ -34,6 +34,35 @@ type Query {
     # not exist → field skipped → no condition applied → all languages returned.
     filmsByPlainInput(filter: PlainFilmIdInput): [Film!]!
     languagesByPlainInput(filter: PlainFilmIdInput): [Language!]!
+    # argres Phase 4b: input-field @condition(override: true) on a real column. The
+    # override flag is inert at projection today (auto-predicate suppression arrives
+    # with step 9), so the runtime effect is identical to a non-override @condition:
+    # filmIdCondition fires and filters by the passed value. Locks in that
+    # override:true parses, classifies, and projects an explicit method call.
+    filmsWithInputFieldOverride(filter: FilmConditionInputWithOverrideField): [Film!]!
+    # argres Phase 4b: outer @condition(override: true) on a @table input whose field has its
+    # own non-override @condition. Pins the rewrite's divergence from legacy "outer owns
+    # everything" semantics: legacy would drop filmIdCondition; rewrite preserves it, so
+    # (film_id >= 2) AND (film_id = 1) no rows. A regression to legacy semantics breaks
+    # this test by name.
+    filmsOuterOverrideTableInput(filter: FilmConditionInput): [Film!]!
+        @condition(condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+            method: "outerOverrideMethod"
+        }, override: true)
+    # argres Phase 4b: two-level nested input. NestedFilmInput contains a NestingField 'inner'
+    # of type InnerFilmInput (plain); InnerFilmInput.filmId carries @condition. Exercises the
+    # multi-segment path ["inner", "filmId"] in NestedInputField extraction.
+    filmsNestedInput(filter: NestedFilmInput): [Film!]!
+    # argres Phase 4b: outer @condition(override: true) composition on a plain (non-@table)
+    # input. alf's production shape (Query.emner, emnerV2, studenter). Both outer and inner
+    # explicit methods fire; outer excludes film 1 so (film_id >= 2) AND (film_id = 1)
+    # no rows, mirroring the @table case's divergence-pinning behavior.
+    filmsOuterOverridePlainInput(filter: PlainFilmIdInput): [Film!]!
+        @condition(condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+            method: "outerOverrideMethod"
+        }, override: true)
 }
 
 type Customer @table(name: "customer") {
@@ -342,4 +371,32 @@ input PlainFilmIdInput {
             className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
             method: "filmIdCondition"
         })
+}
+
+# argres Phase 4b: @table input whose field carries @condition(override: true).
+# The override flag is currently inert at projection (auto-predicates for @table
+# inputs are deferred to step 9), but the directive must still parse and flow
+# the explicit method through projection. Exercises the (Yes outer, Present
+# override:true, Suppressed auto-predicate, Emitted explicit) truth-table row
+# as far as the current projection supports it.
+input FilmConditionInputWithOverrideField @table(name: "film") {
+    filmId: ID! @field(name: "film_id")
+        @condition(condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+            method: "filmIdCondition"
+        }, override: true)
+}
+
+# argres Phase 4b: plain input type used as a NestingField inside a @table input,
+# one level deep; nested-arg extraction walks path ["inner", "filmId"].
+input InnerFilmInput {
+    filmId: ID! @field(name: "film_id")
+        @condition(condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+            method: "filmIdCondition"
+        })
+}
+
+input NestedFilmInput @table(name: "film") {
+    inner: InnerFilmInput
 }

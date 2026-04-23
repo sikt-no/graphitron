@@ -405,17 +405,27 @@ input fields, so no real filter executes. Closing Phase 4 requires:
    auto-predicates are then suppressed under an accumulated override.
    Explicit methods remain unaffected (already correct today).
 
-3. **Remaining execution tests (four of the six originally planned).**
-   With nested-arg extraction working and `filmIdCondition` returning a
-   real predicate, the remaining tests are:
-   - `@table` input-field override (originally test #2).
-   - `@table` outer-override composition, divergence-pinning (originally
-     test #3). Coverage requirement before Done; pins the delta from
-     legacy total-replace semantics so a future regression breaks the
-     test by name.
-   - `@table` nested two-level (originally test #4).
-   - Plain input outer-override composition (originally test #6, alf
-     production shape).
+3. ~~**Remaining execution tests (four of the six originally planned).**~~
+   **Landed** (commit 2).
+   - `inputFieldCondition_tableInput_overrideFlagOnRealColumn_explicitMethodStillFires`:
+     `@condition(override: true)` on a real-column input field. Override is inert
+     at projection today (auto-predicate suppression arrives with step 9); pins
+     that the flag parses and the explicit method still fires.
+   - `inputFieldCondition_tableInput_outerOverride_preservesInnerExplicitMethod`:
+     **divergence-pinning.** Outer `@condition(override: true)` on a `@table`
+     input whose field carries its own `@condition`. Generates
+     `(film_id = ?) AND (film_id >= 2)` with bind ?=1, matching zero rows.
+     Legacy "outer owns everything" would drop `filmIdCondition` and return
+     films 2..5; a regression breaks this test by name.
+   - `inputFieldCondition_nestedTwoLevel_pathWalksThroughNestingField`:
+     `NestedFilmInput` (outer `@table`) contains a `NestingField` holding a
+     plain `InnerFilmInput`. Exercises the two-level
+     `instanceof Map<?, ?>` chain emitted by `ArgCallEmitter` for
+     path `["inner", "filmId"]`.
+   - `inputFieldCondition_plainInput_outerOverride_preservesInnerExplicitMethod`:
+     alf production shape. Outer `@condition(override: true)` composed with a
+     plain input whose field has its own `@condition`. Same divergence-pin
+     assertion as the `@table` case: inner explicit method survives.
 
    The three tests already on trunk (`filmsWithInputFieldCondition`,
    `filmsByPlainInput`, `languagesByPlainInput`) now assert on filtered
@@ -449,16 +459,23 @@ input fields, so no real filter executes. Closing Phase 4 requires:
 - ~~Commit 1: item #1 (ArgCallEmitter nested-arg) + item #5 (fixture returns
   real condition) + retrofit real-filter assertions on the three existing
   execution tests.~~ **Landed.**
-- Commit 2 (next): item #3 (four remaining execution tests). Depends on
-  commit 1.
-- Item #4 (unit tests): orthogonal to runtime; can land alongside either
-  commit, or be dropped entirely if the pipeline cases are judged
-  sufficient (the plan's original §Deliverable unit-test requirement
-  predates the pipeline cases that in fact shipped; pick one).
+- ~~Commit 2: item #3 (four remaining execution tests).~~ **Landed.**
+- Item #4 (unit tests): evaluated against the in-fact-shipped pipeline cases;
+  the pipeline tier (`GraphitronSchemaBuilderTest`) covers the per-variant
+  classification + validator paths and the execution tier covers the
+  projection + emitter paths end-to-end. Dropping the original standalone
+  unit-test requirement; no additive coverage vs the pipeline cases.
 - Item #2 (override accumulator): defer until step 9 (auto-column binding
   for `@table` inputs) lands. Until then, there are no auto-predicates to
   suppress, so the accumulator is unexercised. Pair the accumulator work
   with step 9 in that phase's plan.
+
+**Remaining before Done.** Only item #2 (override accumulator) remains, and
+it is bounded-deferred as part of step 9. The rest of Phase 4b has landed:
+runtime nested-arg extraction works end-to-end, all six planned execution
+tests exist (three pre-existing, three new plus the divergence-pin), and
+`@condition` on `INPUT_FIELD_DEFINITION` is feature-complete for the
+currently-implemented subset of the argument-resolution pipeline.
 
 ## Test assertions
 
