@@ -35,6 +35,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronField.NotGeneratedField;
 import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
 import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.BodyParam;
+import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ConditionFilter;
 import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
@@ -1960,6 +1961,76 @@ class GraphitronSchemaBuilderTest {
                 assertThat(((ConditionFilter) films.filters().get(0)).methodName()).isEqualTo("inputColumnCondition");
                 var languages = (QueryField.QueryTableField) schema.field("Query", "languages");
                 assertThat(languages.filters()).isEmpty();
+            }),
+
+        // ===== Implicit column conditions for @table input types =====
+
+        TABLE_INPUT_IMPLICIT_CONDITION_BODYPARAM_EMITTED(
+            "@table input field with no @condition → implicit BodyParam with NestedInputField extraction in GCF",
+            """
+            input FilmInput @table(name: "film") {
+              filmId: ID @field(name: "film_id")
+            }
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Query { films(filter: FilmInput): [Film!]! }
+            """,
+            schema -> {
+                var f = (QueryField.QueryTableField) schema.field("Query", "films");
+                assertThat(f.filters()).hasSize(1);
+                var gcf = (GeneratedConditionFilter) f.filters().get(0);
+                assertThat(gcf.bodyParams()).hasSize(1);
+                var bp = gcf.bodyParams().get(0);
+                assertThat(bp.name()).isEqualTo("filmId");
+                assertThat(bp.extraction()).isInstanceOf(CallSiteExtraction.NestedInputField.class);
+                var nif = (CallSiteExtraction.NestedInputField) bp.extraction();
+                assertThat(nif.outerArgName()).isEqualTo("filter");
+                assertThat(nif.path()).containsExactly("filmId");
+            }),
+
+        TABLE_INPUT_IMPLICIT_CONDITION_EXPLICIT_OVERRIDE_SUPPRESSES_OWN(
+            "@table input field with @condition(override:true) → explicit fires, implicit for THAT field suppressed, sibling gets implicit",
+            """
+            input FilmInput @table(name: "film") {
+              filmId: ID @field(name: "film_id")
+                @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "inputColumnCondition"}, override: true)
+              title: String @field(name: "title")
+            }
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") title: String! @field(name: "title") }
+            type Query { films(filter: FilmInput): [Film!]! }
+            """,
+            schema -> {
+                var f = (QueryField.QueryTableField) schema.field("Query", "films");
+                // GCF from title implicit, ConditionFilter from filmId explicit
+                assertThat(f.filters()).hasSize(2);
+                var gcf = (GeneratedConditionFilter) f.filters().get(0);
+                assertThat(gcf.bodyParams()).hasSize(1);
+                assertThat(gcf.bodyParams().get(0).name()).isEqualTo("title");
+                assertThat(f.filters().get(1)).isInstanceOf(ConditionFilter.class);
+                assertThat(((ConditionFilter) f.filters().get(1)).methodName()).isEqualTo("inputColumnCondition");
+            }),
+
+        TABLE_INPUT_IMPLICIT_CONDITION_EXPLICIT_SUPPRESSES_IMPLICIT(
+            "@table input field with explicit @condition → implicit BodyParam not emitted for that field; sibling plain field gets one",
+            """
+            input FilmInput @table(name: "film") {
+              filmId: ID @field(name: "film_id") @condition(condition: {className:"no.sikt.graphitron.rewrite.TestConditionStub", method:"inputColumnCondition"})
+              title: String @field(name: "title")
+            }
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") title: String! @field(name: "title") }
+            type Query { films(filter: FilmInput): [Film!]! }
+            """,
+            schema -> {
+                var f = (QueryField.QueryTableField) schema.field("Query", "films");
+                // filmId has explicit @condition → 1 ConditionFilter
+                // title has no @condition → 1 implicit BodyParam in GCF
+                long condFilters = f.filters().stream().filter(fi -> !(fi instanceof GeneratedConditionFilter)).count();
+                assertThat(condFilters).isEqualTo(1);
+                var gcf = f.filters().stream()
+                    .filter(fi -> fi instanceof GeneratedConditionFilter)
+                    .map(fi -> (GeneratedConditionFilter) fi)
+                    .findFirst().orElseThrow();
+                assertThat(gcf.bodyParams()).hasSize(1);
+                assertThat(gcf.bodyParams().get(0).name()).isEqualTo("title");
             });
 
         final String sdl;

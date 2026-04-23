@@ -1394,6 +1394,44 @@ class GraphQLQueryTest {
         assertThat(films).isEmpty();
     }
 
+    // ===== Implicit column conditions for @table input types =====
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void implicitInputCondition_filtersByColumn() {
+        // FilmImplicitInput.filmId has no @condition — the implicit column-equality predicate
+        // (film.FILM_ID = ?) is emitted by walkInputFieldConditions. filmId: "3" → one row.
+        Map<String, Object> data = execute(
+            "{ filmsWithImplicitInput(filter: {filmId: \"3\"}) { filmId } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmsWithImplicitInput");
+        assertThat(films).extracting(f -> f.get("filmId")).containsExactly(3);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void implicitInputCondition_nullField_omitsPredicate_returnsAll() {
+        // filmId: null → DSL.val(null, table.FILM_ID) null-guard skips the predicate →
+        // no WHERE filter → all 5 films returned. "Absent means unconstrained" semantics.
+        Map<String, Object> data = execute(
+            "{ filmsWithImplicitInput(filter: {filmId: null}) { filmId } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmsWithImplicitInput");
+        assertThat(films).hasSize(5);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void implicitInputCondition_parentFieldOverride_suppressesImplicit() {
+        // filmsWithImplicitInputOuterOverride has @condition(override:true) → enclosingOverride=true
+        // → implicit predicate for filmId is suppressed. Only outerOverrideMethod fires
+        // (film_id >= 2). Query with filmId:"1" would return 0 rows if implicit were active
+        // ((film_id >= 2) AND (film_id = 1)), but with suppression it returns 4 rows (2..5).
+        Map<String, Object> data = execute(
+            "{ filmsWithImplicitInputOuterOverride(filter: {filmId: \"1\"}) { filmId } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmsWithImplicitInputOuterOverride");
+        assertThat(films).extracting(f -> f.get("filmId"))
+            .containsExactlyInAnyOrder(2, 3, 4, 5);
+    }
+
     @Test
     void splitLookupTableField_nestedUnderNestingField_batchesPerOuterParent() {
         // FilmInfo.castByKey exercises the SplitLookupTableField arm under NestingField:

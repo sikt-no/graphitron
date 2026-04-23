@@ -64,6 +64,20 @@ type Query {
             className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
             method: "outerOverrideMethod"
         }, override: true)
+    # implicit-input-conditions plan: @table input with un-annotated column field.
+    # filmId has no @condition — the implicit column-equality predicate (film.FILM_ID = ?)
+    # is emitted by walkInputFieldConditions and folded into the GeneratedConditionFilter's
+    # bodyParams. Null filmId produces noCondition() via the standard DSL.val null-guard.
+    filmsWithImplicitInput(filter: FilmImplicitInput): [Film!]!
+    # implicit-input-conditions plan: outer @condition(override: true) on a field whose
+    # @table input has no explicit @condition on its fields. The enclosingOverride flag
+    # suppresses all implicit predicates inside the input; only outerOverrideMethod fires.
+    # Query with filmId: "1" → outerOverrideMethod returns film_id >= 2 → films 2..5 returned.
+    filmsWithImplicitInputOuterOverride(filter: FilmImplicitInput): [Film!]!
+        @condition(condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+            method: "outerOverrideMethod"
+        }, override: true)
 }
 
 type Customer @table(name: "customer") {
@@ -400,4 +414,12 @@ input InnerFilmInput {
 
 input NestedFilmInput @table(name: "film") {
     inner: InnerFilmInput
+}
+
+# implicit-input-conditions plan: @table input type with an un-annotated column field.
+# filmId carries no @condition; the implicit predicate (film.FILM_ID = filmId) is emitted
+# by walkInputFieldConditions when enclosingOverride is false. Nullable so the null-omit
+# behavior (absent means unconstrained) is also exercised by tests.
+input FilmImplicitInput @table(name: "film") {
+    filmId: ID @field(name: "film_id")
 }

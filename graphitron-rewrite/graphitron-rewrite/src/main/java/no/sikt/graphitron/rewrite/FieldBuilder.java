@@ -1000,8 +1000,7 @@ class FieldBuilder {
             case CallSiteExtraction.JooqConvert ignored -> column.columnClass();
             case CallSiteExtraction.Direct ignored -> column.columnClass();
             case CallSiteExtraction.ContextArg ignored -> column.columnClass();
-            case CallSiteExtraction.NestedInputField ignored ->
-                throw new IllegalStateException("NestedInputField extraction should not appear on a column-bound body param");
+            case CallSiteExtraction.NestedInputField ignored -> column.columnClass();
         };
     }
 
@@ -1018,31 +1017,41 @@ class FieldBuilder {
      * {@code docs/planning/plan-implicit-input-conditions.md}. Returns {@code null}
      * when any filter classification fails.
      *
-     * <p>All column-bound scalar args are grouped into a single {@link GeneratedConditionFilter}
-     * entry. The condition class is named {@code <returnTypeName>Conditions} and the method
-     * {@code <fieldName>Condition}.
+     * <p>All column-bound scalar args and implicit column-equality predicates from {@code @table}
+     * input fields are grouped into a single {@link GeneratedConditionFilter} entry. The condition
+     * class is named {@code <returnTypeName>Conditions} and the method {@code <fieldName>Condition}.
      */
     private List<WhereFilter> projectFilters(List<ArgumentRef> refs, GraphQLFieldDefinition fieldDef,
                                              TableRef rt, String returnTypeName, List<String> errors) {
         var bodyParams = new ArrayList<BodyParam>();
         var argConditions = new ArrayList<ConditionFilter>();
         boolean hadError = false;
+        var fieldCond = ctx.readConditionDirective(fieldDef);
+        boolean fieldOverride = fieldCond != null && fieldCond.override();
         for (var ref : refs) {
             switch (ref) {
                 case ArgumentRef.OrderByArg ignored -> {}                     // handled by projectOrderBySpec
                 case ArgumentRef.PaginationArgRef ignored -> {}               // handled by projectPaginationSpec
                 case ArgumentRef.InputTypeArg.TableInputArg tia -> {
-                    // Implicit column conditions for @table input types are pending; see
-                    // docs/planning/plan-implicit-input-conditions.md.
-                    // Arg-level and field-level @condition predicates are emitted now.
+                    // Arg-level @condition and field-level @condition predicates.
                     tia.argCondition().ifPresent(ac -> argConditions.add(ac.filter()));
-                    walkInputFieldConditions(tia.fields(), tia.name(), List.of(), argConditions);
+                    // Implicit predicates are suppressed when any ancestor carries override:true.
+                    boolean enclosingOverride = fieldOverride
+                        || tia.argCondition().map(ArgConditionRef::override).orElse(false);
+                    var lookupBoundNames = tia.fieldBindings().stream()
+                        .map(InputColumnBinding::inputFieldName)
+                        .collect(Collectors.toUnmodifiableSet());
+                    var implicitParams = new ArrayList<BodyParam>();
+                    walkInputFieldConditions(tia.fields(), tia.name(), List.of(),
+                        enclosingOverride, lookupBoundNames, implicitParams, argConditions);
+                    bodyParams.addAll(implicitParams);
                 }
                 case ArgumentRef.InputTypeArg.PlainInputArg pia -> {
                     // Plain input types are silently skipped unless paired with @condition;
                     // see the out-of-scope note in docs/argument-resolution.md.
                     pia.argCondition().ifPresent(ac -> argConditions.add(ac.filter()));
-                    walkInputFieldConditions(pia.fields(), pia.name(), List.of(), argConditions);
+                    walkInputFieldConditions(pia.fields(), pia.name(), List.of(),
+                        false, Set.of(), null, argConditions);
                 }
                 case ArgumentRef.UnclassifiedArg u -> {
                     errors.add("argument '" + u.name() + "': " + u.reason());
@@ -1082,42 +1091,87 @@ class FieldBuilder {
     }
 
     /**
-     * Recursively collects explicit {@code @condition} filters from a list of {@link InputField}s
-     * and rewrites each filter's {@link ParamSource.Arg} params to extract their value from the
-     * enclosing {@code DataFetchingEnvironment} argument Map, not from a top-level argument.
+     * Recursively collects explicit {@code @condition} filters and implicit column-equality
+     * predicates from a list of {@link InputField}s.
      *
-     * <p>Only {@link InputField.ColumnField}, {@link InputField.ColumnReferenceField}, and
-     * {@link InputField.NestingField} carry a {@code condition} optional. {@code NestingField}
-     * children are recursed into with a path prefix extended by the nesting field's name.
-     * Implicit column conditions derived from a {@code @table} input's un-annotated fields
-     * are pending under {@code docs/planning/plan-implicit-input-conditions.md}; that plan
-     * adds a {@code boolean enclosingOverride} accumulator to this recursion so implicit
-     * predicates are suppressed under an ancestor's {@code override: true}.
+     * <p><b>Explicit conditions</b> — {@link InputField.ColumnField},
+     * {@link InputField.ColumnReferenceField}, and {@link InputField.NestingField} all carry an
+     * optional {@code condition}. When present, the filter is rewrapped with a
+     * {@link CallSiteExtraction.NestedInputField} extraction and added to {@code out}.
+     *
+     * <p><b>Implicit conditions</b> — when {@code implicitBodyParams} is non-null (i.e. the
+     * input is a {@code @table}-annotated {@link ArgumentRef.InputTypeArg.TableInputArg}), every
+     * un-annotated {@link InputField.ColumnField} and {@link InputField.ColumnReferenceField}
+     * that carries no {@code @condition} annotation, is not already consumed by a {@code @lookupKey}
+     * binding, and is not suppressed by an enclosing {@code override: true}, gets an implicit
+     * column-equality predicate — a {@link BodyParam} with a
+     * {@link CallSiteExtraction.NestedInputField} extraction — added to {@code implicitBodyParams}.
+     * Fields that carry an explicit {@code @condition} (any override value) never also emit an
+     * implicit predicate.
+     * {@link InputField.PlatformIdField} is skipped (no {@link no.sikt.graphitron.rewrite.model.ColumnRef} available).
+     *
+     * <p>{@code enclosingOverride} propagates the override flag down through
+     * {@link InputField.NestingField} children: once set to {@code true} it stays {@code true}
+     * for all descendants, suppressing their implicit predicates.
+     *
+     * <p>{@code lookupBoundNames} is the set of field names already consumed as
+     * {@code @lookupKey} bindings on the enclosing {@code TableInputArg}. These must not also
+     * emit an implicit condition (the VALUES+JOIN path owns them).
      *
      * <p>{@code outerArgName} is the top-level field-argument name (e.g. {@code "filter"}).
      * {@code pathPrefix} is the list of Map keys from {@code outerArgName} down to the parent of
-     * {@code fields}; empty at the top level. The leaf path for a field {@code f} is
-     * {@code pathPrefix + [f.name()]}: the input-field {@code @condition} method's single arg
-     * (per D3) is named after the SDL input-field name, matching the leaf path segment.
+     * {@code fields}; empty at the top level.
      */
     private void walkInputFieldConditions(
             List<InputField> fields, String outerArgName, List<String> pathPrefix,
+            boolean enclosingOverride, Set<String> lookupBoundNames,
+            List<BodyParam> implicitBodyParams,
             List<ConditionFilter> out) {
         for (var f : fields) {
             var leafPath = new ArrayList<>(pathPrefix);
             leafPath.add(f.name());
             switch (f) {
-                case InputField.ColumnField cf ->
+                case InputField.ColumnField cf -> {
                     cf.condition().ifPresent(c -> out.add(rewrapForNested(c.filter(), outerArgName, leafPath)));
-                case InputField.ColumnReferenceField rf ->
+                    if (implicitBodyParams != null && !enclosingOverride
+                            && cf.condition().isEmpty()
+                            && !lookupBoundNames.contains(cf.name())) {
+                        implicitBodyParams.add(implicitBodyParam(
+                            cf.column(), cf.name(), cf.typeName(), cf.nonNull(), outerArgName, leafPath));
+                    }
+                }
+                case InputField.ColumnReferenceField rf -> {
                     rf.condition().ifPresent(c -> out.add(rewrapForNested(c.filter(), outerArgName, leafPath)));
+                    if (implicitBodyParams != null && !enclosingOverride && rf.condition().isEmpty()) {
+                        implicitBodyParams.add(implicitBodyParam(
+                            rf.column(), rf.name(), rf.typeName(), rf.nonNull(), outerArgName, leafPath));
+                    }
+                }
                 case InputField.NestingField nf -> {
                     nf.condition().ifPresent(c -> out.add(rewrapForNested(c.filter(), outerArgName, leafPath)));
-                    walkInputFieldConditions(nf.fields(), outerArgName, leafPath, out);
+                    boolean nestOverride = enclosingOverride
+                        || nf.condition().map(ArgConditionRef::override).orElse(false);
+                    walkInputFieldConditions(nf.fields(), outerArgName, leafPath,
+                        nestOverride, lookupBoundNames, implicitBodyParams, out);
                 }
                 case InputField.PlatformIdField ignored -> {}
             }
         }
+    }
+
+    /**
+     * Builds a {@link BodyParam} for an implicit column-equality predicate on a {@code @table}
+     * input field. The extraction is {@link CallSiteExtraction.NestedInputField} so the fetcher
+     * call site traverses the argument Map to reach the leaf value. GraphQL {@code ID} scalars
+     * are delivered as {@code String} by graphql-java; all other types use the column's own
+     * Java class.
+     */
+    private static BodyParam implicitBodyParam(ColumnRef column, String fieldName,
+                                               String graphqlTypeName, boolean nonNull,
+                                               String outerArgName, List<String> leafPath) {
+        String javaType = "ID".equals(graphqlTypeName) ? String.class.getName() : column.columnClass();
+        return new BodyParam(fieldName, column, javaType, nonNull, false,
+            new CallSiteExtraction.NestedInputField(outerArgName, leafPath));
     }
 
     /**
