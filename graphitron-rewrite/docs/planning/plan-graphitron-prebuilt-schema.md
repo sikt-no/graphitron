@@ -421,12 +421,12 @@ only; do not call `.query()`, `.mutation()`, `.subscription()`,
 lifecycle scope so request-scoped `GraphitronContext` never leaks into
 application-scoped setup.
 
-**D2.** Package for generated `<TypeName>Type` classes. Options:
-`<outputPackage>.rewrite.types` (reuses existing types package), or
-a new `<outputPackage>.rewrite.schema` package. Reusing `.types`
-collides with the existing `TypeClassGenerator` output (the internal
-`GraphitronValues`-style carriers). Recommend a new `.schema` package
-for clarity.
+**D2.** Package for generated `<TypeName>Type` classes. **Resolved.**
+New `<outputPackage>.rewrite.schema` package. Keeps the graphql-java
+builder classes away from the existing `<outputPackage>.rewrite.types`
+carriers and groups schema-building artifacts
+(`<TypeName>Type`, `GraphitronSchemaAssembler`, `GraphitronSdl`,
+`EngineBuilder`) under one roof.
 
 **D3.** `<TypeName>Type` class naming. Alternatives considered:
 `<TypeName>Type`, `<TypeName>Schema`, `<TypeName>Builder`. Recommend
