@@ -1,6 +1,6 @@
 # Plan: per-type `*Wiring` classes
 
-> **Status:** Spec
+> **Status:** Ready
 
 Move the per-type `TypeRuntimeWiring` construction out of the aggregate `GraphitronWiring.build()` body (and out of `*Fetchers.wiring()`) into dedicated per-type `*Wiring` classes in a new `rewrite.wiring` subpackage. After the refactor `GraphitronWiring.build()` collapses to a pure aggregator (`.type(FooWiring.wiring())` per type), including for synthesized Connection / Edge / nested types whose wiring is currently inlined in the builder.
 
