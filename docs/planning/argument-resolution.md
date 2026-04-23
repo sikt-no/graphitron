@@ -1,6 +1,6 @@
 # Argument Resolution: Phase 4
 
-> **Status:** Spec
+> **Status:** Ready
 >
 > Foundation + Phases 1–3 shipped; Phase 4 adds `@condition` on
 > `INPUT_FIELD_DEFINITION`. Plan revised from the previous deferred-phase wording
@@ -451,29 +451,17 @@ paths; the two fixtures differ only in whether the input type carries
   failure is a caller-fixable error, not a schema-structural one, so it
   should not invalidate the input type's other fields.
 
-- **D5. Plain-input classification failure fallback.** When the per-call-site
-  classifier fails to resolve a plain input's field against the outer
-  field's table (e.g., column not found, `@reference` path invalid),
-  options are:
-  - (A) Mark that one field `UnclassifiedField`, append error, let the
-    rest of the plain input's fields classify; the `PlainInputArg` is
-    still constructed with the partially-resolved `fields` list.
-  - (B) Fail the entire argument: produce `UnclassifiedArg` for the
-    whole plain-input arg, which short-circuits the whole field per
-    `projectFilters`'s existing `UnclassifiedArg` error path.
-  - (C) Hybrid: silently drop unresolvable fields (legacy implicit-table
-    was lenient about fields that didn't correspond to columns).
-  **Lean: (B).** Consistent with `@table` input behaviour today, where
-  a single unresolvable field promotes the whole `TableInputType` to
-  `UnclassifiedType` (TypeBuilder.java:608-619 coalesces failures and
-  returns `Unresolved`). Divergence from (D4)'s "mirror arg-level"
-  pattern is intentional: column resolution failure is structural (the
-  SDL is wrong), not a caller-fixable runtime issue. (A) would leave a
-  half-classified argument in an inconsistent state and violates the
-  classify-never-returns-null invariant in spirit. (C) was legacy's
-  behaviour and is the behaviour `GraphitronSchemaValidator` was
-  created to flag; reproducing the silent-drop would undo that
-  improvement. Needs reviewer confirmation before 4b lands.
+- **D5. Plain-input classification failure fallback. Resolved: (B).**
+  When the per-call-site classifier fails to resolve a plain input's
+  field against the outer field's table (e.g., column not found,
+  `@reference` path invalid), produce `UnclassifiedArg` for the whole
+  plain-input arg; `projectFilters`'s existing `UnclassifiedArg` error
+  path short-circuits the field cleanly. Consistent with `@table` input
+  behaviour (TypeBuilder.java:608-619 coalesces failures and returns
+  `Unresolved`). (A) (partial classification) would leave a
+  half-classified argument in an inconsistent state; (C) (silent drop)
+  undoes the improvement `GraphitronSchemaValidator` was created to
+  provide.
 
 ## Out of Scope
 
