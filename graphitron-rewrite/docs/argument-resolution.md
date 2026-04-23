@@ -46,10 +46,11 @@ not committed to trunk) counted 62 plain inputs carrying inner
 `@condition(override: true)` (`Query.emner`, `Query.emnerV2`,
 `Query.studenter`). Zero `@table` inputs carry inner `@condition`
 because `@table` inputs on alf rely on *implicit column conditions*
-instead (63 distinct call sites). Implicit column conditions are
-tracked separately under
-[`planning/plan-implicit-input-conditions.md`](planning/plan-implicit-input-conditions.md)
-and are required for legacy parity on the 63 `@table` call sites.
+instead (63 distinct call sites). Implicit column conditions ship
+alongside this Phase 4 work (commit `96e39df`); an un-annotated
+`ColumnField` / `ColumnReferenceField` on a `@table` input contributes
+a `BodyParam` with `NestedInputField` extraction to the same
+`GeneratedConditionFilter` this phase emits.
 
 ## Design
 
@@ -425,13 +426,3 @@ code.
 - **`PlatformIdField` with `@condition`.** Platform IDs are legacy
   accessors; if a real schema surfaces this we'll promote it to its own
   backlog item.
-- **Implicit column conditions for `@table` input types, and the
-  override-propagation accumulator that goes with them.** A required
-  sibling feature for legacy parity: 63 `@table` input call sites on alf
-  rely on implicit column conditions. Tracked as an active work item in
-  [`planning/plan-implicit-input-conditions.md`](planning/plan-implicit-input-conditions.md).
-  That plan lands the implicit-predicate emission and the
-  `enclosingOverride` accumulator together (one recursion-parameter delta
-  in `walkInputFieldConditions`, plus the truth-table rows it enables);
-  the 6-row truth table in §Truth table and the §Override propagation /
-  §Legacy behavior reference blocks here are its design reference.

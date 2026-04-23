@@ -1010,12 +1010,10 @@ class FieldBuilder {
      * <p>{@link ArgumentRef.OrderByArg} and {@link ArgumentRef.PaginationArgRef} are skipped
      * (handled by {@link #projectOrderBySpec} / {@link #projectPaginationSpec}).
      * {@link ArgumentRef.UnclassifiedArg} and {@link ArgumentRef.ScalarArg.UnboundArg} add to
-     * {@code errors}. For {@link ArgumentRef.InputTypeArg} variants the arg-level and
-     * input-field-level {@code @condition} predicates are emitted via
-     * {@link #walkInputFieldConditions}; implicit column conditions for a
-     * {@code @table} input's un-annotated fields are pending under
-     * {@code docs/planning/plan-implicit-input-conditions.md}. Returns {@code null}
-     * when any filter classification fails.
+     * {@code errors}. For {@link ArgumentRef.InputTypeArg} variants the arg-level, input-field-level
+     * {@code @condition} predicates and (for {@code @table} inputs) implicit column-equality
+     * predicates on un-annotated fields are emitted via {@link #walkInputFieldConditions}.
+     * Returns {@code null} when any filter classification fails.
      *
      * <p>All column-bound scalar args and implicit column-equality predicates from {@code @table}
      * input fields are grouped into a single {@link GeneratedConditionFilter} entry. The condition
@@ -1142,7 +1140,9 @@ class FieldBuilder {
                 }
                 case InputField.ColumnReferenceField rf -> {
                     rf.condition().ifPresent(c -> out.add(rewrapForNested(c.filter(), outerArgName, leafPath)));
-                    if (implicitBodyParams != null && !enclosingOverride && rf.condition().isEmpty()) {
+                    if (implicitBodyParams != null && !enclosingOverride
+                            && rf.condition().isEmpty()
+                            && !lookupBoundNames.contains(rf.name())) {
                         implicitBodyParams.add(implicitBodyParam(
                             rf.column(), rf.name(), rf.typeName(), rf.nonNull(), outerArgName, leafPath));
                     }

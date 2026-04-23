@@ -38,6 +38,7 @@ import no.sikt.graphitron.rewrite.model.BodyParam;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ConditionFilter;
 import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
+import no.sikt.graphitron.rewrite.model.SqlGeneratingField;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
@@ -2031,6 +2032,52 @@ class GraphitronSchemaBuilderTest {
                     .findFirst().orElseThrow();
                 assertThat(gcf.bodyParams()).hasSize(1);
                 assertThat(gcf.bodyParams().get(0).name()).isEqualTo("title");
+            }),
+
+        TABLE_INPUT_IMPLICIT_CONDITION_LOOKUP_KEY_SKIPPED(
+            "@lookupKey field on a @table input → no implicit BodyParam emitted; sibling plain field gets one",
+            """
+            input FilmInput @table(name: "film") {
+              filmId: Int! @field(name: "film_id") @lookupKey
+              title: String @field(name: "title")
+            }
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") title: String! @field(name: "title") }
+            type Query { films(filter: FilmInput): [Film!]! }
+            """,
+            schema -> {
+                // @lookupKey on an input field promotes this to QueryLookupTableField; access
+                // filters via the SqlGeneratingField interface shared with QueryTableField.
+                var f = (SqlGeneratingField) schema.field("Query", "films");
+                // filmId is @lookupKey → consumed by LookupValuesJoinEmitter, must not also
+                // appear as an implicit BodyParam. title has no @condition → implicit emitted.
+                var gcf = (GeneratedConditionFilter) f.filters().stream()
+                    .filter(fi -> fi instanceof GeneratedConditionFilter)
+                    .findFirst().orElseThrow();
+                assertThat(gcf.bodyParams()).hasSize(1);
+                assertThat(gcf.bodyParams().get(0).name()).isEqualTo("title");
+            }),
+
+        TABLE_INPUT_IMPLICIT_CONDITION_NESTED_TWO_LEVEL(
+            "@table input with NestingField wrapping an un-annotated ColumnField → implicit BodyParam at leaf path",
+            """
+            input OuterInput @table(name: "film") {
+              inner: InnerInput
+            }
+            input InnerInput {
+              filmId: ID @field(name: "film_id")
+            }
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Query { films(filter: OuterInput): [Film!]! }
+            """,
+            schema -> {
+                var f = (QueryField.QueryTableField) schema.field("Query", "films");
+                var gcf = (GeneratedConditionFilter) f.filters().get(0);
+                assertThat(gcf.bodyParams()).hasSize(1);
+                var bp = gcf.bodyParams().get(0);
+                assertThat(bp.name()).isEqualTo("filmId");
+                var nif = (CallSiteExtraction.NestedInputField) bp.extraction();
+                assertThat(nif.outerArgName()).isEqualTo("filter");
+                assertThat(nif.path()).containsExactly("inner", "filmId");
             });
 
         final String sdl;

@@ -1344,10 +1344,9 @@ class GraphQLQueryTest {
     @SuppressWarnings("unchecked")
     void inputFieldCondition_tableInput_overrideFlagOnRealColumn_explicitMethodStillFires() {
         // FilmConditionInputWithOverrideField.filmId carries @condition(override:true).
-        // The override flag is inert at projection today (implicit-condition suppression
-        // lands with plan-implicit-input-conditions.md). The explicit method still fires.
-        // Runtime effect: identical to a non-override @condition, filter by the passed
-        // filmId.
+        // On a field that carries only an explicit @condition with no un-annotated siblings,
+        // there's no implicit predicate to suppress, so the override flag is a no-op here;
+        // the explicit method still fires. Runtime effect: filter by the passed filmId.
         Map<String, Object> data = execute(
             "{ filmsWithInputFieldOverride(filter: {filmId: \"3\"}) { filmId } }");
         List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmsWithInputFieldOverride");
@@ -1430,6 +1429,34 @@ class GraphQLQueryTest {
         List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmsWithImplicitInputOuterOverride");
         assertThat(films).extracting(f -> f.get("filmId"))
             .containsExactlyInAnyOrder(2, 3, 4, 5);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void implicitInputCondition_twoFields_andsProperly() {
+        // Two un-annotated fields: both emit implicit predicates, AND-ed in the GCF.
+        // film 3 is ADAPTATION HOLES → match; filmId=3 + title="ACE GOLDFINGER" → no rows
+        // (AND, not OR: the two predicates must agree).
+        Map<String, Object> both = execute(
+            "{ filmsWithMultiImplicit(filter: {filmId: \"3\", title: \"ADAPTATION HOLES\"}) { filmId } }");
+        assertThat((List<Map<String, Object>>) both.get("filmsWithMultiImplicit"))
+            .extracting(f -> f.get("filmId")).containsExactly(3);
+
+        Map<String, Object> mismatch = execute(
+            "{ filmsWithMultiImplicit(filter: {filmId: \"3\", title: \"ACE GOLDFINGER\"}) { filmId } }");
+        assertThat((List<Map<String, Object>>) mismatch.get("filmsWithMultiImplicit")).isEmpty();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void implicitInputCondition_nestedTwoLevel_firesAtLeaf() {
+        // NestedImplicitInput @table wraps InnerImplicitInput (plain) whose filmId has no
+        // @condition. Implicit predicate binds to the outer @table's film_id column; the
+        // NestedInputField path ["inner", "filmId"] drives call-site extraction.
+        Map<String, Object> data = execute(
+            "{ filmsWithNestedImplicit(filter: {inner: {filmId: \"2\"}}) { filmId } }");
+        assertThat((List<Map<String, Object>>) data.get("filmsWithNestedImplicit"))
+            .extracting(f -> f.get("filmId")).containsExactly(2);
     }
 
     @Test
