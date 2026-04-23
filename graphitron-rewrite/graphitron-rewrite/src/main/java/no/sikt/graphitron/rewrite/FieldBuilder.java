@@ -1019,8 +1019,8 @@ class FieldBuilder {
      * {@code errors}. For {@link ArgumentRef.InputTypeArg} variants the arg-level and
      * input-field-level {@code @condition} predicates are emitted via
      * {@link #walkInputFieldConditions}; auto-column binding from a {@code @table} input's
-     * non-condition fields is not scoped today and is tracked under the auto-column-binding
-     * item in {@code docs/planning/argument-resolution.md} §Out of Scope. Returns {@code null}
+     * non-condition fields is pending under
+     * {@code docs/planning/plan-auto-column-binding.md}. Returns {@code null}
      * when any filter classification fails.
      *
      * <p>All column-bound scalar args are grouped into a single {@link GeneratedConditionFilter}
@@ -1037,8 +1037,8 @@ class FieldBuilder {
                 case ArgumentRef.OrderByArg ignored -> {}                     // handled by projectOrderBySpec
                 case ArgumentRef.PaginationArgRef ignored -> {}               // handled by projectPaginationSpec
                 case ArgumentRef.InputTypeArg.TableInputArg tia -> {
-                    // Auto-column binding for @table input types is out of scope; see
-                    // docs/planning/argument-resolution.md §Out of Scope.
+                    // Auto-column binding for @table input types is pending; see
+                    // docs/planning/plan-auto-column-binding.md.
                     // Arg-level and field-level @condition predicates are emitted now.
                     tia.argCondition().ifPresent(ac -> argConditions.add(ac.filter()));
                     walkInputFieldConditions(tia.fields(), tia.name(), List.of(), argConditions);
@@ -1094,10 +1094,10 @@ class FieldBuilder {
      * <p>Only {@link InputField.ColumnField}, {@link InputField.ColumnReferenceField}, and
      * {@link InputField.NestingField} carry a {@code condition} optional. {@code NestingField}
      * children are recursed into with a path prefix extended by the nesting field's name.
-     * Auto-predicates derived from a {@code @table} input's non-condition fields are out of
-     * scope; see {@code docs/planning/argument-resolution.md} §Out of Scope. When that work is
-     * ever planned, add a {@code boolean enclosingOverride} accumulator to this recursion to
-     * suppress auto-predicates under an ancestor's {@code override: true}.
+     * Auto-predicates derived from a {@code @table} input's non-condition fields are pending
+     * under {@code docs/planning/plan-auto-column-binding.md}; that plan adds a
+     * {@code boolean enclosingOverride} accumulator to this recursion so auto-predicates
+     * are suppressed under an ancestor's {@code override: true}.
      *
      * <p>{@code outerArgName} is the top-level field-argument name (e.g. {@code "filter"}).
      * {@code pathPrefix} is the list of Map keys from {@code outerArgName} down to the parent of

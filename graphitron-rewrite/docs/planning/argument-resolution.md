@@ -40,13 +40,16 @@ conditions compose. Outer-level overrides propagate downward.
 **Scope:** both `@table`-annotated input types (primary case) and plain
 input types used under the legacy "implicit-table" heuristic, where the
 input's fields resolve against the enclosing query field's target table.
-The scope increase is motivated by a divergence-scan of alf's production
-schema (`alf/graphitron-rewrite:graphitron-rewrite/generator-schema.graphql`,
-not committed to trunk): zero `@table` inputs carry inner `@condition` on
-that schema, while 62 plain inputs do, 3 of them under an outer field-level
-`@condition(override: true)` (`Query.emner`, `Query.emnerV2`,
-`Query.studenter`). Restricting Phase 4 to `@table` inputs would leave the
-feature with no real-world usage on the one schema we checked.
+Motivated by a divergence-scan of alf's production schema
+(`alf/graphitron-rewrite:graphitron-rewrite/generator-schema.graphql`,
+not committed to trunk): 62 plain inputs carry inner `@condition`, 3 of
+them under an outer field-level `@condition(override: true)`
+(`Query.emner`, `Query.emnerV2`, `Query.studenter`). Zero `@table`
+inputs carry inner `@condition` because `@table` inputs on alf rely on
+*implicit auto-column binding* instead (63 distinct call sites). This
+plan covers the `@condition` shape; auto-column binding is tracked
+separately under [`plan-auto-column-binding.md`](plan-auto-column-binding.md)
+and is required for legacy parity on the 63 `@table` call sites.
 
 ## Design
 
@@ -591,17 +594,15 @@ value)`) and pipeline tests assert on the classifier output directly
 - **`PlatformIdField` with `@condition`.** Platform IDs are legacy accessors; if
   a real schema surfaces this we'll promote it to its own backlog item.
 - **Auto-column binding for `@table` input types, and the override-propagation
-  accumulator that goes with it.** The rewrite emits explicit `@condition`
-  methods end-to-end but does not (yet) auto-derive column predicates from
-  the non-condition fields of a `@table` input. Without auto-predicates,
-  there is nothing for an `override: true` flag to suppress, so the
-  enclosingOverride accumulator in `walkInputFieldConditions` is
-  unexercised. If a production schema surfaces the need for auto-binding,
-  promote it to a backlog plan; that plan lands the auto-predicate
-  emission and the accumulator together (one small recursion-parameter
-  delta in `walkInputFieldConditions`, plus the truth-table rows it
-  enables). The 6-row truth table in §Truth table is the design reference
-  when that plan is drafted.
+  accumulator that goes with it.** Out of scope for *this* plan, but a
+  required sibling feature for legacy parity: 63 `@table` input call sites
+  on alf rely on implicit column binding. Tracked as an active work item
+  in [`plan-auto-column-binding.md`](plan-auto-column-binding.md). That
+  plan lands the auto-predicate emission and the enclosingOverride
+  accumulator together (one recursion-parameter delta in
+  `walkInputFieldConditions`, plus the truth-table rows it enables). The
+  6-row truth table in §Truth table and the §Override propagation /
+  §Legacy behavior reference blocks are the design references.
 
 (Plain / non-`@table` input types were previously out of scope. That
 exclusion was removed after a divergence-scan on alf's production schema
