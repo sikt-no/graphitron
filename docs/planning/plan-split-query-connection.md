@@ -2,13 +2,9 @@
 
 > **Status:** In Review
 >
-> §1 shipped: `SplitTableField + Connection` classified (not rejected), validator
-> gates orderBy, emitter emits the ROW_NUMBER envelope + scatterConnectionByIdx,
-> DataFetcher returns `CompletableFuture<ConnectionResult>`. Fixture
-> `Film.actorsConnection` + three execution tests (forward first page, forward
-> after-cursor, backward last-page) cover the per-parent batching + cursor
-> round-trip. §2 (SplitLookupTableField + Connection) and dynamic-orderBy remain
-> deferred with explicit validator errors pointing to this plan.
+> §1 (SplitTableField + Connection) shipped at `3821842`. Awaiting reviewer
+> sign-off to close, after which §2 (SplitLookupTableField + Connection) and §3
+> (scope closure) remain.
 
 ## Problem
 
@@ -94,35 +90,36 @@ applied inside the windowed CTE.
 
 ## Touch points
 
-**Classifier** in `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java`:
-- `:252-256`: delete the `hasSplitQuery && hasLookupKey && Connection` rejection;
-  fall through to `SplitLookupTableField` construction
-- `:279-283`: delete the `hasSplitQuery && Connection` rejection; fall through to
-  `SplitTableField` construction
+**§1 (shipped at `3821842`):**
+- `FieldBuilder:279-283` Connection rejection on `SplitTableField` path deleted.
+- `GraphitronSchemaValidator.validateSplitTableField` gained two checks for
+  Split+Connection: (a) orderBy non-empty, (b) orderBy not `Argument`. See
+  "Deferred / non-goals" below for why Argument is out of §1 scope.
+- `SplitRowsMethodEmitter.buildConnectionMethod` (new) emits the
+  parentInput VALUES + FK chain + ROW_NUMBER envelope; dispatch arm in
+  `buildForSplitTable`. `buildScatterConnectionByIdxHelper` emits a scatter
+  that returns `List<ConnectionResult>`; helper emission gated on
+  "any connection-returning SplitTableField in the class".
+- `TypeFetcherGenerator.buildSplitQueryDataFetcher` branches on wrapper:
+  Connection means `DataLoader<KeyType, ConnectionResult>` and returns
+  `CompletableFuture<ConnectionResult>`.
+- `ConnectionResultClassGenerator`: storage type narrowed from `Result<Record>`
+  to `List<Record>` so the scatter can pass per-parent `ArrayList` sublists
+  without synthesizing a jOOQ Result. Root emission unaffected because
+  `Result<Record>` extends `List<Record>`.
+- `SplitRowsMethodEmitter.buildRuntimeStub` handles the Connection wrapper's
+  `List<ConnectionResult>` return type alongside the existing List/Single cases.
 
-**Validator** in `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewrite/GraphitronSchemaValidator.java`:
-- `:346-351`: `validateSplitLookupTableField` rejection on `Connection` wrapper must go
-- `:340-343`: `validateSplitTableField` gains pagination-shape validation (e.g.
-  OrderBy must be non-empty for a Connection, mirroring what cursor encoding
-  requires today)
+**§2 still pending:**
+- `FieldBuilder:252-256`: delete the `hasSplitQuery && hasLookupKey && Connection`
+  rejection; message currently points at this plan's §2.
+- `GraphitronSchemaValidator.validateSplitLookupTableField:346-351`:
+  defense-in-depth rejection on `Connection` wrapper must go.
+- `SplitRowsMethodEmitter.buildConnectionMethod`: extend to handle the
+  `lookupMapping != null` branch (reuse the lookup-input VALUES JOIN from
+  `buildListMethod`).
 
-**Rows emitter** in `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewrite/generators/SplitRowsMethodEmitter.java`:
-- New `buildConnectionMethod(...)` sibling to `buildListMethod` / `buildSingleMethod`.
-  Reuses parent-input VALUES construction, alias generation, FK join emission, and
-  the lookup-input join (for the `SplitLookupTableField` case). Adds the
-  `ROW_NUMBER()` + CTE envelope and the `WHERE rn <= N+1` outer filter.
-- Dispatch in `buildForSplitTable` / `buildForSplitLookupTable` picks the new
-  method when `returnType().wrapper() instanceof FieldWrapper.Connection`.
-- New `scatterConnectionByIdx(flat, keys.size(), pageSize, after, before, backward, orderByColumns)`
-  helper emitted once per fetcher class alongside `scatterByIdx`. Returns
-  `List<ConnectionResult>`.
-
-**DataFetcher** in `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java`:
-- `buildSplitQueryDataFetcher(:1051)` branches on wrapper: `Connection` means
-  `DataLoader<KeyType, ConnectionResult>` and returns `CompletableFuture<ConnectionResult>`.
-  Existing `List<Record>` / `Record` branches stay as-is.
-
-**No new shared classes.** `ConnectionResult`, `ConnectionHelper.edges/nodes/pageInfo`,
+**No new shared classes.** `ConnectionHelper.edges/nodes/pageInfo`,
 `ConnectionHelper.encodeCursor/decodeCursor/reverseOrderBy`, and
 `ConnectionHelper.PageRequest` are all reused.
 
@@ -131,10 +128,19 @@ applied inside the windowed CTE.
 - **Single-cardinality `@splitQuery` + `@asConnection`**: nonsensical (a single
   result isn't paginable). Classifier keeps rejecting; message updated to drop
   the "follow-up plan" caveat.
-- **`SplitLookupTableField` + `@asConnection`**: scope decision in §3 below.
-  Semantics of "paginate the cartesian of per-parent × per-lookup-key" need a
-  second design pass. First shipping phase targets `SplitTableField` only and
-  keeps `SplitLookupTableField + Connection` rejected with an updated message.
+- **`SplitLookupTableField` + `@asConnection`**: §2. Semantics of "paginate the
+  cartesian of per-parent × per-lookup-key" need a design pass. §1 ships with
+  `SplitLookupTableField + Connection` rejected at classifier time with an
+  updated message pointing at §2.
+- **Dynamic `@orderBy` on `SplitTableField` + `@asConnection`**: rejected at
+  validator time. The existing `<fieldName>OrderBy(env)` helper emitted by
+  `TypeFetcherGenerator.buildOrderByHelperMethod` hard-codes the canonical
+  `tableLocal` alias (e.g. `actor`), but Split emission uses the FK-chain terminal
+  alias (e.g. `actorsConnection_a1`). Reuse would return an `OrderByResult`
+  referencing the wrong jOOQ table instance, which jOOQ would flag at SQL
+  generation. Lifting the gate needs either a Split-specific OrderBy helper that
+  accepts the terminal-aliased Table, or a broader refactor threading the alias
+  through all OrderBy helpers. Plausible §2 scope; not §1.
 - **Condition-join hops**: unsupportedReason already gates these; unchanged.
 - **Custom pagination-arg names**: the plan uses `first/last/after/before`
   literal names in the emitted rows method (the same shortcut the root connection
@@ -145,21 +151,34 @@ applied inside the windowed CTE.
 
 ## Phases
 
-**§1: SplitTableField + Connection** (the main item)
-- Classifier: delete `FieldBuilder:279-283` rejection, update the message on the
-  remaining single-cardinality arm.
-- Validator: add OrderBy-non-empty check to `validateSplitTableField`.
-- Emitter: `SplitRowsMethodEmitter.buildConnectionMethod` + `scatterConnectionByIdx`.
-- DataFetcher: Connection arm in `buildSplitQueryDataFetcher`.
-- Fixtures: add connection-returning split fixture (e.g. `Film.actors` as connection
-  in sakila fixture; picks an existing many-many with a natural ordering).
-- Execution test: two parents, forward/backward pagination, cursor round-trip.
+**§1: SplitTableField + Connection** (the main item): shipped at `3821842`.
+Fixture: `Film.actorsConnection` over the film_actor junction with
+`@defaultOrder(primaryKey: true)`. Three execution tests cover two-parent batching
+(one rows round-trip), forward after-cursor paging (per-partition seek), and
+backward last-page (reversed ordering + client-side re-reverse). Learnings:
+
+- jOOQ's `.seek(Field<?>...)` on the inner Select composes the tuple comparison
+  inside the windowed CTE's `WHERE`; `DSL.noField(col)` from `decodeCursor`
+  collapses to no-op when no cursor is supplied, so the single rows method
+  handles both first-page and after-cursor paths without a runtime branch. The
+  `WHERE (ordering_cols) > (cursor_values)` shape drawn in "Shape of the emitted
+  SQL" above is what jOOQ emits; we never had to build it by hand.
+- The `<fieldName>OrderBy(env)` helper for dynamic ordering bakes in the
+  canonical `tableLocal` alias, not the Split path's FK-chain terminal alias;
+  §1 scope rejects `OrderBySpec.Argument` at validator time and defers the
+  alias-threading refactor to §2.
+- `ConnectionResult`'s `result` field narrowed from `Result<Record>` to
+  `List<Record>` so the scatter can pass per-parent `ArrayList` sublists without
+  synthesizing a jOOQ Result. Root connection emission still compiles because
+  `Result<Record>` is-a `List<Record>`.
 
 **§2: SplitLookupTableField + Connection** (defer until §1 lands + reviewed)
 - Requires a decision on per-lookup-key pagination semantics. Options:
   (a) paginate per `(parent, lookup-key)` pair (row_number partitions over the
   combined key); (b) paginate per parent, concatenating all lookup-key matches
   (row_number partitions over parent only); (c) reject until a consumer hits it.
+- Dynamic `@orderBy` on Split+Connection lands here too (needs the
+  terminal-alias OrderBy helper refactor).
 - Emitter: `buildConnectionMethod` handles the `lookupMapping != null` branch; the
   lookup-input JOIN stays, partition clause varies by the option chosen.
 - Classifier: delete `FieldBuilder:252-256` rejection.
@@ -171,36 +190,42 @@ applied inside the windowed CTE.
 
 ## Test coverage
 
-- **Fixture expansion**: at least one SDL fixture in `graphitron-rewrite-test-fixtures`
-  with `@splitQuery @asConnection` over a list relationship; variant coverage for
-  `@orderBy(fixed:)` and `@orderBy(argument:)`.
-- **Pipeline test**: assert classification produces `SplitTableField` with
-  `Connection` wrapper (not `UnclassifiedField`); assert emission produces the
-  expected method signatures.
-- **Execution test**: real Postgres, two parents with overlapping child sets,
-  forward `first: N`, `first: N, after: cursor`, backward `last: N, before: cursor`.
-  Cursor stability under concurrent inserts out of scope (matches root connection
-  coverage).
-- **Lint ratchets**: existing three (`GeneratedSourcesLintTest`) already gate the
-  generated bodies for `var`, full-qualified jOOQ tables, and entity-conditions
-  imports. No new ratchet needed.
+§1 shipped with:
+- Pipeline tests (`GraphitronSchemaBuilderTest`): classification cases
+  `AS_CONNECTION_SPLIT_CLASSIFIED` and
+  `CONNECTION_WITH_DEFAULT_ORDER_INDEX_SPLIT_CLASSIFIED` assert the
+  previously-rejected shapes now produce `SplitTableField` with
+  `FieldWrapper.Connection`. `AS_CONNECTION_SPLIT_LOOKUP_REJECTED` pins the §2
+  rejection message.
+- Execution tests (`GraphQLQueryTest`): three cases covering two-parent
+  batching into a single rows invocation, forward `first: N, after: cursor`
+  (per-partition seek), and backward `last: N` (reversed ordering, client-side
+  re-reverse).
+- Lint ratchets: existing three (`GeneratedSourcesLintTest`) catch `var`,
+  full-qualified jOOQ tables, and graphql-java imports on entity-scoped
+  `*Conditions` classes. The new emitter avoids all three.
+
+§2 will need its own pipeline + execution coverage once the per-lookup-key
+semantics decision lands.
 
 ## Open questions
 
-1. **OrderBy-required invariant**: root connections today don't *require* a
-   non-empty ORDER BY (they fall through to `OrderBySpec.None`, empty orderBy,
-   cursor encoding hashes an empty tuple, which works but gives stable-but-arbitrary
-   pagination). Should Split+Connection require non-empty ORDER BY at validator
-   time to force deterministic partitioning, or inherit the root fetcher's
-   permissive stance? Recommend: **require it**, because partitions without a
-   total order produce silently non-deterministic slicing, which is a worse
-   failure mode than a build error.
-2. **Limit N+1 vs N+2**: root fetcher over-fetches by 1 (`page.limit()` = pageSize+1).
-   For backward pagination on partitions, does the same suffice, or does the
-   re-reversal in `trimmedResult()` need a different guard? Recommend: same
-   over-fetch; `trimmedResult` already handles the reversal symmetrically.
-3. **Phase 2 scope gate**: if no in-tree consumer needs `@splitQuery @lookupKey`
+1. **Phase 2 scope gate**: if no in-tree consumer needs `@splitQuery @lookupKey`
    with a connection return, drop §2 from this plan entirely and leave the
    rejection with a permanent "not supported" message. Worth checking the
    `graphitron-rewrite-test-fixtures` schemas + any known downstream users before
-   committing to §2 design.
+   committing to §2 design. The same scope check should sweep for any
+   in-production schemas that want dynamic `@orderBy` on Split+Connection, since
+   that's now co-located in §2.
+
+### Decided during §1
+
+- **OrderBy-required invariant**: require non-empty ORDER BY at validator time
+  for Split+Connection. Validator now emits
+  "@splitQuery connections require a non-empty ORDER BY (add @defaultOrder,
+  @orderBy, or a primary key on the target table)" when orderBy is `None` or
+  empty `Fixed`. Partitions without a total order would produce silently
+  non-deterministic slicing, which is a worse failure mode than a build error.
+- **Over-fetch size**: same `pageSize + 1` as the root connection fetcher.
+  `ConnectionResult.trimmedResult()` already handles the backward reversal
+  symmetrically, so §1 reuses `page.limit()` unchanged.
