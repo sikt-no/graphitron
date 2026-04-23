@@ -664,20 +664,27 @@ public final class SplitRowsMethodEmitter {
     // -----------------------------------------------------------------------
 
     /**
-     * List-with-per-parent-pagination sibling of {@link #buildListMethod}. Emits the
+     * List-with-per-parent-pagination sibling of {@link #buildListMethod}. Emits a
      * {@code ROW_NUMBER() OVER (PARTITION BY parentInput.idx ORDER BY <effectiveOrderBy>)}
-     * envelope described in {@code plan-split-query-connection.md}. Returns a
-     * {@code List<ConnectionResult>} indexed 1:1 with the DataLoader's keys, where each
-     * element carries that parent's over-fetched slice plus the shared pagination state.
+     * envelope and returns a {@code List<ConnectionResult>} indexed 1:1 with the DataLoader's
+     * keys, where each element carries that parent's over-fetched slice plus the shared
+     * pagination state.
      *
-     * <p>Batching invariant: DataLoader batches share the path and argument values, so
-     * {@code first/last/after/before} are identical across a batch, which is why the
-     * pagination dance runs once per rows invocation and wires into every per-parent slice.
+     * <p>Batching invariant: GraphQL field arguments are selection-set literals, resolved
+     * once per field selection, so every sibling resolver of the same selection sees the
+     * same {@code first/last/after/before} values. Aliases produce distinct selections and
+     * therefore distinct DataLoader paths, so two aliased uses of the same field with
+     * different args go to different batches. That is why the pagination dance runs once
+     * per rows invocation from the first context in
+     * {@code BatchLoaderEnvironment.getKeyContextsList()} and the resulting
+     * {@code PageRequest} is wired into every per-parent slice.
      *
-     * <p>§1 scope: {@link OrderBySpec.Fixed} only. {@link OrderBySpec.Argument} is rejected
-     * upstream by {@code GraphitronSchemaValidator.validateSplitTableField} because the
-     * {@code <fieldName>OrderBy} helper would need to accept the terminal alias rather than
-     * the canonical {@code tableLocal}.
+     * <p>Cursor semantics: because one cursor is shared across the batch, a client that
+     * pages "the next N items after cursor C" sees each parent independently filtered by
+     * {@code (orderBy cols) > C}. With a globally meaningful ordering (primary key, or any
+     * totally-ordered column set), this reads as "paginate these parents' connections in
+     * lockstep through the same cursor space" — which is the semantics graphql-java's
+     * field-args model naturally produces.
      */
     private static MethodSpec buildConnectionMethod(
             String fieldName,

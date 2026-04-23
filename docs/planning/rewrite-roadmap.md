@@ -32,7 +32,6 @@ Rewrite rejections observed in production, ranked by distinct-occurrence count. 
 
 | Count | Rejection | Closes via |
 |---:|---|---|
-| 68 | `@asConnection` on `@splitQuery` | Priority #1: *Lift `@asConnection` rejection on `@splitQuery` fields* |
 | 45 | Mutation update | Stubs #4 |
 | 44 | `MutationServiceRecordField` | Stubs #4 |
 | 41 | `ColumnReferenceField` | Stubs #8 |
@@ -42,21 +41,20 @@ Rewrite rejections observed in production, ranked by distinct-occurrence count. 
 | 20 | `QueryTableInterfaceField` | Stubs #3 |
 | 19 | Mutation insert | Stubs #4 |
 | 16 | `@splitQuery` with condition-join step | Active: *Classification vocabulary follow-ups* §5 |
-| 12 | `SplitTableField` under `NestingField` | Priority #2: *`SplitTableField` under `NestingField`* (new) |
+| 12 | `SplitTableField` under `NestingField` | Priority #1: *`SplitTableField` under `NestingField`* |
 | 3 | Nested type shared across parents with `TableField` | Active: *Multi-parent NestingField sharing — `TableField` arm* |
 | 1 | `QueryInterfaceField` | Stubs #3 |
 | 0 | `QueryServiceRecordField`, `QueryNodeField`, `QueryEntityField`, `@asConnection` on inline `TableField`, service-method unrecognized-sources param, `key does not connect`, `_Service` return type, and other nil-count stubs | various (no consumer pressure today) |
 
-**By area aggregate (close-with-one-plan totals):** Mutation bodies 131 (Stubs #4) · non-table / scalar child leaves 62 (Stubs #8) · interface / union 21 (Stubs #3) · split-query pain 360 (`@splitQuery` Active + Priority #1 + Priority #2 together).
+**By area aggregate (close-with-one-plan totals):** Mutation bodies 131 (Stubs #4) · non-table / scalar child leaves 62 (Stubs #8) · interface / union 21 (Stubs #3) · remaining split-query pain 28 (Active §5 + Priority #1 together).
 
 **Schema-author errors (diagnostics UX, not generator gaps):** `@lookupKey` with no resolved argument 32 · `@condition` parameter unresolvable 7 · service method reference incomplete 4 · no FK between tables 2 · type mapped to `@table` has unresolvable fields 2 · column not in jOOQ table (typo-suggest) 1 · argument's column unresolvable 1.
 
 ### Priority
 
-Ranked by production impact first (see snapshot above), then by architectural / structural concerns. Numbered prefixes `#1`/`#2` tie rows to the snapshot.
+Ranked by production impact first (see snapshot above), then by architectural / structural concerns. Numbered prefix `#1` ties the row to the snapshot.
 
-- **#1 (prod: 68) — Lift `@asConnection` rejection on `@splitQuery` fields** **[In Review]** — emit `ROW_NUMBER() OVER (PARTITION BY fk)` envelope to support per-parent Relay pagination inside DataLoader batches; scope: `SplitTableField` and `SplitLookupTableField` ([plan-split-query-connection.md](plan-split-query-connection.md)).
-- **#2 (prod: 12) — `SplitTableField` under `NestingField`** **[Backlog]** — add `SplitTableField` (and, by symmetry, `SplitLookupTableField`) to `GraphitronSchemaValidator.NESTED_WIREABLE_LEAVES` and extend the nested-depth emitter in `TypeClassGenerator` to wire a split-query rows-method call into the parent multiset. Today rejected generically at `GraphitronSchemaValidator:425-430` with a pointer to roadmap `#8`, but `SplitTableField` is a `BatchKeyField`, not a non-table/scalar/reference leaf — update the rejection pointer (or remove it) when this item lands.
+- **#1 (prod: 12) — `SplitTableField` under `NestingField`** **[Backlog]** — add `SplitTableField` (and, by symmetry, `SplitLookupTableField`) to `GraphitronSchemaValidator.NESTED_WIREABLE_LEAVES` and extend the nested-depth emitter in `TypeClassGenerator` to wire a split-query rows-method call into the parent multiset. Today rejected generically at `GraphitronSchemaValidator:425-430` with a pointer to roadmap `#8`, but `SplitTableField` is a `BatchKeyField`, not a non-table/scalar/reference leaf — update the rejection pointer (or remove it) when this item lands.
 
 Architecture / structural (no direct production-count attribution; ordered by rough dependency):
 
