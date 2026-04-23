@@ -435,8 +435,11 @@ differentiates from the emitted `<TypeName>Fetchers` class and from
 the user's SDL type name. Method-level entry point stays short:
 `FilmType.type()` returns a `GraphQLObjectType`.
 
-**D4.** `getSdl()` caching. Options: build on every call, build once
-and cache in a `static volatile`, build at class-init time. Recommend
-lazy + cached: no work for apps that don't call it, one-time cost
-when they do.
+**D4.** `getSdl()` caching. **Resolved.** Lazy + cached in a
+`static volatile` field. Apps that never call `getSdl()` pay
+nothing; apps that do (federation composition, tooling endpoints)
+pay the `SchemaPrinter` cost on the first call and get a field read
+every subsequent call. The schema is app-scoped and immutable after
+first build, so a single cached SDL is safe for the process
+lifetime.
 
