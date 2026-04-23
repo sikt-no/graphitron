@@ -141,6 +141,69 @@ Additional multi-level fixtures to audit during implementation:
 `listInputJavaRecordAndFieldOverrideCondition` under the same `queries/fetch/
 records/` directory.
 
+#### Legacy behavior reference (and intentional divergence)
+
+The rule above (downward inheritance, explicit methods survive) is the rule
+the **rewrite** will enforce. It is NOT the rule the legacy generator
+implements. Reviewers and implementers should know the delta before signing
+off on §Override propagation.
+
+**Legacy schema — `withListedInputConditions`**
+([`.../withListedInputConditions/schema.graphqls`](../../graphitron-codegen-parent/graphitron-java-codegen/src/test/resources/queries/fetch/records/withListedInputConditions/schema.graphqls)):
+
+```graphql
+type Query {
+  customer(in: [CustomerInput]):         CustomerTable @condition(..., method: "customerJOOQRecordList")
+  customerOverride(in: [CustomerInput]): CustomerTable @condition(..., method: "customerJOOQRecordList", override: true)
+}
+input CustomerInput @table(name: "CUSTOMER") {
+  id:    ID!     @condition(..., method: "customerString")
+  first: String! @field(name: "FIRST_NAME")
+                 @condition(..., method: "customerString", override: true)
+}
+```
+
+**Legacy output — same fixture's `expected/QueryDBQueries.java`**
+([`.../withListedInputConditions/expected/QueryDBQueries.java`](../../graphitron-codegen-parent/graphitron-java-codegen/src/test/resources/queries/fetch/records/withListedInputConditions/expected/QueryDBQueries.java)):
+
+- `customerForQuery` (no outer override, :17-37) emits the full stack:
+  row-IN with `hasId(id)` + `customerString(table, id)` + `customerString(table, firstName)`,
+  AND-ed with `customerJOOQRecordList`. Inner auto-predicate for `first`
+  suppressed by its own `override: true`.
+- `customerOverrideForQuery` (outer override, :40-48) emits **only**
+  `customerJOOQRecordList`. Every inner contribution is dropped: the `id`
+  auto-predicate, the `id` explicit `customerString`, and the `first`
+  explicit `customerString`. There is no row-IN construct at all.
+
+**The legacy rule is total-replace: an outer `override: true` substitutes its
+own explicit method for everything below it, regardless of whether inner
+fields carry their own explicit `@condition` methods.** The rewrite's
+proposed rule preserves inner explicit methods across the boundary. That is
+a **deliberate divergence** from legacy.
+
+**Rationale for diverging.** The legacy behavior couples auto-predicates and
+explicit methods into a single "outer owns everything" toggle, which means a
+schema author can't declaratively compose an outer replacement condition with
+inner explicit side-conditions. The rewrite treats each level's `override`
+flag as affecting only that level's auto-predicate, which lets
+`@condition(override: true)` replace auto-binding without also silencing
+explicit input-field conditions written by the schema author.
+
+**Coverage requirement before Done.** §4c adds an execution test that pins
+the new semantics directly: an outer field-level `@condition(override: true)`
+over a `@table` input whose field carries its own `@condition`. The test
+asserts that the explicit input-field method fires (not suppressed), and
+that the outer auto-column binding is suppressed. Without this test the
+divergence is implicit; with it, any future regression to the legacy
+total-replace rule breaks a named case.
+
+**Out of scope for Phase 4.** The legacy total-replace rule is not
+reproduced. If a downstream consumer relies on the legacy coupling, that's
+a migration note for the cutover, not a Phase 4 requirement; it would be
+handled by an author-side schema edit (drop the inner `@condition` methods
+that they don't want running under outer override) or promoted to its own
+backlog item.
+
 ### Truth table (per input-field, per call site)
 
 "Any enclosing override" = field-level OR arg-level OR any intermediate
