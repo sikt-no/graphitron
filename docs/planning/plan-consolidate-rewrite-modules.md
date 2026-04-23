@@ -1,6 +1,6 @@
 # Plan — Consolidate rewrite modules under `graphitron-rewrite/`
 
-> **Status:** Spec
+> **Status:** Ready
 
 Gather the three rewrite modules — and the rewrite-specific subset of `docs/` — under a single root directory so that "the rewrite world" is one `cd` away and the aggregator pom can host shared properties and profiles. Pure structural refactor — no behaviour change, no new code, no new dependencies, no rewritten doc prose.
 

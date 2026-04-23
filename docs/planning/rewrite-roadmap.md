@@ -104,7 +104,7 @@ Enumerated from `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS`. Priority numbers
 - **Selection parser audit** **[Backlog]** — `selection/` hand-rolls ~500 LOC; audit whether re-parsing is needed given what graphql-java already provides.
 - **`GraphitronContext` extension-point docs** **[Backlog]** — document what belongs in `GraphitronContext` vs jOOQ `ExecuteListener` vs schema directive.
 - **Drop `graphitron-common` build dependency from `graphitron-rewrite`** **[Backlog]** — inline `MultiSourceReader` + auto-inject `directives.graphqls`; emitted code runtime dependency unchanged.
-- **Consolidate rewrite modules under `graphitron-rewrite/`** **[Spec]** — gather generator + fixtures + test-spec under one aggregator; renames `-test-fixtures` → `-fixtures` and `-test-spec` → `-test`. Structural refactor, no behaviour change. ([plan](plan-consolidate-rewrite-modules.md))
+- **Consolidate rewrite modules under `graphitron-rewrite/`** **[Ready]** — gather generator + fixtures + test-spec under one aggregator; renames `-test-fixtures` → `-fixtures` and `-test-spec` → `-test`. Structural refactor, no behaviour change. ([plan](plan-consolidate-rewrite-modules.md))
 
 ### Deferred
 
