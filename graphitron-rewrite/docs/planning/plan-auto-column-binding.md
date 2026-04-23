@@ -38,7 +38,7 @@ For every `InputField.ColumnField` on a `TableInputArg` that does not
 carry `@condition` or sit under a `@lookupKey` binding, emit
 `srcAlias.COLUMN.eq(<nested-arg extraction for the field>)` as an
 additional `WhereFilter` during `projectFilters`. Compose with enclosing
-overrides per the 6-row truth table in `argument-resolution.md`
+overrides per the 6-row truth table in `../argument-resolution.md`
 §Truth table.
 
 Null input values omit the predicate (match legacy "absent means

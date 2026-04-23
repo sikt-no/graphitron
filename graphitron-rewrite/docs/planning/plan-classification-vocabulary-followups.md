@@ -63,7 +63,7 @@ Systematic audit — one pass per file:
 - **`../rewrite-model.md`** — the phrase `"does not navigate to a new table scope"` (in the
   `TableTargetField interface vs. NestingField` subsection) is correct. No other
   lookup-in-scope claims present. No change.
-- **`argument-resolution.md`** — discusses lookup mapping and `@condition` separately.
+- **`../argument-resolution.md`** — discusses lookup mapping and `@condition` separately.
   Spot-check that wording never implies `@condition` is blocked on lookup fields.
 - **`graphitron-codegen-parent/graphitron-java-codegen/README.md`** — primary directive
   reference, ~1500 lines, 32 mentions of `@condition`/`@lookupKey`. Grep for `lookupKey` +

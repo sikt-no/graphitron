@@ -12,7 +12,7 @@ import java.util.List;
  *
  * <p>The generator materialises this as a {@code VALUES(idx, col1, col2, …)} derived table
  * joined against the target table by equality on each key column, ordered by {@code input.idx}
- * to preserve input ordering. See {@code docs/planning/argument-resolution.md#lookupmapping}
+ * to preserve input ordering. See {@code docs/argument-resolution.md#lookupmapping}
  * and the VALUES + JOIN builder in {@code GeneratorUtils}.
  *
  * <p>{@code columns} carries the scalar keys declared via {@code @lookupKey} on arguments and on

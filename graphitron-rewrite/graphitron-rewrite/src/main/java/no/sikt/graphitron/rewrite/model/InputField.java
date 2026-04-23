@@ -16,7 +16,7 @@ import java.util.Optional;
  * alongside (or instead of, when {@code override: true}) the auto-generated column predicate.
  *
  * <p>{@link PlatformIdField} intentionally omits {@code condition} — see
- * {@code docs/planning/argument-resolution.md} Out of Scope.
+ * {@code docs/argument-resolution.md} Out of Scope.
  */
 public sealed interface InputField extends GraphitronField
         permits InputField.ColumnField, InputField.ColumnReferenceField,

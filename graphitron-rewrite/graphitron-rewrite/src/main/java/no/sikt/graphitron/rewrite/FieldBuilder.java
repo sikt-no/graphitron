@@ -650,7 +650,7 @@ class FieldBuilder {
      *
      * <p>The intent of this method is to localise the "what is this argument for" decision so
      * multiple projections can read the same classification. See
-     * {@code docs/planning/argument-resolution.md}.
+     * {@code docs/argument-resolution.md}.
      *
      * <p>Errors append to {@code errors} but never cause a {@code null} return: every arg maps
      * to a variant. Variants like {@link ArgumentRef.ScalarArg.UnboundArg} and
@@ -914,7 +914,7 @@ class FieldBuilder {
      * {@link #classifyArguments} output as the single source of truth about each argument.
      * Replaces the legacy three-pass model ({@code buildFilters} / {@code buildOrderBySpec} /
      * {@code buildPaginationSpec}) with one classification + one projection step. See
-     * {@code docs/planning/argument-resolution.md}.
+     * {@code docs/argument-resolution.md}.
      */
     private TableFieldComponents projectForFilter(List<ArgumentRef> refs, GraphQLFieldDefinition fieldDef,
                                                   TableRef rt, String returnTypeName, List<String> errors) {
@@ -1040,7 +1040,7 @@ class FieldBuilder {
                 }
                 case ArgumentRef.InputTypeArg.PlainInputArg pia -> {
                     // Plain input types are silently skipped unless paired with @condition;
-                    // see the out-of-scope note in docs/planning/argument-resolution.md.
+                    // see the out-of-scope note in docs/argument-resolution.md.
                     pia.argCondition().ifPresent(ac -> argConditions.add(ac.filter()));
                     walkInputFieldConditions(pia.fields(), pia.name(), List.of(), argConditions);
                 }
@@ -1057,7 +1057,7 @@ class FieldBuilder {
                         || (ca.argCondition().isPresent() && ca.argCondition().get().override());
                     // Lookup-key args are consumed by projectForLookup → LookupMapping and
                     // emitted via VALUES+JOIN by LookupValuesJoinEmitter. They must not appear
-                    // as GeneratedConditionFilter bodyParams (per docs/planning/argument-resolution.md Phase 1).
+                    // as GeneratedConditionFilter bodyParams (per docs/argument-resolution.md Phase 1).
                     if (!autoSuppressed && !ca.isLookupKey()) {
                         String javaType = javaTypeFor(ca.extraction(), ca.column());
                         bodyParams.add(new BodyParam(ca.name(), ca.column(), javaType, ca.nonNull(), ca.list(), ca.extraction()));
