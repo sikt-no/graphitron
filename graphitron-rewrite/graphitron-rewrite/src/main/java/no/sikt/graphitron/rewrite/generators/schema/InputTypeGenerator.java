@@ -70,6 +70,9 @@ public final class InputTypeGenerator {
         for (var field : inputType.getFieldDefinitions()) {
             body.add("\n.field(").add(buildFieldDefinition(field)).add(")");
         }
+        for (var applied : AppliedDirectiveEmitter.applicationsFor(inputType)) {
+            body.add(applied);
+        }
         body.add("\n.build();\n").unindent();
 
         var typeMethod = MethodSpec.methodBuilder("type")
@@ -94,6 +97,9 @@ public final class InputTypeGenerator {
         }
         if (field.isDeprecated()) {
             block.add(".deprecate($S)", field.getDeprecationReason());
+        }
+        for (var applied : AppliedDirectiveEmitter.applicationsFor(field)) {
+            block.add(applied);
         }
         block.add(".build()");
         return block.build();

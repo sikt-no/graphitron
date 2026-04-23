@@ -112,6 +112,9 @@ public final class ObjectTypeGenerator {
         for (var field : objectType.getFieldDefinitions()) {
             body.add("\n.field(").add(buildFieldDefinition(field)).add(")");
         }
+        for (var applied : AppliedDirectiveEmitter.applicationsFor(objectType)) {
+            body.add(applied);
+        }
         body.add("\n.build();\n").unindent();
 
         var classBuilder = TypeSpec.classBuilder(objectType.getName() + "Type")
@@ -164,6 +167,9 @@ public final class ObjectTypeGenerator {
         for (var field : interfaceType.getFieldDefinitions()) {
             body.add("\n.field(").add(buildFieldDefinition(field)).add(")");
         }
+        for (var applied : AppliedDirectiveEmitter.applicationsFor(interfaceType)) {
+            body.add(applied);
+        }
         body.add("\n.build();\n").unindent();
 
         return TypeSpec.classBuilder(interfaceType.getName() + "Type")
@@ -188,6 +194,9 @@ public final class ObjectTypeGenerator {
         }
         for (var member : unionType.getTypes()) {
             body.add("\n.possibleType($T.typeRef($S))", TYPE_REF, member.getName());
+        }
+        for (var applied : AppliedDirectiveEmitter.applicationsFor(unionType)) {
+            body.add(applied);
         }
         body.add("\n.build();\n").unindent();
 
@@ -217,6 +226,9 @@ public final class ObjectTypeGenerator {
         for (var arg : field.getArguments()) {
             block.add(".argument(").add(buildArgument(arg)).add(")");
         }
+        for (var applied : AppliedDirectiveEmitter.applicationsFor(field)) {
+            block.add(applied);
+        }
         block.add(".build()");
         return block.build();
     }
@@ -231,6 +243,9 @@ public final class ObjectTypeGenerator {
         }
         if (arg.isDeprecated()) {
             block.add(".deprecate($S)", arg.getDeprecationReason());
+        }
+        for (var applied : AppliedDirectiveEmitter.applicationsFor(arg)) {
+            block.add(applied);
         }
         block.add(".build()");
         return block.build();

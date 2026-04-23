@@ -85,6 +85,9 @@ public final class GraphitronSchemaClassGenerator {
         for (String name : plan.additionalTypeNames) {
             body.add("\n.additionalType($T.type())", ClassName.get(schemaPackage, name + "Type"));
         }
+        for (var dir : DirectiveDefinitionEmitter.survivors(assembled)) {
+            body.add("\n.additionalDirective(").add(DirectiveDefinitionEmitter.buildDefinition(dir)).add(")");
+        }
         body.add("\n.codeRegistry(codeRegistry.build());\n").unindent();
         body.addStatement("customizer.accept(schemaBuilder)");
         body.addStatement("return schemaBuilder.build()");

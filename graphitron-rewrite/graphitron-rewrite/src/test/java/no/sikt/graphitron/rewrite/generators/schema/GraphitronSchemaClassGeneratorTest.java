@@ -114,6 +114,29 @@ class GraphitronSchemaClassGeneratorTest {
     }
 
     @Test
+    void build_emitsAdditionalDirective_forSurvivorDirectiveDefinitions() {
+        var schema = TestSchemaHelper.buildBundle("""
+            directive @auth(roles: [String!]) on FIELD_DEFINITION
+            type Query { secret: String @auth(roles: ["admin"]) }
+            """).assembled();
+        var body = GraphitronSchemaClassGenerator.generate(schema).get(0)
+            .methodSpecs().get(0).code().toString();
+        assertThat(body)
+            .contains(".additionalDirective(")
+            .contains(".name(\"auth\")");
+    }
+
+    @Test
+    void build_skipsAdditionalDirective_forGeneratorOnlyDirectives() {
+        var schema = TestSchemaHelper.buildBundle("type Query { x: String }").assembled();
+        var body = GraphitronSchemaClassGenerator.generate(schema).get(0)
+            .methodSpecs().get(0).code().toString();
+        assertThat(body).doesNotContain(".name(\"table\")");
+        assertThat(body).doesNotContain(".name(\"field\")");
+        assertThat(body).doesNotContain(".name(\"condition\")");
+    }
+
+    @Test
     void build_callsRegisterFetchersForEachTypeWithFetchers_inAlphabeticalOrder() {
         var schema = TestSchemaHelper.buildBundle("""
             type Query { x: String }

@@ -56,6 +56,9 @@ public final class EnumTypeGenerator {
         for (var value : enumType.getValues()) {
             body.add("\n.value(").add(buildValueDefinition(value)).add(")");
         }
+        for (var applied : AppliedDirectiveEmitter.applicationsFor(enumType)) {
+            body.add(applied);
+        }
         body.add("\n.build();\n").unindent();
 
         var typeMethod = MethodSpec.methodBuilder("type")
@@ -79,6 +82,9 @@ public final class EnumTypeGenerator {
         }
         if (value.isDeprecated()) {
             block.add(".deprecationReason($S)", value.getDeprecationReason());
+        }
+        for (var applied : AppliedDirectiveEmitter.applicationsFor(value)) {
+            block.add(applied);
         }
         block.add(".build()");
         return block.build();
