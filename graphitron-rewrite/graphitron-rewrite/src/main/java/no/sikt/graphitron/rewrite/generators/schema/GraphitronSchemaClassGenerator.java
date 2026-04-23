@@ -59,7 +59,7 @@ public final class GraphitronSchemaClassGenerator {
 
     private GraphitronSchemaClassGenerator() {}
 
-    public static List<TypeSpec> generate(GraphQLSchema assembled) {
+    public static List<TypeSpec> generate(GraphQLSchema assembled, Set<String> typesWithFetchers) {
         var plan = planFor(assembled);
         String schemaPackage = RewriteConfig.outputPackage() + ".rewrite.schema";
 
@@ -69,9 +69,15 @@ public final class GraphitronSchemaClassGenerator {
             builderType);
 
         var body = CodeBlock.builder()
-            .addStatement("var codeRegistry = $T.newCodeRegistry()", CODE_REGISTRY)
-            .add("var schemaBuilder = $T.newSchema()", GRAPHQL_SCHEMA)
-            .indent();
+            .addStatement("var codeRegistry = $T.newCodeRegistry()", CODE_REGISTRY);
+
+        var sortedFetcherTypes = new ArrayList<>(typesWithFetchers);
+        sortedFetcherTypes.sort(Comparator.naturalOrder());
+        for (String name : sortedFetcherTypes) {
+            body.addStatement("$T.registerFetchers(codeRegistry)", ClassName.get(schemaPackage, name + "Type"));
+        }
+
+        body.add("var schemaBuilder = $T.newSchema()", GRAPHQL_SCHEMA).indent();
 
         if (plan.hasQuery)        body.add("\n.query($T.type())",        ClassName.get(schemaPackage, "QueryType"));
         if (plan.hasMutation)     body.add("\n.mutation($T.type())",     ClassName.get(schemaPackage, "MutationType"));
@@ -94,6 +100,11 @@ public final class GraphitronSchemaClassGenerator {
             .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
             .addMethod(buildMethod)
             .build());
+    }
+
+    /** Convenience overload for tests that don't exercise fetcher registration. */
+    public static List<TypeSpec> generate(GraphQLSchema assembled) {
+        return generate(assembled, Set.of());
     }
 
     record Plan(

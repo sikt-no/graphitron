@@ -206,108 +206,17 @@ public class WiringClassGenerator {
     // --- Moved from TypeFetcherGenerator ---
 
     /**
-     * Builds the {@code .dataFetcher(name, …)} wiring entry for one field.
-     * Column fields with a parent table use {@code ColumnFetcher} directly.
-     * Property/record fields on {@code @record} parents use backing-object accessors.
-     * All other fields use a plain method reference to the corresponding {@code *Fetchers} class.
+     * Builds the {@code .dataFetcher(name, …)} wiring entry for one field. Delegates the value
+     * expression to {@link FetcherEmitter#dataFetcherValue} so the Commit B code-registry
+     * emitter can reuse the same logic without the {@code TypeRuntimeWiring} wrapper.
      */
     private static CodeBlock buildWiringEntry(GraphitronField field, ClassName fetchersClass,
             TableRef parentTable, GraphitronType.ResultType resultType) {
-        if (field instanceof ChildField.ConstructorField cf) {
-            return CodeBlock.of("\n.dataFetcher($S, env -> env.getSource())", cf.name());
-        }
-        if (field instanceof ChildField.NestingField nf) {
-            return CodeBlock.of("\n.dataFetcher($S, env -> env.getSource())", nf.name());
-        }
-        if (field instanceof ChildField.PropertyField pf && resultType != null) {
-            return buildPropertyOrRecordFetcherEntry(pf.name(), pf.columnName(), pf.column(), resultType);
-        }
-        if (field instanceof ChildField.RecordField rf && resultType != null) {
-            return buildPropertyOrRecordFetcherEntry(rf.name(), rf.columnName(), rf.column(), resultType);
-        }
-        if (field instanceof ChildField.ColumnField cf && parentTable != null) {
-            var columnFetcherClass = ClassName.get(RewriteConfig.outputPackage() + ".rewrite",
-                ColumnFetcherClassGenerator.CLASS_NAME);
-            var tablesClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Tables");
-            return CodeBlock.of("\n.dataFetcher($S, new $T<>($T.$L.$L))",
-                field.name(), columnFetcherClass, tablesClass,
-                parentTable.javaFieldName(), cf.column().javaName());
-        }
-        if (field instanceof ChildField.TableField tf) {
-            // Inline projection: the parent record carries this field as an aliased multiset.
-            // For single cardinality, unwrap to the first row (or null).
-            boolean single = tf.returnType().wrapper() instanceof FieldWrapper.Single;
-            if (single) {
-                var recordClass = ClassName.get("org.jooq", "Record");
-                var resultClass = ClassName.get("org.jooq", "Result");
-                var resultWildcard = ParameterizedTypeName.get(resultClass, WildcardTypeName.subtypeOf(Object.class));
-                return CodeBlock.of(
-                    "\n.dataFetcher($S, env -> { Object raw = (($T) env.getSource()).get($S, $T.class); return raw instanceof $T r && !r.isEmpty() ? r.get(0) : null; })",
-                    field.name(), recordClass, field.name(), resultClass, resultWildcard);
-            }
-            var columnFetcherClass = ClassName.get(RewriteConfig.outputPackage() + ".rewrite",
-                ColumnFetcherClassGenerator.CLASS_NAME);
-            return CodeBlock.of("\n.dataFetcher($S, new $T<>($T.field($S)))",
-                field.name(), columnFetcherClass, DSL, field.name());
-        }
-        if (field instanceof ChildField.LookupTableField) {
-            // Inline projection: same outer shape as TableField list cardinality.
-            var columnFetcherClass = ClassName.get(RewriteConfig.outputPackage() + ".rewrite",
-                ColumnFetcherClassGenerator.CLASS_NAME);
-            return CodeBlock.of("\n.dataFetcher($S, new $T<>($T.field($S)))",
-                field.name(), columnFetcherClass, DSL, field.name());
-        }
-        if (field instanceof ChildField.NodeIdField nf && parentTable != null) {
-            // Key columns are projected by TypeClassGenerator.$fields; the DataFetcher reads them
-            // from the parent Record and encodes the opaque node ID.
-            var encoderClass = ClassName.get(RewriteConfig.outputPackage() + ".rewrite",
-                NodeIdEncoderClassGenerator.CLASS_NAME);
-            var recordClass = ClassName.get("org.jooq", "Record");
-            var tablesClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Tables");
-            var body = CodeBlock.builder()
-                .add("\n.dataFetcher($S, env -> {\n", field.name())
-                .add("    $T r = ($T) env.getSource();\n", recordClass, recordClass)
-                .add("    return $T.encode($S", encoderClass, nf.nodeTypeId());
-            for (var col : nf.nodeKeyColumns()) {
-                body.add(",\n        r.get($T.$L.$L)", tablesClass, parentTable.javaFieldName(), col.javaName());
-            }
-            body.add(");\n").add("})");
-            return body.build();
-        }
-        return CodeBlock.of("\n.dataFetcher($S, $T::$L)", field.name(), fetchersClass, field.name());
-    }
-
-    private static CodeBlock buildPropertyOrRecordFetcherEntry(
-            String fieldName, String columnName, ColumnRef column, GraphitronType.ResultType resultType) {
-        var columnFetcherClass = ClassName.get(RewriteConfig.outputPackage() + ".rewrite",
-            ColumnFetcherClassGenerator.CLASS_NAME);
-        if (resultType instanceof GraphitronType.JooqTableRecordType jtrt && column != null && jtrt.table() != null) {
-            var tablesClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Tables");
-            return CodeBlock.of("\n.dataFetcher($S, new $T<>($T.$L.$L))",
-                fieldName, columnFetcherClass, tablesClass, jtrt.table().javaFieldName(), column.javaName());
-        }
-        if (resultType instanceof GraphitronType.JooqTableRecordType
-                || resultType instanceof GraphitronType.JooqRecordType) {
-            return CodeBlock.of("\n.dataFetcher($S, new $T<>($T.field($S)))",
-                fieldName, columnFetcherClass, DSL, columnName);
-        }
-        if (resultType instanceof GraphitronType.JavaRecordType jrt) {
-            var backingClass = ClassName.bestGuess(jrt.fqClassName());
-            var accessor = toCamelCase(columnName);
-            return CodeBlock.of("\n.dataFetcher($S, env -> (($T) env.getSource()).$L())",
-                fieldName, backingClass, accessor);
-        }
-        var prt = (GraphitronType.PojoResultType) resultType;
-        if (prt.fqClassName() != null) {
-            var backingClass = ClassName.bestGuess(prt.fqClassName());
-            var accessorBase = toCamelCase(columnName);
-            var getter = "get" + Character.toUpperCase(accessorBase.charAt(0)) + accessorBase.substring(1);
-            return CodeBlock.of("\n.dataFetcher($S, env -> (($T) env.getSource()).$L())",
-                fieldName, backingClass, getter);
-        }
-        var propertyDataFetcher = ClassName.get("graphql.schema", "PropertyDataFetcher");
-        return CodeBlock.of("\n.dataFetcher($S, $T.fetching($S))",
-            fieldName, propertyDataFetcher, columnName);
+        return CodeBlock.builder()
+            .add("\n.dataFetcher($S, ", field.name())
+            .add(FetcherEmitter.dataFetcherValue(field, fetchersClass, parentTable, resultType))
+            .add(")")
+            .build();
     }
 
     private static void collectNestedTypes(GraphitronField field, Map<String, NestedTypeWiring> out) {

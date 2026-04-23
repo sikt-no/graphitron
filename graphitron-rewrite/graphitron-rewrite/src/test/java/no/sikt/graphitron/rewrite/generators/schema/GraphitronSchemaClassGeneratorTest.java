@@ -114,6 +114,35 @@ class GraphitronSchemaClassGeneratorTest {
     }
 
     @Test
+    void build_callsRegisterFetchersForEachTypeWithFetchers_inAlphabeticalOrder() {
+        var schema = TestSchemaHelper.buildBundle("""
+            type Query { x: String }
+            type Film { id: ID! }
+            type Person { id: ID! }
+            """).assembled();
+        var body = GraphitronSchemaClassGenerator.generate(schema, Set.of("Film", "Person", "Query"))
+            .get(0).methodSpecs().get(0).code().toString();
+        assertThat(body).contains("com.example.rewrite.schema.FilmType.registerFetchers(codeRegistry)");
+        assertThat(body).contains("com.example.rewrite.schema.PersonType.registerFetchers(codeRegistry)");
+        assertThat(body).contains("com.example.rewrite.schema.QueryType.registerFetchers(codeRegistry)");
+        int filmIdx = body.indexOf("FilmType.registerFetchers");
+        int personIdx = body.indexOf("PersonType.registerFetchers");
+        int queryIdx = body.indexOf("QueryType.registerFetchers");
+        assertThat(filmIdx).isLessThan(personIdx);
+        assertThat(personIdx).isLessThan(queryIdx);
+    }
+
+    @Test
+    void build_callsRegisterFetchersBeforeAnySchemaBuilderSetup() {
+        var schema = TestSchemaHelper.buildBundle("type Query { x: String }").assembled();
+        var body = GraphitronSchemaClassGenerator.generate(schema, Set.of("Query"))
+            .get(0).methodSpecs().get(0).code().toString();
+        int registerIdx = body.indexOf("registerFetchers(codeRegistry)");
+        int schemaBuilderIdx = body.indexOf("var schemaBuilder");
+        assertThat(registerIdx).isGreaterThan(0).isLessThan(schemaBuilderIdx);
+    }
+
+    @Test
     void planFor_preservesRootAndAlphabeticalOrder() {
         var schema = TestSchemaHelper.buildBundle("""
             type Query { x: String }
