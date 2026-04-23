@@ -89,7 +89,6 @@ import static no.sikt.graphitron.rewrite.BuildContext.ARG_COLLATE;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_CLASS_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_CONNECTION_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_DEFAULT_FIRST_VALUE;
-import static no.sikt.graphitron.rewrite.BuildContext.ARG_CONDITION;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_CONTEXT_ARGUMENTS;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_DIRECTION;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_FIELDS;
@@ -669,7 +668,7 @@ class FieldBuilder {
      * {@code null}.
      */
     List<ArgumentRef> classifyArguments(GraphQLFieldDefinition fieldDef, TableRef rt, List<String> errors) {
-        var fieldCondition = readConditionDirective(fieldDef);
+        var fieldCondition = ctx.readConditionDirective(fieldDef);
         boolean fieldOverride = fieldCondition != null && fieldCondition.override();
         var refs = new ArrayList<ArgumentRef>();
         for (var arg : fieldDef.getArguments()) {
@@ -707,10 +706,11 @@ class FieldBuilder {
             if (resolvedType instanceof GraphitronType.TableInputType tit) {
                 List<InputColumnBinding> bindings = buildLookupBindings(tit, arg, fieldDef, name, errors);
                 return new ArgumentRef.InputTypeArg.TableInputArg(
-                    name, typeName, nonNull, list, tit.table(), bindings, argCondition);
+                    name, typeName, nonNull, list, tit.table(), bindings, argCondition, tit.inputFields());
             }
+            List<InputField> plainFields = classifyPlainInputFields(typeName, rt, errors);
             return new ArgumentRef.InputTypeArg.PlainInputArg(
-                name, typeName, nonNull, list, argCondition);
+                name, typeName, nonNull, list, argCondition, plainFields);
         }
 
         // Scalar arg: bind to column
@@ -757,6 +757,29 @@ class FieldBuilder {
             return new CallSiteExtraction.TextMapLookup(mapFieldName, textEnumMapping);
         }
         return new CallSiteExtraction.Direct();
+    }
+
+    /**
+     * Classifies the fields of a plain (non-{@code @table}) input type at call site against {@code rt}.
+     * Used to populate {@link ArgumentRef.InputTypeArg.PlainInputArg#fields()}.
+     * Returns {@link List#of()} when {@code rt} is {@code null} or the type is not an input object.
+     * Fields that fail column resolution are silently skipped (their conditions cannot be built).
+     */
+    private List<InputField> classifyPlainInputFields(String typeName, TableRef rt, List<String> errors) {
+        if (rt == null) return List.of();
+        var rawType = ctx.schema.getType(typeName);
+        if (!(rawType instanceof GraphQLInputObjectType iot)) return List.of();
+        var condErrors = new ArrayList<String>();
+        var classified = new ArrayList<InputField>();
+        for (var f : iot.getFieldDefinitions()) {
+            if (f.hasAppliedDirective(DIR_NOT_GENERATED)) continue;
+            var res = ctx.classifyInputField(f, typeName, rt, new LinkedHashSet<>(), condErrors);
+            if (res instanceof InputFieldResolution.Resolved r) {
+                classified.add(r.field());
+            }
+        }
+        condErrors.forEach(e -> errors.add("plain input type '" + typeName + "': " + e));
+        return List.copyOf(classified);
     }
 
     /**
@@ -809,43 +832,13 @@ class FieldBuilder {
     }
 
     /**
-     * Builder-internal record for a parsed {@code @condition} directive. See
-     * {@code docs/argument-resolution.md#condition-on-field-and-argument-definitions}.
-     */
-    private record ConditionDirective(String className, String methodName, boolean override,
-                                      List<String> contextArguments) {}
-
-    /**
-     * Reads a {@code @condition} directive from a field or argument container. Returns
-     * {@code null} when the directive is absent or could not be parsed (e.g. missing
-     * {@code className}/{@code method}).
-     */
-    private ConditionDirective readConditionDirective(graphql.schema.GraphQLDirectiveContainer container) {
-        var dir = container.getAppliedDirective(DIR_CONDITION);
-        if (dir == null) return null;
-        var condArg = dir.getArgument(ARG_CONDITION);
-        if (condArg == null || condArg.getValue() == null) return null;
-        Map<String, Object> ref = asMap(condArg.getValue());
-        String className = Optional.ofNullable(ref.get(ARG_CLASS_NAME)).map(Object::toString).orElse(null);
-        String methodName = Optional.ofNullable(ref.get(ARG_METHOD)).map(Object::toString).orElse(null);
-        if (className == null) {
-            String refName = Optional.ofNullable(ref.get(ARG_NAME)).map(Object::toString).orElse(null);
-            if (refName != null) className = RewriteConfig.namedReferences().get(refName);
-        }
-        if (className == null || methodName == null) return null;
-        boolean override = argBoolean(container, DIR_CONDITION, ARG_OVERRIDE, false);
-        List<String> ctxArgs = argStringList(container, DIR_CONDITION, ARG_CONTEXT_ARGUMENTS);
-        return new ConditionDirective(className, methodName, override, ctxArgs);
-    }
-
-    /**
      * Builds an {@link ArgConditionRef} from a {@code @condition} directive on one GraphQL argument.
      * Reflects the condition method via {@link ServiceCatalog#reflectTableMethod} with the arg's
      * name in {@code argNames} and any declared {@code contextArguments} in {@code ctxKeys}.
      * Appends an error and returns {@link Optional#empty()} on reflection failure.
      */
     private Optional<ArgConditionRef> buildArgCondition(GraphQLArgument arg, List<String> errors) {
-        var cond = readConditionDirective(arg);
+        var cond = ctx.readConditionDirective(arg);
         if (cond == null) return Optional.empty();
         var argName = arg.getName();
         var result = svc.reflectTableMethod(cond.className(), cond.methodName(),
@@ -867,7 +860,7 @@ class FieldBuilder {
      * {@code null} when the directive is absent or reflection fails (error appended).
      */
     private ConditionFilter buildFieldCondition(GraphQLFieldDefinition fieldDef, List<String> errors) {
-        var cond = readConditionDirective(fieldDef);
+        var cond = ctx.readConditionDirective(fieldDef);
         if (cond == null) return null;
         var argNames = fieldDef.getArguments().stream()
             .map(GraphQLArgument::getName)
@@ -1040,13 +1033,15 @@ class FieldBuilder {
                 case ArgumentRef.PaginationArgRef ignored -> {}               // handled by projectPaginationSpec
                 case ArgumentRef.InputTypeArg.TableInputArg tia -> {
                     // Auto-column binding for @table input types is deferred to step 9.
-                    // An arg-level @condition on the whole input still emits a predicate today.
+                    // Arg-level and field-level @condition predicates are emitted now.
                     tia.argCondition().ifPresent(ac -> argConditions.add(ac.filter()));
+                    walkInputFieldConditions(tia.fields(), argConditions);
                 }
                 case ArgumentRef.InputTypeArg.PlainInputArg pia -> {
                     // Plain input types are silently skipped unless paired with @condition;
                     // see the out-of-scope note in docs/argument-resolution.md.
                     pia.argCondition().ifPresent(ac -> argConditions.add(ac.filter()));
+                    walkInputFieldConditions(pia.fields(), argConditions);
                 }
                 case ArgumentRef.UnclassifiedArg u -> {
                     errors.add("argument '" + u.name() + "': " + u.reason());
@@ -1083,6 +1078,26 @@ class FieldBuilder {
         }
         filters.addAll(argConditions);
         return List.copyOf(filters);
+    }
+
+    /**
+     * Recursively collects explicit {@code @condition} filters from a list of {@link InputField}s.
+     * Only {@link InputField.ColumnField}, {@link InputField.ColumnReferenceField}, and
+     * {@link InputField.NestingField} carry a {@code condition} optional. {@code NestingField}
+     * children are recursed into. Auto-predicates for input type fields remain deferred to step 9.
+     */
+    private void walkInputFieldConditions(List<InputField> fields, List<ConditionFilter> out) {
+        for (var f : fields) {
+            switch (f) {
+                case InputField.ColumnField cf -> cf.condition().ifPresent(c -> out.add(c.filter()));
+                case InputField.ColumnReferenceField rf -> rf.condition().ifPresent(c -> out.add(c.filter()));
+                case InputField.NestingField nf -> {
+                    nf.condition().ifPresent(c -> out.add(c.filter()));
+                    walkInputFieldConditions(nf.fields(), out);
+                }
+                case InputField.PlatformIdField ignored -> {}
+            }
+        }
     }
 
     /**

@@ -9,6 +9,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
+import java.util.Optional;
 
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -20,14 +21,14 @@ class InputNestingFieldValidationTest {
         WITH_COLUMN_FIELDS("NestingField wrapping two ColumnFields — no validation errors",
             new NestingField("FooInput", "range", null, "RangeInput", true, false, List.of(
                 new InputField.ColumnField("RangeInput", "fromYear", null, "Int", false, false,
-                    new ColumnRef("release_year", "RELEASE_YEAR", "java.lang.Integer")),
+                    new ColumnRef("release_year", "RELEASE_YEAR", "java.lang.Integer"), Optional.empty()),
                 new InputField.ColumnField("RangeInput", "toYear", null, "Int", false, false,
-                    new ColumnRef("rental_rate", "RENTAL_RATE", "java.math.BigDecimal"))
-            )),
+                    new ColumnRef("rental_rate", "RENTAL_RATE", "java.math.BigDecimal"), Optional.empty())
+            ), Optional.empty()),
             List.of()),
 
         NULLABLE("nullable NestingField — no validation errors",
-            new NestingField("FooInput", "details", null, "DetailsInput", false, false, List.of()),
+            new NestingField("FooInput", "details", null, "DetailsInput", false, false, List.of(), Optional.empty()),
             List.of());
 
         private final String description;

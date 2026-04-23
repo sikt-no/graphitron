@@ -1919,6 +1919,47 @@ class GraphitronSchemaBuilderTest {
                 var f = (no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField) schema.field("Query", "filmByKey");
                 assertThat(f.reason())
                     .contains("@lookupKey is only supported on scalar column fields");
+            }),
+
+        // ===== Phase 4: @condition on INPUT_FIELD_DEFINITION (condition emission via projectFilters) =====
+
+        TABLE_INPUT_ARG_FIELD_CONDITION_EMITTED(
+            "@condition on a @table input field → ConditionFilter appears in the query field's filters",
+            """
+            input FilmInput @table(name: "film") {
+              filmId: Int! @field(name: "film_id")
+                @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "inputColumnCondition"})
+            }
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Query { films(filter: FilmInput): [Film!]! }
+            """,
+            schema -> {
+                var f = (QueryField.QueryTableField) schema.field("Query", "films");
+                assertThat(f.filters()).hasSize(1);
+                assertThat(f.filters().get(0)).isInstanceOf(ConditionFilter.class);
+                assertThat(((ConditionFilter) f.filters().get(0)).methodName()).isEqualTo("inputColumnCondition");
+            }),
+
+        PLAIN_INPUT_ARG_FIELD_CONDITION_EMITTED(
+            "@condition on a plain input field (conflicting tables, classified per call-site) → condition emitted on the matching call site",
+            """
+            input FilmInput {
+              filmId: Int! @field(name: "film_id")
+                @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "inputColumnCondition"})
+            }
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Language @table(name: "language") { name: String }
+            type Query {
+              films(filter: FilmInput): [Film!]!
+              languages(filter: FilmInput): [Language!]!
+            }
+            """,
+            schema -> {
+                var films = (QueryField.QueryTableField) schema.field("Query", "films");
+                assertThat(films.filters()).hasSize(1);
+                assertThat(((ConditionFilter) films.filters().get(0)).methodName()).isEqualTo("inputColumnCondition");
+                var languages = (QueryField.QueryTableField) schema.field("Query", "languages");
+                assertThat(languages.filters()).isEmpty();
             });
 
         final String sdl;
@@ -2227,7 +2268,79 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> assertThat(schema.type("FilterInput"))
-                .isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType.class));
+                .isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType.class)),
+
+        // ===== Phase 4: @condition on INPUT_FIELD_DEFINITION =====
+
+        COLUMN_FIELD_WITH_CONDITION(
+            "@condition on a ColumnField — condition() is populated on the classified field",
+            """
+            input FilmInput @table(name: "film") {
+              filmId: Int! @field(name: "film_id")
+                @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "inputColumnCondition"})
+            }
+            type Query { x: String }
+            """,
+            schema -> {
+                var it = (TableInputType) schema.type("FilmInput");
+                var cf = (no.sikt.graphitron.rewrite.model.InputField.ColumnField) it.inputFields().get(0);
+                assertThat(cf.condition()).isPresent();
+                assertThat(cf.condition().get().filter().methodName()).isEqualTo("inputColumnCondition");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(InputField.ColumnField.class); }
+        },
+
+        COLUMN_REFERENCE_FIELD_WITH_CONDITION(
+            "@condition on a ColumnReferenceField — condition() is populated",
+            """
+            input FilmInput @table(name: "film") {
+              filmId: Int! @field(name: "film_id")
+              languageName: String @field(name: "name") @reference(path: [{key: "film_language_id_fkey"}])
+                @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "inputRefCondition"})
+            }
+            type Query { x: String }
+            """,
+            schema -> {
+                var it = (TableInputType) schema.type("FilmInput");
+                var crf = (no.sikt.graphitron.rewrite.model.InputField.ColumnReferenceField) it.inputFields().stream()
+                    .filter(f -> f instanceof no.sikt.graphitron.rewrite.model.InputField.ColumnReferenceField)
+                    .findFirst().orElseThrow();
+                assertThat(crf.condition()).isPresent();
+                assertThat(crf.condition().get().filter().methodName()).isEqualTo("inputRefCondition");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(InputField.ColumnReferenceField.class); }
+        },
+
+        NESTING_FIELD_WITH_CONDITION(
+            "@condition on a NestingField — condition() is populated on the nesting wrapper",
+            """
+            input TitleInput { title: String @field(name: "title") }
+            input FilmInput @table(name: "film") {
+              filmId: Int! @field(name: "film_id")
+              details: TitleInput!
+                @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "inputNestingCondition"})
+            }
+            type Query { x: String }
+            """,
+            schema -> {
+                var it = (TableInputType) schema.type("FilmInput");
+                var nf = (no.sikt.graphitron.rewrite.model.InputField.NestingField) it.inputFields().stream()
+                    .filter(f -> f instanceof no.sikt.graphitron.rewrite.model.InputField.NestingField)
+                    .findFirst().orElseThrow();
+                assertThat(nf.condition()).isPresent();
+                assertThat(nf.condition().get().filter().methodName()).isEqualTo("inputNestingCondition");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(InputField.NestingField.class); }
+        },
+
+        INPUT_FIELD_CONDITION_OVERRIDE(
+            "input field carrying @condition(override: true) → whole type bypasses column validation → PojoInputType",
+            """
+            input FilterInput { notAColumn: Int @condition(condition: {className: "C", method: "m"}, override: true) }
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Query { films(filter: FilterInput): [Film] }
+            """,
+            schema -> assertThat(schema.type("FilterInput")).isInstanceOf(PojoInputType.class));
 
         final String sdl;
         final Consumer<GraphitronSchema> assertions;

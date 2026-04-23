@@ -15,4 +15,4 @@ import no.sikt.graphitron.rewrite.model.ConditionFilter;
  * {@code true}, the auto-generated column predicate for this argument is replaced by the arg's
  * condition method; when {@code false}, the auto predicate and the arg method are AND-ed together.
  */
-record ArgConditionRef(ConditionFilter filter, boolean override) {}
+public record ArgConditionRef(ConditionFilter filter, boolean override) {}

@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
 import graphql.language.ArrayValue;
+import graphql.schema.GraphQLType;
 import graphql.language.BooleanValue;
 import graphql.language.NullValue;
 import graphql.language.SourceLocation;
@@ -18,7 +19,9 @@ import graphql.schema.GraphQLSchema;
 import graphql.schema.GraphQLTypeUtil;
 import graphql.schema.GraphQLUnionType;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.rewrite.model.ConditionFilter;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
+import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType.InterfaceType;
@@ -34,6 +37,7 @@ import org.jooq.ForeignKey;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -621,5 +625,176 @@ class BuildContext {
         if (cls != null && method != null) return "method '" + method + "' in class '" + cls + "'";
         if (cls != null) return "class '" + cls + "'";
         return "unknown";
+    }
+
+    // ===== @condition directive parsing (shared with TypeBuilder / FieldBuilder) =====
+
+    /**
+     * Parsed representation of a {@code @condition} directive applied to any
+     * {@link GraphQLDirectiveContainer} (field, argument, or input-object field).
+     */
+    record ConditionDirective(
+        String className,
+        String methodName,
+        boolean override,
+        List<String> contextArguments
+    ) {}
+
+    /**
+     * Reads a {@code @condition} directive from a field, argument, or input-object-field
+     * container. Returns {@code null} when the directive is absent or could not be parsed
+     * (e.g. missing {@code className}/{@code method}).
+     *
+     * <p>Moved from {@code FieldBuilder} (was private) so both {@link FieldBuilder} and
+     * {@link TypeBuilder} can reach it via {@code ctx}.
+     */
+    ConditionDirective readConditionDirective(GraphQLDirectiveContainer container) {
+        var dir = container.getAppliedDirective(DIR_CONDITION);
+        if (dir == null) return null;
+        var condArg = dir.getArgument(ARG_CONDITION);
+        if (condArg == null || condArg.getValue() == null) return null;
+        Map<String, Object> ref = asMap(condArg.getValue());
+        String className = Optional.ofNullable(ref.get(ARG_CLASS_NAME)).map(Object::toString).orElse(null);
+        String methodName = Optional.ofNullable(ref.get(ARG_METHOD)).map(Object::toString).orElse(null);
+        if (className == null) {
+            String refName = Optional.ofNullable(ref.get(ARG_NAME)).map(Object::toString).orElse(null);
+            if (refName != null) className = RewriteConfig.namedReferences().get(refName);
+        }
+        if (className == null || methodName == null) return null;
+        boolean override = argBoolean(container, DIR_CONDITION, ARG_OVERRIDE, false);
+        List<String> ctxArgs = argStringList(container, DIR_CONDITION, ARG_CONTEXT_ARGUMENTS);
+        return new ConditionDirective(className, methodName, override, ctxArgs);
+    }
+
+    /**
+     * Builds an {@link ArgConditionRef} from a {@code @condition} directive on one
+     * {@link GraphQLInputObjectField}. Reflects the condition method via
+     * {@link ServiceCatalog#reflectTableMethod} with {@code inputFieldName} in {@code argNames}
+     * and any declared {@code contextArguments}. Appends an error and returns
+     * {@link Optional#empty()} on reflection failure — mirrors {@code FieldBuilder.buildArgCondition}.
+     */
+    Optional<ArgConditionRef> buildInputFieldCondition(
+            GraphQLInputObjectField field, String inputFieldName, List<String> errors) {
+        var cond = readConditionDirective(field);
+        if (cond == null) return Optional.empty();
+        var result = svc.reflectTableMethod(cond.className(), cond.methodName(),
+            Set.of(inputFieldName), Set.copyOf(cond.contextArguments()));
+        if (result.failed()) {
+            errors.add("input field '" + inputFieldName + "' @condition: " + result.failureReason());
+            return Optional.empty();
+        }
+        var methodRef = result.ref();
+        return Optional.of(new ArgConditionRef(
+            new ConditionFilter(methodRef.className(), methodRef.methodName(), methodRef.params()),
+            cond.override()));
+    }
+
+    // ===== Input-field classifier (shared between TypeBuilder and FieldBuilder) =====
+
+    /**
+     * Classifies a single {@link GraphQLInputObjectField} against {@code resolvedTable}, producing
+     * an {@link InputFieldResolution}: either a fully classified {@link InputField} variant
+     * (possibly with a {@code condition}) or an unresolved result with a diagnostic message.
+     *
+     * <p>Extracted from {@code TypeBuilder.buildInputField} so both {@link TypeBuilder}
+     * (type-build pass, {@code @table} inputs) and {@link FieldBuilder} (argument-classify pass,
+     * plain inputs) share the same decision tree.
+     *
+     * <p>Condition reflection failures append to {@code errors} and leave the
+     * {@code condition} field empty — the field still classifies as its structural variant.
+     * Column-miss and path-resolution failures return {@link InputFieldResolution.Unresolved}.
+     *
+     * <p>{@code expandingTypes} guards against circular plain-input nesting; callers start
+     * with an empty set.
+     */
+    InputFieldResolution classifyInputField(
+            GraphQLInputObjectField field, String parentTypeName, TableRef resolvedTable,
+            Set<String> expandingTypes, List<String> errors) {
+        String name = field.getName();
+        GraphQLType type = field.getType();
+        boolean nonNull = type instanceof GraphQLNonNull;
+        boolean list = GraphQLTypeUtil.unwrapNonNull(type) instanceof GraphQLList;
+        String typeName = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(type)).getName();
+        boolean hasFieldDir = field.hasAppliedDirective(DIR_FIELD);
+        String columnName = hasFieldDir
+            ? argString(field, DIR_FIELD, ARG_NAME).orElse(name)
+            : name;
+        if (field.hasAppliedDirective(DIR_REFERENCE)) {
+            var path = parsePath(field, name, resolvedTable.tableName(), null);
+            if (path.hasError()) return new InputFieldResolution.Unresolved(name, null, path.errorMessage());
+            return svc.resolveColumnForReference(columnName, path.elements(), resolvedTable.tableName())
+                .<InputFieldResolution>map(col -> {
+                    Optional<ArgConditionRef> cond = buildInputFieldCondition(field, name, errors);
+                    return new InputFieldResolution.Resolved(new InputField.ColumnReferenceField(
+                        parentTypeName, name, locationOf(field), typeName, nonNull, list,
+                        col, path.elements(), cond));
+                })
+                .orElseGet(() -> new InputFieldResolution.Unresolved(name, columnName,
+                    "no column '" + columnName + "' reachable via @reference path"));
+        }
+        // Nesting: field type is a plain input object (no @table).
+        var baseType = GraphQLTypeUtil.unwrapAll(type);
+        if (baseType instanceof GraphQLInputObjectType nestedInputType
+                && !nestedInputType.hasAppliedDirective(DIR_TABLE)) {
+            if (expandingTypes.contains(typeName)) {
+                return new InputFieldResolution.Unresolved(name, null,
+                    "circular input type reference detected while expanding '" + typeName + "'");
+            }
+            var newExpanding = new LinkedHashSet<>(expandingTypes);
+            newExpanding.add(typeName);
+            var failures = new ArrayList<InputFieldResolution.Unresolved>();
+            var resolvedFields = new ArrayList<InputField>();
+            for (var nested : nestedInputType.getFieldDefinitions().stream()
+                    .filter(f -> !f.hasAppliedDirective(DIR_NOT_GENERATED)).toList()) {
+                var res = classifyInputField(nested, typeName, resolvedTable, newExpanding, errors);
+                switch (res) {
+                    case InputFieldResolution.Resolved r -> resolvedFields.add(r.field());
+                    case InputFieldResolution.Unresolved u -> failures.add(u);
+                }
+            }
+            if (!failures.isEmpty()) {
+                String reasons = failures.stream()
+                    .map(u -> "'" + u.fieldName() + "': " + u.reason())
+                    .collect(Collectors.joining("; "));
+                String hint = failures.stream()
+                    .map(InputFieldResolution.Unresolved::lookupColumn)
+                    .filter(c -> c != null)
+                    .findFirst()
+                    .map(c -> candidateHint(c, catalog.columnSqlNamesOf(resolvedTable.tableName())))
+                    .orElse("");
+                return new InputFieldResolution.Unresolved(name, null,
+                    "nested input type '" + typeName + "' has unresolvable fields: " + reasons + hint);
+            }
+            Optional<ArgConditionRef> cond = buildInputFieldCondition(field, name, errors);
+            return new InputFieldResolution.Resolved(new InputField.NestingField(
+                parentTypeName, name, locationOf(field), typeName, nonNull, list,
+                List.copyOf(resolvedFields), cond));
+        }
+        String tableName = resolvedTable.tableName();
+        var colEntry = catalog.findColumn(tableName, columnName);
+        if (colEntry.isPresent()) {
+            var e = colEntry.get();
+            Optional<ArgConditionRef> cond = buildInputFieldCondition(field, name, errors);
+            return new InputFieldResolution.Resolved(new InputField.ColumnField(
+                parentTypeName, name, locationOf(field), typeName, nonNull, list,
+                new ColumnRef(e.sqlName(), e.javaName(), e.columnClass()), cond));
+        }
+        // Fallback: check for legacy platform-key accessors on the jOOQ record class.
+        if ("ID".equals(typeName)
+                && !list
+                && !field.hasAppliedDirective(DIR_NODE_ID)) {
+            String accessorSuffix = JooqCatalog.sqlToAccessorSuffix(columnName);
+            String getterName = "get" + accessorSuffix;
+            String setterName = "set" + accessorSuffix;
+            if (catalog.hasPlatformIdAccessors(tableName, getterName, setterName)) {
+                return new InputFieldResolution.Resolved(new InputField.PlatformIdField(
+                    parentTypeName, name, locationOf(field), typeName, nonNull, getterName, setterName));
+            }
+            return new InputFieldResolution.Unresolved(name, null,
+                "field '" + name + "' has no matching column and no accessor methods ("
+                + getterName + "/" + setterName + ") found on record class");
+        }
+        return new InputFieldResolution.Unresolved(name, columnName,
+            "no column '" + columnName + "' found in table '" + tableName + "'");
     }
 }

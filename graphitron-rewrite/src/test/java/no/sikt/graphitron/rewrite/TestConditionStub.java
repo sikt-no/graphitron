@@ -41,4 +41,27 @@ class TestConditionStub {
     public static Condition argConditionWithContext(org.jooq.Table<?> table, String cityNames, String tenantId) {
         throw new UnsupportedOperationException();
     }
+
+    /**
+     * Input-field-level {@code @condition} method — receives the target table plus the SDL input
+     * field value. Used on {@code filmId} input fields in Phase 4 tests.
+     */
+    public static Condition inputColumnCondition(org.jooq.Table<?> table, String filmId) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Input-field-level {@code @condition} for a {@code @reference}-navigating field named
+     * {@code languageName}.
+     */
+    public static Condition inputRefCondition(org.jooq.Table<?> table, String languageName) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Input-field-level {@code @condition} for a {@code NestingField} named {@code details}.
+     */
+    public static Condition inputNestingCondition(org.jooq.Table<?> table, String details) {
+        throw new UnsupportedOperationException();
+    }
 }

@@ -1,15 +1,22 @@
 package no.sikt.graphitron.rewrite.model;
 
 import graphql.language.SourceLocation;
+import no.sikt.graphitron.rewrite.ArgConditionRef;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Classifies every field in a GraphQL input object type.
  * The sealed hierarchy mirrors the input-field taxonomy, parallel to {@link ChildField} for output fields.
  *
- * <p>Currently only {@code @table}-annotated input types have classified fields; developer-owned
- * input types ({@link GraphitronType.InputType}) have no field-level classification yet.
+ * <p>{@link ColumnField}, {@link ColumnReferenceField}, and {@link NestingField} carry an optional
+ * {@code condition} — an {@link ArgConditionRef} built from a {@code @condition} directive on the
+ * input field definition. When present, the condition method fires as an additional WHERE predicate
+ * alongside (or instead of, when {@code override: true}) the auto-generated column predicate.
+ *
+ * <p>{@link PlatformIdField} intentionally omits {@code condition} — see
+ * {@code docs/planning/argument-resolution.md} Out of Scope.
  */
 public sealed interface InputField extends GraphitronField
         permits InputField.ColumnField, InputField.ColumnReferenceField,
@@ -34,7 +41,8 @@ public sealed interface InputField extends GraphitronField
         String typeName,
         boolean nonNull,
         boolean list,
-        ColumnRef column
+        ColumnRef column,
+        Optional<ArgConditionRef> condition
     ) implements InputField {}
 
     /**
@@ -56,7 +64,8 @@ public sealed interface InputField extends GraphitronField
         boolean nonNull,
         boolean list,
         ColumnRef column,
-        List<JoinStep> joinPath
+        List<JoinStep> joinPath,
+        Optional<ArgConditionRef> condition
     ) implements InputField {}
 
     /**
@@ -76,6 +85,16 @@ public sealed interface InputField extends GraphitronField
      * re-deriving method names. A {@code list} field is intentionally omitted — the classifier
      * guarantees scalar.
      */
+    record PlatformIdField(
+        String parentTypeName,
+        String name,
+        SourceLocation location,
+        String typeName,
+        boolean nonNull,
+        String getterName,
+        String setterName
+    ) implements InputField {}
+
     /**
      * A field in a {@code @table}-annotated input type whose GraphQL type is itself an input
      * object type with no {@code @table} directive — i.e., a plain grouping type whose fields all
@@ -95,16 +114,7 @@ public sealed interface InputField extends GraphitronField
         String typeName,
         boolean nonNull,
         boolean list,
-        List<InputField> fields
-    ) implements InputField {}
-
-    record PlatformIdField(
-        String parentTypeName,
-        String name,
-        SourceLocation location,
-        String typeName,
-        boolean nonNull,
-        String getterName,
-        String setterName
+        List<InputField> fields,
+        Optional<ArgConditionRef> condition
     ) implements InputField {}
 }

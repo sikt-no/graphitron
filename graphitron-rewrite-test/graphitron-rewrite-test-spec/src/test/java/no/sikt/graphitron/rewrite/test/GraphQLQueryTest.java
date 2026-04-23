@@ -1300,6 +1300,46 @@ class GraphQLQueryTest {
         assertThat(byId.get(2)).extracting(a -> a.get("actorId")).containsExactlyInAnyOrder(1, 3);
     }
 
+    // ===== argres Phase 4: @condition on INPUT_FIELD_DEFINITION =====
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void inputFieldCondition_tableInput_conditionWiredAsNoOp_returnsAllFilms() {
+        // FilmConditionInput.filmId carries @condition → condition is classified, wired,
+        // and called at runtime. In Phase 4, filmId arrives as null (ArgCallEmitter emits
+        // env.getArgument("filmId") which is null for a nested field), so filmIdCondition
+        // returns noCondition() and the WHERE clause is effectively empty.
+        Map<String, Object> data = execute(
+            "{ filmsWithInputFieldCondition(filter: {filmId: \"1\"}) { filmId } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmsWithInputFieldCondition");
+        assertThat(films).isNotEmpty();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void inputFieldCondition_plainInput_filmTable_fieldResolved_conditionWired_returnsAllFilms() {
+        // PlainFilmIdInput is used on Film and Language queries → two return tables →
+        // conflict → PojoInputType → PlainInputArg at each call site. For the Film call
+        // site, filmId resolves against film → ColumnField with condition is classified;
+        // walkInputFieldConditions collects it. At runtime the condition is a no-op.
+        Map<String, Object> data = execute(
+            "{ filmsByPlainInput(filter: {filmId: \"1\"}) { filmId } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmsByPlainInput");
+        assertThat(films).isNotEmpty();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void inputFieldCondition_plainInput_languageTable_fieldNotResolved_noFilterApplied_returnsAllLanguages() {
+        // For the Language call site, filmId does not exist in the language table →
+        // classifyPlainInputFields skips the field → PlainInputArg.fields is empty →
+        // walkInputFieldConditions adds nothing → field.filters() is empty → no WHERE.
+        Map<String, Object> data = execute(
+            "{ languagesByPlainInput(filter: {filmId: \"1\"}) { languageId } }");
+        List<Map<String, Object>> languages = (List<Map<String, Object>>) data.get("languagesByPlainInput");
+        assertThat(languages).isNotEmpty();
+    }
+
     @Test
     void splitLookupTableField_nestedUnderNestingField_batchesPerOuterParent() {
         // FilmInfo.castByKey exercises the SplitLookupTableField arm under NestingField:

@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.InputColumnBinding;
+import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.TableRef;
 
 import java.util.List;
@@ -91,7 +92,8 @@ sealed interface ArgumentRef {
             boolean list,
             TableRef inputTable,
             List<InputColumnBinding> fieldBindings,
-            Optional<ArgConditionRef> argCondition
+            Optional<ArgConditionRef> argCondition,
+            List<InputField> fields
         ) implements InputTypeArg {}
 
         /**
@@ -104,7 +106,8 @@ sealed interface ArgumentRef {
             String typeName,
             boolean nonNull,
             boolean list,
-            Optional<ArgConditionRef> argCondition
+            Optional<ArgConditionRef> argCondition,
+            List<InputField> fields
         ) implements InputTypeArg {}
     }
 

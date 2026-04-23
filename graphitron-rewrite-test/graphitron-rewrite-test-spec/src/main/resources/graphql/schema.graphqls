@@ -22,6 +22,18 @@ type Query {
         order: [FilmOrderBy] @orderBy,
         first: Int, last: Int, after: String, before: String
     ): FilmsConnection! @defaultOrder(primaryKey: true)
+    # argres Phase 4: @condition on INPUT_FIELD_DEFINITION — @table input type.
+    # FilmConditionInput.filmId carries @condition; the condition method is wired
+    # and called at runtime. In Phase 4, filmId arrives as null (nested-arg access
+    # deferred), so the method returns noCondition() and all films are returned.
+    filmsWithInputFieldCondition(filter: FilmConditionInput): [Film!]!
+    # argres Phase 4: @condition on a plain input field (no @table).
+    # PlainFilmIdInput is used on Film and Language queries → two different return
+    # tables → PojoInputType → PlainInputArg at each call site. For Film, filmId
+    # resolves against film → condition wired (no-op). For Language, filmId does
+    # not exist → field skipped → no condition applied → all languages returned.
+    filmsByPlainInput(filter: PlainFilmIdInput): [Film!]!
+    languagesByPlainInput(filter: PlainFilmIdInput): [Language!]!
 }
 
 type Customer @table(name: "customer") {
@@ -310,4 +322,24 @@ enum ActorSort {
 input ActorOrderBy {
     field: ActorSort!
     direction: SortDirection
+}
+
+# argres Phase 4: @condition on INPUT_FIELD_DEFINITION — @table input type.
+input FilmConditionInput @table(name: "film") {
+    filmId: ID! @field(name: "film_id")
+        @condition(condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+            method: "filmIdCondition"
+        })
+}
+
+# argres Phase 4: plain input (no @table). Used on Film and Language queries,
+# creating a conflict so it stays PojoInputType. Call-site classification resolves
+# filmId for Film (condition wired) but not for Language (field skipped, no filter).
+input PlainFilmIdInput {
+    filmId: ID! @field(name: "film_id")
+        @condition(condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+            method: "filmIdCondition"
+        })
 }

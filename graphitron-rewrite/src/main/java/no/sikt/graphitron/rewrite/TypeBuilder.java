@@ -5,11 +5,8 @@ import graphql.language.SourceLocation;
 import graphql.schema.GraphQLInputObjectField;
 import graphql.schema.GraphQLInputObjectType;
 import graphql.schema.GraphQLInterfaceType;
-import graphql.schema.GraphQLList;
 import graphql.schema.GraphQLNamedType;
-import graphql.schema.GraphQLNonNull;
 import graphql.schema.GraphQLObjectType;
-import graphql.schema.GraphQLType;
 import graphql.schema.GraphQLTypeUtil;
 import graphql.schema.GraphQLUnionType;
 import no.sikt.graphitron.rewrite.model.ErrorHandlerType;
@@ -62,9 +59,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.DIR_MUTATION;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_NODE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_NOT_GENERATED;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_RECORD;
-import static no.sikt.graphitron.rewrite.BuildContext.DIR_REFERENCE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_SERVICE;
-import static no.sikt.graphitron.rewrite.BuildContext.DIR_NODE_ID;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_TABLE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_TABLE_METHOD;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_OVERRIDE;
@@ -441,9 +436,10 @@ class TypeBuilder {
     GraphitronType buildTableInputType(String name, SourceLocation location,
             List<GraphQLInputObjectField> fields, TableRef tableRef) {
         var failures = new ArrayList<InputFieldResolution.Unresolved>();
+        var conditionErrors = new ArrayList<String>();
         var resolvedFields = new ArrayList<InputField>();
         for (var f : fields) {
-            var resolution = buildInputField(f, name, tableRef);
+            var resolution = ctx.classifyInputField(f, name, tableRef, new java.util.LinkedHashSet<>(), conditionErrors);
             switch (resolution) {
                 case InputFieldResolution.Resolved r -> resolvedFields.add(r.field());
                 case InputFieldResolution.Unresolved u -> failures.add(u);
@@ -461,6 +457,11 @@ class TypeBuilder {
                 .orElse("");
             return new UnclassifiedType(name, location,
                 "mapped to table '" + tableRef.tableName() + "' — unresolvable fields: " + reasons + hint);
+        }
+        if (!conditionErrors.isEmpty()) {
+            return new UnclassifiedType(name, location,
+                "mapped to table '" + tableRef.tableName() + "' — bad @condition on fields: "
+                + String.join("; ", conditionErrors));
         }
         return new TableInputType(name, location, tableRef, List.copyOf(resolvedFields));
     }
@@ -537,10 +538,17 @@ class TypeBuilder {
      * validated against table columns.
      *
      * <p>Only argument-level and field-level {@code @condition} are inspected here;
-     * {@code INPUT_FIELD_DEFINITION} override — the third legal position per the SDL — is not
-     * yet handled and is tracked in {@code docs/argument-resolution.md}.
+     * {@code INPUT_FIELD_DEFINITION} override is also checked: if any field in the input type
+     * itself carries {@code @condition(override: true)}, the whole type bypasses column validation.
      */
     private boolean isUsedWithOverrideCondition(String inputTypeName) {
+        var typeFromSchema = ctx.schema.getType(inputTypeName);
+        if (typeFromSchema instanceof GraphQLInputObjectType iot) {
+            for (var fieldDef : iot.getFieldDefinitions()) {
+                if (fieldDef.hasAppliedDirective(DIR_CONDITION)
+                        && argBoolean(fieldDef, DIR_CONDITION, ARG_OVERRIDE, false)) return true;
+            }
+        }
         for (var namedType : ctx.schema.getAllTypesAsList()) {
             if (!(namedType instanceof GraphQLObjectType objType)) continue;
             if (namedType.getName().startsWith("__")) continue;
@@ -557,106 +565,6 @@ class TypeBuilder {
             }
         }
         return false;
-    }
-
-    private InputFieldResolution buildInputField(GraphQLInputObjectField field,
-            String parentTypeName, TableRef resolvedTable) {
-        return buildInputField(field, parentTypeName, resolvedTable, new java.util.LinkedHashSet<>());
-    }
-
-    private InputFieldResolution buildInputField(GraphQLInputObjectField field,
-            String parentTypeName, TableRef resolvedTable, java.util.Set<String> expandingTypes) {
-        String name = field.getName();
-        GraphQLType type = field.getType();
-        boolean nonNull = type instanceof GraphQLNonNull;
-        boolean list = GraphQLTypeUtil.unwrapNonNull(type) instanceof GraphQLList;
-        String typeName = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(type)).getName();
-        boolean hasFieldDir = field.hasAppliedDirective(DIR_FIELD);
-        String columnName = hasFieldDir
-            ? argString(field, DIR_FIELD, ARG_NAME).orElse(name)
-            : name;
-        if (field.hasAppliedDirective(DIR_REFERENCE)) {
-            var path = ctx.parsePath(field, name, resolvedTable.tableName(), null);
-            if (path.hasError()) return new InputFieldResolution.Unresolved(name, null, path.errorMessage());
-            return svc.resolveColumnForReference(columnName, path.elements(), resolvedTable.tableName())
-                .<InputFieldResolution>map(col -> new InputFieldResolution.Resolved(new InputField.ColumnReferenceField(
-                    parentTypeName, name, locationOf(field), typeName, nonNull, list, col, path.elements())))
-                .orElseGet(() -> new InputFieldResolution.Unresolved(name, columnName,
-                    "no column '" + columnName + "' reachable via @reference path"));
-        }
-        // Nesting: field type is a plain input object (no @table) — expand its fields inline
-        // against the parent table, parallel to ChildField.NestingField on the output side.
-        var baseType = GraphQLTypeUtil.unwrapAll(type);
-        if (baseType instanceof GraphQLInputObjectType nestedInputType
-                && !nestedInputType.hasAppliedDirective(DIR_TABLE)) {
-            if (expandingTypes.contains(typeName)) {
-                return new InputFieldResolution.Unresolved(name, null,
-                    "circular input type reference detected while expanding '" + typeName + "'");
-            }
-            var newExpanding = new java.util.LinkedHashSet<>(expandingTypes);
-            newExpanding.add(typeName);
-            var failures = new ArrayList<InputFieldResolution.Unresolved>();
-            var resolvedFields = new ArrayList<InputField>();
-            for (var nested : nestedInputType.getFieldDefinitions().stream()
-                    .filter(f -> !f.hasAppliedDirective(DIR_NOT_GENERATED)).toList()) {
-                var res = buildInputField(nested, typeName, resolvedTable, newExpanding);
-                switch (res) {
-                    case InputFieldResolution.Resolved r -> resolvedFields.add(r.field());
-                    case InputFieldResolution.Unresolved u -> failures.add(u);
-                }
-            }
-            if (!failures.isEmpty()) {
-                String reasons = failures.stream()
-                    .map(u -> "'" + u.fieldName() + "': " + u.reason())
-                    .collect(Collectors.joining("; "));
-                String hint = failures.stream()
-                    .map(InputFieldResolution.Unresolved::lookupColumn)
-                    .filter(c -> c != null)
-                    .findFirst()
-                    .map(c -> candidateHint(c, ctx.catalog.columnSqlNamesOf(resolvedTable.tableName())))
-                    .orElse("");
-                return new InputFieldResolution.Unresolved(name, null,
-                    "nested input type '" + typeName + "' has unresolvable fields: " + reasons + hint);
-            }
-            return new InputFieldResolution.Resolved(new InputField.NestingField(
-                parentTypeName, name, locationOf(field), typeName, nonNull, list,
-                List.copyOf(resolvedFields)));
-        }
-        String tableName = resolvedTable.tableName();
-        var colEntry = ctx.catalog.findColumn(tableName, columnName);
-        if (colEntry.isPresent()) {
-            var e = colEntry.get();
-            return new InputFieldResolution.Resolved(new InputField.ColumnField(
-                parentTypeName, name, locationOf(field), typeName, nonNull, list,
-                new ColumnRef(e.sqlName(), e.javaName(), e.columnClass())));
-        }
-        // Fallback: check for legacy platform-key accessors on the jOOQ record class.
-        // Conditions: scalar (non-list) ID type, no @nodeId. The accessor name is derived
-        // from the column name — PERSON_ID → getPersonId/setPersonId, id → getId/setId.
-        if ("ID".equals(typeName)
-                && !list
-                && !field.hasAppliedDirective(DIR_NODE_ID)) {
-            String accessorSuffix = JooqCatalog.sqlToAccessorSuffix(columnName);
-            String getterName = "get" + accessorSuffix;
-            String setterName = "set" + accessorSuffix;
-            if (ctx.catalog.hasPlatformIdAccessors(tableName, getterName, setterName)) {
-                return new InputFieldResolution.Resolved(new InputField.PlatformIdField(
-                    parentTypeName, name, locationOf(field), typeName, nonNull, getterName, setterName));
-            }
-            return new InputFieldResolution.Unresolved(name, null,
-                "field '" + name + "' has no matching column and no accessor methods ("
-                + getterName + "/" + setterName + ") found on record class");
-        }
-        return new InputFieldResolution.Unresolved(name, columnName,
-            "no column '" + columnName + "' found in table '" + tableName + "'");
-    }
-
-    private sealed interface InputFieldResolution {
-        record Resolved(InputField field) implements InputFieldResolution {}
-        /** {@code lookupColumn} is the SQL column name attempted, or {@code null} when the failure
-         *  is not a column miss (e.g. no platformId methods). Used to emit a single candidate hint
-         *  per {@link TableInputType} rather than one per failing field. */
-        record Unresolved(String fieldName, String lookupColumn, String reason) implements InputFieldResolution {}
     }
 
     private ErrorType.Handler parseErrorHandler(Map<String, Object> item) {
