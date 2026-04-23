@@ -1,11 +1,13 @@
 # Argument Resolution: Phase 4
 
-> **Status:** In Progress
+> **Status:** In Review
 >
 > Foundation + Phases 1–3 shipped. Phase 4a (classification, projection
 > wiring, validator, pipeline tests) shipped in `9cf83463`. Phase 4b
-> (runtime nested-arg access, override propagation, remaining execution
-> and unit tests) is the remaining work before Done.
+> (runtime nested-arg access, divergence-pinning execution tests) shipped
+> in `11dc670a` and `745a2a15`. `@condition` on `INPUT_FIELD_DEFINITION`
+> is feature-complete for the currently-implemented argument-resolution
+> pipeline; ready for reviewer sign-off.
 
 ## Shipped (context)
 
@@ -397,20 +399,23 @@ input fields, so no real filter executes. Closing Phase 4 requires:
    returns a real `table.field(Film.FILM_ID).eq(?)` predicate; the three
    shipped execution tests assert on filtered results (not just wiring).
 
-2. **Override propagation accumulator.** `walkInputFieldConditions` currently
-   always appends explicit-method filters. Once auto-column binding for
-   `@table` input types lands (deferred to step 9 of `classifyArguments`),
-   thread a `boolean enclosingOverride` accumulator through the recursion.
-   Any level's `override: true` flips it to `true` for descendants;
-   auto-predicates are then suppressed under an accumulated override.
-   Explicit methods remain unaffected (already correct today).
+2. ~~**Override propagation accumulator.**~~ **Out of scope for Phase 4.**
+   Moved to §Out of Scope. The accumulator only has visible effect when
+   auto-predicates exist to suppress, and auto-column binding for `@table`
+   input types is not currently scoped on the roadmap. The `override`
+   flag itself parses, classifies, and projects correctly today (pinned
+   by `inputFieldCondition_tableInput_overrideFlagOnRealColumn_explicitMethodStillFires`).
+   If auto-column binding is ever planned, pair the accumulator with it
+   then; the hook is the final parameter position of
+   `walkInputFieldConditions`.
 
 3. ~~**Remaining execution tests (four of the six originally planned).**~~
    **Landed** (commit 2).
    - `inputFieldCondition_tableInput_overrideFlagOnRealColumn_explicitMethodStillFires`:
-     `@condition(override: true)` on a real-column input field. Override is inert
-     at projection today (auto-predicate suppression arrives with step 9); pins
-     that the flag parses and the explicit method still fires.
+     `@condition(override: true)` on a real-column input field. The override
+     flag has no visible effect at projection today (no auto-predicates exist
+     to suppress; see §Out of Scope); this test pins that the flag parses
+     and the explicit method still fires.
    - `inputFieldCondition_tableInput_outerOverride_preservesInnerExplicitMethod`:
      **divergence-pinning.** Outer `@condition(override: true)` on a `@table`
      input whose field carries its own `@condition`. Generates
@@ -454,28 +459,22 @@ input fields, so no real filter executes. Closing Phase 4 requires:
    `table.field(...)` rather than `Film.FILM.FILM_ID` directly anchors
    the predicate in the caller's aliased table.
 
-**Sequencing.**
+**Sequencing (all landed).**
 
 - ~~Commit 1: item #1 (ArgCallEmitter nested-arg) + item #5 (fixture returns
   real condition) + retrofit real-filter assertions on the three existing
-  execution tests.~~ **Landed.**
-- ~~Commit 2: item #3 (four remaining execution tests).~~ **Landed.**
-- Item #4 (unit tests): evaluated against the in-fact-shipped pipeline cases;
-  the pipeline tier (`GraphitronSchemaBuilderTest`) covers the per-variant
-  classification + validator paths and the execution tier covers the
-  projection + emitter paths end-to-end. Dropping the original standalone
-  unit-test requirement; no additive coverage vs the pipeline cases.
-- Item #2 (override accumulator): defer until step 9 (auto-column binding
-  for `@table` inputs) lands. Until then, there are no auto-predicates to
-  suppress, so the accumulator is unexercised. Pair the accumulator work
-  with step 9 in that phase's plan.
+  execution tests.~~ Landed in `11dc670a`.
+- ~~Commit 2: item #3 (four remaining execution tests).~~ Landed in
+  `745a2a15`.
+- Item #4 (unit tests): evaluated and dropped. Pipeline tier
+  (`GraphitronSchemaBuilderTest`) covers the per-variant classification +
+  validator paths; execution tier covers the projection + emitter paths
+  end-to-end. A standalone unit class would not add coverage.
+- Item #2 (override accumulator): moved to §Out of Scope. Rationale is
+  recorded there.
 
-**Remaining before Done.** Only item #2 (override accumulator) remains, and
-it is bounded-deferred as part of step 9. The rest of Phase 4b has landed:
-runtime nested-arg extraction works end-to-end, all six planned execution
-tests exist (three pre-existing, three new plus the divergence-pin), and
-`@condition` on `INPUT_FIELD_DEFINITION` is feature-complete for the
-currently-implemented subset of the argument-resolution pipeline.
+**Status.** Phase 4 is feature-complete for every closable item. In Review
+awaiting reviewer sign-off for transition to Done.
 
 ## Test assertions
 
@@ -591,6 +590,18 @@ value)`) and pipeline tests assert on the classifier output directly
   Mutations get their own plan.
 - **`PlatformIdField` with `@condition`.** Platform IDs are legacy accessors; if
   a real schema surfaces this we'll promote it to its own backlog item.
+- **Auto-column binding for `@table` input types, and the override-propagation
+  accumulator that goes with it.** The rewrite emits explicit `@condition`
+  methods end-to-end but does not (yet) auto-derive column predicates from
+  the non-condition fields of a `@table` input. Without auto-predicates,
+  there is nothing for an `override: true` flag to suppress, so the
+  enclosingOverride accumulator in `walkInputFieldConditions` is
+  unexercised. If a production schema surfaces the need for auto-binding,
+  promote it to a backlog plan; that plan lands the auto-predicate
+  emission and the accumulator together (one small recursion-parameter
+  delta in `walkInputFieldConditions`, plus the truth-table rows it
+  enables). The 6-row truth table in §Truth table is the design reference
+  when that plan is drafted.
 
 (Plain / non-`@table` input types were previously out of scope. That
 exclusion was removed after a divergence-scan on alf's production schema
