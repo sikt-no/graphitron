@@ -1,6 +1,6 @@
 # Implicit column conditions for `@table` input types
 
-> **Status:** Spec
+> **Status:** Ready
 >
 > Legacy-parity feature for `@table` input types used as query arguments.
 > A `@table` input field without `@condition` / `@lookupKey` today classifies
@@ -60,7 +60,9 @@ adopted for explicit conditions).
 
 - **`InputField.ColumnField`** without `condition().isPresent()` and
   without a `@lookupKey` binding already consumed by
-  `buildLookupBindings`. This is the primary case.
+  `buildLookupBindings`. The check is: `tia.fieldBindings().stream()
+  .noneMatch(b -> b.inputFieldName().equals(cf.name()))`.
+  This is the primary case.
 - **`InputField.ColumnReferenceField`** without `condition().isPresent()`.
   The `@reference` field resolves to a column reachable via a
   non-trivial join path. Legacy emits predicates for these as joined
@@ -325,16 +327,22 @@ Single commit. Scope:
    parent-field-level and arg-level `@condition(override: true)`
    flags; merge `implicitBodyParams` into the existing bodyParam list
    before constructing the GCF.
-3. `GeneratedConditionFilter`'s existing emitter: no shape change,
-   but it now receives `BodyParam`s with `NestedInputField`
-   extractions. Verify the method-body AND-composition and the
-   call-site argument extraction both handle the new extraction
-   variant without change (they should, per Phase 4b's emitter
-   coverage).
-4. `FieldBuilder.walkInputFieldConditions` skips implicit contribution
+3. `TypeConditionsGenerator` body emitter (`buildConditionMethod`):
+   extend the `bodyParams` loop to dispatch on `bp.extraction()`.
+   For `CallSiteExtraction.NestedInputField`, emit the null-safe
+   `instanceof Map<?,?>` ternary chain down to the leaf (the same
+   pattern `ArgCallEmitter.buildArgExtraction` already emits at call
+   sites). For all other extraction variants keep the existing
+   `table.COL.eq(val)` emission unchanged.
+4. `FieldBuilder.javaTypeFor()`: remove the `IllegalStateException`
+   guard for `CallSiteExtraction.NestedInputField` (currently at the
+   bottom of the switch, it throws unconditionally). Replace with the
+   column's Java type, identical to the `Direct` branch; the type is
+   available from `bp.column()`.
+5. `FieldBuilder.walkInputFieldConditions` skips implicit contribution
    on fields already consumed as `@lookupKey` bindings.
-5. `isUsedWithOverrideCondition` interaction: no change; implicit
+6. `isUsedWithOverrideCondition` interaction: no change; implicit
    conditions don't introduce new validator gates.
-6. Pipeline + execution tests per §Tests.
+7. Pipeline + execution tests per §Tests.
 
 Bisectable via the touched-files list.
