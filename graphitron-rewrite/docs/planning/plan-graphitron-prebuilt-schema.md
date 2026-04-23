@@ -294,17 +294,19 @@ sync.
 ## Getting started document as API quality gate
 
 Ships alongside the code: `graphitron-rewrite/docs/getting-started.md`.
-Covers the minimum path from a fresh project to a running GraphQL
-server: add the Maven dependency, configure the Mojo, call
-`Graphitron.getSchema()` in startup, wire it to the HTTP layer. One
-page, code-first.
+Starting point: the reader has already run the legacy Maven plugin
+and has generated sources on their classpath. The doc picks up from
+"you have generated code, now what" and covers only the runtime
+wiring side: call `Graphitron.getSchema()`, hand it to the HTTP
+layer, done. Maven plugin configuration is out of scope until the
+rewrite owns its own Mojo; legacy-plugin docs stay where they are.
 
 The document is also a design constraint. If any of the following
 cases doesn't fit in a few lines each, that's a signal the API is
 wrong and we iterate on `Graphitron` / `GraphitronConfig`, not on the
 doc:
 
-- "Hello world": fetch a simple query.
+- "Hello world": instantiate, serve one query.
 - Custom scalar: register one `GraphQLScalarType`.
 - Federation: wrap the schema.
 - One `@notGenerated` field: register one fetcher (transitional).
