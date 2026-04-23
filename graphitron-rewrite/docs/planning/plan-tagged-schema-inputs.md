@@ -14,7 +14,12 @@
 >
 > Depends on "Rewrite owns schema loading + directive auto-injection"
 > landing first; this transform runs inside the same
-> `GraphQLRewriteGenerator` step that plan introduces.
+> `GraphQLRewriteGenerator` step that plan introduces. Also depends on
+> the "Rewrite-owned Maven plugin" plan
+> ([plan-rewrite-maven-plugin.md](plan-rewrite-maven-plugin.md)) for
+> the `<schemaInputs>` config surface and the `SchemaInputBinding`
+> POJO; `RewriteContext.schemaInputs()` is the source this transform
+> reads from.
 
 ## Goal
 
@@ -115,9 +120,11 @@ public record SchemaInput(
 ) {}
 ```
 
-Carried through `RewriteConfig` as `List<SchemaInput>`. Existing
-`generatorSchemaFiles: Set<String>` stays during the rollout window
-(see D1 on migration) but is not the source of attribution.
+Carried through `RewriteContext.schemaInputs()` (the per-invocation
+config object introduced by the Maven-plugin plan). The new plugin
+has no `<schemaFiles>` element at all; `<schemaInputs>` is the sole
+input mechanism, so there is no parallel attribution-less path to
+keep in sync.
 
 ### 2. Resolver (`SchemaInputResolver`)
 
@@ -178,10 +185,10 @@ GraphitronSchemaValidator.validate(schema)
 After this plan:
 
 ```
-attribution = SchemaInputResolver.resolve(config.schemaInputs())  // new; fails on empty/overlap
-registry    = RewriteSchemaLoader.load(attribution.files())
-TagApplier.apply(registry, attribution)                            // new
-DescriptionNoteApplier.apply(registry, attribution)                // new
+attribution = SchemaInputResolver.resolve(ctx.schemaInputs(), ctx.basedir())  // new; fails on empty/overlap
+registry    = RewriteSchemaLoader.load(attribution.forSource().keySet())
+TagApplier.apply(registry, attribution)                                         // new
+DescriptionNoteApplier.apply(registry, attribution)                             // new
 schema      = GraphitronSchemaBuilder.build(registry)
 GraphitronSchemaValidator.validate(schema)
 ```
@@ -194,7 +201,13 @@ application does not depend on tag application or vice versa.
 ## Config surface
 
 Maven plugin gains one new element, `<schemaInputs>`, on the rewrite
-Mojo (see D1 for whether it replaces or augments `<schemaFiles>`):
+Mojo. The new `graphitron-rewrite-maven` plugin has no
+`<schemaFiles>`; `<schemaInputs>` is the only declared input
+mechanism (see [plan-rewrite-maven-plugin.md](plan-rewrite-maven-plugin.md)).
+The POM-level binding POJO is `SchemaInputBinding` (owned by the
+Maven-plugin plan); this plan owns the resolver that turns a list of
+bindings into an `Attribution` map and the two appliers that consume
+it.
 
 ```xml
 <schemaInputs>
@@ -225,7 +238,7 @@ Each `<schemaInput>` has:
   When present, appended to the description of every in-scope
   element defined in a matched file.
 
-`RewriteConfig` exposes the parsed list as `List<SchemaInput>
+`RewriteContext` exposes the parsed list as `List<SchemaInput>
 schemaInputs()`. No other configuration.
 
 ## Implementation
@@ -235,13 +248,16 @@ alongside `RewriteSchemaLoader` (created by the schema-loading plan).
 
 1. `SchemaInput.java`: record above, ~15 LOC.
 2. `SchemaInputResolver.java`: `static Attribution resolve(List<SchemaInput>, Path basedir)` plus the three fail-fast checks, ~120 LOC.
-3. `Attribution.java`: immutable record holding `Set<Path> files()` and `Map<Path, SchemaInput> forFile()`, ~20 LOC.
+3. `Attribution.java`: immutable record with `Map<String, SchemaInput> forSource()`. Keyed by canonical source-name string (the same value `RewriteSchemaLoader.load(Collection<String>)` receives and `SourceLocation.getSourceName()` returns), so appliers look up directly without Path round-tripping, and the loader call is `load(attribution.forSource().keySet())`. ~20 LOC.
 4. `TagApplier.java`: `static void apply(TypeDefinitionRegistry, Attribution)`, ~80 LOC.
 5. `DescriptionNoteApplier.java`: `static void apply(TypeDefinitionRegistry, Attribution)`, ~70 LOC.
 6. Call sites added in `GraphQLRewriteGenerator.generate()`.
-7. `RewriteConfig.schemaInputs()` plumbed through from the Mojo's
-   `<schemaInputs>` configuration element (new `SchemaInputBinding`
-   POJO on the plugin side).
+7. `RewriteContext.schemaInputs()` populated from the Mojo's
+   `<schemaInputs>` elements via `SchemaInputBinding` (the POM
+   binding POJO defined by
+   [plan-rewrite-maven-plugin.md](plan-rewrite-maven-plugin.md);
+   this plan owns the conversion from binding to `SchemaInput` inside
+   `RewriteContext.from(...)`).
 
 Expected diff: ~350 LOC added, plus tests.
 
@@ -261,12 +277,15 @@ entries. Consistent with legacy behaviour.
 
 ### Path normalisation
 
-`SourceLocation.getSourceName()` returns the string the parser was
-given (typically absolute or project-relative). The resolver and
-applier both normalise to `Path.toAbsolutePath().normalize()` before
-map lookup so that `"./schema/foo.graphqls"` and
-`"schema/foo.graphqls"` (and any mix of slash / backslash on
-Windows) collapse to one key.
+`SourceLocation.getSourceName()` echoes back exactly the string the
+parser was given. The resolver pre-normalises each matched file to a
+canonical source-name (e.g. `Path.toAbsolutePath().normalize().toString()`
+for filesystem matches, classpath-resource name for classpath matches)
+and hands that same string both to `RewriteSchemaLoader.load(...)` and
+into the `Attribution` map key. Because the loader passes the source
+string through untouched, `SourceLocation.getSourceName()` at applier
+time matches the map key byte-for-byte; no per-applier renormalisation
+step.
 
 ## Tests
 
@@ -324,21 +343,13 @@ to "Rewrite emits the client SDL as generated output" (umbrella item).
 
 ## Open decisions
 
-**D1. `<schemaInputs>` vs. `<schemaFiles>`.** Two options:
-
-- **(a) Replace.** `<schemaInputs>` is the only way to declare schema
-  files on the rewrite Mojo. Cleaner config; one obvious way to
-  declare inputs; consumers migrate in one diff. Breaking change for
-  existing rewrite-mode consumers.
-- **(b) Coexist.** Both elements accepted; `<schemaFiles>` files load
-  plain (no attribution possible), `<schemaInputs>` files load with
-  attribution. Fail if any file is declared in both. Eases migration;
-  leaves a redundant config shape behind.
-
-Recommend (a): the rewrite Mojo is still young; replacing
-`<schemaFiles>` before it gets widely adopted is the lowest-total-
-cost path. Mojo validation prints a one-line migration pointer if it
-sees `<schemaFiles>` without `<schemaInputs>`.
+**D1. `<schemaInputs>` vs. `<schemaFiles>`.** Resolved by the
+Maven-plugin plan: the new `graphitron-rewrite-maven` plugin has no
+`<schemaFiles>` element at all, so `<schemaInputs>` is necessarily
+the only input mechanism. Consumers migrate to the new plugin and
+its `<schemaInputs>` configuration in one diff; see
+[plan-rewrite-maven-plugin.md](plan-rewrite-maven-plugin.md)'s
+Migration table.
 
 **D2. Note element scope.** Legacy applies description changes only
 to fields / input fields / enum values / arguments / unions. Rewrite

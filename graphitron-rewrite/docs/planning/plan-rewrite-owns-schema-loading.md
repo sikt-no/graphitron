@@ -169,6 +169,16 @@ Replace the static import and the call site:
   `import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;`
 - `GraphQLRewriteGenerator.java:38`: `var registry = RewriteSchemaLoader.load(RewriteConfig.generatorSchemaFiles());`
 
+`RewriteSchemaLoader.load(Collection<String>)` is agnostic to where
+the path list comes from; today it reads `RewriteConfig.generatorSchemaFiles()`
+(the static singleton populated by legacy's two-stage Mojo wiring). Once
+[plan-rewrite-maven-plugin.md](plan-rewrite-maven-plugin.md) lands, the
+caller becomes `RewriteContext` (a per-invocation record threaded
+through the constructor), with the file list derived from the
+`<schemaInputs>` resolver; see
+[plan-tagged-schema-inputs.md](plan-tagged-schema-inputs.md). Neither
+downstream plan alters `RewriteSchemaLoader`'s public API.
+
 ### 4. Stop the legacy pre-injection for rewrite
 
 `GeneratorConfig.loadProperties` appends `GENERATOR_DIRECTIVES_PATH.getPath()`
@@ -190,6 +200,16 @@ Option (a) is less invasive and keeps the Mojo wiring symmetric with
 the legacy path. Recommend (a). Call out in the filter's Javadoc: "The
 legacy path pre-injects its own `directives.graphqls`; rewrite injects
 its own via `RewriteSchemaLoader` and must not double-parse."
+
+Transitional scope. This filter exists only while rewrite runs under
+`graphitron-maven-plugin` via `enableRewrite=true`. The new
+`graphitron-rewrite-maven` plugin
+([plan-rewrite-maven-plugin.md](plan-rewrite-maven-plugin.md)) does
+not thread through `GeneratorConfig.loadProperties`, so the
+pre-injection never happens for that plugin's invocations. When the
+legacy plugin's rewrite path retires, the filter lines delete as
+dead code; no other caller feeds `RewriteConfig` from outside that
+Mojo.
 
 Either option is local to the Mojo-wiring layer; neither changes the
 public API of `RewriteConfig` or `RewriteSchemaLoader`.
@@ -295,13 +315,21 @@ Post-landing, update the roadmap:
   section.
 - Delete the Cleanup-section entry "Drop `graphitron-common` build
   dependency from `graphitron-rewrite`" (absorbed).
-- Link the next umbrella sub-item ("Rewrite owns type-extension merging")
-  as the next candidate for Spec.
+- The next two umbrella sub-items are already in Spec: "Rewrite-owned
+  Maven plugin" ([plan-rewrite-maven-plugin.md](plan-rewrite-maven-plugin.md))
+  and "Rewrite owns pattern-matched `@tag` + description notes"
+  ([plan-tagged-schema-inputs.md](plan-tagged-schema-inputs.md)); both
+  reference this plan's `RewriteSchemaLoader` and can move to Ready
+  once this lands. "Rewrite owns type-extension merging" is the next
+  Backlog item to promote.
 
 ## Open decisions
 
 **D1.** Filter approach in step 4. Recommend (a): in-Mojo filter on
-basename match; see §4 for the tradeoff.
+basename match; see §4 for the tradeoff. The filter is transitional:
+it exists only while rewrite runs under `graphitron-maven-plugin`,
+and deletes when [plan-rewrite-maven-plugin.md](plan-rewrite-maven-plugin.md)
+lands and consumers migrate to the new plugin.
 
 **D2.** Where does the rewrite copy of `directives.graphqls` live?
 Recommend `graphitron-rewrite/graphitron-rewrite/src/main/resources/no/sikt/graphitron/rewrite/schema/directives.graphqls`
