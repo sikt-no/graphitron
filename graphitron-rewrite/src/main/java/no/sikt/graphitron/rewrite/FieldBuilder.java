@@ -252,8 +252,8 @@ class FieldBuilder {
             if (hasSplitQuery && hasLookupKey) {
                 if (returnType.wrapper() instanceof FieldWrapper.Connection) {
                     return new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                        "@asConnection on @splitQuery fields is not supported; per-parent pagination inside a "
-                        + "DataLoader batch requires window-function partitioning and is deferred to a follow-up plan.");
+                        "@asConnection on @splitQuery @lookupKey fields is not supported; per-parent-per-lookup-key "
+                        + "pagination semantics need their own design pass (plan §2).");
                 }
                 if (returnType.wrapper() instanceof FieldWrapper.Single) {
                     return new UnclassifiedField(parentTypeName, name, location, fieldDef,
@@ -277,11 +277,6 @@ class FieldBuilder {
                     tfc.lookupMapping());
             }
             if (hasSplitQuery) {
-                if (returnType.wrapper() instanceof FieldWrapper.Connection) {
-                    return new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                        "@asConnection on @splitQuery fields is not supported; per-parent pagination inside a "
-                        + "DataLoader batch requires window-function partitioning and is deferred to a follow-up plan.");
-                }
                 if (returnType.wrapper() instanceof FieldWrapper.Single
                         && referencePath.elements().size() != 1) {
                     return new UnclassifiedField(parentTypeName, name, location, fieldDef,

@@ -144,6 +144,15 @@ type Film @table(name: "film") {
         {key: "film_actor_film_id_fkey"},
         {key: "film_actor_actor_id_fkey"}
     ])
+    # plan-split-query-connection.md §1: @splitQuery + @asConnection. Per-parent Relay pagination
+    # via a ROW_NUMBER() OVER (PARTITION BY parentInput.idx) envelope. Each Film gets its own
+    # paginated actor slice via the same junction-path, wrapped in a ConnectionResult per key.
+    actorsConnection(
+        first: Int, last: Int, after: String, before: String
+    ): ActorsConnection! @splitQuery @reference(path: [
+        {key: "film_actor_film_id_fkey"},
+        {key: "film_actor_actor_id_fkey"}
+    ]) @defaultOrder(primaryKey: true)
 }
 
 type Actor @table(name: "actor") {
@@ -215,6 +224,20 @@ type FilmsConnection {
 type FilmsEdge {
     cursor: String!
     node: Film!
+}
+
+# plan-split-query-connection.md §1: pre-expanded connection type referenced by
+# Film.actorsConnection (@splitQuery). Structural detection in FieldBuilder.buildWrapper
+# picks up edges.node pattern and produces FieldWrapper.Connection.
+type ActorsConnection {
+    edges: [ActorsEdge!]!
+    nodes: [Actor!]!
+    pageInfo: PageInfo!
+}
+
+type ActorsEdge {
+    cursor: String!
+    node: Actor!
 }
 
 type PageInfo {

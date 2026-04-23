@@ -596,25 +596,24 @@ class GraphitronSchemaBuilderTest {
                     .contains("@asConnection on inline (non-@splitQuery) TableField is not supported");
             }),
 
-        AS_CONNECTION_SPLIT_REJECTED(
-            "@asConnection @splitQuery → UnclassifiedField (per-parent pagination inside DataLoader "
-            + "batch requires window-function partitioning, deferred to a follow-up plan; argres 2b C3)",
+        AS_CONNECTION_SPLIT_CLASSIFIED(
+            "@asConnection @splitQuery → SplitTableField with Connection wrapper "
+            + "(per-parent pagination via ROW_NUMBER() envelope; plan-split-query-connection.md §1)",
             """
             type Customer @table(name: "customer") { firstName: String }
             type Store @table(name: "store") { customers: [Customer!]! @asConnection @splitQuery @defaultOrder(primaryKey: true) }
             type Query { store: Store }
             """,
             schema -> {
-                assertThat(schema.field("Store", "customers")).isInstanceOf(UnclassifiedField.class);
-                assertThat(((UnclassifiedField) schema.field("Store", "customers")).reason())
-                    .contains("@asConnection on @splitQuery fields is not supported")
-                    .contains("window-function partitioning")
-                    .contains("deferred to a follow-up plan");
+                var field = schema.field("Store", "customers");
+                assertThat(field).isInstanceOf(ChildField.SplitTableField.class);
+                assertThat(((ChildField.SplitTableField) field).returnType().wrapper())
+                    .isInstanceOf(FieldWrapper.Connection.class);
             }),
 
         AS_CONNECTION_SPLIT_LOOKUP_REJECTED(
-            "@asConnection @splitQuery + @lookupKey → UnclassifiedField (same rejection as "
-            + "SplitTableField — per-parent pagination inside a DataLoader batch is out of scope)",
+            "@asConnection @splitQuery + @lookupKey → UnclassifiedField (SplitLookupTableField + "
+            + "Connection is §2 scope, held until per-lookup-key pagination semantics are nailed down)",
             """
             type Customer @table(name: "customer") { firstName: String }
             type Store @table(name: "store") {
@@ -625,9 +624,8 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 assertThat(schema.field("Store", "customersByKey")).isInstanceOf(UnclassifiedField.class);
                 assertThat(((UnclassifiedField) schema.field("Store", "customersByKey")).reason())
-                    .contains("@asConnection on @splitQuery fields is not supported")
-                    .contains("window-function partitioning")
-                    .contains("deferred to a follow-up plan");
+                    .contains("@asConnection on @splitQuery @lookupKey fields is not supported")
+                    .contains("plan §2");
             }),
 
         SPLIT_QUERY(
@@ -888,10 +886,9 @@ class GraphitronSchemaBuilderTest {
                 assertThat(order.direction()).isEqualTo("DESC");
             }),
 
-        CONNECTION_WITH_DEFAULT_ORDER_INDEX_SPLIT_REJECTED(
-            "ActorConnection + @splitQuery → UnclassifiedField (argres 2b C3: @asConnection on @splitQuery "
-            + "rejected regardless of @defaultOrder; connection wrapper is inferred from ActorConnection "
-            + "return type, not literal @asConnection)",
+        CONNECTION_WITH_DEFAULT_ORDER_INDEX_SPLIT_CLASSIFIED(
+            "ActorConnection + @splitQuery → SplitTableField with Connection wrapper "
+            + "(structural connection detection + @defaultOrder by index; plan-split-query-connection.md §1)",
             """
             type Actor @table(name: "actor") { name: String }
             type ActorEdge { node: Actor cursor: String }
@@ -901,7 +898,12 @@ class GraphitronSchemaBuilderTest {
             }
             type Query { filmActor: FilmActor }
             """,
-            schema -> assertThat(schema.field("FilmActor", "actors")).isInstanceOf(UnclassifiedField.class)),
+            schema -> {
+                var field = schema.field("FilmActor", "actors");
+                assertThat(field).isInstanceOf(ChildField.SplitTableField.class);
+                assertThat(((ChildField.SplitTableField) field).returnType().wrapper())
+                    .isInstanceOf(FieldWrapper.Connection.class);
+            }),
 
         NO_DEFAULT_ORDER_PK_FALLBACK(
             "no @defaultOrder on PK table → TableField with PK columns auto-filled as Fixed order",

@@ -340,6 +340,31 @@ public class GraphitronSchemaValidator {
     private void validateSplitTableField(no.sikt.graphitron.rewrite.model.ChildField.SplitTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
         validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
+        // Split+Connection partitions rows by parent key; without a total order, ROW_NUMBER() produces
+        // silently non-deterministic slicing. Require an explicit ordering (@defaultOrder, @orderBy,
+        // or a fixed list) at build time rather than letting the cursor encoder hash an empty tuple.
+        if (field.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection) {
+            var orderBy = field.orderBy();
+            boolean empty = orderBy instanceof no.sikt.graphitron.rewrite.model.OrderBySpec.None
+                || (orderBy instanceof no.sikt.graphitron.rewrite.model.OrderBySpec.Fixed f && f.columns().isEmpty());
+            if (empty) {
+                errors.add(new ValidationError(
+                    "Field '" + field.qualifiedName() + "': @splitQuery connections require a non-empty ORDER BY "
+                        + "(add @defaultOrder, @orderBy, or a primary key on the target table)",
+                    field.location()
+                ));
+            }
+            // Dynamic @orderBy arguments would need the OrderBy helper method to accept the terminal
+            // alias of the split query's FK chain rather than baking in the canonical tableLocal
+            // alias. Left as a §2 follow-up; §1 ships with fixed ordering only.
+            if (orderBy instanceof no.sikt.graphitron.rewrite.model.OrderBySpec.Argument) {
+                errors.add(new ValidationError(
+                    "Field '" + field.qualifiedName() + "': dynamic @orderBy on @splitQuery connections is not yet "
+                        + "supported; use @defaultOrder or a fixed ordering",
+                    field.location()
+                ));
+            }
+        }
     }
     private void validateLookupTableField(no.sikt.graphitron.rewrite.model.ChildField.LookupTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);

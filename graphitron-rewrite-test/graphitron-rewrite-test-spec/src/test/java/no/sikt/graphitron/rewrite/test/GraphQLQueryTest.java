@@ -1179,4 +1179,80 @@ class GraphQLQueryTest {
         var bundle = (Map<String, Object>) films.get(0).get("inlineBundle");
         assertThat((List<?>) bundle.get("actorsByKey")).isEmpty();
     }
+
+    // ===== Film.actorsConnection — @splitQuery + @asConnection (plan-split-query-connection §1) =====
+
+    @Test
+    void splitQueryConnection_firstPagePerParent_batchesInOneRowsRoundTrip() {
+        // film_actor seed: film 1 -> {1, 2}, film 2 -> {1, 3}. Two parent films request
+        // actorsConnection(first: 1); the rows method partitions by parent idx, each parent
+        // gets its own over-fetched top-2 slice via ROW_NUMBER() OVER (PARTITION BY idx).
+        // Total round-trips: 1 (films root) + 1 (batched rowsActorsConnection).
+        QUERY_COUNT.set(0);
+        Map<String, Object> data = execute(
+            "{ filmById(film_id: [\"1\", \"2\"]) { filmId actorsConnection(first: 1) "
+                + "{ nodes { actorId } pageInfo { hasNextPage hasPreviousPage } } } }");
+        assertThat(QUERY_COUNT.get()).isEqualTo(2);
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmById");
+        assertThat(films).hasSize(2);
+        var byId = films.stream().collect(java.util.stream.Collectors.toMap(
+            f -> (Integer) f.get("filmId"), f -> (Map<String, Object>) f.get("actorsConnection")));
+        List<Map<String, Object>> film1Nodes = (List<Map<String, Object>>) byId.get(1).get("nodes");
+        List<Map<String, Object>> film2Nodes = (List<Map<String, Object>>) byId.get(2).get("nodes");
+        assertThat(film1Nodes).hasSize(1);
+        assertThat(film1Nodes.get(0).get("actorId")).isEqualTo(1);
+        assertThat(film2Nodes).hasSize(1);
+        assertThat(film2Nodes.get(0).get("actorId")).isEqualTo(1);
+        assertThat((Map<String, Object>) byId.get(1).get("pageInfo"))
+            .extracting("hasNextPage", "hasPreviousPage").containsExactly(true, false);
+        assertThat((Map<String, Object>) byId.get(2).get("pageInfo"))
+            .extracting("hasNextPage", "hasPreviousPage").containsExactly(true, false);
+    }
+
+    @Test
+    void splitQueryConnection_withAfterCursor_pagesForwardPerParent() {
+        // Page 1: actorsConnection(first: 1) → actor 1 for film 1, actor 1 for film 2.
+        // Use the endCursor from film 1 to page forward; because both parents share the
+        // same arg shape, the second query still batches them into one rows round-trip,
+        // and each parent's WHERE (cols) > (cursor_vals) filter plays out inside ROW_NUMBER.
+        Map<String, Object> page1 = execute(
+            "{ filmById(film_id: [\"1\", \"2\"]) { filmId actorsConnection(first: 1) "
+                + "{ edges { cursor } pageInfo { endCursor } } } }");
+        String endCursorFilm1 = (String) ((Map<String, Object>) ((Map<String, Object>)
+            ((List<Map<String, Object>>) page1.get("filmById")).get(0).get("actorsConnection")).get("pageInfo")).get("endCursor");
+        assertThat(endCursorFilm1).isNotNull();
+        QUERY_COUNT.set(0);
+        Map<String, Object> page2 = execute(
+            "{ filmById(film_id: [\"1\", \"2\"]) { filmId actorsConnection(first: 10, after: \""
+                + endCursorFilm1 + "\") { nodes { actorId } pageInfo { hasNextPage } } } }");
+        assertThat(QUERY_COUNT.get()).isEqualTo(2);
+        List<Map<String, Object>> films = (List<Map<String, Object>>) page2.get("filmById");
+        var byId = films.stream().collect(java.util.stream.Collectors.toMap(
+            f -> (Integer) f.get("filmId"), f -> (Map<String, Object>) f.get("actorsConnection")));
+        // Film 1 after actor_id=1 has just actor_id=2; film 2 after actor_id=1 has just actor_id=3.
+        assertThat((List<Map<String, Object>>) byId.get(1).get("nodes"))
+            .extracting(n -> n.get("actorId")).containsExactly(2);
+        assertThat((List<Map<String, Object>>) byId.get(2).get("nodes"))
+            .extracting(n -> n.get("actorId")).containsExactly(3);
+        assertThat(((Map<String, Object>) byId.get(1).get("pageInfo")).get("hasNextPage")).isEqualTo(false);
+    }
+
+    @Test
+    void splitQueryConnection_backwardPagination_returnsLastNAscending() {
+        // last: 1 with no cursor: the CTE inverts the ORDER BY (actor_id DESC) so ROW_NUMBER()
+        // picks the largest actor_id per partition, then ConnectionResult.trimmedResult()
+        // re-reverses back to ascending for the GraphQL client.
+        Map<String, Object> data = execute(
+            "{ filmById(film_id: [\"1\", \"2\"]) { filmId actorsConnection(last: 1) "
+                + "{ nodes { actorId } pageInfo { hasNextPage hasPreviousPage } } } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmById");
+        var byId = films.stream().collect(java.util.stream.Collectors.toMap(
+            f -> (Integer) f.get("filmId"), f -> (Map<String, Object>) f.get("actorsConnection")));
+        // Film 1 last actor is 2; film 2 last actor is 3.
+        assertThat((List<Map<String, Object>>) byId.get(1).get("nodes"))
+            .extracting(n -> n.get("actorId")).containsExactly(2);
+        assertThat((List<Map<String, Object>>) byId.get(2).get("nodes"))
+            .extracting(n -> n.get("actorId")).containsExactly(3);
+        assertThat(((Map<String, Object>) byId.get(1).get("pageInfo")).get("hasPreviousPage")).isEqualTo(true);
+    }
 }

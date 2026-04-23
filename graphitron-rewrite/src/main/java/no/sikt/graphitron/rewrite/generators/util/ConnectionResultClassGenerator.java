@@ -26,28 +26,30 @@ public class ConnectionResultClassGenerator {
 
     public static final String CLASS_NAME = "ConnectionResult";
 
-    private static final ClassName RESULT       = ClassName.get("org.jooq", "Result");
     private static final ClassName RECORD       = ClassName.get("org.jooq", "Record");
     private static final ClassName JOOQ_FIELD   = ClassName.get("org.jooq", "Field");
     private static final ClassName LIST         = ClassName.get(List.class);
 
     public static List<TypeSpec> generate() {
-        var resultOfRecord = ParameterizedTypeName.get(RESULT, RECORD);
+        var listOfRecordField = ParameterizedTypeName.get(LIST, RECORD);
         var fieldWildcard = ParameterizedTypeName.get(JOOQ_FIELD, WildcardTypeName.subtypeOf(Object.class));
         var listOfField = ParameterizedTypeName.get(LIST, fieldWildcard);
 
-        // Fields
-        var resultField = FieldSpec.builder(resultOfRecord, "result", Modifier.PRIVATE, Modifier.FINAL).build();
+        // Fields — stored as List<Record> so the SplitConnection scatter can supply a sublist
+        // without needing to synthesize a jOOQ Result. Root connections pass a Result<Record>
+        // which widens to List<Record> for free (Result extends List).
+        var resultField = FieldSpec.builder(listOfRecordField, "result", Modifier.PRIVATE, Modifier.FINAL).build();
         var pageSizeField = FieldSpec.builder(int.class, "pageSize", Modifier.PRIVATE, Modifier.FINAL).build();
         var afterCursorField = FieldSpec.builder(String.class, "afterCursor", Modifier.PRIVATE, Modifier.FINAL).build();
         var beforeCursorField = FieldSpec.builder(String.class, "beforeCursor", Modifier.PRIVATE, Modifier.FINAL).build();
         var backwardField = FieldSpec.builder(boolean.class, "backward", Modifier.PRIVATE, Modifier.FINAL).build();
         var orderByColumnsField = FieldSpec.builder(listOfField, "orderByColumns", Modifier.PRIVATE, Modifier.FINAL).build();
 
-        // Constructor
+        // Constructor — takes List<Record>. Root connection fetcher passes a jOOQ Result<Record>
+        // (which is-a List<Record>); split-connection scatter passes a per-parent ArrayList sublist.
         var constructor = MethodSpec.constructorBuilder()
             .addModifiers(Modifier.PUBLIC)
-            .addParameter(resultOfRecord, "result")
+            .addParameter(listOfRecordField, "result")
             .addParameter(int.class, "pageSize")
             .addParameter(String.class, "afterCursor")
             .addParameter(String.class, "beforeCursor")
@@ -69,7 +71,7 @@ public class ConnectionResultClassGenerator {
             RewriteConfig.outputPackage() + ".rewrite", "ConnectionHelper", "PageRequest");
         var pageConstructor = MethodSpec.constructorBuilder()
             .addModifiers(Modifier.PUBLIC)
-            .addParameter(resultOfRecord, "result")
+            .addParameter(listOfRecordField, "result")
             .addParameter(pageRequestRef, "page")
             .addStatement("this(result, page.pageSize(), page.after(), page.before(),"
                 + " page.backward(), page.extraFields())")
@@ -78,7 +80,7 @@ public class ConnectionResultClassGenerator {
         // Accessors
         var getResult = MethodSpec.methodBuilder("result")
             .addModifiers(Modifier.PUBLIC)
-            .returns(resultOfRecord)
+            .returns(listOfRecordField)
             .addStatement("return result")
             .build();
 

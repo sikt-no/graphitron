@@ -1,11 +1,14 @@
 # Plan: Lift `@asConnection` rejection on `@splitQuery` fields
 
-> **Status:** Ready
+> **Status:** In Review
 >
-> Design for per-parent Relay pagination inside DataLoader batches via
-> a `ROW_NUMBER() OVER (PARTITION BY <parent-fk>)` envelope. Lifts the four
-> classifier rejections in `FieldBuilder` and the two validator rejections in
-> `GraphitronSchemaValidator`.
+> §1 shipped: `SplitTableField + Connection` classified (not rejected), validator
+> gates orderBy, emitter emits the ROW_NUMBER envelope + scatterConnectionByIdx,
+> DataFetcher returns `CompletableFuture<ConnectionResult>`. Fixture
+> `Film.actorsConnection` + three execution tests (forward first page, forward
+> after-cursor, backward last-page) cover the per-parent batching + cursor
+> round-trip. §2 (SplitLookupTableField + Connection) and dynamic-orderBy remain
+> deferred with explicit validator errors pointing to this plan.
 
 ## Problem
 

@@ -398,12 +398,14 @@ public class TypeFetcherGenerator {
             }
         }
 
-        // Emit list-shape scatterByIdx helper whenever any list-cardinality Split* or
-        // record-backed batched field is present. Single-cardinality fields use the parallel
-        // scatterSingleByIdx helper (emitted below).
+        // Emit list-shape scatterByIdx helper whenever any plain-list-cardinality Split* or
+        // record-backed batched field is present. Single-cardinality fields use
+        // scatterSingleByIdx; Connection-cardinality fields use scatterConnectionByIdx.
         boolean hasListSplitField = fields.stream().anyMatch(f ->
-            (f instanceof ChildField.SplitTableField stf && stf.returnType().wrapper().isList())
-            || f instanceof ChildField.SplitLookupTableField
+            (f instanceof ChildField.SplitTableField stf
+                && stf.returnType().wrapper() instanceof FieldWrapper.List)
+            || (f instanceof ChildField.SplitLookupTableField slf
+                && slf.returnType().wrapper() instanceof FieldWrapper.List)
             || (f instanceof ChildField.RecordTableField rtf && rtf.returnType().wrapper().isList())
             || f instanceof ChildField.RecordLookupTableField);
         if (hasListSplitField) {
@@ -418,6 +420,16 @@ public class TypeFetcherGenerator {
                 && !stf.returnType().wrapper().isList());
         if (hasSingleSplitField) {
             builder.addMethod(SplitRowsMethodEmitter.buildScatterSingleByIdxHelper());
+        }
+
+        // Connection-cardinality sibling: scatterConnectionByIdx returns List<ConnectionResult>.
+        // Each per-parent bucket wraps the over-fetch slice with the shared PageRequest from the
+        // windowed rows-method invocation. See plan-split-query-connection.md §1.
+        boolean hasConnectionSplitField = fields.stream().anyMatch(f ->
+            f instanceof ChildField.SplitTableField stf
+                && stf.returnType().wrapper() instanceof FieldWrapper.Connection);
+        if (hasConnectionSplitField) {
+            builder.addMethod(SplitRowsMethodEmitter.buildScatterConnectionByIdxHelper());
         }
 
         // emptyScatter is needed whenever @lookupKey input can be empty at request time — that is,
@@ -1054,7 +1066,16 @@ public class TypeFetcherGenerator {
             TableRef parentTable) {
 
         boolean isList = tb.wrapper().isList();
-        var valueType = isList ? ParameterizedTypeName.get(LIST, RECORD) : RECORD;
+        boolean isConnection = tb.wrapper() instanceof FieldWrapper.Connection;
+        TypeName valueType;
+        if (isConnection) {
+            valueType = ClassName.get(
+                RewriteConfig.outputPackage() + ".rewrite", ConnectionResultClassGenerator.CLASS_NAME);
+        } else if (isList) {
+            valueType = ParameterizedTypeName.get(LIST, RECORD);
+        } else {
+            valueType = RECORD;
+        }
         var returnType = ParameterizedTypeName.get(COMPLETABLE_FUTURE, valueType);
 
         var batchKey = bkf.batchKey();

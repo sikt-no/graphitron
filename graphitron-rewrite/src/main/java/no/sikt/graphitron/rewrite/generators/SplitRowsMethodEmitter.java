@@ -135,6 +135,11 @@ public final class SplitRowsMethodEmitter {
                 stf.name(), stf.rowsMethodName(), stf.returnType(),
                 stf.joinPath(), stf.filters(), stf.batchKey());
         }
+        if (stf.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
+            return buildConnectionMethod(
+                stf.name(), stf.rowsMethodName(), stf.returnType(),
+                stf.joinPath(), stf.filters(), stf.batchKey(), stf.orderBy(), conn);
+        }
         return buildListMethod(
             stf.name(), stf.rowsMethodName(), stf.returnType(),
             stf.joinPath(), stf.filters(), stf.batchKey(),
@@ -655,6 +660,242 @@ public final class SplitRowsMethodEmitter {
     }
 
     // -----------------------------------------------------------------------
+    // Connection-cardinality list method — window-function envelope
+    // -----------------------------------------------------------------------
+
+    /**
+     * List-with-per-parent-pagination sibling of {@link #buildListMethod}. Emits the
+     * {@code ROW_NUMBER() OVER (PARTITION BY parentInput.idx ORDER BY <effectiveOrderBy>)}
+     * envelope described in {@code plan-split-query-connection.md}. Returns a
+     * {@code List<ConnectionResult>} indexed 1:1 with the DataLoader's keys, where each
+     * element carries that parent's over-fetched slice plus the shared pagination state.
+     *
+     * <p>Batching invariant: DataLoader batches share the path and argument values, so
+     * {@code first/last/after/before} are identical across a batch, which is why the
+     * pagination dance runs once per rows invocation and wires into every per-parent slice.
+     *
+     * <p>§1 scope: {@link OrderBySpec.Fixed} only. {@link OrderBySpec.Argument} is rejected
+     * upstream by {@code GraphitronSchemaValidator.validateSplitTableField} because the
+     * {@code <fieldName>OrderBy} helper would need to accept the terminal alias rather than
+     * the canonical {@code tableLocal}.
+     */
+    private static MethodSpec buildConnectionMethod(
+            String fieldName,
+            String rowsMethodName,
+            ReturnTypeRef.TableBoundReturnType returnType,
+            List<JoinStep> joinPath,
+            List<WhereFilter> filters,
+            BatchKey batchKey,
+            no.sikt.graphitron.rewrite.model.OrderBySpec orderBy,
+            no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
+
+        TableRef terminalTable = returnType.table();
+        ClassName tablesClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Tables");
+        ClassName keysClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Keys");
+        ClassName typeClass = ClassName.get(
+            RewriteConfig.outputPackage() + ".rewrite.types",
+            returnType.returnTypeName());
+        ClassName connectionResultClass = ClassName.get(
+            RewriteConfig.outputPackage() + ".rewrite", "ConnectionResult");
+        ClassName connectionHelperClass = ClassName.get(
+            RewriteConfig.outputPackage() + ".rewrite", "ConnectionHelper");
+        ClassName pageRequestClass = ClassName.get(
+            RewriteConfig.outputPackage() + ".rewrite", "ConnectionHelper", "PageRequest");
+        ClassName sortFieldClass = ClassName.get("org.jooq", "SortField");
+        TypeName sortFieldWildcard = ParameterizedTypeName.get(
+            sortFieldClass, WildcardTypeName.subtypeOf(Object.class));
+        TypeName listOfSortField = ParameterizedTypeName.get(LIST, sortFieldWildcard);
+        TypeName listOfConnectionResult = ParameterizedTypeName.get(LIST, connectionResultClass);
+
+        BatchKey.RowKeyed rowKeyed = (BatchKey.RowKeyed) batchKey;
+        List<ColumnRef> pkCols = rowKeyed.keyColumns();
+        TypeName keyElement = GeneratorUtils.keyElementType(batchKey);
+        TypeName keysListType = ParameterizedTypeName.get(LIST, keyElement);
+
+        int parentRowArity = pkCols.size() + 1;
+        if (parentRowArity > 22) {
+            throw new IllegalStateException(
+                "Parent PK arity " + pkCols.size() + " + idx exceeds jOOQ's typed Row/Record arity limit (22)");
+        }
+        TypeName[] parentRowTypeArgs = new TypeName[parentRowArity];
+        parentRowTypeArgs[0] = ClassName.get(Integer.class);
+        for (int i = 0; i < pkCols.size(); i++) {
+            parentRowTypeArgs[i + 1] = ClassName.bestGuess(pkCols.get(i).columnClass());
+        }
+        TypeName parentRowType = ParameterizedTypeName.get(rowClass(parentRowArity), parentRowTypeArgs);
+        TypeName parentRecordType = ParameterizedTypeName.get(recordClass(parentRowArity), parentRowTypeArgs);
+        TypeName parentInputTableType = ParameterizedTypeName.get(TABLE, parentRecordType);
+
+        List<JoinStep> path = joinPath;
+        List<String> aliases = JoinPathEmitter.generateAliases(path, terminalTable);
+        String terminalAlias = aliases.get(aliases.size() - 1);
+        String firstAlias = aliases.get(0);
+        JoinStep.FkJoin firstHop = (JoinStep.FkJoin) path.get(0);
+
+        var body = CodeBlock.builder();
+
+        body.beginControlFlow("if (keys.isEmpty())");
+        body.addStatement("return $T.of()", LIST);
+        body.endControlFlow();
+
+        body.addStatement("$T dsl = graphitronContext(env).getDslContext(env)",
+            ClassName.get("org.jooq", "DSLContext"));
+
+        // parentInput VALUES — identical shape to buildListMethod.
+        body.add("@$T($S)\n", ClassName.get("java.lang", "SuppressWarnings"), "unchecked");
+        body.addStatement("$T[] parentRows = ($T[]) new $T[keys.size()]",
+            parentRowType, parentRowType, rowClass(parentRowArity));
+        body.beginControlFlow("for (int i = 0; i < keys.size(); i++)");
+        body.addStatement("$T k = keys.get(i)", keyElement);
+        var rowArgs = CodeBlock.builder();
+        rowArgs.add("$T.inline(i)", DSL);
+        for (int i = 0; i < pkCols.size(); i++) {
+            rowArgs.add(", k.field$L()", i + 1);
+        }
+        body.addStatement("parentRows[i] = $T.row($L)", DSL, rowArgs.build());
+        body.endControlFlow();
+
+        var parentInputAlias = CodeBlock.builder();
+        parentInputAlias.add("$S, $S", "parentInput", "idx");
+        for (var col : pkCols) {
+            parentInputAlias.add(", $S", col.sqlName());
+        }
+        body.addStatement("$T parentInput = $T.values(parentRows).as($L)",
+            parentInputTableType, DSL, parentInputAlias.build());
+
+        // FK chain aliases — terminal first, then bridging hops.
+        for (int i = 0; i < path.size(); i++) {
+            JoinStep.FkJoin fk = (JoinStep.FkJoin) path.get(i);
+            ClassName jooqTableClass = ClassName.get(
+                RewriteConfig.getGeneratedJooqPackage() + ".tables",
+                fk.targetTable().javaClassName());
+            body.addStatement("$T $L = $T.$L.as($S)",
+                jooqTableClass, aliases.get(i), tablesClass, fk.targetTable().javaFieldName(),
+                fieldName + "_" + aliases.get(i));
+        }
+
+        // Extract pagination args up front. Invariant: same values across every key in the batch,
+        // because the DataLoader name is path-scoped and graphql-java resolves args per-field-path.
+        body.addStatement("$T first = env.getArgument($S)", Integer.class, "first");
+        body.addStatement("$T last = env.getArgument($S)", Integer.class, "last");
+        body.addStatement("$T after = env.getArgument($S)", String.class, "after");
+        body.addStatement("$T before = env.getArgument($S)", String.class, "before");
+
+        // Fixed orderBy emitted inline, referencing the terminal alias. Argument orderBy is
+        // rejected upstream at validator time.
+        TypeName wildField = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
+        TypeName listOfField = ParameterizedTypeName.get(LIST, wildField);
+        if (!(orderBy instanceof no.sikt.graphitron.rewrite.model.OrderBySpec.Fixed fixed)
+                || fixed.columns().isEmpty()) {
+            throw new IllegalStateException(
+                "SplitTableField+Connection with non-Fixed orderBy reached emitter for field '" + fieldName
+                + "'; validator should have rejected.");
+        }
+        var sortParts = CodeBlock.builder();
+        var colParts = CodeBlock.builder();
+        for (int i = 0; i < fixed.columns().size(); i++) {
+            if (i > 0) { sortParts.add(", "); colParts.add(", "); }
+            var col = fixed.columns().get(i);
+            sortParts.add("$L.$L.$L()", terminalAlias, col.column().javaName(), fixed.jooqMethodName());
+            colParts.add("$L.$L", terminalAlias, col.column().javaName());
+        }
+        body.addStatement("$T orderBy = $T.of($L)", listOfSortField, LIST, sortParts.build());
+        body.addStatement("$T extraFields = $T.of($L)", listOfField, LIST, colParts.build());
+
+        body.addStatement(
+            "$T page = $T.pageRequest(first, last, after, before, $L, orderBy, extraFields, "
+                + "$T.$$fields(env.getSelectionSet(), $L, env))",
+            pageRequestClass, connectionHelperClass, conn.defaultPageSize(), typeClass, terminalAlias);
+
+        // selectFields = page.selectFields() + idx.as("__idx__") + rowNumber.as("__rn__").
+        // rowNumber partitions on the idx column (so each parent sees its own 1..N ordinal) and
+        // orders by effectiveOrderBy (reversed in the backward-pagination case).
+        body.addStatement("$T<$T> selectFields = new $T<>(page.selectFields())",
+            ClassName.get("java.util", "ArrayList"), wildField, ClassName.get("java.util", "ArrayList"));
+        body.addStatement("$T<Integer> idxField = parentInput.field(0, $T.class)",
+            FIELD, Integer.class);
+        body.addStatement("selectFields.add(idxField.as($S))", "__idx__");
+        body.addStatement("selectFields.add($T.rowNumber().over($T.partitionBy(idxField).orderBy(page.effectiveOrderBy())).as($S))",
+            DSL, DSL, "__rn__");
+
+        // Inner windowed SELECT — attaches .orderBy()/.seek() for cursor-driven filtering; the
+        // OS-level seek predicate falls in as WHERE, filtering BEFORE ROW_NUMBER() is computed.
+        var inner = CodeBlock.builder();
+        inner.add("$T<?> ranked = dsl\n", TABLE);
+        inner.indent();
+        inner.add(".select(selectFields)\n");
+        inner.add(".from($L)\n", terminalAlias);
+        for (int i = path.size() - 1; i >= 1; i--) {
+            JoinStep.FkJoin bridging = (JoinStep.FkJoin) path.get(i);
+            String prevAlias = aliases.get(i - 1);
+            inner.add(".join($L).onKey($T.$L)\n",
+                prevAlias, keysClass, bridging.fkJavaConstant());
+        }
+        var onCond = CodeBlock.builder();
+        for (int i = 0; i < firstHop.sourceColumns().size(); i++) {
+            if (i > 0) onCond.add(".and(");
+            ColumnRef pk = pkCols.get(i);
+            ClassName pkType = ClassName.bestGuess(pk.columnClass());
+            onCond.add("$L.$L.eq(parentInput.field($L, $T.class))",
+                firstAlias,
+                firstHop.sourceColumns().get(i).javaName(),
+                i + 1, pkType);
+            if (i > 0) onCond.add(")");
+        }
+        inner.add(".join(parentInput).on($L)\n", onCond.build());
+
+        // WHERE: per-hop filters + field-level filters. Seek predicate added by .seek() below.
+        var where = CodeBlock.builder();
+        where.add("$T.noCondition()", DSL);
+        for (int i = 0; i < path.size(); i++) {
+            JoinStep.FkJoin hop = (JoinStep.FkJoin) path.get(i);
+            if (hop.whereFilter() != null) {
+                String srcAlias = i == 0 ? firstAlias : aliases.get(i - 1);
+                String tgtAlias = aliases.get(i);
+                where.add(".and($L)",
+                    JoinPathEmitter.emitTwoArgMethodCall(hop.whereFilter(), srcAlias, tgtAlias));
+            }
+        }
+        for (WhereFilter f : filters) {
+            where.add(".and($T.$L($L))",
+                ClassName.bestGuess(f.className()), f.methodName(),
+                ArgCallEmitter.buildCallArgs(f.callParams(), f.className(), terminalAlias));
+        }
+        inner.add(".where($L)\n", where.build());
+        inner.add(".orderBy(page.effectiveOrderBy())\n");
+        inner.add(".seek(page.seekFields())\n");
+        inner.add(".asTable($S);\n", "ranked");
+        inner.unindent();
+        body.add(inner.build());
+
+        // Outer: filter by row_number. DSL.select() with no args projects every field from the
+        // subquery — including __idx__ and the original selection; the __rn__ column is referenced
+        // only in the WHERE clause and gets pulled into the projection too, which the scatter
+        // ignores (it reads by name, not by index).
+        var outer = CodeBlock.builder();
+        outer.add("$T<$T> flat = dsl\n",
+            ClassName.get("org.jooq", "Result"), RECORD);
+        outer.indent();
+        outer.add(".select()\n");
+        outer.add(".from(ranked)\n");
+        outer.add(".where(ranked.field($S, $T.class).le($T.val(page.limit())))\n",
+            "__rn__", Integer.class, DSL);
+        outer.add(".fetch();\n");
+        outer.unindent();
+        body.add(outer.build());
+
+        body.addStatement("return scatterConnectionByIdx(flat, keys.size(), page)");
+
+        return MethodSpec.methodBuilder(rowsMethodName)
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(listOfConnectionResult)
+            .addParameter(keysListType, "keys")
+            .addParameter(ENV, "env")
+            .addCode(body.build())
+            .build();
+    }
+
+    // -----------------------------------------------------------------------
     // Stubs: runtime (body-throws) and codegen (emitter-throws)
     // -----------------------------------------------------------------------
 
@@ -665,12 +906,19 @@ public final class SplitRowsMethodEmitter {
      */
     private static MethodSpec buildRuntimeStub(String methodName, BatchKey batchKey,
             ReturnTypeRef.TableBoundReturnType returnType, String reason) {
-        boolean isList = returnType.wrapper().isList();
         TypeName keyElement = GeneratorUtils.keyElementType(batchKey);
         TypeName keysListType = ParameterizedTypeName.get(LIST, keyElement);
-        TypeName valueType = isList
-            ? ParameterizedTypeName.get(LIST, ParameterizedTypeName.get(LIST, RECORD))
-            : ParameterizedTypeName.get(LIST, RECORD);
+        TypeName valueType;
+        if (returnType.wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection) {
+            ClassName connectionResultClass = ClassName.get(
+                RewriteConfig.outputPackage() + ".rewrite", "ConnectionResult");
+            valueType = ParameterizedTypeName.get(LIST, connectionResultClass);
+        } else {
+            boolean isList = returnType.wrapper().isList();
+            valueType = isList
+                ? ParameterizedTypeName.get(LIST, ParameterizedTypeName.get(LIST, RECORD))
+                : ParameterizedTypeName.get(LIST, RECORD);
+        }
         return MethodSpec.methodBuilder(methodName)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(valueType)
@@ -764,6 +1012,51 @@ public final class SplitRowsMethodEmitter {
                 .beginControlFlow("for ($T r : flat)", RECORD)
                 .addStatement("int idx = r.get($S, $T.class)", IDX_COLUMN, Integer.class)
                 .addStatement("out.get(idx).add(r)")
+                .endControlFlow()
+                .addStatement("return out")
+                .build())
+            .build();
+    }
+
+    /**
+     * Connection-cardinality sibling of {@link #buildScatterByIdxHelper}. Buckets the flat
+     * windowed result by {@code __idx__}, wrapping each per-parent sublist in a
+     * {@link no.sikt.graphitron.rewrite.ConnectionResult} that shares the batch's
+     * {@code PageRequest} (page size, cursors, backward flag, orderByColumns). Emitted once
+     * per fetcher class that has any connection-returning Split* field.
+     *
+     * <p>The PageRequest's {@code extraFields()} are the order-by columns (cursor-encoding
+     * seed); the shared {@code PageRequest} is what lets every per-parent
+     * {@code ConnectionResult} answer {@code hasNextPage()} correctly: the over-fetch-by-1
+     * lives per-partition in the windowed CTE, so each parent's bucket is 0..(pageSize+1).
+     */
+    public static MethodSpec buildScatterConnectionByIdxHelper() {
+        TypeName resultRecord = ParameterizedTypeName.get(ClassName.get("org.jooq", "Result"), RECORD);
+        ClassName connectionResultClass = ClassName.get(
+            RewriteConfig.outputPackage() + ".rewrite", "ConnectionResult");
+        ClassName pageRequestClass = ClassName.get(
+            RewriteConfig.outputPackage() + ".rewrite", "ConnectionHelper", "PageRequest");
+        TypeName listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
+        TypeName listOfListOfRecord = ParameterizedTypeName.get(LIST, listOfRecord);
+        TypeName listOfConnectionResult = ParameterizedTypeName.get(LIST, connectionResultClass);
+        return MethodSpec.methodBuilder("scatterConnectionByIdx")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(listOfConnectionResult)
+            .addParameter(resultRecord, "flat")
+            .addParameter(int.class, "keyCount")
+            .addParameter(pageRequestClass, "page")
+            .addCode(CodeBlock.builder()
+                .addStatement("$T buckets = new $T<>(keyCount)", listOfListOfRecord, ARRAY_LIST)
+                .beginControlFlow("for (int i = 0; i < keyCount; i++)")
+                .addStatement("buckets.add(new $T<>())", ARRAY_LIST)
+                .endControlFlow()
+                .beginControlFlow("for ($T r : flat)", RECORD)
+                .addStatement("int idx = r.get($S, $T.class)", IDX_COLUMN, Integer.class)
+                .addStatement("buckets.get(idx).add(r)")
+                .endControlFlow()
+                .addStatement("$T out = new $T<>(keyCount)", listOfConnectionResult, ARRAY_LIST)
+                .beginControlFlow("for (int i = 0; i < keyCount; i++)")
+                .addStatement("out.add(new $T(buckets.get(i), page))", connectionResultClass)
                 .endControlFlow()
                 .addStatement("return out")
                 .build())
