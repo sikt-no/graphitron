@@ -165,7 +165,7 @@ for the full lifecycle and available hooks.
 
 ### Row-Level Security
 
-Graphitron's security model (see [Security](security.md)) designates the database as the
+Graphitron's security model (see [Security](../../docs/security.md)) designates the database as the
 enforcement point. Row-level security (RLS) is the recommended mechanism — policies filter rows
 transparently based on session context, with no changes to generated queries.
 
@@ -207,6 +207,6 @@ the policies automatically.
 ---
 
 **See also:**
-- [Security Model](security.md) — Database-level security philosophy
-- [Common Module README](../graphitron-common/README.md) — GraphitronContext API reference
-- [Example Server](../graphitron-example/graphitron-example-server) — Working implementation
+- [Security Model](../../docs/security.md) — Database-level security philosophy
+- [Common Module README](../../graphitron-common/README.md) — GraphitronContext API reference
+- [Example Server](../../graphitron-example/graphitron-example-server) — Working implementation

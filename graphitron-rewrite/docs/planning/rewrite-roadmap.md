@@ -18,7 +18,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | Multi-parent NestingField sharing — `TableField` arm | Spec | [plan](plan-nestingfield-multiparent-tablefield.md) |
 | Faceted search on `@asConnection` | Spec | [plan](plan-faceted-search.md), [spike](spike-faceted-search-sql.md) |
 | Rewrite emitter + classifier hygiene sweep | Spec | [plan](plan-rewrite-hygiene-sweep.md) |
-| Consolidate rewrite modules under `graphitron-rewrite/` | Ready | [plan](plan-consolidate-rewrite-modules.md) |
 | Docs as an index into classification tests | Ready (deferred) | [plan](plan-docs-as-index-into-tests.md) |
 
 **Notes:** KjerneJooqGenerator is an external Sikt repo change (scratch-only here); unblocks Platform-id steps 2–6 at release time. Classification vocabulary follow-ups covers five independent cleanups — none is a release blocker. Docs-as-index is parked on steps 3–4 until the sealed hierarchy stabilises (Active work and Stubs still in motion); steps 1–2 shipped.
@@ -123,6 +122,7 @@ Enumerated from `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS`. Priority numbers
 - `@table` + `@record` input-type fix: `@record` dominates on input types; introduces `BuildContext.warnings()` channel.
 - `d33ace9` — Variant-coverage Phase 2: `ClassificationCase` interface; 26 enums retrofitted with `variants()` sets.
 - Java-17 output ratchet: `graphitron-rewrite-test` compile goal pinned to `release=17`.
+- Consolidate rewrite modules under `graphitron-rewrite/` shipped at `0e5eb86`.
 - `0b2e4e9` + `49d7879` — Nesting-field emission: `ChildField.NestingField` out of stubs; eight execution tests.
 - `1abc31ed` + `0c449fef` + `a3afd651` — Implicit `@reference` path inference: `BuildContext.parsePath` synthesizes single-hop `FkJoin` from the jOOQ catalog when `@reference` is absent; deletes four `SplitRowsMethodEmitter` EMPTY_PATH stub branches and the duplicate FK-count logic in `GraphitronSchemaValidator`.
 - `2530b93` + `f8df839` + `a063d3e` + `ef89bfb` + `1900453` — Generated-fetcher quality pass: `ConnectionHelper.pageRequest` + emitted `PageRequest` carrier own the full pagination dance (first/last guard, backward/pageSize/cursor derivation, cursor decode, reverse ordering, selection ∪ extraFields name-dedup), with `reverseOrderBy` lifted from per-`*Fetchers`-class to one shared copy; `QueryConditionsGenerator` extracts env-aware condition orchestration into a parallel generated class so entity `*Conditions` stay pure; `$T` substitution replaces every `var`-emitting site in the generator; table-local rename from `table` → `<entity>Table` with `srcAlias` threaded through `ArgCallEmitter` + all `buildCallArgs` callers, breaking the mapper/table name collision; `FieldWrapper.DEFAULT_PAGE_SIZE` unifies four fallback sites; `seekFields: Field<?>[]` matches `decodeCursor`'s declared return type; `ConnectionResult` gains a 2-arg delegating constructor. Three emitted-source lint ratchets (`GeneratedSourcesLintTest`): no `var`, no full-package jOOQ qualification in fetcher bodies, no `graphql.*` imports in entity `*Conditions`. ([plan](plan-generated-fetcher-quality.md))

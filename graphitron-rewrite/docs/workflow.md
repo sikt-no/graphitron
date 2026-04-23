@@ -29,7 +29,7 @@ themselves from approving that revision — another party must sign off.
 
 ## Plan file conventions
 
-- Location: `docs/planning/plan-<slug>.md`. Slug describes the work, not the
+- Location: `planning/plan-<slug>.md`. Slug describes the work, not the
   phase (`plan-variant-coverage-meta-test.md`, not `plan-phase-2.md`).
 - First non-heading line is the status front-matter, verbatim:
   `> **Status:** Spec | Ready | In Review`
@@ -76,7 +76,7 @@ every passing thought.
 Taking a feature from idea to Done. Minimum four commits by at least two parties;
 typical paths are five to six when reviews involve iteration:
 
-1. **Author** picks a `[Backlog]` item, drafts `docs/planning/plan-foo.md`, sets
+1. **Author** picks a `[Backlog]` item, drafts `planning/plan-foo.md`, sets
    roadmap to `[Spec]`.
 2. **Reviewer (≠ author)** reads the plan, revises if needed (stays `[Spec]`),
    then signs off (`[Ready]`).

@@ -11,7 +11,7 @@ Graphitron is used as a Maven plugin, offering two main functionalities:
 **New to Graphitron?** Start with the [documentation guide](./docs/README.md) for conceptual understanding:
 -   [Vision and Goal](./docs/vision-and-goal.md) - What problem Graphitron solves and why
 -   [Graphitron Principles](./docs/graphitron-principles.md) - Design philosophy for building systems that last decades
--   [Code Generation Triggers](./docs/code-generation-triggers.md) - Schema patterns → what gets generated
+-   [Code Generation Triggers](./graphitron-rewrite/docs/code-generation-triggers.md) - Schema patterns → what gets generated
 
 **Ready to use Graphitron?** See the technical reference documentation:
 -   [Online documentation](https://graphitron.sikt.no/)

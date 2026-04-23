@@ -359,7 +359,7 @@ GraphitronContext works alongside other extension points:
 - **jOOQ ExecuteListener**: Intercept and modify queries before execution (add filters, log SQL, collect metrics)
 - **Database Row-Level Security**: Enforce security at database level using session variables
 
-For detailed usage examples and multi-tenancy patterns, see [Runtime Extension Points](../docs/runtime-extension-points.md).
+For detailed usage examples and multi-tenancy patterns, see [Runtime Extension Points](../graphitron-rewrite/docs/runtime-extension-points.md).
 
 ---
 

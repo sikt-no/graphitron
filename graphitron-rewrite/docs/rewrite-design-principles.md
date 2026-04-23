@@ -1,6 +1,6 @@
 # Rewrite Design Principles
 
-Technical and architectural principles that govern the rewrite pipeline. For Graphitron's strategic/philosophical principles, see [graphitron-principles.md](graphitron-principles.md).
+Technical and architectural principles that govern the rewrite pipeline. For Graphitron's strategic/philosophical principles, see [graphitron-principles.md](../../docs/graphitron-principles.md).
 
 ---
 

@@ -112,7 +112,7 @@ Questions to answer:
 
 **Action.** Before wiring lookup execution tests (see Generator stubs #6–7 in the roadmap), nail down the signature,
 document it in
-[graphitron-java-codegen README](../../graphitron-codegen-parent/graphitron-java-codegen/README.md)
+[graphitron-java-codegen README](../../../graphitron-codegen-parent/graphitron-java-codegen/README.md)
 alongside `@condition`, and add an execution test in `graphitron-rewrite-test` that
 verifies the N × M contract holds end-to-end.
 

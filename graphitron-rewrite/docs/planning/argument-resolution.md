@@ -183,7 +183,7 @@ implements. Reviewers and implementers should know the delta before signing
 off on §Override propagation.
 
 **Legacy schema, `withListedInputConditions`**
-([schema.graphqls](../../graphitron-codegen-parent/graphitron-java-codegen/src/test/resources/queries/fetch/records/withListedInputConditions/schema.graphqls)):
+([schema.graphqls](../../../graphitron-codegen-parent/graphitron-java-codegen/src/test/resources/queries/fetch/records/withListedInputConditions/schema.graphqls)):
 
 ```graphql
 type Query {
@@ -198,7 +198,7 @@ input CustomerInput @table(name: "CUSTOMER") {
 ```
 
 **Legacy output, same fixture's**
-[`expected/QueryDBQueries.java`](../../graphitron-codegen-parent/graphitron-java-codegen/src/test/resources/queries/fetch/records/withListedInputConditions/expected/QueryDBQueries.java):
+[`expected/QueryDBQueries.java`](../../../graphitron-codegen-parent/graphitron-java-codegen/src/test/resources/queries/fetch/records/withListedInputConditions/expected/QueryDBQueries.java):
 
 - `customerForQuery` (no outer override, :17-37) emits the full stack:
   row-IN containing `hasId(id)` + `customerString(table, id)` +

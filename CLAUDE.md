@@ -15,7 +15,7 @@ Maven-based code generator that turns GraphQL schemas + jOOQ-generated database 
 
 Maven 3.9.11 at `/opt/maven`; Java 21 default. Pre-configured — no installation needed.
 
-**Claude Code Web:** see [`docs/claude-code-web-environment.md`](docs/claude-code-web-environment.md) for the web-sandbox setup (no Docker, native PostgreSQL via `-Plocal-db`).
+**Claude Code Web:** see [`graphitron-rewrite/docs/claude-code-web-environment.md`](graphitron-rewrite/docs/claude-code-web-environment.md) for the web-sandbox setup (no Docker, native PostgreSQL via `-Plocal-db`).
 
 ## Common commands
 
@@ -29,7 +29,7 @@ mvn clean install -Pquick    # Fast build, skips tests + javadocs
 
 ## Building and testing graphitron-rewrite
 
-Full pipeline (build-fixtures → test → compile-spec → execute-spec) and recovery from the fixtures-jar clobber: [`docs/claude-code-web-environment.md`](docs/claude-code-web-environment.md). Test-tier conventions (no code-string assertions on generated bodies; unit vs pipeline vs compilation vs execution): [`docs/rewrite-design-principles.md`](docs/rewrite-design-principles.md).
+Full pipeline (build-fixtures → test → compile-spec → execute-spec) and recovery from the fixtures-jar clobber: [`graphitron-rewrite/docs/claude-code-web-environment.md`](graphitron-rewrite/docs/claude-code-web-environment.md). Test-tier conventions (no code-string assertions on generated bodies; unit vs pipeline vs compilation vs execution): [`graphitron-rewrite/docs/rewrite-design-principles.md`](graphitron-rewrite/docs/rewrite-design-principles.md).
 
 ## Writing style
 
@@ -41,9 +41,9 @@ Prefer many small `Edit` calls over one large `Write` when trimming or rewriting
 
 ## Development Workflow
 
-Every change moves Backlog → Spec → Ready → In Progress → In Review → Done, tracked per item in `docs/planning/rewrite-roadmap.md` with inline `[Status]` markers. Plans live at `docs/planning/plan-<slug>.md` and carry a `> **Status:** ...` front-matter that mirrors the roadmap. Reviewer must be a different party than the author (for Spec → Ready) and the implementer (for In Review → Done). Any session can add `[Backlog]` items to the roadmap.
+Every change moves Backlog → Spec → Ready → In Progress → In Review → Done, tracked per item in `graphitron-rewrite/docs/planning/rewrite-roadmap.md` with inline `[Status]` markers. Plans live at `graphitron-rewrite/docs/planning/plan-<slug>.md` and carry a `> **Status:** ...` front-matter that mirrors the roadmap. Reviewer must be a different party than the author (for Spec → Ready) and the implementer (for In Review → Done). Any session can add `[Backlog]` items to the roadmap.
 
-Full spec — state table, file conventions, canonical path: [`docs/workflow.md`](docs/workflow.md). Read it once; it's short.
+Full spec — state table, file conventions, canonical path: [`graphitron-rewrite/docs/workflow.md`](graphitron-rewrite/docs/workflow.md). Read it once; it's short.
 
 ## Git Workflow
 
