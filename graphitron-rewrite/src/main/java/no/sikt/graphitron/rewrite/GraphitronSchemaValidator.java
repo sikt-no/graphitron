@@ -417,12 +417,13 @@ public class GraphitronSchemaValidator {
     }
 
     /**
-     * Variants wireable at nested depth. {@code GraphitronWiringClassGenerator} calls
-     * {@code TypeFetcherGenerator.buildWiringEntry} with {@code className=null} and
-     * {@code resultType=null}; only these variants have arms that don't fall through to the
-     * {@code $L::$L} fallback (which would emit {@code null::fieldName} — invalid Java).
-     * Expanding this set is a one-line edit paired with adding a className-independent arm
-     * to {@code buildWiringEntry}.
+     * Variants wireable at nested depth. Inline leaves ({@code ColumnField}, {@code TableField},
+     * etc.) have className-independent arms in {@code TypeFetcherGenerator.buildWiringEntry}.
+     * Class-backed leaves ({@code SplitTableField}, {@code SplitLookupTableField}) are wired via
+     * a per-nested-type {@code <NestedTypeName>Fetchers} class whose name is threaded through
+     * {@code GraphitronWiringClassGenerator}; {@code TypeFetcherGenerator.generate} emits that
+     * class via a separate walk over {@code NestingField.nestedFields()}. Expanding either group
+     * requires the corresponding generator-side change.
      */
     private static final java.util.Set<Class<? extends GraphitronField>> NESTED_WIREABLE_LEAVES = java.util.Set.of(
         ChildField.ColumnField.class,
@@ -430,7 +431,9 @@ public class GraphitronSchemaValidator {
         ChildField.TableField.class,
         ChildField.LookupTableField.class,
         ChildField.ConstructorField.class,
-        ChildField.NestingField.class);
+        ChildField.NestingField.class,
+        ChildField.SplitTableField.class,
+        ChildField.SplitLookupTableField.class);
 
     private void validateVariantIsSupportedAtNestedDepth(GraphitronField field, List<ValidationError> errors) {
         // Stubbed variants already surfaced by validateVariantIsImplemented — don't double-report.

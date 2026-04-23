@@ -7,6 +7,7 @@ import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
+import no.sikt.graphitron.rewrite.model.BatchKeyField;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.TableRef;
 
@@ -103,14 +104,22 @@ public class GraphitronWiringClassGenerator {
             }
 
             // Nested-type wiring: one TypeRuntimeWiring per plain object type reached through a
-            // NestingField. The nested type has no *Fetchers class — its data fetchers come from
-            // TypeFetcherGenerator.buildWiringEntry applied to each classified nested field.
+            // NestingField. Inline leaves (ColumnField, TableField, etc.) wire without a class
+            // reference. Class-backed leaves (SplitTableField, SplitLookupTableField) wire via
+            // <NestedTypeName>Fetchers, emitted by TypeFetcherGenerator.generate. The Fetchers
+            // class is in the fetchers sub-package, so use ClassName ($T) to emit a proper import.
             for (var ntw : nestedTypeWirings) {
+                ClassName nestedFetchersClass = ntw.fields().stream().anyMatch(f -> f instanceof BatchKeyField)
+                    ? ClassName.get(fetchersPackage, ntw.nestedTypeName() + "Fetchers") : null;
                 body.add("\n.type($T.newTypeWiring($S)", TYPE_WIRING, ntw.nestedTypeName());
                 body.indent();
                 for (var nf : ntw.fields()) {
-                    body.add(TypeFetcherGenerator.buildWiringEntry(
-                        nf, null, ntw.representativeParentTable(), null));
+                    if (nestedFetchersClass != null && nf instanceof BatchKeyField) {
+                        body.add("\n.dataFetcher($S, $T::$L)", nf.name(), nestedFetchersClass, nf.name());
+                    } else {
+                        body.add(TypeFetcherGenerator.buildWiringEntry(
+                            nf, null, ntw.representativeParentTable(), null));
+                    }
                 }
                 body.add(")");
                 body.unindent();

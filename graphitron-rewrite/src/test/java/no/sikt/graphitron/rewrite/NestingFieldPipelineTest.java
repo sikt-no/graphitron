@@ -120,6 +120,52 @@ class NestingFieldPipelineTest {
         assertThat(occurrences).isEqualTo(1L);
     }
 
+    private static final String SPLIT_NESTING_SDL = """
+        type Actor @table(name: "actor") { name: String }
+        type FilmInfo {
+            cast: [Actor!]! @splitQuery
+                @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
+        }
+        type Film @table(name: "film") { info: FilmInfo }
+        type Query { film: Film }
+        """;
+
+    @Test
+    void wiringClass_nestedSplitField_referencesNestedFetchersClass() {
+        var wiring = buildWiring(SPLIT_NESTING_SDL);
+        String body = wiringBuildBody(wiring);
+        assertThat(body).contains("newTypeWiring(\"FilmInfo\")");
+        assertThat(body).contains("FilmInfoFetchers::cast");
+    }
+
+    @Test
+    void wiringClass_nestedSplitField_inlineLeavesInSameTypeStillWireInline() {
+        // If FilmInfo also has a scalar column, that scalar still wires via ColumnFetcher,
+        // not via the Fetchers class.
+        var wiring = buildWiring("""
+            type Actor @table(name: "actor") { name: String }
+            type FilmInfo {
+                title: String
+                cast: [Actor!]! @splitQuery
+                    @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
+            }
+            type Film @table(name: "film") { info: FilmInfo }
+            type Query { film: Film }
+            """);
+        String body = wiringBuildBody(wiring);
+        assertThat(body).contains("ColumnFetcher");
+        assertThat(body).contains("FilmInfoFetchers::cast");
+    }
+
+    @Test
+    void typeClass_nestedSplitField_filmTypeSpecGeneratesWithoutError() {
+        // TypeClassGenerator.generate must succeed when a NestingField child contains a
+        // SplitTableField; the recursive collectBatchKeyColumns walk must not throw.
+        var schema = TestSchemaHelper.buildSchema(SPLIT_NESTING_SDL);
+        var typeSpecs = TypeClassGenerator.generate(schema);
+        assertThat(typeSpecs.stream().map(TypeSpec::name)).contains("Film");
+    }
+
     // ===== Helpers =====
 
     private static TypeSpec findFetcher(String className, String sdl) {
@@ -143,7 +189,10 @@ class NestingFieldPipelineTest {
      */
     private static TypeSpec buildWiring(String sdl) {
         var schema = TestSchemaHelper.buildSchema(sdl);
+        // Mirrors GraphQLRewriteGenerator: exclude nested Fetchers (no wiring() method) from the
+        // fetcherClassNames list so the wiring builder doesn't reference a non-existent method.
         var fetcherClassNames = TypeFetcherGenerator.generate(schema).stream()
+            .filter(t -> t.methodSpecs().stream().anyMatch(m -> m.name().equals("wiring")))
             .map(TypeSpec::name).toList();
         var nestedTypeMap = new LinkedHashMap<String, GraphitronWiringClassGenerator.NestedTypeWiring>();
         schema.fields().values().forEach(f -> collectNestedTypes(f, nestedTypeMap));

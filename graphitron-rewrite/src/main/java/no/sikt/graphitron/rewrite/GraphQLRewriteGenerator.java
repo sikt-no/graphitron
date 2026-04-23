@@ -66,7 +66,13 @@ public class GraphQLRewriteGenerator {
         }
 
         var fetcherClasses = TypeFetcherGenerator.generate(schema);
-        var fetcherClassNames = fetcherClasses.stream().map(TypeSpec::name).toList();
+        // Nested plain-object Fetchers classes have no wiring() method (wiring is handled by
+        // GraphitronWiringClassGenerator's nestedTypeWirings loop). Exclude them from the
+        // fetcherClassNames list so the wiring builder doesn't emit a FilmInfoFetchers.wiring() call.
+        var fetcherClassNames = fetcherClasses.stream()
+            .filter(t -> t.methodSpecs().stream().anyMatch(m -> m.name().equals("wiring")))
+            .map(TypeSpec::name)
+            .toList();
 
         // Collect one wiring entry per distinct Connection type referenced by any field.
         // Multiple fields may return the same Connection type; TypeRuntimeWiring is per-type.

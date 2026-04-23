@@ -90,15 +90,9 @@ public class TypeClassGenerator {
             .toList();
         // Split* fields don't appear in $fields (they're handled by DataLoader-backed fetchers),
         // but their BatchKey columns must land in the parent SELECT so key extraction reads
-        // non-null values off env.getSource(). See plan-single-cardinality-split-query.md §2.
-        var requiredProjectionColumns = schema.fieldsOf(typeName).stream()
-            .flatMap(f -> {
-                if (f instanceof ChildField.SplitTableField stf && stf.batchKey() instanceof BatchKey.RowKeyed rk)
-                    return rk.keyColumns().stream();
-                if (f instanceof ChildField.SplitLookupTableField slf && slf.batchKey() instanceof BatchKey.RowKeyed rk)
-                    return rk.keyColumns().stream();
-                return java.util.stream.Stream.<ColumnRef>empty();
-            })
+        // non-null values off env.getSource(). Recurse into NestingField.nestedFields() so nested
+        // Split fields' BatchKey columns are also projected by the outer parent's SELECT.
+        var requiredProjectionColumns = collectBatchKeyColumns(schema.fieldsOf(typeName))
             .distinct()
             .toList();
         return buildTypeSpec(typeName, type.table(), columnFields, platformIdFields, nodeIdFields, tableFields, lookupTableFields, nestingFields, requiredProjectionColumns);
@@ -285,5 +279,17 @@ public class TypeClassGenerator {
 
     private static String sfName(int depth) { return depth == 0 ? "sf" : "sf" + depth; }
     private static String entryName(int depth) { return depth == 0 ? "entry" : "entry" + depth; }
+
+    private static java.util.stream.Stream<ColumnRef> collectBatchKeyColumns(List<? extends GraphitronField> fields) {
+        return fields.stream().flatMap(f -> {
+            if (f instanceof ChildField.SplitTableField stf && stf.batchKey() instanceof BatchKey.RowKeyed rk)
+                return rk.keyColumns().stream();
+            if (f instanceof ChildField.SplitLookupTableField slf && slf.batchKey() instanceof BatchKey.RowKeyed rk)
+                return rk.keyColumns().stream();
+            if (f instanceof ChildField.NestingField nf)
+                return collectBatchKeyColumns(nf.nestedFields());
+            return java.util.stream.Stream.empty();
+        });
+    }
 
 }

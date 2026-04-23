@@ -367,4 +367,49 @@ class SplitTableFieldPipelineTest {
                 "graphql.schema.DataFetchingEnvironment",
                 "no.sikt.graphitron.rewrite.test.jooq.tables.Actor");
     }
+
+    // ===== SplitTableField under NestingField =====
+
+    @Test
+    void nestingFieldWithSplitTableField_producesNestedFetchersClass() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Actor @table(name: "actor") { name: String }
+            type FilmInfo {
+                cast: [Actor!]! @splitQuery
+                    @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
+            }
+            type Film @table(name: "film") { info: FilmInfo }
+            type Query { film: Film }
+            """);
+
+        var all = TypeFetcherGenerator.generate(schema);
+
+        var filmInfoFetchers = all.stream()
+            .filter(t -> t.name().equals("FilmInfoFetchers"))
+            .findFirst()
+            .orElseThrow();
+        var methodNames = filmInfoFetchers.methodSpecs().stream().map(m -> m.name()).toList();
+        assertThat(methodNames).contains("cast", "rowsCast", "scatterByIdx");
+        assertThat(methodNames).doesNotContain("wiring");
+    }
+
+    @Test
+    void nestingFieldWithSplitTableField_outerFetchersClassUnaffected() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Actor @table(name: "actor") { name: String }
+            type FilmInfo {
+                cast: [Actor!]! @splitQuery
+                    @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
+            }
+            type Film @table(name: "film") { info: FilmInfo }
+            type Query { film: Film }
+            """);
+
+        var filmFetchers = TypeFetcherGenerator.generate(schema).stream()
+            .filter(t -> t.name().equals("FilmFetchers"))
+            .findFirst()
+            .orElseThrow();
+        var methodNames = filmFetchers.methodSpecs().stream().map(m -> m.name()).toList();
+        assertThat(methodNames).doesNotContain("cast", "rowsCast");
+    }
 }

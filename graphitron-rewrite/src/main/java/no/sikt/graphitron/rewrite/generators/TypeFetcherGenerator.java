@@ -64,7 +64,7 @@ import java.util.Set;
 public class TypeFetcherGenerator {
 
     public static List<TypeSpec> generate(GraphitronSchema schema) {
-        return schema.types().entrySet().stream()
+        var result = new ArrayList<TypeSpec>(schema.types().entrySet().stream()
             .filter(e -> e.getValue() instanceof GraphitronType.TableType
                       || e.getValue() instanceof GraphitronType.NodeType
                       || e.getValue() instanceof GraphitronType.RootType
@@ -72,7 +72,41 @@ public class TypeFetcherGenerator {
             .map(Map.Entry::getKey)
             .sorted()
             .map(typeName -> generateForType(schema, typeName))
-            .toList();
+            .toList());
+
+        // Walk NestingField descendants of TableBackedType roots; emit a narrow Fetchers class
+        // for each nested plain-object type that contains at least one BatchKeyField leaf.
+        // These types are absent from schema.types(), so they cannot reach the stream above.
+        var seenNestedTypes = new java.util.LinkedHashSet<String>();
+        schema.types().entrySet().stream()
+            .filter(e -> e.getValue() instanceof GraphitronType.TableBackedType)
+            .sorted(Map.Entry.comparingByKey())
+            .forEach(e -> schema.fieldsOf(e.getKey()).forEach(f -> {
+                if (f instanceof ChildField.NestingField nf) {
+                    collectNestedFetcherClasses(nf, seenNestedTypes, result);
+                }
+            }));
+        return result;
+    }
+
+    private static void collectNestedFetcherClasses(ChildField.NestingField nf,
+            Set<String> seen, List<TypeSpec> out) {
+        var nestedTypeName = nf.returnType().returnTypeName();
+        if (seen.add(nestedTypeName)) {
+            var batchKeyFields = nf.nestedFields().stream()
+                .filter(f -> f instanceof BatchKeyField)
+                .map(f -> (GraphitronField) f)
+                .sorted(Comparator.comparing(GraphitronField::name))
+                .toList();
+            if (!batchKeyFields.isEmpty()) {
+                out.add(generateTypeSpec(nestedTypeName, nf.returnType().table(), null, batchKeyFields, false));
+            }
+        }
+        for (var nested : nf.nestedFields()) {
+            if (nested instanceof ChildField.NestingField innerNf) {
+                collectNestedFetcherClasses(innerNf, seen, out);
+            }
+        }
     }
 
     private static TypeSpec generateForType(GraphitronSchema schema, String typeName) {
@@ -250,6 +284,11 @@ public class TypeFetcherGenerator {
      */
     static TypeSpec generateTypeSpec(String typeName, TableRef parentTable,
             GraphitronType.ResultType resultType, List<GraphitronField> fields) {
+        return generateTypeSpec(typeName, parentTable, resultType, fields, true);
+    }
+
+    private static TypeSpec generateTypeSpec(String typeName, TableRef parentTable,
+            GraphitronType.ResultType resultType, List<GraphitronField> fields, boolean emitWiring) {
         var className = typeName + "Fetchers";
         var builder = TypeSpec.classBuilder(className)
             .addModifiers(Modifier.PUBLIC);
@@ -449,7 +488,9 @@ public class TypeFetcherGenerator {
             builder.addMethod(SplitRowsMethodEmitter.buildEmptyScatterHelper());
         }
 
-        builder.addMethod(buildWiringMethod(typeName, className, parentTable, resultType, fields));
+        if (emitWiring) {
+            builder.addMethod(buildWiringMethod(typeName, className, parentTable, resultType, fields));
+        }
         return builder.build();
     }
 

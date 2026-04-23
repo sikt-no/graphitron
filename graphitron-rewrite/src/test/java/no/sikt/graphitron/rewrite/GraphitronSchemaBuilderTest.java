@@ -1152,6 +1152,29 @@ class GraphitronSchemaBuilderTest {
         tc.assertions.accept(build(tc.sdl));
     }
 
+    @Test
+    void nestingField_splitTableFieldClassifiedAsNestedSplitTableField() {
+        var schema = build("""
+            type Actor @table(name: "actor") { name: String }
+            type FilmInfo {
+                cast: [Actor!]! @splitQuery
+                    @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
+            }
+            type Film @table(name: "film") { info: FilmInfo }
+            type Query { film: Film }
+            """);
+        var infoField = (NestingField) schema.field("Film", "info");
+        var castField = infoField.nestedFields().stream()
+            .filter(f -> f.name().equals("cast"))
+            .findFirst().orElseThrow();
+        assertThat(castField).isInstanceOf(SplitTableField.class);
+        var stf = (SplitTableField) castField;
+        assertThat(stf.parentTypeName()).isEqualTo("FilmInfo");
+        assertThat(stf.batchKey()).isInstanceOf(BatchKey.RowKeyed.class);
+        var rk = (BatchKey.RowKeyed) stf.batchKey();
+        assertThat(rk.keyColumns()).extracting(ColumnRef::javaName).containsExactly("FILM_ID");
+    }
+
     // ===== ServiceTableField / ServiceRecordField =====
 
     enum ServiceFieldCase implements ClassificationCase {

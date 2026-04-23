@@ -187,6 +187,12 @@ type FilmSummary {
 type FilmInfo {
     releaseYear: Int    @field(name: "RELEASE_YEAR")
     meta:        FilmMeta
+    # Nested-depth @splitQuery: per-Film DataLoader batch reaches actors via
+    # film_actor junction, same path as Film.actors at non-nested depth.
+    cast: [Actor!]! @splitQuery @reference(path: [
+        {key: "film_actor_film_id_fkey"},
+        {key: "film_actor_actor_id_fkey"}
+    ])
 }
 
 type FilmMeta {
