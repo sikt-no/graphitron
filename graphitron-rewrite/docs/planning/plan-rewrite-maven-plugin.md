@@ -15,8 +15,8 @@
 
 ## Goal
 
-Ship `graphitron-rewrite-maven-plugin` as a new Maven plugin artifact
-with one primary goal (`generate`) and a minimal, opinionated config
+Ship `graphitron-rewrite-maven` as a new Maven plugin artifact with
+two goals (`generate`, `validate`) and a minimal, opinionated config
 surface. The plugin replaces static-config singletons with a
 per-invocation context, drops every legacy escape hatch, and exposes
 exactly the knobs rewrite consumers need today.
@@ -30,9 +30,9 @@ migrated.
 
 **In scope**
 
-- New artifact `graphitron-rewrite-maven-plugin` at
-  `graphitron-rewrite/graphitron-rewrite-maven-plugin/`.
-- One `generate` Mojo driving `GraphQLRewriteGenerator.generate()`
+- New artifact `graphitron-rewrite-maven` at
+  `graphitron-rewrite/graphitron-rewrite-maven/`.
+- Two Mojos (`generate`, `validate`) driving the rewrite pipeline
   via a per-invocation context object (no static singletons).
 - Minimal config schema, anchored on `<schemaInputs>` (sibling plan).
 - Plugin packaging, lifecycle bindings, `plugin.xml` descriptor,
@@ -110,16 +110,18 @@ graphitron-rewrite/
 ├── graphitron-rewrite/                      # unchanged: pipeline code
 ├── graphitron-rewrite-fixtures/             # unchanged
 ├── graphitron-rewrite-test/                 # unchanged
-└── graphitron-rewrite-maven-plugin/         # NEW
+└── graphitron-rewrite-maven/                # NEW
     ├── pom.xml                              # packaging=maven-plugin
     └── src/main/java/no/sikt/graphitron/rewrite/maven/
-        ├── GenerateMojo.java                # the one primary goal
+        ├── GenerateMojo.java                # primary goal
+        ├── ValidateMojo.java                # validate-only goal
         ├── RewriteContext.java              # per-invocation config
         └── SchemaInputBinding.java          # POM XML binding for <schemaInput>
 ```
 
-Package `no.sikt.graphitron.rewrite.maven` (not `no.sikt.graphitron.mojo`)
-to keep legacy-plugin class-search hits out of rewrite work.
+Artifact: `graphitron-rewrite-maven` (non-standard Maven-plugin
+suffix; see §Goal-prefix note at the end of this section). Package:
+`no.sikt.graphitron.rewrite.maven`.
 
 ### `GenerateMojo` shape
 
@@ -148,9 +150,12 @@ public class GenerateMojo extends AbstractMojo {
 }
 ```
 
-**That is the entire `@Parameter` list.** Eight parameters vs. the
-legacy plugin's 18+ across its Mojos. Everything else from the legacy
-audit is dropped (see §Current state).
+**That is the entire `@Parameter` list for `generate`.** Eight
+parameters vs. the legacy plugin's 18+ across its Mojos. `ValidateMojo`
+inherits the same eight via a small shared abstract base
+(`AbstractRewriteMojo`); it omits nothing because schema loading +
+`<schemaInputs>` resolution need the full input set. Everything else
+from the legacy audit is dropped (see §Current state).
 
 ### `RewriteContext`: replaces static config
 
@@ -178,21 +183,38 @@ two-stage population, no subset leak.
 
 ### Goals (the final list)
 
-Exactly one: `generate`. Companion goals the legacy plugin ships are
-re-evaluated against consumer pressure:
+Two goals:
 
-- `validate`: fold into `generate` as a `<skipCodeOutput>true</skipCodeOutput>`
-  mode? Or drop entirely and let consumers run `mvn compile` on the
-  output? See D3.
-- `introspect`: rewrite has no jOOQ-introspection code today;
-  consumers who need LSP config keep using `graphitron-maven-plugin:introspect`
-  until a separate plan ports it. Not blocked by this plan.
-- `transform`: gone. The only transformation the rewrite plugin
-  does is `<schemaInputs>` tagging, which runs inside `generate`.
-- `watch`: gone. IDE incremental builds (IntelliJ Maven project
-  reimport on schema change) cover the use case; a Maven-goal file
-  watcher is a dev-mode feature that doesn't justify the extra
-  surface. See D4 if a consumer objects.
+- **`generate`** (default phase `GENERATE_SOURCES`): runs the full
+  pipeline and writes generated Java.
+- **`validate`** (default phase `VALIDATE`): runs schema loading,
+  `<schemaInputs>` resolution, and `GraphitronSchemaValidator`
+  without writing any output. Separate Mojo (not a
+  `<skipCodeOutput>true</skipCodeOutput>` flag) so the declarative
+  phase binding lands at `VALIDATE`, matching consumer expectations
+  for `mvn validate`. Both Mojos share the same `RewriteContext`
+  construction path; `ValidateMojo` simply stops before the emitter
+  step.
+
+Dropped from the legacy plugin:
+
+- `transform`: the only transformation the rewrite plugin does is
+  `<schemaInputs>` tagging, which runs inside `generate` / `validate`.
+- `watch`: IDE incremental builds cover the dev-loop case. Not
+  revisiting without concrete consumer ask.
+
+`introspect` is ported in a separate umbrella sub-item (see roadmap);
+consumers who need LSP config keep using `graphitron-maven-plugin:introspect`
+until that plan ships. Not blocked by this plan.
+
+### Goal-prefix note
+
+Maven's default goal-prefix inference requires an artifactId of the
+form `*-maven-plugin` or `maven-*-plugin`. `graphitron-rewrite-maven`
+doesn't match, so `maven-plugin-plugin` needs an explicit
+`<goalPrefix>graphitron-rewrite</goalPrefix>` in the plugin pom.
+Consumers invoke goals as `mvn graphitron-rewrite:generate` /
+`mvn graphitron-rewrite:validate`.
 
 ### Config bindings (POM → Java)
 
@@ -245,7 +267,7 @@ After:
 ```xml
 <plugin>
   <groupId>no.sikt.graphitron</groupId>
-  <artifactId>graphitron-rewrite-maven-plugin</artifactId>
+  <artifactId>graphitron-rewrite-maven</artifactId>
   <configuration>
     <schemaInputs>...</schemaInputs>
     <outputDirectory>...</outputDirectory>
@@ -302,13 +324,10 @@ correctness.
 
 ## Open decisions
 
-**D1. Artifact name.** `graphitron-rewrite-maven-plugin` is descriptive
-but long. Alternatives: `graphitron-plugin` (short, but collides
-conceptually with the legacy one during the coexistence window);
-`graphitron-rewrite-plugin` (Maven convention prefers the
-`-maven-plugin` suffix for goal prefix inference). Recommend
-`graphitron-rewrite-maven-plugin`; consumers get the short goal prefix
-`graphitron-rewrite:generate`.
+**D1. Artifact name.** Resolved: `graphitron-rewrite-maven`. Requires
+explicit `<goalPrefix>graphitron-rewrite</goalPrefix>` in the plugin
+pom (see §Goal-prefix note); consumers invoke
+`mvn graphitron-rewrite:generate` / `mvn graphitron-rewrite:validate`.
 
 **D2. Keep `externalReferences` + `scalars` as Mojo `@Parameter` fields?**
 Legacy plugin's namedReference + ScalarConfig shapes are
@@ -320,17 +339,13 @@ door though; switching later is a breaking change. Recommend keeping
 as `@Parameter` for now; revisit if a third generator-extension
 concept lands and the Mojo grows bloated.
 
-**D3. `validate` goal.** Options: (a) drop entirely, (b) add as a
-thin wrapper that runs `GraphitronSchemaValidator` without writing
-output, (c) fold into `generate` as `<skipWrite>true</skipWrite>`.
-Recommend (a): `mvn compile` on the generated output is a stricter
-validator than the schema-validator today, and the schema-validator
-runs inside `generate` anyway. Re-add if a consumer use case emerges.
+**D3. `validate` goal.** Resolved: included as a separate Mojo at
+phase `VALIDATE` (see §Design: Goals). Shares the `RewriteContext`
+construction path with `generate`; stops before the emitter.
 
-**D4. `watch` goal.** Dropped in the design (see §Design: Goals). If
-a consumer objects, cheapest revival: a `watch` goal that re-runs
-`generate` on schema-file change, wrapping the same `GenerateMojo`
-logic. Not worth spec'ing until asked.
+**D4. `watch` goal.** Resolved: dropped. IDE incremental builds
+cover the dev-loop case; no Maven-goal file watcher ships. Not
+revisiting without concrete consumer ask.
 
 **D5. `@Parameter` defaults for `outputPackage` / `jooqPackage`.**
 Legacy defaults `outputPackage` to `no.sikt.graphql`: opinionated
@@ -355,13 +370,13 @@ directive auto-injection" (the prerequisite) and before
 
 ```
 - **Rewrite-owned Maven plugin** **[Spec]** — new
-  `graphitron-rewrite-maven-plugin` artifact with one `generate`
-  goal and a per-invocation `RewriteContext` replacing the
+  `graphitron-rewrite-maven` artifact with `generate` + `validate`
+  goals and a per-invocation `RewriteContext` replacing the
   `GeneratorConfig` + `RewriteConfig` static singletons. Eight
   `@Parameter` fields vs. legacy's 18+; no legacy gating toggles,
   no `@Execute` trickery, no embedded transform logic. Drops
-  `validate` / `transform` / `watch` goals by default (re-added
-  only on demand). ([plan](plan-rewrite-maven-plugin.md))
+  `transform` + `watch` goals; `introspect` ports separately
+  (sibling item). ([plan](plan-rewrite-maven-plugin.md))
 ```
 
 The `<schemaInputs>` plan's D1 (replace vs. coexist with
