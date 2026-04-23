@@ -1769,7 +1769,7 @@ class GraphitronSchemaBuilderTest {
         // methods live in TestConditionStub (fieldCondition, argCondition, argConditionWithContext).
 
         FIELD_CONDITION_ADDITIVE(
-            "field-level @condition without override — filters contain auto-predicate AND ConditionFilter",
+            "field-level @condition without override — filters contain implicit condition AND ConditionFilter",
             """
             type Language @table(name: "language") { name: String }
             type Query {
@@ -1802,7 +1802,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         ARG_CONDITION_ADDITIVE(
-            "arg-level @condition without override — auto-predicate for that arg AND ConditionFilter are BOTH emitted",
+            "arg-level @condition without override — implicit condition for that arg AND ConditionFilter are BOTH emitted",
             """
             type Language @table(name: "language") { name: String }
             type Query {

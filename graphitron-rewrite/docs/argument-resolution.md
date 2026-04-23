@@ -73,7 +73,7 @@ which source produced it; the carrying argument record (`TableInputArg` or
 `PlatformIdField` is intentionally excluded; see Out of Scope. `ArgConditionRef`
 is reused verbatim; its `override` flag is the input-field-level override
 (matching legacy semantics: `override: true` on an input field replaces that
-field's auto-predicate with the explicit method).
+field's implicit condition with the explicit method).
 
 ### Classification: reading the directive at type-build and call-site time
 
@@ -154,11 +154,11 @@ itself another input type, which has its own fields. Each nested level can
 carry its own `@condition`.
 
 **Propagation rule (downward inheritance).** `override: true` at any enclosing
-level (field ⊇ arg ⊇ nesting-field) suppresses every nested *auto-predicate*
-(jOOQ `table.COLUMN.eq(input.getField())`). Explicit `@condition` methods are
-never suppressed by ancestor overrides; they're independent declarations by
-the schema author, and a level's own `override` flag affects only that level's
-auto-predicate.
+level (parent-field ⊇ arg ⊇ nesting-field) suppresses every nested *implicit
+condition* (jOOQ `table.COLUMN.eq(input.getField())`). Explicit `@condition`
+methods are never suppressed by ancestor overrides; they're independent
+declarations by the schema author, and a level's own `override` flag affects
+only that level's implicit condition.
 
 #### Legacy behavior reference (and intentional divergence)
 
@@ -188,14 +188,14 @@ input CustomerInput @table(name: "CUSTOMER") {
 - `customerForQuery` (no outer override, :17-37) emits the full stack:
   row-IN containing `hasId(id)` + `customerString(table, id)` +
   `customerString(table, firstName)`, AND-ed with `customerJOOQRecordList`.
-  Inner `id` (no override) contributes both auto-predicate AND explicit
+  Inner `id` (no override) contributes both implicit condition AND explicit
   method; inner `first` (`override: true`) contributes only the explicit
-  method (its own auto-predicate suppressed at the input-field level).
+  method (its own implicit condition suppressed at the input-field level).
   No explicit method is dropped by the outer level.
 - `customerOverrideForQuery` (outer override, :40-48) emits **only**
   `customerJOOQRecordList`. Every inner contribution is dropped: `id`'s
-  auto-predicate, `id`'s explicit `customerString`, and `first`'s explicit
-  `customerString`. There is no row-IN construct at all.
+  implicit condition, `id`'s explicit `customerString`, and `first`'s
+  explicit `customerString`. There is no row-IN construct at all.
 
 **The legacy rule is total-replace: an outer `override: true` substitutes its
 own explicit method for everything below it, regardless of whether inner
@@ -203,11 +203,11 @@ fields carry their own explicit `@condition` methods.** The rewrite's
 proposed rule preserves inner explicit methods across the boundary. That is
 a **deliberate divergence** from legacy.
 
-**Rationale for diverging.** The legacy behavior couples implicit predicates
+**Rationale for diverging.** The legacy behavior couples implicit conditions
 and explicit methods into a single "outer owns everything" toggle, which means
 a schema author can't declaratively compose an outer replacement condition
 with inner explicit side-conditions. The rewrite treats each level's
-`override` flag as affecting only that level's implicit predicate, which lets
+`override` flag as affecting only that level's implicit condition, which lets
 `@condition(override: true)` replace the implicit condition without also
 silencing explicit input-field conditions written by the schema author.
 
@@ -240,21 +240,21 @@ is complete:
 - `nestedListInputJavaRecordOverrideCondition`: arg-level
   `@condition(override: true)` over `[Input1]` whose fields carry no
   `@condition`. Row 4 of the truth table.
-- `listInputJavaRecordAndFieldOverrideCondition`: field-level
+- `listInputJavaRecordAndFieldOverrideCondition`: parent-field-level
   `@condition(override: true)` composed with arg-level `@condition` (no
-  override) on a sibling scalar-list arg. Field-level override propagates
-  to the arg's auto-predicates; explicit arg method fires. Row 2 and row
-  5 combined across two args; no new row for input-field semantics (no
-  input type is involved).
+  override) on a sibling scalar-list arg. Parent-field-level override
+  propagates to the arg's implicit conditions; explicit arg method fires.
+  Row 2 and row 5 combined across two args; no new row for input-field
+  semantics (no input type is involved).
 
 All three fall within the 6-row table.
 
 ### Truth table (per input-field, per call site)
 
-"Any enclosing override" = field-level OR arg-level OR any intermediate
-nesting-field's `override: true`.
+"Any enclosing override" = parent-field-level OR arg-level OR any
+intermediate nesting-field's `override: true`.
 
-| Any enclosing override | Input field `@condition` | Auto-predicate | Explicit method |
+| Any enclosing override | Input field `@condition` | Implicit condition | Explicit method |
 |---|---|---|---|
 | No  | Absent                  | Emitted     | n/a     |
 | No  | Present (no override)   | Emitted     | Emitted |
@@ -267,7 +267,7 @@ nesting-field's `override: true`.
 `List<WhereFilter>` returned by `projectFilters`; downstream emitters AND
 all present filters together (see §Emission). The earlier column label
 "Replaces" was inherited from column-arg vocabulary and is misleading here,
-since rows 5-6 have no auto-predicate left to replace.
+since rows 5-6 have no implicit condition left to replace.
 
 Six rows, not nine: the previous draft's "outer `override: false`" row is
 indistinguishable from "outer absent" since `false` is the directive default.

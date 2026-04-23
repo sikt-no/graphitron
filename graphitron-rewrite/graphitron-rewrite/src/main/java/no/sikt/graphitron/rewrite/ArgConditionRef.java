@@ -12,7 +12,8 @@ import no.sikt.graphitron.rewrite.model.ConditionFilter;
  * projection table in {@code docs/argument-resolution.md}.
  *
  * <p>{@code override} is the directive's {@code override} flag at the argument level: when
- * {@code true}, the auto-generated column predicate for this argument is replaced by the arg's
- * condition method; when {@code false}, the auto predicate and the arg method are AND-ed together.
+ * {@code true}, the implicit column condition for this argument is replaced by the arg's
+ * condition method; when {@code false}, the implicit condition and the arg method are AND-ed
+ * together.
  */
 public record ArgConditionRef(ConditionFilter filter, boolean override) {}
