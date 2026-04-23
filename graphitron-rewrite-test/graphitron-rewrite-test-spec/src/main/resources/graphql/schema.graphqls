@@ -193,6 +193,14 @@ type FilmInfo {
         {key: "film_actor_film_id_fkey"},
         {key: "film_actor_actor_id_fkey"}
     ])
+    # Nested-depth @splitQuery + @lookupKey: SplitLookupTableField inside a
+    # plain-object NestingField. Classifier, emitter, and wiring paths all
+    # treat Split and SplitLookup uniformly via BatchKeyField; this fixture
+    # verifies the lookup arm ships too.
+    castByKey(actor_id: [Int!] @lookupKey): [Actor!]! @splitQuery @reference(path: [
+        {key: "film_actor_film_id_fkey"},
+        {key: "film_actor_actor_id_fkey"}
+    ])
 }
 
 type FilmMeta {

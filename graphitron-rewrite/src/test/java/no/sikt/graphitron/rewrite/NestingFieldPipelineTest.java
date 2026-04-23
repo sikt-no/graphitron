@@ -158,12 +158,14 @@ class NestingFieldPipelineTest {
     }
 
     @Test
-    void typeClass_nestedSplitField_filmTypeSpecGeneratesWithoutError() {
-        // TypeClassGenerator.generate must succeed when a NestingField child contains a
-        // SplitTableField; the recursive collectBatchKeyColumns walk must not throw.
-        var schema = TestSchemaHelper.buildSchema(SPLIT_NESTING_SDL);
-        var typeSpecs = TypeClassGenerator.generate(schema);
-        assertThat(typeSpecs.stream().map(TypeSpec::name)).contains("Film");
+    void typeClass_nestedSplitField_projectsOuterParentBatchKeyColumn() {
+        // The recursive collectBatchKeyColumns walk must surface Film.info.cast's RowKeyed
+        // BatchKey column (FILM.FILM_ID) into Film.$fields so key extraction reads a non-null
+        // FK off env.getSource() at request time. Without the recursion, the fixture compiles
+        // and runs but every batch hits a NullPointerException reading FILM_ID from a Record
+        // whose SELECT omitted it.
+        var filmType = findType("Film", SPLIT_NESTING_SDL);
+        assertThat(TypeSpecAssertions.appendsRequiredColumn(filmType, "FILM_ID")).isTrue();
     }
 
     // ===== Helpers =====

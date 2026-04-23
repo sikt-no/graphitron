@@ -1277,4 +1277,45 @@ class GraphQLQueryTest {
             .extracting(n -> n.get("actorId")).containsExactly(3);
         assertThat(((Map<String, Object>) byId.get(1).get("pageInfo")).get("hasPreviousPage")).isEqualTo(true);
     }
+
+    // ===== SplitTableField / SplitLookupTableField under NestingField
+    // (plan-splittablefield-nestingfield) =====
+
+    @Test
+    void splitTableField_nestedUnderNestingField_batchesPerOuterParent() {
+        // FilmInfo.cast is a @splitQuery inside a plain-object NestingField. The outer Film
+        // Record is passed through by the NestingField wiring, so key extraction reads
+        // FILM_ID off env.getSource() just like at non-nested depth. Two parent films should
+        // produce exactly one batched rowsCast invocation.
+        // Seed: film 1 → {1, 2}, film 2 → {1, 3}.
+        QUERY_COUNT.set(0);
+        Map<String, Object> data = execute(
+            "{ filmById(film_id: [\"1\", \"2\"]) { filmId info { cast { actorId } } } }");
+        assertThat(QUERY_COUNT.get()).isEqualTo(2);
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmById");
+        var byId = films.stream().collect(java.util.stream.Collectors.toMap(
+            f -> (Integer) f.get("filmId"),
+            f -> (List<Map<String, Object>>) ((Map<String, Object>) f.get("info")).get("cast")));
+        assertThat(byId.get(1)).extracting(a -> a.get("actorId")).containsExactlyInAnyOrder(1, 2);
+        assertThat(byId.get(2)).extracting(a -> a.get("actorId")).containsExactlyInAnyOrder(1, 3);
+    }
+
+    @Test
+    void splitLookupTableField_nestedUnderNestingField_batchesPerOuterParent() {
+        // FilmInfo.castByKey exercises the SplitLookupTableField arm under NestingField:
+        // classifier, emitter, and wiring all route via BatchKeyField uniformly, so
+        // @splitQuery + @lookupKey at nested depth takes the same path as the top-level
+        // Film.actorsBySplitLookup (:732 above).
+        // actor_id: [1, 2] → film 1 gets {1, 2}; film 2 gets {1}.
+        QUERY_COUNT.set(0);
+        Map<String, Object> data = execute(
+            "{ filmById(film_id: [\"1\", \"2\"]) { filmId info { castByKey(actor_id: [1, 2]) { actorId } } } }");
+        assertThat(QUERY_COUNT.get()).isEqualTo(2);
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmById");
+        var byId = films.stream().collect(java.util.stream.Collectors.toMap(
+            f -> (Integer) f.get("filmId"),
+            f -> (List<Map<String, Object>>) ((Map<String, Object>) f.get("info")).get("castByKey")));
+        assertThat(byId.get(1)).extracting(a -> a.get("actorId")).containsExactlyInAnyOrder(1, 2);
+        assertThat(byId.get(2)).extracting(a -> a.get("actorId")).containsExactly(1);
+    }
 }

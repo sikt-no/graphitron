@@ -79,6 +79,18 @@ public final class TypeSpecAssertions {
         return !methodBody(type, "wiring").orElse("").contains(".dataFetcher(");
     }
 
+    /**
+     * True when {@code type}'s {@code $fields} method unconditionally appends a jOOQ column to
+     * the projection via the {@code if (!fields.contains(table.COL)) fields.add(table.COL)}
+     * idiom used for BatchKey-column projection (plan-single-cardinality-split-query §2 +
+     * plan-splittablefield-nestingfield nested recursion). Caller supplies the jOOQ field's
+     * Java name (e.g. {@code "FILM_ID"}).
+     */
+    public static boolean appendsRequiredColumn(TypeSpec type, String columnJavaName) {
+        String body = methodBody(type, "$fields").orElse("");
+        return body.contains("fields.add(table." + columnJavaName + ")");
+    }
+
     private static Optional<String> methodBody(TypeSpec type, String methodName) {
         return type.methodSpecs().stream()
             .filter(m -> m.name().equals(methodName))
