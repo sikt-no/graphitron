@@ -39,10 +39,15 @@ Outcome of an explicit A / B / C tradeoff exploration:
   get a ready-to-use schema.
 - **C.** Middle ground: SDL input + emitted `GraphQLCodeRegistry`.
 
-B was selected on three signals: (1) a clear UX win, apps call one
-method and start serving, (2) zero `SchemaDirectiveWiring` in any known
-consumer app, (3) `@notGenerated` drops to a validator rejection in
-the same commit, so there is no escape-hatch regression to worry about.
+B was selected on three signals: (1) concrete quality wins, no SDL
+parse at startup, no stringly-typed wiring builder, emitted code
+depends only on jOOQ and graphql-java, (2) zero
+`SchemaDirectiveWiring` in any known consumer app, (3) `@notGenerated`
+drops to a validator rejection in the same commit, so there is no
+escape-hatch regression to worry about. Apps still build the
+`GraphQL` engine and `ExecutionInput` themselves using stock
+graphql-java APIs; the win is in what those composition steps no
+longer have to carry, not in their count.
 ## Current state
 
 Rewrite emits the following application-facing surface, matching the
@@ -115,13 +120,15 @@ New emitted surface:
   `<outputPackage>.rewrite.schema.GraphitronContext`. Three
   DFE-aware methods (`getDslContext`, `getContextArgument`,
   `getTenantId`). Apps implement this generated type.
-- `<TypeName>Type` classes (rename from `<TypeName>Wiring`): expose a
-  single `public static GraphQLObjectType type(GraphQLCodeRegistry.Builder codeRegistry)`
-  that builds a typed `GraphQLObjectType` and registers its fetchers
-  on the passed-in code registry. The aggregator (`GraphitronSchema`)
-  owns the single shared `GraphQLCodeRegistry.Builder` instance and
-  hands it to each type in turn; `type(...)` cannot be called in
-  isolation because the code registry is required for correctness.
+- `<TypeName>Type` classes (rename from `<TypeName>Wiring`): expose
+  two static methods. `public static GraphQLObjectType type()` is
+  pure, returns the `GraphQLObjectType`. `public static void
+  registerFetchers(GraphQLCodeRegistry.Builder codeRegistry)`
+  attaches the type's fetchers by coordinate on the passed-in
+  registry. The aggregator (`GraphitronSchema`) calls both in
+  sequence; pure return + explicit side-effect keeps each method
+  single-purpose and leaves room for test callers that want just
+  the type structure.
 - `GraphitronSchema` (rename from `GraphitronWiring`): internal
   assembler that wires each `<TypeName>Type` into a top-level
   `GraphQLSchema.Builder`, registers the code registry, and builds the
@@ -408,30 +415,39 @@ don't call into).
 
 Two classes of directives in the schema today:
 
-1. **Survivors** — must reach the programmatic schema (and, via
+1. **Survivors.** Must reach the programmatic schema (and, via
    `SchemaPrinter`, any downstream SDL output a future SDL-emitter
    plan produces). Federation directives (`@key`, `@external`,
    `@provides`, `@requires`, `@shareable`, `@override`, `@tag`) and
    user-declared custom directives (`@deprecated`, app directives).
-2. **Generator-only** — consumed at build time, never emitted.
+2. **Generator-only.** Consumed at build time, never emitted.
    `@table`, `@field`, `@condition`, `@lookupKey`, `@reference`,
    `@splitQuery`, `@asConnection`, `@service`, `@tableMethod`,
    `@discriminate`, `@discriminator`, `@notGenerated`,
    `@externalField`.
 
-Implementation: the `<TypeName>Type` emitter reads each schema
-element's directive applications off the classification model; for
-every application whose directive name is in the survivors set, the
-emitter translates it to `GraphQLDirective.newDirective()` on the
-`GraphQLObjectType` / `GraphQLFieldDefinition` / argument /
-input-field builder. Generator-only applications are skipped.
-Directive-argument values (scalars, lists, object literals, defaults)
-go through graphql-java's standard value-translation path.
+Implementation, two layers:
+
+1. **Definitions.** `GraphitronSchema` calls
+   `schemaBuilder.additionalDirective(...)` once per survivor
+   directive declared in the SDL. Without a definition on the schema,
+   graphql-java rejects applications at build time and
+   `SchemaPrinter.includeDirectives(true)` omits the directive from
+   downstream SDL output.
+2. **Applications.** The `<TypeName>Type` emitter reads each schema
+   element's directive applications off the classification model; for
+   every application whose directive name is in the survivors set, it
+   translates the application to `GraphQLDirective.newDirective()` on
+   the `GraphQLObjectType` / `GraphQLFieldDefinition` / argument /
+   input-field builder. Generator-only applications are skipped.
+   Directive-argument values (scalars, lists, object literals,
+   defaults) go through graphql-java's standard value-translation
+   path.
 
 Consequence: generator-only directives never enter the programmatic
 schema. A future SDL-emitter plan can call `SchemaPrinter` against the
 built schema with `SchemaPrinter.Options.includeDirectives(true)` and
-get exactly the survivors in the output — no stripping pass, no
+get exactly the survivors in the output: no stripping pass, no
 cross-module enum to keep in sync. The "directive stripping" umbrella
 item collapses to a survivors registry plus a single "known directive
 names" check in this emitter.
@@ -471,28 +487,38 @@ wrong and we iterate on `Graphitron` and on the emitted
   generator already emits the `getContextArgument(env, name)` call
   site for every `@condition contextArguments: ["userId"]`.
 
-The last two cases are what point (5) above rides on: if the wire-up
-demo for tenant DSLContext or context arguments runs long, that is
+The last two cases are the point of the whole gate: if the wire-up
+demo for tenant `DSLContext` or context arguments runs long, that is
 direct evidence the emitted `GraphitronContext` surface is wrong and
 we revise it, not the prose. Reviewer who finds a section growing
 past a few lines should push back on the interface, not on the doc.
 
 ## Prerequisites
 
-Ordered dependencies from the schema-transform umbrella:
+None hard. This plan changes only the emitted *output* shape
+(generated fetcher-wiring classes, the `Graphitron.java` facade, the
+runtime SDL resource). Build-time input handling is untouched:
+rewrite continues to read the input schema via whatever mechanism
+it uses when this plan lands.
 
-1. **Rewrite owns schema loading + directive auto-injection**
-   ([plan](plan-rewrite-owns-schema-loading.md), currently Spec). This
-   plan kills the runtime SDL-parse path; the build-time path must
-   live inside rewrite first.
-2. **Rewrite owns type-extension merging** (backlog). Extension
-   merging is a registry-level pre-pass; the programmatic schema
-   consumes the merged classification output, not raw SDL. Needed
-   before the `<TypeName>Type` emitter can trust that every field is
-   visible on its declaring type.
-3. **Rewrite owns `@asConnection` → Connection synthesis** (backlog).
-   Connection / Edge / PageInfo types must exist in the classifier
-   output so `<TypeName>Type` can emit them.
+Umbrella items that sound like prerequisites but aren't:
+
+- **Rewrite owns schema loading** concerns the build-time parser
+  (`SchemaReadingHelper` in `graphitron-common`). This plan removes
+  the runtime SDL-parse path, which is a distinct concern; the
+  build-time path can stay on the legacy helper until the
+  schema-loading plan lands separately.
+- **Rewrite owns type-extension merging** and **Rewrite owns
+  `@asConnection` → Connection synthesis** are umbrella items that
+  migrate existing schema-transform passes into rewrite. The rewrite
+  classifier today already sees merged extensions (graphql-java's
+  parser handles them) and synthesized Connection types (from
+  `MakeConnections`); this plan consumes whatever the classifier
+  produces, so neither migration is required first.
+
+**Landing order.** No rewrite consumers today, so this plan can land
+ahead of the schema-transform umbrella items and the
+umbrella reshapes around it once it's in.
 
 Items the umbrella reshapes or absorbs under B:
 
@@ -539,11 +565,26 @@ coordinates and a clear message. Mirror case: an SDL with no
 response. Pins the contract that federation-jvm consumes a
 programmatically-built schema.
 
+**Context-key contract test.** Two cases, both exercise the emitted
+`graphitronContext(env)` helper directly. Happy path: app provides a
+`GraphitronContext` implementation under
+`GraphitronContext.class` in `graphQLContext`; the emitted helper
+returns it; a query resolves successfully. Error-quality path: no
+context provided; the helper surfaces a clear error at the first
+fetcher that dereferences it, naming the missing key (not a bare
+NullPointerException). Pins both the key name and the quality of the
+"you forgot to wire the context" signal.
+
 **Lint ratchet.** `GeneratedSourcesLintTest` asserts no
-`RuntimeWiring`, `TypeRuntimeWiring`, `SchemaGenerator`,
-`SchemaReadingHelper`, or `no.sikt.graphql.GraphitronContext` imports
-appear in emitted code. Prevents regression into the old shape and
-enforces the zero-runtime-dep invariant.
+`graphql.schema.idl.RuntimeWiring`,
+`graphql.schema.idl.TypeRuntimeWiring`,
+`graphql.schema.idl.SchemaGenerator`,
+`no.sikt.graphql.schema.SchemaReadingHelper`, or
+`no.sikt.graphql.GraphitronContext` imports appear in emitted code.
+Match is on the FQN, not the simple name, so the generated
+`<outputPackage>.rewrite.schema.GraphitronContext` is not affected.
+Prevents regression into the old shape and enforces the
+zero-legacy-dep invariant on emitted code.
 ## Open decisions
 
 **D1.** API shape for app customization. **Resolved.** Single-method
@@ -561,7 +602,7 @@ parallel APIs for problems graphql-java already solves, and lets the
 guidance for the customizer goes in javadoc on the `Consumer`
 parameter ("use additive methods only; do not call `.query()`,
 `.mutation()`, `.subscription()`, `.clearDirectives()`, or the
-replace overload `.codeRegistry(GraphQLCodeRegistry)` — the
+replace overload `.codeRegistry(GraphQLCodeRegistry)`, since the
 `UnaryOperator` overload is the supported extension point for
 additional type resolvers").
 
