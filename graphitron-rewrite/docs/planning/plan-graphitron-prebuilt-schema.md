@@ -428,10 +428,12 @@ carriers and groups schema-building artifacts
 (`<TypeName>Type`, `GraphitronSchemaAssembler`, `GraphitronSdl`,
 `EngineBuilder`) under one roof.
 
-**D3.** `<TypeName>Type` class naming. Alternatives considered:
-`<TypeName>Type`, `<TypeName>Schema`, `<TypeName>Builder`. Recommend
-`<TypeName>Type` mirroring graphql-java's own type-hierarchy naming
-(`GraphQLObjectType`, `GraphQLInterfaceType`).
+**D3.** `<TypeName>Type` class naming. **Resolved.** `<TypeName>Type`
+mirrors graphql-java's own type-hierarchy naming
+(`GraphQLObjectType`, `GraphQLInterfaceType`). The `Type` suffix
+differentiates from the emitted `<TypeName>Fetchers` class and from
+the user's SDL type name. Method-level entry point stays short:
+`FilmType.type()` returns a `GraphQLObjectType`.
 
 **D4.** `getSdl()` caching. Options: build on every call, build once
 and cache in a `static volatile`, build at class-init time. Recommend
