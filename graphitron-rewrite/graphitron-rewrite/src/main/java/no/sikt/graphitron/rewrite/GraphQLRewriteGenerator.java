@@ -8,6 +8,11 @@ import no.sikt.graphitron.rewrite.generators.TypeClassGenerator;
 import no.sikt.graphitron.rewrite.generators.TypeConditionsGenerator;
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
 import no.sikt.graphitron.rewrite.generators.WiringClassGenerator;
+import no.sikt.graphitron.rewrite.generators.schema.EnumTypeGenerator;
+import no.sikt.graphitron.rewrite.generators.schema.GraphitronFacadeGenerator;
+import no.sikt.graphitron.rewrite.generators.schema.GraphitronSchemaClassGenerator;
+import no.sikt.graphitron.rewrite.generators.schema.InputTypeGenerator;
+import no.sikt.graphitron.rewrite.generators.schema.ObjectTypeGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ColumnFetcherClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ConnectionHelperClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ConnectionResultClassGenerator;
@@ -37,7 +42,9 @@ public class GraphQLRewriteGenerator {
 
     public static void generate() {
         var registry = getTypeDefinitionRegistry(RewriteConfig.generatorSchemaFiles());
-        var schema = GraphitronSchemaBuilder.build(registry);
+        var bundle = GraphitronSchemaBuilder.buildBundle(registry);
+        var schema = bundle.model();
+        var assembled = bundle.assembled();
 
         schema.warnings().forEach(w -> {
             var loc = w.location();
@@ -73,6 +80,11 @@ public class GraphQLRewriteGenerator {
         write(ConnectionHelperClassGenerator.generate(),          "rewrite");
         write(OrderByResultClassGenerator.generate(),             "rewrite");
         write(GraphitronContextInterfaceGenerator.generate(),     "rewrite.schema");
+        write(EnumTypeGenerator.generate(assembled),              "rewrite.schema");
+        write(InputTypeGenerator.generate(assembled),             "rewrite.schema");
+        write(ObjectTypeGenerator.generate(assembled),            "rewrite.schema");
+        write(GraphitronSchemaClassGenerator.generate(assembled), "rewrite.schema");
+        write(GraphitronFacadeGenerator.generate(),               "rewrite.schema");
         write(TypeClassGenerator.generate(schema),                "rewrite.types");
         write(TypeConditionsGenerator.generate(schema),           "rewrite.conditions");
         write(QueryConditionsGenerator.generate(schema),          "rewrite.conditions");
