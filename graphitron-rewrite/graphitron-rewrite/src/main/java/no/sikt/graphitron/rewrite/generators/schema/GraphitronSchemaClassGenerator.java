@@ -55,7 +55,9 @@ public final class GraphitronSchemaClassGenerator {
     public static final String CLASS_NAME = "GraphitronSchema";
 
     private static final ClassName GRAPHQL_SCHEMA = ClassName.get("graphql.schema", "GraphQLSchema");
+    private static final ClassName SCHEMA_BUILDER = ClassName.get("graphql.schema", "GraphQLSchema", "Builder");
     private static final ClassName CODE_REGISTRY  = ClassName.get("graphql.schema", "GraphQLCodeRegistry");
+    private static final ClassName CODE_REGISTRY_BLDR = ClassName.get("graphql.schema", "GraphQLCodeRegistry", "Builder");
 
     private GraphitronSchemaClassGenerator() {}
 
@@ -69,7 +71,7 @@ public final class GraphitronSchemaClassGenerator {
             builderType);
 
         var body = CodeBlock.builder()
-            .addStatement("var codeRegistry = $T.newCodeRegistry()", CODE_REGISTRY);
+            .addStatement("$T codeRegistry = $T.newCodeRegistry()", CODE_REGISTRY_BLDR, CODE_REGISTRY);
 
         var sortedFetcherTypes = new ArrayList<>(typesWithFetchers);
         sortedFetcherTypes.sort(Comparator.naturalOrder());
@@ -77,7 +79,7 @@ public final class GraphitronSchemaClassGenerator {
             body.addStatement("$T.registerFetchers(codeRegistry)", ClassName.get(schemaPackage, name + "Type"));
         }
 
-        body.add("var schemaBuilder = $T.newSchema()", GRAPHQL_SCHEMA).indent();
+        body.add("$T schemaBuilder = $T.newSchema()", SCHEMA_BUILDER, GRAPHQL_SCHEMA).indent();
 
         if (plan.hasQuery)        body.add("\n.query($T.type())",        ClassName.get(schemaPackage, "QueryType"));
         if (plan.hasMutation)     body.add("\n.mutation($T.type())",     ClassName.get(schemaPackage, "MutationType"));

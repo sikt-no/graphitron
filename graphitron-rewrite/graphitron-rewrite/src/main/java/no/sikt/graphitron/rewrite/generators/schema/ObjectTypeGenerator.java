@@ -57,6 +57,7 @@ public final class ObjectTypeGenerator {
     private static final ClassName LIST             = ClassName.get("graphql.schema", "GraphQLList");
     private static final ClassName CODE_REGISTRY_BLDR = ClassName.get("graphql.schema", "GraphQLCodeRegistry", "Builder");
     private static final ClassName FIELD_COORDS     = ClassName.get("graphql.schema", "FieldCoordinates");
+    private static final ClassName TYPE_RUNTIME_WIRING = ClassName.get("graphql.schema.idl", "TypeRuntimeWiring");
 
     private ObjectTypeGenerator() {}
 
@@ -142,7 +143,7 @@ public final class ObjectTypeGenerator {
             RewriteConfig.outputPackage() + ".rewrite.wiring",
             typeName + "Wiring");
         var body = CodeBlock.builder()
-            .addStatement("var typeWiring = $T.wiring().build()", legacyWiring)
+            .addStatement("$T typeWiring = $T.wiring().build()", TYPE_RUNTIME_WIRING, legacyWiring)
             .addStatement("typeWiring.getFieldDataFetchers().forEach((fieldName, fetcher) ->\n"
                 + "    codeRegistry.dataFetcher($T.coordinates($S, fieldName), fetcher))",
                 FIELD_COORDS, typeName)

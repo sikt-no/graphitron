@@ -6,7 +6,7 @@ import graphql.schema.GraphQLSchema;
 import graphql.schema.idl.SchemaGenerator;
 import graphql.schema.idl.SchemaParser;
 import no.sikt.graphitron.rewrite.test.generated.rewrite.GraphitronWiring;
-import no.sikt.graphql.GraphitronContext;
+import no.sikt.graphitron.rewrite.test.generated.rewrite.schema.GraphitronContext;
 import graphql.schema.DataFetchingEnvironment;
 import org.jooq.DSLContext;
 import org.jooq.Record;
@@ -95,17 +95,13 @@ class GraphQLQueryTest {
             public <T> T getContextArgument(DataFetchingEnvironment env, String name) {
                 return null;
             }
-            @Override
-            public String getDataLoaderName(DataFetchingEnvironment env) {
-                return env.getExecutionStepInfo().getPath().toString().replaceAll("/\\d+", "");
-            }
         };
 
         // DataLoader registry is per-request; Split* fetchers call computeIfAbsent on it.
         // graphql-java requires one explicitly even for non-DataLoader queries.
         var input = ExecutionInput.newExecutionInput()
             .query(query)
-            .graphQLContext(builder -> builder.put("graphitronContext", context))
+            .graphQLContext(builder -> builder.put(GraphitronContext.class, context))
             .dataLoaderRegistry(new org.dataloader.DataLoaderRegistry())
             .build();
 
@@ -128,15 +124,11 @@ class GraphQLQueryTest {
             public <T> T getContextArgument(DataFetchingEnvironment env, String name) {
                 return null;
             }
-            @Override
-            public String getDataLoaderName(DataFetchingEnvironment env) {
-                return env.getExecutionStepInfo().getPath().toString().replaceAll("/\\d+", "");
-            }
         };
 
         var input = ExecutionInput.newExecutionInput()
             .query(query)
-            .graphQLContext(builder -> builder.put("graphitronContext", context))
+            .graphQLContext(builder -> builder.put(GraphitronContext.class, context))
             .build();
 
         return graphql.execute(input);

@@ -106,7 +106,7 @@ class GraphitronSchemaClassGeneratorTest {
     @Test
     void build_attachesCodeRegistryAndInvokesCustomizerBeforeBuild() {
         var body = buildBody("type Query { x: String }");
-        assertThat(body).contains("var codeRegistry = graphql.schema.GraphQLCodeRegistry.newCodeRegistry()");
+        assertThat(body).contains("graphql.schema.GraphQLCodeRegistry.Builder codeRegistry = graphql.schema.GraphQLCodeRegistry.newCodeRegistry()");
         assertThat(body).contains(".codeRegistry(codeRegistry.build())");
         int customizerIdx = body.indexOf("customizer.accept(schemaBuilder)");
         int buildIdx = body.indexOf("return schemaBuilder.build()");
@@ -161,7 +161,7 @@ class GraphitronSchemaClassGeneratorTest {
         var body = GraphitronSchemaClassGenerator.generate(schema, Set.of("Query"))
             .get(0).methodSpecs().get(0).code().toString();
         int registerIdx = body.indexOf("registerFetchers(codeRegistry)");
-        int schemaBuilderIdx = body.indexOf("var schemaBuilder");
+        int schemaBuilderIdx = body.indexOf("schemaBuilder = graphql.schema.GraphQLSchema.newSchema()");
         assertThat(registerIdx).isGreaterThan(0).isLessThan(schemaBuilderIdx);
     }
 
