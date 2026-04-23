@@ -1,10 +1,11 @@
 # Argument Resolution: Phase 4
 
-> **Status:** Ready
+> **Status:** In Progress
 >
-> Foundation + Phases 1–3 shipped; Phase 4 adds `@condition` on
-> `INPUT_FIELD_DEFINITION`. Plan revised from the previous deferred-phase wording
-> so implementation can proceed.
+> Foundation + Phases 1–3 shipped. Phase 4a (classification, projection
+> wiring, validator, pipeline tests) shipped in `9cf83463`. Phase 4b
+> (runtime nested-arg access, override propagation, remaining execution
+> and unit tests) is the remaining work before Done.
 
 ## Shipped (context)
 
@@ -335,109 +336,129 @@ descendants. No new emitter shape.
    classifier's `errors` list for plain inputs (same `UnclassifiedArg`
    fallback already used for other classify-time failures).
 
-## Deliverable
+## Landed in 9cf83463 (Phase 4a)
 
-Phase 4 lands as a single commit. Sub-phasing by file-type (model / projection
-/ validator) would force reviewers through three half-implementations of one
-feature where none of them compiles-and-tests end-to-end on its own; the
-fixtures needed to exercise §b (projection) and §c (validator) are the same
-fixtures needed to exercise §a (data model), and splitting them defers real
-test coverage past the point where mistakes are cheap to fix.
+The following shipped as a single commit and is the current state on trunk.
+All 105 `graphitron-rewrite-test-spec` tests pass.
 
-Bisectable via the touched-files list below if a regression surfaces later.
+1. **Data model.** `model/InputField.java`: `ColumnField`, `ColumnReferenceField`,
+   `NestingField` carry `Optional<ArgConditionRef> condition`. `model/ArgumentRef.java`:
+   `TableInputArg` and `PlainInputArg` each carry `List<InputField> fields`.
+   `InputFieldResolution` extracted to its own file so `BuildContext` and
+   `FieldBuilder` can both reference it.
 
-**Scope, by region (single commit):**
+2. **Classification.** `BuildContext.classifyInputField(field, parentTypeName,
+   tableRef, expandingTypes, errors) -> InputFieldResolution` (D1 landing point;
+   moved from `TypeBuilder`). `BuildContext.readConditionDirective` promoted
+   from `FieldBuilder`. `FieldBuilder.classifyPlainInputFields` invokes the
+   shared classifier per call site against the enclosing field's `rt`; fields
+   that fail column resolution are excluded from `PlainInputArg.fields` with
+   the reason appended to the field-level `errors` list (see D5 for the
+   deviation from whole-arg `UnclassifiedArg`).
 
-1. **Data model.**
-   - `model/InputField.java`: three variants (`ColumnField`, `ColumnReferenceField`,
-     `NestingField`) gain `Optional<ArgConditionRef> condition`. `PlatformIdField`
-     unchanged (see Out of Scope).
-   - `model/ArgumentRef.java`: `TableInputArg` and `PlainInputArg` each gain
-     `List<InputField> fields` (see D2). Verified no consumers outside
-     `graphitron-rewrite` package via grep.
+3. **Projection.** `FieldBuilder.projectFilters` extends both `TableInputArg`
+   and `PlainInputArg` cases to walk `fields` via
+   `walkInputFieldConditions(fields, out)`; recursive into `NestingField`.
+   Explicit-method filters always fire (truth-table rows 2, 3, 5, 6
+   in the "Explicit method" column).
 
-2. **Classification.**
-   - Extract `TypeBuilder.buildInputField` (TypeBuilder.java:562-652) into a
-     shared helper `classifyInputField(field, parentTypeName, tableRef,
-     expandingTypes, errors) -> InputField`. The existing method
-     already takes `resolvedTable` as a parameter and accesses only `ctx` and
-     `svc` state, so extraction is mechanical: move the body, adjust call
-     sites at TypeBuilder.java:582, 621, 629 to pass through.
-   - Add `buildInputFieldCondition(...)` modelled on
-     `FieldBuilder.buildArgCondition` (FieldBuilder.java:847-861). Invoked
-     inside `classifyInputField` for each field; the returned
-     `Optional<ArgConditionRef>` populates the new record field.
-   - `readConditionDirective` (currently private in `FieldBuilder`) moves to
-     `BuildContext` (D1) so both `FieldBuilder` and the shared classifier
-     reach it via `ctx`. Single-file move; no public API change.
-   - `FieldBuilder.classifyArguments` populates `TableInputArg.fields` from
-     the registry as before, and populates `PlainInputArg.fields` by
-     invoking the shared classifier per call site against the enclosing
-     field's `rt`. Plain-input classification failure produces
-     `UnclassifiedArg` for the whole arg (D5).
+4. **Validator.** `TypeBuilder.isUsedWithOverrideCondition` extended to
+   also return true when the input type's own fields carry `@condition(override: true)`.
 
-3. **Projection.**
-   - `FieldBuilder.projectFilters` (FieldBuilder.java:1032-1086): extend
-     both the `TableInputArg` and `PlainInputArg` cases to walk their
-     `fields` lists and apply the 6-row truth table from §Override
-     propagation. Any enclosing override (field, arg, or nesting-field
-     level) suppresses auto-predicates; explicit methods always fire.
+5. **Pipeline tests.** Six `GraphitronSchemaBuilderTest` cases added:
+   `COLUMN_FIELD_WITH_CONDITION`, `COLUMN_REFERENCE_FIELD_WITH_CONDITION`,
+   `NESTING_FIELD_WITH_CONDITION`, `INPUT_FIELD_CONDITION_OVERRIDE`
+   (validator short-circuit), `TABLE_INPUT_ARG_FIELD_CONDITION_EMITTED`,
+   `PLAIN_INPUT_ARG_FIELD_CONDITION_EMITTED` (includes the
+   plain-input-on-non-matching-table skip).
 
-4. **Validator.**
-   - `TypeBuilder.isUsedWithOverrideCondition` (TypeBuilder.java:543-559):
-     extend to also return true when the input type itself has any field
-     with `@condition(override: true)`. Plain inputs need no branch here
-     (they don't gate through `isUsedWithOverrideCondition`; the per-call-
-     site classifier handles column resolution directly).
+6. **Spec schema and execution coverage (partial).** `FilmConditionInput`
+   (`@table`) and `PlainFilmIdInput` (plain, used on Film and Language)
+   added; `InputFieldConditionFixtures.filmIdCondition` stub;
+   `filmsWithInputFieldCondition`, `filmsByPlainInput`, `languagesByPlainInput`
+   execution tests assert the pipeline is wired (condition method called,
+   all rows returned because the method stub is a no-op).
 
-5. **Tests and fixtures.** All tiers land in this commit.
-   - **Unit.** `InputFieldClassificationTest` (new): one case per variant
-     (`ColumnField`, `ColumnReferenceField`, `NestingField`) with and
-     without `@condition`, plus a reflection-failure case producing
-     `UnclassifiedType` for `@table` inputs and `UnclassifiedArg` for
-     plain inputs. `ProjectFiltersTest` (new or extend existing): one
-     case per row of the 6-row truth table, asserting the produced
-     `List<WhereFilter>` shape per variant.
-   - **Pipeline.** `GraphitronSchemaBuilderTest` cases: three
-     `@table`-input variants (`ColumnField`, `ColumnReferenceField`,
-     `NestingField`) with `@condition`; one plain-input case asserting
-     `PlainInputArg.fields` populated by the call-site classifier; one
-     validator short-circuit case.
-   - **Execution.** Six tests in `graphitron-rewrite-test-spec` against
-     the Sakila PostgreSQL schema:
-     1. `@table` single-level: `@condition` on a `ColumnField` inside a
-        `@table` input, list-typed outer arg.
-     2. `@table` input-field override: `@condition(override: true)` on
-        one field, plain on another; asserts auto-predicate suppression
-        for the override-carrying field only.
-     3. `@table` outer-override composition (divergence-pinning, see
-        §Legacy behavior reference): outer field-level
-        `@condition(override: true)` over a `@table` input whose field
-        carries `@condition` with no input-field override. Asserts the
-        inner explicit method runs (not suppressed), the inner auto-
-        column binding is suppressed, and the outer explicit method
-        runs alongside. Documents the delta from legacy total-replace
-        semantics.
-     4. `@table` nested: two-level input nesting with a condition at
-        each level; asserts both run and composite cardinality is
-        correct.
-     5. Plain input single-level: `@condition` on a field inside a
-        plain (non-`@table`) input type used directly as a query arg;
-        asserts correct WHERE clause under implicit-table resolution
-        against the outer field's target table.
-     6. Plain input outer-override composition: outer field-level
-        `@condition(override: true)` over a plain input whose field
-        carries `@condition`. Assertions mirror case 3. Shape matches
-        the plain-input-with-outer-override scenario identified in
-        alf's production schema (3 call sites).
-   - **Fixtures.** Extend
-     `graphitron-rewrite-test/graphitron-rewrite-test-spec/src/main/resources/graphql/schema.graphqls`
-     with a `@condition`-carrying `@table` input and a
-     `@condition`-carrying plain input (around line 16). Add
-     `InputFieldConditionFixtures` sibling to `CategoryConditions` in
-     `graphitron-rewrite-test-fixtures/.../conditions/` carrying the
-     condition methods referenced by the test SDL; register via
-     `RewriteConfig.namedReferences`.
+## Remaining for Done (Phase 4b)
+
+The shipped slice wires the classifier and emits `ConditionFilter` method
+calls, but the runtime values passed to those methods are `null` for nested
+input fields, so no real filter executes. Closing Phase 4 requires:
+
+1. **Runtime nested-arg extraction (core blocker).** `ArgCallEmitter.buildArgExtraction`
+   (ArgCallEmitter.java:42) emits `env.getArgument(param.name())` for every
+   `CallSiteExtraction` variant. This resolves against top-level args only;
+   for an input-field condition, the value lives at
+   `((Map) env.getArgument(outerArgName)).get(fieldName)` (or deeper for
+   `NestingField`-nested conditions). Work:
+   - Carry outer-arg path on the condition's `CallParam` or via a new
+     `CallSiteExtraction` variant (see D6).
+   - Projection step annotates input-field-condition `CallParam`s with the
+     path from the field argument to the leaf.
+   - Emitter generates the map traversal, null-safe, typed via
+     `env.<Map<String, Object>>getArgument(outerArgName)`.
+
+2. **Override propagation accumulator.** `walkInputFieldConditions` currently
+   always appends explicit-method filters. Once auto-column binding for
+   `@table` input types lands (deferred to step 9 of `classifyArguments`),
+   thread a `boolean enclosingOverride` accumulator through the recursion.
+   Any level's `override: true` flips it to `true` for descendants;
+   auto-predicates are then suppressed under an accumulated override.
+   Explicit methods remain unaffected (already correct today).
+
+3. **Remaining execution tests (four of the six originally planned).**
+   With nested-arg extraction working and `filmIdCondition` returning a
+   real predicate (e.g. `Film.FILM.FILM_ID.eq(...)`):
+   - `@table` input-field override (originally test #2).
+   - `@table` outer-override composition, divergence-pinning (originally
+     test #3). Coverage requirement before Done; pins the delta from
+     legacy total-replace semantics so a future regression breaks the
+     test by name.
+   - `@table` nested two-level (originally test #4).
+   - Plain input outer-override composition (originally test #6, alf
+     production shape).
+
+   The three tests already on trunk (`filmsWithInputFieldCondition`,
+   `filmsByPlainInput`, `languagesByPlainInput`) gain real filter
+   assertions (JDBC round-trip count + row-ID match) once the fixture
+   returns an actual condition.
+
+4. **Unit tests missing from the landed slice.** Plan's §Deliverable
+   originally called for:
+   - `InputFieldClassificationTest`: one case per variant (`ColumnField`,
+     `ColumnReferenceField`, `NestingField`) with and without `@condition`;
+     reflection-failure case producing `UnclassifiedType` for `@table`
+     inputs and `UnclassifiedArg` for plain inputs.
+   - `ProjectFiltersTest`: one case per row of the 6-row truth table,
+     asserting the `List<WhereFilter>` shape per variant.
+
+   The shipped `GraphitronSchemaBuilderTest` cases overlap some of this
+   ground at the pipeline tier. Evaluate whether standalone unit tests
+   are additive (cheaper feedback loop, narrower assertion scope) or
+   whether the pipeline cases are sufficient; if the latter, remove the
+   unit-test requirement from this section instead of shipping redundant
+   coverage.
+
+5. **Fixture update.** `InputFieldConditionFixtures.filmIdCondition`
+   switches from `DSL.noCondition()` to
+   `Film.FILM.FILM_ID.eq(Integer.parseInt(filmId))` (or equivalent)
+   once #1 is in place. Enables the existing three execution tests to
+   assert filtering, not just wiring.
+
+**Sequencing.**
+
+- Commit 1: item #1 (ArgCallEmitter nested-arg) + item #5 (fixture returns
+  real condition) + retrofit real-filter assertions on the three existing
+  execution tests. Unlocks runtime filtering end-to-end.
+- Commit 2: item #3 (four remaining execution tests). Depends on commit 1.
+- Item #4 (unit tests): orthogonal to runtime; can land alongside either
+  commit, or be dropped entirely if the pipeline cases are judged
+  sufficient (the plan's original §Deliverable unit-test requirement
+  predates the pipeline cases that in fact shipped; pick one).
+- Item #2 (override accumulator): defer until step 9 (auto-column binding
+  for `@table` inputs) lands. Until then, there are no auto-predicates to
+  suppress, so the accumulator is unexercised. Pair the accumulator work
+  with step 9 in that phase's plan.
 
 ## Test assertions
 
@@ -504,17 +525,48 @@ value)`) and pipeline tests assert on the classifier output directly
   failure is a caller-fixable error, not a schema-structural one, so it
   should not invalidate the input type's other fields.
 
-- **D5. Plain-input classification failure fallback. Resolved: (B).**
-  When the per-call-site classifier fails to resolve a plain input's
-  field against the outer field's table (e.g., column not found,
-  `@reference` path invalid), produce `UnclassifiedArg` for the whole
-  plain-input arg; `projectFilters`'s existing `UnclassifiedArg` error
-  path short-circuits the field cleanly. Consistent with `@table` input
-  behaviour (TypeBuilder.java:608-619 coalesces failures and returns
-  `Unresolved`). (A) (partial classification) would leave a
-  half-classified argument in an inconsistent state; (C) (silent drop)
-  undoes the improvement `GraphitronSchemaValidator` was created to
-  provide.
+- **D5. Plain-input classification failure fallback. Landed: per-field
+  skip with error-recording; plan originally resolved (B).**
+  `FieldBuilder.classifyPlainInputFields` skips individual fields that
+  fail column resolution (not added to `PlainInputArg.fields`) but
+  appends each failure reason to the field-level `errors` list; the
+  plain-input arg itself stays classified. The original resolution
+  (produce `UnclassifiedArg` for the whole arg on any field failure)
+  was revised during implementation because plain inputs are legitimately
+  reused across heterogeneous call sites: `PlainFilmIdInput` on both
+  `films(filter: ...)` (resolves against `film`) and
+  `languages(filter: ...)` (no `film_id` column in `language`).
+  Whole-arg failure would reject the Language call site even though
+  the Film call site is valid; per-field skip lets each call site
+  retain the fields that resolve against its own table. `@table` inputs
+  retain the stricter whole-type `UnclassifiedType` behavior via
+  `TypeBuilder.buildInputField`.
+
+- **D6. ArgCallEmitter shape for nested input-field extraction.** Blocker
+  for Phase 4b (see §Remaining item 1). Today `ArgCallEmitter.buildArgExtraction`
+  emits `env.getArgument(param.name())` for every extraction variant,
+  which returns `null` for input-field conditions because the field is
+  not a top-level arg. Three approaches:
+  - (A) New sealed variant `CallSiteExtraction.NestedInputField(String
+    outerArgName, List<String> path)`. Emitter generates
+    `path.stream().reduce(env.<Map<String,Object>>getArgument(outerArgName),
+    (m, key) -> m != null ? (Map<String,Object>) m.get(key) : null, (a, b) -> b)`
+    or equivalent null-safe traversal. Type-safe, extends the existing
+    hierarchy, makes the nested case explicit at every emitter switch.
+  - (B) Optional `outerArgPath` field on `CallParam`; every extraction
+    variant checks it and wraps its generated code in a lookup.
+    Minimal structural change; couples every variant to the nested case.
+  - (C) Pre-lift: projection emits a top-of-fetcher-body local
+    `Object <slot> = env.getArgument(outerArgName) instanceof Map m ?
+    m.get(fieldName) : null;` and references it. Clean at the call
+    site; complicates projection with a new emission slot and doesn't
+    compose with `NestingField` chains.
+
+  **Recommend (A).** The sealed hierarchy is already the right place for
+  extraction-shape variations (`Direct`, `EnumValueOf`, `TextMapLookup`,
+  `ContextArg`, `JooqConvert`). Resolve during Phase 4b §Remaining item 1;
+  `@table` and plain paths converge here since both land the same
+  `ConditionFilter` shape in projection.
 
 ## Out of Scope
 
