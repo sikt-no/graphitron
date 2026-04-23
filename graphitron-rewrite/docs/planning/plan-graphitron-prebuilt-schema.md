@@ -26,9 +26,14 @@
 > `GraphitronWiring`, `TypeRegistry`, and the SDL runtime resource remain in
 > place until Commit C deletes them.
 >
-> **Outstanding before flipping to In Review:**
-> - Execution-tier verification against `graphitron-rewrite-test-spec`
->   (requires Docker for legacy jOOQ codegen; per §Environment notes).
+> Execution-tier verification landed at `dabfba3` (`mvn test -pl
+> :graphitron-rewrite-test -Plocal-db` against the web-sandbox native
+> PostgreSQL): 114 pass, 0 fail. Two pre-existing gaps fixed on the way
+> in: (1) `GraphQLQueryTest` still wired `GraphitronContext` at the pre-A
+> string key against the upstream interface; switched to the generated
+> interface + class-keyed lookup; (2) the generated-sources `var` lint
+> caught three Commit B helper locals (`typeWiring`, `codeRegistry`,
+> `schemaBuilder`); replaced with explicit JavaPoet `$T` references.
 >
 > **Commit C remains unchanged**: remove legacy emitters, replace the
 > `registerFetchers` bridge with direct `FetcherEmitter` calls, add
