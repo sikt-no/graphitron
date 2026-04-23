@@ -95,6 +95,13 @@ Split BatchKey columns flow through.
   emitting their data fetcher methods would be dead code. Simplest: filter
   `fields` to only `BatchKeyField` variants before the switch in
   `generateTypeSpec` when emitting for a nested plain-object type.
+- `:452` (`buildWiringMethod` emission): `generateTypeSpec` today always emits
+  a per-class `buildWiring` method listing every entry in `fields`. For nested
+  plain-object types, wiring is already built by
+  `GraphitronWiringClassGenerator.nestedTypeWirings` (`:108-117`), so emitting
+  a second `buildWiring` on the nested Fetchers class would produce an
+  unreferenced `TypeRuntimeWiring`. Suppress it: add a flag or separate entry
+  point that skips the `buildWiringMethod` call for nested invocations.
 
 **Wiring** in `GraphitronWiringClassGenerator.java`:
 - `:108-117` (nested-type wiring loop): pass
@@ -121,9 +128,7 @@ Split BatchKey columns flow through.
 
 **§1: Mechanism.** `NESTED_WIREABLE_LEAVES` extension; nested-type Fetchers class
 emission gated on "any BatchKeyField leaf"; wiring-generator className
-threading; `requiredProjectionColumns` recursion into `NestingField.nestedFields()`;
-validator check that no plain-object type shares a name with a `@table` type
-(prevents silent Fetchers-class overwrite — see Open Question 1).
+threading; `requiredProjectionColumns` recursion into `NestingField.nestedFields()`.
 Ship with a `SplitTableField`-only fixture to keep §1 focused.
 
 **§2: `SplitLookupTableField` arm.** Adding the composite-keyed variant. The
@@ -191,8 +196,10 @@ actors resolve correctly (film 1 → [1, 2]; film 2 → [1, 3]).
 ## Open questions
 
 1. **Nested-type Fetchers class naming.** Resolved: use `<NestedTypeName>Fetchers`
-   (matches top-level convention); add a schema validator check that no
-   plain-object type shares a name with a `@table` type. Assigned to §1.
+   (matches top-level convention). No validator check needed — GraphQL already
+   enforces unique type names across the schema, so two types (one `@table`,
+   one plain-object) cannot share a name and cannot collide on
+   `<Name>Fetchers.java` in the `rewrite.fetchers` output package.
 2. **Class-emission gate: "any `BatchKeyField` leaf" vs "any non-inline leaf".**
    The former is surgical; the latter is more forward-compatible if more nested
    leaves ever need class-scoped methods. Recommend: start with `BatchKeyField`
