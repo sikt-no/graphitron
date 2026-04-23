@@ -272,4 +272,99 @@ class SplitTableFieldPipelineTest {
         assertThat(filmFetchers.methodSpecs()).extracting(m -> m.name())
             .doesNotContain("scatterByIdx");
     }
+
+    // plan-split-query-connection.md §1 + §2: Connection-cardinality pipeline coverage.
+
+    @Test
+    void splitQueryConnection_fetcherReturnsConnectionResult_rowsMethodReturnsListOfConnectionResult() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Actor @table(name: "actor") { name: String }
+            type ActorEdge { node: Actor! cursor: String! }
+            type ActorsConnection { edges: [ActorEdge!]! nodes: [Actor!]! }
+            type Film @table(name: "film") {
+                actorsConnection(first: Int, last: Int, after: String, before: String): ActorsConnection! @splitQuery
+                    @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
+                    @defaultOrder(primaryKey: true)
+            }
+            type Query { film: Film }
+            """);
+
+        var filmFetchers = TypeFetcherGenerator.generate(schema).stream()
+            .filter(t -> t.name().equals("FilmFetchers"))
+            .findFirst().orElseThrow();
+
+        var fetcher = filmFetchers.methodSpecs().stream()
+            .filter(m -> m.name().equals("actorsConnection"))
+            .findFirst().orElseThrow();
+        assertThat(fetcher.returnType().toString())
+            .isEqualTo("java.util.concurrent.CompletableFuture<fake.code.generated.rewrite.ConnectionResult>");
+
+        var rowsMethod = filmFetchers.methodSpecs().stream()
+            .filter(m -> m.name().equals("rowsActorsConnection"))
+            .findFirst().orElseThrow();
+        assertThat(rowsMethod.returnType().toString())
+            .isEqualTo("java.util.List<fake.code.generated.rewrite.ConnectionResult>");
+    }
+
+    @Test
+    void splitQueryConnection_emitsScatterConnectionByIdxHelperAndOmitsListScatter() {
+        // Connection-only fetcher class: scatterConnectionByIdx emitted, scatterByIdx is not
+        // (plain-list scatter would be dead code in a class that only has Connection-cardinality
+        // Split* fields).
+        var schema = TestSchemaHelper.buildSchema("""
+            type Actor @table(name: "actor") { name: String }
+            type ActorEdge { node: Actor! cursor: String! }
+            type ActorsConnection { edges: [ActorEdge!]! nodes: [Actor!]! }
+            type Film @table(name: "film") {
+                actorsConnection(first: Int, last: Int, after: String, before: String): ActorsConnection! @splitQuery
+                    @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
+                    @defaultOrder(primaryKey: true)
+            }
+            type Query { film: Film }
+            """);
+
+        var filmFetchers = TypeFetcherGenerator.generate(schema).stream()
+            .filter(t -> t.name().equals("FilmFetchers"))
+            .findFirst().orElseThrow();
+
+        var methodNames = filmFetchers.methodSpecs().stream().map(m -> m.name()).toList();
+        assertThat(methodNames).contains("scatterConnectionByIdx");
+        assertThat(methodNames).as("plain-list scatterByIdx not emitted when no plain-list-cardinality Split* field")
+            .doesNotContain("scatterByIdx");
+    }
+
+    @Test
+    void splitQueryConnection_withDynamicOrderByArg_emitsOrderByHelperAcceptingAliasedTable() {
+        // plan-split-query-connection.md §2: the OrderBy helper signature now takes the aliased
+        // Table so Split callers can pass their FK-chain terminal alias. Pipeline-level check
+        // that the helper is emitted for Argument orderBy on Split+Connection fields.
+        var schema = TestSchemaHelper.buildSchema("""
+            enum ActorSort { ACTOR_ID @order(primaryKey: true) }
+            input ActorOrderBy { field: ActorSort! direction: SortDirection }
+            type Actor @table(name: "actor") { name: String }
+            type ActorEdge { node: Actor! cursor: String! }
+            type ActorsConnection { edges: [ActorEdge!]! nodes: [Actor!]! }
+            type Film @table(name: "film") {
+                actorsConnection(
+                    order: [ActorOrderBy] @orderBy, first: Int, last: Int, after: String, before: String
+                ): ActorsConnection! @splitQuery
+                    @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
+                    @defaultOrder(primaryKey: true)
+            }
+            type Query { film: Film }
+            """);
+
+        var filmFetchers = TypeFetcherGenerator.generate(schema).stream()
+            .filter(t -> t.name().equals("FilmFetchers"))
+            .findFirst().orElseThrow();
+
+        var helper = filmFetchers.methodSpecs().stream()
+            .filter(m -> m.name().equals("actorsConnectionOrderBy"))
+            .findFirst().orElseThrow();
+        assertThat(helper.parameters())
+            .extracting(p -> p.type().toString())
+            .containsExactly(
+                "graphql.schema.DataFetchingEnvironment",
+                "no.sikt.graphitron.rewrite.test.jooq.tables.Actor");
+    }
 }

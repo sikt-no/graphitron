@@ -153,6 +153,17 @@ type Film @table(name: "film") {
         {key: "film_actor_film_id_fkey"},
         {key: "film_actor_actor_id_fkey"}
     ]) @defaultOrder(primaryKey: true)
+    # plan-split-query-connection.md §2: dynamic @orderBy on @splitQuery + @asConnection.
+    # The emitted `actorsOrderedConnectionOrderBy(env, <ActorTable>)` helper accepts the
+    # FK-chain terminal alias as parameter, so the column refs resolve against the Split
+    # query's aliased jOOQ Table instance rather than a hard-coded canonical alias.
+    actorsOrderedConnection(
+        order: [ActorOrderBy] @orderBy,
+        first: Int, last: Int, after: String, before: String
+    ): ActorsConnection! @splitQuery @reference(path: [
+        {key: "film_actor_film_id_fkey"},
+        {key: "film_actor_actor_id_fkey"}
+    ]) @defaultOrder(primaryKey: true)
 }
 
 type Actor @table(name: "actor") {
@@ -271,5 +282,18 @@ enum FilmSort {
 
 input FilmOrderBy {
     field: FilmSort!
+    direction: SortDirection
+}
+
+# plan-split-query-connection.md §2 fixture: dynamic ordering input for
+# Film.actorsOrderedConnection.
+enum ActorSort {
+    ACTOR_ID   @order(primaryKey: true)
+    FIRST_NAME @order(fields: [{name: "first_name"}])
+    LAST_NAME  @order(fields: [{name: "last_name"}])
+}
+
+input ActorOrderBy {
+    field: ActorSort!
     direction: SortDirection
 }

@@ -2,10 +2,10 @@
 
 > **Status:** In Review
 >
-> §1 (SplitTableField + Connection) shipped at `3821842`. Awaiting reviewer
-> sign-off to close. `@asConnection` + `@lookupKey` is permanently invalid (not
-> a deferred scope), so the only possible §2 follow-up is dynamic `@orderBy` on
-> Split+Connection, gated on whether any consumer needs it.
+> §1 (SplitTableField + Connection with fixed ordering) shipped at `3821842`.
+> §2 (dynamic `@orderBy`) shipped at `<PENDING>` after production-schema audit
+> surfaced 5 real consumers. `@asConnection` + `@lookupKey` is permanently
+> invalid, not a deferred scope. Awaiting reviewer sign-off to close.
 
 ## Problem
 
@@ -93,9 +93,8 @@ applied inside the windowed CTE.
 
 **§1 (shipped at `3821842`):**
 - `FieldBuilder:279-283` Connection rejection on `SplitTableField` path deleted.
-- `GraphitronSchemaValidator.validateSplitTableField` gained two checks for
-  Split+Connection: (a) orderBy non-empty, (b) orderBy not `Argument`. See
-  "Deferred / non-goals" below for why Argument is out of §1 scope.
+- `GraphitronSchemaValidator.validateSplitTableField` gained an orderBy non-empty
+  check for Split+Connection.
 - `SplitRowsMethodEmitter.buildConnectionMethod` (new) emits the
   parentInput VALUES + FK chain + ROW_NUMBER envelope; dispatch arm in
   `buildForSplitTable`. `buildScatterConnectionByIdxHelper` emits a scatter
@@ -110,6 +109,23 @@ applied inside the windowed CTE.
   `Result<Record>` extends `List<Record>`.
 - `SplitRowsMethodEmitter.buildRuntimeStub` handles the Connection wrapper's
   `List<ConnectionResult>` return type alongside the existing List/Single cases.
+
+**§2 (shipped at `<PENDING>`):**
+- `TypeFetcherGenerator.buildOrderByHelperMethod`: dropped the internal
+  `declareTableLocal`; the aliased Table is now a parameter, so one helper shape
+  serves root callers (canonical `tableLocal`) and Split+Connection callers
+  (FK-chain terminal alias).
+- `TypeFetcherGenerator.buildConnectionOrderingBlock` and `buildOrderByCode`:
+  pass the caller's aliased Table variable to the helper.
+- `TypeFetcherGenerator` helper-emission loop: now emits a helper for
+  `SplitTableField + Connection + OrderBySpec.Argument` alongside
+  `QueryTableField + Argument`.
+- `SplitRowsMethodEmitter.buildConnectionMethod`: dispatches on `OrderBySpec`
+  (Fixed inline, Argument delegated to the `<fieldName>OrderBy(env, alias)`
+  helper), emits `OrderByResult ordering = ...` then extracts sortFields +
+  columns into the shared `orderBy` + `extraFields` locals.
+- `GraphitronSchemaValidator.validateSplitTableField`: dropped the
+  `OrderBySpec.Argument` rejection.
 
 **Permanent rejections (no further work):**
 - `FieldBuilder:252-257` and `:266-271`: `@asConnection` + `@lookupKey` rejected
@@ -134,16 +150,6 @@ applied inside the windowed CTE.
   input key list and the output list; pagination would break that contract.
   Not a "deferred" generator gap, it is permanently incompatible. The rejection
   message instructs the schema author to drop one directive.
-- **Dynamic `@orderBy` on `SplitTableField` + `@asConnection`**: rejected at
-  validator time. The existing `<fieldName>OrderBy(env)` helper emitted by
-  `TypeFetcherGenerator.buildOrderByHelperMethod` hard-codes the canonical
-  `tableLocal` alias (e.g. `actor`), but Split emission uses the FK-chain terminal
-  alias (e.g. `actorsConnection_a1`). Reuse would return an `OrderByResult`
-  referencing the wrong jOOQ table instance, which jOOQ would flag at SQL
-  generation. Lifting the gate needs either a Split-specific OrderBy helper that
-  accepts the terminal-aliased Table, or a broader refactor threading the alias
-  through all OrderBy helpers. Possible §2, gated on whether any consumer asks
-  for it.
 - **Condition-join hops**: unsupportedReason already gates these; unchanged.
 - **Custom pagination-arg names**: the plan uses `first/last/after/before`
   literal names in the emitted rows method (the same shortcut the root connection
@@ -154,7 +160,7 @@ applied inside the windowed CTE.
 
 ## Phases
 
-**§1: SplitTableField + Connection** (the main item): shipped at `3821842`.
+**§1: SplitTableField + Connection with fixed ordering:** shipped at `3821842`.
 Fixture: `Film.actorsConnection` over the film_actor junction with
 `@defaultOrder(primaryKey: true)`. Three execution tests cover two-parent batching
 (one rows round-trip), forward after-cursor paging (per-partition seek), and
@@ -166,24 +172,21 @@ backward last-page (reversed ordering + client-side re-reverse). Learnings:
   handles both first-page and after-cursor paths without a runtime branch. The
   `WHERE (ordering_cols) > (cursor_values)` shape drawn in "Shape of the emitted
   SQL" above is what jOOQ emits; we never had to build it by hand.
-- The `<fieldName>OrderBy(env)` helper for dynamic ordering bakes in the
-  canonical `tableLocal` alias, not the Split path's FK-chain terminal alias;
-  §1 scope rejects `OrderBySpec.Argument` at validator time and defers the
-  alias-threading refactor to §2.
 - `ConnectionResult`'s `result` field narrowed from `Result<Record>` to
   `List<Record>` so the scatter can pass per-parent `ArrayList` sublists without
   synthesizing a jOOQ Result. Root connection emission still compiles because
   `Result<Record>` is-a `List<Record>`.
 
-**§2 (conditional): dynamic `@orderBy` on SplitTableField + Connection.**
-Gated on a consumer request. Needs the `<fieldName>OrderBy(env)` helper to
-accept the FK-chain terminal-aliased Table instead of baking in the canonical
-`tableLocal` alias. Either a Split-specific helper variant or a cross-cutting
-refactor that threads the alias through every OrderBy helper. If no consumer
-hits it, keep the validator rejection and close this plan at §1.
+**§2: dynamic `@orderBy` on SplitTableField + Connection:** shipped at `<PENDING>`.
+Production-schema audit of `alf/graphitron-rewrite:graphitron-rewrite/generator-schema.graphql`
+surfaced 5 consumer fields, so the feature was in scope. Fixture:
+`Film.actorsOrderedConnection(order: [ActorOrderBy] @orderBy, ...)` with a new
+execution test that orders by `LAST_NAME DESC`, `first: 1`, over two parents and
+asserts each partition gets its locally-top record. Implementation centred on
+turning `<fieldName>OrderBy`'s baked-in table alias into a parameter so one
+helper shape serves both root and Split callers.
 
-**§3: Scope closure.** Delete this file once §1 is approved, assuming §2 is not
-pursued. If §2 lands, its own closure commit handles the file deletion.
+**§3: Scope closure.** Delete this file once reviewer approves §1 + §2.
 
 ## Test coverage
 
@@ -202,16 +205,17 @@ pursued. If §2 lands, its own closure commit handles the file deletion.
   full-qualified jOOQ tables, and graphql-java imports on entity-scoped
   `*Conditions` classes. The new emitter avoids all three.
 
-§2, if pursued, needs a pipeline + execution test for dynamic-orderBy on
-Split+Connection. Classifier case
-`AS_CONNECTION_LOOKUP_REJECTED` in `GraphitronSchemaBuilderTest` already pins
-the `@asConnection` + `@lookupKey` rejection as a permanent invariant.
+§2 shipped with an execution test
+(`splitQueryConnection_dynamicOrderByArg_sortsEachPartitionByNamedField`) that
+orders by `LAST_NAME DESC` across two parents and asserts each gets its locally
+top record. Unit-test `orderByArg_helperMethod_takesEnvAndAliasedTableParameters`
+in `TypeFetcherGeneratorTest` pins the new helper signature. Classifier case
+`AS_CONNECTION_LOOKUP_REJECTED` in `GraphitronSchemaBuilderTest` pins the
+`@asConnection` + `@lookupKey` rejection as a permanent invariant.
 
 ## Open questions
 
-1. **§2 trigger**: does any in-tree or downstream schema want dynamic `@orderBy`
-   on `@splitQuery @asConnection`? If yes, §2 is worth doing and the alias-threading
-   refactor is its focus. If no, §1 closes the plan.
+None. §1 and §2 both shipped; only reviewer sign-off remains.
 
 ### Decided during §1
 

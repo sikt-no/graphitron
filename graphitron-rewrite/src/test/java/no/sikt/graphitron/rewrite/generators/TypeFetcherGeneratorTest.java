@@ -449,12 +449,18 @@ class TypeFetcherGeneratorTest {
     // check was redundant with the return-type check.
 
     @Test
-    void orderByArg_helperMethod_takesEnvParameter() {
+    void orderByArg_helperMethod_takesEnvAndAliasedTableParameters() {
+        // Helper signature: (DataFetchingEnvironment env, <FilmTable> film). The Table is a
+        // parameter (not a local declaration) so the same helper serves root callers (pass the
+        // canonical tableLocal) and Split+Connection callers (pass the FK-chain terminal alias).
+        // See plan-split-query-connection.md §2.
         var field = queryTableFieldWithOrderByArg("films");
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(field));
         assertThat(method(spec, "filmsOrderBy").parameters())
             .extracting(p -> p.type().toString())
-            .containsExactly("graphql.schema.DataFetchingEnvironment");
+            .containsExactly(
+                "graphql.schema.DataFetchingEnvironment",
+                "no.sikt.graphitron.rewrite.test.jooq.tables.Film");
     }
 
     // Dropped orderByArg_fetcherBody_callsHelperMethod: Pattern 2 — "method A references

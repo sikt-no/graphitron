@@ -388,13 +388,21 @@ public class TypeFetcherGenerator {
             .values()
             .forEach(tl -> builder.addField(TypeConditionsGenerator.buildTextEnumMapField(tl)));
 
-        // Emit orderBy helper methods for QueryTableFields with a dynamic @orderBy argument
+        // Emit orderBy helper methods for fields with a dynamic @orderBy argument. Covers
+        // QueryTableField (root connection + list fetchers) and SplitTableField+Connection
+        // (per-parent paginated rows method).
         for (var field : fields) {
             if (field instanceof QueryField.QueryTableField qtf
                     && qtf.orderBy() instanceof OrderBySpec.Argument arg) {
                 var tableRef = qtf.returnType().table();
                 var names = GeneratorUtils.ResolvedTableNames.of(tableRef, qtf.returnType().returnTypeName());
                 builder.addMethod(buildOrderByHelperMethod(qtf.name(), arg, names, tableRef));
+            } else if (field instanceof ChildField.SplitTableField stf
+                    && stf.returnType().wrapper() instanceof FieldWrapper.Connection
+                    && stf.orderBy() instanceof OrderBySpec.Argument arg) {
+                var tableRef = stf.returnType().table();
+                var names = GeneratorUtils.ResolvedTableNames.of(tableRef, stf.returnType().returnTypeName());
+                builder.addMethod(buildOrderByHelperMethod(stf.name(), arg, names, tableRef));
             }
         }
 
@@ -638,9 +646,12 @@ public class TypeFetcherGenerator {
             }
             case OrderBySpec.Argument arg -> {
                 // Single dispatch: OrderByResult carries both sort fields and cursor columns.
+                // Pass the caller's aliased Table so the helper's column refs resolve to the
+                // right jOOQ instance (canonical tableLocal for root, FK-chain terminal alias
+                // for Split+Connection).
                 var orderByResultClass = ClassName.get(
                     RewriteConfig.outputPackage() + ".rewrite", OrderByResultClassGenerator.CLASS_NAME);
-                code.addStatement("$T ordering = $LOrderBy(env)", orderByResultClass, fieldName);
+                code.addStatement("$T ordering = $LOrderBy(env, $L)", orderByResultClass, fieldName, srcAlias);
                 code.addStatement("$T orderBy = ordering.sortFields()", SORT_FIELD_LIST);
                 code.addStatement("$T extraFields = ordering.columns()", listOfField);
             }
@@ -677,8 +688,9 @@ public class TypeFetcherGenerator {
             }
             case OrderBySpec.Argument arg -> {
                 if (fieldName != null) {
-                    // Helper now returns OrderByResult; extract just the sort fields for non-connection fetchers
-                    code.addStatement("$T orderBy = $LOrderBy(env).sortFields()", SORT_FIELD_LIST, fieldName);
+                    // Helper now returns OrderByResult; extract just the sort fields for non-connection fetchers.
+                    // Pass srcAlias so the helper's column refs bind to the caller's aliased Table instance.
+                    code.addStatement("$T orderBy = $LOrderBy(env, $L).sortFields()", SORT_FIELD_LIST, fieldName, srcAlias);
                 } else {
                     code.add(buildOrderByCode(arg.base(), null, srcAlias));
                 }
@@ -694,12 +706,19 @@ public class TypeFetcherGenerator {
     // -----------------------------------------------------------------------
 
     /**
-     * Generates the private static {@code <fieldName>OrderBy(DataFetchingEnvironment env)} helper.
+     * Generates the private static {@code <fieldName>OrderBy(DataFetchingEnvironment env, <Table> aliased)}
+     * helper.
      *
      * <p>The helper reads the {@code @orderBy} argument from {@code env}, dispatches over the
      * sort-field name via a switch expression (single arg) or accumulates into a list (list arg),
-     * and returns a {@code List<SortField<?>>}. Fetcher bodies call this helper instead of
+     * and returns an {@code OrderByResult}. Fetcher bodies call this helper instead of
      * inlining the dispatch logic.
+     *
+     * <p>The aliased table instance is a parameter rather than a locally-declared Table, so
+     * callers with different aliasing schemes share one helper. Root connection fetchers pass
+     * their canonical {@code tableLocal} (the un-aliased {@code Tables.FILM}); Split+Connection
+     * rows methods pass the FK-chain terminal alias (e.g. {@code Tables.ACTOR.as("actorsConnection_a1")}).
+     * See {@code plan-split-query-connection.md} §2.
      */
     private static MethodSpec buildOrderByHelperMethod(
             String fieldName,
@@ -710,13 +729,12 @@ public class TypeFetcherGenerator {
         var orderByResultClass = ClassName.get(
             RewriteConfig.outputPackage() + ".rewrite", OrderByResultClassGenerator.CLASS_NAME);
 
+        String tableLocal = names.tableLocalName();
         var builder = MethodSpec.methodBuilder(fieldName + "OrderBy")
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .returns(orderByResultClass)
-            .addParameter(ENV, "env");
-
-        builder.addCode(GeneratorUtils.declareTableLocal(names, tableRef));
-        String tableLocal = names.tableLocalName();
+            .addParameter(ENV, "env")
+            .addParameter(names.jooqTableClass(), tableLocal);
 
         var baseExpr = buildBaseReturnExpr(arg.base(), tableLocal);
         if (arg.list()) {

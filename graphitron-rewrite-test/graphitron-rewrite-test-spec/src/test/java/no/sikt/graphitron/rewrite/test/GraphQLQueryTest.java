@@ -1238,6 +1238,28 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void splitQueryConnection_dynamicOrderByArg_sortsEachPartitionByNamedField() {
+        // plan-split-query-connection.md §2: @splitQuery + @asConnection with a dynamic @orderBy
+        // argument. The emitted OrderBy helper accepts the FK-chain terminal alias so column refs
+        // bind to the aliased jOOQ Actor table. Order by LAST_NAME descending, then take the first
+        // row per parent — that's the actor with the latest last_name in each film.
+        // Film 1 actors: {PENELOPE GUINESS, NICK WAHLBERG} → last-desc-first = NICK (WAHLBERG).
+        // Film 2 actors: {PENELOPE GUINESS, ED CHASE}      → last-desc-first = PENELOPE (GUINESS).
+        Map<String, Object> data = execute(
+            "{ filmById(film_id: [\"1\", \"2\"]) { filmId actorsOrderedConnection("
+                + "order: [{field: LAST_NAME, direction: DESC}], first: 1) "
+                + "{ nodes { actorId firstName lastName } } } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmById");
+        var byId = films.stream().collect(java.util.stream.Collectors.toMap(
+            f -> (Integer) f.get("filmId"),
+            f -> (List<Map<String, Object>>) ((Map<String, Object>) f.get("actorsOrderedConnection")).get("nodes")));
+        assertThat(byId.get(1)).hasSize(1);
+        assertThat(byId.get(1).get(0).get("lastName")).isEqualTo("WAHLBERG");
+        assertThat(byId.get(2)).hasSize(1);
+        assertThat(byId.get(2).get(0).get("lastName")).isEqualTo("GUINESS");
+    }
+
+    @Test
     void splitQueryConnection_backwardPagination_returnsLastNAscending() {
         // last: 1 with no cursor: the CTE inverts the ORDER BY (actor_id DESC) so ROW_NUMBER()
         // picks the largest actor_id per partition, then ConnectionResult.trimmedResult()

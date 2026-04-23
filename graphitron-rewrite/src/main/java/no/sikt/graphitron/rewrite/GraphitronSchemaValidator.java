@@ -354,16 +354,6 @@ public class GraphitronSchemaValidator {
                     field.location()
                 ));
             }
-            // Dynamic @orderBy arguments would need the OrderBy helper method to accept the terminal
-            // alias of the split query's FK chain rather than baking in the canonical tableLocal
-            // alias. Left as a §2 follow-up; §1 ships with fixed ordering only.
-            if (orderBy instanceof no.sikt.graphitron.rewrite.model.OrderBySpec.Argument) {
-                errors.add(new ValidationError(
-                    "Field '" + field.qualifiedName() + "': dynamic @orderBy on @splitQuery connections is not yet "
-                        + "supported; use @defaultOrder or a fixed ordering",
-                    field.location()
-                ));
-            }
         }
     }
     private void validateLookupTableField(no.sikt.graphitron.rewrite.model.ChildField.LookupTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {

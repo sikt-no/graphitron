@@ -50,7 +50,24 @@ class SplitTableFieldValidationTest {
             new SplitTableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)),
                 List.of(new JoinStep.ConditionJoin(new MethodRef.Basic("com.example.Conditions", "actorCondition", "org.jooq.Condition", List.of()), "")),
                 List.of(), new OrderBySpec.None(), null, PARENT_BATCH_KEY),
-            List.of(CONDITION_JOIN_STUB));
+            List.of(CONDITION_JOIN_STUB)),
+
+        // plan-split-query-connection.md §1: Split + Connection with no ORDER BY is a build error.
+        // ROW_NUMBER() needs a total order to slice partitions deterministically; without one,
+        // cursor encoding hashes an empty tuple and pages silently non-deterministically.
+        CONNECTION_EMPTY_ORDERBY_NONE("Connection + OrderBySpec.None — build error, non-empty ORDER BY required",
+            new SplitTableField("Film", "actors", null, actorReturn(new FieldWrapper.Connection(false, false)),
+                List.of(new JoinStep.FkJoin("film_actor_film_id_fkey", "", null, List.of(), new TableRef("film_actor", "", "", List.of()), List.of(), null, "")),
+                List.of(), new OrderBySpec.None(), null, PARENT_BATCH_KEY),
+            List.of("Field 'Film.actors': @splitQuery connections require a non-empty ORDER BY "
+                + "(add @defaultOrder, @orderBy, or a primary key on the target table)")),
+
+        CONNECTION_EMPTY_ORDERBY_FIXED("Connection + empty OrderBySpec.Fixed — same rejection",
+            new SplitTableField("Film", "actors", null, actorReturn(new FieldWrapper.Connection(false, false)),
+                List.of(new JoinStep.FkJoin("film_actor_film_id_fkey", "", null, List.of(), new TableRef("film_actor", "", "", List.of()), List.of(), null, "")),
+                List.of(), new OrderBySpec.Fixed(List.of(), "asc"), null, PARENT_BATCH_KEY),
+            List.of("Field 'Film.actors': @splitQuery connections require a non-empty ORDER BY "
+                + "(add @defaultOrder, @orderBy, or a primary key on the target table)"));
 
         private final String description;
         private final GraphitronField field;

@@ -105,8 +105,6 @@ Enumerated from `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS`. Priority numbers
 - **`GraphitronContext` extension-point docs** **[Backlog]** — document what belongs in `GraphitronContext` vs jOOQ `ExecuteListener` vs schema directive.
 - **Drop `graphitron-common` build dependency from `graphitron-rewrite`** **[Backlog]** — inline `MultiSourceReader` + auto-inject `directives.graphqls`; emitted code runtime dependency unchanged.
 - **Consolidate rewrite modules under `graphitron-rewrite/`** **[Ready]** — gather generator + fixtures + test-spec under one aggregator; renames `-test-fixtures` → `-fixtures` and `-test-spec` → `-test`. Structural refactor, no behaviour change. ([plan](plan-consolidate-rewrite-modules.md))
-- **`SplitTableField + Connection` pipeline test coverage** **[Backlog]** — `SplitTableFieldPipelineTest` has no connection-cardinality cases: add tests that (a) verify the fetcher returns `CompletableFuture<ConnectionResult>`, (b) verify the rows method returns `List<ConnectionResult>`, and (c) verify `scatterConnectionByIdx` is emitted (and `scatterByIdx` is not for a connection-only class). Mirrors the existing single-cardinality and list-cardinality pipeline tests. Identified during review of `plan-split-query-connection.md` §1.
-- **`SplitTableField + Connection` validator test coverage** **[Backlog]** — `SplitTableFieldValidationTest` has no cases for the two new error paths added by `validateSplitTableField`: (a) Connection + empty `OrderBySpec` (`None` or empty `Fixed`) must produce the "require a non-empty ORDER BY" error, (b) Connection + `OrderBySpec.Argument` must produce the "dynamic @orderBy not yet supported" error. Identified during review of `plan-split-query-connection.md` §1.
 
 ### Deferred
 

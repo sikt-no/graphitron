@@ -781,26 +781,36 @@ public final class SplitRowsMethodEmitter {
         body.addStatement("$T after = env.getArgument($S)", String.class, "after");
         body.addStatement("$T before = env.getArgument($S)", String.class, "before");
 
-        // Fixed orderBy emitted inline, referencing the terminal alias. Argument orderBy is
-        // rejected upstream at validator time.
+        // OrderBy derivation. Fixed inlined, Argument delegated to the <fieldName>OrderBy helper
+        // emitted by TypeFetcherGenerator (same helper shape as root connections). None is rejected
+        // upstream at validator time so empty-tuple cursors can't happen.
         TypeName wildField = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
         TypeName listOfField = ParameterizedTypeName.get(LIST, wildField);
-        if (!(orderBy instanceof no.sikt.graphitron.rewrite.model.OrderBySpec.Fixed fixed)
-                || fixed.columns().isEmpty()) {
-            throw new IllegalStateException(
-                "SplitTableField+Connection with non-Fixed orderBy reached emitter for field '" + fieldName
+        ClassName orderByResultClass = ClassName.get(
+            RewriteConfig.outputPackage() + ".rewrite", "OrderByResult");
+        switch (orderBy) {
+            case no.sikt.graphitron.rewrite.model.OrderBySpec.Fixed fixed when !fixed.columns().isEmpty() -> {
+                var sortParts = CodeBlock.builder();
+                var colParts = CodeBlock.builder();
+                for (int i = 0; i < fixed.columns().size(); i++) {
+                    if (i > 0) { sortParts.add(", "); colParts.add(", "); }
+                    var col = fixed.columns().get(i);
+                    sortParts.add("$L.$L.$L()", terminalAlias, col.column().javaName(), fixed.jooqMethodName());
+                    colParts.add("$L.$L", terminalAlias, col.column().javaName());
+                }
+                body.addStatement("$T orderBy = $T.of($L)", listOfSortField, LIST, sortParts.build());
+                body.addStatement("$T extraFields = $T.of($L)", listOfField, LIST, colParts.build());
+            }
+            case no.sikt.graphitron.rewrite.model.OrderBySpec.Argument arg -> {
+                body.addStatement("$T ordering = $LOrderBy(env, $L)",
+                    orderByResultClass, fieldName, terminalAlias);
+                body.addStatement("$T orderBy = ordering.sortFields()", listOfSortField);
+                body.addStatement("$T extraFields = ordering.columns()", listOfField);
+            }
+            default -> throw new IllegalStateException(
+                "SplitTableField+Connection with empty/None orderBy reached emitter for field '" + fieldName
                 + "'; validator should have rejected.");
         }
-        var sortParts = CodeBlock.builder();
-        var colParts = CodeBlock.builder();
-        for (int i = 0; i < fixed.columns().size(); i++) {
-            if (i > 0) { sortParts.add(", "); colParts.add(", "); }
-            var col = fixed.columns().get(i);
-            sortParts.add("$L.$L.$L()", terminalAlias, col.column().javaName(), fixed.jooqMethodName());
-            colParts.add("$L.$L", terminalAlias, col.column().javaName());
-        }
-        body.addStatement("$T orderBy = $T.of($L)", listOfSortField, LIST, sortParts.build());
-        body.addStatement("$T extraFields = $T.of($L)", listOfField, LIST, colParts.build());
 
         body.addStatement(
             "$T page = $T.pageRequest(first, last, after, before, $L, orderBy, extraFields, "
