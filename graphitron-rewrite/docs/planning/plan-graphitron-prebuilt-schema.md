@@ -1,6 +1,24 @@
 # Plan: Graphitron emits a prebuilt programmatic GraphQLSchema
 
-> **Status:** Ready
+> **Status:** Done
+>
+> **Reviewer sign-off (`492892a`).** Independent review across Commits A
+> (`81fa607`), B (`5b4ecce` -> `4088cb1` + fix `dabfba3`), and C
+> (`9b4622e`) walked the seven focus areas: new schema emitters
+> (correctness of root-type routing, survivor filtering, `typeRef`
+> usage, typed-lambda disambiguation, built-in-scalar registration,
+> enum runtime values), validator + lint ratchet (`@notGenerated`
+> rejection message + FQN-keyed lint matcher), facade shape (exactly
+> one `buildSchema(Consumer<GraphQLSchema.Builder>)` + customizer
+> javadoc), runtime context key (class-keyed), getting-started doc
+> (five required cases), test coverage (one unit test per new
+> emitter; `FetcherRegistrationsEmitter` covered indirectly via
+> pipeline tests per plan intent), and dead-code fallout (no
+> lingering `*Wiring` / `SchemaReadingHelper` /
+> `no.sikt.graphql.GraphitronContext` references in emitted code
+> paths). No correctness or coverage findings. Single doc-style nit
+> (three em dashes in `getting-started.md`) flagged as follow-up, not
+> blocking. Roadmap bumps from `[In Review]` to Done.
 >
 > **In flight.** Roadmap is `[In Progress]`. Commit A landed at
 > `81fa607`: `GraphitronContext` emitted into `<outputPackage>.rewrite.schema`,
