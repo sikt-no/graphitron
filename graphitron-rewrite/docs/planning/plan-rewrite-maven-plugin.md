@@ -50,8 +50,12 @@ migrated.
   tagged-inputs with `schemaInputs` + `basedir`) with the remaining
   plugin knobs: output paths, packages, named references, scalars,
   page-size cap.
-- Deletion of `RewriteConfig` statics entirely once all readers
-  migrate to `RewriteContext`.
+- Deletion of `RewriteConfig` statics entirely. Rewiring 68 call
+  sites across 18 files in rewrite core to read from `RewriteContext`
+  instead. Threading approach described in §Removing `RewriteConfig`.
+  Matches the plan's "no static singletons" driving principle;
+  without this step, `RewriteConfig` would sit as an orphaned
+  never-populated static bag post-landing.
 - Migration documentation: what consumer POMs look like before vs.
   after.
 
@@ -320,6 +324,88 @@ them:
   together because they share a migration note: consumers who need
   the same behaviour under rewrite open a roadmap item for that
   specific capability.
+
+### Removing `RewriteConfig`
+
+`RewriteConfig` is rewrite core's static bag. Tagged-inputs already
+deleted the Mojo call site that populated it; this plan deletes the
+class and rewires every reader onto `RewriteContext`.
+
+**Call-site inventory** (68 reads across 18 files in rewrite core,
+post-tagged-inputs state):
+
+| File                                        | Reads |
+|---------------------------------------------|-------|
+| `generators/SplitRowsMethodEmitter.java`    |  18   |
+| `generators/TypeFetcherGenerator.java`      |  10   |
+| `generators/FetcherEmitter.java`            |   8   |
+| `generators/GeneratorUtils.java`            |   6   |
+| `generators/InlineLookupTableFieldEmitter.java` | 5 |
+| `generators/InlineTableFieldEmitter.java`   |   4   |
+| `GraphQLRewriteGenerator.java`              |   3   |
+| `generators/WiringClassGenerator.java`      |   2   |
+| `FieldBuilder.java`                         |   2   |
+| `BuildContext.java`                         |   2   |
+| `generators/util/ConnectionResultClassGenerator.java` | 1 |
+| `generators/util/ConnectionHelperClassGenerator.java` | 1 |
+| `generators/schema/ObjectTypeGenerator.java` |  1   |
+| `generators/schema/GraphitronSchemaClassGenerator.java` | 1 |
+| `generators/schema/GraphitronFacadeGenerator.java` | 1 |
+| `generators/TypeClassGenerator.java`        |   1   |
+| `generators/GraphitronWiringClassGenerator.java` | 1 |
+| `GraphitronSchemaBuilder.java`              |   1   |
+
+Fields read: `outputPackage` (~40), `getGeneratedJooqPackage` (~20),
+`namedReferences` (3), `outputDirectory` (1), `generatorSchemaFiles`
+(1). The two dominant reads are used to construct `ClassName`
+objects for emitted rewrite / jOOQ types; a pair of helpers on
+`BuildContext` (e.g. `bctx.rewriteClass(subPkg, name)` /
+`bctx.jooqTablesClass()`) can collapse dozens of reads into a few
+method calls post-migration, but that's a follow-up cleanup rather
+than a requirement of this plan.
+
+**Threading approach: constructor parameter.** `GraphQLRewriteGenerator`
+is already instance-based post-tagged-inputs and holds `RewriteContext
+ctx`. Propagate `ctx` to each generator that reads from `RewriteConfig`
+today:
+
+1. `GraphQLRewriteGenerator.generate()` passes `ctx` into
+   `GraphitronSchemaBuilder.build(registry, ctx)` (new parameter).
+2. `GraphitronSchemaBuilder.build` constructs `BuildContext` as
+   `new BuildContext(schema, catalog, ctx)`; `BuildContext` gains a
+   `RewriteContext ctx()` accessor and its two `namedReferences`
+   reads become `ctx.namedReferences()`.
+3. `FieldBuilder` already threads through `BuildContext`; its two
+   reads migrate to `bctx.ctx().outputPackage()` /
+   `bctx.ctx().namedReferences()`. No new parameter.
+4. Emitters invoked from `GraphQLRewriteGenerator` (type/fetcher
+   class generators) take `ctx` as a constructor argument or a
+   method argument on their `generate(...)` entry point. Each
+   generator picks the pattern that matches its current surface;
+   static factories become instance methods where necessary.
+5. `GeneratorUtils` is a static-helper class; its reads migrate to
+   methods that accept `BuildContext` (its callers already thread
+   one). Static-method signatures gain the `BuildContext` parameter
+   or the utility becomes instance-based, whichever the call-site
+   density favours.
+
+Generators invoked purely as static helpers (e.g. inline emitters)
+take `ctx` as a method parameter rather than holding state.
+Principle: `RewriteContext` is passed, never held in a static or
+`ThreadLocal`.
+
+**Deliverable:** 68 call sites edited across 18 files; ~150–200 LOC
+net change in rewrite core (mostly ctor/method parameters threading
+a single object, not logic changes). Plus the deletion of
+`RewriteConfig.java` (66 LOC).
+
+**Test fixtures.** Any rewrite-core test that currently populates
+`RewriteConfig.setProperties(...)` in `@BeforeEach` switches to
+constructing a `RewriteContext` directly. Tagged-inputs already
+established this pattern for `schemaInputs` + `basedir`; extending to
+the new fields is mechanical. Remove `RewriteConfig.clear()` calls
+from `@AfterEach` hooks when their only purpose was clearing the
+statics.
 
 ### Lifecycle and packaging
 
