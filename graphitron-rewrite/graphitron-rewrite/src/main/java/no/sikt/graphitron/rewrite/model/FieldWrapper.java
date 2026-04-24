@@ -54,31 +54,21 @@ public sealed interface FieldWrapper
     ) implements FieldWrapper {}
 
     /**
-     * The field returns a Relay cursor-paginated connection.
-     *
-     * <p>The element type is the type of the {@code edges.node} field in the schema.
+     * The field returns a Relay cursor-paginated connection. The per-type metadata
+     * (Connection name, element type name, item nullability) lives on the first-class
+     * {@link no.sikt.graphitron.rewrite.model.GraphitronType.ConnectionType} entry in
+     * {@link no.sikt.graphitron.rewrite.GraphitronSchema#types()}; this wrapper carries only
+     * the per-carrier-site information that varies independently of the Connection type.
      *
      * <p>{@code connectionNullable} is {@code true} when the connection wrapper itself may be
-     * null. {@code itemNullable} is {@code true} when individual {@code edges.node} items may be
-     * null.
+     * null at this carrier site.
      *
      * <p>{@code defaultPageSize} is the default page size when the client omits the {@code first}
-     * argument (from {@code @asConnection(defaultFirstValue:)}). Defaults to 100.
-     *
-     * <p>{@code connectionName} overrides the generated Connection type name (from
-     * {@code @asConnection(connectionName:)}). When {@code null}, the generator derives the name
-     * from the parent type and field name ({@code {ParentType}{FieldName}Connection}).
+     * argument (from {@code @asConnection(defaultFirstValue:)}). Defaults to 100. Per-site
+     * because two carriers returning the same Connection type may declare different defaults.
      */
     record Connection(
         boolean connectionNullable,
-        boolean itemNullable,
-        int defaultPageSize,
-        String connectionName
-    ) implements FieldWrapper {
-
-        /** Convenience constructor for structural detection (pre-expanded connection types). */
-        public Connection(boolean connectionNullable, boolean itemNullable) {
-            this(connectionNullable, itemNullable, DEFAULT_PAGE_SIZE, null);
-        }
-    }
+        int defaultPageSize
+    ) implements FieldWrapper {}
 }
