@@ -65,7 +65,7 @@ class PlatformIdPipelineTest {
         NODE_AND_METADATA_AGREE(
             "`@node(typeId:, keyColumns:)` matching metadata exactly → NodeType (accepted)",
             """
-            type Foo @table(name: "bar") @node(typeId: "Bar", keyColumns: ["id_1", "id_2"]) { name: String }
+            type Foo implements Node @table(name: "bar") @node(typeId: "Bar", keyColumns: ["id_1", "id_2"]) { id: ID! name: String }
             type Query { foo: Foo }
             """,
             schema -> {
@@ -78,7 +78,7 @@ class PlatformIdPipelineTest {
         NODE_WITHOUT_ARGS_DELEGATES_TO_METADATA(
             "`@node` with neither `typeId` nor `keyColumns` delegates to metadata on both axes",
             """
-            type Foo @table(name: "bar") @node { name: String }
+            type Foo implements Node @table(name: "bar") @node { id: ID! name: String }
             type Query { foo: Foo }
             """,
             schema -> {
@@ -88,41 +88,68 @@ class PlatformIdPipelineTest {
                     .containsExactly("id_1", "id_2");
             }),
 
-        TYPE_ID_DISAGREES(
-            "`@node(typeId: \"Foo\")` disagrees with metadata (\"Bar\") → UnclassifiedType with both sides",
+        TYPE_ID_DISAGREES_SDL_WINS(
+            "`@node(typeId: \"Foo\")` on a metadata-carrying table → NodeType with SDL typeId (durability: SDL author pins wire format)",
             """
-            type Foo @table(name: "bar") @node(typeId: "Foo", keyColumns: ["id_1", "id_2"]) { name: String }
+            type Foo implements Node @table(name: "bar") @node(typeId: "Foo", keyColumns: ["id_1", "id_2"]) { id: ID! name: String }
             type Query { foo: Foo }
             """,
             schema -> {
-                var t = (GraphitronType.UnclassifiedType) schema.type("Foo");
-                assertThat(t.reason())
-                    .contains("@node(typeId: \"Foo\")")
-                    .contains("typeId: \"Bar\"");
+                var t = (GraphitronType.NodeType) schema.type("Foo");
+                assertThat(t.typeId()).isEqualTo("Foo");
+                assertThat(t.nodeKeyColumns()).extracting(ColumnRef::sqlName)
+                    .containsExactly("id_1", "id_2");
             }),
 
-        KEY_COLUMNS_DISAGREE(
-            "`@node(keyColumns: [...])` disagrees with metadata → UnclassifiedType with both sides (typeId match is not a waiver)",
+        KEY_COLUMNS_ORDER_ONLY_DIFFERS_SDL_WINS(
+            "`@node(keyColumns: [...])` with same set but different order from metadata → NodeType with SDL order (WARN logged but not blocking)",
             """
-            type Foo @table(name: "bar") @node(typeId: "Bar", keyColumns: ["id_2", "id_1"]) { name: String }
+            type Foo implements Node @table(name: "bar") @node(typeId: "Bar", keyColumns: ["id_2", "id_1"]) { id: ID! name: String }
+            type Query { foo: Foo }
+            """,
+            schema -> {
+                var t = (GraphitronType.NodeType) schema.type("Foo");
+                assertThat(t.typeId()).isEqualTo("Bar");
+                assertThat(t.nodeKeyColumns()).extracting(ColumnRef::sqlName)
+                    .containsExactly("id_2", "id_1");
+            }),
+
+        KEY_COLUMNS_SET_DIFFERS_HARD_ERROR(
+            "`@node(keyColumns: [...])` with different *set* from metadata → UnclassifiedType (one side wrong about the schema)",
+            """
+            type Foo implements Node @table(name: "bar") @node(keyColumns: ["id_1"]) { id: ID! name: String }
             type Query { foo: Foo }
             """,
             schema -> {
                 var t = (GraphitronType.UnclassifiedType) schema.type("Foo");
                 assertThat(t.reason())
-                    .contains("@node(keyColumns:")
+                    .contains("column sets are different")
+                    .contains("[\"id_1\"]")
                     .contains("[\"id_1\", \"id_2\"]");
             }),
 
         TYPE_ID_ONLY_DISAGREES_KEY_COLUMNS_OMITTED(
-            "`@node(typeId: \"Foo\")` disagrees on typeId; keyColumns omitted → UnclassifiedType (partial disagreement still errors)",
+            "`@node(typeId: \"Foo\")` without keyColumns → NodeType (SDL typeId wins silently; keyColumns fall through to metadata)",
             """
-            type Foo @table(name: "bar") @node(typeId: "Foo") { name: String }
+            type Foo implements Node @table(name: "bar") @node(typeId: "Foo") { id: ID! name: String }
+            type Query { foo: Foo }
+            """,
+            schema -> {
+                var t = (GraphitronType.NodeType) schema.type("Foo");
+                assertThat(t.typeId()).isEqualTo("Foo");
+                assertThat(t.nodeKeyColumns()).extracting(ColumnRef::sqlName)
+                    .containsExactly("id_1", "id_2");
+            }),
+
+        NODE_WITHOUT_IMPLEMENTS_NODE(
+            "`@node` on a type that does not `implements Node` → UnclassifiedType (schema contract violation)",
+            """
+            type Foo @table(name: "bar") @node { name: String }
             type Query { foo: Foo }
             """,
             schema -> {
                 var t = (GraphitronType.UnclassifiedType) schema.type("Foo");
-                assertThat(t.reason()).contains("typeId");
+                assertThat(t.reason()).contains("implements Node");
             }),
 
         NO_METADATA_NO_NODE(
@@ -136,7 +163,7 @@ class PlatformIdPipelineTest {
         NODE_ONLY_NO_METADATA(
             "`@node` without metadata → NodeType with SDL-declared values (pre-pivot path preserved)",
             """
-            type Foo @table(name: "qux") @node(typeId: "Foo") { name: String }
+            type Foo implements Node @table(name: "qux") @node(typeId: "Foo") { id: ID! name: String }
             type Query { foo: Foo }
             """,
             schema -> {
