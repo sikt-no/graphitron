@@ -395,8 +395,8 @@ public final class SplitRowsMethodEmitter {
         // SelectedField as in Phase 2a's inline projection). The helper method name follows
         // Phase 2a's convention: <fieldName>InputRows.
         String lookupInputAlias = fieldName + "Input";
-        if (lookupMapping != null) {
-            List<LookupMapping.LookupColumn> lookupCols = lookupMapping.columns();
+        if (lookupMapping instanceof LookupMapping.ColumnMapping columnMapping) {
+            List<LookupMapping.ColumnMapping.LookupColumn> lookupCols = columnMapping.columns();
             // Typed Row<M+1> / Record<M+1> for lookupInput — idx + one cell per @lookupKey
             // column. Arity known at codegen time; the cap is enforced inside LookupValuesJoinEmitter
             // (which emits the helper this call consumes). DSL.values(Row<M+1>...) returns
@@ -464,9 +464,9 @@ public final class SplitRowsMethodEmitter {
         // types directly. Position mapping inside lookupInput: index 0 is idx, indices 1..M
         // are the lookup columns in LookupMapping order. Same USING-vs-ON reasoning as the
         // parent-input JOIN.
-        if (lookupMapping != null) {
+        if (lookupMapping instanceof LookupMapping.ColumnMapping columnMapping2) {
             var lookupOnCond = CodeBlock.builder();
-            List<LookupMapping.LookupColumn> lookupCols = lookupMapping.columns();
+            List<LookupMapping.ColumnMapping.LookupColumn> lookupCols = columnMapping2.columns();
             for (int i = 0; i < lookupCols.size(); i++) {
                 if (i > 0) lookupOnCond.add(".and(");
                 var col = lookupCols.get(i);

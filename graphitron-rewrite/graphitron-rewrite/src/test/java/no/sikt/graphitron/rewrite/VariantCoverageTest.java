@@ -36,6 +36,10 @@ class VariantCoverageTest {
             "Scheduled for deletion in plan-nodeid-directives after NodeType synthesis migration.",
         InputField.PlatformIdField.class,
             "Scheduled for deletion in plan-nodeid-directives after NodeType synthesis migration.",
+        InputField.NodeIdField.class,
+            "Covered by PlatformIdPipelineTest.InputCase (requires platformid fixture with "
+            + "__NODE_TYPE_ID/__NODE_KEY_COLUMNS metadata not available in the standard sakila catalog); "
+            + "add a GraphitronSchemaBuilderTest case when the platformid fixture is made available there.",
         GraphitronType.JooqRecordType.class,
             "No plain jOOQ Record<?> (non-TableRecord) fixture class in the test classpath; "
             + "add a case when a suitable fixture is introduced.",
