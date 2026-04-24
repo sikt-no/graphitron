@@ -30,7 +30,7 @@ rewrite code is gone, and the rewrite module's `pom.xml` loses its
 ## Scope boundaries
 
 - **In scope:** rewrite's build-time schema parsing at
-  `GraphQLRewriteGenerator.java:38` and the test-side equivalent in
+  `GraphQLRewriteGenerator.java:44` and the test-side equivalent in
   `TestSchemaHelper`. Removal of the Maven dep on `graphitron-common`
   from `graphitron-rewrite/graphitron-rewrite/pom.xml`.
 - **Out of scope:** emitted runtime code. `TypeRegistryMethodGenerator`
@@ -47,8 +47,8 @@ rewrite code is gone, and the rewrite module's `pom.xml` loses its
 
 One call site in rewrite main:
 
-- `GraphQLRewriteGenerator.java:24`: `import static no.sikt.graphql.schema.SchemaReadingHelper.getTypeDefinitionRegistry;`
-- `GraphQLRewriteGenerator.java:38`: `var registry = getTypeDefinitionRegistry(RewriteConfig.generatorSchemaFiles());`
+- `GraphQLRewriteGenerator.java:30`: `import static no.sikt.graphql.schema.SchemaReadingHelper.getTypeDefinitionRegistry;`
+- `GraphQLRewriteGenerator.java:44`: `var registry = getTypeDefinitionRegistry(RewriteConfig.generatorSchemaFiles());`
 
 Two doc-comment references that mention the helper by name (harmless,
 must be updated for accuracy):
@@ -65,19 +65,46 @@ string, and hands the resulting strings to `MultiSourceReader.Builder#string`.
 The intermediate `String` step is unnecessary: `MultiSourceReader.Builder`
 accepts `Reader`s directly.
 
-Directive injection, today: `GeneratorConfig.loadProperties` appends
-`GENERATOR_DIRECTIVES_PATH.getPath()` to the `generatorSchemaFiles` set
-before rewrite runs, so `RewriteConfig.generatorSchemaFiles()` inherits
-the legacy injection implicitly. The directives file lives at
-`graphitron-codegen-parent/graphitron-java-codegen/src/main/resources/schema/directives.graphqls`
-(tracked) and is also copied to `graphitron-common/src/main/resources/directives.graphqls`
-(the canonical file that the runtime helper loads from classpath). The
-two files currently agree on the rewrite-relevant directives; rewrite
-should get its own copy so it stops depending on legacy's pre-stuff.
+Directive injection, today: `GeneratorConfig.java:29` declares
+`GENERATOR_DIRECTIVES_PATH = GeneratorConfig.class.getResource("schema/directives.graphqls")`,
+then `GeneratorConfig.loadProperties` guards the conditional
+injection at `:98` (`if (GENERATOR_DIRECTIVES_PATH != null) inputFiles.add(...)`).
+The resource lookup resolves relative to
+`no.sikt.graphitron.configuration`, so the classloader searches for
+`no/sikt/graphitron/configuration/schema/directives.graphqls`. No
+source file or JAR entry exists at that path on the codegen
+module's classpath (confirmed: running
+`GeneratorConfig.class.getResource("schema/directives.graphqls")`
+against the compiled classes prints `null`). **The injection is a
+silent no-op today.** Rewrite consumers parse `@table` etc. because
+their `<userSchemaFiles>` lists explicitly include a classpath copy
+of `directives.graphqls` (or because tests prepend it via
+`TestSchemaHelper`), not because `GeneratorConfig` injects one.
 
-Test-side: `TestSchemaHelper.java:26-33` loads `directives.graphqls` from
-the test classpath (picked up from `graphitron-common`'s resource) and
-prepends it to every test SDL string. Once rewrite owns its own
+Two directive-source copies exist in-repo:
+
+- `graphitron-common/src/main/resources/directives.graphqls` (**292
+  lines, canonical**). Contains `@table`, `@field`, `@reference`,
+  `@asConnection`, `@node`, `@order`, and all other rewrite-relevant
+  directives. This is the file this plan mirrors into rewrite's
+  own resources.
+- `graphitron-schema-transform/src/main/resources/schema/directives.graphqls`
+  (14 lines, subset). Declares only `@asConnection`, `@connection`,
+  `@feature`; used by `graphitron-schema-transform` internally when
+  running its transforms. Irrelevant to rewrite; does not go away
+  with this plan.
+
+An unpacked build-time copy also appears at
+`graphitron-codegen-parent/graphitron-java-codegen/target/graphitron-common/schema/directives.graphqls`,
+produced by the `unpack-graphitron-directives-schema` execution in
+`graphitron-java-codegen/pom.xml`. It's consumed by jOOQ codegen as
+a schema-input path, not as a runtime classpath resource; not
+relevant here.
+
+Test-side: `TestSchemaHelper.java:31-37` loads `directives.graphqls` from
+the test classpath (picked up from `graphitron-common`'s root-level
+resource via `getClassLoader().getResourceAsStream("directives.graphqls")`)
+and prepends it to every test SDL string. Once rewrite owns its own
 directives resource, the helper updates to read from the new location.
 
 ## Proposed implementation
@@ -117,13 +144,16 @@ public final class RewriteSchemaLoader {
         var builder = MultiSourceReader.newMultiSourceReader();
         addDirectivesSource(builder);
         userSchemaPaths.forEach(path -> builder.reader(openSource(path), path));
-        var multi = builder.trackData(true).build();
-        var document = new Parser().parseDocument(
-            ParserEnvironment.newParserEnvironment()
-                .parserOptions(ParserOptions.getDefaultSdlParserOptions())
-                .document(multi)
-                .build());
-        return new SchemaParser().buildRegistry(document);
+        try (var multi = builder.trackData(true).build()) {
+            var document = new Parser().parseDocument(
+                ParserEnvironment.newParserEnvironment()
+                    .parserOptions(ParserOptions.getDefaultSdlParserOptions())
+                    .document(multi)
+                    .build());
+            return new SchemaParser().buildRegistry(document);
+        } catch (IOException e) {
+            throw new RuntimeException("Schema parse failed", e);
+        }
     }
 
     private static void addDirectivesSource(MultiSourceReader.Builder builder) {
@@ -161,13 +191,25 @@ verbatim because existing schema-file configs rely on both resolution
 modes (Quarkus dev mode in particular uses the context classloader
 path).
 
+Close semantics: the `try-with-resources` on `MultiSourceReader`
+closes it after the `SchemaParser` finishes. `MultiSourceReader`
+extends `java.io.Reader` and has its own `close()` method (verified
+against graphql-java 25.0's class file). The plan's assumption is
+that `MultiSourceReader.close()` cascades to each source-part
+`Reader`; verify this in `RewriteSchemaLoaderTest` by wrapping the
+fixture reader in an `InputStreamReader` over a test-controlled
+`ByteArrayInputStream` and asserting `close()` was invoked. If the
+cascade is absent, fall back to tracking each opened `Reader` in a
+`List<Reader>` and closing them in a `finally` block inside
+`load(...)`.
+
 ### 3. Switch `GraphQLRewriteGenerator` to the new loader
 
 Replace the static import and the call site:
 
-- `GraphQLRewriteGenerator.java:24`: remove `import static no.sikt.graphql.schema.SchemaReadingHelper.getTypeDefinitionRegistry;`, add
+- `GraphQLRewriteGenerator.java:30`: remove `import static no.sikt.graphql.schema.SchemaReadingHelper.getTypeDefinitionRegistry;`, add
   `import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;`
-- `GraphQLRewriteGenerator.java:38`: `var registry = RewriteSchemaLoader.load(RewriteConfig.generatorSchemaFiles());`
+- `GraphQLRewriteGenerator.java:44`: `var registry = RewriteSchemaLoader.load(RewriteConfig.generatorSchemaFiles());`
 
 `RewriteSchemaLoader.load(Collection<String>)` is agnostic to where
 the path list comes from; today it reads `RewriteConfig.generatorSchemaFiles()`
@@ -180,26 +222,13 @@ in its constructor and derives the file list from its
 of the `RewriteContext` shape. Neither downstream plan alters
 `RewriteSchemaLoader`'s public API.
 
-### 4. Stop the legacy pre-injection for rewrite
-
-`GeneratorConfig.loadProperties` appends `GENERATOR_DIRECTIVES_PATH.getPath()`
-to the schema file set at legacy-module level; once rewrite injects
-its own directives, rewrite would double-parse the legacy file.
-
-Fix: at `GenerateMojo.java:192-198`, populate
-`RewriteConfig.generatorSchemaFiles` from the unmodified
-`mojo.getSchemaFiles()` list rather than from `GeneratorConfig.generatorSchemaFiles()`.
-One-line change; rewrite's file set never sees the legacy directives
-path. Legacy continues to read `GeneratorConfig.generatorSchemaFiles()`
-unchanged.
-
-### 5. Update `TestSchemaHelper`
+### 4. Update `TestSchemaHelper`
 
 Change `TestSchemaHelper.loadDirectives()` to read rewrite's resource
 instead of graphitron-common's:
 
 ```java
-try (InputStream is = TestSchemaHelper.class.getResourceAsStream("schema/directives.graphqls")) {
+try (InputStream is = RewriteSchemaLoader.class.getResourceAsStream("schema/directives.graphqls")) {
     if (is == null) throw new IllegalStateException("schema/directives.graphqls not found on classpath");
     return new String(is.readAllBytes(), StandardCharsets.UTF_8);
 }
@@ -211,7 +240,7 @@ test files want. It does not go through `RewriteSchemaLoader`; the
 loader is the production entry point, the helper is the inline-test
 shortcut. Same directives file, two consumers.
 
-### 6. Drop the Maven dep
+### 5. Drop the Maven dep
 
 In `graphitron-rewrite/graphitron-rewrite/pom.xml`, remove:
 
@@ -224,20 +253,30 @@ In `graphitron-rewrite/graphitron-rewrite/pom.xml`, remove:
 ```
 
 Confirmation: `grep -rln 'no\.sikt\.graphql\|no\.sikt\.graphitron\.common'
-graphitron-rewrite/graphitron-rewrite/src/main/` must show only
-`ClassName.get(...)` references in `GeneratorUtils` / `TypeFetcherGenerator`
-(javapoet strings for emitted code, not imports). No actual import
-statement from `graphitron-common` should remain.
+graphitron-rewrite/graphitron-rewrite/src/main/` surfaces both live
+imports and javapoet `ClassName.get("no.sikt.graphql.…", …)` string
+literals in emitter sources (today: `GeneratorUtils`,
+`TypeFetcherGenerator`, `GraphitronContextInterfaceGenerator`, and
+any future emitter following the same pattern). The assertion this
+plan makes is narrower: **no live `import` statements** from
+`no.sikt.graphql.*` or `no.sikt.graphitron.common.*` may remain
+(only the post-`RewriteSchemaLoader` switch at `GraphQLRewriteGenerator.java:30`
+would violate this). String-literal javapoet references are
+expected and unaudited; they are emitted into generated Java, not
+executed in rewrite's own classpath.
 
-The test source tree still touches `graphitron-common` symbols
-indirectly via `graphitron-rewrite-fixtures` (which may transitively
-depend on common). Audit: if the fixtures module also has no
-`graphitron-common` compile dep at this point, the umbrella can close
-the Cleanup item entirely. If fixtures still depends on common, the
-rewrite-main dep drop is sufficient for this plan; the fixtures
-side lands with its own sub-item.
+Scope boundary: `graphitron-rewrite-fixtures/pom.xml` has **no**
+`graphitron-common` dependency today (verified). `graphitron-rewrite-test/pom.xml`
+has it as a compile dep (also verified). This plan drops the dep
+from `graphitron-rewrite/graphitron-rewrite/pom.xml` only; the
+`graphitron-rewrite-test` dep stays and retires with its own
+follow-up sub-item once `TestSchemaHelper` and other test-support
+code no longer reach into legacy symbols. The roadmap's Cleanup
+entry "Drop `graphitron-common` build dependency from
+`graphitron-rewrite`" absorbs into this plan; the analogous
+rewrite-test entry is tracked separately.
 
-### 7. Update stale doc comments
+### 6. Update stale doc comments
 
 - `ValidationError.java:9`: replace "when the schema is parsed via
   {@code SchemaReadingHelper}" with "{@code RewriteSchemaLoader}".
@@ -254,9 +293,12 @@ Pure documentation; no behavioural impact.
     providing a directives path (auto-injection proof).
   - Asserts a missing source throws `RuntimeException` with the path in
     the message (matches legacy's contract).
-  - Asserts each `Reader` is closed on the happy path (use
-    `InputStreamReader` wrapping a `ByteArrayInputStream` the test
-    controls, assert `close()` was called).
+  - Asserts each source-part `Reader` is closed on the happy path.
+    Wrap a fixture `Reader` in a counting / tracking subclass (or
+    use Mockito to spy on `close()`) and assert it was invoked
+    after `load(...)` returns. If the assertion fails, the loader
+    falls back to explicit per-Reader close-tracking (see §2's close
+    semantics paragraph).
 - **Pipeline:** the existing `GraphitronSchemaBuilderTest` suite passes
   unchanged. If any case fails, it indicates a directive-parsing
   regression, not a scope issue.
@@ -269,17 +311,15 @@ Pure documentation; no behavioural impact.
 
 ## Deliverable
 
-One commit covering six regions:
+One commit covering five regions:
 
 1. Add `graphitron-rewrite/graphitron-rewrite/src/main/resources/no/sikt/graphitron/rewrite/schema/directives.graphqls`
-   (copied verbatim from `graphitron-common/src/main/resources/directives.graphqls`).
+   (copied verbatim from `graphitron-common/src/main/resources/directives.graphqls`,
+   the 292-line canonical source).
 2. Add `RewriteSchemaLoader.java` + `RewriteSchemaLoaderTest.java`.
 3. Switch `GraphQLRewriteGenerator.java` to the new loader.
-4. `GenerateMojo` populates `RewriteConfig.generatorSchemaFiles`
-   from `mojo.getSchemaFiles()` (pre-pre-injection), not from
-   `GeneratorConfig.generatorSchemaFiles()`.
-5. Switch `TestSchemaHelper.loadDirectives()` to the rewrite resource.
-6. Remove the Maven dep from `graphitron-rewrite/graphitron-rewrite/pom.xml`;
+4. Switch `TestSchemaHelper.loadDirectives()` to the rewrite resource.
+5. Remove the Maven dep from `graphitron-rewrite/graphitron-rewrite/pom.xml`;
    update Javadoc in `ValidationError.java` and `BuildWarning.java`.
 
 Expected diff size: ~200 lines added (mostly the copied directives
@@ -321,8 +361,17 @@ first citizen of what will become rewrite's schema-pre-processing
 module boundary.
 
 **D3.** Keep the sync-check between graphitron-common's and rewrite's
-`directives.graphqls`? Options: (i) leave it manual for the migration
-window, (ii) add a build-time diff assertion, (iii) have rewrite's
-resource be a symlink or a generated copy. Recommend (i) for the
-migration window; drift between the two is detectable because legacy
-tests fail fast on unknown directives.
+`directives.graphqls`? Canonical source is
+`graphitron-common/src/main/resources/directives.graphqls` (the
+292-line copy). `graphitron-schema-transform`'s 14-line
+`schema/directives.graphqls` is not in scope: it's a transform-time
+subset (`@asConnection`, `@connection`, `@feature`) consumed only
+by `graphitron-schema-transform` itself and retires with that module.
+Options for the common ↔ rewrite sync: (i) leave it manual for the
+migration window, (ii) add a build-time diff assertion, (iii) have
+rewrite's resource be a generated copy via maven-resources-plugin
+filtering or similar. Recommend (i) for the migration window; drift
+between common and rewrite is detectable because legacy tests fail
+fast on unknown directives. Once the schema-transform module retires
+and graphitron-common's copy can be deleted, only rewrite's copy
+remains and the sync question is moot.
