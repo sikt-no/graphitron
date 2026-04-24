@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<settings>
+  <!--
+    Settings for maven-invoker-plugin integration tests.
+    The invoker:install goal installs the just-built plugin to the standard
+    local Maven repository before these ITs run. All other artifacts (jOOQ,
+    GraphQL-java, graphitron-rewrite-fixtures, etc.) must already be present
+    in the local repository; they are pre-cached by the regular build.
+  -->
+</settings>
