@@ -100,6 +100,7 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.InputField.ColumnField f            -> validateInputColumnField(f, errors);
             case no.sikt.graphitron.rewrite.model.InputField.ColumnReferenceField f  -> validateInputColumnReferenceField(f, errors);
             case no.sikt.graphitron.rewrite.model.InputField.NodeIdField f            -> {} // no extra validation yet
+            case no.sikt.graphitron.rewrite.model.InputField.NodeIdReferenceField f  -> {} // no extra validation yet
             case no.sikt.graphitron.rewrite.model.InputField.PlatformIdField f       -> validateInputPlatformIdField(f, errors);
             case no.sikt.graphitron.rewrite.model.InputField.NestingField f          -> validateInputNestingField(f, errors);
             case no.sikt.graphitron.rewrite.model.GraphitronField.NotGeneratedField f -> validateNotGeneratedField(f, errors);
