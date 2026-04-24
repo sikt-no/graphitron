@@ -8,20 +8,30 @@ import graphql.schema.GraphQLNamedType;
 import graphql.schema.GraphQLNonNull;
 import graphql.schema.GraphQLObjectType;
 import graphql.schema.GraphQLOutputType;
+import graphql.schema.GraphQLSchema;
+import graphql.schema.GraphQLSchemaElement;
 import graphql.schema.GraphQLTypeReference;
+import graphql.schema.GraphQLTypeVisitorStub;
 import graphql.schema.GraphQLAppliedDirective;
+import graphql.schema.SchemaTransformer;
 import graphql.schema.idl.EchoingWiringFactory;
 import graphql.schema.idl.ScalarInfo;
 import graphql.schema.idl.SchemaGenerator;
 import graphql.schema.idl.TypeDefinitionRegistry;
+import graphql.util.TraversalControl;
+import graphql.util.TraverserContext;
+import graphql.util.TreeTransformerUtil;
 
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ConnectionType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.EdgeType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.PageInfoType;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.rewrite.BuildContext.*;
@@ -77,10 +87,13 @@ public class GraphitronSchemaBuilder {
         bctx.svc = svc;
         var typeBuilder = new TypeBuilder(bctx, svc);
         var fieldBuilder = new FieldBuilder(bctx, svc);
-        return new Bundle(buildSchema(bctx, typeBuilder, fieldBuilder), assembled);
+        var result = buildSchema(bctx, typeBuilder, fieldBuilder);
+        return new Bundle(result.model, result.assembled);
     }
 
-    private static GraphitronSchema buildSchema(BuildContext ctx, TypeBuilder typeBuilder, FieldBuilder fieldBuilder) {
+    private record BuildResult(GraphitronSchema model, GraphQLSchema assembled) {}
+
+    private static BuildResult buildSchema(BuildContext ctx, TypeBuilder typeBuilder, FieldBuilder fieldBuilder) {
         validateDirectiveSchema(ctx);
         ctx.types = typeBuilder.buildTypes();
         var fields = new LinkedHashMap<FieldCoordinates, GraphitronField>();
@@ -100,9 +113,114 @@ public class GraphitronSchemaBuilder {
                         FieldCoordinates.coordinates(objType.getName(), fieldDef.getName()),
                         fieldBuilder.classifyField(fieldDef, objType.getName(), parentType)));
             });
-        promoteConnectionTypes(ctx);
-        return new GraphitronSchema(ctx.types, Collections.unmodifiableMap(fields), ctx.warnings());
+        var rewrites = promoteConnectionTypes(ctx);
+        var rebuiltAssembled = rebuildAssembledForConnections(ctx.schema, ctx.types, rewrites);
+        var model = new GraphitronSchema(ctx.types, Collections.unmodifiableMap(fields), ctx.warnings());
+        return new BuildResult(model, rebuiltAssembled);
     }
+
+    /**
+     * Rewrites directive-driven {@code @asConnection} carrier fields so their return type
+     * references the synthesised Connection and their arguments include {@code first} /
+     * {@code after}, and registers all directive-synthesised types
+     * ({@link ConnectionType}, {@link EdgeType}, {@link PageInfoType} entries absent from the
+     * original assembled schema) via {@code additionalType(...)}.
+     *
+     * <p>Returns the rebuilt schema; untouched types pass through by reference via
+     * {@link SchemaTransformer}, preserving applied directives and field order on everything
+     * outside the carrier set.
+     */
+    private static GraphQLSchema rebuildAssembledForConnections(
+            GraphQLSchema original,
+            Map<String, no.sikt.graphitron.rewrite.model.GraphitronType> types,
+            List<CarrierRewrite> rewrites) {
+        if (rewrites.isEmpty() && noSynthesisedTypes(original, types)) {
+            return original;
+        }
+
+        // Step 1: register synthesised types on the schema so later carrier rewrites can reference
+        // them by typeRef without graphql-java's build-time validation failing.
+        var withSynthesised = original;
+        boolean anySynth = false;
+        var extrasBuilder = GraphQLSchema.newSchema(original);
+        for (var entry : types.entrySet()) {
+            if (original.getType(entry.getKey()) != null) continue;
+            GraphQLObjectType schemaType = switch (entry.getValue()) {
+                case ConnectionType ct -> ct.schemaType();
+                case EdgeType et -> et.schemaType();
+                case PageInfoType pi -> pi.schemaType();
+                default -> null;
+            };
+            if (schemaType != null) {
+                extrasBuilder.additionalType(schemaType);
+                anySynth = true;
+            }
+        }
+        if (anySynth) withSynthesised = extrasBuilder.build();
+
+        if (rewrites.isEmpty()) return withSynthesised;
+
+        // Step 2: transform carrier fields. typeRef("<ConnName>") now resolves against the
+        // synthesised types added in step 1.
+        var rewriteIndex = new LinkedHashMap<String, CarrierRewrite>();
+        for (var r : rewrites) rewriteIndex.put(r.parentTypeName() + "." + r.fieldName(), r);
+
+        var visitor = new GraphQLTypeVisitorStub() {
+            @Override
+            public TraversalControl visitGraphQLFieldDefinition(
+                    GraphQLFieldDefinition node, TraverserContext<GraphQLSchemaElement> context) {
+                var parent = context.getParentNode();
+                if (!(parent instanceof GraphQLObjectType parentObj)) return TraversalControl.CONTINUE;
+                var rewrite = rewriteIndex.get(parentObj.getName() + "." + node.getName());
+                if (rewrite == null) return TraversalControl.CONTINUE;
+                var rewritten = rewriteCarrierField(node, rewrite);
+                return TreeTransformerUtil.changeNode(context, rewritten);
+            }
+        };
+        return SchemaTransformer.transformSchema(withSynthesised, visitor);
+    }
+
+    private static boolean noSynthesisedTypes(GraphQLSchema assembled,
+            Map<String, no.sikt.graphitron.rewrite.model.GraphitronType> types) {
+        for (var entry : types.entrySet()) {
+            var v = entry.getValue();
+            boolean isSynth = v instanceof ConnectionType || v instanceof EdgeType || v instanceof PageInfoType;
+            if (isSynth && assembled.getType(entry.getKey()) == null) return false;
+        }
+        return true;
+    }
+
+    /**
+     * Returns the rewritten carrier: return type swapped for the synthesised Connection's
+     * reference; {@code first} / {@code after} arguments appended after any existing ones.
+     * Description, deprecation, and applied directives pass through untouched.
+     */
+    private static GraphQLFieldDefinition rewriteCarrierField(GraphQLFieldDefinition original, CarrierRewrite rewrite) {
+        var ref = GraphQLTypeReference.typeRef(rewrite.connectionName());
+        GraphQLOutputType newType = rewrite.outerNonNull() ? GraphQLNonNull.nonNull(ref) : ref;
+        var firstArg = GraphQLArgument.newArgument()
+            .name("first")
+            .type(GraphQLTypeReference.typeRef("Int"))
+            .defaultValueProgrammatic(rewrite.defaultPageSize())
+            .build();
+        var afterArg = GraphQLArgument.newArgument()
+            .name("after")
+            .type(GraphQLTypeReference.typeRef("String"))
+            .build();
+        return original.transform(b -> b.type(newType).argument(firstArg).argument(afterArg));
+    }
+
+    /**
+     * Per-carrier info collected during connection-type promotion so the schema-rebuild pass can
+     * find and rewrite each directive-driven carrier field.
+     */
+    private record CarrierRewrite(
+        String parentTypeName,
+        String fieldName,
+        String connectionName,
+        int defaultPageSize,
+        boolean outerNonNull
+    ) {}
 
     /**
      * Promotes every carrier field that returns a Relay connection (directive-driven
@@ -119,7 +237,8 @@ public class GraphitronSchemaBuilder {
      * carrier that points at it. {@link PageInfoType} is registered once at most, and only when
      * at least one Connection is promoted and the SDL doesn't already declare {@code PageInfo}.
      */
-    private static void promoteConnectionTypes(BuildContext ctx) {
+    private static List<CarrierRewrite> promoteConnectionTypes(BuildContext ctx) {
+        var rewrites = new ArrayList<CarrierRewrite>();
         boolean pageInfoShareable = false;
         boolean anyConnectionSynthesised = false;
         for (var t : ctx.schema.getAllTypesAsList()) {
@@ -128,6 +247,20 @@ public class GraphitronSchemaBuilder {
             for (var fieldDef : objType.getFieldDefinitions()) {
                 ConnectionPromotion promotion = promotionFor(ctx, objType, fieldDef);
                 if (promotion == null) continue;
+                // Record a carrier rewrite only when the graphql-java return type actually needs
+                // to change — i.e. the current base-type name differs from the connection name.
+                // Directive-driven bare-list carriers need rewriting; structural carriers (where
+                // the SDL return type already names the Connection) do not, even when they
+                // carry @asConnection alongside.
+                String currentBaseName = baseTypeName(fieldDef.getType());
+                if (fieldDef.hasAppliedDirective(DIR_AS_CONNECTION)
+                        && !promotion.connectionName().equals(currentBaseName)) {
+                    rewrites.add(new CarrierRewrite(
+                        objType.getName(), fieldDef.getName(),
+                        promotion.connectionName(),
+                        resolveDefaultFirstValue(fieldDef),
+                        fieldDef.getType() instanceof GraphQLNonNull));
+                }
                 if (ctx.types.get(promotion.connectionName()) instanceof ConnectionType existing) {
                     pageInfoShareable |= existing.shareable();
                     anyConnectionSynthesised = true;
@@ -158,6 +291,19 @@ public class GraphitronSchemaBuilder {
             ctx.types.put("PageInfo", new PageInfoType(
                 "PageInfo", null, shareable, pageInfoObj));
         }
+        return rewrites;
+    }
+
+    private static int resolveDefaultFirstValue(GraphQLFieldDefinition field) {
+        var applied = field.getAppliedDirective(DIR_AS_CONNECTION);
+        if (applied == null) return no.sikt.graphitron.rewrite.model.FieldWrapper.DEFAULT_PAGE_SIZE;
+        var arg = applied.getArgument(ARG_DEFAULT_FIRST_VALUE);
+        if (arg == null || arg.getValue() == null) return no.sikt.graphitron.rewrite.model.FieldWrapper.DEFAULT_PAGE_SIZE;
+        Object v = arg.getValue();
+        if (v instanceof Integer i) return i;
+        if (v instanceof Number n) return n.intValue();
+        if (v instanceof graphql.language.IntValue iv) return iv.getValue().intValueExact();
+        return no.sikt.graphitron.rewrite.model.FieldWrapper.DEFAULT_PAGE_SIZE;
     }
 
     private record ConnectionPromotion(
