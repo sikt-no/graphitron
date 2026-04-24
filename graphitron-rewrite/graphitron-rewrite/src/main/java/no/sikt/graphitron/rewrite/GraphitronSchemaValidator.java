@@ -55,6 +55,7 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.GraphitronType.ConnectionType t     -> {} // structural validation is a downstream concern
             case no.sikt.graphitron.rewrite.model.GraphitronType.EdgeType t           -> {} // structural validation is a downstream concern
             case no.sikt.graphitron.rewrite.model.GraphitronType.PageInfoType t       -> {} // structural validation is a downstream concern
+            case no.sikt.graphitron.rewrite.model.GraphitronType.PlainObjectType t    -> {} // no domain directives, nothing to validate structurally
             case no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType t   -> validateUnclassifiedType(t, errors);
         }
     }

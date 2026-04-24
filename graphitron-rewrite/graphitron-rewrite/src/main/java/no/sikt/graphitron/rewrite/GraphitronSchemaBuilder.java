@@ -90,6 +90,11 @@ public class GraphitronSchemaBuilder {
             .forEach(objType -> {
                 var parentType = ctx.types.get(objType.getName());
                 if (parentType == null) return;
+                // Fields on plain SDL object types (no domain directive) are the developer's
+                // responsibility to wire — the classifier records the parent in schema.types()
+                // but leaves per-field classification out. Matches pre-Phase-4 behaviour where
+                // such types had no entries in schema.fields().
+                if (parentType instanceof no.sikt.graphitron.rewrite.model.GraphitronType.PlainObjectType) return;
                 objType.getFieldDefinitions().forEach(fieldDef ->
                     fields.put(
                         FieldCoordinates.coordinates(objType.getName(), fieldDef.getName()),
