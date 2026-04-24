@@ -273,6 +273,107 @@ class TagApplierTest {
     }
 
     @Test
+    void extendInterfaceFieldGainsTagAndStaysInExtensionsMap() {
+        var registry = InMemoryRegistry.of(Map.of(
+            "base.graphqls", "interface Named { id: ID! }",
+            "ext.graphqls", "extend interface Named { description: String }"
+        ));
+        var inputs = SchemaInputAttribution.build(List.of(
+            new SchemaInput("base.graphqls", Optional.empty(), Optional.empty()),
+            new SchemaInput("ext.graphqls", Optional.of("iface-ext"), Optional.empty())
+        ));
+
+        TagApplier.apply(registry, inputs);
+
+        var base = (InterfaceTypeDefinition) registry.getType("Named").orElseThrow();
+        assertThat(base.getFieldDefinitions().getFirst().getDirectives()).isEmpty();
+
+        var extensions = registry.interfaceTypeExtensions().get("Named");
+        assertThat(extensions).hasSize(1);
+        var extension = extensions.getFirst();
+        assertThat(extension.getFieldDefinitions()).hasSize(1);
+        assertThat(tagValue(extension.getFieldDefinitions().getFirst())).isEqualTo("iface-ext");
+    }
+
+    @Test
+    void extendInputObjectFieldGainsTagAndStaysInExtensionsMap() {
+        var registry = InMemoryRegistry.of(Map.of(
+            "base.graphqls", "input FooInput { id: ID! }",
+            "ext.graphqls", "extend input FooInput { name: String }"
+        ));
+        var inputs = SchemaInputAttribution.build(List.of(
+            new SchemaInput("base.graphqls", Optional.empty(), Optional.empty()),
+            new SchemaInput("ext.graphqls", Optional.of("input-ext"), Optional.empty())
+        ));
+
+        TagApplier.apply(registry, inputs);
+
+        var base = (InputObjectTypeDefinition) registry.getType("FooInput").orElseThrow();
+        assertThat(base.getInputValueDefinitions().getFirst().getDirectives()).isEmpty();
+
+        var extensions = registry.inputObjectTypeExtensions().get("FooInput");
+        assertThat(extensions).hasSize(1);
+        var extension = extensions.getFirst();
+        assertThat(extension.getInputValueDefinitions()).hasSize(1);
+        assertThat(tagValue(extension.getInputValueDefinitions().getFirst())).isEqualTo("input-ext");
+    }
+
+    @Test
+    void extendEnumValueGainsTagAndStaysInExtensionsMap() {
+        var registry = InMemoryRegistry.of(Map.of(
+            "base.graphqls", "enum Color { RED }",
+            "ext.graphqls", "extend enum Color { GREEN BLUE }"
+        ));
+        var inputs = SchemaInputAttribution.build(List.of(
+            new SchemaInput("base.graphqls", Optional.empty(), Optional.empty()),
+            new SchemaInput("ext.graphqls", Optional.of("enum-ext"), Optional.empty())
+        ));
+
+        TagApplier.apply(registry, inputs);
+
+        var base = (EnumTypeDefinition) registry.getType("Color").orElseThrow();
+        assertThat(base.getEnumValueDefinitions().getFirst().getDirectives()).isEmpty();
+
+        var extensions = registry.enumTypeExtensions().get("Color");
+        assertThat(extensions).hasSize(1);
+        var extension = extensions.getFirst();
+        assertThat(extension.getEnumValueDefinitions()).hasSize(2);
+        assertThat(tagValue(extension.getEnumValueDefinitions().getFirst())).isEqualTo("enum-ext");
+        assertThat(tagValue(extension.getEnumValueDefinitions().get(1))).isEqualTo("enum-ext");
+    }
+
+    @Test
+    void extendUnionDeclarationGainsTagAndStaysInExtensionsMap() {
+        // Union extension can add members (= C) or directives; tagging the extension
+        // itself is the in-scope operation for TagApplier. We add a member so the
+        // extension has content beyond the @tag the applier injects.
+        var registry = InMemoryRegistry.of(Map.of(
+            "base.graphqls", """
+                type A { id: ID! }
+                type B { id: ID! }
+                union AB = A | B
+                """,
+            "ext.graphqls", """
+                type C { id: ID! }
+                extend union AB = C
+                """
+        ));
+        var inputs = SchemaInputAttribution.build(List.of(
+            new SchemaInput("base.graphqls", Optional.empty(), Optional.empty()),
+            new SchemaInput("ext.graphqls", Optional.of("union-ext"), Optional.empty())
+        ));
+
+        TagApplier.apply(registry, inputs);
+
+        var base = (UnionTypeDefinition) registry.getType("AB").orElseThrow();
+        assertThat(base.getDirectives()).isEmpty();
+
+        var extensions = registry.unionTypeExtensions().get("AB");
+        assertThat(extensions).hasSize(1);
+        assertThat(tagValue(extensions.getFirst())).isEqualTo("union-ext");
+    }
+
+    @Test
     void tagValueWithQuotesAndUnicodeRoundTrips() {
         var registry = InMemoryRegistry.of(Map.of(
             "t.graphqls", "type Foo { id: ID! }"

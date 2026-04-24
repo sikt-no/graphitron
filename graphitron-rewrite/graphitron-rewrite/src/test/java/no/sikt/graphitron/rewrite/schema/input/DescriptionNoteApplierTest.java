@@ -260,6 +260,102 @@ class DescriptionNoteApplierTest {
     }
 
     @Test
+    void extendInterfaceFieldGainsNoteAndExtensionStaysInExtensionsMap() {
+        var registry = InMemoryRegistry.of(Map.of(
+            "base.graphqls", "interface Named { id: ID! }",
+            "ext.graphqls", "extend interface Named { description: String }"
+        ));
+        var inputs = SchemaInputAttribution.build(List.of(
+            new SchemaInput("base.graphqls", Optional.empty(), Optional.empty()),
+            new SchemaInput("ext.graphqls", Optional.empty(), Optional.of("Interface extension note."))
+        ));
+
+        DescriptionNoteApplier.apply(registry, inputs);
+
+        var base = (InterfaceTypeDefinition) registry.getType("Named").orElseThrow();
+        assertThat(base.getFieldDefinitions().getFirst().getDescription()).isNull();
+
+        var extensions = registry.interfaceTypeExtensions().get("Named");
+        assertThat(extensions).hasSize(1);
+        assertThat(extensions.getFirst().getFieldDefinitions().getFirst().getDescription().getContent())
+            .isEqualTo("Interface extension note.");
+    }
+
+    @Test
+    void extendInputObjectFieldGainsNoteAndExtensionStaysInExtensionsMap() {
+        var registry = InMemoryRegistry.of(Map.of(
+            "base.graphqls", "input FooInput { id: ID! }",
+            "ext.graphqls", "extend input FooInput { name: String }"
+        ));
+        var inputs = SchemaInputAttribution.build(List.of(
+            new SchemaInput("base.graphqls", Optional.empty(), Optional.empty()),
+            new SchemaInput("ext.graphqls", Optional.empty(), Optional.of("Input extension note."))
+        ));
+
+        DescriptionNoteApplier.apply(registry, inputs);
+
+        var base = (InputObjectTypeDefinition) registry.getType("FooInput").orElseThrow();
+        assertThat(base.getInputValueDefinitions().getFirst().getDescription()).isNull();
+
+        var extensions = registry.inputObjectTypeExtensions().get("FooInput");
+        assertThat(extensions).hasSize(1);
+        assertThat(extensions.getFirst().getInputValueDefinitions().getFirst().getDescription().getContent())
+            .isEqualTo("Input extension note.");
+    }
+
+    @Test
+    void extendEnumValueGainsNoteAndExtensionStaysInExtensionsMap() {
+        var registry = InMemoryRegistry.of(Map.of(
+            "base.graphqls", "enum Color { RED }",
+            "ext.graphqls", "extend enum Color { GREEN BLUE }"
+        ));
+        var inputs = SchemaInputAttribution.build(List.of(
+            new SchemaInput("base.graphqls", Optional.empty(), Optional.empty()),
+            new SchemaInput("ext.graphqls", Optional.empty(), Optional.of("Enum extension note."))
+        ));
+
+        DescriptionNoteApplier.apply(registry, inputs);
+
+        var base = (EnumTypeDefinition) registry.getType("Color").orElseThrow();
+        assertThat(base.getEnumValueDefinitions().getFirst().getDescription()).isNull();
+
+        var extensions = registry.enumTypeExtensions().get("Color");
+        assertThat(extensions).hasSize(1);
+        var extValues = extensions.getFirst().getEnumValueDefinitions();
+        assertThat(extValues).hasSize(2);
+        assertThat(extValues.getFirst().getDescription().getContent()).isEqualTo("Enum extension note.");
+        assertThat(extValues.get(1).getDescription().getContent()).isEqualTo("Enum extension note.");
+    }
+
+    @Test
+    void extendUnionDeclarationGainsNoteAndStaysInExtensionsMap() {
+        var registry = InMemoryRegistry.of(Map.of(
+            "base.graphqls", """
+                type A { id: ID! }
+                type B { id: ID! }
+                union AB = A | B
+                """,
+            "ext.graphqls", """
+                type C { id: ID! }
+                extend union AB = C
+                """
+        ));
+        var inputs = SchemaInputAttribution.build(List.of(
+            new SchemaInput("base.graphqls", Optional.empty(), Optional.empty()),
+            new SchemaInput("ext.graphqls", Optional.empty(), Optional.of("Union extension note."))
+        ));
+
+        DescriptionNoteApplier.apply(registry, inputs);
+
+        var base = (UnionTypeDefinition) registry.getType("AB").orElseThrow();
+        assertThat(base.getDescription()).isNull();
+
+        var extensions = registry.unionTypeExtensions().get("AB");
+        assertThat(extensions).hasSize(1);
+        assertThat(extensions.getFirst().getDescription().getContent()).isEqualTo("Union extension note.");
+    }
+
+    @Test
     void existingDescriptionIsStrippedBeforeConcat() {
         // Leading / trailing whitespace on the existing description is dropped
         // before the "\n\n<note>" append; keeps the output deterministic.

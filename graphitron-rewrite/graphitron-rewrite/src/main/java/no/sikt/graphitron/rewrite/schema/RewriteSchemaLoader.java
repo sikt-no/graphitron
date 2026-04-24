@@ -59,32 +59,45 @@ public final class RewriteSchemaLoader {
 
     /**
      * Wraps {@code inner} so that after it reports EOF the stream emits one final
-     * newline character. Without this, {@link MultiSourceReader} would attribute the
-     * first line of each subsequent source to the previous source's name when the
-     * previous source does not end with a newline: source-name tracking is
-     * line-terminator-based, and an unterminated last line bleeds into the next
-     * reader. Rewrite's tag / description-note appliers rely on
-     * {@code SourceLocation.getSourceName()} matching the {@code SchemaInput}'s key,
-     * so accurate attribution is a correctness requirement, not a cosmetic concern.
+     * newline character, unless the inner stream already ended with one. Without this,
+     * {@link MultiSourceReader} would attribute the first line of each subsequent
+     * source to the previous source's name when the previous source does not end with
+     * a newline: source-name tracking is line-terminator-based, and an unterminated
+     * last line bleeds into the next reader. Rewrite's tag / description-note
+     * appliers rely on {@code SourceLocation.getSourceName()} matching the
+     * {@code SchemaInput}'s key, so accurate attribution is a correctness
+     * requirement, not a cosmetic concern.
+     *
+     * <p>The last-char check avoids doubling-up the newline for sources that are
+     * already terminated (the common case: editors default to a trailing newline).
+     * Without it, {@code SourceLocation.line} numbers in parse-error diagnostics
+     * would shift by one on the synthetic trailing blank for every non-terminal
+     * source in the pipeline.
      */
     private static Reader terminated(Reader inner) {
         return new Reader() {
             private boolean upstreamExhausted = false;
-            private boolean newlineEmitted = false;
+            private boolean done = false;
+            private char lastChar;
+            private boolean hasLastChar = false;
 
             @Override
             public int read(char[] buf, int off, int len) throws IOException {
                 if (!upstreamExhausted) {
                     int n = inner.read(buf, off, len);
-                    if (n >= 0) return n;
+                    if (n > 0) {
+                        lastChar = buf[off + n - 1];
+                        hasLastChar = true;
+                        return n;
+                    }
+                    if (n == 0) return 0;  // caller passed len==0; pass through
                     upstreamExhausted = true;
                 }
-                if (!newlineEmitted && len > 0) {
-                    buf[off] = '\n';
-                    newlineEmitted = true;
-                    return 1;
-                }
-                return -1;
+                if (done || len <= 0) return -1;
+                done = true;
+                if (hasLastChar && lastChar == '\n') return -1;  // already terminated
+                buf[off] = '\n';
+                return 1;
             }
 
             @Override

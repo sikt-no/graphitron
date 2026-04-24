@@ -45,6 +45,32 @@ class RewriteSchemaLoaderTest {
     }
 
     @Test
+    void unterminatedFirstSourceDoesNotBleedSourceNameIntoSecond(@TempDir Path tmp) throws IOException {
+        // Regression ratchet for the terminated() Reader wrapper in RewriteSchemaLoader.
+        // MultiSourceReader attributes source names line-by-line; without the wrapper,
+        // an input whose final line is not newline-terminated bleeds into the next
+        // source and the second source's first definition carries the wrong source-name.
+        // This test writes a first file WITHOUT a trailing newline (intentionally a raw
+        // string, not a text block) and asserts the second source's node still reports
+        // its own file as the source. Deleting the terminated() wrapper would fail here.
+        Path first = tmp.resolve("first.graphqls");
+        Files.writeString(first, "type Foo { id: ID! }", StandardCharsets.UTF_8);
+        assertThat(Files.readString(first)).doesNotEndWith("\n");  // pin the fixture shape
+
+        Path second = tmp.resolve("second.graphqls");
+        Files.writeString(second, """
+            type Bar { id: ID! }
+            """);
+
+        var registry = RewriteSchemaLoader.load(List.of(first.toString(), second.toString()));
+
+        var bar = registry.getType("Bar").orElseThrow();
+        var location = bar.getSourceLocation();
+        assertThat(location).isNotNull();
+        assertThat(location.getSourceName()).isEqualTo(second.toString());
+    }
+
+    @Test
     void missingSourceThrowsRuntimeExceptionWithPathInMessage() {
         String missing = "/nope/absolutely-does-not-exist.graphqls";
         assertThatThrownBy(() -> RewriteSchemaLoader.load(List.of(missing)))

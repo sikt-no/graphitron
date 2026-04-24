@@ -523,9 +523,10 @@ bugs: an extension → base-definition downgrade on transform, and a
 `MultiSourceReader` source-name-attribution miss on unterminated
 inputs. Both fixes landed alongside the test that surfaced them.
 
-Review of `8adaaa5e` surfaced three new items (F1-F3 below); F1 is
-substantive and should close before flipping to Done, F2 and F3 are
-nice-to-have.
+Review of `8adaaa5e` surfaced three new items (F1-F3 below). All
+three addressed in a follow-up commit: F1 and F2 per reviewer ask;
+F3 promoted from "no fix recommended" to "fixed" since the
+last-char tracking was a small delta on the wrapper.
 
 ### M1. `run()` has no end-to-end test
 
@@ -700,6 +701,13 @@ second source's path. The assertion must go through `SourceLocation`
 on the registry's `Definition`, not through an applier map, so it
 pins the invariant the wrapper preserves.
 
+*Resolution.* Added `unterminatedFirstSourceDoesNotBleedSourceNameIntoSecond`
+in `RewriteSchemaLoaderTest`. Fixture uses a raw string (not a text
+block) and `assertThat(readString).doesNotEndWith("\n")` pins the
+fixture shape so a future refactor that auto-terminates the fixture
+can't silently defeat the ratchet. Deleting the `terminated()`
+wrapper in production fails this test.
+
 ### F2. Extension coverage is Object-only
 
 `8adaaa5e` added 10 new transform methods (5 kinds × 2 appliers:
@@ -716,6 +724,15 @@ five kinds, or add four more per applier (eight new cases total).
 `TagApplierTest.java:245-272` shows the test shape; each case is
 roughly 20 LOC and mechanical.
 
+*Resolution.* Added four extension tests per applier (Interface,
+InputObject, Enum, Union) mirroring the existing Object case. Eight
+new tests total; each asserts the child element gains its directive /
+note AND the extension stays in the correct `*TypeExtensions()` map
+rather than being moved into `types()`. For the Union test, the
+extension adds a member (`extend union AB = C`) rather than relying
+on the applier's injected `@tag` / note alone, so the extension has
+content independent of what the applier adds.
+
 ### F3. `terminated()` double-terminates already-terminated input
 
 The wrapper unconditionally appends `\n` at EOF regardless of the
@@ -729,6 +746,12 @@ redundant `\n` is more wrapper complexity than the invariant
 warrants; flag for awareness only. Revisit if `SourceLocation.line`
 precision on the last line of a source ever matters for error
 reporting.
+
+*Resolution.* Fixed anyway — the "last-emitted char" delta turned
+out to be four lines (save `buf[off + n - 1]` into a field on every
+successful read, check it at EOF before emitting the synthetic
+`\n`). Worth paying once for deterministic line numbers across
+every parse-error diagnostic the loader will ever produce.
 
 ## Roadmap integration
 
