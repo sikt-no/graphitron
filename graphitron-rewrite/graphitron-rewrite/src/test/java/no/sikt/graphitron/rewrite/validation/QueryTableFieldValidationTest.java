@@ -85,7 +85,7 @@ class QueryTableFieldValidationTest {
 
         PAGINATED_WITH_ORDERING("connection with pagination and ordering — valid",
             new QueryTableField("Query", "films", null,
-                filmReturn(new FieldWrapper.Connection(true, true)),
+                filmReturn(new FieldWrapper.Connection(true, 100)),
                 List.of(), PK_ORDER,
                 new PaginationSpec(
                     new PaginationSpec.PaginationArg("first", "Int", false),
@@ -96,7 +96,7 @@ class QueryTableFieldValidationTest {
 
         PAGINATED_WITHOUT_ORDERING("connection with pagination but no ordering — error",
             new QueryTableField("Query", "films", null,
-                filmReturn(new FieldWrapper.Connection(true, true)),
+                filmReturn(new FieldWrapper.Connection(true, 100)),
                 List.of(), new OrderBySpec.None(),
                 new PaginationSpec(
                     new PaginationSpec.PaginationArg("first", "Int", false),

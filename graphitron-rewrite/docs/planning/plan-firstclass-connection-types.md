@@ -1,6 +1,6 @@
 # Plan: promote Connection, Edge, and PageInfo to first-class `GraphitronType` variants
 
-> **Status:** In Progress
+> **Status:** In Review
 >
 > Today `schema.types()` lies about what the generator emits. A schema with
 > `stores: [Store!]! @asConnection` gets `Store` as a `TableType` entry and

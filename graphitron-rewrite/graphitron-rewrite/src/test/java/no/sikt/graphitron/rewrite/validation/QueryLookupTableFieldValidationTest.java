@@ -73,7 +73,7 @@ class QueryLookupTableFieldValidationTest {
 
         CONNECTION_RETURN("connection return — never valid on lookup",
             new QueryLookupTableField("Query", "filmById", null,
-                new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", List.of()), new FieldWrapper.Connection(true, true)),
+                new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", List.of()), new FieldWrapper.Connection(true, 100)),
                 List.of(), new OrderBySpec.None(), null, EMPTY_LOOKUP),
             List.of("Field 'Query.filmById': lookup fields must not return a connection")),
 
@@ -83,7 +83,7 @@ class QueryLookupTableFieldValidationTest {
 
         CONNECTION_AND_ORDERBY("connection return AND @orderBy — two independent errors",
             new QueryLookupTableField("Query", "filmById", null,
-                new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", List.of()), new FieldWrapper.Connection(true, true)),
+                new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", List.of()), new FieldWrapper.Connection(true, 100)),
                 List.of(), new OrderBySpec.Argument("order", "FilmOrder", false, false, "sortField", "direction", List.of(), new OrderBySpec.None()), null, EMPTY_LOOKUP),
             List.of(
                 "Field 'Query.filmById': lookup fields must not return a connection",

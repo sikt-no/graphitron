@@ -432,7 +432,7 @@ class TypeFetcherGeneratorTest {
         var orderBy = new OrderBySpec.Fixed(
             List.of(new OrderBySpec.ColumnOrderEntry(TestFixtures.filmIdCol(), null)), "ASC");
         return new QueryField.QueryTableField("Query", name, null,
-            TestFixtures.tableBoundFilm(new FieldWrapper.Connection(true, true, 100, null)),
+            TestFixtures.tableBoundFilm(new FieldWrapper.Connection(true, 100)),
             List.of(), orderBy, forwardPagination());
     }
 
@@ -447,7 +447,7 @@ class TypeFetcherGeneratorTest {
             "order", "FilmOrder", false, false, "field", "direction",
             List.of(namedOrder), base);
         return new QueryField.QueryTableField("Query", name, null,
-            TestFixtures.tableBoundFilm(new FieldWrapper.Connection(true, true, 100, null)),
+            TestFixtures.tableBoundFilm(new FieldWrapper.Connection(true, 100)),
             List.of(), orderBy, forwardPagination());
     }
 
@@ -483,7 +483,7 @@ class TypeFetcherGeneratorTest {
             new PaginationSpec.PaginationArg("cursor", "String", false),
             null);
         var field = new QueryField.QueryTableField("Query", "films", null,
-            TestFixtures.tableBoundFilm(new FieldWrapper.Connection(true, true, 100, null)),
+            TestFixtures.tableBoundFilm(new FieldWrapper.Connection(true, 100)),
             List.of(), orderBy, customPagination);
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(field));
         // intentional body-content assertion — no structural equivalent.

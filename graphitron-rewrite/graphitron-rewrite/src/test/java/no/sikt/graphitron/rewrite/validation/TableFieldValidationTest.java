@@ -83,7 +83,7 @@ class TableFieldValidationTest {
 
         PAGINATED_WITH_ORDERING("connection with pagination and ordering",
             new TableField("Film", "actors", null,
-                actorReturn(new FieldWrapper.Connection(true, true)),
+                actorReturn(new FieldWrapper.Connection(true, 100)),
                 List.of(), List.of(),
                 new OrderBySpec.Fixed(List.of(new OrderBySpec.ColumnOrderEntry(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer"), null)), "ASC"),
                 new PaginationSpec(
@@ -95,7 +95,7 @@ class TableFieldValidationTest {
 
         PAGINATED_WITHOUT_ORDERING("connection with pagination but no ordering — error",
             new TableField("Film", "actors", null,
-                actorReturn(new FieldWrapper.Connection(true, true)),
+                actorReturn(new FieldWrapper.Connection(true, 100)),
                 List.of(), List.of(),
                 new OrderBySpec.None(),
                 new PaginationSpec(

@@ -387,12 +387,12 @@ class FieldBuilder {
         boolean outerNullable = !(fieldType instanceof GraphQLNonNull);
         GraphQLType unwrappedOnce = GraphQLTypeUtil.unwrapNonNull(fieldType);
 
-        // @asConnection on a list field → Connection wrapper
-        if (fieldDef.hasAppliedDirective(DIR_AS_CONNECTION) && unwrappedOnce instanceof GraphQLList listType) {
-            boolean itemNullable = !(listType.getWrappedType() instanceof GraphQLNonNull);
+        // @asConnection on a list field → Connection wrapper.
+        // Per-type metadata (name, element, item nullability) lives on ConnectionType in
+        // schema.types(); this wrapper only carries per-carrier-site pagination metadata.
+        if (fieldDef.hasAppliedDirective(DIR_AS_CONNECTION) && unwrappedOnce instanceof GraphQLList) {
             int defaultPageSize = resolveDefaultFirstValue(fieldDef);
-            String connectionName = argString(fieldDef, DIR_AS_CONNECTION, ARG_CONNECTION_NAME).orElse(null);
-            return new FieldWrapper.Connection(outerNullable, itemNullable, defaultPageSize, connectionName);
+            return new FieldWrapper.Connection(outerNullable, defaultPageSize);
         }
 
         if (unwrappedOnce instanceof GraphQLList listType) {
@@ -401,12 +401,9 @@ class FieldBuilder {
         }
 
         // Structural detection: pre-expanded Connection type with edges.node pattern.
-        // Pass typeName as connectionName so wiring uses the SDL type name directly
-        // instead of deriving "<Parent><Field>Connection" from the field declaration.
         String typeName = baseTypeName(fieldDef);
         if (ctx.isConnectionType(typeName)) {
-            boolean itemNullable = ctx.connectionItemNullable(typeName);
-            return new FieldWrapper.Connection(outerNullable, itemNullable, FieldWrapper.DEFAULT_PAGE_SIZE, typeName);
+            return new FieldWrapper.Connection(outerNullable, FieldWrapper.DEFAULT_PAGE_SIZE);
         }
 
         return new FieldWrapper.Single(outerNullable);
