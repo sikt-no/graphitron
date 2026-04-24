@@ -87,6 +87,18 @@ public final class GraphitronSchemaClassGenerator {
         for (String name : plan.additionalTypeNames) {
             body.add("\n.additionalType($T.type())", ClassName.get(schemaPackage, name + "Type"));
         }
+        // Synthesised Connection and Edge types (directive-driven @asConnection fields).
+        var synthPlan = ConnectionSynthesis.buildPlan(assembled);
+        var sortedConnNames = new ArrayList<>(synthPlan.connections().keySet());
+        sortedConnNames.sort(Comparator.naturalOrder());
+        for (String connName : sortedConnNames) {
+            String edgeName = ConnectionSynthesis.resolveEdgeName(connName);
+            body.add("\n.additionalType($T.type())", ClassName.get(schemaPackage, connName + "Type"));
+            body.add("\n.additionalType($T.type())", ClassName.get(schemaPackage, edgeName + "Type"));
+        }
+        if (synthPlan.needPageInfo()) {
+            body.add("\n.additionalType($T.type())", ClassName.get(schemaPackage, "PageInfoType"));
+        }
         // Built-in GraphQL scalars aren't auto-registered on a programmatic schema; the SDL
         // path in SchemaGenerator used to add them for us. Register the five graphql-spec
         // scalars so every typeRef("Int") / typeRef("String") / … resolves at build time.

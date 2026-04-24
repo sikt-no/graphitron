@@ -1441,4 +1441,41 @@ class GraphQLQueryTest {
         assertThat(byId.get(1)).extracting(a -> a.get("actorId")).containsExactlyInAnyOrder(1, 2);
         assertThat(byId.get(2)).extracting(a -> a.get("actorId")).containsExactly(1);
     }
+
+    // ===== stores — directive-driven @asConnection (emit-time synthesis) =====
+
+    @Test
+    void stores_synthesisedConnection_returnsEdgesAndPageInfo() {
+        // The QueryStoresConnection / QueryStoresEdge types are synthesised at emit time
+        // (not hand-written). This test proves SDL → classifier → synthesis → programmatic
+        // schema → fetcher runtime compose end-to-end.
+        // The test DB has 2 stores; request first:1 so hasNextPage is true.
+        Map<String, Object> data = execute(
+            "{ stores(first: 1) { edges { cursor node { storeId } } pageInfo { hasNextPage hasPreviousPage } } }");
+        var conn = (Map<String, Object>) data.get("stores");
+        List<Map<String, Object>> edges = (List<Map<String, Object>>) conn.get("edges");
+        assertThat(edges).hasSize(1);
+        assertThat(edges.get(0)).containsKey("cursor");
+        assertThat(((Map<String, Object>) edges.get(0).get("node")).get("storeId")).isNotNull();
+        var pageInfo = (Map<String, Object>) conn.get("pageInfo");
+        assertThat(pageInfo.get("hasNextPage")).isEqualTo(true);
+        assertThat(pageInfo.get("hasPreviousPage")).isEqualTo(false);
+    }
+
+    @Test
+    void stores_synthesisedConnection_cursorRoundTrip() {
+        // Fetch page 1 cursor, use it for page 2, assert hasNextPage is false (2 stores total).
+        Map<String, Object> page1 = execute(
+            "{ stores(first: 1) { pageInfo { endCursor } } }");
+        String endCursor = (String) ((Map<String, Object>) ((Map<String, Object>) page1.get("stores")).get("pageInfo")).get("endCursor");
+        assertThat(endCursor).isNotNull();
+
+        Map<String, Object> page2 = execute(
+            "{ stores(first: 1, after: \"" + endCursor + "\") { nodes { storeId } pageInfo { hasNextPage } } }");
+        var conn2 = (Map<String, Object>) page2.get("stores");
+        List<Map<String, Object>> nodes2 = (List<Map<String, Object>>) conn2.get("nodes");
+        assertThat(nodes2).hasSize(1);
+        var pageInfo2 = (Map<String, Object>) conn2.get("pageInfo");
+        assertThat(pageInfo2.get("hasNextPage")).isEqualTo(false);
+    }
 }

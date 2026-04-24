@@ -14,6 +14,11 @@ type Query {
     # two @lookupKey scalar fields (film_id, actor_id); the generator materialises a VALUES
     # derived table with columns (idx, film_id, actor_id) and joins on both keys.
     filmActorsByKey(key: [FilmActorKey!]! @lookupKey): [FilmActor!]!
+    # ConnectionSynthesis: directive-driven @asConnection on a bare list. The generator
+    # synthesises QueryStoresConnectionType, QueryStoresEdgeType and wires them into
+    # GraphitronSchema.build() via .additionalType(...). Hand-written Connection types
+    # (FilmsConnection, ActorsConnection) are unaffected — both paths coexist.
+    stores: [Store!]! @asConnection @defaultOrder(primaryKey: true)
     filmsConnection(
         first: Int, last: Int, after: String, before: String
     ): FilmsConnection! @defaultOrder(primaryKey: true)
