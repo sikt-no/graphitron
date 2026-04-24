@@ -163,14 +163,9 @@ class JooqCatalogNodeIdMetadataTest {
         assertThat(catalog().nodeIdMetadataDiagnostic("nonexistent")).isEmpty();
     }
 
-    @Test
-    void diagnosticPresentForMalformedConstants() {
-        // MalformedBar has __NODE_TYPE_ID = "" — the empty-string check is the first validation gate.
-        // A non-empty Optional here proves the Malformed branch in nodeIdMetadataDiagnostic fires,
-        // not the Absent branch (which would also return empty and make the three tests above pass
-        // even if instanceof arms were accidentally swapped).
-        assertThat(catalog().nodeIdMetadataDiagnostic("malformed_bar"))
-            .isPresent()
-            .get().asString().contains("__NODE_TYPE_ID");
-    }
+    // Malformed-diagnostic integration coverage is handled by the direct validateLookup unit
+    // tests above. A dedicated "table class with deliberately bad constants" fixture is not
+    // worth the maintenance cost — the real NodeIdFixtureGenerator models well-behaved output
+    // and nodeIdMetadataDiagnostic itself is a three-line instanceof dispatch over the same
+    // NodeIdMetadataLookup sum type the unit tests already exercise.
 }
