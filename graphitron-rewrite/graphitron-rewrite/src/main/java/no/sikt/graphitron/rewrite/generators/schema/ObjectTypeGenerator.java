@@ -13,13 +13,12 @@ import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
-import no.sikt.graphitron.rewrite.RewriteConfig;
 
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Set;
+import java.util.Map;
 
 /**
  * Emits one {@code <TypeName>Type} class per GraphQL object, interface, or union type into
@@ -38,9 +37,12 @@ import java.util.Set;
  * {@link InputTypeGenerator#buildInputTypeRef} structurally; keeping them separate so a later
  * directive-translation pass can diverge the two without cross-contamination.
  *
- * <p>Fetcher registration via a per-class {@code registerFetchers(GraphQLCodeRegistry.Builder)}
- * method is a follow-up step within Commit B; this generator currently emits the type structure
- * only. Default argument values and directive applications are likewise follow-ups.
+ * <p>For every type whose name is a key in the {@code fetcherBodies} map, the emitted class also
+ * exposes {@code public static void registerFetchers(GraphQLCodeRegistry.Builder codeRegistry)}.
+ * The body comes from {@link FetcherRegistrationsEmitter} and attaches each fetcher to the
+ * shared code registry by {@link graphql.schema.FieldCoordinates}. The assembler
+ * ({@link GraphitronSchemaClassGenerator}) invokes {@code registerFetchers} for every such type
+ * before sealing the registry into the schema.
  *
  * <p>Introspection types (names starting with {@code __}) and federation-injected types
  * (names starting with {@code _}) are skipped — neither is part of the user surface.
@@ -56,29 +58,22 @@ public final class ObjectTypeGenerator {
     private static final ClassName NON_NULL         = ClassName.get("graphql.schema", "GraphQLNonNull");
     private static final ClassName LIST             = ClassName.get("graphql.schema", "GraphQLList");
     private static final ClassName CODE_REGISTRY_BLDR = ClassName.get("graphql.schema", "GraphQLCodeRegistry", "Builder");
-    private static final ClassName FIELD_COORDS     = ClassName.get("graphql.schema", "FieldCoordinates");
-    private static final ClassName TYPE_RUNTIME_WIRING = ClassName.get("graphql.schema.idl", "TypeRuntimeWiring");
 
     private ObjectTypeGenerator() {}
 
     /**
-     * Emits {@code <TypeName>Type} classes. {@code typesWithLegacyWiring} names every object
-     * type for which {@link no.sikt.graphitron.rewrite.generators.WiringClassGenerator} also
-     * emits a {@code <TypeName>Wiring} class; each such {@code <TypeName>Type} gets a
-     * {@code registerFetchers} method that bridges the legacy wiring's fetchers into a
-     * {@link graphql.schema.GraphQLCodeRegistry.Builder} by coordinate. The bridge is the
-     * minimum-viable step that keeps the new emission path functional during Commit B;
-     * Commit C replaces it with direct {@link no.sikt.graphitron.rewrite.generators.FetcherEmitter}
-     * invocations after the legacy wiring generator is deleted.
+     * Emits {@code <TypeName>Type} classes. {@code fetcherBodies} maps each type name to the
+     * body of its {@code registerFetchers(GraphQLCodeRegistry.Builder)} method; types not present
+     * in the map do not get the method. {@link FetcherRegistrationsEmitter} produces the map from
+     * the classifier model.
      */
-    public static List<TypeSpec> generate(GraphQLSchema assembled, Set<String> typesWithLegacyWiring) {
+    public static List<TypeSpec> generate(GraphQLSchema assembled, Map<String, CodeBlock> fetcherBodies) {
         var result = new ArrayList<TypeSpec>();
         assembled.getAllTypesAsList().stream()
             .filter(t -> !t.getName().startsWith("_"))
             .forEach(t -> {
                 if (t instanceof GraphQLObjectType obj) {
-                    result.add(buildObjectTypeSpec(obj,
-                        typesWithLegacyWiring.contains(obj.getName())));
+                    result.add(buildObjectTypeSpec(obj, fetcherBodies.get(obj.getName())));
                 } else if (t instanceof GraphQLInterfaceType it) {
                     result.add(buildInterfaceTypeSpec(it));
                 } else if (t instanceof GraphQLUnionType un) {
@@ -90,16 +85,15 @@ public final class ObjectTypeGenerator {
     }
 
     /**
-     * Convenience overload for tests that don't need {@code registerFetchers} emission. The
-     * empty set means no type gets a {@code registerFetchers} method.
+     * Convenience overload for tests that don't need {@code registerFetchers} emission.
      */
     public static List<TypeSpec> generate(GraphQLSchema assembled) {
-        return generate(assembled, Set.of());
+        return generate(assembled, Map.of());
     }
 
     // ===== Object =====
 
-    private static TypeSpec buildObjectTypeSpec(GraphQLObjectType objectType, boolean bridgeLegacyFetchers) {
+    private static TypeSpec buildObjectTypeSpec(GraphQLObjectType objectType, CodeBlock fetcherBody) {
         var body = CodeBlock.builder()
             .add("return $T.newObject()", OBJECT_TYPE)
             .indent()
@@ -126,33 +120,14 @@ public final class ObjectTypeGenerator {
                 .addCode(body.build())
                 .build());
 
-        if (bridgeLegacyFetchers) {
-            classBuilder.addMethod(buildRegisterFetchersBridge(objectType.getName()));
+        if (fetcherBody != null && !fetcherBody.isEmpty()) {
+            classBuilder.addMethod(MethodSpec.methodBuilder("registerFetchers")
+                .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+                .addParameter(CODE_REGISTRY_BLDR, "codeRegistry")
+                .addCode(fetcherBody)
+                .build());
         }
         return classBuilder.build();
-    }
-
-    /**
-     * Emits a {@code registerFetchers(codeRegistry)} method that copies every fetcher from the
-     * matching legacy {@code <outputPackage>.rewrite.wiring.<TypeName>Wiring.wiring().build()}
-     * into the passed-in {@link graphql.schema.GraphQLCodeRegistry.Builder} keyed by
-     * {@link graphql.schema.FieldCoordinates}. Temporary Commit B bridge; removed in Commit C.
-     */
-    private static MethodSpec buildRegisterFetchersBridge(String typeName) {
-        var legacyWiring = ClassName.get(
-            RewriteConfig.outputPackage() + ".rewrite.wiring",
-            typeName + "Wiring");
-        var body = CodeBlock.builder()
-            .addStatement("$T typeWiring = $T.wiring().build()", TYPE_RUNTIME_WIRING, legacyWiring)
-            .addStatement("typeWiring.getFieldDataFetchers().forEach((fieldName, fetcher) ->\n"
-                + "    codeRegistry.dataFetcher($T.coordinates($S, fieldName), fetcher))",
-                FIELD_COORDS, typeName)
-            .build();
-        return MethodSpec.methodBuilder("registerFetchers")
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .addParameter(CODE_REGISTRY_BLDR, "codeRegistry")
-            .addCode(body)
-            .build();
     }
 
     // ===== Interface =====

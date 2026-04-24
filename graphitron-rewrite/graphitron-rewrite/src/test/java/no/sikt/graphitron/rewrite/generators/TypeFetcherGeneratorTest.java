@@ -79,7 +79,7 @@ class TypeFetcherGeneratorTest {
 
     @Test
     void generate_hasNoWiringMethod() {
-        // Wiring is now emitted by WiringClassGenerator, not TypeFetcherGenerator.
+        // Fetcher registration bodies are emitted by FetcherRegistrationsEmitter, not TypeFetcherGenerator.
         var spec = TypeFetcherGenerator.generateTypeSpec("Film", null, List.of());
         assertThat(spec.methodSpecs()).extracting(MethodSpec::name).doesNotContain("wiring");
     }
@@ -107,7 +107,7 @@ class TypeFetcherGeneratorTest {
 
     @Test
     void columnFetcher_withParentTable_hasNoMethods() {
-        // ColumnField wiring is handled by WiringClassGenerator; the Fetchers class has no methods.
+        // ColumnField wiring is handled by FetcherRegistrationsEmitter; the Fetchers class has no methods.
         var spec = TypeFetcherGenerator.generateTypeSpec("Film", FILM_TABLE,
             List.of(columnField("title", "title", "TITLE", "java.lang.String")));
         assertThat(spec.methodSpecs()).isEmpty();

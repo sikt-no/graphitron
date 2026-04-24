@@ -379,12 +379,12 @@ public class TypeFetcherGenerator {
                 case ChildField.TableMethodField f              -> builder.addMethod(stub(f));
                 case ChildField.InterfaceField f                -> builder.addMethod(stub(f));
                 case ChildField.UnionField f                    -> builder.addMethod(stub(f));
-                case ChildField.NestingField ignored            -> { /* wired via WiringClassGenerator: env -> env.getSource() */ }
-                case ChildField.ConstructorField ignored        -> { /* wired via WiringClassGenerator: env -> env.getSource() */ }
+                case ChildField.NestingField ignored            -> { /* wired via FetcherRegistrationsEmitter: env -> env.getSource() */ }
+                case ChildField.ConstructorField ignored        -> { /* wired via FetcherRegistrationsEmitter: env -> env.getSource() */ }
                 case ChildField.ServiceRecordField f            -> builder.addMethod(stub(f));
-                case ChildField.RecordField ignored             -> { /* wired via WiringClassGenerator.buildPropertyOrRecordFetcherEntry */ }
+                case ChildField.RecordField ignored             -> { /* wired via FetcherRegistrationsEmitter.propertyOrRecordValue */ }
                 case ChildField.ComputedField f                 -> builder.addMethod(stub(f));
-                case ChildField.PropertyField ignored           -> { /* wired via WiringClassGenerator.buildPropertyOrRecordFetcherEntry */ }
+                case ChildField.PropertyField ignored           -> { /* wired via FetcherRegistrationsEmitter.propertyOrRecordValue */ }
                 case ChildField.MultitableReferenceField f      -> builder.addMethod(stub(f));
                 // Cannot occur — filtered by generateForType before dispatch
                 case InputField ignored ->

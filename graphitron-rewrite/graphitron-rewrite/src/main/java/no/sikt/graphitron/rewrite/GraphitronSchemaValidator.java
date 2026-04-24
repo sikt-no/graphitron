@@ -418,12 +418,11 @@ public class GraphitronSchemaValidator {
 
     /**
      * Variants wireable at nested depth. Inline leaves ({@code ColumnField}, {@code TableField},
-     * etc.) have className-independent arms in {@code TypeFetcherGenerator.buildWiringEntry}.
+     * etc.) have className-independent arms in {@code FetcherRegistrationsEmitter}.
      * Class-backed leaves ({@code SplitTableField}, {@code SplitLookupTableField}) are wired via
-     * a per-nested-type {@code <NestedTypeName>Fetchers} class whose name is threaded through
-     * {@code GraphitronWiringClassGenerator}; {@code TypeFetcherGenerator.generate} emits that
-     * class via a separate walk over {@code NestingField.nestedFields()}. Expanding either group
-     * requires the corresponding generator-side change.
+     * a per-nested-type {@code <NestedTypeName>Fetchers} class; {@code TypeFetcherGenerator.generate}
+     * emits that class via a separate walk over {@code NestingField.nestedFields()}. Expanding
+     * either group requires the corresponding generator-side change.
      */
     private static final java.util.Set<Class<? extends GraphitronField>> NESTED_WIREABLE_LEAVES = java.util.Set.of(
         ChildField.ColumnField.class,
@@ -646,7 +645,12 @@ public class GraphitronSchemaValidator {
     private void validateInputNestingField(no.sikt.graphitron.rewrite.model.InputField.NestingField field, List<ValidationError> errors) {
         // Nested field columns are resolved at classification time; no additional structural checks needed.
     }
-    private void validateNotGeneratedField(no.sikt.graphitron.rewrite.model.GraphitronField.NotGeneratedField field, List<ValidationError> errors) {}
+    private void validateNotGeneratedField(no.sikt.graphitron.rewrite.model.GraphitronField.NotGeneratedField field, List<ValidationError> errors) {
+        errors.add(new ValidationError(
+            "Field '" + field.qualifiedName() + "': @notGenerated is not supported by the rewrite pipeline; the field must be fully described by the schema.",
+            field.location()
+        ));
+    }
     private void validateUnclassifiedType(no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType type, List<ValidationError> errors) {
         errors.add(new ValidationError(
             "Type '" + type.name() + "': " + type.reason(),

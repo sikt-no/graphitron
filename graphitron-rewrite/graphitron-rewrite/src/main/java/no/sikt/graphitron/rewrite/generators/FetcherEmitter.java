@@ -20,18 +20,19 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.toCamelCase;
 /**
  * Builds the {@code DataFetcher} value expression for a single classified field.
  *
- * <p>Shared by {@link WiringClassGenerator} (which wraps the value in
- * {@code .dataFetcher(name, ...)} calls on a {@code TypeRuntimeWiring.Builder}) and by the
- * Commit B {@code ObjectTypeGenerator.registerFetchers} emitter (which wraps the value in
- * {@code codeRegistry.dataFetcher(FieldCoordinates.coordinates(type, name), ...)} calls on a
- * {@code GraphQLCodeRegistry.Builder}). The fetcher logic is identical across the two wrappers;
- * keeping it in one place avoids divergence during Commit B.
+ * <p>Consumed by {@link no.sikt.graphitron.rewrite.generators.schema.FetcherRegistrationsEmitter},
+ * which wraps the value in {@code codeRegistry.dataFetcher(FieldCoordinates.coordinates(type,
+ * name), ...)} calls on a {@code GraphQLCodeRegistry.Builder}. The fetcher logic is kept in
+ * one place so the classifier → registration pipeline stays the only path from schema model
+ * to a {@code DataFetcher}.
  *
  * <p>The returned {@link CodeBlock} starts with no leading whitespace and contains only the
  * value expression: a method reference, lambda, or {@code new ColumnFetcher<>(...)}
  * instantiation.
  */
 public final class FetcherEmitter {
+
+    private static final ClassName DATA_FETCHING_ENV = ClassName.get("graphql.schema", "DataFetchingEnvironment");
 
     private FetcherEmitter() {}
 
@@ -50,10 +51,10 @@ public final class FetcherEmitter {
             GraphitronField field, ClassName fetchersClass,
             TableRef parentTable, GraphitronType.ResultType resultType) {
         if (field instanceof ChildField.ConstructorField) {
-            return CodeBlock.of("env -> env.getSource()");
+            return CodeBlock.of("($T env) -> env.getSource()", DATA_FETCHING_ENV);
         }
         if (field instanceof ChildField.NestingField) {
-            return CodeBlock.of("env -> env.getSource()");
+            return CodeBlock.of("($T env) -> env.getSource()", DATA_FETCHING_ENV);
         }
         if (field instanceof ChildField.PropertyField pf && resultType != null) {
             return propertyOrRecordValue(pf.columnName(), pf.column(), resultType);
@@ -76,8 +77,8 @@ public final class FetcherEmitter {
                 var resultClass = ClassName.get("org.jooq", "Result");
                 var resultWildcard = ParameterizedTypeName.get(resultClass, WildcardTypeName.subtypeOf(Object.class));
                 return CodeBlock.of(
-                    "env -> { Object raw = (($T) env.getSource()).get($S, $T.class); return raw instanceof $T r && !r.isEmpty() ? r.get(0) : null; }",
-                    recordClass, field.name(), resultClass, resultWildcard);
+                    "($T env) -> { Object raw = (($T) env.getSource()).get($S, $T.class); return raw instanceof $T r && !r.isEmpty() ? r.get(0) : null; }",
+                    DATA_FETCHING_ENV, recordClass, field.name(), resultClass, resultWildcard);
             }
             var columnFetcherClass = ClassName.get(RewriteConfig.outputPackage() + ".rewrite",
                 ColumnFetcherClassGenerator.CLASS_NAME);
@@ -94,7 +95,7 @@ public final class FetcherEmitter {
             var recordClass = ClassName.get("org.jooq", "Record");
             var tablesClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Tables");
             var body = CodeBlock.builder()
-                .add("env -> {\n")
+                .add("($T env) -> {\n", DATA_FETCHING_ENV)
                 .add("    $T r = ($T) env.getSource();\n", recordClass, recordClass)
                 .add("    return $T.encode($S", encoderClass, nf.nodeTypeId());
             for (var col : nf.nodeKeyColumns()) {
@@ -123,14 +124,14 @@ public final class FetcherEmitter {
         if (resultType instanceof GraphitronType.JavaRecordType jrt) {
             var backingClass = ClassName.bestGuess(jrt.fqClassName());
             var accessor = toCamelCase(columnName);
-            return CodeBlock.of("env -> (($T) env.getSource()).$L()", backingClass, accessor);
+            return CodeBlock.of("($T env) -> (($T) env.getSource()).$L()", DATA_FETCHING_ENV, backingClass, accessor);
         }
         var prt = (GraphitronType.PojoResultType) resultType;
         if (prt.fqClassName() != null) {
             var backingClass = ClassName.bestGuess(prt.fqClassName());
             var accessorBase = toCamelCase(columnName);
             var getter = "get" + Character.toUpperCase(accessorBase.charAt(0)) + accessorBase.substring(1);
-            return CodeBlock.of("env -> (($T) env.getSource()).$L()", backingClass, getter);
+            return CodeBlock.of("($T env) -> (($T) env.getSource()).$L()", DATA_FETCHING_ENV, backingClass, getter);
         }
         var propertyDataFetcher = ClassName.get("graphql.schema", "PropertyDataFetcher");
         return CodeBlock.of("$T.fetching($S)", propertyDataFetcher, columnName);

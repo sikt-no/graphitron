@@ -15,9 +15,9 @@ class NotGeneratedFieldValidationTest {
 
     enum Case implements ValidatorCase {
 
-        VALID("field marked @notGenerated — always valid, no errors expected",
+        REJECTED("field marked @notGenerated is rejected by the rewrite pipeline",
             new NotGeneratedField("Query", "ignored", null),
-            List.of());
+            List.of("Field 'Query.ignored': @notGenerated is not supported by the rewrite pipeline; the field must be fully described by the schema."));
 
         private final String description;
         private final GraphitronField field;

@@ -140,15 +140,56 @@ class GeneratedSourcesLintTest {
             .isEmpty();
     }
 
+    /** FQNs that must not appear as imports in any emitted source file. Plan
+     *  §Tests — no legacy runtime dependency may reach the emitted output:
+     *  {@code RuntimeWiring} / {@code TypeRuntimeWiring} / {@code SchemaGenerator}
+     *  are the SDL-driven schema path Commit C replaced with a programmatic
+     *  {@code GraphQLSchema.Builder}; {@code SchemaReadingHelper} is the
+     *  {@code graphitron-common} SDL parser the generator no longer needs at
+     *  runtime; {@code no.sikt.graphql.GraphitronContext} is the upstream
+     *  interface now replaced by the generated
+     *  {@code <outputPackage>.rewrite.schema.GraphitronContext}. Match is on
+     *  FQN so the generated context interface is unaffected. */
+    private static final List<String> FORBIDDEN_IMPORTS = List.of(
+        "graphql.schema.idl.RuntimeWiring",
+        "graphql.schema.idl.TypeRuntimeWiring",
+        "graphql.schema.idl.SchemaGenerator",
+        "no.sikt.graphql.schema.SchemaReadingHelper",
+        "no.sikt.graphql.GraphitronContext"
+    );
+
     @Test
-    void wiringAggregatorDoesNotInlineTypeWiring() throws IOException {
-        Path wiringFile = GENERATED_REWRITE_ROOT.resolve("GraphitronWiring.java");
-        assertThat(wiringFile).exists();
-        String source = Files.readString(wiringFile);
-        assertThat(source)
-            .as("GraphitronWiring.java must only reference *Wiring.wiring() calls, "
-                + "never inline newTypeWiring() blocks. Move per-type wiring into dedicated *Wiring classes.")
-            .doesNotContain("newTypeWiring(");
+    void emittedSourcesDoNotImportLegacyRuntimeTypes() throws IOException {
+        assertThat(GENERATED_REWRITE_ROOT).exists();
+        var offenders = new ArrayList<String>();
+        try (Stream<Path> paths = Files.walk(GENERATED_REWRITE_ROOT)) {
+            paths.filter(p -> p.toString().endsWith(".java")).forEach(p -> {
+                try {
+                    for (String line : Files.readAllLines(p)) {
+                        String trimmed = line.trim();
+                        if (!trimmed.startsWith("import ")) continue;
+                        String imported = trimmed
+                            .replaceFirst("^import\\s+(static\\s+)?", "")
+                            .replaceFirst(";.*$", "")
+                            .trim();
+                        for (String forbidden : FORBIDDEN_IMPORTS) {
+                            if (imported.equals(forbidden) || imported.startsWith(forbidden + ".")) {
+                                offenders.add(p.getFileName() + "  " + trimmed);
+                                break;
+                            }
+                        }
+                    }
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            });
+        }
+        assertThat(offenders)
+            .as("Emitted sources must not import legacy runtime types — the programmatic\n"
+                + "schema path is the only one supported. The ratchet guards against\n"
+                + "regressions into the SDL + RuntimeWiring shape or re-introduction of\n"
+                + "the upstream GraphitronContext interface.")
+            .isEmpty();
     }
 
     private static boolean isCommentLine(String line) {

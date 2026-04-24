@@ -2,13 +2,12 @@ package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.javapoet.JavaFile;
 import no.sikt.graphitron.javapoet.TypeSpec;
-import no.sikt.graphitron.rewrite.generators.GraphitronWiringClassGenerator;
 import no.sikt.graphitron.rewrite.generators.QueryConditionsGenerator;
 import no.sikt.graphitron.rewrite.generators.TypeClassGenerator;
 import no.sikt.graphitron.rewrite.generators.TypeConditionsGenerator;
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
-import no.sikt.graphitron.rewrite.generators.WiringClassGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.EnumTypeGenerator;
+import no.sikt.graphitron.rewrite.generators.schema.FetcherRegistrationsEmitter;
 import no.sikt.graphitron.rewrite.generators.schema.GraphitronFacadeGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.GraphitronSchemaClassGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.InputTypeGenerator;
@@ -69,12 +68,7 @@ public class GraphQLRewriteGenerator {
         }
 
         var fetcherClasses = TypeFetcherGenerator.generate(schema);
-        var wiringClasses  = WiringClassGenerator.generate(schema);
-        var aggregator     = GraphitronWiringClassGenerator.generate(
-            wiringClasses.stream().map(TypeSpec::name).toList());
-        var typesWithWiring = wiringClasses.stream()
-            .map(t -> t.name().replaceFirst("Wiring$", ""))
-            .collect(java.util.stream.Collectors.toSet());
+        var fetcherBodies  = FetcherRegistrationsEmitter.emit(schema);
 
         write(GraphitronValuesClassGenerator.generate(),          "rewrite");
         write(ColumnFetcherClassGenerator.generate(),             "rewrite");
@@ -85,15 +79,13 @@ public class GraphQLRewriteGenerator {
         write(GraphitronContextInterfaceGenerator.generate(),     "rewrite.schema");
         write(EnumTypeGenerator.generate(assembled),              "rewrite.schema");
         write(InputTypeGenerator.generate(assembled),             "rewrite.schema");
-        write(ObjectTypeGenerator.generate(assembled, typesWithWiring),            "rewrite.schema");
-        write(GraphitronSchemaClassGenerator.generate(assembled, typesWithWiring), "rewrite.schema");
+        write(ObjectTypeGenerator.generate(assembled, fetcherBodies),            "rewrite.schema");
+        write(GraphitronSchemaClassGenerator.generate(assembled, fetcherBodies.keySet()), "rewrite.schema");
         write(GraphitronFacadeGenerator.generate(),               "rewrite.schema");
         write(TypeClassGenerator.generate(schema),                "rewrite.types");
         write(TypeConditionsGenerator.generate(schema),           "rewrite.conditions");
         write(QueryConditionsGenerator.generate(schema),          "rewrite.conditions");
         write(fetcherClasses,                                      "rewrite.fetchers");
-        write(wiringClasses,                                       "rewrite.wiring");
-        write(List.of(aggregator),                                 "rewrite");
     }
 
     private static void write(List<TypeSpec> specs, String subPackage) {

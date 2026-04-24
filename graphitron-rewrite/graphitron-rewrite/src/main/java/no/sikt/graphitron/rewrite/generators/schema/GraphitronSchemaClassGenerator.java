@@ -58,6 +58,7 @@ public final class GraphitronSchemaClassGenerator {
     private static final ClassName SCHEMA_BUILDER = ClassName.get("graphql.schema", "GraphQLSchema", "Builder");
     private static final ClassName CODE_REGISTRY  = ClassName.get("graphql.schema", "GraphQLCodeRegistry");
     private static final ClassName CODE_REGISTRY_BLDR = ClassName.get("graphql.schema", "GraphQLCodeRegistry", "Builder");
+    private static final ClassName SCALARS        = ClassName.get("graphql", "Scalars");
 
     private GraphitronSchemaClassGenerator() {}
 
@@ -87,6 +88,14 @@ public final class GraphitronSchemaClassGenerator {
         for (String name : plan.additionalTypeNames) {
             body.add("\n.additionalType($T.type())", ClassName.get(schemaPackage, name + "Type"));
         }
+        // Built-in GraphQL scalars aren't auto-registered on a programmatic schema; the SDL
+        // path in SchemaGenerator used to add them for us. Register the five graphql-spec
+        // scalars so every typeRef("Int") / typeRef("String") / … resolves at build time.
+        body.add("\n.additionalType($T.GraphQLInt)",     SCALARS);
+        body.add("\n.additionalType($T.GraphQLFloat)",   SCALARS);
+        body.add("\n.additionalType($T.GraphQLString)",  SCALARS);
+        body.add("\n.additionalType($T.GraphQLBoolean)", SCALARS);
+        body.add("\n.additionalType($T.GraphQLID)",      SCALARS);
         for (var dir : DirectiveDefinitionEmitter.survivors(assembled)) {
             body.add("\n.additionalDirective(").add(DirectiveDefinitionEmitter.buildDefinition(dir)).add(")");
         }

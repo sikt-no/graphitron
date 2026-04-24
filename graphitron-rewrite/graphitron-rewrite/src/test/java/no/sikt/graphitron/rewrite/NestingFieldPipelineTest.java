@@ -1,30 +1,31 @@
 package no.sikt.graphitron.rewrite;
 
+import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.generators.TypeClassGenerator;
-import no.sikt.graphitron.rewrite.generators.WiringClassGenerator;
+import no.sikt.graphitron.rewrite.generators.schema.FetcherRegistrationsEmitter;
 import no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions;
 import no.sikt.graphitron.rewrite.model.ChildField.NestingField;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * SDL → generated {@link TypeSpec} pipeline tests for {@link NestingField}. Covers the three
+ * SDL → fetcher-registration pipeline tests for {@link NestingField}. Covers the three
  * emission sides affected by nesting:
  * <ul>
- *   <li>{@code FilmWiring.wiring()} — outer {@code .dataFetcher("details", env -> env.getSource())}
- *       passthrough (lambda kind).</li>
+ *   <li>Outer type's {@code registerFetchers(codeRegistry)} body — {@code Film.details} wired as a
+ *       passthrough lambda (lambda kind).</li>
  *   <li>{@code Film.$fields(...)} — switch arm for {@code details} recurses into nested column
  *       names.</li>
- *   <li>{@code FilmDetailsWiring.wiring()} — one {@code TypeRuntimeWiring.newTypeWiring("FilmDetails")}
- *       per nested type, produced by {@link WiringClassGenerator}.</li>
+ *   <li>Nested type's {@code registerFetchers(codeRegistry)} body — one entry per nested type in
+ *       the {@link FetcherRegistrationsEmitter} output, keyed by the nested type's name.</li>
  * </ul>
  */
 class NestingFieldPipelineTest {
@@ -46,10 +47,9 @@ class NestingFieldPipelineTest {
         """;
 
     @Test
-    void outerWiringClass_wiresNestingFieldAsLambda() {
-        var wirings = buildWiringClasses(SCALAR_NESTING_SDL);
-        var filmWiring = findWiring("Film", wirings);
-        assertThat(TypeSpecAssertions.wiringFor(filmWiring, "details"))
+    void outerFetcherRegistration_wiresNestingFieldAsLambda() {
+        var bodies = fetcherBodies(SCALAR_NESTING_SDL);
+        assertThat(TypeSpecAssertions.wiringFor(bodies, "Film", "details"))
             .contains(TypeSpecAssertions.DataFetcherKind.LAMBDA);
     }
 
@@ -66,47 +66,42 @@ class NestingFieldPipelineTest {
     }
 
     @Test
-    void wiringClass_emitsOneWiringClassPerNestedType() {
-        var wirings = buildWiringClasses(SCALAR_NESTING_SDL);
-        var filmDetailsWiring = findWiring("FilmDetails", wirings);
-        String body = wiringMethodBody(filmDetailsWiring);
-        assertThat(body).contains("newTypeWiring(\"FilmDetails\")");
-        assertThat(body).contains(".dataFetcher(\"title\"");
+    void fetcherRegistration_emitsOneBodyPerNestedType() {
+        var bodies = fetcherBodies(SCALAR_NESTING_SDL);
+        assertThat(bodies).containsKey("FilmDetails");
+        assertThat(TypeSpecAssertions.wiringFor(bodies, "FilmDetails", "title"))
+            .contains(TypeSpecAssertions.DataFetcherKind.COLUMN_FETCHER);
     }
 
     @Test
-    void wiringClass_noNestingField_noNestedTypeWiringClass() {
-        var wirings = buildWiringClasses("""
+    void fetcherRegistration_noNestingField_noNestedTypeBody() {
+        var bodies = fetcherBodies("""
             type Film @table(name: "film") { title: String }
             type Query { film: Film }
             """);
-        assertThat(wirings.stream().map(TypeSpec::name)).doesNotContain("FilmDetailsWiring");
+        assertThat(bodies).doesNotContainKey("FilmDetails");
     }
 
     @Test
-    void wiringClass_multiLevelNesting_emitsWiringClassForEveryNestedType() {
-        var wirings = buildWiringClasses("""
+    void fetcherRegistration_multiLevelNesting_emitsBodyForEveryNestedType() {
+        var bodies = fetcherBodies("""
             type Film @table(name: "film") { details: FilmDetails }
             type FilmDetails { title: String, meta: FilmMeta }
             type FilmMeta { title: String }
             type Query { film: Film }
             """);
-        assertThat(wirings.stream().map(TypeSpec::name))
-            .contains("FilmDetailsWiring", "FilmMetaWiring");
+        assertThat(bodies.keySet()).contains("FilmDetails", "FilmMeta");
     }
 
     @Test
-    void wiringClass_sharedNestedType_emittedOnlyOnce() {
-        var wirings = buildWiringClasses("""
+    void fetcherRegistration_sharedNestedType_emittedOnlyOnce() {
+        var bodies = fetcherBodies("""
             type Film @table(name: "film") { details: FilmDetails }
             type FilmList @table(name: "film") { details: FilmDetails }
             type FilmDetails { title: String }
             type Query { film: Film }
             """);
-        long occurrences = wirings.stream()
-            .filter(t -> t.name().equals("FilmDetailsWiring"))
-            .count();
-        assertThat(occurrences).isEqualTo(1L);
+        assertThat(bodies).containsKey("FilmDetails");
     }
 
     private static final String SPLIT_NESTING_SDL = """
@@ -120,16 +115,17 @@ class NestingFieldPipelineTest {
         """;
 
     @Test
-    void wiringClass_nestedSplitField_referencesNestedFetchersClass() {
-        var wirings = buildWiringClasses(SPLIT_NESTING_SDL);
-        String body = wiringMethodBody(findWiring("FilmInfo", wirings));
-        assertThat(body).contains("newTypeWiring(\"FilmInfo\")");
-        assertThat(body).contains("FilmInfoFetchers::cast");
+    void fetcherRegistration_nestedSplitField_referencesNestedFetchersClass() {
+        var bodies = fetcherBodies(SPLIT_NESTING_SDL);
+        assertThat(bodies).containsKey("FilmInfo");
+        assertThat(TypeSpecAssertions.wiringFor(bodies, "FilmInfo", "cast"))
+            .contains(TypeSpecAssertions.DataFetcherKind.METHOD_REFERENCE);
+        assertThat(bodies.get("FilmInfo").toString()).contains("FilmInfoFetchers");
     }
 
     @Test
-    void wiringClass_nestedSplitField_inlineLeavesInSameTypeStillWireInline() {
-        var wirings = buildWiringClasses("""
+    void fetcherRegistration_nestedSplitField_inlineLeavesInSameTypeStillWireInline() {
+        var bodies = fetcherBodies("""
             type Actor @table(name: "actor") { name: String }
             type FilmInfo {
                 title: String
@@ -139,9 +135,10 @@ class NestingFieldPipelineTest {
             type Film @table(name: "film") { info: FilmInfo }
             type Query { film: Film }
             """);
-        String body = wiringMethodBody(findWiring("FilmInfo", wirings));
-        assertThat(body).contains("ColumnFetcher");
-        assertThat(body).contains("FilmInfoFetchers::cast");
+        assertThat(TypeSpecAssertions.wiringFor(bodies, "FilmInfo", "title"))
+            .contains(TypeSpecAssertions.DataFetcherKind.COLUMN_FETCHER);
+        assertThat(TypeSpecAssertions.wiringFor(bodies, "FilmInfo", "cast"))
+            .contains(TypeSpecAssertions.DataFetcherKind.METHOD_REFERENCE);
     }
 
     @Test
@@ -164,22 +161,7 @@ class NestingFieldPipelineTest {
             .orElseThrow(() -> new AssertionError("Type class not found: " + className));
     }
 
-    private static List<TypeSpec> buildWiringClasses(String sdl) {
-        return WiringClassGenerator.generate(TestSchemaHelper.buildSchema(sdl));
-    }
-
-    private static TypeSpec findWiring(String typeName, List<TypeSpec> wirings) {
-        return wirings.stream()
-            .filter(t -> t.name().equals(typeName + "Wiring"))
-            .findFirst()
-            .orElseThrow(() -> new AssertionError("Wiring class not found: " + typeName + "Wiring"));
-    }
-
-    private static String wiringMethodBody(TypeSpec wiring) {
-        return wiring.methodSpecs().stream()
-            .filter(m -> m.name().equals("wiring"))
-            .findFirst()
-            .orElseThrow(() -> new AssertionError("wiring() method not found on " + wiring.name()))
-            .code().toString();
+    private static Map<String, CodeBlock> fetcherBodies(String sdl) {
+        return FetcherRegistrationsEmitter.emit(TestSchemaHelper.buildSchema(sdl));
     }
 }

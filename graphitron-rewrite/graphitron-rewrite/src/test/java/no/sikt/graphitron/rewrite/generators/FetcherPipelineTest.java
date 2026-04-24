@@ -1,12 +1,13 @@
 package no.sikt.graphitron.rewrite.generators;
 
+import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.RewriteConfig;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
+import no.sikt.graphitron.rewrite.generators.schema.FetcherRegistrationsEmitter;
 import no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions;
-import no.sikt.graphitron.rewrite.generators.WiringClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions.DataFetcherKind;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -94,8 +95,8 @@ class FetcherPipelineTest {
             type Container @record { value: String }
             type Query { dummy: String }
             """;
-        var wiring = findWiring("ContainerWiring", sdl);
-        assertThat(TypeSpecAssertions.wiringFor(wiring, "value")).isPresent();
+        var bodies = fetcherBodies(sdl);
+        assertThat(TypeSpecAssertions.wiringFor(bodies, "Container", "value")).isPresent();
     }
 
     @Test
@@ -115,8 +116,8 @@ class FetcherPipelineTest {
             type Container @record { value: String }
             type Query { dummy: String }
             """;
-        var wiring = findWiring("ContainerWiring", sdl);
-        assertThat(TypeSpecAssertions.wiringFor(wiring, "value"))
+        var bodies = fetcherBodies(sdl);
+        assertThat(TypeSpecAssertions.wiringFor(bodies, "Container", "value"))
             .contains(DataFetcherKind.PROPERTY_FETCHER);
     }
 
@@ -127,8 +128,8 @@ class FetcherPipelineTest {
             type FilmDetails @record { stats: FilmStats }
             type Query { dummy: String }
             """;
-        var wiring = findWiring("FilmDetailsWiring", sdl);
-        assertThat(TypeSpecAssertions.wiringFor(wiring, "stats")).isPresent();
+        var bodies = fetcherBodies(sdl);
+        assertThat(TypeSpecAssertions.wiringFor(bodies, "FilmDetails", "stats")).isPresent();
     }
 
     @Test
@@ -225,7 +226,7 @@ class FetcherPipelineTest {
             type Film @table(name: "film") { title: String }
             type Query { dummy: String }
             """;
-        assertThat(TypeSpecAssertions.wiringFor(findWiring("FilmWiring", sdl), "title"))
+        assertThat(TypeSpecAssertions.wiringFor(fetcherBodies(sdl), "Film", "title"))
             .contains(DataFetcherKind.COLUMN_FETCHER);
     }
 
@@ -240,9 +241,9 @@ class FetcherPipelineTest {
             type Film @table(name: "film") { title: String, hidden: String @notGenerated }
             type Query { dummy: String }
             """;
-        var filmWiring = findWiring("FilmWiring", sdl);
-        assertThat(TypeSpecAssertions.wiringFor(filmWiring, "title")).isPresent();
-        assertThat(TypeSpecAssertions.wiringFor(filmWiring, "hidden")).isEmpty();
+        var bodies = fetcherBodies(sdl);
+        assertThat(TypeSpecAssertions.wiringFor(bodies, "Film", "title")).isPresent();
+        assertThat(TypeSpecAssertions.wiringFor(bodies, "Film", "hidden")).isEmpty();
     }
 
     // ===== Root query table fields =====
@@ -356,33 +357,6 @@ class FetcherPipelineTest {
         assertThat(languageFetchers.methodSpecs()).extracting(MethodSpec::name).contains("loadFilms");
     }
 
-    // ===== GraphitronWiring aggregator =====
-
-    @Test
-    void wiringAggregator_buildsFromWiringClassNames() {
-        var schema = buildSchema("""
-            type Film @table(name: "film") { title: String }
-            type Customer @table(name: "customer") { firstName: String @field(name: "first_name") }
-            type Query { dummy: String }
-            """);
-        var wiringClassNames = WiringClassGenerator.generate(schema).stream()
-            .map(TypeSpec::name).toList();
-        var aggregator = GraphitronWiringClassGenerator.generate(wiringClassNames);
-
-        assertThat(aggregator.name()).isEqualTo("GraphitronWiring");
-        var build = aggregator.methodSpecs().stream()
-            .filter(m -> m.name().equals("build")).findFirst().orElseThrow();
-        assertThat(build.returnType().toString())
-            .isEqualTo("graphql.schema.idl.RuntimeWiring.Builder");
-    }
-
-    @Test
-    void wiringAggregator_noTypes_stillGenerates() {
-        var aggregator = GraphitronWiringClassGenerator.generate(List.of());
-        assertThat(aggregator.name()).isEqualTo("GraphitronWiring");
-        assertThat(aggregator.methodSpecs()).extracting(MethodSpec::name).contains("build");
-    }
-
     // ===== Helpers =====
 
     private List<String> generate(String sdl) {
@@ -405,11 +379,8 @@ class FetcherPipelineTest {
             .orElseThrow(() -> new AssertionError("Method not found: " + name));
     }
 
-    private TypeSpec findWiring(String wiringClassName, String sdl) {
-        return WiringClassGenerator.generate(buildSchema(sdl)).stream()
-            .filter(t -> t.name().equals(wiringClassName))
-            .findFirst()
-            .orElseThrow(() -> new AssertionError("Wiring class not found: " + wiringClassName));
+    private java.util.Map<String, CodeBlock> fetcherBodies(String sdl) {
+        return FetcherRegistrationsEmitter.emit(buildSchema(sdl));
     }
 
     private GraphitronSchema buildSchema(String schemaText) {

@@ -18,19 +18,21 @@ class GeneratedSourcesSmokeTest {
 
     @ParameterizedTest(name = "{0}")
     @ValueSource(strings = {
-        // Wiring entry point
-        PKG + ".GraphitronWiring",
-        // Wiring classes — one per GraphQL object type (five representative categories)
+        // Schema facade + internal assembler + generated context interface
+        PKG + ".schema.Graphitron",
+        PKG + ".schema.GraphitronSchema",
+        PKG + ".schema.GraphitronContext",
+        // <TypeName>Type classes — one per GraphQL type (five representative categories)
         // Category 1: regular @table type
-        PKG + ".wiring.FilmWiring",
+        PKG + ".schema.FilmType",
         // Category 2: nested type with BatchKeyField leaf (FilmInfo.cast is @splitQuery)
-        PKG + ".wiring.FilmInfoWiring",
+        PKG + ".schema.FilmInfoType",
         // Category 3: nested type with column-only leaves (no BatchKeyField)
-        PKG + ".wiring.FilmSummaryWiring",
+        PKG + ".schema.FilmSummaryType",
         // Category 4: connection type
-        PKG + ".wiring.FilmsConnectionWiring",
+        PKG + ".schema.FilmsConnectionType",
         // Category 5: edge type
-        PKG + ".wiring.FilmsEdgeWiring",
+        PKG + ".schema.FilmsEdgeType",
         // Fetcher classes — one per GraphQL object type
         PKG + ".fetchers.QueryFetchers",
         PKG + ".fetchers.FilmFetchers",

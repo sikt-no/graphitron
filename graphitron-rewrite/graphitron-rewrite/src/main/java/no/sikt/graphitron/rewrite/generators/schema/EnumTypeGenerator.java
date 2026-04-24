@@ -74,9 +74,14 @@ public final class EnumTypeGenerator {
     }
 
     private static CodeBlock buildValueDefinition(graphql.schema.GraphQLEnumValueDefinition value) {
+        // Set the runtime value alongside the name. SchemaGenerator's SDL path defaults runtime
+        // value to the name string; `newEnumValueDefinition().name(x).build()` alone leaves it
+        // null, which makes every serialization of a "string-matching-enum-name" blow up with
+        // "Unknown value 'X'" at the Coercing layer.
         var block = CodeBlock.builder()
             .add("$T.newEnumValueDefinition()", ENUM_VALUE)
-            .add(".name($S)", value.getName());
+            .add(".name($S)", value.getName())
+            .add(".value($S)", value.getName());
         if (value.getDescription() != null && !value.getDescription().isEmpty()) {
             block.add(".description($S)", value.getDescription());
         }

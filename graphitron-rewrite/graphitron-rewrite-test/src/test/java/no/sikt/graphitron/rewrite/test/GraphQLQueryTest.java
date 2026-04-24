@@ -2,27 +2,17 @@ package no.sikt.graphitron.rewrite.test;
 
 import graphql.ExecutionInput;
 import graphql.GraphQL;
-import graphql.schema.GraphQLSchema;
-import graphql.schema.idl.SchemaGenerator;
-import graphql.schema.idl.SchemaParser;
-import no.sikt.graphitron.rewrite.test.generated.rewrite.GraphitronWiring;
-import no.sikt.graphitron.rewrite.test.generated.rewrite.schema.GraphitronContext;
 import graphql.schema.DataFetchingEnvironment;
+import graphql.schema.GraphQLSchema;
+import no.sikt.graphitron.rewrite.test.generated.rewrite.schema.Graphitron;
+import no.sikt.graphitron.rewrite.test.generated.rewrite.schema.GraphitronContext;
 import org.jooq.DSLContext;
-import org.jooq.Record;
-import org.jooq.Result;
-import org.jooq.SQLDialect;
 import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.PostgreSQLContainer;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -66,16 +56,7 @@ class GraphQLQueryTest {
                 }
             }));
 
-        // Build GraphQL schema from the SDL used by the generator
-        var sdl = Files.readString(Path.of("src/main/resources/graphql/schema.graphqls"));
-        // Add directives so the schema parses (the generator needs them, and so does SchemaGenerator)
-        var directives = readClasspathResource("directives.graphqls");
-        var registry = new SchemaParser().parse(directives + "\n" + sdl);
-
-        var wiring = GraphitronWiring.build()
-            .build();
-
-        GraphQLSchema schema = new SchemaGenerator().makeExecutableSchema(registry, wiring);
+        GraphQLSchema schema = Graphitron.buildSchema(b -> {});
         graphql = GraphQL.newGraphQL(schema).build();
     }
 
@@ -132,15 +113,6 @@ class GraphQLQueryTest {
             .build();
 
         return graphql.execute(input);
-    }
-
-    private static String readClasspathResource(String name) {
-        try (InputStream is = GraphQLQueryTest.class.getClassLoader().getResourceAsStream(name)) {
-            if (is == null) throw new IllegalStateException(name + " not found on classpath");
-            return new String(is.readAllBytes(), StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
     }
 
     // ===== Multi-field root query =====
