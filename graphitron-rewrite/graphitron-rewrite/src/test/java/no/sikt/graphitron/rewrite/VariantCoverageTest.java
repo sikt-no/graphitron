@@ -32,10 +32,6 @@ class VariantCoverageTest {
      * leaf should have a case showing the classifier lands there.
      */
     private static final Map<Class<?>, String> NO_CASE_REQUIRED = Map.of(
-        ChildField.PlatformIdField.class,
-            "Scheduled for deletion in plan-nodeid-directives after NodeType synthesis migration.",
-        InputField.PlatformIdField.class,
-            "Scheduled for deletion in plan-nodeid-directives after NodeType synthesis migration.",
         InputField.NodeIdField.class,
             "Covered by PlatformIdPipelineTest.InputCase (requires platformid fixture with "
             + "__NODE_TYPE_ID/__NODE_KEY_COLUMNS metadata not available in the standard sakila catalog); "

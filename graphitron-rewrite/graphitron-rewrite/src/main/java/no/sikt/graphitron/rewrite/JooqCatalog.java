@@ -80,30 +80,6 @@ public class JooqCatalog {
     }
 
     /**
-     * Converts a resolved column name to the Java accessor suffix used by jOOQ's naming
-     * convention. SQL-style names ({@code ALL_CAPS}, {@code UPPER_CASE_WITH_UNDERSCORES}) are
-     * split on {@code _}, lowercased, and each word capitalized; camelCase names have only their
-     * first letter uppercased. Examples: {@code "PERSON_ID"} → {@code "PersonId"},
-     * {@code "ID"} → {@code "Id"}, {@code "id"} → {@code "Id"},
-     * {@code "personId"} → {@code "PersonId"}.
-     *
-     * <p>Package-private for direct unit testing.
-     */
-    static String sqlToAccessorSuffix(String columnName) {
-        if (columnName.equals(columnName.toUpperCase())) {
-            StringBuilder sb = new StringBuilder();
-            for (String part : columnName.toLowerCase().split("_+")) {
-                if (!part.isEmpty()) {
-                    sb.append(Character.toUpperCase(part.charAt(0)));
-                    sb.append(part.substring(1));
-                }
-            }
-            return sb.toString();
-        }
-        return Character.toUpperCase(columnName.charAt(0)) + columnName.substring(1);
-    }
-
-    /**
      * Returns the jOOQ record class for the table with the given SQL name, or empty when the
      * table cannot be found or the catalog is unavailable. The returned class is whatever
      * {@link org.jooq.Table#getRecordType()} returns for the matching table — typically the
@@ -111,31 +87,6 @@ public class JooqCatalog {
      */
     public Optional<Class<?>> findRecordClass(String tableSqlName) {
         return findTable(tableSqlName).map(e -> e.table().getRecordType());
-    }
-
-    /**
-     * Returns {@code true} when the jOOQ record class for the table with the given SQL name
-     * exposes both {@code public String <getterName>()} and
-     * {@code public void <setterName>(String)} methods. These are emitted by the custom jOOQ
-     * code generator for legacy composite platform keys. Returns {@code false} when the catalog
-     * is unavailable, the table cannot be found, or either method is absent.
-     */
-    public boolean hasPlatformIdAccessors(String tableSqlName, String getterName, String setterName) {
-        return findRecordClass(tableSqlName)
-            .map(cls -> recordHasPlatformIdAccessors(cls, getterName, setterName))
-            .orElse(false);
-    }
-
-    /** Package-private for direct unit testing against synthetic record classes. */
-    static boolean recordHasPlatformIdAccessors(Class<?> record, String getterName, String setterName) {
-        try {
-            var get = record.getMethod(getterName);
-            var set = record.getMethod(setterName, String.class);
-            return String.class.equals(get.getReturnType())
-                && void.class.equals(set.getReturnType());
-        } catch (NoSuchMethodException e) {
-            return false;
-        }
     }
 
     /**
@@ -386,28 +337,6 @@ public class JooqCatalog {
     private static NodeIdMetadataLookup.Malformed malformed(String tableSqlName, String reason) {
         LOGGER.warn("KjerneJooqGenerator metadata on table '{}' is malformed: {}", tableSqlName, reason);
         return new NodeIdMetadataLookup.Malformed(reason);
-    }
-
-    /**
-     * Returns the names of {@code get*Id()} instance methods on the jOOQ table class (not the
-     * record class) that take no parameters and return an {@link org.jooq.SelectField}. These are
-     * emitted by the custom jOOQ code generator for tables with a legacy composite platform key and
-     * are the output-side counterpart to the record-level {@code getId}/{@code setId} accessors.
-     *
-     * <p>Intended for diagnostic hints in error messages — not for code generation.
-     * Returns an empty list when the table cannot be found or the catalog is unavailable.
-     */
-    public java.util.List<String> platformIdOutputMethodNames(String tableSqlName) {
-        return findTable(tableSqlName).map(te -> {
-            Class<?> tableClass = te.table().getClass();
-            return Arrays.stream(tableClass.getMethods())
-                .filter(m -> m.getParameterCount() == 0)
-                .filter(m -> org.jooq.SelectField.class.isAssignableFrom(m.getReturnType()))
-                .filter(m -> m.getName().startsWith("get") && m.getName().endsWith("Id"))
-                .map(java.lang.reflect.Method::getName)
-                .sorted()
-                .toList();
-        }).orElse(java.util.List.of());
     }
 
     /**
