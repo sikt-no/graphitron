@@ -18,7 +18,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | Multi-parent NestingField sharing — `TableField` arm | Spec | [plan](plan-nestingfield-multiparent-tablefield.md) |
 | Faceted search on `@asConnection` | Spec | [plan](plan-faceted-search.md), [spike](spike-faceted-search-sql.md) |
 | Rewrite emitter + classifier hygiene sweep | Spec | [plan](plan-rewrite-hygiene-sweep.md) |
-| First-class Connection, Edge, PageInfo type variants | In Review | [plan](plan-firstclass-connection-types.md) |
+| First-class Connection, Edge, PageInfo type variants | Spec | [plan](plan-firstclass-connection-types.md) |
 | Mutation bodies | Spec | [plan](plan-mutations.md) |
 | Docs as an index into classification tests | Ready (deferred) | [plan](plan-docs-as-index-into-tests.md) |
 | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` | In Progress | (see body) |
