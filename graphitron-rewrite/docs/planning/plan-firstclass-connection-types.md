@@ -1,6 +1,6 @@
 # Plan: first-class Connection type variants + classifier-authoritative emission
 
-> **Status:** In Progress
+> **Status:** In Review
 >
 > First installment (Phases 1-3) shipped: `ConnectionType` / `EdgeType` /
 > `PageInfoType` are first-class `GraphitronType` variants, `ConnectionSynthesis`
@@ -37,6 +37,34 @@
   `(connectionNullable, defaultPageSize)`. Structural-detection convenience
   constructor deleted. `FetcherRegistrationsEmitter` finds
   connection/edge names from `schema.types()` directly.
+- **Phase 4** (`98021043`, on trunk) — `PlainObjectType` variant for SDL
+  object types without directives; classifier populates it;
+  `ObjectTypeGenerator.generate` drops its `assembled`-fallback loop. Closes D1.
+- **Phase 5** (`476bbee1`, on trunk) — classifier rewrites `@asConnection`
+  carriers via `SchemaTransformer` and registers synthesised types on
+  `assembled` via `.additionalType(...)`. Two-step rebuild
+  (newSchema-with-additionals → SchemaTransformer) because graphql-java
+  validates type references before the Consumer-arg overload can register
+  them. Emit-time directive probe deleted. Closes D2, D3.
+- **Phase 6** (`9a80a1d5`) — `EnumType` variant; classifier records enums
+  and skips `InputDirectiveInputTypes.NAMES` (option A);
+  `EnumTypeGenerator` + `InputTypeGenerator` read from `schema.types()`.
+  `GraphitronSchemaClassGenerator.planFor` drops the assembled fallback
+  entirely. One bug fix surfaced by the flip: `FieldBuilder.classifyArgument`
+  had a loose `ctx.types.containsKey(typeName)` guard that implicitly meant
+  "any classified type routes to PlainInputArg"; with enums now in the model,
+  this misfired on enum-typed arguments. Tightened to `instanceof InputType
+  || (UnclassifiedType && GraphQLInputObjectType)`. Closes D4.
+- **Phase 7** — **skipped**. The gate was "five variants carrying
+  `schemaType` should collapse into a common accessor." Reality: the
+  five variants exist (Connection, Edge, PageInfo, PlainObject, Enum), but
+  their consumers are two *specialised* switches (the D3 rebuild covers
+  Conn/Edge/PageInfo only; the object-emitter dispatch covers
+  Conn/Edge/PageInfo/Plain; enum is separate). A common accessor would
+  require ~15 domain variants (TableType, NodeType, ResultType family,
+  ErrorType, the interface/union/input hierarchies) to carry a
+  `GraphQLNamedType` they don't need, for the payoff of removing ~7
+  `instanceof` lines. Churn outweighs benefit.
 
 ## Deviations still in place
 
