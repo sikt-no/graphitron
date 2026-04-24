@@ -1,6 +1,6 @@
 # Plan: Rewrite-owned Maven plugin
 
-> **Status:** Done (commit 17504dd)
+> **Status:** Done (initial landing `17504dd`; review-round-2 follow-ups `6026b98` + `388065b` cut dead `<scalars>` / `<maxAllowedPageSize>` knobs, normalise `<outputDirectory>`, make `validate` usable standalone from the CLI, unify error handling across Mojos, widen `SchemaInputExpander` catch, extract `logWarnings` helper, trim stale javadoc)
 >
 > Sub-item of the "Dissolve `graphitron-schema-transform` module"
 > umbrella. Lands last in the umbrella's rewrite-plumbing arc, after
