@@ -8,6 +8,11 @@
 > the umbrella is where consumer-facing Maven-pipeline work lives; the
 > behaviour shows up as "did my IDE recompile every file or just the
 > ones I changed?" when a developer edits a schema.
+>
+> Ships a three-clause generator contract (determinism, minimal-change
+> writes, clean removal) documented as an intended feature in
+> `graphitron-rewrite/docs/getting-started.md`, not an internal
+> optimization.
 
 ## Goal
 
@@ -37,12 +42,45 @@ dev-mode tools watch as a source root. Two failure modes today:
 Both failure modes compound on larger schemas (Sikt's production schema
 emits ~400 files), where full recompiles dominate the inner dev loop.
 
+## Developer contract
+
+The behaviour this plan lands is a contract, not an optimization.
+Post-landing, the generator guarantees three clauses developers can
+rely on when building their dev-loop and CI setup:
+
+1. **Determinism.** Same schema + same config → same bytes on disk.
+   Running the generator twice produces byte-identical output trees,
+   so there is no mtime churn and no spurious diff in version control
+   between two consecutive runs over an unchanged input.
+2. **Minimal-change writes.** A schema edit that touches one type
+   rewrites that type's file (and its direct dependents when a
+   signature changes); every other file lands as a no-op write, so
+   IntelliJ's incremental compiler, Quarkus `quarkus:dev`, and Spring
+   Boot DevTools recompile only what actually changed.
+3. **Clean removal.** Removing a type or field from the schema deletes
+   the corresponding generated file at the end of the next generator
+   run. No orphan code, no stale compile errors against removed types,
+   no manual `target/` cleanup.
+
+Each clause has a named test ratchet (see §Tests):
+`GeneratorDeterminismTest` pins (1), the mtime-preservation test pins
+(2), the orphan-sweep tests pin (3). A future refactor that breaks any
+clause fails a test; restoring the clause is not a judgment call.
+
+The contract composes with standard IDE / build-tool incremental
+compile paths. No Graphitron-specific IDE plugin, watch goal, or
+opt-in flag is required; developers get the behaviour from using the
+generator.
+
 ## Scope boundaries
 
 - **In scope:** the single writer funnel at
   `GraphQLRewriteGenerator.java:90-103`. Content-idempotent write;
   end-of-run orphan sweep scoped to the sub-packages this generator
   emits. Determinism audit of the emitters that feed the funnel.
+  A new `## Dev loop` section in `graphitron-rewrite/docs/getting-started.md`
+  documenting the three-clause contract in developer-observable
+  terms (see §Documentation).
 - **Out of scope:** the legacy generator's write sites in
   `graphitron-java-codegen`. Legacy stays as-is; the umbrella retires
   it later. Parallel-safety of the write loop; the generator runs
@@ -169,6 +207,47 @@ split:
    every emitted file, touch nothing, run it again, assert all mtimes
    unchanged. Protects against a future writer refactor re-introducing
    unconditional overwrites.
+
+## Documentation
+
+Lands in the same commit as the writer change: a new `## Dev loop`
+H2 section in `graphitron-rewrite/docs/getting-started.md`, placed
+between the existing `## Customizer safe surface` and `## Notes`
+sections.
+
+The guide's opening paragraph currently scopes out build-time
+behaviour in its entirety ("Build-time Maven plugin configuration is
+out of scope here"). This plan narrows that exclusion to plugin
+*configuration* specifically; the runtime-visible dev-loop behaviour
+is a documented feature of the generator and belongs in the same
+guide that covers the runtime API, because it's part of what a
+consumer agrees to when they pick up rewrite. Rewording the opening
+paragraph is part of this deliverable.
+
+Proposed section content (outline; prose lands in the commit):
+
+- **What the developer does.** Edit `.graphqls` source; run
+  `mvn generate-sources` (or let the surrounding build tool
+  re-trigger it, for consumers who have their own watch / live-reload
+  wiring). The plan ships no Graphitron-specific watch goal.
+- **What the generator does.** Walks the full schema, renders each
+  output file, writes only the files whose content changed, deletes
+  files corresponding to removed schema elements. All three actions
+  happen unconditionally; no flag to enable.
+- **What the developer observes.** The three contract clauses in
+  developer-observable terms: `git diff` shows only the types the
+  schema edit touched; IDE recompile time is proportional to the
+  changed set, not the full generated tree; removing a type or field
+  from the schema removes the corresponding generated file on the
+  next run.
+- **Tool interop.** One-line confirmation that IntelliJ incremental
+  compile, Quarkus `quarkus:dev`, and Spring Boot DevTools work with
+  the behaviour out of the box; no Graphitron-specific tool
+  integration is required.
+
+Not in scope for the getting-started section: guidance on Maven-plugin
+configuration (still deferred until the rewrite-owned plugin lands).
+The new section is purely about the runtime-visible behaviour.
 
 ## Rollout
 
