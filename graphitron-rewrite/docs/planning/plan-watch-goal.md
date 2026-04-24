@@ -1,18 +1,20 @@
 # Plan: `graphitron:watch` goal
 
-> **Status:** Backlog
+> **Status:** Spec
 >
 > Adds a `watch` goal to `graphitron-rewrite-maven` (the rewrite-owned
-> Maven plugin). Depends on two prerequisites: the Maven plugin plan
-> must ship first to provide the clean `RewriteContext` construction
-> path, and the content-idempotent-writes plan must ship first so that
-> watch-triggered regeneration is cheap (only changed files are
-> written; unchanged files keep their mtimes and the IDE recompiles
-> only the types that actually changed).
+> Maven plugin). Both prerequisites are in place on trunk:
+> `AbstractRewriteMojo` / `RewriteContext` landed with the
+> rewrite-maven-plugin work (`17504dd` + follow-ups), and content-
+> idempotent writes (SHA-256 short-circuit in
+> `JavaFile.writeToPath`, orphan sweep in `GraphQLRewriteGenerator`)
+> landed in `9526217` + `5176dc2`.
 >
-> Without idempotent writes, a watch trigger rewrites the full output
-> tree on every save, defeating the purpose. With them, the trigger
-> cost is proportional to the diff.
+> Without idempotent writes a watch trigger would rewrite the full
+> output tree on every save, defeating the purpose. With them, the
+> trigger cost is proportional to the diff: unchanged files keep
+> their mtimes and the IDE recompiles only the types the schema edit
+> actually touched.
 
 ## Goal
 
@@ -37,9 +39,11 @@ becomes a natural complement to the dev-loop guarantee already
 documented in `getting-started.md`.
 
 The `getting-started.md` `## Dev loop` section (landed with
-idempotent-writes) already tells consumers to run `mvn
-generate-sources` or their own watch-trigger wiring. This plan closes
-the wiring gap for consumers who want a first-party solution.
+idempotent-writes) currently states that Graphitron ships no watch
+goal and points consumers at `mvn generate-sources` plus their own
+file-watcher wiring. This plan closes that gap with a first-party
+solution and replaces the "no watch goal" disclaimer with a
+`### Watch mode` subsection.
 
 ## Scope boundaries
 
@@ -51,17 +55,16 @@ the wiring gap for consumers who want a first-party solution.
   that contain the resolved `<schemaInputs>` files.
 - Debounce via `ScheduledExecutorService` (configurable window,
   default 300 ms).
-- Recursive directory registration: if the glob includes `**`,
-  register all existing subdirectories at startup and newly created
-  subdirectories at runtime.
+- Recursive directory registration at startup (via `Files.walk`
+  over each watched root) plus on-the-fly registration of newly
+  created subdirectories discovered via `ENTRY_CREATE`.
 - Error recovery: schema validation failures and `IOException` on
   re-generation are caught, printed with `getLog().error(...)`, and
   the watch loop resumes.
 - One run of the generator on startup before the watch loop begins,
   so the output tree is fresh when the loop starts.
-- A `--no-initial-run` skip flag (`-Dgraphitron.watch.skipInitial`)
-  for consumers whose build already ran `generate-sources` in the same
-  session.
+- `-Dgraphitron.watch.skipInitial=true` skip flag for consumers
+  whose build already ran `generate-sources` in the same session.
 
 **Out of scope**
 
@@ -83,37 +86,55 @@ the wiring gap for consumers who want a first-party solution.
 
 ```
 graphitron-rewrite-maven/
-  src/main/java/no/sikt/graphitron/maven/
-    WatchMojo.java          -- @Mojo(name = "watch", requiresDependencyResolution = COMPILE)
+  src/main/java/no/sikt/graphitron/rewrite/maven/
+    WatchMojo.java          -- @Mojo(name = "watch",
+                                      requiresDependencyResolution = COMPILE,
+                                      threadSafe = true)
     watch/
       SchemaWatcher.java    -- WatchService registration + event loop
       DebounceExecutor.java -- ScheduledExecutorService debounce helper
 ```
 
-`WatchMojo` extends the same `AbstractRewriteMojo` that `GenerateMojo`
-will extend, so `RewriteContext` construction is shared. The Mojo:
+`WatchMojo` extends `AbstractRewriteMojo` (same superclass as
+`GenerateMojo` / `ValidateMojo`). `packagesRequired()` returns `true`,
+matching `GenerateMojo`, because the watch loop performs real output
+writes. Context construction reuses the superclass's
+`protected final RewriteContext buildContext()` helper; the
+`protected final runGenerator(GeneratorCall)` helper is deliberately
+**not** reused because it wraps `RuntimeException` into
+`MojoExecutionException`, and the watch loop needs to catch and
+resume rather than abort the Maven process.
 
-1. Builds `RewriteContext` from plugin parameters (same path as
-   `GenerateMojo.execute()`).
-2. Unless `skipInitial` is set, runs `new GraphQLRewriteGenerator(ctx).run()` once.
-3. Resolves the watch directory set from `ctx.schemaInputs()` (parent
-   directories of every resolved `SchemaInput.sourceName()`; deduplicated).
-4. Starts `SchemaWatcher` with that directory set and a callback that
-   calls the generator and re-expands `<schemaInputs>` to pick up new
-   files added mid-session.
-5. Blocks on `SchemaWatcher.run()` until the JVM receives SIGINT or
-   SIGTERM.
+The Mojo:
+
+1. Calls `buildContext()` once to validate plugin configuration (a
+   misconfigured `<schemaInputs>` or missing required package is a
+   fatal `MojoExecutionException`, not a watch-loop event).
+2. Unless `skipInitial` is set, runs `new GraphQLRewriteGenerator(ctx).generate()` once.
+3. Resolves the watch directory set: for each `SchemaInput` in
+   `ctx.schemaInputs()`, take `Paths.get(input.sourceName()).getParent()`
+   and deduplicate.
+4. Installs a JVM shutdown hook that closes the `SchemaWatcher`
+   (which in turn closes the `WatchService` and shuts down the
+   `DebounceExecutor`).
+5. Starts `SchemaWatcher` with that directory set and a callback that
+   re-invokes `buildContext()` (to re-expand `<schemaInputs>` globs
+   and pick up new files) and then runs the generator.
+6. Blocks on `SchemaWatcher.run()` until the shutdown hook fires.
 
 ### `SchemaWatcher`
 
 Wraps `FileSystems.getDefault().newWatchService()`. On construction:
 
-- Registers each directory in the watch set for
-  `ENTRY_CREATE`, `ENTRY_MODIFY`, `ENTRY_DELETE`.
-- If the glob set includes any `**` pattern, performs a
-  `Files.walk(dir)` to register all existing subdirectories and
-  re-registers each new `ENTRY_CREATE` event that resolves to a
-  directory.
+- For each directory in the watch set, walks it via `Files.walk(dir)`
+  and registers every directory (root + all existing subdirectories)
+  for `ENTRY_CREATE`, `ENTRY_MODIFY`, `ENTRY_DELETE`.
+  Always walking recursively is simpler than inspecting raw
+  `SchemaInputBinding` glob patterns for `**` markers, and costs
+  nothing on a flat schema directory (one registration, zero extra
+  walks).
+- Any runtime `ENTRY_CREATE` event that resolves to a directory is
+  registered on the fly so newly-created subtrees are watched.
 
 Event loop:
 
@@ -138,33 +159,50 @@ cancels any pending task and schedules a new one 300 ms in the future
 (configurable via `-Dgraphitron.watch.debounceMs`). When the task
 fires, it:
 
-1. Re-expands `<schemaInputs>` globs (picks up new files).
-2. Rebuilds `RewriteContext` with the updated input set.
-3. Calls `new GraphQLRewriteGenerator(ctx).run()`.
-4. Catches `RuntimeException`; prints via `getLog().error(...)`;
-   resumes.
-5. Re-registers any new directories discovered in the expanded input
-   set.
+1. Calls `buildContext()` on the Mojo (re-expands `<schemaInputs>`
+   globs via `SchemaInputExpander`, producing a fresh
+   `RewriteContext`).
+2. Calls `new GraphQLRewriteGenerator(ctx).generate()`.
+3. Catches `RuntimeException` and `MojoExecutionException`; prints
+   via `getLog().error(...)`; resumes. Validation errors are already
+   surfaced via `getLog().error(...)` inside the generator's
+   `validateAndLogErrors` helper, so the catch block handles only
+   structural failures (I/O, config drift).
+4. Diffs the new watch-directory set against the current
+   `SchemaWatcher` registry and registers any directories added by
+   new matches.
 
 ### Thread safety
 
 `GraphQLRewriteGenerator` is constructed fresh on each trigger with
-its own `RewriteContext` instance. After the rewrite-maven-plugin
-plan lands and `RewriteConfig` statics are deleted, the generator has
-no shared mutable state. The debounce executor's single thread
-serialises triggers so two generator runs cannot overlap.
+its own `RewriteContext` instance; confirmed free of static/singleton
+state in the current tree. The debounce executor's single thread
+serialises triggers so two generator runs cannot overlap. The
+`WatchService` loop runs on its own thread and hands events to the
+debounce executor via the single `schedule(...)` seam.
+
+On shutdown (SIGINT/SIGTERM → JVM shutdown hook): the hook closes
+the `WatchService` (causing the event-loop thread's `take()` to
+throw `ClosedWatchServiceException`, which it treats as graceful
+exit) and calls `shutdownNow()` on the debounce executor. A
+best-effort `awaitTermination(1, SECONDS)` gives any in-flight
+generator run a chance to finish its current file write.
 
 ### Parameters
 
 | Parameter | XML element | System property | Default |
 |---|---|---|---|
-| Inherited from `AbstractRewriteMojo` | `<schemaInputs>`, `<outputPackage>`, etc. | (same as `generate`) | (same as `generate`) |
-| Skip initial run | (flag only) | `graphitron.watch.skipInitial` | `false` |
-| Debounce window | (flag only) | `graphitron.watch.debounceMs` | `300` |
+| Inherited from `AbstractRewriteMojo` | `<schemaInputs>`, `<outputDirectory>`, `<outputPackage>`, `<jooqPackage>`, `<namedReferences>` | (same as `generate`) | (same as `generate`) |
+| Skip initial run | (intentionally undocumented) | `graphitron.watch.skipInitial` | `false` |
+| Debounce window | (intentionally undocumented) | `graphitron.watch.debounceMs` | `300` |
 
-Neither `skipInitial` nor `debounceMs` is a `@Parameter`-exposed XML
-element; they are developer-session overrides passed on the command
-line, not project configuration.
+`skipInitial` and `debounceMs` are declared as
+`@Parameter(property = "graphitron.watch.skipInitial")` /
+`@Parameter(property = "graphitron.watch.debounceMs")` so Maven can
+inject `-D` overrides, but they are omitted from `getting-started.md`
+and the plugin README: they are developer-session knobs, not project
+configuration. (Maven doesn't offer a "`-D` only, no XML" mode; the
+convention is to document them only as system properties.)
 
 ## Tests
 
@@ -180,11 +218,19 @@ under `src/test`).
 - Writes a non-`.graphqls` file, asserts no callback.
 - Creates a subdirectory and writes a `.graphqls` file into it,
   asserts the callback fires (recursive registration).
-- `OVERFLOW` event causes a callback.
+- `OVERFLOW` event causes a callback. Since `WatchService` does not
+  expose a public knob for triggering `OVERFLOW`, this case is
+  tested by posting a synthetic `WatchEvent` of kind
+  `StandardWatchEventKinds.OVERFLOW` into `SchemaWatcher`'s event
+  dispatch method directly (the dispatch method is package-private
+  for this reason).
 
-Uses `WatchService` against the real filesystem (temp dirs); no
-mocking needed since the API surface is small and the behaviour under
-test is the OS-level notification contract.
+Tests use `WatchService` against the real filesystem (temp dirs).
+Timing-sensitive assertions use `CountDownLatch.await(timeout,
+unit)` with a generous margin (e.g. `debounceMs + 500 ms`) rather
+than fixed `Thread.sleep`, to avoid the flakiness pattern that
+motivated the `IdempotentWriterTest` mtime-backdate fix
+(`5176dc2`).
 
 **Unit: `DebounceExecutorTest`** (new, same module).
 
@@ -201,27 +247,37 @@ idempotent-writes plan). The watch loop adds only the
 
 ## Documentation
 
-Extend the `## Dev loop` section in
-`graphitron-rewrite/docs/getting-started.md` (introduced by the
-idempotent-writes plan) with a short `### Watch mode` subsection:
+The current `## Dev loop` section in
+`graphitron-rewrite/docs/getting-started.md` contains an explicit
+sentence stating "Graphitron ships no watch goal." That sentence is
+removed and replaced with a `### Watch mode` subsection:
 
-- Command: `mvn graphitron:watch`
+- Command: `mvn graphitron:watch` (plugin groupId/artifactId same as
+  `generate`; the `graphitron` prefix is resolved by the standard
+  Maven plugin-prefix mechanism).
 - What it does: runs the generator once on startup, then watches
   `<schemaInputs>` directories and re-runs on any `.graphqls` change.
 - What the developer observes: only changed files are written; the
-  IDE recompiles only the affected classes (same three-clause contract
-  as a manual `generate-sources` run).
-- How to stop: Ctrl+C.
+  IDE recompiles only the affected classes (same three-clause
+  contract as a manual `generate-sources` run, pinned by
+  `IdempotentWriterTest` and `GeneratorDeterminismTest`).
+- How to stop: Ctrl+C (the JVM shutdown hook closes the
+  `WatchService` and the debounce executor).
 - Note on jOOQ changes: changing the jOOQ schema requires restarting
   the watch session (the compiled jOOQ classes are not watched).
 
+System-property knobs (`graphitron.watch.skipInitial`,
+`graphitron.watch.debounceMs`) are **not** documented in
+getting-started.md; they are session overrides for developers
+debugging the watch loop itself.
+
 ## Rollout
 
-Single-commit landing in `graphitron-rewrite-maven` after both
-prerequisites are merged to `claude/graphitron-rewrite`. No consumer
-migration required: the goal is additive and opt-in. Consumers who
-already use `mvn generate-sources` in a shell loop or IDE file watcher
-can migrate at their convenience; both work correctly alongside the
+Single-commit landing in `graphitron-rewrite-maven` (both
+prerequisites are already on trunk). No consumer migration
+required: the goal is additive and opt-in. Consumers who already use
+`mvn generate-sources` in a shell loop or IDE file watcher can
+migrate at their convenience; both work correctly alongside the
 idempotent-writes contract.
 
 ## Roadmap integration
