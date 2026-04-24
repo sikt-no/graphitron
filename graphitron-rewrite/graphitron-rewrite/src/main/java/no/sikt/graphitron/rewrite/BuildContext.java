@@ -35,6 +35,8 @@ import no.sikt.graphitron.rewrite.model.JoinStep.FkJoin;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import org.jooq.ForeignKey;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -53,6 +55,8 @@ import java.util.stream.Collectors;
  * pass and sets it. All code that reads {@code types} is called only after that point.
  */
 class BuildContext {
+
+    private static final Logger NODE_ID_SHIM_LOGGER = LoggerFactory.getLogger(BuildContext.class);
 
     // ===== Directive names =====
 
@@ -842,11 +846,20 @@ class BuildContext {
                 new ColumnRef(e.sqlName(), e.javaName(), e.columnClass()), cond));
         }
         // NodeId: scalar ID field whose backing table carries node-identity metadata
-        // (__NODE_TYPE_ID / __NODE_KEY_COLUMNS constants emitted by KjerneJooqGenerator, or
-        // asserted via @nodeId on the field). Both routes produce NodeIdField.
+        // (__NODE_TYPE_ID / __NODE_KEY_COLUMNS constants emitted by KjerneJooqGenerator). Two
+        // routes produce InputField.NodeIdField here: the declared form (field carries @nodeId)
+        // and the migration-shim form (bare scalar ID on a node-type table). The shim fires a
+        // per-site deprecation diagnostic — the canonical form is to declare @nodeId explicitly.
+        // Shim is retired at R7. See plan-nodeid-directives.md.
         if ("ID".equals(typeName) && !list) {
             Optional<JooqCatalog.NodeIdMetadata> nodeIdMeta = catalog.nodeIdMetadata(tableName);
             if (nodeIdMeta.isPresent()) {
+                if (!field.hasAppliedDirective(DIR_NODE_ID)) {
+                    NODE_ID_SHIM_LOGGER.warn("input field '{}.{}' synthesizes NodeIdField without"
+                        + " '@nodeId' — declare the directive explicitly; synthesis shim will be"
+                        + " removed in a future release. See plan-nodeid-directives.md",
+                        parentTypeName, name);
+                }
                 return new InputFieldResolution.Resolved(new InputField.NodeIdField(
                     parentTypeName, name, locationOf(field),
                     nodeIdMeta.get().typeId(), nodeIdMeta.get().keyColumns()));

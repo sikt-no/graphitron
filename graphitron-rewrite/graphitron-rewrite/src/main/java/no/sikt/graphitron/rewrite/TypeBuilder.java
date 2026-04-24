@@ -271,8 +271,15 @@ class TypeBuilder {
             return new TableType(name, location, tableRef);
         }
         if (!hasNode) {
-            // Metadata-only migration shim — see plan-nodeid-directives.md "Migration".
-            // R2 will add a deprecation diagnostic when the type lacks `implements Node @node`.
+            // Migration shim: metadata-carrying table promoted to NodeType without canonical
+            // `implements Node @node` in SDL. Fires a deprecation diagnostic per type; the shim
+            // is removed in R7 once consumers have finished migrating SDL. See plan-nodeid-
+            // directives.md "Migration".
+            String missing = implementsNode(objType) ? "@node" : "implements Node @node";
+            LOGGER.warn("table '{}' has KjerneJooqGenerator metadata but type '{}' is missing '{}'"
+                + " — synthesis shim will be removed in a future release; declare '{}' to opt into"
+                + " node-identity semantics explicitly. See plan-nodeid-directives.md",
+                tableRef.tableName(), name, missing, missing);
             return new NodeType(name, location, tableRef, metadata.get().typeId(),
                 List.copyOf(metadata.get().keyColumns()));
         }
