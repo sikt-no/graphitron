@@ -30,6 +30,14 @@
 
         <!-- Test dependencies -->
         <dependency>
+            <!-- GeneratorDeterminismTest invokes the generator in-process against
+                 the fixture schema to ratchet the three-clause contract. -->
+            <groupId>no.sikt</groupId>
+            <artifactId>graphitron-rewrite</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
             <groupId>com.graphql-java</groupId>
             <artifactId>graphql-java</artifactId>
             <scope>test</scope>

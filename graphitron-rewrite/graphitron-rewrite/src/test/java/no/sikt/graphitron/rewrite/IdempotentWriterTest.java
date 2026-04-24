@@ -8,21 +8,22 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.attribute.FileTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Verifies the three-clause generator contract at the writer level:
- * (1) unchanged files are not rewritten (mtime preserved), (2) changed
- * files are overwritten, (3) orphan files are swept from owned sub-packages
- * and files outside owned sub-packages are left alone.
+ * Writer-level unit tests: tamper-detection (content-idempotent write),
+ * orphan sweep inside owned sub-packages, and scope preservation for
+ * files outside owned sub-packages. Runs against a trivial two-type SDL
+ * because the writer mechanics don't depend on emitter breadth. The
+ * pipeline-tier determinism and mtime-preservation ratchets live in
+ * {@code graphitron-rewrite-test/GeneratorDeterminismTest} against the
+ * full fixture schema.
  */
 class IdempotentWriterTest {
 
@@ -40,44 +41,6 @@ class IdempotentWriterTest {
             DEFAULT_JOOQ_PACKAGE,
             Map.of()
         );
-    }
-
-    private static Map<Path, Long> mtimes(Path root) throws IOException {
-        try (var walk = Files.walk(root)) {
-            return walk.filter(Files::isRegularFile)
-                .collect(Collectors.toMap(p -> p, p -> {
-                    try { return Files.getLastModifiedTime(p).toMillis(); }
-                    catch (IOException e) { throw new RuntimeException(e); }
-                }));
-        }
-    }
-
-    @Test
-    void unchangedFilesPreserveMtime(@TempDir Path root) throws IOException {
-        Path schemaFile = root.resolve("schema.graphqls");
-        Files.writeString(schemaFile, SCHEMA_SDL, StandardCharsets.UTF_8);
-        Path outDir = root.resolve("out");
-        Files.createDirectories(outDir);
-
-        var ctx = contextFor(schemaFile, outDir);
-        new GraphQLRewriteGenerator(ctx).generate();
-
-        // Wind all mtimes back 2 seconds so any rewrite is detectable by mtime advancing.
-        long past = System.currentTimeMillis() - 2_000;
-        try (var walk = Files.walk(outDir)) {
-            walk.filter(Files::isRegularFile)
-                .forEach(p -> {
-                    try { Files.setLastModifiedTime(p, FileTime.fromMillis(past)); }
-                    catch (IOException e) { throw new RuntimeException(e); }
-                });
-        }
-        Map<Path, Long> before = mtimes(outDir);
-        assertThat(before).isNotEmpty();
-
-        new GraphQLRewriteGenerator(ctx).generate();
-        Map<Path, Long> after = mtimes(outDir);
-
-        assertThat(after).isEqualTo(before);
     }
 
     @Test
