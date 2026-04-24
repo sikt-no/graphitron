@@ -78,7 +78,6 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.ChildField.ColumnReferenceField f    -> validateColumnReferenceField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.NodeIdField f             -> validateNodeIdField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.NodeIdReferenceField f    -> validateNodeIdReferenceField(f, errors);
-            case no.sikt.graphitron.rewrite.model.ChildField.PlatformIdField f         -> validateChildPlatformIdField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.TableField f              -> validateTableField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.SplitTableField f        -> validateSplitTableField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.LookupTableField f       -> validateLookupTableField(f, types, errors);
@@ -101,7 +100,6 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.InputField.ColumnReferenceField f  -> validateInputColumnReferenceField(f, errors);
             case no.sikt.graphitron.rewrite.model.InputField.NodeIdField f            -> {} // no extra validation yet
             case no.sikt.graphitron.rewrite.model.InputField.NodeIdReferenceField f  -> {} // no extra validation yet
-            case no.sikt.graphitron.rewrite.model.InputField.PlatformIdField f       -> validateInputPlatformIdField(f, errors);
             case no.sikt.graphitron.rewrite.model.InputField.NestingField f          -> validateInputNestingField(f, errors);
             case no.sikt.graphitron.rewrite.model.GraphitronField.NotGeneratedField f -> validateNotGeneratedField(f, errors);
             case no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField f -> validateUnclassifiedField(f, errors);
@@ -307,9 +305,6 @@ public class GraphitronSchemaValidator {
     private void validateNodeIdField(no.sikt.graphitron.rewrite.model.ChildField.NodeIdField field, List<ValidationError> errors) {
         // NodeIdField is only classified when the parent type is a NodeType.
         // The absence-of-@node case is classified as UnclassifiedField in the builder.
-    }
-    private void validateChildPlatformIdField(no.sikt.graphitron.rewrite.model.ChildField.PlatformIdField field, List<ValidationError> errors) {
-        // Detection confirmed the table-class method exists; no further structural checks needed.
     }
     private void validateNodeIdReferenceField(no.sikt.graphitron.rewrite.model.ChildField.NodeIdReferenceField field, List<ValidationError> errors) {
         // @node is always resolved — builder returns UnclassifiedField if the type is missing or lacks @node.
@@ -644,9 +639,6 @@ public class GraphitronSchemaValidator {
     }
     private void validateInputColumnReferenceField(no.sikt.graphitron.rewrite.model.InputField.ColumnReferenceField field, List<ValidationError> errors) {
         // Column and join path resolution is guaranteed by the builder (unresolved → UnclassifiedType). Nothing to validate here.
-    }
-    private void validateInputPlatformIdField(no.sikt.graphitron.rewrite.model.InputField.PlatformIdField field, List<ValidationError> errors) {
-        // platformId method presence is guaranteed by the builder (unresolved → UnclassifiedType). Nothing to validate here.
     }
     private void validateInputNestingField(no.sikt.graphitron.rewrite.model.InputField.NestingField field, List<ValidationError> errors) {
         // Nested field columns are resolved at classification time; no additional structural checks needed.

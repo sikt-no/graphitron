@@ -841,10 +841,9 @@ class BuildContext {
                 parentTypeName, name, locationOf(field), typeName, nonNull, list,
                 new ColumnRef(e.sqlName(), e.javaName(), e.columnClass()), cond));
         }
-        // NodeId: scalar ID field whose backing table carries node-identity metadata (synthesized
-        // via __NODE_TYPE_ID/__NODE_KEY_COLUMNS constants, or asserted via @nodeId on the field).
-        // Both routes produce NodeIdField; the column lookup above already failed so we skip the
-        // platform-id accessor check entirely for node-type tables.
+        // NodeId: scalar ID field whose backing table carries node-identity metadata
+        // (__NODE_TYPE_ID / __NODE_KEY_COLUMNS constants emitted by KjerneJooqGenerator, or
+        // asserted via @nodeId on the field). Both routes produce NodeIdField.
         if ("ID".equals(typeName) && !list) {
             Optional<JooqCatalog.NodeIdMetadata> nodeIdMeta = catalog.nodeIdMetadata(tableName);
             if (nodeIdMeta.isPresent()) {
@@ -852,21 +851,6 @@ class BuildContext {
                     parentTypeName, name, locationOf(field),
                     nodeIdMeta.get().typeId(), nodeIdMeta.get().keyColumns()));
             }
-        }
-        // Fallback: check for legacy platform-key accessors on the jOOQ record class.
-        if ("ID".equals(typeName)
-                && !list
-                && !field.hasAppliedDirective(DIR_NODE_ID)) {
-            String accessorSuffix = JooqCatalog.sqlToAccessorSuffix(columnName);
-            String getterName = "get" + accessorSuffix;
-            String setterName = "set" + accessorSuffix;
-            if (catalog.hasPlatformIdAccessors(tableName, getterName, setterName)) {
-                return new InputFieldResolution.Resolved(new InputField.PlatformIdField(
-                    parentTypeName, name, locationOf(field), typeName, nonNull, getterName, setterName));
-            }
-            return new InputFieldResolution.Unresolved(name, null,
-                "field '" + name + "' has no matching column and no accessor methods ("
-                + getterName + "/" + setterName + ") found on record class");
         }
         return new InputFieldResolution.Unresolved(name, columnName,
             "no column '" + columnName + "' found in table '" + tableName + "'");
