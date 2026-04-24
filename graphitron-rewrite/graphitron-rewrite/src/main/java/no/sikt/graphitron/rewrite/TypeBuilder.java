@@ -131,7 +131,33 @@ class TypeBuilder {
             case UnclassifiedType ignored -> type;
         });
 
+        // NodeType typeId uniqueness: two types cannot share a typeId because Query.node(id:)
+        // dispatch extracts the typeId prefix and routes to one GraphQL type. Colliding entries
+        // demote symmetrically — we can't pick a winner without silently breaking the loser's
+        // issued IDs, which would violate the durability invariant.
+        validateNodeTypeIdUniqueness(result);
+
         return result;
+    }
+
+    private static void validateNodeTypeIdUniqueness(Map<String, GraphitronType> types) {
+        var byTypeId = new LinkedHashMap<String, List<NodeType>>();
+        for (var type : types.values()) {
+            if (type instanceof NodeType nt) {
+                byTypeId.computeIfAbsent(nt.typeId(), k -> new ArrayList<>()).add(nt);
+            }
+        }
+        for (var entry : byTypeId.entrySet()) {
+            if (entry.getValue().size() < 2) continue;
+            String typeId = entry.getKey();
+            List<String> colliding = entry.getValue().stream().map(NodeType::name).sorted().toList();
+            String others = String.join(", ", colliding);
+            for (var nt : entry.getValue()) {
+                types.put(nt.name(), new UnclassifiedType(nt.name(), nt.location(),
+                    "typeId '" + typeId + "' is declared on multiple types (" + others
+                    + ") — Query.node dispatch would be nondeterministic; pick one via @node(typeId:)"));
+            }
+        }
     }
 
     private GraphitronType enrichTableInterfaceType(TableInterfaceType type) {
