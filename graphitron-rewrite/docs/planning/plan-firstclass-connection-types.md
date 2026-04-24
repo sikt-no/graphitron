@@ -1,362 +1,345 @@
-# Plan: promote Connection, Edge, and PageInfo to first-class `GraphitronType` variants
+# Plan: first-class Connection type variants + classifier-authoritative emission
 
-> **Status:** In Review
+> **Status:** Spec
 >
-> Today `schema.types()` lies about what the generator emits. A schema with
-> `stores: [Store!]! @asConnection` gets `Store` as a `TableType` entry and
-> nothing for `QueryStoresConnection` / `QueryStoresEdge` / `PageInfo` — those
-> three types are magicked into the output at emit time by `ConnectionSynthesis`
-> scanning the assembled schema in parallel. The carrier field's
-> `FieldWrapper.Connection` holds the edge of the missing nodes: it says "this
-> field is a Connection of Store" and points at types that aren't in the model.
+> First instalment (Phases 1-3) shipped: `ConnectionType` / `EdgeType` /
+> `PageInfoType` are first-class `GraphitronType` variants, `ConnectionSynthesis`
+> is deleted, `FieldWrapper.Connection` is down to per-site metadata. The original
+> driver — `schema.types()` lying about what the generator emits — is resolved
+> for Connections.
 >
-> This plan promotes Connection, Edge, and PageInfo to first-class
-> `GraphitronType` variants so `schema.types()` is honest. The parallel
-> `ConnectionSynthesis` mechanism dissolves; emission iterates the model
-> uniformly; structural and directive-driven Connections stop being artificial
-> different paths.
+> The remaining work closes three deviations from the "classifier is authoritative"
+> principle that the shipped implementation didn't address, plus extends the
+> pattern to the other schema emitters. **No production users yet** — this is
+> the right window to finish the job cleanly rather than paper over the gaps
+> with indirection.
+>
+> The endpoint: every emitter in `generators/schema/` reads from `GraphitronSchema`
+> only. The `assembled GraphQLSchema` is a classifier output that the runtime
+> validator and generated `GraphitronSchema.build()` consume, but no emitter
+> reads it. No directive probing at emit time. No fallback iterations over
+> two sources.
 
-## Problem
+## Shipped
 
-Three consequences of the current collapse:
+- **Phase 1** (`0aef2c7`) — `ConnectionType`, `EdgeType`, `PageInfoType` added to
+  `GraphitronType` sealed hierarchy; classifier populates them for both
+  directive-driven (`@asConnection` on a bare list) and structural
+  (hand-written Connection-shaped SDL) paths. Each variant carries its
+  `GraphQLObjectType schemaType`. Six `ConnectionTypeCase` classification tests.
+- **Phase 2** (`0ecde9d`) — `ObjectTypeGenerator` and
+  `GraphitronSchemaClassGenerator` iterate `schema.types()`.
+  `ConnectionSynthesis.java` + test deleted (385 + 243 lines).
+  `GraphQLRewriteGenerator.runPipeline` passes `schema` to emitters. Emitter
+  fetcher-body lookup keyed off `schema.types()` via
+  `FetcherRegistrationsEmitter`.
+- **Phase 3** (`237d6d3`) — `FieldWrapper.Connection` shrunk to
+  `(connectionNullable, defaultPageSize)`. Structural-detection convenience
+  constructor deleted. `FetcherRegistrationsEmitter` finds
+  connection/edge names from `schema.types()` directly.
 
-1. **The model misrepresents the output.** `schema.types()` claims to be the
-   type index; a caller who trusts it cannot find `QueryStoresConnection`
-   because the classifier never records it. Any future tool that iterates
-   `types()` for emission, validation, introspection, or diagnostics gets an
-   incomplete answer.
-2. **Directive-driven vs. structural Connections are artificially different.**
-   A hand-written `FilmsConnection { edges, nodes, pageInfo }` produces a
-   `TableType` in `types()` (misclassified, but present). A directive-driven
-   `[Film!]! @asConnection` produces nothing in `types()`. Both are
-   "Connection of Film" semantically; the model distinguishes them for
-   implementation reasons, not design reasons.
-3. **`ConnectionSynthesis` exists to paper over the first two.** It scans the
-   assembled schema three times (once each from
-   `GraphQLRewriteGenerator.runPipeline`, `ObjectTypeGenerator.generate`,
-   `GraphitronSchemaClassGenerator.generate`) to re-derive the types the
-   classifier already saw but didn't record. The parallel scan is why the
-   misfire bug in `ObjectTypeGenerator.buildFieldDefinition` exists (probing
-   by derived name instead of directive presence) and why the
-   fetcher-body duplication in `FetcherRegistrationsEmitter` exists (the
-   structural path needs bodies keyed by name; the synthesis path reinvents
-   them inline).
+## Deviations still in place
 
-The technical debt is that `FieldWrapper.Connection` absorbed responsibility
-that belongs on dedicated type variants. Moving it back makes every downstream
-problem disappear.
+The shipped implementation has three gaps from the "classifier is
+authoritative" principle. Each is a working workaround today; each is worth
+closing pre-launch rather than carrying into production.
 
-## Current state
+### D1 — plain SDL types bypass the classifier
 
-- `GraphitronType` sealed hierarchy at
-  `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewrite/model/GraphitronType.java`
-  has variants for every SDL type the classifier recognises (TableType,
-  NodeType, ResultType family, RootType, InterfaceType, UnionType, ErrorType,
-  InputType family, TableInputType, UnclassifiedType). No variant for
-  Connection, Edge, or PageInfo.
-- `FieldWrapper.Connection` at
-  `.../model/FieldWrapper.java` carries `connectionNullable`, `itemNullable`,
-  `defaultPageSize`, `connectionName`. The `connectionName` field is the only
-  link between a carrier and its (missing) type.
-- `FieldBuilder.buildWrapper` at `FieldBuilder.java:384-412` has two arms
-  producing `FieldWrapper.Connection` — directive-driven (line 390) and
-  structural (line 406). Neither adds a type to `schema.types()`.
-- `ConnectionSynthesis.java` (385 lines) exists solely to re-derive what the
-  classifier saw. It scans the assembled schema, builds a Plan, emits
-  TypeSpecs for the missing types, and feeds the same plan back to
-  `ObjectTypeGenerator.buildFieldDefinition` (carrier rewrite) and
-  `GraphitronSchemaClassGenerator.generate` (`.additionalType(...)` wiring).
-- Runtime behaviour is correct today — the TypeSpecs are emitted, the
-  `additionalType(...)` calls are generated, fetchers wire up. The lie is
-  in the model, not the output.
+`TypeBuilder.classifyType` returns `null` for object types without
+`@table` / `@record` / `@error`. Such types don't enter `schema.types()`.
+`ObjectTypeGenerator.generate` accommodates this with a second loop over
+`assembled.getAllTypesAsList()` — the exact kind of dual-source iteration this
+plan was meant to retire.
 
-## Desired end state
+*Fix:* classifier records every emittable object type. A new
+`GraphitronType.PojoObjectType` (or analogous name) for plain object types,
+a variant for enums, and normalization so every SDL-declared type the
+generator emits has a `schema.types()` entry.
 
-- `GraphitronType` has three new variants: `ConnectionType`, `EdgeType`,
-  `PageInfoType`. Each carries the semantic info it needs (element type,
-  nullability, shareable flag).
-- The classifier populates these variants in `schema.types()` whenever it
-  encounters `@asConnection` on a bare list (directive-driven) or a
-  hand-written Connection-shaped type (structural). Both paths produce the
-  same variant.
-- Each variant exposes its graphql-java form — either as a constructor field
-  populated at classification time (SDL: reference from the assembled schema;
-  synthesised: built programmatically) or via a `schemaType()` method. The
-  generator reads this uniformly.
-- `ObjectTypeGenerator` and `GraphitronSchemaClassGenerator` iterate
-  `schema.types()` (not `assembled.getAllTypesAsList()`) and emit from the
-  variant's graphql-java form.
-- `ConnectionSynthesis.java` is deleted. Its test file is deleted; assertions
-  migrate to classifier and emitter tests.
-- `FieldWrapper.Connection` keeps only what's per-carrier-site
-  (`defaultPageSize`); fields that describe the Connection *type*
-  (`connectionName`, `itemNullable`) move to `ConnectionType`.
-- The assembled `GraphQLSchema` produced by `GraphitronSchemaBuilder` contains
-  the synthesised types so runtime introspection and validation see them.
+### D2 — carrier rewrite happens at emit time, via directive probing
 
-## Scope: why this is a Connection-only problem
+Plan Phase 2 envisioned the classifier rewriting the carrier field's
+`GraphQLFieldDefinition` via `.transform()` (replacing the bare-list return
+type with the Connection type reference, appending `first`/`after` args) so
+the emitter reads a pre-rewritten field. That wasn't implemented.
+`ObjectTypeGenerator.buildFieldDefinition` currently probes
+`field.hasAppliedDirective("asConnection")`, resolves the connection name at
+emit time, and rewrites the emitted `CodeBlock`.
 
-Every other `GraphitronType` variant has a corresponding entry in `types()`
-when its SDL type is present. `@record` → `ResultType` family. `@error` →
-`ErrorType`. `@table` → `TableType`. `@node` → `NodeType`. `@table` on input
-→ `TableInputType`. Hand-written enums, interfaces, unions, and inputs land
-as their corresponding variants. None of them synthesise an SDL type the
-author didn't write, and none of them get collapsed into a field wrapper.
+*Fix:* classifier rebuilds the parent `GraphQLObjectType` with the carrier
+field transformed. Emitter stops reading directives.
 
-Connection is unique because `@asConnection` *is* a synthesis directive — it
-instructs the generator to add types the author did not declare. The current
-code handles the synthesis at emit time and neglects to notify the model.
-No other directive has this shape today; when `@asFacet` lands it will
-(separately, per [plan-faceted-search.md](plan-faceted-search.md)), and the
-pattern this plan establishes — directives that synthesise types populate
-first-class variants via the classifier — is the precedent `@asFacet`
-inherits.
+### D3 — assembled schema doesn't see synthesised types
 
-## Phase 1 — model additions (no emitter changes)
+Directive-driven Connection / Edge / PageInfo types are built by the
+classifier and stored on their respective variants' `schemaType`, but the
+`assembled GraphQLSchema` the bundle returns does not contain them.
+`assembled.getType("QueryStoresConnection")` returns `null` for directive-driven
+connections. Nothing downstream reads assembled for synthesised names today, so
+it's latent — but any future code that does will silently miss them.
 
-**Scope.** Introduce the three variants and have the classifier populate
-them. Pure additive. No existing emitter reads them yet;
-`ConnectionSynthesis` remains the source of truth for emission.
+*Fix:* rebuild the assembled schema with `additionalType(...)` calls for
+synthesised types (and carrier-rewritten parent types from D2). Post-rebuild,
+the model and the assembled schema agree on what types exist.
 
-**Touch points.**
+### D4 — enums and inputs still bypass the classifier for emission
 
-- `GraphitronType.java` — add `ConnectionType`, `EdgeType`, `PageInfoType` to
-  the `permits` clause and declare the records:
+`EnumTypeGenerator` and `InputTypeGenerator` still iterate
+`assembled.getAllTypesAsList()`. The D1 / D2 / D3 work is scoped to objects;
+these two emitters were left alone in Phase 2. Pre-launch is the right window
+to flip them too, so the architecture is uniform.
 
-  ```java
-  record ConnectionType(
-      String name, SourceLocation location,
-      String elementTypeName,
-      String edgeTypeName,
-      boolean itemNullable,
-      boolean shareable,
-      GraphQLObjectType schemaType         // graphql-java form
-  ) implements GraphitronType {}
+*Fix:* classifier records enum and plain-input types in `schema.types()`;
+both emitters iterate `schema.types()` only.
 
-  record EdgeType(
-      String name, SourceLocation location,
-      String elementTypeName, boolean itemNullable, boolean shareable,
-      GraphQLObjectType schemaType
-  ) implements GraphitronType {}
+## End state
 
-  record PageInfoType(
-      String name, SourceLocation location, boolean shareable,
-      GraphQLObjectType schemaType
-  ) implements GraphitronType {}
-  ```
+After the remaining phases ship:
 
-- `FieldBuilder.buildWrapper` (both arms) — after producing
-  `FieldWrapper.Connection`, contribute the corresponding `ConnectionType`,
-  `EdgeType`, and (when absent) `PageInfoType` to the schema under
-  construction. Dedup by name. Resolve name / element / flags from the
-  existing wrapper-building logic; compute `schemaType` by:
-  - For the structural arm: reference the already-built `GraphQLObjectType`
-    from the assembled schema.
-  - For the directive-driven arm: build a `GraphQLObjectType` programmatically
-    using graphql-java builders, with fields `edges` / `nodes` / `pageInfo`
-    (Connection), `cursor` / `node` (Edge), or the four Relay fields
-    (PageInfo). Shareable applied via `.withAppliedDirective(...)` as today.
-- `GraphitronSchemaBuilder` — also ensure the assembled `GraphQLSchema`
-  includes the synthesised types. Either (a) mutate the registry before
-  graphql-java builds the schema, or (b) rebuild a fresh schema with
-  `additionalType(...)` calls from the synthesised variants. Pick (b) — it's
-  local to the builder and doesn't touch `TypeDefinitionRegistry`.
+- `schema.types()` is the single source of truth for what the generator
+  emits. Every emittable type — SDL-declared or directive-synthesised — has
+  an entry, with an appropriate `GraphitronType` variant.
+- Every `GraphitronType` variant exposes its graphql-java form via a common
+  `schemaType()` accessor (or equivalent). SDL-declared variants carry the
+  reference from the assembled schema; directive-synthesised variants carry a
+  programmatically-built instance.
+- `ObjectTypeGenerator`, `EnumTypeGenerator`, `InputTypeGenerator`,
+  `GraphitronSchemaClassGenerator` iterate `schema.types()` only. No fallback
+  loops. No directive probing at emit time.
+- The `assembled GraphQLSchema` returned by the builder is coherent with the
+  model: every type in `schema.types()` is findable via
+  `assembled.getType(name)`. Downstream runtime consumers (validator,
+  generated `GraphitronSchema.build()`) see a uniform view.
+- `FieldWrapper.Connection` stays at its current shrunk shape
+  (`connectionNullable`, `defaultPageSize`). All per-Connection-type
+  information lives on `ConnectionType` in `schema.types()`.
+- `@asFacet` (see [plan-faceted-search.md](plan-faceted-search.md)) inherits
+  this as precedent: classifier produces dedicated variants; emitters read
+  the model; no parallel scan.
 
-**Test coverage.** One classifier test per variant: classify
-`type Query { stores: [Store!]! @asConnection } type Store { id: ID! }`,
-assert `schema.types().get("QueryStoresConnection") instanceof ConnectionType`
-with the right element name, edge name, flags. Parallel test for the
-structural path with a hand-written `FilmsConnection` — same
-`ConnectionType` variant produced, flagged as structural via the
-`connectionName == typeName` coincidence (or via an explicit marker if
-distinguishing is useful — probably not, given the goal is to erase the
-distinction).
+## Pre-launch justification
 
-**Risk.** Low. Additive; nothing downstream reads the new variants in
-this phase.
+We have no production users. Carrying D1-D4 into a v1 release means every
+future emitter author has to know that `schema.types()` isn't actually
+authoritative, that directive-probing lingers in one place, that the
+assembled schema might miss types the model claims exist, and that two of
+the four schema emitters read from different sources. Each deviation is
+individually small; taken together they make the system harder to extend
+(notably for `@asFacet`, which lands on the same seams).
 
-## Phase 2 — emitters read from `types()`; delete `ConnectionSynthesis`
+Closing them now costs one compact phase per deviation, before the surface
+area grows. The alternative — fix after launch — requires a migration for
+every consumer who came to rely on the current behaviour in the meantime.
 
-**Scope.** Flip `ObjectTypeGenerator` and `GraphitronSchemaClassGenerator`
-to iterate `schema.types()` and read graphql-java form from each variant.
-Delete `ConnectionSynthesis`.
+## Phase 4 — classifier records every emittable object type (closes D1)
+
+**Scope.** Make `schema.types()` complete for object, interface, and union
+types. `ObjectTypeGenerator.generate` loses its fallback iteration over
+`assembled.getAllTypesAsList()`.
 
 **Touch points.**
 
-- `ObjectTypeGenerator.generate(GraphitronSchema schema, Map<String, CodeBlock> fetcherBodies)` —
-  iterate `schema.types().values()`, dispatch on variant kind where needed
-  (object-like → `buildObjectTypeSpec`; interface → `buildInterfaceTypeSpec`;
-  union → `buildUnionTypeSpec`; ConnectionType / EdgeType / PageInfoType →
-  use their `schemaType()` through the object-like path). The per-variant
-  dispatch can be an exhaustive sealed switch matching the recent
-  `TypeFetcherGenerator` refactor (commit `3357928`).
-- `ObjectTypeGenerator.buildFieldDefinition` — delete the `@asConnection`
-  probe (lines 205-215, 221-228, 242-248). The carrier field's return type
-  is already rewritten in the graphql-java form held on the parent type
-  (via `.transform(...)` in the classifier); the generator reads that
-  rewritten form directly. First/after args are part of the rewritten
-  arguments list.
-- `GraphitronSchemaClassGenerator.planFor` — iterate `schema.types()`
-  instead of `assembled.getAllTypesAsList()`. Delete the synthesised-types
-  loop (lines 91-101). One loop over all type names; Connection/Edge/PageInfo
-  entries flow through naturally.
-- `GraphQLRewriteGenerator.runPipeline` — stop passing `assembled` to
-  `ObjectTypeGenerator` and `GraphitronSchemaClassGenerator`. The bundle
-  still produces `assembled` for runtime use; emission no longer depends
-  on it.
-- `ConnectionSynthesis.java` — delete.
-- `ConnectionSynthesisTest.java` — delete; assertions about the plan move
-  to classifier tests (Phase 1), assertions about emitted TypeSpec content
-  move to `ObjectTypeGeneratorTest` with the variant as input.
-- `FetcherRegistrationsEmitter.connectionBody` / `edgeBody` — stay as-is;
-  they produce fetcher bodies keyed by name, which flow through the normal
-  `ObjectTypeGenerator` path now that Connection/Edge names are in
-  `types()`.
+- `GraphitronType` — add a variant for plain object types without directives.
+  Naming candidates: `PojoObjectType` (parallels `PojoInputType`),
+  `PlainObjectType`, `NestingType` (matches the "nesting" concept the
+  classifier uses elsewhere). Pick one; keep it terse.
+- `TypeBuilder.classifyType` — plain `GraphQLObjectType` without
+  `@table` / `@record` / `@error` returns the new variant instead of `null`.
+- `TypeBuilder.buildTypes` — add case to the enrich-phase switch.
+- `GraphitronSchemaValidator.validateType` — add exhaustive case (no
+  structural validation needed for plain objects).
+- `ObjectTypeGenerator.generate` — delete the second loop over
+  `assembled.getAllTypesAsList()`. Iterate `schema.types()` only. Delete
+  `seen` / `emitForName` dual-iteration machinery.
+- `GraphitronSchemaClassGenerator.planFor` — iterate `schema.types()` only
+  for non-enum kinds; the enum fallback remains until Phase 6.
 
-**Test coverage.**
+**Test coverage.** Classifier test: plain `type Foo { bar: String }` classifies
+as the new variant. Snapshot diff on the test-spec's generated `schema/`
+directory before/after — zero diff (same TypeSpecs produced).
 
-- Snapshot diff: run generate-sources on the full rewrite test-spec before
-  and after, assert zero diff on every `<TypeName>Type.java` file. Runtime
-  behaviour must be byte-identical.
-- Existing `GeneratedSourcesSmokeTest` assertion for
-  `QueryStoresConnectionType` / `QueryStoresEdgeType` — unchanged, passes
-  on the new path.
-- Existing `GraphQLQueryTest` cursor-pagination execution tests —
-  unchanged, passes on the new path.
-- New negative test: a schema with field `@asConnection(connectionName: "FooConnection")`
-  and a sibling non-directive field whose derived name collides with
-  `FooConnection`. Assert the sibling is not rewritten (the misfire bug
-  can't happen anymore because the probe is gone — this test locks in
-  that invariant).
+**Risk.** Low. The variant is additive; most code paths are
+exhaustive-switch handlers that fail to compile if missed.
+`VariantCoverageTest` requires a classification-case entry for the new
+variant.
 
-**Risk.** Medium. The snapshot diff is the safety net. Two nuances to
-watch:
+## Phase 5 — classifier rewrites carriers + rebuilds assembled (closes D2, D3)
 
-- **Carrier rewrite via `.transform(...)`.** Graphql-java's immutable types
-  mean rewriting the carrier's parent requires rebuilding the parent's
-  `GraphQLObjectType`. The rebuilt parent replaces the original in
-  `schema.types()`. Test that this chains correctly through parent types.
-- **Assembled schema coherence.** After Phase 1's (b) rebuild, the
-  assembled schema contains synthesised types. Validator coverage on a
-  schema exercising `@asConnection` confirms the runtime still validates.
-
-## Phase 3 — simplify `FieldWrapper.Connection`
-
-**Scope.** Remove fields from `FieldWrapper.Connection` that are now
-properties of `ConnectionType`. Update callers.
+**Scope.** Classifier rebuilds each directive-driven `@asConnection`
+carrier's parent `GraphQLObjectType` via `.transform()` — replacing the
+bare-list return type with a Connection reference and appending `first` /
+`after` arguments. It also rebuilds the `assembled GraphQLSchema` with
+`.additionalType(...)` for synthesised types. Emission reads the rewritten
+assembled schema directly; no directive probing.
 
 **Touch points.**
 
-- `FieldWrapper.Connection` reduces to `(connectionNullable, defaultPageSize)`.
-  `connectionName` and `itemNullable` are derivable from the carrier's return
-  type (`ConnectionType.name()` / `ConnectionType.itemNullable()`).
-- Call sites that read `conn.connectionName()` or `conn.itemNullable()`
-  switch to reading from the carrier field's return-type reference into
-  `schema.types()`. Grep-driven sweep; mechanical.
-- The structural-detection convenience constructor at `FieldWrapper.java:80`
-  goes away — nothing distinguishes structural from directive-driven now
-  that both produce a `ConnectionType` entry.
+- `GraphitronSchemaBuilder.buildBundle` — after `promoteConnectionTypes`
+  populates `ctx.types` with synthesised variants, run a second pass that:
+  1. For each directive-driven carrier field, rebuild its parent
+     `GraphQLObjectType` with a transformed `GraphQLFieldDefinition` (return
+     type → Connection `typeRef`, appended pagination args).
+  2. Build a new `GraphQLSchema` — either
+     `GraphQLSchema.newSchema(existing)...additionalType(synthConn)...` or
+     via `SchemaTransformer`. Prototype both; pick the shorter shape that
+     preserves applied directives on rebuilt parents.
+  3. Return the rebuilt `assembled` in the `Bundle`.
+- `ObjectTypeGenerator.buildFieldDefinition` — delete the
+  `field.hasAppliedDirective("asConnection")` probe, `resolveConnectionName`
+  helper, `defaultPageSizeFor` fallback, and `baseTypeName` helper. The
+  carrier's graphql-java form already has the final return type and
+  arguments.
+- `FieldWrapper.Connection.defaultPageSize` stays — fetcher wiring reads it
+  for keyset pagination, and its value matches the `first` argument's
+  default (both populated from `@asConnection(defaultFirstValue:)` at
+  classification time).
+- `AppliedDirectiveEmitter` still filters `@asConnection` as a generator-only
+  directive; the carrier's applied-directive list won't leak it.
 
-**Test coverage.** Existing tests still pass. The wrapper's shrunk
-record is the only surface change; validators/classifier/fetcher paths
-that referenced the old fields now go through `schema.types()`.
+**Test coverage.** Classifier test: after `buildBundle`, a carrier like
+`stores: [Store!]! @asConnection` has
+`assembled.getObjectType("Query").getFieldDefinition("stores")` returning a
+field whose type resolves to `QueryStoresConnection!` with `first` / `after`
+arguments; `assembled.getType("QueryStoresConnection")` returns the
+synthesised object type. Existing execution tests cover end-to-end; a
+targeted `SchemaPrinter` snapshot guards against drift in SDL-level output.
 
-**Risk.** Low. Grep sweeps are mechanical; any missed call site fails
-to compile.
+**Risk.** Medium. Graphql-java's schema-rebuild surface is fussy: every type
+reference in the rebuilt schema must resolve; applied directives on rebuilt
+parents need to be preserved; the code registry must survive. Biggest
+unknown — worth a spike before committing.
+
+## Phase 6 — model-driven enum and input emission (closes D4)
+
+**Scope.** `EnumTypeGenerator` and `InputTypeGenerator` read from
+`schema.types()` only.
+
+**Touch points.**
+
+- `GraphitronType` — add an `EnumType(name, location, GraphQLEnumType schemaType)`
+  variant. Thin by default: enum values and per-value directives are pure
+  schema shape unless current classifier code interprets enum-level
+  directives (audit `@index` / `@order` handling during impl).
+- `TypeBuilder.classifyType` — returns `EnumType` instead of `null` for
+  `GraphQLEnumType`.
+- `EnumTypeGenerator.generate(GraphitronSchema)` — iterate `schema.types()`
+  for `EnumType` variants; read `schemaType()` for emission.
+- `InputTypeGenerator.generate(GraphitronSchema)` — iterate `schema.types()`
+  for `InputType` / `TableInputType` variants. Move the
+  `InputDirectiveInputTypes.NAMES` filter into the classifier so the
+  generator doesn't need an `assembled` parameter.
+- `GraphitronSchemaClassGenerator.planFor` — enum fallback branch drops;
+  enums now come through `schema.types()`.
+- `GraphQLRewriteGenerator.runPipeline` — emitter call sites simplify.
+
+**Test coverage.** Classification-case additions for the new `EnumType`
+variant; snapshot diff on generated enum / input TypeSpecs.
+
+**Risk.** Low. Structural parallel to Phase 4; no novel mechanism.
+
+## Phase 7 — common `schemaType()` accessor (optional)
+
+**Scope.** Factor the per-variant `schemaType()` accessor into a method on
+`GraphitronType`. Removes duplication across variants that carry their
+graphql-java form.
+
+**Touch points.**
+
+- `GraphitronType` — add `GraphQLNamedType schemaType()` as an abstract
+  method.
+- Every variant implements — SDL variants receive their form at
+  classification time (`TypeBuilder.classifyType` already has it in hand);
+  synthesised variants already carry it.
+- `ObjectTypeGenerator.graphqlTypeFor` helper — deletes; every variant
+  answers its own `schemaType()`.
+
+**Test coverage.** None new — pure refactor, existing tests verify.
+
+**Risk.** Low. Medium touch (constructor-arity break across the whole
+`GraphitronType` hierarchy). Do only if Phase 4-6 surface duplication worth
+collapsing; may not be worth the churn.
 
 ## Order + gating
 
-Strict order: Phase 1 → Phase 2 → Phase 3. Each phase leaves the build
-green. Phase 1 adds surface with no consumer; Phase 2 swings the consumer
-over and deletes the old mechanism; Phase 3 cleans up the now-redundant
-wrapper fields.
+Strict order on the closure phases:
 
-Phases 1 and 2 can land in separate commits for review readability, or
-together if the diff stays tractable. Phase 3 is best kept as its own
-commit — the wrapper shrink touches call sites across fetcher / condition /
-validator code and reads more clearly as an isolated change.
+1. **Phase 4** (D1) — plain object classification. Unblocks removing the
+   fallback loop.
+2. **Phase 5** (D2 + D3) — classifier rewrites + assembled rebuild. Largest
+   change; deserves its own commit.
+3. **Phase 6** (D4) — enum + input emitters flip. Independent of 4-5 but
+   lands cleaner after 4.
+4. **Phase 7** — optional `schemaType()` uplift. Skip unless the previous
+   phases reveal motivating duplication.
+
+Each phase leaves the build green and runtime behaviour byte-identical on
+existing fixtures.
 
 ## Non-goals
 
-- **Generalising the variant introduction pattern to other macros.**
-  `@asFacet` will follow the same shape when it lands — classifier produces
-  dedicated variants, emitter reads them uniformly — but `@asFacet`'s plan
-  owns that work. This plan only fixes the Connection collapse.
-- **Removing `FieldWrapper.Connection` entirely.** The wrapper still
-  encodes "this carrier field returns a Connection" distinct from the
-  Connection type itself, which matters for per-site metadata like
-  `defaultPageSize`. The wrapper shrinks; it doesn't vanish.
-- **Reshaping the `FetcherRegistrationsEmitter` output.** It keeps producing
-  bodies keyed by type name; Phase 2 just relies on those bodies being
-  found by `ObjectTypeGenerator` via the normal path now that the type
-  names exist in `types()`.
-- **`assembled` schema removal from the bundle.** Validator and any future
-  runtime-wired consumer still want a full `GraphQLSchema`. The bundle
-  continues to produce one. Only emission stops reading it.
-- **Auditing other variants for similar collapses.** Every other
-  `GraphitronType` variant corresponds to an SDL-declared type; none
-  synthesise. Nothing to audit.
+- **Rewriting `FetcherRegistrationsEmitter`.** Phase 3 already switched it
+  to `schema.types()`.
+- **Collapsing `GraphitronType` domain variants.** `TableType` / `NodeType` /
+  `ResultType` etc. stay; shape extensions layer on top.
+- **Touching the generated `GraphitronSchema.build()` output.** Stable since
+  Phase 2; cleanup is generator-internal.
+- **Moving away from graphql-java types in the model.** Shape records were
+  considered and rejected in design; model still carries graphql-java forms
+  for schema emission.
+- **`@asFacet` scaffolding.** Facets land on the pattern this plan
+  establishes (see [plan-faceted-search.md](plan-faceted-search.md)), but
+  their classifier contribution is that plan's concern.
 
 ## Testing strategy
 
-- **Unit (Phase 1):** `FieldBuilderTest` / `GraphitronSchemaBuilderTest`
-  assertions on the three new variants being present in `types()` with
-  correct data. Two new cases per variant (directive-driven and
-  structural inputs).
-- **Unit (Phase 2):** `ObjectTypeGeneratorTest` takes a
-  `ConnectionType` variant and asserts the emitted TypeSpec has the
-  right field list (edges/nodes/pageInfo), etc. Migrated assertions
-  from the deleted `ConnectionSynthesisTest`.
-- **Snapshot diff (Phase 2):** pre/post generate-sources diff on the
-  full rewrite test-spec — zero diff on every emitted file.
-- **Execution (unchanged):** existing `GraphQLQueryTest` cursor-pagination
-  tests cover the round trip; Phase 2 keeps them green.
-- **Regression:** an execution fixture using a hand-written structural
-  Connection (if one exists in test-spec) must continue to work without
-  modification. If the test suite lacks one, add a small one — the
-  structural path is hit by the same code post-refactor and deserves
-  explicit coverage.
+- **Classification coverage.** `VariantCoverageTest` demands classification
+  cases for new variants (Phase 4 plain object, Phase 6 enum).
+- **Snapshot diff.** Run generate-sources on the rewrite test-spec before
+  and after each phase; diff the `schema/` output directory; assert
+  byte-identical output on Phases 4, 6, 7. Phase 5 may legitimately change
+  ordering or formatting when the assembled schema rebuild shifts field
+  definitions; diff should still be small and explicable.
+- **Execution.** Existing `GraphQLQueryTest` cursor-pagination tests are the
+  runtime safety net for Phase 5. They exercise classifier → emission →
+  compilation → execution against Sakila.
+- **Plan-shipped gap.** Add a direct `ObjectTypeGenerator` test that
+  constructs a `ConnectionType` variant (without the classifier) and passes
+  it through emission. Today the emission path for synthesised variants is
+  only reachable via classification, so a classifier bug could mask an
+  emitter bug.
 
 ## Risks and open questions
 
-1. **Schema rebuild vs. registry mutation.** Phase 1's assembled-schema
-   coherence needs synthesised types included. Rebuilding with
-   `additionalType(...)` is local but adds a step; mutating the registry
-   is more invasive but reuses `SchemaGenerator`. Decide during Phase 1
-   implementation.
-2. **`schemaType` on variants vs. parallel map.** Storing `GraphQLObjectType`
-   on each variant is tight coupling but matches the principle "variants
-   know how they appear in the schema." A parallel
-   `Map<String, GraphQLNamedType>` on `GraphitronSchema` decouples but
-   duplicates keys with `types()`. Prefer on-variant; swap if a concrete
-   reason appears.
-3. **Structural-vs-directive marker.** Some callers today branch on
-   "is this Connection synthesised?" (in `FieldBuilder.buildWrapper`
-   `:405` structural constructor). After this plan, they're unified.
-   Sweep to confirm no remaining caller needs to know; delete the
-   convenience constructor.
-4. **Interface-type Connections.** `ConnectionSynthesis.buildPlan` scans
-   interface types too. Confirm the classifier's `FieldBuilder` also
-   visits interface fields; if not, a small extension covers parity
-   (no-test-coverage today, so this is latent).
+1. **Graphql-java schema rebuild (Phase 5).** `SchemaTransformer` vs.
+   `GraphQLSchema.newSchema(existing).additionalType(...)` — prototype both
+   on the test-spec schema and measure before committing. Prefer the shorter
+   shape; fall back to `SchemaTransformer` only if `newSchema` drops applied
+   directives on rebuilt parents.
+2. **`defaultPageSize` redundancy.** After Phase 5 it appears both on
+   `FieldWrapper.Connection` and as the default on the carrier's `first`
+   argument. Two sources for the same number. Collapse or annotate with an
+   invariant; decide during Phase 5 impl.
+3. **Enum variant richness.** Whether `EnumType` is thin (name + schemaType)
+   or richer depends on whether the classifier currently reads enum-level
+   directives like `@index` / `@order`. Audit during Phase 6 impl.
+4. **`assembled` parameter on emitter signatures.** Should drop entirely
+   after Phase 6. Confirm during Phase 6 review.
 
 ## References
 
-- `graphitron-rewrite/.../model/GraphitronType.java` — Phase 1 target.
-- `graphitron-rewrite/.../model/FieldWrapper.java` — Phase 3 target.
-- `graphitron-rewrite/.../FieldBuilder.java:384-412` — classifier entry
-  points for the two Connection arms; extended in Phase 1.
-- `graphitron-rewrite/.../GraphitronSchemaBuilder.java` — bundle
-  construction; assembled-schema coherence concern from Phase 1.
-- `graphitron-rewrite/.../generators/schema/ConnectionSynthesis.java` —
-  deleted in Phase 2.
+- Shipped commits: `0aef2c7` (Phase 1), `0ecde9d` (Phase 2), `237d6d3` (Phase 3).
+- `graphitron-rewrite/.../model/GraphitronType.java` — sealed hierarchy;
+  Phase 4 / 6 / 7 targets.
+- `graphitron-rewrite/.../TypeBuilder.java` — `classifyType` and
+  `buildTypes`; Phase 4 / 6 targets.
+- `graphitron-rewrite/.../GraphitronSchemaBuilder.java` —
+  `promoteConnectionTypes` populates synthesised variants today; Phase 5
+  adds the `.transform()` + schema rebuild.
 - `graphitron-rewrite/.../generators/schema/ObjectTypeGenerator.java` —
-  Phase 2 target; `@asConnection` branch deleted.
-- `graphitron-rewrite/.../generators/schema/GraphitronSchemaClassGenerator.java` —
-  Phase 2 target; synthesised-types loop deleted.
-- `graphitron-rewrite/.../GraphQLRewriteGenerator.java:runPipeline` —
-  `assembled` parameter drops from emitter signatures in Phase 2.
-- [plan-faceted-search.md](plan-faceted-search.md) — downstream beneficiary
-  of the first-class-variant pattern.
-- Shipped emit-time baseline (to be replaced): `79af12c` (roadmap Done
-  entry).
+  `buildFieldDefinition` probe deleted in Phase 5; fallback loop deleted in
+  Phase 4.
+- `graphitron-rewrite/.../generators/schema/EnumTypeGenerator.java`,
+  `.../InputTypeGenerator.java` — Phase 6 targets.
+- [plan-faceted-search.md](plan-faceted-search.md) — downstream consumer;
+  inherits the pattern after Phase 5 lands.
