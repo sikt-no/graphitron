@@ -13,9 +13,12 @@ import no.sikt.graphitron.rewrite.model.ErrorHandlerType;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.ConnectionType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.EdgeType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.InputType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.InterfaceType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.NodeType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.PageInfoType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ResultType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.RootType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableBackedType;
@@ -122,6 +125,9 @@ class TypeBuilder {
             case ErrorType ignored        -> type;
             case InputType ignored        -> type;
             case TableInputType ignored   -> type;
+            case ConnectionType ignored   -> type;
+            case EdgeType ignored         -> type;
+            case PageInfoType ignored     -> type;
             case UnclassifiedType ignored -> type;
         });
 

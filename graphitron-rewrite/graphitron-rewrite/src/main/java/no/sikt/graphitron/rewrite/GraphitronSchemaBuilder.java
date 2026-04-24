@@ -2,13 +2,23 @@ package no.sikt.graphitron.rewrite;
 
 import graphql.schema.FieldCoordinates;
 import graphql.schema.GraphQLArgument;
+import graphql.schema.GraphQLFieldDefinition;
+import graphql.schema.GraphQLList;
+import graphql.schema.GraphQLNamedType;
+import graphql.schema.GraphQLNonNull;
 import graphql.schema.GraphQLObjectType;
+import graphql.schema.GraphQLOutputType;
+import graphql.schema.GraphQLTypeReference;
+import graphql.schema.GraphQLAppliedDirective;
 import graphql.schema.idl.EchoingWiringFactory;
 import graphql.schema.idl.ScalarInfo;
 import graphql.schema.idl.SchemaGenerator;
 import graphql.schema.idl.TypeDefinitionRegistry;
 
 import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.model.GraphitronType.ConnectionType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.EdgeType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.PageInfoType;
 
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -85,7 +95,217 @@ public class GraphitronSchemaBuilder {
                         FieldCoordinates.coordinates(objType.getName(), fieldDef.getName()),
                         fieldBuilder.classifyField(fieldDef, objType.getName(), parentType)));
             });
+        promoteConnectionTypes(ctx);
         return new GraphitronSchema(ctx.types, Collections.unmodifiableMap(fields), ctx.warnings());
+    }
+
+    /**
+     * Promotes every carrier field that returns a Relay connection (directive-driven
+     * {@code @asConnection} on a bare list, or a structural Connection-shaped return type) to a
+     * first-class {@link ConnectionType} / {@link EdgeType} / {@link PageInfoType} entry in
+     * {@code ctx.types}.
+     *
+     * <p>For directive-driven carriers the {@link GraphQLObjectType} schema form is built
+     * programmatically (the synthesised types are not in the assembled schema). For structural
+     * carriers the schema form is referenced from the assembled schema, where it was parsed from
+     * the SDL.
+     *
+     * <p>Dedups by name: a single synthesised {@code QueryStoresConnection} entry covers every
+     * carrier that points at it. {@link PageInfoType} is registered once at most, and only when
+     * at least one Connection is promoted and the SDL doesn't already declare {@code PageInfo}.
+     */
+    private static void promoteConnectionTypes(BuildContext ctx) {
+        boolean pageInfoShareable = false;
+        boolean anyConnectionSynthesised = false;
+        for (var t : ctx.schema.getAllTypesAsList()) {
+            if (t.getName().startsWith("_")) continue;
+            if (!(t instanceof GraphQLObjectType objType)) continue;
+            for (var fieldDef : objType.getFieldDefinitions()) {
+                ConnectionPromotion promotion = promotionFor(ctx, objType, fieldDef);
+                if (promotion == null) continue;
+                if (ctx.types.get(promotion.connectionName()) instanceof ConnectionType existing) {
+                    pageInfoShareable |= existing.shareable();
+                    anyConnectionSynthesised = true;
+                    continue;
+                }
+                anyConnectionSynthesised = true;
+                pageInfoShareable |= promotion.shareable();
+                var connSchema = promotion.connectionSchemaType();
+                var edgeSchema = promotion.edgeSchemaType();
+                ctx.types.put(promotion.connectionName(), new ConnectionType(
+                    promotion.connectionName(), null,
+                    promotion.elementTypeName(), promotion.edgeName(),
+                    promotion.itemNullable(), promotion.shareable(), connSchema));
+                ctx.types.put(promotion.edgeName(), new EdgeType(
+                    promotion.edgeName(), null,
+                    promotion.elementTypeName(), promotion.itemNullable(),
+                    promotion.shareable(), edgeSchema));
+            }
+        }
+        if (anyConnectionSynthesised
+                && ctx.schema.getType("PageInfo") == null
+                && !(ctx.types.get("PageInfo") instanceof PageInfoType)) {
+            ctx.types.put("PageInfo", new PageInfoType(
+                "PageInfo", null, pageInfoShareable, buildSynthesisedPageInfo(pageInfoShareable)));
+        } else if (ctx.schema.getType("PageInfo") instanceof GraphQLObjectType pageInfoObj
+                && !(ctx.types.get("PageInfo") instanceof PageInfoType)) {
+            boolean shareable = pageInfoObj.hasAppliedDirective("shareable");
+            ctx.types.put("PageInfo", new PageInfoType(
+                "PageInfo", null, shareable, pageInfoObj));
+        }
+    }
+
+    private record ConnectionPromotion(
+        String connectionName,
+        String edgeName,
+        String elementTypeName,
+        boolean itemNullable,
+        boolean shareable,
+        GraphQLObjectType connectionSchemaType,
+        GraphQLObjectType edgeSchemaType
+    ) {}
+
+    /**
+     * Returns a {@link ConnectionPromotion} describing the synthesis for a connection-returning
+     * carrier field, or {@code null} when this field is not a connection carrier.
+     */
+    private static ConnectionPromotion promotionFor(BuildContext ctx, GraphQLObjectType parent,
+                                                     GraphQLFieldDefinition fieldDef) {
+        GraphQLOutputType fieldType = fieldDef.getType();
+        GraphQLOutputType unwrapped = fieldType instanceof GraphQLNonNull nn
+            ? (GraphQLOutputType) nn.getWrappedType()
+            : fieldType;
+
+        // Directive-driven: @asConnection on a bare list — build the schema type programmatically.
+        if (fieldDef.hasAppliedDirective(DIR_AS_CONNECTION) && unwrapped instanceof GraphQLList listType) {
+            boolean itemNullable = !(listType.getWrappedType() instanceof GraphQLNonNull);
+            var elementLayer = itemNullable
+                ? listType.getWrappedType()
+                : ((GraphQLNonNull) listType.getWrappedType()).getWrappedType();
+            String elementTypeName = elementLayer instanceof GraphQLNamedType named
+                ? named.getName() : elementLayer.toString();
+            String connName = resolveConnectionName(parent.getName(), fieldDef);
+            String edgeName = connName.replace("Connection", "Edge");
+            boolean shareable = fieldDef.hasAppliedDirective("shareable");
+            var connSchema = buildSynthesisedConnection(connName, edgeName, elementTypeName, itemNullable, shareable);
+            var edgeSchema = buildSynthesisedEdge(edgeName, elementTypeName, itemNullable, shareable);
+            return new ConnectionPromotion(connName, edgeName, elementTypeName,
+                itemNullable, shareable, connSchema, edgeSchema);
+        }
+
+        // Structural: the return type shape is a declared Connection — reference the assembled type.
+        String typeName = baseTypeName(unwrapped);
+        if (typeName != null && ctx.isConnectionType(typeName)) {
+            var connSchema = (GraphQLObjectType) ctx.schema.getType(typeName);
+            boolean itemNullable = ctx.connectionItemNullable(typeName);
+            String elementTypeName = ctx.connectionElementTypeName(typeName);
+            String edgeName = typeName.replace("Connection", "Edge");
+            var edgeSchema = (GraphQLObjectType) ctx.schema.getType(edgeName);
+            boolean shareable = connSchema.hasAppliedDirective("shareable");
+            return new ConnectionPromotion(typeName, edgeName, elementTypeName,
+                itemNullable, shareable, connSchema, edgeSchema);
+        }
+        return null;
+    }
+
+    private static String baseTypeName(GraphQLOutputType t) {
+        GraphQLOutputType cur = t;
+        while (cur instanceof GraphQLNonNull nn) cur = (GraphQLOutputType) nn.getWrappedType();
+        while (cur instanceof GraphQLList list) cur = (GraphQLOutputType) list.getWrappedType();
+        while (cur instanceof GraphQLNonNull nn) cur = (GraphQLOutputType) nn.getWrappedType();
+        return cur instanceof GraphQLNamedType named ? named.getName() : null;
+    }
+
+    /**
+     * Resolves the connection type name for a carrier field: explicit
+     * {@code @asConnection(connectionName:)} wins; otherwise derive
+     * {@code <ParentType><FieldName>Connection}.
+     */
+    private static String resolveConnectionName(String parentTypeName, GraphQLFieldDefinition field) {
+        var applied = field.getAppliedDirective(DIR_AS_CONNECTION);
+        if (applied != null) {
+            var arg = applied.getArgument(ARG_CONNECTION_NAME);
+            if (arg != null && arg.getValue() instanceof String s && !s.isEmpty()) {
+                return s;
+            }
+        }
+        return parentTypeName + capitalize(field.getName()) + "Connection";
+    }
+
+    private static String capitalize(String s) {
+        if (s == null || s.isEmpty()) return s;
+        return Character.toUpperCase(s.charAt(0)) + s.substring(1);
+    }
+
+    private static GraphQLObjectType buildSynthesisedConnection(String connName, String edgeName,
+            String elementTypeName, boolean itemNullable, boolean shareable) {
+        var edgesField = GraphQLFieldDefinition.newFieldDefinition()
+            .name("edges")
+            .type(GraphQLNonNull.nonNull(GraphQLList.list(GraphQLNonNull.nonNull(
+                GraphQLTypeReference.typeRef(edgeName)))))
+            .build();
+        GraphQLOutputType nodeInnerRef = itemNullable
+            ? GraphQLTypeReference.typeRef(elementTypeName)
+            : GraphQLNonNull.nonNull(GraphQLTypeReference.typeRef(elementTypeName));
+        var nodesField = GraphQLFieldDefinition.newFieldDefinition()
+            .name("nodes")
+            .type(GraphQLNonNull.nonNull(GraphQLList.list(nodeInnerRef)))
+            .build();
+        var pageInfoField = GraphQLFieldDefinition.newFieldDefinition()
+            .name("pageInfo")
+            .type(GraphQLNonNull.nonNull(GraphQLTypeReference.typeRef("PageInfo")))
+            .build();
+        var builder = GraphQLObjectType.newObject()
+            .name(connName)
+            .field(edgesField)
+            .field(nodesField)
+            .field(pageInfoField);
+        if (shareable) builder.withAppliedDirective(GraphQLAppliedDirective.newDirective().name("shareable").build());
+        return builder.build();
+    }
+
+    private static GraphQLObjectType buildSynthesisedEdge(String edgeName, String elementTypeName,
+            boolean itemNullable, boolean shareable) {
+        var cursorField = GraphQLFieldDefinition.newFieldDefinition()
+            .name("cursor")
+            .type(GraphQLNonNull.nonNull(GraphQLTypeReference.typeRef("String")))
+            .build();
+        GraphQLOutputType nodeType = itemNullable
+            ? GraphQLTypeReference.typeRef(elementTypeName)
+            : GraphQLNonNull.nonNull(GraphQLTypeReference.typeRef(elementTypeName));
+        var nodeField = GraphQLFieldDefinition.newFieldDefinition()
+            .name("node")
+            .type(nodeType)
+            .build();
+        var builder = GraphQLObjectType.newObject()
+            .name(edgeName)
+            .field(cursorField)
+            .field(nodeField);
+        if (shareable) builder.withAppliedDirective(GraphQLAppliedDirective.newDirective().name("shareable").build());
+        return builder.build();
+    }
+
+    private static GraphQLObjectType buildSynthesisedPageInfo(boolean shareable) {
+        var builder = GraphQLObjectType.newObject()
+            .name("PageInfo")
+            .field(GraphQLFieldDefinition.newFieldDefinition()
+                .name("hasNextPage")
+                .type(GraphQLNonNull.nonNull(GraphQLTypeReference.typeRef("Boolean")))
+                .build())
+            .field(GraphQLFieldDefinition.newFieldDefinition()
+                .name("hasPreviousPage")
+                .type(GraphQLNonNull.nonNull(GraphQLTypeReference.typeRef("Boolean")))
+                .build())
+            .field(GraphQLFieldDefinition.newFieldDefinition()
+                .name("startCursor")
+                .type(GraphQLTypeReference.typeRef("String"))
+                .build())
+            .field(GraphQLFieldDefinition.newFieldDefinition()
+                .name("endCursor")
+                .type(GraphQLTypeReference.typeRef("String"))
+                .build());
+        if (shareable) builder.withAppliedDirective(GraphQLAppliedDirective.newDirective().name("shareable").build());
+        return builder.build();
     }
 
     private static void validateDirectiveSchema(BuildContext ctx) {
