@@ -1,6 +1,6 @@
 # Plan: Tagged schema inputs with tags + description notes
 
-> **Status:** Spec
+> **Status:** In Progress
 >
 > Slice of the "Dissolve `graphitron-schema-transform` module" roadmap
 > umbrella. Replaces legacy `FeatureConfiguration`'s `@tag` +
@@ -55,7 +55,10 @@ land with the remaining "Rewrite owns feature-flag SDL splits" work.
 
 ## Scope
 
-**In scope**
+`TagApplier` and `DescriptionNoteApplier` have different element
+scopes by design; see D2 for rationale.
+
+**`TagApplier` in scope** (legacy parity):
 
 - Fields on object + interface types (`FieldDefinition`).
 - Input object fields (`InputValueDefinition` under `InputObjectTypeDefinition`).
@@ -63,15 +66,22 @@ land with the remaining "Rewrite owns feature-flag SDL splits" work.
 - Field arguments (`InputValueDefinition` under `FieldDefinition`).
 - Union type declarations themselves (`UnionTypeDefinition`).
 
-(Same element set as legacy's visitor. No object or interface type
-itself gets tagged; only its fields.)
+No object / interface / enum / input type declaration itself gets
+tagged.
+
+**`DescriptionNoteApplier` in scope** (widened past legacy):
+
+- Everything `TagApplier` touches (above).
+- Plus the type declarations themselves: `ObjectTypeDefinition`,
+  `InterfaceTypeDefinition`, `EnumTypeDefinition`,
+  `InputObjectTypeDefinition`.
 
 **Out of scope**
 
 - `@feature` directive application.
 - `<outputSchemas>` schema-file splits.
-- Object / interface / enum / input type declarations themselves
-  (neither legacy nor this plan tag those).
+- `@tag` on type declarations (tracked by D2; federation's tag
+  vocabulary targets fields, not types).
 - Connection / Edge / PageInfo auto-generated types. Rewrite's
   Connection synthesis is still emitter-side; there are no
   registry-level synthesized nodes to tag at this pipeline stage.
@@ -229,12 +239,15 @@ first pass, then apply `remove` + `add` in the second. This avoids
 
 ### 4. `DescriptionNoteApplier`
 
-Same walk; for every in-scope element defined in a file whose
-`SchemaInput` carries a `descriptionNote`, sets description to
+Same walk shape, wider element scope (D2 resolved: widen). For every
+in-scope element defined in a file whose `SchemaInput` carries a
+`descriptionNote`, sets description to
 `existing.strip() + "\n\n" + note.strip()` when an existing
-description is present, or `note` alone when not. Identical
-element-kind scope as `TagApplier` (see D2 for whether to widen to
-type declarations).
+description is present, or `note` alone when not. Element scope is
+`TagApplier`'s set plus the four type-declaration kinds
+(`ObjectTypeDefinition`, `InterfaceTypeDefinition`,
+`EnumTypeDefinition`, `InputObjectTypeDefinition`). Union declarations
+are in both scopes; they sit in one kind, not two.
 
 No state; resolver map is the sole input. Applier order is
 independent; both walks read the same map.
@@ -412,6 +425,11 @@ In-memory only; no `@TempDir`, no filesystem, no globs.
 - Element in an entry with no note is untouched.
 - Literal-string round-trip: multi-line note, note containing
   backticks, note containing GraphQL-string-escape characters.
+- Widened element kinds (one test per kind, pinned against a
+  `TagApplier`-untouchable decl): `ObjectTypeDefinition`,
+  `InterfaceTypeDefinition`, `EnumTypeDefinition`,
+  `InputObjectTypeDefinition` each receive the note on the type
+  declaration itself, not just on their members.
 
 ### Pipeline: `GraphitronSchemaBuilderTest` additions
 
@@ -439,12 +457,17 @@ when the Maven-plugin plan lands; `<schemaFiles>` and
 `<userSchemaFiles>` never migrate (they belong to the retiring
 legacy plugin).
 
-**D2. Note element scope.** Legacy applies description changes only
-to fields / input fields / enum values / arguments / unions. Rewrite
-could widen to type declarations themselves (object, interface,
-enum, input, union). Widening makes documentation more useful;
-narrowing keeps parity with legacy. Recommend widen; call it out in
-the roadmap Done entry.
+**D2. Note element scope.** Resolved: widen `DescriptionNoteApplier`
+to type declarations themselves (object, interface, enum, input);
+`TagApplier` stays narrow (legacy parity). The asymmetry is
+intentional. Notes are documentation: the type declaration is the
+most discoverable place a reader looks, so a `<descriptionNote>`
+like "part of the enrollment feature" lands naturally alongside
+`"""An enrolled student."""` on the type. `@tag`, in contrast, is
+federation vocabulary where field-level targeting is the established
+idiom; tagging a type declaration adds no routing information and
+would diverge from legacy without a consumer ask. Call it out in the
+roadmap Done entry.
 
 **D3. Missing `@tag` directive declaration.** Resolved: `TagApplier`
 auto-injects a default declaration
