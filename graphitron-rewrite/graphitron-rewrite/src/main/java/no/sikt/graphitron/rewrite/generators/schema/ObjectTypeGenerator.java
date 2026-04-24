@@ -15,13 +15,10 @@ import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
 
 import no.sikt.graphitron.rewrite.GraphitronSchema;
-import no.sikt.graphitron.rewrite.model.FieldWrapper;
-import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ConnectionType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.EdgeType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.PageInfoType;
-import no.sikt.graphitron.rewrite.model.SqlGeneratingField;
 
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
@@ -77,7 +74,7 @@ public final class ObjectTypeGenerator {
      * the classifier model.
      *
      * <p>Directive-driven {@code @asConnection} fields (bare-list return type with no pre-existing
-     * Connection type in the schema) are detected via the classifier's {@link FieldWrapper.Connection}
+     * Connection type in the schema) are rewritten at classifier time in the assembled schema
      * on the carrier field. For these fields the emitted return type reference is substituted with
      * the synthesised Connection name and the standard {@code first} / {@code after} pagination
      * arguments are appended.
@@ -225,36 +222,14 @@ public final class ObjectTypeGenerator {
     private static CodeBlock buildFieldDefinition(String parentTypeName,
                                                    graphql.schema.GraphQLFieldDefinition field,
                                                    GraphitronSchema schema) {
-        // Detect directive-driven @asConnection carriers. The classifier registered a
-        // ConnectionType in schema.types() at Phase 1; here we just look up that entry via the
-        // resolved connection name and rewrite the bare-list return type to reference it.
-        // Structural carriers (SDL return type already names the Connection) need no rewrite.
-        String synthConnName = null;
-        int synthDefaultPageSize = FieldWrapper.DEFAULT_PAGE_SIZE;
-        if (field.hasAppliedDirective("asConnection")) {
-            String resolved = resolveConnectionName(parentTypeName, field);
-            if (schema.type(resolved) instanceof GraphitronType.ConnectionType
-                    && !resolved.equals(baseTypeName(field.getType()))) {
-                synthConnName = resolved;
-                synthDefaultPageSize = defaultPageSizeFor(field, schema, parentTypeName);
-            }
-        }
-
+        // Carrier-field rewriting for directive-driven @asConnection has already happened in the
+        // classifier (GraphitronSchemaBuilder.rebuildAssembledForConnections): the field arrives
+        // with its return type pointing at the Connection and `first` / `after` arguments
+        // appended. Emission reads the field as-is — no probe, no directive inspection.
         var block = CodeBlock.builder()
             .add("$T.newFieldDefinition()", FIELD_DEF)
-            .add(".name($S)", field.getName());
-
-        if (synthConnName != null) {
-            // Replace bare-list return type with the synthesised Connection type reference.
-            boolean nonNull = field.getType() instanceof GraphQLNonNull;
-            if (nonNull) {
-                block.add(".type($T.nonNull($T.typeRef($S)))", NON_NULL, TYPE_REF, synthConnName);
-            } else {
-                block.add(".type($T.typeRef($S))", TYPE_REF, synthConnName);
-            }
-        } else {
-            block.add(".type(").add(buildOutputTypeRef(field.getType())).add(")");
-        }
+            .add(".name($S)", field.getName())
+            .add(".type(").add(buildOutputTypeRef(field.getType())).add(")");
 
         if (field.getDescription() != null && !field.getDescription().isEmpty()) {
             block.add(".description($S)", field.getDescription());
@@ -264,13 +239,6 @@ public final class ObjectTypeGenerator {
         }
         for (var arg : field.getArguments()) {
             block.add(".argument(").add(buildArgument(arg)).add(")");
-        }
-        if (synthConnName != null) {
-            // Append standard pagination arguments after any existing arguments.
-            block.add(".argument($T.newArgument().name($S).type($T.typeRef($S)).defaultValueProgrammatic($L).build())",
-                ARGUMENT, "first", TYPE_REF, "Int", synthDefaultPageSize);
-            block.add(".argument($T.newArgument().name($S).type($T.typeRef($S)).build())",
-                ARGUMENT, "after", TYPE_REF, "String");
         }
         for (var applied : AppliedDirectiveEmitter.applicationsFor(field)) {
             block.add(applied);
@@ -328,55 +296,4 @@ public final class ObjectTypeGenerator {
         return CodeBlock.of("$T.typeRef($S)", TYPE_REF, name);
     }
 
-    /**
-     * Resolves the Connection type name for a carrier field carrying {@code @asConnection}:
-     * explicit {@code connectionName:} argument wins; otherwise derived as
-     * {@code <ParentType><FieldName>Connection}.
-     */
-    private static String resolveConnectionName(String parentTypeName,
-                                                 graphql.schema.GraphQLFieldDefinition field) {
-        var applied = field.getAppliedDirective("asConnection");
-        if (applied != null) {
-            var arg = applied.getArgument("connectionName");
-            if (arg != null && arg.getValue() instanceof String s && !s.isEmpty()) return s;
-        }
-        return parentTypeName + capitalize(field.getName()) + "Connection";
-    }
-
-    /**
-     * Returns the per-site default page size: the classifier's {@link FieldWrapper.Connection}
-     * if the field has one, else the fallback in {@link FieldWrapper#DEFAULT_PAGE_SIZE}.
-     * The directive's own {@code defaultFirstValue:} argument is the authoritative source;
-     * the classifier already read it into the wrapper. Fields that don't classify as
-     * {@link SqlGeneratingField} (e.g. carriers on unclassified element types) fall back
-     * to the default.
-     */
-    private static int defaultPageSizeFor(graphql.schema.GraphQLFieldDefinition field,
-                                           GraphitronSchema schema, String parent) {
-        GraphitronField f = schema.field(parent, field.getName());
-        if (f instanceof SqlGeneratingField sgf
-                && sgf.returnType().wrapper() instanceof FieldWrapper.Connection c) {
-            return c.defaultPageSize();
-        }
-        var applied = field.getAppliedDirective("asConnection");
-        if (applied != null) {
-            var arg = applied.getArgument("defaultFirstValue");
-            if (arg != null && arg.getValue() instanceof Integer i) return i;
-            if (arg != null && arg.getValue() instanceof Number n) return n.intValue();
-        }
-        return FieldWrapper.DEFAULT_PAGE_SIZE;
-    }
-
-    private static String capitalize(String s) {
-        return s == null || s.isEmpty() ? s : Character.toUpperCase(s.charAt(0)) + s.substring(1);
-    }
-
-    /** Unwraps non-null + list layers to return the innermost named type's name. */
-    private static String baseTypeName(GraphQLType type) {
-        GraphQLType cur = type;
-        while (cur instanceof GraphQLNonNull nn) cur = nn.getWrappedType();
-        while (cur instanceof GraphQLList list) cur = list.getWrappedType();
-        while (cur instanceof GraphQLNonNull nn) cur = nn.getWrappedType();
-        return cur instanceof GraphQLNamedType named ? named.getName() : null;
-    }
 }
