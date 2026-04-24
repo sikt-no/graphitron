@@ -7,6 +7,9 @@ import no.sikt.graphitron.rewrite.generators.TypeClassGenerator;
 import no.sikt.graphitron.rewrite.generators.TypeConditionsGenerator;
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
 import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
+import no.sikt.graphitron.rewrite.schema.input.DescriptionNoteApplier;
+import no.sikt.graphitron.rewrite.schema.input.SchemaInputAttribution;
+import no.sikt.graphitron.rewrite.schema.input.TagApplier;
 import no.sikt.graphitron.rewrite.generators.schema.EnumTypeGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.FetcherRegistrationsEmitter;
 import no.sikt.graphitron.rewrite.generators.schema.GraphitronFacadeGenerator;
@@ -38,8 +41,42 @@ import java.util.List;
 public class GraphQLRewriteGenerator {
     static final Logger LOGGER = LoggerFactory.getLogger(GraphQLRewriteGenerator.class);
 
+    private final RewriteContext ctx;
+
+    /**
+     * Construct an instance-based generator driven by a {@link RewriteContext}.
+     *
+     * <p>When instance-mode is used, the context's {@code schemaInputs} drive schema
+     * loading, and the {@link TagApplier} / {@link DescriptionNoteApplier} stages run
+     * between parse and classification. The static {@link #generate()} entry point
+     * stays intact for consumers that still drive rewrite through the legacy Mojo;
+     * the Maven-plugin plan retires that call site later.
+     */
+    public GraphQLRewriteGenerator(RewriteContext ctx) {
+        this.ctx = ctx;
+    }
+
+    /**
+     * Instance entry point. Named {@code run} (not {@code generate}) because Java
+     * disallows an instance and a static method sharing the same signature in one
+     * class, and the static {@link #generate()} is still live for legacy-Mojo
+     * callers. The Maven-plugin plan unifies this onto a single {@code generate}
+     * name once the static path retires.
+     */
+    public void run() {
+        var bySource = SchemaInputAttribution.build(ctx.schemaInputs());
+        var registry = RewriteSchemaLoader.load(bySource.keySet());
+        TagApplier.apply(registry, bySource);
+        DescriptionNoteApplier.apply(registry, bySource);
+        runPipeline(registry);
+    }
+
     public static void generate() {
         var registry = RewriteSchemaLoader.load(RewriteConfig.generatorSchemaFiles());
+        runPipeline(registry);
+    }
+
+    private static void runPipeline(graphql.schema.idl.TypeDefinitionRegistry registry) {
         var bundle = GraphitronSchemaBuilder.buildBundle(registry);
         var schema = bundle.model();
         var assembled = bundle.assembled();

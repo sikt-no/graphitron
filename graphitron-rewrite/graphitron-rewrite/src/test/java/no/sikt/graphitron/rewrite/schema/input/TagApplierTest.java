@@ -1,0 +1,271 @@
+package no.sikt.graphitron.rewrite.schema.input;
+
+import graphql.language.Argument;
+import graphql.language.Directive;
+import graphql.language.DirectivesContainer;
+import graphql.language.EnumTypeDefinition;
+import graphql.language.InputObjectTypeDefinition;
+import graphql.language.InterfaceTypeDefinition;
+import graphql.language.NonNullType;
+import graphql.language.ObjectTypeDefinition;
+import graphql.language.StringValue;
+import graphql.language.TypeName;
+import graphql.language.UnionTypeDefinition;
+import graphql.schema.idl.TypeDefinitionRegistry;
+import org.junit.jupiter.api.Test;
+
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+class TagApplierTest {
+
+    @Test
+    void fieldInTaggedFileGainsTagDirective() {
+        var registry = InMemoryRegistry.of(Map.of(
+            "tagged.graphqls", "type Foo { id: ID! }"
+        ));
+        var inputs = SchemaInputAttribution.build(List.of(
+            new SchemaInput("tagged.graphqls", Optional.of("enrollment"), Optional.empty())
+        ));
+
+        TagApplier.apply(registry, inputs);
+
+        var field = ((ObjectTypeDefinition) registry.getType("Foo").orElseThrow())
+            .getFieldDefinitions().getFirst();
+        assertThat(tagValue(field)).isEqualTo("enrollment");
+    }
+
+    @Test
+    void fieldWithExplicitTagIsNotDoubleTagged() {
+        var registry = InMemoryRegistry.of(Map.of(
+            "tagged.graphqls", """
+                directive @tag(name: String!) repeatable on FIELD_DEFINITION
+                type Foo { id: ID! @tag(name: "explicit") }
+                """
+        ));
+        var inputs = SchemaInputAttribution.build(List.of(
+            new SchemaInput("tagged.graphqls", Optional.of("auto"), Optional.empty())
+        ));
+
+        TagApplier.apply(registry, inputs);
+
+        var field = ((ObjectTypeDefinition) registry.getType("Foo").orElseThrow())
+            .getFieldDefinitions().getFirst();
+        assertThat(field.getDirectives()).hasSize(1);
+        assertThat(tagValue(field)).isEqualTo("explicit");
+    }
+
+    @Test
+    void fieldInUntaggedEntryIsUntouched() {
+        var registry = InMemoryRegistry.of(Map.of(
+            "plain.graphqls", "type Foo { id: ID! }"
+        ));
+        var inputs = SchemaInputAttribution.build(List.of(
+            new SchemaInput("plain.graphqls", Optional.empty(), Optional.of("note"))
+        ));
+
+        TagApplier.apply(registry, inputs);
+
+        var field = ((ObjectTypeDefinition) registry.getType("Foo").orElseThrow())
+            .getFieldDefinitions().getFirst();
+        assertThat(field.getDirectives()).isEmpty();
+    }
+
+    @Test
+    void inputObjectFieldGainsTag() {
+        var registry = InMemoryRegistry.of(Map.of(
+            "t.graphqls", "input FooInput { id: ID! }"
+        ));
+        var inputs = SchemaInputAttribution.build(List.of(
+            new SchemaInput("t.graphqls", Optional.of("x"), Optional.empty())
+        ));
+
+        TagApplier.apply(registry, inputs);
+
+        var field = ((InputObjectTypeDefinition) registry.getType("FooInput").orElseThrow())
+            .getInputValueDefinitions().getFirst();
+        assertThat(tagValue(field)).isEqualTo("x");
+    }
+
+    @Test
+    void enumValueGainsTag() {
+        var registry = InMemoryRegistry.of(Map.of(
+            "t.graphqls", "enum Color { RED GREEN }"
+        ));
+        var inputs = SchemaInputAttribution.build(List.of(
+            new SchemaInput("t.graphqls", Optional.of("x"), Optional.empty())
+        ));
+
+        TagApplier.apply(registry, inputs);
+
+        var values = ((EnumTypeDefinition) registry.getType("Color").orElseThrow())
+            .getEnumValueDefinitions();
+        assertThat(tagValue(values.getFirst())).isEqualTo("x");
+        assertThat(tagValue(values.get(1))).isEqualTo("x");
+    }
+
+    @Test
+    void fieldArgumentGainsTag() {
+        var registry = InMemoryRegistry.of(Map.of(
+            "t.graphqls", "type Foo { item(id: ID!): String }"
+        ));
+        var inputs = SchemaInputAttribution.build(List.of(
+            new SchemaInput("t.graphqls", Optional.of("x"), Optional.empty())
+        ));
+
+        TagApplier.apply(registry, inputs);
+
+        var field = ((ObjectTypeDefinition) registry.getType("Foo").orElseThrow())
+            .getFieldDefinitions().getFirst();
+        var arg = field.getInputValueDefinitions().getFirst();
+        assertThat(tagValue(arg)).isEqualTo("x");
+    }
+
+    @Test
+    void unionTypeDeclarationGainsTag() {
+        var registry = InMemoryRegistry.of(Map.of(
+            "t.graphqls", """
+                type A { id: ID! }
+                type B { id: ID! }
+                union AB = A | B
+                """
+        ));
+        var inputs = SchemaInputAttribution.build(List.of(
+            new SchemaInput("t.graphqls", Optional.of("ab-tag"), Optional.empty())
+        ));
+
+        TagApplier.apply(registry, inputs);
+
+        var union = (UnionTypeDefinition) registry.getType("AB").orElseThrow();
+        assertThat(tagValue(union)).isEqualTo("ab-tag");
+    }
+
+    @Test
+    void interfaceFieldGainsTag() {
+        var registry = InMemoryRegistry.of(Map.of(
+            "t.graphqls", "interface Named { name: String }"
+        ));
+        var inputs = SchemaInputAttribution.build(List.of(
+            new SchemaInput("t.graphqls", Optional.of("iface-tag"), Optional.empty())
+        ));
+
+        TagApplier.apply(registry, inputs);
+
+        var field = ((InterfaceTypeDefinition) registry.getType("Named").orElseThrow())
+            .getFieldDefinitions().getFirst();
+        assertThat(tagValue(field)).isEqualTo("iface-tag");
+    }
+
+    @Test
+    void typeDeclarationsThemselvesAreNotTagged() {
+        var registry = InMemoryRegistry.of(Map.of(
+            "t.graphqls", """
+                type Foo { id: ID! }
+                interface Bar { id: ID! }
+                enum Baz { A }
+                input Qux { id: ID! }
+                """
+        ));
+        var inputs = SchemaInputAttribution.build(List.of(
+            new SchemaInput("t.graphqls", Optional.of("x"), Optional.empty())
+        ));
+
+        TagApplier.apply(registry, inputs);
+
+        assertThat(registry.getType("Foo").orElseThrow().getDirectives()).isEmpty();
+        assertThat(registry.getType("Bar").orElseThrow().getDirectives()).isEmpty();
+        assertThat(registry.getType("Baz").orElseThrow().getDirectives()).isEmpty();
+        assertThat(registry.getType("Qux").orElseThrow().getDirectives()).isEmpty();
+    }
+
+    @Test
+    void tagDirectiveAutoInjectedWhenAbsent() {
+        var registry = InMemoryRegistry.of(Map.of(
+            "t.graphqls", "type Foo { id: ID! }"
+        ));
+        assertThat(registry.getDirectiveDefinition("tag")).isEmpty();
+
+        var inputs = SchemaInputAttribution.build(List.of(
+            new SchemaInput("t.graphqls", Optional.of("x"), Optional.empty())
+        ));
+        TagApplier.apply(registry, inputs);
+
+        var decl = registry.getDirectiveDefinition("tag").orElseThrow();
+        assertThat(decl.isRepeatable()).isTrue();
+        assertThat(decl.getDirectiveLocations()).extracting(l -> l.getName())
+            .containsExactlyInAnyOrder(
+                "FIELD_DEFINITION", "INPUT_FIELD_DEFINITION", "ENUM_VALUE",
+                "ARGUMENT_DEFINITION", "UNION"
+            );
+        assertThat(decl.getInputValueDefinitions()).hasSize(1);
+        var arg = decl.getInputValueDefinitions().getFirst();
+        assertThat(arg.getName()).isEqualTo("name");
+        assertThat(arg.getType()).isInstanceOfSatisfying(NonNullType.class, nn ->
+            assertThat(((TypeName) nn.getType()).getName()).isEqualTo("String")
+        );
+    }
+
+    @Test
+    void existingTagDirectiveDeclarationIsPreserved() {
+        // User hand-declares @tag with a narrower location set; applier respects it.
+        var registry = InMemoryRegistry.of(Map.of(
+            "t.graphqls", """
+                directive @tag(name: String!) on FIELD_DEFINITION
+                type Foo { id: ID! }
+                """
+        ));
+        var original = registry.getDirectiveDefinition("tag").orElseThrow();
+
+        var inputs = SchemaInputAttribution.build(List.of(
+            new SchemaInput("t.graphqls", Optional.of("x"), Optional.empty())
+        ));
+        TagApplier.apply(registry, inputs);
+
+        var after = registry.getDirectiveDefinition("tag").orElseThrow();
+        assertThat(after).isSameAs(original);
+    }
+
+    @Test
+    void noTagDirectiveInjectedWhenNoEntryCarriesATag() {
+        var registry = InMemoryRegistry.of(Map.of(
+            "t.graphqls", "type Foo { id: ID! }"
+        ));
+        var inputs = SchemaInputAttribution.build(List.of(
+            new SchemaInput("t.graphqls", Optional.empty(), Optional.of("note only"))
+        ));
+
+        TagApplier.apply(registry, inputs);
+
+        assertThat(registry.getDirectiveDefinition("tag")).isEmpty();
+    }
+
+    @Test
+    void tagValueWithQuotesAndUnicodeRoundTrips() {
+        var registry = InMemoryRegistry.of(Map.of(
+            "t.graphqls", "type Foo { id: ID! }"
+        ));
+        String tricky = "naïve-\"quoted\"-\\backslash";
+        var inputs = SchemaInputAttribution.build(List.of(
+            new SchemaInput("t.graphqls", Optional.of(tricky), Optional.empty())
+        ));
+
+        TagApplier.apply(registry, inputs);
+
+        var field = ((ObjectTypeDefinition) registry.getType("Foo").orElseThrow())
+            .getFieldDefinitions().getFirst();
+        assertThat(tagValue(field)).isEqualTo(tricky);
+    }
+
+    private static String tagValue(DirectivesContainer<?> node) {
+        var tags = node.getDirectives().stream().filter(d -> "tag".equals(d.getName())).toList();
+        assertThat(tags).hasSize(1);
+        Directive d = tags.getFirst();
+        Argument arg = d.getArgument("name");
+        assertThat(arg).isNotNull();
+        assertThat(arg.getValue()).isInstanceOf(StringValue.class);
+        return ((StringValue) arg.getValue()).getValue();
+    }
+}

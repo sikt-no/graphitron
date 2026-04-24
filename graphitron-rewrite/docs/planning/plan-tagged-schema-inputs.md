@@ -1,6 +1,6 @@
 # Plan: Tagged schema inputs with tags + description notes
 
-> **Status:** In Progress
+> **Status:** In Review
 >
 > Slice of the "Dissolve `graphitron-schema-transform` module" roadmap
 > umbrella. Replaces legacy `FeatureConfiguration`'s `@tag` +
@@ -269,7 +269,7 @@ This plan adds a parallel instance entry point wired to
 `RewriteContext`:
 
 ```
-// new GraphQLRewriteGenerator(ctx).generate()
+// new GraphQLRewriteGenerator(ctx).run()
 bySource = SchemaInputAttribution.build(ctx.schemaInputs())   // new; fails on overlap
 registry = RewriteSchemaLoader.load(bySource.keySet())
 TagApplier.apply(registry, bySource)                          // new
@@ -330,13 +330,15 @@ same path it uses today. No legacy-plugin file touched.
    type so the new generator entry-point signature stays stable
    across both landings. ~15 LOC.
 7. `GraphQLRewriteGenerator`: add an instance constructor that takes
-   `RewriteContext` and an instance `generate()` that runs the
+   `RewriteContext` and an instance `run()` method that executes the
    attribution + loader + appliers pipeline (see §Placement). The
    existing static `generate()` stays unchanged, still reads
    `RewriteConfig.generatorSchemaFiles()`, still drives
-   `graphitron-rewrite-test` through the legacy Mojo. The two
-   entry points coexist; the Maven-plugin plan deletes the static
-   one when it ships the new Mojo.
+   `graphitron-rewrite-test` through the legacy Mojo. Named `run()`
+   (not `generate()`) because Java disallows a static and an instance
+   method sharing the same signature on one class; the Maven-plugin
+   plan folds both paths onto a single `generate()` name once the
+   static entry retires.
 
 Expected diff: ~250 LOC rewrite-core production code +
 `SchemaInputException` ~10 LOC + ~300-400 LOC tests (five test
