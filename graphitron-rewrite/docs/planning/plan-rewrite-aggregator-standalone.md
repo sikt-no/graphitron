@@ -154,11 +154,13 @@ practice. Mitigation if drift becomes a concern: a one-shot
 mismatch. Not wired in this plan; add only if a real divergence
 lands.
 
-**Eventual collapse.** When the legacy generator retires (the
-umbrella's closing landing marker), delete the legacy javapoet
-module. The rewrite copy becomes the only copy and may reclaim
-the shorter `graphitron-javapoet` coord at that point, if desired.
-Out of scope for this plan.
+**Eventual collapse.** The umbrella's closing item,
+"Retire legacy and unnest the rewrite aggregator" (see
+`rewrite-roadmap.md`), deletes the legacy javapoet module along
+with the rest of the legacy tree. The rewrite copy becomes the
+only copy at that point and may reclaim the shorter
+`graphitron-javapoet` coord (and move to the unnested repo root).
+Out of scope for this plan; the closing item tracks it.
 
 ### 2. Reparent `graphitron-rewrite-parent`
 
