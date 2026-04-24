@@ -698,13 +698,21 @@ class FieldBuilder {
 
         Optional<ArgConditionRef> argCondition = buildArgCondition(arg, errors);
 
-        if (ctx.types.containsKey(typeName)) {
-            var resolvedType = ctx.types.get(typeName);
-            if (resolvedType instanceof GraphitronType.TableInputType tit) {
-                List<InputColumnBinding> bindings = buildLookupBindings(tit, arg, fieldDef, name, errors);
-                return new ArgumentRef.InputTypeArg.TableInputArg(
-                    name, typeName, nonNull, list, tit.table(), bindings, argCondition, tit.inputFields());
-            }
+        // Route the arg to an input-shaped classification when the classifier recognises its type
+        // as something input-like. TableInputType keeps its dedicated binding resolution.
+        // InputType (Pojo / Java record / jOOQ record) and UnclassifiedType (input resolution
+        // failed — e.g. FilmKey unresolvable against the surrounding table) both go through the
+        // plain-input path so lookup-key search still runs and produces a focused error.
+        var resolvedType = ctx.types.get(typeName);
+        if (resolvedType instanceof GraphitronType.TableInputType tit) {
+            List<InputColumnBinding> bindings = buildLookupBindings(tit, arg, fieldDef, name, errors);
+            return new ArgumentRef.InputTypeArg.TableInputArg(
+                name, typeName, nonNull, list, tit.table(), bindings, argCondition, tit.inputFields());
+        }
+        boolean isInputLike = resolvedType instanceof GraphitronType.InputType
+            || (resolvedType instanceof GraphitronType.UnclassifiedType
+                && ctx.schema.getType(typeName) instanceof GraphQLInputObjectType);
+        if (isInputLike) {
             List<InputField> plainFields = classifyPlainInputFields(typeName, rt, errors);
             return new ArgumentRef.InputTypeArg.PlainInputArg(
                 name, typeName, nonNull, list, argCondition, plainFields);

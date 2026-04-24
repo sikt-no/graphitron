@@ -130,6 +130,7 @@ class TypeBuilder {
             case EdgeType ignored         -> type;
             case PageInfoType ignored     -> type;
             case PlainObjectType ignored  -> type;
+            case no.sikt.graphitron.rewrite.model.GraphitronType.EnumType ignored -> type;
             case UnclassifiedType ignored -> type;
         });
 
@@ -228,12 +229,23 @@ class TypeBuilder {
     // ===== Type classification =====
 
     GraphitronType classifyType(GraphQLNamedType namedType) {
-        if (namedType instanceof graphql.schema.GraphQLScalarType
-                || namedType instanceof graphql.schema.GraphQLEnumType) {
+        if (namedType instanceof graphql.schema.GraphQLScalarType) {
             return null;
+        }
+        if (namedType instanceof graphql.schema.GraphQLEnumType enumType) {
+            return new no.sikt.graphitron.rewrite.model.GraphitronType.EnumType(
+                enumType.getName(), locationOf(enumType), enumType);
         }
         // Federation-injected types (e.g. _Service, _Any) are not Graphitron-managed.
         if (namedType.getName().startsWith("_")) {
+            return null;
+        }
+        // Directive-argument input types (ErrorHandler, ReferencesForType, etc.) exist only to
+        // shape Graphitron's own build-time directives. They must not reach emission, so the
+        // classifier skips them entirely — they never enter schema.types().
+        if (namedType instanceof GraphQLInputObjectType
+                && no.sikt.graphitron.rewrite.generators.schema.InputDirectiveInputTypes.NAMES
+                    .contains(namedType.getName())) {
             return null;
         }
         if (namedType instanceof GraphQLInputObjectType inputType) {

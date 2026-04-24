@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
 import graphql.language.SourceLocation;
+import graphql.schema.GraphQLEnumType;
 import graphql.schema.GraphQLObjectType;
 
 import no.sikt.graphitron.rewrite.model.ErrorHandlerType;
@@ -15,7 +16,7 @@ public sealed interface GraphitronType
             GraphitronType.InterfaceType, GraphitronType.UnionType, GraphitronType.ErrorType,
             GraphitronType.InputType, GraphitronType.TableInputType,
             GraphitronType.ConnectionType, GraphitronType.EdgeType, GraphitronType.PageInfoType,
-            GraphitronType.PlainObjectType, GraphitronType.UnclassifiedType {
+            GraphitronType.PlainObjectType, GraphitronType.EnumType, GraphitronType.UnclassifiedType {
 
     String name();
 
@@ -303,6 +304,17 @@ public sealed interface GraphitronType
         String name,
         SourceLocation location,
         GraphQLObjectType schemaType
+    ) implements GraphitronType {}
+
+    /**
+     * A GraphQL enum type. Classifier records it so {@code schema.types()} is complete for
+     * emission. Per-value directives and deprecation survive through {@code schemaType} — the
+     * emitter reads them directly at generation time.
+     */
+    record EnumType(
+        String name,
+        SourceLocation location,
+        GraphQLEnumType schemaType
     ) implements GraphitronType {}
 
     /**

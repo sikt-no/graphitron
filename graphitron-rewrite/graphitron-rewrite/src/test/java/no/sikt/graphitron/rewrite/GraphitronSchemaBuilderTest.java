@@ -3685,6 +3685,54 @@ class GraphitronSchemaBuilderTest {
         tc.assertions.accept(build(tc.sdl));
     }
 
+    // ===== Enum type classification =====
+
+    enum EnumTypeCase implements ClassificationCase {
+        PLAIN_ENUM(
+            "SDL-declared enum classifies as EnumType with its GraphQLEnumType as schemaType",
+            """
+            enum Status { ACTIVE INACTIVE }
+            type Query { s: Status }
+            """,
+            schema -> {
+                var t = (no.sikt.graphitron.rewrite.model.GraphitronType.EnumType)
+                    schema.type("Status");
+                assertThat(t.name()).isEqualTo("Status");
+                assertThat(t.schemaType()).isNotNull();
+                assertThat(t.schemaType().getValues()).extracting(v -> v.getName())
+                    .containsExactly("ACTIVE", "INACTIVE");
+            }),
+
+        ENUM_WITH_DEPRECATED_VALUE(
+            "deprecation on an enum value survives on schemaType",
+            """
+            enum Status { ACTIVE OLD @deprecated(reason: "unused") }
+            type Query { s: Status }
+            """,
+            schema -> {
+                var t = (no.sikt.graphitron.rewrite.model.GraphitronType.EnumType)
+                    schema.type("Status");
+                assertThat(t.schemaType().getValue("OLD").isDeprecated()).isTrue();
+            });
+
+        final String sdl;
+        final Consumer<GraphitronSchema> assertions;
+        EnumTypeCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
+            this.sdl = sdl;
+            this.assertions = assertions;
+        }
+        @Override public Set<Class<?>> variants() {
+            return Set.of(no.sikt.graphitron.rewrite.model.GraphitronType.EnumType.class);
+        }
+        @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(EnumTypeCase.class)
+    void enumTypeClassification(EnumTypeCase tc) {
+        tc.assertions.accept(build(tc.sdl));
+    }
+
     // ===== Helper =====
 
     private GraphitronSchema build(String schemaText) {

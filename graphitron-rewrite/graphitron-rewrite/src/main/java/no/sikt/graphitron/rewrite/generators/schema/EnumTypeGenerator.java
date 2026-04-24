@@ -1,11 +1,12 @@
 package no.sikt.graphitron.rewrite.generators.schema;
 
 import graphql.schema.GraphQLEnumType;
-import graphql.schema.GraphQLSchema;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
+import no.sikt.graphitron.rewrite.GraphitronSchema;
+import no.sikt.graphitron.rewrite.model.GraphitronType;
 
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
@@ -16,9 +17,9 @@ import java.util.List;
  * Emits one {@code <TypeName>Type} class per GraphQL enum type into
  * {@code <outputPackage>.rewrite.schema}. Each class exposes a single
  * {@code public static GraphQLEnumType type()} method that rebuilds the enum as a
- * programmatic graphql-java type at runtime. Introspection types
- * ({@code "__"}-prefixed) and federation-injected enums
- * ({@code "_"}-prefixed) are skipped; neither enters the user's schema surface.
+ * programmatic graphql-java type at runtime. Reads from
+ * {@link GraphitronSchema#types()} only — introspection and federation-injected enums don't
+ * appear there because the classifier skips them.
  */
 public final class EnumTypeGenerator {
 
@@ -27,14 +28,15 @@ public final class EnumTypeGenerator {
 
     private EnumTypeGenerator() {}
 
-    public static List<TypeSpec> generate(GraphQLSchema assembled) {
+    public static List<TypeSpec> generate(GraphitronSchema schema) {
         var result = new ArrayList<TypeSpec>();
-        assembled.getAllTypesAsList().stream()
-            .filter(t -> t instanceof GraphQLEnumType)
-            .map(t -> (GraphQLEnumType) t)
-            .filter(t -> !t.getName().startsWith("_"))
-            .sorted(Comparator.comparing(GraphQLEnumType::getName))
-            .forEach(enumType -> result.add(buildEnumTypeSpec(enumType)));
+        for (var entry : schema.types().entrySet()) {
+            if (entry.getKey().startsWith("_")) continue;
+            if (entry.getValue() instanceof GraphitronType.EnumType et) {
+                result.add(buildEnumTypeSpec(et.schemaType()));
+            }
+        }
+        result.sort(Comparator.comparing(TypeSpec::name));
         return result;
     }
 

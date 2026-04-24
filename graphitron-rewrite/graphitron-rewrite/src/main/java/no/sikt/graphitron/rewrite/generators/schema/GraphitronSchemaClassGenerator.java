@@ -1,6 +1,5 @@
 package no.sikt.graphitron.rewrite.generators.schema;
 
-import graphql.schema.GraphQLEnumType;
 import graphql.schema.GraphQLSchema;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
@@ -8,9 +7,7 @@ import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
-import no.sikt.graphitron.rewrite.model.GraphitronType.InputType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.RootType;
-import no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType;
 
 import javax.lang.model.element.Modifier;
@@ -138,9 +135,9 @@ public final class GraphitronSchemaClassGenerator {
     /**
      * Enumerates the types that need registration in the emitted {@code GraphitronSchema.build()}.
      *
-     * <p>Source of truth is {@link GraphitronSchema#types()}, which by Phase 4 contains every
-     * emittable object / interface / union / input type: SDL-declared and synthesised alike.
-     * Enums aren't in the model yet (Phase 6); the assembled schema is consulted for those only.
+     * <p>Source of truth is {@link GraphitronSchema#types()}, which by Phase 6 contains every
+     * emittable type — objects, interfaces, unions, inputs, enums, SDL-declared and synthesised
+     * alike. The assembled schema is no longer consulted here.
      */
     static Plan planFor(GraphitronSchema schema, GraphQLSchema assembled) {
         var additional = new java.util.LinkedHashSet<String>();
@@ -157,19 +154,7 @@ public final class GraphitronSchemaClassGenerator {
                 continue;
             }
             if (variant instanceof UnclassifiedType) continue;
-            if ((variant instanceof InputType || variant instanceof TableInputType)
-                    && InputDirectiveInputTypes.NAMES.contains(name)) {
-                continue;
-            }
             additional.add(name);
-        }
-
-        // Enums aren't classified into schema.types() today — pull them from the assembled
-        // schema until Phase 6 brings them into the model.
-        for (var t : assembled.getAllTypesAsList()) {
-            String name = t.getName();
-            if (name.startsWith("_")) continue;
-            if (t instanceof GraphQLEnumType) additional.add(name);
         }
 
         var sorted = new ArrayList<>(additional);

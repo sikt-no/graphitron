@@ -10,6 +10,8 @@ import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
+import no.sikt.graphitron.rewrite.GraphitronSchema;
+import no.sikt.graphitron.rewrite.model.GraphitronType;
 
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
@@ -47,15 +49,20 @@ public final class InputTypeGenerator {
 
     private InputTypeGenerator() {}
 
-    public static List<TypeSpec> generate(GraphQLSchema assembled) {
+    public static List<TypeSpec> generate(GraphitronSchema schema, GraphQLSchema assembled) {
         var result = new ArrayList<TypeSpec>();
-        assembled.getAllTypesAsList().stream()
-            .filter(t -> t instanceof GraphQLInputObjectType)
-            .map(t -> (GraphQLInputObjectType) t)
-            .filter(t -> !t.getName().startsWith("_"))
-            .filter(t -> !InputDirectiveInputTypes.NAMES.contains(t.getName()))
-            .sorted(Comparator.comparing(GraphQLInputObjectType::getName))
-            .forEach(inputType -> result.add(buildInputTypeSpec(inputType)));
+        for (var entry : schema.types().entrySet()) {
+            String name = entry.getKey();
+            if (name.startsWith("_")) continue;
+            var variant = entry.getValue();
+            if (variant instanceof GraphitronType.InputType
+                    || variant instanceof GraphitronType.TableInputType) {
+                if (assembled.getType(name) instanceof GraphQLInputObjectType inputType) {
+                    result.add(buildInputTypeSpec(inputType));
+                }
+            }
+        }
+        result.sort(Comparator.comparing(TypeSpec::name));
         return result;
     }
 
