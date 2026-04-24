@@ -42,7 +42,7 @@ class LookupTableFieldValidationTest {
             List.of()),
 
         CONNECTION_BLOCKED("connection return — not valid on lookup field (validator mirror of classifier rejection)",
-            new LookupTableField("Language", "films", null, filmReturn(new FieldWrapper.Connection(true, true)), List.of(), List.of(), new OrderBySpec.None(), null,
+            new LookupTableField("Language", "films", null, filmReturn(new FieldWrapper.Connection(true, 100)), List.of(), List.of(), new OrderBySpec.None(), null,
                 EMPTY_LOOKUP),
             List.of("Field 'Language.films': lookup fields must not return a connection"));
 

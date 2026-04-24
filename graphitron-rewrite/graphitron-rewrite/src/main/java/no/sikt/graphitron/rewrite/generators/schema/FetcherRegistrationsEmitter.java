@@ -7,10 +7,8 @@ import no.sikt.graphitron.rewrite.generators.FetcherEmitter;
 import no.sikt.graphitron.rewrite.generators.util.ConnectionHelperClassGenerator;
 import no.sikt.graphitron.rewrite.model.BatchKeyField;
 import no.sikt.graphitron.rewrite.model.ChildField;
-import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
-import no.sikt.graphitron.rewrite.model.SqlGeneratingField;
 import no.sikt.graphitron.rewrite.model.TableRef;
 
 import java.util.Comparator;
@@ -65,16 +63,12 @@ public final class FetcherRegistrationsEmitter {
         String fetchersPackage = outputPackage + ".fetchers";
         String utilPackage     = outputPackage + ".util";
 
+        // Connection / Edge wiring is driven by the classifier's first-class type entries
+        // (populated for both directive-driven and structural carriers).
         var connectionTypeMap = new LinkedHashMap<String, String>();
-        schema.fields().forEach((coords, field) -> {
-            if (field instanceof SqlGeneratingField sgf
-                    && sgf.returnType().wrapper() instanceof FieldWrapper.Connection conn) {
-                String parentType = coords.getTypeName();
-                String fieldName  = coords.getFieldName();
-                String connName   = conn.connectionName() != null
-                    ? conn.connectionName()
-                    : parentType + capitalize(fieldName) + "Connection";
-                connectionTypeMap.putIfAbsent(connName, connName.replace("Connection", "Edge"));
+        schema.types().forEach((name, type) -> {
+            if (type instanceof GraphitronType.ConnectionType ct) {
+                connectionTypeMap.putIfAbsent(ct.name(), ct.edgeTypeName());
             }
         });
 
@@ -198,7 +192,4 @@ public final class FetcherRegistrationsEmitter {
         }
     }
 
-    private static String capitalize(String s) {
-        return s.isEmpty() ? s : Character.toUpperCase(s.charAt(0)) + s.substring(1);
-    }
 }

@@ -64,7 +64,7 @@ class RecordLookupTableFieldValidationTest {
             List.of()),
 
         CONNECTION_BLOCKED("connection return — lookup-field rejection",
-            new RecordLookupTableField("Language", "films", null, filmReturn(new FieldWrapper.Connection(true, true)), List.of(), List.of(), new OrderBySpec.None(), null, BATCH_KEY, EMPTY_LOOKUP),
+            new RecordLookupTableField("Language", "films", null, filmReturn(new FieldWrapper.Connection(true, 100)), List.of(), List.of(), new OrderBySpec.None(), null, BATCH_KEY, EMPTY_LOOKUP),
             List.of("Field 'Language.films': lookup fields must not return a connection"));
 
         private final String description;
