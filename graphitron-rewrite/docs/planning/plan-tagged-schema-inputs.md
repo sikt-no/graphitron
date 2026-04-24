@@ -104,9 +104,19 @@ Key legacy behaviours this port changes:
   `<descriptionNote>` element. Consumers migrating from legacy
   inline the file's contents or keep them in a `<![CDATA[ ... ]]>`
   block.
+- **No global tag-disable toggle.** Legacy's
+  `FeatureConfiguration(..., boolean addTags)` constructor gates all
+  tag application on a single flag. Rewrite drops the toggle; any
+  `<schemaInput>` with a `<tag>` applies unconditionally. Consumers
+  who want to skip tagging for a subset of files omit `<tag>` on
+  those entries.
 - **Decouple note from `@feature`.** Legacy applies the suffix only
   when `@feature` is added; rewrite applies the note whenever a
   matching entry declares one, independent of `@tag`.
+- **Description concat is platform-stable.** Legacy uses
+  `System.lineSeparator()` (platform-dependent: `\n` on Linux/macOS,
+  `\r\n` on Windows). Rewrite uses literal `\n\n` so generated
+  descriptions are identical across build hosts.
 - **Federation import auto-handled.** Legacy guards `@tag` on
   `@link(import: [...])` containing `"@tag"`. Rewrite's `TagApplier`
   auto-injects a `@tag` directive declaration when the registry has
@@ -117,6 +127,14 @@ Key legacy behaviours this port changes:
 - **Operate on `TypeDefinitionRegistry`**, not on the built schema.
   `SourceLocation` is preserved per `Definition`, so source-file
   attribution flows through without a built-schema round-trip.
+
+`@tag` is federation-owned, not a Graphitron directive. Rewrite's
+`directives.graphqls` (copied by the schema-loading plan) does not
+declare it; the `TagApplier`'s auto-injection is the mechanism that
+makes the feature work for consumers who haven't imported federation
+via `@link`. This is deliberate — rewrite doesn't want to claim
+ownership of a federation construct, but also doesn't want every
+tag-using consumer to have to opt into federation first.
 
 ## Design
 
@@ -179,9 +197,13 @@ a source-name key in the map whose `SchemaInput` has a `tag`,
 appends `@tag(name: "<tag>")` to the element's directives, unless the
 element already declares `@tag` explicitly.
 
-Operates on AST `Definition` nodes via `.transform(builder -> ...)`;
-`TypeDefinitionRegistry` is mutable and we replace each transformed
-definition in place.
+Operates on AST `Definition` nodes via `.transform(builder -> ...)`.
+`TypeDefinitionRegistry` exposes `add(SDLDefinition)` and
+`remove(SDLDefinition)` but no atomic replace. The appliers use a
+two-pass pattern: collect the (old, new) definition pairs in the
+first pass, then apply `remove` + `add` in the second. This avoids
+`ConcurrentModificationException` on iteration over
+`registry.types()` and friends.
 
 ### 4. `DescriptionNoteApplier`
 
@@ -248,33 +270,61 @@ smooth.
 New package `no.sikt.graphitron.rewrite.schema.input`, landing
 alongside `RewriteSchemaLoader` (created by the schema-loading plan).
 
-All rewrite-core. Maven plugin untouched except for the
-`enableRewrite` deletion at step 7.
+All rewrite-core. `graphitron-maven-plugin` and
+`graphitron-java-codegen` touched only to unwind the dead
+`enableRewrite` / `disableLegacy` plumbing at step 8.
 
 1. `no.sikt.graphitron.rewrite.schema.input.SchemaInput`: record
    (pattern, Optional<tag>, Optional<descriptionNote>). ~15 LOC.
-2. `SchemaInputResolver`: `static Map<String, SchemaInput> resolve(List<SchemaInput>, Path basedir)`
-   plus the two fail-fast checks, ~110 LOC.
-3. `TagApplier`: `static void apply(TypeDefinitionRegistry, Map<String, SchemaInput>)`,
+2. `SchemaInputException extends RuntimeException`: thrown by the
+   resolver on empty-match / overlap / malformed glob. Matches
+   legacy's `RuntimeException` contract, adds a specific type for
+   catch-site precision in tests. ~10 LOC.
+3. `SchemaInputResolver`: `static Map<String, SchemaInput> resolve(List<SchemaInput>, Path basedir)`
+   plus the two fail-fast checks. Returns a `LinkedHashMap` keyed in
+   the order the caller's `List<SchemaInput>` was traversed, so
+   overlap error messages name rules deterministically and the
+   emitted tag/note order is reproducible across builds. ~110 LOC.
+4. `TagApplier`: `static void apply(TypeDefinitionRegistry, Map<String, SchemaInput>)`,
    including the synthetic `@tag` directive declaration when the
    registry has none, ~90 LOC.
-4. `DescriptionNoteApplier`: `static void apply(TypeDefinitionRegistry, Map<String, SchemaInput>)`, ~70 LOC.
-5. `no.sikt.graphitron.rewrite.RewriteContext`: minimal record
+5. `DescriptionNoteApplier`: `static void apply(TypeDefinitionRegistry, Map<String, SchemaInput>)`, ~70 LOC.
+6. `no.sikt.graphitron.rewrite.RewriteContext`: minimal record
    (`List<SchemaInput> schemaInputs`, `Path basedir`). The
    Maven-plugin plan expands the record; this plan introduces the
    type so the generator signature stays stable across both
    landings. ~15 LOC.
-6. `GraphQLRewriteGenerator`: constructor now takes `RewriteContext`;
+7. `GraphQLRewriteGenerator`: constructor now takes `RewriteContext`;
    `generate()` reads `ctx.schemaInputs()` + `ctx.basedir()`
    for the resolver call, otherwise unchanged from the
    schema-loading plan's shape.
-7. `graphitron-maven-plugin`: delete the `enableRewrite=true`
-   branch from `GenerateMojo`, the `RewriteConfig.setProperties(...)`
-   wiring, and the `ValidateMojo.failOnRewriteValidationError`
-   path. Rewrite has no Mojo entry until the new plugin lands.
+8. Legacy-plugin cleanup (four files): rewrite has no Mojo entry
+   until the new plugin lands, so every shred of the `enableRewrite`
+   / `disableLegacy` plumbing leaves. `disableLegacy` goes too —
+   without `enableRewrite`, setting `disableLegacy=true` becomes
+   "generate nothing," a degenerate state nobody should reach for.
+   Files:
+   - `graphitron-maven-plugin/.../mojo/GenerateMojo.java`: delete
+     the `@Parameter enableRewrite` + `@Parameter disableLegacy`
+     declarations, both getter overrides, the `if (!disableLegacy)`
+     wrap, the `if (enableRewrite) { RewriteConfig.setProperties(...);
+     GraphQLRewriteGenerator.generate(); }` block. Legacy call
+     unwraps to unconditional `GraphQLGenerator.generate()`.
+   - `graphitron-maven-plugin/.../mojo/ValidateMojo.java`: delete
+     the `@Parameter failOnRewriteValidationError`, its consumer,
+     and the rewrite-error downgrade path + associated help text.
+   - `graphitron-codegen-parent/.../generate/Generator.java`:
+     delete the `default boolean enableRewrite()` + `default boolean
+     disableLegacy()` interface methods.
+   - `graphitron-codegen-parent/.../configuration/GeneratorConfig.java`:
+     delete the `private static boolean enableRewrite`,
+     `enableRewrite = mojo.enableRewrite()` line in
+     `loadProperties`, getter, and setter.
 
-Expected diff: ~350 LOC added in rewrite core; ~50 LOC deleted in
-the legacy plugin. Tests exercise everything.
+Expected diff: ~300 LOC rewrite-core production code +
+`SchemaInputException` ~10 LOC + ~300-400 LOC tests (five test
+classes) = ~700 LOC added; ~80 LOC deleted in the legacy plugin +
+codegen-parent across the four files above.
 
 ### Element walking
 
@@ -293,14 +343,21 @@ entries. Consistent with legacy behaviour.
 ### Path normalisation
 
 `SourceLocation.getSourceName()` echoes back exactly the string the
-parser was given. The resolver pre-normalises each matched file to a
-canonical source-name (e.g. `Path.toAbsolutePath().normalize().toString()`
-for filesystem matches, classpath-resource name for classpath matches)
-and hands that same string both to `RewriteSchemaLoader.load(...)` and
-into the resolver's map key. Because the loader passes the source
-string through untouched, `SourceLocation.getSourceName()` at applier
-time matches the map key byte-for-byte; no per-applier renormalisation
-step.
+parser was given. The resolver normalises every matched file to
+`Path.toAbsolutePath().normalize().toString()` and hands that same
+string both to `RewriteSchemaLoader.load(...)` and into the resolver's
+map key. Because the loader passes the source string through
+untouched, `SourceLocation.getSourceName()` at applier time matches
+the map key byte-for-byte; no per-applier renormalisation step. User
+paths are always filesystem paths (the schema-loading plan's
+`openSource` is filesystem-only).
+
+The auto-injected directives source has source name
+`schema/directives.graphqls` (classpath-relative; set by
+`RewriteSchemaLoader.addDirectivesSource`), which by construction
+matches no resolver map key. Directive definitions therefore receive
+no tag or note, which is the intended behaviour; don't "fix" the
+apparent lookup miss.
 
 ## Tests
 
@@ -314,6 +371,21 @@ step.
   `SchemaInputException` with the pattern text in the message.
 - Two patterns match the same file: throws with both pattern strings
   and the offending file path in the message.
+- Overlap error is deterministic: given entries A then B in the
+  input list, the error names A before B (verifies
+  `LinkedHashMap` iteration order).
+- Malformed glob (e.g. unclosed bracket): resolver throws
+  `SchemaInputException` wrapping the underlying
+  `PatternSyntaxException`, with the offending pattern in the
+  message.
+- Empty-string tag (`<tag></tag>`): resolver normalises to
+  `Optional.empty()` so the POM-binder "empty element" case doesn't
+  end up applying `@tag(name: "")`.
+- Tag value containing quotes, backslashes, unicode: round-trips
+  through the applier into a well-formed `@tag(name: "...")` AST
+  (no SDL-escape breakage).
+- `basedir` doesn't exist or points at a file: resolver throws
+  `SchemaInputException` with the path in the message.
 - Path normalisation: pattern `./schema/*.graphqls` matches a
   project-relative entry `schema/foo.graphqls`; lookup resolves.
 
@@ -331,6 +403,11 @@ step.
 - `@tag` directive auto-inject: registry without `@tag` gains the
   synthetic declaration when any entry has a `tag`; registry with a
   prior `@tag` declaration keeps the original untouched.
+- Auto-injected declaration shape: `directive @tag(name: String!)
+  repeatable` with locations exactly
+  `FIELD_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE | ARGUMENT_DEFINITION | UNION`.
+  Pins the Apollo-federation-compatible form so nobody narrows it
+  accidentally.
 - No entry carries a `tag`: no synthetic declaration added.
 
 ### Unit: `DescriptionNoteApplierTest`
@@ -345,10 +422,12 @@ step.
 ### Pipeline: `GraphitronSchemaBuilderTest` additions
 
 One end-to-end case: two `<schemaInput>` entries (one tagged-only,
-one noted-only, one both). Assert on the built `GraphitronSchema`
-that the attributions reach the generator as expected. No
-emission-level assertions; this is a registry-level transform and
-the emitter side is agnostic.
+one noted-only, one both). Assertions read through the built
+`GraphitronSchema`'s directive and description accessors — not
+through the pre-build registry — so any future caching the builder
+might introduce between registry mutation and schema build is
+covered. No emission-level assertions; this is a registry-level
+transform and the emitter side is agnostic.
 
 ### Emission ratchet
 
