@@ -1,52 +1,53 @@
-# Plan: Pattern-matched schema inputs with tags + description notes
+# Plan: Tagged schema inputs with tags + description notes
 
 > **Status:** Spec
 >
 > Slice of the "Dissolve `graphitron-schema-transform` module" roadmap
 > umbrella. Replaces legacy `FeatureConfiguration`'s `@tag` +
 > description-suffix behaviour with an explicit, config-driven model:
-> each schema input is a glob pattern plus an optional tag and an
-> optional description note. Carries a tighter contract than legacy
-> (overlap is an error, not a silent union).
+> each schema input is a resolved source file plus an optional tag
+> and an optional description note. Tighter contract than legacy:
+> the same source in two entries is an error, not a silent union.
 >
 > Excludes `@feature` directive and `<outputSchemas>` splits; those
 > land with the remaining "Rewrite owns feature-flag SDL splits" item.
 >
 > Depends on "Rewrite owns schema loading + directive auto-injection"
 > landing first; this transform runs inside the same
-> `GraphQLRewriteGenerator` step that plan introduces. Lands before
-> the "Rewrite-owned Maven plugin" plan
-> ([plan-rewrite-maven-plugin.md](plan-rewrite-maven-plugin.md))
-> as pure rewrite-core work: resolver, appliers, and a minimal
-> `RewriteContext` record threaded through `GraphQLRewriteGenerator`.
-> No legacy-plugin file touched. `<schemaInputs>` XML surface and
-> the full `RewriteContext` field set land with the Maven-plugin
-> plan, along with the `enableRewrite` / `disableLegacy` cleanup
-> and the `graphitron-rewrite-test/pom.xml` migration to the new
-> Mojo. Until then, `graphitron-rewrite-test` continues to drive
-> code generation via the legacy plugin's `enableRewrite=true`
-> branch.
+> `GraphQLRewriteGenerator` step that plan introduces. Pure
+> rewrite-core work: the `SchemaInput` data type, attribution
+> builder, two appliers, and a new entry point on
+> `GraphQLRewriteGenerator` that takes them. Purely additive: no
+> legacy-plugin file touched; the existing static `generate()` entry
+> point stays intact for `graphitron-rewrite-test`'s current
+> rewrite-via-legacy-Mojo path. `<schemaInputs>` XML surface and
+> the glob expansion that turns user patterns into concrete
+> `SchemaInput` records both land with the
+> [Maven-plugin plan](plan-rewrite-maven-plugin.md), alongside the
+> `enableRewrite` / `disableLegacy` cleanup and the
+> `graphitron-rewrite-test/pom.xml` migration to the new Mojo.
 
 ## Goal
 
-Give rewrite a first-class `SchemaInput` concept: each input is a
-glob pattern plus optional tag and optional description note, and
-rewrite's pipeline attaches:
+Give rewrite-core a first-class `SchemaInput` concept: each input
+is one resolved source file plus an optional tag and an optional
+description note. The rewrite pipeline attaches:
 
 - a **tag** applied as `@tag(name: "<tag>")` to in-scope elements
-  defined in the matched files, and
+  defined in that source, and
 - a **description note** appended (with a blank-line separator) to
   the description of those elements.
 
-One tag per entry, one note per entry. No implicit folder
-convention; the list of `SchemaInput` records driving the pipeline
-is the only source of truth. Two build-time errors, both owned by
-rewrite with precise messages: an entry whose pattern matches zero
-files, and a file matched by two or more entries.
+One tag per entry, one note per entry. The list of `SchemaInput`
+records driving the pipeline is the only source of truth; no
+implicit folder convention, no glob matching inside rewrite-core.
+One build-time error owned by rewrite-core with a precise message:
+the same source name appearing in two or more entries.
 
-The XML surface (Maven `<schemaInputs>` config, `SchemaInputBinding`
-POJO, Mojo parameter) lands with the Maven-plugin plan; this plan
-ships rewrite core and its tests.
+The user-facing XML surface (Maven `<schemaInputs>` with `<pattern>`
+entries, glob expansion to concrete files, empty-match fail-fast)
+lives in the Maven-plugin plan. This separation keeps rewrite-core
+filesystem-agnostic and its tests in-memory.
 
 Out of scope: the `@feature(flags: [...])` directive, the
 `<outputSchemas>` feature-flag splits, `SchemaFeatureFilter`. Those
@@ -125,8 +126,12 @@ Key legacy behaviours this port changes:
   auto-injects a `@tag` directive declaration when the registry has
   none; see §3 and D3.
 - **Overlap is an error.** Legacy silently let arbitrary folder
-  logic decide. Rewrite fails the build if a single file matches two
-  entries, naming both patterns in the message.
+  logic decide. Rewrite fails the build if a single source name
+  appears in two `SchemaInput` entries, naming both entries in the
+  message. The check runs in rewrite-core at the attribution-
+  building boundary (before tagging or note application), so it
+  applies uniformly regardless of who supplies the inputs (Maven
+  plugin, test, hypothetical CLI driver).
 - **Operate on `TypeDefinitionRegistry`**, not on the built schema.
   `SourceLocation` is preserved per `Definition`, so source-file
   attribution flows through without a built-schema round-trip.
@@ -145,41 +150,55 @@ tag-using consumer to have to opt into federation first.
 
 ```java
 public record SchemaInput(
-    String pattern,              // glob, e.g. "schema/enrollment/**/*.graphqls"
-    Optional<String> tag,        // e.g. "enrollment"; empty = no tag applied
-    Optional<String> descriptionNote  // literal text; empty = no note appended
+    String sourceName,              // canonical source-name (the same string
+                                    //   RewriteSchemaLoader.load receives and
+                                    //   SourceLocation.getSourceName() echoes back)
+    Optional<String> tag,            // e.g. "enrollment"; empty = no tag applied
+    Optional<String> descriptionNote // literal text; empty = no note appended
 ) {}
 ```
+
+One entry per resolved schema source. No patterns, no globs:
+rewrite-core never touches the filesystem to build this list. The
+[Maven-plugin plan](plan-rewrite-maven-plugin.md) owns the
+`<pattern>` → one-or-more-`SchemaInput` expansion via Maven's
+`DirectoryScanner` and owns the empty-match fail-fast (a plugin-
+level user-config diagnostic). Tests hand-construct `SchemaInput`
+lists directly.
 
 Held on a new minimal `RewriteContext` record introduced by this
 plan (fields: `List<SchemaInput> schemaInputs`, `Path basedir`), in
 package `no.sikt.graphitron.rewrite`. `GraphQLRewriteGenerator`
-accepts `RewriteContext` in its constructor; the Maven-plugin plan
-expands the record with the remaining plugin knobs (output paths,
-named references, scalars, etc.) without moving or renaming it.
-Tests construct a `RewriteContext` directly.
+gains a new entry point that takes `RewriteContext`; the existing
+static `generate()` stays unchanged for the legacy-Mojo call path.
+The Maven-plugin plan expands `RewriteContext` with the remaining
+plugin knobs (output paths, named references, scalars, etc.)
+without moving or renaming it. Tests construct a `RewriteContext`
+directly.
 
-### 2. Resolver (`SchemaInputResolver`)
+### 2. Attribution builder (`SchemaInputAttribution`)
 
-Expands each `SchemaInput.pattern` to a concrete set of file paths
-using `java.nio.file.FileSystem.getPathMatcher("glob:...")` rooted at
-the project basedir. Returns `Map<String, SchemaInput>` keyed by
-canonical source-name (the same string value `RewriteSchemaLoader.load(...)`
-receives and `SourceLocation.getSourceName()` returns at applier
-time). No wrapper record; the map itself is the contract.
+```java
+public final class SchemaInputAttribution {
+    public static Map<String, SchemaInput> build(List<SchemaInput> inputs) { ... }
+}
+```
 
-Fail-fast checks, in order:
+Builds a `LinkedHashMap<String, SchemaInput>` keyed by `sourceName`,
+preserving input-list order so overlap error messages name entries
+deterministically and tag/note application is reproducible across
+builds. ~30 LOC.
 
-1. **Empty match.** A pattern that matches zero files is an error:
-   `"<schemaInput pattern='...'> matched no files"`.
-2. **Overlap.** A file matched by two entries is an error:
-   `"schema file X is matched by two <schemaInput> patterns: '<A>' and '<B>'. Each file must belong to exactly one entry."`
+One fail-fast check: the same `sourceName` appearing in two entries
+throws `SchemaInputException` with both offending entries in the
+message:
+`"source 'X' is declared in two <schemaInput> entries: #N with tag=<T1>/note=<N1> and #M with tag=<T2>/note=<N2>. Each source must belong to exactly one entry."`
 
 Missing `@tag` declaration is not an error: the `TagApplier` injects
-a synthetic declaration if any `<tag>` entry is configured and the
-registry carries no prior `@tag` definition (see §3).
+a synthetic declaration if any entry carries a tag and the registry
+has no prior `@tag` definition (see §3).
 
-The resolver runs once, before `RewriteSchemaLoader.load(...)`. Its
+The builder runs once, before `RewriteSchemaLoader.load(...)`. Its
 keyset is the file set handed to the loader; the map itself is
 consumed by the two appliers.
 
@@ -222,29 +241,35 @@ independent; both walks read the same map.
 
 ## Placement in the pipeline
 
-`GraphQLRewriteGenerator.generate()` today:
+Today's static entry point stays as-is so the legacy Mojo's
+`enableRewrite=true` branch keeps calling it and
+`graphitron-rewrite-test` keeps building:
 
 ```
-registry = getTypeDefinitionRegistry(...)         // plan: RewriteSchemaLoader.load(...)
+// GraphQLRewriteGenerator.generate() — unchanged
+registry = RewriteSchemaLoader.load(RewriteConfig.generatorSchemaFiles())
 schema   = GraphitronSchemaBuilder.build(registry)
 GraphitronSchemaValidator.validate(schema)
 ```
 
-After this plan:
+This plan adds a parallel instance entry point wired to
+`RewriteContext`:
 
 ```
-bySource = SchemaInputResolver.resolve(ctx.schemaInputs(), ctx.basedir())  // new; fails on empty/overlap
+// new GraphQLRewriteGenerator(ctx).generate()
+bySource = SchemaInputAttribution.build(ctx.schemaInputs())   // new; fails on overlap
 registry = RewriteSchemaLoader.load(bySource.keySet())
-TagApplier.apply(registry, bySource)                                        // new
-DescriptionNoteApplier.apply(registry, bySource)                            // new
+TagApplier.apply(registry, bySource)                          // new
+DescriptionNoteApplier.apply(registry, bySource)              // new
 schema   = GraphitronSchemaBuilder.build(registry)
 GraphitronSchemaValidator.validate(schema)
 ```
 
-`ctx` is the `RewriteContext` instance passed into
-`GraphQLRewriteGenerator`'s constructor. No Mojo currently
-constructs one; tests are the only callers until the Maven-plugin
-plan lands.
+`ctx` is the `RewriteContext` passed into the constructor. Tests
+are the only callers during the tagged-inputs window. The
+Maven-plugin plan makes it the sole entry point by constructing a
+`RewriteContext` from `<schemaInputs>` and deleting the static path
++ the legacy-Mojo branch in the same commit.
 
 Both appliers mutate the registry in place (registry is mutable; AST
 `Definition` nodes are immutable, so mutation is "replace each
@@ -253,74 +278,57 @@ application does not depend on tag application or vice versa.
 
 ## Config surface
 
-None. This plan ships rewrite-core code with no Maven wiring. The
-`<schemaInputs>` XML surface, its `SchemaInputBinding` POJO, and the
-Mojo-to-`SchemaInput` conversion all land with the Maven-plugin plan
-(see [plan-rewrite-maven-plugin.md](plan-rewrite-maven-plugin.md)),
-which is the only thing that will ever construct `RewriteContext`
-instances carrying real schema inputs.
-
-Legacy-plugin cleanup as part of this plan: delete the
-`enableRewrite=true` branch from `graphitron-maven-plugin`'s
-`GenerateMojo` and its associated `RewriteConfig.setProperties(...)`
-call. Legacy plugin reverts to legacy-only; rewrite has no
-Maven entry point until the new plugin lands. Consumers are not
-running rewrite in production yet, so there is no regression to
-smooth.
+None in rewrite-core. This plan ships data types, the attribution
+builder, the two appliers, and the new generator entry point, all
+under `no.sikt.graphitron.rewrite.schema.input` and
+`no.sikt.graphitron.rewrite`. The `<schemaInputs>` XML, its
+`SchemaInputBinding` POJO, the `<pattern>` → concrete
+`SchemaInput` expansion (via Maven's `DirectoryScanner`), and the
+empty-match fail-fast all land in the
+[Maven-plugin plan](plan-rewrite-maven-plugin.md). Rewrite-core
+stays filesystem-agnostic.
 
 ## Implementation
 
 New package `no.sikt.graphitron.rewrite.schema.input`, landing
 alongside `RewriteSchemaLoader` (created by the schema-loading plan).
 
-All rewrite-core. No legacy-plugin file touched. The legacy Mojo's
-`enableRewrite=true` branch still exists after this plan lands and
-still drives `GraphQLRewriteGenerator.generate()` for
-`graphitron-rewrite-test`; `RewriteConfig.setProperties(...)` in the
-Mojo populates the same statics generators already read. The
-Maven-plugin plan handles the `enableRewrite` / `disableLegacy`
-cleanup and migrates `graphitron-rewrite-test/pom.xml` to the new
-Mojo in the same commit.
+All rewrite-core, all additive. The legacy Mojo's `enableRewrite=true`
+branch and its `GraphQLRewriteGenerator.generate()` (static) call
+stay intact; `graphitron-rewrite-test` keeps building through the
+same path it uses today. No legacy-plugin file touched.
 
 1. `no.sikt.graphitron.rewrite.schema.input.SchemaInput`: record
-   (pattern, Optional<tag>, Optional<descriptionNote>). ~15 LOC.
-2. `SchemaInputException extends RuntimeException`: thrown by the
-   resolver on empty-match / overlap / malformed glob. Matches
-   legacy's `RuntimeException` contract, adds a specific type for
-   catch-site precision in tests. ~10 LOC.
-3. `SchemaInputResolver`: `static Map<String, SchemaInput> resolve(List<SchemaInput>, Path basedir)`
-   plus the two fail-fast checks. Returns a `LinkedHashMap` keyed in
-   the order the caller's `List<SchemaInput>` was traversed, so
-   overlap error messages name rules deterministically and the
-   emitted tag/note order is reproducible across builds. ~110 LOC.
+   (sourceName, Optional<tag>, Optional<descriptionNote>). ~15 LOC.
+2. `SchemaInputException extends RuntimeException`: thrown on
+   overlap. Specific type for catch-site precision in tests. ~10 LOC.
+3. `SchemaInputAttribution`: `static Map<String, SchemaInput> build(List<SchemaInput>)`
+   plus the overlap fail-fast. Returns a `LinkedHashMap` keyed in
+   the order the caller's list was traversed, so overlap error
+   messages name entries deterministically and tag/note application
+   is reproducible across builds. ~30 LOC.
 4. `TagApplier`: `static void apply(TypeDefinitionRegistry, Map<String, SchemaInput>)`,
    including the synthetic `@tag` directive declaration when the
-   registry has none, ~90 LOC.
-5. `DescriptionNoteApplier`: `static void apply(TypeDefinitionRegistry, Map<String, SchemaInput>)`, ~70 LOC.
+   registry has none. ~90 LOC.
+5. `DescriptionNoteApplier`: `static void apply(TypeDefinitionRegistry, Map<String, SchemaInput>)`. ~70 LOC.
 6. `no.sikt.graphitron.rewrite.RewriteContext`: minimal record
    (`List<SchemaInput> schemaInputs`, `Path basedir`). The
    Maven-plugin plan expands the record; this plan introduces the
-   type so the generator signature stays stable across both
-   landings. ~15 LOC.
-7. `GraphQLRewriteGenerator`: constructor now takes `RewriteContext`;
-   `generate()` reads `ctx.schemaInputs()` + `ctx.basedir()` for the
-   resolver call, otherwise unchanged from the schema-loading plan's
-   shape. Legacy-Mojo bridge: at `GenerateMojo.java:199` the Mojo
-   constructs a `RewriteContext` by wrapping each `mojo.getSchemaFiles()`
-   entry as a plain `SchemaInput(path, Optional.empty(), Optional.empty())`
-   and calls `new GraphQLRewriteGenerator(ctx).generate()`. The glob
-   matcher treats literal paths as patterns that match themselves;
-   no tags or notes are applied (no `<schemaInputs>` XML yet). This
-   is the only legacy-plugin line this plan changes; the branch
-   itself stays until the Maven-plugin plan deletes the whole
-   `enableRewrite` path.
+   type so the new generator entry-point signature stays stable
+   across both landings. ~15 LOC.
+7. `GraphQLRewriteGenerator`: add an instance constructor that takes
+   `RewriteContext` and an instance `generate()` that runs the
+   attribution + loader + appliers pipeline (see §Placement). The
+   existing static `generate()` stays unchanged, still reads
+   `RewriteConfig.generatorSchemaFiles()`, still drives
+   `graphitron-rewrite-test` through the legacy Mojo. The two
+   entry points coexist; the Maven-plugin plan deletes the static
+   one when it ships the new Mojo.
 
-Expected diff: ~300 LOC rewrite-core production code +
+Expected diff: ~250 LOC rewrite-core production code +
 `SchemaInputException` ~10 LOC + ~300-400 LOC tests (five test
-classes) = ~700 LOC added. One legacy-Mojo line touched (replacing
-the static `GraphQLRewriteGenerator.generate()` call with
-`new GraphQLRewriteGenerator(ctx).generate()`), no other legacy
-changes.
+classes) = ~600 LOC added in rewrite-core. Zero legacy files
+touched.
 
 ### Element walking
 
@@ -336,54 +344,44 @@ different extension files of the same type can receive different
 tags (or notes) if the two files fall into different `<schemaInput>`
 entries. Consistent with legacy behaviour.
 
-### Path normalisation
+### Source-name convention
 
-`SourceLocation.getSourceName()` echoes back exactly the string the
-parser was given. The resolver normalises every matched file to
-`Path.toAbsolutePath().normalize().toString()` and hands that same
-string both to `RewriteSchemaLoader.load(...)` and into the resolver's
-map key. Because the loader passes the source string through
-untouched, `SourceLocation.getSourceName()` at applier time matches
-the map key byte-for-byte; no per-applier renormalisation step. User
-paths are always filesystem paths (the schema-loading plan's
-`openSource` is filesystem-only).
+`SchemaInput.sourceName` is whatever string the supplier produces.
+That same string is handed to `RewriteSchemaLoader.load(...)` as a
+schema-file path and appears back as
+`SourceLocation.getSourceName()` at applier time, so map lookups
+match byte-for-byte and require no per-applier renormalisation. The
+Maven-plugin expander uses `Path.toAbsolutePath().normalize().toString()`
+when producing `SchemaInput` entries from matched files (filesystem
+paths); tests may use any stable string (typically a short fixture
+name). Rewrite-core does not normalise.
 
 The auto-injected directives source has source name
-`schema/directives.graphqls` (classpath-relative; set by
+`directives.graphqls` (classpath-relative; set by
 `RewriteSchemaLoader.addDirectivesSource`), which by construction
-matches no resolver map key. Directive definitions therefore receive
-no tag or note, which is the intended behaviour; don't "fix" the
-apparent lookup miss.
+matches no `SchemaInput` key. Directive definitions therefore
+receive no tag or note, which is the intended behaviour; don't
+"fix" the apparent lookup miss.
 
 ## Tests
 
-### Unit: `SchemaInputResolverTest`
+### Unit: `SchemaInputAttributionTest`
 
-- Pattern matches one file; tag + note both present: resolver map
-  carries the file with the entry.
-- Pattern matches three files; map has three entries, all pointing
-  at the same `SchemaInput`.
-- Pattern matches zero files: resolver throws
-  `SchemaInputException` with the pattern text in the message.
-- Two patterns match the same file: throws with both pattern strings
-  and the offending file path in the message.
+In-memory only; no `@TempDir`, no filesystem, no globs.
+
+- Single entry with tag + note: map has one key mapped to the entry.
+- Three distinct entries: map has three keys, each to its own
+  `SchemaInput`, iteration order matches the input-list order
+  (verifies `LinkedHashMap`).
+- Two entries with the same `sourceName`: throws
+  `SchemaInputException` with both offending entries in the message.
 - Overlap error is deterministic: given entries A then B in the
-  input list, the error names A before B (verifies
-  `LinkedHashMap` iteration order).
-- Malformed glob (e.g. unclosed bracket): resolver throws
-  `SchemaInputException` wrapping the underlying
-  `PatternSyntaxException`, with the offending pattern in the
-  message.
-- Empty-string tag (`<tag></tag>`): resolver normalises to
-  `Optional.empty()` so the POM-binder "empty element" case doesn't
-  end up applying `@tag(name: "")`.
+  input list, the error names A before B.
+- Empty input list: returns an empty map.
 - Tag value containing quotes, backslashes, unicode: round-trips
   through the applier into a well-formed `@tag(name: "...")` AST
-  (no SDL-escape breakage).
-- `basedir` doesn't exist or points at a file: resolver throws
-  `SchemaInputException` with the path in the message.
-- Path normalisation: pattern `./schema/*.graphqls` matches a
-  project-relative entry `schema/foo.graphqls`; lookup resolves.
+  (no SDL-escape breakage). Covered in `TagApplierTest` too but
+  pinned here on the data boundary.
 
 ### Unit: `TagApplierTest`
 
@@ -417,12 +415,13 @@ apparent lookup miss.
 
 ### Pipeline: `GraphitronSchemaBuilderTest` additions
 
-One end-to-end case: two `<schemaInput>` entries (one tagged-only,
-one noted-only, one both). Assertions read through the built
-`GraphitronSchema`'s directive and description accessors — not
-through the pre-build registry — so any future caching the builder
-might introduce between registry mutation and schema build is
-covered. No emission-level assertions; this is a registry-level
+One end-to-end case: a hand-constructed `RewriteContext` with three
+`SchemaInput` entries (one tagged-only, one noted-only, one both),
+pointing at three fixture schema files. Assertions read through
+the built `GraphitronSchema`'s directive and description accessors
+(not through the pre-build registry) so any future caching the
+builder might introduce between registry mutation and schema build
+is covered. No emission-level assertions; this is a registry-level
 transform and the emitter side is agnostic.
 
 ### Emission ratchet
@@ -456,22 +455,35 @@ import via `@link` for rewrite's tagging feature to work. If the
 schema already declares `@tag` (via federation `@link` or explicit
 declaration), the existing definition wins.
 
-**D4. Idempotency.** If resolver/appliers run twice (e.g. Maven
+**D4. Idempotency.** If the appliers run twice (e.g. Maven
 re-executes the Mojo in a multi-module build), notes duplicate.
 Options: (a) accept: Maven plugin executions are single-entry per
-build; (b) detect and skip when the element already carries the note
-suffix. Recommend (a) unless a concrete duplicate-run failure
+build; (b) detect and skip when the element already carries the
+note suffix. Recommend (a) unless a concrete duplicate-run failure
 appears.
 
 **D5. Legacy compatibility window.** Legacy's `FeatureConfiguration`,
 `<outputSchemas>`, and `features/<name>/` folder convention stay
 intact on the legacy-only path; existing legacy consumers are
-unaffected. The legacy Mojo's `enableRewrite=true` branch also stays,
-keeping `graphitron-rewrite-test` running on its current build path.
-The Maven-plugin plan deletes that branch and migrates
+unaffected. The legacy Mojo's `enableRewrite=true` branch also stays
+(this plan is purely additive on rewrite-core), keeping
+`graphitron-rewrite-test` running on its current build path. The
+Maven-plugin plan deletes that branch and migrates
 `graphitron-rewrite-test/pom.xml` to the new plugin in the same
 commit. The umbrella's closing item retires legacy once every
 consumer has migrated.
+
+**D6. Glob expansion: rewrite-core vs. Maven plugin.** Resolved:
+the plugin. Rewrite-core's `SchemaInput` carries concrete resolved
+sources; the Maven plugin uses `DirectoryScanner` to turn
+`<pattern>` entries into per-file `SchemaInput` records and owns
+the empty-match fail-fast. Rationale: keeps rewrite-core
+filesystem-agnostic (in-memory tests, no `@TempDir`, no
+classloader-path pattern-escape gotchas), uses Maven's native
+idiom, and keeps a clean API boundary for hypothetical non-Maven
+drivers. Cross-boundary invariants (overlap on `sourceName`) stay
+in rewrite-core; user-config diagnostics (empty match) stay in the
+plugin.
 
 ## Roadmap integration
 

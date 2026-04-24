@@ -44,6 +44,11 @@ migrated.
 - `<schemaInputs>` XML surface and its `SchemaInputBinding` POJO,
   introduced in this plan (tagged-inputs left the config layer to
   this plan on purpose).
+- Glob expansion: turn each `<schemaInput>`'s `<pattern>` into one
+  or more concrete `SchemaInput` records via Maven's
+  `DirectoryScanner`, rooted at `project.getBasedir()`. The
+  empty-match fail-fast lives here (plugin-level user-config
+  diagnostic). See §Glob expansion.
 - Plugin packaging, lifecycle bindings, `plugin.xml` descriptor,
   integration test harness.
 - Expansion of the minimal `RewriteContext` (introduced by
@@ -149,6 +154,7 @@ graphitron-rewrite/
         ├── GenerateMojo.java                # primary goal
         ├── ValidateMojo.java                # validate-only goal
         ├── SchemaInputBinding.java          # POM XML binding for <schemaInput>
+        ├── SchemaInputExpander.java         # <pattern> → List<SchemaInput> via DirectoryScanner
         ├── NamedReferenceBinding.java       # POM XML binding for <namedReference>
         └── ScalarBinding.java               # POM XML binding for <scalar>
 ```
@@ -237,9 +243,10 @@ module):
 ```java
 // inside AbstractRewriteMojo
 RewriteContext buildContext() {
+    var basedir = project.getBasedir().toPath();
     return new RewriteContext(
-        schemaInputs.stream().map(SchemaInputBinding::toSchemaInput).toList(),
-        project.getBasedir().toPath(),
+        SchemaInputExpander.expand(schemaInputs, basedir),
+        basedir,
         Path.of(outputDirectory),
         outputPackage,
         jooqPackage,
@@ -250,8 +257,10 @@ RewriteContext buildContext() {
 }
 ```
 
-`toNamedReferenceMap` and `toScalarMappings` are private statics on
-`AbstractRewriteMojo`. `RewriteConfig` deletes once all rewrite-core
+`SchemaInputExpander` lives in the plugin module (see §Glob
+expansion). `toNamedReferenceMap` and `toScalarMappings` are
+private statics on `AbstractRewriteMojo`. `RewriteConfig` deletes
+once all rewrite-core
 readers migrate; no new statics are introduced.
 
 ### Goals (the final list)
@@ -295,9 +304,8 @@ Three small POJOs that Maven populates from XML, all new in this
 plan (rewrite core has `SchemaInput` but no XML binding yet):
 
 - `SchemaInputBinding`: fields `pattern`, `tag`, `descriptionNote`.
-  Carries a `toSchemaInput()` method that returns a rewrite-core
-  `SchemaInput` record; this is the only bridge between the plugin
-  module and rewrite core for schema-input config.
+  Expanded into one-or-more rewrite-core `SchemaInput` records by
+  `SchemaInputExpander` (see §Glob expansion).
 - `NamedReferenceBinding`: fields `name`, `className`. Collapses into
   a `Map<String, String>` on the context. Renamed from legacy's
   `<externalReferences>` / `ExternalMojoClassReference(name, fullyQualifiedClassName)`
@@ -315,6 +323,70 @@ points at) lives in rewrite core at
 `no.sikt.graphitron.rewrite.schema.ScalarMapping`, next to
 `SchemaInput`. `ScalarBinding.toScalarMapping()` is the plugin-module
 conversion; rewrite core has no compile-time dep on the binding.
+
+### Glob expansion
+
+Rewrite-core's `SchemaInput` holds one concrete source per entry;
+the `<pattern>` → file-list expansion lives here in the plugin so
+rewrite-core stays filesystem-agnostic. `SchemaInputExpander` uses
+Maven's `DirectoryScanner` (standard idiom for Maven plugins
+processing file patterns, already on the plugin classpath via
+`maven-plugin-api`):
+
+```java
+// no.sikt.graphitron.rewrite.maven.SchemaInputExpander
+static List<SchemaInput> expand(List<SchemaInputBinding> bindings, Path basedir) {
+    var expanded = new ArrayList<SchemaInput>();
+    for (int i = 0; i < bindings.size(); i++) {
+        var b = bindings.get(i);
+        var scanner = new DirectoryScanner();
+        scanner.setBasedir(basedir.toFile());
+        scanner.setIncludes(new String[]{b.pattern});
+        scanner.scan();
+        var matches = scanner.getIncludedFiles();
+        if (matches.length == 0) {
+            throw new MojoExecutionException(
+                "<schemaInput pattern='" + b.pattern + "'> matched no files (entry #" + i + ")");
+        }
+        for (var rel : matches) {
+            var abs = basedir.resolve(rel).toAbsolutePath().normalize().toString();
+            expanded.add(new SchemaInput(
+                abs,
+                Optional.ofNullable(b.tag).filter(s -> !s.isEmpty()),
+                Optional.ofNullable(b.descriptionNote).filter(s -> !s.isEmpty())
+            ));
+        }
+    }
+    return expanded;
+}
+```
+
+~40 LOC. Ant-style patterns (`**`, `*`, `?`) are what
+`DirectoryScanner` natively supports; consumers write patterns
+relative to the project basedir. Empty-string `<tag>` or
+`<descriptionNote>` normalise to `Optional.empty()` so the common
+"empty XML element" case doesn't end up applying
+`@tag(name: "")`.
+
+Cross-boundary invariants (overlap on `sourceName`) stay in
+rewrite-core's `SchemaInputAttribution.build(...)`; the plugin just
+hands over a `List<SchemaInput>`. If two bindings match the same
+file, rewrite-core throws at attribution time with both entries in
+the message.
+
+Expander tests (`SchemaInputExpanderTest`, in the plugin module):
+
+- Single pattern, one match: returns one `SchemaInput` with
+  absolute-normalised path.
+- Single pattern, `**` glob, three matches: returns three
+  `SchemaInput`s in alphabetic / scanner-order; all share the
+  binding's tag and note.
+- Zero-match pattern: throws `MojoExecutionException` with the
+  pattern and binding index in the message.
+- Empty-string tag: normalises to `Optional.empty()`.
+- Empty-string descriptionNote: normalises to `Optional.empty()`.
+- Malformed pattern (bracket-unclosed etc.): throws with the
+  pattern and underlying scanner error.
 
 ### Dropped legacy config elements
 
