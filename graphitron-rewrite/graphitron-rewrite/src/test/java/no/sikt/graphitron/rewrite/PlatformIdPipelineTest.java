@@ -160,8 +160,8 @@ class PlatformIdPipelineTest {
             """,
             schema -> assertThat(schema.type("Foo")).isInstanceOf(GraphitronType.TableType.class)),
 
-        NODE_ONLY_NO_METADATA(
-            "`@node` without metadata → NodeType with SDL-declared values (pre-pivot path preserved)",
+        NODE_ONLY_NO_METADATA_TYPEID_DECLARED(
+            "`@node(typeId:)` without keyColumns and no metadata → NodeType with SDL typeId and PK fallback (R3)",
             """
             type Foo implements Node @table(name: "qux") @node(typeId: "Foo") { id: ID! name: String }
             type Query { foo: Foo }
@@ -169,7 +169,21 @@ class PlatformIdPipelineTest {
             schema -> {
                 var t = (GraphitronType.NodeType) schema.type("Foo");
                 assertThat(t.typeId()).isEqualTo("Foo");
-                assertThat(t.nodeKeyColumns()).isEmpty();
+                assertThat(t.nodeKeyColumns()).extracting(ColumnRef::sqlName)
+                    .containsExactly("name");
+            }),
+
+        NODE_ONLY_NO_METADATA_DEFAULTS_FROM_SDL(
+            "`@node` with no args and no metadata → NodeType with typeId = SDL type name and PK fallback (R3)",
+            """
+            type Foo implements Node @table(name: "qux") @node { id: ID! name: String }
+            type Query { foo: Foo }
+            """,
+            schema -> {
+                var t = (GraphitronType.NodeType) schema.type("Foo");
+                assertThat(t.typeId()).isEqualTo("Foo");
+                assertThat(t.nodeKeyColumns()).extracting(ColumnRef::sqlName)
+                    .containsExactly("name");
             });
 
         final String sdl;
