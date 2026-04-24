@@ -41,9 +41,12 @@ import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
 import no.sikt.graphitron.rewrite.model.SqlGeneratingField;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.JoinStep;
+import no.sikt.graphitron.rewrite.model.GraphitronType.ConnectionType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.EdgeType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.InputType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.InterfaceType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.PageInfoType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.JavaRecordInputType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.JavaRecordType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.JooqTableRecordInputType;
@@ -3498,6 +3501,128 @@ class GraphitronSchemaBuilderTest {
     @ParameterizedTest(name = "{0}")
     @EnumSource(JoinStepAliasCase.class)
     void joinStepAliasComputation(JoinStepAliasCase tc) {
+        tc.assertions.accept(build(tc.sdl));
+    }
+
+    // ===== Connection / Edge / PageInfo promotion =====
+
+    enum ConnectionTypeCase implements ClassificationCase {
+        DIRECTIVE_DRIVEN_MINIMAL(
+            "@asConnection on a bare list → ConnectionType + EdgeType + PageInfoType in schema.types()",
+            """
+            type Film @table(name: "film") { id: ID }
+            type Query { films: [Film!]! @asConnection }
+            """,
+            schema -> {
+                var conn = (ConnectionType) schema.type("QueryFilmsConnection");
+                assertThat(conn.elementTypeName()).isEqualTo("Film");
+                assertThat(conn.edgeTypeName()).isEqualTo("QueryFilmsEdge");
+                assertThat(conn.itemNullable()).isFalse();
+                assertThat(conn.shareable()).isFalse();
+                assertThat(conn.schemaType()).isNotNull();
+                assertThat(conn.schemaType().getFieldDefinition("edges")).isNotNull();
+                assertThat(conn.schemaType().getFieldDefinition("nodes")).isNotNull();
+                assertThat(conn.schemaType().getFieldDefinition("pageInfo")).isNotNull();
+
+                var edge = (EdgeType) schema.type("QueryFilmsEdge");
+                assertThat(edge.elementTypeName()).isEqualTo("Film");
+                assertThat(edge.itemNullable()).isFalse();
+                assertThat(edge.schemaType().getFieldDefinition("cursor")).isNotNull();
+                assertThat(edge.schemaType().getFieldDefinition("node")).isNotNull();
+
+                var pi = (PageInfoType) schema.type("PageInfo");
+                assertThat(pi.shareable()).isFalse();
+                assertThat(pi.schemaType().getFieldDefinition("hasNextPage")).isNotNull();
+                assertThat(pi.schemaType().getFieldDefinition("endCursor")).isNotNull();
+            }),
+
+        EXPLICIT_CONNECTION_NAME(
+            "@asConnection(connectionName:) overrides the derived name",
+            """
+            type Film @table(name: "film") { id: ID }
+            type Query { films: [Film!]! @asConnection(connectionName: "MyFilmsConnection") }
+            """,
+            schema -> {
+                assertThat(schema.type("MyFilmsConnection")).isInstanceOf(ConnectionType.class);
+                assertThat(schema.type("QueryFilmsConnection")).isNull();
+                assertThat(schema.type("MyFilmsEdge")).isInstanceOf(EdgeType.class);
+            }),
+
+        NULLABLE_ITEM(
+            "item nullability of the bare list carries through to ConnectionType.itemNullable",
+            """
+            type Film @table(name: "film") { id: ID }
+            type Query { films: [Film] @asConnection }
+            """,
+            schema -> {
+                var conn = (ConnectionType) schema.type("QueryFilmsConnection");
+                assertThat(conn.itemNullable()).isTrue();
+                var edge = (EdgeType) schema.type("QueryFilmsEdge");
+                assertThat(edge.itemNullable()).isTrue();
+            }),
+
+        STRUCTURAL_CONNECTION(
+            "a hand-written Connection/Edge/PageInfo pattern classifies as ConnectionType/EdgeType/PageInfoType",
+            """
+            type Film @table(name: "film") { id: ID }
+            type FilmsConnection { edges: [FilmsEdge!]! nodes: [Film!]! pageInfo: PageInfo! }
+            type FilmsEdge { cursor: String! node: Film! }
+            type PageInfo { hasNextPage: Boolean! hasPreviousPage: Boolean! startCursor: String endCursor: String }
+            type Query { films: FilmsConnection }
+            """,
+            schema -> {
+                var conn = (ConnectionType) schema.type("FilmsConnection");
+                assertThat(conn.elementTypeName()).isEqualTo("Film");
+                assertThat(conn.edgeTypeName()).isEqualTo("FilmsEdge");
+                assertThat(conn.schemaType()).isNotNull();
+                // Structural path: schemaType is the SDL-parsed instance, reused verbatim.
+                assertThat(schema.type("FilmsEdge")).isInstanceOf(EdgeType.class);
+                assertThat(schema.type("PageInfo")).isInstanceOf(PageInfoType.class);
+            }),
+
+        DEDUP_SAME_EXPLICIT_NAME(
+            "two carriers pointing at the same explicit connectionName dedup to a single variant",
+            """
+            type Film @table(name: "film") { id: ID }
+            type Query {
+              films:  [Film!]! @asConnection(connectionName: "SharedConnection")
+              films2: [Film!]! @asConnection(connectionName: "SharedConnection")
+            }
+            """,
+            schema -> {
+                assertThat(schema.type("SharedConnection")).isInstanceOf(ConnectionType.class);
+                assertThat(schema.type("SharedEdge")).isInstanceOf(EdgeType.class);
+            }),
+
+        NO_PAGE_INFO_SYNTHESIS_WHEN_DECLARED(
+            "an SDL-declared PageInfo is reused — the synthesis step does not overwrite it",
+            """
+            type Film @table(name: "film") { id: ID }
+            type PageInfo { hasNextPage: Boolean! hasPreviousPage: Boolean! startCursor: String endCursor: String }
+            type Query { films: [Film!]! @asConnection }
+            """,
+            schema -> {
+                var pi = (PageInfoType) schema.type("PageInfo");
+                // Structural SDL-parsed schemaType — not the synthesised instance.
+                assertThat(pi.schemaType()).isNotNull();
+                assertThat(pi.shareable()).isFalse();
+            });
+
+        final String sdl;
+        final Consumer<GraphitronSchema> assertions;
+        ConnectionTypeCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
+            this.sdl = sdl;
+            this.assertions = assertions;
+        }
+        @Override public Set<Class<?>> variants() {
+            return Set.of(ConnectionType.class, EdgeType.class, PageInfoType.class);
+        }
+        @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(ConnectionTypeCase.class)
+    void connectionTypePromotion(ConnectionTypeCase tc) {
         tc.assertions.accept(build(tc.sdl));
     }
 

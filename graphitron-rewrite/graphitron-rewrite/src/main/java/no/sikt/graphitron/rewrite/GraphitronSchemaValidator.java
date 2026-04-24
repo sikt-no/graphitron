@@ -52,6 +52,9 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType t          -> {} // no structural validation needed
             case no.sikt.graphitron.rewrite.model.GraphitronType.InputType t          -> validateInputType(t, types, errors);
             case no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType t     -> validateTableInputType(t, errors);
+            case no.sikt.graphitron.rewrite.model.GraphitronType.ConnectionType t     -> {} // structural validation is a downstream concern
+            case no.sikt.graphitron.rewrite.model.GraphitronType.EdgeType t           -> {} // structural validation is a downstream concern
+            case no.sikt.graphitron.rewrite.model.GraphitronType.PageInfoType t       -> {} // structural validation is a downstream concern
             case no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType t   -> validateUnclassifiedType(t, errors);
         }
     }
