@@ -1959,13 +1959,19 @@ class FieldBuilder {
             String tableSqlName = tableType.table().tableName();
             boolean isList = GraphQLTypeUtil.unwrapNonNull(fieldDef.getType()) instanceof GraphQLList;
             String typeName = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(fieldDef.getType())).getName();
-            // Path 2 — synthesized NodeIdField. `@nodeId`, `@reference`, and `@field` are already
-            // excluded above (`@nodeId` by the directive check, `@reference` by its own block, and
-            // `@field` via the exclusion here). See plan: docs/planning/plan-nodeid-directives.md.
+            // Path 2 — migration-shim NodeIdField. `@nodeId`, `@reference`, and `@field` are
+            // already excluded above (`@nodeId` by the directive check, `@reference` by its own
+            // block, and `@field` via the exclusion here). Fires a per-site deprecation diagnostic
+            // — the canonical form is to declare `@nodeId` explicitly. Retired at R7. See plan:
+            // docs/planning/plan-nodeid-directives.md.
             if (tableType instanceof NodeType nodeType
                     && "ID".equals(typeName)
                     && !isList
                     && !hasFieldDirective) {
+                LOG.warn("field '{}.{}' synthesizes NodeIdField without '@nodeId' — declare the"
+                    + " directive explicitly; synthesis shim will be removed in a future release."
+                    + " See plan-nodeid-directives.md",
+                    parentTypeName, name);
                 return new NodeIdField(parentTypeName, name, location,
                     nodeType.typeId(), nodeType.nodeKeyColumns());
             }
