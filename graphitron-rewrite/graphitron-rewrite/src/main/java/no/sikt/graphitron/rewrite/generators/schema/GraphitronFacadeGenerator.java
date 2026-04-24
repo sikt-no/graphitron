@@ -12,19 +12,13 @@ import java.util.function.Consumer;
 
 /**
  * Generates the {@code Graphitron} facade class in {@code <outputPackage>.rewrite.schema}.
- *
- * <p>Commit B's public entry point: the single public static
- * {@code buildSchema(Consumer<GraphQLSchema.Builder> customizer)} method delegates to
- * {@link GraphitronSchemaClassGenerator}'s emitted {@code GraphitronSchema.build(...)}.
- * Keeping the user-facing facade separate from the internal assembler gives the plan's
- * "one method, no hidden state" surface while leaving room inside the assembler to evolve.
- *
- * <p>The method javadoc spells out the contract from §Target state of the prebuilt-schema plan:
- * additive-only mutations; the user must not call {@code .query()}, {@code .mutation()},
+ * The single public static {@code buildSchema(Consumer<GraphQLSchema.Builder> customizer)}
+ * method delegates to {@link GraphitronSchemaClassGenerator}'s emitted
+ * {@code GraphitronSchema.build(...)}; the user-facing surface stays at one method with
+ * no hidden state while the assembler is free to evolve internally. Customizer contract
+ * (additive-only; must not call {@code .query()}, {@code .mutation()},
  * {@code .subscription()}, {@code .clearDirectives()}, or the replace overload
- * {@code .codeRegistry(GraphQLCodeRegistry)}. The {@code UnaryOperator} overload of
- * {@code codeRegistry(...)} is the supported way to add type resolvers for user-defined
- * interfaces and unions.
+ * {@code .codeRegistry(GraphQLCodeRegistry)}) lives on the emitted method's own javadoc.
  */
 public final class GraphitronFacadeGenerator {
 

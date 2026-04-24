@@ -16,16 +16,9 @@ import java.util.List;
  * Emits one {@code <TypeName>Type} class per GraphQL enum type into
  * {@code <outputPackage>.rewrite.schema}. Each class exposes a single
  * {@code public static GraphQLEnumType type()} method that rebuilds the enum as a
- * programmatic graphql-java type at runtime.
- *
- * <p>First of the Commit B leaf-type emitters. Introspection types (those whose names start
- * with {@code "__"}) and federation-injected enums (names starting with {@code "_"}) are
- * skipped; neither enters the user's schema surface.
- *
- * <p>Descriptions and deprecation reasons are preserved so the programmatic schema round-trips
- * to SDL with the same informational payload. Directive applications are not yet translated;
- * they will be added in a follow-up step within Commit B per §Directive emission strategy of
- * {@code plan-graphitron-prebuilt-schema.md}.
+ * programmatic graphql-java type at runtime. Introspection types
+ * ({@code "__"}-prefixed) and federation-injected enums
+ * ({@code "_"}-prefixed) are skipped; neither enters the user's schema surface.
  */
 public final class EnumTypeGenerator {
 
