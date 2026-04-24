@@ -7,6 +7,7 @@ import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.LookupMapping;
+import no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import no.sikt.graphitron.rewrite.model.WhereFilter;
 
@@ -112,7 +113,12 @@ public final class InlineLookupTableFieldEmitter {
         // Typed Row<M+1> / Record<M+1> for idx + @lookupKey columns — matches the helper's
         // return type retyped in C1. DSL.values(Row<M+1>...) yields Table<Record<M+1>>, so
         // input.field(Field<T>) and input.field(int, Class<T>) both remain typed Field<T>.
-        List<LookupMapping.LookupColumn> lookupCols = lf.lookupMapping().columns();
+        if (!(lf.lookupMapping() instanceof ColumnMapping cm)) {
+            throw new IllegalStateException(
+                "InlineLookupTableField '" + lf.parentTypeName() + "." + lf.name()
+                + "' has NodeIdMapping — inline NodeId emission not yet implemented");
+        }
+        List<ColumnMapping.LookupColumn> lookupCols = cm.columns();
         int lookupArity = lookupCols.size() + 1;
         TypeName[] lookupTypeArgs = new TypeName[lookupArity];
         lookupTypeArgs[0] = ClassName.get(Integer.class);

@@ -17,6 +17,7 @@ import graphql.schema.GraphQLObjectType;
 import graphql.schema.GraphQLScalarType;
 import graphql.schema.GraphQLType;
 import graphql.schema.GraphQLTypeUtil;
+import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ChildField.ColumnField;
 import no.sikt.graphitron.rewrite.model.ChildField.ConstructorField;
@@ -57,6 +58,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.TableInterfaceType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.UnionType;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.LookupMapping;
+import no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.ParamSource;
@@ -706,6 +708,19 @@ class FieldBuilder {
                 name, typeName, nonNull, list, argCondition, plainFields);
         }
 
+        // NodeId scalar: scalar ID arg on a node-type table — skip column binding and produce
+        // NodeIdArg so projections emit hasIds/hasId instead of a column predicate.
+        if ("ID".equals(typeName) && !list) {
+            Optional<JooqCatalog.NodeIdMetadata> nodeIdMeta = ctx.catalog.nodeIdMetadata(rt.tableName());
+            if (nodeIdMeta.isPresent()) {
+                boolean isLookupKey = arg.hasAppliedDirective(DIR_LOOKUP_KEY);
+                return new ArgumentRef.ScalarArg.NodeIdArg(
+                    name, typeName, nonNull, list,
+                    nodeIdMeta.get().typeId(), nodeIdMeta.get().keyColumns(),
+                    new CallSiteExtraction.Direct(), argCondition, isLookupKey);
+            }
+        }
+
         // Scalar arg: bind to column
         String columnName = argString(arg, DIR_FIELD, ARG_NAME).orElse(name);
         var col = ctx.catalog.findColumn(rt.tableName(), columnName);
@@ -941,7 +956,14 @@ class FieldBuilder {
         // fields (TableInputArg.fieldBindings, argres Phase 3) contribute; the gate fires only
         // when every lookup-key source failed to produce a column (e.g. all fieldBindings were
         // rejected for being @reference-navigating or list-typed).
-        if (hasLookupKeyAnywhere(fieldDef) && lookupMapping.columns().isEmpty()) {
+        // LookupField invariant: if any @lookupKey is present, the mapping must be non-empty.
+        // NodeIdMapping is always non-empty (carries typeId + keyColumns from the NodeType).
+        // ColumnMapping must have at least one column.
+        boolean emptyMapping = switch (lookupMapping) {
+            case ColumnMapping cm -> cm.columns().isEmpty();
+            case LookupMapping.NodeIdMapping ignored -> false;
+        };
+        if (hasLookupKeyAnywhere(fieldDef) && emptyMapping) {
             // Prefer the specific binding-failure reason (e.g. @lookupKey on a @reference field)
             // when buildLookupBindings recorded one; fall back to the generic empty-mapping error.
             String msg = errors.isEmpty()
@@ -964,27 +986,34 @@ class FieldBuilder {
      * constructed as a {@code LookupField} variant.
      */
     private LookupMapping projectForLookup(List<ArgumentRef> refs, TableRef targetTable) {
-        var columns = new ArrayList<LookupMapping.LookupColumn>();
+        // NodeIdArg with @lookupKey produces NodeIdMapping instead of the VALUES+JOIN path.
+        for (var ref : refs) {
+            if (ref instanceof ArgumentRef.ScalarArg.NodeIdArg na && na.isLookupKey()) {
+                return new LookupMapping.NodeIdMapping(
+                    na.name(), na.nodeTypeId(), na.nodeKeyColumns(), na.list(), targetTable);
+            }
+        }
+        var columns = new ArrayList<ColumnMapping.LookupColumn>();
         for (var ref : refs) {
             switch (ref) {
                 case ArgumentRef.ScalarArg.ColumnArg ca when ca.isLookupKey() ->
-                    columns.add(new LookupMapping.LookupColumn(
-                        new LookupMapping.SourcePath(List.of(ca.name())),
+                    columns.add(new ColumnMapping.LookupColumn(
+                        new ColumnMapping.SourcePath(List.of(ca.name())),
                         ca.column(), ca.extraction(), ca.list()));
                 case ArgumentRef.InputTypeArg.TableInputArg tia -> {
                     // Each binding on a @table input type's @lookupKey field becomes one column.
                     // List cardinality is inherited from the outer argument — individual input
                     // fields are guaranteed scalar by buildLookupBindings.
                     for (var binding : tia.fieldBindings()) {
-                        columns.add(new LookupMapping.LookupColumn(
-                            new LookupMapping.SourcePath(List.of(tia.name(), binding.inputFieldName())),
+                        columns.add(new ColumnMapping.LookupColumn(
+                            new ColumnMapping.SourcePath(List.of(tia.name(), binding.inputFieldName())),
                             binding.targetColumn(), binding.extraction(), tia.list()));
                     }
                 }
                 default -> {}
             }
         }
-        return new LookupMapping(List.copyOf(columns), targetTable);
+        return new ColumnMapping(List.copyOf(columns), targetTable);
     }
 
     /**
@@ -1070,6 +1099,11 @@ class FieldBuilder {
                     }
                     ca.argCondition().ifPresent(ac -> argConditions.add(ac.filter()));
                 }
+                case ArgumentRef.ScalarArg.NodeIdArg na -> {
+                    // Lookup-key NodeIdArg is consumed by projectForLookup → NodeIdMapping;
+                    // non-lookup NodeIdArg filter emission is not yet implemented (Step 4 follow-up).
+                    na.argCondition().ifPresent(ac -> argConditions.add(ac.filter()));
+                }
             }
         }
         if (hadError) return null;
@@ -1154,6 +1188,7 @@ class FieldBuilder {
                         nestOverride, lookupBoundNames, implicitBodyParams, out);
                 }
                 case InputField.PlatformIdField ignored -> {}
+                case InputField.NodeIdField ignored -> {}
             }
         }
     }

@@ -17,12 +17,11 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * SDL → classified-variant pipeline tests for the platform-id path. Exercises both the
- * input-side ({@link InputField.PlatformIdField}) and output-side ({@link ChildField.PlatformIdField})
- * classifier fallbacks that fire when a column lookup misses, plus the type-level {@link
- * GraphitronType.NodeType} synthesis landed in Step 2 of the platform-id plan (tables whose jOOQ
- * class exposes {@code __NODE_TYPE_ID} + {@code __NODE_KEY_COLUMNS} constants classify as {@code
- * NodeType} regardless of whether the SDL declares {@code @node}).
+ * SDL → classified-variant pipeline tests for the platform-id / node-id path. Exercises the
+ * input-side ({@link InputField.NodeIdField}), output-side ({@link ChildField.NodeIdField}),
+ * and type-level {@link GraphitronType.NodeType} synthesis for tables whose jOOQ class exposes
+ * {@code __NODE_TYPE_ID} + {@code __NODE_KEY_COLUMNS} constants (synthesized route) as well as
+ * the SDL-declared {@code @node} / {@code @nodeId} directive paths.
  *
  * <p>Uses the synthetic catalog in {@code no.sikt.graphitron.rewrite.platformidfixture} instead of
  * the sakila-style test fixture — the standard jOOQ generator never emits platform-id shape, so
@@ -162,35 +161,49 @@ class PlatformIdPipelineTest {
 
     enum InputCase {
         IMPLICIT_ID(
-            "input `id: ID!` on a platform-id table → NodeType at type level, PlatformIdField at field level (until Step 3 flips)",
+            "input `id: ID!` on a node-type table → NodeIdField(nodeTypeId=Bar, keyColumns=[id_1,id_2]) — synthesized route",
             """
             input Foo @table(name: "bar") { id: ID! }
             type Query { x: String }
             """,
             schema -> {
-                // TableInputType still emits; the inner InputField still classifies as
-                // PlatformIdField in Step 2 (Step 3 flips bare id: ID! to InputField.NodeIdField).
                 var t = (GraphitronType.TableInputType) schema.type("Foo");
-                var f = (InputField.PlatformIdField) t.inputFields().get(0);
-                assertThat(f.getterName()).isEqualTo("getId");
-                assertThat(f.setterName()).isEqualTo("setId");
+                var f = (InputField.NodeIdField) t.inputFields().get(0);
+                assertThat(f.nodeTypeId()).isEqualTo("Bar");
+                assertThat(f.nodeKeyColumns()).extracting(ColumnRef::sqlName)
+                    .containsExactly("id_1", "id_2");
             }),
 
         EXPLICIT_PERSON_ID(
-            "input `personId: ID! @field(name: \"PERSON_ID\")` → PlatformIdField(getPersonId/setPersonId) at field level",
+            "input `personId: ID! @field(name: \"PERSON_ID\")` on a node-type table → NodeIdField (PERSON_ID has no column, nodeId metadata wins)",
             """
             input Foo @table(name: "bar") { personId: ID! @field(name: "PERSON_ID") }
             type Query { x: String }
             """,
             schema -> {
                 var t = (GraphitronType.TableInputType) schema.type("Foo");
-                var f = (InputField.PlatformIdField) t.inputFields().get(0);
-                assertThat(f.getterName()).isEqualTo("getPersonId");
-                assertThat(f.setterName()).isEqualTo("setPersonId");
+                var f = (InputField.NodeIdField) t.inputFields().get(0);
+                assertThat(f.nodeTypeId()).isEqualTo("Bar");
+                assertThat(f.nodeKeyColumns()).extracting(ColumnRef::sqlName)
+                    .containsExactly("id_1", "id_2");
+            }),
+
+        EXPLICIT_NODE_ID_DIRECTIVE(
+            "input `id: ID! @nodeId` on a node-type table → NodeIdField via declared @nodeId (same classifier path as synthesized)",
+            """
+            input Foo @table(name: "bar") { id: ID! @nodeId }
+            type Query { x: String }
+            """,
+            schema -> {
+                var t = (GraphitronType.TableInputType) schema.type("Foo");
+                var f = (InputField.NodeIdField) t.inputFields().get(0);
+                assertThat(f.nodeTypeId()).isEqualTo("Bar");
+                assertThat(f.nodeKeyColumns()).extracting(ColumnRef::sqlName)
+                    .containsExactly("id_1", "id_2");
             }),
 
         ACCESSOR_MISSING(
-            "platform-id fallback runs but record has no getId/setId → TableInputType fails, type becomes UnclassifiedType",
+            "plain ID field on a table without node-id metadata and no platform-id accessor → TableInputType fails, type becomes UnclassifiedType",
             """
             input Foo @table(name: "qux") { id: ID! }
             type Query { x: String }
@@ -198,7 +211,7 @@ class PlatformIdPipelineTest {
             schema -> assertThat(schema.type("Foo")).isInstanceOf(GraphitronType.UnclassifiedType.class)),
 
         LIST_VARIANT(
-            "list ID input skips the platform-id fallback (list gate) → UnclassifiedType",
+            "list ID input skips both the node-id and platform-id checks (list gate) → UnclassifiedType",
             """
             input Foo @table(name: "bar") { id: [ID!]! }
             type Query { x: String }

@@ -26,7 +26,7 @@ class QueryLookupTableFieldValidationTest {
 
     private static final ColumnRef FILM_ID_COL = new ColumnRef("film_id", "FILM_ID", "java.lang.Integer");
     private static final TableRef FILM_TABLE = new TableRef("film", "FILM", "Film", List.of());
-    private static final LookupMapping EMPTY_LOOKUP = new LookupMapping(List.of(), FILM_TABLE);
+    private static final LookupMapping EMPTY_LOOKUP = new LookupMapping.ColumnMapping(List.of(), FILM_TABLE);
 
     private static GeneratedConditionFilter columnFilter(String name, boolean nonNull, boolean list) {
         var bodyParam = new BodyParam(name, FILM_ID_COL, "java.lang.Integer", nonNull, list, new CallSiteExtraction.Direct());

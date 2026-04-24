@@ -129,10 +129,13 @@ public class TypeClassGenerator {
         var allLookupFields = new ArrayList<ChildField.LookupTableField>(lookupTableFields);
         collectNestedLookupFields(nestingFields, allLookupFields);
         for (var lf : allLookupFields) {
-            var targetJooqTableClass = ClassName.get(
-                jooqPackage + ".tables",
-                lf.returnType().table().javaClassName());
-            builder.addMethod(LookupValuesJoinEmitter.buildChildInputRowsMethod(lf, targetJooqTableClass));
+            // NodeIdMapping uses hasIds/hasId inline — no VALUES+JOIN input-rows helper needed.
+            if (lf.lookupMapping() instanceof no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) {
+                var targetJooqTableClass = ClassName.get(
+                    jooqPackage + ".tables",
+                    lf.returnType().table().javaClassName());
+                builder.addMethod(LookupValuesJoinEmitter.buildChildInputRowsMethod(lf, targetJooqTableClass));
+            }
         }
         return builder.build();
     }

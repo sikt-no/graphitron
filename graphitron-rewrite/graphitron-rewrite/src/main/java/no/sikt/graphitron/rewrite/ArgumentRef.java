@@ -65,6 +65,32 @@ sealed interface ArgumentRef {
         ) implements ScalarArg {}
 
         /**
+         * Scalar arg resolved to a composite node ID. Fires when the arg GraphQL type is
+         * {@code ID}, the target table is a {@link no.sikt.graphitron.rewrite.model.GraphitronType.NodeType},
+         * and the arg does not carry {@code @nodeId(typeName:)} (that is the reference variant,
+         * handled in Step 5). Both the synthesized route (table has KjerneJooqGenerator metadata)
+         * and the declared route ({@code @nodeId} on the arg) produce this variant.
+         *
+         * <p>{@code nodeTypeId} and {@code nodeKeyColumns} are taken verbatim from the NodeType's
+         * metadata. {@code extraction} is {@link no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct}
+         * for scalar and list top-level args. {@code isLookupKey} reflects {@code @lookupKey} at
+         * classify time — lookup-key {@code NodeIdArg}s project into
+         * {@link no.sikt.graphitron.rewrite.model.LookupMapping.NodeIdMapping} and are emitted
+         * via {@code NodeIdStrategy.hasIds}; non-lookup ones contribute a WHERE predicate.
+         */
+        record NodeIdArg(
+            String name,
+            String typeName,
+            boolean nonNull,
+            boolean list,
+            String nodeTypeId,
+            List<ColumnRef> nodeKeyColumns,
+            CallSiteExtraction extraction,
+            Optional<ArgConditionRef> argCondition,
+            boolean isLookupKey
+        ) implements ScalarArg {}
+
+        /**
          * Scalar arg whose column could not be resolved on the target table.
          * Step 10 turns this into a validation error (with a candidate hint).
          */
