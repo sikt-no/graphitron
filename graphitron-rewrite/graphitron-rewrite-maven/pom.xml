@@ -8,7 +8,7 @@
     <parent>
         <groupId>no.sikt</groupId>
         <artifactId>graphitron-rewrite-parent</artifactId>
-        <version>${revision}${changelist}</version>
+        <version>9-SNAPSHOT</version>
     </parent>
 
     <artifactId>graphitron-rewrite-maven</artifactId>
@@ -81,26 +81,10 @@
                     <execution>
                         <id>integration-test</id>
                         <goals>
+                            <goal>install</goal>
                             <goal>run</goal>
                             <goal>verify</goal>
                         </goals>
-                    </execution>
-                </executions>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-install-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>install-plugin-for-it</id>
-                        <phase>pre-integration-test</phase>
-                        <goals>
-                            <goal>install-file</goal>
-                        </goals>
-                        <configuration>
-                            <file>${project.build.directory}/${project.build.finalName}.jar</file>
-                            <pomFile>${project.basedir}/.flattened-pom.xml</pomFile>
-                        </configuration>
                     </execution>
                 </executions>
             </plugin>

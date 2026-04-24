@@ -7,7 +7,7 @@
     <parent>
         <groupId>no.sikt</groupId>
         <artifactId>graphitron-rewrite-parent</artifactId>
-        <version>${revision}${changelist}</version>
+        <version>9-SNAPSHOT</version>
     </parent>
 
     <artifactId>graphitron-rewrite-test</artifactId>
@@ -128,7 +128,7 @@
             <plugin>
                 <groupId>no.sikt</groupId>
                 <artifactId>graphitron-rewrite-maven</artifactId>
-                <version>${revision}${changelist}</version>
+                <version>${project.version}</version>
                 <executions>
                     <execution>
                         <id>rewrite-generate</id>
@@ -150,7 +150,7 @@
                     <dependency>
                         <groupId>no.sikt</groupId>
                         <artifactId>graphitron-rewrite-fixtures</artifactId>
-                        <version>${revision}${changelist}</version>
+                        <version>${project.version}</version>
                     </dependency>
                 </dependencies>
             </plugin>

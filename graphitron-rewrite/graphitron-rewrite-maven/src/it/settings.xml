@@ -2,9 +2,8 @@
 <settings>
   <!--
     Settings for maven-invoker-plugin integration tests.
-    The plugin JAR is installed via maven-install-plugin:install-file in
-    pre-integration-test using the .flattened-pom.xml so the resolved version
-    is used. All other artifacts must already be present in the local
-    repository from a prior build.
+    invoker:install puts the just-built plugin into the local repository before
+    the IT child sessions run. All other artifacts must already be present in
+    the local repository from a prior build.
   -->
 </settings>
