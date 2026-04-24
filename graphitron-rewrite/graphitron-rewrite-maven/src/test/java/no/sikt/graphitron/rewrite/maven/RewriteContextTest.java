@@ -1,7 +1,6 @@
 package no.sikt.graphitron.rewrite.maven;
 
 import no.sikt.graphitron.rewrite.RewriteContext;
-import no.sikt.graphitron.rewrite.schema.ScalarMapping;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
 import org.junit.jupiter.api.Test;
 
@@ -20,7 +19,7 @@ class RewriteContextTest {
     void schemaInputsList_isImmutable() {
         var mutable = new ArrayList<SchemaInput>();
         mutable.add(SchemaInput.plain("/a"));
-        var ctx = ctx(mutable, Map.of(), List.of());
+        var ctx = ctx(mutable, Map.of());
 
         assertThatThrownBy(() -> ctx.schemaInputs().add(SchemaInput.plain("/b")))
             .isInstanceOf(UnsupportedOperationException.class);
@@ -30,18 +29,9 @@ class RewriteContextTest {
     void namedReferencesMap_isImmutable() {
         var mutable = new HashMap<String, String>();
         mutable.put("k", "v");
-        var ctx = ctx(List.of(), mutable, List.of());
+        var ctx = ctx(List.of(), mutable);
 
         assertThatThrownBy(() -> ctx.namedReferences().put("x", "y"))
-            .isInstanceOf(UnsupportedOperationException.class);
-    }
-
-    @Test
-    void scalarsList_isImmutable() {
-        var mutable = new ArrayList<ScalarMapping>();
-        var ctx = ctx(List.of(), Map.of(), mutable);
-
-        assertThatThrownBy(() -> ctx.scalars().add(new ScalarMapping("A", "B")))
             .isInstanceOf(UnsupportedOperationException.class);
     }
 
@@ -49,7 +39,7 @@ class RewriteContextTest {
     void mutatingPassedList_doesNotAffectContext() {
         var mutable = new ArrayList<SchemaInput>();
         mutable.add(SchemaInput.plain("/a"));
-        var ctx = ctx(mutable, Map.of(), List.of());
+        var ctx = ctx(mutable, Map.of());
 
         mutable.add(SchemaInput.plain("/b"));
 
@@ -58,10 +48,9 @@ class RewriteContextTest {
 
     private static RewriteContext ctx(
             List<SchemaInput> schemaInputs,
-            Map<String, String> namedReferences,
-            List<ScalarMapping> scalars) {
+            Map<String, String> namedReferences) {
         return new RewriteContext(
             schemaInputs, Path.of(""), Path.of(""), "pkg", "jooq",
-            namedReferences, scalars, 1000);
+            namedReferences);
     }
 }

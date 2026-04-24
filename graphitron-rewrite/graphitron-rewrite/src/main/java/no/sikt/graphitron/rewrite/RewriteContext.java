@@ -1,6 +1,5 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.rewrite.schema.ScalarMapping;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
 
 import java.nio.file.Path;
@@ -22,9 +21,7 @@ public record RewriteContext(
     Path outputDirectory,
     String outputPackage,
     String jooqPackage,
-    Map<String, String> namedReferences,
-    List<ScalarMapping> scalars,
-    int maxAllowedPageSize
+    Map<String, String> namedReferences
 ) {
     public RewriteContext {
         Objects.requireNonNull(schemaInputs, "schemaInputs");
@@ -33,9 +30,7 @@ public record RewriteContext(
         Objects.requireNonNull(outputPackage, "outputPackage");
         Objects.requireNonNull(jooqPackage, "jooqPackage");
         Objects.requireNonNull(namedReferences, "namedReferences");
-        Objects.requireNonNull(scalars, "scalars");
         schemaInputs = List.copyOf(schemaInputs);
         namedReferences = Map.copyOf(namedReferences);
-        scalars = List.copyOf(scalars);
     }
 }

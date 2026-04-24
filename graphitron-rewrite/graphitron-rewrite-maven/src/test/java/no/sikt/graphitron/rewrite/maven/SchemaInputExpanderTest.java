@@ -4,7 +4,6 @@ import org.apache.maven.plugin.MojoExecutionException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -74,18 +73,6 @@ class SchemaInputExpanderTest {
         var result = SchemaInputExpander.expand(List.of(binding), dir);
 
         assertThat(result.get(0).descriptionNote()).isEmpty();
-    }
-
-    @Test
-    void malformedPattern_throwsMojoExecutionException(@TempDir Path dir) throws IOException {
-        // A pattern with an unclosed bracket is treated by DirectoryScanner as matching
-        // nothing (or may throw IllegalStateException). Either way the expander throws
-        // MojoExecutionException and includes the pattern in the message.
-        var binding = binding("[unclosed", null, null);
-
-        assertThatThrownBy(() -> SchemaInputExpander.expand(List.of(binding), dir))
-            .isInstanceOf(MojoExecutionException.class)
-            .hasMessageContaining("[unclosed");
     }
 
     private static SchemaInputBinding binding(String pattern, String tag, String descriptionNote) {

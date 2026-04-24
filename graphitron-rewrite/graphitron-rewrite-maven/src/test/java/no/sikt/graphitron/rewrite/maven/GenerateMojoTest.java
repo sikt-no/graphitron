@@ -17,33 +17,34 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class GenerateMojoTest {
 
     @Test
-    void buildContext_allEightParametersRoundTrip(@TempDir Path basedir) throws Exception {
+    void buildContext_allParametersRoundTrip(@TempDir Path basedir) throws Exception {
         var mojo = mojo(basedir);
         mojo.outputDirectory = basedir.resolve("target/generated").toString();
-        mojo.maxAllowedPageSize = 50;
 
         var ref = new NamedReferenceBinding();
         ref.name = "MyRef";
         ref.className = "com.example.MyRef";
         mojo.namedReferences = List.of(ref);
 
-        var scalar = new ScalarBinding();
-        scalar.scalarName = "DateTime";
-        scalar.className = "java.time.Instant";
-        mojo.scalars = List.of(scalar);
-
         var ctx = mojo.buildContext();
 
         assertThat(ctx.outputPackage()).isEqualTo("com.example.generated");
         assertThat(ctx.jooqPackage()).isEqualTo("com.example.jooq");
         assertThat(ctx.basedir()).isEqualTo(basedir);
-        assertThat(ctx.outputDirectory()).isEqualTo(Path.of(basedir.resolve("target/generated").toString()));
-        assertThat(ctx.maxAllowedPageSize()).isEqualTo(50);
+        assertThat(ctx.outputDirectory()).isEqualTo(basedir.resolve("target/generated").normalize());
         assertThat(ctx.namedReferences()).containsEntry("MyRef", "com.example.MyRef");
-        assertThat(ctx.scalars()).hasSize(1);
-        assertThat(ctx.scalars().get(0).scalarName()).isEqualTo("DateTime");
-        assertThat(ctx.scalars().get(0).className()).isEqualTo("java.time.Instant");
         assertThat(ctx.schemaInputs()).isEmpty();
+    }
+
+    @Test
+    void buildContext_relativeOutputDirectory_resolvesAgainstBasedir(@TempDir Path basedir) throws Exception {
+        var mojo = mojo(basedir);
+        mojo.outputDirectory = "gen";
+
+        var ctx = mojo.buildContext();
+
+        assertThat(ctx.outputDirectory()).isAbsolute();
+        assertThat(ctx.outputDirectory()).isEqualTo(basedir.resolve("gen").normalize());
     }
 
     @Test
@@ -67,7 +68,7 @@ class GenerateMojoTest {
     }
 
     @Test
-    void nullOutputPackage_throwsNullPointerException(@TempDir Path basedir) {
+    void generate_nullOutputPackage_throwsMojoExecutionException(@TempDir Path basedir) {
         var mojo = new GenerateMojo();
         var project = new MavenProject();
         project.setFile(basedir.resolve("pom.xml").toFile());
@@ -77,8 +78,38 @@ class GenerateMojoTest {
         mojo.outputDirectory = basedir.resolve("target/generated").toString();
 
         assertThatThrownBy(mojo::buildContext)
-            .isInstanceOf(NullPointerException.class)
+            .isInstanceOf(MojoExecutionException.class)
             .hasMessageContaining("outputPackage");
+    }
+
+    @Test
+    void generate_nullJooqPackage_throwsMojoExecutionException(@TempDir Path basedir) {
+        var mojo = new GenerateMojo();
+        var project = new MavenProject();
+        project.setFile(basedir.resolve("pom.xml").toFile());
+        mojo.project = project;
+        mojo.outputPackage = "com.example.generated";
+        // jooqPackage deliberately null
+        mojo.outputDirectory = basedir.resolve("target/generated").toString();
+
+        assertThatThrownBy(mojo::buildContext)
+            .isInstanceOf(MojoExecutionException.class)
+            .hasMessageContaining("jooqPackage");
+    }
+
+    @Test
+    void validate_nullPackages_substitutesSentinel(@TempDir Path basedir) throws Exception {
+        var mojo = new ValidateMojo();
+        var project = new MavenProject();
+        project.setFile(basedir.resolve("pom.xml").toFile());
+        mojo.project = project;
+        mojo.outputDirectory = basedir.resolve("target/generated").toString();
+        // outputPackage + jooqPackage deliberately null
+
+        var ctx = mojo.buildContext();
+
+        assertThat(ctx.outputPackage()).isNotNull();
+        assertThat(ctx.jooqPackage()).isNotNull();
     }
 
     /** Constructs a {@link GenerateMojo} with minimal valid state. */

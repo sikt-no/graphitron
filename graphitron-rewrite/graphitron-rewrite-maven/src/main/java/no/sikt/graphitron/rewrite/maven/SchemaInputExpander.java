@@ -31,7 +31,7 @@ class SchemaInputExpander {
             scanner.setIncludes(new String[]{b.pattern});
             try {
                 scanner.scan();
-            } catch (IllegalStateException e) {
+            } catch (RuntimeException e) {
                 throw new MojoExecutionException(
                     "<schemaInput pattern='" + b.pattern + "'> scanner error (entry #" + i + "): " + e.getMessage(), e);
             }

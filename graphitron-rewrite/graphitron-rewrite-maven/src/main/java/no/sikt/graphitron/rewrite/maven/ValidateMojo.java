@@ -9,7 +9,9 @@ import org.apache.maven.plugins.annotations.ResolutionScope;
 /**
  * Validates the GraphQL schema without writing any generated sources.
  * Runs schema loading, attribution, classification, and validation only.
- * Invoke as {@code mvn graphitron-rewrite:validate}.
+ * Invoke as {@code mvn graphitron-rewrite:validate}; {@code <outputPackage>}
+ * and {@code <jooqPackage>} are optional for this goal (a sentinel is
+ * substituted so the classifier stage still type-checks).
  */
 @Mojo(
     name = "validate",
@@ -20,12 +22,13 @@ import org.apache.maven.plugins.annotations.ResolutionScope;
 public class ValidateMojo extends AbstractRewriteMojo {
 
     @Override
+    protected boolean packagesRequired() {
+        return false;
+    }
+
+    @Override
     public void execute() throws MojoExecutionException {
-        try {
-            new GraphQLRewriteGenerator(buildContext()).validate();
-        } catch (RuntimeException e) {
-            throw new MojoExecutionException(e.getMessage(), e);
-        }
+        runGenerator(GraphQLRewriteGenerator::validate);
         getLog().info("Schema validation completed successfully");
     }
 }

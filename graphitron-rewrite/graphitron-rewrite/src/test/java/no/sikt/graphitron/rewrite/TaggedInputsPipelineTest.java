@@ -2,7 +2,6 @@ package no.sikt.graphitron.rewrite;
 
 import graphql.schema.GraphQLObjectType;
 import graphql.schema.GraphQLSchema;
-import no.sikt.graphitron.rewrite.schema.ScalarMapping;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -66,9 +65,7 @@ class TaggedInputsPipelineTest {
             tmp,
             DEFAULT_OUTPUT_PACKAGE,
             DEFAULT_JOOQ_PACKAGE,
-            Map.of(),
-            List.<ScalarMapping>of(),
-            100
+            Map.of()
         );
 
         var registry = new GraphQLRewriteGenerator(ctx).loadAttributedRegistry();

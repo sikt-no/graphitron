@@ -19,9 +19,13 @@ import org.apache.maven.plugins.annotations.ResolutionScope;
 public class GenerateMojo extends AbstractRewriteMojo {
 
     @Override
+    protected boolean packagesRequired() {
+        return true;
+    }
+
+    @Override
     public void execute() throws MojoExecutionException {
-        var ctx = buildContext();
-        new GraphQLRewriteGenerator(ctx).generate();
+        runGenerator(GraphQLRewriteGenerator::generate);
         project.addCompileSourceRoot(outputDirectory);
     }
 }

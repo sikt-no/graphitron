@@ -5,7 +5,6 @@ import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.InputField;
-import no.sikt.graphitron.rewrite.schema.ScalarMapping;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -42,7 +41,7 @@ class PlatformIdPipelineTest {
     private static final RewriteContext FIXTURE_CTX = new RewriteContext(
         List.of(), Path.of(""), Path.of(""),
         DEFAULT_OUTPUT_PACKAGE, FIXTURE_JOOQ_PACKAGE,
-        Map.of(), List.<ScalarMapping>of(), 100
+        Map.of()
     );
 
     // ===== Type-level NodeType synthesis =====

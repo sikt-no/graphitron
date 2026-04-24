@@ -1,7 +1,6 @@
 package no.sikt.graphitron.common.configuration;
 
 import no.sikt.graphitron.rewrite.RewriteContext;
-import no.sikt.graphitron.rewrite.schema.ScalarMapping;
 
 import java.nio.file.Path;
 import java.util.List;
@@ -19,9 +18,7 @@ public class TestConfiguration {
             Path.of(""),
             DEFAULT_OUTPUT_PACKAGE,
             DEFAULT_JOOQ_PACKAGE,
-            Map.of(),
-            List.<ScalarMapping>of(),
-            100
+            Map.of()
         );
     }
 }
