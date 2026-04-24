@@ -319,12 +319,18 @@ class FieldBuilder {
                 new ReturnTypeRef.PolymorphicReturnType(elementTypeName, buildWrapper(fieldDef)));
         }
 
-        // NestingField: a plain object type in the schema with no Graphitron classification.
+        // NestingField: a plain object type in the schema with no Graphitron domain classification.
         // Its fields are resolved from the same table context as the parent — classified
         // recursively so nested scalars reach the model as ColumnField (and future arms as
         // their respective leaves). @record parents cannot reach here; this path is gated
         // on TableBackedType by classifyChildFieldOnTableType's caller at line 1217.
-        if (ctx.schema.getType(elementTypeName) instanceof GraphQLObjectType graphQLObjectType && elementType == null) {
+        //
+        // "No domain classification" includes both the pre-classifier-records-plain-types state
+        // (elementType == null) and the post-Phase-4 state (classified as PlainObjectType).
+        boolean isPlainObjectElement = elementType == null
+            || elementType instanceof GraphitronType.PlainObjectType;
+        if (ctx.schema.getType(elementTypeName) instanceof GraphQLObjectType graphQLObjectType
+                && isPlainObjectElement) {
             var wrapper = buildWrapper(fieldDef);
             if (expandingTypes.contains(elementTypeName)) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef,

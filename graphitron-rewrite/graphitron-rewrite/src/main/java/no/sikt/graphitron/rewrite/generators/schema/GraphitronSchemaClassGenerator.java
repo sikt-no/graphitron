@@ -138,24 +138,20 @@ public final class GraphitronSchemaClassGenerator {
     /**
      * Enumerates the types that need registration in the emitted {@code GraphitronSchema.build()}.
      *
-     * <p>Source of truth is {@link GraphitronSchema#types()}, which by Phase 1 of the first-class
-     * Connection plan contains every emittable type — SDL-declared ones and directive-synthesised
-     * {@link ConnectionType} / {@link EdgeType} / {@link PageInfoType} alike. The assembled schema
-     * is consulted only for enum and input-object entries that the classifier doesn't record in
-     * its model.
+     * <p>Source of truth is {@link GraphitronSchema#types()}, which by Phase 4 contains every
+     * emittable object / interface / union / input type: SDL-declared and synthesised alike.
+     * Enums aren't in the model yet (Phase 6); the assembled schema is consulted for those only.
      */
     static Plan planFor(GraphitronSchema schema, GraphQLSchema assembled) {
         var additional = new java.util.LinkedHashSet<String>();
         boolean hasQuery = false, hasMutation = false, hasSubscription = false;
-        var seen = new java.util.LinkedHashSet<String>();
 
         for (var entry : schema.types().entrySet()) {
             String name = entry.getKey();
             if (name.startsWith("_")) continue;
-            seen.add(name);
             var variant = entry.getValue();
             if (variant instanceof RootType) {
-                if ("Query".equals(name))        hasQuery = true;
+                if ("Query".equals(name))             hasQuery = true;
                 else if ("Mutation".equals(name))     hasMutation = true;
                 else if ("Subscription".equals(name)) hasSubscription = true;
                 continue;
@@ -168,21 +164,12 @@ public final class GraphitronSchemaClassGenerator {
             additional.add(name);
         }
 
-        // Fall back to the assembled schema for types the classifier didn't record:
-        // plain SDL types without directives, enums, and any SDL-declared scalars.
+        // Enums aren't classified into schema.types() today — pull them from the assembled
+        // schema until Phase 6 brings them into the model.
         for (var t : assembled.getAllTypesAsList()) {
             String name = t.getName();
             if (name.startsWith("_")) continue;
-            if (seen.contains(name)) continue;
-            if (t instanceof graphql.schema.GraphQLScalarType) continue;
-            if (t instanceof graphql.schema.GraphQLInputObjectType
-                    && InputDirectiveInputTypes.NAMES.contains(name)) continue;
-            if (t instanceof graphql.schema.GraphQLObjectType obj) {
-                if ("Query".equals(name))        { hasQuery = true; continue; }
-                if ("Mutation".equals(name))     { hasMutation = true; continue; }
-                if ("Subscription".equals(name)) { hasSubscription = true; continue; }
-            }
-            additional.add(name);
+            if (t instanceof GraphQLEnumType) additional.add(name);
         }
 
         var sorted = new ArrayList<>(additional);

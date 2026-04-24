@@ -3626,6 +3626,65 @@ class GraphitronSchemaBuilderTest {
         tc.assertions.accept(build(tc.sdl));
     }
 
+    // ===== Plain object type classification =====
+
+    enum PlainObjectTypeCase implements ClassificationCase {
+        NESTED_DTO_WITHOUT_DIRECTIVES(
+            "plain object type with no directives → PlainObjectType entry in schema.types()",
+            """
+            type Film { id: ID! title: String }
+            type Query { foo: String }
+            """,
+            schema -> {
+                var t = (no.sikt.graphitron.rewrite.model.GraphitronType.PlainObjectType)
+                    schema.type("Film");
+                assertThat(t.name()).isEqualTo("Film");
+                assertThat(t.schemaType()).isNotNull();
+                assertThat(t.schemaType().getName()).isEqualTo("Film");
+                assertThat(t.schemaType().getFieldDefinition("id")).isNotNull();
+            }),
+
+        STANDALONE_RETURN_TYPE(
+            "plain object used as a Query return also classifies as PlainObjectType",
+            """
+            type Meta { totalCount: Int }
+            type Query { meta: Meta }
+            """,
+            schema -> {
+                assertThat(schema.type("Meta"))
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.PlainObjectType.class);
+            }),
+
+        DOES_NOT_OVERRIDE_DIRECTIVE_CLASSIFICATION(
+            "@table-annotated types still classify as TableType, not PlainObjectType",
+            """
+            type Film @table(name: "film") { id: ID! }
+            type Query { f: Film }
+            """,
+            schema -> {
+                assertThat(schema.type("Film"))
+                    .isInstanceOf(TableType.class)
+                    .isNotInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.PlainObjectType.class);
+            });
+
+        final String sdl;
+        final Consumer<GraphitronSchema> assertions;
+        PlainObjectTypeCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
+            this.sdl = sdl;
+            this.assertions = assertions;
+        }
+        @Override public Set<Class<?>> variants() {
+            return Set.of(no.sikt.graphitron.rewrite.model.GraphitronType.PlainObjectType.class);
+        }
+        @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(PlainObjectTypeCase.class)
+    void plainObjectTypeClassification(PlainObjectTypeCase tc) {
+        tc.assertions.accept(build(tc.sdl));
+    }
+
     // ===== Helper =====
 
     private GraphitronSchema build(String schemaText) {

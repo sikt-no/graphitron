@@ -19,6 +19,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.InputType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.InterfaceType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.NodeType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.PageInfoType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.PlainObjectType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ResultType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.RootType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableBackedType;
@@ -128,6 +129,7 @@ class TypeBuilder {
             case ConnectionType ignored   -> type;
             case EdgeType ignored         -> type;
             case PageInfoType ignored     -> type;
+            case PlainObjectType ignored  -> type;
             case UnclassifiedType ignored -> type;
         });
 
@@ -192,11 +194,11 @@ class TypeBuilder {
     }
 
     /**
-     * @param allowNestingAsUnbound when {@code true}, types absent from {@code ctx.types} (no
-     *     {@code @table}, no {@code @record}, no {@code @error}) are accepted as
-     *     {@link ParticipantRef.Unbound} — they are nesting types whose fields expand against the
-     *     parent table. When {@code false} (union and {@code TableInterfaceType} participants),
-     *     every member must be table-bound or explicitly recognised; absent types are an error.
+     * @param allowNestingAsUnbound when {@code true}, plain object types without domain
+     *     directives are accepted as {@link ParticipantRef.Unbound} — they are nesting types
+     *     whose fields expand against the parent table. When {@code false} (union and
+     *     {@code TableInterfaceType} participants), every member must be table-bound or
+     *     carry a domain directive; plain object types are an error.
      */
     private ParticipantListResult buildParticipantList(List<String> typeNames, boolean allowNestingAsUnbound) {
         var result = new ArrayList<ParticipantRef>();
@@ -206,9 +208,12 @@ class TypeBuilder {
             if (gt instanceof TableBackedType tbt && !(gt instanceof TableInterfaceType)) {
                 String discriminatorValue = argString(ctx.schema.getObjectType(typeName), DIR_DISCRIMINATOR, ARG_VALUE).orElse(null);
                 result.add(new ParticipantRef.TableBound(typeName, tbt.table(), discriminatorValue));
-            } else if (gt != null && !(gt instanceof UnclassifiedType)) {
+            } else if (gt instanceof PlainObjectType && allowNestingAsUnbound) {
+                // Plain SDL object types join as nesting participants only in contexts that
+                // allow nesting (plain InterfaceType). Unions and TableInterfaceType require
+                // a domain directive or table binding.
                 result.add(new ParticipantRef.Unbound(typeName));
-            } else if (gt == null && allowNestingAsUnbound) {
+            } else if (gt != null && !(gt instanceof UnclassifiedType) && !(gt instanceof PlainObjectType)) {
                 result.add(new ParticipantRef.Unbound(typeName));
             } else {
                 errors.add("implementing type '" + typeName + "' is not table-bound (missing @table directive)");
@@ -255,7 +260,9 @@ class TypeBuilder {
             if (objType.hasAppliedDirective(DIR_ERROR)) {
                 return buildErrorType(objType);
             }
-            return null;
+            // Plain SDL object type — no domain directive. Record it in the model so
+            // emitters can iterate schema.types() without an assembled-schema fallback.
+            return new PlainObjectType(name, location, objType);
         }
         if (namedType instanceof GraphQLInterfaceType iface) {
             if (iface.hasAppliedDirective(DIR_TABLE) && iface.hasAppliedDirective(DIR_DISCRIMINATE)) {
