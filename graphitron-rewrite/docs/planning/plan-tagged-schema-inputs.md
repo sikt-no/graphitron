@@ -517,6 +517,12 @@ Each has a concrete fix; none blocks flipping the plan to Done, but
 M1 and M2 should land before the Maven-plugin plan starts depending
 on this surface.
 
+**Status:** all six items addressed in the follow-up commit. M2
+caught two previously undetected production bugs: an extension →
+base-definition downgrade on transform, and a `MultiSourceReader`
+source-name-attribution miss on unterminated inputs. Both fixes
+landed alongside the test that surfaced them.
+
 ### M1. `run()` has no end-to-end test
 
 `TaggedInputsPipelineTest` reconstructs the four stages inline
@@ -534,6 +540,20 @@ behavioural: `@tag` directives and descriptions present on the
 built schema's types. The point is covering the wiring in
 `GraphQLRewriteGenerator.run()` (today lines 66-72), which the
 existing pipeline test bypasses.
+
+*Resolution.* Extracted a package-private
+`GraphQLRewriteGenerator.loadAttributedRegistry()` that encapsulates
+the four-stage pipeline; `run()` becomes a one-liner
+(`runPipeline(loadAttributedRegistry())`) so the wiring is fully
+covered by testing the extracted method. `TaggedInputsPipelineTest`
+moved to `no.sikt.graphitron.rewrite` (same package as the
+generator) and now drives through
+`new GraphQLRewriteGenerator(ctx).loadAttributedRegistry()`. Test
+assertions unchanged. Invoking `run()` literally was ruled out:
+`runPipeline()` needs configured `RewriteConfig.outputDirectory()` +
+`outputPackage()` and a classifiable schema, which the tagged-inputs
+module has no test fixture for — that end-to-end path lives in
+`graphitron-rewrite-test`.
 
 ### M2. Schema extensions are walked but not tested
 
@@ -556,6 +576,31 @@ Assert the extension's `bar` field gains `@tag` / note, and that
 the extension is still in `registry.objectTypeExtensions().get("Foo")`
 after apply (not moved into `registry.types()`).
 
+*Resolution.* Added the two extension tests. They caught two real
+bugs:
+
+1. **Transform downgrade.** `ObjectTypeDefinition.transform()` on an
+   `ObjectTypeExtensionDefinition` returns a plain
+   `ObjectTypeDefinition`, discarding the extension type. The
+   subclass exposes `transformExtension()` which returns the
+   extension type. Fixed by adding extension arms to each applier's
+   type-dispatch switch (extension case listed before base case
+   because pattern-match order matters) and routing each extension
+   through `transformExtension(b -> b.xxx(...))`. Five extension
+   kinds × two appliers = ten new transform methods; shared helpers
+   extract the per-kind change computation.
+2. **Source-name attribution miss on unterminated inputs.**
+   `MultiSourceReader` attributes AST nodes to the preceding
+   source's name when an input does not end with a newline, because
+   source-name tracking is line-terminator-based. Fixed in
+   `RewriteSchemaLoader` by wrapping each source `Reader` in a
+   `terminated()` helper that emits a final `\n` at EOF. The
+   in-memory test helper `InMemoryRegistry` carries the same
+   safeguard. This was a pre-existing latent bug in the loader,
+   independent of tagged-inputs; the extension tests surfaced it
+   because unterminated SDL is how test strings get written in
+   practice.
+
 ### m1. `SchemaInputAttribution.indexOf` uses reference identity
 
 `SchemaInputAttribution.java:44` compares with `==`. Works for the
@@ -564,6 +609,10 @@ a caller passing `List.of(sameRef, sameRef)` would produce
 `#0 ... #0` in the error message. Not a realistic caller shape.
 
 *Fix.* Switch to `inputs.get(i).equals(target)`. Two-line change.
+
+*Resolution.* Replaced the custom `indexOf` helper entirely with
+`List.indexOf` which uses `.equals()` on the record. Net reduction,
+not expansion.
 
 ### m2. Error message leaks Maven XML into rewrite-core
 
@@ -580,6 +629,8 @@ phrasing indirectly through `withMessageContaining("dup.graphqls")`
 (the tag-name check already ignores the XML wording, so no test
 update is required).
 
+*Resolution.* Applied the one-line change.
+
 ### m3. Inconsistent builder method between object and interface
 
 `TagApplier.java:95` calls
@@ -594,6 +645,15 @@ confirm they do the same thing. Same shape at
 name for the field-list setter on type definitions is
 `definitions`; `fieldDefinitions` exists on `ObjectTypeDefinition`
 as an alias). Cosmetic; acceptable to defer.
+
+*Resolution (no change).* The premise is incorrect:
+`ObjectTypeDefinition.Builder` exposes only `fieldDefinitions(...)`,
+never `definitions(...)`; `InterfaceTypeDefinition.Builder` exposes
+only `definitions(...)`. The method names are not interchangeable
+aliases but distinct API surface per type. Verified by inspecting
+the graphql-java 25 builder class files. Our code uses the only
+method each builder provides; the naming asymmetry is graphql-java's,
+not ours to fix.
 
 ### m4. `RewriteContext.basedir` is declared, required, and unread
 

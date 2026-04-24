@@ -1,9 +1,8 @@
-package no.sikt.graphitron.rewrite.schema.input;
+package no.sikt.graphitron.rewrite;
 
 import graphql.schema.GraphQLObjectType;
 import graphql.schema.GraphQLSchema;
-import no.sikt.graphitron.rewrite.GraphitronSchemaBuilder;
-import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
+import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -16,11 +15,17 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * End-to-end coverage of the tagged-inputs pipeline: attribution → loader →
- * tag applier → description-note applier → classification. Reads assertions
- * off the built {@link GraphQLSchema} (not the pre-build registry) so any
- * future caching the classifier might introduce between registry mutation
- * and schema build is covered by this test.
+ * End-to-end coverage of the tagged-inputs pipeline driven through the new
+ * {@link GraphQLRewriteGenerator} instance entry point. Reads assertions off
+ * the built {@link GraphQLSchema} (not the pre-build registry) so any future
+ * caching the classifier might introduce between registry mutation and schema
+ * build is covered by this test.
+ *
+ * <p>Uses the package-private {@code loadAttributedRegistry()} hook so we can
+ * exercise the wiring that {@link GraphQLRewriteGenerator#run()} feeds into
+ * the pipeline without paying the emission stage's configured-output-paths
+ * tax. {@code run()} itself is a one-liner over this method, so the wiring is
+ * fully covered.
  */
 class TaggedInputsPipelineTest {
 
@@ -47,17 +52,16 @@ class TaggedInputsPipelineTest {
             enum Status { ACTIVE INACTIVE }
             """);
 
-        var inputs = List.of(
-            new SchemaInput(enrolment.toString(), Optional.of("enrolment"), Optional.empty()),
-            new SchemaInput(cinema.toString(), Optional.empty(), Optional.of("Part of cinema feature.")),
-            new SchemaInput(shared.toString(), Optional.of("core"), Optional.of("Shared by every feature."))
+        var ctx = new RewriteContext(
+            List.of(
+                new SchemaInput(enrolment.toString(), Optional.of("enrolment"), Optional.empty()),
+                new SchemaInput(cinema.toString(), Optional.empty(), Optional.of("Part of cinema feature.")),
+                new SchemaInput(shared.toString(), Optional.of("core"), Optional.of("Shared by every feature."))
+            ),
+            tmp
         );
 
-        var bySource = SchemaInputAttribution.build(inputs);
-        var registry = RewriteSchemaLoader.load(bySource.keySet());
-        TagApplier.apply(registry, bySource);
-        DescriptionNoteApplier.apply(registry, bySource);
-
+        var registry = new GraphQLRewriteGenerator(ctx).loadAttributedRegistry();
         GraphQLSchema assembled = GraphitronSchemaBuilder.buildBundle(registry).assembled();
 
         // Tagged-only: @tag present on fields, no description change.

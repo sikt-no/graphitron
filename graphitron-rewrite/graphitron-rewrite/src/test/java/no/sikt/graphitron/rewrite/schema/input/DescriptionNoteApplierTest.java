@@ -234,6 +234,32 @@ class DescriptionNoteApplierTest {
     }
 
     @Test
+    void extendTypeFieldGainsNoteAndExtensionStaysInExtensionsMap() {
+        // Mirror of TagApplier's extend-type test: only the extension source carries
+        // a note; assert the extension's field picks up the note AND the extension
+        // survives the remove+add round-trip inside objectTypeExtensions().
+        var registry = InMemoryRegistry.of(Map.of(
+            "base.graphqls", "type Foo { id: ID! }",
+            "ext.graphqls", "extend type Foo { bar: String }"
+        ));
+        var inputs = SchemaInputAttribution.build(List.of(
+            new SchemaInput("base.graphqls", Optional.empty(), Optional.empty()),
+            new SchemaInput("ext.graphqls", Optional.empty(), Optional.of("Enrolment extension."))
+        ));
+
+        DescriptionNoteApplier.apply(registry, inputs);
+
+        var base = (ObjectTypeDefinition) registry.getType("Foo").orElseThrow();
+        assertThat(base.getFieldDefinitions().getFirst().getDescription()).isNull();
+
+        var extensions = registry.objectTypeExtensions().get("Foo");
+        assertThat(extensions).hasSize(1);
+        var extension = extensions.getFirst();
+        assertThat(extension.getFieldDefinitions().getFirst().getDescription().getContent())
+            .isEqualTo("Enrolment extension.");
+    }
+
+    @Test
     void existingDescriptionIsStrippedBeforeConcat() {
         // Leading / trailing whitespace on the existing description is dropped
         // before the "\n\n<note>" append; keeps the output deterministic.

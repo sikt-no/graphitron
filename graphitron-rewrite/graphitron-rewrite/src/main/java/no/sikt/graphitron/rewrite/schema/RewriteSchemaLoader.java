@@ -36,7 +36,7 @@ public final class RewriteSchemaLoader {
     public static TypeDefinitionRegistry load(Collection<String> userSchemaPaths) {
         var builder = MultiSourceReader.newMultiSourceReader();
         addDirectivesSource(builder);
-        userSchemaPaths.forEach(path -> builder.reader(openSource(path), path));
+        userSchemaPaths.forEach(path -> builder.reader(terminated(openSource(path)), path));
         try (var multi = builder.trackData(true).build()) {
             var document = new Parser().parseDocument(
                 ParserEnvironment.newParserEnvironment()
@@ -54,7 +54,44 @@ public final class RewriteSchemaLoader {
         if (stream == null) {
             throw new IllegalStateException(DIRECTIVES_RESOURCE + " not found on classpath");
         }
-        builder.reader(new InputStreamReader(stream, StandardCharsets.UTF_8), DIRECTIVES_RESOURCE);
+        builder.reader(terminated(new InputStreamReader(stream, StandardCharsets.UTF_8)), DIRECTIVES_RESOURCE);
+    }
+
+    /**
+     * Wraps {@code inner} so that after it reports EOF the stream emits one final
+     * newline character. Without this, {@link MultiSourceReader} would attribute the
+     * first line of each subsequent source to the previous source's name when the
+     * previous source does not end with a newline: source-name tracking is
+     * line-terminator-based, and an unterminated last line bleeds into the next
+     * reader. Rewrite's tag / description-note appliers rely on
+     * {@code SourceLocation.getSourceName()} matching the {@code SchemaInput}'s key,
+     * so accurate attribution is a correctness requirement, not a cosmetic concern.
+     */
+    private static Reader terminated(Reader inner) {
+        return new Reader() {
+            private boolean upstreamExhausted = false;
+            private boolean newlineEmitted = false;
+
+            @Override
+            public int read(char[] buf, int off, int len) throws IOException {
+                if (!upstreamExhausted) {
+                    int n = inner.read(buf, off, len);
+                    if (n >= 0) return n;
+                    upstreamExhausted = true;
+                }
+                if (!newlineEmitted && len > 0) {
+                    buf[off] = '\n';
+                    newlineEmitted = true;
+                    return 1;
+                }
+                return -1;
+            }
+
+            @Override
+            public void close() throws IOException {
+                inner.close();
+            }
+        };
     }
 
     private static Reader openSource(String path) {

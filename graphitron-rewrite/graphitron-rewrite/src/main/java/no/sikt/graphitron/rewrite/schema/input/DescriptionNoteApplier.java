@@ -2,15 +2,20 @@ package no.sikt.graphitron.rewrite.schema.input;
 
 import graphql.language.Description;
 import graphql.language.EnumTypeDefinition;
+import graphql.language.EnumTypeExtensionDefinition;
 import graphql.language.EnumValueDefinition;
 import graphql.language.FieldDefinition;
 import graphql.language.InputObjectTypeDefinition;
+import graphql.language.InputObjectTypeExtensionDefinition;
 import graphql.language.InputValueDefinition;
 import graphql.language.InterfaceTypeDefinition;
+import graphql.language.InterfaceTypeExtensionDefinition;
 import graphql.language.ObjectTypeDefinition;
+import graphql.language.ObjectTypeExtensionDefinition;
 import graphql.language.SDLDefinition;
 import graphql.language.SourceLocation;
 import graphql.language.UnionTypeDefinition;
+import graphql.language.UnionTypeExtensionDefinition;
 import graphql.schema.idl.TypeDefinitionRegistry;
 
 import java.util.ArrayList;
@@ -64,11 +69,20 @@ public final class DescriptionNoteApplier {
     private static void collectReplacement(
         SDLDefinition<?> def, Map<String, SchemaInput> bySource, List<Replacement> out
     ) {
+        // Order matters: more-specific extension cases must come before their base
+        // type arms so the switch dispatches to transformExtension() (which returns
+        // the extension type) rather than transform() (which would downgrade an
+        // extension to a plain definition and break registry.add's dispatch).
         SDLDefinition<?> transformed = switch (def) {
+            case ObjectTypeExtensionDefinition ext -> transformObjectExtension(ext, bySource);
             case ObjectTypeDefinition obj -> transformObject(obj, bySource);
+            case InterfaceTypeExtensionDefinition ext -> transformInterfaceExtension(ext, bySource);
             case InterfaceTypeDefinition itf -> transformInterface(itf, bySource);
+            case InputObjectTypeExtensionDefinition ext -> transformInputObjectExtension(ext, bySource);
             case InputObjectTypeDefinition inp -> transformInputObject(inp, bySource);
+            case EnumTypeExtensionDefinition ext -> transformEnumExtension(ext, bySource);
             case EnumTypeDefinition enm -> transformEnum(enm, bySource);
+            case UnionTypeExtensionDefinition ext -> transformUnionExtension(ext, bySource);
             case UnionTypeDefinition uni -> transformUnion(uni, bySource);
             default -> null;
         };
@@ -77,67 +91,106 @@ public final class DescriptionNoteApplier {
         }
     }
 
+    private record ObjectChanges(List<FieldDefinition> rewrittenFields, Description newDescription) {
+        boolean any() { return rewrittenFields != null || newDescription != null; }
+    }
+
+    private static ObjectChanges computeObjectChanges(
+        List<FieldDefinition> fields, graphql.language.AbstractNode<?> node, Map<String, SchemaInput> bySource
+    ) {
+        return new ObjectChanges(rewriteFields(fields, bySource), descriptionToApply(node, bySource));
+    }
+
     private static ObjectTypeDefinition transformObject(ObjectTypeDefinition node, Map<String, SchemaInput> bySource) {
-        var rewrittenFields = rewriteFields(node.getFieldDefinitions(), bySource);
-        var newDescription = descriptionToApply(node, bySource);
-        if (rewrittenFields == null && newDescription == null) return null;
+        var ch = computeObjectChanges(node.getFieldDefinitions(), node, bySource);
+        if (!ch.any()) return null;
         return node.transform(b -> {
-            if (rewrittenFields != null) b.fieldDefinitions(rewrittenFields);
-            if (newDescription != null) b.description(newDescription);
+            if (ch.rewrittenFields() != null) b.fieldDefinitions(ch.rewrittenFields());
+            if (ch.newDescription() != null) b.description(ch.newDescription());
+        });
+    }
+
+    private static ObjectTypeExtensionDefinition transformObjectExtension(ObjectTypeExtensionDefinition node, Map<String, SchemaInput> bySource) {
+        var ch = computeObjectChanges(node.getFieldDefinitions(), node, bySource);
+        if (!ch.any()) return null;
+        return node.transformExtension(b -> {
+            if (ch.rewrittenFields() != null) b.fieldDefinitions(ch.rewrittenFields());
+            if (ch.newDescription() != null) b.description(ch.newDescription());
         });
     }
 
     private static InterfaceTypeDefinition transformInterface(InterfaceTypeDefinition node, Map<String, SchemaInput> bySource) {
-        var rewrittenFields = rewriteFields(node.getFieldDefinitions(), bySource);
-        var newDescription = descriptionToApply(node, bySource);
-        if (rewrittenFields == null && newDescription == null) return null;
+        var ch = computeObjectChanges(node.getFieldDefinitions(), node, bySource);
+        if (!ch.any()) return null;
         return node.transform(b -> {
-            if (rewrittenFields != null) b.definitions(rewrittenFields);
-            if (newDescription != null) b.description(newDescription);
+            if (ch.rewrittenFields() != null) b.definitions(ch.rewrittenFields());
+            if (ch.newDescription() != null) b.description(ch.newDescription());
         });
+    }
+
+    private static InterfaceTypeExtensionDefinition transformInterfaceExtension(InterfaceTypeExtensionDefinition node, Map<String, SchemaInput> bySource) {
+        var ch = computeObjectChanges(node.getFieldDefinitions(), node, bySource);
+        if (!ch.any()) return null;
+        return node.transformExtension(b -> {
+            if (ch.rewrittenFields() != null) b.definitions(ch.rewrittenFields());
+            if (ch.newDescription() != null) b.description(ch.newDescription());
+        });
+    }
+
+    private record InputChanges(List<InputValueDefinition> next, Description newDescription) {
+        boolean any() { return next != null || newDescription != null; }
+    }
+
+    private static InputChanges computeInputChanges(
+        List<InputValueDefinition> inputs, graphql.language.AbstractNode<?> node, Map<String, SchemaInput> bySource
+    ) {
+        var rewritten = rewriteInputValues(inputs, bySource);
+        return new InputChanges(rewritten, descriptionToApply(node, bySource));
     }
 
     private static InputObjectTypeDefinition transformInputObject(InputObjectTypeDefinition node, Map<String, SchemaInput> bySource) {
-        var inputs = node.getInputValueDefinitions();
-        var next = new ArrayList<InputValueDefinition>(inputs.size());
-        boolean fieldChanged = false;
-        for (var input : inputs) {
-            var noted = noteInputValue(input, bySource);
-            if (noted != null) {
-                next.add(noted);
-                fieldChanged = true;
-            } else {
-                next.add(input);
-            }
-        }
-        var newDescription = descriptionToApply(node, bySource);
-        if (!fieldChanged && newDescription == null) return null;
-        boolean finalFieldChanged = fieldChanged;
+        var ch = computeInputChanges(node.getInputValueDefinitions(), node, bySource);
+        if (!ch.any()) return null;
         return node.transform(b -> {
-            if (finalFieldChanged) b.inputValueDefinitions(next);
-            if (newDescription != null) b.description(newDescription);
+            if (ch.next() != null) b.inputValueDefinitions(ch.next());
+            if (ch.newDescription() != null) b.description(ch.newDescription());
         });
     }
 
+    private static InputObjectTypeExtensionDefinition transformInputObjectExtension(InputObjectTypeExtensionDefinition node, Map<String, SchemaInput> bySource) {
+        var ch = computeInputChanges(node.getInputValueDefinitions(), node, bySource);
+        if (!ch.any()) return null;
+        return node.transformExtension(b -> {
+            if (ch.next() != null) b.inputValueDefinitions(ch.next());
+            if (ch.newDescription() != null) b.description(ch.newDescription());
+        });
+    }
+
+    private record EnumChanges(List<EnumValueDefinition> next, Description newDescription) {
+        boolean any() { return next != null || newDescription != null; }
+    }
+
+    private static EnumChanges computeEnumChanges(
+        List<EnumValueDefinition> values, graphql.language.AbstractNode<?> node, Map<String, SchemaInput> bySource
+    ) {
+        return new EnumChanges(rewriteEnumValues(values, bySource), descriptionToApply(node, bySource));
+    }
+
     private static EnumTypeDefinition transformEnum(EnumTypeDefinition node, Map<String, SchemaInput> bySource) {
-        var values = node.getEnumValueDefinitions();
-        var next = new ArrayList<EnumValueDefinition>(values.size());
-        boolean valueChanged = false;
-        for (var value : values) {
-            var newValueDesc = descriptionToApply(value, bySource);
-            if (newValueDesc != null) {
-                next.add(value.transform(b -> b.description(newValueDesc)));
-                valueChanged = true;
-            } else {
-                next.add(value);
-            }
-        }
-        var newDescription = descriptionToApply(node, bySource);
-        if (!valueChanged && newDescription == null) return null;
-        boolean finalChanged = valueChanged;
+        var ch = computeEnumChanges(node.getEnumValueDefinitions(), node, bySource);
+        if (!ch.any()) return null;
         return node.transform(b -> {
-            if (finalChanged) b.enumValueDefinitions(next);
-            if (newDescription != null) b.description(newDescription);
+            if (ch.next() != null) b.enumValueDefinitions(ch.next());
+            if (ch.newDescription() != null) b.description(ch.newDescription());
+        });
+    }
+
+    private static EnumTypeExtensionDefinition transformEnumExtension(EnumTypeExtensionDefinition node, Map<String, SchemaInput> bySource) {
+        var ch = computeEnumChanges(node.getEnumValueDefinitions(), node, bySource);
+        if (!ch.any()) return null;
+        return node.transformExtension(b -> {
+            if (ch.next() != null) b.enumValueDefinitions(ch.next());
+            if (ch.newDescription() != null) b.description(ch.newDescription());
         });
     }
 
@@ -145,6 +198,42 @@ public final class DescriptionNoteApplier {
         var newDescription = descriptionToApply(node, bySource);
         if (newDescription == null) return null;
         return node.transform(b -> b.description(newDescription));
+    }
+
+    private static UnionTypeExtensionDefinition transformUnionExtension(UnionTypeExtensionDefinition node, Map<String, SchemaInput> bySource) {
+        var newDescription = descriptionToApply(node, bySource);
+        if (newDescription == null) return null;
+        return node.transformExtension(b -> b.description(newDescription));
+    }
+
+    private static List<InputValueDefinition> rewriteInputValues(List<InputValueDefinition> inputs, Map<String, SchemaInput> bySource) {
+        var next = new ArrayList<InputValueDefinition>(inputs.size());
+        boolean changed = false;
+        for (var input : inputs) {
+            var noted = noteInputValue(input, bySource);
+            if (noted != null) {
+                next.add(noted);
+                changed = true;
+            } else {
+                next.add(input);
+            }
+        }
+        return changed ? next : null;
+    }
+
+    private static List<EnumValueDefinition> rewriteEnumValues(List<EnumValueDefinition> values, Map<String, SchemaInput> bySource) {
+        var next = new ArrayList<EnumValueDefinition>(values.size());
+        boolean changed = false;
+        for (var value : values) {
+            var newValueDesc = descriptionToApply(value, bySource);
+            if (newValueDesc != null) {
+                next.add(value.transform(b -> b.description(newValueDesc)));
+                changed = true;
+            } else {
+                next.add(value);
+            }
+        }
+        return changed ? next : null;
     }
 
     private static List<FieldDefinition> rewriteFields(List<FieldDefinition> fields, Map<String, SchemaInput> bySource) {

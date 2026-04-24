@@ -23,7 +23,14 @@ final class InMemoryRegistry {
 
     static TypeDefinitionRegistry of(Map<String, String> sourceToSdl) {
         var builder = MultiSourceReader.newMultiSourceReader();
-        sourceToSdl.forEach((source, sdl) -> builder.reader(new StringReader(sdl), source));
+        sourceToSdl.forEach((source, sdl) -> {
+            // Terminate each part with a newline so MultiSourceReader's source-name
+            // tracking switches cleanly between inputs. Without this, unterminated
+            // SDL runs through into the next source and the AST gets attributed to
+            // the wrong source-name (applier map lookups then miss).
+            var terminated = sdl.endsWith("\n") ? sdl : sdl + "\n";
+            builder.reader(new StringReader(terminated), source);
+        });
         try (var multi = builder.trackData(true).build()) {
             var document = new Parser().parseDocument(
                 ParserEnvironment.newParserEnvironment()

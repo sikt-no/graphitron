@@ -5,18 +5,23 @@ import graphql.language.Directive;
 import graphql.language.DirectiveDefinition;
 import graphql.language.DirectiveLocation;
 import graphql.language.EnumTypeDefinition;
+import graphql.language.EnumTypeExtensionDefinition;
 import graphql.language.EnumValueDefinition;
 import graphql.language.FieldDefinition;
 import graphql.language.InputObjectTypeDefinition;
+import graphql.language.InputObjectTypeExtensionDefinition;
 import graphql.language.InputValueDefinition;
 import graphql.language.InterfaceTypeDefinition;
+import graphql.language.InterfaceTypeExtensionDefinition;
 import graphql.language.NonNullType;
 import graphql.language.ObjectTypeDefinition;
+import graphql.language.ObjectTypeExtensionDefinition;
 import graphql.language.SDLDefinition;
 import graphql.language.SourceLocation;
 import graphql.language.StringValue;
 import graphql.language.TypeName;
 import graphql.language.UnionTypeDefinition;
+import graphql.language.UnionTypeExtensionDefinition;
 import graphql.schema.idl.TypeDefinitionRegistry;
 
 import java.util.ArrayList;
@@ -76,11 +81,20 @@ public final class TagApplier {
     private static void collectReplacement(
         SDLDefinition<?> def, Map<String, SchemaInput> bySource, List<Replacement> out
     ) {
+        // Order matters: more-specific extension cases must come before their base
+        // type arms so the switch dispatches to transformExtension() (which returns
+        // the extension type) rather than transform() (which would downgrade an
+        // extension to a plain definition and break registry.add's dispatch).
         SDLDefinition<?> transformed = switch (def) {
+            case ObjectTypeExtensionDefinition ext -> transformObjectExtension(ext, bySource);
             case ObjectTypeDefinition obj -> transformObject(obj, bySource);
+            case InterfaceTypeExtensionDefinition ext -> transformInterfaceExtension(ext, bySource);
             case InterfaceTypeDefinition itf -> transformInterface(itf, bySource);
+            case InputObjectTypeExtensionDefinition ext -> transformInputObjectExtension(ext, bySource);
             case InputObjectTypeDefinition inp -> transformInputObject(inp, bySource);
+            case EnumTypeExtensionDefinition ext -> transformEnumExtension(ext, bySource);
             case EnumTypeDefinition enm -> transformEnum(enm, bySource);
+            case UnionTypeExtensionDefinition ext -> transformUnionExtension(ext, bySource);
             case UnionTypeDefinition uni -> transformUnion(uni, bySource);
             default -> null;
         };
@@ -95,14 +109,57 @@ public final class TagApplier {
         return node.transform(b -> b.fieldDefinitions(rewritten));
     }
 
+    private static ObjectTypeExtensionDefinition transformObjectExtension(ObjectTypeExtensionDefinition node, Map<String, SchemaInput> bySource) {
+        var rewritten = rewriteFields(node.getFieldDefinitions(), bySource);
+        if (rewritten == null) return null;
+        return node.transformExtension(b -> b.fieldDefinitions(rewritten));
+    }
+
     private static InterfaceTypeDefinition transformInterface(InterfaceTypeDefinition node, Map<String, SchemaInput> bySource) {
         var rewritten = rewriteFields(node.getFieldDefinitions(), bySource);
         if (rewritten == null) return null;
         return node.transform(b -> b.definitions(rewritten));
     }
 
+    private static InterfaceTypeExtensionDefinition transformInterfaceExtension(InterfaceTypeExtensionDefinition node, Map<String, SchemaInput> bySource) {
+        var rewritten = rewriteFields(node.getFieldDefinitions(), bySource);
+        if (rewritten == null) return null;
+        return node.transformExtension(b -> b.definitions(rewritten));
+    }
+
     private static InputObjectTypeDefinition transformInputObject(InputObjectTypeDefinition node, Map<String, SchemaInput> bySource) {
-        var inputs = node.getInputValueDefinitions();
+        var next = rewriteInputValues(node.getInputValueDefinitions(), bySource);
+        return next == null ? null : node.transform(b -> b.inputValueDefinitions(next));
+    }
+
+    private static InputObjectTypeExtensionDefinition transformInputObjectExtension(InputObjectTypeExtensionDefinition node, Map<String, SchemaInput> bySource) {
+        var next = rewriteInputValues(node.getInputValueDefinitions(), bySource);
+        return next == null ? null : node.transformExtension(b -> b.inputValueDefinitions(next));
+    }
+
+    private static EnumTypeDefinition transformEnum(EnumTypeDefinition node, Map<String, SchemaInput> bySource) {
+        var next = rewriteEnumValues(node.getEnumValueDefinitions(), bySource);
+        return next == null ? null : node.transform(b -> b.enumValueDefinitions(next));
+    }
+
+    private static EnumTypeExtensionDefinition transformEnumExtension(EnumTypeExtensionDefinition node, Map<String, SchemaInput> bySource) {
+        var next = rewriteEnumValues(node.getEnumValueDefinitions(), bySource);
+        return next == null ? null : node.transformExtension(b -> b.enumValueDefinitions(next));
+    }
+
+    private static UnionTypeDefinition transformUnion(UnionTypeDefinition node, Map<String, SchemaInput> bySource) {
+        var tag = tagToApply(node, bySource);
+        if (tag == null) return null;
+        return node.transform(b -> b.directives(withTag(node.getDirectives(), tag)));
+    }
+
+    private static UnionTypeExtensionDefinition transformUnionExtension(UnionTypeExtensionDefinition node, Map<String, SchemaInput> bySource) {
+        var tag = tagToApply(node, bySource);
+        if (tag == null) return null;
+        return node.transformExtension(b -> b.directives(withTag(node.getDirectives(), tag)));
+    }
+
+    private static List<InputValueDefinition> rewriteInputValues(List<InputValueDefinition> inputs, Map<String, SchemaInput> bySource) {
         var next = new ArrayList<InputValueDefinition>(inputs.size());
         boolean changed = false;
         for (var input : inputs) {
@@ -114,11 +171,10 @@ public final class TagApplier {
                 next.add(input);
             }
         }
-        return changed ? node.transform(b -> b.inputValueDefinitions(next)) : null;
+        return changed ? next : null;
     }
 
-    private static EnumTypeDefinition transformEnum(EnumTypeDefinition node, Map<String, SchemaInput> bySource) {
-        var values = node.getEnumValueDefinitions();
+    private static List<EnumValueDefinition> rewriteEnumValues(List<EnumValueDefinition> values, Map<String, SchemaInput> bySource) {
         var next = new ArrayList<EnumValueDefinition>(values.size());
         boolean changed = false;
         for (var value : values) {
@@ -130,13 +186,7 @@ public final class TagApplier {
                 next.add(value);
             }
         }
-        return changed ? node.transform(b -> b.enumValueDefinitions(next)) : null;
-    }
-
-    private static UnionTypeDefinition transformUnion(UnionTypeDefinition node, Map<String, SchemaInput> bySource) {
-        var tag = tagToApply(node, bySource);
-        if (tag == null) return null;
-        return node.transform(b -> b.directives(withTag(node.getDirectives(), tag)));
+        return changed ? next : null;
     }
 
     private static List<FieldDefinition> rewriteFields(List<FieldDefinition> fields, Map<String, SchemaInput> bySource) {

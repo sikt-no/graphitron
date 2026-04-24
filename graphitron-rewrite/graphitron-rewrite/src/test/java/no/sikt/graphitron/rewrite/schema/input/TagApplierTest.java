@@ -243,6 +243,36 @@ class TagApplierTest {
     }
 
     @Test
+    void extendTypeFieldGainsTagAndStaysInExtensionsMap() {
+        // Base type in one source, extension with new fields in another; only the
+        // extension source carries a tag. Asserts both that the extension's field
+        // picks up @tag and that the remove+add round-trip preserves the extension's
+        // identity (it stays in objectTypeExtensions(), not moved into types()).
+        var registry = InMemoryRegistry.of(Map.of(
+            "base.graphqls", "type Foo { id: ID! }",
+            "ext.graphqls", "extend type Foo { bar: String }"
+        ));
+        var inputs = SchemaInputAttribution.build(List.of(
+            new SchemaInput("base.graphqls", Optional.empty(), Optional.empty()),
+            new SchemaInput("ext.graphqls", Optional.of("enrolment"), Optional.empty())
+        ));
+
+        TagApplier.apply(registry, inputs);
+
+        // Base field is untouched (untagged source).
+        var base = (ObjectTypeDefinition) registry.getType("Foo").orElseThrow();
+        assertThat(base.getFieldDefinitions().getFirst().getDirectives()).isEmpty();
+
+        // Extension's new field carries the tag, and the extension is still in
+        // the extensions map with the replacement in place.
+        var extensions = registry.objectTypeExtensions().get("Foo");
+        assertThat(extensions).hasSize(1);
+        var extension = extensions.getFirst();
+        assertThat(extension.getFieldDefinitions()).hasSize(1);
+        assertThat(tagValue(extension.getFieldDefinitions().getFirst())).isEqualTo("enrolment");
+    }
+
+    @Test
     void tagValueWithQuotesAndUnicodeRoundTrips() {
         var registry = InMemoryRegistry.of(Map.of(
             "t.graphqls", "type Foo { id: ID! }"

@@ -27,9 +27,9 @@ public final class SchemaInputAttribution {
             var entry = inputs.get(i);
             var prior = map.putIfAbsent(entry.sourceName(), entry);
             if (prior != null) {
-                int priorIdx = indexOf(inputs, prior);
+                int priorIdx = inputs.indexOf(prior);
                 throw new SchemaInputException(
-                    "source '" + entry.sourceName() + "' is declared in two <schemaInput> entries: "
+                    "source '" + entry.sourceName() + "' is declared in two SchemaInput entries: "
                         + "#" + priorIdx + " with " + describe(prior)
                         + " and #" + i + " with " + describe(entry)
                         + ". Each source must belong to exactly one entry."
@@ -37,15 +37,6 @@ public final class SchemaInputAttribution {
             }
         }
         return map;
-    }
-
-    private static int indexOf(List<SchemaInput> inputs, SchemaInput target) {
-        for (int i = 0; i < inputs.size(); i++) {
-            if (inputs.get(i) == target) {
-                return i;
-            }
-        }
-        return -1;
     }
 
     private static String describe(SchemaInput input) {

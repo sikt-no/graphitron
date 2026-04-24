@@ -64,11 +64,22 @@ public class GraphQLRewriteGenerator {
      * name once the static path retires.
      */
     public void run() {
+        runPipeline(loadAttributedRegistry());
+    }
+
+    /**
+     * Package-private so tests can exercise the attribution + load + apply
+     * pipeline without incurring the full emission stage (which wants
+     * {@link RewriteConfig} output paths and a classifiable schema). Production
+     * callers always go through {@link #run()}; the one-liner above guarantees
+     * this method is what {@code run} feeds into {@link #runPipeline}.
+     */
+    graphql.schema.idl.TypeDefinitionRegistry loadAttributedRegistry() {
         var bySource = SchemaInputAttribution.build(ctx.schemaInputs());
         var registry = RewriteSchemaLoader.load(bySource.keySet());
         TagApplier.apply(registry, bySource);
         DescriptionNoteApplier.apply(registry, bySource);
-        runPipeline(registry);
+        return registry;
     }
 
     public static void generate() {
