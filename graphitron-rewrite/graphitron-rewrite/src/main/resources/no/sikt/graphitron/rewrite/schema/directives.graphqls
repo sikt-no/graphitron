@@ -1,0 +1,292 @@
+"""Create a new resolver and a separate query for fetching of the annotated field."""
+directive @splitQuery on FIELD_DEFINITION
+
+"""
+Any field with this directive set is exempt from code generation. This should be used on resolvers that are to be manually implemented.
+Can be set on an input field to prevent generation of record mappers.
+"""
+directive @notGenerated on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | INTERFACE | UNION
+
+"""Connect this type to a jOOQ table. All the containing fields will by default be assumed to be located there."""
+directive @table(name: String) on OBJECT | INPUT_OBJECT | INTERFACE
+
+"""
+The default assumption for generating fields is that the name of each schema field corresponds exactly to a jOOQ table record field
+in the related jOOQ table (set by @table), or a field in a Java record if that is used instead.
+This directive overrides the assumption, allowing to correctly map schema field names that diverge from what is available in the record.
+
+The second parameter is used exclusively for Java records, and is kept separate to support cases where Java and jOOQ records need to interact.
+It defaults to the value of the first parameter.
+"""
+directive @field(name: String!, javaName: String) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE
+
+"""
+The @externalField directive indicates that the annotated field is
+retrieved using a static method implemented in Java.
+This is typically used when the field's value requires custom logic implemented in Java."
+
+For more information, see documentation [here](https://github.com/sikt-no/graphitron/tree/main/graphitron-codegen-parent/graphitron-java-codegen/README.md#custom-field-logic-with-externalfield).
+"""
+directive @externalField on FIELD_DEFINITION
+
+"""Links this schema enum to a Java enum class. Available values are set in the plugin configuration."""
+directive @enum(enumReference: ExternalCodeReference!) on ENUM
+
+"""
+Use an external service to do the DB-operations.
+The signature of the method must match the inputs of the mutation or query.
+Available values are set in the plugin configuration.
+
+Context arguments must be added to the GraphQLContext at run-time.
+"""
+directive @service(service: ExternalCodeReference!, contextArguments: [String!]) on FIELD_DEFINITION
+
+"""
+The @error directive serves to map specific Java exceptions to GraphQL errors.
+This directive is applied to error types in the schema and accepts a list of
+handlers with parameters, specifying how various exceptions should be mapped.
+"""
+directive @error(handlers: [ErrorHandler!]!) on OBJECT
+
+"""
+Defines the handlers for the @error directive. Each handler has properties
+which help to map exceptions to GraphQL errors.
+"""
+input ErrorHandler {
+  """
+  Determines which error handler to use. DATABASE and GENERIC are the two options
+  currently available.
+  """
+  handler: ErrorHandlerType!
+
+  """
+  Specifies the fully qualified name of the exception class. Required for the
+  GENERIC handler and defaults to org.jooq.exception.DataAccessException if not
+  provided for the DATABASE handler.
+  """
+  className: String
+
+  """
+  For the DATABASE handler, this is the database error code associated with the exception.
+  Not used for the GENERIC handler.
+  """
+  code: String
+
+  """
+  For the DATABASE handler, this is the SQL state code (e.g. "23503" for foreign key violation).
+  SQL state codes are standardized and work across database vendors.
+  Can be used together with or instead of 'code'.
+  """
+  sqlState: String
+
+  """
+  A string that the exception message must contain in order to be handled.
+  If not present, the handler will be used for all exceptions of the specified class.
+  """
+  matches: String
+
+  """
+  Provides a description of the error to be returned to the user. If not provided,
+  the exception message will be used.
+  """
+  description: String
+}
+
+"""
+Determines the type of the error handler to use.
+"""
+enum ErrorHandlerType {
+  GENERIC,
+  DATABASE
+}
+
+"""
+Helps create connections between tables where a simple implicit join would be insufficient.
+In addition, this directive permits fields to be mapped to different tables than their surrounding object.
+If neither table or key are provided and none can be automatically inferred, the condition is assumed to be sufficient to complete the join.
+"""
+directive @reference(
+  """The ordered list of reference elements composes the path from the table of this type to the table corresponding to the type of the field."""
+  path: [ReferenceElement!]!
+) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
+
+"""
+Similar to the reference directive, but for fields returning data from multiple tables.
+"""
+directive @multitableReference(
+    routes: [ReferencesForType!]
+) on FIELD_DEFINITION
+
+input ReferencesForType {
+    "Name of the GraphQL type the reference path should apply to. This name is case sensitive."
+    typeName: String!
+
+    "The ordered list of reference elements composes the path from the table of this type to the table corresponding to the type specified in the typeName parameter."
+    path: [ReferenceElement!]!
+}
+
+"""Adjust constraints for this field, argument or input field."""
+directive @condition(
+  """Condition to be used. Available values are set in the plugin configuration."""
+  condition: ExternalCodeReference,
+  """If true, this condition should be used instead of the usual checks that are generated."""
+  override: Boolean = false,
+  """Arguments to include from the GraphQLContext. Context arguments must be added to the GraphQLContext at run-time."""
+  contextArguments: [String!]
+) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
+
+directive @lookupKey on ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
+directive @mutation(typeName: MutationType!) on FIELD_DEFINITION
+
+"""
+Marks a list field as a Relay cursor-paginated connection. The rewrite pipeline synthesizes
+Connection, Edge, and PageInfo types and generates keyset-based pagination code.
+If pagination arguments (first, after, last, before) are not already present on the field,
+forward-pagination arguments (first: Int, after: String) are added automatically.
+"""
+directive @asConnection(
+  """Default page size when the client omits the 'first' argument."""
+  defaultFirstValue: Int = 100
+  """Override the generated Connection type name (default: {ParentType}{FieldName}Connection)."""
+  connectionName: String
+) on FIELD_DEFINITION
+
+"""Handle this input argument as orderBy functionality"""
+directive @orderBy on ARGUMENT_DEFINITION
+
+"""Connect this enum value to an index with the given name. Deprecated: use @order(index:) instead."""
+directive @index(name: String) on ENUM_VALUE
+
+"""Connect this enum value to a sorting specification. Exactly one of index, fields, or primaryKey must be set."""
+directive @order(
+  """Name of the database index to use"""
+  index: String
+  """Field(s) to sort by, with optional collation"""
+  fields: [FieldSort!]
+  """Use primary key fields for sorting"""
+  primaryKey: Boolean = false
+) on ENUM_VALUE
+
+"""Field sort specification for @order and @defaultOrder directives"""
+input FieldSort {
+  """Database field name (as defined in the jOOQ table)"""
+  name: String!
+  """Collation to apply (e.g., "xdanish_ai"). Database-specific."""
+  collate: String
+}
+
+"""
+Specifies the default sort order for this field when no @orderBy input is provided.
+Uses a database index, field names, or primary key for consistent, efficient sorting.
+If @orderBy input is also present and the user provides an orderBy value, that takes precedence.
+Exactly one of index, fields, or primaryKey must be set.
+"""
+directive @defaultOrder(
+  """Name of the database index to use for sorting"""
+  index: String
+  """Field(s) to sort by, with optional collation"""
+  fields: [FieldSort!]
+  """Use primary key fields for sorting"""
+  primaryKey: Boolean = false
+  """Sort direction (default: ASC)"""
+  direction: SortDirection = ASC
+) on FIELD_DEFINITION
+
+enum SortDirection { ASC, DESC }
+
+"""Wrap type in the given Java record. Currently, this can only be used with services."""
+directive @record(record: ExternalCodeReference) on OBJECT | INPUT_OBJECT
+
+enum MutationType { UPDATE, DELETE, INSERT, UPSERT }
+
+input ExternalCodeReference {
+    name: String @deprecated(reason: "Fases ut til fordel for `class`"),
+    """Navnet på klassen man ønsker å referere til.
+
+    Dersom pakken klassen finnes i er importert i `externalReferences` i graphitron-konfigurasjonen så holder det med det forenklede navnet, ellers må det fullstendige navnet (fqcn) oppgis."""
+    className: String
+    """Navnet på metoden man ønsker å referere til."""
+    method: String
+}
+
+input ReferenceElement {
+  """The jOOQ table to connect to."""
+  table: String,
+  """The key to use to create this reference."""
+  key: String,
+  """Extra condition for this reference. Available values are set in the plugin configuration."""
+  condition: ExternalCodeReference
+}
+
+directive @discriminate(
+  """Column that should be used to decide which subtype an object belongs to"""
+  on: String!
+) on INTERFACE | UNION
+
+directive @discriminator(
+  """The descriminator value that means an object belongs to this subtype"""
+  value: String!
+) on OBJECT
+
+directive @node(
+  """
+  Value that identifies the type. It is embedded in the ID, and indicates where to look for the object identified by the ID.
+  If nothing is specified here, we use the name of the type.
+  Setting typeId can be set when you want a shorter ID, or an ID that remains the same even if the name of the type changes.
+  """
+  typeId: String
+
+  """
+  Defines the order of the primary or unique key columns in the node ID.
+  These columns must correspond to the primary key or another unique key defined in the database schema.
+
+  If you do not specify keyColumns, we use the primary key in the database and the order set there.
+  Note that in such a case, changing the primary key will cause the IDs to change, which can be undesirable.
+  """
+  keyColumns: [String!]
+) on OBJECT
+
+"""
+Specifies that the field is a globally unique ID in accordance with our implementation of [Global Object Identification](https://graphql.org/learn/global-object-identification/).
+If used as a reference in jOOQ record input types, the primary or unique key the foreign targets must match the key defined in the referenced type's @node-configuration.
+"""
+directive @nodeId(
+  """
+  Name of the type the ID belongs to (case-sensitive). The type must have the @node directive set.
+
+  This parameter is optional - if omitted, Graphitron will deduce the node type as follows:
+  * For object fields without the @reference directive, uses the containing type (if it is a node type)
+  * For fields with the @reference directive or jOOQ record input fields, uses the node type with the same table (if unambiguous)
+  """
+  typeName: String
+) on FIELD_DEFINITION | INPUT_FIELD_DEFINITION | ARGUMENT_DEFINITION
+
+
+"""
+Specifies that the table that is used on the field should be the jOOQ table returned from the specified tableMethod
+"""
+directive @tableMethod(tableMethodReference: ExternalCodeReference!, contextArguments: [String!]) on FIELD_DEFINITION
+
+"""
+Specifies how fields should be resolved for nested types. This would typically be used with non-resolvable federation entities.
+"""
+directive @experimental_constructType(
+  """
+  The selection argument specifies how we can construct the type of this field.
+  The key side references the field in the type we are constructing while the value side denotes the column we want to fetch the data from.
+  This is similar to what goes inside a selection set in GraphQL. The differences are:
+  - Does not support arguments
+  - Does not support variables
+  - Does not support nesting
+
+  Examples:
+  ```graphql
+  @experimental_constructType(selection: "firstName: FIRST_NAME, lastName: LAST_NAME")
+  @experimental_constructType(selection: \"""
+      first_name,
+      surname: LAST_NAME
+  \""")
+  ```
+  """
+  selection: String
+) on FIELD_DEFINITION
