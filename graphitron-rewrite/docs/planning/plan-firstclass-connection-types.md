@@ -2,7 +2,7 @@
 
 > **Status:** Spec
 >
-> First instalment (Phases 1-3) shipped: `ConnectionType` / `EdgeType` /
+> First installment (Phases 1-3) shipped: `ConnectionType` / `EdgeType` /
 > `PageInfoType` are first-class `GraphitronType` variants, `ConnectionSynthesis`
 > is deleted, `FieldWrapper.Connection` is down to per-site metadata. The original
 > driver — `schema.types()` lying about what the generator emits — is resolved
@@ -76,12 +76,20 @@ Directive-driven Connection / Edge / PageInfo types are built by the
 classifier and stored on their respective variants' `schemaType`, but the
 `assembled GraphQLSchema` the bundle returns does not contain them.
 `assembled.getType("QueryStoresConnection")` returns `null` for directive-driven
-connections. Nothing downstream reads assembled for synthesised names today, so
-it's latent — but any future code that does will silently miss them.
+connections.
+
+Grep confirms no downstream consumer reads `assembled` for synthesised names
+today — the validator doesn't touch it at all, and the four schema emitters
+that do read it (`ObjectTypeGenerator`, `EnumTypeGenerator`,
+`InputTypeGenerator`, `GraphitronSchemaClassGenerator`) are exactly the ones
+migrating to `schema.types()` in Phase 4 / 6. So D3 is not fixing a bug today;
+it's buying internal consistency — the model and the assembled schema agreeing
+on what types exist.
 
 *Fix:* rebuild the assembled schema with `additionalType(...)` calls for
-synthesised types (and carrier-rewritten parent types from D2). Post-rebuild,
-the model and the assembled schema agree on what types exist.
+synthesised types (and carrier-rewritten parent types from D2). Cheap if D2 is
+already doing a rebuild; separable from D2 if the rebuild spike blocks (see
+Phase 5's fallback).
 
 ### D4 — enums and inputs still bypass the classifier for emission
 
@@ -157,7 +165,11 @@ types. `ObjectTypeGenerator.generate` loses its fallback iteration over
 
 **Test coverage.** Classifier test: plain `type Foo { bar: String }` classifies
 as the new variant. Snapshot diff on the test-spec's generated `schema/`
-directory before/after — zero diff (same TypeSpecs produced).
+directory before/after — zero diff (same TypeSpecs produced). Zero-diff holds
+because `ObjectTypeGenerator.generate` already sorts its output list
+alphabetically by `TypeSpec::name` before returning, so the switch from
+"`schema.types()` then `assembled` fallback" to "`schema.types()` only"
+doesn't shift emission order.
 
 **Risk.** Low. The variant is additive; most code paths are
 exhaustive-switch handlers that fail to compile if missed.
@@ -173,6 +185,12 @@ bare-list return type with a Connection reference and appending `first` /
 `.additionalType(...)` for synthesised types. Emission reads the rewritten
 assembled schema directly; no directive probing.
 
+D2 (carrier rewrite) and D3 (assembled contains synthesised types) share a
+rebuilt schema, so they bundle into one phase by default. They're separable
+in principle — D2 transforms field definitions, D3 registers extra types —
+so the phase has a documented fallback if the rebuild spike forces them
+apart; see *Fallback* below.
+
 **Touch points.**
 
 - `GraphitronSchemaBuilder.buildBundle` — after `promoteConnectionTypes`
@@ -182,8 +200,8 @@ assembled schema directly; no directive probing.
      type → Connection `typeRef`, appended pagination args).
   2. Build a new `GraphQLSchema` — either
      `GraphQLSchema.newSchema(existing)...additionalType(synthConn)...` or
-     via `SchemaTransformer`. Prototype both; pick the shorter shape that
-     preserves applied directives on rebuilt parents.
+     via `SchemaTransformer`. The spike decides which; see *Spike
+     invariants* below.
   3. Return the rebuilt `assembled` in the `Bundle`.
 - `ObjectTypeGenerator.buildFieldDefinition` — delete the
   `field.hasAppliedDirective("asConnection")` probe, `resolveConnectionName`
@@ -197,6 +215,33 @@ assembled schema directly; no directive probing.
 - `AppliedDirectiveEmitter` still filters `@asConnection` as a generator-only
   directive; the carrier's applied-directive list won't leak it.
 
+**Spike invariants.** Before committing to a rebuild approach, a spike asserts
+three mechanical invariants against the rewrite test-spec schema; any failure
+bumps to the next approach:
+
+1. `assembled.getCodeRegistry()` is identical to the pre-rebuild registry
+   (or trivially reconstructible from it).
+2. Every `GraphQLAppliedDirective` on every type *not* touched by the
+   transform is preserved — `assembled.getObjectType("Store").getAppliedDirectives()`
+   equals its pre-rebuild value.
+3. Field ordering within untouched types is stable (snapshot diff flags any
+   reordering).
+
+The approach ladder: start with `GraphQLSchema.newSchema(existing)...additionalType(...)`;
+fall back to `SchemaTransformer` if any invariant fails. If `SchemaTransformer`
+also fails on any invariant, invoke the *Fallback* below.
+
+**Fallback: D2 without D3.** If no rebuild approach clears the invariants,
+ship D2 alone: rewrite the carrier's return type by continuing to read
+`FieldWrapper.Connection` + `ConnectionType` at emit time, but move the
+rewrite out of `buildFieldDefinition` into a classifier-owned transform that
+writes to a parallel `Map<FieldCoordinates, GraphQLFieldDefinition>` on the
+bundle. Emission reads that map first, falling back to the original
+`GraphQLFieldDefinition` — the probe goes away, the directive isn't read at
+emit time, but assembled stays stale. D3 becomes a follow-up once graphql-java
+offers a workable rebuild, or stays as permanent latent debt (grep-justified
+per the D3 section).
+
 **Test coverage.** Classifier test: after `buildBundle`, a carrier like
 `stores: [Store!]! @asConnection` has
 `assembled.getObjectType("Query").getFieldDefinition("stores")` returning a
@@ -204,11 +249,12 @@ field whose type resolves to `QueryStoresConnection!` with `first` / `after`
 arguments; `assembled.getType("QueryStoresConnection")` returns the
 synthesised object type. Existing execution tests cover end-to-end; a
 targeted `SchemaPrinter` snapshot guards against drift in SDL-level output.
+If the *Fallback* path ships, the second assertion (`getType` returns the
+synthesised type) is deferred and noted in the commit.
 
-**Risk.** Medium. Graphql-java's schema-rebuild surface is fussy: every type
-reference in the rebuilt schema must resolve; applied directives on rebuilt
-parents need to be preserved; the code registry must survive. Biggest
-unknown — worth a spike before committing.
+**Risk.** Medium. Graphql-java's schema-rebuild surface is fussy. The spike
+invariants make the go/no-go mechanical; the fallback keeps Phase 5 shippable
+even if both rebuild approaches fail.
 
 ## Phase 6 — model-driven enum and input emission (closes D4)
 
@@ -226,9 +272,15 @@ unknown — worth a spike before committing.
 - `EnumTypeGenerator.generate(GraphitronSchema)` — iterate `schema.types()`
   for `EnumType` variants; read `schemaType()` for emission.
 - `InputTypeGenerator.generate(GraphitronSchema)` — iterate `schema.types()`
-  for `InputType` / `TableInputType` variants. Move the
-  `InputDirectiveInputTypes.NAMES` filter into the classifier so the
-  generator doesn't need an `assembled` parameter.
+  for `InputType` / `TableInputType` variants.
+- `TypeBuilder.classifyType` skips `InputDirectiveInputTypes.NAMES` types
+  entirely — they never enter `schema.types()`. Grep confirms these five
+  internal directive-argument types (`ErrorHandler`, `ReferencesForType`,
+  `FieldSort`, `ExternalCodeReference`, `ReferenceElement`) are only read
+  by the two schema emitters that currently filter them out, so skipping
+  at classify time is safe. No `SkipEmissionInputType` variant needed.
+  `InputDirectiveInputTypes.java` stays as a referenceable constant for
+  the classifier's skip check.
 - `GraphitronSchemaClassGenerator.planFor` — enum fallback branch drops;
   enums now come through `schema.types()`.
 - `GraphQLRewriteGenerator.runPipeline` — emitter call sites simplify.
@@ -238,7 +290,7 @@ variant; snapshot diff on generated enum / input TypeSpecs.
 
 **Risk.** Low. Structural parallel to Phase 4; no novel mechanism.
 
-## Phase 7 — common `schemaType()` accessor (optional)
+## Phase 7 — common `schemaType()` accessor (decide after Phase 6)
 
 **Scope.** Factor the per-variant `schemaType()` accessor into a method on
 `GraphitronType`. Removes duplication across variants that carry their
@@ -257,8 +309,16 @@ graphql-java form.
 **Test coverage.** None new — pure refactor, existing tests verify.
 
 **Risk.** Low. Medium touch (constructor-arity break across the whole
-`GraphitronType` hierarchy). Do only if Phase 4-6 surface duplication worth
-collapsing; may not be worth the churn.
+`GraphitronType` hierarchy).
+
+**Decision gate.** Reviewer flagged that "optional" is likely optimistic: by
+end of Phase 6 there are at least five variants carrying a `schemaType`
+field (`ConnectionType`, `EdgeType`, `PageInfoType`, `PojoObjectType`,
+`EnumType`). Five copies of the same accessor shape is typically the
+motivating duplication. Leaving this as a post-Phase-6 decision rather than
+a hard commitment lets the actual duplication speak; if by then the accessor
+is used in two places in the generator and that's it, skip — if it's used in
+five and they all look the same, ship.
 
 ## Order + gating
 
@@ -270,8 +330,9 @@ Strict order on the closure phases:
    change; deserves its own commit.
 3. **Phase 6** (D4) — enum + input emitters flip. Independent of 4-5 but
    lands cleaner after 4.
-4. **Phase 7** — optional `schemaType()` uplift. Skip unless the previous
-   phases reveal motivating duplication.
+4. **Phase 7** — `schemaType()` uplift. Decide after Phase 6 review; see
+   the phase's decision gate on whether duplication by that point makes
+   this effectively required.
 
 Each phase leaves the build green and runtime behaviour byte-identical on
 existing fixtures.
