@@ -8,6 +8,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | Item | Status | Plan |
 |---|---|---|
+| Rebase and squash rewrite branch onto main | Ready | [plan](plan-history-squash.md) |
 | `@nodeId` + `@node` directive support | Ready | [plan](plan-nodeid-directives.md) |
 | `BatchKey.ObjectBased` removal | Spec | [plan](plan-batchkey-remove-objectbased.md) |
 | Service-backed and method-backed root fetchers | Spec | [plan](plan-service-root-fetchers.md) |
