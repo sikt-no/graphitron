@@ -3,8 +3,11 @@ package no.sikt.graphitron.rewrite.platformidfixture.tables;
 import no.sikt.graphitron.rewrite.platformidfixture.Public;
 import no.sikt.graphitron.rewrite.platformidfixture.tables.records.BarRecord;
 
+import no.sikt.graphitron.rewrite.platformidfixture.Keys;
+
 import org.jooq.Condition;
 import org.jooq.Field;
+import org.jooq.ForeignKey;
 import org.jooq.Name;
 import org.jooq.Schema;
 import org.jooq.SelectField;
@@ -14,6 +17,8 @@ import org.jooq.TableOptions;
 import org.jooq.impl.DSL;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
+
+import java.util.List;
 
 /**
  * Hand-written jOOQ table that mimics the shape the custom {@code KjerneJooqGenerator} emits for
@@ -62,6 +67,11 @@ public class Bar extends TableImpl<BarRecord> {
 
     public Bar() {
         this(DSL.name("bar"), null);
+    }
+
+    @Override
+    public List<ForeignKey<BarRecord, ?>> getReferences() {
+        return List.of(Keys.BAR__BAR_ID_1_FKEY);
     }
 
     public SelectField<String> getId() {

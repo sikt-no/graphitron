@@ -1189,6 +1189,7 @@ class FieldBuilder {
                 }
                 case InputField.PlatformIdField ignored -> {}
                 case InputField.NodeIdField ignored -> {}
+                case InputField.NodeIdReferenceField ignored -> {}
             }
         }
     }

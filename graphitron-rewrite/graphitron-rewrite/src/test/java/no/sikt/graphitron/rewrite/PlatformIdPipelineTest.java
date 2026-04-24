@@ -233,6 +233,68 @@ class PlatformIdPipelineTest {
         tc.assertions.accept(TestSchemaHelper.buildSchema(tc.sdl, FIXTURE_CTX));
     }
 
+    // ===== Input reference side =====
+
+    enum InputReferenceCase {
+        REFERENCE_TO_NODE_TYPE(
+            "input `relatedId: ID! @nodeId(typeName: 'Baz')` on bar table → NodeIdReferenceField via auto-inferred bar→baz FK",
+            """
+            type Baz @table(name: "baz") { id: ID! }
+            input Foo @table(name: "bar") { relatedId: ID! @nodeId(typeName: "Baz") }
+            type Query { x: String }
+            """,
+            schema -> {
+                var t = (GraphitronType.TableInputType) schema.type("Foo");
+                var f = (InputField.NodeIdReferenceField) t.inputFields().get(0);
+                assertThat(f.typeName()).isEqualTo("Baz");
+                assertThat(f.nodeTypeId()).isEqualTo("Baz");
+                assertThat(f.nodeKeyColumns()).extracting(ColumnRef::sqlName)
+                    .containsExactly("id");
+                assertThat(f.joinPath()).hasSize(1);
+            }),
+
+        TARGET_NOT_A_NODE_TYPE(
+            "input `relatedId: ID! @nodeId(typeName: 'Qux')` where Qux is not a NodeType → UnclassifiedType",
+            """
+            type Qux @table(name: "qux") { name: String }
+            input Foo @table(name: "bar") { relatedId: ID! @nodeId(typeName: "Qux") }
+            type Query { x: String }
+            """,
+            schema -> assertThat(schema.type("Foo")).isInstanceOf(GraphitronType.UnclassifiedType.class)),
+
+        LIST_VARIANT(
+            "list `[ID!]!` with @nodeId(typeName:) → UnclassifiedType (list-gate applies before @nodeId check)",
+            """
+            type Baz @table(name: "baz") { id: ID! }
+            input Foo @table(name: "bar") { relatedId: [ID!]! @nodeId(typeName: "Baz") }
+            type Query { x: String }
+            """,
+            schema -> assertThat(schema.type("Foo")).isInstanceOf(GraphitronType.UnclassifiedType.class)),
+
+        NO_FK_PATH(
+            "input `relatedId: ID! @nodeId(typeName: 'Baz')` where no FK from qux to baz → UnclassifiedType (path resolver rejects)",
+            """
+            type Baz @table(name: "baz") { id: ID! }
+            input Foo @table(name: "qux") { relatedId: ID! @nodeId(typeName: "Baz") }
+            type Query { x: String }
+            """,
+            schema -> assertThat(schema.type("Foo")).isInstanceOf(GraphitronType.UnclassifiedType.class));
+
+        final String sdl;
+        final Consumer<GraphitronSchema> assertions;
+        InputReferenceCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
+            this.sdl = sdl;
+            this.assertions = assertions;
+        }
+        @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(InputReferenceCase.class)
+    void inputNodeIdReferenceClassification(InputReferenceCase tc) {
+        tc.assertions.accept(TestSchemaHelper.buildSchema(tc.sdl, FIXTURE_CTX));
+    }
+
     // ===== Output side =====
 
     enum OutputCase {
