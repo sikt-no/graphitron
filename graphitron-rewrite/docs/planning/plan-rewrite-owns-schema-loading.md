@@ -1,6 +1,6 @@
 # Plan: Rewrite owns schema loading + directive auto-injection
 
-> **Status:** Spec
+> **Status:** Ready
 >
 > First sub-item of the "Dissolve `graphitron-schema-transform` module"
 > roadmap umbrella. Prerequisite for every subsequent migration
@@ -332,6 +332,16 @@ file, ~100 LOC, plus the ~80 LOC loader + its test). Net deletion in
 the rewrite main tree: one import plus one static method reference.
 
 ## Rollout
+
+**Pre-landing consumer-pom sweep.** The new loader auto-injects
+`directives.graphqls` from rewrite's own classpath and does not
+filter the caller's schema-file list. Any consumer pom that lists
+a `directives.graphqls` path in `<userSchemaFiles>` (or its
+rewrite-equivalent once the Maven-plugin plan lands) will fail
+schema parse with "directive '@table' redefined" on first build
+after this lands. Sweep and update consumer poms to drop the
+explicit directives entry before merging. In-house-only consumers;
+no external-consumer migration window required.
 
 Post-landing, update the roadmap:
 
