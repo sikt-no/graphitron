@@ -1,6 +1,6 @@
 # Plan: Rewrite-owned Maven plugin
 
-> **Status:** Ready
+> **Status:** Done (commit 17504dd)
 >
 > Sub-item of the "Dissolve `graphitron-schema-transform` module"
 > umbrella. Lands last in the umbrella's rewrite-plumbing arc, after
