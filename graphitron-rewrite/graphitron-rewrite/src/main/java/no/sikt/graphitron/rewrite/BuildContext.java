@@ -115,6 +115,7 @@ class BuildContext {
 
     final GraphQLSchema schema;
     final JooqCatalog catalog;
+    final RewriteContext ctx;
     /**
      * Populated by {@link TypeBuilder#buildTypes()} at the end of its first pass.
      * All accesses after that point are safe; nothing reads it before it is set.
@@ -132,9 +133,14 @@ class BuildContext {
      */
     private final List<BuildWarning> warnings = new ArrayList<>();
 
-    BuildContext(GraphQLSchema schema, JooqCatalog catalog) {
+    BuildContext(GraphQLSchema schema, JooqCatalog catalog, RewriteContext ctx) {
         this.schema = schema;
         this.catalog = catalog;
+        this.ctx = ctx;
+    }
+
+    RewriteContext ctx() {
+        return ctx;
     }
 
     void addWarning(BuildWarning warning) {
@@ -600,7 +606,7 @@ class BuildContext {
      * {@link ServiceCatalog#reflectTableMethod}. Returns {@code null} when the class/method cannot
      * be determined or reflection fails — the caller adds a diagnostic error in that case.
      *
-     * <p>The deprecated {@code name:} form is resolved via {@link RewriteConfig#namedReferences()},
+     * <p>The deprecated {@code name:} form is resolved via {@link RewriteContext#namedReferences()},
      * exactly as in {@link FieldBuilder#parseExternalRef}.
      */
     private MethodRef resolveConditionRef(Map<String, Object> conditionMap) {
@@ -609,7 +615,7 @@ class BuildContext {
         if (className == null) {
             String name = Optional.ofNullable(conditionMap.get(ARG_NAME)).map(Object::toString).orElse(null);
             if (name != null) {
-                className = RewriteConfig.namedReferences().get(name);
+                className = ctx.namedReferences().get(name);
             }
         }
         if (className == null || methodName == null || svc == null) return null;
@@ -658,7 +664,7 @@ class BuildContext {
         String methodName = Optional.ofNullable(ref.get(ARG_METHOD)).map(Object::toString).orElse(null);
         if (className == null) {
             String refName = Optional.ofNullable(ref.get(ARG_NAME)).map(Object::toString).orElse(null);
-            if (refName != null) className = RewriteConfig.namedReferences().get(refName);
+            if (refName != null) className = ctx.namedReferences().get(refName);
         }
         if (className == null || methodName == null) return null;
         boolean override = argBoolean(container, DIR_CONDITION, ARG_OVERRIDE, false);

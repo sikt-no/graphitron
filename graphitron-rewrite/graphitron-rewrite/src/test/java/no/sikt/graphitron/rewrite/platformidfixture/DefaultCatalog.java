@@ -9,7 +9,7 @@ import org.jooq.impl.CatalogImpl;
  * Minimal jOOQ catalog used exclusively by platform-id pipeline tests. The layout mirrors the
  * stock jOOQ generator's output ({@code DefaultCatalog}/{@code Public}/{@code Tables}) so that
  * {@link no.sikt.graphitron.rewrite.JooqCatalog#loadDefaultCatalog} can load it by
- * reflection when tests point {@code RewriteConfig.setProperties} at this package.
+ * reflection when tests configure the jOOQ package to this package.
  *
  * <p>Contains a single table {@link no.sikt.graphitron.rewrite.platformidfixture.tables.Bar}
  * that adds legacy platform-id accessor methods ({@code getId()} / {@code getPersonId()})

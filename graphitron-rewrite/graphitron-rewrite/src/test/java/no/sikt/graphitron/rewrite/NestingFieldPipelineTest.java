@@ -6,14 +6,10 @@ import no.sikt.graphitron.rewrite.generators.TypeClassGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.FetcherRegistrationsEmitter;
 import no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions;
 import no.sikt.graphitron.rewrite.model.ChildField.NestingField;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
-import java.util.Set;
 
-import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -29,16 +25,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  * </ul>
  */
 class NestingFieldPipelineTest {
-
-    @BeforeEach
-    void setup() {
-        RewriteConfig.setProperties(Set.of(), "", "fake.code.generated", DEFAULT_JOOQ_PACKAGE, java.util.Map.of());
-    }
-
-    @AfterEach
-    void teardown() {
-        RewriteConfig.clear();
-    }
 
     private static final String SCALAR_NESTING_SDL = """
         type Film @table(name: "film") { details: FilmDetails }

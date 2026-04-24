@@ -11,7 +11,6 @@ import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
-import no.sikt.graphitron.rewrite.RewriteConfig;
 
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
@@ -62,9 +61,9 @@ public final class GraphitronSchemaClassGenerator {
 
     private GraphitronSchemaClassGenerator() {}
 
-    public static List<TypeSpec> generate(GraphQLSchema assembled, Set<String> typesWithFetchers) {
+    public static List<TypeSpec> generate(GraphQLSchema assembled, Set<String> typesWithFetchers, String outputPackage) {
         var plan = planFor(assembled);
-        String schemaPackage = RewriteConfig.outputPackage() + ".schema";
+        String schemaPackage = outputPackage + ".schema";
 
         var builderType = ClassName.get("graphql.schema", "GraphQLSchema", "Builder");
         var customizerType = ParameterizedTypeName.get(
@@ -116,9 +115,14 @@ public final class GraphitronSchemaClassGenerator {
             .build());
     }
 
-    /** Convenience overload for tests that don't exercise fetcher registration. */
+    /** Convenience overload for tests — empty fetcher set, no output-package prefix. */
     public static List<TypeSpec> generate(GraphQLSchema assembled) {
-        return generate(assembled, Set.of());
+        return generate(assembled, Set.of(), "");
+    }
+
+    /** Convenience overload for tests that pass a fetcher set but not an output-package. */
+    public static List<TypeSpec> generate(GraphQLSchema assembled, Set<String> typesWithFetchers) {
+        return generate(assembled, typesWithFetchers, "");
     }
 
     record Plan(

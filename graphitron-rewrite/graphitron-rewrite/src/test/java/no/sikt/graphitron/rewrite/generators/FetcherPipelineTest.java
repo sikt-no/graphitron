@@ -4,19 +4,14 @@ import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
-import no.sikt.graphitron.rewrite.RewriteConfig;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.generators.schema.FetcherRegistrationsEmitter;
 import no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions;
 import no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions.DataFetcherKind;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.Set;
 
-import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -29,16 +24,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@link no.sikt.graphitron.rewrite.model.GraphitronType.RootType}.
  */
 class FetcherPipelineTest {
-
-    @BeforeEach
-    void setup() {
-        RewriteConfig.setProperties(Set.of(), "", "fake.code.generated", DEFAULT_JOOQ_PACKAGE, java.util.Map.of());
-    }
-
-    @AfterEach
-    void teardown() {
-        RewriteConfig.clear();
-    }
 
     @Test
     void singleTableType_producesOneFetchersClass() {

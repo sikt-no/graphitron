@@ -4,7 +4,6 @@ import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
-import no.sikt.graphitron.rewrite.RewriteConfig;
 
 import javax.lang.model.element.Modifier;
 import java.util.List;
@@ -26,8 +25,8 @@ public final class GraphitronFacadeGenerator {
 
     private GraphitronFacadeGenerator() {}
 
-    public static List<TypeSpec> generate() {
-        String schemaPackage = RewriteConfig.outputPackage() + ".schema";
+    public static List<TypeSpec> generate(String outputPackage) {
+        String schemaPackage = outputPackage + ".schema";
         var graphQLSchema = ClassName.get("graphql.schema", "GraphQLSchema");
         var schemaBuilder = ClassName.get("graphql.schema", "GraphQLSchema", "Builder");
         var customizerType = ParameterizedTypeName.get(ClassName.get(Consumer.class), schemaBuilder);

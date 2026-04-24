@@ -2,7 +2,6 @@ package no.sikt.graphitron.rewrite.generators;
 
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.rewrite.RewriteConfig;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.JoinStep;
@@ -50,7 +49,7 @@ public final class InlineTableFieldEmitter {
      *                     recursion, where each nesting level declares its own
      *                     {@code SelectedField} local to avoid JLS §14.4.2 shadowing.
      */
-    public static CodeBlock buildSwitchArmBody(ChildField.TableField tf, String parentAlias, String sfName) {
+    public static CodeBlock buildSwitchArmBody(ChildField.TableField tf, String parentAlias, String sfName, String outputPackage, String jooqPackage) {
         if (JoinPathEmitter.hasConditionJoin(tf.joinPath())) {
             return CodeBlock.builder()
                 .addStatement("throw new $T($S)",
@@ -59,19 +58,17 @@ public final class InlineTableFieldEmitter {
                     + "cannot be emitted until classification-vocabulary item 5 resolves condition-method target tables")
                 .build();
         }
-        return buildFkOnlyArm(tf, parentAlias, sfName);
+        return buildFkOnlyArm(tf, parentAlias, sfName, outputPackage, jooqPackage);
     }
 
-    private static CodeBlock buildFkOnlyArm(ChildField.TableField tf, String parentAlias, String sfName) {
+    private static CodeBlock buildFkOnlyArm(ChildField.TableField tf, String parentAlias, String sfName, String outputPackage, String jooqPackage) {
         List<JoinStep> path = tf.joinPath();
         TableRef terminalTable = tf.returnType().table();
         List<String> aliases = JoinPathEmitter.generateAliases(path, terminalTable);
         String terminalAlias = aliases.get(aliases.size() - 1);
-        ClassName tablesClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Tables");
-        ClassName keysClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Keys");
-        ClassName typeClass = ClassName.get(
-            RewriteConfig.outputPackage() + ".types",
-            tf.returnType().returnTypeName());
+        ClassName tablesClass = ClassName.get(jooqPackage, "Tables");
+        ClassName keysClass = ClassName.get(jooqPackage, "Keys");
+        ClassName typeClass = ClassName.get(outputPackage + ".types", tf.returnType().returnTypeName());
 
         var code = CodeBlock.builder();
 
@@ -83,7 +80,7 @@ public final class InlineTableFieldEmitter {
         for (int i = 0; i < path.size(); i++) {
             JoinStep.FkJoin fk = (JoinStep.FkJoin) path.get(i);
             ClassName jooqTableClass = ClassName.get(
-                RewriteConfig.getGeneratedJooqPackage() + ".tables",
+                jooqPackage + ".tables",
                 fk.targetTable().javaClassName());
             code.addStatement("$T $L = $T.$L.as($L.getName() + $S)",
                 jooqTableClass, aliases.get(i), tablesClass, fk.targetTable().javaFieldName(),

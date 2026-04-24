@@ -5,13 +5,9 @@ import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.InputField;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
-import java.util.Map;
-import java.util.Set;
 import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -38,16 +34,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 class PlatformIdPipelineTest {
 
     private static final String FIXTURE_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.platformidfixture";
-
-    @BeforeEach
-    void setup() {
-        RewriteConfig.setProperties(Set.of(), "", "fake.code.generated", FIXTURE_JOOQ_PACKAGE, Map.of());
-    }
-
-    @AfterEach
-    void teardown() {
-        RewriteConfig.clear();
-    }
 
     // ===== Type-level NodeType synthesis =====
 

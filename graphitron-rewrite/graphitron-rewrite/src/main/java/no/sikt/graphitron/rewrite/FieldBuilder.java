@@ -1,6 +1,5 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.rewrite.RewriteConfig;
 import graphql.language.BooleanValue;
 import graphql.language.EnumValue;
 import graphql.language.SourceLocation;
@@ -1077,7 +1076,7 @@ class FieldBuilder {
 
         var filters = new ArrayList<WhereFilter>();
         if (!bodyParams.isEmpty()) {
-            String conditionsClassName = RewriteConfig.outputPackage() + ".conditions." + returnTypeName + "Conditions";
+            String conditionsClassName = ctx.ctx().outputPackage() + ".conditions." + returnTypeName + "Conditions";
             String methodName = fieldDef.getName() + "Condition";
             var callParams = bodyParams.stream()
                 .map(bp -> new CallParam(bp.name(), bp.extraction(), bp.list(), bp.javaType()))
@@ -1971,7 +1970,7 @@ class FieldBuilder {
      * argument is absent.
      *
      * <p>When the reference uses the deprecated {@code name} form instead of {@code className},
-     * the name is looked up in {@link RewriteConfig#namedReferences()}. A deprecation warning is
+     * the name is looked up in {@link RewriteContext#namedReferences()}. A deprecation warning is
      * logged per field. If the name is not in the map, the returned {@code ExternalRef} carries a
      * non-null {@link ExternalRef#lookupError()} and the {@code className} is {@code null}.
      */
@@ -1987,7 +1986,7 @@ class FieldBuilder {
             String name = Optional.ofNullable(ref.get(ARG_NAME)).map(Object::toString).orElse(null);
             if (name != null) {
                 LOG.warn("ExternalCodeReference 'name' is deprecated on field '{}.{}'; use 'className' instead", parentTypeName, fieldDef.getName());
-                String resolved = RewriteConfig.namedReferences().get(name);
+                String resolved = ctx.ctx().namedReferences().get(name);
                 if (resolved != null) {
                     className = resolved;
                 } else {

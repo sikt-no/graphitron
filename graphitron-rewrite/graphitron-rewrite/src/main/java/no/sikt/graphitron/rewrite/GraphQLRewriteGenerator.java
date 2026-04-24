@@ -26,7 +26,6 @@ import no.sikt.graphitron.rewrite.generators.util.OrderByResultClassGenerator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.File;
 import java.io.IOException;
 import java.util.List;
 
@@ -57,22 +56,17 @@ public class GraphQLRewriteGenerator {
     }
 
     /**
-     * Instance entry point. Named {@code run} (not {@code generate}) because Java
-     * disallows an instance and a static method sharing the same signature in one
-     * class, and the static {@link #generate()} is still live for legacy-Mojo
-     * callers. The Maven-plugin plan unifies this onto a single {@code generate}
-     * name once the static path retires.
+     * Runs the full code-generation pipeline: loads and attributes schema inputs, classifies,
+     * validates, and writes all generated sources to the configured output directory.
      */
-    public void run() {
+    public void generate() {
         runPipeline(loadAttributedRegistry());
     }
 
     /**
      * Package-private so tests can exercise the attribution + load + apply
-     * pipeline without incurring the full emission stage (which wants
-     * {@link RewriteConfig} output paths and a classifiable schema). Production
-     * callers always go through {@link #run()}; the one-liner above guarantees
-     * this method is what {@code run} feeds into {@link #runPipeline}.
+     * pipeline without incurring the full emission stage. Production callers
+     * always go through {@link #generate()}.
      */
     graphql.schema.idl.TypeDefinitionRegistry loadAttributedRegistry() {
         var bySource = SchemaInputAttribution.build(ctx.schemaInputs());
@@ -82,13 +76,8 @@ public class GraphQLRewriteGenerator {
         return registry;
     }
 
-    public static void generate() {
-        var registry = RewriteSchemaLoader.load(RewriteConfig.generatorSchemaFiles());
-        runPipeline(registry);
-    }
-
-    private static void runPipeline(graphql.schema.idl.TypeDefinitionRegistry registry) {
-        var bundle = GraphitronSchemaBuilder.buildBundle(registry);
+    private void runPipeline(graphql.schema.idl.TypeDefinitionRegistry registry) {
+        var bundle = GraphitronSchemaBuilder.buildBundle(registry, ctx);
         var schema = bundle.model();
         var assembled = bundle.assembled();
 
@@ -114,35 +103,39 @@ public class GraphQLRewriteGenerator {
             throw new RuntimeException("Rewrite schema validation failed with " + errors.size() + " error(s)");
         }
 
-        var fetcherClasses = TypeFetcherGenerator.generate(schema);
-        var fetcherBodies  = FetcherRegistrationsEmitter.emit(schema);
+        String outputPackage = ctx.outputPackage();
+        String jooqPackage   = ctx.jooqPackage();
 
-        write(GraphitronValuesClassGenerator.generate(),          "util");
-        write(ColumnFetcherClassGenerator.generate(),             "util");
-        write(NodeIdEncoderClassGenerator.generate(),             "util");
-        write(ConnectionResultClassGenerator.generate(),          "util");
-        write(ConnectionHelperClassGenerator.generate(),          "util");
-        write(OrderByResultClassGenerator.generate(),             "util");
-        write(GraphitronContextInterfaceGenerator.generate(),     "schema");
-        write(EnumTypeGenerator.generate(assembled),              "schema");
-        write(InputTypeGenerator.generate(assembled),             "schema");
-        write(ObjectTypeGenerator.generate(assembled, fetcherBodies),            "schema");
-        write(GraphitronSchemaClassGenerator.generate(assembled, fetcherBodies.keySet()), "schema");
-        write(GraphitronFacadeGenerator.generate(),               "");
-        write(TypeClassGenerator.generate(schema),                "types");
-        write(TypeConditionsGenerator.generate(schema),           "conditions");
-        write(QueryConditionsGenerator.generate(schema),          "conditions");
-        write(fetcherClasses,                                      "fetchers");
+        var fetcherClasses = TypeFetcherGenerator.generate(schema, outputPackage, jooqPackage);
+        var fetcherBodies  = FetcherRegistrationsEmitter.emit(schema, outputPackage, jooqPackage);
+
+        write(GraphitronValuesClassGenerator.generate(),                                          "util");
+        write(ColumnFetcherClassGenerator.generate(),                                             "util");
+        write(NodeIdEncoderClassGenerator.generate(),                                             "util");
+        write(ConnectionResultClassGenerator.generate(outputPackage),                             "util");
+        write(ConnectionHelperClassGenerator.generate(outputPackage),                             "util");
+        write(OrderByResultClassGenerator.generate(),                                             "util");
+        write(GraphitronContextInterfaceGenerator.generate(),                                     "schema");
+        write(EnumTypeGenerator.generate(assembled),                                              "schema");
+        write(InputTypeGenerator.generate(assembled),                                             "schema");
+        write(ObjectTypeGenerator.generate(assembled, fetcherBodies),                             "schema");
+        write(GraphitronSchemaClassGenerator.generate(assembled, fetcherBodies.keySet(), outputPackage), "schema");
+        write(GraphitronFacadeGenerator.generate(outputPackage),                                  "");
+        write(TypeClassGenerator.generate(schema, outputPackage, jooqPackage),                   "types");
+        write(TypeConditionsGenerator.generate(schema),                                           "conditions");
+        write(QueryConditionsGenerator.generate(schema),                                          "conditions");
+        write(fetcherClasses,                                                                      "fetchers");
     }
 
-    private static void write(List<TypeSpec> specs, String subPackage) {
+    private void write(List<TypeSpec> specs, String subPackage) {
+        String outputPackage = ctx.outputPackage();
         var packageName = subPackage.isEmpty()
-            ? RewriteConfig.outputPackage()
-            : RewriteConfig.outputPackage() + "." + subPackage;
+            ? outputPackage
+            : outputPackage + "." + subPackage;
         specs.forEach(spec -> {
             try {
                 JavaFile.builder(packageName, spec).indent("    ").build()
-                    .writeTo(new File(RewriteConfig.outputDirectory()));
+                    .writeTo(ctx.outputDirectory().toFile());
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }

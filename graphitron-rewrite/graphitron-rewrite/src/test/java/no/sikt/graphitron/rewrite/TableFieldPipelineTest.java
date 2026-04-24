@@ -3,8 +3,6 @@ package no.sikt.graphitron.rewrite;
 import no.sikt.graphitron.rewrite.generators.TypeClassGenerator;
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
 import no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
@@ -21,16 +19,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  * item 5.
  */
 class TableFieldPipelineTest {
-
-    @BeforeEach
-    void setup() {
-        RewriteConfig.setProperties(java.util.Set.of(), "", "fake.code.generated", DEFAULT_JOOQ_PACKAGE, java.util.Map.of());
-    }
-
-    @AfterEach
-    void teardown() {
-        RewriteConfig.clear();
-    }
 
     @Test
     void singleHopFk_producesSwitchArmInDollarFields() {

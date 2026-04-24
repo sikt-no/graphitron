@@ -6,8 +6,6 @@ import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
-import no.sikt.graphitron.rewrite.RewriteConfig;
-
 import javax.lang.model.element.Modifier;
 import java.util.List;
 
@@ -30,7 +28,7 @@ public class ConnectionResultClassGenerator {
     private static final ClassName JOOQ_FIELD   = ClassName.get("org.jooq", "Field");
     private static final ClassName LIST         = ClassName.get(List.class);
 
-    public static List<TypeSpec> generate() {
+    public static List<TypeSpec> generate(String outputPackage) {
         var listOfRecordField = ParameterizedTypeName.get(LIST, RECORD);
         var fieldWildcard = ParameterizedTypeName.get(JOOQ_FIELD, WildcardTypeName.subtypeOf(Object.class));
         var listOfField = ParameterizedTypeName.get(LIST, fieldWildcard);
@@ -68,7 +66,7 @@ public class ConnectionResultClassGenerator {
         // page.selectFields() — cursor encoding must hash only the ordering columns, not the
         // selection-merged list.
         var pageRequestRef = ClassName.get(
-            RewriteConfig.outputPackage() + ".util", "ConnectionHelper", "PageRequest");
+            outputPackage + ".util", "ConnectionHelper", "PageRequest");
         var pageConstructor = MethodSpec.constructorBuilder()
             .addModifiers(Modifier.PUBLIC)
             .addParameter(listOfRecordField, "result")

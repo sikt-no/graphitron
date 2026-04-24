@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite;
 
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
+import no.sikt.graphitron.common.configuration.TestConfiguration;
 import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
 
 import java.io.IOException;
@@ -19,13 +20,21 @@ public final class TestSchemaHelper {
     private TestSchemaHelper() {}
 
     public static GraphitronSchema buildSchema(String schemaText) {
+        return buildSchema(schemaText, TestConfiguration.testContext());
+    }
+
+    public static GraphitronSchema buildSchema(String schemaText, RewriteContext ctx) {
         TypeDefinitionRegistry registry = new SchemaParser().parse(DIRECTIVES + "\n" + schemaText);
-        return GraphitronSchemaBuilder.build(registry);
+        return GraphitronSchemaBuilder.build(registry, ctx);
     }
 
     public static GraphitronSchemaBuilder.Bundle buildBundle(String schemaText) {
+        return buildBundle(schemaText, TestConfiguration.testContext());
+    }
+
+    public static GraphitronSchemaBuilder.Bundle buildBundle(String schemaText, RewriteContext ctx) {
         TypeDefinitionRegistry registry = new SchemaParser().parse(DIRECTIVES + "\n" + schemaText);
-        return GraphitronSchemaBuilder.buildBundle(registry);
+        return GraphitronSchemaBuilder.buildBundle(registry, ctx);
     }
 
     private static String loadDirectives() {

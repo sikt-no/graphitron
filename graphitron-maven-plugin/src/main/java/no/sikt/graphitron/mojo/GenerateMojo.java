@@ -9,8 +9,6 @@ import no.sikt.graphitron.configuration.externalreferences.GlobalTransform;
 import no.sikt.graphitron.definitions.helpers.ScalarUtils;
 import no.sikt.graphitron.generate.Generator;
 import no.sikt.graphitron.generate.GraphQLGenerator;
-import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
-import no.sikt.graphitron.rewrite.RewriteConfig;
 import no.sikt.graphitron.validation.ValidationHandler;
 import org.apache.maven.model.Resource;
 import org.apache.maven.plugin.MojoExecutionException;
@@ -19,7 +17,6 @@ import org.apache.maven.plugins.annotations.Parameter;
 
 import java.io.IOException;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -180,23 +177,6 @@ public class GenerateMojo extends AbstractGraphitronMojo implements Generator {
     private void runGenerators() {
         if (!disableLegacy) {
             GraphQLGenerator.generate();
-        }
-        if (enableRewrite) {
-            var refs = getExternalReferences();
-            Map<String, String> namedRefs = refs == null ? Map.of() : refs.stream()
-                .filter(r -> r.name() != null && r instanceof ExternalMojoClassReference)
-                .collect(Collectors.toMap(
-                    r -> r.name(),
-                    r -> ((ExternalMojoClassReference) r).fullyQualifiedClassName()
-                ));
-            RewriteConfig.setProperties(
-                GeneratorConfig.generatorSchemaFiles(),
-                GeneratorConfig.outputDirectory(),
-                GeneratorConfig.outputPackage(),
-                GeneratorConfig.getGeneratedJooqPackage(),
-                namedRefs
-            );
-            GraphQLRewriteGenerator.generate();
         }
     }
 

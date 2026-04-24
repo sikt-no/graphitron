@@ -46,17 +46,17 @@ public class TypeClassGenerator {
     private static final ClassName SELECTION_SET  = ClassName.get("graphql.schema", "DataFetchingFieldSelectionSet");
     private static final ClassName ARRAY_LIST     = ClassName.get(ArrayList.class);
 
-    public static List<TypeSpec> generate(GraphitronSchema schema) {
+    public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage, String jooqPackage) {
         return schema.types().entrySet().stream()
             .filter(e -> e.getValue() instanceof GraphitronType.TableType
                       || e.getValue() instanceof GraphitronType.NodeType)
             .map(java.util.Map.Entry::getKey)
             .sorted()
-            .map(typeName -> generateForType(schema, typeName))
+            .map(typeName -> generateForType(schema, typeName, outputPackage, jooqPackage))
             .toList();
     }
 
-    private static TypeSpec generateForType(GraphitronSchema schema, String typeName) {
+    private static TypeSpec generateForType(GraphitronSchema schema, String typeName, String outputPackage, String jooqPackage) {
         var type = (GraphitronType.TableBackedType) schema.type(typeName);
         var columnFields = schema.fieldsOf(typeName).stream()
             .filter(f -> f instanceof ChildField.ColumnField)
@@ -95,7 +95,7 @@ public class TypeClassGenerator {
         var requiredProjectionColumns = collectBatchKeyColumns(schema.fieldsOf(typeName))
             .distinct()
             .toList();
-        return buildTypeSpec(typeName, type.table(), columnFields, platformIdFields, nodeIdFields, tableFields, lookupTableFields, nestingFields, requiredProjectionColumns);
+        return buildTypeSpec(typeName, type.table(), columnFields, platformIdFields, nodeIdFields, tableFields, lookupTableFields, nestingFields, requiredProjectionColumns, outputPackage, jooqPackage);
     }
 
     /**
@@ -117,10 +117,11 @@ public class TypeClassGenerator {
             List<ChildField.TableField> tableFields,
             List<ChildField.LookupTableField> lookupTableFields,
             List<ChildField.NestingField> nestingFields,
-            List<ColumnRef> requiredProjectionColumns) {
+            List<ColumnRef> requiredProjectionColumns,
+            String outputPackage, String jooqPackage) {
         var builder = TypeSpec.classBuilder(typeName)
             .addModifiers(Modifier.PUBLIC)
-            .addMethod(build$FieldsMethod(tableRef, columnFields, platformIdFields, nodeIdFields, tableFields, lookupTableFields, nestingFields, requiredProjectionColumns));
+            .addMethod(build$FieldsMethod(tableRef, columnFields, platformIdFields, nodeIdFields, tableFields, lookupTableFields, nestingFields, requiredProjectionColumns, outputPackage, jooqPackage));
         // Helpers for inline LookupTableFields are hoisted onto this outer type class — including
         // ones nested inside NestingField sub-types, which don't get their own type class (plain
         // objects share the parent's table context). The generated switch arm calls the helper
@@ -129,7 +130,7 @@ public class TypeClassGenerator {
         collectNestedLookupFields(nestingFields, allLookupFields);
         for (var lf : allLookupFields) {
             var targetJooqTableClass = ClassName.get(
-                no.sikt.graphitron.rewrite.RewriteConfig.getGeneratedJooqPackage() + ".tables",
+                jooqPackage + ".tables",
                 lf.returnType().table().javaClassName());
             builder.addMethod(LookupValuesJoinEmitter.buildChildInputRowsMethod(lf, targetJooqTableClass));
         }
@@ -175,8 +176,9 @@ public class TypeClassGenerator {
             List<ChildField.TableField> tableFields,
             List<ChildField.LookupTableField> lookupTableFields,
             List<ChildField.NestingField> nestingFields,
-            List<ColumnRef> requiredProjectionColumns) {
-        var names = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
+            List<ColumnRef> requiredProjectionColumns,
+            String outputPackage, String jooqPackage) {
+        var names = GeneratorUtils.ResolvedTableNames.ofTable(tableRef, jooqPackage);
         var fieldWildcard = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
         var listOfField = ParameterizedTypeName.get(LIST, fieldWildcard);
         var entryType = ParameterizedTypeName.get(
@@ -199,7 +201,7 @@ public class TypeClassGenerator {
         flat.addAll(tableFields);
         flat.addAll(lookupTableFields);
         flat.addAll(nestingFields);
-        emitSelectionSwitch(builder, 0, flat, "table", entryType);
+        emitSelectionSwitch(builder, 0, flat, "table", entryType, outputPackage, jooqPackage);
 
         // Required-projection set (plan-single-cardinality-split-query.md §2): BatchKey columns of
         // every DataLoader-backed Split* child on this type must land in the SELECT regardless of
@@ -229,7 +231,8 @@ public class TypeClassGenerator {
      */
     private static void emitSelectionSwitch(MethodSpec.Builder builder, int depth,
                                             List<ChildField> fields, String tableArg,
-                                            ParameterizedTypeName entryType) {
+                                            ParameterizedTypeName entryType,
+                                            String outputPackage, String jooqPackage) {
         String parentSel = (depth == 0) ? "sel" : (sfName(depth - 1) + ".getSelectionSet()");
         String entry = entryName(depth);
         String sf = sfName(depth);
@@ -254,17 +257,17 @@ public class TypeClassGenerator {
                 }
                 case ChildField.TableField tf -> {
                     builder.addCode("        case $S -> {\n", tf.name());
-                    builder.addCode("$L", InlineTableFieldEmitter.buildSwitchArmBody(tf, tableArg, sf));
+                    builder.addCode("$L", InlineTableFieldEmitter.buildSwitchArmBody(tf, tableArg, sf, outputPackage, jooqPackage));
                     builder.addCode("        }\n");
                 }
                 case ChildField.LookupTableField lf -> {
                     builder.addCode("        case $S -> {\n", lf.name());
-                    builder.addCode("$L", InlineLookupTableFieldEmitter.buildSwitchArmBody(lf, tableArg, sf));
+                    builder.addCode("$L", InlineLookupTableFieldEmitter.buildSwitchArmBody(lf, tableArg, sf, outputPackage, jooqPackage));
                     builder.addCode("        }\n");
                 }
                 case ChildField.NestingField nf -> {
                     builder.addCode("        case $S -> {\n", nf.name());
-                    emitSelectionSwitch(builder, depth + 1, nf.nestedFields(), tableArg, entryType);
+                    emitSelectionSwitch(builder, depth + 1, nf.nestedFields(), tableArg, entryType, outputPackage, jooqPackage);
                     builder.addCode("        }\n");
                 }
                 default -> {

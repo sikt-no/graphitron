@@ -4,7 +4,6 @@ import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
-import no.sikt.graphitron.rewrite.RewriteConfig;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.LookupMapping;
@@ -57,7 +56,7 @@ public final class InlineLookupTableFieldEmitter {
      *                     recursion, where each nesting level declares its own
      *                     {@code SelectedField} local to avoid JLS §14.4.2 shadowing.
      */
-    public static CodeBlock buildSwitchArmBody(ChildField.LookupTableField lf, String parentAlias, String sfName) {
+    public static CodeBlock buildSwitchArmBody(ChildField.LookupTableField lf, String parentAlias, String sfName, String outputPackage, String jooqPackage) {
         if (JoinPathEmitter.hasConditionJoin(lf.joinPath())) {
             return CodeBlock.builder()
                 .addStatement("throw new $T($S)",
@@ -66,17 +65,15 @@ public final class InlineLookupTableFieldEmitter {
                     + "cannot be emitted until classification-vocabulary item 5 resolves condition-method target tables")
                 .build();
         }
-        return buildFkOnlyArm(lf, parentAlias, sfName);
+        return buildFkOnlyArm(lf, parentAlias, sfName, outputPackage, jooqPackage);
     }
 
-    private static CodeBlock buildFkOnlyArm(ChildField.LookupTableField lf, String parentAlias, String sfName) {
+    private static CodeBlock buildFkOnlyArm(ChildField.LookupTableField lf, String parentAlias, String sfName, String outputPackage, String jooqPackage) {
         List<JoinStep> path = lf.joinPath();
         TableRef terminalTable = lf.returnType().table();
-        ClassName tablesClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Tables");
-        ClassName keysClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Keys");
-        ClassName typeClass = ClassName.get(
-            RewriteConfig.outputPackage() + ".types",
-            lf.returnType().returnTypeName());
+        ClassName tablesClass = ClassName.get(jooqPackage, "Tables");
+        ClassName keysClass = ClassName.get(jooqPackage, "Keys");
+        ClassName typeClass = ClassName.get(outputPackage + ".types", lf.returnType().returnTypeName());
 
         var code = CodeBlock.builder();
         List<String> aliases;
@@ -89,7 +86,7 @@ public final class InlineLookupTableFieldEmitter {
             aliases = List.of();
             terminalAlias = "lk0";
             ClassName jooqTableClass = ClassName.get(
-                RewriteConfig.getGeneratedJooqPackage() + ".tables",
+                jooqPackage + ".tables",
                 terminalTable.javaClassName());
             code.addStatement("$T $L = $T.$L.as($L.getName() + $S)",
                 jooqTableClass, terminalAlias, tablesClass, terminalTable.javaFieldName(),
@@ -103,7 +100,7 @@ public final class InlineLookupTableFieldEmitter {
             for (int i = 0; i < path.size(); i++) {
                 JoinStep.FkJoin fk = (JoinStep.FkJoin) path.get(i);
                 ClassName jooqTableClass = ClassName.get(
-                    RewriteConfig.getGeneratedJooqPackage() + ".tables",
+                    jooqPackage + ".tables",
                     fk.targetTable().javaClassName());
                 code.addStatement("$T $L = $T.$L.as($L.getName() + $S)",
                     jooqTableClass, aliases.get(i), tablesClass, fk.targetTable().javaFieldName(),

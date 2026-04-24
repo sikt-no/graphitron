@@ -6,7 +6,6 @@ import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
-import no.sikt.graphitron.rewrite.RewriteConfig;
 import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.BatchKeyField;
 import no.sikt.graphitron.rewrite.model.ChildField;
@@ -104,18 +103,18 @@ public final class SplitRowsMethodEmitter {
      *             or {@link ChildField.RecordLookupTableField}. Other {@link BatchKeyField}
      *             leaves throw {@link IllegalArgumentException}.
      */
-    public static MethodSpec buildRowsMethod(BatchKeyField bkf) {
+    public static MethodSpec buildRowsMethod(BatchKeyField bkf, String outputPackage, String jooqPackage) {
         if (bkf instanceof ChildField.SplitTableField stf) {
-            return buildForSplitTable(stf);
+            return buildForSplitTable(stf, outputPackage, jooqPackage);
         }
         if (bkf instanceof ChildField.SplitLookupTableField slf) {
-            return buildForSplitLookupTable(slf);
+            return buildForSplitLookupTable(slf, outputPackage, jooqPackage);
         }
         if (bkf instanceof ChildField.RecordTableField rtf) {
-            return buildForRecordTable(rtf);
+            return buildForRecordTable(rtf, outputPackage, jooqPackage);
         }
         if (bkf instanceof ChildField.RecordLookupTableField rltf) {
-            return buildForRecordLookupTable(rltf);
+            return buildForRecordLookupTable(rltf, outputPackage, jooqPackage);
         }
         throw new IllegalArgumentException(
             "SplitRowsMethodEmitter does not handle " + bkf.getClass().getSimpleName());
@@ -125,25 +124,25 @@ public final class SplitRowsMethodEmitter {
     // SplitTableField
     // -----------------------------------------------------------------------
 
-    private static MethodSpec buildForSplitTable(ChildField.SplitTableField stf) {
+    private static MethodSpec buildForSplitTable(ChildField.SplitTableField stf, String outputPackage, String jooqPackage) {
         var stubReason = unsupportedReason(stf);
         if (stubReason.isPresent()) {
-            return buildRuntimeStub(stf.rowsMethodName(), stf.batchKey(), stf.returnType(), stubReason.get());
+            return buildRuntimeStub(stf.rowsMethodName(), stf.batchKey(), stf.returnType(), stubReason.get(), outputPackage);
         }
         if (stf.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Single) {
             return buildSingleMethod(
                 stf.name(), stf.rowsMethodName(), stf.returnType(),
-                stf.joinPath(), stf.filters(), stf.batchKey());
+                stf.joinPath(), stf.filters(), stf.batchKey(), outputPackage, jooqPackage);
         }
         if (stf.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
             return buildConnectionMethod(
                 stf.name(), stf.rowsMethodName(), stf.returnType(),
-                stf.joinPath(), stf.filters(), stf.batchKey(), stf.orderBy(), conn);
+                stf.joinPath(), stf.filters(), stf.batchKey(), stf.orderBy(), conn, outputPackage, jooqPackage);
         }
         return buildListMethod(
             stf.name(), stf.rowsMethodName(), stf.returnType(),
             stf.joinPath(), stf.filters(), stf.batchKey(),
-            /* lookupMapping */ null);
+            /* lookupMapping */ null, outputPackage, jooqPackage);
     }
 
     /**
@@ -167,16 +166,16 @@ public final class SplitRowsMethodEmitter {
     // SplitLookupTableField (C2)
     // -----------------------------------------------------------------------
 
-    private static MethodSpec buildForSplitLookupTable(ChildField.SplitLookupTableField slf) {
+    private static MethodSpec buildForSplitLookupTable(ChildField.SplitLookupTableField slf, String outputPackage, String jooqPackage) {
         var stubReason = unsupportedReason(slf);
         if (stubReason.isPresent()) {
-            return buildRuntimeStub(slf.rowsMethodName(), slf.batchKey(), slf.returnType(), stubReason.get());
+            return buildRuntimeStub(slf.rowsMethodName(), slf.batchKey(), slf.returnType(), stubReason.get(), outputPackage);
         }
 
         return buildListMethod(
             slf.name(), slf.rowsMethodName(), slf.returnType(),
             slf.joinPath(), slf.filters(), slf.batchKey(),
-            slf.lookupMapping());
+            slf.lookupMapping(), outputPackage, jooqPackage);
     }
 
     /**
@@ -200,15 +199,15 @@ public final class SplitRowsMethodEmitter {
     // RecordTableField
     // -----------------------------------------------------------------------
 
-    private static MethodSpec buildForRecordTable(ChildField.RecordTableField rtf) {
+    private static MethodSpec buildForRecordTable(ChildField.RecordTableField rtf, String outputPackage, String jooqPackage) {
         var stubReason = unsupportedReason(rtf);
         if (stubReason.isPresent()) {
-            return buildRuntimeStub(rtf.rowsMethodName(), rtf.batchKey(), rtf.returnType(), stubReason.get());
+            return buildRuntimeStub(rtf.rowsMethodName(), rtf.batchKey(), rtf.returnType(), stubReason.get(), outputPackage);
         }
         return buildListMethod(
             rtf.name(), rtf.rowsMethodName(), rtf.returnType(),
             rtf.joinPath(), rtf.filters(), rtf.batchKey(),
-            /* lookupMapping */ null);
+            /* lookupMapping */ null, outputPackage, jooqPackage);
     }
 
     /**
@@ -234,10 +233,10 @@ public final class SplitRowsMethodEmitter {
     // RecordLookupTableField
     // -----------------------------------------------------------------------
 
-    private static MethodSpec buildForRecordLookupTable(ChildField.RecordLookupTableField rltf) {
+    private static MethodSpec buildForRecordLookupTable(ChildField.RecordLookupTableField rltf, String outputPackage, String jooqPackage) {
         var stubReason = unsupportedReason(rltf);
         if (stubReason.isPresent()) {
-            return buildRuntimeStub(rltf.rowsMethodName(), rltf.batchKey(), rltf.returnType(), stubReason.get());
+            return buildRuntimeStub(rltf.rowsMethodName(), rltf.batchKey(), rltf.returnType(), stubReason.get(), outputPackage);
         }
         // Rows-method body is identical to SplitLookupTableField's — same BatchKey.RowKeyed +
         // LookupMapping shape, so buildListMethod handles both. The record-parent divergence
@@ -246,7 +245,7 @@ public final class SplitRowsMethodEmitter {
         return buildListMethod(
             rltf.name(), rltf.rowsMethodName(), rltf.returnType(),
             rltf.joinPath(), rltf.filters(), rltf.batchKey(),
-            rltf.lookupMapping());
+            rltf.lookupMapping(), outputPackage, jooqPackage);
     }
 
     /**
@@ -281,12 +280,14 @@ public final class SplitRowsMethodEmitter {
             List<JoinStep> joinPath,
             List<WhereFilter> filters,
             BatchKey batchKey,
-            LookupMapping lookupMapping) {
+            LookupMapping lookupMapping,
+            String outputPackage,
+            String jooqPackage) {
         TableRef terminalTable = returnType.table();
-        ClassName tablesClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Tables");
-        ClassName keysClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Keys");
+        ClassName tablesClass = ClassName.get(jooqPackage, "Tables");
+        ClassName keysClass = ClassName.get(jooqPackage, "Keys");
         ClassName typeClass = ClassName.get(
-            RewriteConfig.outputPackage() + ".types",
+            outputPackage + ".types",
             returnType.returnTypeName());
 
         BatchKey.RowKeyed rowKeyed = (BatchKey.RowKeyed) batchKey;
@@ -366,7 +367,7 @@ public final class SplitRowsMethodEmitter {
         for (int i = 0; i < path.size(); i++) {
             JoinStep.FkJoin fk = (JoinStep.FkJoin) path.get(i);
             ClassName jooqTableClass = ClassName.get(
-                RewriteConfig.getGeneratedJooqPackage() + ".tables",
+                jooqPackage + ".tables",
                 fk.targetTable().javaClassName());
             body.addStatement("$T $L = $T.$L.as($S)",
                 jooqTableClass, aliases.get(i), tablesClass, fk.targetTable().javaFieldName(),
@@ -533,11 +534,13 @@ public final class SplitRowsMethodEmitter {
             ReturnTypeRef.TableBoundReturnType returnType,
             List<JoinStep> joinPath,
             List<WhereFilter> filters,
-            BatchKey batchKey) {
+            BatchKey batchKey,
+            String outputPackage,
+            String jooqPackage) {
         TableRef terminalTable = returnType.table();
-        ClassName tablesClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Tables");
+        ClassName tablesClass = ClassName.get(jooqPackage, "Tables");
         ClassName typeClass = ClassName.get(
-            RewriteConfig.outputPackage() + ".types",
+            outputPackage + ".types",
             returnType.returnTypeName());
 
         BatchKey.RowKeyed rowKeyed = (BatchKey.RowKeyed) batchKey;
@@ -597,7 +600,7 @@ public final class SplitRowsMethodEmitter {
 
         // Single-hop terminal alias.
         ClassName jooqTableClass = ClassName.get(
-            RewriteConfig.getGeneratedJooqPackage() + ".tables",
+            jooqPackage + ".tables",
             firstHop.targetTable().javaClassName());
         body.addStatement("$T $L = $T.$L.as($S)",
             jooqTableClass, firstAlias, tablesClass, firstHop.targetTable().javaFieldName(),
@@ -694,20 +697,22 @@ public final class SplitRowsMethodEmitter {
             List<WhereFilter> filters,
             BatchKey batchKey,
             no.sikt.graphitron.rewrite.model.OrderBySpec orderBy,
-            no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
+            no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn,
+            String outputPackage,
+            String jooqPackage) {
 
         TableRef terminalTable = returnType.table();
-        ClassName tablesClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Tables");
-        ClassName keysClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Keys");
+        ClassName tablesClass = ClassName.get(jooqPackage, "Tables");
+        ClassName keysClass = ClassName.get(jooqPackage, "Keys");
         ClassName typeClass = ClassName.get(
-            RewriteConfig.outputPackage() + ".types",
+            outputPackage + ".types",
             returnType.returnTypeName());
         ClassName connectionResultClass = ClassName.get(
-            RewriteConfig.outputPackage() + ".util", "ConnectionResult");
+            outputPackage + ".util", "ConnectionResult");
         ClassName connectionHelperClass = ClassName.get(
-            RewriteConfig.outputPackage() + ".util", "ConnectionHelper");
+            outputPackage + ".util", "ConnectionHelper");
         ClassName pageRequestClass = ClassName.get(
-            RewriteConfig.outputPackage() + ".util", "ConnectionHelper", "PageRequest");
+            outputPackage + ".util", "ConnectionHelper", "PageRequest");
         ClassName sortFieldClass = ClassName.get("org.jooq", "SortField");
         TypeName sortFieldWildcard = ParameterizedTypeName.get(
             sortFieldClass, WildcardTypeName.subtypeOf(Object.class));
@@ -774,7 +779,7 @@ public final class SplitRowsMethodEmitter {
         for (int i = 0; i < path.size(); i++) {
             JoinStep.FkJoin fk = (JoinStep.FkJoin) path.get(i);
             ClassName jooqTableClass = ClassName.get(
-                RewriteConfig.getGeneratedJooqPackage() + ".tables",
+                jooqPackage + ".tables",
                 fk.targetTable().javaClassName());
             body.addStatement("$T $L = $T.$L.as($S)",
                 jooqTableClass, aliases.get(i), tablesClass, fk.targetTable().javaFieldName(),
@@ -794,7 +799,7 @@ public final class SplitRowsMethodEmitter {
         TypeName wildField = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
         TypeName listOfField = ParameterizedTypeName.get(LIST, wildField);
         ClassName orderByResultClass = ClassName.get(
-            RewriteConfig.outputPackage() + ".util", "OrderByResult");
+            outputPackage + ".util", "OrderByResult");
         switch (orderBy) {
             case no.sikt.graphitron.rewrite.model.OrderBySpec.Fixed fixed when !fixed.columns().isEmpty() -> {
                 var sortParts = CodeBlock.builder();
@@ -922,13 +927,13 @@ public final class SplitRowsMethodEmitter {
      * ConditionJoin, and empty-joinPath branches that C1/C2 don't emit real bodies for.
      */
     private static MethodSpec buildRuntimeStub(String methodName, BatchKey batchKey,
-            ReturnTypeRef.TableBoundReturnType returnType, String reason) {
+            ReturnTypeRef.TableBoundReturnType returnType, String reason, String outputPackage) {
         TypeName keyElement = GeneratorUtils.keyElementType(batchKey);
         TypeName keysListType = ParameterizedTypeName.get(LIST, keyElement);
         TypeName valueType;
         if (returnType.wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection) {
             ClassName connectionResultClass = ClassName.get(
-                RewriteConfig.outputPackage() + ".util", "ConnectionResult");
+                outputPackage + ".util", "ConnectionResult");
             valueType = ParameterizedTypeName.get(LIST, connectionResultClass);
         } else {
             boolean isList = returnType.wrapper().isList();
@@ -1047,12 +1052,12 @@ public final class SplitRowsMethodEmitter {
      * {@code ConnectionResult} answer {@code hasNextPage()} correctly: the over-fetch-by-1
      * lives per-partition in the windowed CTE, so each parent's bucket is 0..(pageSize+1).
      */
-    public static MethodSpec buildScatterConnectionByIdxHelper() {
+    public static MethodSpec buildScatterConnectionByIdxHelper(String outputPackage) {
         TypeName resultRecord = ParameterizedTypeName.get(ClassName.get("org.jooq", "Result"), RECORD);
         ClassName connectionResultClass = ClassName.get(
-            RewriteConfig.outputPackage() + ".util", "ConnectionResult");
+            outputPackage + ".util", "ConnectionResult");
         ClassName pageRequestClass = ClassName.get(
-            RewriteConfig.outputPackage() + ".util", "ConnectionHelper", "PageRequest");
+            outputPackage + ".util", "ConnectionHelper", "PageRequest");
         TypeName listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
         TypeName listOfListOfRecord = ParameterizedTypeName.get(LIST, listOfRecord);
         TypeName listOfConnectionResult = ParameterizedTypeName.get(LIST, connectionResultClass);

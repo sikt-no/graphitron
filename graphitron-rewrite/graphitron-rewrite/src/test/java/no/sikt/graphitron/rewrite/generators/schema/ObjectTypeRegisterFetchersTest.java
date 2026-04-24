@@ -2,16 +2,12 @@ package no.sikt.graphitron.rewrite.generators.schema;
 
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.TypeSpec;
-import no.sikt.graphitron.rewrite.RewriteConfig;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import javax.lang.model.element.Modifier;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -21,16 +17,6 @@ class ObjectTypeRegisterFetchersTest {
         type Query { film: Film }
         type Film { id: ID! title: String }
         """;
-
-    @BeforeEach
-    void setUp() {
-        RewriteConfig.setProperties(Set.of(), "/tmp", "com.example", "com.example.jooq", Map.of());
-    }
-
-    @AfterEach
-    void tearDown() {
-        RewriteConfig.clear();
-    }
 
     @Test
     void noRegisterFetchers_whenTypeNotInFetcherBodies() {

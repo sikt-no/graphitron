@@ -1,29 +1,14 @@
 package no.sikt.graphitron.rewrite.generators.schema;
 
 import no.sikt.graphitron.javapoet.TypeSpec;
-import no.sikt.graphitron.rewrite.RewriteConfig;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class DefaultValueEmissionTest {
-
-    @BeforeEach
-    void setUp() {
-        RewriteConfig.setProperties(Set.of(), "/tmp", "com.example", "com.example.jooq", Map.of());
-    }
-
-    @AfterEach
-    void tearDown() {
-        RewriteConfig.clear();
-    }
 
     @Test
     void fieldArgument_defaultInt_emitsDefaultValueProgrammatic() {

@@ -2,7 +2,6 @@ package no.sikt.graphitron.rewrite.generators;
 
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
-import no.sikt.graphitron.rewrite.RewriteConfig;
 import no.sikt.graphitron.rewrite.TestFixtures;
 import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.BodyParam;
@@ -19,14 +18,12 @@ import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
+import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static no.sikt.graphitron.rewrite.TestFixtures.*;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -40,16 +37,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class TypeFetcherGeneratorTest {
 
     private static final TableRef FILM_TABLE = filmTable();
-
-    @BeforeEach
-    void setup() {
-        RewriteConfig.setProperties(Set.of(), "", "fake.code.generated", DEFAULT_JOOQ_PACKAGE, java.util.Map.of());
-    }
-
-    @AfterEach
-    void teardown() {
-        RewriteConfig.clear();
-    }
 
     private static GraphitronField columnField(String name, String columnName, String javaName, String columnClass) {
         return TestFixtures.columnField("Film", name, columnName, javaName, columnClass);
@@ -560,7 +547,7 @@ class TypeFetcherGeneratorTest {
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null,
             List.of(queryTableField("film", false)));
         var helper = method(spec, "graphitronContext");
-        var expectedFqn = RewriteConfig.outputPackage() + ".schema.GraphitronContext";
+        var expectedFqn = DEFAULT_OUTPUT_PACKAGE + ".schema.GraphitronContext";
         assertThat(helper.returnType().toString())
             .as("retargeted to the locally-emitted interface under the output package")
             .isEqualTo(expectedFqn);

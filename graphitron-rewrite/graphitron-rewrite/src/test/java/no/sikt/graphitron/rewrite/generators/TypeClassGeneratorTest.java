@@ -1,21 +1,18 @@
 package no.sikt.graphitron.rewrite.generators;
 
-import no.sikt.graphitron.rewrite.RewriteConfig;
 import no.sikt.graphitron.rewrite.TestFixtures;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions;
 import no.sikt.graphitron.rewrite.model.ChildField;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
+import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static no.sikt.graphitron.rewrite.TestFixtures.*;
 import static org.assertj.core.api.Assertions.assertThat;
-import java.util.List;
 
 /**
  * Unit tests for {@link TypeClassGenerator}. Tests verify structural properties of the generated
@@ -24,16 +21,6 @@ import java.util.List;
  * the {@code graphitron-rewrite-test} module.
  */
 class TypeClassGeneratorTest {
-
-    @BeforeEach
-    void setup() {
-        RewriteConfig.setProperties(java.util.Set.of(), "", "fake.code.generated", DEFAULT_JOOQ_PACKAGE, java.util.Map.of());
-    }
-
-    @AfterEach
-    void teardown() {
-        RewriteConfig.clear();
-    }
 
     private static final List<ChildField.ColumnField> FILM_COLUMNS = List.of(
         TestFixtures.columnField("Film", "title", "title", "TITLE", "java.lang.String"),
@@ -49,7 +36,8 @@ class TypeClassGeneratorTest {
             List.of(),
             List.of(),
             List.of(),
-            List.of());
+            List.of(),
+            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
     }
 
     private static MethodSpec method(String methodName) {
@@ -84,7 +72,8 @@ class TypeClassGeneratorTest {
             List.of(),
             List.of(),
             List.of(),
-            List.of());
+            List.of(),
+            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
         assertThat(TypeSpecAssertions.hasFieldsArm(spec, "id")).isTrue();
     }
 
@@ -98,7 +87,8 @@ class TypeClassGeneratorTest {
             List.of(),
             List.of(),
             List.of(),
-            List.of());
+            List.of(),
+            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
         assertThat(TypeSpecAssertions.hasFieldsArm(spec, "personId")).isTrue();
         // Accessor selection (table.getPersonId() vs table.getId()) is a body-content question.
         // Compile tier catches the wrong accessor via graphitron-rewrite-test; execution
@@ -117,7 +107,8 @@ class TypeClassGeneratorTest {
             List.of(),
             List.of(),
             List.of(),
-            List.of());
+            List.of(),
+            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
         assertThat(TypeSpecAssertions.hasFieldsArm(spec, "id")).isTrue();
     }
 

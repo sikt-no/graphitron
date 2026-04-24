@@ -60,8 +60,6 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.TableInterfaceType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.UnionType;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -78,16 +76,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * case; the parameterised test method iterates the whole truth table automatically.
  */
 class GraphitronSchemaBuilderTest {
-
-    @BeforeEach
-    void setup() {
-        RewriteConfig.setProperties(java.util.Set.of(), "", "fake.code.generated", DEFAULT_JOOQ_PACKAGE, java.util.Map.of());
-    }
-
-    @AfterEach
-    void teardown() {
-        RewriteConfig.clear();
-    }
 
     // ===== ColumnField =====
 

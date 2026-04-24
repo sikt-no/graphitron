@@ -3,7 +3,6 @@ package no.sikt.graphitron.rewrite.generators.schema;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
-import no.sikt.graphitron.rewrite.RewriteConfig;
 import no.sikt.graphitron.rewrite.generators.FetcherEmitter;
 import no.sikt.graphitron.rewrite.generators.util.ConnectionHelperClassGenerator;
 import no.sikt.graphitron.rewrite.model.BatchKeyField;
@@ -62,9 +61,9 @@ public final class FetcherRegistrationsEmitter {
 
     private FetcherRegistrationsEmitter() {}
 
-    public static Map<String, CodeBlock> emit(GraphitronSchema schema) {
-        String fetchersPackage = RewriteConfig.outputPackage() + ".fetchers";
-        String utilPackage     = RewriteConfig.outputPackage() + ".util";
+    public static Map<String, CodeBlock> emit(GraphitronSchema schema, String outputPackage, String jooqPackage) {
+        String fetchersPackage = outputPackage + ".fetchers";
+        String utilPackage     = outputPackage + ".util";
 
         var connectionTypeMap = new LinkedHashMap<String, String>();
         schema.fields().forEach((coords, field) -> {
@@ -89,10 +88,10 @@ public final class FetcherRegistrationsEmitter {
                       || e.getValue() instanceof GraphitronType.NodeType
                       || e.getValue() instanceof GraphitronType.RootType
                       || e.getValue() instanceof GraphitronType.ResultType)
-            .forEach(e -> result.put(e.getKey(), typeBody(schema, e.getKey(), fetchersPackage)));
+            .forEach(e -> result.put(e.getKey(), typeBody(schema, e.getKey(), fetchersPackage, outputPackage, jooqPackage)));
 
         nestedTypeMap.values().forEach(ntw ->
-            result.put(ntw.nestedTypeName(), nestedBody(ntw, fetchersPackage)));
+            result.put(ntw.nestedTypeName(), nestedBody(ntw, fetchersPackage, outputPackage, jooqPackage)));
 
         connectionTypeMap.forEach((connName, edgeName) -> {
             result.put(connName, connectionBody(connName, utilPackage));
@@ -103,7 +102,7 @@ public final class FetcherRegistrationsEmitter {
     }
 
     private static CodeBlock typeBody(GraphitronSchema schema, String typeName,
-            String fetchersPackage) {
+            String fetchersPackage, String outputPackage, String jooqPackage) {
         var type = schema.type(typeName);
         var fields = schema.fieldsOf(typeName).stream()
             .filter(f -> !(f instanceof GraphitronField.NotGeneratedField))
@@ -113,10 +112,10 @@ public final class FetcherRegistrationsEmitter {
         TableRef parentTable = type instanceof GraphitronType.TableBackedType tbt ? tbt.table() : null;
         GraphitronType.ResultType resultType = type instanceof GraphitronType.ResultType rt ? rt : null;
         ClassName fetchersClass = ClassName.get(fetchersPackage, typeName + "Fetchers");
-        return buildBody(typeName, fields, fetchersClass, parentTable, resultType);
+        return buildBody(typeName, fields, fetchersClass, parentTable, resultType, outputPackage, jooqPackage);
     }
 
-    private static CodeBlock nestedBody(NestedTypeWiring ntw, String fetchersPackage) {
+    private static CodeBlock nestedBody(NestedTypeWiring ntw, String fetchersPackage, String outputPackage, String jooqPackage) {
         ClassName nestedFetchersClass = ntw.fields().stream().anyMatch(f -> f instanceof BatchKeyField)
             ? ClassName.get(fetchersPackage, ntw.nestedTypeName() + "Fetchers") : null;
 
@@ -132,7 +131,7 @@ public final class FetcherRegistrationsEmitter {
                     nestedFetchersClass, field.name());
             } else {
                 body.add(registrationEntry(ntw.nestedTypeName(), field,
-                    null, ntw.representativeParentTable(), null));
+                    null, ntw.representativeParentTable(), null, outputPackage, jooqPackage));
             }
         }
         body.add(";\n").unindent();
@@ -163,23 +162,25 @@ public final class FetcherRegistrationsEmitter {
     }
 
     private static CodeBlock buildBody(String typeName, List<GraphitronField> fields,
-            ClassName fetchersClass, TableRef parentTable, GraphitronType.ResultType resultType) {
+            ClassName fetchersClass, TableRef parentTable, GraphitronType.ResultType resultType,
+            String outputPackage, String jooqPackage) {
         if (fields.isEmpty()) {
             return CodeBlock.builder().build();
         }
         var body = CodeBlock.builder().add("codeRegistry").indent();
         for (var field : fields) {
-            body.add(registrationEntry(typeName, field, fetchersClass, parentTable, resultType));
+            body.add(registrationEntry(typeName, field, fetchersClass, parentTable, resultType, outputPackage, jooqPackage));
         }
         body.add(";\n").unindent();
         return body.build();
     }
 
     private static CodeBlock registrationEntry(String typeName, GraphitronField field,
-            ClassName fetchersClass, TableRef parentTable, GraphitronType.ResultType resultType) {
+            ClassName fetchersClass, TableRef parentTable, GraphitronType.ResultType resultType,
+            String outputPackage, String jooqPackage) {
         return CodeBlock.builder()
             .add("\n.dataFetcher($T.coordinates($S, $S), ", FIELD_COORDS, typeName, field.name())
-            .add(FetcherEmitter.dataFetcherValue(field, fetchersClass, parentTable, resultType))
+            .add(FetcherEmitter.dataFetcherValue(field, fetchersClass, parentTable, resultType, outputPackage, jooqPackage))
             .add(")")
             .build();
     }

@@ -4,7 +4,6 @@ import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
-import no.sikt.graphitron.rewrite.RewriteConfig;
 import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
@@ -44,8 +43,8 @@ class GeneratorUtils {
     /** {@code graphql.schema.SelectedField} */
     static final ClassName SELECTED_FIELD   = ClassName.get("graphql.schema", "SelectedField");
     /** {@code <outputPackage>.schema.GraphitronContext} — generated per build; see {@link no.sikt.graphitron.rewrite.generators.util.GraphitronContextInterfaceGenerator}. */
-    static ClassName graphitronContext() {
-        return ClassName.get(RewriteConfig.outputPackage() + ".schema", "GraphitronContext");
+    static ClassName graphitronContext(String outputPackage) {
+        return ClassName.get(outputPackage + ".schema", "GraphitronContext");
     }
 
     // -----------------------------------------------------------------------
@@ -67,18 +66,18 @@ class GeneratorUtils {
      */
     record ResolvedTableNames(ClassName tablesClass, ClassName jooqTableClass, ClassName typeClass) {
 
-        static ResolvedTableNames of(TableRef tableRef, String returnTypeName) {
+        static ResolvedTableNames of(TableRef tableRef, String returnTypeName, String outputPackage, String jooqPackage) {
             return new ResolvedTableNames(
-                ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Tables"),
-                ClassName.get(RewriteConfig.getGeneratedJooqPackage() + ".tables", tableRef.javaClassName()),
-                ClassName.get(RewriteConfig.outputPackage() + ".types", returnTypeName));
+                ClassName.get(jooqPackage, "Tables"),
+                ClassName.get(jooqPackage + ".tables", tableRef.javaClassName()),
+                ClassName.get(outputPackage + ".types", returnTypeName));
         }
 
         /** Resolves only {@link #tablesClass} and {@link #jooqTableClass} — use when the type class is not needed. */
-        static ResolvedTableNames ofTable(TableRef tableRef) {
+        static ResolvedTableNames ofTable(TableRef tableRef, String jooqPackage) {
             return new ResolvedTableNames(
-                ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Tables"),
-                ClassName.get(RewriteConfig.getGeneratedJooqPackage() + ".tables", tableRef.javaClassName()),
+                ClassName.get(jooqPackage, "Tables"),
+                ClassName.get(jooqPackage + ".tables", tableRef.javaClassName()),
                 null);
         }
 
@@ -185,7 +184,7 @@ class GeneratorUtils {
      *   <li>{@link GraphitronType.PojoResultType} (non-null class): {@code ((BackingClass) env.getSource()).getLowerCamelCase()}</li>
      * </ul>
      */
-    static CodeBlock buildRecordKeyExtraction(BatchKey.RowKeyed batchKey, GraphitronType.ResultType resultType) {
+    static CodeBlock buildRecordKeyExtraction(BatchKey.RowKeyed batchKey, GraphitronType.ResultType resultType, String jooqPackage) {
         TypeName keyType = keyElementType(batchKey);
         List<ColumnRef> fkCols = batchKey.keyColumns();
         var rowArgs = CodeBlock.builder();
@@ -193,7 +192,7 @@ class GeneratorUtils {
             if (i > 0) rowArgs.add(", ");
             ColumnRef col = fkCols.get(i);
             if (resultType instanceof GraphitronType.JooqTableRecordType jtt) {
-                var tablesClass = ResolvedTableNames.ofTable(jtt.table()).tablesClass();
+                var tablesClass = ResolvedTableNames.ofTable(jtt.table(), jooqPackage).tablesClass();
                 rowArgs.add("(($T) env.getSource()).get($T.$L.$L)",
                     RECORD, tablesClass, jtt.table().javaFieldName(), col.javaName());
             } else if (resultType instanceof GraphitronType.JooqRecordType) {
@@ -226,13 +225,13 @@ class GeneratorUtils {
      * <p>Only the {@link BatchKey.RowKeyed} variant is handled; single-cardinality
      * {@code @splitQuery} on a {@code @table} parent is the only caller today.
      */
-    static CodeBlock buildKeyExtractionWithNullCheck(BatchKey batchKey, TableRef parentTable) {
+    static CodeBlock buildKeyExtractionWithNullCheck(BatchKey batchKey, TableRef parentTable, String jooqPackage) {
         if (!(batchKey instanceof BatchKey.RowKeyed rk)) {
             throw new IllegalArgumentException(
                 "buildKeyExtractionWithNullCheck supports BatchKey.RowKeyed only, got "
                 + batchKey.getClass().getSimpleName());
         }
-        var tablesClass = ResolvedTableNames.ofTable(parentTable).tablesClass();
+        var tablesClass = ResolvedTableNames.ofTable(parentTable, jooqPackage).tablesClass();
         String tableField = parentTable.javaFieldName();
         List<ColumnRef> pkCols = rk.keyColumns();
         TypeName keyType = keyElementType(batchKey);
@@ -260,9 +259,9 @@ class GeneratorUtils {
         return out.build();
     }
 
-    static CodeBlock buildKeyExtraction(BatchKey batchKey, TableRef parentTable) {
+    static CodeBlock buildKeyExtraction(BatchKey batchKey, TableRef parentTable, String jooqPackage) {
         TypeName keyType = keyElementType(batchKey);
-        var tablesClass = ResolvedTableNames.ofTable(parentTable).tablesClass();
+        var tablesClass = ResolvedTableNames.ofTable(parentTable, jooqPackage).tablesClass();
         return switch (batchKey) {
             case BatchKey.RowKeyed rk -> {
                 String tableField = parentTable.javaFieldName();

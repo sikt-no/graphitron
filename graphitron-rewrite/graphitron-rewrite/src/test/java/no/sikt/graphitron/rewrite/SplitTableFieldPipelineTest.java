@@ -1,11 +1,8 @@
 package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -19,16 +16,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  * fetcher class containing any Split* field.
  */
 class SplitTableFieldPipelineTest {
-
-    @BeforeEach
-    void setup() {
-        RewriteConfig.setProperties(java.util.Set.of(), "", "fake.code.generated", DEFAULT_JOOQ_PACKAGE, java.util.Map.of());
-    }
-
-    @AfterEach
-    void teardown() {
-        RewriteConfig.clear();
-    }
 
     @Test
     void splitQueryField_producesDataLoaderFetcherAndRowsMethod() {

@@ -6,7 +6,6 @@ import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
-import no.sikt.graphitron.rewrite.RewriteConfig;
 
 import javax.lang.model.element.Modifier;
 import java.util.List;
@@ -49,9 +48,9 @@ public class ConnectionHelperClassGenerator {
     private static final ClassName ARRAY_LIST       = ClassName.get("java.util", "ArrayList");
     private static final ClassName BASE64           = ClassName.get("java.util", "Base64");
 
-    public static List<TypeSpec> generate() {
+    public static List<TypeSpec> generate(String outputPackage) {
         var connectionResultClass = ClassName.get(
-            RewriteConfig.outputPackage() + ".util", ConnectionResultClassGenerator.CLASS_NAME);
+            outputPackage + ".util", ConnectionResultClassGenerator.CLASS_NAME);
 
         // --- Edge nested class ---
         var edgeClass = TypeSpec.classBuilder("Edge")

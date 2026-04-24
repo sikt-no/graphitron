@@ -12,7 +12,6 @@ import no.sikt.graphitron.rewrite.generators.util.ConnectionResultClassGenerator
 import no.sikt.graphitron.rewrite.generators.util.OrderByResultClassGenerator;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
-import no.sikt.graphitron.rewrite.RewriteConfig;
 import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.BatchKeyField;
 import no.sikt.graphitron.rewrite.model.CallParam;
@@ -60,7 +59,7 @@ import java.util.Set;
  */
 public class TypeFetcherGenerator {
 
-    public static List<TypeSpec> generate(GraphitronSchema schema) {
+    public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage, String jooqPackage) {
         var result = new ArrayList<TypeSpec>(schema.types().entrySet().stream()
             .filter(e -> e.getValue() instanceof GraphitronType.TableType
                       || e.getValue() instanceof GraphitronType.NodeType
@@ -68,7 +67,7 @@ public class TypeFetcherGenerator {
                       || e.getValue() instanceof GraphitronType.ResultType)
             .map(Map.Entry::getKey)
             .sorted()
-            .map(typeName -> generateForType(schema, typeName))
+            .map(typeName -> generateForType(schema, typeName, outputPackage, jooqPackage))
             .toList());
 
         // Walk NestingField descendants of TableBackedType roots; emit a narrow Fetchers class
@@ -80,14 +79,14 @@ public class TypeFetcherGenerator {
             .sorted(Map.Entry.comparingByKey())
             .forEach(e -> schema.fieldsOf(e.getKey()).forEach(f -> {
                 if (f instanceof ChildField.NestingField nf) {
-                    collectNestedFetcherClasses(nf, seenNestedTypes, result);
+                    collectNestedFetcherClasses(nf, seenNestedTypes, result, outputPackage, jooqPackage);
                 }
             }));
         return result;
     }
 
     private static void collectNestedFetcherClasses(ChildField.NestingField nf,
-            Set<String> seen, List<TypeSpec> out) {
+            Set<String> seen, List<TypeSpec> out, String outputPackage, String jooqPackage) {
         var nestedTypeName = nf.returnType().returnTypeName();
         if (seen.add(nestedTypeName)) {
             var batchKeyFields = nf.nestedFields().stream()
@@ -96,17 +95,17 @@ public class TypeFetcherGenerator {
                 .sorted(Comparator.comparing(GraphitronField::name))
                 .toList();
             if (!batchKeyFields.isEmpty()) {
-                out.add(generateTypeSpec(nestedTypeName, nf.returnType().table(), null, batchKeyFields));
+                out.add(generateTypeSpec(nestedTypeName, nf.returnType().table(), null, batchKeyFields, outputPackage, jooqPackage));
             }
         }
         for (var nested : nf.nestedFields()) {
             if (nested instanceof ChildField.NestingField innerNf) {
-                collectNestedFetcherClasses(innerNf, seen, out);
+                collectNestedFetcherClasses(innerNf, seen, out, outputPackage, jooqPackage);
             }
         }
     }
 
-    private static TypeSpec generateForType(GraphitronSchema schema, String typeName) {
+    private static TypeSpec generateForType(GraphitronSchema schema, String typeName, String outputPackage, String jooqPackage) {
         var type = schema.type(typeName);
         var fields = schema.fieldsOf(typeName).stream()
             .filter(f -> !(f instanceof GraphitronField.NotGeneratedField))
@@ -115,7 +114,7 @@ public class TypeFetcherGenerator {
             .toList();
         TableRef parentTable = type instanceof GraphitronType.TableBackedType tbt ? tbt.table() : null;
         GraphitronType.ResultType resultType = type instanceof GraphitronType.ResultType rt ? rt : null;
-        return generateTypeSpec(typeName, parentTable, resultType, fields);
+        return generateTypeSpec(typeName, parentTable, resultType, fields, outputPackage, jooqPackage);
     }
 
     // Fetcher-specific constants (cross-generator constants come from GeneratorUtils via static import)
@@ -262,10 +261,10 @@ public class TypeFetcherGenerator {
 
     /**
      * Overload for tests and callers that don't need to specify a {@link GraphitronType.ResultType}.
-     * Delegates to the 4-arg form with {@code resultType = null}.
+     * Delegates to the 6-arg form with {@code resultType = null} and empty package strings.
      */
     static TypeSpec generateTypeSpec(String typeName, TableRef parentTable, List<GraphitronField> fields) {
-        return generateTypeSpec(typeName, parentTable, null, fields);
+        return generateTypeSpec(typeName, parentTable, null, fields, "", "");
     }
 
     /**
@@ -278,7 +277,8 @@ public class TypeFetcherGenerator {
      * @param fields      the classified fields belonging to this type
      */
     static TypeSpec generateTypeSpec(String typeName, TableRef parentTable,
-            GraphitronType.ResultType resultType, List<GraphitronField> fields) {
+            GraphitronType.ResultType resultType, List<GraphitronField> fields,
+            String outputPackage, String jooqPackage) {
         var className = typeName + "Fetchers";
         var builder = TypeSpec.classBuilder(className)
             .addModifiers(Modifier.PUBLIC);
@@ -302,29 +302,29 @@ public class TypeFetcherGenerator {
                 case QueryField.QueryLookupTableField qlf -> {
                     var lookupTableRef = qlf.returnType().table();
                     var lookupTableClass = GeneratorUtils.ResolvedTableNames
-                        .of(lookupTableRef, qlf.returnType().returnTypeName()).jooqTableClass();
+                        .of(lookupTableRef, qlf.returnType().returnTypeName(), outputPackage, jooqPackage).jooqTableClass();
                     builder.addMethod(buildQueryLookupFetcher(qlf));
-                    builder.addMethod(buildQueryLookupRowsMethod(qlf));
+                    builder.addMethod(buildQueryLookupRowsMethod(qlf, outputPackage, jooqPackage));
                     builder.addMethod(LookupValuesJoinEmitter.buildInputRowsMethod(qlf, lookupTableClass));
                 }
                 case QueryField.QueryTableField qtf -> {
                     if (qtf.returnType().wrapper() instanceof FieldWrapper.Connection) {
-                        builder.addMethod(buildQueryConnectionFetcher(qtf));
+                        builder.addMethod(buildQueryConnectionFetcher(qtf, outputPackage, jooqPackage));
                     } else {
-                        builder.addMethod(buildQueryTableFetcher(qtf));
+                        builder.addMethod(buildQueryTableFetcher(qtf, outputPackage, jooqPackage));
                     }
                 }
                 case ChildField.ServiceTableField stf -> {
-                    builder.addMethod(buildServiceDataFetcher(stf.name(), stf, stf.method(), stf.returnType(), parentTable, className));
+                    builder.addMethod(buildServiceDataFetcher(stf.name(), stf, stf.method(), stf.returnType(), parentTable, className, jooqPackage));
                     builder.addMethod(buildServiceRowsMethod(stf, stf.returnType()));
                 }
                 case ChildField.SplitTableField stf -> {
-                    builder.addMethod(buildSplitQueryDataFetcher(stf, stf.returnType(), parentTable));
-                    builder.addMethod(SplitRowsMethodEmitter.buildRowsMethod(stf));
+                    builder.addMethod(buildSplitQueryDataFetcher(stf, stf.returnType(), parentTable, outputPackage, jooqPackage));
+                    builder.addMethod(SplitRowsMethodEmitter.buildRowsMethod(stf, outputPackage, jooqPackage));
                 }
                 case ChildField.SplitLookupTableField slf -> {
-                    builder.addMethod(buildSplitQueryDataFetcher(slf, slf.returnType(), parentTable));
-                    builder.addMethod(SplitRowsMethodEmitter.buildRowsMethod(slf));
+                    builder.addMethod(buildSplitQueryDataFetcher(slf, slf.returnType(), parentTable, outputPackage, jooqPackage));
+                    builder.addMethod(SplitRowsMethodEmitter.buildRowsMethod(slf, outputPackage, jooqPackage));
                     // Emit the VALUES-building input-rows helper alongside the rows method.
                     // Phase 2a's env-based variant (buildInputRowsMethod) reads args from
                     // env.getArgument(name) — correct for a Split* fetcher whose @lookupKey args
@@ -332,7 +332,7 @@ public class TypeFetcherGenerator {
                     // args live on a parent's SelectedField).
                     var lookupTableRef = slf.returnType().table();
                     var lookupTableClass = GeneratorUtils.ResolvedTableNames
-                        .of(lookupTableRef, slf.returnType().returnTypeName()).jooqTableClass();
+                        .of(lookupTableRef, slf.returnType().returnTypeName(), outputPackage, jooqPackage).jooqTableClass();
                     builder.addMethod(LookupValuesJoinEmitter.buildInputRowsMethod(slf, lookupTableClass));
                 }
                 // Stub variants — see NOT_IMPLEMENTED_REASONS
@@ -363,17 +363,17 @@ public class TypeFetcherGenerator {
                 case ChildField.NodeIdField ignored             -> { }
                 case ChildField.TableInterfaceField f           -> builder.addMethod(stub(f));
                 case ChildField.RecordTableField rtf -> {
-                    builder.addMethod(buildRecordBasedDataFetcher(rtf, resultType));
-                    builder.addMethod(SplitRowsMethodEmitter.buildRowsMethod(rtf));
+                    builder.addMethod(buildRecordBasedDataFetcher(rtf, resultType, jooqPackage));
+                    builder.addMethod(SplitRowsMethodEmitter.buildRowsMethod(rtf, outputPackage, jooqPackage));
                 }
                 case ChildField.RecordLookupTableField rltf -> {
-                    builder.addMethod(buildRecordBasedDataFetcher(rltf, resultType));
-                    builder.addMethod(SplitRowsMethodEmitter.buildRowsMethod(rltf));
+                    builder.addMethod(buildRecordBasedDataFetcher(rltf, resultType, jooqPackage));
+                    builder.addMethod(SplitRowsMethodEmitter.buildRowsMethod(rltf, outputPackage, jooqPackage));
                     // Input-rows helper identical in shape to SplitLookupTableField's — reads
                     // @lookupKey args from env.getArgument(name) and emits the typed Row<M+1>[].
                     var lookupTableRef = rltf.returnType().table();
                     var lookupTableClass = GeneratorUtils.ResolvedTableNames
-                        .of(lookupTableRef, rltf.returnType().returnTypeName()).jooqTableClass();
+                        .of(lookupTableRef, rltf.returnType().returnTypeName(), outputPackage, jooqPackage).jooqTableClass();
                     builder.addMethod(LookupValuesJoinEmitter.buildInputRowsMethod(rltf, lookupTableClass));
                 }
                 case ChildField.TableMethodField f              -> builder.addMethod(stub(f));
@@ -397,7 +397,7 @@ public class TypeFetcherGenerator {
         }
 
         if (needsGraphitronContextHelper) {
-            builder.addMethod(buildGraphitronContextHelper());
+            builder.addMethod(buildGraphitronContextHelper(outputPackage));
         }
 
         // Emit static map fields for any TextMapLookup extractions on method-backed fields.
@@ -424,14 +424,14 @@ public class TypeFetcherGenerator {
             if (field instanceof QueryField.QueryTableField qtf
                     && qtf.orderBy() instanceof OrderBySpec.Argument arg) {
                 var tableRef = qtf.returnType().table();
-                var names = GeneratorUtils.ResolvedTableNames.of(tableRef, qtf.returnType().returnTypeName());
-                builder.addMethod(buildOrderByHelperMethod(qtf.name(), arg, names, tableRef));
+                var names = GeneratorUtils.ResolvedTableNames.of(tableRef, qtf.returnType().returnTypeName(), outputPackage, jooqPackage);
+                builder.addMethod(buildOrderByHelperMethod(qtf.name(), arg, names, tableRef, outputPackage));
             } else if (field instanceof ChildField.SplitTableField stf
                     && stf.returnType().wrapper() instanceof FieldWrapper.Connection
                     && stf.orderBy() instanceof OrderBySpec.Argument arg) {
                 var tableRef = stf.returnType().table();
-                var names = GeneratorUtils.ResolvedTableNames.of(tableRef, stf.returnType().returnTypeName());
-                builder.addMethod(buildOrderByHelperMethod(stf.name(), arg, names, tableRef));
+                var names = GeneratorUtils.ResolvedTableNames.of(tableRef, stf.returnType().returnTypeName(), outputPackage, jooqPackage);
+                builder.addMethod(buildOrderByHelperMethod(stf.name(), arg, names, tableRef, outputPackage));
             }
         }
 
@@ -466,7 +466,7 @@ public class TypeFetcherGenerator {
             f instanceof ChildField.SplitTableField stf
                 && stf.returnType().wrapper() instanceof FieldWrapper.Connection);
         if (hasConnectionSplitField) {
-            builder.addMethod(SplitRowsMethodEmitter.buildScatterConnectionByIdxHelper());
+            builder.addMethod(SplitRowsMethodEmitter.buildScatterConnectionByIdxHelper(outputPackage));
         }
 
         // emptyScatter is needed whenever @lookupKey input can be empty at request time — that is,
@@ -497,9 +497,9 @@ public class TypeFetcherGenerator {
      * }
      * }</pre>
      */
-    private static MethodSpec buildQueryTableFetcher(QueryField.QueryTableField qtf) {
+    private static MethodSpec buildQueryTableFetcher(QueryField.QueryTableField qtf, String outputPackage, String jooqPackage) {
         var tableRef = qtf.returnType().table();
-        var names = GeneratorUtils.ResolvedTableNames.of(tableRef, qtf.returnType().returnTypeName());
+        var names = GeneratorUtils.ResolvedTableNames.of(tableRef, qtf.returnType().returnTypeName(), outputPackage, jooqPackage);
         boolean isList = qtf.returnType().wrapper().isList();
 
         var returnType = isList
@@ -513,7 +513,7 @@ public class TypeFetcherGenerator {
 
         builder.addCode(GeneratorUtils.declareTableLocal(names, tableRef));
         String tableLocal = names.tableLocalName();
-        builder.addCode(buildConditionCall(qtf, tableLocal));
+        builder.addCode(buildConditionCall(qtf, tableLocal, outputPackage));
 
         var dslContextClass = ClassName.get("org.jooq", "DSLContext");
         if (isList) {
@@ -545,9 +545,9 @@ public class TypeFetcherGenerator {
         return builder.build();
     }
 
-    private static CodeBlock buildConditionCall(QueryField.QueryTableField qtf, String srcAlias) {
+    private static CodeBlock buildConditionCall(QueryField.QueryTableField qtf, String srcAlias, String outputPackage) {
         var queryConditionsClass = ClassName.get(
-            RewriteConfig.outputPackage() + ".conditions",
+            outputPackage + ".conditions",
             qtf.parentTypeName() + QueryConditionsGenerator.CLASS_NAME_SUFFIX);
         return CodeBlock.builder()
             .addStatement("$T condition = $T.$L($L, env)",
@@ -564,13 +564,13 @@ public class TypeFetcherGenerator {
      * reverses ordering for backward pagination, executes inline paginated SQL with
      * name-based extra-field deduplication, and wraps the result in a {@code ConnectionResult}.
      */
-    private static MethodSpec buildQueryConnectionFetcher(QueryField.QueryTableField qtf) {
+    private static MethodSpec buildQueryConnectionFetcher(QueryField.QueryTableField qtf, String outputPackage, String jooqPackage) {
         var tableRef = qtf.returnType().table();
-        var names = GeneratorUtils.ResolvedTableNames.of(tableRef, qtf.returnType().returnTypeName());
+        var names = GeneratorUtils.ResolvedTableNames.of(tableRef, qtf.returnType().returnTypeName(), outputPackage, jooqPackage);
         var connectionResultClass = ClassName.get(
-            RewriteConfig.outputPackage() + ".util", ConnectionResultClassGenerator.CLASS_NAME);
+            outputPackage + ".util", ConnectionResultClassGenerator.CLASS_NAME);
         var connectionHelperClass = ClassName.get(
-            RewriteConfig.outputPackage() + ".util", ConnectionHelperClassGenerator.CLASS_NAME);
+            outputPackage + ".util", ConnectionHelperClassGenerator.CLASS_NAME);
         var conn = (FieldWrapper.Connection) qtf.returnType().wrapper();
 
         var builder = MethodSpec.methodBuilder(qtf.name())
@@ -584,7 +584,7 @@ public class TypeFetcherGenerator {
         builder.addCode(buildConditionCall(qtf, tableLocal));
         // Single dispatch produces both orderBy (for SQL) and extraFields (for cursor columns),
         // keeping them in sync when the client picks a dynamic named order.
-        builder.addCode(buildConnectionOrderingBlock(qtf.orderBy(), qtf.name(), names, tableLocal));
+        builder.addCode(buildConnectionOrderingBlock(qtf.orderBy(), qtf.name(), names, tableLocal, outputPackage));
 
         // Extract all four Relay pagination arguments using arg names from the model
         var pagination = qtf.pagination();
@@ -603,7 +603,7 @@ public class TypeFetcherGenerator {
         // all live inside ConnectionHelper.pageRequest. The fetcher keeps the four env.getArgument
         // calls above so pageRequest itself has no graphql-java dependency.
         var pageRequestClass = ClassName.get(
-            RewriteConfig.outputPackage() + ".util", "ConnectionHelper", "PageRequest");
+            outputPackage + ".util", "ConnectionHelper", "PageRequest");
         builder.addStatement(
             "$T page = $T.pageRequest(first, last, after, before, $L, orderBy, extraFields, "
                 + "$T.$$fields(env.getSelectionSet(), $L, env))",
@@ -647,7 +647,7 @@ public class TypeFetcherGenerator {
      * </ul>
      */
     private static CodeBlock buildConnectionOrderingBlock(
-            OrderBySpec orderBy, String fieldName, GeneratorUtils.ResolvedTableNames names, String srcAlias) {
+            OrderBySpec orderBy, String fieldName, GeneratorUtils.ResolvedTableNames names, String srcAlias, String outputPackage) {
         var code = CodeBlock.builder();
         var JOOQ_FIELD = ClassName.get("org.jooq", "Field");
         var WILDCARD_FIELD = ParameterizedTypeName.get(JOOQ_FIELD,
@@ -678,7 +678,7 @@ public class TypeFetcherGenerator {
                 // right jOOQ instance (canonical tableLocal for root, FK-chain terminal alias
                 // for Split+Connection).
                 var orderByResultClass = ClassName.get(
-                    RewriteConfig.outputPackage() + ".util", OrderByResultClassGenerator.CLASS_NAME);
+                    outputPackage + ".util", OrderByResultClassGenerator.CLASS_NAME);
                 code.addStatement("$T ordering = $LOrderBy(env, $L)", orderByResultClass, fieldName, srcAlias);
                 code.addStatement("$T orderBy = ordering.sortFields()", SORT_FIELD_LIST);
                 code.addStatement("$T extraFields = ordering.columns()", listOfField);
@@ -752,10 +752,10 @@ public class TypeFetcherGenerator {
             String fieldName,
             OrderBySpec.Argument arg,
             GeneratorUtils.ResolvedTableNames names,
-            TableRef tableRef) {
+            TableRef tableRef, String outputPackage) {
 
         var orderByResultClass = ClassName.get(
-            RewriteConfig.outputPackage() + ".util", OrderByResultClassGenerator.CLASS_NAME);
+            outputPackage + ".util", OrderByResultClassGenerator.CLASS_NAME);
 
         String tableLocal = names.tableLocalName();
         var builder = MethodSpec.methodBuilder(fieldName + "OrderBy")
@@ -764,11 +764,11 @@ public class TypeFetcherGenerator {
             .addParameter(ENV, "env")
             .addParameter(names.jooqTableClass(), tableLocal);
 
-        var baseExpr = buildBaseReturnExpr(arg.base(), tableLocal);
+        var baseExpr = buildBaseReturnExpr(arg.base(), tableLocal, outputPackage);
         if (arg.list()) {
-            builder.addCode(buildListArgOrderByBody(arg, baseExpr, tableLocal));
+            builder.addCode(buildListArgOrderByBody(arg, baseExpr, tableLocal, outputPackage));
         } else {
-            builder.addCode(buildSingleArgOrderByBody(arg, baseExpr, tableLocal));
+            builder.addCode(buildSingleArgOrderByBody(arg, baseExpr, tableLocal, outputPackage));
         }
 
         return builder.build();
@@ -779,9 +779,9 @@ public class TypeFetcherGenerator {
      * or {@code new OrderByResult(List.of(), List.of())}) used when no {@code @orderBy} argument is
      * supplied at runtime.
      */
-    private static CodeBlock buildBaseReturnExpr(OrderBySpec base, String srcAlias) {
+    private static CodeBlock buildBaseReturnExpr(OrderBySpec base, String srcAlias, String outputPackage) {
         var orderByResultClass = ClassName.get(
-            RewriteConfig.outputPackage() + ".util", OrderByResultClassGenerator.CLASS_NAME);
+            outputPackage + ".util", OrderByResultClassGenerator.CLASS_NAME);
         return switch (base) {
             case OrderBySpec.Fixed fixed when !fixed.columns().isEmpty() -> {
                 var sortParts = CodeBlock.builder();
@@ -814,10 +814,10 @@ public class TypeFetcherGenerator {
      * };
      * }</pre>
      */
-    private static CodeBlock buildSingleArgOrderByBody(OrderBySpec.Argument arg, CodeBlock baseExpr, String srcAlias) {
+    private static CodeBlock buildSingleArgOrderByBody(OrderBySpec.Argument arg, CodeBlock baseExpr, String srcAlias, String outputPackage) {
         var code = CodeBlock.builder();
         var orderByResultClass = ClassName.get(
-            RewriteConfig.outputPackage() + ".util", OrderByResultClassGenerator.CLASS_NAME);
+            outputPackage + ".util", OrderByResultClassGenerator.CLASS_NAME);
         code.addStatement("$T<$T, $T> orderArg = env.getArgument($S)", MAP, String.class, Object.class, arg.name());
         code.add("if (orderArg == null) return $L;\n", baseExpr);
         code.addStatement("$T field = ($T) orderArg.get($S)", String.class, String.class, arg.sortFieldName());
@@ -863,13 +863,13 @@ public class TypeFetcherGenerator {
      * return parts;
      * }</pre>
      */
-    private static CodeBlock buildListArgOrderByBody(OrderBySpec.Argument arg, CodeBlock baseExpr, String srcAlias) {
+    private static CodeBlock buildListArgOrderByBody(OrderBySpec.Argument arg, CodeBlock baseExpr, String srcAlias, String outputPackage) {
         var code = CodeBlock.builder();
         var JOOQ_FIELD = ClassName.get("org.jooq", "Field");
         var WILDCARD_FIELD = ParameterizedTypeName.get(JOOQ_FIELD,
             no.sikt.graphitron.javapoet.WildcardTypeName.subtypeOf(Object.class));
         var orderByResultClass = ClassName.get(
-            RewriteConfig.outputPackage() + ".util", OrderByResultClassGenerator.CLASS_NAME);
+            outputPackage + ".util", OrderByResultClassGenerator.CLASS_NAME);
         code.addStatement("$T<$T<$T, $T>> orderArgs = env.getArgument($S)",
             LIST, MAP, String.class, Object.class, arg.name());
         code.add("if (orderArgs == null || orderArgs.isEmpty()) return $L;\n", baseExpr);
@@ -949,9 +949,9 @@ public class TypeFetcherGenerator {
      * }
      * }</pre>
      */
-    private static MethodSpec buildQueryLookupRowsMethod(QueryField.QueryLookupTableField field) {
+    private static MethodSpec buildQueryLookupRowsMethod(QueryField.QueryLookupTableField field, String outputPackage, String jooqPackage) {
         var tableRef = field.returnType().table();
-        var names = GeneratorUtils.ResolvedTableNames.of(tableRef, field.returnType().returnTypeName());
+        var names = GeneratorUtils.ResolvedTableNames.of(tableRef, field.returnType().returnTypeName(), outputPackage, jooqPackage);
 
         var builder = MethodSpec.methodBuilder(field.lookupMethodName())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -1020,7 +1020,7 @@ public class TypeFetcherGenerator {
             MethodRef smr,
             ReturnTypeRef.TableBoundReturnType tb,
             TableRef prt,
-            String className) {
+            String className, String jooqPackage) {
 
         boolean isList = tb.wrapper().isList();
         var valueType = isList ? ParameterizedTypeName.get(LIST, RECORD) : RECORD;
@@ -1051,7 +1051,7 @@ public class TypeFetcherGenerator {
                 "    .computeIfAbsent(name, k -> $T.newDataLoaderWithContext($L));\n",
                 loaderType, DATA_LOADER_FACTORY, lambdaBlock);
 
-        methodBuilder.addCode(GeneratorUtils.buildKeyExtraction(batchKey, prt));
+        methodBuilder.addCode(GeneratorUtils.buildKeyExtraction(batchKey, prt, jooqPackage));
         return methodBuilder.addStatement("return loader.load(key, env)").build();
     }
 
@@ -1109,14 +1109,14 @@ public class TypeFetcherGenerator {
     private static MethodSpec buildSplitQueryDataFetcher(
             BatchKeyField bkf,
             ReturnTypeRef.TableBoundReturnType tb,
-            TableRef parentTable) {
+            TableRef parentTable, String outputPackage, String jooqPackage) {
 
         boolean isList = tb.wrapper().isList();
         boolean isConnection = tb.wrapper() instanceof FieldWrapper.Connection;
         TypeName valueType;
         if (isConnection) {
             valueType = ClassName.get(
-                RewriteConfig.outputPackage() + ".util", ConnectionResultClassGenerator.CLASS_NAME);
+                outputPackage + ".util", ConnectionResultClassGenerator.CLASS_NAME);
         } else if (isList) {
             valueType = ParameterizedTypeName.get(LIST, RECORD);
         } else {
@@ -1159,9 +1159,9 @@ public class TypeFetcherGenerator {
         // skip the DataLoader round-trip and return null directly. See
         // plan-single-cardinality-split-query.md §4.
         if (isList) {
-            methodBuilder.addCode(GeneratorUtils.buildKeyExtraction(batchKey, parentTable));
+            methodBuilder.addCode(GeneratorUtils.buildKeyExtraction(batchKey, parentTable, jooqPackage));
         } else {
-            methodBuilder.addCode(GeneratorUtils.buildKeyExtractionWithNullCheck(batchKey, parentTable));
+            methodBuilder.addCode(GeneratorUtils.buildKeyExtractionWithNullCheck(batchKey, parentTable, jooqPackage));
         }
         return methodBuilder.addStatement("return loader.load(key, env)").build();
     }
@@ -1200,7 +1200,7 @@ public class TypeFetcherGenerator {
      *            {@code batchKey()} and {@code rowsMethodName()}).
      */
     private static <T extends ChildField.TableTargetField & BatchKeyField> MethodSpec
-            buildRecordBasedDataFetcher(T field, GraphitronType.ResultType resultType) {
+            buildRecordBasedDataFetcher(T field, GraphitronType.ResultType resultType, String jooqPackage) {
 
         boolean isList = field.returnType().wrapper().isList();
         var valueType = isList ? ParameterizedTypeName.get(LIST, RECORD) : RECORD;
@@ -1230,7 +1230,7 @@ public class TypeFetcherGenerator {
                 "$T loader = env.getDataLoaderRegistry()\n" +
                 "    .computeIfAbsent(name, k -> $T.newDataLoader($L));\n",
                 loaderType, DATA_LOADER_FACTORY, lambdaBlock)
-            .addCode(GeneratorUtils.buildRecordKeyExtraction((BatchKey.RowKeyed) batchKey, resultType))
+            .addCode(GeneratorUtils.buildRecordKeyExtraction((BatchKey.RowKeyed) batchKey, resultType, jooqPackage))
             .addStatement("return loader.load(key, env)")
             .build();
     }
@@ -1246,8 +1246,8 @@ public class TypeFetcherGenerator {
     // GraphitronContext helper
     // -----------------------------------------------------------------------
 
-    private static MethodSpec buildGraphitronContextHelper() {
-        var ctxType = graphitronContext();
+    private static MethodSpec buildGraphitronContextHelper(String outputPackage) {
+        var ctxType = graphitronContext(outputPackage);
         return MethodSpec.methodBuilder("graphitronContext")
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .returns(ctxType)

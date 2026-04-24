@@ -1,6 +1,5 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.rewrite.RewriteConfig;
 import graphql.schema.FieldCoordinates;
 import graphql.schema.GraphQLArgument;
 import graphql.schema.GraphQLObjectType;
@@ -25,7 +24,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.*;
  * <p>This is the directive-reading boundary: the only place in the pipeline that reads schema
  * directives. Downstream code works exclusively with the produced model values.
  *
- * <p>The Maven plugin calls {@link #build(TypeDefinitionRegistry)} before running
+ * <p>The Maven plugin calls {@link #build(TypeDefinitionRegistry, RewriteContext)} before running
  * {@link GraphitronSchemaValidator#validate(GraphitronSchema)}.
  */
 public class GraphitronSchemaBuilder {
@@ -35,8 +34,9 @@ public class GraphitronSchemaBuilder {
      * classifier built internally. The Commit B emitters read raw type structure (argument
      * default values, nested list/non-null wrapping, directive applications) off the assembled
      * schema and don't need the reclassification to carry it all, so we just surface both
-     * together. Production callers use {@link #buildBundle(TypeDefinitionRegistry)}; tests that
-     * only need the classified model continue to call {@link #build(TypeDefinitionRegistry)}.
+     * together. Production callers use {@link #buildBundle(TypeDefinitionRegistry, RewriteContext)};
+     * tests that only need the classified model continue to call
+     * {@link #build(TypeDefinitionRegistry, RewriteContext)}.
      */
     public record Bundle(GraphitronSchema model, graphql.schema.GraphQLSchema assembled) {}
 
@@ -45,15 +45,15 @@ public class GraphitronSchemaBuilder {
      * {@link GraphitronSchema}. The registry must already include the Graphitron directive
      * definitions.
      */
-    public static GraphitronSchema build(TypeDefinitionRegistry registry) {
-        return buildBundle(registry).model();
+    public static GraphitronSchema build(TypeDefinitionRegistry registry, RewriteContext ctx) {
+        return buildBundle(registry, ctx).model();
     }
 
     /**
      * Classifies {@code registry} and returns both the classified model and the assembled
      * {@link GraphQLSchema}. See {@link Bundle}.
      */
-    public static Bundle buildBundle(TypeDefinitionRegistry registry) {
+    public static Bundle buildBundle(TypeDefinitionRegistry registry, RewriteContext ctx) {
         var runtimeWiring = EchoingWiringFactory.newEchoingWiring(wiring ->
             registry.scalars().forEach((name, v) -> {
                 if (!ScalarInfo.isGraphqlSpecifiedScalar(name)) {
@@ -62,12 +62,12 @@ public class GraphitronSchemaBuilder {
             })
         );
         var assembled = new SchemaGenerator().makeExecutableSchema(registry, runtimeWiring);
-        var ctx = new BuildContext(assembled, new JooqCatalog(RewriteConfig.getGeneratedJooqPackage()));
-        var svc = new ServiceCatalog(ctx);
-        ctx.svc = svc;
-        var typeBuilder = new TypeBuilder(ctx, svc);
-        var fieldBuilder = new FieldBuilder(ctx, svc);
-        return new Bundle(buildSchema(ctx, typeBuilder, fieldBuilder), assembled);
+        var bctx = new BuildContext(assembled, new JooqCatalog(ctx.jooqPackage()), ctx);
+        var svc = new ServiceCatalog(bctx);
+        bctx.svc = svc;
+        var typeBuilder = new TypeBuilder(bctx, svc);
+        var fieldBuilder = new FieldBuilder(bctx, svc);
+        return new Bundle(buildSchema(bctx, typeBuilder, fieldBuilder), assembled);
     }
 
     private static GraphitronSchema buildSchema(BuildContext ctx, TypeBuilder typeBuilder, FieldBuilder fieldBuilder) {

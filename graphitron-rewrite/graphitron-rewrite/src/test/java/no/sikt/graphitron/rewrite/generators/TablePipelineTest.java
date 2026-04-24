@@ -1,16 +1,12 @@
 package no.sikt.graphitron.rewrite.generators;
 
-import no.sikt.graphitron.rewrite.RewriteConfig;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
-import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -22,16 +18,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  * the table (not the GraphQL type name), and skips all other types.
  */
 class TablePipelineTest {
-
-    @BeforeEach
-    void setup() {
-        RewriteConfig.setProperties(java.util.Set.of(), "", "fake.code.generated", DEFAULT_JOOQ_PACKAGE, java.util.Map.of());
-    }
-
-    @AfterEach
-    void teardown() {
-        RewriteConfig.clear();
-    }
 
     @Test
     void singleTableType_producesOneClass() {

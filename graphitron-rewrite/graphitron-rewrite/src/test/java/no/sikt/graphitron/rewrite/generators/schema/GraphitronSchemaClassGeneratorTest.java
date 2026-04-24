@@ -1,35 +1,23 @@
 package no.sikt.graphitron.rewrite.generators.schema;
 
 import no.sikt.graphitron.javapoet.TypeSpec;
-import no.sikt.graphitron.rewrite.RewriteConfig;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import javax.lang.model.element.Modifier;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class GraphitronSchemaClassGeneratorTest {
 
-    @BeforeEach
-    void setUp() {
-        RewriteConfig.setProperties(Set.of(), "/tmp", "com.example", "com.example.jooq", Map.of());
-    }
-
-    @AfterEach
-    void tearDown() {
-        RewriteConfig.clear();
-    }
+    private static final String OUTPUT_PKG = "com.example";
 
     @Test
     void generate_returnsExactlyOneClassNamedGraphitronSchema() {
         var schema = TestSchemaHelper.buildBundle("type Query { x: String }").assembled();
-        List<TypeSpec> result = GraphitronSchemaClassGenerator.generate(schema);
+        List<TypeSpec> result = GraphitronSchemaClassGenerator.generate(schema, Set.of(), OUTPUT_PKG);
         assertThat(result).hasSize(1);
         var spec = result.get(0);
         assertThat(spec.name()).isEqualTo("GraphitronSchema");
@@ -143,7 +131,7 @@ class GraphitronSchemaClassGeneratorTest {
             type Film { id: ID! }
             type Person { id: ID! }
             """).assembled();
-        var body = GraphitronSchemaClassGenerator.generate(schema, Set.of("Film", "Person", "Query"))
+        var body = GraphitronSchemaClassGenerator.generate(schema, Set.of("Film", "Person", "Query"), OUTPUT_PKG)
             .get(0).methodSpecs().get(0).code().toString();
         assertThat(body).contains("com.example.schema.FilmType.registerFetchers(codeRegistry)");
         assertThat(body).contains("com.example.schema.PersonType.registerFetchers(codeRegistry)");
@@ -158,7 +146,7 @@ class GraphitronSchemaClassGeneratorTest {
     @Test
     void build_callsRegisterFetchersBeforeAnySchemaBuilderSetup() {
         var schema = TestSchemaHelper.buildBundle("type Query { x: String }").assembled();
-        var body = GraphitronSchemaClassGenerator.generate(schema, Set.of("Query"))
+        var body = GraphitronSchemaClassGenerator.generate(schema, Set.of("Query"), OUTPUT_PKG)
             .get(0).methodSpecs().get(0).code().toString();
         int registerIdx = body.indexOf("registerFetchers(codeRegistry)");
         int schemaBuilderIdx = body.indexOf("schemaBuilder = graphql.schema.GraphQLSchema.newSchema()");
@@ -182,7 +170,7 @@ class GraphitronSchemaClassGeneratorTest {
 
     private static TypeSpec generate(String sdl) {
         var schema = TestSchemaHelper.buildBundle(sdl).assembled();
-        return GraphitronSchemaClassGenerator.generate(schema).get(0);
+        return GraphitronSchemaClassGenerator.generate(schema, Set.of(), OUTPUT_PKG).get(0);
     }
 
     private static String buildBody(String sdl) {

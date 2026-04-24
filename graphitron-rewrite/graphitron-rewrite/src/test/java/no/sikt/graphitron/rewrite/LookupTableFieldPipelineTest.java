@@ -4,8 +4,6 @@ import no.sikt.graphitron.rewrite.generators.TypeClassGenerator;
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
 import no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
@@ -21,16 +19,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  * or single cardinality on an inline {@code @lookupKey} field produces {@code UnclassifiedField}.
  */
 class LookupTableFieldPipelineTest {
-
-    @BeforeEach
-    void setup() {
-        RewriteConfig.setProperties(java.util.Set.of(), "", "fake.code.generated", DEFAULT_JOOQ_PACKAGE, java.util.Map.of());
-    }
-
-    @AfterEach
-    void teardown() {
-        RewriteConfig.clear();
-    }
 
     @Test
     void listLookupKey_producesSwitchArmAndInputRowsHelper() {

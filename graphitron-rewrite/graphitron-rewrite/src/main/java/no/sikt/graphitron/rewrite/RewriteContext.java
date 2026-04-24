@@ -1,34 +1,41 @@
 package no.sikt.graphitron.rewrite;
 
+import no.sikt.graphitron.rewrite.schema.ScalarMapping;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
 
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 /**
  * Per-invocation configuration the rewrite generator runs against.
  *
- * <p>Minimal today: just the ordered list of schema inputs and the project
- * basedir. The rewrite-owned Maven plugin will expand this record with the
- * remaining plugin knobs (output paths, packages, named references, scalars,
- * page-size cap); the record's canonical constructor absorbs those fields
- * when that plan lands. Callers that construct a context today stay working;
- * new fields are purely additive.
- *
- * <p>This context is the rewrite-core boundary for externally supplied
- * configuration. It is never held in a static or {@link ThreadLocal}; it
- * flows through the constructor of
- * {@link GraphQLRewriteGenerator#GraphQLRewriteGenerator(RewriteContext)}
- * and is accessible to every pipeline stage through the generator instance.
+ * <p>Constructed once by the Mojo and flowed through the entire pipeline. Never held in a static
+ * or {@link ThreadLocal}; it travels through
+ * {@link GraphQLRewriteGenerator#GraphQLRewriteGenerator(RewriteContext)} and is accessible to
+ * every pipeline stage through the generator instance.
  */
 public record RewriteContext(
     List<SchemaInput> schemaInputs,
-    Path basedir
+    Path basedir,
+    Path outputDirectory,
+    String outputPackage,
+    String jooqPackage,
+    Map<String, String> namedReferences,
+    List<ScalarMapping> scalars,
+    int maxAllowedPageSize
 ) {
     public RewriteContext {
         Objects.requireNonNull(schemaInputs, "schemaInputs");
         Objects.requireNonNull(basedir, "basedir");
+        Objects.requireNonNull(outputDirectory, "outputDirectory");
+        Objects.requireNonNull(outputPackage, "outputPackage");
+        Objects.requireNonNull(jooqPackage, "jooqPackage");
+        Objects.requireNonNull(namedReferences, "namedReferences");
+        Objects.requireNonNull(scalars, "scalars");
         schemaInputs = List.copyOf(schemaInputs);
+        namedReferences = Map.copyOf(namedReferences);
+        scalars = List.copyOf(scalars);
     }
 }
