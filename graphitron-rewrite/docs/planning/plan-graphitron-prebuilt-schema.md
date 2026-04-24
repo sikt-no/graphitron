@@ -35,10 +35,69 @@
 > caught three Commit B helper locals (`typeWiring`, `codeRegistry`,
 > `schemaBuilder`); replaced with explicit JavaPoet `$T` references.
 >
-> **Commit C remains unchanged**: remove legacy emitters, replace the
-> `registerFetchers` bridge with direct `FetcherEmitter` calls, add
-> `@notGenerated` validator rejection, add lint ratchet, write
-> `graphitron-rewrite/docs/getting-started.md`.
+> **Commit C landed.** Legacy `WiringClassGenerator`,
+> `GraphitronWiringClassGenerator`, the emitted `GraphitronWiring`
+> aggregator, and the legacy `<TypeName>Wiring` classes are deleted. The
+> `ObjectTypeGenerator.registerFetchers` bridge is replaced by direct
+> fetcher-coordinate emissions from a new
+> `FetcherRegistrationsEmitter` (the former `WiringClassGenerator`
+> logic, retargeted to produce `codeRegistry.dataFetcher(FieldCoordinates
+> .coordinates(type, field), value)` bodies instead of
+> `.dataFetcher(field, value)` on a `TypeRuntimeWiring.Builder`).
+> `GraphitronSchemaValidator.validateNotGeneratedField` now rejects any
+> `@notGenerated` application with "@notGenerated is not supported by the
+> rewrite pipeline; the field must be fully described by the schema."
+> `GeneratedSourcesLintTest` gains `emittedSourcesDoNotImportLegacyRuntimeTypes`
+> (ratchets against `RuntimeWiring`, `TypeRuntimeWiring`,
+> `SchemaGenerator`, `SchemaReadingHelper`, and upstream
+> `no.sikt.graphql.GraphitronContext` imports on emitted sources) in
+> place of the now-obsolete `wiringAggregatorDoesNotInlineTypeWiring`
+> check. `graphitron-rewrite/docs/getting-started.md` ships alongside,
+> covering hello-world, custom scalar, federation, tenant-scoped
+> `DSLContext`, and context arguments from a JWT claim against the
+> `Graphitron.buildSchema(Consumer<GraphQLSchema.Builder>)` surface.
+>
+> `GraphQLQueryTest` migrated from `GraphitronWiring.build()` +
+> `SchemaGenerator.makeExecutableSchema` to the single
+> `Graphitron.buildSchema(b -> {})` call. `GeneratedSourcesSmokeTest`
+> switched from `rewrite.wiring.<TypeName>Wiring` expectations to
+> `rewrite.schema.<TypeName>Type` + the new `rewrite.schema.Graphitron`,
+> `rewrite.schema.GraphitronSchema`, `rewrite.schema.GraphitronContext`
+> entries. `FetcherPipelineTest` and `NestingFieldPipelineTest`
+> rewrote their assertions against `FetcherRegistrationsEmitter.emit(...)`
+> output; `ObjectTypeRegisterFetchersTest` switched from the deleted
+> `Set<String> typesWithLegacyWiring` signature to the new
+> `Map<String, CodeBlock> fetcherBodies` signature. `TypeSpecAssertions
+> .wiringFor` now scans the shared `FieldCoordinates.coordinates(type,
+> field)` body shape.
+>
+> Exit criteria met: the emitted `Graphitron.java` surface is exactly
+> the single `buildSchema(Consumer<GraphQLSchema.Builder>)` method;
+> no `SchemaReadingHelper`, `RuntimeWiring`, `TypeRuntimeWiring`,
+> `SchemaGenerator`, or `no.sikt.graphql.GraphitronContext` reference
+> remains in emitted code (enforced by the new lint ratchet).
+>
+> Execution-tier run flushed out three fallout items the programmatic
+> path needed that the SDL path had done for us. (1) Lambda parameter
+> disambiguation: `GraphQLCodeRegistry.Builder.dataFetcher` has two
+> overloads (`DataFetcher<?>` vs `DataFetcherFactory<?>`), so the bare
+> `env -> env.getSource()` lambda shapes `FetcherEmitter` emits became
+> ambiguous; every lambda now types its param as
+> `(DataFetchingEnvironment env) -> ...`. (2) Built-in scalars:
+> `GraphQLSchema.Builder` does not auto-register `Int`, `Float`,
+> `String`, `Boolean`, `ID` the way `SchemaGenerator` does for SDL, so
+> `GraphitronSchema.build` now calls `.additionalType(Scalars.GraphQLInt)`
+> and friends (five one-liners) to make every built-in `typeRef` resolve
+> at build time. (3) Enum runtime values: `GraphQLEnumValueDefinition
+> .newEnumValueDefinition().name(x).build()` leaves the runtime value
+> `null`, which makes graphql-java's Coercing layer reject every
+> string-matching-enum-name serialization with `"Unknown value 'X'"`.
+> `EnumTypeGenerator` now emits `.value(name)` alongside `.name(name)`
+> on every enum value, matching `SchemaGenerator`'s SDL default.
+>
+> 649 rewrite unit tests green; 116 execution-tier tests green (the
+> single execution suite on rewrite-test, all against the new
+> `Graphitron.buildSchema(b -> {})` wiring).
 
 ## Goal
 
