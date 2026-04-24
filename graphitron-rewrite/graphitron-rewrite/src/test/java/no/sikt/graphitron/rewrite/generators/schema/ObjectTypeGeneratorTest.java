@@ -181,7 +181,8 @@ class ObjectTypeGeneratorTest {
     }
 
     private static List<TypeSpec> generateFor(String sdl) {
-        return ObjectTypeGenerator.generate(TestSchemaHelper.buildBundle(sdl).assembled());
+        var bundle = TestSchemaHelper.buildBundle(sdl);
+        return ObjectTypeGenerator.generate(bundle.model(), bundle.assembled());
     }
 
     private static TypeSpec findByName(List<TypeSpec> specs, String name) {
