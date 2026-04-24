@@ -517,11 +517,15 @@ Each has a concrete fix; none blocks flipping the plan to Done, but
 M1 and M2 should land before the Maven-plugin plan starts depending
 on this surface.
 
-**Status:** all six items addressed in the follow-up commit. M2
-caught two previously undetected production bugs: an extension →
-base-definition downgrade on transform, and a `MultiSourceReader`
-source-name-attribution miss on unterminated inputs. Both fixes
-landed alongside the test that surfaced them.
+**Status:** all six original items addressed in the follow-up
+commit `8adaaa5e`. M2 caught two previously undetected production
+bugs: an extension → base-definition downgrade on transform, and a
+`MultiSourceReader` source-name-attribution miss on unterminated
+inputs. Both fixes landed alongside the test that surfaced them.
+
+Review of `8adaaa5e` surfaced three new items (F1-F3 below); F1 is
+substantive and should close before flipping to Done, F2 and F3 are
+nice-to-have.
 
 ### M1. `run()` has no end-to-end test
 
@@ -668,6 +672,63 @@ consumers yet, so the churn is free).
 
 *No fix recommended.* Keep the field as-is; the plugin plan is
 next and will wire it up.
+
+### F1. The `terminated()` Reader wrapper is untested
+
+Follow-up to the latent-bug fix in `8adaaa5e`. The wrapper at
+`RewriteSchemaLoader.java:66-91` is the production fix for the
+unterminated-source attribution bug, but no test exercises it:
+
+- `RewriteSchemaLoaderTest` fixtures use Java text blocks, which
+  always end in `\n`.
+- `TaggedInputsPipelineTest` fixtures also use text blocks.
+- `InMemoryRegistry.of` applies its own string-level termination
+  before constructing a `StringReader`, so the applier tests go
+  through a `StringReader` that is already terminated and never
+  hit the production wrapper.
+
+A regression that deletes the wrapper passes all 686 tests today,
+and production then silently mis-attributes any `.graphqls` file
+saved without a final newline (a common editor default).
+
+*Fix.* Add one test to `RewriteSchemaLoaderTest` that writes two
+fixture files where the first does **not** end with `\n`
+(`Files.writeString(..., "type Foo { id: ID! }")`), loads them
+together, and asserts via the registry that a node defined in the
+second source has `SourceLocation.getSourceName()` equal to the
+second source's path. The assertion must go through `SourceLocation`
+on the registry's `Definition`, not through an applier map, so it
+pins the invariant the wrapper preserves.
+
+### F2. Extension coverage is Object-only
+
+`8adaaa5e` added 10 new transform methods (5 kinds × 2 appliers:
+Object / Interface / InputObject / Enum / Union extensions). Tests
+cover `ObjectTypeExtensionDefinition` only. The four other kinds
+share the same shape and rely on the same `transformExtension` API,
+but "low risk" is not "zero risk" and the matching extension arms
+in each switch would rot silently if someone refactored the
+`collectReplacement` dispatch.
+
+*Fix.* Parameterise the existing
+`extendTypeFieldGainsTagAndStaysInExtensionsMap` test across all
+five kinds, or add four more per applier (eight new cases total).
+`TagApplierTest.java:245-272` shows the test shape; each case is
+roughly 20 LOC and mechanical.
+
+### F3. `terminated()` double-terminates already-terminated input
+
+The wrapper unconditionally appends `\n` at EOF regardless of the
+inner reader's last char, so an input that already ends in `\n`
+gets a redundant blank line. Harmless for SDL parsing, but shifts
+`SourceLocation.line` for diagnostics on the synthetic trailing
+blank and marginally inflates the source-name-tracking cost.
+
+*No fix recommended.* Tracking the last-emitted char to avoid the
+redundant `\n` is more wrapper complexity than the invariant
+warrants; flag for awareness only. Revisit if `SourceLocation.line`
+precision on the last line of a source ever matters for error
+reporting.
 
 ## Roadmap integration
 
