@@ -510,6 +510,105 @@ drivers. Cross-boundary invariants (overlap on `sourceName`) stay
 in rewrite-core; user-config diagnostics (empty match) stay in the
 plugin.
 
+## Review follow-ups
+
+Findings from reviewing the landed implementation at `84cfd644`.
+Each has a concrete fix; none blocks flipping the plan to Done, but
+M1 and M2 should land before the Maven-plugin plan starts depending
+on this surface.
+
+### M1. `run()` has no end-to-end test
+
+`TaggedInputsPipelineTest` reconstructs the four stages inline
+(`SchemaInputAttribution.build` then `RewriteSchemaLoader.load`
+then `TagApplier.apply` then `DescriptionNoteApplier.apply`) rather
+than calling `new GraphQLRewriteGenerator(ctx).run()`, so the one
+new surface this plan adds, and the method the Maven-plugin plan
+will drive the generator through, is untested.
+
+*Fix.* Add one test that constructs a `RewriteContext` from three
+in-memory fixture files (same shape as the existing pipeline test,
+one tagged-only / one noted-only / one both) and invokes
+`new GraphQLRewriteGenerator(ctx).run()`. Assertions stay
+behavioural: `@tag` directives and descriptions present on the
+built schema's types. The point is covering the wiring in
+`GraphQLRewriteGenerator.run()` (today lines 66-72), which the
+existing pipeline test bypasses.
+
+### M2. Schema extensions are walked but not tested
+
+Both appliers iterate `registry.objectTypeExtensions()`,
+`interfaceTypeExtensions()`, etc. in their walks and rely on
+pattern matching (`ObjectTypeExtensionDefinition` is a subclass of
+`ObjectTypeDefinition` so the `case ObjectTypeDefinition` arm
+catches both) plus `registry.remove(old); registry.add(new)` to
+swap. Whether the round-trip puts the replacement back into the
+extensions map rather than `types()` is unexercised.
+
+*Fix.* Add one test per applier where the tagged/noted source is
+
+```
+extend type Foo { bar: String }
+```
+
+alongside a base `type Foo { id: ID! }` in a second (plain) source.
+Assert the extension's `bar` field gains `@tag` / note, and that
+the extension is still in `registry.objectTypeExtensions().get("Foo")`
+after apply (not moved into `registry.types()`).
+
+### m1. `SchemaInputAttribution.indexOf` uses reference identity
+
+`SchemaInputAttribution.java:44` compares with `==`. Works for the
+one call site because `putIfAbsent` stored the exact reference, but
+a caller passing `List.of(sameRef, sameRef)` would produce
+`#0 ... #0` in the error message. Not a realistic caller shape.
+
+*Fix.* Switch to `inputs.get(i).equals(target)`. Two-line change.
+
+### m2. Error message leaks Maven XML into rewrite-core
+
+`SchemaInputAttribution.java:33` throws with
+`"two <schemaInput> entries"`, but rewrite-core is filesystem-and-
+XML-agnostic (D6). A non-Maven driver (test, hypothetical CLI)
+hitting the overlap gets a misleading diagnostic pointing at XML
+it never wrote.
+
+*Fix.* Rephrase the literal as `"two SchemaInput entries"` (the
+record name, not the XML tag). One-line change plus the assertion
+in `SchemaInputAttributionTest` that currently pins the old
+phrasing indirectly through `withMessageContaining("dup.graphqls")`
+(the tag-name check already ignores the XML wording, so no test
+update is required).
+
+### m3. Inconsistent builder method between object and interface
+
+`TagApplier.java:95` calls
+`ObjectTypeDefinition.Builder.fieldDefinitions(...)`; `:101` calls
+`InterfaceTypeDefinition.Builder.definitions(...)` for the same
+conceptual operation (install a new field list). Both are valid
+graphql-java surface, but the mismatch costs a grep cycle to
+confirm they do the same thing. Same shape at
+`DescriptionNoteApplier.java:85` and `:95`.
+
+*Fix.* Prefer `definitions(...)` on both (graphql-java's canonical
+name for the field-list setter on type definitions is
+`definitions`; `fieldDefinitions` exists on `ObjectTypeDefinition`
+as an alias). Cosmetic; acceptable to defer.
+
+### m4. `RewriteContext.basedir` is declared, required, and unread
+
+Deliberate seat-warmer for the Maven-plugin plan per the record's
+Javadoc at `RewriteContext.java:11-17`, not an oversight. Flagging
+only so a later adjuster does not assume it is wired up. Test
+callers today have to fabricate a `Path` that nothing reads. If
+the reviewer prefers strict "add fields when they have a reader",
+drop `basedir` from the record now and reintroduce it with the
+plugin plan (the record is new and rewrite-core has no external
+consumers yet, so the churn is free).
+
+*No fix recommended.* Keep the field as-is; the plugin plan is
+next and will wire it up.
+
 ## Roadmap integration
 
 The roadmap already carries a sub-item pointing at this plan under the
