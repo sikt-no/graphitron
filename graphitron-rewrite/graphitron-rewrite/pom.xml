@@ -17,7 +17,7 @@
     <dependencies>
         <dependency>
             <groupId>${project.groupId}</groupId>
-            <artifactId>graphitron-javapoet</artifactId>
+            <artifactId>graphitron-rewrite-javapoet</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>

@@ -42,41 +42,50 @@ uses `postgres`/`postgres` credentials.
 
 ## Building graphitron-rewrite
 
-Run these commands in order from the repository root:
+The rewrite aggregator builds standalone from `graphitron-rewrite/pom.xml`; no
+legacy module (`graphitron-common`, `graphitron-java-codegen`,
+`graphitron-maven-plugin`, `graphitron-schema-transform`) needs to exist in the
+local repo first. Run commands from the repository root:
 
 ```bash
-# 1. Build graphitron-common, graphitron-javapoet, and graphitron-rewrite-fixtures.
-#    -am (also-make) builds all upstream dependencies automatically.
-#    -Plocal-db switches jooq codegen in test-fixtures from TestContainers to native Postgres.
-mvn install -pl :graphitron-rewrite-fixtures -am -Plocal-db
+# 1. Build the full rewrite aggregator (javapoet, rewrite, fixtures, maven, test).
+#    -Plocal-db switches jooq codegen in fixtures from TestContainers to native Postgres.
+mvn install -f graphitron-rewrite/pom.xml -Plocal-db
 
-# 2. Build graphitron-common, graphitron-javapoet, graphitron-java-codegen,
-#    graphitron-schema-transform, graphitron-rewrite, and graphitron-maven-plugin.
-#    Again, -am pulls in all upstream dependencies automatically.
-#    -Djooq.codegen.skip=true skips the Docker-backed jOOQ test-source generation in
-#    graphitron-java-codegen. -Dmaven.test.skip=true skips test compilation and execution
-#    for all modules (required because test sources in graphitron-java-codegen reference
-#    jOOQ classes that were not generated in step 1).
-mvn install -pl :graphitron-java-codegen,:graphitron-maven-plugin -am \
-  -Djooq.codegen.skip=true -Dmaven.test.skip=true
+# 2. Unit and structural tests for graphitron-rewrite (no DB needed)
+mvn test -f graphitron-rewrite/pom.xml -pl :graphitron-rewrite
 
-# 3. Unit and structural tests for graphitron-rewrite (no DB needed)
-mvn test -pl :graphitron-rewrite
+# 3. Compilation test: generated code compiles against real jOOQ classes
+mvn compile -f graphitron-rewrite/pom.xml -pl :graphitron-rewrite-test -Plocal-db
 
-# 4. Compilation test — generated code compiles against real jOOQ classes
-mvn compile -pl :graphitron-rewrite-test -Plocal-db
-
-# 5. Execution tests — generated code runs against native PostgreSQL
-mvn test -pl :graphitron-rewrite-test -Plocal-db
+# 4. Execution tests: generated code runs against native PostgreSQL
+mvn test -f graphitron-rewrite/pom.xml -pl :graphitron-rewrite-test -Plocal-db
 ```
+
+To verify the aggregator stays standalone (no legacy artifact leaks into the
+build):
+
+```bash
+graphitron-rewrite/scripts/verify-standalone-build.sh -Plocal-db
+```
+
+Runs `mvn install` against a fresh empty local repo and fails if any
+`no.sikt:graphitron-common`, `graphitron-java-codegen`,
+`graphitron-maven-plugin`, `graphitron-schema-transform`, or legacy
+`graphitron-javapoet` artifact is resolved. The rewrite tree depends on
+`graphitron-rewrite-javapoet` (the aggregator-local fork), not the legacy
+coord.
 
 ### Notes
 
-- The `local-db` profile is defined in `graphitron-rewrite-fixtures/pom.xml` and switches
-  jOOQ codegen from `ContainerDatabaseDriver` to `org.postgresql.Driver` at `localhost:5432/rewrite_test`.
-- `-Djooq.codegen.skip=true` skips the Docker-backed jOOQ test source generation in
-  `graphitron-java-codegen` (configured via the `jooq.codegen.skip` property in its pom.xml).
-- Maven is at `/opt/maven/bin/mvn`; Java 21 is the default JVM — both are pre-installed.
+- The `local-db` profile is defined in `graphitron-rewrite-fixtures/pom.xml`
+  and switches jOOQ codegen from `ContainerDatabaseDriver` to
+  `org.postgresql.Driver` at `localhost:5432/rewrite_test`.
+- Maven is at `/opt/maven/bin/mvn`; Java 21 is the default JVM. Both are
+  pre-installed.
+- The legacy repo-root `mvn install` still works as before, but it no longer
+  builds the rewrite tree (dropped from the root reactor as part of the
+  aggregator-standalone work).
 
 ## Fixtures-jar clobber — symptoms and recovery
 

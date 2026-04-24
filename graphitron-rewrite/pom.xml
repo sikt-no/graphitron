@@ -12,6 +12,7 @@
     <url>https://github.com/sikt-no/graphitron</url>
 
     <modules>
+        <module>graphitron-javapoet</module>
         <module>graphitron-rewrite</module>
         <module>graphitron-rewrite-fixtures</module>
         <module>graphitron-rewrite-maven</module>

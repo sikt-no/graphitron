@@ -93,6 +93,14 @@ Graphitron is a code generator. The Java version used to build the generator is 
 
 The practical implication: when adding code to a generator, distinguish between code *in* the generator (unrestricted) and code *emitted by* the generator (Java 17).
 
+## Rewrite builds independently of legacy Graphitron modules
+
+`graphitron-rewrite/pom.xml` is a self-contained Maven aggregator. `mvn install -f graphitron-rewrite/pom.xml` on a clean local repo builds the five rewrite modules (`graphitron-rewrite-javapoet`, `graphitron-rewrite`, `graphitron-rewrite-fixtures`, `graphitron-rewrite-maven`, `graphitron-rewrite-test`) without resolving any legacy artifact (`graphitron-common`, `graphitron-java-codegen`, `graphitron-maven-plugin`, `graphitron-schema-transform`, or the legacy `graphitron-javapoet` coord).
+
+The invariant is enforced by `graphitron-rewrite/scripts/verify-standalone-build.sh`, which runs the aggregator against a fresh empty local repo and greps the resulting repo for forbidden legacy coords. Any future change that pulls a legacy dep back into the rewrite tree fails this check.
+
+Rationale: rewrite is the successor; consumers migrating off the legacy generator should be able to depend on the rewrite aggregator alone. The rewrite-owned Maven plugin (`graphitron-rewrite-maven`) is the entry point; the legacy plugin and schema-transform module remain available for consumers who haven't migrated yet, but rewrite code does not import from them.
+
 ---
 
 ## Emitter Conventions

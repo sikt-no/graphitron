@@ -19,3 +19,18 @@ Graphitron is used as a Maven plugin, offering two main functionalities:
 -   [Java Code Generator README](./graphitron-codegen-parent/graphitron-java-codegen/README.md) - Complete directive reference
 -   [Schema Transform README](./graphitron-schema-transform/README.md) - Schema transformation features
 -   [Common Module README](./graphitron-common/README.md) - Exception handling framework and shared utilities
+
+## Building
+
+`mvn install` at the repo root builds the legacy plugin tree
+(`graphitron-common`, `graphitron-java-codegen`, `graphitron-maven-plugin`,
+`graphitron-schema-transform`, etc).
+
+Rewrite-only work can build standalone from the rewrite aggregator without
+any legacy module in the dependency graph:
+
+```bash
+mvn install -f graphitron-rewrite/pom.xml -Plocal-db
+```
+
+See [graphitron-rewrite/docs/claude-code-web-environment.md](./graphitron-rewrite/docs/claude-code-web-environment.md) for the full rewrite build flow.
