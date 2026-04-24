@@ -12,6 +12,6 @@ import graphql.language.SourceLocation;
  * discouraged (e.g. directives shadowed by another directive on the same declaration).
  *
  * <p>{@code location.getSourceName()} carries the source file path when the schema was parsed
- * via {@code SchemaReadingHelper}.
+ * via {@code RewriteSchemaLoader}.
  */
 public record BuildWarning(String message, SourceLocation location) {}

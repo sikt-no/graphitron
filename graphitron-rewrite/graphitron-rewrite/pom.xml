@@ -17,13 +17,12 @@
     <dependencies>
         <dependency>
             <groupId>${project.groupId}</groupId>
-            <artifactId>graphitron-common</artifactId>
+            <artifactId>graphitron-javapoet</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>
-            <groupId>${project.groupId}</groupId>
-            <artifactId>graphitron-javapoet</artifactId>
-            <version>${project.version}</version>
+            <groupId>com.graphql-java</groupId>
+            <artifactId>graphql-java</artifactId>
         </dependency>
         <dependency>
             <groupId>org.jooq</groupId>

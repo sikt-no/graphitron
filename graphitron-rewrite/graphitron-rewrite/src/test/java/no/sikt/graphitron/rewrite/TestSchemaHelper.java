@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite;
 
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
+import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -9,8 +10,7 @@ import java.nio.charset.StandardCharsets;
 
 /**
  * Shared test helper that builds a {@link GraphitronSchema} from inline SDL,
- * loading Graphitron directive definitions from the classpath (via {@code graphitron-common})
- * instead of a hardcoded filesystem path.
+ * loading Graphitron directive definitions from rewrite's own classpath resource.
  */
 public final class TestSchemaHelper {
 
@@ -29,7 +29,7 @@ public final class TestSchemaHelper {
     }
 
     private static String loadDirectives() {
-        try (InputStream is = TestSchemaHelper.class.getClassLoader().getResourceAsStream("directives.graphqls")) {
+        try (InputStream is = RewriteSchemaLoader.class.getResourceAsStream("directives.graphqls")) {
             if (is == null) throw new IllegalStateException("directives.graphqls not found on classpath");
             return new String(is.readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException e) {

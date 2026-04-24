@@ -1171,7 +1171,7 @@ public class TypeFetcherGenerator {
      * {@code GraphitronContext.getTenantId(env)} + {@code "/"} +
      * {@code env.getExecutionStepInfo().getPath().getKeysOnly()} joined by {@code "/"} —
      * tenant-scoped and path-unique. The path is Graphitron-controlled; only the tenant prefix
-     * is pluggable via {@link no.sikt.graphql.GraphitronContext#getTenantId}, so implementers
+     * is pluggable via {@code no.sikt.graphql.GraphitronContext#getTenantId}, so implementers
      * cannot accidentally produce a colliding name.
      *
      * <p>{@code ResultPath.getKeysOnly()} returns named segments only (list indices stripped),

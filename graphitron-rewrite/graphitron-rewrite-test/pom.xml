@@ -142,11 +142,9 @@
                             <goal>generate</goal>
                         </goals>
                         <configuration>
-                            <transform>
-                                <schemaRootDirectories>
-                                    <directory>${project.basedir}/src/main/resources/graphql</directory>
-                                </schemaRootDirectories>
-                            </transform>
+                            <schemaFiles>
+                                <param>${project.basedir}/src/main/resources/graphql/schema.graphqls</param>
+                            </schemaFiles>
                             <jooqGeneratedPackage>${jooqPackage}</jooqGeneratedPackage>
                             <outputPackage>${outputPackage}</outputPackage>
                             <enableRewrite>true</enableRewrite>

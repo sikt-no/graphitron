@@ -1,6 +1,6 @@
 # Plan: Rewrite owns schema loading + directive auto-injection
 
-> **Status:** Ready
+> **Status:** In Review
 >
 > First sub-item of the "Dissolve `graphitron-schema-transform` module"
 > roadmap umbrella. Prerequisite for every subsequent migration
@@ -339,9 +339,17 @@ filter the caller's schema-file list. Any consumer pom that lists
 a `directives.graphqls` path in `<userSchemaFiles>` (or its
 rewrite-equivalent once the Maven-plugin plan lands) will fail
 schema parse with "directive '@table' redefined" on first build
-after this lands. Sweep and update consumer poms to drop the
-explicit directives entry before merging. In-house-only consumers;
-no external-consumer migration window required.
+after this lands. The same clash fires for a rewrite-only consumer
+that routes through `<transform>` today: `SchemaTransformRunner`
+writes `generator-schema.graphql` with the directive declarations
+embedded (`Keep generator directives = false` branch), and
+`GenerateMojo` then feeds that assembled file to rewrite via
+`this.schemaFiles = Set.of(result.generatorSchemaPath())`. For
+rewrite-only consumers (`disableLegacy=true`), drop `<transform>`
+and point `<schemaFiles>` at the raw user schema(s); the transform
+exists only to feed the legacy generator its assembled input.
+Sweep and update consumer poms before merging. In-house-only
+consumers; no external-consumer migration window required.
 
 Post-landing, update the roadmap:
 

@@ -6,6 +6,7 @@ import no.sikt.graphitron.rewrite.generators.QueryConditionsGenerator;
 import no.sikt.graphitron.rewrite.generators.TypeClassGenerator;
 import no.sikt.graphitron.rewrite.generators.TypeConditionsGenerator;
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
+import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
 import no.sikt.graphitron.rewrite.generators.schema.EnumTypeGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.FetcherRegistrationsEmitter;
 import no.sikt.graphitron.rewrite.generators.schema.GraphitronFacadeGenerator;
@@ -26,8 +27,6 @@ import java.io.File;
 import java.io.IOException;
 import java.util.List;
 
-import static no.sikt.graphql.schema.SchemaReadingHelper.getTypeDefinitionRegistry;
-
 /**
  * Entry point for the rewrite code-generation pipeline.
  *
@@ -40,7 +39,7 @@ public class GraphQLRewriteGenerator {
     static final Logger LOGGER = LoggerFactory.getLogger(GraphQLRewriteGenerator.class);
 
     public static void generate() {
-        var registry = getTypeDefinitionRegistry(RewriteConfig.generatorSchemaFiles());
+        var registry = RewriteSchemaLoader.load(RewriteConfig.generatorSchemaFiles());
         var bundle = GraphitronSchemaBuilder.buildBundle(registry);
         var schema = bundle.model();
         var assembled = bundle.assembled();
