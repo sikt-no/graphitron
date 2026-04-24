@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
 import graphql.language.SourceLocation;
+import graphql.schema.GraphQLObjectType;
 
 import no.sikt.graphitron.rewrite.model.ErrorHandlerType;
 import java.util.List;
@@ -12,7 +13,9 @@ import java.util.List;
 public sealed interface GraphitronType
     permits GraphitronType.TableBackedType, GraphitronType.ResultType, GraphitronType.RootType,
             GraphitronType.InterfaceType, GraphitronType.UnionType, GraphitronType.ErrorType,
-            GraphitronType.InputType, GraphitronType.TableInputType, GraphitronType.UnclassifiedType {
+            GraphitronType.InputType, GraphitronType.TableInputType,
+            GraphitronType.ConnectionType, GraphitronType.EdgeType, GraphitronType.PageInfoType,
+            GraphitronType.UnclassifiedType {
 
     String name();
 
@@ -292,5 +295,67 @@ public sealed interface GraphitronType
         String name,
         SourceLocation location,
         String reason
+    ) implements GraphitronType {}
+
+    /**
+     * A Relay connection object type — the outer wrapper whose fields are
+     * {@code edges: [EdgeType!]!}, {@code nodes: [ElementType]!}, and {@code pageInfo: PageInfo!}.
+     *
+     * <p>Classifier produces this variant for two inputs that are semantically the same:
+     * <ul>
+     *   <li><b>Directive-driven:</b> a field carrying {@code @asConnection} on a bare list.
+     *       The classifier synthesises the Connection type (it is not declared in the SDL).</li>
+     *   <li><b>Structural:</b> a hand-written object type whose field shape matches the Relay
+     *       connection pattern (an {@code edges} field of a type that has a {@code node} field).
+     *       The classifier recognises the pattern and routes the declared type here.</li>
+     * </ul>
+     *
+     * <p>{@code schemaType} is the graphql-java {@link GraphQLObjectType} that rebuilds the
+     * connection's schema shape at runtime. For directive-driven connections the classifier
+     * builds it programmatically; for structural connections the classifier references the
+     * already-built value from the assembled schema.
+     */
+    record ConnectionType(
+        String name,
+        SourceLocation location,
+        String elementTypeName,
+        String edgeTypeName,
+        boolean itemNullable,
+        boolean shareable,
+        GraphQLObjectType schemaType
+    ) implements GraphitronType {}
+
+    /**
+     * A Relay edge object type — the inner wrapper whose fields are {@code cursor: String!} and
+     * {@code node: ElementType}. Produced by the classifier whenever a {@link ConnectionType} is
+     * produced; directive-driven and structural paths both route here.
+     *
+     * <p>{@code schemaType} is the graphql-java {@link GraphQLObjectType} for this edge — built
+     * programmatically for directive-driven connections, referenced from the assembled schema
+     * for structural ones.
+     */
+    record EdgeType(
+        String name,
+        SourceLocation location,
+        String elementTypeName,
+        boolean itemNullable,
+        boolean shareable,
+        GraphQLObjectType schemaType
+    ) implements GraphitronType {}
+
+    /**
+     * The Relay {@code PageInfo} object type. Exactly one instance per schema; the classifier
+     * reuses the SDL-declared type when present and synthesises one when at least one
+     * {@link ConnectionType} exists and the SDL does not already declare {@code PageInfo}.
+     *
+     * <p>{@code shareable} is {@code true} when any connection in the schema carries the
+     * {@code @shareable} directive; the synthesised page-info propagates that so federation
+     * consumers see a consistent contract.
+     */
+    record PageInfoType(
+        String name,
+        SourceLocation location,
+        boolean shareable,
+        GraphQLObjectType schemaType
     ) implements GraphitronType {}
 }
