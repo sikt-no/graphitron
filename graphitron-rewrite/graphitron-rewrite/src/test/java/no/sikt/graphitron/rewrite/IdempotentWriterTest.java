@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -52,7 +53,7 @@ class IdempotentWriterTest {
     }
 
     @Test
-    void unchangedFilesPreserveMtime(@TempDir Path root) throws IOException, InterruptedException {
+    void unchangedFilesPreserveMtime(@TempDir Path root) throws IOException {
         Path schemaFile = root.resolve("schema.graphqls");
         Files.writeString(schemaFile, SCHEMA_SDL, StandardCharsets.UTF_8);
         Path outDir = root.resolve("out");
@@ -60,10 +61,19 @@ class IdempotentWriterTest {
 
         var ctx = contextFor(schemaFile, outDir);
         new GraphQLRewriteGenerator(ctx).generate();
+
+        // Wind all mtimes back 2 seconds so any rewrite is detectable by mtime advancing.
+        long past = System.currentTimeMillis() - 2_000;
+        try (var walk = Files.walk(outDir)) {
+            walk.filter(Files::isRegularFile)
+                .forEach(p -> {
+                    try { Files.setLastModifiedTime(p, FileTime.fromMillis(past)); }
+                    catch (IOException e) { throw new RuntimeException(e); }
+                });
+        }
         Map<Path, Long> before = mtimes(outDir);
         assertThat(before).isNotEmpty();
 
-        Thread.sleep(50);
         new GraphQLRewriteGenerator(ctx).generate();
         Map<Path, Long> after = mtimes(outDir);
 
