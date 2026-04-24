@@ -30,10 +30,14 @@ class GeneratedSourcesSmokeTest {
         PKG + ".schema.FilmInfoType",
         // Category 3: nested type with column-only leaves (no BatchKeyField)
         PKG + ".schema.FilmSummaryType",
-        // Category 4: connection type
+        // Category 4: connection type (structural / hand-written)
         PKG + ".schema.FilmsConnectionType",
-        // Category 5: edge type
+        // Category 5: edge type (structural / hand-written)
         PKG + ".schema.FilmsEdgeType",
+        // Category 6: synthesised connection type (directive-driven @asConnection)
+        PKG + ".schema.QueryStoresConnectionType",
+        // Category 7: synthesised edge type
+        PKG + ".schema.QueryStoresEdgeType",
         // Fetcher classes — one per GraphQL object type
         PKG + ".fetchers.QueryFetchers",
         PKG + ".fetchers.FilmFetchers",

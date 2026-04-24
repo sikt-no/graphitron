@@ -14,6 +14,8 @@ import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
 
+import no.sikt.graphitron.rewrite.model.FieldWrapper;
+
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -66,16 +68,23 @@ public final class ObjectTypeGenerator {
      * body of its {@code registerFetchers(GraphQLCodeRegistry.Builder)} method; types not present
      * in the map do not get the method. {@link FetcherRegistrationsEmitter} produces the map from
      * the classifier model.
+     *
+     * <p>Directive-driven {@code @asConnection} fields (bare-list return type with no pre-existing
+     * Connection type in the schema) are detected via a {@link ConnectionSynthesis.Plan} built from
+     * the assembled schema. For these fields the emitted return type reference is substituted with
+     * the synthesised Connection name and the standard {@code first} / {@code after} pagination
+     * arguments are appended.
      */
     public static List<TypeSpec> generate(GraphQLSchema assembled, Map<String, CodeBlock> fetcherBodies) {
+        var plan = ConnectionSynthesis.buildPlan(assembled);
         var result = new ArrayList<TypeSpec>();
         assembled.getAllTypesAsList().stream()
             .filter(t -> !t.getName().startsWith("_"))
             .forEach(t -> {
                 if (t instanceof GraphQLObjectType obj) {
-                    result.add(buildObjectTypeSpec(obj, fetcherBodies.get(obj.getName())));
+                    result.add(buildObjectTypeSpec(obj, fetcherBodies.get(obj.getName()), plan));
                 } else if (t instanceof GraphQLInterfaceType it) {
-                    result.add(buildInterfaceTypeSpec(it));
+                    result.add(buildInterfaceTypeSpec(it, plan));
                 } else if (t instanceof GraphQLUnionType un) {
                     result.add(buildUnionTypeSpec(un));
                 }
@@ -93,7 +102,8 @@ public final class ObjectTypeGenerator {
 
     // ===== Object =====
 
-    private static TypeSpec buildObjectTypeSpec(GraphQLObjectType objectType, CodeBlock fetcherBody) {
+    private static TypeSpec buildObjectTypeSpec(GraphQLObjectType objectType, CodeBlock fetcherBody,
+                                               ConnectionSynthesis.Plan plan) {
         var body = CodeBlock.builder()
             .add("return $T.newObject()", OBJECT_TYPE)
             .indent()
@@ -105,7 +115,7 @@ public final class ObjectTypeGenerator {
             body.add("\n.withInterface($T.typeRef($S))", TYPE_REF, iface.getName());
         }
         for (var field : objectType.getFieldDefinitions()) {
-            body.add("\n.field(").add(buildFieldDefinition(field)).add(")");
+            body.add("\n.field(").add(buildFieldDefinition(objectType.getName(), field, plan)).add(")");
         }
         for (var applied : AppliedDirectiveEmitter.applicationsFor(objectType)) {
             body.add(applied);
@@ -132,7 +142,8 @@ public final class ObjectTypeGenerator {
 
     // ===== Interface =====
 
-    private static TypeSpec buildInterfaceTypeSpec(GraphQLInterfaceType interfaceType) {
+    private static TypeSpec buildInterfaceTypeSpec(GraphQLInterfaceType interfaceType,
+                                                   ConnectionSynthesis.Plan plan) {
         var body = CodeBlock.builder()
             .add("return $T.newInterface()", INTERFACE_TYPE)
             .indent()
@@ -141,7 +152,7 @@ public final class ObjectTypeGenerator {
             body.add("\n.description($S)", interfaceType.getDescription());
         }
         for (var field : interfaceType.getFieldDefinitions()) {
-            body.add("\n.field(").add(buildFieldDefinition(field)).add(")");
+            body.add("\n.field(").add(buildFieldDefinition(interfaceType.getName(), field, plan)).add(")");
         }
         for (var applied : AppliedDirectiveEmitter.applicationsFor(interfaceType)) {
             body.add(applied);
@@ -188,11 +199,37 @@ public final class ObjectTypeGenerator {
 
     // ===== Field / argument / type-ref =====
 
-    private static CodeBlock buildFieldDefinition(graphql.schema.GraphQLFieldDefinition field) {
+    private static CodeBlock buildFieldDefinition(String parentTypeName,
+                                                   graphql.schema.GraphQLFieldDefinition field,
+                                                   ConnectionSynthesis.Plan plan) {
+        // Detect directive-driven @asConnection: field is in the synthesis plan.
+        String synthConnName = null;
+        int synthDefaultPageSize = FieldWrapper.DEFAULT_PAGE_SIZE;
+        if (plan != null && !plan.connections().isEmpty()) {
+            String resolved = ConnectionSynthesis.resolveConnectionName(parentTypeName, field);
+            var def = plan.connections().get(resolved);
+            if (def != null) {
+                synthConnName = resolved;
+                synthDefaultPageSize = def.defaultPageSize();
+            }
+        }
+
         var block = CodeBlock.builder()
             .add("$T.newFieldDefinition()", FIELD_DEF)
-            .add(".name($S)", field.getName())
-            .add(".type(").add(buildOutputTypeRef(field.getType())).add(")");
+            .add(".name($S)", field.getName());
+
+        if (synthConnName != null) {
+            // Replace bare-list return type with the synthesised Connection type reference.
+            boolean nonNull = field.getType() instanceof GraphQLNonNull;
+            if (nonNull) {
+                block.add(".type($T.nonNull($T.typeRef($S)))", NON_NULL, TYPE_REF, synthConnName);
+            } else {
+                block.add(".type($T.typeRef($S))", TYPE_REF, synthConnName);
+            }
+        } else {
+            block.add(".type(").add(buildOutputTypeRef(field.getType())).add(")");
+        }
+
         if (field.getDescription() != null && !field.getDescription().isEmpty()) {
             block.add(".description($S)", field.getDescription());
         }
@@ -201,6 +238,13 @@ public final class ObjectTypeGenerator {
         }
         for (var arg : field.getArguments()) {
             block.add(".argument(").add(buildArgument(arg)).add(")");
+        }
+        if (synthConnName != null) {
+            // Append standard pagination arguments after any existing arguments.
+            block.add(".argument($T.newArgument().name($S).type($T.typeRef($S)).defaultValueProgrammatic($L).build())",
+                ARGUMENT, "first", TYPE_REF, "Int", synthDefaultPageSize);
+            block.add(".argument($T.newArgument().name($S).type($T.typeRef($S)).build())",
+                ARGUMENT, "after", TYPE_REF, "String");
         }
         for (var applied : AppliedDirectiveEmitter.applicationsFor(field)) {
             block.add(applied);

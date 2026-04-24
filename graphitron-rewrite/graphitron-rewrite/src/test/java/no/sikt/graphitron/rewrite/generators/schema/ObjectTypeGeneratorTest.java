@@ -135,6 +135,51 @@ class ObjectTypeGeneratorTest {
         assertThat(names).isSorted();
     }
 
+    // ===== @asConnection synthesis =====
+
+    private static final String WITH_AS_CONNECTION = """
+        type Query {
+          films: [Film!]! @asConnection
+        }
+        type Film { id: ID! }
+        """;
+
+    @Test
+    void asConnection_replacesReturnTypeWithConnectionRef() {
+        var body = findByName(generateFor(WITH_AS_CONNECTION), "QueryType").methodSpecs().get(0).code().toString();
+        // should reference the synthesised Connection type, not the bare list
+        assertThat(body).contains("typeRef(\"QueryFilmsConnection\")");
+        assertThat(body).doesNotContain("graphql.schema.GraphQLList.list");
+    }
+
+    @Test
+    void asConnection_addsFirstAndAfterArguments() {
+        var body = findByName(generateFor(WITH_AS_CONNECTION), "QueryType").methodSpecs().get(0).code().toString();
+        assertThat(body).contains(".name(\"first\")");
+        assertThat(body).contains(".name(\"after\")");
+    }
+
+    @Test
+    void asConnection_firstArgumentHasDefaultPageSize() {
+        var body = findByName(generateFor(WITH_AS_CONNECTION), "QueryType").methodSpecs().get(0).code().toString();
+        assertThat(body).contains(".defaultValueProgrammatic(100)");
+    }
+
+    @Test
+    void asConnection_doesNotEmitAsConnectionDirective() {
+        var body = findByName(generateFor(WITH_AS_CONNECTION), "QueryType").methodSpecs().get(0).code().toString();
+        assertThat(body).doesNotContain("\"asConnection\"");
+    }
+
+    @Test
+    void asConnection_structuralFieldIsUnchanged() {
+        // Hand-written FilmsConnection in BASIC schema: no @asConnection directive,
+        // connection type exists structurally — should emit as-is (bare list return type).
+        // Here we test that the Query.films field in BASIC is emitted as a list.
+        var body = findByName(generateFor(BASIC), "QueryType").methodSpecs().get(0).code().toString();
+        assertThat(body).contains("graphql.schema.GraphQLList.list");
+    }
+
     private static List<TypeSpec> generateFor(String sdl) {
         return ObjectTypeGenerator.generate(TestSchemaHelper.buildBundle(sdl).assembled());
     }

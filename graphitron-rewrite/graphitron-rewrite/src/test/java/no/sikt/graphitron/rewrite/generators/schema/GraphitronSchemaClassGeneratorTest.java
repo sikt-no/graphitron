@@ -153,6 +153,65 @@ class GraphitronSchemaClassGeneratorTest {
         assertThat(registerIdx).isGreaterThan(0).isLessThan(schemaBuilderIdx);
     }
 
+    // ===== @asConnection synthesis =====
+
+    @Test
+    void build_emitsAdditionalType_forSynthesisedConnection() {
+        var body = buildBody("type Query { films: [Film!]! @asConnection }\ntype Film { id: ID! }");
+        assertThat(body).contains(".additionalType(com.example.schema.QueryFilmsConnectionType.type())");
+    }
+
+    @Test
+    void build_emitsAdditionalType_forSynthesisedEdge() {
+        var body = buildBody("type Query { films: [Film!]! @asConnection }\ntype Film { id: ID! }");
+        assertThat(body).contains(".additionalType(com.example.schema.QueryFilmsEdgeType.type())");
+    }
+
+    @Test
+    void build_emitsAdditionalType_forSynthesisedPageInfo_whenAbsent() {
+        var body = buildBody("type Query { films: [Film!]! @asConnection }\ntype Film { id: ID! }");
+        assertThat(body).contains(".additionalType(com.example.schema.PageInfoType.type())");
+    }
+
+    @Test
+    void build_doesNotAddPageInfoTwice_whenAlreadyDeclared() {
+        // When PageInfo is declared in the schema it is registered via the regular
+        // additionalTypeNames loop. The synthesis path must not add it a second time.
+        var body = buildBody("""
+            type Query { films: [Film!]! @asConnection }
+            type Film { id: ID! }
+            type PageInfo { hasNextPage: Boolean! hasPreviousPage: Boolean! startCursor: String endCursor: String }
+            """);
+        int count = countOccurrences(body, "PageInfoType.type()");
+        assertThat(count).as("PageInfoType.type() should appear exactly once (from regular type loop only)").isEqualTo(1);
+    }
+
+    @Test
+    void build_doesNotEmitAdditionalType_forStructuralConnection() {
+        // A hand-written Connection type already in the assembled schema should appear via
+        // the regular additionalTypeNames loop (not the synthesis path), so no duplicate.
+        var body = buildBody("""
+            type Query { films: FilmsConnection! }
+            type FilmsConnection { edges: [FilmsEdge!]! nodes: [Film!]! pageInfo: PageInfo! }
+            type FilmsEdge { cursor: String! node: Film! }
+            type PageInfo { hasNextPage: Boolean! hasPreviousPage: Boolean! startCursor: String endCursor: String }
+            type Film { id: ID! }
+            """);
+        // FilmsConnectionType appears once (from regular additionalTypeNames), not from synthesis
+        int count = countOccurrences(body, "FilmsConnectionType.type()");
+        assertThat(count).as("FilmsConnectionType.type() should appear exactly once").isEqualTo(1);
+    }
+
+    private static int countOccurrences(String text, String sub) {
+        int count = 0;
+        int idx = 0;
+        while ((idx = text.indexOf(sub, idx)) != -1) {
+            count++;
+            idx += sub.length();
+        }
+        return count;
+    }
+
     @Test
     void planFor_preservesRootAndAlphabeticalOrder() {
         var schema = TestSchemaHelper.buildBundle("""
