@@ -17,6 +17,14 @@ public final class TestSchemaHelper {
 
     private static final String DIRECTIVES = loadDirectives();
 
+    /**
+     * Relay {@code Node} interface, injected into every test SDL as a harmless orphan unless the
+     * test declares its own implementation. {@code @node} typeclassification requires the type
+     * to {@code implements Node}; bundling the declaration here keeps test SDL focused on the
+     * actual subject.
+     */
+    private static final String NODE_INTERFACE = "interface Node { id: ID! }\n";
+
     private TestSchemaHelper() {}
 
     public static GraphitronSchema buildSchema(String schemaText) {
@@ -24,7 +32,7 @@ public final class TestSchemaHelper {
     }
 
     public static GraphitronSchema buildSchema(String schemaText, RewriteContext ctx) {
-        TypeDefinitionRegistry registry = new SchemaParser().parse(DIRECTIVES + "\n" + schemaText);
+        TypeDefinitionRegistry registry = new SchemaParser().parse(prelude(schemaText) + schemaText);
         return GraphitronSchemaBuilder.build(registry, ctx);
     }
 
@@ -33,8 +41,16 @@ public final class TestSchemaHelper {
     }
 
     public static GraphitronSchemaBuilder.Bundle buildBundle(String schemaText, RewriteContext ctx) {
-        TypeDefinitionRegistry registry = new SchemaParser().parse(DIRECTIVES + "\n" + schemaText);
+        TypeDefinitionRegistry registry = new SchemaParser().parse(prelude(schemaText) + schemaText);
         return GraphitronSchemaBuilder.buildBundle(registry, ctx);
+    }
+
+    private static String prelude(String schemaText) {
+        String out = DIRECTIVES + "\n";
+        if (!schemaText.contains("interface Node")) {
+            out += NODE_INTERFACE;
+        }
+        return out;
     }
 
     private static String loadDirectives() {

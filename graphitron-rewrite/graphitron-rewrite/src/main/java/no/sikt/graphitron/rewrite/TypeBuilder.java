@@ -27,6 +27,8 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.UnionType;
 import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -79,6 +81,8 @@ import static no.sikt.graphitron.rewrite.BuildContext.locationOf;
  * which require the full first-pass map to be available.
  */
 class TypeBuilder {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(TypeBuilder.class);
 
     private static final Set<String> ROOT_TYPE_NAMES = Set.of("Query", "Mutation", "Subscription");
 
@@ -261,12 +265,21 @@ class TypeBuilder {
             return new TableType(name, location, tableRef);
         }
         if (!hasNode) {
-            // metadata-only → synthesize NodeType from the constants verbatim.
+            // Metadata-only migration shim — see plan-nodeid-directives.md "Migration".
+            // R2 will add a deprecation diagnostic when the type lacks `implements Node @node`.
             return new NodeType(name, location, tableRef, metadata.get().typeId(),
                 List.copyOf(metadata.get().keyColumns()));
         }
 
-        // @node directive present — resolve SDL-declared values.
+        // @node declared — the type must implement the Relay Node interface (id: ID!).
+        // `implements Node` is a schema-level contract published to clients; we cannot promote
+        // a type to NodeType without it.
+        if (!implementsNode(objType)) {
+            return new UnclassifiedType(name, location,
+                "@node requires the type to implement the Relay Node interface — add 'implements Node' to the type declaration");
+        }
+
+        // Resolve SDL-declared values.
         String sdlTypeId = argString(objType, DIR_NODE, ARG_TYPE_ID).orElse(null);
         List<String> sdlKeyColumnNames = argStringList(objType, DIR_NODE, ARG_KEY_COLUMNS);
         var keyColumnErrors = new ArrayList<String>();
@@ -285,30 +298,44 @@ class TypeBuilder {
         }
 
         if (metadata.isEmpty()) {
-            // @node-only (pre-pivot path) — use SDL values verbatim, including null/empty when omitted.
+            // @node-only path — use SDL values verbatim. R3 will add primary-key fallback
+            // for the keyColumns-omitted case.
             return new NodeType(name, location, tableRef, sdlTypeId, List.copyOf(sdlKeyColumns));
         }
 
-        // Both @node and metadata present — apply the collision rule:
-        //  - SDL value omitted  → delegate to metadata on that axis (no disagreement possible).
-        //  - SDL value present, matches metadata → accept.
-        //  - SDL value present, disagrees with metadata → UnclassifiedType with both sides.
-        // typeId is compared by string equality; keyColumns is order-sensitive column equality.
+        // Both @node and metadata present. SDL wins — it is the author's published wire-format
+        // contract, decoupled from whatever the jOOQ generator happens to output:
+        //  - typeId: SDL overrides silently. The entire point of @node(typeId:) is to let
+        //    authors pin the wire format independent of the jOOQ table name.
+        //  - keyColumns: SDL overrides. If the column *sets* differ, one side is wrong about
+        //    the schema — hard error. If sets are equal but *order* differs, SDL wins with a
+        //    WARN (the author pinned a specific order; worth surfacing but not blocking).
+        //  - Values omitted on an axis fall through to metadata.
         var meta = metadata.get();
-        var disagreements = new ArrayList<String>();
-        if (sdlTypeId != null && !sdlTypeId.equals(meta.typeId())) {
-            disagreements.add("@node(typeId: \"" + sdlTypeId + "\") disagrees with KjerneJooqGenerator metadata (typeId: \"" + meta.typeId() + "\")");
+        String resolvedTypeId = sdlTypeId != null ? sdlTypeId : meta.typeId();
+        List<ColumnRef> resolvedKeyColumns;
+        if (sdlKeyColumnNames.isEmpty()) {
+            resolvedKeyColumns = List.copyOf(meta.keyColumns());
+        } else {
+            if (!columnSetsMatch(sdlKeyColumns, meta.keyColumns())) {
+                return new UnclassifiedType(name, location,
+                    "@node(keyColumns: " + keyColumnsLiteral(sdlKeyColumns)
+                    + ") on " + name + " disagrees with KjerneJooqGenerator metadata (keyColumns: "
+                    + keyColumnsLiteral(meta.keyColumns())
+                    + ") — the column sets are different; one side is wrong about the schema");
+            }
+            if (!columnListsMatch(sdlKeyColumns, meta.keyColumns())) {
+                LOGGER.warn("@node(keyColumns: {}) on {} pins an order different from KjerneJooqGenerator metadata ({}); SDL order wins",
+                    keyColumnsLiteral(sdlKeyColumns), name, keyColumnsLiteral(meta.keyColumns()));
+            }
+            resolvedKeyColumns = List.copyOf(sdlKeyColumns);
         }
-        if (!sdlKeyColumnNames.isEmpty() && !columnListsMatch(sdlKeyColumns, meta.keyColumns())) {
-            disagreements.add("@node(keyColumns: " + keyColumnsLiteral(sdlKeyColumns)
-                + ") disagrees with KjerneJooqGenerator metadata (keyColumns: " + keyColumnsLiteral(meta.keyColumns()) + ")");
-        }
-        if (!disagreements.isEmpty()) {
-            return new UnclassifiedType(name, location, String.join("; ", disagreements));
-        }
-        // Agreed (or SDL omitted on both axes) — metadata values are authoritative (equal to SDL
-        // on declared axes; fill in the omitted ones).
-        return new NodeType(name, location, tableRef, meta.typeId(), List.copyOf(meta.keyColumns()));
+        return new NodeType(name, location, tableRef, resolvedTypeId, resolvedKeyColumns);
+    }
+
+    private static boolean implementsNode(GraphQLObjectType objType) {
+        return objType.getInterfaces().stream()
+            .anyMatch(i -> "Node".equals(((GraphQLNamedType) i).getName()));
     }
 
     private static boolean columnListsMatch(List<ColumnRef> a, List<ColumnRef> b) {
@@ -317,6 +344,13 @@ class TypeBuilder {
             if (!a.get(i).sqlName().equalsIgnoreCase(b.get(i).sqlName())) return false;
         }
         return true;
+    }
+
+    private static boolean columnSetsMatch(List<ColumnRef> a, List<ColumnRef> b) {
+        if (a.size() != b.size()) return false;
+        var aNames = a.stream().map(c -> c.sqlName().toLowerCase()).collect(Collectors.toSet());
+        var bNames = b.stream().map(c -> c.sqlName().toLowerCase()).collect(Collectors.toSet());
+        return aNames.equals(bNames);
     }
 
     private static String keyColumnsLiteral(List<ColumnRef> cols) {
