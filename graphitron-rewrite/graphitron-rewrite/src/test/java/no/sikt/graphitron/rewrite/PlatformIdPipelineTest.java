@@ -5,11 +5,16 @@ import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.InputField;
+import no.sikt.graphitron.rewrite.schema.ScalarMapping;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
+import java.nio.file.Path;
+import java.util.List;
+import java.util.Map;
 import java.util.function.Consumer;
 
+import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -34,6 +39,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 class PlatformIdPipelineTest {
 
     private static final String FIXTURE_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.platformidfixture";
+    private static final RewriteContext FIXTURE_CTX = new RewriteContext(
+        List.of(), Path.of(""), Path.of(""),
+        DEFAULT_OUTPUT_PACKAGE, FIXTURE_JOOQ_PACKAGE,
+        Map.of(), List.<ScalarMapping>of(), 100
+    );
 
     // ===== Type-level NodeType synthesis =====
 
@@ -146,7 +156,7 @@ class PlatformIdPipelineTest {
     @ParameterizedTest(name = "{0}")
     @EnumSource(TypeCase.class)
     void typeLevelNodeSynthesis(TypeCase tc) {
-        tc.assertions.accept(TestSchemaHelper.buildSchema(tc.sdl));
+        tc.assertions.accept(TestSchemaHelper.buildSchema(tc.sdl, FIXTURE_CTX));
     }
 
     // ===== Input side =====
@@ -208,7 +218,7 @@ class PlatformIdPipelineTest {
     @ParameterizedTest(name = "{0}")
     @EnumSource(InputCase.class)
     void inputPlatformIdClassification(InputCase tc) {
-        tc.assertions.accept(TestSchemaHelper.buildSchema(tc.sdl));
+        tc.assertions.accept(TestSchemaHelper.buildSchema(tc.sdl, FIXTURE_CTX));
     }
 
     // ===== Output side =====
@@ -278,6 +288,6 @@ class PlatformIdPipelineTest {
     @ParameterizedTest(name = "{0}")
     @EnumSource(OutputCase.class)
     void outputPlatformIdClassification(OutputCase tc) {
-        tc.assertions.accept(TestSchemaHelper.buildSchema(tc.sdl));
+        tc.assertions.accept(TestSchemaHelper.buildSchema(tc.sdl, FIXTURE_CTX));
     }
 }

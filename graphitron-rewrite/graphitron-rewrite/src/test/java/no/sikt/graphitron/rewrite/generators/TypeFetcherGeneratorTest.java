@@ -398,7 +398,7 @@ class TypeFetcherGeneratorTest {
         // canonical tableLocal) and Split+Connection callers (pass the FK-chain terminal alias).
         // See plan-split-query-connection.md §2.
         var field = queryTableFieldWithOrderByArg("films");
-        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(field));
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
         assertThat(method(spec, "filmsOrderBy").parameters())
             .extracting(p -> p.type().toString())
             .containsExactly(
@@ -544,8 +544,8 @@ class TypeFetcherGeneratorTest {
         // Pins the commit that retargeted GraphitronContext from no.sikt.graphql to the
         // generated <outputPackage>.schema package, and the key from the string
         // "graphitronContext" to the typed GraphitronContext.class lookup.
-        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null,
-            List.of(queryTableField("film", false)));
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
+            List.of(queryTableField("film", false)), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
         var helper = method(spec, "graphitronContext");
         var expectedFqn = DEFAULT_OUTPUT_PACKAGE + ".schema.GraphitronContext";
         assertThat(helper.returnType().toString())
