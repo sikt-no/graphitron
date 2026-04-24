@@ -81,43 +81,25 @@
                     <execution>
                         <id>integration-test</id>
                         <goals>
-                            <goal>install</goal>
                             <goal>run</goal>
                             <goal>verify</goal>
                         </goals>
                     </execution>
                 </executions>
             </plugin>
-            <!--
-                The maven-invoker-plugin:install goal re-installs parent POMs from the
-                unflatted pom.xml files (CI-friendly ${revision}${changelist} preserved as-is
-                in the parent chain). When the IT Maven session then resolves the plugin's POM
-                chain it cannot find graphitron-parent:pom:${revision}${changelist}.
-
-                This antrun execution runs in the SAME pre-integration-test phase as
-                invoker:install but AFTER it (declared last → last in phase). It overwrites
-                the bad parent POMs with the correct flattened versions from the source tree.
-            -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-antrun-plugin</artifactId>
-                <version>3.1.0</version>
+                <artifactId>maven-install-plugin</artifactId>
                 <executions>
                     <execution>
-                        <id>fix-parent-poms-for-it</id>
+                        <id>install-plugin-for-it</id>
                         <phase>pre-integration-test</phase>
                         <goals>
-                            <goal>run</goal>
+                            <goal>install-file</goal>
                         </goals>
                         <configuration>
-                            <target>
-                                <copy overwrite="true"
-                                      file="${project.basedir}/../../.flattened-pom.xml"
-                                      tofile="${settings.localRepository}/no/sikt/graphitron-parent/${project.version}/graphitron-parent-${project.version}.pom"/>
-                                <copy overwrite="true"
-                                      file="${project.basedir}/../.flattened-pom.xml"
-                                      tofile="${settings.localRepository}/no/sikt/graphitron-rewrite-parent/${project.version}/graphitron-rewrite-parent-${project.version}.pom"/>
-                            </target>
+                            <file>${project.build.directory}/${project.build.finalName}.jar</file>
+                            <pomFile>${project.basedir}/.flattened-pom.xml</pomFile>
                         </configuration>
                     </execution>
                 </executions>

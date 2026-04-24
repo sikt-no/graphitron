@@ -2,9 +2,9 @@
 <settings>
   <!--
     Settings for maven-invoker-plugin integration tests.
-    The invoker:install goal installs the just-built plugin to the standard
-    local Maven repository before these ITs run. All other artifacts (jOOQ,
-    GraphQL-java, graphitron-rewrite-fixtures, etc.) must already be present
-    in the local repository; they are pre-cached by the regular build.
+    The plugin JAR is installed via maven-install-plugin:install-file in
+    pre-integration-test using the .flattened-pom.xml so the resolved version
+    is used. All other artifacts must already be present in the local
+    repository from a prior build.
   -->
 </settings>
