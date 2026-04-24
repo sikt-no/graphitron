@@ -88,7 +88,7 @@ landing):
 | Module | Dep | Resolved by |
 |---|---|---|
 | `graphitron-rewrite-parent` | parent = `graphitron-parent` | this plan |
-| `graphitron-rewrite` main | `graphitron-javapoet` (co-owned by legacy `graphitron-java-codegen`) | this plan (relocate module) |
+| `graphitron-rewrite` main | `graphitron-javapoet` (co-owned by legacy `graphitron-java-codegen`) | this plan (fork into aggregator-local copy) |
 | `graphitron-rewrite` main | `graphitron-common` | plan-rewrite-owns-schema-loading |
 | `graphitron-rewrite-test` | `graphitron-common` | plan-graphitron-prebuilt-schema (`GraphitronContext` relocation) + lint-forbidden-imports doc update |
 | `graphitron-rewrite-test` | `graphitron-maven-plugin` | plan-rewrite-maven-plugin |
@@ -107,34 +107,58 @@ child of `graphitron-parent`.
 
 ## Design
 
-### 1. Relocate `graphitron-javapoet`
+### 1. Fork `graphitron-javapoet` into the aggregator
 
-Physical move:
+Duplicate, do not move: legacy's
+`graphitron-codegen-parent/graphitron-javapoet/` stays exactly
+where it is with coord `no.sikt:graphitron-javapoet` and parent
+`graphitron-codegen-parent`. A second copy lands inside the
+rewrite aggregator for rewrite's own use.
+
+Layout:
 
 ```
-graphitron-codegen-parent/graphitron-javapoet/   →   graphitron-rewrite/graphitron-javapoet/
+graphitron-rewrite/graphitron-javapoet/           # NEW — rewrite's copy
+graphitron-codegen-parent/graphitron-javapoet/    # unchanged — legacy's copy
 ```
 
-- Update `graphitron-rewrite/pom.xml` `<modules>` to include
-  `graphitron-javapoet` as the first module (must build before
+- New module at `graphitron-rewrite/graphitron-javapoet/`. Files
+  copied verbatim from the legacy directory (including
+  `LICENSE-JAVAPOET.txt` and the full `src/` tree).
+- New coord: `no.sikt:graphitron-rewrite-javapoet`. Distinct from
+  legacy so there is no coord collision in the local repo and the
+  rewrite aggregator's resolve is unambiguous.
+- Package stays `no.sikt.graphitron.javapoet`. The rewrite main
+  module's existing imports (e.g. `import no.sikt.graphitron.javapoet.JavaFile;`)
+  keep working without a rename pass across the rewrite source tree.
+  Both copies publish the same package; they never coexist on a
+  single classpath (legacy consumers depend on
+  `graphitron-javapoet`; rewrite consumers depend on
+  `graphitron-rewrite-javapoet`; the rewrite aggregator's build
+  resolves only the latter).
+- Parent on the new copy: `graphitron-rewrite-parent`.
+- `graphitron-rewrite/pom.xml` `<modules>` gains
+  `graphitron-javapoet` as the first entry (must build before
   `graphitron-rewrite`, `-fixtures`, `-test`, `-maven`).
-- Update `graphitron-codegen-parent/pom.xml` to drop
-  `graphitron-javapoet` from its `<modules>` list.
-- Re-parent the moved POM to `graphitron-rewrite-parent` (was:
-  `graphitron-codegen-parent`).
-- Artifact coordinates stay `no.sikt:graphitron-javapoet`. Legacy
-  `graphitron-java-codegen` continues to resolve the dep by
-  coordinate; no pom change on the legacy side.
+- `graphitron-rewrite/graphitron-rewrite/pom.xml` swaps its
+  `graphitron-javapoet` dep for `graphitron-rewrite-javapoet`.
+- Legacy `graphitron-codegen-parent/pom.xml` unchanged;
+  `graphitron-codegen-parent/graphitron-java-codegen/pom.xml`
+  unchanged; `graphitron-codegen-parent/graphitron-javapoet/`
+  unchanged. Legacy build is byte-identical post-landing.
 
-Top-level reactor ordering: Maven resolves inter-module
-dependencies and reorders automatically. The legacy
-`graphitron-codegen-parent/graphitron-java-codegen` depends on
-`graphitron-javapoet`; with the javapoet module now reached via
-the rewrite aggregator, the top-level reactor will build rewrite's
-javapoet sub-module before legacy's `graphitron-java-codegen`.
-Verified by running `mvn install -pl graphitron-codegen-parent/graphitron-java-codegen -am`
-at the repo root; javapoet should appear in the build plan before
-java-codegen.
+**Drift between the two copies.** The javapoet tree is a vendored
+fork with no upstream sync pressure today; drift is unlikely in
+practice. Mitigation if drift becomes a concern: a one-shot
+`diff -rq` in CI between the two `src/` trees, flagged on
+mismatch. Not wired in this plan; add only if a real divergence
+lands.
+
+**Eventual collapse.** When the legacy generator retires (the
+umbrella's closing landing marker), delete the legacy javapoet
+module. The rewrite copy becomes the only copy and may reclaim
+the shorter `graphitron-javapoet` coord at that point, if desired.
+Out of scope for this plan.
 
 ### 2. Reparent `graphitron-rewrite-parent`
 
@@ -275,31 +299,35 @@ itself. Verification is entirely at the build-topology layer:
   `-schema-transform` artifact is resolved during the aggregator
   build.
 - **Full-repo regression**: `mvn install` at the repo root still
-  exits 0, with the legacy build unaffected. This is the anti-
-  regression guard against the `graphitron-javapoet` relocation
-  breaking the legacy reactor.
+  exits 0, with the legacy build byte-identical. Since the
+  javapoet fork is additive (legacy's copy stays at its original
+  location and coord), this check should be a no-op; it is listed
+  as a guard-rail only.
 
 ## Deliverable
 
 One commit covering five regions:
 
-1. Move `graphitron-codegen-parent/graphitron-javapoet/` →
-   `graphitron-rewrite/graphitron-javapoet/`; update its POM's
-   `<parent>` to `graphitron-rewrite-parent`.
-2. Update `graphitron-rewrite/pom.xml`: drop `<parent>`, inline
+1. Copy `graphitron-codegen-parent/graphitron-javapoet/` →
+   `graphitron-rewrite/graphitron-javapoet/` (new files); update
+   the copy's POM: `<artifactId>graphitron-rewrite-javapoet</artifactId>`
+   and `<parent>graphitron-rewrite-parent</parent>`. Legacy copy
+   and its POM untouched.
+2. Update `graphitron-rewrite/graphitron-rewrite/pom.xml`: swap
+   the `graphitron-javapoet` dep for `graphitron-rewrite-javapoet`.
+3. Update `graphitron-rewrite/pom.xml`: drop `<parent>`, inline
    property / dependencyManagement / pluginManagement / profile
    blocks, add `<module>graphitron-javapoet</module>` first in
    `<modules>`.
-3. Update `graphitron-codegen-parent/pom.xml`: drop
-   `<module>graphitron-javapoet</module>`.
 4. Add the standalone-build script (§4) as
    `graphitron-rewrite/scripts/verify-standalone-build.sh` or a
    `mise` task. Wire it to CI in the rewrite-tests workflow.
 5. Update the three docs (§5).
 
-Expected diff: ~400 lines moved (javapoet POM reparent + legacy
-parent dep/plugin management copied into the rewrite parent).
-Net new code: ~50 lines (the verification script).
+Expected diff: ~400 lines added (full javapoet source tree copied
+into the rewrite aggregator + the inlined parent management).
+Net new code: ~50 lines (the verification script). Legacy tree:
+zero lines changed.
 
 ## Rollout
 
@@ -315,14 +343,24 @@ Post-landing, update the roadmap:
 
 ## Open decisions
 
-**D1. Javapoet module location.** Resolved: move under
-`graphitron-rewrite/graphitron-javapoet/` as a sibling of
-`graphitron-rewrite-maven`. Alternative considered: leave in
-place and list its relative path `../graphitron-codegen-parent/graphitron-javapoet`
-as a `<module>` in the rewrite aggregator (Maven allows external
-modules). Rejected: the aggregator's build would still reach into
-the legacy tree, defeating the "self-contained" goal. Physical
-move keeps the aggregator's directory boundary honest.
+**D1. Javapoet: move vs. duplicate.** Resolved: duplicate. Legacy's
+`graphitron-codegen-parent/graphitron-javapoet/` stays at its
+current path and coord; rewrite gets an additive copy at
+`graphitron-rewrite/graphitron-javapoet/` under coord
+`graphitron-rewrite-javapoet`. Alternatives considered:
+- **Move**, updating the legacy reactor to reach into the
+  rewrite tree. Rejected: a move reshapes the legacy reactor
+  order and makes the legacy build depend on the rewrite
+  aggregator. The user-facing goal of this plan is exactly the
+  reverse of that coupling.
+- **External-module reference**, where the aggregator lists
+  `../graphitron-codegen-parent/graphitron-javapoet` as a
+  `<module>`. Rejected: the aggregator's build still reaches into
+  the legacy tree, defeating the "self-contained" goal.
+
+Duplication costs ~1k lines of vendored source held in two places;
+the drift-mitigation note in §Design step 1 covers maintenance.
+Single-copy collapse happens when legacy retires.
 
 **D2. Reparent strategy.** Resolved: self-parent with inlined
 management blocks (option A above). Alternative considered:
