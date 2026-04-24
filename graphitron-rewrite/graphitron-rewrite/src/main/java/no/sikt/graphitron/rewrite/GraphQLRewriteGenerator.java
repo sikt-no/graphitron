@@ -64,6 +64,36 @@ public class GraphQLRewriteGenerator {
     }
 
     /**
+     * Runs schema loading, attribution, classification, and validation without writing any output.
+     * Throws {@link RuntimeException} if validation errors are found.
+     */
+    public void validate() {
+        var registry = loadAttributedRegistry();
+        var bundle = GraphitronSchemaBuilder.buildBundle(registry, ctx);
+        var schema = bundle.model();
+        schema.warnings().forEach(w -> {
+            var loc = w.location();
+            if (loc != null) {
+                LOGGER.warn("{}:{}:{}: warning: {}", loc.getSourceName(), loc.getLine(), loc.getColumn(), w.message());
+            } else {
+                LOGGER.warn("warning: {}", w.message());
+            }
+        });
+        var errors = new GraphitronSchemaValidator().validate(schema);
+        if (!errors.isEmpty()) {
+            errors.forEach(e -> {
+                var loc = e.location();
+                if (loc != null) {
+                    LOGGER.error("{}:{}:{}: error: {}", loc.getSourceName(), loc.getLine(), loc.getColumn(), e.message());
+                } else {
+                    LOGGER.error("error: {}", e.message());
+                }
+            });
+            throw new RuntimeException(errors.size() + " validation error(s); see log for details");
+        }
+    }
+
+    /**
      * Package-private so tests can exercise the attribution + load + apply
      * pipeline without incurring the full emission stage. Production callers
      * always go through {@link #generate()}.

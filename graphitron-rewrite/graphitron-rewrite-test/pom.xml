@@ -125,30 +125,24 @@
                     </execution>
                 </executions>
             </plugin>
-            <!--
-                Graphitron code generation — activated in G1 when the rewrite generators are ready.
-                The plugin config below is intentionally phase=none so it compiles but does not run.
-                G1 will change phase to generate-sources and set enableRewrite=true.
-            -->
             <plugin>
                 <groupId>no.sikt</groupId>
-                <artifactId>graphitron-maven-plugin</artifactId>
+                <artifactId>graphitron-rewrite-maven</artifactId>
                 <version>${revision}${changelist}</version>
                 <executions>
                     <execution>
                         <id>rewrite-generate</id>
-                        <phase>generate-sources</phase>
                         <goals>
                             <goal>generate</goal>
                         </goals>
                         <configuration>
-                            <schemaFiles>
-                                <param>${project.basedir}/src/main/resources/graphql/schema.graphqls</param>
-                            </schemaFiles>
-                            <jooqGeneratedPackage>${jooqPackage}</jooqGeneratedPackage>
+                            <schemaInputs>
+                                <schemaInput>
+                                    <pattern>src/main/resources/graphql/schema.graphqls</pattern>
+                                </schemaInput>
+                            </schemaInputs>
+                            <jooqPackage>${jooqPackage}</jooqPackage>
                             <outputPackage>${outputPackage}</outputPackage>
-                            <enableRewrite>true</enableRewrite>
-                            <disableLegacy>true</disableLegacy>
                         </configuration>
                     </execution>
                 </executions>

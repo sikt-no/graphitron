@@ -17,6 +17,7 @@
     <modules>
         <module>graphitron-rewrite</module>
         <module>graphitron-rewrite-fixtures</module>
+        <module>graphitron-rewrite-maven</module>
         <module>graphitron-rewrite-test</module>
     </modules>
 
