@@ -170,9 +170,9 @@ interface Error {
 
 type InvalidInput implements Error @error(handlers: [
     {
-        handler: DATABASE,
-        sqlState: "23514",
-        matches: "year_check",
+        handler: DATABASE, 
+        code: "23514", 
+        matches: "year_check", 
         description: "Release year must be between 1901 and 2155"
     },
     {
@@ -237,13 +237,13 @@ You can provide your own implementation of `DataAccessExceptionMapper` to custom
 
 The `ErrorMessageFormatter` class provides user-friendly messages for common SQL errors:
 
-| SQL State | Error Type        | User Message                        |
-|-----------|-------------------|-------------------------------------|
-| 23505     | Unique constraint | "Duplicate value not allowed"       |
-| 23503     | Foreign key       | "Referenced record does not exist"  |
-| 23502     | Not null          | "Required field cannot be empty"    |
-| 23514     | Check constraint  | "Value violates constraint: [name]" |
-| 22001     | Data too long     | "Value exceeds maximum length"      |
+| SQL State | Error Type | User Message |
+|-----------|------------|--------------|
+| 23505 | Unique constraint | "Duplicate value not allowed" |
+| 23503 | Foreign key | "Referenced record does not exist" |
+| 23502 | Not null | "Required field cannot be empty" |
+| 23514 | Check constraint | "Value violates constraint: [name]" |
+| 22001 | Data too long | "Value exceeds maximum length" |
 
 For check constraints, the formatter attempts to extract and humanize the constraint name (e.g., "year_check" becomes "year").
 
@@ -270,7 +270,7 @@ For check constraints, the formatter attempts to extract and humanize the constr
 
 ### Custom Exception Strategy Example
 
-Extend `SchemaBasedErrorStrategy` to handle application-specific exceptions. See [ExceptionStrategyImpl.java](../graphitron-example/graphitron-example-server/src/main/java/no/sikt/graphitron/example/exceptionhandling/SchemaBasedErrorStrategyImpl.java) in the example project:
+Extend `SchemaBasedErrorStrategy` to handle application-specific exceptions. See [ExceptionStrategyImpl.java](../graphitron-example/graphitron-example-server/src/main/java/no/sikt/graphitron/example/exceptionhandling/ExceptionStrategyImpl.java) in the example project:
 
 ```java
 public class ExceptionStrategyImpl extends SchemaBasedErrorStrategy {
@@ -292,6 +292,76 @@ public class ExceptionStrategyImpl extends SchemaBasedErrorStrategy {
     }
 }
 ```
+
+## GraphitronContext - Runtime Extension Point
+
+`GraphitronContext` is the primary extension point for customizing Graphitron's runtime behavior without modifying generated code.
+
+### Interface
+
+**Location:** `graphitron-common/src/main/java/no/sikt/graphql/GraphitronContext.java`
+
+```java
+public interface GraphitronContext {
+    DSLContext getDslContext(DataFetchingEnvironment env);
+    <T> T getContextArgument(DataFetchingEnvironment env, String name);
+    String getDataLoaderName(DataFetchingEnvironment env);
+}
+```
+
+### Methods
+
+#### getDslContext(DataFetchingEnvironment env)
+- **Purpose**: Provide the jOOQ `DSLContext` for each GraphQL field resolution
+- **Called by**: Every generated DataFetcher before executing queries
+- **Use cases**:
+  - Multi-tenancy with database-level isolation
+  - Per-request transaction management
+  - Custom connection pooling strategies
+  - Setting session variables for Row-Level Security (RLS)
+
+#### getContextArgument(DataFetchingEnvironment env, String name)
+- **Purpose**: Extract values from GraphQL context to pass to service methods and conditions
+- **Use cases**:
+  - Pass user ID or tenant ID to `@condition` filters
+  - Extract security context for business logic
+  - Access request-scoped configuration
+
+#### getDataLoaderName(DataFetchingEnvironment env)
+- **Purpose**: Provide DataLoader registry key for batching
+- **Critical for multi-tenancy**: DataLoaders cache results, so different tenants must not share DataLoader instances to prevent cache leakage
+- **Default behavior**: Returns `"{fieldName}For{typeName}"` (e.g., `"filmsForActor"`)
+- **Multi-tenant override**: Must scope names per-tenant (e.g., `"filmsForActor-tenant123"`) to ensure isolated caching
+
+### Usage
+
+Applications provide an implementation of `GraphitronContext` at startup:
+
+```java
+@Override
+protected ExecutionInput buildExecutionInput(ExecutionInput.Builder builder) {
+    GraphitronContext context = new MyCustomGraphitronContext(dataSource);
+    return builder.graphQLContext(Map.of("graphitronContext", context)).build();
+}
+```
+
+Generated DataFetchers retrieve it per-request:
+
+```java
+GraphitronContext graphitronContext = env.getGraphQlContext().get("graphitronContext");
+DSLContext ctx = graphitronContext.getDslContext(env);
+```
+
+### Extension Mechanisms
+
+GraphitronContext works alongside other extension points:
+
+- **jOOQ ExecuteListener**: Intercept and modify queries before execution (add filters, log SQL, collect metrics)
+- **Database Row-Level Security**: Enforce security at database level using session variables
+
+For detailed usage examples and multi-tenancy patterns, see [Runtime Extension Points](../graphitron-rewrite/docs/runtime-extension-points.md).
+
+---
 
 ## Other Components
 

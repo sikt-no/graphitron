@@ -273,6 +273,15 @@ type FilmDetails @table(name: "FILM") {
 
 **Reverse self-references** (listing rows that reference the current row via a self-referencing FK) are not currently supported through automatic join resolution. Use a custom `@condition` as a workaround.
 
+**Cardinality.** `@splitQuery` supports both list-cardinality (child-holds-FK) and single-cardinality (parent-holds-FK) fields. The DataLoader keys by the parent's PK for lists and by the parent's FK column for singles; the rest of the batching shape is identical. Single-cardinality `@splitQuery` is restricted to a single-hop reference path — multi-hop single cardinality is rejected at build time. A nullable FK on the parent short-circuits to `null` without dispatching to the DataLoader:
+
+```graphql
+type Address @table { district: String }
+type Customer @table {
+  address: Address @splitQuery # single-cardinality: customer.address_id → address.address_id
+}
+```
+
 #### Skip DataFetcher generation with @notGenerated
 Set this on any query or mutation field that Graphitron would usually generate a new data fetcher for in order to
 cancel of it.

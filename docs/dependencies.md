@@ -1,0 +1,17 @@
+# Dependencies
+
+Graphitron is built on two foundational dependencies. They're not incidental implementation choices — they shape the architecture and your experience working with Graphitron.
+
+## jOOQ
+
+jOOQ generates type-safe Java code from your database schema and provides a fluent API for building SQL queries. It has been actively maintained since 2009, stays close to SQL rather than hiding it, and produces readable, debuggable code.
+
+**jOOQ is where you work.** When you need custom logic — filtering, calculated fields, complex conditions — you write it using jOOQ's DSL. You'll work with generated table classes, write `Condition` methods, and think in jOOQ's terms. Familiarity with jOOQ is essential for extending what Graphitron generates.
+
+Licensing: jOOQ uses dual licensing. The open source edition covers PostgreSQL, MySQL, SQLite, and others. Commercial databases require a commercial license. We use the commercial license, which includes source rights — if jOOQ's maintainers disappeared, we could continue.
+
+## GraphQL-Java
+
+GraphQL-Java is the reference implementation of GraphQL for Java. It parses schemas, executes queries, and provides the DataFetcher and TypeResolver interfaces that Graphitron's generated code plugs into.
+
+**GraphQL-Java is under the hood.** You won't typically write GraphQL-Java code directly — Graphitron handles that. But understanding how it executes queries helps when reading generated code or debugging.
