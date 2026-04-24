@@ -184,6 +184,23 @@ class PlatformIdPipelineTest {
                 assertThat(t.typeId()).isEqualTo("Foo");
                 assertThat(t.nodeKeyColumns()).extracting(ColumnRef::sqlName)
                     .containsExactly("name");
+            }),
+
+        TYPE_ID_COLLISION_DEMOTES_BOTH(
+            "two NodeTypes with the same typeId → both demoted to UnclassifiedType (R4a registry uniqueness)",
+            """
+            type Foo implements Node @table(name: "bar") @node(typeId: "Shared") { id: ID! name: String }
+            type Zed implements Node @table(name: "qux") @node(typeId: "Shared") { id: ID! name: String }
+            type Query { foo: Foo zed: Zed }
+            """,
+            schema -> {
+                assertThat(schema.type("Foo")).isInstanceOf(GraphitronType.UnclassifiedType.class);
+                assertThat(schema.type("Zed")).isInstanceOf(GraphitronType.UnclassifiedType.class);
+                var fooReason = ((GraphitronType.UnclassifiedType) schema.type("Foo")).reason();
+                assertThat(fooReason)
+                    .contains("typeId 'Shared'")
+                    .contains("Foo, Zed")
+                    .contains("nondeterministic");
             });
 
         final String sdl;
