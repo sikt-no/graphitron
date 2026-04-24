@@ -23,7 +23,7 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
     @Parameter
     List<SchemaInputBinding> schemaInputs;
 
-    @Parameter(defaultValue = "${project.build.directory}/generated-sources")
+    @Parameter(defaultValue = "${project.build.directory}/generated-sources/graphitron")
     String outputDirectory;
 
     @Parameter(required = true)
