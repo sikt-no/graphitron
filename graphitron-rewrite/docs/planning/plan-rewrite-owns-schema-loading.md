@@ -165,31 +165,27 @@ public final class RewriteSchemaLoader {
     }
 
     private static Reader openSource(String path) {
-        // classpath first, filesystem fallback (matches SchemaReadingHelper's probe order)
-        var normalized = path.startsWith("/") ? path.substring(1) : path;
-        var cl = Thread.currentThread().getContextClassLoader();
-        var stream = cl.getResourceAsStream(normalized);
-        if (stream != null) {
-            return new InputStreamReader(stream, StandardCharsets.UTF_8);
-        }
         var filePath = Paths.get(path);
-        if (Files.exists(filePath)) {
-            try {
-                return Files.newBufferedReader(filePath, StandardCharsets.UTF_8);
-            } catch (IOException e) {
-                throw new RuntimeException("Schema file unreadable: " + path, e);
-            }
+        if (!Files.exists(filePath)) {
+            throw new RuntimeException("Schema file not found: " + path);
         }
-        throw new RuntimeException("Schema file not found: " + path);
+        try {
+            return Files.newBufferedReader(filePath, StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new RuntimeException("Schema file unreadable: " + path, e);
+        }
     }
 }
 ```
 
-Target: ~80 LOC including imports. No `String` materialization per
-source. The classpath-first / filesystem-fallback probe is preserved
-verbatim because existing schema-file configs rely on both resolution
-modes (Quarkus dev mode in particular uses the context classloader
-path).
+Target: ~70 LOC including imports. No `String` materialization per
+source. Filesystem-only for user schemas: `RewriteSchemaLoader` is
+build-time code, and the post-tagged-inputs caller is the resolver's
+glob expansion (absolute paths). Legacy's classpath-first probe
+existed because `SchemaReadingHelper` is also the runtime loader for
+generated code; that helper stays intact and keeps serving the
+runtime use case. The directives source remains on classpath via
+`addDirectivesSource` — same-module resource, same classloader.
 
 Close semantics: the `try-with-resources` on `MultiSourceReader`
 closes it after the `SchemaParser` finishes. `MultiSourceReader`
@@ -281,6 +277,13 @@ rewrite-test entry is tracked separately.
 - `ValidationError.java:9`: replace "when the schema is parsed via
   {@code SchemaReadingHelper}" with "{@code RewriteSchemaLoader}".
 - `BuildWarning.java:15`: same change.
+- `TypeFetcherGenerator.java:1174`: the
+  `{@link no.sikt.graphql.GraphitronContext#getTenantId}` Javadoc
+  link becomes an unresolvable cross-module reference once the
+  `graphitron-common` dep drops. Switch `{@link}` → `{@code}` so
+  the reference stays stylistic and doesn't trip Javadoc with
+  `-Xdoclint`. Sibling `GraphitronContextInterfaceGenerator.java`
+  already uses `{@code}` and needs no change.
 
 Pure documentation; no behavioural impact.
 
@@ -302,12 +305,14 @@ Pure documentation; no behavioural impact.
 - **Pipeline:** the existing `GraphitronSchemaBuilderTest` suite passes
   unchanged. If any case fails, it indicates a directive-parsing
   regression, not a scope issue.
-- **Emitted-output ratchet:** `GeneratedSourcesLintTest` (if present
-  for this module) adds a rule: rewrite-emitted fetcher sources contain
-  no `no.sikt.graphql.schema.SchemaReadingHelper` import references.
-  (Sanity check that no future generator quietly reaches back through
-  the legacy helper.) Skip if the existing lint tests don't cover
-  reference-origin assertions; unit tests above are sufficient.
+- **Emitted-output ratchet:** `GeneratedSourcesLintTest` (in
+  `graphitron-rewrite-test`) gains a rule: rewrite-emitted fetcher
+  sources contain no `no.sikt.graphql.schema.SchemaReadingHelper`
+  import references. Sanity check that no future generator quietly
+  reaches back through the legacy helper. The test class already
+  does import-origin assertions (`emittedSourcesDoNotUseVar`,
+  `entityConditionsClassesHaveNoGraphqlJavaImports`); the new rule
+  copies one of those with a different filter. ~15 LOC.
 
 ## Deliverable
 
