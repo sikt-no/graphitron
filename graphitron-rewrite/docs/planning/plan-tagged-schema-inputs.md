@@ -17,12 +17,15 @@
 > `GraphQLRewriteGenerator` step that plan introduces. Lands before
 > the "Rewrite-owned Maven plugin" plan
 > ([plan-rewrite-maven-plugin.md](plan-rewrite-maven-plugin.md))
-> without touching `graphitron-maven-plugin`: this plan ships
-> rewrite-core code only and deletes the legacy plugin's
-> `enableRewrite` path in the process. No `<schemaInputs>` XML
-> surface exists until the new plugin lands; rewrite's pipeline is
-> test-driven during the transitional window. `graphitron-maven-plugin`
-> as a whole retires with the Maven-plugin plan.
+> as pure rewrite-core work: resolver, appliers, and a minimal
+> `RewriteContext` record threaded through `GraphQLRewriteGenerator`.
+> No legacy-plugin file touched. `<schemaInputs>` XML surface and
+> the full `RewriteContext` field set land with the Maven-plugin
+> plan, along with the `enableRewrite` / `disableLegacy` cleanup
+> and the `graphitron-rewrite-test/pom.xml` migration to the new
+> Mojo. Until then, `graphitron-rewrite-test` continues to drive
+> code generation via the legacy plugin's `enableRewrite=true`
+> branch.
 
 ## Goal
 
@@ -270,9 +273,14 @@ smooth.
 New package `no.sikt.graphitron.rewrite.schema.input`, landing
 alongside `RewriteSchemaLoader` (created by the schema-loading plan).
 
-All rewrite-core. `graphitron-maven-plugin` and
-`graphitron-java-codegen` touched only to unwind the dead
-`enableRewrite` / `disableLegacy` plumbing at step 8.
+All rewrite-core. No legacy-plugin file touched. The legacy Mojo's
+`enableRewrite=true` branch still exists after this plan lands and
+still drives `GraphQLRewriteGenerator.generate()` for
+`graphitron-rewrite-test`; `RewriteConfig.setProperties(...)` in the
+Mojo populates the same statics generators already read. The
+Maven-plugin plan handles the `enableRewrite` / `disableLegacy`
+cleanup and migrates `graphitron-rewrite-test/pom.xml` to the new
+Mojo in the same commit.
 
 1. `no.sikt.graphitron.rewrite.schema.input.SchemaInput`: record
    (pattern, Optional<tag>, Optional<descriptionNote>). ~15 LOC.
@@ -295,36 +303,24 @@ All rewrite-core. `graphitron-maven-plugin` and
    type so the generator signature stays stable across both
    landings. ~15 LOC.
 7. `GraphQLRewriteGenerator`: constructor now takes `RewriteContext`;
-   `generate()` reads `ctx.schemaInputs()` + `ctx.basedir()`
-   for the resolver call, otherwise unchanged from the
-   schema-loading plan's shape.
-8. Legacy-plugin cleanup (four files): rewrite has no Mojo entry
-   until the new plugin lands, so every shred of the `enableRewrite`
-   / `disableLegacy` plumbing leaves. `disableLegacy` goes too —
-   without `enableRewrite`, setting `disableLegacy=true` becomes
-   "generate nothing," a degenerate state nobody should reach for.
-   Files:
-   - `graphitron-maven-plugin/.../mojo/GenerateMojo.java`: delete
-     the `@Parameter enableRewrite` + `@Parameter disableLegacy`
-     declarations, both getter overrides, the `if (!disableLegacy)`
-     wrap, the `if (enableRewrite) { RewriteConfig.setProperties(...);
-     GraphQLRewriteGenerator.generate(); }` block. Legacy call
-     unwraps to unconditional `GraphQLGenerator.generate()`.
-   - `graphitron-maven-plugin/.../mojo/ValidateMojo.java`: delete
-     the `@Parameter failOnRewriteValidationError`, its consumer,
-     and the rewrite-error downgrade path + associated help text.
-   - `graphitron-codegen-parent/.../generate/Generator.java`:
-     delete the `default boolean enableRewrite()` + `default boolean
-     disableLegacy()` interface methods.
-   - `graphitron-codegen-parent/.../configuration/GeneratorConfig.java`:
-     delete the `private static boolean enableRewrite`,
-     `enableRewrite = mojo.enableRewrite()` line in
-     `loadProperties`, getter, and setter.
+   `generate()` reads `ctx.schemaInputs()` + `ctx.basedir()` for the
+   resolver call, otherwise unchanged from the schema-loading plan's
+   shape. Legacy-Mojo bridge: at `GenerateMojo.java:199` the Mojo
+   constructs a `RewriteContext` by wrapping each `mojo.getSchemaFiles()`
+   entry as a plain `SchemaInput(path, Optional.empty(), Optional.empty())`
+   and calls `new GraphQLRewriteGenerator(ctx).generate()`. The glob
+   matcher treats literal paths as patterns that match themselves;
+   no tags or notes are applied (no `<schemaInputs>` XML yet). This
+   is the only legacy-plugin line this plan changes; the branch
+   itself stays until the Maven-plugin plan deletes the whole
+   `enableRewrite` path.
 
 Expected diff: ~300 LOC rewrite-core production code +
 `SchemaInputException` ~10 LOC + ~300-400 LOC tests (five test
-classes) = ~700 LOC added; ~80 LOC deleted in the legacy plugin +
-codegen-parent across the four files above.
+classes) = ~700 LOC added. One legacy-Mojo line touched (replacing
+the static `GraphQLRewriteGenerator.generate()` call with
+`new GraphQLRewriteGenerator(ctx).generate()`), no other legacy
+changes.
 
 ### Element walking
 
@@ -467,14 +463,15 @@ build; (b) detect and skip when the element already carries the note
 suffix. Recommend (a) unless a concrete duplicate-run failure
 appears.
 
-**D5. Legacy compatibility window.** Legacy's `FeatureConfiguration` /
-`<outputSchemas>` / `features/<name>/` folder convention stay
-intact on the legacy-only path. This plan does delete the
-`enableRewrite=true` branch from legacy's `GenerateMojo`, so any
-consumer currently wiring rewrite through the legacy plugin loses
-that entry point and waits for the new plugin. The umbrella's
-"Retire `graphitron-schema-transform`" landing marker closes the
-legacy transform path later.
+**D5. Legacy compatibility window.** Legacy's `FeatureConfiguration`,
+`<outputSchemas>`, and `features/<name>/` folder convention stay
+intact on the legacy-only path; existing legacy consumers are
+unaffected. The legacy Mojo's `enableRewrite=true` branch also stays,
+keeping `graphitron-rewrite-test` running on its current build path.
+The Maven-plugin plan deletes that branch and migrates
+`graphitron-rewrite-test/pom.xml` to the new plugin in the same
+commit. The umbrella's closing item retires legacy once every
+consumer has migrated.
 
 ## Roadmap integration
 

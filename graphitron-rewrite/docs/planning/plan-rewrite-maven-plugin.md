@@ -56,6 +56,18 @@ migrated.
   Matches the plan's "no static singletons" driving principle;
   without this step, `RewriteConfig` would sit as an orphaned
   never-populated static bag post-landing.
+- Legacy-plugin cleanup: delete the `enableRewrite` /
+  `disableLegacy` / `failOnRewriteValidationError` plumbing that
+  tagged-inputs intentionally left in place. Four files across
+  `graphitron-maven-plugin` and `graphitron-codegen-parent`; see
+  §Legacy-plugin cleanup.
+- `graphitron-rewrite-test/pom.xml` migration: switch its
+  `<plugin>graphitron-maven-plugin</plugin>` execution to
+  `<plugin>graphitron-rewrite-maven</plugin>`, dropping the
+  `<enableRewrite>` / `<disableLegacy>` configuration elements in
+  the same commit as the Mojo cleanup (atomic: trunk never
+  transits through a state where rewrite-test has no generation
+  entry point).
 - Migration documentation: what consumer POMs look like before vs.
   after.
 
@@ -77,10 +89,9 @@ migrated.
 
 Audit of `graphitron-maven-plugin` surfaced seven concrete warts that
 the new plugin does not inherit. Each is tied to a file + line in the
-legacy code so the cut is unambiguous. Warts 4 and part of 5
-(`ValidateMojo.failOnRewriteValidationError`, `enableRewrite` branch)
-are already gone by the time this plan runs; tagged-inputs removed
-them. Listed here for the full historical justification.
+legacy code so the cut is unambiguous. Wart 4 (`enableRewrite` /
+`disableLegacy` gating + `failOnRewriteValidationError`) is deleted by
+this plan; see §Legacy-plugin cleanup for the file list.
 
 1. **Static config singletons.** `GeneratorConfig` (`graphitron-codegen-parent/.../GeneratorConfig.java`)
    and `RewriteConfig` (`graphitron-rewrite/.../RewriteConfig.java`) are
@@ -101,8 +112,8 @@ them. Listed here for the full historical justification.
 
 4. **Rewrite / legacy gating toggles.** `enableRewrite` / `disableLegacy`
    at `GenerateMojo.java:114,123`; `ValidateMojo.failOnRewriteValidationError`.
-   Already deleted by tagged-inputs. The new plugin is rewrite-only
-   from day one; no gates.
+   Deleted by this plan (see §Legacy-plugin cleanup). The new plugin is
+   rewrite-only from day one; no gates.
 
 5. **Embedded transform logic.** `GenerateMojo` optionally invokes
    `SchemaTransformRunner` inline (`GenerateMojo.java:138-141`) while
@@ -407,6 +418,50 @@ the new fields is mechanical. Remove `RewriteConfig.clear()` calls
 from `@AfterEach` hooks when their only purpose was clearing the
 statics.
 
+### Legacy-plugin cleanup
+
+Tagged-inputs left the Mojo's `enableRewrite=true` branch in place
+so `graphitron-rewrite-test` could keep building via the legacy
+plugin. This plan deletes that branch along with its supporting
+plumbing. `disableLegacy` goes too: without `enableRewrite`, setting
+`disableLegacy=true` becomes "generate nothing," a degenerate state
+nobody should reach for.
+
+Files to edit:
+
+- `graphitron-maven-plugin/.../mojo/GenerateMojo.java`: delete the
+  `@Parameter enableRewrite` + `@Parameter disableLegacy` declarations,
+  both getter overrides, the `if (!disableLegacy)` wrap, and the
+  `if (enableRewrite) { RewriteConfig.setProperties(...);
+  new GraphQLRewriteGenerator(ctx).generate(); }` block (the
+  `GraphQLRewriteGenerator(ctx)` variant is what tagged-inputs
+  produced). Legacy call unwraps to unconditional
+  `GraphQLGenerator.generate()`.
+- `graphitron-maven-plugin/.../mojo/ValidateMojo.java`: delete the
+  `@Parameter failOnRewriteValidationError`, its consumer, and the
+  rewrite-error downgrade path + associated help text.
+- `graphitron-codegen-parent/.../generate/Generator.java`: delete
+  the `default boolean enableRewrite()` + `default boolean
+  disableLegacy()` interface methods.
+- `graphitron-codegen-parent/.../configuration/GeneratorConfig.java`:
+  delete `private static boolean enableRewrite`, the
+  `enableRewrite = mojo.enableRewrite()` line in `loadProperties`,
+  the getter, and the setter.
+
+And in the same commit, migrate `graphitron-rewrite-test/pom.xml`:
+
+- `<plugin>graphitron-maven-plugin</plugin>` → `<plugin>graphitron-rewrite-maven</plugin>`.
+- Drop `<enableRewrite>true</enableRewrite>` and
+  `<disableLegacy>true</disableLegacy>` (parameters no longer exist).
+- `<schemaFiles>` → `<schemaInputs><schemaInput><pattern>...</pattern></schemaInput></schemaInputs>`
+  (single-entry, no tag or note; rewrite-test doesn't exercise
+  tag/note behaviour from this path).
+
+Atomic: trunk moves from "rewrite-test generates via the legacy
+Mojo's enableRewrite branch" straight to "rewrite-test generates
+via the new plugin." No intermediate state where rewrite-test has
+no generation entry point.
+
 ### Lifecycle and packaging
 
 - `graphitron-rewrite/pom.xml`: add `<module>graphitron-rewrite-maven</module>`
@@ -447,7 +502,7 @@ Full rename table:
 | `<externalReferences>` (`<externalReference><name/><fullyQualifiedClassName/>`) | `<namedReferences>` (`<namedReference><name/><className/>`) | matches rewrite's own `namedReferences` terminology; field shortens |
 | `<externalReferenceImports>`      | (removed)            | not consumed by rewrite |
 | `<scalars>` (reuses ExternalMojoClassReference) | `<scalars>` (`<scalar><scalarName/><className/>`) | dedicated POJO; `<name>` → `<scalarName>`, `<fullyQualifiedClassName>` → `<className>` |
-| `<transform>` (nested block)      | (removed)            | tagging now via `<schemaInputs>` |
+| `<transform>` (nested block)      | (removed)            | tagging now via `<schemaInputs>`. **Gotcha:** existing rewrite-mode consumers using `<transform>` will hit a duplicate-directive parse error once they migrate (the legacy transform writes `generator-schema.graphql` with directive declarations embedded; rewrite auto-injects directives, causing a collision). Drop `<transform>` and point `<schemaInputs>` at the raw schema files. This is the same fix the schema-loading landing applied to `graphitron-rewrite-test/pom.xml`. |
 | `<maxAllowedPageSize>`            | `<maxAllowedPageSize>` | unchanged |
 | `<globalRecordTransforms>` / `<recordValidation>` / `<codeGenerationThresholds>` / `<optionalSelect>` / `<useJdbcBatchingForDeletes>` / `<useJdbcBatchingForInserts>` / `<validateOverlappingInputFields>` / `<failOnMerge>` / `<makeNodeStrategy>` / `<experimental_requireTypeIdOnNode>` | (removed) | legacy-only; no rewrite reader |
 
