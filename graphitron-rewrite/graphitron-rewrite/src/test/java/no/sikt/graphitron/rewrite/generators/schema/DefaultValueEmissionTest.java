@@ -76,7 +76,8 @@ class DefaultValueEmissionTest {
     }
 
     private static String findInputBody(String sdl, String typeName) {
-        return findBody(InputTypeGenerator.generate(TestSchemaHelper.buildBundle(sdl).assembled()), typeName);
+        var bundle = TestSchemaHelper.buildBundle(sdl);
+        return findBody(InputTypeGenerator.generate(bundle.model(), bundle.assembled()), typeName);
     }
 
     private static String findBody(List<TypeSpec> specs, String typeName) {

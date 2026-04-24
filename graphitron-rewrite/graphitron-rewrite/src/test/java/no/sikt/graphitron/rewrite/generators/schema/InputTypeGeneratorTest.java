@@ -100,7 +100,8 @@ class InputTypeGeneratorTest {
     }
 
     private static List<TypeSpec> generateFor(String sdl) {
-        return InputTypeGenerator.generate(TestSchemaHelper.buildBundle(sdl).assembled());
+        var bundle = TestSchemaHelper.buildBundle(sdl);
+        return InputTypeGenerator.generate(bundle.model(), bundle.assembled());
     }
 
     private static TypeSpec findByName(List<TypeSpec> specs, String name) {

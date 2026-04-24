@@ -87,7 +87,7 @@ class EnumTypeGeneratorTest {
     }
 
     private static List<TypeSpec> generateFor(String sdl) {
-        return EnumTypeGenerator.generate(TestSchemaHelper.buildBundle(sdl).assembled());
+        return EnumTypeGenerator.generate(TestSchemaHelper.buildBundle(sdl).model());
     }
 
     private static TypeSpec findByName(List<TypeSpec> specs, String name) {
