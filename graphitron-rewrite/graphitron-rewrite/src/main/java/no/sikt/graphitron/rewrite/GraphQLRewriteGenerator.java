@@ -12,6 +12,7 @@ import no.sikt.graphitron.rewrite.schema.input.SchemaInputAttribution;
 import no.sikt.graphitron.rewrite.schema.input.TagApplier;
 import no.sikt.graphitron.rewrite.generators.schema.EnumTypeGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.FetcherRegistrationsEmitter;
+import no.sikt.graphitron.rewrite.generators.schema.ConnectionSynthesis;
 import no.sikt.graphitron.rewrite.generators.schema.GraphitronFacadeGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.GraphitronSchemaClassGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.InputTypeGenerator;
@@ -124,6 +125,7 @@ public class GraphQLRewriteGenerator {
         write(EnumTypeGenerator.generate(assembled),                                              "schema",     emittedThisRun);
         write(InputTypeGenerator.generate(assembled),                                             "schema",     emittedThisRun);
         write(ObjectTypeGenerator.generate(assembled, fetcherBodies),                             "schema",     emittedThisRun);
+        write(ConnectionSynthesis.emitSupportingTypes(ConnectionSynthesis.buildPlan(assembled), outputPackage), "schema", emittedThisRun);
         write(GraphitronSchemaClassGenerator.generate(assembled, fetcherBodies.keySet(), outputPackage), "schema", emittedThisRun);
         write(GraphitronFacadeGenerator.generate(outputPackage),                                  "",           emittedThisRun);
         write(TypeClassGenerator.generate(schema, outputPackage, jooqPackage),                   "types",      emittedThisRun);
