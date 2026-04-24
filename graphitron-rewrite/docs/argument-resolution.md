@@ -1,0 +1,428 @@
+# Argument Resolution
+
+Reference document for how the rewrite classifies GraphQL arguments and
+projects them into filters, lookup mappings, order-by specs, and pagination
+specs. Covers `@condition` at all three legal positions
+(`FIELD_DEFINITION`, `ARGUMENT_DEFINITION`, `INPUT_FIELD_DEFINITION`) and the
+override-propagation semantics that tie them together.
+
+## Pipeline shape
+
+- `FieldBuilder.classifyArguments` returns `List<ArgumentRef>` (sealed:
+  `ColumnArg`, `UnboundArg`, `TableInputArg`, `PlainInputArg`, `OrderByArg`,
+  `PaginationArgRef`, `UnclassifiedArg`).
+- Projection helpers consume that list: `projectFilters`,
+  `projectOrderBySpec`, `projectPaginationSpec`, `projectForLookup`.
+- `contextArguments` flow through `ServiceCatalog.reflectTableMethod` into
+  trailing `ParamSource.Context` parameters on the generated method calls.
+- `ArgConditionRef(ConditionFilter filter, boolean override)` carries the
+  reusable "condition + override flag" pair at every level (field, arg,
+  input-field).
+- `TableInputArg.fieldBindings: List<InputColumnBinding>` carries the
+  `@lookupKey`-only bindings; composite-key lookups are wired end-to-end
+  via `LookupValuesJoinEmitter`.
+- `LookupField` capability with non-`Optional` `LookupMapping lookupMapping()`
+  pairs with `@lookupKey`.
+- `TypeBuilder.isUsedWithOverrideCondition` skips table-column validation on
+  inputs whose outer field / argument / own fields declare
+  `@condition(override: true)`.
+
+## Scope
+
+`@condition` is legal at three positions per `directives.graphqls`:
+`FIELD_DEFINITION`, `ARGUMENT_DEFINITION`, `INPUT_FIELD_DEFINITION`. Each
+`@condition`-carrying field *inside* an input type contributes its own
+predicate when the input is used at a call site. Nested input-field
+conditions compose. Outer-level overrides propagate downward.
+
+The input-field position covers both `@table`-annotated input types
+(primary case) and plain input types used under the legacy
+"implicit-table" heuristic, where the input's fields resolve against the
+enclosing query field's target table. A divergence-scan of alf's
+production schema
+(`alf/graphitron-rewrite:graphitron-rewrite/generator-schema.graphql`,
+not committed to trunk) counted 62 plain inputs carrying inner
+`@condition`, 3 of them under an outer field-level
+`@condition(override: true)` (`Query.emner`, `Query.emnerV2`,
+`Query.studenter`). Zero `@table` inputs carry inner `@condition`
+because `@table` inputs on alf rely on *implicit column conditions*
+instead (63 distinct call sites). Implicit column conditions ship
+alongside this Phase 4 work (commit `96e39df`); an un-annotated
+`ColumnField` / `ColumnReferenceField` on a `@table` input contributes
+a `BodyParam` with `NestedInputField` extraction to the same
+`GeneratedConditionFilter` this phase emits.
+
+## Design
+
+### Data model
+
+Three `InputField` variants
+(`graphitron-rewrite/.../model/InputField.java`) carry
+`Optional<ArgConditionRef> condition`:
+
+- `InputField.ColumnField`
+- `InputField.ColumnReferenceField`
+- `InputField.NestingField`
+
+The same variants cover both resolution sources: `@table`-input fields
+(classified at type-build time against the input's own declared table) and
+plain-input fields (classified at argument-classify time against the
+enclosing query field's target table). The variant doesn't need to know
+which source produced it; the carrying argument record (`TableInputArg` or
+`PlainInputArg`) remembers that.
+
+`PlatformIdField` is intentionally excluded; see Out of Scope. `ArgConditionRef`
+is reused verbatim; its `override` flag is the input-field-level override
+(matching legacy semantics: `override: true` on an input field replaces that
+field's implicit condition with the explicit method).
+
+### Classification: reading the directive at type-build and call-site time
+
+`@table` inputs and plain inputs classify at different times because their
+resolution tables differ:
+
+- **`@table` inputs.** Classified once at type-build time by
+  `TypeBuilder.buildInputField` against the input's own `@table(name:)`.
+- **Plain inputs.** Classified per call site by
+  `FieldBuilder.classifyPlainInputFields` against the enclosing query
+  field's target table (`rt`). Same plain input used at N call sites
+  classifies N times, one per resolved table. Classification is cheap;
+  reclassification is simpler than caching, and a per-site cache would
+  complicate invalidation without a measured need.
+
+**Shared per-field classifier.** `BuildContext.classifyInputField(field,
+parentTypeName, tableRef, expandingTypes, errors) -> InputFieldResolution`
+hosts the column / `@reference` / nesting decision tree, accessible from
+both `TypeBuilder` and `FieldBuilder`. `TypeBuilder` calls it with the
+input type's declared table; `FieldBuilder` calls it with the call site's
+`rt` when it encounters a plain-input arg. The shared classifier means
+`NestingField` semantics stay identical across both resolution paths: a
+plain input nested inside a `@table` input still resolves against the
+parent `@table`'s table via the existing recursive call, and a plain input
+used directly as a field argument resolves against `rt`.
+
+**Condition helper.** `BuildContext.buildInputFieldCondition(GraphQLInputObjectField
+field, String inputFieldName, List<String> errors) -> Optional<ArgConditionRef>`
+mirrors `FieldBuilder.buildArgCondition`:
+
+- Directive parsing is delegated to `BuildContext.readConditionDirective`,
+  which is `GraphQLDirectiveContainer`-generic so `GraphQLInputObjectField`
+  works without modification.
+- Reflection via `ServiceCatalog.reflectTableMethod(className, method,
+  Set.of(inputFieldName), Set.copyOf(contextArguments))`. The method's
+  primary argument is the single input-field value, named after the
+  SDL field name (matches legacy; see `withListedInputConditions`
+  fixture: `customerString(table, input.getId())`).
+- On reflection failure, the error is appended and `Optional.empty()` is
+  returned, mirroring the `buildArgCondition` error contract.
+
+The helper is agnostic to `@table` vs. plain source; both paths call it
+with the same shape. `classifyInputField`, `buildInputFieldCondition`,
+and `readConditionDirective` all live in `BuildContext`; callers in
+`TypeBuilder` and `FieldBuilder` reach them via `ctx`.
+
+### Projection: threading conditions to the call site
+
+`FieldBuilder.projectFilters` handles outer-arg-level `@condition` on both
+`TableInputArg` and `PlainInputArg` and then walks each input's classified
+`InputField` records via `walkInputFieldConditions`, appending every
+present condition. The walking logic is identical across both carriers;
+differences live only in the carrying record.
+
+**Both variants carry a classified field list.** `TableInputArg` and
+`PlainInputArg` each carry `List<InputField> fields` populated at
+classify time. `TableInputArg.fieldBindings` is `@lookupKey`-only and
+insufficient on its own, since condition-carrying fields aren't
+necessarily lookup keys.
+
+The alternative was to read the field list out of a registry at projection
+time. Rejected: re-couples projection to builder context, breaks the
+invariant that projection is a pure function of `List<ArgumentRef>` (no
+builder state, no registry lookups). For `PlainInputArg` there is no
+registry entry to read from at all, so the carry-on-the-record shape is
+the only coherent option there anyway.
+
+### Override propagation
+
+Three directive levels can co-exist at one call site:
+
+- **Field**: `fieldDef @condition`
+- **Argument**: `arg @condition`
+- **Input field**: `inputField @condition`
+
+Nesting adds a fourth tier: an input type contains an input field whose type is
+itself another input type, which has its own fields. Each nested level can
+carry its own `@condition`.
+
+**Propagation rule (downward inheritance).** `override: true` at any enclosing
+level (parent-field ⊇ arg ⊇ nesting-field) suppresses every nested *implicit
+condition* (jOOQ `table.COLUMN.eq(input.getField())`). Explicit `@condition`
+methods are never suppressed by ancestor overrides; they're independent
+declarations by the schema author, and a level's own `override` flag affects
+only that level's implicit condition.
+
+#### Legacy behavior reference (and intentional divergence)
+
+The rule above (downward inheritance, explicit methods survive) is the rule
+the **rewrite** will enforce. It is NOT the rule the legacy generator
+implements. Reviewers and implementers should know the delta before signing
+off on §Override propagation.
+
+**Legacy schema, `withListedInputConditions`**
+([schema.graphqls](../../../graphitron-codegen-parent/graphitron-java-codegen/src/test/resources/queries/fetch/records/withListedInputConditions/schema.graphqls)):
+
+```graphql
+type Query {
+  customer(in: [CustomerInput]):         CustomerTable @condition(..., method: "customerJOOQRecordList")
+  customerOverride(in: [CustomerInput]): CustomerTable @condition(..., method: "customerJOOQRecordList", override: true)
+}
+input CustomerInput @table(name: "CUSTOMER") {
+  id:    ID!     @condition(..., method: "customerString")
+  first: String! @field(name: "FIRST_NAME")
+                 @condition(..., method: "customerString", override: true)
+}
+```
+
+**Legacy output, same fixture's**
+[`expected/QueryDBQueries.java`](../../../graphitron-codegen-parent/graphitron-java-codegen/src/test/resources/queries/fetch/records/withListedInputConditions/expected/QueryDBQueries.java):
+
+- `customerForQuery` (no outer override, :17-37) emits the full stack:
+  row-IN containing `hasId(id)` + `customerString(table, id)` +
+  `customerString(table, firstName)`, AND-ed with `customerJOOQRecordList`.
+  Inner `id` (no override) contributes both implicit condition AND explicit
+  method; inner `first` (`override: true`) contributes only the explicit
+  method (its own implicit condition suppressed at the input-field level).
+  No explicit method is dropped by the outer level.
+- `customerOverrideForQuery` (outer override, :40-48) emits **only**
+  `customerJOOQRecordList`. Every inner contribution is dropped: `id`'s
+  implicit condition, `id`'s explicit `customerString`, and `first`'s
+  explicit `customerString`. There is no row-IN construct at all.
+
+**The legacy rule is total-replace: an outer `override: true` substitutes its
+own explicit method for everything below it, regardless of whether inner
+fields carry their own explicit `@condition` methods.** The rewrite's
+proposed rule preserves inner explicit methods across the boundary. That is
+a **deliberate divergence** from legacy.
+
+**Rationale for diverging.** The legacy behavior couples implicit conditions
+and explicit methods into a single "outer owns everything" toggle, which means
+a schema author can't declaratively compose an outer replacement condition
+with inner explicit side-conditions. The rewrite treats each level's
+`override` flag as affecting only that level's implicit condition, which lets
+`@condition(override: true)` replace the implicit condition without also
+silencing explicit input-field conditions written by the schema author.
+
+**Divergence-pinning tests.** Two execution tests pin the rewrite against
+legacy's total-replace rule:
+`inputFieldCondition_tableInput_outerOverride_preservesInnerExplicitMethod`
+(outer `@condition(override: true)` over a `@table` input whose field
+carries its own `@condition`) and
+`inputFieldCondition_plainInput_outerOverride_preservesInnerExplicitMethod`
+(same shape against a plain input; alf production shape). Both generate a
+predicate conjunction that evaluates to an empty result set; a regression
+to the legacy "outer owns everything" rule would drop the inner predicate
+and return rows, breaking the tests by name.
+
+**If a downstream consumer relies on the legacy coupling**, handle it with
+an author-side schema edit (drop the inner `@condition` methods that
+should not run under outer override) or promote to its own backlog item.
+The rewrite does not reproduce total-replace.
+
+**Audit of legacy override fixtures.** Three additional fixtures under
+`queries/fetch/records/` were inspected to confirm the 6-row truth table
+is complete:
+
+- `multiLevelInputJavaRecordOverrideCondition`: three-level nesting
+  `Input3 → Input2 → Input1`, with `@condition(override: true)` at the
+  `Input2.input1` nesting field (not at outer arg, not at field). Confirms
+  nesting-field-level override is a real production shape; already covered
+  by the "any enclosing override (field ⊇ arg ⊇ nesting-field)" propagation
+  rule. No new row.
+- `nestedListInputJavaRecordOverrideCondition`: arg-level
+  `@condition(override: true)` over `[Input1]` whose fields carry no
+  `@condition`. Row 4 of the truth table.
+- `listInputJavaRecordAndFieldOverrideCondition`: parent-field-level
+  `@condition(override: true)` composed with arg-level `@condition` (no
+  override) on a sibling scalar-list arg. Parent-field-level override
+  propagates to the arg's implicit conditions; explicit arg method fires.
+  Row 2 and row 5 combined across two args; no new row for input-field
+  semantics (no input type is involved).
+
+All three fall within the 6-row table.
+
+### Truth table (per input-field, per call site)
+
+"Any enclosing override" = parent-field-level OR arg-level OR any
+intermediate nesting-field's `override: true`.
+
+| Any enclosing override | Input field `@condition` | Implicit condition | Explicit method |
+|---|---|---|---|
+| No  | Absent                  | Emitted     | n/a     |
+| No  | Present (no override)   | Emitted     | Emitted |
+| No  | Present (override:true) | Suppressed  | Emitted |
+| Yes | Absent                  | Suppressed  | n/a     |
+| Yes | Present (no override)   | Suppressed  | Emitted |
+| Yes | Present (override:true) | Suppressed  | Emitted |
+
+"Emitted" in the explicit-method column means the method call lands in the
+`List<WhereFilter>` returned by `projectFilters`; downstream emitters AND
+all present filters together (see §Emission). The earlier column label
+"Replaces" was inherited from column-arg vocabulary and is misleading here,
+since rows 5-6 have no implicit condition left to replace.
+
+Six rows, not nine: the previous draft's "outer `override: false`" row is
+indistinguishable from "outer absent" since `false` is the directive default.
+Confirmed against `BuildContext.argBoolean` (which defaults `ARG_OVERRIDE` to
+`false`) and the SDL declaration in `directives.graphqls` (`override: Boolean
+= false`).
+
+### Emission: no new emitters
+
+`projectFilters` output is `List<WhereFilter>`; each `ConditionFilter` is
+already a callable reference carrying `Table<?>` + arg-value parameters. The
+downstream emitters (`LookupTableFieldEmitter`, `InlineLookupTableFieldEmitter`,
+`SplitRowsMethodEmitter`) already AND-in each `ConditionFilter` without
+knowing its provenance. Input-field conditions land alongside field-level
+and arg-level conditions in the same filter list.
+
+**List-typed inputs (composite-key lookups).** `LookupValuesJoinEmitter` emits
+VALUES+JOIN rows; per-row condition evaluation already reads fields via
+`input.get(i).get<FieldName>()`. Input-field conditions piggyback on the same
+loop; projection just hands them as additional filters. Verify round-trip
+count with an execution test (see §Test strategy).
+
+**Nested non-`@table` input types.** `InputField.NestingField` resolves its
+own fields against the parent's table. A condition on the nesting field is
+reflected with the nesting field's SDL name as the sole arg (same shape as a
+scalar input field's condition); projection walks `NestingField.fields`
+recursively to pick up inner conditions, threading a `boolean enclosingOverride`
+accumulator: any level's `override: true` flips it to `true` for all
+descendants. No new emitter shape.
+
+### Validator
+
+1. **`TypeBuilder.isUsedWithOverrideCondition`.** Returns true when any
+   consuming field or argument declares `@condition(override: true)`
+   against the input type, *or* when the input type itself has any
+   field with `@condition(override: true)`. This preserves the
+   "skip table-column validation when overridden" escape hatch across
+   outer-level and per-field overrides. Plain inputs do not pass through
+   `isUsedWithOverrideCondition` (it gates table-column validation for
+   `@table` inputs); the per-call-site classifier handles plain-input
+   column resolution directly against the outer field's table with the
+   existing `catalog.findColumn` + `@field(name:)` path.
+
+2. **`GraphitronSchemaValidator`.** No new structural validation:
+   graphql-java enforces `on INPUT_FIELD_DEFINITION` placement at
+   schema-parse time. Reflection errors surface through the existing
+   `errors` list in `TypeBuilder.buildInputField` → `UnclassifiedType`
+   fallback for `@table` inputs, and through the per-call-site
+   classifier's `errors` list for plain inputs (same `UnclassifiedArg`
+   fallback already used for other classify-time failures).
+
+## Runtime: nested input-field arg extraction
+
+When a `@condition` method sits on an input field, the runtime values
+passed to it are not reachable as top-level arguments. The
+`CallSiteExtraction.NestedInputField(String outerArgName, List<String> path)`
+variant records the path from the outer argument down to the leaf value.
+`FieldBuilder.walkInputFieldConditions` threads `(outerArgName, pathPrefix)`
+through the recursion; when a condition is found, `rewrapForNested`
+replaces each `ParamSource.Arg` param's extraction with
+`NestedInputField(outerArgName, prefix + [fieldName])`.
+
+At code-gen time, `ArgCallEmitter.buildArgExtraction` turns that into a
+null-safe nested `instanceof Map<?, ?>` ternary chain that traverses from
+the top-level argument Map down to the leaf value. The chain short-circuits
+to `null` at any level whose value is absent or is not a Map, so a
+`@condition` method always receives either the concrete leaf value or
+`null`; reflecting it with a Map or a wrong-shaped value is not possible.
+
+## Test assertions
+
+Follows `docs/rewrite-design-principles.md`: no body-string assertions on
+emitted method bodies. Execution tests assert, for each case:
+
+- JDBC round-trip count matches expectation (catches spurious extra queries).
+- Returned row IDs match the hand-authored expected set.
+- WHERE-clause shape via a jOOQ `ExecuteListener` capturing the generated
+  SQL: compare structural tokens (column references, operator positions,
+  AND/OR tree shape), not literal strings.
+
+Pipeline tests (`GraphitronSchemaBuilderTest`) assert on the classifier
+output directly (`List<InputField>`, `List<WhereFilter>`), not on emitted
+code.
+
+## Design decisions & rationale
+
+- **`readConditionDirective` home: `BuildContext`.** Rejected
+  alternatives: a new `ConditionDirectives` utility; keeping it in
+  `FieldBuilder` and duplicating a minimal copy in `TypeBuilder`.
+  `BuildContext` already houses `DIR_CONDITION`, `ARG_OVERRIDE`,
+  `argBoolean`, and `argStringList`; co-locating directive-parsing helpers
+  there is consistent and every caller already has a `ctx` handle.
+
+- **Projection access to `InputField` list: carried on the argument
+  record, not looked up from a registry.** `TableInputArg` and
+  `PlainInputArg` each hold `List<InputField> fields`, populated at
+  classify time. Registry lookup at projection time was rejected: it
+  re-couples projection to builder context and breaks the invariant that
+  projection is a pure function of `List<ArgumentRef>`. For
+  `PlainInputArg` there is no registry entry anyway (plain-input fields
+  classify per call site against the outer field's `rt`), so the
+  carry-on-record shape is the only coherent one there.
+
+- **Condition-method signature for `NestingField` conditions: single arg
+  named after the SDL field.** Matches the reflection shape
+  `ServiceCatalog.reflectTableMethod(className, method, Set.of(fieldName),
+  ...)` already used by scalar input-field conditions. Per-leaf
+  parameterization was rejected as speculative: no legacy fixture or alf
+  call site requires it, and it would change the reflection key from a
+  single field name to an ordered tuple that does not round-trip through
+  `ArgConditionRef` without schema changes. If a method needs inner
+  values, it traverses the passed object.
+
+- **Reflection-failure behaviour: per-arg, not per-type.** Input-field
+  condition reflection mirrors `buildArgCondition`: append the error,
+  return `Optional.empty()`, leave the rest of the field classifying
+  cleanly. Promoting the whole `TableInputType` to `UnclassifiedType` was
+  rejected on blast-radius grounds: a reflection failure is a
+  caller-fixable error, not a schema-structural one, so it should not
+  invalidate the input type's other fields.
+
+- **Plain-input classification failure: per-field skip, not whole-arg
+  failure.** `FieldBuilder.classifyPlainInputFields` skips individual
+  fields that fail column resolution (they are not added to
+  `PlainInputArg.fields`) and appends the failure reason to the
+  field-level `errors` list. The plain-input arg itself stays classified.
+  Rationale: plain inputs are legitimately reused across heterogeneous
+  call sites (e.g. `PlainFilmIdInput` used on both `films(filter: ...)`
+  against `film` and `languages(filter: ...)` against `language`, which
+  has no `film_id` column). Whole-arg failure would reject the Language
+  call site even though the Film call site is valid; per-field skip lets
+  each call site retain the fields that resolve against its own table.
+  `@table` inputs keep the stricter whole-type `UnclassifiedType`
+  behaviour via `TypeBuilder.buildInputField`.
+
+- **`ArgCallEmitter` shape for nested input-field extraction: new sealed
+  variant `CallSiteExtraction.NestedInputField(outerArgName, path)`.**
+  Rejected alternatives: (B) an optional `outerArgPath` field on
+  `CallParam` that every extraction variant checks (couples every variant
+  to the nested case); (C) projection pre-lifts a
+  `Object <slot> = env.getArgument(outerArg) instanceof Map m ?
+  m.get(field) : null;` local at the top of the fetcher body and
+  references it (complicates projection with a new emission slot and
+  doesn't compose with `NestingField` chains). The sealed hierarchy is
+  already the right place for extraction-shape variations (`Direct`,
+  `EnumValueOf`, `TextMapLookup`, `ContextArg`, `JooqConvert`);
+  `NestedInputField` fits the same pattern, makes the nested case explicit
+  at every emitter switch, and composes cleanly with `NestingField`
+  recursion in projection.
+
+## Out of Scope
+
+- **Mutations.** Input-type arguments for DML use a different mapping.
+  Mutations get their own plan.
+- **`PlatformIdField` with `@condition`.** Platform IDs are legacy
+  accessors; if a real schema surfaces this we'll promote it to its own
+  backlog item.

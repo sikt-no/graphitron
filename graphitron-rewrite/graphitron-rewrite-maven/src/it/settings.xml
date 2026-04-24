@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<settings>
+  <!--
+    Settings for maven-invoker-plugin integration tests.
+    invoker:install puts the just-built plugin into the local repository before
+    the IT child sessions run. All other artifacts must already be present in
+    the local repository from a prior build.
+  -->
+</settings>

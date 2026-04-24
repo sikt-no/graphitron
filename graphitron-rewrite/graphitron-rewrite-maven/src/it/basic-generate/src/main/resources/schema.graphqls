@@ -1,0 +1,9 @@
+type Query {
+    films: [Film!]!
+    filmById(film_id: [ID] @lookupKey): [Film!]!
+}
+
+type Film @table(name: "film") {
+    filmId: Int! @field(name: "FILM_ID")
+    title: String! @field(name: "TITLE")
+}
