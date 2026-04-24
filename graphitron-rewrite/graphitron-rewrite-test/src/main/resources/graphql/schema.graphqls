@@ -1,0 +1,448 @@
+type Query {
+    customers(active: Boolean @field(name: "ACTIVEBOOL")): [Customer!]!
+    films(
+        rating: MpaaRating @field(name: "RATING"),
+        textRating: TextRating @field(name: "TEXT_RATING"),
+        maxRentalRate: Float @field(name: "RENTAL_RATE")
+    ): [Film!]!
+    filmById(film_id: [ID] @lookupKey): [Film!]!
+    languageByKey(language_id: [Int] @lookupKey @field(name: "language_id")): [Language!]!
+    customerById(customer_id: [ID] @lookupKey, store_id: ID @lookupKey): [Customer!]!
+    storeById(store_id: [Int] @lookupKey @field(name: "store_id")): [Store!]!
+    categoryById(category_id: [Int] @lookupKey @field(name: "category_id")): [Category!]!
+    # argres Phase 3: composite-key lookup via @table input type. Each FilmActorKey carries
+    # two @lookupKey scalar fields (film_id, actor_id); the generator materialises a VALUES
+    # derived table with columns (idx, film_id, actor_id) and joins on both keys.
+    filmActorsByKey(key: [FilmActorKey!]! @lookupKey): [FilmActor!]!
+    filmsConnection(
+        first: Int, last: Int, after: String, before: String
+    ): FilmsConnection! @defaultOrder(primaryKey: true)
+    filmsOrderedConnection(
+        rating: MpaaRating @field(name: "RATING"),
+        order: [FilmOrderBy] @orderBy,
+        first: Int, last: Int, after: String, before: String
+    ): FilmsConnection! @defaultOrder(primaryKey: true)
+    # argres Phase 4: @condition on INPUT_FIELD_DEFINITION — @table input type.
+    # FilmConditionInput.filmId carries @condition; the condition method is wired
+    # and called at runtime. In Phase 4, filmId arrives as null (nested-arg access
+    # deferred), so the method returns noCondition() and all films are returned.
+    filmsWithInputFieldCondition(filter: FilmConditionInput): [Film!]!
+    # argres Phase 4: @condition on a plain input field (no @table).
+    # PlainFilmIdInput is used on Film and Language queries → two different return
+    # tables → PojoInputType → PlainInputArg at each call site. For Film, filmId
+    # resolves against film → condition wired (no-op). For Language, filmId does
+    # not exist → field skipped → no condition applied → all languages returned.
+    filmsByPlainInput(filter: PlainFilmIdInput): [Film!]!
+    languagesByPlainInput(filter: PlainFilmIdInput): [Language!]!
+    # argres Phase 4b: input-field @condition(override: true) on a real column. There is no
+    # un-annotated sibling to suppress, so the override flag is a no-op here; runtime effect
+    # is identical to a non-override @condition: filmIdCondition fires and filters by the
+    # passed value. Locks in that override:true parses, classifies, and projects an explicit
+    # method call.
+    filmsWithInputFieldOverride(filter: FilmConditionInputWithOverrideField): [Film!]!
+    # argres Phase 4b: outer @condition(override: true) on a @table input whose field has its
+    # own non-override @condition. Pins the rewrite's divergence from legacy "outer owns
+    # everything" semantics: legacy would drop filmIdCondition; rewrite preserves it, so
+    # (film_id >= 2) AND (film_id = 1) no rows. A regression to legacy semantics breaks
+    # this test by name.
+    filmsOuterOverrideTableInput(filter: FilmConditionInput): [Film!]!
+        @condition(condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+            method: "outerOverrideMethod"
+        }, override: true)
+    # argres Phase 4b: two-level nested input. NestedFilmInput contains a NestingField 'inner'
+    # of type InnerFilmInput (plain); InnerFilmInput.filmId carries @condition. Exercises the
+    # multi-segment path ["inner", "filmId"] in NestedInputField extraction.
+    filmsNestedInput(filter: NestedFilmInput): [Film!]!
+    # argres Phase 4b: outer @condition(override: true) composition on a plain (non-@table)
+    # input. alf's production shape (Query.emner, emnerV2, studenter). Both outer and inner
+    # explicit methods fire; outer excludes film 1 so (film_id >= 2) AND (film_id = 1)
+    # no rows, mirroring the @table case's divergence-pinning behavior.
+    filmsOuterOverridePlainInput(filter: PlainFilmIdInput): [Film!]!
+        @condition(condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+            method: "outerOverrideMethod"
+        }, override: true)
+    # implicit-input-conditions plan: @table input with un-annotated column field.
+    # filmId has no @condition — the implicit column-equality predicate (film.FILM_ID = ?)
+    # is emitted by walkInputFieldConditions and folded into the GeneratedConditionFilter's
+    # bodyParams. Null filmId produces noCondition() via the standard DSL.val null-guard.
+    filmsWithImplicitInput(filter: FilmImplicitInput): [Film!]!
+    # implicit-input-conditions plan: outer @condition(override: true) on a field whose
+    # @table input has no explicit @condition on its fields. The enclosingOverride flag
+    # suppresses all implicit predicates inside the input; only outerOverrideMethod fires.
+    # Query with filmId: "1" → outerOverrideMethod returns film_id >= 2 → films 2..5 returned.
+    filmsWithImplicitInputOuterOverride(filter: FilmImplicitInput): [Film!]!
+        @condition(condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+            method: "outerOverrideMethod"
+        }, override: true)
+    # implicit-input-conditions plan: @table input with two un-annotated fields.
+    # Both filmId and title get implicit predicates; GCF body ANDs them.
+    filmsWithMultiImplicit(filter: FilmMultiImplicitInput): [Film!]!
+    # implicit-input-conditions plan: @table input whose NestingField wraps an un-annotated
+    # ColumnField two levels deep. Implicit predicate binds to the outer @table's film_id
+    # column; NestedInputField path is ["inner", "filmId"].
+    filmsWithNestedImplicit(filter: NestedImplicitInput): [Film!]!
+}
+
+type Customer @table(name: "customer") {
+    customerId: Int!     @field(name: "CUSTOMER_ID")
+    firstName:  String!  @field(name: "FIRST_NAME")
+    lastName:   String!  @field(name: "LAST_NAME")
+    email:      String   @field(name: "EMAIL")
+    activebool: Boolean! @field(name: "ACTIVEBOOL")
+    # G5: single-hop inline TableField — customer.address_id → address.address_id
+    address:       Address @reference(path: [{key: "customer_address_id_fkey"}])
+    # G5: multi-hop inline TableField — customer → store → address (2 hops)
+    storeAddress:  Address @reference(path: [
+        {key: "customer_store_id_fkey"},
+        {key: "store_address_id_fkey"}
+    ])
+    # plan-single-cardinality-split-query.md §5: single-cardinality @splitQuery
+    # (parent-holds-FK). DataLoader-batches address lookups keyed by customer.address_id;
+    # siblings sharing an address_id collapse to one rows-method invocation for that key.
+    # The FK column is NOT NULL on this table, so the §4 null-FK short-circuit never fires
+    # here — covered by Store.manager below.
+    addressSplit:  Address @splitQuery @reference(path: [{key: "customer_address_id_fkey"}])
+}
+
+type Address @table(name: "address") {
+    addressId:  Int!     @field(name: "ADDRESS_ID")
+    address:    String!  @field(name: "ADDRESS")
+    district:   String!  @field(name: "DISTRICT")
+}
+
+type Store @table(name: "store") {
+    storeId:    Int!     @field(name: "STORE_ID")
+    # G5 + implicit-reference-inference: single-hop inline TableField list with no @reference —
+    # the classifier infers the one-hop FK customer.store_id → store.store_id from the jOOQ
+    # catalog because there is exactly one FK between the two tables.
+    customers:  [Customer!]! @defaultOrder(primaryKey: true)
+    # plan-single-cardinality-split-query.md §5: single-cardinality @splitQuery with a
+    # NULLABLE FK (store.manager_staff_id). At least one store seeds manager_staff_id as
+    # NULL in init.sql, so the §4 null-FK short-circuit returns null for that store without
+    # dispatching a DataLoader round-trip. Two FKs exist between store and staff
+    # (store.manager_staff_id and staff.store_id), so inference would fail — explicit
+    # @reference is required.
+    manager:    Staff @splitQuery @reference(path: [{key: "store_manager_staff_id_fkey"}])
+}
+
+type Staff @table(name: "staff") {
+    staffId:   Int!    @field(name: "STAFF_ID")
+    firstName: String! @field(name: "FIRST_NAME")
+    lastName:  String! @field(name: "LAST_NAME")
+}
+
+type Category @table(name: "category") {
+    categoryId:  Int!     @field(name: "CATEGORY_ID")
+    name:        String!  @field(name: "NAME")
+    # G5: self-referential inline TableField (single) — category.parent_category_id → category.category_id
+    parent:      Category @reference(path: [{key: "category_parent_category_id_fkey"}])
+    # G5: self-referential inline TableField (list) — reverse of the same FK
+    children:    [Category!]! @reference(path: [{key: "category_parent_category_id_fkey"}]) @defaultOrder(primaryKey: true)
+    # G5 ConditionJoin fixture — classification-only. C3's emitter emits a runtime-throwing stub
+    # for ConditionJoin paths; runtime behaviour lands with classification-vocabulary item 5.
+    similar:     Category @reference(path: [{condition: {
+        className: "no.sikt.graphitron.rewrite.test.conditions.CategoryConditions",
+        method:    "sameNamePrefix"
+    }}])
+}
+
+"""
+FilmDetails is a @record type backed by jOOQ's FilmRecord (JooqTableRecordType).
+It is reached via Film.filmDetails (ConstructorField — the Film Record is passed through
+as the FilmDetails source), and has a RecordTableField child (language: Language) that
+DataLoader-batches language lookups keyed by the Film's language_id column.
+"""
+type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) {
+    title:    String!     @field(name: "title")
+    language: [Language!]! @reference(path: [{key: "film_language_id_fkey"}])
+    # record-fields Phase 2 fixture: @record parent + @lookupKey. Classifies as
+    # RecordLookupTableField — DataLoader-batches actor lookups keyed by the Film record's
+    # film_id, with the lookup-input VALUES join narrowing by the caller-provided actor_id list.
+    # @splitQuery is not needed on record-parent fields; classifyChildFieldOnResultType never
+    # inspects it (record-parent table-bound fields are DataLoader-batched unconditionally).
+    actorsByLookup(actor_id: [Int!] @lookupKey): [Actor!]! @reference(path: [
+        {key: "film_actor_film_id_fkey"},
+        {key: "film_actor_actor_id_fkey"}
+    ])
+}
+
+type Film @table(name: "film") {
+    filmId:      Int!         @field(name: "FILM_ID")
+    title:       String!      @field(name: "TITLE")
+    description: String       @field(name: "DESCRIPTION")
+    rentalRate:  Float!       @field(name: "RENTAL_RATE")
+    rating:      MpaaRating   @field(name: "RATING")
+    textRating:  String       @field(name: "TEXT_RATING")
+    length:      Int          @field(name: "LENGTH")
+    languageId:  Int          @field(name: "LANGUAGE_ID")
+    # NestingField fixture: plain-object summary type nested inside Film. Fields resolve
+    # against the outer Film table via $fields recursion (Film.summary.title → FILM.TITLE).
+    summary:     FilmSummary
+    # NestingField multi-level fixture: FilmInfo carries a further NestingField (meta)
+    # whose own scalars resolve against the same outer Film table.
+    info:        FilmInfo
+    # NestingField + inline TableField/LookupTableField fixture: exercises the sfName
+    # parameter threaded into the inline emitters. Nested field arms resolve against the
+    # outer Film table alias via $fields recursion at depth 1, so they reference sf1
+    # rather than a literal sf. Without the parameterisation, the generated code for
+    # either nested arm would reference an undefined sf variable at depth ≥ 1.
+    inlineBundle: FilmInlineBundle
+    # C4 RecordTableField fixture: pass Film record through to FilmDetails (ConstructorField),
+    # then batch-load Language via DataLoader from FilmDetails.language (RecordTableField).
+    filmDetails: FilmDetails
+    # argres Phase 2a: child-level @lookupKey via junction table (film_actor).
+    # VALUES+USING keyset narrows by actor_id; FK chain restricts to the parent film.
+    actors(actor_id: [Int!] @lookupKey): [Actor!]! @reference(path: [
+        {key: "film_actor_film_id_fkey"},
+        {key: "film_actor_actor_id_fkey"}
+    ])
+    # argres Phase 2b C4: SplitLookupTableField fixture. Same junction-path shape as actors
+    # above, but DataLoader-batched — each Film gets its own filtered actor list via the
+    # flat-SELECT + VALUES+ON keyset + per-parent scatter shape.
+    actorsBySplitLookup(actor_id: [Int!] @lookupKey): [Actor!]! @splitQuery @reference(path: [
+        {key: "film_actor_film_id_fkey"},
+        {key: "film_actor_actor_id_fkey"}
+    ])
+    # plan-split-query-connection.md §1: @splitQuery + @asConnection. Per-parent Relay pagination
+    # via a ROW_NUMBER() OVER (PARTITION BY parentInput.idx) envelope. Each Film gets its own
+    # paginated actor slice via the same junction-path, wrapped in a ConnectionResult per key.
+    actorsConnection(
+        first: Int, last: Int, after: String, before: String
+    ): ActorsConnection! @splitQuery @reference(path: [
+        {key: "film_actor_film_id_fkey"},
+        {key: "film_actor_actor_id_fkey"}
+    ]) @defaultOrder(primaryKey: true)
+    # plan-split-query-connection.md §2: dynamic @orderBy on @splitQuery + @asConnection.
+    # The emitted `actorsOrderedConnectionOrderBy(env, <ActorTable>)` helper accepts the
+    # FK-chain terminal alias as parameter, so the column refs resolve against the Split
+    # query's aliased jOOQ Table instance rather than a hard-coded canonical alias.
+    actorsOrderedConnection(
+        order: [ActorOrderBy] @orderBy,
+        first: Int, last: Int, after: String, before: String
+    ): ActorsConnection! @splitQuery @reference(path: [
+        {key: "film_actor_film_id_fkey"},
+        {key: "film_actor_actor_id_fkey"}
+    ]) @defaultOrder(primaryKey: true)
+}
+
+type Actor @table(name: "actor") {
+    actorId:   Int!    @field(name: "ACTOR_ID")
+    firstName: String! @field(name: "FIRST_NAME")
+    lastName:  String! @field(name: "LAST_NAME")
+}
+
+# Plain-object nesting type. No @table, no @record. Nested under Film.summary; the
+# classifier resolves each nested scalar against the outer Film table. `originalTitle`
+# exercises @field(name:) remap at nested depth — resolves to FILM.TITLE despite the
+# distinct GraphQL field name.
+type FilmSummary {
+    title:         String @field(name: "TITLE")
+    releaseYear:   Int    @field(name: "RELEASE_YEAR")
+    originalTitle: String @field(name: "TITLE")
+}
+
+# Multi-level plain-object nesting — `info` contains `meta` contains scalars. Every
+# nested scalar resolves against the same outer Film table (nesting is transparent).
+type FilmInfo {
+    releaseYear: Int    @field(name: "RELEASE_YEAR")
+    meta:        FilmMeta
+    # Nested-depth @splitQuery: per-Film DataLoader batch reaches actors via
+    # film_actor junction, same path as Film.actors at non-nested depth.
+    cast: [Actor!]! @splitQuery @reference(path: [
+        {key: "film_actor_film_id_fkey"},
+        {key: "film_actor_actor_id_fkey"}
+    ])
+    # Nested-depth @splitQuery + @lookupKey: SplitLookupTableField inside a
+    # plain-object NestingField. Classifier, emitter, and wiring paths all
+    # treat Split and SplitLookup uniformly via BatchKeyField; this fixture
+    # verifies the lookup arm ships too.
+    castByKey(actor_id: [Int!] @lookupKey): [Actor!]! @splitQuery @reference(path: [
+        {key: "film_actor_film_id_fkey"},
+        {key: "film_actor_actor_id_fkey"}
+    ])
+}
+
+type FilmMeta {
+    title:  String @field(name: "TITLE")
+    length: Int    @field(name: "LENGTH")
+}
+
+# NestingField parent for inline TableField + LookupTableField. Resolves against the
+# outer Film table alias, so each nested inline arm is emitted via the sfName-threaded
+# emitter path. `language` is a single-hop inline TableField (Film.language_id →
+# Language.language_id); `actorsByKey` is an inline LookupTableField traversing the
+# film_actor junction with an @lookupKey VALUES+ON keyset.
+type FilmInlineBundle {
+    language: Language @reference(path: [{key: "film_language_id_fkey"}])
+    actorsByKey(actor_id: [Int!] @lookupKey): [Actor!]! @reference(path: [
+        {key: "film_actor_film_id_fkey"},
+        {key: "film_actor_actor_id_fkey"}
+    ])
+}
+
+# argres Phase 3 composite-key fixture. Each key carries both film_id and actor_id as
+# @lookupKey scalars. The generator builds a VALUES(idx, film_id, actor_id) derived table
+# and joins on the full composite key, preserving caller input order.
+input FilmActorKey @table(name: "film_actor") {
+    filmId:  Int! @field(name: "film_id")  @lookupKey
+    actorId: Int! @field(name: "actor_id") @lookupKey
+}
+
+type FilmActor @table(name: "film_actor") {
+    filmId:  Int! @field(name: "film_id")
+    actorId: Int! @field(name: "actor_id")
+}
+
+type Language @table(name: "language") {
+    languageId: Int!    @field(name: "LANGUAGE_ID")
+    name:       String! @field(name: "NAME")
+    films: [Film!]! @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
+}
+
+type FilmsConnection {
+    edges: [FilmsEdge!]!
+    nodes: [Film!]!
+    pageInfo: PageInfo!
+}
+
+type FilmsEdge {
+    cursor: String!
+    node: Film!
+}
+
+# plan-split-query-connection.md §1: pre-expanded connection type referenced by
+# Film.actorsConnection (@splitQuery). Structural detection in FieldBuilder.buildWrapper
+# picks up edges.node pattern and produces FieldWrapper.Connection.
+type ActorsConnection {
+    edges: [ActorsEdge!]!
+    nodes: [Actor!]!
+    pageInfo: PageInfo!
+}
+
+type ActorsEdge {
+    cursor: String!
+    node: Actor!
+}
+
+type PageInfo {
+    hasNextPage: Boolean!
+    hasPreviousPage: Boolean!
+    startCursor: String
+    endCursor: String
+}
+
+enum MpaaRating {
+    G
+    PG
+    PG_13
+    R
+    NC_17
+}
+
+"""Text-column enum — values map to database strings via @field(name:)."""
+enum TextRating {
+    G
+    PG
+    PG_13 @field(name: "PG-13")
+    R
+    NC_17 @field(name: "NC-17")
+}
+
+enum FilmSort {
+    FILM_ID @order(primaryKey: true)
+    TITLE   @order(fields: [{name: "title"}])
+}
+
+input FilmOrderBy {
+    field: FilmSort!
+    direction: SortDirection
+}
+
+# plan-split-query-connection.md §2 fixture: dynamic ordering input for
+# Film.actorsOrderedConnection.
+enum ActorSort {
+    ACTOR_ID   @order(primaryKey: true)
+    FIRST_NAME @order(fields: [{name: "first_name"}])
+    LAST_NAME  @order(fields: [{name: "last_name"}])
+}
+
+input ActorOrderBy {
+    field: ActorSort!
+    direction: SortDirection
+}
+
+# argres Phase 4: @condition on INPUT_FIELD_DEFINITION — @table input type.
+input FilmConditionInput @table(name: "film") {
+    filmId: ID! @field(name: "film_id")
+        @condition(condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+            method: "filmIdCondition"
+        })
+}
+
+# argres Phase 4: plain input (no @table). Used on Film and Language queries,
+# creating a conflict so it stays PojoInputType. Call-site classification resolves
+# filmId for Film (condition wired) but not for Language (field skipped, no filter).
+input PlainFilmIdInput {
+    filmId: ID! @field(name: "film_id")
+        @condition(condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+            method: "filmIdCondition"
+        })
+}
+
+# argres Phase 4b: @table input whose field carries @condition(override: true).
+# This fixture has only the annotated field — no un-annotated sibling to suppress — so the
+# override flag has no observable effect. The directive must still parse and flow the
+# explicit method through projection. Exercises the (Yes outer, Present override:true,
+# Suppressed implicit, Emitted explicit) truth-table row as far as this fixture supports it.
+input FilmConditionInputWithOverrideField @table(name: "film") {
+    filmId: ID! @field(name: "film_id")
+        @condition(condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+            method: "filmIdCondition"
+        }, override: true)
+}
+
+# argres Phase 4b: plain input type used as a NestingField inside a @table input,
+# one level deep; nested-arg extraction walks path ["inner", "filmId"].
+input InnerFilmInput {
+    filmId: ID! @field(name: "film_id")
+        @condition(condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+            method: "filmIdCondition"
+        })
+}
+
+input NestedFilmInput @table(name: "film") {
+    inner: InnerFilmInput
+}
+
+# implicit-input-conditions plan: @table input type with an un-annotated column field.
+# filmId carries no @condition; the implicit predicate (film.FILM_ID = filmId) is emitted
+# by walkInputFieldConditions when enclosingOverride is false. Nullable so the null-omit
+# behavior (absent means unconstrained) is also exercised by tests.
+input FilmImplicitInput @table(name: "film") {
+    filmId: ID @field(name: "film_id")
+}
+
+# implicit-input-conditions plan: @table input with two un-annotated fields. Both emit
+# implicit column-equality predicates, AND-ed inside the GCF's generated method body.
+input FilmMultiImplicitInput @table(name: "film") {
+    filmId: ID @field(name: "film_id")
+    title: String @field(name: "title")
+}
+
+# implicit-input-conditions plan: @table input wrapping a plain nesting type. The implicit
+# predicate at filmId binds to the outer @table's film column via NestedInputField path
+# ["inner", "filmId"]; exercises the NestingField arm of walkInputFieldConditions.
+input NestedImplicitInput @table(name: "film") {
+    inner: InnerImplicitInput
+}
+
+input InnerImplicitInput {
+    filmId: ID @field(name: "film_id")
+}
