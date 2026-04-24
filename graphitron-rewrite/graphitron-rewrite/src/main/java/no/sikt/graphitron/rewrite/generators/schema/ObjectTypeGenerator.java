@@ -14,7 +14,14 @@ import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
 
+import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
+import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.model.GraphitronType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.ConnectionType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.EdgeType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.PageInfoType;
+import no.sikt.graphitron.rewrite.model.SqlGeneratingField;
 
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
@@ -70,40 +77,76 @@ public final class ObjectTypeGenerator {
      * the classifier model.
      *
      * <p>Directive-driven {@code @asConnection} fields (bare-list return type with no pre-existing
-     * Connection type in the schema) are detected via a {@link ConnectionSynthesis.Plan} built from
-     * the assembled schema. For these fields the emitted return type reference is substituted with
+     * Connection type in the schema) are detected via the classifier's {@link FieldWrapper.Connection}
+     * on the carrier field. For these fields the emitted return type reference is substituted with
      * the synthesised Connection name and the standard {@code first} / {@code after} pagination
      * arguments are appended.
      */
-    public static List<TypeSpec> generate(GraphQLSchema assembled, Map<String, CodeBlock> fetcherBodies) {
-        var plan = ConnectionSynthesis.buildPlan(assembled);
+    public static List<TypeSpec> generate(GraphitronSchema schema, GraphQLSchema assembled,
+                                          Map<String, CodeBlock> fetcherBodies) {
         var result = new ArrayList<TypeSpec>();
-        assembled.getAllTypesAsList().stream()
-            .filter(t -> !t.getName().startsWith("_"))
-            .forEach(t -> {
-                if (t instanceof GraphQLObjectType obj) {
-                    result.add(buildObjectTypeSpec(obj, fetcherBodies.get(obj.getName()), plan));
-                } else if (t instanceof GraphQLInterfaceType it) {
-                    result.add(buildInterfaceTypeSpec(it, plan));
-                } else if (t instanceof GraphQLUnionType un) {
-                    result.add(buildUnionTypeSpec(un));
-                }
-            });
+        var seen = new java.util.LinkedHashSet<String>();
+
+        // Iterate classified types first so synthesised variants (Connection / Edge / PageInfo)
+        // use their classifier-owned schemaType() form.
+        for (var entry : schema.types().entrySet()) {
+            String name = entry.getKey();
+            if (name.startsWith("_")) continue;
+            seen.add(name);
+            emitForName(result, entry.getValue(), name, schema, assembled, fetcherBodies);
+        }
+
+        // Fall back to the assembled schema for any object/interface/union types the classifier
+        // didn't produce a variant for (plain SDL types without directives, e.g. nested DTOs).
+        for (var t : assembled.getAllTypesAsList()) {
+            String name = t.getName();
+            if (name.startsWith("_")) continue;
+            if (seen.contains(name)) continue;
+            emitForName(result, null, name, schema, assembled, fetcherBodies);
+        }
+
         result.sort(Comparator.comparing(TypeSpec::name));
         return result;
+    }
+
+    private static void emitForName(ArrayList<TypeSpec> result, GraphitronType variant, String name,
+                                     GraphitronSchema schema, GraphQLSchema assembled,
+                                     Map<String, CodeBlock> fetcherBodies) {
+        var graphqlType = graphqlTypeFor(variant, name, assembled);
+        if (graphqlType instanceof GraphQLObjectType obj) {
+            result.add(buildObjectTypeSpec(obj, fetcherBodies.get(name), schema));
+        } else if (graphqlType instanceof GraphQLInterfaceType it) {
+            result.add(buildInterfaceTypeSpec(it, schema));
+        } else if (graphqlType instanceof GraphQLUnionType un) {
+            result.add(buildUnionTypeSpec(un));
+        }
+        // Input / enum / scalar / unclassified entries are handled elsewhere or skipped.
     }
 
     /**
      * Convenience overload for tests that don't need {@code registerFetchers} emission.
      */
-    public static List<TypeSpec> generate(GraphQLSchema assembled) {
-        return generate(assembled, Map.of());
+    public static List<TypeSpec> generate(GraphitronSchema schema, GraphQLSchema assembled) {
+        return generate(schema, assembled, Map.of());
+    }
+
+    /**
+     * Resolves the graphql-java type form for a classified {@link GraphitronType} entry.
+     * Synthesised variants (Connection / Edge / PageInfo) carry their form directly;
+     * SDL-declared variants look up via the assembled schema.
+     */
+    private static GraphQLNamedType graphqlTypeFor(GraphitronType variant, String name, GraphQLSchema assembled) {
+        if (variant instanceof ConnectionType ct) return ct.schemaType();
+        if (variant instanceof EdgeType et) return et.schemaType();
+        if (variant instanceof PageInfoType pi) return pi.schemaType();
+        var t = assembled.getType(name);
+        return t instanceof GraphQLNamedType named ? named : null;
     }
 
     // ===== Object =====
 
     private static TypeSpec buildObjectTypeSpec(GraphQLObjectType objectType, CodeBlock fetcherBody,
-                                               ConnectionSynthesis.Plan plan) {
+                                               GraphitronSchema schema) {
         var body = CodeBlock.builder()
             .add("return $T.newObject()", OBJECT_TYPE)
             .indent()
@@ -115,7 +158,7 @@ public final class ObjectTypeGenerator {
             body.add("\n.withInterface($T.typeRef($S))", TYPE_REF, iface.getName());
         }
         for (var field : objectType.getFieldDefinitions()) {
-            body.add("\n.field(").add(buildFieldDefinition(objectType.getName(), field, plan)).add(")");
+            body.add("\n.field(").add(buildFieldDefinition(objectType.getName(), field, schema)).add(")");
         }
         for (var applied : AppliedDirectiveEmitter.applicationsFor(objectType)) {
             body.add(applied);
@@ -143,7 +186,7 @@ public final class ObjectTypeGenerator {
     // ===== Interface =====
 
     private static TypeSpec buildInterfaceTypeSpec(GraphQLInterfaceType interfaceType,
-                                                   ConnectionSynthesis.Plan plan) {
+                                                   GraphitronSchema schema) {
         var body = CodeBlock.builder()
             .add("return $T.newInterface()", INTERFACE_TYPE)
             .indent()
@@ -152,7 +195,7 @@ public final class ObjectTypeGenerator {
             body.add("\n.description($S)", interfaceType.getDescription());
         }
         for (var field : interfaceType.getFieldDefinitions()) {
-            body.add("\n.field(").add(buildFieldDefinition(interfaceType.getName(), field, plan)).add(")");
+            body.add("\n.field(").add(buildFieldDefinition(interfaceType.getName(), field, schema)).add(")");
         }
         for (var applied : AppliedDirectiveEmitter.applicationsFor(interfaceType)) {
             body.add(applied);
@@ -201,16 +244,19 @@ public final class ObjectTypeGenerator {
 
     private static CodeBlock buildFieldDefinition(String parentTypeName,
                                                    graphql.schema.GraphQLFieldDefinition field,
-                                                   ConnectionSynthesis.Plan plan) {
-        // Detect directive-driven @asConnection: field is in the synthesis plan.
+                                                   GraphitronSchema schema) {
+        // Detect directive-driven @asConnection carriers. The classifier registered a
+        // ConnectionType in schema.types() at Phase 1; here we just look up that entry via the
+        // resolved connection name and rewrite the bare-list return type to reference it.
+        // Structural carriers (SDL return type already names the Connection) need no rewrite.
         String synthConnName = null;
         int synthDefaultPageSize = FieldWrapper.DEFAULT_PAGE_SIZE;
-        if (plan != null && !plan.connections().isEmpty()) {
-            String resolved = ConnectionSynthesis.resolveConnectionName(parentTypeName, field);
-            var def = plan.connections().get(resolved);
-            if (def != null) {
+        if (field.hasAppliedDirective("asConnection")) {
+            String resolved = resolveConnectionName(parentTypeName, field);
+            if (schema.type(resolved) instanceof GraphitronType.ConnectionType
+                    && !resolved.equals(baseTypeName(field.getType()))) {
                 synthConnName = resolved;
-                synthDefaultPageSize = def.defaultPageSize();
+                synthDefaultPageSize = defaultPageSizeFor(field, schema, parentTypeName);
             }
         }
 
@@ -300,5 +346,57 @@ public final class ObjectTypeGenerator {
         }
         var name = ((GraphQLNamedType) type).getName();
         return CodeBlock.of("$T.typeRef($S)", TYPE_REF, name);
+    }
+
+    /**
+     * Resolves the Connection type name for a carrier field carrying {@code @asConnection}:
+     * explicit {@code connectionName:} argument wins; otherwise derived as
+     * {@code <ParentType><FieldName>Connection}.
+     */
+    private static String resolveConnectionName(String parentTypeName,
+                                                 graphql.schema.GraphQLFieldDefinition field) {
+        var applied = field.getAppliedDirective("asConnection");
+        if (applied != null) {
+            var arg = applied.getArgument("connectionName");
+            if (arg != null && arg.getValue() instanceof String s && !s.isEmpty()) return s;
+        }
+        return parentTypeName + capitalize(field.getName()) + "Connection";
+    }
+
+    /**
+     * Returns the per-site default page size: the classifier's {@link FieldWrapper.Connection}
+     * if the field has one, else the fallback in {@link FieldWrapper#DEFAULT_PAGE_SIZE}.
+     * The directive's own {@code defaultFirstValue:} argument is the authoritative source;
+     * the classifier already read it into the wrapper. Fields that don't classify as
+     * {@link SqlGeneratingField} (e.g. carriers on unclassified element types) fall back
+     * to the default.
+     */
+    private static int defaultPageSizeFor(graphql.schema.GraphQLFieldDefinition field,
+                                           GraphitronSchema schema, String parent) {
+        GraphitronField f = schema.field(parent, field.getName());
+        if (f instanceof SqlGeneratingField sgf
+                && sgf.returnType().wrapper() instanceof FieldWrapper.Connection c) {
+            return c.defaultPageSize();
+        }
+        var applied = field.getAppliedDirective("asConnection");
+        if (applied != null) {
+            var arg = applied.getArgument("defaultFirstValue");
+            if (arg != null && arg.getValue() instanceof Integer i) return i;
+            if (arg != null && arg.getValue() instanceof Number n) return n.intValue();
+        }
+        return FieldWrapper.DEFAULT_PAGE_SIZE;
+    }
+
+    private static String capitalize(String s) {
+        return s == null || s.isEmpty() ? s : Character.toUpperCase(s.charAt(0)) + s.substring(1);
+    }
+
+    /** Unwraps non-null + list layers to return the innermost named type's name. */
+    private static String baseTypeName(GraphQLType type) {
+        GraphQLType cur = type;
+        while (cur instanceof GraphQLNonNull nn) cur = nn.getWrappedType();
+        while (cur instanceof GraphQLList list) cur = list.getWrappedType();
+        while (cur instanceof GraphQLNonNull nn) cur = nn.getWrappedType();
+        return cur instanceof GraphQLNamedType named ? named.getName() : null;
     }
 }

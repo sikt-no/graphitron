@@ -1,16 +1,17 @@
 package no.sikt.graphitron.rewrite.generators.schema;
 
 import graphql.schema.GraphQLEnumType;
-import graphql.schema.GraphQLInputObjectType;
-import graphql.schema.GraphQLInterfaceType;
-import graphql.schema.GraphQLObjectType;
 import graphql.schema.GraphQLSchema;
-import graphql.schema.GraphQLUnionType;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
+import no.sikt.graphitron.rewrite.GraphitronSchema;
+import no.sikt.graphitron.rewrite.model.GraphitronType.InputType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.RootType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType;
 
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
@@ -61,8 +62,9 @@ public final class GraphitronSchemaClassGenerator {
 
     private GraphitronSchemaClassGenerator() {}
 
-    public static List<TypeSpec> generate(GraphQLSchema assembled, Set<String> typesWithFetchers, String outputPackage) {
-        var plan = planFor(assembled);
+    public static List<TypeSpec> generate(GraphitronSchema schema, GraphQLSchema assembled,
+                                          Set<String> typesWithFetchers, String outputPackage) {
+        var plan = planFor(schema, assembled);
         String schemaPackage = outputPackage + ".schema";
 
         var builderType = ClassName.get("graphql.schema", "GraphQLSchema", "Builder");
@@ -86,18 +88,6 @@ public final class GraphitronSchemaClassGenerator {
         if (plan.hasSubscription) body.add("\n.subscription($T.type())", ClassName.get(schemaPackage, "SubscriptionType"));
         for (String name : plan.additionalTypeNames) {
             body.add("\n.additionalType($T.type())", ClassName.get(schemaPackage, name + "Type"));
-        }
-        // Synthesised Connection and Edge types (directive-driven @asConnection fields).
-        var synthPlan = ConnectionSynthesis.buildPlan(assembled);
-        var sortedConnNames = new ArrayList<>(synthPlan.connections().keySet());
-        sortedConnNames.sort(Comparator.naturalOrder());
-        for (String connName : sortedConnNames) {
-            String edgeName = ConnectionSynthesis.resolveEdgeName(connName);
-            body.add("\n.additionalType($T.type())", ClassName.get(schemaPackage, connName + "Type"));
-            body.add("\n.additionalType($T.type())", ClassName.get(schemaPackage, edgeName + "Type"));
-        }
-        if (synthPlan.needPageInfo()) {
-            body.add("\n.additionalType($T.type())", ClassName.get(schemaPackage, "PageInfoType"));
         }
         // Built-in GraphQL scalars aren't auto-registered on a programmatic schema; the SDL
         // path in SchemaGenerator used to add them for us. Register the five graphql-spec
@@ -128,13 +118,14 @@ public final class GraphitronSchemaClassGenerator {
     }
 
     /** Convenience overload for tests — empty fetcher set, no output-package prefix. */
-    public static List<TypeSpec> generate(GraphQLSchema assembled) {
-        return generate(assembled, Set.of(), "");
+    public static List<TypeSpec> generate(GraphitronSchema schema, GraphQLSchema assembled) {
+        return generate(schema, assembled, Set.of(), "");
     }
 
     /** Convenience overload for tests that pass a fetcher set but not an output-package. */
-    public static List<TypeSpec> generate(GraphQLSchema assembled, Set<String> typesWithFetchers) {
-        return generate(assembled, typesWithFetchers, "");
+    public static List<TypeSpec> generate(GraphitronSchema schema, GraphQLSchema assembled,
+                                          Set<String> typesWithFetchers) {
+        return generate(schema, assembled, typesWithFetchers, "");
     }
 
     record Plan(
@@ -144,28 +135,58 @@ public final class GraphitronSchemaClassGenerator {
         List<String> additionalTypeNames
     ) {}
 
-    static Plan planFor(GraphQLSchema assembled) {
-        var roots = Set.of("Query", "Mutation", "Subscription");
-        var additional = new ArrayList<String>();
+    /**
+     * Enumerates the types that need registration in the emitted {@code GraphitronSchema.build()}.
+     *
+     * <p>Source of truth is {@link GraphitronSchema#types()}, which by Phase 1 of the first-class
+     * Connection plan contains every emittable type — SDL-declared ones and directive-synthesised
+     * {@link ConnectionType} / {@link EdgeType} / {@link PageInfoType} alike. The assembled schema
+     * is consulted only for enum and input-object entries that the classifier doesn't record in
+     * its model.
+     */
+    static Plan planFor(GraphitronSchema schema, GraphQLSchema assembled) {
+        var additional = new java.util.LinkedHashSet<String>();
         boolean hasQuery = false, hasMutation = false, hasSubscription = false;
-        for (var t : assembled.getAllTypesAsList()) {
-            if (t.getName().startsWith("_")) continue;
-            if (t instanceof GraphQLObjectType obj) {
-                if ("Query".equals(obj.getName()))           { hasQuery = true;        continue; }
-                if ("Mutation".equals(obj.getName()))        { hasMutation = true;     continue; }
-                if ("Subscription".equals(obj.getName()))    { hasSubscription = true; continue; }
-                if (!roots.contains(obj.getName()))          additional.add(obj.getName());
-            } else if (t instanceof GraphQLInterfaceType
-                    || t instanceof GraphQLUnionType
-                    || t instanceof GraphQLEnumType) {
-                additional.add(t.getName());
-            } else if (t instanceof GraphQLInputObjectType) {
-                if (!InputDirectiveInputTypes.NAMES.contains(t.getName())) {
-                    additional.add(t.getName());
-                }
+        var seen = new java.util.LinkedHashSet<String>();
+
+        for (var entry : schema.types().entrySet()) {
+            String name = entry.getKey();
+            if (name.startsWith("_")) continue;
+            seen.add(name);
+            var variant = entry.getValue();
+            if (variant instanceof RootType) {
+                if ("Query".equals(name))        hasQuery = true;
+                else if ("Mutation".equals(name))     hasMutation = true;
+                else if ("Subscription".equals(name)) hasSubscription = true;
+                continue;
             }
+            if (variant instanceof UnclassifiedType) continue;
+            if ((variant instanceof InputType || variant instanceof TableInputType)
+                    && InputDirectiveInputTypes.NAMES.contains(name)) {
+                continue;
+            }
+            additional.add(name);
         }
-        additional.sort(Comparator.naturalOrder());
-        return new Plan(hasQuery, hasMutation, hasSubscription, List.copyOf(additional));
+
+        // Fall back to the assembled schema for types the classifier didn't record:
+        // plain SDL types without directives, enums, and any SDL-declared scalars.
+        for (var t : assembled.getAllTypesAsList()) {
+            String name = t.getName();
+            if (name.startsWith("_")) continue;
+            if (seen.contains(name)) continue;
+            if (t instanceof graphql.schema.GraphQLScalarType) continue;
+            if (t instanceof graphql.schema.GraphQLInputObjectType
+                    && InputDirectiveInputTypes.NAMES.contains(name)) continue;
+            if (t instanceof graphql.schema.GraphQLObjectType obj) {
+                if ("Query".equals(name))        { hasQuery = true; continue; }
+                if ("Mutation".equals(name))     { hasMutation = true; continue; }
+                if ("Subscription".equals(name)) { hasSubscription = true; continue; }
+            }
+            additional.add(name);
+        }
+
+        var sorted = new ArrayList<>(additional);
+        sorted.sort(Comparator.naturalOrder());
+        return new Plan(hasQuery, hasMutation, hasSubscription, List.copyOf(sorted));
     }
 }

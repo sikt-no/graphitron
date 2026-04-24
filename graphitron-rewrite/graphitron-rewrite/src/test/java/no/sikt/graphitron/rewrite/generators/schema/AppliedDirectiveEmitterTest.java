@@ -72,7 +72,8 @@ class AppliedDirectiveEmitterTest {
     }
 
     private static String findTypeBody(String sdl, String typeName) {
-        var specs = ObjectTypeGenerator.generate(TestSchemaHelper.buildBundle(sdl).assembled());
+        var bundle = TestSchemaHelper.buildBundle(sdl);
+        var specs = ObjectTypeGenerator.generate(bundle.model(), bundle.assembled());
         TypeSpec spec = specs.stream()
             .filter(s -> s.name().equals(typeName))
             .findFirst()
@@ -82,6 +83,7 @@ class AppliedDirectiveEmitterTest {
 
     @SuppressWarnings("unused")
     private static List<TypeSpec> all(String sdl) {
-        return ObjectTypeGenerator.generate(TestSchemaHelper.buildBundle(sdl).assembled());
+        var bundle = TestSchemaHelper.buildBundle(sdl);
+        return ObjectTypeGenerator.generate(bundle.model(), bundle.assembled());
     }
 }

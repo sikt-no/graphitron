@@ -20,16 +20,16 @@ class ObjectTypeRegisterFetchersTest {
 
     @Test
     void noRegisterFetchers_whenTypeNotInFetcherBodies() {
-        var spec = findByName(ObjectTypeGenerator.generate(
-            TestSchemaHelper.buildBundle(SDL).assembled()), "FilmType");
+        var bundle = TestSchemaHelper.buildBundle(SDL);
+        var spec = findByName(ObjectTypeGenerator.generate(bundle.model(), bundle.assembled()), "FilmType");
         assertThat(spec.methodSpecs()).extracting(m -> m.name()).containsExactly("type");
     }
 
     @Test
     void registerFetchers_emitted_whenTypeHasBody() {
         var body = CodeBlock.of("codeRegistry.dataFetcher($S, null);\n", "Film");
-        var spec = findByName(ObjectTypeGenerator.generate(
-            TestSchemaHelper.buildBundle(SDL).assembled(), Map.of("Film", body)), "FilmType");
+        var bundle = TestSchemaHelper.buildBundle(SDL);
+        var spec = findByName(ObjectTypeGenerator.generate(bundle.model(), bundle.assembled(), Map.of("Film", body)), "FilmType");
         assertThat(spec.methodSpecs()).extracting(m -> m.name())
             .containsExactlyInAnyOrder("type", "registerFetchers");
     }
@@ -37,8 +37,8 @@ class ObjectTypeRegisterFetchersTest {
     @Test
     void registerFetchers_signatureTakesCodeRegistryBuilder_returnsVoid() {
         var body = CodeBlock.of("codeRegistry.dataFetcher($S, null);\n", "Film");
-        var spec = findByName(ObjectTypeGenerator.generate(
-            TestSchemaHelper.buildBundle(SDL).assembled(), Map.of("Film", body)), "FilmType");
+        var bundle = TestSchemaHelper.buildBundle(SDL);
+        var spec = findByName(ObjectTypeGenerator.generate(bundle.model(), bundle.assembled(), Map.of("Film", body)), "FilmType");
         var method = spec.methodSpecs().stream()
             .filter(m -> m.name().equals("registerFetchers"))
             .findFirst().orElseThrow();
@@ -53,8 +53,8 @@ class ObjectTypeRegisterFetchersTest {
     @Test
     void registerFetchers_bodyMatchesInput() {
         var body = CodeBlock.of("codeRegistry.dataFetcher($S, null);\n", "marker-value");
-        var spec = findByName(ObjectTypeGenerator.generate(
-            TestSchemaHelper.buildBundle(SDL).assembled(), Map.of("Film", body)), "FilmType");
+        var bundle = TestSchemaHelper.buildBundle(SDL);
+        var spec = findByName(ObjectTypeGenerator.generate(bundle.model(), bundle.assembled(), Map.of("Film", body)), "FilmType");
         var emitted = spec.methodSpecs().stream()
             .filter(m -> m.name().equals("registerFetchers"))
             .findFirst().orElseThrow()
@@ -66,8 +66,9 @@ class ObjectTypeRegisterFetchersTest {
     void registerFetchers_notEmitted_forInterfaceOrUnionTypes() {
         String withInterface = SDL + "interface Node { id: ID! }\nunion Hit = Film";
         var body = CodeBlock.of("codeRegistry.dataFetcher($S, null);\n", "x");
+        var bundle = TestSchemaHelper.buildBundle(withInterface);
         var specs = ObjectTypeGenerator.generate(
-            TestSchemaHelper.buildBundle(withInterface).assembled(),
+            bundle.model(), bundle.assembled(),
             Map.of("Film", body, "Node", body, "Hit", body));
         var nodeSpec = findByName(specs, "NodeType");
         var hitSpec = findByName(specs, "HitType");

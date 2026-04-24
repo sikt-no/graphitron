@@ -71,7 +71,8 @@ class DefaultValueEmissionTest {
     }
 
     private static String findObjectBody(String sdl, String typeName) {
-        return findBody(ObjectTypeGenerator.generate(TestSchemaHelper.buildBundle(sdl).assembled()), typeName);
+        var bundle = TestSchemaHelper.buildBundle(sdl);
+        return findBody(ObjectTypeGenerator.generate(bundle.model(), bundle.assembled()), typeName);
     }
 
     private static String findInputBody(String sdl, String typeName) {

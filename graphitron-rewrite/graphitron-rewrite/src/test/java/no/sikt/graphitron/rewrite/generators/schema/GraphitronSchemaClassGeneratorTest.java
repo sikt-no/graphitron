@@ -16,8 +16,8 @@ class GraphitronSchemaClassGeneratorTest {
 
     @Test
     void generate_returnsExactlyOneClassNamedGraphitronSchema() {
-        var schema = TestSchemaHelper.buildBundle("type Query { x: String }").assembled();
-        List<TypeSpec> result = GraphitronSchemaClassGenerator.generate(schema, Set.of(), OUTPUT_PKG);
+        var bundle = TestSchemaHelper.buildBundle("type Query { x: String }");
+        List<TypeSpec> result = GraphitronSchemaClassGenerator.generate(bundle.model(), bundle.assembled(), Set.of(), OUTPUT_PKG);
         assertThat(result).hasSize(1);
         var spec = result.get(0);
         assertThat(spec.name()).isEqualTo("GraphitronSchema");
@@ -103,11 +103,11 @@ class GraphitronSchemaClassGeneratorTest {
 
     @Test
     void build_emitsAdditionalDirective_forSurvivorDirectiveDefinitions() {
-        var schema = TestSchemaHelper.buildBundle("""
+        var bundle = TestSchemaHelper.buildBundle("""
             directive @auth(roles: [String!]) on FIELD_DEFINITION
             type Query { secret: String @auth(roles: ["admin"]) }
-            """).assembled();
-        var body = GraphitronSchemaClassGenerator.generate(schema).get(0)
+            """);
+        var body = GraphitronSchemaClassGenerator.generate(bundle.model(), bundle.assembled()).get(0)
             .methodSpecs().get(0).code().toString();
         assertThat(body)
             .contains(".additionalDirective(")
@@ -116,8 +116,8 @@ class GraphitronSchemaClassGeneratorTest {
 
     @Test
     void build_skipsAdditionalDirective_forGeneratorOnlyDirectives() {
-        var schema = TestSchemaHelper.buildBundle("type Query { x: String }").assembled();
-        var body = GraphitronSchemaClassGenerator.generate(schema).get(0)
+        var bundle = TestSchemaHelper.buildBundle("type Query { x: String }");
+        var body = GraphitronSchemaClassGenerator.generate(bundle.model(), bundle.assembled()).get(0)
             .methodSpecs().get(0).code().toString();
         assertThat(body).doesNotContain(".name(\"table\")");
         assertThat(body).doesNotContain(".name(\"field\")");
@@ -126,12 +126,12 @@ class GraphitronSchemaClassGeneratorTest {
 
     @Test
     void build_callsRegisterFetchersForEachTypeWithFetchers_inAlphabeticalOrder() {
-        var schema = TestSchemaHelper.buildBundle("""
+        var bundle = TestSchemaHelper.buildBundle("""
             type Query { x: String }
             type Film { id: ID! }
             type Person { id: ID! }
-            """).assembled();
-        var body = GraphitronSchemaClassGenerator.generate(schema, Set.of("Film", "Person", "Query"), OUTPUT_PKG)
+            """);
+        var body = GraphitronSchemaClassGenerator.generate(bundle.model(), bundle.assembled(), Set.of("Film", "Person", "Query"), OUTPUT_PKG)
             .get(0).methodSpecs().get(0).code().toString();
         assertThat(body).contains("com.example.schema.FilmType.registerFetchers(codeRegistry)");
         assertThat(body).contains("com.example.schema.PersonType.registerFetchers(codeRegistry)");
@@ -145,8 +145,8 @@ class GraphitronSchemaClassGeneratorTest {
 
     @Test
     void build_callsRegisterFetchersBeforeAnySchemaBuilderSetup() {
-        var schema = TestSchemaHelper.buildBundle("type Query { x: String }").assembled();
-        var body = GraphitronSchemaClassGenerator.generate(schema, Set.of("Query"), OUTPUT_PKG)
+        var bundle = TestSchemaHelper.buildBundle("type Query { x: String }");
+        var body = GraphitronSchemaClassGenerator.generate(bundle.model(), bundle.assembled(), Set.of("Query"), OUTPUT_PKG)
             .get(0).methodSpecs().get(0).code().toString();
         int registerIdx = body.indexOf("registerFetchers(codeRegistry)");
         int schemaBuilderIdx = body.indexOf("schemaBuilder = graphql.schema.GraphQLSchema.newSchema()");
@@ -214,13 +214,13 @@ class GraphitronSchemaClassGeneratorTest {
 
     @Test
     void planFor_preservesRootAndAlphabeticalOrder() {
-        var schema = TestSchemaHelper.buildBundle("""
+        var bundle = TestSchemaHelper.buildBundle("""
             type Query { x: String }
             type Mutation { y: String }
             type Zebra { id: ID! }
             type Alpha { id: ID! }
-            """).assembled();
-        var plan = GraphitronSchemaClassGenerator.planFor(schema);
+            """);
+        var plan = GraphitronSchemaClassGenerator.planFor(bundle.model(), bundle.assembled());
         assertThat(plan.hasQuery()).isTrue();
         assertThat(plan.hasMutation()).isTrue();
         assertThat(plan.hasSubscription()).isFalse();
@@ -228,8 +228,8 @@ class GraphitronSchemaClassGeneratorTest {
     }
 
     private static TypeSpec generate(String sdl) {
-        var schema = TestSchemaHelper.buildBundle(sdl).assembled();
-        return GraphitronSchemaClassGenerator.generate(schema, Set.of(), OUTPUT_PKG).get(0);
+        var bundle = TestSchemaHelper.buildBundle(sdl);
+        return GraphitronSchemaClassGenerator.generate(bundle.model(), bundle.assembled(), Set.of(), OUTPUT_PKG).get(0);
     }
 
     private static String buildBody(String sdl) {
