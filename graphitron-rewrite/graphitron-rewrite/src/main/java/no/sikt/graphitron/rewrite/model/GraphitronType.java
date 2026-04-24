@@ -15,7 +15,7 @@ public sealed interface GraphitronType
             GraphitronType.InterfaceType, GraphitronType.UnionType, GraphitronType.ErrorType,
             GraphitronType.InputType, GraphitronType.TableInputType,
             GraphitronType.ConnectionType, GraphitronType.EdgeType, GraphitronType.PageInfoType,
-            GraphitronType.UnclassifiedType {
+            GraphitronType.PlainObjectType, GraphitronType.UnclassifiedType {
 
     String name();
 
@@ -283,6 +283,26 @@ public sealed interface GraphitronType
         SourceLocation location,
         TableRef table,
         List<InputField> inputFields
+    ) implements GraphitronType {}
+
+    /**
+     * A plain SDL object type — no {@code @table}, {@code @record}, {@code @error}, or other
+     * domain directive, and not a root operation type. Typically a DTO nested under a parent
+     * that carries the table context, or a standalone return type the developer wires manually.
+     *
+     * <p>No SQL is generated for the type itself. The classifier records it so
+     * {@code schema.types()} is complete — every emittable type has an entry — and so the
+     * schema emitters can iterate the model without falling back to the assembled
+     * {@link graphql.schema.GraphQLSchema}.
+     *
+     * <p>{@code schemaType} is the graphql-java object referenced from the assembled schema at
+     * classification time. Emission reads field list, description, and applied directives
+     * through it.
+     */
+    record PlainObjectType(
+        String name,
+        SourceLocation location,
+        GraphQLObjectType schemaType
     ) implements GraphitronType {}
 
     /**

@@ -85,42 +85,21 @@ public final class ObjectTypeGenerator {
     public static List<TypeSpec> generate(GraphitronSchema schema, GraphQLSchema assembled,
                                           Map<String, CodeBlock> fetcherBodies) {
         var result = new ArrayList<TypeSpec>();
-        var seen = new java.util.LinkedHashSet<String>();
-
-        // Iterate classified types first so synthesised variants (Connection / Edge / PageInfo)
-        // use their classifier-owned schemaType() form.
         for (var entry : schema.types().entrySet()) {
             String name = entry.getKey();
             if (name.startsWith("_")) continue;
-            seen.add(name);
-            emitForName(result, entry.getValue(), name, schema, assembled, fetcherBodies);
+            var graphqlType = graphqlTypeFor(entry.getValue(), name, assembled);
+            if (graphqlType instanceof GraphQLObjectType obj) {
+                result.add(buildObjectTypeSpec(obj, fetcherBodies.get(name), schema));
+            } else if (graphqlType instanceof GraphQLInterfaceType it) {
+                result.add(buildInterfaceTypeSpec(it, schema));
+            } else if (graphqlType instanceof GraphQLUnionType un) {
+                result.add(buildUnionTypeSpec(un));
+            }
+            // Input / enum / scalar / unclassified entries are handled elsewhere or skipped.
         }
-
-        // Fall back to the assembled schema for any object/interface/union types the classifier
-        // didn't produce a variant for (plain SDL types without directives, e.g. nested DTOs).
-        for (var t : assembled.getAllTypesAsList()) {
-            String name = t.getName();
-            if (name.startsWith("_")) continue;
-            if (seen.contains(name)) continue;
-            emitForName(result, null, name, schema, assembled, fetcherBodies);
-        }
-
         result.sort(Comparator.comparing(TypeSpec::name));
         return result;
-    }
-
-    private static void emitForName(ArrayList<TypeSpec> result, GraphitronType variant, String name,
-                                     GraphitronSchema schema, GraphQLSchema assembled,
-                                     Map<String, CodeBlock> fetcherBodies) {
-        var graphqlType = graphqlTypeFor(variant, name, assembled);
-        if (graphqlType instanceof GraphQLObjectType obj) {
-            result.add(buildObjectTypeSpec(obj, fetcherBodies.get(name), schema));
-        } else if (graphqlType instanceof GraphQLInterfaceType it) {
-            result.add(buildInterfaceTypeSpec(it, schema));
-        } else if (graphqlType instanceof GraphQLUnionType un) {
-            result.add(buildUnionTypeSpec(un));
-        }
-        // Input / enum / scalar / unclassified entries are handled elsewhere or skipped.
     }
 
     /**
@@ -132,13 +111,14 @@ public final class ObjectTypeGenerator {
 
     /**
      * Resolves the graphql-java type form for a classified {@link GraphitronType} entry.
-     * Synthesised variants (Connection / Edge / PageInfo) carry their form directly;
-     * SDL-declared variants look up via the assembled schema.
+     * Synthesised and plain variants carry their form directly; variants classified by domain
+     * (TableType, NodeType, …) look up via the assembled schema.
      */
     private static GraphQLNamedType graphqlTypeFor(GraphitronType variant, String name, GraphQLSchema assembled) {
         if (variant instanceof ConnectionType ct) return ct.schemaType();
         if (variant instanceof EdgeType et) return et.schemaType();
         if (variant instanceof PageInfoType pi) return pi.schemaType();
+        if (variant instanceof GraphitronType.PlainObjectType pot) return pot.schemaType();
         var t = assembled.getType(name);
         return t instanceof GraphQLNamedType named ? named : null;
     }

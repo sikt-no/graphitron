@@ -1,6 +1,6 @@
 # Plan: first-class Connection type variants + classifier-authoritative emission
 
-> **Status:** Ready
+> **Status:** In Progress
 >
 > First installment (Phases 1-3) shipped: `ConnectionType` / `EdgeType` /
 > `PageInfoType` are first-class `GraphitronType` variants, `ConnectionSynthesis`
