@@ -2,8 +2,10 @@
 
 You have generated sources on your classpath. This doc covers what to write in
 your app to stand up a working GraphQL endpoint against them. Build-time Maven
-plugin configuration is out of scope here; see the legacy-plugin docs for that
-until the rewrite owns its own Mojo.
+plugin *configuration* is out of scope here; see the legacy-plugin docs for
+that until the rewrite owns its own Mojo. The dev-loop behaviour the generator
+guarantees is documented below in `## Dev loop`, because it is part of what a
+consumer agrees to when they adopt the rewrite generator.
 
 Every example assumes the emitted output package is `com.example.app`. Your
 generator config determines the real package; substitute it when importing the
@@ -173,6 +175,59 @@ Avoid:
 - `.clearDirectives()` — drops the survivor definitions Graphitron emitted.
 - The replace overload `.codeRegistry(GraphQLCodeRegistry)` — use the
   `UnaryOperator` overload to add resolvers to the in-flight registry.
+
+## Dev loop
+
+### What you do
+
+Edit your `.graphqls` source files, then run `mvn generate-sources` (or let
+your build tool re-trigger it). Graphitron ships no watch goal; if you want
+file-watching, wire `mvn generate-sources` into your IDE's file-watcher or
+use whichever live-reload tool your framework provides.
+
+### What the generator does
+
+Every run walks the full schema, renders each output file, and then:
+
+1. Writes only the files whose rendered content differs from what is already
+   on disk (SHA-256 comparison inside javapoet).
+2. Deletes any `*.java` file in the six rewrite-owned sub-packages
+   (`<outputPackage>`, `.util`, `.schema`, `.types`, `.conditions`,
+   `.fetchers`) that this run did not emit.
+
+Both steps happen unconditionally on every run; no flag is required.
+
+### What you observe
+
+- **`git diff` is proportional.** A schema edit that touches one type
+  rewrites that type's files; every other generated file is byte-identical
+  to the previous run and unchanged on disk, so `git diff` shows only the
+  types the edit actually touched.
+- **IDE recompile time is proportional.** IntelliJ's incremental compiler
+  and Quarkus `quarkus:dev` and Spring Boot DevTools all watch
+  `target/generated-sources/` for mtime changes. Because unchanged files
+  keep their mtimes, only the files that actually changed trigger a
+  recompile.
+- **Removing a type removes its file.** Deleting a type or field from the
+  schema causes the corresponding generated file to disappear on the next
+  generator run. No orphan code, no stale compile errors, no manual
+  `target/` cleanup.
+
+These three properties are guaranteed by the generator and pinned by
+`IdempotentWriterTest` and `GeneratorDeterminismTest`; a future refactor
+that breaks any of them fails the test suite.
+
+### Tool interop
+
+No Graphitron-specific IDE plugin or tool integration is required. The
+behaviour composes with standard incremental-compile paths:
+
+- **IntelliJ IDEA** — incremental compiler re-examines files whose mtime
+  changed; unchanged generated files are invisible to it.
+- **Quarkus `quarkus:dev`** — detects source-root changes by mtime; only
+  the changed files trigger a reload.
+- **Spring Boot DevTools** — same mtime-based detection; unchanged files
+  are ignored.
 
 ## Notes
 

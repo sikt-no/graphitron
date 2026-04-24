@@ -27,6 +27,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashSet;
@@ -141,7 +142,7 @@ public class GraphQLRewriteGenerator {
             try {
                 emittedThisRun.add(
                     JavaFile.builder(packageName, spec).indent("    ").build()
-                        .writeToPath(ctx.outputDirectory())
+                        .writeToPath(ctx.outputDirectory(), StandardCharsets.UTF_8)
                 );
             } catch (IOException e) {
                 throw new RuntimeException(e);
