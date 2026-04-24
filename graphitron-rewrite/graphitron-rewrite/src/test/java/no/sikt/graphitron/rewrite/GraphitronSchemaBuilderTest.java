@@ -380,7 +380,7 @@ class GraphitronSchemaBuilderTest {
         WITH_NODE_DIRECTIVE(
             "@nodeId on a type that also has @node — classified as NodeIdField with resolved key columns",
             """
-            type Film @table(name: "film") @node(keyColumns: ["film_id"]) {
+            type Film implements Node @table(name: "film") @node(keyColumns: ["film_id"]) {
               id: ID! @nodeId
             }
             type Query { film: Film }
@@ -420,7 +420,7 @@ class GraphitronSchemaBuilderTest {
         RESOLVED(
             "typeName pointing to a @node type with a single FK between tables → NodeIdReferenceField with a one-hop inferred joinPath",
             """
-            type Country @table(name: "country") @node(keyColumns: ["country_id"]) {
+            type Country implements Node @table(name: "country") @node(keyColumns: ["country_id"]) {
               id: ID! @nodeId
             }
             type City @table(name: "city") {
@@ -460,7 +460,7 @@ class GraphitronSchemaBuilderTest {
         WITH_REFERENCE_PATH(
             "@reference(path:) on a @nodeId field populates the joinPath",
             """
-            type Language @table(name: "language") @node(keyColumns: ["language_id"]) {
+            type Language implements Node @table(name: "language") @node(keyColumns: ["language_id"]) {
               id: ID! @nodeId
             }
             type Film @table(name: "film") {
@@ -478,7 +478,7 @@ class GraphitronSchemaBuilderTest {
         IMPLICIT_REFERENCE_ZERO_FK(
             "no @reference on @nodeId with no direct FK between parent and target tables → UnclassifiedField",
             """
-            type Actor @table(name: "actor") @node(keyColumns: ["actor_id"]) { id: ID! @nodeId }
+            type Actor implements Node @table(name: "actor") @node(keyColumns: ["actor_id"]) { id: ID! @nodeId }
             type Film @table(name: "film") { actorId: ID! @nodeId(typeName: "Actor") }
             type Query { film: Film }
             """,
@@ -494,7 +494,7 @@ class GraphitronSchemaBuilderTest {
         IMPLICIT_REFERENCE_MULTIPLE_FK(
             "no @reference on @nodeId with multiple FKs between parent and target tables → UnclassifiedField",
             """
-            type Language @table(name: "language") @node(keyColumns: ["language_id"]) { id: ID! @nodeId }
+            type Language implements Node @table(name: "language") @node(keyColumns: ["language_id"]) { id: ID! @nodeId }
             type Film @table(name: "film") { languageId: ID! @nodeId(typeName: "Language") }
             type Query { film: Film }
             """,
@@ -2490,7 +2490,7 @@ class GraphitronSchemaBuilderTest {
         NODE_TYPE(
             "@table+@node type → NodeType with resolved key columns",
             """
-            type Film @table(name: "film") @node(keyColumns: ["film_id"]) {
+            type Film implements Node @table(name: "film") @node(keyColumns: ["film_id"]) {
               id: ID! @nodeId
             }
             type Query { film: Film }
