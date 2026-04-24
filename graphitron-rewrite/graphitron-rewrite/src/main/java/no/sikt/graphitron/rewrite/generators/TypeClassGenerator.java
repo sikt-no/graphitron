@@ -63,11 +63,6 @@ public class TypeClassGenerator {
             .map(f -> (ChildField.ColumnField) f)
             .sorted(Comparator.comparing(GraphitronField::name))
             .toList();
-        var platformIdFields = schema.fieldsOf(typeName).stream()
-            .filter(f -> f instanceof ChildField.PlatformIdField)
-            .map(f -> (ChildField.PlatformIdField) f)
-            .sorted(Comparator.comparing(GraphitronField::name))
-            .toList();
         var nodeIdFields = schema.fieldsOf(typeName).stream()
             .filter(f -> f instanceof ChildField.NodeIdField)
             .map(f -> (ChildField.NodeIdField) f)
@@ -95,14 +90,13 @@ public class TypeClassGenerator {
         var requiredProjectionColumns = collectBatchKeyColumns(schema.fieldsOf(typeName))
             .distinct()
             .toList();
-        return buildTypeSpec(typeName, type.table(), columnFields, platformIdFields, nodeIdFields, tableFields, lookupTableFields, nestingFields, requiredProjectionColumns, outputPackage, jooqPackage);
+        return buildTypeSpec(typeName, type.table(), columnFields, nodeIdFields, tableFields, lookupTableFields, nestingFields, requiredProjectionColumns, outputPackage, jooqPackage);
     }
 
     /**
      * @param typeName        the GraphQL type name (used as the class name)
      * @param tableRef        the resolved table reference with jOOQ field/class names
      * @param columnFields    the scalar column fields to include in {@code $fields()}, in declaration order
-     * @param platformIdFields the legacy platform-id fields whose getters return {@code SelectField<String>}
      * @param tableFields     the inline {@code @reference}-path table fields emitted as correlated
      *                        subqueries via {@link InlineTableFieldEmitter}
      * @param lookupTableFields the inline {@code @lookupKey} table fields emitted as correlated
@@ -112,7 +106,6 @@ public class TypeClassGenerator {
      */
     static TypeSpec buildTypeSpec(String typeName, TableRef tableRef,
             List<ChildField.ColumnField> columnFields,
-            List<ChildField.PlatformIdField> platformIdFields,
             List<ChildField.NodeIdField> nodeIdFields,
             List<ChildField.TableField> tableFields,
             List<ChildField.LookupTableField> lookupTableFields,
@@ -121,7 +114,7 @@ public class TypeClassGenerator {
             String outputPackage, String jooqPackage) {
         var builder = TypeSpec.classBuilder(typeName)
             .addModifiers(Modifier.PUBLIC)
-            .addMethod(build$FieldsMethod(tableRef, columnFields, platformIdFields, nodeIdFields, tableFields, lookupTableFields, nestingFields, requiredProjectionColumns, outputPackage, jooqPackage));
+            .addMethod(build$FieldsMethod(tableRef, columnFields, nodeIdFields, tableFields, lookupTableFields, nestingFields, requiredProjectionColumns, outputPackage, jooqPackage));
         // Helpers for inline LookupTableFields are hoisted onto this outer type class — including
         // ones nested inside NestingField sub-types, which don't get their own type class (plain
         // objects share the parent's table context). The generated switch arm calls the helper
@@ -174,7 +167,6 @@ public class TypeClassGenerator {
      */
     private static MethodSpec build$FieldsMethod(TableRef tableRef,
             List<ChildField.ColumnField> columnFields,
-            List<ChildField.PlatformIdField> platformIdFields,
             List<ChildField.NodeIdField> nodeIdFields,
             List<ChildField.TableField> tableFields,
             List<ChildField.LookupTableField> lookupTableFields,
@@ -199,7 +191,6 @@ public class TypeClassGenerator {
 
         var flat = new ArrayList<ChildField>();
         flat.addAll(columnFields);
-        flat.addAll(platformIdFields);
         flat.addAll(nodeIdFields);
         flat.addAll(tableFields);
         flat.addAll(lookupTableFields);
@@ -248,9 +239,6 @@ public class TypeClassGenerator {
                 case ChildField.ColumnField cf ->
                     builder.addCode("        case $S -> fields.add($L.$L);\n",
                         cf.name(), tableArg, cf.column().javaName());
-                case ChildField.PlatformIdField pf ->
-                    builder.addCode("        case $S -> fields.add($L.$L());\n",
-                        pf.name(), tableArg, pf.getterName());
                 case ChildField.NodeIdField nif -> {
                     builder.addCode("        case $S -> {\n", nif.name());
                     for (var col : nif.nodeKeyColumns()) {

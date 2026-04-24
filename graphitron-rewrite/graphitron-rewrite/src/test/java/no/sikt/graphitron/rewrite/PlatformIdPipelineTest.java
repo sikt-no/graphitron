@@ -312,18 +312,6 @@ class PlatformIdPipelineTest {
                     .containsExactly("id_1", "id_2");
             }),
 
-        EXPLICIT_PERSON_ID(
-            "output `personId: ID! @field(name: \"PERSON_ID\")` → NodeType parent, PlatformIdField(getPersonId) field (the !@field clause keeps this on the platform-id fallback until Step 5)",
-            """
-            type Foo @table(name: "bar") { personId: ID! @field(name: "PERSON_ID") }
-            type Query { foo: Foo }
-            """,
-            schema -> {
-                assertThat(schema.type("Foo")).isInstanceOf(GraphitronType.NodeType.class);
-                var f = (ChildField.PlatformIdField) schema.field("Foo", "personId");
-                assertThat(f.getterName()).isEqualTo("getPersonId");
-            }),
-
         ACCESSOR_MISSING(
             "column absent AND no metadata / platform-id accessor → UnclassifiedField, parent stays TableType",
             """

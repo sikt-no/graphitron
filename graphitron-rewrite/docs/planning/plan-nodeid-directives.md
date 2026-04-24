@@ -318,20 +318,6 @@ Built from `ctx.types.values()` filtered to `NodeType`. Uniqueness is validated 
 
 ---
 
-## Deletions
-
-After the migration lands, these go away:
-
-- `InputField.PlatformIdField` record + its `permits` entry (`InputField.java`).
-- `ChildField.PlatformIdField` record + its `permits` entry + the `$fields` arm in `TypeClassGenerator` that emits `table.<getterName>()`.
-- `FieldBuilder` output-side platform-id fallback (the platform-id sub-block at `FieldBuilder.java:1614-1624` inside the `column.isEmpty()` block at `:1612-1631`), input-side platform-id fallback (`TypeBuilder.java:632-649`).
-- `JooqCatalog.platformIdOutputMethodNames(String)`, `JooqCatalog.hasPlatformIdAccessors(String, String, String)`, `JooqCatalog.recordHasPlatformIdAccessors(Class, String, String)`, `JooqCatalog.sqlToAccessorSuffix(String)` (the last one is unused once the accessor-suffix derivation is gone).
-- `TypeFetcherGenerator.IMPLEMENTED_LEAVES` entries for `PlatformIdField` variants + their switch arms.
-- `ChildPlatformIdFieldValidationTest`, `PlatformIdFieldValidationTest` (the input-side validator; the repo has one file, not two), the `PlatformIdField` assertions in `PlatformIdPipelineTest`. The pipeline test stays but asserts `NodeIdField` outcomes; the synthetic fixture adds the `__NODE_TYPE_ID` + `__NODE_KEY_COLUMNS` constants on `Bar`.
-- The variant-coverage Phase-1 partition entries for `PlatformIdField` — they disappear along with the record.
-
----
-
 ## Pipeline-test fixture
 
 Synthetic fixture shipped: `Bar` carries `__NODE_TYPE_ID="Bar"` + `__NODE_KEY_COLUMNS={BAR.ID_1, BAR.ID_2}`; `Qux` carries none. These cover the mechanics of reading metadata but assume the old "metadata alone promotes" semantics. Revised test coverage lands alongside the R-steps below.
@@ -387,26 +373,17 @@ Synthetic fixture shipped: `Bar` carries `__NODE_TYPE_ID="Bar"` + `__NODE_KEY_CO
 
 ## Migration (from platform-id to declared `@node` / `@nodeId`)
 
-Platform-id was legacy's internal mechanism for composite-key IDs — reflected on per-table `getId` / `hasId` / `hasIds` accessors. The rewrite replaces it with the GOI vocabulary above. Two migrations run in parallel: a **generator migration** (jOOQ output gains metadata constants) and a **schema migration** (consumer SDL gains `implements Node @node` and `@nodeId`).
+The design that makes this migration cheap is simple: **the `__NODE_TYPE_ID` + `__NODE_KEY_COLUMNS` constants give the rewrite everything the legacy reflection-based platform-id detection used to compute at classify time, plus a direct path to the same runtime helpers (`NodeIdStrategy.createId` / `hasIds` / `setId`).** Reflection-based detection (`hasPlatformIdAccessors`, method-name scanning on jOOQ record classes) is redundant from the moment the generator ships the constants. That redundancy is what lets us cut legacy dead code aggressively instead of carrying it through a deprecation window.
 
-**Generator migration (hard cut-over).**
+KjerneJooqGenerator X.Y is live; Sikt's production schema (`alf/graphitron-rewrite`) already declares `implements Node @node` on every type that targets a metadata-carrying table. So the two migrations are at different points:
 
-1. KjerneJooqGenerator X.Y ships with `__NODE_TYPE_ID` + `__NODE_KEY_COLUMNS` constants and a pinned, documented column-order rule (see Open points).
-2. Consumers regenerate their jOOQ classes against X.Y — their build now has the constants, nothing else changes.
-3. Rewrite release Y.Z ships with `minKjerneJooqGeneratorVersion = X.Y` in the compatibility table, the migration shim on, and `PlatformIdField` deleted.
-4. Consumers bump rewrite to Y.Z.
+**Generator migration (done).** X.Y shipped. Consumers that haven't regenerated jOOQ still work via unmigrated builds; consumers that have regenerated see the constants.
 
-Skipping step 2 before step 4 fails loudly: every `id: ID!` on a (formerly) platform-id table classifies as `UnclassifiedField` with the canonical diagnostic "regenerate jOOQ classes with KjerneJooqGenerator ≥ X.Y". Skipping step 3 is impossible — Y.Z is the first release that requires the constants.
+**Reflection deletion (R6 — this plan, immediate).** The `PlatformIdField` sum-type variants, the `platformIdOutputMethodNames` / `hasPlatformIdAccessors` / `recordHasPlatformIdAccessors` catalog methods, the FieldBuilder / TypeBuilder reflection fallbacks, and the platform-id-specific validation tests are deleted. The rewrite classifies every platform-id table through the metadata path (synthesis shim + canonical `@node` + `@nodeId`). No deprecation window — the reflection path is dead code the moment the constants are present.
 
-**Schema migration (soft, one-cycle shim).**
+**Schema migration (R2 shim, soft).** The metadata-only synthesis shim promotes a metadata-carrying table without `implements Node @node` in SDL to `NodeType` with a deprecation diagnostic. This is the bridge that let R6 delete reflection without breaking consumers whose SDL hasn't caught up. Retired at R7 once the deprecation window closes.
 
-The migration shim (R2) promotes a metadata-carrying table *without* `implements Node @node` to `NodeType` for release Y.Z only, emitting a deprecation diagnostic per type:
-
-> "table 'customer' has `__NODE_TYPE_ID` metadata but its GraphQL type `Customer` is missing `implements Node @node` — this will become an error in release Y.Z+1. See plan-nodeid-directives.md."
-
-The same message fires at field sites when a scalar `ID` on a migration-shim NodeType lacks `@nodeId`. In Y.Z+1 the shim is removed (R6); thereafter promotion to NodeType requires the SDL contract.
-
-**Why two migrations, not one.** Conflating them would either (a) force every consumer to do a simultaneous generator bump + SDL rewrite in a single release, or (b) keep the shim on forever, which inverts the Node contract permanently. The cycle is the minimum price of honouring both the generator's ownership story and Relay's schema-contract story.
+**Why not wait.** Keeping reflection alive alongside metadata synthesis would force every change in the NodeId code path to be written twice (once for the reflection path, once for the metadata path), and every test to assert both outcomes. The cost compounds. Deleting reflection early is the single action that most reduces the ongoing maintenance surface.
 
 ---
 
@@ -434,10 +411,20 @@ Commits, in order. Each lands independently and green. Steps 1–5 shipped on tr
 
 **R5. `ChildField.NodeIdReferenceField` emission.** `TypeClassGenerator.$fields` projects target-table key columns via the resolved JOIN; `TypeFetcherGenerator` wires the encode lambda. Remove the `NOT_IMPLEMENTED_REASONS` entry at `TypeFetcherGenerator.java:247-248` and the `stub(f)` dispatch arm at `:358`. Closes the `NodeIdReferenceField` slot in Generator stub #8. Execution-test coverage against the real-jOOQ test-spec.
 
-**R6. Retire platform-id + retire migration shim.** Two commits, bundled because they together mark the end of the migration cycle:
+**R6. Delete platform-id reflection (immediate; can land ahead of R1–R5).** The `__NODE_TYPE_ID` + `__NODE_KEY_COLUMNS` constants cover every classification case the reflection fallbacks handled. Sikt's production schema declares `implements Node @node` on every metadata-carrying type, so the metadata synthesis path (which is live, unconditional on trunk today) already classifies every node type. Reflection is dead code. Delete:
 
-1. *Delete `PlatformIdField` sum-type variants + supporting catalog methods* — the variant records, the `FieldBuilder`/`TypeBuilder` fallbacks, `hasPlatformIdAccessors`, `platformIdOutputMethodNames`, `sqlToAccessorSuffix` (if no other caller), `IMPLEMENTED_LEAVES` entries, `ChildPlatformIdFieldValidationTest` / `PlatformIdFieldValidationTest`.
-2. *Retire the synthesis shim* — the metadata-only NodeType promotion branch in `TypeBuilder.buildTableType` (R2-introduced) and the synthesized Path-2 `@nodeId` branch in `FieldBuilder`. From here on, `implements Node @node` and `@nodeId` are mandatory for node-identity semantics. The canonical diagnostic changes from "will become an error in Y.Z+1" to the terminal error.
+- `ChildField.PlatformIdField` record + its `permits` entry + the `$fields` arm in `TypeClassGenerator`.
+- `InputField.PlatformIdField` record + its `permits` entry.
+- `FieldBuilder` output-side platform-id fallback (`FieldBuilder.java:1978-1985`) + input-side platform-id fallback in `TypeBuilder.resolveInputField` (`TypeBuilder.java:632-649`).
+- `JooqCatalog.platformIdOutputMethodNames`, `hasPlatformIdAccessors`, `recordHasPlatformIdAccessors`, and `sqlToAccessorSuffix` if no other caller survives.
+- `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS` / `IMPLEMENTED_LEAVES` entries + switch arms for `PlatformIdField`.
+- `ChildPlatformIdFieldValidationTest`, `PlatformIdFieldValidationTest`, and the `PlatformIdField` assertions in `PlatformIdPipelineTest`. The pipeline test stays but asserts `NodeIdField` outcomes.
+- Variant-coverage Phase-1 partition entries for `PlatformIdField`.
+- `codereferences/dummyreferences/PlatformIdRecord` if unused elsewhere.
+
+R6 depends on: KjerneJooqGenerator X.Y having shipped (done), and the current unconditional-metadata-synthesis behaviour on trunk (live since shipped Step 2). It does **not** depend on R1–R5; land it first to stop the dual-implementation maintenance cost immediately.
+
+**R7. Retire the migration shim.** Once consumers have finished migrating SDL to declared `implements Node @node` + `@nodeId`, delete the metadata-only NodeType promotion branch in `TypeBuilder.buildTableType` (R2-introduced) and the synthesized Path-2 `@nodeId` branch in `FieldBuilder`. From here on, the directives are mandatory for node-identity semantics; the deprecation diagnostic becomes a terminal error. Timing: one release cycle after R1–R6 ship.
 
 Mutation binding (input-side `setId` / column-bind) remains gated on argres Phase 3 and lands via that plan — as a unified `NodeIdBinding` in `InputColumnBinding`, with one dispatch arm serving both `InputField.NodeIdField` and `InputField.NodeIdReferenceField`.
 

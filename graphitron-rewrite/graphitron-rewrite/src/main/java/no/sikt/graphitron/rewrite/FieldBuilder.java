@@ -28,7 +28,6 @@ import no.sikt.graphitron.rewrite.model.ChildField.MultitableReferenceField;
 import no.sikt.graphitron.rewrite.model.ChildField.NestingField;
 import no.sikt.graphitron.rewrite.model.ChildField.NodeIdField;
 import no.sikt.graphitron.rewrite.model.ChildField.NodeIdReferenceField;
-import no.sikt.graphitron.rewrite.model.ChildField.PlatformIdField;
 import no.sikt.graphitron.rewrite.model.ChildField.PropertyField;
 import no.sikt.graphitron.rewrite.model.ChildField.RecordField;
 import no.sikt.graphitron.rewrite.model.ChildField.RecordLookupTableField;
@@ -1139,7 +1138,6 @@ class FieldBuilder {
      * {@link CallSiteExtraction.NestedInputField} extraction — added to {@code implicitBodyParams}.
      * Fields that carry an explicit {@code @condition} (any override value) never also emit an
      * implicit predicate.
-     * {@link InputField.PlatformIdField} is skipped (no {@link no.sikt.graphitron.rewrite.model.ColumnRef} available).
      *
      * <p>{@code enclosingOverride} propagates the override flag down through
      * {@link InputField.NestingField} children: once set to {@code true} it stays {@code true}
@@ -1187,7 +1185,6 @@ class FieldBuilder {
                     walkInputFieldConditions(nf.fields(), outerArgName, leafPath,
                         nestOverride, lookupBoundNames, implicitBodyParams, out);
                 }
-                case InputField.PlatformIdField ignored -> {}
                 case InputField.NodeIdField ignored -> {}
                 case InputField.NodeIdReferenceField ignored -> {}
             }
@@ -1975,21 +1972,9 @@ class FieldBuilder {
                 return new NodeIdField(parentTypeName, name, location,
                     nodeType.typeId(), nodeType.nodeKeyColumns());
             }
-            var platformIdMethods = ctx.catalog.platformIdOutputMethodNames(tableSqlName);
-            // Fallback: check for legacy platform-key output accessor on the jOOQ table class.
-            // Conditions: scalar ID type, not a list. @nodeId is already handled above.
-            if ("ID".equals(typeName) && !isList) {
-                String getterName = "get" + JooqCatalog.sqlToAccessorSuffix(columnName);
-                if (platformIdMethods.contains(getterName)) {
-                    return new PlatformIdField(parentTypeName, name, location, getterName);
-                }
-            }
-            String platformHint = platformIdMethods.isEmpty() ? ""
-                : candidateHint(columnName, platformIdMethods, "; platform-id methods on table class: ");
             return new UnclassifiedField(parentTypeName, name, location, fieldDef,
                 "column '" + columnName + "' could not be resolved in the jOOQ table"
-                + candidateHint(columnName, ctx.catalog.columnSqlNamesOf(tableSqlName))
-                + platformHint);
+                + candidateHint(columnName, ctx.catalog.columnSqlNamesOf(tableSqlName)));
         }
         return new ColumnField(parentTypeName, name, location, columnName, column.get(), javaNamePresent);
     }

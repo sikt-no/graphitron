@@ -11,7 +11,6 @@ import java.util.List;
 public sealed interface ChildField extends GraphitronField
     permits ChildField.ColumnField, ChildField.ColumnReferenceField,
             ChildField.NodeIdField, ChildField.NodeIdReferenceField,
-            ChildField.PlatformIdField,
             ChildField.TableTargetField,
             ChildField.TableMethodField,
             ChildField.InterfaceField, ChildField.UnionField,
@@ -58,26 +57,6 @@ public sealed interface ChildField extends GraphitronField
         String nodeTypeId,
         List<ColumnRef> nodeKeyColumns,
         List<JoinStep> joinPath
-    ) implements ChildField {}
-
-    /**
-     * A scalar {@code ID} field on a {@code @table} output type backed by a legacy composite
-     * platform key. The jOOQ table class exposes a {@code get<X>Id()} instance method (e.g.
-     * {@code getId()}, {@code getPersonId()}) that returns a {@link org.jooq.SelectField}{@code <String>};
-     * this is used in SELECT projection instead of a real column reference.
-     *
-     * <p>Only classified for scalar {@code ID} fields with no {@code @nodeId} directive, when no
-     * real column matches the resolved name but the table class exposes the expected
-     * {@code get<X>Id()} method. {@code @nodeId} fields are handled by {@link NodeIdField}.
-     *
-     * <p>{@code getterName} (e.g. {@code "getId"}, {@code "getPersonId"}) is pre-resolved from the
-     * column name by the classifier so the generator emits the correct call without re-deriving it.
-     */
-    record PlatformIdField(
-        String parentTypeName,
-        String name,
-        SourceLocation location,
-        String getterName
     ) implements ChildField {}
 
     /**

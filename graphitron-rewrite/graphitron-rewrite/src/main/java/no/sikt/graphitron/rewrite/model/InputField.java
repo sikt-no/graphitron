@@ -14,14 +14,11 @@ import java.util.Optional;
  * {@code condition} — an {@link ArgConditionRef} built from a {@code @condition} directive on the
  * input field definition. When present, the condition method fires as an additional WHERE predicate
  * alongside (or instead of, when {@code override: true}) the auto-generated column predicate.
- *
- * <p>{@link PlatformIdField} intentionally omits {@code condition} — see
- * {@code docs/argument-resolution.md} Out of Scope.
  */
 public sealed interface InputField extends GraphitronField
         permits InputField.ColumnField, InputField.ColumnReferenceField,
                 InputField.NodeIdField, InputField.NodeIdReferenceField,
-                InputField.PlatformIdField, InputField.NestingField {
+                InputField.NestingField {
 
     /**
      * A field in a {@code @table}-annotated input type, successfully resolved to a SQL column
@@ -117,33 +114,6 @@ public sealed interface InputField extends GraphitronField
         List<ColumnRef> nodeKeyColumns,
         List<JoinStep> joinPath,
         Optional<ArgConditionRef> condition
-    ) implements InputField {}
-
-    /**
-     * A field in a {@code @table}-annotated input type that represents a legacy composite
-     * platform key. The underlying jOOQ record class exposes {@code getXId()} /
-     * {@code setXId(String)} accessor methods (where {@code X} is derived from the resolved
-     * column name) added by a custom jOOQ code generator; the table has no corresponding column.
-     *
-     * <p>Only classified for scalar GraphQL {@code ID}-typed fields with no {@code @nodeId}
-     * directive, when no real column matches the resolved name but the record class exposes the
-     * expected accessor pair. Fields with {@code @nodeId} take the Relay NodeID path and never
-     * produce this variant; list-typed fields ({@code [ID!]!}) are rejected at the fallback
-     * boundary.
-     *
-     * <p>No {@link ColumnRef} is carried. {@code getterName} and {@code setterName} are
-     * pre-resolved by the classifier so the generator emits the correct call without
-     * re-deriving method names. A {@code list} field is intentionally omitted — the classifier
-     * guarantees scalar.
-     */
-    record PlatformIdField(
-        String parentTypeName,
-        String name,
-        SourceLocation location,
-        String typeName,
-        boolean nonNull,
-        String getterName,
-        String setterName
     ) implements InputField {}
 
     /**

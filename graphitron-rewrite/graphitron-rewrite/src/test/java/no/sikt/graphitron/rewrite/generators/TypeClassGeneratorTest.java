@@ -36,7 +36,6 @@ class TypeClassGeneratorTest {
             List.of(),
             List.of(),
             List.of(),
-            List.of(),
             DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
     }
 
@@ -60,48 +59,12 @@ class TypeClassGeneratorTest {
             .containsExactly("$fields");
     }
 
-    // ===== Platform-id fields =====
-
-    @Test
-    void $fields_platformIdField_producesSwitchArm() {
-        var spec = TypeClassGenerator.buildTypeSpec("Film",
-            filmTable(),
-            List.of(),
-            List.of(platformIdField("Film", "id", "getId")),
-            List.of(),
-            List.of(),
-            List.of(),
-            List.of(),
-            List.of(),
-            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
-        assertThat(TypeSpecAssertions.hasFieldsArm(spec, "id")).isTrue();
-    }
-
-    @Test
-    void $fields_platformIdField_producesSwitchArmForNamedGetter() {
-        var spec = TypeClassGenerator.buildTypeSpec("Film",
-            filmTable(),
-            List.of(),
-            List.of(platformIdField("Film", "personId", "getPersonId")),
-            List.of(),
-            List.of(),
-            List.of(),
-            List.of(),
-            List.of(),
-            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
-        assertThat(TypeSpecAssertions.hasFieldsArm(spec, "personId")).isTrue();
-        // Accessor selection (table.getPersonId() vs table.getId()) is a body-content question.
-        // Compile tier catches the wrong accessor via graphitron-rewrite-test; execution
-        // tier catches wrong values via PlatformIdPipelineTest fixtures.
-    }
-
     // ===== NodeId fields =====
 
     @Test
     void $fields_nodeIdField_producesSwitchArm() {
         var spec = TypeClassGenerator.buildTypeSpec("Film",
             filmTable(),
-            List.of(),
             List.of(),
             List.of(nodeIdField("Film", "id", "Film", List.of(filmIdCol()))),
             List.of(),
