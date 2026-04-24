@@ -99,6 +99,7 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.ChildField.MultitableReferenceField f -> validateMultitableReferenceField(f, errors);
             case no.sikt.graphitron.rewrite.model.InputField.ColumnField f            -> validateInputColumnField(f, errors);
             case no.sikt.graphitron.rewrite.model.InputField.ColumnReferenceField f  -> validateInputColumnReferenceField(f, errors);
+            case no.sikt.graphitron.rewrite.model.InputField.NodeIdField f            -> {} // no extra validation yet
             case no.sikt.graphitron.rewrite.model.InputField.PlatformIdField f       -> validateInputPlatformIdField(f, errors);
             case no.sikt.graphitron.rewrite.model.InputField.NestingField f          -> validateInputNestingField(f, errors);
             case no.sikt.graphitron.rewrite.model.GraphitronField.NotGeneratedField f -> validateNotGeneratedField(f, errors);
@@ -216,8 +217,12 @@ public class GraphitronSchemaValidator {
             // Lookup cardinality is determined by whether any @lookupKey arg is a list. Post argres
             // Phase 1, lookup-key args live on LookupMapping; any legacy filter-carried list arg is
             // also considered (validator is input-shape-agnostic and covers both paths).
-            boolean anyKeyIsList = field.lookupMapping().columns().stream()
-                    .anyMatch(no.sikt.graphitron.rewrite.model.LookupMapping.LookupColumn::list)
+            boolean anyKeyIsList = switch (field.lookupMapping()) {
+                    case no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping cm ->
+                        cm.columns().stream().anyMatch(no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping.LookupColumn::list);
+                    case no.sikt.graphitron.rewrite.model.LookupMapping.NodeIdMapping nim ->
+                        nim.list();
+                }
                 || field.filters().stream().anyMatch(f -> switch (f) {
                     case no.sikt.graphitron.rewrite.model.GeneratedConditionFilter gcf ->
                         gcf.bodyParams().stream().anyMatch(bp -> bp.list());

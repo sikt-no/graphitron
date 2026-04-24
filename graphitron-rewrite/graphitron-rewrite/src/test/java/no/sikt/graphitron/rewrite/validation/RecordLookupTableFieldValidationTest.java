@@ -22,7 +22,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class RecordLookupTableFieldValidationTest {
 
     private static final TableRef FILM_TABLE = new TableRef("film", "FILM", "Film", List.of());
-    private static final LookupMapping EMPTY_LOOKUP = new LookupMapping(List.of(), FILM_TABLE);
+    private static final LookupMapping EMPTY_LOOKUP = new LookupMapping.ColumnMapping(List.of(), FILM_TABLE);
     private static final BatchKey BATCH_KEY = new BatchKey.RowKeyed(List.of());
 
     private static ReturnTypeRef.TableBoundReturnType filmReturn(FieldWrapper wrapper) {

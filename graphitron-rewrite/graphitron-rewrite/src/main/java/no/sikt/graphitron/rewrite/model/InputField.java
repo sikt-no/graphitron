@@ -20,7 +20,7 @@ import java.util.Optional;
  */
 public sealed interface InputField extends GraphitronField
         permits InputField.ColumnField, InputField.ColumnReferenceField,
-                InputField.PlatformIdField, InputField.NestingField {
+                InputField.NodeIdField, InputField.PlatformIdField, InputField.NestingField {
 
     /**
      * A field in a {@code @table}-annotated input type, successfully resolved to a SQL column
@@ -66,6 +66,27 @@ public sealed interface InputField extends GraphitronField
         ColumnRef column,
         List<JoinStep> joinPath,
         Optional<ArgConditionRef> condition
+    ) implements InputField {}
+
+    /**
+     * A field in a {@code @table}-annotated input type whose GraphQL type is scalar {@code ID}
+     * and whose backing table is a {@link no.sikt.graphitron.rewrite.model.GraphitronType.NodeType}.
+     *
+     * <p>Classified on both the synthesized route (table has {@code __NODE_TYPE_ID} /
+     * {@code __NODE_KEY_COLUMNS} constants) and the declared route (field carries {@code @nodeId}).
+     * Both paths produce the same variant carrying {@code (nodeTypeId, nodeKeyColumns)}.
+     *
+     * <p>The generator decodes the base64 composite ID and binds each unpacked value to its
+     * own-table column via {@code NodeIdStrategy.unpackIdValues} / {@code hasIds} / {@code hasId}.
+     * No {@link ColumnRef} is carried — the columns are in {@code nodeKeyColumns}.
+     * A {@code list} field is intentionally omitted — the classifier guarantees scalar.
+     */
+    record NodeIdField(
+        String parentTypeName,
+        String name,
+        SourceLocation location,
+        String nodeTypeId,
+        List<ColumnRef> nodeKeyColumns
     ) implements InputField {}
 
     /**

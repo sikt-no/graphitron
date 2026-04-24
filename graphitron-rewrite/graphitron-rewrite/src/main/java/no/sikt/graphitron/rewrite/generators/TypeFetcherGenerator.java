@@ -163,6 +163,7 @@ public class TypeFetcherGenerator {
         GraphitronField.UnclassifiedField.class,
         InputField.ColumnField.class,
         InputField.ColumnReferenceField.class,
+        InputField.NodeIdField.class,
         InputField.PlatformIdField.class,
         InputField.NestingField.class);
 
@@ -305,7 +306,10 @@ public class TypeFetcherGenerator {
                         .of(lookupTableRef, qlf.returnType().returnTypeName(), outputPackage, jooqPackage).jooqTableClass();
                     builder.addMethod(buildQueryLookupFetcher(qlf));
                     builder.addMethod(buildQueryLookupRowsMethod(qlf, outputPackage, jooqPackage));
-                    builder.addMethod(LookupValuesJoinEmitter.buildInputRowsMethod(qlf, lookupTableClass));
+                    // NodeIdMapping uses hasIds/hasId inline — no VALUES+JOIN input-rows helper needed.
+                    if (qlf.lookupMapping() instanceof no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) {
+                        builder.addMethod(LookupValuesJoinEmitter.buildInputRowsMethod(qlf, lookupTableClass));
+                    }
                 }
                 case QueryField.QueryTableField qtf -> {
                     if (qtf.returnType().wrapper() instanceof FieldWrapper.Connection) {
@@ -330,10 +334,12 @@ public class TypeFetcherGenerator {
                     // env.getArgument(name) — correct for a Split* fetcher whose @lookupKey args
                     // live on the field itself (vs. Phase 2a's inline child-lookup path where
                     // args live on a parent's SelectedField).
-                    var lookupTableRef = slf.returnType().table();
-                    var lookupTableClass = GeneratorUtils.ResolvedTableNames
-                        .of(lookupTableRef, slf.returnType().returnTypeName(), outputPackage, jooqPackage).jooqTableClass();
-                    builder.addMethod(LookupValuesJoinEmitter.buildInputRowsMethod(slf, lookupTableClass));
+                    if (slf.lookupMapping() instanceof no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) {
+                        var lookupTableRef = slf.returnType().table();
+                        var lookupTableClass = GeneratorUtils.ResolvedTableNames
+                            .of(lookupTableRef, slf.returnType().returnTypeName(), outputPackage, jooqPackage).jooqTableClass();
+                        builder.addMethod(LookupValuesJoinEmitter.buildInputRowsMethod(slf, lookupTableClass));
+                    }
                 }
                 // Stub variants — see NOT_IMPLEMENTED_REASONS
                 case QueryField.QueryTableMethodTableField f  -> builder.addMethod(stub(f));
@@ -371,10 +377,12 @@ public class TypeFetcherGenerator {
                     builder.addMethod(SplitRowsMethodEmitter.buildRowsMethod(rltf, outputPackage, jooqPackage));
                     // Input-rows helper identical in shape to SplitLookupTableField's — reads
                     // @lookupKey args from env.getArgument(name) and emits the typed Row<M+1>[].
-                    var lookupTableRef = rltf.returnType().table();
-                    var lookupTableClass = GeneratorUtils.ResolvedTableNames
-                        .of(lookupTableRef, rltf.returnType().returnTypeName(), outputPackage, jooqPackage).jooqTableClass();
-                    builder.addMethod(LookupValuesJoinEmitter.buildInputRowsMethod(rltf, lookupTableClass));
+                    if (rltf.lookupMapping() instanceof no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) {
+                        var lookupTableRef = rltf.returnType().table();
+                        var lookupTableClass = GeneratorUtils.ResolvedTableNames
+                            .of(lookupTableRef, rltf.returnType().returnTypeName(), outputPackage, jooqPackage).jooqTableClass();
+                        builder.addMethod(LookupValuesJoinEmitter.buildInputRowsMethod(rltf, lookupTableClass));
+                    }
                 }
                 case ChildField.TableMethodField f              -> builder.addMethod(stub(f));
                 case ChildField.InterfaceField f                -> builder.addMethod(stub(f));
@@ -981,7 +989,11 @@ public class TypeFetcherGenerator {
 
         var typeFieldsCall = CodeBlock.of("$T.$$fields(env.getSelectionSet(), $L, env)",
             names.typeClass(), tableLocal);
-        builder.addCode(LookupValuesJoinEmitter.buildFetcherBody(field, typeFieldsCall, tableLocal));
+        if (field.lookupMapping() instanceof no.sikt.graphitron.rewrite.model.LookupMapping.NodeIdMapping) {
+            builder.addCode(LookupValuesJoinEmitter.buildNodeIdFetcherBody(field, typeFieldsCall, tableLocal));
+        } else {
+            builder.addCode(LookupValuesJoinEmitter.buildFetcherBody(field, typeFieldsCall, tableLocal));
+        }
         return builder.build();
     }
 

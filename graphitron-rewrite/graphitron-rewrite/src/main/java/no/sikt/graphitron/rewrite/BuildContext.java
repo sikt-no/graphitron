@@ -785,6 +785,18 @@ class BuildContext {
                 parentTypeName, name, locationOf(field), typeName, nonNull, list,
                 new ColumnRef(e.sqlName(), e.javaName(), e.columnClass()), cond));
         }
+        // NodeId: scalar ID field whose backing table carries node-identity metadata (synthesized
+        // via __NODE_TYPE_ID/__NODE_KEY_COLUMNS constants, or asserted via @nodeId on the field).
+        // Both routes produce NodeIdField; the column lookup above already failed so we skip the
+        // platform-id accessor check entirely for node-type tables.
+        if ("ID".equals(typeName) && !list) {
+            Optional<JooqCatalog.NodeIdMetadata> nodeIdMeta = catalog.nodeIdMetadata(tableName);
+            if (nodeIdMeta.isPresent()) {
+                return new InputFieldResolution.Resolved(new InputField.NodeIdField(
+                    parentTypeName, name, locationOf(field),
+                    nodeIdMeta.get().typeId(), nodeIdMeta.get().keyColumns()));
+            }
+        }
         // Fallback: check for legacy platform-key accessors on the jOOQ record class.
         if ("ID".equals(typeName)
                 && !list
