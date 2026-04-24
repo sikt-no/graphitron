@@ -27,8 +27,9 @@
             <groupId>org.jooq</groupId>
             <artifactId>jooq</artifactId>
         </dependency>
-
-        <!-- Test dependencies -->
+        <!-- Compile scope: generator emits sources under target/generated-sources/graphitron
+             that reference graphql.schema.* and org.dataloader.* (via transitive java-dataloader),
+             so these must be on the main compile classpath, not just test. -->
         <dependency>
             <!-- GeneratorDeterminismTest invokes the generator in-process against
                  the fixture schema to ratchet the three-clause contract. -->
@@ -40,8 +41,9 @@
         <dependency>
             <groupId>com.graphql-java</groupId>
             <artifactId>graphql-java</artifactId>
-            <scope>test</scope>
         </dependency>
+
+        <!-- Test dependencies -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter-engine</artifactId>
