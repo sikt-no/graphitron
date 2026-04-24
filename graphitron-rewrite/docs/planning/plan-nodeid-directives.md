@@ -399,7 +399,10 @@ Commits, in order. Each lands independently and green. Steps 1–5 shipped on tr
 4. `InputField.NodeIdField` + `NodeIdArg` + `LookupMapping` sum type + lookup / filter emitter branches. `NestedInputId` permit added.
 5. `InputField.NodeIdReferenceField` classifier.
 
-### Phase 2 (remaining; R1–R6)
+### Phase 2 (R0 shipped; R1–R7 remaining)
+
+**R0. Custom jOOQ generator for platform-id fixtures (landed).** Replaces the hand-written `platformidfixture/` test catalog with output from a custom generator, `graphitron-rewrite-fixtures-codegen/NodeIdFixtureGenerator`. The generator extends `org.jooq.codegen.JavaGenerator` and appends `__NODE_TYPE_ID` / `__NODE_KEY_COLUMNS` constants to `bar` (composite key: `{ BAR.ID_1, BAR.ID_2 }`) and `baz` (single-column key) via `generateTableClassFooter`. Tables outside the hard-coded `METADATA` map generate as stock jOOQ output. `init.sql` grows a `platformidfixture` schema with the three tables (`bar`, `baz`, `qux`) in the real Postgres database, so the rewrite's classifier is exercised against actual generator output rather than a hand-edited approximation — upgrading jOOQ can no longer silently drift the fixture away from the generator contract. The `MalformedBar` hand-written fixture and its `diagnosticPresentForMalformedConstants` integration test are dropped: the direct `validateNodeIdMetadata` unit tests already cover every malformed branch, and `nodeIdMetadataDiagnostic` is a three-line instanceof dispatch trivially correct if those tests pass. Codegen lives in a separate Maven module (`graphitron-rewrite-fixtures-codegen`) because `jooq-codegen-maven` runs in `generate-sources`, before the consuming module's own classes are compiled, so the generator class must be on the plugin's dependency classpath.
+
 
 **R1. Collision-rule inversion + `implements Node` validator.** `TypeBuilder.buildTableType:298-311`: replace "error on any disagreement" with "SDL typeId wins; SDL keyColumns wins (WARN on order-only, ERROR on set-level disagreement)." `GraphitronSchemaValidator`: add a rule that `@node` requires `implements Node` on the same type (per the canonical legacy docs). Migrate the collision-case pipeline fixtures to the new expectations, and add the durability regression test.
 
