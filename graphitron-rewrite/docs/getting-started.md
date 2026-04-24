@@ -14,7 +14,7 @@ generated `Graphitron`, `GraphitronContext`, and related classes.
 Implement the generated `GraphitronContext`:
 
 ```java
-import com.example.app.rewrite.schema.GraphitronContext;
+import com.example.app.schema.GraphitronContext;
 import graphql.schema.DataFetchingEnvironment;
 import org.jooq.DSLContext;
 
@@ -34,8 +34,8 @@ public class AppContext implements GraphitronContext {
 Build the schema and engine once per app, handle each request:
 
 ```java
-import com.example.app.rewrite.schema.Graphitron;
-import com.example.app.rewrite.schema.GraphitronContext;
+import com.example.app.Graphitron;
+import com.example.app.schema.GraphitronContext;
 import graphql.ExecutionInput;
 import graphql.GraphQL;
 import graphql.schema.GraphQLSchema;

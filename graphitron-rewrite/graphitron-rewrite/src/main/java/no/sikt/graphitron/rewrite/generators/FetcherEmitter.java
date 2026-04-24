@@ -63,7 +63,7 @@ public final class FetcherEmitter {
             return propertyOrRecordValue(rf.columnName(), rf.column(), resultType);
         }
         if (field instanceof ChildField.ColumnField cf && parentTable != null) {
-            var columnFetcherClass = ClassName.get(RewriteConfig.outputPackage() + ".rewrite",
+            var columnFetcherClass = ClassName.get(RewriteConfig.outputPackage() + ".util",
                 ColumnFetcherClassGenerator.CLASS_NAME);
             var tablesClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Tables");
             return CodeBlock.of("new $T<>($T.$L.$L)",
@@ -80,17 +80,17 @@ public final class FetcherEmitter {
                     "($T env) -> { Object raw = (($T) env.getSource()).get($S, $T.class); return raw instanceof $T r && !r.isEmpty() ? r.get(0) : null; }",
                     DATA_FETCHING_ENV, recordClass, field.name(), resultClass, resultWildcard);
             }
-            var columnFetcherClass = ClassName.get(RewriteConfig.outputPackage() + ".rewrite",
+            var columnFetcherClass = ClassName.get(RewriteConfig.outputPackage() + ".util",
                 ColumnFetcherClassGenerator.CLASS_NAME);
             return CodeBlock.of("new $T<>($T.field($S))", columnFetcherClass, DSL, field.name());
         }
         if (field instanceof ChildField.LookupTableField) {
-            var columnFetcherClass = ClassName.get(RewriteConfig.outputPackage() + ".rewrite",
+            var columnFetcherClass = ClassName.get(RewriteConfig.outputPackage() + ".util",
                 ColumnFetcherClassGenerator.CLASS_NAME);
             return CodeBlock.of("new $T<>($T.field($S))", columnFetcherClass, DSL, field.name());
         }
         if (field instanceof ChildField.NodeIdField nf && parentTable != null) {
-            var encoderClass = ClassName.get(RewriteConfig.outputPackage() + ".rewrite",
+            var encoderClass = ClassName.get(RewriteConfig.outputPackage() + ".util",
                 NodeIdEncoderClassGenerator.CLASS_NAME);
             var recordClass = ClassName.get("org.jooq", "Record");
             var tablesClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Tables");
@@ -109,7 +109,7 @@ public final class FetcherEmitter {
 
     private static CodeBlock propertyOrRecordValue(
             String columnName, ColumnRef column, GraphitronType.ResultType resultType) {
-        var columnFetcherClass = ClassName.get(RewriteConfig.outputPackage() + ".rewrite",
+        var columnFetcherClass = ClassName.get(RewriteConfig.outputPackage() + ".util",
             ColumnFetcherClassGenerator.CLASS_NAME);
         if (resultType instanceof GraphitronType.JooqTableRecordType jtrt
                 && column != null && jtrt.table() != null) {

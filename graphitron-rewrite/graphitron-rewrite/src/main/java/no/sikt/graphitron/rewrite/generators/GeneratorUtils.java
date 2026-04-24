@@ -43,9 +43,9 @@ class GeneratorUtils {
     static final ClassName ENV              = ClassName.get("graphql.schema", "DataFetchingEnvironment");
     /** {@code graphql.schema.SelectedField} */
     static final ClassName SELECTED_FIELD   = ClassName.get("graphql.schema", "SelectedField");
-    /** {@code <outputPackage>.rewrite.schema.GraphitronContext} — generated per build; see {@link no.sikt.graphitron.rewrite.generators.util.GraphitronContextInterfaceGenerator}. */
+    /** {@code <outputPackage>.schema.GraphitronContext} — generated per build; see {@link no.sikt.graphitron.rewrite.generators.util.GraphitronContextInterfaceGenerator}. */
     static ClassName graphitronContext() {
-        return ClassName.get(RewriteConfig.outputPackage() + ".rewrite.schema", "GraphitronContext");
+        return ClassName.get(RewriteConfig.outputPackage() + ".schema", "GraphitronContext");
     }
 
     // -----------------------------------------------------------------------
@@ -62,7 +62,7 @@ class GeneratorUtils {
      *   <li>{@link #jooqTableClass} — the concrete jOOQ table class
      *       (e.g. {@code no.example.jooq.tables.Film})</li>
      *   <li>{@link #typeClass} — the generated Graphitron type class
-     *       (e.g. {@code no.example.rewrite.types.Film})</li>
+     *       (e.g. {@code no.example.types.Film})</li>
      * </ul>
      */
     record ResolvedTableNames(ClassName tablesClass, ClassName jooqTableClass, ClassName typeClass) {
@@ -71,7 +71,7 @@ class GeneratorUtils {
             return new ResolvedTableNames(
                 ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Tables"),
                 ClassName.get(RewriteConfig.getGeneratedJooqPackage() + ".tables", tableRef.javaClassName()),
-                ClassName.get(RewriteConfig.outputPackage() + ".rewrite.types", returnTypeName));
+                ClassName.get(RewriteConfig.outputPackage() + ".types", returnTypeName));
         }
 
         /** Resolves only {@link #tablesClass} and {@link #jooqTableClass} — use when the type class is not needed. */

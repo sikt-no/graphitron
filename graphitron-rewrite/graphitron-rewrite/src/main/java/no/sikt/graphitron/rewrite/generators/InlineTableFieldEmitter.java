@@ -70,7 +70,7 @@ public final class InlineTableFieldEmitter {
         ClassName tablesClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Tables");
         ClassName keysClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Keys");
         ClassName typeClass = ClassName.get(
-            RewriteConfig.outputPackage() + ".rewrite.types",
+            RewriteConfig.outputPackage() + ".types",
             tf.returnType().returnTypeName());
 
         var code = CodeBlock.builder();

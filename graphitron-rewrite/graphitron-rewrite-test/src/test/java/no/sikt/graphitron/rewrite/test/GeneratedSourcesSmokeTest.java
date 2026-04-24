@@ -14,12 +14,13 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  */
 class GeneratedSourcesSmokeTest {
 
-    private static final String PKG = "no.sikt.graphitron.rewrite.test.generated.rewrite";
+    private static final String PKG = "no.sikt.graphitron.generated";
 
     @ParameterizedTest(name = "{0}")
     @ValueSource(strings = {
-        // Schema facade + internal assembler + generated context interface
-        PKG + ".schema.Graphitron",
+        // Public entrypoint at output-package root
+        PKG + ".Graphitron",
+        // Internal assembler + generated context interface
         PKG + ".schema.GraphitronSchema",
         PKG + ".schema.GraphitronContext",
         // <TypeName>Type classes — one per GraphQL type (five representative categories)

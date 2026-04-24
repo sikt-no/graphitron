@@ -68,7 +68,7 @@ public class ConnectionResultClassGenerator {
         // page.selectFields() — cursor encoding must hash only the ordering columns, not the
         // selection-merged list.
         var pageRequestRef = ClassName.get(
-            RewriteConfig.outputPackage() + ".rewrite", "ConnectionHelper", "PageRequest");
+            RewriteConfig.outputPackage() + ".util", "ConnectionHelper", "PageRequest");
         var pageConstructor = MethodSpec.constructorBuilder()
             .addModifiers(Modifier.PUBLIC)
             .addParameter(listOfRecordField, "result")

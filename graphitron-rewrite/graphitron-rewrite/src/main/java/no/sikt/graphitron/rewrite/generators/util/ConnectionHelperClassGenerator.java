@@ -51,7 +51,7 @@ public class ConnectionHelperClassGenerator {
 
     public static List<TypeSpec> generate() {
         var connectionResultClass = ClassName.get(
-            RewriteConfig.outputPackage() + ".rewrite", ConnectionResultClassGenerator.CLASS_NAME);
+            RewriteConfig.outputPackage() + ".util", ConnectionResultClassGenerator.CLASS_NAME);
 
         // --- Edge nested class ---
         var edgeClass = TypeSpec.classBuilder("Edge")

@@ -63,8 +63,8 @@ public final class FetcherRegistrationsEmitter {
     private FetcherRegistrationsEmitter() {}
 
     public static Map<String, CodeBlock> emit(GraphitronSchema schema) {
-        String fetchersPackage = RewriteConfig.outputPackage() + ".rewrite.fetchers";
-        String rewritePackage  = RewriteConfig.outputPackage() + ".rewrite";
+        String fetchersPackage = RewriteConfig.outputPackage() + ".fetchers";
+        String utilPackage     = RewriteConfig.outputPackage() + ".util";
 
         var connectionTypeMap = new LinkedHashMap<String, String>();
         schema.fields().forEach((coords, field) -> {
@@ -95,8 +95,8 @@ public final class FetcherRegistrationsEmitter {
             result.put(ntw.nestedTypeName(), nestedBody(ntw, fetchersPackage)));
 
         connectionTypeMap.forEach((connName, edgeName) -> {
-            result.put(connName, connectionBody(connName, rewritePackage));
-            result.put(edgeName,  edgeBody(edgeName, rewritePackage));
+            result.put(connName, connectionBody(connName, utilPackage));
+            result.put(edgeName,  edgeBody(edgeName, utilPackage));
         });
 
         return result;
@@ -139,8 +139,8 @@ public final class FetcherRegistrationsEmitter {
         return body.build();
     }
 
-    private static CodeBlock connectionBody(String connectionTypeName, String rewritePackage) {
-        var helper = ClassName.get(rewritePackage, ConnectionHelperClassGenerator.CLASS_NAME);
+    private static CodeBlock connectionBody(String connectionTypeName, String utilPackage) {
+        var helper = ClassName.get(utilPackage, ConnectionHelperClassGenerator.CLASS_NAME);
         return CodeBlock.builder()
             .add("codeRegistry")
             .indent()
@@ -151,8 +151,8 @@ public final class FetcherRegistrationsEmitter {
             .build();
     }
 
-    private static CodeBlock edgeBody(String edgeTypeName, String rewritePackage) {
-        var helper = ClassName.get(rewritePackage, ConnectionHelperClassGenerator.CLASS_NAME);
+    private static CodeBlock edgeBody(String edgeTypeName, String utilPackage) {
+        var helper = ClassName.get(utilPackage, ConnectionHelperClassGenerator.CLASS_NAME);
         return CodeBlock.builder()
             .add("codeRegistry")
             .indent()

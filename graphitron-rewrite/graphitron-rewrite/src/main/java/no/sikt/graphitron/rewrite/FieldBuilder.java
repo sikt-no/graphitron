@@ -1077,7 +1077,7 @@ class FieldBuilder {
 
         var filters = new ArrayList<WhereFilter>();
         if (!bodyParams.isEmpty()) {
-            String conditionsClassName = RewriteConfig.outputPackage() + ".rewrite.conditions." + returnTypeName + "Conditions";
+            String conditionsClassName = RewriteConfig.outputPackage() + ".conditions." + returnTypeName + "Conditions";
             String methodName = fieldDef.getName() + "Condition";
             var callParams = bodyParams.stream()
                 .map(bp -> new CallParam(bp.name(), bp.extraction(), bp.list(), bp.javaType()))

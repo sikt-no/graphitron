@@ -547,7 +547,7 @@ public class TypeFetcherGenerator {
 
     private static CodeBlock buildConditionCall(QueryField.QueryTableField qtf, String srcAlias) {
         var queryConditionsClass = ClassName.get(
-            RewriteConfig.outputPackage() + ".rewrite.conditions",
+            RewriteConfig.outputPackage() + ".conditions",
             qtf.parentTypeName() + QueryConditionsGenerator.CLASS_NAME_SUFFIX);
         return CodeBlock.builder()
             .addStatement("$T condition = $T.$L($L, env)",
@@ -568,9 +568,9 @@ public class TypeFetcherGenerator {
         var tableRef = qtf.returnType().table();
         var names = GeneratorUtils.ResolvedTableNames.of(tableRef, qtf.returnType().returnTypeName());
         var connectionResultClass = ClassName.get(
-            RewriteConfig.outputPackage() + ".rewrite", ConnectionResultClassGenerator.CLASS_NAME);
+            RewriteConfig.outputPackage() + ".util", ConnectionResultClassGenerator.CLASS_NAME);
         var connectionHelperClass = ClassName.get(
-            RewriteConfig.outputPackage() + ".rewrite", ConnectionHelperClassGenerator.CLASS_NAME);
+            RewriteConfig.outputPackage() + ".util", ConnectionHelperClassGenerator.CLASS_NAME);
         var conn = (FieldWrapper.Connection) qtf.returnType().wrapper();
 
         var builder = MethodSpec.methodBuilder(qtf.name())
@@ -603,7 +603,7 @@ public class TypeFetcherGenerator {
         // all live inside ConnectionHelper.pageRequest. The fetcher keeps the four env.getArgument
         // calls above so pageRequest itself has no graphql-java dependency.
         var pageRequestClass = ClassName.get(
-            RewriteConfig.outputPackage() + ".rewrite", "ConnectionHelper", "PageRequest");
+            RewriteConfig.outputPackage() + ".util", "ConnectionHelper", "PageRequest");
         builder.addStatement(
             "$T page = $T.pageRequest(first, last, after, before, $L, orderBy, extraFields, "
                 + "$T.$$fields(env.getSelectionSet(), $L, env))",
@@ -678,7 +678,7 @@ public class TypeFetcherGenerator {
                 // right jOOQ instance (canonical tableLocal for root, FK-chain terminal alias
                 // for Split+Connection).
                 var orderByResultClass = ClassName.get(
-                    RewriteConfig.outputPackage() + ".rewrite", OrderByResultClassGenerator.CLASS_NAME);
+                    RewriteConfig.outputPackage() + ".util", OrderByResultClassGenerator.CLASS_NAME);
                 code.addStatement("$T ordering = $LOrderBy(env, $L)", orderByResultClass, fieldName, srcAlias);
                 code.addStatement("$T orderBy = ordering.sortFields()", SORT_FIELD_LIST);
                 code.addStatement("$T extraFields = ordering.columns()", listOfField);
@@ -755,7 +755,7 @@ public class TypeFetcherGenerator {
             TableRef tableRef) {
 
         var orderByResultClass = ClassName.get(
-            RewriteConfig.outputPackage() + ".rewrite", OrderByResultClassGenerator.CLASS_NAME);
+            RewriteConfig.outputPackage() + ".util", OrderByResultClassGenerator.CLASS_NAME);
 
         String tableLocal = names.tableLocalName();
         var builder = MethodSpec.methodBuilder(fieldName + "OrderBy")
@@ -781,7 +781,7 @@ public class TypeFetcherGenerator {
      */
     private static CodeBlock buildBaseReturnExpr(OrderBySpec base, String srcAlias) {
         var orderByResultClass = ClassName.get(
-            RewriteConfig.outputPackage() + ".rewrite", OrderByResultClassGenerator.CLASS_NAME);
+            RewriteConfig.outputPackage() + ".util", OrderByResultClassGenerator.CLASS_NAME);
         return switch (base) {
             case OrderBySpec.Fixed fixed when !fixed.columns().isEmpty() -> {
                 var sortParts = CodeBlock.builder();
@@ -817,7 +817,7 @@ public class TypeFetcherGenerator {
     private static CodeBlock buildSingleArgOrderByBody(OrderBySpec.Argument arg, CodeBlock baseExpr, String srcAlias) {
         var code = CodeBlock.builder();
         var orderByResultClass = ClassName.get(
-            RewriteConfig.outputPackage() + ".rewrite", OrderByResultClassGenerator.CLASS_NAME);
+            RewriteConfig.outputPackage() + ".util", OrderByResultClassGenerator.CLASS_NAME);
         code.addStatement("$T<$T, $T> orderArg = env.getArgument($S)", MAP, String.class, Object.class, arg.name());
         code.add("if (orderArg == null) return $L;\n", baseExpr);
         code.addStatement("$T field = ($T) orderArg.get($S)", String.class, String.class, arg.sortFieldName());
@@ -869,7 +869,7 @@ public class TypeFetcherGenerator {
         var WILDCARD_FIELD = ParameterizedTypeName.get(JOOQ_FIELD,
             no.sikt.graphitron.javapoet.WildcardTypeName.subtypeOf(Object.class));
         var orderByResultClass = ClassName.get(
-            RewriteConfig.outputPackage() + ".rewrite", OrderByResultClassGenerator.CLASS_NAME);
+            RewriteConfig.outputPackage() + ".util", OrderByResultClassGenerator.CLASS_NAME);
         code.addStatement("$T<$T<$T, $T>> orderArgs = env.getArgument($S)",
             LIST, MAP, String.class, Object.class, arg.name());
         code.add("if (orderArgs == null || orderArgs.isEmpty()) return $L;\n", baseExpr);
@@ -1116,7 +1116,7 @@ public class TypeFetcherGenerator {
         TypeName valueType;
         if (isConnection) {
             valueType = ClassName.get(
-                RewriteConfig.outputPackage() + ".rewrite", ConnectionResultClassGenerator.CLASS_NAME);
+                RewriteConfig.outputPackage() + ".util", ConnectionResultClassGenerator.CLASS_NAME);
         } else if (isList) {
             valueType = ParameterizedTypeName.get(LIST, RECORD);
         } else {

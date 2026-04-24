@@ -70,26 +70,28 @@ public class GraphQLRewriteGenerator {
         var fetcherClasses = TypeFetcherGenerator.generate(schema);
         var fetcherBodies  = FetcherRegistrationsEmitter.emit(schema);
 
-        write(GraphitronValuesClassGenerator.generate(),          "rewrite");
-        write(ColumnFetcherClassGenerator.generate(),             "rewrite");
-        write(NodeIdEncoderClassGenerator.generate(),             "rewrite");
-        write(ConnectionResultClassGenerator.generate(),          "rewrite");
-        write(ConnectionHelperClassGenerator.generate(),          "rewrite");
-        write(OrderByResultClassGenerator.generate(),             "rewrite");
-        write(GraphitronContextInterfaceGenerator.generate(),     "rewrite.schema");
-        write(EnumTypeGenerator.generate(assembled),              "rewrite.schema");
-        write(InputTypeGenerator.generate(assembled),             "rewrite.schema");
-        write(ObjectTypeGenerator.generate(assembled, fetcherBodies),            "rewrite.schema");
-        write(GraphitronSchemaClassGenerator.generate(assembled, fetcherBodies.keySet()), "rewrite.schema");
-        write(GraphitronFacadeGenerator.generate(),               "rewrite.schema");
-        write(TypeClassGenerator.generate(schema),                "rewrite.types");
-        write(TypeConditionsGenerator.generate(schema),           "rewrite.conditions");
-        write(QueryConditionsGenerator.generate(schema),          "rewrite.conditions");
-        write(fetcherClasses,                                      "rewrite.fetchers");
+        write(GraphitronValuesClassGenerator.generate(),          "util");
+        write(ColumnFetcherClassGenerator.generate(),             "util");
+        write(NodeIdEncoderClassGenerator.generate(),             "util");
+        write(ConnectionResultClassGenerator.generate(),          "util");
+        write(ConnectionHelperClassGenerator.generate(),          "util");
+        write(OrderByResultClassGenerator.generate(),             "util");
+        write(GraphitronContextInterfaceGenerator.generate(),     "schema");
+        write(EnumTypeGenerator.generate(assembled),              "schema");
+        write(InputTypeGenerator.generate(assembled),             "schema");
+        write(ObjectTypeGenerator.generate(assembled, fetcherBodies),            "schema");
+        write(GraphitronSchemaClassGenerator.generate(assembled, fetcherBodies.keySet()), "schema");
+        write(GraphitronFacadeGenerator.generate(),               "");
+        write(TypeClassGenerator.generate(schema),                "types");
+        write(TypeConditionsGenerator.generate(schema),           "conditions");
+        write(QueryConditionsGenerator.generate(schema),          "conditions");
+        write(fetcherClasses,                                      "fetchers");
     }
 
     private static void write(List<TypeSpec> specs, String subPackage) {
-        var packageName = RewriteConfig.outputPackage() + "." + subPackage;
+        var packageName = subPackage.isEmpty()
+            ? RewriteConfig.outputPackage()
+            : RewriteConfig.outputPackage() + "." + subPackage;
         specs.forEach(spec -> {
             try {
                 JavaFile.builder(packageName, spec).indent("    ").build()

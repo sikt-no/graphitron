@@ -555,12 +555,12 @@ class TypeFetcherGeneratorTest {
     @Test
     void graphitronContextHelper_targetsLocallyEmittedInterfaceByClassKey() {
         // Pins the commit that retargeted GraphitronContext from no.sikt.graphql to the
-        // generated <outputPackage>.rewrite.schema package, and the key from the string
+        // generated <outputPackage>.schema package, and the key from the string
         // "graphitronContext" to the typed GraphitronContext.class lookup.
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null,
             List.of(queryTableField("film", false)));
         var helper = method(spec, "graphitronContext");
-        var expectedFqn = RewriteConfig.outputPackage() + ".rewrite.schema.GraphitronContext";
+        var expectedFqn = RewriteConfig.outputPackage() + ".schema.GraphitronContext";
         assertThat(helper.returnType().toString())
             .as("retargeted to the locally-emitted interface under the output package")
             .isEqualTo(expectedFqn);

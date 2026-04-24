@@ -52,7 +52,7 @@ class GraphitronSchemaClassGeneratorTest {
     @Test
     void build_routesQueryThroughQueryEntryPoint() {
         var body = buildBody("type Query { x: String }");
-        assertThat(body).contains(".query(com.example.rewrite.schema.QueryType.type())");
+        assertThat(body).contains(".query(com.example.schema.QueryType.type())");
     }
 
     @Test
@@ -61,7 +61,7 @@ class GraphitronSchemaClassGeneratorTest {
             type Query { x: String }
             type Mutation { createFilm: String }
             """);
-        assertThat(body).contains(".mutation(com.example.rewrite.schema.MutationType.type())");
+        assertThat(body).contains(".mutation(com.example.schema.MutationType.type())");
     }
 
     @Test
@@ -71,7 +71,7 @@ class GraphitronSchemaClassGeneratorTest {
             type Query { x: String }
             type Subscription { counter: Int }
             """);
-        assertThat(body).contains(".subscription(com.example.rewrite.schema.SubscriptionType.type())");
+        assertThat(body).contains(".subscription(com.example.schema.SubscriptionType.type())");
     }
 
     @Test
@@ -80,7 +80,7 @@ class GraphitronSchemaClassGeneratorTest {
             type Query { film: Film }
             type Film { id: ID! }
             """);
-        assertThat(body).contains(".additionalType(com.example.rewrite.schema.FilmType.type())");
+        assertThat(body).contains(".additionalType(com.example.schema.FilmType.type())");
     }
 
     @Test
@@ -90,8 +90,8 @@ class GraphitronSchemaClassGeneratorTest {
             enum Status { A B }
             input FilterInput { q: String }
             """);
-        assertThat(body).contains(".additionalType(com.example.rewrite.schema.StatusType.type())");
-        assertThat(body).contains(".additionalType(com.example.rewrite.schema.FilterInputType.type())");
+        assertThat(body).contains(".additionalType(com.example.schema.StatusType.type())");
+        assertThat(body).contains(".additionalType(com.example.schema.FilterInputType.type())");
     }
 
     @Test
@@ -145,9 +145,9 @@ class GraphitronSchemaClassGeneratorTest {
             """).assembled();
         var body = GraphitronSchemaClassGenerator.generate(schema, Set.of("Film", "Person", "Query"))
             .get(0).methodSpecs().get(0).code().toString();
-        assertThat(body).contains("com.example.rewrite.schema.FilmType.registerFetchers(codeRegistry)");
-        assertThat(body).contains("com.example.rewrite.schema.PersonType.registerFetchers(codeRegistry)");
-        assertThat(body).contains("com.example.rewrite.schema.QueryType.registerFetchers(codeRegistry)");
+        assertThat(body).contains("com.example.schema.FilmType.registerFetchers(codeRegistry)");
+        assertThat(body).contains("com.example.schema.PersonType.registerFetchers(codeRegistry)");
+        assertThat(body).contains("com.example.schema.QueryType.registerFetchers(codeRegistry)");
         int filmIdx = body.indexOf("FilmType.registerFetchers");
         int personIdx = body.indexOf("PersonType.registerFetchers");
         int queryIdx = body.indexOf("QueryType.registerFetchers");

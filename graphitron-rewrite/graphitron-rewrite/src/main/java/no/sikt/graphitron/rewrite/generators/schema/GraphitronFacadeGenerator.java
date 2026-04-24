@@ -27,7 +27,7 @@ public final class GraphitronFacadeGenerator {
     private GraphitronFacadeGenerator() {}
 
     public static List<TypeSpec> generate() {
-        String schemaPackage = RewriteConfig.outputPackage() + ".rewrite.schema";
+        String schemaPackage = RewriteConfig.outputPackage() + ".schema";
         var graphQLSchema = ClassName.get("graphql.schema", "GraphQLSchema");
         var schemaBuilder = ClassName.get("graphql.schema", "GraphQLSchema", "Builder");
         var customizerType = ParameterizedTypeName.get(ClassName.get(Consumer.class), schemaBuilder);

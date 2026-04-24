@@ -286,7 +286,7 @@ public final class SplitRowsMethodEmitter {
         ClassName tablesClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Tables");
         ClassName keysClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Keys");
         ClassName typeClass = ClassName.get(
-            RewriteConfig.outputPackage() + ".rewrite.types",
+            RewriteConfig.outputPackage() + ".types",
             returnType.returnTypeName());
 
         BatchKey.RowKeyed rowKeyed = (BatchKey.RowKeyed) batchKey;
@@ -537,7 +537,7 @@ public final class SplitRowsMethodEmitter {
         TableRef terminalTable = returnType.table();
         ClassName tablesClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Tables");
         ClassName typeClass = ClassName.get(
-            RewriteConfig.outputPackage() + ".rewrite.types",
+            RewriteConfig.outputPackage() + ".types",
             returnType.returnTypeName());
 
         BatchKey.RowKeyed rowKeyed = (BatchKey.RowKeyed) batchKey;
@@ -700,14 +700,14 @@ public final class SplitRowsMethodEmitter {
         ClassName tablesClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Tables");
         ClassName keysClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Keys");
         ClassName typeClass = ClassName.get(
-            RewriteConfig.outputPackage() + ".rewrite.types",
+            RewriteConfig.outputPackage() + ".types",
             returnType.returnTypeName());
         ClassName connectionResultClass = ClassName.get(
-            RewriteConfig.outputPackage() + ".rewrite", "ConnectionResult");
+            RewriteConfig.outputPackage() + ".util", "ConnectionResult");
         ClassName connectionHelperClass = ClassName.get(
-            RewriteConfig.outputPackage() + ".rewrite", "ConnectionHelper");
+            RewriteConfig.outputPackage() + ".util", "ConnectionHelper");
         ClassName pageRequestClass = ClassName.get(
-            RewriteConfig.outputPackage() + ".rewrite", "ConnectionHelper", "PageRequest");
+            RewriteConfig.outputPackage() + ".util", "ConnectionHelper", "PageRequest");
         ClassName sortFieldClass = ClassName.get("org.jooq", "SortField");
         TypeName sortFieldWildcard = ParameterizedTypeName.get(
             sortFieldClass, WildcardTypeName.subtypeOf(Object.class));
@@ -794,7 +794,7 @@ public final class SplitRowsMethodEmitter {
         TypeName wildField = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
         TypeName listOfField = ParameterizedTypeName.get(LIST, wildField);
         ClassName orderByResultClass = ClassName.get(
-            RewriteConfig.outputPackage() + ".rewrite", "OrderByResult");
+            RewriteConfig.outputPackage() + ".util", "OrderByResult");
         switch (orderBy) {
             case no.sikt.graphitron.rewrite.model.OrderBySpec.Fixed fixed when !fixed.columns().isEmpty() -> {
                 var sortParts = CodeBlock.builder();
@@ -928,7 +928,7 @@ public final class SplitRowsMethodEmitter {
         TypeName valueType;
         if (returnType.wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection) {
             ClassName connectionResultClass = ClassName.get(
-                RewriteConfig.outputPackage() + ".rewrite", "ConnectionResult");
+                RewriteConfig.outputPackage() + ".util", "ConnectionResult");
             valueType = ParameterizedTypeName.get(LIST, connectionResultClass);
         } else {
             boolean isList = returnType.wrapper().isList();
@@ -1050,9 +1050,9 @@ public final class SplitRowsMethodEmitter {
     public static MethodSpec buildScatterConnectionByIdxHelper() {
         TypeName resultRecord = ParameterizedTypeName.get(ClassName.get("org.jooq", "Result"), RECORD);
         ClassName connectionResultClass = ClassName.get(
-            RewriteConfig.outputPackage() + ".rewrite", "ConnectionResult");
+            RewriteConfig.outputPackage() + ".util", "ConnectionResult");
         ClassName pageRequestClass = ClassName.get(
-            RewriteConfig.outputPackage() + ".rewrite", "ConnectionHelper", "PageRequest");
+            RewriteConfig.outputPackage() + ".util", "ConnectionHelper", "PageRequest");
         TypeName listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
         TypeName listOfListOfRecord = ParameterizedTypeName.get(LIST, listOfRecord);
         TypeName listOfConnectionResult = ParameterizedTypeName.get(LIST, connectionResultClass);

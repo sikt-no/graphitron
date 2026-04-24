@@ -63,7 +63,7 @@ class GraphitronFacadeGeneratorTest {
     @Test
     void buildSchema_delegatesToGraphitronSchemaBuild() {
         var body = GraphitronFacadeGenerator.generate().get(0).methodSpecs().get(0).code().toString();
-        assertThat(body).contains("return com.example.rewrite.schema.GraphitronSchema.build(customizer)");
+        assertThat(body).contains("return com.example.schema.GraphitronSchema.build(customizer)");
     }
 
     @Test

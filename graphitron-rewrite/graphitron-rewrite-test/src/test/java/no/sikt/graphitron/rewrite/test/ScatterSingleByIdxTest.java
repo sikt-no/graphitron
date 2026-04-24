@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite.test;
 
-import no.sikt.graphitron.rewrite.test.generated.rewrite.fetchers.CustomerFetchers;
+import no.sikt.graphitron.generated.fetchers.CustomerFetchers;
 import org.jooq.DSLContext;
 import org.jooq.Field;
 import org.jooq.Record;

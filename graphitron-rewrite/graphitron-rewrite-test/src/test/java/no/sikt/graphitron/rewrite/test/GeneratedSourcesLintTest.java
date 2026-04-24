@@ -32,7 +32,7 @@ class GeneratedSourcesLintTest {
      *  {@code graphitron/} source-folder segment that precedes the Java package path. */
     private static final Path GENERATED_REWRITE_ROOT = Paths.get(
         "target", "generated-sources", "graphitron",
-        "no", "sikt", "graphitron", "rewrite", "test", "generated", "rewrite");
+        "no", "sikt", "graphitron", "generated");
 
     private static final Pattern VAR_DECLARATION = Pattern.compile("\\bvar\\b\\s+\\w+");
 
@@ -148,7 +148,7 @@ class GeneratedSourcesLintTest {
      *  {@code graphitron-common} SDL parser the generator no longer needs at
      *  runtime; {@code no.sikt.graphql.GraphitronContext} is the upstream
      *  interface now replaced by the generated
-     *  {@code <outputPackage>.rewrite.schema.GraphitronContext}. Match is on
+     *  {@code <outputPackage>.schema.GraphitronContext}. Match is on
      *  FQN so the generated context interface is unaffected. */
     private static final List<String> FORBIDDEN_IMPORTS = List.of(
         "graphql.schema.idl.RuntimeWiring",

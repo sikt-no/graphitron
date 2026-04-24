@@ -64,7 +64,7 @@ public final class GraphitronSchemaClassGenerator {
 
     public static List<TypeSpec> generate(GraphQLSchema assembled, Set<String> typesWithFetchers) {
         var plan = planFor(assembled);
-        String schemaPackage = RewriteConfig.outputPackage() + ".rewrite.schema";
+        String schemaPackage = RewriteConfig.outputPackage() + ".schema";
 
         var builderType = ClassName.get("graphql.schema", "GraphQLSchema", "Builder");
         var customizerType = ParameterizedTypeName.get(

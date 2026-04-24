@@ -297,13 +297,13 @@ class SplitTableFieldPipelineTest {
             .filter(m -> m.name().equals("actorsConnection"))
             .findFirst().orElseThrow();
         assertThat(fetcher.returnType().toString())
-            .isEqualTo("java.util.concurrent.CompletableFuture<fake.code.generated.rewrite.ConnectionResult>");
+            .isEqualTo("java.util.concurrent.CompletableFuture<fake.code.generated.util.ConnectionResult>");
 
         var rowsMethod = filmFetchers.methodSpecs().stream()
             .filter(m -> m.name().equals("rowsActorsConnection"))
             .findFirst().orElseThrow();
         assertThat(rowsMethod.returnType().toString())
-            .isEqualTo("java.util.List<fake.code.generated.rewrite.ConnectionResult>");
+            .isEqualTo("java.util.List<fake.code.generated.util.ConnectionResult>");
     }
 
     @Test

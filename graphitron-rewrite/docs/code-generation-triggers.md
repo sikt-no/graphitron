@@ -19,9 +19,9 @@ GraphitronSchema
   └── Map<String, GraphitronField>  (one per field)
       ↓
 Generators
-  ├── TypeFetcherGenerator     →  rewrite.fetchers.*Fetchers
-  ├── TypeClassGenerator       →  rewrite.types.*
-  └── TypeConditionsGenerator  →  rewrite.conditions.*Conditions
+  ├── TypeFetcherGenerator     →  fetchers.*Fetchers
+  ├── TypeClassGenerator       →  types.*
+  └── TypeConditionsGenerator  →  conditions.*Conditions
 ```
 
 Each sealed variant maps to specific generator output. The sections below show the full
@@ -276,9 +276,9 @@ All source lives under `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewr
 
 | Component | Output | File |
 |---|---|---|
-| `TypeFetcherGenerator` | `rewrite.fetchers.*Fetchers` — wiring + field fetcher/rows methods | `TypeFetcherGenerator.java` |
-| `TypeClassGenerator` | `rewrite.types.*` — `$fields(sel, table, env)` projection method | `TypeClassGenerator.java` |
-| `TypeConditionsGenerator` | `rewrite.conditions.*Conditions` — pure-function WHERE predicates | `TypeConditionsGenerator.java` |
+| `TypeFetcherGenerator` | `fetchers.*Fetchers` — wiring + field fetcher/rows methods | `TypeFetcherGenerator.java` |
+| `TypeClassGenerator` | `types.*` — `$fields(sel, table, env)` projection method | `TypeClassGenerator.java` |
+| `TypeConditionsGenerator` | `conditions.*Conditions` — pure-function WHERE predicates | `TypeConditionsGenerator.java` |
 | `GeneratorUtils` | Shared building blocks — `ResolvedTableNames`, key type construction, constants | `GeneratorUtils.java` |
 | `ColumnFetcherClassGenerator` | `rewrite.ColumnFetcher<T>` — `LightDataFetcher` for column fields | `util/ColumnFetcherClassGenerator.java` |
 | `ConnectionResultClassGenerator` | `rewrite.ConnectionResult` — pagination carrier (Result + pageSize + cursor + columns) | `util/ConnectionResultClassGenerator.java` |

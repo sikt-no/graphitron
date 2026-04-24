@@ -75,7 +75,7 @@ public final class InlineLookupTableFieldEmitter {
         ClassName tablesClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Tables");
         ClassName keysClass = ClassName.get(RewriteConfig.getGeneratedJooqPackage(), "Keys");
         ClassName typeClass = ClassName.get(
-            RewriteConfig.outputPackage() + ".rewrite.types",
+            RewriteConfig.outputPackage() + ".types",
             lf.returnType().returnTypeName());
 
         var code = CodeBlock.builder();
