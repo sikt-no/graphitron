@@ -108,19 +108,6 @@ public class GenerateMojo extends AbstractGraphitronMojo implements Generator {
     @SuppressWarnings("unused")
     protected boolean validateOverlappingInputFields;
 
-    @Parameter(property = "graphitron.enableRewrite", defaultValue = "false")
-    @SuppressWarnings("unused")
-    protected boolean enableRewrite;
-
-    /**
-     * When {@code true}, the legacy generator is skipped and only the rewrite pipeline runs.
-     * Use this during rewrite pipeline development when the legacy generators do not yet compile
-     * for the target schema.
-     */
-    @Parameter(property = "graphitron.disableLegacy", defaultValue = "false")
-    @SuppressWarnings("unused")
-    protected boolean disableLegacy;
-
     @Override
     public Set<String> getUserSchemaFiles() {
         if (userSchemaFiles == null || userSchemaFiles.isEmpty()) {
@@ -175,9 +162,7 @@ public class GenerateMojo extends AbstractGraphitronMojo implements Generator {
     }
 
     private void runGenerators() {
-        if (!disableLegacy) {
-            GraphQLGenerator.generate();
-        }
+        GraphQLGenerator.generate();
     }
 
     private void validateTransformPluginConfiguration() throws MojoExecutionException {
@@ -266,13 +251,4 @@ public class GenerateMojo extends AbstractGraphitronMojo implements Generator {
         return failOnMerge;
     }
 
-    @Override
-    public boolean enableRewrite() {
-        return enableRewrite;
-    }
-
-    @Override
-    public boolean disableLegacy() {
-        return disableLegacy;
-    }
 }

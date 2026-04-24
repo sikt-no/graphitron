@@ -27,12 +27,6 @@
         </dependency>
 
         <dependency>
-            <groupId>${project.groupId}</groupId>
-            <artifactId>graphitron-rewrite</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-
-        <dependency>
             <groupId>no.sikt</groupId>
             <artifactId>graphitron-schema-transform</artifactId>
             <version>${project.version}</version>

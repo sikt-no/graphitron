@@ -46,16 +46,4 @@ public interface Generator {
 
     OptionalSelect getOptionalSelect();
 
-    default boolean enableRewrite() {
-        return false;
-    }
-
-    /**
-     * When {@code true}, the legacy generator is skipped and only the rewrite pipeline runs.
-     * Intended for development of the rewrite pipeline while the legacy generators produce
-     * code that does not yet compile for the target schema.
-     */
-    default boolean disableLegacy() {
-        return false;
-    }
 }

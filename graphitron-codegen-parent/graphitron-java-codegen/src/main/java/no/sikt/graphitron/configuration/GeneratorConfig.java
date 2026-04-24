@@ -45,7 +45,6 @@ public class GeneratorConfig {
     private static boolean requireTypeIdOnNode = false;
     private static boolean validateOverlappingInputFields = true;
     private static boolean failOnMerge = false;
-    private static boolean enableRewrite = false;
 
     private static int maxAllowedPageSize;
 
@@ -124,7 +123,6 @@ public class GeneratorConfig {
         optionalSelect = mojo.getOptionalSelect();
         validateOverlappingInputFields = mojo.validateOverlappingInputFields();
         failOnMerge = mojo.failOnMerge();
-        enableRewrite = mojo.enableRewrite();
     }
 
     /**
@@ -352,14 +350,6 @@ public class GeneratorConfig {
 
     public static void setFailOnMerge(boolean fail) {
         failOnMerge = fail;
-    }
-
-    public static boolean enableRewrite() {
-        return enableRewrite;
-    }
-
-    public static void setEnableRewrite(boolean enable) {
-        enableRewrite = enable;
     }
 
     public static void setUseOptionalSelects(boolean enable) {
