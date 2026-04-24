@@ -25,6 +25,7 @@ import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType.InterfaceType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.NodeType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ResultType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableBackedType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.UnionType;
@@ -725,6 +726,61 @@ class BuildContext {
         String columnName = hasFieldDir
             ? argString(field, DIR_FIELD, ARG_NAME).orElse(name)
             : name;
+        if ("ID".equals(typeName) && !list && field.hasAppliedDirective(DIR_NODE_ID)) {
+            Optional<String> refTypeName = argString(field, DIR_NODE_ID, ARG_TYPE_NAME);
+            if (refTypeName.isPresent()) {
+                // ctx.types may be null during the first type-builder pass; resolve via
+                // schema + catalog directly so this classifier works in both passes.
+                var rawGqlType = schema.getType(refTypeName.get());
+                if (rawGqlType == null) {
+                    return new InputFieldResolution.Unresolved(name, null,
+                        "@nodeId(typeName:) type '" + refTypeName.get() + "' does not exist in the schema"
+                        + candidateHint(refTypeName.get(), schema.getAllTypesAsList().stream()
+                            .map(t -> t.getName()).filter(n -> !n.startsWith("__")).toList()));
+                }
+                // Must be a table-backed object type to be a NodeType
+                if (!(rawGqlType instanceof GraphQLObjectType gqlObjType)
+                        || !gqlObjType.hasAppliedDirective(DIR_TABLE)) {
+                    return new InputFieldResolution.Unresolved(name, null,
+                        "@nodeId(typeName:) type '" + refTypeName.get()
+                        + "' is not a node type (not a @table-annotated object type)");
+                }
+                String targetTableName = argString(gqlObjType, DIR_TABLE, ARG_NAME)
+                    .orElse(refTypeName.get().toLowerCase());
+                // Prefer catalog metadata; fall back to ctx.types (when available post-first-pass)
+                // for SDL-only @node types.
+                String targetTypeId;
+                List<ColumnRef> targetKeyColumns;
+                var metaOpt = catalog.nodeIdMetadata(targetTableName);
+                if (metaOpt.isPresent()) {
+                    targetTypeId = metaOpt.get().typeId();
+                    targetKeyColumns = metaOpt.get().keyColumns();
+                } else if (types != null && types.get(refTypeName.get()) instanceof NodeType nt) {
+                    targetTypeId = nt.typeId();
+                    targetKeyColumns = nt.nodeKeyColumns();
+                } else if (gqlObjType.hasAppliedDirective(DIR_NODE)) {
+                    // @node declared without catalog metadata — no error, but empty keyColumns
+                    // (caller must ensure table has real metadata or be aware of the empty list).
+                    targetTypeId = argString(gqlObjType, DIR_NODE, ARG_TYPE_ID)
+                        .orElse(refTypeName.get());
+                    targetKeyColumns = List.of();
+                } else {
+                    return new InputFieldResolution.Unresolved(name, null,
+                        "@nodeId(typeName:) type '" + refTypeName.get()
+                        + "' is not a node type (missing @node or KjerneJooqGenerator metadata)");
+                }
+                TableRef targetTable = resolveTable(targetTableName);
+                var nodeRefPath = parsePath(field, name, resolvedTable.tableName(), targetTable.tableName());
+                if (nodeRefPath.hasError()) {
+                    return new InputFieldResolution.Unresolved(name, null, nodeRefPath.errorMessage());
+                }
+                Optional<ArgConditionRef> cond = buildInputFieldCondition(field, name, errors);
+                return new InputFieldResolution.Resolved(new InputField.NodeIdReferenceField(
+                    parentTypeName, name, locationOf(field), refTypeName.get(), nonNull,
+                    resolvedTable, targetTypeId, targetKeyColumns,
+                    nodeRefPath.elements(), cond));
+            }
+        }
         if (field.hasAppliedDirective(DIR_REFERENCE)) {
             var path = parsePath(field, name, resolvedTable.tableName(), null);
             if (path.hasError()) return new InputFieldResolution.Unresolved(name, null, path.errorMessage());

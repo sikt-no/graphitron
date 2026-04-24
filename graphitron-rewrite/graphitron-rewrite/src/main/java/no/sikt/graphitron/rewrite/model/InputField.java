@@ -20,7 +20,8 @@ import java.util.Optional;
  */
 public sealed interface InputField extends GraphitronField
         permits InputField.ColumnField, InputField.ColumnReferenceField,
-                InputField.NodeIdField, InputField.PlatformIdField, InputField.NestingField {
+                InputField.NodeIdField, InputField.NodeIdReferenceField,
+                InputField.PlatformIdField, InputField.NestingField {
 
     /**
      * A field in a {@code @table}-annotated input type, successfully resolved to a SQL column
@@ -87,6 +88,35 @@ public sealed interface InputField extends GraphitronField
         SourceLocation location,
         String nodeTypeId,
         List<ColumnRef> nodeKeyColumns
+    ) implements InputField {}
+
+    /**
+     * A field in a {@code @table}-annotated input type whose GraphQL type is scalar {@code ID}
+     * and which carries {@code @nodeId(typeName: "X")} pointing at a {@link
+     * no.sikt.graphitron.rewrite.model.GraphitronType.NodeType} reachable from the input type's
+     * own table via {@code joinPath}.
+     *
+     * <p>Classified when {@code typeName} resolves to a {@code NodeType} and a FK join path from
+     * the input type's own table to that type's table exists (either auto-inferred from a single
+     * FK or specified explicitly via {@code @reference}). The classifier guarantees scalar (list
+     * inputs collapse the containing {@code TableInputType} to {@code UnclassifiedType}).
+     *
+     * <p>The generator decodes the base64 composite ID and binds each unpacked value to its
+     * target column via {@code NodeIdStrategy.unpackIdValues} / {@code hasIds} / {@code hasId},
+     * JOINing through {@code joinPath} before applying the predicate (or collapsing to a direct
+     * same-table column assignment when the own-table mirrors the target's key columns).
+     */
+    record NodeIdReferenceField(
+        String parentTypeName,
+        String name,
+        SourceLocation location,
+        String typeName,
+        boolean nonNull,
+        TableRef parentTable,
+        String nodeTypeId,
+        List<ColumnRef> nodeKeyColumns,
+        List<JoinStep> joinPath,
+        Optional<ArgConditionRef> condition
     ) implements InputField {}
 
     /**
