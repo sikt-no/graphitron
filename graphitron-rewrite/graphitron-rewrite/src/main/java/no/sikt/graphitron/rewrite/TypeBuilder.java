@@ -298,9 +298,24 @@ class TypeBuilder {
         }
 
         if (metadata.isEmpty()) {
-            // @node-only path — use SDL values verbatim. R3 will add primary-key fallback
-            // for the keyColumns-omitted case.
-            return new NodeType(name, location, tableRef, sdlTypeId, List.copyOf(sdlKeyColumns));
+            // @node-only path: SDL values win verbatim on any declared axis; fill the omitted
+            // ones from sensible defaults (docs: typeId defaults to type name, keyColumns to PK).
+            String resolvedTypeId = sdlTypeId != null ? sdlTypeId : name;
+            List<ColumnRef> resolvedKeyColumns;
+            if (!sdlKeyColumnNames.isEmpty()) {
+                resolvedKeyColumns = List.copyOf(sdlKeyColumns);
+            } else {
+                var pk = ctx.catalog.findPkColumns(tableRef.tableName()).stream()
+                    .map(e -> new ColumnRef(e.sqlName(), e.javaName(), e.columnClass()))
+                    .toList();
+                if (pk.isEmpty()) {
+                    return new UnclassifiedType(name, location,
+                        "@node on " + name + " omits keyColumns but table '" + tableRef.tableName()
+                        + "' has no primary key — declare `keyColumns:` on @node or add a primary key");
+                }
+                resolvedKeyColumns = pk;
+            }
+            return new NodeType(name, location, tableRef, resolvedTypeId, resolvedKeyColumns);
         }
 
         // Both @node and metadata present. SDL wins — it is the author's published wire-format
