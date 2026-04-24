@@ -1,6 +1,5 @@
 package no.sikt.graphitron.rewrite.validation;
 
-import no.sikt.graphitron.common.configuration.TestConfiguration;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.JoinStep;
@@ -8,7 +7,6 @@ import no.sikt.graphitron.rewrite.model.ChildField.NodeIdReferenceField;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -19,11 +17,6 @@ import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.va
 import static org.assertj.core.api.Assertions.assertThat;
 
 class NodeIdReferenceFieldValidationTest {
-
-    @BeforeAll
-    static void setUpConfig() {
-        TestConfiguration.setProperties();
-    }
 
     enum Case implements ValidatorCase {
 

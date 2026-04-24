@@ -581,7 +581,7 @@ public class TypeFetcherGenerator {
         String tableLocal = names.tableLocalName();
         builder.addStatement("$T $L = $T.$L",
             names.jooqTableClass(), tableLocal, names.tablesClass(), tableRef.javaFieldName());
-        builder.addCode(buildConditionCall(qtf, tableLocal));
+        builder.addCode(buildConditionCall(qtf, tableLocal, outputPackage));
         // Single dispatch produces both orderBy (for SQL) and extraFields (for cursor columns),
         // keeping them in sync when the client picks a dynamic named order.
         builder.addCode(buildConnectionOrderingBlock(qtf.orderBy(), qtf.name(), names, tableLocal, outputPackage));

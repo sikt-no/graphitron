@@ -43,14 +43,14 @@ public class QueryConditionsGenerator {
 
     public static final String CLASS_NAME_SUFFIX = "Conditions";
 
-    public static List<TypeSpec> generate(GraphitronSchema schema) {
+    public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage, String jooqPackage) {
         var out = new ArrayList<TypeSpec>();
         for (var type : schema.types().values()) {
             if (!(type instanceof GraphitronType.RootType rootType)) continue;
             var methods = new ArrayList<MethodSpec>();
             for (var field : schema.fieldsOf(rootType.name())) {
                 if (field instanceof QueryField.QueryTableField qtf) {
-                    methods.add(buildConditionMethod(qtf));
+                    methods.add(buildConditionMethod(qtf, outputPackage, jooqPackage));
                 }
             }
             if (methods.isEmpty()) continue;
@@ -67,9 +67,9 @@ public class QueryConditionsGenerator {
         return fieldName + "Condition";
     }
 
-    private static MethodSpec buildConditionMethod(QueryField.QueryTableField qtf) {
+    private static MethodSpec buildConditionMethod(QueryField.QueryTableField qtf, String outputPackage, String jooqPackage) {
         var tableRef = qtf.returnType().table();
-        var names = GeneratorUtils.ResolvedTableNames.of(tableRef, qtf.returnType().returnTypeName());
+        var names = GeneratorUtils.ResolvedTableNames.of(tableRef, qtf.returnType().returnTypeName(), outputPackage, jooqPackage);
         var jooqTableClass = names.jooqTableClass();
 
         var builder = MethodSpec.methodBuilder(conditionMethodName(qtf.name()))

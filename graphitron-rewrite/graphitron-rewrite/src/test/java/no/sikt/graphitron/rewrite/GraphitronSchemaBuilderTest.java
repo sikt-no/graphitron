@@ -67,6 +67,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 import java.util.Set;
 import java.util.function.Consumer;
 
+import no.sikt.graphitron.common.configuration.TestConfiguration;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -2717,7 +2718,7 @@ class GraphitronSchemaBuilderTest {
     @Test
     void build_throwsWhenDirectiveMissingFromRegistry() {
         TypeDefinitionRegistry registry = new SchemaParser().parse("type Query { x: String }");
-        assertThatThrownBy(() -> GraphitronSchemaBuilder.build(registry))
+        assertThatThrownBy(() -> GraphitronSchemaBuilder.build(registry, TestConfiguration.testContext()))
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("@");
     }

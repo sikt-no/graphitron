@@ -12,6 +12,8 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
+import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
+import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -257,7 +259,7 @@ class FetcherPipelineTest {
             type Film @table(name: "film") { title: String, film_id: Int }
             type Query { film(film_id: Int!): Film }
             """);
-        var conditionsClasses = TypeConditionsGenerator.generate(schema);
+        var conditionsClasses = TypeConditionsGenerator.generate(schema, DEFAULT_JOOQ_PACKAGE);
         assertThat(conditionsClasses).extracting(TypeSpec::name).contains("FilmConditions");
         var filmConditions = conditionsClasses.stream()
             .filter(t -> t.name().equals("FilmConditions")).findFirst().orElseThrow();
@@ -345,13 +347,13 @@ class FetcherPipelineTest {
     // ===== Helpers =====
 
     private List<String> generate(String sdl) {
-        return TypeFetcherGenerator.generate(buildSchema(sdl)).stream()
+        return TypeFetcherGenerator.generate(buildSchema(sdl), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE).stream()
             .map(TypeSpec::name)
             .toList();
     }
 
     private TypeSpec findSpec(String className, String sdl) {
-        return TypeFetcherGenerator.generate(buildSchema(sdl)).stream()
+        return TypeFetcherGenerator.generate(buildSchema(sdl), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE).stream()
             .filter(t -> t.name().equals(className))
             .findFirst()
             .orElseThrow(() -> new AssertionError("Class not found: " + className));
@@ -365,7 +367,7 @@ class FetcherPipelineTest {
     }
 
     private java.util.Map<String, CodeBlock> fetcherBodies(String sdl) {
-        return FetcherRegistrationsEmitter.emit(buildSchema(sdl));
+        return FetcherRegistrationsEmitter.emit(buildSchema(sdl), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
     }
 
     private GraphitronSchema buildSchema(String schemaText) {
