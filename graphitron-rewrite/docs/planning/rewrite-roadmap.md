@@ -18,12 +18,13 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | Multi-parent NestingField sharing — `TableField` arm | Spec | [plan](plan-nestingfield-multiparent-tablefield.md) |
 | Faceted search on `@asConnection` | Spec | [plan](plan-faceted-search.md), [spike](spike-faceted-search-sql.md) |
 | Rewrite emitter + classifier hygiene sweep | Spec | [plan](plan-rewrite-hygiene-sweep.md) |
+| Mutation bodies | Spec | [plan](plan-mutations.md) |
 | Docs as an index into classification tests | Ready (deferred) | [plan](plan-docs-as-index-into-tests.md) |
 | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` | In Progress | (see body) |
 | `graphitron:watch` goal | Spec | [plan](plan-watch-goal.md) |
 | Rewrite owns `@asConnection` via emit-time synthesis | Spec | [plan](plan-make-connections-in-rewrite.md) |
 
-**Notes:** KjerneJooqGenerator is an external Sikt repo change (scratch-only here); unblocks the platform-id synthesis steps of `@nodeId` + `@node` directive support at release time. Classification vocabulary follow-ups covers five independent cleanups — none is a release blocker. Docs-as-index is parked on steps 3–4 until the sealed hierarchy stabilises (Active work and Stubs still in motion); steps 1–2 shipped. `Retire graphitron-maven-plugin` is the Phase 3 migration umbrella; `graphitron:watch` goal and `@asConnection` emit-time synthesis are its two Spec sub-items tracked separately above.
+**Notes:** KjerneJooqGenerator is an external Sikt repo change (scratch-only here); unblocks the platform-id synthesis steps of `@nodeId` + `@node` directive support at release time. Classification vocabulary follow-ups covers five independent cleanups — none is a release blocker. Docs-as-index is parked on steps 3–4 until the sealed hierarchy stabilises (Active work and Stubs still in motion); steps 1–2 shipped. `Retire graphitron-maven-plugin` is the Phase 3 migration umbrella; `graphitron:watch` goal and `@asConnection` emit-time synthesis are its two Spec sub-items tracked separately above. Mutation bodies Phase 6 (service variants) depends on `plan-service-root-fetchers.md` landing first.
 
 ---
 
