@@ -124,17 +124,24 @@ single narrowly-scoped construct in the new plugin.
 
 ```
 graphitron-rewrite/
-├── graphitron-rewrite/                      # unchanged: pipeline code
+├── graphitron-rewrite/                      # pipeline code; this plan expands RewriteContext here
 ├── graphitron-rewrite-fixtures/             # unchanged
 ├── graphitron-rewrite-test/                 # unchanged
 └── graphitron-rewrite-maven/                # NEW
     ├── pom.xml                              # packaging=maven-plugin
     └── src/main/java/no/sikt/graphitron/rewrite/maven/
+        ├── AbstractRewriteMojo.java         # shared @Parameter surface
         ├── GenerateMojo.java                # primary goal
         ├── ValidateMojo.java                # validate-only goal
-        ├── RewriteContext.java              # per-invocation config
-        └── SchemaInputBinding.java          # POM XML binding for <schemaInput>
+        ├── SchemaInputBinding.java          # POM XML binding for <schemaInput>
+        ├── NamedReferenceBinding.java       # POM XML binding for <namedReference>
+        └── ScalarBinding.java               # POM XML binding for <scalar>
 ```
+
+`RewriteContext` stays in `no.sikt.graphitron.rewrite` (rewrite core) where
+tagged-inputs put it; this plan edits that file in place to add the new
+fields. `ScalarMapping` (the rewrite-core record `List<ScalarMapping>` on
+the context points at) also lives in rewrite core, next to `SchemaInput`.
 
 Artifact: `graphitron-rewrite-maven` (non-standard Maven-plugin
 suffix; see §Goal-prefix note at the end of this section). Package:
@@ -143,36 +150,47 @@ suffix; see §Goal-prefix note at the end of this section). Package:
 ### `GenerateMojo` shape
 
 ```java
-@Mojo(name = "generate", defaultPhase = LifecyclePhase.GENERATE_SOURCES,
-      requiresDependencyResolution = ResolutionScope.COMPILE)
-public class GenerateMojo extends AbstractMojo {
+public abstract class AbstractRewriteMojo extends AbstractMojo {
 
     @Parameter(defaultValue = "${project}", readonly = true)
-    private MavenProject project;
+    MavenProject project;
 
-    @Parameter private List<SchemaInputBinding> schemaInputs;
+    @Parameter List<SchemaInputBinding> schemaInputs;
     @Parameter(defaultValue = "${project.build.directory}/generated-sources")
-    private String outputDirectory;
-    @Parameter(required = true) private String outputPackage;
-    @Parameter(required = true) private String jooqPackage;
-    @Parameter private List<NamedReferenceBinding> namedReferences;
-    @Parameter private List<ScalarBinding> scalars;
-    @Parameter(defaultValue = "1000") private int maxAllowedPageSize;
+    String outputDirectory;
+    @Parameter(required = true) String outputPackage;
+    @Parameter(required = true) String jooqPackage;
+    @Parameter List<NamedReferenceBinding> namedReferences;
+    @Parameter List<ScalarBinding> scalars;
+    @Parameter(defaultValue = "1000") int maxAllowedPageSize;
 
+    protected RewriteContext buildContext() { /* see §RewriteContext */ }
+}
+
+@Mojo(name = "generate", defaultPhase = LifecyclePhase.GENERATE_SOURCES,
+      requiresDependencyResolution = ResolutionScope.COMPILE,
+      threadSafe = true)
+public class GenerateMojo extends AbstractRewriteMojo {
     @Override
     public void execute() {
-        var ctx = RewriteContext.from(this, project);
-        new GraphQLRewriteGenerator(ctx).generate();
+        new GraphQLRewriteGenerator(buildContext()).generate();
     }
 }
 ```
 
 **That is the entire `@Parameter` list for `generate`.** Eight
 parameters vs. the legacy plugin's 18+ across its Mojos. `ValidateMojo`
-inherits the same eight via a small shared abstract base
-(`AbstractRewriteMojo`); it omits nothing because schema loading +
-`<schemaInputs>` resolution need the full input set. Everything else
-from the legacy audit is dropped (see §Current state).
+inherits the same eight from `AbstractRewriteMojo`; it omits nothing
+because schema loading + `<schemaInputs>` resolution need the full
+input set. Everything else from the legacy audit is dropped (see
+§Current state).
+
+Fields are package-private so `RewriteContext.from` can read them
+without getters; Maven's reflective `@Parameter` injection works
+either way, and package-private keeps the Mojo→context bridge as two
+lines of field access rather than eight getter methods. `threadSafe =
+true` is the immediate win from eliminating `RewriteConfig` statics
+(see §Scope's `RewriteConfig` removal bullet).
 
 ### `RewriteContext`: expanded to carry full plugin config
 
@@ -181,6 +199,8 @@ Tagged-inputs already put `RewriteContext` in
 `basedir`). This plan expands the record with the remaining knobs;
 the generator signature stays `new GraphQLRewriteGenerator(ctx)`
 across both landings.
+
+Rewrite-core record (edited in place; canonical constructor only):
 
 ```java
 public record RewriteContext(
@@ -192,28 +212,32 @@ public record RewriteContext(
     Map<String, String> namedReferences,
     List<ScalarMapping> scalars,
     int maxAllowedPageSize
-) {
-    public static RewriteContext from(GenerateMojo mojo, MavenProject project) {
-        return new RewriteContext(
-            mojo.schemaInputs.stream().map(SchemaInputBinding::toSchemaInput).toList(),
-            project.getBasedir().toPath(),
-            Path.of(mojo.outputDirectory),
-            mojo.outputPackage,
-            mojo.jooqPackage,
-            toNamedReferenceMap(mojo.namedReferences),
-            toScalarMappings(mojo.scalars),
-            mojo.maxAllowedPageSize
-        );
-    }
+) {}
+```
+
+Plugin-module factory (lives on `AbstractRewriteMojo`, not on the
+record, so rewrite core has no compile-time dependency on the plugin
+module):
+
+```java
+// inside AbstractRewriteMojo
+RewriteContext buildContext() {
+    return new RewriteContext(
+        schemaInputs.stream().map(SchemaInputBinding::toSchemaInput).toList(),
+        project.getBasedir().toPath(),
+        Path.of(outputDirectory),
+        outputPackage,
+        jooqPackage,
+        toNamedReferenceMap(namedReferences),
+        toScalarMappings(scalars),
+        maxAllowedPageSize
+    );
 }
 ```
 
-The `SchemaInputBinding.toSchemaInput()` converter is owned by this
-plan (binding lives in the plugin module, record lives in rewrite
-core, the conversion happens at the plugin boundary). Small static
-helpers for named-references and scalars live inside
-`RewriteContext`. `RewriteConfig` deletes once all readers migrate;
-no new statics are introduced.
+`toNamedReferenceMap` and `toScalarMappings` are private statics on
+`AbstractRewriteMojo`. `RewriteConfig` deletes once all rewrite-core
+readers migrate; no new statics are introduced.
 
 ### Goals (the final list)
 
@@ -271,6 +295,12 @@ plan (rewrite core has `SchemaInput` but no XML binding yet):
 
 Deliberate: one POJO per concept. No shared base class.
 
+`ScalarMapping` (the rewrite-core record the context's `List<ScalarMapping>`
+points at) lives in rewrite core at
+`no.sikt.graphitron.rewrite.schema.ScalarMapping`, next to
+`SchemaInput`. `ScalarBinding.toScalarMapping()` is the plugin-module
+conversion; rewrite core has no compile-time dep on the binding.
+
 ### Dropped legacy config elements
 
 Beyond the Mojo-level cuts in §Current state, three
@@ -293,11 +323,23 @@ them:
 
 ### Lifecycle and packaging
 
-- `pom.xml` packaging: `maven-plugin`.
-- `maven-plugin-plugin` generates `plugin.xml` from annotations.
+- `graphitron-rewrite/pom.xml`: add `<module>graphitron-rewrite-maven</module>`
+  to the existing three-entry `<modules>` list. Without this, `mvn
+  install` at the repo root won't build the new plugin.
+- `graphitron-rewrite-maven/pom.xml`: `<packaging>maven-plugin</packaging>`;
+  depends on `graphitron-rewrite` (source access to generator +
+  `RewriteContext`) and the Maven plugin API. No dep on
+  `graphitron-common` (the schema-loading plan already severed
+  rewrite's build-time common dep).
+- `<prerequisites><maven>3.9</maven></prerequisites>`.
+- `maven-plugin-plugin` with two executions (mirrors
+  `graphitron-maven-plugin/pom.xml`): `descriptor` (generates
+  `plugin.xml` from the `@Mojo` / `@Parameter` annotations) and
+  `help-mojo` (generates the `help` goal). Set
+  `<goalPrefix>graphitron-rewrite</goalPrefix>` in the plugin
+  configuration.
 - Default lifecycle binding: `GENERATE_SOURCES`, declarative via
   `@Mojo`. No `@Execute`.
-- Minimum Maven version: 3.9 (matches project-wide `mise` env).
 - Java: plugin code targets Java 21 (build-time); plugin output
   classes targeted at 17 (generator's existing output contract).
 
@@ -318,7 +360,7 @@ Full rename table:
 | `<jooqGeneratedPackage>`          | `<jooqPackage>`      | shorter |
 | `<externalReferences>` (`<externalReference><name/><fullyQualifiedClassName/>`) | `<namedReferences>` (`<namedReference><name/><className/>`) | matches rewrite's own `namedReferences` terminology; field shortens |
 | `<externalReferenceImports>`      | (removed)            | not consumed by rewrite |
-| `<scalars>` (reuses ExternalMojoClassReference) | `<scalars>` (`<scalar><scalarName/><className/>`) | dedicated POJO; `scalarName` replaces reused `name` |
+| `<scalars>` (reuses ExternalMojoClassReference) | `<scalars>` (`<scalar><scalarName/><className/>`) | dedicated POJO; `<name>` → `<scalarName>`, `<fullyQualifiedClassName>` → `<className>` |
 | `<transform>` (nested block)      | (removed)            | tagging now via `<schemaInputs>` |
 | `<maxAllowedPageSize>`            | `<maxAllowedPageSize>` | unchanged |
 | `<globalRecordTransforms>` / `<recordValidation>` / `<codeGenerationThresholds>` / `<optionalSelect>` / `<useJdbcBatchingForDeletes>` / `<useJdbcBatchingForInserts>` / `<validateOverlappingInputFields>` / `<failOnMerge>` / `<makeNodeStrategy>` / `<experimental_requireTypeIdOnNode>` | (removed) | legacy-only; no rewrite reader |
@@ -387,13 +429,43 @@ until the legacy retirement landing marker fires.
 
 ### Integration: `it/basic-generate`
 
-Uses the Maven Invoker Plugin (standard for Maven-plugin ITs). A
-minimal consumer `pom.xml` + `schema.graphqls`; running
-`mvn graphitron-rewrite:generate` produces expected Java files at
-`target/generated-sources/.../Graphitron.java`.
+Uses the Maven Invoker Plugin (standard for Maven-plugin ITs). Layout:
 
-One IT covers the happy path; a second asserts that omitting
-`<schemaInputs>` fails with a precise message (not an NPE).
+```
+graphitron-rewrite-maven/
+├── pom.xml                                  # <maven-invoker-plugin> wired here
+└── src/it/
+    ├── settings.xml                         # uses ${project.version} via filtering
+    ├── basic-generate/
+    │   ├── invoker.properties               # goals=graphitron-rewrite:generate
+    │   ├── pom.xml                          # consumer pom under test
+    │   ├── src/main/resources/schema.graphqls
+    │   └── verify.groovy                    # asserts generated files exist + compile
+    └── missing-schema-inputs/
+        ├── invoker.properties               # expectedFailure=true
+        ├── pom.xml                          # <schemaInputs> absent
+        └── verify.groovy                    # asserts the error message text
+```
+
+Groovy verify scripts (the Invoker plugin default; BeanShell is
+deprecated in current Invoker versions). Two ITs total:
+
+- `basic-generate`: happy path; asserts the expected generated files
+  appear under `target/generated-sources/...`.
+- `missing-schema-inputs`: omits `<schemaInputs>`; asserts the build
+  fails with a precise message (not an NPE), matched via
+  `verify.groovy` on `build.log`.
+
+**jOOQ dependency.** The IT's consumer pom declares a runtime dep on
+`graphitron-rewrite-fixtures` (the existing rewrite fixture module
+already carries pre-generated jOOQ classes for a minimal test
+schema). The IT's `<jooqPackage>` parameter points at that fixtures
+package. No per-IT jOOQ regeneration step.
+
+**Plugin version resolution.** `src/it/settings.xml` and the IT
+`pom.xml` both reference `${project.version}` via the Invoker
+plugin's property filtering, so ITs track the in-progress plugin
+version without hand-editing.
 
 ### No parity matrix with legacy
 
