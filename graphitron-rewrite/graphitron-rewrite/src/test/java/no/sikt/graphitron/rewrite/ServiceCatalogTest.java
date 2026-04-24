@@ -20,7 +20,7 @@ class ServiceCatalogTest {
     private static final String STUB_CLASS = "no.sikt.graphitron.rewrite.TestServiceStub";
 
     private static ServiceCatalog newCatalog() {
-        return new ServiceCatalog(new BuildContext(null, null));
+        return new ServiceCatalog(new BuildContext(null, null, null));
     }
 
     @Test

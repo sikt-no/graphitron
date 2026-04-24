@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite;
 
 import graphql.schema.GraphQLObjectType;
 import graphql.schema.GraphQLSchema;
+import no.sikt.graphitron.rewrite.schema.ScalarMapping;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -10,8 +11,11 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
+import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
+import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -58,11 +62,17 @@ class TaggedInputsPipelineTest {
                 new SchemaInput(cinema.toString(), Optional.empty(), Optional.of("Part of cinema feature.")),
                 new SchemaInput(shared.toString(), Optional.of("core"), Optional.of("Shared by every feature."))
             ),
-            tmp
+            tmp,
+            tmp,
+            DEFAULT_OUTPUT_PACKAGE,
+            DEFAULT_JOOQ_PACKAGE,
+            Map.of(),
+            List.<ScalarMapping>of(),
+            100
         );
 
         var registry = new GraphQLRewriteGenerator(ctx).loadAttributedRegistry();
-        GraphQLSchema assembled = GraphitronSchemaBuilder.buildBundle(registry).assembled();
+        GraphQLSchema assembled = GraphitronSchemaBuilder.buildBundle(registry, ctx).assembled();
 
         // Tagged-only: @tag present on fields, no description change.
         GraphQLObjectType student = (GraphQLObjectType) assembled.getType("Student");

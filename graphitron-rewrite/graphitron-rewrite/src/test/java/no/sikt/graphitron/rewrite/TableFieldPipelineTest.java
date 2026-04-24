@@ -6,6 +6,7 @@ import no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions;
 import org.junit.jupiter.api.Test;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
+import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -30,7 +31,7 @@ class TableFieldPipelineTest {
             type Query { film: Film }
             """);
 
-        var filmClass = TypeClassGenerator.generate(schema).stream()
+        var filmClass = TypeClassGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE).stream()
             .filter(t -> t.name().equals("Film"))
             .findFirst()
             .orElseThrow();
@@ -48,7 +49,7 @@ class TableFieldPipelineTest {
             type Query { film: Film }
             """);
 
-        var filmFetchers = TypeFetcherGenerator.generate(schema).stream()
+        var filmFetchers = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE).stream()
             .filter(t -> t.name().equals("FilmFetchers"))
             .findFirst()
             .orElseThrow();
@@ -72,7 +73,7 @@ class TableFieldPipelineTest {
             type Query { film: Film }
             """);
 
-        var filmClass = TypeClassGenerator.generate(schema).stream()
+        var filmClass = TypeClassGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE).stream()
             .filter(t -> t.name().equals("Film"))
             .findFirst()
             .orElseThrow();
