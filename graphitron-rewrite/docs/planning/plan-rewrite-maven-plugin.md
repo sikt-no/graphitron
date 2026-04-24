@@ -1,6 +1,6 @@
 # Plan: Rewrite-owned Maven plugin
 
-> **Status:** Spec
+> **Status:** Ready
 >
 > Sub-item of the "Dissolve `graphitron-schema-transform` module"
 > umbrella. Lands last in the umbrella's rewrite-plumbing arc, after
@@ -446,6 +446,15 @@ objects for emitted rewrite / jOOQ types; a pair of helpers on
 `bctx.jooqTablesClass()`) can collapse dozens of reads into a few
 method calls post-migration, but that's a follow-up cleanup rather
 than a requirement of this plan.
+
+**`run()` → `generate()` rename.** The instance method is currently
+called `run()` rather than `generate()` because Java disallows an
+instance and a static method with the same name in one class, and the
+static `generate()` is still live. Deleting the static `generate()` as
+part of this plan unblocks renaming `run()` to `generate()`; the rename
+must happen in the same commit as the static's deletion so no caller is
+left with a dangling `run()` call. The Mojo snippet above already shows
+`new GraphQLRewriteGenerator(buildContext()).generate()`.
 
 **Threading approach: constructor parameter.** `GraphQLRewriteGenerator`
 is already instance-based post-tagged-inputs and holds `RewriteContext
