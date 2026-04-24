@@ -27,7 +27,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Stream;
 
 /**
  * Entry point for the rewrite code-generation pipeline.
@@ -39,6 +44,9 @@ import java.util.List;
  */
 public class GraphQLRewriteGenerator {
     static final Logger LOGGER = LoggerFactory.getLogger(GraphQLRewriteGenerator.class);
+
+    private static final List<String> OWNED_SUBPACKAGES =
+        List.of("", "util", "schema", "types", "conditions", "fetchers");
 
     private final RewriteContext ctx;
 
@@ -104,38 +112,69 @@ public class GraphQLRewriteGenerator {
         var fetcherClasses = TypeFetcherGenerator.generate(schema, outputPackage, jooqPackage);
         var fetcherBodies  = FetcherRegistrationsEmitter.emit(schema, outputPackage, jooqPackage);
 
-        write(GraphitronValuesClassGenerator.generate(),                                          "util");
-        write(ColumnFetcherClassGenerator.generate(),                                             "util");
-        write(NodeIdEncoderClassGenerator.generate(),                                             "util");
-        write(ConnectionResultClassGenerator.generate(outputPackage),                             "util");
-        write(ConnectionHelperClassGenerator.generate(outputPackage),                             "util");
-        write(OrderByResultClassGenerator.generate(),                                             "util");
-        write(GraphitronContextInterfaceGenerator.generate(),                                     "schema");
-        write(EnumTypeGenerator.generate(assembled),                                              "schema");
-        write(InputTypeGenerator.generate(assembled),                                             "schema");
-        write(ObjectTypeGenerator.generate(assembled, fetcherBodies),                             "schema");
-        write(GraphitronSchemaClassGenerator.generate(assembled, fetcherBodies.keySet(), outputPackage), "schema");
-        write(GraphitronFacadeGenerator.generate(outputPackage),                                  "");
-        write(TypeClassGenerator.generate(schema, outputPackage, jooqPackage),                   "types");
-        write(TypeConditionsGenerator.generate(schema, jooqPackage),                              "conditions");
-        write(QueryConditionsGenerator.generate(schema, outputPackage, jooqPackage),             "conditions");
-        write(fetcherClasses,                                                                      "fetchers");
+        Set<Path> emittedThisRun = new LinkedHashSet<>();
+        write(GraphitronValuesClassGenerator.generate(),                                          "util",       emittedThisRun);
+        write(ColumnFetcherClassGenerator.generate(),                                             "util",       emittedThisRun);
+        write(NodeIdEncoderClassGenerator.generate(),                                             "util",       emittedThisRun);
+        write(ConnectionResultClassGenerator.generate(outputPackage),                             "util",       emittedThisRun);
+        write(ConnectionHelperClassGenerator.generate(outputPackage),                             "util",       emittedThisRun);
+        write(OrderByResultClassGenerator.generate(),                                             "util",       emittedThisRun);
+        write(GraphitronContextInterfaceGenerator.generate(),                                     "schema",     emittedThisRun);
+        write(EnumTypeGenerator.generate(assembled),                                              "schema",     emittedThisRun);
+        write(InputTypeGenerator.generate(assembled),                                             "schema",     emittedThisRun);
+        write(ObjectTypeGenerator.generate(assembled, fetcherBodies),                             "schema",     emittedThisRun);
+        write(GraphitronSchemaClassGenerator.generate(assembled, fetcherBodies.keySet(), outputPackage), "schema", emittedThisRun);
+        write(GraphitronFacadeGenerator.generate(outputPackage),                                  "",           emittedThisRun);
+        write(TypeClassGenerator.generate(schema, outputPackage, jooqPackage),                   "types",      emittedThisRun);
+        write(TypeConditionsGenerator.generate(schema, jooqPackage),                              "conditions", emittedThisRun);
+        write(QueryConditionsGenerator.generate(schema, outputPackage, jooqPackage),             "conditions", emittedThisRun);
+        write(fetcherClasses,                                                                      "fetchers",   emittedThisRun);
+        sweepOrphans(emittedThisRun);
     }
 
-    private void write(List<TypeSpec> specs, String subPackage) {
+    private void write(List<TypeSpec> specs, String subPackage, Set<Path> emittedThisRun) {
         String outputPackage = ctx.outputPackage();
         var packageName = subPackage.isEmpty()
             ? outputPackage
             : outputPackage + "." + subPackage;
-        specs.forEach(spec -> {
+        for (TypeSpec spec : specs) {
             try {
-                JavaFile.builder(packageName, spec).indent("    ").build()
-                    .writeTo(ctx.outputDirectory().toFile());
+                emittedThisRun.add(
+                    JavaFile.builder(packageName, spec).indent("    ").build()
+                        .writeToPath(ctx.outputDirectory())
+                );
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
-        });
+        }
         LOGGER.info("Rewrite: generated sources to: {}", packageName);
+    }
+
+    private void sweepOrphans(Set<Path> emittedThisRun) {
+        String outputPackage = ctx.outputPackage();
+        Path outputDir = ctx.outputDirectory();
+        for (String sub : OWNED_SUBPACKAGES) {
+            String pkgName = sub.isEmpty() ? outputPackage : outputPackage + "." + sub;
+            Path pkgDir = outputDir;
+            for (String segment : pkgName.split("\\.")) {
+                pkgDir = pkgDir.resolve(segment);
+            }
+            if (!Files.isDirectory(pkgDir)) continue;
+            try (Stream<Path> files = Files.list(pkgDir)) {
+                files.filter(p -> p.toString().endsWith(".java"))
+                     .filter(p -> !emittedThisRun.contains(p))
+                     .forEach(p -> {
+                         try {
+                             Files.delete(p);
+                             LOGGER.info("Rewrite: swept orphan: {}", p);
+                         } catch (IOException e) {
+                             throw new RuntimeException(e);
+                         }
+                     });
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        }
     }
 
     private static void logWarnings(GraphitronSchema schema) {

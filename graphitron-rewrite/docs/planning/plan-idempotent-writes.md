@@ -1,6 +1,6 @@
 # Plan: Content-idempotent writes + stale-file sweep
 
-> **Status:** Spec
+> **Status:** Ready
 >
 > Sub-item of the "Dissolve `graphitron-schema-transform` module"
 > umbrella. Independent of the other sub-items; can ship against either
@@ -75,12 +75,14 @@ generator.
 ## Scope boundaries
 
 - **In scope:** the single writer funnel at
-  `GraphQLRewriteGenerator.java:90-103`. Content-idempotent write;
-  end-of-run orphan sweep scoped to the sub-packages this generator
-  emits. Determinism audit of the emitters that feed the funnel.
-  A new `## Dev loop` section in `graphitron-rewrite/docs/getting-started.md`
-  documenting the three-clause contract in developer-observable
-  terms (see §Documentation).
+  `GraphQLRewriteGenerator.java:125-139`. Path-tracking via
+  `writeToPath(Path)` (javapoet already handles the skip-if-unchanged
+  logic); end-of-run orphan sweep scoped to the six sub-packages this
+  generator emits. Determinism audit of the emitters that feed the
+  funnel. A new `## Dev loop` section in
+  `graphitron-rewrite/docs/getting-started.md` documenting the
+  three-clause contract in developer-observable terms (see
+  §Documentation).
 - **Out of scope:** the legacy generator's write sites in
   `graphitron-java-codegen`. Legacy stays as-is; the umbrella retires
   it later. Parallel-safety of the write loop; the generator runs
@@ -96,56 +98,62 @@ generator.
 One funnel, one writer call:
 
 ```java
-// GraphQLRewriteGenerator.java:90-103
-private static void write(List<TypeSpec> specs, String subPackage) {
+// GraphQLRewriteGenerator.java:125-139
+private void write(List<TypeSpec> specs, String subPackage) {
+    String outputPackage = ctx.outputPackage();
     var packageName = subPackage.isEmpty()
-        ? RewriteConfig.outputPackage()
-        : RewriteConfig.outputPackage() + "." + subPackage;
+        ? outputPackage
+        : outputPackage + "." + subPackage;
     specs.forEach(spec -> {
         try {
             JavaFile.builder(packageName, spec).indent("    ").build()
-                .writeTo(new File(RewriteConfig.outputDirectory()));
+                .writeTo(ctx.outputDirectory().toFile());
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
     });
+    LOGGER.info("Rewrite: generated sources to: {}", packageName);
 }
 ```
 
-Called seven times from `generate()` (lines 80-87) with sub-packages
-`""`, `"schema"`, `"types"`, `"conditions"`, `"fetchers"`. Every
-generator TypeSpec reaches the filesystem through this one path. Nice.
+Called sixteen times from `runPipeline()` across six sub-packages:
+`""`, `"util"`, `"schema"`, `"types"`, `"conditions"`, `"fetchers"`.
+Every generator TypeSpec reaches the filesystem through this one path.
+
+Note: the javapoet fork (`no.sikt.graphitron.javapoet.JavaFile`) already
+implements content-idempotent writes inside `writeToPath(Path)` via SHA-256
+comparison — it skips the disk write when the hash of the rendered output
+matches the hash of the existing file. The current code calls
+`writeTo(ctx.outputDirectory().toFile())`, which delegates to `writeTo(Path)`
+and then `writeToPath(Path)`. So failure mode 1 (mtime churn on unchanged
+files) is already fixed at the javapoet layer. Failure mode 2 (orphan files)
+is not addressed.
 
 ## Design
 
 ### Content-idempotent write
 
-Replace `JavaFile.writeTo(File)` with a three-step sequence:
-
-1. Render the `JavaFile` to an in-memory `String` via
-   `JavaFile.toString()` (javapoet already supports this; we avoid
-   creating an intermediate file).
-2. Compute the target `Path` from `outputDirectory + packageName +
-   spec.name + ".java"`. This mirrors what `JavaFile.writeTo` would do.
-3. Read the existing bytes if the file exists; if they match the
-   rendered string (UTF-8), skip the write and record the path as
-   "seen". Otherwise write the new content and record the path.
-
-Record every path written or skipped in a `Set<Path> emittedThisRun`
-carried by the generator run.
+The javapoet fork already handles the skip-if-unchanged logic inside
+`writeToPath(Path)` via SHA-256 comparison. The only change needed is to
+switch the call from `writeTo(ctx.outputDirectory().toFile())` (which returns
+`void`) to `writeToPath(ctx.outputDirectory())` (which returns the `Path` the
+file was written to, whether or not the write was actually performed). Collect
+each returned `Path` into a `Set<Path> emittedThisRun` that is allocated at
+the top of `runPipeline()` and passed to every `write()` call.
 
 ### Orphan sweep
 
-After the seven `write(...)` calls in `generate()`, walk the
+After all `write(...)` calls in `runPipeline()`, walk the
 sub-packages this generator owns (`<outputPackage>`,
-`<outputPackage>.schema`, `<outputPackage>.types`,
-`<outputPackage>.conditions`, `<outputPackage>.fetchers`) rooted at
-`outputDirectory`. Any `*.java` file not in `emittedThisRun` gets
-deleted. Walk is non-recursive beyond the five named sub-packages;
-other files in the output tree (e.g. jOOQ-generated tables,
-legacy-generator output in coexistence mode) are off-limits.
+`<outputPackage>.util`, `<outputPackage>.schema`,
+`<outputPackage>.types`, `<outputPackage>.conditions`,
+`<outputPackage>.fetchers`) rooted at `outputDirectory`. Any `*.java`
+file not in `emittedThisRun` gets deleted. Walk is non-recursive
+beyond the six named sub-packages; other files in the output tree
+(e.g. jOOQ-generated tables, legacy-generator output in coexistence
+mode) are off-limits.
 
-Sweep scope is defined by the five sub-package constants inside the
+Sweep scope is defined by the six sub-package constants inside the
 generator, not by a recursive `Files.walk` from `outputDirectory`.
 This keeps the sweep's blast radius narrow and easy to reason about.
 
@@ -195,7 +203,7 @@ split:
    - Records the path in `emittedThisRun` regardless of which branch
      ran.
    - Sweep deletes files not in `emittedThisRun`; leaves in-set files
-     alone; stays inside the five named sub-packages.
+     alone; stays inside the six named sub-packages.
 
 2. **Pipeline: `GeneratorDeterminismTest`** (new, in
    `graphitron-rewrite-test`). Byte-for-byte equal output trees across
