@@ -958,7 +958,7 @@ class GraphitronSchemaBuilderTest {
             """
             type Language @table(name: "language") { name: String }
             type Film @table(name: "film") {
-                language: Language @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "get"})
+                language: Language @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getLanguage"})
             }
             type Query { film: Film }
             """,
@@ -970,7 +970,7 @@ class GraphitronSchemaBuilderTest {
             """
             type Actor @table(name: "actor") { name: String }
             type Film @table(name: "film") {
-                actors: [Actor!]! @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "get"})
+                actors: [Actor!]! @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getActor"})
             }
             type Query { film: Film }
             """,
@@ -984,7 +984,7 @@ class GraphitronSchemaBuilderTest {
             type ActorEdge { node: Actor cursor: String }
             type ActorConnection { edges: [ActorEdge] }
             type Film @table(name: "film") {
-                actors: ActorConnection @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "get"})
+                actors: ActorConnection @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getActor"})
             }
             type Query { film: Film }
             """,
@@ -1000,7 +1000,7 @@ class GraphitronSchemaBuilderTest {
             type Language @table(name: "language") { name: String }
             type Film @table(name: "film") {
                 language: Language
-                    @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "get"})
+                    @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getLanguage"})
                     @reference(path: [{key: "film_language_id_fkey"}])
             }
             type Query { film: Film }
@@ -1750,7 +1750,7 @@ class GraphitronSchemaBuilderTest {
             type Language @table(name: "language") { name: String }
             type Film @table(name: "film") {
                 language: Language
-                    @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getWithContext"}, contextArguments: ["tenantId"])
+                    @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getLanguageWithContext"}, contextArguments: ["tenantId"])
             }
             type Query { film: Film }
             """,
@@ -2936,7 +2936,7 @@ class GraphitronSchemaBuilderTest {
             type Film @table(name: "film") { title: String }
             type Query {
                 filteredFilms: [Film!]!
-                    @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getWithContext"}, contextArguments: ["tenantId"])
+                    @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getFilmWithContext"}, contextArguments: ["tenantId"])
             }
             """,
             schema -> {
@@ -3225,6 +3225,21 @@ class GraphitronSchemaBuilderTest {
                 assertThat(f).isInstanceOf(UnclassifiedField.class);
                 assertThat(((UnclassifiedField) f).reason())
                     .contains("@service at the root does not support List<Row>/List<Record>/List<Object> batch parameters");
+            }),
+
+        TABLEMETHOD_WITH_WIDER_RETURN_TYPE_REJECTED(
+            "@tableMethod whose method returns a wider Table<?> rather than the generated jOOQ table class → UnclassifiedField (Invariants §3)",
+            """
+            type Film @table(name: "film") { title: String }
+            type Query {
+                wider: [Film!]! @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "get"})
+            }
+            """,
+            schema -> {
+                var f = schema.field("Query", "wider");
+                assertThat(f).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) f).reason())
+                    .contains("must return the generated jOOQ table class");
             });
 
         final String sdl;

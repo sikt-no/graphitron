@@ -204,9 +204,16 @@ class ServiceCatalog {
      * A warning is logged proactively as soon as any nameless parameter is detected — even if
      * type-based classification would otherwise succeed — so that the user is notified regardless
      * of whether all parameters happen to have distinct types.
+     *
+     * <p>The method's return type must match {@code expectedReturnClassName} exactly (the FQCN
+     * of the generated jOOQ table class for the field's {@code @table}-bound return type).
+     * Wider return types like {@code Table<R>} are rejected; the emitter relies on the strict
+     * type so the generated fetcher's local can carry the specific table class
+     * (e.g. {@code Film table = Service.method(...)}) and feed it into {@code FilmType.$fields(...)}
+     * without a downcast.
      */
     ServiceReflectionResult reflectTableMethod(String className, String methodName,
-            Set<String> argNames, Set<String> ctxKeys) {
+            Set<String> argNames, Set<String> ctxKeys, String expectedReturnClassName) {
         if (className == null || methodName == null) {
             return new ServiceReflectionResult(null, "table method reference is incomplete");
         }
@@ -225,6 +232,14 @@ class ServiceCatalog {
                     + BuildContext.candidateHint(methodName, declaredMethodNames));
             }
             var javaMethod = methods.get(0);
+            if (expectedReturnClassName != null
+                    && !javaMethod.getReturnType().getName().equals(expectedReturnClassName)) {
+                return new ServiceReflectionResult(null,
+                    "method '" + methodName + "' in class '" + className
+                    + "' must return the generated jOOQ table class '" + expectedReturnClassName
+                    + "' for @tableMethod with a @table-bound return type — got '"
+                    + javaMethod.getReturnType().getName() + "'");
+            }
             if (Arrays.stream(javaMethod.getParameters()).anyMatch(p -> !p.isNamePresent())) {
                 emitParametersWarning();
             }

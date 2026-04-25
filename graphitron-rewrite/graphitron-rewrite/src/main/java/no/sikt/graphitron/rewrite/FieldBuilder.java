@@ -861,7 +861,7 @@ class FieldBuilder {
         if (cond == null) return Optional.empty();
         var argName = arg.getName();
         var result = svc.reflectTableMethod(cond.className(), cond.methodName(),
-            Set.of(argName), Set.copyOf(cond.contextArguments()));
+            Set.of(argName), Set.copyOf(cond.contextArguments()), null);
         if (result.failed()) {
             errors.add("argument '" + argName + "' @condition: " + result.failureReason());
             return Optional.empty();
@@ -885,7 +885,7 @@ class FieldBuilder {
             .map(GraphQLArgument::getName)
             .collect(Collectors.toSet());
         var result = svc.reflectTableMethod(cond.className(), cond.methodName(),
-            argNames, Set.copyOf(cond.contextArguments()));
+            argNames, Set.copyOf(cond.contextArguments()), null);
         if (result.failed()) {
             errors.add("field '" + fieldDef.getName() + "' @condition: " + result.failureReason());
             return null;
@@ -1522,10 +1522,15 @@ class FieldBuilder {
             }
             Set<String> qtmArgNames = fieldDef.getArguments().stream().map(GraphQLArgument::getName).collect(Collectors.toSet());
             List<String> qtmCtxArgs = parseContextArguments(fieldDef, DIR_TABLE_METHOD);
+            // Invariants §3 (return-type strictness): the developer's @tableMethod must return
+            // the generated jOOQ table class exactly, not a wider Table<R>. Computed from the
+            // resolved @table-bound return type's TableRef + the build-context jOOQ package.
+            String expectedReturnClass = ctx.ctx().jooqPackage() + ".tables." + tb.table().javaClassName();
             var qtmResult = svc.reflectTableMethod(
                 qtmRef != null ? qtmRef.className() : null,
                 qtmRef != null ? qtmRef.methodName() : null,
-                qtmArgNames, new java.util.HashSet<>(qtmCtxArgs));
+                qtmArgNames, new java.util.HashSet<>(qtmCtxArgs),
+                expectedReturnClass);
             if (qtmResult.failed()) {
                 return new GraphitronField.UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
                     "table method could not be resolved — " + qtmResult.failureReason());
@@ -1916,10 +1921,15 @@ class FieldBuilder {
             }
             Set<String> tmArgNames = fieldDef.getArguments().stream().map(GraphQLArgument::getName).collect(Collectors.toSet());
             List<String> tmCtxArgs = parseContextArguments(fieldDef, DIR_TABLE_METHOD);
+            // Invariants §3 (return-type strictness) — applies to child @tableMethod too.
+            String tmExpectedReturnClass = returnType instanceof ReturnTypeRef.TableBoundReturnType tbr
+                ? ctx.ctx().jooqPackage() + ".tables." + tbr.table().javaClassName()
+                : null;
             var tmResult = svc.reflectTableMethod(
                 tmRef != null ? tmRef.className() : null,
                 tmRef != null ? tmRef.methodName() : null,
-                tmArgNames, new java.util.HashSet<>(tmCtxArgs));
+                tmArgNames, new java.util.HashSet<>(tmCtxArgs),
+                tmExpectedReturnClass);
             if (tmResult.failed()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
                     "table method could not be resolved — " + tmResult.failureReason());

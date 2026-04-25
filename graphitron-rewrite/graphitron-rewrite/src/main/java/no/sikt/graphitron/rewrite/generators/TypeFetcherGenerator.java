@@ -568,10 +568,11 @@ public class TypeFetcherGenerator {
      * {@link ArgCallEmitter#buildMethodBackedCallArgs}; the {@link ParamSource.Table} slot
      * resolves to {@code Tables.<NAME>} wherever the user declared it.
      *
-     * <p>The local is declared with the specific table class (not a {@code Table<?>} wildcard)
-     * because the generated {@code $fields} method takes the specific table type. Developer
-     * methods that return a wider type (e.g. {@code Table<FilmRecord>}) need a cast or to
-     * narrow their return type.
+     * <p>The local is declared with the specific table class (e.g. {@code Film}, not
+     * {@code Table<?>}). Type-strictness is enforced at classifier time
+     * (Invariants §3): {@link ServiceCatalog#reflectTableMethod} rejects developer
+     * methods whose return type is wider than the generated jOOQ table class for the
+     * field's {@code @table}-bound return type, so no downcast is needed in the emitter.
      */
     private static MethodSpec buildQueryTableMethodFetcher(QueryField.QueryTableMethodTableField qtmtf,
                                                             String outputPackage, String jooqPackage) {
@@ -592,11 +593,10 @@ public class TypeFetcherGenerator {
             .returns(returnType)
             .addParameter(ENV, "env");
 
-        // <SpecificTableClass> table = (<SpecificTableClass>) MethodClass.method(<args>);
-        // Cast covers developer methods that return a wider Table<R>; runtime ClassCastException
-        // surfaces if the returned table isn't an instance of the declared @table type.
-        builder.addStatement("$T table = ($T) $T.$L($L)",
-            names.jooqTableClass(),
+        // <SpecificTableClass> table = MethodClass.method(<args>);
+        // No cast: classifier-time return-type check (Invariants §3) guarantees the developer's
+        // method returns the specific table class. A wider return type fails classification.
+        builder.addStatement("$T table = $T.$L($L)",
             names.jooqTableClass(),
             methodClass,
             qtmtf.method().methodName(),
