@@ -1600,7 +1600,7 @@ class GraphQLQueryTest {
         assertThat(pageInfo2.get("hasNextPage")).isEqualTo(false);
     }
 
-    // ===== plan-service-root-fetchers.md — service / tableMethod root fetchers =====
+    // ===== Service / tableMethod root fetchers =====
 
     @Test
     @SuppressWarnings("unchecked")
