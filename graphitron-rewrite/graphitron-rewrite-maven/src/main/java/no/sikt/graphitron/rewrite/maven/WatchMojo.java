@@ -109,7 +109,7 @@ public class WatchMojo extends AbstractRewriteMojo {
                 }
             }
         } catch (MojoExecutionException | RuntimeException e) {
-            getLog().error("graphitron:watch: regeneration failed: " + e.getMessage());
+            getLog().error("graphitron:watch: regeneration failed", e);
         }
     }
 

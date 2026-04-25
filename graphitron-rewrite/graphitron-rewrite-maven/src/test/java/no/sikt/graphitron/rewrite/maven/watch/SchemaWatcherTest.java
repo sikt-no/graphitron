@@ -120,6 +120,51 @@ class SchemaWatcherTest {
         assertThat(latch.await(WAIT_MS, TimeUnit.MILLISECONDS)).isTrue();
     }
 
+    @Test
+    void addRootRacesWithDispatch_bothRegistrationsLand(@TempDir Path dir) throws Exception {
+        // The registry is shared between the watch-loop thread (writes from
+        // dispatch on ENTRY_CREATE-for-directory) and the debounce thread
+        // (writes from addRoot). Pin that concurrent registration is safe.
+        Path createdViaDispatch = Files.createDirectory(dir.resolve("via-dispatch"));
+        Path createdViaAddRoot = Files.createDirectory(dir.resolve("via-add-root"));
+
+        debounce = new DebounceExecutor(DEBOUNCE_MS);
+        watcher = new SchemaWatcher(Set.of(dir), debounce, () -> {});
+
+        var start = new java.util.concurrent.CountDownLatch(1);
+        var done = new java.util.concurrent.CountDownLatch(2);
+        var errors = new java.util.concurrent.ConcurrentLinkedQueue<Throwable>();
+
+        Runnable dispatchSide = () -> {
+            try {
+                start.await();
+                watcher.dispatch(dir, entryCreateEvent(dir.relativize(createdViaDispatch)));
+            } catch (Throwable t) {
+                errors.add(t);
+            } finally {
+                done.countDown();
+            }
+        };
+        Runnable addRootSide = () -> {
+            try {
+                start.await();
+                watcher.addRoot(createdViaAddRoot);
+            } catch (Throwable t) {
+                errors.add(t);
+            } finally {
+                done.countDown();
+            }
+        };
+
+        new Thread(dispatchSide, "race-dispatch").start();
+        new Thread(addRootSide, "race-addroot").start();
+        start.countDown();
+
+        assertThat(done.await(WAIT_MS, TimeUnit.MILLISECONDS)).isTrue();
+        assertThat(errors).isEmpty();
+        assertThat(watcher.watchedDirs()).contains(dir, createdViaDispatch, createdViaAddRoot);
+    }
+
     private void startWatcher(Set<Path> roots, Runnable onTrigger) throws Exception {
         debounce = new DebounceExecutor(DEBOUNCE_MS);
         watcher = new SchemaWatcher(roots, debounce, onTrigger);
@@ -133,6 +178,14 @@ class SchemaWatcherTest {
             @Override public Kind<Object> kind() { return StandardWatchEventKinds.OVERFLOW; }
             @Override public int count() { return 1; }
             @Override public Object context() { return null; }
+        };
+    }
+
+    private static WatchEvent<?> entryCreateEvent(Path relative) {
+        return new WatchEvent<Path>() {
+            @Override public Kind<Path> kind() { return StandardWatchEventKinds.ENTRY_CREATE; }
+            @Override public int count() { return 1; }
+            @Override public Path context() { return relative; }
         };
     }
 }
