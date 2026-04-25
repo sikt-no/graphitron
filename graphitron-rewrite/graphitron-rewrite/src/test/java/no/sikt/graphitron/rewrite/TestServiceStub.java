@@ -32,4 +32,14 @@ class TestServiceStub {
 
     /** Service method with a parameter that isn't DSLContext, isn't a GraphQL arg, and isn't a {@code List<?>}. */
     public static String getWithUnknown(Object opaque) { throw new UnsupportedOperationException(); }
+
+    /**
+     * Service method with a {@code List<Row1<Integer>>} parameter. Classifies as
+     * {@link no.sikt.graphitron.rewrite.model.ParamSource.Sources} via {@link ServiceCatalog#classifySourcesType}.
+     * Used to test that root-level @service rejects Sources params at classifier time
+     * (plan-service-root-fetchers.md Invariants §2).
+     */
+    public static String getWithSources(java.util.List<org.jooq.Row1<Integer>> keys) {
+        throw new UnsupportedOperationException();
+    }
 }
