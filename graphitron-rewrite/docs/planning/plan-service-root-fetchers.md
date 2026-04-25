@@ -1,6 +1,6 @@
 # Service-backed and method-backed root fetchers
 
-> **Status:** Spec
+> **Status:** Ready
 >
 > Lift three root-`Query` leaves out of `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS`:
 > `QueryField.QueryTableMethodTableField`, `QueryField.QueryServiceTableField`,
@@ -28,7 +28,7 @@
 
 - **Jooq table expression.** `GeneratorUtils.ResolvedTableNames` exposes `tablesClass()`, `jooqTableClass()`, and `typeClass()` — no helper today returns a `Tables.FOO` expression directly. The existing pattern (`declareTableLocal`, `GeneratorUtils.java:110-115`) builds it inline from `tablesClass()` + `tableRef.javaFieldName()` via JavaPoet `$T.$L`. This plan reuses that pattern; no new record method is required.
 
-- **Test fixtures.** `graphitron-rewrite/graphitron-rewrite/graphitron-rewrite-test/src/main/resources/graphql/schema.graphqls` contains no `@service` or `@tableMethod` usages — fixtures must be added. `TestServiceStub` and `TestTableMethodStub` exist under `graphitron-rewrite/src/test/java/` for unit tests but are not on the test-spec classpath.
+- **Test fixtures.** `graphitron-rewrite/graphitron-rewrite-test/src/main/resources/graphql/schema.graphqls` contains no `@service` or `@tableMethod` usages — fixtures must be added. `TestServiceStub` and `TestTableMethodStub` exist under `graphitron-rewrite/src/test/java/` for unit tests but are not on the test-spec classpath.
 
 ## Shape of emitted fetcher per leaf
 
@@ -84,13 +84,13 @@ Both shapes share the same argument-list emission (params-walk, with DSLContext 
 
 The three leaves share one invariant and two variant-specific ones:
 
-1. **Cardinality (all three).** Wrapper must be `Single` or `List`, not `Connection`. Reject at **classifier time** in `FieldBuilder.classifyQueryField` by returning `UnclassifiedField` — consistent with the existing polymorphic `@service` rejection at `:1305-1306` and the single-cardinality-`@splitQuery` plan's §1b/§1c pattern. `UnclassifiedField` surfaces through `GraphitronSchemaValidator.validateUnclassifiedField` (`:639-644`) as a build-time error. Sites:
-   - `@service` arm at `:1298-1307`: before the `switch (svcResult.returnType())`, check the resolved wrapper (`svcResult.returnType().wrapper()` — `wrapper()` is defined on all four `ReturnTypeRef` variants). If `Connection`, return `UnclassifiedField` with `"@service at the root does not support Connection return types — use [T] or T instead"`.
-   - `@tableMethod` arm at `:1333-1356`: after the `TableBoundReturnType tb` check but before `reflectTableMethod`, if `tb.wrapper() instanceof FieldWrapper.Connection` return `UnclassifiedField` with `"@tableMethod at the root does not support Connection return types — use [T] or T instead"`.
+1. **Cardinality (all three).** Wrapper must be `Single` or `List`, not `Connection`. Reject at **classifier time** in `FieldBuilder.classifyQueryField` by returning `UnclassifiedField` — consistent with the existing polymorphic `@service` rejection at `:1467-1468` and the single-cardinality-`@splitQuery` plan's §1b/§1c pattern. `UnclassifiedField` surfaces through `GraphitronSchemaValidator.validateUnclassifiedField` (`:664-669`) as a build-time error. Sites:
+   - `@service` arm at `:1455-1470`: before the `switch (svcResult.returnType())`, check the resolved wrapper (`svcResult.returnType().wrapper()` — `wrapper()` is defined on all four `ReturnTypeRef` variants). If `Connection`, return `UnclassifiedField` with `"@service at the root does not support Connection return types — use [T] or T instead"`.
+   - `@tableMethod` arm at `:1495-1519`: after the `TableBoundReturnType tb` check but before `reflectTableMethod`, if `tb.wrapper() instanceof FieldWrapper.Connection` return `UnclassifiedField` with `"@tableMethod at the root does not support Connection return types — use [T] or T instead"`.
 
    The existing no-op `validateCardinality(...)` call in `validateQueryTableMethodTableField` is load-bearing on nothing; delete it as part of this plan. `validateCardinality` itself stays (its other ~15 callers legitimately accept `Connection`).
 
-2. **No `Sourced` parameter at root (both service variants).** `ServiceCatalog.reflectServiceMethod` admits a `ParamSource.Sources` parameter when the method takes `List<RowN<?>>` / `List<RecordN<?>>` / `List<SomeClass>`. At the root, `parentPkColumns` is `List.of()`, so a `RowKeyed`/`RecordKeyed` param carries an empty key column list — the DataLoader batching semantics that shape presumes are not available. Reject at classifier time, same site as §1's `@service` check (before the `switch`), using `svcResult.method().params().stream().anyMatch(p -> p.source() instanceof ParamSource.Sources)` → return `UnclassifiedField` with `"@service at the root does not support List<Row>/List<Record>/List<Object> batch parameters — the root has no parent context to batch against"`. This prevents the classifier from ever producing a `QueryServiceTableField`/`QueryServiceRecordField` with a Sourced param, so the emitter's `Sources` arm in `buildMethodBackedCallArgs` remains genuinely unreachable.
+2. **No `Sources` parameter at root (both service variants).** `ServiceCatalog.reflectServiceMethod` admits a `ParamSource.Sources` parameter when the method takes `List<RowN<?>>` / `List<RecordN<?>>` / `List<SomeClass>`. At the root, `parentPkColumns` is `List.of()`, so a `RowKeyed`/`RecordKeyed` param carries an empty key column list — the DataLoader batching semantics that shape presumes are not available. Reject at classifier time, same site as §1's `@service` check (before the `switch`), using `svcResult.method().params().stream().anyMatch(p -> p.source() instanceof ParamSource.Sources)` → return `UnclassifiedField` with `"@service at the root does not support List<Row>/List<Record>/List<Object> batch parameters — the root has no parent context to batch against"`. This prevents the classifier from ever producing a `QueryServiceTableField`/`QueryServiceRecordField` with a Sources param, so the emitter's `Sources` arm in `buildMethodBackedCallArgs` remains genuinely unreachable.
 
 3. **`@tableMethod` signature (already enforced).** `ServiceCatalog.reflectTableMethod` enforces exactly one `Table<?>` parameter at reflection time; no classifier branch produces `QueryTableMethodTableField` without it. It also currently rejects `DSLContext` parameters on `@tableMethod` methods — that's tracked as the separate Backlog item "`DSLContext` on `@condition` / `@tableMethod` methods". This plan does not lift that gate; `QueryTableMethodTableField` params are limited to `Table` / `Arg` / `Context`.
 
@@ -120,7 +120,7 @@ The helper iterates `method.params()` in **declaration order** and emits a comma
 
 | `ParamSource`     | Emitted expression |
 |-------------------|--------------------|
-| `Arg(extraction)` | Delegates to the existing `buildArgExtraction(new CallParam(p.name(), extraction, false, p.typeName()), conditionsClassName)` — re-uses the five-way `CallSiteExtraction` switch (`Direct`, `EnumValueOf`, `TextMapLookup`, `ContextArg`, `JooqConvert`). |
+| `Arg(extraction)` | Delegates to the existing `buildArgExtraction(new CallParam(p.name(), extraction, false, p.typeName()), conditionsClassName, srcAlias)` — re-uses the existing `CallSiteExtraction` switch (`Direct`, `EnumValueOf`, `TextMapLookup`, `ContextArg`, `JooqConvert`, `NestedInputField`). The `srcAlias` arg only matters for `JooqConvert` (column-qualifier prefix); for `QueryTableMethodTableField` pass the table local name (the `var table = …` declared in step 1 of the per-leaf fetcher), and for the two service variants pass `null` — `JooqConvert` extractions don't apply at the root for service methods (no source-table context), and any future surfacing should be rejected at classify time alongside Invariants §2. |
 | `Context()`       | `graphitronContext(env).getContextArgument(env, "<p.name()>")` |
 | `DslContext()`    | Literal `dsl` — the per-leaf fetcher is responsible for declaring the local before calling the helper. |
 | `Table()`         | The supplied `tableExpression` `CodeBlock` (e.g. `CodeBlock.of("$T.$L", names.tablesClass(), tableRef.javaFieldName())` → emits `Tables.FILM`). |
@@ -165,13 +165,13 @@ Switch arms in `generateTypeSpec` change from `stub(f)` to the new emitter calls
 
 ### Classifier additions
 
-Rejection lives in `FieldBuilder.classifyQueryField` — consistent with the existing polymorphic `@service` rejection at `:1305-1306` and the single-cardinality-`@splitQuery` plan's §1b/§1c rejections. `UnclassifiedField` routes through `GraphitronSchemaValidator.validateUnclassifiedField` (`:639-644`) which surfaces `field.reason()` as a build error.
+Rejection lives in `FieldBuilder.classifyQueryField` — consistent with the existing polymorphic `@service` rejection at `:1467-1468` and the single-cardinality-`@splitQuery` plan's §1b/§1c rejections. `UnclassifiedField` routes through `GraphitronSchemaValidator.validateUnclassifiedField` (`:664-669`) which surfaces `field.reason()` as a build error.
 
-- `@service` arm at `:1298-1307`. Before the `switch (svcResult.returnType())`:
+- `@service` arm at `:1455-1470`. Before the `switch (svcResult.returnType())`:
   - Wrapper check (Invariants §1). If `svcResult.returnType().wrapper() instanceof FieldWrapper.Connection` → return `UnclassifiedField` with the message in Invariants §1.
-  - Sourced-param check (Invariants §2). If any `svcResult.method().params()` has `source() instanceof ParamSource.Sources` → return `UnclassifiedField` with the message in Invariants §2.
+  - Sources-param check (Invariants §2). If any `svcResult.method().params()` has `source() instanceof ParamSource.Sources` → return `UnclassifiedField` with the message in Invariants §2.
 
-- `@tableMethod` arm at `:1333-1356`. After the `TableBoundReturnType tb` check (`:1337-1340`) but before the `parseExternalRef`/`reflectTableMethod` calls:
+- `@tableMethod` arm at `:1495-1519`. After the `TableBoundReturnType tb` check (`:1499`) but before the `parseExternalRef`/`reflectTableMethod` calls:
   - Wrapper check (Invariants §1). If `tb.wrapper() instanceof FieldWrapper.Connection` → return `UnclassifiedField` with the message in Invariants §1.
 
 ### Validator additions
