@@ -548,11 +548,10 @@ class TypeFetcherGeneratorTest {
 
     @Test
     void queryTableMethodTableField_emittedFetcher_declaresSpecificTableLocalAndProjects() {
-        // Asserts the method-shaped fetcher: signature (DataFetchingEnvironment env), return
-        // type Result<Record> (List), declares a specific-table local via the developer method's
-        // class, then projects via $fields. Body-content assertions on the literal $fields call
-        // and method invocation are kept as the structural fingerprint — execution-tier covers
-        // round-trip behavior in graphitron-rewrite-test.
+        // Structural-tier assertions only: method exists, signature is (DataFetchingEnvironment env),
+        // return type is Result<Record> for a List-cardinality @table-bound return. Body-shape
+        // properties (specific-table local, $fields projection, .from(table) call) are behavioural
+        // and asserted at execution tier — see GraphQLQueryTest.queryTableMethod_popularFilms_*.
         var method = new MethodRef.Basic(
             "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
             "popularFilms",
@@ -573,20 +572,14 @@ class TypeFetcherGeneratorTest {
             .containsExactly("graphql.schema.DataFetchingEnvironment");
         assertThat(fetcher.returnType().toString())
             .isEqualTo("org.jooq.Result<org.jooq.Record>");
-        var body = fetcher.code().toString();
-        // Specific-table local (no Table<?> wildcard, no cast — Invariants §3 guarantees the type).
-        assertThat(body).contains("no.sikt.graphitron.rewrite.test.jooq.tables.Film table = "
-            + "no.sikt.graphitron.rewrite.test.services.SampleQueryService.popularFilms(");
-        // Projection via $fields over the developer-returned table.
-        assertThat(body).contains(".$fields(env.getSelectionSet(), table, env)");
-        assertThat(body).contains(".from(table)");
     }
 
     @Test
-    void queryServiceTableField_emittedFetcher_declaresTypedResultAndCallsServiceDirectly() {
-        // Asserts the typed return: Result<FilmRecord> (not Object). No projection — the service
-        // hands records straight through. Optional `dsl` local present because the method takes
-        // a DSLContext parameter.
+    void queryServiceTableField_emittedFetcher_declaresTypedResult() {
+        // Structural-tier assertion: List-cardinality @table-bound @service field returns
+        // Result<FilmRecord> typed, not Object. Body-shape properties (the optional dsl local,
+        // direct service call, no projection) are behavioural and asserted at execution tier —
+        // see GraphQLQueryTest.queryServiceTable_filmsByService_*.
         var method = new MethodRef.Basic(
             "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
             "filmsByService",
@@ -602,22 +595,16 @@ class TypeFetcherGeneratorTest {
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
             List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
 
-        var fetcher = method(spec, "filmsByService");
-        assertThat(fetcher.returnType().toString())
+        assertThat(method(spec, "filmsByService").returnType().toString())
             .isEqualTo("org.jooq.Result<no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord>");
-        var body = fetcher.code().toString();
-        // Optional dsl local emitted because the developer method takes a DSLContext.
-        assertThat(body).contains("DSLContext dsl = graphitronContext(env).getDslContext(env)");
-        // Direct call, no $fields projection — graphql-java's column fetchers walk the records.
-        assertThat(body).contains("return no.sikt.graphitron.rewrite.test.services.SampleQueryService.filmsByService(");
-        assertThat(body).doesNotContain("$fields");
     }
 
     @Test
     void queryServiceRecordField_emittedFetcher_declaresScalarReturnFromMethodReflection() {
-        // ScalarReturnType faithfully reflects the developer's declared return type (no validation;
-        // no Object). For filmCount returning Integer, the fetcher signature declares Integer
-        // — graphql-java coerces to GraphQL Int!.
+        // Structural-tier assertion: ScalarReturnType faithfully reflects the developer's
+        // declared return type — no widening to Object. Behavioural round-trip
+        // (graphql-java coercing Integer to GraphQL Int!) is asserted at execution tier —
+        // see GraphQLQueryTest.queryServiceRecord_filmCount_*.
         var method = new MethodRef.Basic(
             "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
             "filmCount",
@@ -628,11 +615,7 @@ class TypeFetcherGeneratorTest {
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
             List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
 
-        var fetcher = method(spec, "filmCount");
-        assertThat(fetcher.returnType().toString()).isEqualTo("java.lang.Integer");
-        var body = fetcher.code().toString();
-        assertThat(body).contains("return no.sikt.graphitron.rewrite.test.services.SampleQueryService.filmCount(dsl)");
-        assertThat(body).doesNotContain("$fields");
+        assertThat(method(spec, "filmCount").returnType().toString()).isEqualTo("java.lang.Integer");
     }
 
     @Test
