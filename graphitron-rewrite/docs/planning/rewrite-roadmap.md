@@ -20,7 +20,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | Mutation bodies | Spec | [plan](plan-mutations.md) |
 | Docs as an index into classification tests | Ready (deferred) | [plan](plan-docs-as-index-into-tests.md) |
 | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` | In Progress | (see body) |
-| `graphitron-rewrite:watch` goal | In Review | [plan](plan-watch-goal.md) |
+| `graphitron-rewrite:watch` goal | Ready | [plan](plan-watch-goal.md) |
 **Notes:** `@asConnection` `totalCount` field is a release blocker: synthesised Connections currently lack the field that legacy ships by default, so consumers migrating off the legacy generator would lose `totalCount` selection until this lands. Classification vocabulary follow-ups covers five independent cleanups — none is a release blocker. Docs-as-index is parked on steps 3–4 until the sealed hierarchy stabilises (Active work and Stubs still in motion); steps 1–2 shipped. `Retire graphitron-maven-plugin` is the umbrella tracker for what's left of the schema-transform / Maven-plugin migration; `graphitron:watch` goal is its only sub-item with a plan, the rest are body bullets under the umbrella. Mutation bodies Phase 6 (service variants) depends on `plan-service-root-fetchers.md` landing first.
 
 ---
@@ -60,7 +60,7 @@ Architecture / structural:
 
 - **Retire `graphitron-maven-plugin` + `graphitron-schema-transform`** — fold the remaining transform passes and the Maven surface into `graphitron-rewrite` so every schema pass has a single code-owner and consumers depend on `graphitron-rewrite-maven` only. End state: `mvn install -f graphitron-rewrite/pom.xml` produces a self-contained plugin jar and the legacy modules delete. Most of this umbrella has shipped; see [`changelog.md`](changelog.md) for the build surface (schema loading, tagged inputs, Maven plugin, aggregator-standalone, content-idempotent writes) and `@asConnection` emit-time synthesis. Remaining sub-items, all in scope of this umbrella:
 
-  - **`graphitron-rewrite:watch` goal** — Active row (In Review), has a plan. ([plan-watch-goal.md](plan-watch-goal.md))
+  - **`graphitron-rewrite:watch` goal** — Active row (Ready; reverted from In Review by review at `6bb5419`, registry concurrency blocker), has a plan. ([plan-watch-goal.md](plan-watch-goal.md))
   - **Port `introspect` goal to `graphitron-rewrite-maven`** — migrate the LSP-config introspection goal from `graphitron-maven-plugin:introspect`. Reads jOOQ-generated tables and emits `graphitron-lsp-config.json`; no schema transformation involved. Sized separately because the legacy `IntrospectMojo` is ~280 LOC of its own; worth spec'ing only when a consumer actually migrates off the legacy plugin for it.
   - **`@notGenerated` element handling in rewrite** — legacy `ElementRemovalFilter` removed `@notGenerated` elements from the registry plus a reachability re-scan. Under the programmatic-schema architecture there is no shared registry to filter; the equivalent is to skip the marked element at type-build time and prune any now-orphaned references. Rewrite already has `GraphitronSchemaValidator.validateNotGeneratedField` rejecting the directive; this item replaces that with the skip-and-prune path. Plan to be drafted when picked up.
   - **Federation SDL integration** — bundled with the **Apollo Federation via federation-jvm transform** Backlog item below; tracked there.

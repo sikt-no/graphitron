@@ -1,6 +1,13 @@
 # Plan: `graphitron-rewrite:watch` goal
 
-> **Status:** In Review
+> **Status:** Ready
+>
+> Returned to Ready by review (2026-04-25). See
+> [Review feedback](#review-feedback-2026-04-25) at the bottom: one
+> blocker (registry concurrency) and one nit (error-logging
+> consistency). Implementation otherwise matches the plan and the test
+> suite covers the documented surface. Fix the blocker, then move back
+> to In Review.
 >
 > Adds a `watch` goal to `graphitron-rewrite-maven` (the rewrite-owned
 > Maven plugin). Both prerequisites are in place on trunk:
@@ -286,3 +293,86 @@ Standalone item under Architecture / structural in the roadmap.
 Prerequisites are noted in the roadmap entry. On landing, move the
 entry to `## Done` with a one-line summary citing the commit sha and
 the `SchemaWatcherTest` location.
+
+## Review feedback (2026-04-25)
+
+Implementation landed at `8ae55b1` + `6bb5419`. Tests (9, all green
+locally) cover write, modify, delete, debounce coalescing, non-`.graphqls`
+filter, recursive subdirectory registration, and `OVERFLOW`. Documentation
+and roadmap moved as the plan called for. One blocker and one nit:
+
+### Blocker: `SchemaWatcher.registry` is shared by two threads but only
+half-synchronized
+
+`SchemaWatcher.registry` is a plain `HashMap<WatchKey, Path>` accessed
+from two threads:
+
+- **Watch-loop thread** (`run()` / `dispatch()`) reads via
+  `registry.get(key)` and `registry.remove(key)`, and writes via
+  `register(dir)` when an `ENTRY_CREATE` event resolves to a directory
+  (`SchemaWatcher.java:132-138`).
+- **Debounce-executor thread** (`WatchMojo.trigger()` →
+  `watcher.addRoot(root)`) reads via `registry.containsValue(root)` and
+  writes via `register(dir)` for newly-discovered roots from a fresh
+  `<schemaInputs>` expansion.
+
+Only `addRoot` is `synchronized`; `register`, `dispatch`, and `run`
+are not. Two concurrent `register(...)` calls (one from each thread)
+mutate the same `HashMap` without happens-before — the standard
+HashMap-under-concurrent-put corruption hazard, which can silently
+deadlock the watch loop on a TreeNode link or drop a registration.
+
+The window is small (both new-subdirectory events and trigger-time
+re-expansion are rare) but the fix is trivial and the plan's "Thread
+safety" section already commits to a no-overlap guarantee, so the gap
+is worth closing rather than waving away.
+
+**Required fix.** Pick one:
+
+1. Replace `Map<WatchKey, Path> registry = new HashMap<>()` with
+   `new ConcurrentHashMap<>()`. `containsValue` remains O(n) but the
+   call site already accepts that, and every other access is O(1) and
+   thread-safe by construction. Drop `synchronized` from `addRoot`
+   (the map handles concurrency itself; the early-return on duplicate
+   becomes a benign benign double-register if a race threads the
+   needle, but `register()` overwrites by-key idempotently).
+2. Or: make every registry access `synchronized` on the SchemaWatcher
+   monitor (i.e. add `synchronized` to `register`, and bracket the
+   `registry.get(key)` / `registry.remove(key)` block in `run()` and
+   the directory-create branch in `dispatch()`).
+
+Option 1 is shorter and matches the plan's "single `schedule(...)`
+seam" framing — the registry is the only shared mutable state, and a
+concurrent map localises that fact.
+
+**Test for the regression.** Add a `SchemaWatcherTest` case that, on
+the same SchemaWatcher instance, races `addRoot(brandNewDir)` from one
+thread against `dispatch(parent, ENTRY_CREATE-for-brandNewDir)` from
+another, and asserts both watch entries are present in the registry
+afterwards. (Make `registry` package-private or expose a
+`watchedDirs()` accessor purely for the test, mirroring the existing
+package-private `dispatch` seam.)
+
+### Nit: error-logging asymmetry between initial run and watch-loop trigger
+
+`WatchMojo.execute()` (initial run) logs with the two-arg
+`getLog().error(message, throwable)` form, which prints the stack
+trace. `WatchMojo.trigger()` (watch-loop catch) logs with one-arg
+`getLog().error("...: " + e.getMessage())` and drops the throwable on
+the floor.
+
+Validation errors are already surfaced via SLF4J before the throw, so
+the user-visible diagnostics are fine for that case. The asymmetry
+bites on structural failures (I/O during write, config drift between
+runs): on the initial run you get a stack trace, on the watch-loop
+catch you get one line of text. Align both call sites on
+`getLog().error(message, throwable)` so debugging structural failures
+is symmetric.
+
+Not a blocker; fold into the same revision as the registry fix.
+
+### Followups already shipped
+
+The plan's `### Tests` section called for ENTRY_MODIFY and
+ENTRY_DELETE coverage; `6bb5419` added them. No further test additions
+required beyond the registry-concurrency case above.
