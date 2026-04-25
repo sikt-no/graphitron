@@ -11,7 +11,6 @@ import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
 
-import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.stubbedError;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -19,11 +18,11 @@ class QueryServiceRecordFieldValidationTest {
 
     enum Case implements ValidatorCase {
 
-        STUBBED("service query field with non-table return — not yet implemented, produces stubbed-variant error",
+        VALID("service query field with non-table return — passes validation (Invariants §1/§2 enforced at classifier time)",
             new QueryServiceRecordField("Query", "externalData", null,
                 new ReturnTypeRef.ResultReturnType("Film", new FieldWrapper.Single(true), null),
                 new MethodRef.Basic("com.example.Service", "method", "void", List.of())),
-            List.of(stubbedError("Query.externalData", QueryServiceRecordField.class)));
+            List.of());
 
         private final String description;
         private final GraphitronField field;

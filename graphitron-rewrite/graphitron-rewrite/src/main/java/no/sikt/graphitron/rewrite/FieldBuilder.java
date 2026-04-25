@@ -1457,6 +1457,16 @@ class FieldBuilder {
             if (svcResult.error() != null) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, svcResult.error());
             }
+            // Invariants §1: Connection wrapper not supported on @service at root.
+            if (svcResult.returnType().wrapper() instanceof FieldWrapper.Connection) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                    "@service at the root does not support Connection return types — use [T] or T instead");
+            }
+            // Invariants §2: ParamSource.Sources not supported at root (no parent context to batch against).
+            if (svcResult.method().params().stream().anyMatch(p -> p.source() instanceof ParamSource.Sources)) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                    "@service at the root does not support List<Row>/List<Record>/List<Object> batch parameters — the root has no parent context to batch against");
+            }
             return switch (svcResult.returnType()) {
                 case ReturnTypeRef.TableBoundReturnType tb ->
                     new QueryField.QueryServiceTableField(parentTypeName, name, location, tb, svcResult.method());
@@ -1499,6 +1509,11 @@ class FieldBuilder {
             if (!(returnType instanceof ReturnTypeRef.TableBoundReturnType tb)) {
                 return new GraphitronField.UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
                     "@tableMethod requires a @table-annotated return type");
+            }
+            // Invariants §1: Connection wrapper not supported on @tableMethod at root.
+            if (tb.wrapper() instanceof FieldWrapper.Connection) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                    "@tableMethod at the root does not support Connection return types — use [T] or T instead");
             }
             var qtmRef = parseExternalRef(parentTypeName, fieldDef, DIR_TABLE_METHOD, ARG_TABLE_METHOD_REF);
             if (qtmRef != null && qtmRef.lookupError() != null) {

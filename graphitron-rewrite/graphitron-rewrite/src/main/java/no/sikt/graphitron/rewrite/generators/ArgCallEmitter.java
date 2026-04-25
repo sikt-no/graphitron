@@ -5,6 +5,8 @@ import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.model.CallParam;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
+import no.sikt.graphitron.rewrite.model.MethodRef;
+import no.sikt.graphitron.rewrite.model.ParamSource;
 
 import java.util.List;
 import java.util.Map;
@@ -39,6 +41,83 @@ public final class ArgCallEmitter {
             args.add(", $L", buildArgExtraction(param, conditionsClassName, srcAlias));
         }
         return args.build();
+    }
+
+    /**
+     * Builds the argument list for a method-backed call (root {@code @service} or
+     * {@code @tableMethod} fetcher), iterating {@link MethodRef#params()} in declaration
+     * order and emitting one expression per {@link ParamSource} variant.
+     *
+     * <p>Unlike {@link #buildCallArgs}, there is no implicit first argument: the helper
+     * emits exactly the comma-separated argument expressions in user-declared order,
+     * letting the caller wrap with whatever surrounding code (a {@code dsl} local,
+     * a projection, a {@code return} statement) the per-leaf shape requires.
+     *
+     * <p>Per-{@link ParamSource} emission:
+     * <ul>
+     *   <li>{@link ParamSource.Arg} — delegates to {@link #buildArgExtraction} so the
+     *       five-way {@link CallSiteExtraction} switch ({@code Direct}, {@code EnumValueOf},
+     *       {@code TextMapLookup}, {@code ContextArg}, {@code JooqConvert}, {@code NestedInputField})
+     *       is reused. The {@code srcAlias} threaded into {@code buildArgExtraction} is
+     *       the table local for {@code QueryTableMethodTableField} (the {@code var table = ...}
+     *       declared by the per-leaf fetcher) and {@code null} for the service variants
+     *       (no source-table context at the root).</li>
+     *   <li>{@link ParamSource.Context} — {@code graphitronContext(env).getContextArgument(env, name)}.</li>
+     *   <li>{@link ParamSource.DslContext} — literal {@code dsl}; the per-leaf fetcher
+     *       declares the local before calling this helper.</li>
+     *   <li>{@link ParamSource.Table} — the supplied {@code tableExpression} {@code CodeBlock}
+     *       (e.g. {@code Tables.FILM} for {@code @tableMethod}); {@code null} for service variants.</li>
+     *   <li>{@link ParamSource.Sources} / {@link ParamSource.SourceTable} — never reached:
+     *       the classifier (FieldBuilder Invariants §2) and the {@code @tableMethod} reflection
+     *       check (ServiceCatalog) prevent a root leaf from carrying these. The helper throws
+     *       {@link IllegalStateException} if it sees one.</li>
+     * </ul>
+     *
+     * @param method            the developer method to call.
+     * @param tableExpression   expression emitted at the {@link ParamSource.Table} slot;
+     *                          must be non-null when the method declares a {@code Table<?>} parameter.
+     * @param conditionsClassName  target for {@link CallSiteExtraction.TextMapLookup}; may be null
+     *                             when no {@code TextMapLookup} extractions exist on the method.
+     */
+    public static CodeBlock buildMethodBackedCallArgs(MethodRef method, CodeBlock tableExpression, String conditionsClassName) {
+        var args = CodeBlock.builder();
+        boolean first = true;
+        for (var param : method.params()) {
+            if (!first) args.add(", ");
+            first = false;
+            args.add(emitForParam(param, tableExpression, conditionsClassName));
+        }
+        return args.build();
+    }
+
+    private static CodeBlock emitForParam(MethodRef.Param param, CodeBlock tableExpression, String conditionsClassName) {
+        var source = param.source();
+        return switch (source) {
+            case ParamSource.Arg arg -> buildArgExtraction(
+                new CallParam(param.name(), arg.extraction(), false, param.typeName()),
+                conditionsClassName,
+                null);
+            case ParamSource.Context ignored ->
+                CodeBlock.of("graphitronContext(env).getContextArgument(env, $S)", param.name());
+            case ParamSource.DslContext ignored ->
+                CodeBlock.of("dsl");
+            case ParamSource.Table ignored -> {
+                if (tableExpression == null) {
+                    throw new IllegalStateException(
+                        "ParamSource.Table reached buildMethodBackedCallArgs without a tableExpression: param '"
+                        + param.name() + "'");
+                }
+                yield tableExpression;
+            }
+            case ParamSource.Sources ignored ->
+                throw new IllegalStateException(
+                    "ParamSource.Sources reached buildMethodBackedCallArgs at root — should have been rejected at classifier time (Invariants §2): param '"
+                    + param.name() + "'");
+            case ParamSource.SourceTable ignored ->
+                throw new IllegalStateException(
+                    "ParamSource.SourceTable reached buildMethodBackedCallArgs — SourceTable is a child-field concept, unreachable at root: param '"
+                    + param.name() + "'");
+        };
     }
 
     public static CodeBlock buildArgExtraction(CallParam param, String conditionsClassName, String srcAlias) {
