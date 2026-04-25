@@ -33,13 +33,13 @@ class VariantCoverageTest {
      */
     private static final Map<Class<?>, String> NO_CASE_REQUIRED = Map.of(
         InputField.NodeIdField.class,
-            "Covered by PlatformIdPipelineTest.InputCase (requires platformid fixture with "
+            "Covered by NodeIdPipelineTest.InputCase (requires nodeid fixture with "
             + "__NODE_TYPE_ID/__NODE_KEY_COLUMNS metadata not available in the standard sakila catalog); "
-            + "add a GraphitronSchemaBuilderTest case when the platformid fixture is made available there.",
+            + "add a GraphitronSchemaBuilderTest case when the nodeid fixture is made available there.",
         InputField.NodeIdReferenceField.class,
-            "Covered by PlatformIdPipelineTest.InputReferenceCase (requires platformid fixture with "
+            "Covered by NodeIdPipelineTest.InputReferenceCase (requires nodeid fixture with "
             + "FK-linked NodeType table not available in the standard sakila catalog); "
-            + "add a GraphitronSchemaBuilderTest case when the platformid fixture is made available there.",
+            + "add a GraphitronSchemaBuilderTest case when the nodeid fixture is made available there.",
         GraphitronType.JooqRecordType.class,
             "No plain jOOQ Record<?> (non-TableRecord) fixture class in the test classpath; "
             + "add a case when a suitable fixture is introduced.",

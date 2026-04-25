@@ -2,7 +2,7 @@ package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.rewrite.JooqCatalog.ColumnEntry;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
-import no.sikt.graphitron.rewrite.platformidfixture.tables.Bar;
+import no.sikt.graphitron.rewrite.nodeidfixture.tables.Bar;
 import org.jooq.Field;
 import org.jooq.impl.DSL;
 import org.jooq.impl.SQLDataType;
@@ -14,10 +14,9 @@ import java.util.function.Function;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Coverage for {@link JooqCatalog#nodeIdMetadata(String)} — the platform-id synthesized-NodeId
- * plan's Step 1 probe.
+ * Coverage for {@link JooqCatalog#nodeIdMetadata(String)} — the synthesized-NodeId metadata probe.
  *
- * <p>Well-formed / absent / catalog-unavailable cases use the synthetic {@code platformidfixture}
+ * <p>Well-formed / absent / catalog-unavailable cases use the synthetic {@code nodeidfixture}
  * catalog: {@link Bar} carries the two metadata constants; {@code qux} does not.
  *
  * <p>Malformed-metadata cases call the package-private {@link JooqCatalog#validateNodeIdMetadata}
@@ -26,7 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class JooqCatalogNodeIdMetadataTest {
 
-    private static final String FIXTURE_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.platformidfixture";
+    private static final String FIXTURE_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.nodeidfixture";
 
     private JooqCatalog catalog() {
         return new JooqCatalog(FIXTURE_JOOQ_PACKAGE);
