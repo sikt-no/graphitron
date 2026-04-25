@@ -195,10 +195,11 @@ public class GraphQLRewriteGenerator {
         var errors = new GraphitronSchemaValidator().validate(schema);
         errors.forEach(e -> {
             var loc = e.location();
+            String kindPrefix = "[" + e.kind().displayName() + "] ";
             if (loc != null) {
-                LOGGER.error("{}:{}:{}: error: {}", loc.getSourceName(), loc.getLine(), loc.getColumn(), e.message());
+                LOGGER.error("{}:{}:{}: error: {}{}", loc.getSourceName(), loc.getLine(), loc.getColumn(), kindPrefix, e.message());
             } else {
-                LOGGER.error("error: {}", e.message());
+                LOGGER.error("error: {}{}", kindPrefix, e.message());
             }
         });
         return errors;

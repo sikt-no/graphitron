@@ -28,6 +28,10 @@ class StubbedVariantPipelineTest {
         assertThat(messages(errors))
             .contains("Field 'Mutation.createFilm': "
                 + TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS.get(MutationField.MutationInsertTableField.class));
+        // Ratchet: whole-variant stubs are DEFERRED (generator capability gap), not
+        // INVALID_SCHEMA. Mutation bodies will land via the dedicated roadmap item.
+        assertThat(errors).anyMatch(e -> e.kind() == RejectionKind.DEFERRED
+            && e.message().contains("Mutation.createFilm"));
     }
 
     @Test

@@ -3,11 +3,13 @@ package no.sikt.graphitron.rewrite.validation;
 import graphql.schema.FieldCoordinates;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.GraphitronSchemaValidator;
+import no.sikt.graphitron.rewrite.RejectionKind;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.RootType;
+import org.assertj.core.api.Assertions;
 
 import java.util.List;
 import java.util.Map;
@@ -73,5 +75,17 @@ public final class FieldValidationTestHelper {
     public static String stubbedError(String qualifiedName, Class<? extends GraphitronField> variant) {
         return "Field '" + qualifiedName + "': "
             + TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS.get(variant);
+    }
+
+    /**
+     * Asserts that {@code errors} contains at least one entry with the given {@link RejectionKind}
+     * whose {@code message()} contains {@code messageSubstring}. Used for ratchet checks where
+     * mis-categorisation would silently drift back to a less-specific kind (e.g. INVALID_SCHEMA
+     * regressing to DEFERRED).
+     */
+    public static void assertHasKind(List<ValidationError> errors, RejectionKind kind, String messageSubstring) {
+        Assertions.assertThat(errors)
+            .as("expected error with kind=%s and message containing '%s'", kind, messageSubstring)
+            .anyMatch(e -> e.kind() == kind && e.message().contains(messageSubstring));
     }
 }
