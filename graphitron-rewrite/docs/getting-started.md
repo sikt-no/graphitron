@@ -181,9 +181,9 @@ Avoid:
 ### What you do
 
 Edit your `.graphqls` source files, then run `mvn generate-sources` (or let
-your build tool re-trigger it). Graphitron ships no watch goal; if you want
-file-watching, wire `mvn generate-sources` into your IDE's file-watcher or
-use whichever live-reload tool your framework provides.
+your build tool re-trigger it). For a hands-off loop, run
+`mvn graphitron-rewrite:watch` in a side terminal: see [Watch mode](#watch-mode)
+below.
 
 ### What the generator does
 
@@ -228,6 +228,28 @@ behaviour composes with standard incremental-compile paths:
   the changed files trigger a reload.
 - **Spring Boot DevTools** — same mtime-based detection; unchanged files
   are ignored.
+
+### Watch mode
+
+Run `mvn graphitron-rewrite:watch` in a side terminal. The goal:
+
+1. Runs the generator once on startup, so the output tree is fresh.
+2. Watches every directory that backs a `<schemaInputs>` entry (recursively)
+   for `.graphqls` changes.
+3. On any change, re-runs the generator. Idempotent writes mean only the
+   files whose rendered content actually changed are written; the IDE
+   recompiles only those classes (same three-clause contract pinned by
+   `IdempotentWriterTest` and `GeneratorDeterminismTest`).
+4. Validation failures are logged to the console; the watch loop keeps
+   running so a typo does not kill the session.
+
+Stop the loop with Ctrl+C (a JVM shutdown hook closes the watch service and
+the debounce executor cleanly).
+
+Caveat: the generator reads jOOQ classes off the compiled classpath, so
+changing the jOOQ schema requires a full Maven build and a fresh
+`graphitron-rewrite:watch` session. The watch loop covers `.graphqls` edits
+only.
 
 ## Notes
 
