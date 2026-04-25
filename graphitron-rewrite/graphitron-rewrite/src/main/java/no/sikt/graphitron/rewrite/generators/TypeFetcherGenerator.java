@@ -562,10 +562,16 @@ public class TypeFetcherGenerator {
 
     /**
      * Emits the fetcher for a {@link QueryField.QueryTableMethodTableField}: declares the
-     * developer-returned {@code Table<?>} as a local, then projects via {@code $fields}
-     * over that table. The developer method's parameter list is reproduced in declaration
-     * order via {@link ArgCallEmitter#buildMethodBackedCallArgs}; the {@link ParamSource.Table}
-     * slot resolves to {@code Tables.<NAME>} wherever the user declared it.
+     * developer-returned table local with the specific jOOQ table class (e.g. {@code Film}),
+     * then projects via {@code $fields} over that table. The developer method's parameter
+     * list is reproduced in declaration order via
+     * {@link ArgCallEmitter#buildMethodBackedCallArgs}; the {@link ParamSource.Table} slot
+     * resolves to {@code Tables.<NAME>} wherever the user declared it.
+     *
+     * <p>The local is declared with the specific table class (not a {@code Table<?>} wildcard)
+     * because the generated {@code $fields} method takes the specific table type. Developer
+     * methods that return a wider type (e.g. {@code Table<FilmRecord>}) need a cast or to
+     * narrow their return type.
      */
     private static MethodSpec buildQueryTableMethodFetcher(QueryField.QueryTableMethodTableField qtmtf,
                                                             String outputPackage, String jooqPackage) {
@@ -586,12 +592,12 @@ public class TypeFetcherGenerator {
             .returns(returnType)
             .addParameter(ENV, "env");
 
-        // var table = MethodClass.method(<args>);
-        var jooqTableType = ParameterizedTypeName.get(
-            ClassName.get("org.jooq", "Table"),
-            WildcardTypeName.subtypeOf(Object.class));
-        builder.addStatement("$T table = $T.$L($L)",
-            jooqTableType,
+        // <SpecificTableClass> table = (<SpecificTableClass>) MethodClass.method(<args>);
+        // Cast covers developer methods that return a wider Table<R>; runtime ClassCastException
+        // surfaces if the returned table isn't an instance of the declared @table type.
+        builder.addStatement("$T table = ($T) $T.$L($L)",
+            names.jooqTableClass(),
+            names.jooqTableClass(),
             methodClass,
             qtmtf.method().methodName(),
             ArgCallEmitter.buildMethodBackedCallArgs(qtmtf.method(), tableExpression, conditionsClassName));
@@ -614,12 +620,18 @@ public class TypeFetcherGenerator {
      * the developer service method, with an optional {@code dsl} local declared first
      * if the method takes a {@link org.jooq.DSLContext}. No projection — graphql-java's
      * column fetchers traverse the service-returned {@code Record}/{@code Result<Record>}.
+     *
+     * <p>Return type is declared as {@code Object} (rather than the more specific
+     * {@code Result<Record>}/{@code Record}) so that developer methods returning typed
+     * {@code Result<FooRecord>} or {@code FooRecord} subtypes don't require an unchecked
+     * cast in the emitter — graphql-java's column fetchers traverse via field-name lookup
+     * and don't care about the static return type. The runtime shape (List vs single)
+     * is observable in graphql-java via the result type's iteration semantics.
      */
     private static MethodSpec buildQueryServiceTableFetcher(QueryField.QueryServiceTableField qstf,
                                                              String outputPackage) {
-        boolean isList = qstf.returnType().wrapper().isList();
-        TypeName returnType = isList ? ParameterizedTypeName.get(RESULT, RECORD) : RECORD;
-        return buildServiceFetcherCommon(qstf.name(), qstf.method(), qstf.parentTypeName(), returnType, outputPackage);
+        return buildServiceFetcherCommon(qstf.name(), qstf.method(), qstf.parentTypeName(),
+            ClassName.OBJECT, outputPackage);
     }
 
     /**
