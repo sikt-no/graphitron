@@ -15,7 +15,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | Classification vocabulary follow-ups | Spec | [plan](plan-classification-vocabulary-followups.md) |
 | Multi-parent NestingField sharing — `TableField` arm | Spec | [plan](plan-nestingfield-multiparent-tablefield.md) |
 | Faceted search on `@asConnection` | Spec | [plan](plan-faceted-search.md), [spike](spike-faceted-search-sql.md) |
-| Rewrite emitter + classifier hygiene sweep | In Progress | [plan](plan-rewrite-hygiene-sweep.md) |
+| Rewrite emitter + classifier hygiene sweep | In Review | [plan](plan-rewrite-hygiene-sweep.md) |
 | First-class Connection, Edge, PageInfo type variants | In Review | [plan](plan-firstclass-connection-types.md) |
 | Mutation bodies | Spec | [plan](plan-mutations.md) |
 | Docs as an index into classification tests | Ready (deferred) | [plan](plan-docs-as-index-into-tests.md) |
