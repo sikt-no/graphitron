@@ -1,14 +1,14 @@
-# Plan: `graphitron:watch` goal
+# Plan: `graphitron-rewrite:watch` goal
 
-> **Status:** Spec
+> **Status:** In Review
 >
 > Adds a `watch` goal to `graphitron-rewrite-maven` (the rewrite-owned
 > Maven plugin). Both prerequisites are in place on trunk:
 > `AbstractRewriteMojo` / `RewriteContext` landed with the
-> rewrite-maven-plugin work (`17504dd` + follow-ups), and content-
-> idempotent writes (SHA-256 short-circuit in
-> `JavaFile.writeToPath`, orphan sweep in `GraphQLRewriteGenerator`)
-> landed in `9526217` + `5176dc2`.
+> rewrite-maven-plugin work, and content-idempotent writes (SHA-256
+> short-circuit in `JavaFile.writeToPath`, orphan sweep in
+> `GraphQLRewriteGenerator`) landed alongside the dev-loop docs (see
+> [`changelog.md`](changelog.md)).
 >
 > Without idempotent writes a watch trigger would rewrite the full
 > output tree on every save, defeating the purpose. With them, the
