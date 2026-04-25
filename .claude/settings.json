@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(git push *)",
+            "command": "jq -r '.tool_input.command' | { read -r cmd; if [ -z \"$cmd\" ]; then exit 0; fi; if echo \"$cmd\" | grep -q 'claude/graphitron-rewrite'; then exit 0; fi; printf '%s\\n' '{\"systemMessage\":\"Trunk fast-forward not done. Follow up with: git push origin HEAD:claude/graphitron-rewrite\"}'; }"
+          }
+        ]
+      }
+    ]
+  }
+}
