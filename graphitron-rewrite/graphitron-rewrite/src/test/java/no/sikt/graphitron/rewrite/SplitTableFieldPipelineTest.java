@@ -160,7 +160,7 @@ class SplitTableFieldPipelineTest {
             .contains("scatterByIdx");
     }
 
-    // ===== single-cardinality @splitQuery (plan-single-cardinality-split-query.md §3–§4) =====
+    // ===== single-cardinality @splitQuery =====
 
     @Test
     void splitQueryField_singleCardinality_producesFetcherAndRowsMethodReturningSingleRecord() {
