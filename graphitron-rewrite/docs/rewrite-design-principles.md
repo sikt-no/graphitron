@@ -122,3 +122,17 @@ Selection-driven queries produce different SQL per request, preventing cached qu
 ### Error quality
 
 `BuildContext.candidateHint(attempt, candidates)` sorts candidates by Levenshtein distance. Used in 14 places (5 in `FieldBuilder`, 5 in `TypeBuilder`, 2 in `BuildContext`, 2 in `ServiceCatalog`). When adding new jOOQ existence checks in the validator or builder, follow the same pattern — pass the relevant candidate list from `JooqCatalog` to `candidateHint`.
+
+### Helper-locality
+
+Emitted helper methods that bind column references to a specific aliased jOOQ `Table` instance always take the `Table` as a parameter — never declare it locally. Callers from different paths (root fetcher, inline subquery, Split-rows method) need to pass distinct aliases for the same target table; a locally-declared `Table` forces the wrong alias on every caller but the one the helper was first written for.
+
+Pattern (canonical example, `<fieldName>OrderBy` emitted by `TypeFetcherGenerator.buildOrderByHelperMethod`):
+
+```java
+private static OrderByResult <fieldName>OrderBy(DataFetchingEnvironment env, <Table> table) { ... }
+```
+
+Each call site supplies the alias appropriate to its scope: the root fetcher passes its declared `<entity>Table`; a Split-rows method passes its FK-chain terminal alias; an inline subquery passes its correlated alias. The helper's column references resolve through the parameter.
+
+Compliant emitters (audit 2026-04-25): `TypeFetcherGenerator.buildOrderByHelperMethod`, `QueryConditionsGenerator`, `LookupValuesJoinEmitter` (root + child forms), `InlineLookupTableFieldEmitter`. `ConnectionHelperClassGenerator.pageRequest` / `encodeCursor` / `decodeCursor` are not Table-bound (operate on `Field<?>` / `SortField<?>`) and the rule does not apply.
