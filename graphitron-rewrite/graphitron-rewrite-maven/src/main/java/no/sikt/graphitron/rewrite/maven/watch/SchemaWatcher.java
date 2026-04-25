@@ -12,9 +12,9 @@ import java.nio.file.StandardWatchEventKinds;
 import java.nio.file.WatchEvent;
 import java.nio.file.WatchKey;
 import java.nio.file.WatchService;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Stream;
 
 /**
@@ -40,7 +40,15 @@ public final class SchemaWatcher implements AutoCloseable {
     private final WatchService watchService;
     private final DebounceExecutor debounce;
     private final Runnable onTrigger;
-    private final Map<WatchKey, Path> registry = new HashMap<>();
+    /**
+     * Shared between the watch-loop thread (reads in {@link #run()}, writes from
+     * {@link #dispatch} on directory-create) and the debounce-executor thread
+     * (writes from {@link #addRoot}). Concurrent map so put/get/remove are
+     * thread-safe without external synchronization; {@code containsValue} is
+     * O(n) but called only on the trigger path (cheap relative to a generator
+     * run).
+     */
+    private final Map<WatchKey, Path> registry = new ConcurrentHashMap<>();
 
     public SchemaWatcher(Set<Path> roots, DebounceExecutor debounce, Runnable onTrigger) throws IOException {
         this.watchService = FileSystems.getDefault().newWatchService();
@@ -82,7 +90,7 @@ public final class SchemaWatcher implements AutoCloseable {
      * watch directories surfaced by a re-expansion of {@code <schemaInputs>} flow through
      * here.
      */
-    public synchronized void addRoot(Path root) throws IOException {
+    public void addRoot(Path root) throws IOException {
         if (registry.containsValue(root)) return;
         registerRecursive(root);
     }
@@ -149,5 +157,10 @@ public final class SchemaWatcher implements AutoCloseable {
         } catch (IOException e) {
             LOGGER.warn("graphitron:watch: error closing WatchService: {}", e.getMessage());
         }
+    }
+
+    /** Snapshot of currently-registered watch directories. Test seam. */
+    Set<Path> watchedDirs() {
+        return Set.copyOf(registry.values());
     }
 }
