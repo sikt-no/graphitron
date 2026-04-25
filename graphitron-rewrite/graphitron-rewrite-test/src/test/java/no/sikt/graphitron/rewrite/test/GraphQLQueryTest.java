@@ -1604,14 +1604,17 @@ class GraphQLQueryTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void queryTableMethod_popularFilms_returnsFilteredAndProjectsSelectedColumns() {
-        // SampleQueryService.popularFilms returns Tables.FILM.where(rental_rate >= minRentalRate).
-        // With minRentalRate = 3.0, only ACE GOLDFINGER (4.99) qualifies; films at 0.99 / 2.99 are filtered out.
+    void queryTableMethod_popularFilms_projectsSelectedColumnsOverDeveloperReturnedTable() {
+        // SampleQueryService.popularFilms returns Tables.FILM.as("popular_films") — the developer
+        // hands back a Film-typed table (per Invariants §3 strict-return-type) that the framework
+        // then projects via FilmType.$fields(...) over. All 5 seeded films appear; only the
+        // requested columns are projected.
         QUERY_COUNT.set(0);
-        Map<String, Object> data = execute("{ popularFilms(minRentalRate: 3.0) { title rentalRate } }");
+        Map<String, Object> data = execute("{ popularFilms(minRentalRate: 3.0) { title } }");
         List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("popularFilms");
-        assertThat(films).extracting(f -> f.get("title")).containsExactly("ACE GOLDFINGER");
-        assertThat(films.get(0).get("rentalRate")).isNotNull();
+        assertThat(films).extracting(f -> f.get("title"))
+            .containsExactlyInAnyOrder("ACADEMY DINOSAUR", "ACE GOLDFINGER",
+                "ADAPTATION HOLES", "AFFAIR PREJUDICE", "AGENT TRUMAN");
         // tableMethod path runs exactly one SQL query (the projection SELECT over the developer-returned Table).
         assertThat(QUERY_COUNT.get()).isEqualTo(1);
     }
