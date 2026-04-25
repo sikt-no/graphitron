@@ -1,10 +1,10 @@
 package no.sikt.graphitron.rewrite.test.services;
 
 import no.sikt.graphitron.rewrite.test.jooq.Tables;
+import no.sikt.graphitron.rewrite.test.jooq.tables.Film;
 import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord;
 import org.jooq.DSLContext;
 import org.jooq.Result;
-import org.jooq.Table;
 
 import java.util.List;
 
@@ -35,11 +35,20 @@ public final class SampleQueryService {
      * to {@code Tables.FILM} per the @table-bound return type) and projects via
      * {@code FilmType.$fields(...)} over the returned {@code Table<FilmRecord>}.
      */
-    public static Table<FilmRecord> popularFilms(Table<FilmRecord> filmTable, Double minRentalRate) {
-        // graphql-java's GraphQL Float scalar coerces Java-side to Double, so signatures that take
-        // a Float would receive a ClassCastException; Double is the correct receive type.
-        return Tables.FILM.where(Tables.FILM.RENTAL_RATE.greaterOrEqual(
-            org.jooq.impl.DSL.value(minRentalRate.floatValue(), Tables.FILM.RENTAL_RATE.getDataType())));
+    /**
+     * Returns the framework-supplied {@code Tables.FILM} aliased. Demonstrates that
+     * {@code @tableMethod} preserves the developer's choice of jOOQ table while still
+     * being projected by the framework via {@code FilmType.$fields(...)}. The minimum
+     * rental rate argument is intentionally unused in this fixture (filtering on a
+     * specific table class isn't directly possible since {@code Tables.FILM.where(...)}
+     * returns a wider {@code Table<R>} that would fail the classifier-time return-type
+     * check — see plan-service-root-fetchers.md Invariants §3); the arg is kept on the
+     * SDL so the {@code ParamSource.Arg} slot is exercised in declaration order. Real
+     * use cases for {@code @tableMethod}-with-strict-return are tenant-scoped table
+     * routing or aliasing — both of which preserve the {@code Film} type.
+     */
+    public static Film popularFilms(Film filmTable, Double minRentalRate) {
+        return filmTable.as("popular_films");
     }
 
     /**
