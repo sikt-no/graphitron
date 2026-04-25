@@ -218,6 +218,34 @@ class PlatformIdPipelineTest {
         tc.assertions.accept(TestSchemaHelper.buildSchema(tc.sdl, FIXTURE_CTX));
     }
 
+    @org.junit.jupiter.api.Test
+    void nodeTypeWireFormat_independentOfSdlTypeName() {
+        // Opacity invariant: an opaque ID encodes against (typeId, keyColumns), neither of
+        // which is the SDL type name. Renaming the SDL type while pinning @node(typeId:) and
+        // pointing at the same table must produce a structurally identical NodeType — the
+        // wire-format carrier the encoder and dispatcher consult. If a refactor ever leaked
+        // the SDL type name into typeId or keyColumns, every ID issued before the rename
+        // would silently stop resolving.
+        String sdlOriginal = """
+            type Foo implements Node @table(name: "bar") @node(typeId: "FrozenWire") { id: ID! name: String }
+            type Query { foo: Foo }
+            """;
+        String sdlRenamed = """
+            type RenamedFoo implements Node @table(name: "bar") @node(typeId: "FrozenWire") { id: ID! name: String }
+            type Query { foo: RenamedFoo }
+            """;
+        var schemaA = TestSchemaHelper.buildSchema(sdlOriginal, FIXTURE_CTX);
+        var schemaB = TestSchemaHelper.buildSchema(sdlRenamed, FIXTURE_CTX);
+
+        var ntA = (GraphitronType.NodeType) schemaA.type("Foo");
+        var ntB = (GraphitronType.NodeType) schemaB.type("RenamedFoo");
+
+        assertThat(ntA.typeId()).isEqualTo("FrozenWire");
+        assertThat(ntB.typeId()).isEqualTo(ntA.typeId());
+        assertThat(ntB.nodeKeyColumns()).extracting(ColumnRef::sqlName)
+            .isEqualTo(ntA.nodeKeyColumns().stream().map(ColumnRef::sqlName).toList());
+    }
+
     // ===== Input side =====
 
     enum InputCase {

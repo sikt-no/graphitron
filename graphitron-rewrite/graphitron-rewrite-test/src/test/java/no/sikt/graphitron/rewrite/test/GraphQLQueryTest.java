@@ -1535,6 +1535,54 @@ class GraphQLQueryTest {
         assertThat(data.get("node")).isNull();
     }
 
+    // ===== nodeId durability / opacity invariants =====
+    //
+    // The wire format must stay frozen across releases: an ID issued by release N must still
+    // resolve under release N+k. These tests pin specific encoded forms and assert the
+    // dispatcher can decode them, so any change to NodeIdEncoder (encoding scheme, escape
+    // policy, column-order normalisation) breaks loudly here before it can silently
+    // invalidate IDs already in circulation.
+
+    @Test
+    void node_pinnedSingleKeyId_stillResolves() {
+        // base64-url-no-pad of UTF-8 "Customer:1". If the encoder ever switches to standard
+        // base64, padding, a different separator, or any other format change, this exact
+        // string stops resolving and the test fails. Treat the literal as a release contract.
+        String pinnedId = "Q3VzdG9tZXI6MQ";
+        assertThat(no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 1))
+            .isEqualTo(pinnedId);
+
+        Map<String, Object> data = execute(
+            "{ node(id: \"" + pinnedId + "\") { __typename ... on Customer { firstName lastName } } }");
+        var node = (Map<String, Object>) data.get("node");
+        assertThat(node).isNotNull();
+        assertThat(node.get("__typename")).isEqualTo("Customer");
+        assertThat(node.get("firstName")).isEqualTo("Mary");
+        assertThat(node.get("lastName")).isEqualTo("Smith");
+    }
+
+    @Test
+    void node_compositeKeyEncoding_isFrozen() {
+        // The execution-tier schema only exposes single-key NodeTypes, but the encoder is
+        // used for composite keys too (see PlatformIdPipelineTest's `bar` fixture). Pin the
+        // composite wire format directly so a "tidy up the CSV" refactor that, say, switches
+        // the separator from ',' to '|' or drops the comma escape rule is caught here.
+        String pinned = "Rm9vOjEsMg";  // base64-url-no-pad of "Foo:1,2"
+        assertThat(no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Foo", "1", "2"))
+            .isEqualTo(pinned);
+    }
+
+    @Test
+    void node_keyColumnsOrder_isLoadBearing() {
+        // Composite keys encode positionally: encoder and decoder must agree on column order.
+        // If anyone ever "normalises" by sorting args alphabetically, every previously-issued
+        // composite ID stops matching. Asserting (1,2) ≠ (2,1) keeps the positional contract
+        // honest. See plan-nodeid-directives.md "KjerneJooqGenerator contract".
+        String fwd = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Foo", "1", "2");
+        String rev = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Foo", "2", "1");
+        assertThat(fwd).isNotEqualTo(rev);
+    }
+
     @Test
     void stores_synthesisedConnection_cursorRoundTrip() {
         // Fetch page 1 cursor, use it for page 2, assert hasNextPage is false (2 stores total).
