@@ -24,6 +24,7 @@ import no.sikt.graphitron.rewrite.model.MethodBackedField;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
+import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.SqlGeneratingField;
@@ -145,6 +146,9 @@ public class TypeFetcherGenerator {
         QueryField.QueryNodeField.class,
         QueryField.QueryLookupTableField.class,
         QueryField.QueryTableField.class,
+        QueryField.QueryTableMethodTableField.class,
+        QueryField.QueryServiceTableField.class,
+        QueryField.QueryServiceRecordField.class,
         ChildField.ServiceTableField.class,
         ChildField.SplitTableField.class,
         ChildField.SplitLookupTableField.class,
@@ -211,8 +215,6 @@ public class TypeFetcherGenerator {
     public static final Map<Class<? extends GraphitronField>, String> NOT_IMPLEMENTED_REASONS =
         Map.ofEntries(
             // QueryField stubs
-            Map.entry(QueryField.QueryTableMethodTableField.class,
-                "QueryTableMethodTableField not yet implemented — see rewrite-roadmap.md 'Stubs to complete' #1"),
             Map.entry(QueryField.QueryEntityField.class,
                 "QueryEntityField not yet implemented — see rewrite-roadmap.md"),
             Map.entry(QueryField.QueryTableInterfaceField.class,
@@ -221,10 +223,6 @@ public class TypeFetcherGenerator {
                 "QueryInterfaceField not yet implemented — see rewrite-roadmap.md 'Stubs to complete' #3"),
             Map.entry(QueryField.QueryUnionField.class,
                 "QueryUnionField not yet implemented — see rewrite-roadmap.md 'Stubs to complete' #3"),
-            Map.entry(QueryField.QueryServiceTableField.class,
-                "QueryServiceTableField not yet implemented — see rewrite-roadmap.md"),
-            Map.entry(QueryField.QueryServiceRecordField.class,
-                "QueryServiceRecordField not yet implemented — see rewrite-roadmap.md"),
             // MutationField stubs — see rewrite-roadmap.md 'Stubs to complete' #4
             Map.entry(MutationField.MutationInsertTableField.class,
                 "Mutation insert not yet implemented — see rewrite-roadmap.md 'Stubs to complete' #4"),
@@ -342,14 +340,14 @@ public class TypeFetcherGenerator {
                     }
                 }
                 case QueryField.QueryNodeField f              -> builder.addMethod(buildQueryNodeFetcher(f, outputPackage));
+                case QueryField.QueryTableMethodTableField f  -> builder.addMethod(buildQueryTableMethodFetcher(f, outputPackage, jooqPackage));
+                case QueryField.QueryServiceTableField f      -> builder.addMethod(buildQueryServiceTableFetcher(f, outputPackage));
+                case QueryField.QueryServiceRecordField f     -> builder.addMethod(buildQueryServiceRecordFetcher(f, outputPackage));
                 // Stub variants — see NOT_IMPLEMENTED_REASONS
-                case QueryField.QueryTableMethodTableField f  -> builder.addMethod(stub(f));
                 case QueryField.QueryEntityField f            -> builder.addMethod(stub(f));
                 case QueryField.QueryTableInterfaceField f    -> builder.addMethod(stub(f));
                 case QueryField.QueryInterfaceField f         -> builder.addMethod(stub(f));
                 case QueryField.QueryUnionField f             -> builder.addMethod(stub(f));
-                case QueryField.QueryServiceTableField f      -> builder.addMethod(stub(f));
-                case QueryField.QueryServiceRecordField f     -> builder.addMethod(stub(f));
                 case MutationField.MutationInsertTableField f  -> builder.addMethod(stub(f));
                 case MutationField.MutationUpdateTableField f  -> builder.addMethod(stub(f));
                 case MutationField.MutationDeleteTableField f  -> builder.addMethod(stub(f));
@@ -560,6 +558,111 @@ public class TypeFetcherGenerator {
                 CONDITION, queryConditionsClass,
                 QueryConditionsGenerator.conditionMethodName(qtf.name()), srcAlias)
             .build();
+    }
+
+    /**
+     * Emits the fetcher for a {@link QueryField.QueryTableMethodTableField}: declares the
+     * developer-returned {@code Table<?>} as a local, then projects via {@code $fields}
+     * over that table. The developer method's parameter list is reproduced in declaration
+     * order via {@link ArgCallEmitter#buildMethodBackedCallArgs}; the {@link ParamSource.Table}
+     * slot resolves to {@code Tables.<NAME>} wherever the user declared it.
+     */
+    private static MethodSpec buildQueryTableMethodFetcher(QueryField.QueryTableMethodTableField qtmtf,
+                                                            String outputPackage, String jooqPackage) {
+        var tableRef = qtmtf.returnType().table();
+        var names = GeneratorUtils.ResolvedTableNames.of(tableRef, qtmtf.returnType().returnTypeName(), outputPackage, jooqPackage);
+        boolean isList = qtmtf.returnType().wrapper().isList();
+
+        TypeName returnType = isList ? ParameterizedTypeName.get(RESULT, RECORD) : RECORD;
+        var dslContextClass = ClassName.get("org.jooq", "DSLContext");
+
+        var methodClass = ClassName.bestGuess(qtmtf.method().className());
+        var tableExpression = CodeBlock.of("$T.$L", names.tablesClass(), tableRef.javaFieldName());
+        String conditionsClassName = outputPackage + ".conditions."
+            + qtmtf.parentTypeName() + QueryConditionsGenerator.CLASS_NAME_SUFFIX;
+
+        var builder = MethodSpec.methodBuilder(qtmtf.name())
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(returnType)
+            .addParameter(ENV, "env");
+
+        // var table = MethodClass.method(<args>);
+        var jooqTableType = ParameterizedTypeName.get(
+            ClassName.get("org.jooq", "Table"),
+            WildcardTypeName.subtypeOf(Object.class));
+        builder.addStatement("$T table = $T.$L($L)",
+            jooqTableType,
+            methodClass,
+            qtmtf.method().methodName(),
+            ArgCallEmitter.buildMethodBackedCallArgs(qtmtf.method(), tableExpression, conditionsClassName));
+
+        builder.addStatement("$T dsl = graphitronContext(env).getDslContext(env)", dslContextClass);
+        builder.addCode(CodeBlock.builder()
+            .add("return dsl\n")
+            .indent()
+            .add(".select($T.$$fields(env.getSelectionSet(), table, env))\n", names.typeClass())
+            .add(".from(table)\n")
+            .add(isList ? ".fetch();\n" : ".fetchOne();\n")
+            .unindent()
+            .build());
+
+        return builder.build();
+    }
+
+    /**
+     * Emits the fetcher for a {@link QueryField.QueryServiceTableField}: a direct call to
+     * the developer service method, with an optional {@code dsl} local declared first
+     * if the method takes a {@link org.jooq.DSLContext}. No projection — graphql-java's
+     * column fetchers traverse the service-returned {@code Record}/{@code Result<Record>}.
+     */
+    private static MethodSpec buildQueryServiceTableFetcher(QueryField.QueryServiceTableField qstf,
+                                                             String outputPackage) {
+        boolean isList = qstf.returnType().wrapper().isList();
+        TypeName returnType = isList ? ParameterizedTypeName.get(RESULT, RECORD) : RECORD;
+        return buildServiceFetcherCommon(qstf.name(), qstf.method(), qstf.parentTypeName(), returnType, outputPackage);
+    }
+
+    /**
+     * Emits the fetcher for a {@link QueryField.QueryServiceRecordField}: same shape as
+     * {@link #buildQueryServiceTableFetcher} but with return type {@code Object} to cover
+     * both {@code ResultReturnType} (record-backed) and {@code ScalarReturnType} (scalar /
+     * DTO) sub-cases. graphql-java coerces.
+     */
+    private static MethodSpec buildQueryServiceRecordFetcher(QueryField.QueryServiceRecordField qsrf,
+                                                              String outputPackage) {
+        return buildServiceFetcherCommon(qsrf.name(), qsrf.method(), qsrf.parentTypeName(),
+            ClassName.OBJECT, outputPackage);
+    }
+
+    /**
+     * Shared body shape for {@link #buildQueryServiceTableFetcher} and
+     * {@link #buildQueryServiceRecordFetcher}: optional {@code dsl} local + direct
+     * {@code return ServiceClass.method(<args>);}.
+     */
+    private static MethodSpec buildServiceFetcherCommon(String fieldName, MethodRef method,
+                                                        String parentTypeName, TypeName returnType,
+                                                        String outputPackage) {
+        var dslContextClass = ClassName.get("org.jooq", "DSLContext");
+        var serviceClass = ClassName.bestGuess(method.className());
+        String conditionsClassName = outputPackage + ".conditions."
+            + parentTypeName + QueryConditionsGenerator.CLASS_NAME_SUFFIX;
+        boolean needsDsl = method.params().stream()
+            .anyMatch(p -> p.source() instanceof ParamSource.DslContext);
+
+        var builder = MethodSpec.methodBuilder(fieldName)
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(returnType)
+            .addParameter(ENV, "env");
+
+        if (needsDsl) {
+            builder.addStatement("$T dsl = graphitronContext(env).getDslContext(env)", dslContextClass);
+        }
+        builder.addStatement("return $T.$L($L)",
+            serviceClass,
+            method.methodName(),
+            ArgCallEmitter.buildMethodBackedCallArgs(method, null, conditionsClassName));
+
+        return builder.build();
     }
 
     /**
