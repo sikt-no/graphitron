@@ -35,6 +35,9 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.DSL;
  *
  * <p>{@link JoinStep.ConditionJoin} anywhere in the path triggers a runtime-throwing stub arm —
  * same limitation as G5, resolved by classification-vocabulary item 5.
+ *
+ * <p>Threads the nested-alias parameter through every emitted Table-bound helper call — see
+ * "Helper-locality" in {@code docs/rewrite-design-principles.md}.
  */
 public final class InlineLookupTableFieldEmitter {
 

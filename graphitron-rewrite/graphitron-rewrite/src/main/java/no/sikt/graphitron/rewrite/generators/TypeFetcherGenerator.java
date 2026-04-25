@@ -56,6 +56,9 @@ import java.util.Set;
  *       independently (e.g. by Apollo Federation {@code _entities} resolution).</li>
  *   <li>All other field types — stub throwing {@link UnsupportedOperationException}.</li>
  * </ul>
+ *
+ * <p>Emitted Table-bound helpers ({@code <fieldName>OrderBy}) take the aliased {@code Table}
+ * as a parameter — see "Helper-locality" in {@code docs/rewrite-design-principles.md}.
  */
 public class TypeFetcherGenerator {
 
