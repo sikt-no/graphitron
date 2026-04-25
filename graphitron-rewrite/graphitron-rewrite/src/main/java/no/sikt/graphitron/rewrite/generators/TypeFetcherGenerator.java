@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.generators;
 
+import no.sikt.graphitron.javapoet.ArrayTypeName;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
@@ -711,22 +712,83 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * Parses a parameterized type FQCN string (e.g. {@code "java.util.List<java.lang.Integer>"})
-     * into a javapoet {@link TypeName}. Recursive on nested generics; falls back to
-     * {@link ClassName#bestGuess} when no type parameters are present.
+     * Parses a Java type-name string as produced by {@link java.lang.reflect.Type#getTypeName()}
+     * into a javapoet {@link TypeName}. Honours the typed-data contract: every shape the
+     * developer's reflected return type can take is preserved exactly, with no widening to
+     * {@code Object}. Handles, in order:
+     *
+     * <ul>
+     *   <li><b>Wildcards</b> — {@code "?"}, {@code "? extends X"}, {@code "? super X"}.</li>
+     *   <li><b>Arrays</b> — trailing {@code []} (peeled one level per recursion).</li>
+     *   <li><b>Parameterized types</b> — {@code "Raw<arg1, arg2, ...>"} with depth-aware comma
+     *       splitting so multi-arg generics ({@code Map<K, V>}) and nested generics
+     *       ({@code Result<List<FilmRecord>>}) round-trip correctly.</li>
+     *   <li><b>Primitives + void</b> — {@code int}, {@code long}, {@code boolean}, etc., mapped to
+     *       the corresponding {@link TypeName} constants.</li>
+     *   <li><b>Plain class names</b> — fall through to {@link ClassName#bestGuess}.</li>
+     * </ul>
      */
     private static TypeName parseTypeName(String name) {
-        int lt = name.indexOf('<');
-        if (lt < 0) return ClassName.bestGuess(name);
-        int gt = name.lastIndexOf('>');
-        String rawName = name.substring(0, lt);
-        String inner = name.substring(lt + 1, gt).trim();
-        // Single-arg parameterized types only (jOOQ Result<R>, java.util.List<E>, etc.) — multi-
-        // arg generics on service return types are not currently expected; if they appear, this
-        // method should grow a comma-aware splitter.
-        return ParameterizedTypeName.get(
-            (ClassName) ClassName.bestGuess(rawName),
-            parseTypeName(inner));
+        String trimmed = name.trim();
+        if (trimmed.equals("?")) {
+            return WildcardTypeName.subtypeOf(Object.class);
+        }
+        if (trimmed.startsWith("? extends ")) {
+            return WildcardTypeName.subtypeOf(parseTypeName(trimmed.substring("? extends ".length())));
+        }
+        if (trimmed.startsWith("? super ")) {
+            return WildcardTypeName.supertypeOf(parseTypeName(trimmed.substring("? super ".length())));
+        }
+        if (trimmed.endsWith("[]")) {
+            return ArrayTypeName.of(parseTypeName(trimmed.substring(0, trimmed.length() - 2)));
+        }
+        int lt = trimmed.indexOf('<');
+        if (lt >= 0) {
+            int gt = trimmed.lastIndexOf('>');
+            String rawName = trimmed.substring(0, lt);
+            String inner = trimmed.substring(lt + 1, gt);
+            List<String> args = splitTopLevelTypeArgs(inner);
+            TypeName[] parsedArgs = args.stream()
+                .map(TypeFetcherGenerator::parseTypeName)
+                .toArray(TypeName[]::new);
+            return ParameterizedTypeName.get((ClassName) ClassName.bestGuess(rawName), parsedArgs);
+        }
+        return switch (trimmed) {
+            case "void"    -> TypeName.VOID;
+            case "boolean" -> TypeName.BOOLEAN;
+            case "byte"    -> TypeName.BYTE;
+            case "short"   -> TypeName.SHORT;
+            case "int"     -> TypeName.INT;
+            case "long"    -> TypeName.LONG;
+            case "char"    -> TypeName.CHAR;
+            case "float"   -> TypeName.FLOAT;
+            case "double"  -> TypeName.DOUBLE;
+            default        -> ClassName.bestGuess(trimmed);
+        };
+    }
+
+    /**
+     * Splits a parameterized type's argument list on top-level commas, ignoring commas nested
+     * inside angle brackets. {@code "K, V"} → {@code ["K", "V"]};
+     * {@code "java.util.Map<A, B>, C"} → {@code ["java.util.Map<A, B>", "C"]}.
+     */
+    private static List<String> splitTopLevelTypeArgs(String inner) {
+        var args = new ArrayList<String>();
+        int depth = 0;
+        int start = 0;
+        for (int i = 0; i < inner.length(); i++) {
+            char c = inner.charAt(i);
+            if (c == '<') {
+                depth++;
+            } else if (c == '>') {
+                depth--;
+            } else if (c == ',' && depth == 0) {
+                args.add(inner.substring(start, i).trim());
+                start = i + 1;
+            }
+        }
+        args.add(inner.substring(start).trim());
+        return args;
     }
 
     /**
