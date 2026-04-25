@@ -40,13 +40,9 @@ The behaviour is on by default; no Maven flag mirrors the legacy `totalCountFiel
 - **Maven configuration flag.** No `totalCountFieldInConnectionsEnabled` analogue. See "Desired end state" rationale.
 - **Faceted-search totals.** `plan-faceted-search.md` lists `totalCount` in its desired Relay shape; this plan ships the underlying field and resolver so faceted search can rely on it being there. Faceted search itself is unchanged.
 
-## Implementation approach
+## Implementation
 
-### 1. Synthesise the `totalCount` field
-
-**File:** `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewrite/GraphitronSchemaBuilder.java`, in `buildSynthesisedConnection`.
-
-Append a `totalCount: Int` field (nullable) to the builder before returning, alongside the existing `edges`, `nodes`, `pageInfo` fields:
+**`GraphitronSchemaBuilder.buildSynthesisedConnection`** — append a `totalCount: Int` field (nullable, no `GraphQLNonNull` wrap) to the builder, alongside the existing `edges`, `nodes`, `pageInfo`:
 
 ```java
 var totalCountField = GraphQLFieldDefinition.newFieldDefinition()
@@ -55,46 +51,33 @@ var totalCountField = GraphQLFieldDefinition.newFieldDefinition()
     .build();
 ```
 
-and `.field(totalCountField)` on the builder. Nullable (no `GraphQLNonNull` wrap) so the field type can survive the lazy / count-skipped path naturally; matches legacy.
+Nullable matches legacy and survives the count-skipped path naturally. The synthesised PageInfo and Edge are unchanged.
 
-The synthesised PageInfo and Edge are unchanged.
+**`ConnectionResultClassGenerator`** — add `org.jooq.Table<?> table` and `org.jooq.Condition condition` fields with `table()` / `condition()` accessors. Constructors:
 
-### 2. Carry the source table and condition on `ConnectionResult`
+- Primary (currently 6-arg, becomes 8-arg): `table` and `condition` as the last two parameters.
+- `(result, page)` convenience (existing): delegates with `null, null`. This is the path `SplitRowsMethodEmitter.scatterConnectionByIdx` uses; selecting `totalCount` on a Split-Connection field returns `null` until that wiring lands (see Backlog follow-up).
+- New `(result, page, table, condition)` convenience: delegates with the supplied values; called by the connection fetcher.
 
-**File:** `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewrite/generators/util/ConnectionResultClassGenerator.java`.
+Accessors return `null` for the Split-Connection path; the helper null-checks before issuing SQL. Update the class Javadoc to mention the new fields and the Split-Connection carve-out.
 
-Add two fields to the carrier:
-
-- `org.jooq.Table<?> table`
-- `org.jooq.Condition condition`
-
-Thread them through the constructors:
-
-- **Primary constructor** (currently 6-arg, becomes 8-arg): `table` and `condition` as the last two parameters.
-- **`(result, page)` convenience constructor** (existing): delegates with `null, null`. This is the path Split-Connection scatter (`SplitRowsMethodEmitter.scatterConnectionByIdx`) uses today; selecting `totalCount` on a Split-Connection field will return `null` until that wiring is filled in (see "What we're NOT doing" and the corresponding Backlog follow-up).
-- **New `(result, page, table, condition)` convenience constructor**: delegates with the supplied values. This is what `TypeFetcherGenerator.buildQueryConnectionFetcher` calls.
-
-Add accessors `table()` and `condition()`. They return `null` for the Split-Connection path; the helper checks for null before issuing SQL.
-
-Update the class Javadoc to mention the new fields and the Split-Connection `null` carve-out.
-
-### 3. Pass table and condition into the constructor
-
-**File:** `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java`, in `buildQueryConnectionFetcher`.
-
-`tableLocal` and `condition` are already in scope at the return site (declared earlier in the method via `declareTableLocal` and `buildConditionCall`). Replace the existing `return new ConnectionResult(result, page);` with the four-arg form:
+**`TypeFetcherGenerator.buildQueryConnectionFetcher`** — replace `return new ConnectionResult(result, page);` with the four-arg form:
 
 ```java
 return new ConnectionResult(result, page, <tableLocal>, condition);
 ```
 
-No closure, no supplier. The fetcher's responsibility is to capture the inputs that downstream resolvers will derive from; the helper class is where the derivation lives.
+Both locals are already in scope (declared earlier via `declareTableLocal` and `buildConditionCall`). No closure, no supplier.
 
-### 4. Generate a `totalCount` resolver in `ConnectionHelper`
+**`ConnectionHelperClassGenerator`** — emit a private static `graphitronContext` shim mirroring `TypeFetcherGenerator.buildGraphitronContextHelper`:
 
-**File:** `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewrite/generators/util/ConnectionHelperClassGenerator.java`.
+```java
+private static GraphitronContext graphitronContext(DataFetchingEnvironment env) {
+    return env.getGraphQlContext().get(GraphitronContext.class);
+}
+```
 
-Add `totalCount(env)` alongside the other static resolvers:
+and a `totalCount(env)` resolver alongside the other static resolvers:
 
 ```java
 public static Integer totalCount(DataFetchingEnvironment env) {
@@ -105,40 +88,36 @@ public static Integer totalCount(DataFetchingEnvironment env) {
 }
 ```
 
-The helper class needs its own private static `graphitronContext(env)` shim, mirroring the one `TypeFetcherGenerator.buildGraphitronContextHelper` emits onto each Fetchers class:
+Register `totalCount` on the `TypeSpec` builder. Update the class Javadoc bullet list to include it.
 
-```java
-private static GraphitronContext graphitronContext(DataFetchingEnvironment env) {
-    return env.getGraphQlContext().get(GraphitronContext.class);
-}
-```
-
-Emit it once on the helper class. Register `totalCount` on the `TypeSpec` builder. Update the class Javadoc bullet list to include `totalCount(env)`.
-
-### 5. Wire `totalCount` from the registrations emitter
-
-**File:** `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewrite/generators/schema/FetcherRegistrationsEmitter.java`, `connectionBody`.
-
-Append a fourth registration line, gated on the field being present on the connection's `schemaType()` *and* typed `Int`:
+**`FetcherRegistrationsEmitter`** — change `connectionBody` to take the full `ConnectionType` (instead of `(connectionTypeName, utilPackage)`) and append a fourth registration line gated on the field's presence and `Int`-typing:
 
 ```java
 GraphQLFieldDefinition fd = connectionType.schemaType().getFieldDefinition("totalCount");
 if (fd != null && GraphQLTypeUtil.unwrapAll(fd.getType()) == Scalars.GraphQLInt) {
     body.add("\n.dataFetcher($T.coordinates($S, $S), $T::totalCount)",
-        FIELD_COORDS, connectionTypeName, "totalCount", helper);
+        FIELD_COORDS, connectionType.name(), "totalCount", helper);
 }
 ```
 
-The synthesised path always trips the gate because Step 1 unconditionally adds the field as `Int`. The structural path trips it only when the SDL author declared `totalCount: Int` (or `Int!`); structural fields named `totalCount` with any other type are quietly ignored rather than mis-wired.
+The synthesised path always trips the gate. Structural connections trip only when the SDL author declared `totalCount: Int` (or `Int!`); fields named `totalCount` with any other type are quietly ignored rather than mis-wired.
 
-`connectionBody` currently takes only `(connectionTypeName, utilPackage)`. Change the signature to take the full `ConnectionType` so the gate can read `schemaType()`. While editing the file, fold in two incidental cleanups (small, in scope):
+While editing the file, fold in two incidental cleanups (small, in scope):
 
-- **Drop the intermediate `Map<String, String> connectionTypeMap`** at lines 68-73 and iterate `schema.types().values()` directly for `ConnectionType` instances. The map collapses each `ConnectionType` record down to a `(name, edgeName)` pair only for the call site to need the rest back. Iterating the records directly gives `connectionBody` the full type without any intermediate projection, and the `putIfAbsent` defensiveness goes away (`schema.types()` is itself keyed by name, duplicates can't occur).
-- **Remove the unused `ConnectionWiring` record** declared at the top of the class. It's a refactor stub that nothing references.
+- Drop the intermediate `Map<String, String> connectionTypeMap` and iterate `schema.types().values()` directly for `ConnectionType` instances. The map collapses each record down to a `(name, edgeName)` pair only for the call site to need the rest back; iterating the records directly hands `connectionBody` the full type and removes the `putIfAbsent` defensiveness (`schema.types()` is itself keyed by name, duplicates can't occur).
+- Remove the unused `ConnectionWiring` record at the top of the class. It's a refactor stub that nothing references.
 
-### 6. Roadmap entry
+## Tests
 
-**File:** `graphitron-rewrite/docs/planning/rewrite-roadmap.md`.
+Per `rewrite-design-principles.md`: no code-string assertions on generated bodies; tiers are unit, pipeline, compilation, execution.
+
+- **Pipeline (synthesised)** — `GraphitronSchemaBuilderTest` asserts the synthesised `ConnectionType` for an `@asConnection` carrier has a `totalCount: Int` (nullable) field on its `schemaType()`. One fixture; synthesis is unconditional.
+- **Pipeline (structural)** — three fixtures: a hand-written Connection-shaped type with `totalCount: Int`, one without, and one with `totalCount: String` (or some other non-Int type). Only the first ends up with `totalCount` wired. Verify by inspecting the emitted `FetcherRegistrationsClass` source via the existing pipeline-test scaffolding for "what coordinates were registered", which the firstclass-connections work already exercises.
+- **Compilation** — `GeneratedSourcesSmokeTest`'s normal job; nothing new to add beyond ensuring the new `(table, condition)` constructor parameters, the helper's `graphitronContext` shim, and the `totalCount` resolver are reached by an existing fixture.
+- **Execution (positive)** — in `graphitron-rewrite-test`, query `edges { node { ... } } totalCount` against an existing connection fixture. Assert the count matches `dsl.fetchCount(<table>)` for the unfiltered case, and equals the WHERE-filtered count for a filter-bearing case.
+- **Execution (negative)** — a second query that omits `totalCount` must not issue a count SQL statement. Register a jOOQ `ExecuteListener` on the test `DSLContext` that records the rendered SQL for each statement; the test fails if any captured statement begins with `select count`. The lazy-on-selection property is the whole point of the design and deserves a real assertion.
+
+## Roadmap entries
 
 The Active table already lists `@asConnection \`totalCount\` field` linked to this plan. No change there.
 
@@ -148,25 +127,11 @@ Add to the Backlog (Cleanup or Priority, implementer's call) for the explicitly-
 
 > **`totalCount`-only execution skips the page query** **[Backlog]**: when `totalCount` is the only selected connection field, the connection fetcher could skip the page query entirely. Interacts with `ConnectionResult` invariants (`trimmedResult`, cursor encoding) that today assume a page result exists; needs `result == empty` paths added throughout. Defer until a real query pattern surfaces.
 
-Two additional Backlog items, surfaced during plan review and worth filing alongside this work:
+Two adjacent items, surfaced during plan review and worth filing alongside this work:
 
 > **Remove `@shareable` propagation from synthesised Relay types** **[Backlog]**: `GraphitronSchemaBuilder` currently propagates `@shareable` from the source query field onto the synthesised Connection, Edge, and PageInfo types. This is overreach: a directive on a query field doesn't carry cross-subgraph sharing intent, and Federation v2 type-level `@shareable` silently extends to every present and future field on the type (including new synthesised siblings such as `totalCount`). Drop the propagation entirely. Users who need `@shareable` on PageInfo or any other Relay-shaped type declare a structural type with the directives directly; the synthesiser only runs when no structural type is provided. Touches `buildSynthesisedConnection`, `buildSynthesisedEdge`, `buildSynthesisedPageInfo`, the `pageInfoShareable` aggregation, the `shareable` constructor parameters, and the `shareable` fields on `ConnectionType` / `EdgeType` (audit consumers, likely removable).
 
 > **Constrain Connection types to a single source field** **[Backlog]**: A hand-written `Connection` type may currently be the return type of multiple `QueryTableField`s, each with its own parent table and conditions. This forces request-time context (table, condition) to be captured per-field rather than carried on the schema model, blocks model-time metadata for `totalCount` and faceted search, and divides the synthesised path (always 1-to-1) from the structural path (n-to-1). Enforce 1-to-1 via a classifier check; emit a build-time error pointing at the conflicting fields. No production users yet, so this is the cheapest moment to draw the line.
-
-### 7. Tests
-
-Per `rewrite-design-principles.md` test tiers: no code-string assertions on generated bodies; the four tiers are unit, pipeline, compilation, execution.
-
-**Pipeline test** (`GraphitronSchemaBuilderTest`): assert that the synthesised `ConnectionType` for an `@asConnection` carrier has a `totalCount: Int` (nullable) field on its `schemaType()`. One case is enough; the synthesis is unconditional so a single fixture covers all.
-
-**Pipeline test for structural connections**: author three fixtures: a hand-written Connection-shaped type that declares `totalCount: Int`, one without `totalCount`, and one with `totalCount: String` (or some other non-Int type). Only the first ends up with `totalCount` wired; the other two do not. Verify by inspecting the emitted `FetcherRegistrationsClass` source via the existing pipeline-test scaffolding for "what coordinates were registered", which the firstclass-connections work already exercises.
-
-**Compilation test**: the generated `ConnectionResult`, `ConnectionHelper`, and per-fetcher classes compile. This is `GeneratedSourcesSmokeTest`'s normal job; nothing new to add beyond making sure the new `(table, condition)` constructor parameters, the helper's `graphitronContext` shim, and the `totalCount` resolver are reached by an existing fixture's emission.
-
-**Execution test** (`graphitron-rewrite/graphitron-rewrite-test/...`): pick an existing connection fixture and add a query that selects `totalCount` alongside `edges { node { ... } }`. Assert the count matches `dsl.fetchCount(<table>)` for the unfiltered case, and equals the WHERE-filtered count for a filter-bearing case.
-
-**Negative execution test**: a second query that omits `totalCount` must not issue a count SQL statement. Register a jOOQ `ExecuteListener` on the test `DSLContext` that records the rendered SQL for each statement; the test fails if any captured statement begins with `select count`. The lazy-on-selection property is the whole point of the design and deserves a real assertion, not a faith-based one.
 
 ## Success criteria
 
