@@ -806,7 +806,7 @@ class FieldBuilder {
      * {@link InputColumnBinding} per {@code @lookupKey}-bearing input field (argres Phase 3).
      *
      * <p>Only {@link InputField.ColumnField} entries contribute bindings — a {@code @lookupKey}
-     * on a {@code @reference}-navigating, nesting, or platform-id input field is rejected here.
+     * on a {@code @reference}-navigating, nesting, or NodeId input field is rejected here.
      * List-typed input fields are also rejected: list cardinality must live on the outer
      * argument, not on an individual input-type field.
      *

@@ -11,7 +11,7 @@ import java.util.Locale;
 /**
  * Custom jOOQ code generator for graphitron-rewrite test fixtures. Appends NodeId-metadata
  * constants ({@code __NODE_TYPE_ID} and {@code __NODE_KEY_COLUMNS}) to specific fixture tables,
- * mimicking what Sikt's {@code KjerneJooqGenerator} emits for platform-id tables in production.
+ * mimicking what Sikt's {@code KjerneJooqGenerator} emits for NodeId-bearing tables in production.
  *
  * <p>The mapping is hard-coded in {@link #METADATA}. Tables outside the map generate as stock jOOQ
  * output. The point is that the rewrite's classifier is exercised against real generator output

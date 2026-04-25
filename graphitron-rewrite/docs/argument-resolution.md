@@ -71,7 +71,7 @@ enclosing query field's target table). The variant doesn't need to know
 which source produced it; the carrying argument record (`TableInputArg` or
 `PlainInputArg`) remembers that.
 
-`PlatformIdField` is intentionally excluded; see Out of Scope. `ArgConditionRef`
+`NodeIdField` is intentionally excluded; see Out of Scope. `ArgConditionRef`
 is reused verbatim; its `override` flag is the input-field-level override
 (matching legacy semantics: `override: true` on an input field replaces that
 field's implicit condition with the explicit method).
@@ -423,6 +423,8 @@ code.
 
 - **Mutations.** Input-type arguments for DML use a different mapping.
   Mutations get their own plan.
-- **`PlatformIdField` with `@condition`.** Platform IDs are legacy
-  accessors; if a real schema surfaces this we'll promote it to its own
-  backlog item.
+- **`NodeIdField` with `@condition`.** Node-id input fields decode through
+  `NodeIdStrategy` rather than direct column binding, so input-field-level
+  `@condition` would compose with the encoded-id path differently than with
+  plain column fields. Promote to its own backlog item if a real schema
+  surfaces this.

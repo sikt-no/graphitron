@@ -1564,7 +1564,7 @@ class GraphQLQueryTest {
     @Test
     void node_compositeKeyEncoding_isFrozen() {
         // The execution-tier schema only exposes single-key NodeTypes, but the encoder is
-        // used for composite keys too (see PlatformIdPipelineTest's `bar` fixture). Pin the
+        // used for composite keys too (see NodeIdPipelineTest's `bar` fixture). Pin the
         // composite wire format directly so a "tidy up the CSV" refactor that, say, switches
         // the separator from ',' to '|' or drops the comma escape rule is caught here.
         String pinned = "Rm9vOjEsMg";  // base64-url-no-pad of "Foo:1,2"
