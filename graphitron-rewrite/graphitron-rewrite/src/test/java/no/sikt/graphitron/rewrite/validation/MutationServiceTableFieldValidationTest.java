@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.validation;
 
+import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.MutationField.MutationServiceTableField;
@@ -29,7 +30,7 @@ class MutationServiceTableFieldValidationTest {
         STUBBED("service mutation field with resolved method — not yet implemented, produces stubbed-variant error",
             new MutationServiceTableField("Mutation", "externalMutation", null,
                 FILM_RETURN,
-                new MethodRef.Basic("com.example.Service", "method", "void", List.of())),
+                new MethodRef.Basic("com.example.Service", "method", TypeName.VOID, List.of())),
             List.of(stubbedError("Mutation.externalMutation", MutationServiceTableField.class)));
 
         private final String description;

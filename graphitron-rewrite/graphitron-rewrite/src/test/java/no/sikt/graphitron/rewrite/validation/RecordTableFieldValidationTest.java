@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.validation;
 
+import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.BatchKey;
@@ -50,13 +51,13 @@ class RecordTableFieldValidationTest {
 
         SINGLE_WITH_CONDITION_ONLY("single cardinality with condition-only join step — single-cardinality stub fires first",
             new RecordTableField("FilmDetails", "film", null, filmReturn(new FieldWrapper.Single(true)),
-                List.of(new JoinStep.ConditionJoin(new MethodRef.Basic("com.example.Conditions", "filmCondition", "org.jooq.Condition", List.of()), "")),
+                List.of(new JoinStep.ConditionJoin(new MethodRef.Basic("com.example.Conditions", "filmCondition", ClassName.get("org.jooq", "Condition"), List.of()), "")),
                 List.of(), new OrderBySpec.None(), null, BATCH_KEY),
             List.of(SINGLE_CARDINALITY_STUB)),
 
         LIST_WITH_CONDITION_ONLY("list cardinality with condition-only join step — condition-join stub surfaces as build error",
             new RecordTableField("FilmDetails", "film", null, filmReturn(new FieldWrapper.List(true, true)),
-                List.of(new JoinStep.ConditionJoin(new MethodRef.Basic("com.example.Conditions", "filmCondition", "org.jooq.Condition", List.of()), "")),
+                List.of(new JoinStep.ConditionJoin(new MethodRef.Basic("com.example.Conditions", "filmCondition", ClassName.get("org.jooq", "Condition"), List.of()), "")),
                 List.of(), new OrderBySpec.None(), null, BATCH_KEY),
             List.of(CONDITION_JOIN_STUB)),
 

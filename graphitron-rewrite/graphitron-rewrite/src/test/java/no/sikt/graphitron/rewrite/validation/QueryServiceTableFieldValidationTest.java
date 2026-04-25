@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.validation;
 
+import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.QueryField.QueryServiceTableField;
@@ -28,7 +29,7 @@ class QueryServiceTableFieldValidationTest {
         VALID("service query field with resolved method — passes validation (Invariants §1/§2 enforced at classifier time)",
             new QueryServiceTableField("Query", "externalFilm", null,
                 FILM_RETURN,
-                new MethodRef.Basic("com.example.Service", "method", "void", List.of())),
+                new MethodRef.Basic("com.example.Service", "method", TypeName.VOID, List.of())),
             List.of());
 
         private final String description;

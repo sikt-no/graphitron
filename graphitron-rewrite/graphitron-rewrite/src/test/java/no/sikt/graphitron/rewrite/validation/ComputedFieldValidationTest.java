@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.validation;
 
+import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.ChildField.ComputedField;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
@@ -26,7 +27,7 @@ class ComputedFieldValidationTest {
 
         WITH_LIFT_CONDITION("lift condition with a resolved method (stubbed)",
             new ComputedField("Film", "fullTitle", null, new ReturnTypeRef.ScalarReturnType("Film", new FieldWrapper.Single(true)), List.of(
-                new JoinStep.ConditionJoin(new MethodRef.Basic("com.example.Conditions", "liftCondition", "org.jooq.Condition", List.of()), ""))),
+                new JoinStep.ConditionJoin(new MethodRef.Basic("com.example.Conditions", "liftCondition", ClassName.get("org.jooq", "Condition"), List.of()), ""))),
             List.of(stubbedError("Film.fullTitle", ComputedField.class)));
 
         private final String description;
