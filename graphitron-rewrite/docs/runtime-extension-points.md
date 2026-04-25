@@ -9,8 +9,12 @@ touching generated code.
 ## GraphitronContext
 
 `GraphitronContext` is the runtime extension point that Graphitron defines. Every generated
-DataFetcher retrieves it and calls its methods. You control what happens at runtime by providing
-your own implementation.
+DataFetcher retrieves it and calls its methods. Generated helper utilities that issue SQL on
+behalf of those fetchers (for example, `ConnectionHelper.totalCount(env)` for `@asConnection`
+connections) follow the same pattern: they emit a private `graphitronContext(env)` shim and look
+up `DSLContext` per invocation rather than capturing one. You control what happens at runtime by
+providing your own implementation; transaction boundaries, connection scope, session variables,
+and listeners are all decided by the `DSLContext` you return, not by anything Graphitron emits.
 
 **Location:** `graphitron-common/src/main/java/no/sikt/graphql/GraphitronContext.java`
 
