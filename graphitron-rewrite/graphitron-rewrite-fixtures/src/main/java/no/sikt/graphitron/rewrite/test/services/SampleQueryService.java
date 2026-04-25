@@ -30,25 +30,14 @@ public final class SampleQueryService {
     private SampleQueryService() {}
 
     /**
-     * Filters the FILM table by minimum rental rate. The framework supplies
-     * {@code Tables.FILM} as {@code filmTable} (the {@code ParamSource.Table} slot resolves
-     * to {@code Tables.FILM} per the @table-bound return type) and projects via
-     * {@code FilmType.$fields(...)} over the returned {@code Table<FilmRecord>}.
-     */
-    /**
-     * Returns the framework-supplied {@code Tables.FILM} aliased. Demonstrates that
-     * {@code @tableMethod} preserves the developer's choice of jOOQ table while still
-     * being projected by the framework via {@code FilmType.$fields(...)}. The minimum
-     * rental rate argument is intentionally unused in this fixture (filtering on a
-     * specific table class isn't directly possible since {@code Tables.FILM.where(...)}
-     * returns a wider {@code Table<R>} that would fail the classifier-time return-type
-     * check — see plan-service-root-fetchers.md Invariants §3); the arg is kept on the
-     * SDL so the {@code ParamSource.Arg} slot is exercised in declaration order. Real
-     * use cases for {@code @tableMethod}-with-strict-return are tenant-scoped table
-     * routing or aliasing — both of which preserve the {@code Film} type.
+     * Filters the FILM table by minimum rental rate. The generated jOOQ {@code Film} class
+     * overrides {@code where(...)} to return {@code Film} (not {@code Table<R>}), so the
+     * filtered derived table preserves the specific table type required by
+     * plan-service-root-fetchers.md Invariants §3 and feeds {@code FilmType.$fields(...)}
+     * directly without a downcast.
      */
     public static Film popularFilms(Film filmTable, Double minRentalRate) {
-        return filmTable.as("popular_films");
+        return filmTable.where(filmTable.RENTAL_RATE.ge(java.math.BigDecimal.valueOf(minRentalRate)));
     }
 
     /**
