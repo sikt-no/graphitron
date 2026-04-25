@@ -42,6 +42,30 @@ class SchemaWatcherTest {
     }
 
     @Test
+    void modifyingGraphqlsFile_firesCallback(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("schema.graphqls");
+        Files.writeString(file, "type Query { x: Int }");
+        var latch = new CountDownLatch(1);
+        startWatcher(Set.of(dir), latch::countDown);
+
+        Files.writeString(file, "type Query { y: Int }");
+
+        assertThat(latch.await(WAIT_MS, TimeUnit.MILLISECONDS)).isTrue();
+    }
+
+    @Test
+    void deletingGraphqlsFile_firesCallback(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("schema.graphqls");
+        Files.writeString(file, "type Query { x: Int }");
+        var latch = new CountDownLatch(1);
+        startWatcher(Set.of(dir), latch::countDown);
+
+        Files.delete(file);
+
+        assertThat(latch.await(WAIT_MS, TimeUnit.MILLISECONDS)).isTrue();
+    }
+
+    @Test
     void rapidWrites_firesCallbackOnce(@TempDir Path dir) throws Exception {
         var fired = new AtomicInteger();
         var latch = new CountDownLatch(1);
