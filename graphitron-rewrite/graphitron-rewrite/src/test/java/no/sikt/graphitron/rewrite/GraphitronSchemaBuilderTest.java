@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite;
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.rewrite.BuildWarning;
+import no.sikt.graphitron.rewrite.RejectionKind;
 import no.sikt.graphitron.rewrite.model.ErrorHandlerType;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ChildField.ColumnField;
@@ -617,10 +618,14 @@ class GraphitronSchemaBuilderTest {
             type Query { store: Store }
             """,
             schema -> {
-                assertThat(schema.field("Store", "customersByKey")).isInstanceOf(UnclassifiedField.class);
-                assertThat(((UnclassifiedField) schema.field("Store", "customersByKey")).reason())
+                var rejected = (UnclassifiedField) schema.field("Store", "customersByKey");
+                assertThat(rejected).isInstanceOf(UnclassifiedField.class);
+                assertThat(rejected.reason())
                     .contains("@asConnection on @lookupKey fields is invalid")
                     .contains("positional correspondence");
+                // Ratchet: this rejection is a permanent schema-modeling error, not a generator
+                // gap. INVALID_SCHEMA must not drift back to DEFERRED.
+                assertThat(rejected.kind()).isEqualTo(RejectionKind.INVALID_SCHEMA);
             }),
 
         SPLIT_QUERY(
@@ -1896,6 +1901,9 @@ class GraphitronSchemaBuilderTest {
                     .contains("argument 'tytle'")
                     .contains("could not be resolved in table 'film'")
                     .contains("did you mean");
+                // Ratchet: typo-class rejections are AUTHOR_ERROR (typo-fixable). Must not drift
+                // into INVALID_SCHEMA or DEFERRED.
+                assertThat(f.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
             }),
 
         LOOKUP_KEY_ON_INPUT_FIELD_WITH_REFERENCE_JOIN_REJECTED(
