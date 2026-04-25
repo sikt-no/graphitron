@@ -1,24 +1,31 @@
 # Plan: Rewrite emitter + classifier hygiene sweep
 
-> **Status:** Ready
+> **Status:** In Review
 >
 > Three cleanups surfaced during the split-query-connection work (shipped at
-> `3821842` §1 + `62b51c3` §2). Bundled into one plan because each gates a
-> distinct piece of upcoming feature work cleanly:
+> `3821842` §1 + `62b51c3` §2). All three phases shipped:
 >
-> - **Phase 1** (`SplitRowsMethodEmitter` dedup) gates *Faceted search on
->   `@asConnection`*, which is likely to add a fourth Split-rows variant.
->   Doing it first means faceted-search authors a body, not a fourth copy.
-> - **Phase 2** (Table-parameter convention audit) is a low-cost rule-write;
->   per the audit below every existing helper already complies, so this
->   reduces to a one-liner on each emitter plus a paragraph in design
->   principles.
-> - **Phase 3** (rejection-message taxonomy) gates *Mutation bodies*, which
->   will add the largest single batch of new rejection sites in the rewrite's
->   history. Categorising up-front is cheaper than retrofitting later.
+> - **Phase 1** at `1cc4e19` — `SplitRowsMethodEmitter` prelude extracted
+>   into `emitParentInputAndFkChain` + `PreludeBindings` record. Each
+>   sibling reduces to its divergence-point body. Generated output verified
+>   byte-identical against pre-refactor baseline; net 70 lines saved.
+> - **Phase 2** at `48ef3e4` — Helper-locality rule landed in
+>   `docs/rewrite-design-principles.md` with per-emitter back-pointers on
+>   the four compliant emitters. Audit found every existing emitter
+>   compliant; documentation only.
+> - **Phase 3** at `939b972` (UnclassifiedField + 52 FieldBuilder sites)
+>   and `17b9312` (ValidationError + 32 validator sites + log prefix).
+>   `RejectionKind` enum carries the four-value taxonomy
+>   (`INVALID_SCHEMA` / `AUTHOR_ERROR` / `DEFERRED` / `INTERNAL_INVARIANT`);
+>   `validateUnclassifiedField` propagates `field.kind()` so the classifier
+>   stays the source of truth; logs prefix `[<kind>]` in kebab-case. Three
+>   ratchet tests pin the canonical-drift cases (@asConnection + @lookupKey
+>   as INVALID_SCHEMA, typo-class column rejections as AUTHOR_ERROR,
+>   whole-variant stubs as DEFERRED).
 >
-> All three ship under one plan / one InReview cycle to keep workflow
-> overhead low. The phases are still landed in distinct commits.
+> 707 rewrite-core unit + 131 rewrite-test execution + 14 maven plugin
+> tests green. Plan retained for one review round; delete on Done per
+> workflow.
 
 ## Problem
 
