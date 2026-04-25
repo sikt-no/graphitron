@@ -77,6 +77,13 @@ class TestServiceStub {
     /** Returns {@link LanguageRecord} — used by {@code @service} on a {@code Language} return. */
     public static LanguageRecord getLanguage() { throw new UnsupportedOperationException(); }
 
+    /**
+     * Returns {@code Result<LanguageRecord>} — used to exercise the inner-generic-mismatch
+     * rejection path where a {@code [Film!]!} field expecting {@code Result<FilmRecord>} is
+     * pointed at a method whose outer type matches but whose inner type does not.
+     */
+    public static Result<LanguageRecord> getLanguages() { throw new UnsupportedOperationException(); }
+
     // ===== Methods that intentionally violate return-type strictness =====
 
     /**

@@ -3303,6 +3303,78 @@ class GraphitronSchemaBuilderTest {
                 assertThat(f).isInstanceOf(UnclassifiedField.class);
                 assertThat(((UnclassifiedField) f).reason())
                     .contains("@service at the root does not support List<Row>/List<Record>/List<Object> batch parameters");
+            }),
+
+        SERVICE_WITH_INNER_GENERIC_MISMATCH_REJECTED(
+            "@service at root with right outer wrapper but wrong inner generic → UnclassifiedField (strict comparison is structural, not raw-class)",
+            """
+            type Film @table(name: "film") { title: String }
+            type Query {
+                innerMismatch: [Film!]!
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getLanguages"})
+            }
+            """,
+            schema -> {
+                var f = schema.field("Query", "innerMismatch");
+                assertThat(f).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) f).reason())
+                    .contains("must return")
+                    .contains("FilmRecord")
+                    .contains("LanguageRecord");
+            }),
+
+        SERVICE_WITH_LIST_VS_SINGLE_MISMATCH_REJECTED(
+            "@service at root: Single field whose method returns Result<FilmRecord> → UnclassifiedField (cardinality mismatch)",
+            """
+            type Film @table(name: "film") { title: String }
+            type Query {
+                cardinalityMismatch: Film
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilms"})
+            }
+            """,
+            schema -> {
+                var f = schema.field("Query", "cardinalityMismatch");
+                assertThat(f).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) f).reason())
+                    .contains("must return")
+                    .contains("FilmRecord");
+            }),
+
+        SERVICE_WITH_RECORD_BACKING_CLASS_MISMATCH_REJECTED(
+            "@service at root: @record-backed return type whose method returns the wrong concrete class → UnclassifiedField",
+            """
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) {
+                title: String
+            }
+            type Query {
+                filmDetails: FilmDetails
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getLanguage"})
+            }
+            """,
+            schema -> {
+                var f = schema.field("Query", "filmDetails");
+                assertThat(f).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) f).reason())
+                    .contains("must return")
+                    .contains("FilmRecord")
+                    .contains("LanguageRecord");
+            }),
+
+        MUTATION_SERVICE_WITH_WRONG_RETURN_TYPE_REJECTED(
+            "@service on mutation field with mismatched return type → UnclassifiedField (strict-return applies on mutation arm too)",
+            """
+            type Film @table(name: "film") { title: String }
+            type Query { x: String }
+            type Mutation {
+                wrongReturnMutation: Film
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "run"})
+            }
+            """,
+            schema -> {
+                var f = schema.field("Mutation", "wrongReturnMutation");
+                assertThat(f).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) f).reason())
+                    .contains("must return 'no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord'");
             });
 
         final String sdl;
