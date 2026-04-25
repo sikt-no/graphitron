@@ -234,7 +234,7 @@ public class JooqCatalog {
      *       {@code __NODE_KEY_COLUMNS} non-null, non-empty, and every entry resolvable to a column
      *       on the same table. Malformed metadata logs a warning keyed on the table SQL name; the
      *       classifier boundary surfaces this as an {@code UnclassifiedType} once the probe is
-     *       consumed there (Step 2 of the platform-id plan).</li>
+     *       consumed there.</li>
      * </ul>
      *
      * <p>Consumer-side: {@code NodeIdStrategy.createId(typeId, keyFields)} and
@@ -448,7 +448,7 @@ public class JooqCatalog {
     /**
      * Three-state outcome of a {@link #nodeIdMetadata} reflection probe. {@link Absent} means the
      * table class has no {@code __NODE_TYPE_ID} / {@code __NODE_KEY_COLUMNS} constants (legal for
-     * non-platform-id tables). {@link Present} carries the validated metadata. {@link Malformed}
+     * non-NodeId tables). {@link Present} carries the validated metadata. {@link Malformed}
      * carries a human-readable reason suitable for a classifier-boundary diagnostic; the caller
      * prepends the {@code "KjerneJooqGenerator metadata on table 'X' is malformed: "} prefix.
      *

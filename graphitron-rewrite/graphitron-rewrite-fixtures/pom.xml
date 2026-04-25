@@ -105,12 +105,12 @@
                             <generator>
                                 <name>no.sikt.graphitron.rewrite.fixtures.codegen.NodeIdFixtureGenerator</name>
                                 <database>
-                                    <inputSchema>platformidfixture</inputSchema>
-                                    <includes>platformidfixture\..*</includes>
+                                    <inputSchema>nodeidfixture</inputSchema>
+                                    <includes>nodeidfixture\..*</includes>
                                     <schemaVersionProvider>${jooq.codegen.schema.version}</schemaVersionProvider>
                                 </database>
                                 <target>
-                                    <packageName>no.sikt.graphitron.rewrite.platformidfixture</packageName>
+                                    <packageName>no.sikt.graphitron.rewrite.nodeidfixture</packageName>
                                     <directory>${project.build.directory}/generated-sources/jooq</directory>
                                 </target>
                             </generator>
