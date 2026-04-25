@@ -1462,6 +1462,56 @@ class GraphQLQueryTest {
         assertThat(pageInfo.get("hasPreviousPage")).isEqualTo(false);
     }
 
+    // ===== Query.node — Relay Global Object Identification =====
+
+    @Test
+    void node_customerById_roundTripsThroughDispatcher() {
+        String id = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 1);
+        Map<String, Object> data = execute(
+            "{ node(id: \"" + id + "\") { __typename ... on Customer { firstName lastName } } }");
+        var node = (Map<String, Object>) data.get("node");
+        assertThat(node).isNotNull();
+        assertThat(node.get("__typename")).isEqualTo("Customer");
+        assertThat(node.get("firstName")).isEqualTo("Mary");
+        assertThat(node.get("lastName")).isEqualTo("Smith");
+    }
+
+    @Test
+    void node_filmById_dispatchesByTypeIdPrefix() {
+        // Different NodeType (Film) — verifies the dispatcher routes by typeId prefix.
+        String id = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 1);
+        Map<String, Object> data = execute(
+            "{ node(id: \"" + id + "\") { __typename ... on Film { title } } }");
+        var node = (Map<String, Object>) data.get("node");
+        assertThat(node).isNotNull();
+        assertThat(node.get("__typename")).isEqualTo("Film");
+        assertThat(node.get("title")).isEqualTo("ACADEMY DINOSAUR");
+    }
+
+    @Test
+    void node_unknownTypeId_returnsNull() {
+        // typeId prefix no NodeType claims → null (Relay spec: "if no such object exists, the
+        // field returns null"). Dispatcher must not raise.
+        String id = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("NotARegisteredType", "1");
+        Map<String, Object> data = execute("{ node(id: \"" + id + "\") { __typename } }");
+        assertThat(data.get("node")).isNull();
+    }
+
+    @Test
+    void node_garbageInput_returnsNull() {
+        // Malformed base64 → null (opacity: decoding errors are not exposed to clients).
+        Map<String, Object> data = execute("{ node(id: \"not-a-valid-base64-id\") { __typename } }");
+        assertThat(data.get("node")).isNull();
+    }
+
+    @Test
+    void node_validPrefixNoSuchRow_returnsNull() {
+        // Registered typeId but the row doesn't exist — null, not error.
+        String id = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 999999);
+        Map<String, Object> data = execute("{ node(id: \"" + id + "\") { __typename } }");
+        assertThat(data.get("node")).isNull();
+    }
+
     @Test
     void stores_synthesisedConnection_cursorRoundTrip() {
         // Fetch page 1 cursor, use it for page 2, assert hasNextPage is false (2 stores total).

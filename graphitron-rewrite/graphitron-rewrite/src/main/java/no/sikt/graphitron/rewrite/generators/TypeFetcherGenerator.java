@@ -138,6 +138,7 @@ public class TypeFetcherGenerator {
      */
     public static final Set<Class<? extends GraphitronField>> IMPLEMENTED_LEAVES = Set.of(
         ChildField.ColumnField.class,
+        QueryField.QueryNodeField.class,
         QueryField.QueryLookupTableField.class,
         QueryField.QueryTableField.class,
         ChildField.ServiceTableField.class,
@@ -208,8 +209,6 @@ public class TypeFetcherGenerator {
             // QueryField stubs
             Map.entry(QueryField.QueryTableMethodTableField.class,
                 "QueryTableMethodTableField not yet implemented — see rewrite-roadmap.md 'Stubs to complete' #1"),
-            Map.entry(QueryField.QueryNodeField.class,
-                "QueryNodeField not yet implemented — see rewrite-roadmap.md"),
             Map.entry(QueryField.QueryEntityField.class,
                 "QueryEntityField not yet implemented — see rewrite-roadmap.md"),
             Map.entry(QueryField.QueryTableInterfaceField.class,
@@ -340,9 +339,9 @@ public class TypeFetcherGenerator {
                         builder.addMethod(LookupValuesJoinEmitter.buildInputRowsMethod(slf, lookupTableClass));
                     }
                 }
+                case QueryField.QueryNodeField f              -> builder.addMethod(buildQueryNodeFetcher(f, outputPackage));
                 // Stub variants — see NOT_IMPLEMENTED_REASONS
                 case QueryField.QueryTableMethodTableField f  -> builder.addMethod(stub(f));
-                case QueryField.QueryNodeField f              -> builder.addMethod(stub(f));
                 case QueryField.QueryEntityField f            -> builder.addMethod(stub(f));
                 case QueryField.QueryTableInterfaceField f    -> builder.addMethod(stub(f));
                 case QueryField.QueryInterfaceField f         -> builder.addMethod(stub(f));
@@ -985,7 +984,7 @@ public class TypeFetcherGenerator {
         var typeFieldsCall = CodeBlock.of("$T.$$fields(env.getSelectionSet(), $L, env)",
             names.typeClass(), tableLocal);
         if (field.lookupMapping() instanceof no.sikt.graphitron.rewrite.model.LookupMapping.NodeIdMapping) {
-            builder.addCode(LookupValuesJoinEmitter.buildNodeIdFetcherBody(field, typeFieldsCall, tableLocal));
+            builder.addCode(LookupValuesJoinEmitter.buildNodeIdFetcherBody(field, typeFieldsCall, tableLocal, outputPackage));
         } else {
             builder.addCode(LookupValuesJoinEmitter.buildFetcherBody(field, typeFieldsCall, tableLocal));
         }
@@ -998,6 +997,18 @@ public class TypeFetcherGenerator {
      * {@link AssertionError} if the class is not in the map, which means the switch arm
      * is missing a map entry.
      */
+    private static MethodSpec buildQueryNodeFetcher(QueryField.QueryNodeField field, String outputPackage) {
+        var queryNodeFetcher = ClassName.get(outputPackage + ".fetchers",
+            no.sikt.graphitron.rewrite.generators.util.QueryNodeFetcherClassGenerator.CLASS_NAME);
+        return MethodSpec.methodBuilder(field.name())
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(RECORD)
+            .addParameter(ENV, "env")
+            .addStatement("return $T.$L(env)", queryNodeFetcher,
+                no.sikt.graphitron.rewrite.generators.util.QueryNodeFetcherClassGenerator.DISPATCH_METHOD)
+            .build();
+    }
+
     private static MethodSpec stub(GraphitronField field) {
         var reason = Objects.requireNonNull(
             NOT_IMPLEMENTED_REASONS.get(field.getClass()),

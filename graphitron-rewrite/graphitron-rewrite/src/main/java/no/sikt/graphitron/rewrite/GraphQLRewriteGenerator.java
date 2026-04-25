@@ -22,6 +22,7 @@ import no.sikt.graphitron.rewrite.generators.util.ConnectionResultClassGenerator
 import no.sikt.graphitron.rewrite.generators.util.GraphitronContextInterfaceGenerator;
 import no.sikt.graphitron.rewrite.generators.util.GraphitronValuesClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator;
+import no.sikt.graphitron.rewrite.generators.util.QueryNodeFetcherClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.OrderByResultClassGenerator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -130,6 +131,7 @@ public class GraphQLRewriteGenerator {
         write(TypeConditionsGenerator.generate(schema, jooqPackage),                              "conditions", emittedThisRun);
         write(QueryConditionsGenerator.generate(schema, outputPackage, jooqPackage),             "conditions", emittedThisRun);
         write(fetcherClasses,                                                                      "fetchers",   emittedThisRun);
+        write(QueryNodeFetcherClassGenerator.generate(schema, outputPackage, jooqPackage),         "fetchers",   emittedThisRun);
         sweepOrphans(emittedThisRun);
     }
 

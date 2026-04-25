@@ -10,7 +10,6 @@ import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
 
-import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.stubbedError;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -18,9 +17,9 @@ class QueryNodeFieldValidationTest {
 
     enum Case implements ValidatorCase {
 
-        STUBBED("node query field — not yet implemented, produces stubbed-variant error",
-            new QueryNodeField("Query", "node", null, new ReturnTypeRef.PolymorphicReturnType("Film", new FieldWrapper.Single(true))),
-            List.of(stubbedError("Query.node", QueryNodeField.class)));
+        IMPLEMENTED_NO_ERRORS("node query field is implemented (R4b) — no per-variant validation errors",
+            new QueryNodeField("Query", "node", null, new ReturnTypeRef.PolymorphicReturnType("Node", new FieldWrapper.Single(true))),
+            List.of());
 
         private final String description;
         private final GraphitronField field;
