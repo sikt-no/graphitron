@@ -13,7 +13,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | Service-backed and method-backed root fetchers | Spec | [plan](plan-service-root-fetchers.md) |
 | `IdReferenceField` input filter variant | Spec | [plan](plan-id-reference-input-field.md) |
 | Classification vocabulary follow-ups | Spec | [plan](plan-classification-vocabulary-followups.md) |
-| KjerneJooqGenerator — emit NodeId metadata constants | Spec | [plan](plan-kjerne-jooq-generator.md) |
 | Multi-parent NestingField sharing — `TableField` arm | Spec | [plan](plan-nestingfield-multiparent-tablefield.md) |
 | Faceted search on `@asConnection` | Spec | [plan](plan-faceted-search.md), [spike](spike-faceted-search-sql.md) |
 | Rewrite emitter + classifier hygiene sweep | Spec | [plan](plan-rewrite-hygiene-sweep.md) |
@@ -22,7 +21,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | Docs as an index into classification tests | Ready (deferred) | [plan](plan-docs-as-index-into-tests.md) |
 | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` | In Progress | (see body) |
 | `graphitron:watch` goal | Spec | [plan](plan-watch-goal.md) |
-**Notes:** KjerneJooqGenerator is an external Sikt repo change (scratch-only here). Classification vocabulary follow-ups covers five independent cleanups — none is a release blocker. Docs-as-index is parked on steps 3–4 until the sealed hierarchy stabilises (Active work and Stubs still in motion); steps 1–2 shipped. `Retire graphitron-maven-plugin` is the Phase 3 migration umbrella; `graphitron:watch` goal is its remaining Spec sub-item. Mutation bodies Phase 6 (service variants) depends on `plan-service-root-fetchers.md` landing first.
+**Notes:** Classification vocabulary follow-ups covers five independent cleanups — none is a release blocker. Docs-as-index is parked on steps 3–4 until the sealed hierarchy stabilises (Active work and Stubs still in motion); steps 1–2 shipped. `Retire graphitron-maven-plugin` is the Phase 3 migration umbrella; `graphitron:watch` goal is its remaining Spec sub-item. Mutation bodies Phase 6 (service variants) depends on `plan-service-root-fetchers.md` landing first.
 
 ---
 
