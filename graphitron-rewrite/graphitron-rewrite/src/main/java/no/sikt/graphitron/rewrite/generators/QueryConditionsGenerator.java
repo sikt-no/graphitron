@@ -36,6 +36,9 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.toCamelCase;
  * {@code QueryConditionsGenerator} emits the env-aware shim layer on top: its generated
  * methods do the {@code env.getArgument(...)} extraction, enum coercion, and composition.
  * Fetcher bodies collapse to {@code QueryConditions.<name>Condition(<tableLocal>, env)}.
+ *
+ * <p>Emitted {@code <fieldName>Condition} helpers take the aliased {@code Table} as a
+ * parameter — see "Helper-locality" in {@code docs/rewrite-design-principles.md}.
  */
 public class QueryConditionsGenerator {
 
