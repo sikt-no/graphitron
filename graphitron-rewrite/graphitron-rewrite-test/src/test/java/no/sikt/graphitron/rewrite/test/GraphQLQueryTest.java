@@ -1505,6 +1505,29 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void node_referenceField_encodesFromFkMirrorThenRoundTrips() {
+        // Customer.addressNodeId references Address.id via the customer_address_id_fkey FK
+        // (FK-mirror collapse: customer.address_id mirrors address.address_id). The dispatcher
+        // encodes the FK column on the parent and the resulting opaque ID round-trips through
+        // Query.node back to the matching Address row — without ever loading the Address table
+        // during the projection.
+        Map<String, Object> data = execute(
+            "{ customers { customerId addressNodeId } }");
+        List<Map<String, Object>> customers = (List<Map<String, Object>>) data.get("customers");
+        assertThat(customers).isNotEmpty();
+        String addressNodeId = (String) customers.get(0).get("addressNodeId");
+        assertThat(addressNodeId).isNotNull();
+
+        Map<String, Object> nodeData = execute(
+            "{ node(id: \"" + addressNodeId + "\") { __typename ... on Address { addressId district } } }");
+        var node = (Map<String, Object>) nodeData.get("node");
+        assertThat(node).isNotNull();
+        assertThat(node.get("__typename")).isEqualTo("Address");
+        assertThat(node.get("addressId")).isNotNull();
+        assertThat(node.get("district")).isNotNull();
+    }
+
+    @Test
     void node_validPrefixNoSuchRow_returnsNull() {
         // Registered typeId but the row doesn't exist — null, not error.
         String id = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 999999);
