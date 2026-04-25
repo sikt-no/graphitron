@@ -1,5 +1,8 @@
 package no.sikt.graphitron.rewrite.model;
 
+import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.TypeName;
+
 import java.util.List;
 
 /**
@@ -39,9 +42,11 @@ public record ConditionFilter(
     List<MethodRef.Param> params
 ) implements WhereFilter, MethodRef {
 
+    private static final TypeName CONDITION = ClassName.get("org.jooq", "Condition");
+
     @Override
-    public String returnTypeName() {
-        return "org.jooq.Condition";
+    public TypeName returnType() {
+        return CONDITION;
     }
 
     @Override

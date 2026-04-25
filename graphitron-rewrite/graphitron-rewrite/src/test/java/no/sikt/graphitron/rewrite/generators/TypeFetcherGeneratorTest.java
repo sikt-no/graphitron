@@ -1,7 +1,12 @@
 package no.sikt.graphitron.rewrite.generators;
 
+import no.sikt.graphitron.javapoet.ArrayTypeName;
+import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.MethodSpec;
+import no.sikt.graphitron.javapoet.ParameterizedTypeName;
+import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
+import no.sikt.graphitron.javapoet.WildcardTypeName;
 import no.sikt.graphitron.rewrite.TestFixtures;
 import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.BodyParam;
@@ -308,7 +313,7 @@ class TypeFetcherGeneratorTest {
         var returnWrapper = isList ? (FieldWrapper) listWrapper() : single();
         var returnType = tableBoundFilm(returnWrapper);
         var method = new MethodRef.Basic(
-            "no.example.FilmService", "getFilms", "java.util.List",
+            "no.example.FilmService", "getFilms", ClassName.get("java.util", "List"),
             List.of(
                 new MethodRef.Param.Sourced("keys",
                     new BatchKey.RowKeyed(List.of(languageIdCol()))),
@@ -551,7 +556,7 @@ class TypeFetcherGeneratorTest {
         var method = new MethodRef.Basic(
             "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
             "popularFilms",
-            "no.sikt.graphitron.rewrite.test.jooq.tables.Film",
+            ClassName.get("no.sikt.graphitron.rewrite.test.jooq.tables", "Film"),
             List.of(
                 new MethodRef.Param.Typed("filmTable",
                     "no.sikt.graphitron.rewrite.test.jooq.tables.Film",
@@ -585,7 +590,9 @@ class TypeFetcherGeneratorTest {
         var method = new MethodRef.Basic(
             "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
             "filmsByService",
-            "org.jooq.Result<no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord>",
+            ParameterizedTypeName.get(
+                ClassName.get("org.jooq", "Result"),
+                ClassName.get("no.sikt.graphitron.rewrite.test.jooq.tables.records", "FilmRecord")),
             List.of(
                 new MethodRef.Param.Typed("dsl", "org.jooq.DSLContext", new ParamSource.DslContext()),
                 new MethodRef.Param.Typed("ids", "java.util.List<java.lang.Integer>",
@@ -614,7 +621,7 @@ class TypeFetcherGeneratorTest {
         var method = new MethodRef.Basic(
             "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
             "filmCount",
-            "java.lang.Integer",
+            ClassName.get("java.lang", "Integer"),
             List.of(new MethodRef.Param.Typed("dsl", "org.jooq.DSLContext", new ParamSource.DslContext())));
         var field = new QueryField.QueryServiceRecordField("Query", "filmCount", null,
             new ReturnTypeRef.ScalarReturnType("Int", single()), method);
@@ -633,7 +640,7 @@ class TypeFetcherGeneratorTest {
         // Reflection of `int filmCount()` produces returnTypeName "int". The emitter must
         // declare the primitive faithfully — no widening to Object or Integer.
         var method = new MethodRef.Basic(
-            "com.example.Service", "filmCount", "int", List.of());
+            "com.example.Service", "filmCount", TypeName.INT, List.of());
         var field = new QueryField.QueryServiceRecordField("Query", "filmCount", null,
             new ReturnTypeRef.ScalarReturnType("Int", single()), method);
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
@@ -647,7 +654,8 @@ class TypeFetcherGeneratorTest {
         // Reflection of `String[] tags()` produces returnTypeName "java.lang.String[]". The
         // emitter must preserve the array shape faithfully via ArrayTypeName.
         var method = new MethodRef.Basic(
-            "com.example.Service", "tags", "java.lang.String[]", List.of());
+            "com.example.Service", "tags",
+            ArrayTypeName.of(ClassName.get("java.lang", "String")), List.of());
         var field = new QueryField.QueryServiceRecordField("Query", "tags", null,
             new ReturnTypeRef.ScalarReturnType("Tags", single()), method);
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
@@ -662,7 +670,10 @@ class TypeFetcherGeneratorTest {
         // emitter's depth-aware comma splitter must yield ParameterizedTypeName with two args.
         var method = new MethodRef.Basic(
             "com.example.Service", "stats",
-            "java.util.Map<java.lang.String, java.lang.Integer>", List.of());
+            ParameterizedTypeName.get(
+                ClassName.get("java.util", "Map"),
+                ClassName.get("java.lang", "String"),
+                ClassName.get("java.lang", "Integer")), List.of());
         var field = new QueryField.QueryServiceRecordField("Query", "stats", null,
             new ReturnTypeRef.ScalarReturnType("Stats", single()), method);
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
@@ -678,7 +689,9 @@ class TypeFetcherGeneratorTest {
         // java.lang.Number>". The emitter must preserve the wildcard via WildcardTypeName.
         var method = new MethodRef.Basic(
             "com.example.Service", "nums",
-            "java.util.List<? extends java.lang.Number>", List.of());
+            ParameterizedTypeName.get(
+                ClassName.get("java.util", "List"),
+                WildcardTypeName.subtypeOf(ClassName.get("java.lang", "Number"))), List.of());
         var field = new QueryField.QueryServiceRecordField("Query", "nums", null,
             new ReturnTypeRef.ScalarReturnType("Nums", single()), method);
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,

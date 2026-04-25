@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
+import no.sikt.graphitron.javapoet.TypeName;
+
 import java.util.List;
 
 /**
@@ -12,8 +14,12 @@ import java.util.List;
  *
  * <p>{@code methodName} is the method name, e.g. {@code "getFilms"}.
  *
- * <p>{@code returnTypeName} is the fully qualified erased return type as returned by
- * {@link Class#getName()} (e.g. {@code "java.util.List"}).
+ * <p>{@code returnType} is the structured javapoet {@link TypeName} captured from
+ * {@link java.lang.reflect.Method#getGenericReturnType()} (services) or
+ * {@link java.lang.reflect.Method#getReturnType()} (table methods, conditions). Carries the
+ * full parameterised shape so emitters can declare matching fetcher signatures without parsing
+ * a string back into a {@code TypeName}, and so the strict-return classifier check compares
+ * structurally via {@link TypeName#equals(Object)}.
  *
  * <p>{@code params} is the list of parameters in declaration order; an empty list means the
  * method takes no parameters.
@@ -27,7 +33,7 @@ public interface MethodRef {
 
     String className();
     String methodName();
-    String returnTypeName();
+    TypeName returnType();
     List<Param> params();
 
     /**
@@ -79,7 +85,7 @@ public interface MethodRef {
     record Basic(
         String className,
         String methodName,
-        String returnTypeName,
+        TypeName returnType,
         List<Param> params
     ) implements MethodRef {}
 

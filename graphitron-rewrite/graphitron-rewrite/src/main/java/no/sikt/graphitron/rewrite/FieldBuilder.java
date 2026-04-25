@@ -17,6 +17,9 @@ import graphql.schema.GraphQLObjectType;
 import graphql.schema.GraphQLScalarType;
 import graphql.schema.GraphQLType;
 import graphql.schema.GraphQLTypeUtil;
+import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.ParameterizedTypeName;
+import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ChildField.ColumnField;
@@ -190,10 +193,10 @@ class FieldBuilder {
         // returns a flat or keyed shape that doesn't directly match the field's return type — that
         // shape is the child-service plan's concern. Root fields hand the value straight to graphql-
         // java, so the framework needs to know its specific shape.
-        String expectedReturnTypeName = parentPkColumns.isEmpty()
+        TypeName expectedReturnType = parentPkColumns.isEmpty()
             ? computeExpectedServiceReturnType(returnType)
             : null;
-        var result = svc.reflectServiceMethod(serviceRef.className(), serviceRef.methodName(), argNames, new java.util.HashSet<>(contextArgs), parentPkColumns, expectedReturnTypeName);
+        var result = svc.reflectServiceMethod(serviceRef.className(), serviceRef.methodName(), argNames, new java.util.HashSet<>(contextArgs), parentPkColumns, expectedReturnType);
         if (result.failed()) {
             return new ServiceResolution(null, null, "service method could not be resolved — " + result.failureReason());
         }
@@ -201,9 +204,9 @@ class FieldBuilder {
     }
 
     /**
-     * Computes the expected parameterized return-type FQCN that a {@code @service} method must
-     * declare. Returns {@code null} when no strict validation is applicable (the caller treats
-     * the actual reflection-captured return type as truth).
+     * Computes the expected return type that a {@code @service} method must declare, as a
+     * structured javapoet {@link TypeName}. Returns {@code null} when no strict validation
+     * is applicable (the caller treats the actual reflection-captured return type as truth).
      *
      * <ul>
      *   <li>{@code TableBoundReturnType} + Single → {@code <jooqPackage>.tables.records.<TableName>Record}</li>
@@ -218,7 +221,7 @@ class FieldBuilder {
      * <p>Connection-cardinality cases are unreachable here because {@code @service} +
      * {@code Connection} is rejected at Invariants §1 before this helper runs.
      */
-    private String computeExpectedServiceReturnType(ReturnTypeRef returnType) {
+    private TypeName computeExpectedServiceReturnType(ReturnTypeRef returnType) {
         // Connection-cardinality is rejected by Invariants §1 downstream of this helper; skip the
         // return-type check here so the §1 message fires (rather than masking it with a
         // less-specific return-type mismatch).
@@ -226,12 +229,19 @@ class FieldBuilder {
         boolean isList = returnType.wrapper().isList();
         return switch (returnType) {
             case ReturnTypeRef.TableBoundReturnType tb -> {
-                String recordFqcn = ctx.ctx().jooqPackage() + ".tables.records." + tb.table().javaClassName() + "Record";
-                yield isList ? "org.jooq.Result<" + recordFqcn + ">" : recordFqcn;
+                ClassName recordCls = ClassName.get(
+                    ctx.ctx().jooqPackage() + ".tables.records",
+                    tb.table().javaClassName() + "Record");
+                yield isList
+                    ? ParameterizedTypeName.get(ClassName.get("org.jooq", "Result"), recordCls)
+                    : recordCls;
             }
             case ReturnTypeRef.ResultReturnType r -> {
                 if (r.fqClassName() == null) yield null;
-                yield isList ? "java.util.List<" + r.fqClassName() + ">" : r.fqClassName();
+                ClassName resultCls = ClassName.bestGuess(r.fqClassName());
+                yield isList
+                    ? ParameterizedTypeName.get(ClassName.get("java.util", "List"), resultCls)
+                    : resultCls;
             }
             case ReturnTypeRef.ScalarReturnType ignored -> null;
             case ReturnTypeRef.PolymorphicReturnType ignored -> null;
@@ -1338,7 +1348,7 @@ class FieldBuilder {
                 new ParamSource.Arg(new CallSiteExtraction.TextMapLookup(mapFieldName, textMapping)));
         }).toList();
         return new MethodRef.Basic(method.className(), method.methodName(),
-            method.returnTypeName(), newParams);
+            method.returnType(), newParams);
     }
 
     /**
@@ -1586,7 +1596,8 @@ class FieldBuilder {
             // Invariants §3 (return-type strictness): the developer's @tableMethod must return
             // the generated jOOQ table class exactly, not a wider Table<R>. Computed from the
             // resolved @table-bound return type's TableRef + the build-context jOOQ package.
-            String expectedReturnClass = ctx.ctx().jooqPackage() + ".tables." + tb.table().javaClassName();
+            ClassName expectedReturnClass = ClassName.get(
+                ctx.ctx().jooqPackage() + ".tables", tb.table().javaClassName());
             var qtmResult = svc.reflectTableMethod(
                 qtmRef != null ? qtmRef.className() : null,
                 qtmRef != null ? qtmRef.methodName() : null,
@@ -1987,8 +1998,8 @@ class FieldBuilder {
             Set<String> tmArgNames = fieldDef.getArguments().stream().map(GraphQLArgument::getName).collect(Collectors.toSet());
             List<String> tmCtxArgs = parseContextArguments(fieldDef, DIR_TABLE_METHOD);
             // Invariants §3 (return-type strictness) — applies to child @tableMethod too.
-            String tmExpectedReturnClass = returnType instanceof ReturnTypeRef.TableBoundReturnType tbr
-                ? ctx.ctx().jooqPackage() + ".tables." + tbr.table().javaClassName()
+            ClassName tmExpectedReturnClass = returnType instanceof ReturnTypeRef.TableBoundReturnType tbr
+                ? ClassName.get(ctx.ctx().jooqPackage() + ".tables", tbr.table().javaClassName())
                 : null;
             var tmResult = svc.reflectTableMethod(
                 tmRef != null ? tmRef.className() : null,

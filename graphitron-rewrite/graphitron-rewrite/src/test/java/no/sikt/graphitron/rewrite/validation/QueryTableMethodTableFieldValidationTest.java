@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.validation;
 
+import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
@@ -22,7 +23,7 @@ class QueryTableMethodTableFieldValidationTest {
         VALID("single cardinality — passes validation (Invariants §1 Connection-rejection enforced at classifier time)",
             new QueryTableMethodTableField("Query", "filmsByMethod", null,
                 new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", List.of()), new FieldWrapper.Single(true)),
-                new MethodRef.Basic("com.example.TableMethods", "filmsByMethod", "org.jooq.Table", List.of())),
+                new MethodRef.Basic("com.example.TableMethods", "filmsByMethod", ClassName.get("org.jooq", "Table"), List.of())),
             List.of());
 
         private final String description;
