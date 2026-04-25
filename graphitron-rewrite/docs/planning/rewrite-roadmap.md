@@ -8,6 +8,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | Item | Status | Plan |
 |---|---|---|
+| `@asConnection` `totalCount` field (release blocker) | Spec | [plan](plan-asconnection-totalcount.md) |
 | Rebase and squash rewrite branch onto main | Ready | [plan](plan-history-squash.md) |
 | `BatchKey.ObjectBased` removal | Spec | [plan](plan-batchkey-remove-objectbased.md) |
 | Service-backed and method-backed root fetchers | Ready | [plan](plan-service-root-fetchers.md) |
@@ -20,7 +21,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | Docs as an index into classification tests | Ready (deferred) | [plan](plan-docs-as-index-into-tests.md) |
 | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` | In Progress | (see body) |
 | `graphitron:watch` goal | Spec | [plan](plan-watch-goal.md) |
-**Notes:** Classification vocabulary follow-ups covers five independent cleanups — none is a release blocker. Docs-as-index is parked on steps 3–4 until the sealed hierarchy stabilises (Active work and Stubs still in motion); steps 1–2 shipped. `Retire graphitron-maven-plugin` is the umbrella tracker for what's left of the schema-transform / Maven-plugin migration; `graphitron:watch` goal is its only sub-item with a plan, the rest are body bullets under the umbrella. Mutation bodies Phase 6 (service variants) depends on `plan-service-root-fetchers.md` landing first.
+**Notes:** `@asConnection` `totalCount` field is a release blocker: synthesised Connections currently lack the field that legacy ships by default, so consumers migrating off the legacy generator would lose `totalCount` selection until this lands. Classification vocabulary follow-ups covers five independent cleanups — none is a release blocker. Docs-as-index is parked on steps 3–4 until the sealed hierarchy stabilises (Active work and Stubs still in motion); steps 1–2 shipped. `Retire graphitron-maven-plugin` is the umbrella tracker for what's left of the schema-transform / Maven-plugin migration; `graphitron:watch` goal is its only sub-item with a plan, the rest are body bullets under the umbrella. Mutation bodies Phase 6 (service variants) depends on `plan-service-root-fetchers.md` landing first.
 
 ---
 
