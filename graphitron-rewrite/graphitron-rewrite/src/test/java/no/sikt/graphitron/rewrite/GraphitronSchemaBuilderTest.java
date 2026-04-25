@@ -3255,6 +3255,54 @@ class GraphitronSchemaBuilderTest {
                 assertThat(f).isInstanceOf(UnclassifiedField.class);
                 assertThat(((UnclassifiedField) f).reason())
                     .contains("must return 'no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord'");
+            }),
+
+        MUTATION_SERVICE_WITH_CONNECTION_RETURN_REJECTED(
+            "@service on mutation field returning a Connection-shaped type → UnclassifiedField (Invariants §1, mutation arm)",
+            """
+            type Film @table(name: "film") { title: String }
+            type FilmConnection {
+                edges: [FilmEdge]
+                pageInfo: PageInfo!
+            }
+            type FilmEdge {
+                node: Film
+                cursor: String!
+            }
+            type PageInfo {
+                hasNextPage: Boolean!
+                hasPreviousPage: Boolean!
+                startCursor: String
+                endCursor: String
+            }
+            type Query { x: String }
+            type Mutation {
+                paginatedMutation: FilmConnection
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "run"})
+            }
+            """,
+            schema -> {
+                var f = schema.field("Mutation", "paginatedMutation");
+                assertThat(f).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) f).reason())
+                    .contains("@service at the root does not support Connection return types");
+            }),
+
+        MUTATION_SERVICE_WITH_SOURCES_PARAM_REJECTED(
+            "@service on mutation field with a List<Row1<Integer>> parameter → UnclassifiedField (Invariants §2, mutation arm)",
+            """
+            type Film @table(name: "film") { title: String }
+            type Query { x: String }
+            type Mutation {
+                batchedMutation: [Film!]!
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilmsWithSources"})
+            }
+            """,
+            schema -> {
+                var f = schema.field("Mutation", "batchedMutation");
+                assertThat(f).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) f).reason())
+                    .contains("@service at the root does not support List<Row>/List<Record>/List<Object> batch parameters");
             });
 
         final String sdl;
