@@ -86,9 +86,9 @@ target table and the column bindings — this data is currently discarded at cla
    (`"nested input types in @mutation fields are not yet supported"`).  This keeps the initial
    scope flat; nesting can land in a follow-up.
 
-8. **`InputField.PlatformIdField` in a mutation input is deferred.**  Same gate:
-   `"PlatformIdField in @mutation inputs is not yet supported — use @nodeId"`; tracked under the
-   `plan-nodeid-directives.md` mutation-binding step.
+8. **`InputField.NodeIdField` in a mutation input is deferred.**  Same gate:
+   `"NodeIdField in @mutation inputs is not yet supported"`; the binding-time NodeId decode
+   lands as part of argres Phase 3 (`InputColumnBinding` with a `NodeIdBinding` variant).
 
 9. **`InputField.ColumnReferenceField` (cross-table reference) in a mutation input is deferred.**
    Gate: `"ColumnReferenceField in @mutation inputs is not yet supported"`.
@@ -307,8 +307,9 @@ implement it.  Call sites stay lighter (one parameter instead of three) and new 
 (e.g. bulk-INSERT in a follow-up) pick up the helper for free.  No downstream code reads the
 supertype today, so this is purely additive.
 
-NodeId-encoded IDs (`NodeIdStrategy.createId(...)`) are deferred to the `plan-nodeid-directives.md`
-mutation-binding step.  For now, scalar `ID` returns emit the raw PK column value wrapped in
+NodeId-encoded IDs (via the locally-emitted `NodeIdEncoder.encode(...)`) on mutation return
+values are deferred to argres Phase 3's `NodeIdBinding` work.  For now, scalar `ID` returns
+emit the raw PK column value wrapped in
 `Object`; graphql-java's `ID` scalar handles the `Long → String` coercion.
 
 **`RETURNING` with nested selections (`TableBoundReturnType`):** `Type.$fields` emits
@@ -558,8 +559,8 @@ through graphql-java's registered fetchers.
   constructing a batch INSERT / batch UPDATE / DELETE / UPSERT.  The legacy code uses jOOQ
   `batchInsert` / `batchUpdate` / `batchDelete` / `batchStore` for this.  Tracked as a follow-up.
 - **Nested input types** (`NestingField`): deferred per Invariant #7.
-- **`PlatformIdField` in mutation inputs**: deferred to `plan-nodeid-directives.md`
-  mutation-binding step (Invariant #8).
+- **`InputField.NodeIdField` in mutation inputs**: deferred to argres Phase 3's
+  `NodeIdBinding` variant of `InputColumnBinding` (Invariant #8).
 - **`ColumnReferenceField` in mutation inputs**: deferred (Invariant #9).
 - **Non-`TableInputArg` arguments on DML fields**: deferred (Invariant #11).  A future plan could
   admit scalar context arguments alongside the `@table` input (e.g. a `reason: String` audit field
@@ -576,8 +577,9 @@ through graphql-java's registered fetchers.
   `returningResult(DSL.val(1))` cannot express either honestly.  When a consumer needs an `Int`
   return, a follow-up plan will extend `buildMutationReturnExpression` with an arm that uses
   `.execute()` (returns affected-row count) and skips `returningResult` entirely.
-- **NodeId-encoded IDs in return values** (`NodeIdStrategy.createId(...)`): the returned scalar `ID`
-  is the raw PK column value until `plan-nodeid-directives.md` adds the `NodeIdBinding` step.
+- **NodeId-encoded IDs in return values** (via the locally-emitted `NodeIdEncoder.encode(...)`):
+  the returned scalar `ID` is the raw PK column value until argres Phase 3 lands the
+  `NodeIdBinding` variant of `InputColumnBinding`.
 - **Transaction wrapping**: the emitted DML statements run within whatever transaction context
   the caller provides via `dsl`.  Explicit transaction wrapping (e.g. `dsl.transactionResult(...)`)
   is not added here; service variants already control their own transactions through the
