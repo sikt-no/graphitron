@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.validation;
 
+import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.ChildField.ColumnReferenceField;
 import no.sikt.graphitron.rewrite.model.JoinStep;
@@ -32,7 +33,7 @@ class ColumnReferenceFieldValidationTest {
 
         CONDITION_METHOD("path resolved via condition method instead of a FK (stubbed)",
             new ColumnReferenceField("Film", "languageName", null, "languageName", new ColumnRef("NAME", "", ""),
-                List.of(new JoinStep.ConditionJoin(new MethodRef.Basic("com.example.Conditions", "languageCondition", "org.jooq.Condition", List.of()), "")), false),
+                List.of(new JoinStep.ConditionJoin(new MethodRef.Basic("com.example.Conditions", "languageCondition", ClassName.get("org.jooq", "Condition"), List.of()), "")), false),
             List.of(stubbedError("Film.languageName", ColumnReferenceField.class))),
 
         JAVA_NAME_PRESENT("@field(javaName:) is not supported — validation error (and stubbed)",

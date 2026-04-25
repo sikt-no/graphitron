@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.validation;
 
+import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
@@ -23,19 +24,19 @@ class TableMethodFieldValidationTest {
 
         NO_PATH("no @reference — FK auto-inference will be attempted at code-generation time (stubbed)",
             new TableMethodField("Film", "filteredActors", null, new ReturnTypeRef.ScalarReturnType("Film", new FieldWrapper.Single(true)),
-                List.of(), new MethodRef.Basic("com.example.TableMethods", "filteredActors", "org.jooq.Table", List.of())),
+                List.of(), new MethodRef.Basic("com.example.TableMethods", "filteredActors", ClassName.get("org.jooq", "Table"), List.of())),
             List.of(stubbedError("Film.filteredActors", TableMethodField.class))),
 
         WITH_FK_PATH("explicit FK path — key resolved to a jOOQ ForeignKey (stubbed)",
             new TableMethodField("Film", "filteredActors", null, new ReturnTypeRef.ScalarReturnType("Film", new FieldWrapper.Single(true)), List.of(
                 new JoinStep.FkJoin("film_actor_film_id_fkey", "", null, List.of(), new TableRef("film_actor", "", "", List.of()), List.of(), null, "")),
-                new MethodRef.Basic("com.example.TableMethods", "filteredActors", "org.jooq.Table", List.of())),
+                new MethodRef.Basic("com.example.TableMethods", "filteredActors", ClassName.get("org.jooq", "Table"), List.of())),
             List.of(stubbedError("Film.filteredActors", TableMethodField.class))),
 
         WITH_CONDITION_ONLY("condition method only — no FK (stubbed)",
             new TableMethodField("Film", "filteredActors", null, new ReturnTypeRef.ScalarReturnType("Film", new FieldWrapper.Single(true)), List.of(
-                new JoinStep.ConditionJoin(new MethodRef.Basic("com.example.Conditions", "actorCondition", "org.jooq.Condition", List.of()), "")),
-                new MethodRef.Basic("com.example.TableMethods", "filteredActors", "org.jooq.Table", List.of())),
+                new JoinStep.ConditionJoin(new MethodRef.Basic("com.example.Conditions", "actorCondition", ClassName.get("org.jooq", "Condition"), List.of()), "")),
+                new MethodRef.Basic("com.example.TableMethods", "filteredActors", ClassName.get("org.jooq", "Table"), List.of())),
             List.of(stubbedError("Film.filteredActors", TableMethodField.class)));
 
         private final String description;

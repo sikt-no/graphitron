@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.validation;
 
+import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.ChildField.RecordLookupTableField;
@@ -53,7 +54,7 @@ class RecordLookupTableFieldValidationTest {
 
         LIST_WITH_CONDITION_ONLY("list cardinality with condition-only join step — condition-join stub surfaces as build error",
             new RecordLookupTableField("Language", "films", null, filmReturn(new FieldWrapper.List(true, true)),
-                List.of(new JoinStep.ConditionJoin(new MethodRef.Basic("com.example.Conditions", "filmCondition", "org.jooq.Condition", List.of()), "")),
+                List.of(new JoinStep.ConditionJoin(new MethodRef.Basic("com.example.Conditions", "filmCondition", ClassName.get("org.jooq", "Condition"), List.of()), "")),
                 List.of(), new OrderBySpec.None(), null, BATCH_KEY, EMPTY_LOOKUP),
             List.of(CONDITION_JOIN_STUB)),
 

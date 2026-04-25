@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
+import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
@@ -131,18 +133,21 @@ class ServiceCatalog {
      * <p>If the compiler was not invoked with {@code -parameters}, any parameter may lack a name.
      * A warning is logged proactively as soon as any nameless parameter is detected.
      *
-     * <p>{@code expectedReturnTypeName} (when non-null) is the parameterized FQCN the method's
-     * generic return type must equal exactly (e.g. {@code "org.jooq.Result<no.sikt...FilmRecord>"}
-     * for a List-cardinality {@code @table}-bound return). Mismatched return types fail
-     * classification with a message naming the expected vs actual type. Pass {@code null} for
-     * cases where strict validation isn't applicable (e.g. {@code ScalarReturnType} or
-     * {@code ResultReturnType} with no backing class). The captured return type stored on the
-     * resulting {@link MethodRef.Basic} is always the parameterized form so emitters can
-     * declare matching fetcher return types.
+     * <p>{@code expectedReturnType} (when non-null) is the structured javapoet
+     * {@link TypeName} the method's generic return type must equal exactly (e.g.
+     * {@code Result<FilmRecord>} for a List-cardinality {@code @table}-bound return).
+     * Mismatched return types fail classification with a message naming the expected vs
+     * actual type. Pass {@code null} for cases where strict validation isn't applicable
+     * (e.g. {@code ScalarReturnType} or {@code ResultReturnType} with no backing class).
+     * Comparison is via {@link TypeName#equals(Object)} so it is whitespace-tolerant and
+     * structurally exact (a wildcard {@code ? extends Foo} is not equal to {@code Foo}).
+     * The captured return type stored on the resulting {@link MethodRef.Basic} is always
+     * the parameterised form so emitters can declare matching fetcher return types
+     * directly without parsing a string.
      */
     ServiceReflectionResult reflectServiceMethod(String className, String methodName,
             Set<String> argNames, Set<String> ctxKeys, List<ColumnRef> parentPkColumns,
-            String expectedReturnTypeName) {
+            TypeName expectedReturnType) {
         if (className == null || methodName == null) {
             return new ServiceReflectionResult(null, "service reference is incomplete");
         }
@@ -161,13 +166,13 @@ class ServiceCatalog {
                     + BuildContext.candidateHint(methodName, declaredMethodNames));
             }
             var javaMethod = methods.get(0);
-            String actualReturnTypeName = javaMethod.getGenericReturnType().getTypeName();
-            if (expectedReturnTypeName != null
-                    && !actualReturnTypeName.equals(expectedReturnTypeName)) {
+            TypeName actualReturnType = TypeName.get(javaMethod.getGenericReturnType());
+            if (expectedReturnType != null
+                    && !actualReturnType.equals(expectedReturnType)) {
                 return new ServiceReflectionResult(null,
                     "method '" + methodName + "' in class '" + className
-                    + "' must return '" + expectedReturnTypeName
-                    + "' to match the field's declared return type — got '" + actualReturnTypeName + "'");
+                    + "' must return '" + expectedReturnType
+                    + "' to match the field's declared return type — got '" + actualReturnType + "'");
             }
             if (Arrays.stream(javaMethod.getParameters()).anyMatch(p -> !p.isNamePresent())) {
                 emitParametersWarning();
@@ -203,7 +208,7 @@ class ServiceCatalog {
                 }
             }
             return new ServiceReflectionResult(
-                new MethodRef.Basic(className, methodName, actualReturnTypeName, List.copyOf(params)),
+                new MethodRef.Basic(className, methodName, actualReturnType, List.copyOf(params)),
                 null);
         } catch (ClassNotFoundException e) {
             return new ServiceReflectionResult(null, "class '" + className + "' could not be loaded");
@@ -223,15 +228,15 @@ class ServiceCatalog {
      * type-based classification would otherwise succeed — so that the user is notified regardless
      * of whether all parameters happen to have distinct types.
      *
-     * <p>The method's return type must match {@code expectedReturnClassName} exactly (the FQCN
-     * of the generated jOOQ table class for the field's {@code @table}-bound return type).
-     * Wider return types like {@code Table<R>} are rejected; the emitter relies on the strict
-     * type so the generated fetcher's local can carry the specific table class
-     * (e.g. {@code Film table = Service.method(...)}) and feed it into {@code FilmType.$fields(...)}
-     * without a downcast.
+     * <p>The method's return type must match {@code expectedReturnClass} exactly (the
+     * {@link ClassName} of the generated jOOQ table class for the field's {@code @table}-bound
+     * return type). Wider return types like {@code Table<R>} are rejected; the emitter relies
+     * on the strict type so the generated fetcher's local can carry the specific table class
+     * (e.g. {@code Film table = Service.method(...)}) and feed it into
+     * {@code FilmType.$fields(...)} without a downcast.
      */
     ServiceReflectionResult reflectTableMethod(String className, String methodName,
-            Set<String> argNames, Set<String> ctxKeys, String expectedReturnClassName) {
+            Set<String> argNames, Set<String> ctxKeys, ClassName expectedReturnClass) {
         if (className == null || methodName == null) {
             return new ServiceReflectionResult(null, "table method reference is incomplete");
         }
@@ -250,13 +255,14 @@ class ServiceCatalog {
                     + BuildContext.candidateHint(methodName, declaredMethodNames));
             }
             var javaMethod = methods.get(0);
-            if (expectedReturnClassName != null
-                    && !javaMethod.getReturnType().getName().equals(expectedReturnClassName)) {
+            ClassName actualReturnClass = ClassName.get(javaMethod.getReturnType());
+            if (expectedReturnClass != null
+                    && !actualReturnClass.equals(expectedReturnClass)) {
                 return new ServiceReflectionResult(null,
                     "method '" + methodName + "' in class '" + className
-                    + "' must return the generated jOOQ table class '" + expectedReturnClassName
+                    + "' must return the generated jOOQ table class '" + expectedReturnClass
                     + "' for @tableMethod with a @table-bound return type — got '"
-                    + javaMethod.getReturnType().getName() + "'");
+                    + actualReturnClass + "'");
             }
             if (Arrays.stream(javaMethod.getParameters()).anyMatch(p -> !p.isNamePresent())) {
                 emitParametersWarning();
@@ -294,7 +300,7 @@ class ServiceCatalog {
                     + "' has no Table<?> parameter — @tableMethod requires exactly one Table<?> parameter");
             }
             return new ServiceReflectionResult(
-                new MethodRef.Basic(className, methodName, javaMethod.getReturnType().getName(), List.copyOf(params)),
+                new MethodRef.Basic(className, methodName, ClassName.get(javaMethod.getReturnType()), List.copyOf(params)),
                 null);
         } catch (ClassNotFoundException e) {
             return new ServiceReflectionResult(null, "class '" + className + "' could not be loaded");
@@ -370,11 +376,10 @@ class ServiceCatalog {
                     return Optional.of(new BatchKey.RecordKeyed(parentPkColumns));
                 }
             }
-        } else if (elementType instanceof Class<?> elementClass
-                && org.jooq.TableRecord.class.isAssignableFrom(elementClass)) {
-            return Optional.of(new BatchKey.ObjectBased(elementClass.getName()));
         } else if (elementType instanceof Class<?> elementClass) {
-            // Non-TableRecord class — result DTO parent
+            // Object-based parent: a jOOQ TableRecord subclass or a plain result-DTO class. Both
+            // shapes emit identical codegen ({@code (FqClass) env.getSource()}), so they collapse
+            // to the same BatchKey variant.
             return Optional.of(new BatchKey.ObjectBased(elementClass.getName()));
         }
 
