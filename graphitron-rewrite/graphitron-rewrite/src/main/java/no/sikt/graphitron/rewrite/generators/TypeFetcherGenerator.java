@@ -341,7 +341,7 @@ public class TypeFetcherGenerator {
                 }
                 case QueryField.QueryNodeField f              -> builder.addMethod(buildQueryNodeFetcher(f, outputPackage));
                 case QueryField.QueryTableMethodTableField f  -> builder.addMethod(buildQueryTableMethodFetcher(f, outputPackage, jooqPackage));
-                case QueryField.QueryServiceTableField f      -> builder.addMethod(buildQueryServiceTableFetcher(f, outputPackage));
+                case QueryField.QueryServiceTableField f      -> builder.addMethod(buildQueryServiceTableFetcher(f, outputPackage, jooqPackage));
                 case QueryField.QueryServiceRecordField f     -> builder.addMethod(buildQueryServiceRecordFetcher(f, outputPackage));
                 // Stub variants — see NOT_IMPLEMENTED_REASONS
                 case QueryField.QueryEntityField f            -> builder.addMethod(stub(f));
@@ -621,29 +621,62 @@ public class TypeFetcherGenerator {
      * if the method takes a {@link org.jooq.DSLContext}. No projection — graphql-java's
      * column fetchers traverse the service-returned {@code Record}/{@code Result<Record>}.
      *
-     * <p>Return type is declared as {@code Object} (rather than the more specific
-     * {@code Result<Record>}/{@code Record}) so that developer methods returning typed
-     * {@code Result<FooRecord>} or {@code FooRecord} subtypes don't require an unchecked
-     * cast in the emitter — graphql-java's column fetchers traverse via field-name lookup
-     * and don't care about the static return type. The runtime shape (List vs single)
-     * is observable in graphql-java via the result type's iteration semantics.
+     * <p>Return type is the specific {@code Result<<RecordClass>>} for List cardinality or
+     * the specific {@code <RecordClass>} for Single. Type-strictness is enforced at classifier
+     * time (Invariants §3): {@link ServiceCatalog#reflectServiceMethod} rejects methods whose
+     * declared parameterized return type doesn't match the expected record class for the
+     * field's {@code @table}-bound return type.
      */
     private static MethodSpec buildQueryServiceTableFetcher(QueryField.QueryServiceTableField qstf,
-                                                             String outputPackage) {
+                                                             String outputPackage, String jooqPackage) {
+        var tableRef = qstf.returnType().table();
+        var recordClass = ClassName.get(jooqPackage + ".tables.records",
+            tableRef.javaClassName() + "Record");
+        boolean isList = qstf.returnType().wrapper().isList();
+        TypeName returnType = isList
+            ? ParameterizedTypeName.get(RESULT, recordClass)
+            : recordClass;
         return buildServiceFetcherCommon(qstf.name(), qstf.method(), qstf.parentTypeName(),
-            ClassName.OBJECT, outputPackage);
+            returnType, outputPackage);
     }
 
     /**
-     * Emits the fetcher for a {@link QueryField.QueryServiceRecordField}: same shape as
-     * {@link #buildQueryServiceTableFetcher} but with return type {@code Object} to cover
-     * both {@code ResultReturnType} (record-backed) and {@code ScalarReturnType} (scalar /
-     * DTO) sub-cases. graphql-java coerces.
+     * Emits the fetcher for a {@link QueryField.QueryServiceRecordField}: same body shape as
+     * {@link #buildQueryServiceTableFetcher} but the declared return type covers two
+     * sub-shapes:
+     *
+     * <ul>
+     *   <li>{@code ResultReturnType} with non-null {@code fqClassName} (a Java {@code @record}
+     *       backing class): declare the specific class for Single, or
+     *       {@code java.util.List<className>} for List. Validated strictly at classifier time.</li>
+     *   <li>{@code ResultReturnType} with null {@code fqClassName} (PojoResultType) or
+     *       {@code ScalarReturnType}: declare based on the developer method's actual reflected
+     *       return type. No strict validation — the dev's declared return is the source of
+     *       truth, and graphql-java coerces.</li>
+     * </ul>
      */
     private static MethodSpec buildQueryServiceRecordFetcher(QueryField.QueryServiceRecordField qsrf,
                                                               String outputPackage) {
+        TypeName returnType = computeServiceRecordReturnType(qsrf);
         return buildServiceFetcherCommon(qsrf.name(), qsrf.method(), qsrf.parentTypeName(),
-            ClassName.OBJECT, outputPackage);
+            returnType, outputPackage);
+    }
+
+    /**
+     * Computes the emitter's declared return type for a {@link QueryField.QueryServiceRecordField}
+     * based on the field's resolved {@link ReturnTypeRef} and (when needed) the method's actual
+     * reflected return type. See {@link #buildQueryServiceRecordFetcher} for the policy.
+     */
+    private static TypeName computeServiceRecordReturnType(QueryField.QueryServiceRecordField qsrf) {
+        boolean isList = qsrf.returnType().wrapper().isList();
+        if (qsrf.returnType() instanceof ReturnTypeRef.ResultReturnType r && r.fqClassName() != null) {
+            ClassName recordCls = ClassName.bestGuess(r.fqClassName());
+            return isList ? ParameterizedTypeName.get(LIST, recordCls) : recordCls;
+        }
+        // PojoResultType (null fqClassName) or ScalarReturnType: faithfully reflect the
+        // developer's declared return type. MethodRef.returnTypeName carries the parameterized
+        // form (e.g. "java.util.List<java.lang.Integer>") captured at reflection time.
+        return parseTypeName(qsrf.method().returnTypeName());
     }
 
     /**
@@ -675,6 +708,25 @@ public class TypeFetcherGenerator {
             ArgCallEmitter.buildMethodBackedCallArgs(method, null, conditionsClassName));
 
         return builder.build();
+    }
+
+    /**
+     * Parses a parameterized type FQCN string (e.g. {@code "java.util.List<java.lang.Integer>"})
+     * into a javapoet {@link TypeName}. Recursive on nested generics; falls back to
+     * {@link ClassName#bestGuess} when no type parameters are present.
+     */
+    private static TypeName parseTypeName(String name) {
+        int lt = name.indexOf('<');
+        if (lt < 0) return ClassName.bestGuess(name);
+        int gt = name.lastIndexOf('>');
+        String rawName = name.substring(0, lt);
+        String inner = name.substring(lt + 1, gt).trim();
+        // Single-arg parameterized types only (jOOQ Result<R>, java.util.List<E>, etc.) — multi-
+        // arg generics on service return types are not currently expected; if they appear, this
+        // method should grow a comma-aware splitter.
+        return ParameterizedTypeName.get(
+            (ClassName) ClassName.bestGuess(rawName),
+            parseTypeName(inner));
     }
 
     /**

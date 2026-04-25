@@ -26,7 +26,7 @@ class ServiceCatalogTest {
     @Test
     void reflectServiceMethod_dslContextParam_classifiedAsDslContextSource() {
         var result = newCatalog().reflectServiceMethod(
-            STUB_CLASS, "getByIdWithDsl", Set.of("id"), Set.of(), List.of());
+            STUB_CLASS, "getByIdWithDsl", Set.of("id"), Set.of(), List.of(), null);
 
         assertThat(result.failed()).isFalse();
         var params = result.ref().params();
@@ -41,7 +41,7 @@ class ServiceCatalogTest {
     @Test
     void reflectServiceMethod_dslContextOnly_noArgs() {
         var result = newCatalog().reflectServiceMethod(
-            STUB_CLASS, "getWithDsl", Set.of(), Set.of(), List.of());
+            STUB_CLASS, "getWithDsl", Set.of(), Set.of(), List.of(), null);
 
         assertThat(result.failed()).isFalse();
         var params = result.ref().params();
@@ -53,7 +53,7 @@ class ServiceCatalogTest {
     @Test
     void reflectServiceMethod_dslContextParamNameCollidesWithArg_typeWins() {
         var result = newCatalog().reflectServiceMethod(
-            STUB_CLASS, "getFilteredWithDsl", Set.of("filter"), Set.of(), List.of());
+            STUB_CLASS, "getFilteredWithDsl", Set.of("filter"), Set.of(), List.of(), null);
 
         assertThat(result.failed()).isFalse();
         var params = result.ref().params();
@@ -64,7 +64,7 @@ class ServiceCatalogTest {
     @Test
     void reflectServiceMethod_unrecognisedParam_stillErrors() {
         var result = newCatalog().reflectServiceMethod(
-            STUB_CLASS, "getWithUnknown", Set.of(), Set.of(), List.of());
+            STUB_CLASS, "getWithUnknown", Set.of(), Set.of(), List.of(), null);
 
         assertThat(result.failed()).isTrue();
         assertThat(result.failureReason()).contains("unrecognized sources type");
