@@ -1192,7 +1192,7 @@ class GraphitronSchemaBuilderTest {
             """
             type Language @table(name: "language") { name: String }
             type Film @table(name: "film") {
-                language: Language @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"})
+                language: Language @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getLanguage"})
             }
             type Query { film: Film }
             """,
@@ -1500,7 +1500,7 @@ class GraphitronSchemaBuilderTest {
             "@record parent + @service + @table return type → ServiceTableField",
             """
             type Language @table(name: "language") { name: String }
-            type FilmDetails @record { language: Language @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"}) }
+            type FilmDetails @record { language: Language @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getLanguage"}) }
             type Film @table(name: "film") { details: FilmDetails }
             type Query { film: Film }
             """,
@@ -3013,14 +3013,14 @@ class GraphitronSchemaBuilderTest {
             """
             type Film @table(name: "film") { title: String }
             type Query {
-                externalFilm: Film @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"})
+                externalFilm: Film @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
             }
             """,
             schema -> {
                 assertThat(schema.field("Query", "externalFilm")).isInstanceOf(QueryField.QueryServiceTableField.class);
                 var f = (QueryField.QueryServiceTableField) schema.field("Query", "externalFilm");
                 assertThat(f.method().className()).isEqualTo("no.sikt.graphitron.rewrite.TestServiceStub");
-                assertThat(f.method().methodName()).isEqualTo("get");
+                assertThat(f.method().methodName()).isEqualTo("getFilm");
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(QueryField.QueryServiceTableField.class); }
         },
@@ -3087,7 +3087,7 @@ class GraphitronSchemaBuilderTest {
             type Film @table(name: "film") { title: String }
             type Query { x: String }
             type Mutation {
-                externalMutation: Film @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "run"})
+                externalMutation: Film @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runFilm"})
             }
             """,
             schema -> assertThat(schema.field("Mutation", "externalMutation")).isInstanceOf(MutationField.MutationServiceTableField.class)) {
@@ -3217,7 +3217,7 @@ class GraphitronSchemaBuilderTest {
             """
             type Film @table(name: "film") { title: String }
             type Query {
-                batchedFilms: Film @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getWithSources"})
+                batchedFilms: Film @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilmWithSources"})
             }
             """,
             schema -> {
@@ -3240,6 +3240,21 @@ class GraphitronSchemaBuilderTest {
                 assertThat(f).isInstanceOf(UnclassifiedField.class);
                 assertThat(((UnclassifiedField) f).reason())
                     .contains("must return the generated jOOQ table class");
+            }),
+
+        SERVICE_WITH_WRONG_RETURN_TYPE_REJECTED(
+            "@service at root whose method's return type does not match the field's @table-bound return → UnclassifiedField (strict service return-type)",
+            """
+            type Film @table(name: "film") { title: String }
+            type Query {
+                wrongReturn: Film @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"})
+            }
+            """,
+            schema -> {
+                var f = schema.field("Query", "wrongReturn");
+                assertThat(f).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) f).reason())
+                    .contains("must return 'no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord'");
             });
 
         final String sdl;
@@ -3505,7 +3520,7 @@ class GraphitronSchemaBuilderTest {
         var schema = build("""
             type Film @table(name: "film") { title: String }
             type Query {
-                film: Film @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"})
+                film: Film @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
             }
             """);
         assertThat(schema.field("Query", "film")).isInstanceOf(QueryField.QueryServiceTableField.class);

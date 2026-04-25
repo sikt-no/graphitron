@@ -185,11 +185,57 @@ class FieldBuilder {
         }
         List<String> contextArgs = parseContextArguments(fieldDef, DIR_SERVICE);
         Set<String> argNames = fieldDef.getArguments().stream().map(GraphQLArgument::getName).collect(Collectors.toSet());
-        var result = svc.reflectServiceMethod(serviceRef.className(), serviceRef.methodName(), argNames, new java.util.HashSet<>(contextArgs), parentPkColumns);
+        // Strict return-type validation applies to root @service fields only (parentPkColumns empty).
+        // Child @service uses DataLoader-batched semantics where the method takes Sources keys and
+        // returns a flat or keyed shape that doesn't directly match the field's return type — that
+        // shape is the child-service plan's concern. Root fields hand the value straight to graphql-
+        // java, so the framework needs to know its specific shape.
+        String expectedReturnTypeName = parentPkColumns.isEmpty()
+            ? computeExpectedServiceReturnType(returnType)
+            : null;
+        var result = svc.reflectServiceMethod(serviceRef.className(), serviceRef.methodName(), argNames, new java.util.HashSet<>(contextArgs), parentPkColumns, expectedReturnTypeName);
         if (result.failed()) {
             return new ServiceResolution(null, null, "service method could not be resolved — " + result.failureReason());
         }
         return new ServiceResolution(enrichArgExtractions(result.ref(), fieldDef), returnType, null);
+    }
+
+    /**
+     * Computes the expected parameterized return-type FQCN that a {@code @service} method must
+     * declare. Returns {@code null} when no strict validation is applicable (the caller treats
+     * the actual reflection-captured return type as truth).
+     *
+     * <ul>
+     *   <li>{@code TableBoundReturnType} + Single → {@code <jooqPackage>.tables.records.<TableName>Record}</li>
+     *   <li>{@code TableBoundReturnType} + List → {@code org.jooq.Result<<RecordFqcn>>}</li>
+     *   <li>{@code ResultReturnType} (with non-null fqClassName) + Single → {@code <fqClassName>}</li>
+     *   <li>{@code ResultReturnType} (with non-null fqClassName) + List → {@code java.util.List<<fqClassName>>}</li>
+     *   <li>{@code ResultReturnType} (null fqClassName) → null</li>
+     *   <li>{@code ScalarReturnType} → null (graphql-java's scalar coercion handles type matching)</li>
+     *   <li>{@code PolymorphicReturnType} → null (rejected separately)</li>
+     * </ul>
+     *
+     * <p>Connection-cardinality cases are unreachable here because {@code @service} +
+     * {@code Connection} is rejected at Invariants §1 before this helper runs.
+     */
+    private String computeExpectedServiceReturnType(ReturnTypeRef returnType) {
+        // Connection-cardinality is rejected by Invariants §1 downstream of this helper; skip the
+        // return-type check here so the §1 message fires (rather than masking it with a
+        // less-specific return-type mismatch).
+        if (returnType.wrapper() instanceof FieldWrapper.Connection) return null;
+        boolean isList = returnType.wrapper().isList();
+        return switch (returnType) {
+            case ReturnTypeRef.TableBoundReturnType tb -> {
+                String recordFqcn = ctx.ctx().jooqPackage() + ".tables.records." + tb.table().javaClassName() + "Record";
+                yield isList ? "org.jooq.Result<" + recordFqcn + ">" : recordFqcn;
+            }
+            case ReturnTypeRef.ResultReturnType r -> {
+                if (r.fqClassName() == null) yield null;
+                yield isList ? "java.util.List<" + r.fqClassName() + ">" : r.fqClassName();
+            }
+            case ReturnTypeRef.ScalarReturnType ignored -> null;
+            case ReturnTypeRef.PolymorphicReturnType ignored -> null;
+        };
     }
 
     private record TableFieldComponents(List<WhereFilter> filters, OrderBySpec orderBy, PaginationSpec pagination,

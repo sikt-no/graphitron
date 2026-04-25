@@ -130,9 +130,19 @@ class ServiceCatalog {
      *
      * <p>If the compiler was not invoked with {@code -parameters}, any parameter may lack a name.
      * A warning is logged proactively as soon as any nameless parameter is detected.
+     *
+     * <p>{@code expectedReturnTypeName} (when non-null) is the parameterized FQCN the method's
+     * generic return type must equal exactly (e.g. {@code "org.jooq.Result<no.sikt...FilmRecord>"}
+     * for a List-cardinality {@code @table}-bound return). Mismatched return types fail
+     * classification with a message naming the expected vs actual type. Pass {@code null} for
+     * cases where strict validation isn't applicable (e.g. {@code ScalarReturnType} or
+     * {@code ResultReturnType} with no backing class). The captured return type stored on the
+     * resulting {@link MethodRef.Basic} is always the parameterized form so emitters can
+     * declare matching fetcher return types.
      */
     ServiceReflectionResult reflectServiceMethod(String className, String methodName,
-            Set<String> argNames, Set<String> ctxKeys, List<ColumnRef> parentPkColumns) {
+            Set<String> argNames, Set<String> ctxKeys, List<ColumnRef> parentPkColumns,
+            String expectedReturnTypeName) {
         if (className == null || methodName == null) {
             return new ServiceReflectionResult(null, "service reference is incomplete");
         }
@@ -151,6 +161,14 @@ class ServiceCatalog {
                     + BuildContext.candidateHint(methodName, declaredMethodNames));
             }
             var javaMethod = methods.get(0);
+            String actualReturnTypeName = javaMethod.getGenericReturnType().getTypeName();
+            if (expectedReturnTypeName != null
+                    && !actualReturnTypeName.equals(expectedReturnTypeName)) {
+                return new ServiceReflectionResult(null,
+                    "method '" + methodName + "' in class '" + className
+                    + "' must return '" + expectedReturnTypeName
+                    + "' to match the field's declared return type — got '" + actualReturnTypeName + "'");
+            }
             if (Arrays.stream(javaMethod.getParameters()).anyMatch(p -> !p.isNamePresent())) {
                 emitParametersWarning();
             }
@@ -185,7 +203,7 @@ class ServiceCatalog {
                 }
             }
             return new ServiceReflectionResult(
-                new MethodRef.Basic(className, methodName, javaMethod.getReturnType().getName(), List.copyOf(params)),
+                new MethodRef.Basic(className, methodName, actualReturnTypeName, List.copyOf(params)),
                 null);
         } catch (ClassNotFoundException e) {
             return new ServiceReflectionResult(null, "class '" + className + "' could not be loaded");
