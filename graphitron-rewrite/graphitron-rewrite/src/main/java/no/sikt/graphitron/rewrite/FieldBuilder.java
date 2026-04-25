@@ -240,23 +240,23 @@ class FieldBuilder {
             var returnType = (ReturnTypeRef.TableBoundReturnType) ctx.resolveReturnType(elementTypeName, wrapper);
             var referencePath = ctx.parsePath(fieldDef, name, parentTableType.table().tableName(), returnType.table().tableName());
             if (referencePath.hasError()) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef, referencePath.errorMessage());
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, referencePath.errorMessage());
             }
             var tfc = resolveTableFieldComponents(fieldDef, returnType.table(), elementTypeName);
-            if (tfc.error() != null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, tfc.error());
+            if (tfc.error() != null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, tfc.error());
             boolean hasSplitQuery = fieldDef.hasAppliedDirective(DIR_SPLIT_QUERY);
             boolean hasLookupKey  = hasLookupKeyAnywhere(fieldDef);
             boolean isList = returnType.wrapper().isList();
             var parentBatchKey = deriveSplitQueryBatchKey(parentTableType.table(), referencePath.elements(), isList);
             if (hasSplitQuery && hasLookupKey) {
                 if (returnType.wrapper() instanceof FieldWrapper.Connection) {
-                    return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.INVALID_SCHEMA,
                         "@asConnection on @lookupKey fields is invalid: @lookupKey establishes a positional "
                         + "correspondence between the input key list and the output list (one entry per key), "
                         + "which pagination would break. Drop @asConnection or drop @lookupKey.");
                 }
                 if (returnType.wrapper() instanceof FieldWrapper.Single) {
-                    return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.INVALID_SCHEMA,
                         "Single-cardinality @splitQuery @lookupKey is not supported; pass a list-returning field or drop @lookupKey");
                 }
                 return new no.sikt.graphitron.rewrite.model.ChildField.SplitLookupTableField(
@@ -265,13 +265,13 @@ class FieldBuilder {
             }
             if (!hasSplitQuery && hasLookupKey) {
                 if (returnType.wrapper() instanceof FieldWrapper.Connection) {
-                    return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.INVALID_SCHEMA,
                         "@asConnection on @lookupKey fields is invalid: @lookupKey establishes a positional "
                         + "correspondence between the input key list and the output list (one entry per key), "
                         + "which pagination would break. Drop @asConnection or drop @lookupKey.");
                 }
                 if (returnType.wrapper() instanceof FieldWrapper.Single) {
-                    return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.INVALID_SCHEMA,
                         "Single-cardinality @lookupKey is not supported; pass a list-returning field or drop @lookupKey");
                 }
                 return new no.sikt.graphitron.rewrite.model.ChildField.LookupTableField(
@@ -281,7 +281,7 @@ class FieldBuilder {
             if (hasSplitQuery) {
                 if (returnType.wrapper() instanceof FieldWrapper.Single
                         && referencePath.elements().size() != 1) {
-                    return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.DEFERRED,
                         "Single-cardinality @splitQuery requires a single-hop parent-holds-FK reference path; "
                         + "multi-hop paths are not yet supported on single cardinality");
                 }
@@ -289,7 +289,7 @@ class FieldBuilder {
                     parentTypeName, name, location, returnType, referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination(), parentBatchKey);
             }
             if (returnType.wrapper() instanceof FieldWrapper.Connection) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.INVALID_SCHEMA,
                     "@asConnection on inline (non-@splitQuery) TableField is not supported; add @splitQuery for batched connection semantics");
             }
             return new TableField(parentTypeName, name, location,
@@ -300,10 +300,10 @@ class FieldBuilder {
             var wrapper = buildWrapper(fieldDef);
             var referencePath = ctx.parsePath(fieldDef, name, parentTableType.table().tableName(), tableInterfaceType.table().tableName());
             if (referencePath.hasError()) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef, referencePath.errorMessage());
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, referencePath.errorMessage());
             }
             var tfc = resolveTableFieldComponents(fieldDef, tableInterfaceType.table(), elementTypeName);
-            if (tfc.error() != null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, tfc.error());
+            if (tfc.error() != null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, tfc.error());
             return new TableInterfaceField(parentTypeName, name, location,
                 new ReturnTypeRef.TableBoundReturnType(elementTypeName, tableInterfaceType.table(), wrapper),
                 referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination());
@@ -333,7 +333,7 @@ class FieldBuilder {
                 && isPlainObjectElement) {
             var wrapper = buildWrapper(fieldDef);
             if (expandingTypes.contains(elementTypeName)) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.INVALID_SCHEMA,
                     "circular type reference detected while expanding '" + elementTypeName + "'");
             }
             var newExpanding = new LinkedHashSet<>(expandingTypes);
@@ -343,7 +343,7 @@ class FieldBuilder {
                 if (nestedDef.hasAppliedDirective(DIR_NOT_GENERATED)) continue;
                 var nested = classifyChildFieldOnTableType(nestedDef, elementTypeName, parentTableType, newExpanding);
                 if (nested instanceof UnclassifiedField unc) {
-                    return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, unc.kind(),
                         "nested type '" + elementTypeName + "' field '" + nestedDef.getName() + "': " + unc.reason());
                 }
                 if (nested instanceof NotGeneratedField) {
@@ -352,7 +352,7 @@ class FieldBuilder {
                 if (nested instanceof ChildField cf) {
                     nestedFields.add(cf);
                 } else {
-                    return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.INTERNAL_INVARIANT,
                         "nested type '" + elementTypeName + "' field '" + nestedDef.getName()
                         + "' classified as unexpected variant " + nested.getClass().getSimpleName());
                 }
@@ -370,7 +370,7 @@ class FieldBuilder {
             return new ConstructorField(parentTypeName, name, location, returnType);
         }
 
-        return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+        return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
             "return type '" + elementTypeName + "' is not a @table, @record, interface, or union Graphitron type");
     }
 
@@ -1392,7 +1392,7 @@ class FieldBuilder {
         if (!(parentType instanceof RootType)) {
             String conflict = detectChildFieldConflict(fieldDef);
             if (conflict != null) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef, conflict);
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.INVALID_SCHEMA, conflict);
             }
         }
 
@@ -1416,7 +1416,7 @@ class FieldBuilder {
             return classifyChildFieldOnErrorType(fieldDef, parentTypeName);
         }
 
-        return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+        return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
             "parent type is unclassified");
     }
 
@@ -1426,7 +1426,7 @@ class FieldBuilder {
         if (isScalarOrEnum(fieldDef)) {
             return new PropertyField(parentTypeName, name, location, name, null);
         }
-        return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+        return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.INVALID_SCHEMA,
             "fields on @error types must be scalar or enum");
     }
 
@@ -1439,7 +1439,7 @@ class FieldBuilder {
         if (parentTypeName.equals("Query")) {
             return classifyQueryField(fieldDef, parentTypeName);
         }
-        return new UnclassifiedField(parentTypeName, fieldDef.getName(), locationOf(fieldDef), fieldDef,
+        return new UnclassifiedField(parentTypeName, fieldDef.getName(), locationOf(fieldDef), fieldDef, RejectionKind.DEFERRED,
             "fields on '" + parentTypeName + "' (Subscription is not supported)");
     }
 
@@ -1449,13 +1449,13 @@ class FieldBuilder {
 
         String conflict = detectQueryFieldConflict(fieldDef);
         if (conflict != null) {
-            return new UnclassifiedField(parentTypeName, name, location, fieldDef, conflict);
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.INVALID_SCHEMA, conflict);
         }
 
         if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
             var svcResult = resolveServiceField(parentTypeName, fieldDef, List.of());
             if (svcResult.error() != null) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef, svcResult.error());
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, svcResult.error());
             }
             return switch (svcResult.returnType()) {
                 case ReturnTypeRef.TableBoundReturnType tb ->
@@ -1465,7 +1465,7 @@ class FieldBuilder {
                 case ReturnTypeRef.ScalarReturnType s ->
                     new QueryField.QueryServiceRecordField(parentTypeName, name, location, s, svcResult.method());
                 case ReturnTypeRef.PolymorphicReturnType p ->
-                    new UnclassifiedField(parentTypeName, name, location, fieldDef, "@service returning a polymorphic type is not yet supported");
+                    new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.DEFERRED, "@service returning a polymorphic type is not yet supported");
             };
         }
 
@@ -1483,11 +1483,11 @@ class FieldBuilder {
             String lookupTypeName = baseTypeName(fieldDef);
             var returnType = ctx.resolveReturnType(lookupTypeName, buildWrapper(fieldDef));
             if (!(returnType instanceof ReturnTypeRef.TableBoundReturnType tb)) {
-                return new GraphitronField.UnclassifiedField(parentTypeName, name, location, fieldDef,
+                return new GraphitronField.UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
                     "@lookupKey requires a @table-annotated return type");
             }
             var tfc = resolveTableFieldComponents(fieldDef, tb.table(), lookupTypeName);
-            if (tfc.error() != null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, tfc.error());
+            if (tfc.error() != null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, tfc.error());
             return new QueryField.QueryLookupTableField(parentTypeName, name, location, tb, tfc.filters(), tfc.orderBy(), tfc.pagination(),
                 tfc.lookupMapping());
         }
@@ -1497,12 +1497,12 @@ class FieldBuilder {
             String elementTypeName = ctx.isConnectionType(rawTypeName) ? ctx.connectionElementTypeName(rawTypeName) : rawTypeName;
             var returnType = ctx.resolveReturnType(elementTypeName, buildWrapper(fieldDef));
             if (!(returnType instanceof ReturnTypeRef.TableBoundReturnType tb)) {
-                return new GraphitronField.UnclassifiedField(parentTypeName, name, location, fieldDef,
+                return new GraphitronField.UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
                     "@tableMethod requires a @table-annotated return type");
             }
             var qtmRef = parseExternalRef(parentTypeName, fieldDef, DIR_TABLE_METHOD, ARG_TABLE_METHOD_REF);
             if (qtmRef != null && qtmRef.lookupError() != null) {
-                return new GraphitronField.UnclassifiedField(parentTypeName, name, location, fieldDef,
+                return new GraphitronField.UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
                     "table method could not be resolved — " + qtmRef.lookupError());
             }
             Set<String> qtmArgNames = fieldDef.getArguments().stream().map(GraphQLArgument::getName).collect(Collectors.toSet());
@@ -1512,7 +1512,7 @@ class FieldBuilder {
                 qtmRef != null ? qtmRef.methodName() : null,
                 qtmArgNames, new java.util.HashSet<>(qtmCtxArgs));
             if (qtmResult.failed()) {
-                return new GraphitronField.UnclassifiedField(parentTypeName, name, location, fieldDef,
+                return new GraphitronField.UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
                     "table method could not be resolved — " + qtmResult.failureReason());
             }
             return new QueryField.QueryTableMethodTableField(parentTypeName, name, location, tb, enrichArgExtractions(qtmResult.ref(), fieldDef));
@@ -1526,13 +1526,13 @@ class FieldBuilder {
             var wrapper = buildWrapper(fieldDef);
             var returnType = (ReturnTypeRef.TableBoundReturnType) ctx.resolveReturnType(elementTypeName, wrapper);
             var tfc = resolveTableFieldComponents(fieldDef, returnType.table(), elementTypeName);
-            if (tfc.error() != null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, tfc.error());
+            if (tfc.error() != null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, tfc.error());
             return new QueryField.QueryTableField(parentTypeName, name, location, returnType, tfc.filters(), tfc.orderBy(), tfc.pagination());
         }
         if (elementType instanceof TableInterfaceType tableInterfaceType) {
             var wrapper = buildWrapper(fieldDef);
             var tfc = resolveTableFieldComponents(fieldDef, tableInterfaceType.table(), elementTypeName);
-            if (tfc.error() != null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, tfc.error());
+            if (tfc.error() != null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, tfc.error());
             return new QueryField.QueryTableInterfaceField(parentTypeName, name, location,
                 new ReturnTypeRef.TableBoundReturnType(elementTypeName, tableInterfaceType.table(), wrapper), tfc.filters(), tfc.orderBy(), tfc.pagination());
         }
@@ -1545,7 +1545,7 @@ class FieldBuilder {
                 new ReturnTypeRef.PolymorphicReturnType(elementTypeName, buildWrapper(fieldDef)));
         }
 
-        return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+        return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
             "return type '" + elementTypeName + "' is not a @table, interface, or union Graphitron type; " +
             "@service, @lookupKey, and @tableMethod are all absent");
     }
@@ -1555,14 +1555,14 @@ class FieldBuilder {
         SourceLocation location = locationOf(fieldDef);
 
         if (fieldDef.hasAppliedDirective(DIR_SERVICE) && fieldDef.hasAppliedDirective(DIR_MUTATION)) {
-            return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.INVALID_SCHEMA,
                 "@" + DIR_SERVICE + ", @" + DIR_MUTATION + " are mutually exclusive");
         }
 
         if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
             var svcResult = resolveServiceField(parentTypeName, fieldDef, List.of());
             if (svcResult.error() != null) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef, svcResult.error());
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, svcResult.error());
             }
             return switch (svcResult.returnType()) {
                 case ReturnTypeRef.TableBoundReturnType tb ->
@@ -1572,7 +1572,7 @@ class FieldBuilder {
                 case ReturnTypeRef.ScalarReturnType s ->
                     new MutationField.MutationServiceRecordField(parentTypeName, name, location, s, svcResult.method());
                 case ReturnTypeRef.PolymorphicReturnType p ->
-                    new UnclassifiedField(parentTypeName, name, location, fieldDef, "@service returning a polymorphic type is not yet supported");
+                    new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.DEFERRED, "@service returning a polymorphic type is not yet supported");
             };
         }
 
@@ -1586,13 +1586,13 @@ class FieldBuilder {
                     case "UPDATE" -> new MutationField.MutationUpdateTableField(parentTypeName, name, location, returnType);
                     case "DELETE" -> new MutationField.MutationDeleteTableField(parentTypeName, name, location, returnType);
                     case "UPSERT" -> new MutationField.MutationUpsertTableField(parentTypeName, name, location, returnType);
-                    default       -> new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                    default       -> new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
                         "unknown @mutation(typeName:) value '" + typeName + "'");
                 };
             }
         }
 
-        return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+        return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
             "@" + DIR_SERVICE + " and @" + DIR_MUTATION + " are both absent on this mutation field");
     }
 
@@ -1708,11 +1708,11 @@ class FieldBuilder {
         if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
             var svcResult = resolveServiceField(parentTypeName, fieldDef, List.of());
             if (svcResult.error() != null) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef, svcResult.error());
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, svcResult.error());
             }
             var servicePath = ctx.parsePath(fieldDef, name, null, null);
             if (servicePath.hasError()) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef, servicePath.errorMessage());
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, servicePath.errorMessage());
             }
             return switch (svcResult.returnType()) {
                 case ReturnTypeRef.TableBoundReturnType tb ->
@@ -1724,7 +1724,7 @@ class FieldBuilder {
                 case ReturnTypeRef.ScalarReturnType s ->
                     new ServiceRecordField(parentTypeName, name, location, s, servicePath.elements(), svcResult.method());
                 case ReturnTypeRef.PolymorphicReturnType p ->
-                    new UnclassifiedField(parentTypeName, name, location, fieldDef, "@service returning a polymorphic type is not yet supported");
+                    new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.DEFERRED, "@service returning a polymorphic type is not yet supported");
             };
         }
 
@@ -1753,23 +1753,23 @@ class FieldBuilder {
             ? tbt.table().tableName() : null;
         var objectPath = ctx.parsePath(fieldDef, name, parentSqlTableName, targetSqlTableName);
         if (objectPath.hasError()) {
-            return new UnclassifiedField(parentTypeName, name, location, fieldDef, objectPath.errorMessage());
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, objectPath.errorMessage());
         }
         return switch (resolvedReturnType) {
             case ReturnTypeRef.TableBoundReturnType tb -> {
                 var tfc = resolveTableFieldComponents(fieldDef, tb.table(), elementTypeName);
-                if (tfc.error() != null) yield new UnclassifiedField(parentTypeName, name, location, fieldDef, tfc.error());
+                if (tfc.error() != null) yield new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, tfc.error());
                 var batchKey = deriveBatchKeyForResultType(objectPath.elements(), parentResultType);
                 if (hasLookupKeyAnywhere(fieldDef)) {
                     if (batchKey == null) {
-                        yield new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                        yield new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.DEFERRED,
                             "RecordLookupTableField requires a FK join path and a typed backing class for batch key extraction");
                     }
                     yield new RecordLookupTableField(parentTypeName, name, location, tb, objectPath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination(),
                         batchKey, tfc.lookupMapping());
                 }
                 if (batchKey == null) {
-                    yield new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                    yield new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.DEFERRED,
                         "RecordTableField requires a FK join path and a typed backing class for batch key extraction");
                 }
                 yield new RecordTableField(parentTypeName, name, location, tb, objectPath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination(), batchKey);
@@ -1781,7 +1781,7 @@ class FieldBuilder {
                 new RecordField(parentTypeName, name, location, s, columnName,
                     resolveColumnOnJooqTableRecord(columnName, parentResultType));
             case ReturnTypeRef.PolymorphicReturnType p ->
-                new UnclassifiedField(parentTypeName, name, location, fieldDef, "@record type returning a polymorphic type is not yet supported");
+                new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.DEFERRED, "@record type returning a polymorphic type is not yet supported");
         };
     }
 
@@ -1854,12 +1854,12 @@ class FieldBuilder {
         if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
             var svcResult = resolveServiceField(parentTypeName, fieldDef, tableType.table().primaryKeyColumns());
             if (svcResult.error() != null) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef, svcResult.error());
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, svcResult.error());
             }
             // Service reconnect path: starts from the service return type's table (not the parent).
             var servicePath = ctx.parsePath(fieldDef, name, null, null);
             if (servicePath.hasError()) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef, servicePath.errorMessage());
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, servicePath.errorMessage());
             }
             return switch (svcResult.returnType()) {
                 case ReturnTypeRef.TableBoundReturnType tb ->
@@ -1871,14 +1871,14 @@ class FieldBuilder {
                 case ReturnTypeRef.ScalarReturnType s ->
                     new ServiceRecordField(parentTypeName, name, location, s, servicePath.elements(), svcResult.method());
                 case ReturnTypeRef.PolymorphicReturnType p ->
-                    new UnclassifiedField(parentTypeName, name, location, fieldDef, "@service returning a polymorphic type is not yet supported");
+                    new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.DEFERRED, "@service returning a polymorphic type is not yet supported");
             };
         }
 
         if (fieldDef.hasAppliedDirective(DIR_EXTERNAL_FIELD)) {
             var externalPath = ctx.parsePath(fieldDef, name, tableType.table().tableName(), null);
             if (externalPath.hasError()) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef, externalPath.errorMessage());
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, externalPath.errorMessage());
             }
             String extTypeName = baseTypeName(fieldDef);
             return new ComputedField(parentTypeName, name, location,
@@ -1892,11 +1892,11 @@ class FieldBuilder {
             var returnType = ctx.resolveReturnType(elementTypeName, buildWrapper(fieldDef));
             var tableMethodPath = ctx.parsePath(fieldDef, name, tableType.table().tableName(), null);
             if (tableMethodPath.hasError()) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef, tableMethodPath.errorMessage());
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, tableMethodPath.errorMessage());
             }
             var tmRef = parseExternalRef(parentTypeName, fieldDef, DIR_TABLE_METHOD, ARG_TABLE_METHOD_REF);
             if (tmRef != null && tmRef.lookupError() != null) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
                     "table method could not be resolved — " + tmRef.lookupError());
             }
             Set<String> tmArgNames = fieldDef.getArguments().stream().map(GraphQLArgument::getName).collect(Collectors.toSet());
@@ -1906,7 +1906,7 @@ class FieldBuilder {
                 tmRef != null ? tmRef.methodName() : null,
                 tmArgNames, new java.util.HashSet<>(tmCtxArgs));
             if (tmResult.failed()) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
                     "table method could not be resolved — " + tmResult.failureReason());
             }
             return new TableMethodField(parentTypeName, name, location, returnType, tableMethodPath.elements(), enrichArgExtractions(tmResult.ref(), fieldDef));
@@ -1922,24 +1922,24 @@ class FieldBuilder {
                 ReturnTypeRef targetType = ctx.resolveReturnType(typeName.get(), new FieldWrapper.Single(true));
                 var targetGType = ctx.types.get(typeName.get());
                 if (targetGType == null) {
-                    return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
                         "@nodeId(typeName:) type '" + typeName.get() + "' does not exist in the schema"
                         + candidateHint(typeName.get(), new ArrayList<>(ctx.types.keySet())));
                 }
                 if (!(targetGType instanceof NodeType targetNodeType)) {
-                    return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
                         "@nodeId(typeName:) type '" + typeName.get() + "' does not have @node");
                 }
                 TableRef parentTable = tableType.table();
                 var nodeRefPath = ctx.parsePath(fieldDef, name, tableType.table().tableName(), targetNodeType.table().tableName());
                 if (nodeRefPath.hasError()) {
-                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, nodeRefPath.errorMessage());
+                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, nodeRefPath.errorMessage());
                 }
                 return new NodeIdReferenceField(parentTypeName, name, location, typeName.get(), targetType, parentTable,
                     targetNodeType.typeId(), targetNodeType.nodeKeyColumns(), nodeRefPath.elements());
             } else {
                 if (!(tableType instanceof NodeType nodeType)) {
-                    return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
                         "@nodeId requires the containing type to be a node type (via @node or KjerneJooqGenerator metadata)");
                 }
                 return new NodeIdField(parentTypeName, name, location, nodeType.typeId(), nodeType.nodeKeyColumns());
@@ -1956,12 +1956,12 @@ class FieldBuilder {
         if (fieldDef.hasAppliedDirective(DIR_REFERENCE)) {
             var refPath = ctx.parsePath(fieldDef, name, tableType.table().tableName(), null);
             if (refPath.hasError()) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef, refPath.errorMessage());
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, refPath.errorMessage());
             }
             Optional<ColumnRef> column = svc.resolveColumnForReference(columnName, refPath.elements(), tableType);
             if (column.isEmpty()) {
                 String terminalTable = svc.terminalTableSqlNameForReference(refPath.elements(), tableType);
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
                     "column '" + columnName + "' could not be resolved in the jOOQ table"
                     + (terminalTable != null ? candidateHint(columnName, ctx.catalog.columnSqlNamesOf(terminalTable)) : ""));
             }
@@ -1989,7 +1989,7 @@ class FieldBuilder {
                 return new NodeIdField(parentTypeName, name, location,
                     nodeType.typeId(), nodeType.nodeKeyColumns());
             }
-            return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
                 "column '" + columnName + "' could not be resolved in the jOOQ table"
                 + candidateHint(columnName, ctx.catalog.columnSqlNamesOf(tableSqlName)));
         }

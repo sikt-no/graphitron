@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite.model;
 
 import graphql.language.SourceLocation;
 import graphql.schema.GraphQLFieldDefinition;
+import no.sikt.graphitron.rewrite.RejectionKind;
 
 /**
  * Classifies every field in a GraphQL schema. The sealed hierarchy mirrors the field taxonomy.
@@ -45,12 +46,17 @@ public sealed interface GraphitronField
      * classify the field are absent, or two mutually exclusive directives were found together.
      * The {@link no.sikt.graphitron.rewrite.GraphitronSchemaValidator} includes the reason in its
      * error message so the user knows exactly what to fix.
+     *
+     * <p>{@code kind} categorises the rejection so downstream tooling and log formatters can
+     * distinguish author-correctable mistakes from invalid-schema combinations from
+     * generator-deferred features. See {@link RejectionKind}.
      */
     record UnclassifiedField(
         String parentTypeName,
         String name,
         SourceLocation location,
         GraphQLFieldDefinition definition,
+        RejectionKind kind,
         String reason
     ) implements GraphitronField {}
 }
