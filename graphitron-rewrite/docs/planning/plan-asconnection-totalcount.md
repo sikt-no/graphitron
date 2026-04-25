@@ -133,6 +133,8 @@ Two adjacent items, surfaced during plan review and worth filing alongside this 
 
 > **Constrain Connection types to a single source field** **[Backlog]**: A hand-written `Connection` type may currently be the return type of multiple `QueryTableField`s, each with its own parent table and conditions. This forces request-time context (table, condition) to be captured per-field rather than carried on the schema model, blocks model-time metadata for `totalCount` and faceted search, and divides the synthesised path (always 1-to-1) from the structural path (n-to-1). Enforce 1-to-1 via a classifier check; emit a build-time error pointing at the conflicting fields. No production users yet, so this is the cheapest moment to draw the line.
 
+> **Lift source-field metadata onto `ConnectionType`** **[Backlog]**: Once Connection types are 1-to-1 with a `QueryTableField` (see "Constrain Connection types to a single source field"), `ConnectionType` can carry a back-reference to its source field. Faceted search, aggregates, and other per-connection derivables would then read source metadata (table, condition recipe, facet column choices) from the schema model at emission time rather than reconstructing it at each per-field fetcher site. The runtime `(table, condition)` carrier on `ConnectionResult` continues to hold per-request bound values; what moves to the model is the recipe, not the values. Successor to the single-source-field constraint above; ship that first.
+
 ## Success criteria
 
 ### Automated
