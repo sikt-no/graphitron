@@ -1,6 +1,6 @@
 # Plan: Rewrite emitter + classifier hygiene sweep
 
-> **Status:** Spec
+> **Status:** Ready
 >
 > Three cleanups surfaced during the split-query-connection work (shipped at
 > `3821842` §1 + `62b51c3` §2). Bundled into one plan because each gates a
