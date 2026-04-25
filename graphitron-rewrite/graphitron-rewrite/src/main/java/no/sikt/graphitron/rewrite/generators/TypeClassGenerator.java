@@ -246,6 +246,22 @@ public class TypeClassGenerator {
                     }
                     builder.addCode("        }\n");
                 }
+                case ChildField.NodeIdReferenceField nrf -> {
+                    // FK-mirror collapse: when the joinPath is a single FkJoin entered from the
+                    // parent table (parent holds the FK), the FK source columns on the parent
+                    // mirror the target's nodeKeyColumns by FK constraint — no JOIN is needed,
+                    // we project the parent's FK columns directly. Other shapes (composite-key
+                    // FK that doesn't mirror, multi-hop, condition-join) emit nothing here and
+                    // are stubbed at the fetcher arm.
+                    var fkMirror = fkMirrorSourceColumns(nrf);
+                    if (fkMirror != null) {
+                        builder.addCode("        case $S -> {\n", nrf.name());
+                        for (var col : fkMirror) {
+                            builder.addCode("            fields.add($L.$L);\n", tableArg, col.javaName());
+                        }
+                        builder.addCode("        }\n");
+                    }
+                }
                 case ChildField.TableField tf -> {
                     builder.addCode("        case $S -> {\n", tf.name());
                     builder.addCode("$L", InlineTableFieldEmitter.buildSwitchArmBody(tf, tableArg, sf, outputPackage, jooqPackage));
@@ -269,6 +285,30 @@ public class TypeClassGenerator {
         builder.addCode("        default -> { } // unhandled fields\n");
         builder.addCode("    }\n");
         builder.addCode("}\n");
+    }
+
+    /**
+     * Returns the FK source columns on the parent table when the {@code NodeIdReferenceField}'s
+     * join path collapses to a single FK hop entered from the parent (parent-holds-FK pattern)
+     * <em>and</em> the FK's target columns positionally match the target's {@code nodeKeyColumns}.
+     * In that case, the FK source columns on the parent are equal-by-constraint to the target's
+     * nodeId key columns, so we can project them directly off the parent and skip the JOIN.
+     *
+     * <p>Returns {@code null} when the field requires the full JOIN form (composite key with a
+     * non-mirroring FK, multi-hop path, condition join). Those cases are stubbed at the fetcher
+     * arm — see {@link no.sikt.graphitron.rewrite.generators.FetcherEmitter}.
+     */
+    static java.util.List<ColumnRef> fkMirrorSourceColumns(ChildField.NodeIdReferenceField nrf) {
+        if (nrf.joinPath().size() != 1) return null;
+        if (!(nrf.joinPath().get(0) instanceof no.sikt.graphitron.rewrite.model.JoinStep.FkJoin fk)) return null;
+        if (!fk.sourceTable().tableName().equalsIgnoreCase(nrf.parentTable().tableName())) return null;
+        if (fk.targetColumns().size() != nrf.nodeKeyColumns().size()) return null;
+        for (int i = 0; i < fk.targetColumns().size(); i++) {
+            if (!fk.targetColumns().get(i).sqlName().equalsIgnoreCase(nrf.nodeKeyColumns().get(i).sqlName())) {
+                return null;
+            }
+        }
+        return fk.sourceColumns();
     }
 
     private static String sfName(int depth) { return depth == 0 ? "sf" : "sf" + depth; }

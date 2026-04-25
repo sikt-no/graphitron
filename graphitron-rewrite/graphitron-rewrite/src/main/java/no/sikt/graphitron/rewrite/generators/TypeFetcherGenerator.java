@@ -138,6 +138,7 @@ public class TypeFetcherGenerator {
      */
     public static final Set<Class<? extends GraphitronField>> IMPLEMENTED_LEAVES = Set.of(
         ChildField.ColumnField.class,
+        ChildField.NodeIdReferenceField.class,
         QueryField.QueryNodeField.class,
         QueryField.QueryLookupTableField.class,
         QueryField.QueryTableField.class,
@@ -242,8 +243,6 @@ public class TypeFetcherGenerator {
             // ChildField stubs — remaining direct permits
             Map.entry(ChildField.ColumnReferenceField.class,
                 "ColumnReferenceField not yet implemented — see rewrite-roadmap.md"),
-            Map.entry(ChildField.NodeIdReferenceField.class,
-                "NodeIdReferenceField not yet implemented — see rewrite-roadmap.md"),
             Map.entry(ChildField.TableMethodField.class,
                 "TableMethodField not yet implemented — see rewrite-roadmap.md"),
             Map.entry(ChildField.InterfaceField.class,
@@ -355,12 +354,14 @@ public class TypeFetcherGenerator {
                 case MutationField.MutationServiceTableField f -> builder.addMethod(stub(f));
                 case MutationField.MutationServiceRecordField f -> builder.addMethod(stub(f));
                 case ChildField.ColumnReferenceField f          -> builder.addMethod(stub(f));
-                case ChildField.NodeIdReferenceField f          -> builder.addMethod(stub(f));
-                // ChildField.TableField / LookupTableField / NodeIdField have no fetcher —
-                // inline projection via TypeClassGenerator.$fields.
+                // ChildField.TableField / LookupTableField / NodeIdField / NodeIdReferenceField
+                // have no fetcher — inline projection via TypeClassGenerator.$fields plus a
+                // DataFetcher value emitted by FetcherEmitter for the encode lambda (NodeIdField,
+                // NodeIdReferenceField).
                 case ChildField.TableField ignored              -> { }
                 case ChildField.LookupTableField ignored        -> { }
                 case ChildField.NodeIdField ignored             -> { }
+                case ChildField.NodeIdReferenceField ignored    -> { }
                 case ChildField.TableInterfaceField f           -> builder.addMethod(stub(f));
                 case ChildField.RecordTableField rtf -> {
                     builder.addMethod(buildRecordBasedDataFetcher(rtf, resultType, jooqPackage));

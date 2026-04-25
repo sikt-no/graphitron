@@ -106,6 +106,36 @@ public final class FetcherEmitter {
             body.add(");\n").add("}");
             return body.build();
         }
+        if (field instanceof ChildField.NodeIdReferenceField nrf && parentTable != null) {
+            // FK-mirror collapse — encode the parent's FK source columns directly. See
+            // TypeClassGenerator#fkMirrorSourceColumns; matching code paths must agree on which
+            // columns get projected.
+            var fkMirror = no.sikt.graphitron.rewrite.generators.TypeClassGenerator.fkMirrorSourceColumns(nrf);
+            if (fkMirror != null) {
+                var encoderClass = ClassName.get(outputPackage + ".util",
+                    NodeIdEncoderClassGenerator.CLASS_NAME);
+                var recordClass = ClassName.get("org.jooq", "Record");
+                var tablesClass = ClassName.get(jooqPackage, "Tables");
+                var body = CodeBlock.builder()
+                    .add("($T env) -> {\n", DATA_FETCHING_ENV)
+                    .add("    $T r = ($T) env.getSource();\n", recordClass, recordClass)
+                    .add("    return $T.encode($S", encoderClass, nrf.nodeTypeId());
+                for (var col : fkMirror) {
+                    body.add(",\n        r.get($T.$L.$L)", tablesClass, parentTable.javaFieldName(), col.javaName());
+                }
+                body.add(");\n").add("}");
+                return body.build();
+            }
+            // Non-FK-mirror cases (composite-FK that doesn't mirror, multi-hop, condition-join)
+            // fall through to a runtime-throwing stub by default. Lifted to the JOIN-projection
+            // form in a follow-up.
+            return CodeBlock.of(
+                "($T env) -> { throw new $T($S); }",
+                DATA_FETCHING_ENV, UnsupportedOperationException.class,
+                "NodeIdReferenceField '" + nrf.parentTypeName() + "." + nrf.name()
+                    + "' requires the JOIN-projection form (composite FK or multi-hop) which "
+                    + "is not yet implemented; the FK-mirror case is supported. See plan-nodeid-directives.md.");
+        }
         return CodeBlock.of("$T::$L", fetchersClass, field.name());
     }
 
