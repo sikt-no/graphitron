@@ -7,9 +7,10 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * End-to-end check that classifier rejections from {@code plan-service-root-fetchers.md}
- * Invariants §1 / §2 / §3 (and the strict {@code @service} return-type extension) surface
- * as {@link ValidationError}s through the full SDL → classifier → validator path.
+ * End-to-end check that classifier rejections from the root {@code @service} / {@code @tableMethod}
+ * invariants (Connection wrapper, {@code Sources} param at root, {@code @tableMethod} strict-class
+ * return type, and the strict {@code @service} return-type comparison) surface as
+ * {@link ValidationError}s through the full SDL → classifier → validator path.
  *
  * <p>{@link GraphitronSchemaBuilderTest.UnclassifiedFieldCase} pins that the field is
  * classified as {@code UnclassifiedField} with the right reason; this test pins that the

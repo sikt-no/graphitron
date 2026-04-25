@@ -46,9 +46,17 @@ target table and the column bindings — this data is currently discarded at cla
   for mutations it identifies the WHERE-clause columns.
 - `GeneratorUtils.ResolvedTableNames` — resolves `tablesClass`, `jooqTableClass`, `typeClass` from
   a `TableRef`.  Used by every SQL-generating emitter.
-- `plan-service-root-fetchers.md` — adds `buildMethodBackedCallArgs`, a declaration-order
-  param-list emitter needed by the service-mutation variants.  The mutations plan
-  **depends on that plan landing first** for Phases 2 and 5–6.
+- `ArgCallEmitter.buildMethodBackedCallArgs(MethodRef, CodeBlock, String)` — declaration-order
+  param-list emitter introduced by the service-root-fetchers work (now Done; see roadmap
+  Done section). Service-mutation variants (Phases 2 and 5–6) reuse it directly.
+- `FieldBuilder.validateRootServiceInvariants(ServiceResolution)` — shared classifier-time
+  helper enforcing §1 (Connection rejection) and §2 (no `Sources` parameter at root) on
+  both `@service` query and `@service` mutation arms. Already wired into `classifyMutationField`
+  by service-root-fetchers (Done); the mutation-bodies plan inherits these checks for free.
+- `MethodRef.Basic.returnType()` — structured javapoet `TypeName` captured at reflection time
+  (was a string FQCN before service-root-fetchers landed). Mutation-`@service` strict-return
+  validation already routes through `FieldBuilder.computeExpectedServiceReturnType` for the
+  `parentPkColumns.isEmpty()` path; only the emitter side remains for Phase 6.
 
 ---
 
@@ -338,7 +346,8 @@ phase's landing commit.
 **Execution** (new `GraphQLMutationTest` in `graphitron-rewrite-test`):
 - **Fixture gap**: `graphitron-rewrite-test/src/main/resources/graphql/schema.graphqls` currently
   has no `Mutation` type.  Phase 2 adds the first one; subsequent phases extend it.  This mirrors
-  the fixture gap `plan-service-root-fetchers.md` calls out for `@service` / `@tableMethod`.
+  the fixture gap that the service-root-fetchers work (Done) closed for `@service` / `@tableMethod`
+  via `SampleQueryService` and the three new Query fields.
 - Fixture SDL: `type Mutation { createFilm(in: FilmInput!): ID @mutation(typeName: INSERT) }`
   with `input FilmInput @table(name: "film") { title: String!, languageId: Int!, rentalDuration: Int!, rentalRate: Float!, replacementCost: Float! }`.
   Sakila's `film` table has several NOT-NULL columns without defaults (`language_id`,
@@ -493,9 +502,12 @@ semantics.
 
 ### Phase 6 — Service mutations
 
-**Prerequisite:** `plan-service-root-fetchers.md` must be complete (landed on trunk) before
-starting this phase.  That plan introduces `ArgCallEmitter.buildMethodBackedCallArgs`, the
-helper both service-query and service-mutation emitters share.
+**Prerequisite (satisfied).** Service-root-fetchers (Done) introduced
+`ArgCallEmitter.buildMethodBackedCallArgs`, the declaration-order param-list helper this phase
+reuses verbatim. It also wired `validateRootServiceInvariants` (§1 / §2) and the strict
+`@service` return-type check into the mutation arm of `classifyMutationField`, so this phase
+inherits classifier-time rejection for connection returns, batch-keyed parameters, and
+mismatched return types without further work.
 
 **Synchronous, no DataLoader.**  Both service-mutation variants emit synchronous methods — same
 as root service queries.  Root mutation fields have no parent-batching context; per-request

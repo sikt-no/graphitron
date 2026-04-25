@@ -9,12 +9,11 @@ import org.jooq.Result;
 import java.util.List;
 
 /**
- * Fixture for service-backed and method-backed root fetchers (plan-service-root-fetchers.md).
- * Three methods, one per leaf:
+ * Fixture for service-backed and method-backed root fetchers. Three methods, one per leaf:
  *
  * <ul>
- *   <li>{@link #popularFilms} — returns a {@code Table<FilmRecord>} for {@code @tableMethod};
- *       the framework wraps with a projection SELECT.</li>
+ *   <li>{@link #popularFilms} — returns a specific-typed {@link Film} for {@code @tableMethod};
+ *       the framework wraps with a projection SELECT via {@code FilmType.$fields(...)}.</li>
  *   <li>{@link #filmsByService} — returns {@code Result<FilmRecord>} for {@code @service}
  *       with a {@code @table}-bound return type. Service hands records straight to graphql-java;
  *       no framework projection.</li>
@@ -32,9 +31,10 @@ public final class SampleQueryService {
     /**
      * Filters the FILM table by minimum rental rate. The generated jOOQ {@code Film} class
      * overrides {@code where(...)} to return {@code Film} (not {@code Table<R>}), so the
-     * filtered derived table preserves the specific table type required by
-     * plan-service-root-fetchers.md Invariants §3 and feeds {@code FilmType.$fields(...)}
-     * directly without a downcast.
+     * filtered derived table preserves the specific table type required by the strict
+     * {@code @tableMethod} return-type check in {@code ServiceCatalog.reflectTableMethod}, and
+     * feeds {@code FilmType.$fields(...)} directly without a downcast. See
+     * {@code rewrite-design-principles.md} ("Classifier guarantees shape emitter assumptions").
      */
     public static Film popularFilms(Film filmTable, Double minRentalRate) {
         return filmTable.where(filmTable.RENTAL_RATE.ge(java.math.BigDecimal.valueOf(minRentalRate)));
