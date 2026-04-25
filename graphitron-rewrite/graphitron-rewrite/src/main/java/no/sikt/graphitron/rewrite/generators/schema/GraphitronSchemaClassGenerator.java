@@ -7,6 +7,8 @@ import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
+import no.sikt.graphitron.rewrite.generators.util.QueryNodeFetcherClassGenerator;
+import no.sikt.graphitron.rewrite.model.GraphitronType.NodeType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.RootType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType;
 
@@ -76,6 +78,17 @@ public final class GraphitronSchemaClassGenerator {
         sortedFetcherTypes.sort(Comparator.naturalOrder());
         for (String name : sortedFetcherTypes) {
             body.addStatement("$T.registerFetchers(codeRegistry)", ClassName.get(schemaPackage, name + "Type"));
+        }
+
+        // Node interface TypeResolver — only when the schema actually has at least one
+        // NodeType. Routes via the synthetic __typename column projected by every
+        // QueryNodeFetcher.getNode dispatch arm.
+        boolean hasNodeTypes = schema.types().values().stream().anyMatch(t -> t instanceof NodeType);
+        if (hasNodeTypes) {
+            var queryNodeFetcher = ClassName.get(outputPackage + ".fetchers",
+                QueryNodeFetcherClassGenerator.CLASS_NAME);
+            body.addStatement("$T.$L(codeRegistry)", queryNodeFetcher,
+                QueryNodeFetcherClassGenerator.REGISTER_RESOLVER_METHOD);
         }
 
         body.add("$T schemaBuilder = $T.newSchema()", SCHEMA_BUILDER, GRAPHQL_SCHEMA).indent();

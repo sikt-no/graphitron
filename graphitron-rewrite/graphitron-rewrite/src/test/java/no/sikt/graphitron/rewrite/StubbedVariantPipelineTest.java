@@ -2,7 +2,6 @@ package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
 import no.sikt.graphitron.rewrite.model.MutationField;
-import no.sikt.graphitron.rewrite.model.QueryField;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -29,18 +28,6 @@ class StubbedVariantPipelineTest {
         assertThat(messages(errors))
             .contains("Field 'Mutation.createFilm': "
                 + TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS.get(MutationField.MutationInsertTableField.class));
-    }
-
-    @Test
-    void queryNodeField_surfacesStubbedError() {
-        var errors = validate("""
-            type Film @table(name: "film") @node(keyColumns: ["film_id"]) { title: String }
-            type Query { node(id: ID!): Film }
-            """);
-
-        assertThat(messages(errors))
-            .contains("Field 'Query.node': "
-                + TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS.get(QueryField.QueryNodeField.class));
     }
 
     @Test
