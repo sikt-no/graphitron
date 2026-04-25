@@ -238,6 +238,27 @@ class FieldBuilder {
         };
     }
 
+    /**
+     * Shared invariant check for root {@code @service} fields (both Query and Mutation arms).
+     * Returns a non-null reason string when the resolved {@link ServiceResolution} violates an
+     * invariant, {@code null} otherwise.
+     *
+     * <ul>
+     *   <li>§1: {@link FieldWrapper.Connection} return type — root has no pagination context.</li>
+     *   <li>§2: {@link ParamSource.Sources} parameter — root has no parent context to batch
+     *       against.</li>
+     * </ul>
+     */
+    private static String validateRootServiceInvariants(ServiceResolution svcResult) {
+        if (svcResult.returnType().wrapper() instanceof FieldWrapper.Connection) {
+            return "@service at the root does not support Connection return types — use [T] or T instead";
+        }
+        if (svcResult.method().params().stream().anyMatch(p -> p.source() instanceof ParamSource.Sources)) {
+            return "@service at the root does not support List<Row>/List<Record>/List<Object> batch parameters — the root has no parent context to batch against";
+        }
+        return null;
+    }
+
     private record TableFieldComponents(List<WhereFilter> filters, OrderBySpec orderBy, PaginationSpec pagination,
                                         String error, LookupMapping lookupMapping) {
         /** Construct an error result with no component values. */
@@ -1503,15 +1524,9 @@ class FieldBuilder {
             if (svcResult.error() != null) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, svcResult.error());
             }
-            // Invariants §1: Connection wrapper not supported on @service at root.
-            if (svcResult.returnType().wrapper() instanceof FieldWrapper.Connection) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                    "@service at the root does not support Connection return types — use [T] or T instead");
-            }
-            // Invariants §2: ParamSource.Sources not supported at root (no parent context to batch against).
-            if (svcResult.method().params().stream().anyMatch(p -> p.source() instanceof ParamSource.Sources)) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                    "@service at the root does not support List<Row>/List<Record>/List<Object> batch parameters — the root has no parent context to batch against");
+            String invariant = validateRootServiceInvariants(svcResult);
+            if (invariant != null) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, invariant);
             }
             return switch (svcResult.returnType()) {
                 case ReturnTypeRef.TableBoundReturnType tb ->
@@ -1629,6 +1644,10 @@ class FieldBuilder {
             var svcResult = resolveServiceField(parentTypeName, fieldDef, List.of());
             if (svcResult.error() != null) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, svcResult.error());
+            }
+            String invariant = validateRootServiceInvariants(svcResult);
+            if (invariant != null) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, invariant);
             }
             return switch (svcResult.returnType()) {
                 case ReturnTypeRef.TableBoundReturnType tb ->
