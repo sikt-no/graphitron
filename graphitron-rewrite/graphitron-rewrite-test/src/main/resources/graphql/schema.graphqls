@@ -104,6 +104,9 @@ type Customer implements Node @table(name: "customer") @node {
     lastName:   String!  @field(name: "LAST_NAME")
     email:      String   @field(name: "EMAIL")
     activebool: Boolean! @field(name: "ACTIVEBOOL")
+    # R5: NodeIdReferenceField — encodes Address's NodeId from customer.address_id
+    # (FK-mirror collapse: customer.address_id == address.address_id, so no JOIN).
+    addressNodeId: ID    @nodeId(typeName: "Address") @reference(path: [{key: "customer_address_id_fkey"}])
     # G5: single-hop inline TableField — customer.address_id → address.address_id
     address:       Address @reference(path: [{key: "customer_address_id_fkey"}])
     # G5: multi-hop inline TableField — customer → store → address (2 hops)
@@ -119,7 +122,8 @@ type Customer implements Node @table(name: "customer") @node {
     addressSplit:  Address @splitQuery @reference(path: [{key: "customer_address_id_fkey"}])
 }
 
-type Address @table(name: "address") {
+type Address implements Node @table(name: "address") @node {
+    id:         ID!      @nodeId
     addressId:  Int!     @field(name: "ADDRESS_ID")
     address:    String!  @field(name: "ADDRESS")
     district:   String!  @field(name: "DISTRICT")
