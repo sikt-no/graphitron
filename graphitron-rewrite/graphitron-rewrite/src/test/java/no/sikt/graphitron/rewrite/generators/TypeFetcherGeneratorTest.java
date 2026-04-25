@@ -629,6 +629,66 @@ class TypeFetcherGeneratorTest {
     }
 
     @Test
+    void queryServiceRecordField_emittedFetcher_handlesPrimitiveReturnType() {
+        // Reflection of `int filmCount()` produces returnTypeName "int". The emitter must
+        // declare the primitive faithfully — no widening to Object or Integer.
+        var method = new MethodRef.Basic(
+            "com.example.Service", "filmCount", "int", List.of());
+        var field = new QueryField.QueryServiceRecordField("Query", "filmCount", null,
+            new ReturnTypeRef.ScalarReturnType("Int", single()), method);
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
+            List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+
+        assertThat(method(spec, "filmCount").returnType().toString()).isEqualTo("int");
+    }
+
+    @Test
+    void queryServiceRecordField_emittedFetcher_handlesArrayReturnType() {
+        // Reflection of `String[] tags()` produces returnTypeName "java.lang.String[]". The
+        // emitter must preserve the array shape faithfully via ArrayTypeName.
+        var method = new MethodRef.Basic(
+            "com.example.Service", "tags", "java.lang.String[]", List.of());
+        var field = new QueryField.QueryServiceRecordField("Query", "tags", null,
+            new ReturnTypeRef.ScalarReturnType("Tags", single()), method);
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
+            List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+
+        assertThat(method(spec, "tags").returnType().toString()).isEqualTo("java.lang.String[]");
+    }
+
+    @Test
+    void queryServiceRecordField_emittedFetcher_handlesMultiArgGenericReturnType() {
+        // Reflection of `Map<String, Integer> stats()` produces a multi-arg type name. The
+        // emitter's depth-aware comma splitter must yield ParameterizedTypeName with two args.
+        var method = new MethodRef.Basic(
+            "com.example.Service", "stats",
+            "java.util.Map<java.lang.String, java.lang.Integer>", List.of());
+        var field = new QueryField.QueryServiceRecordField("Query", "stats", null,
+            new ReturnTypeRef.ScalarReturnType("Stats", single()), method);
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
+            List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+
+        assertThat(method(spec, "stats").returnType().toString())
+            .isEqualTo("java.util.Map<java.lang.String, java.lang.Integer>");
+    }
+
+    @Test
+    void queryServiceRecordField_emittedFetcher_handlesBoundedWildcardReturnType() {
+        // Reflection of `List<? extends Number> nums()` produces "java.util.List<? extends
+        // java.lang.Number>". The emitter must preserve the wildcard via WildcardTypeName.
+        var method = new MethodRef.Basic(
+            "com.example.Service", "nums",
+            "java.util.List<? extends java.lang.Number>", List.of());
+        var field = new QueryField.QueryServiceRecordField("Query", "nums", null,
+            new ReturnTypeRef.ScalarReturnType("Nums", single()), method);
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
+            List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+
+        assertThat(method(spec, "nums").returnType().toString())
+            .isEqualTo("java.util.List<? extends java.lang.Number>");
+    }
+
+    @Test
     void graphitronContextHelper_targetsLocallyEmittedInterfaceByClassKey() {
         // Pins the commit that retargeted GraphitronContext from no.sikt.graphql to the
         // generated <outputPackage>.schema package, and the key from the string
