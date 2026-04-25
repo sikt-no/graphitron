@@ -35,9 +35,11 @@ public final class SampleQueryService {
      * to {@code Tables.FILM} per the @table-bound return type) and projects via
      * {@code FilmType.$fields(...)} over the returned {@code Table<FilmRecord>}.
      */
-    public static Table<FilmRecord> popularFilms(Table<FilmRecord> filmTable, Float minRentalRate) {
+    public static Table<FilmRecord> popularFilms(Table<FilmRecord> filmTable, Double minRentalRate) {
+        // graphql-java's GraphQL Float scalar coerces Java-side to Double, so signatures that take
+        // a Float would receive a ClassCastException; Double is the correct receive type.
         return Tables.FILM.where(Tables.FILM.RENTAL_RATE.greaterOrEqual(
-            org.jooq.impl.DSL.value(minRentalRate, Tables.FILM.RENTAL_RATE.getDataType())));
+            org.jooq.impl.DSL.value(minRentalRate.floatValue(), Tables.FILM.RENTAL_RATE.getDataType())));
     }
 
     /**

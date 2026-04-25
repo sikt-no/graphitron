@@ -3150,7 +3150,82 @@ class GraphitronSchemaBuilderTest {
             type Untyped { value: String }
             type Query { data: Untyped }
             """,
-            schema -> assertThat(schema.field("Untyped", "value")).isNull());
+            schema -> assertThat(schema.field("Untyped", "value")).isNull()),
+
+        SERVICE_AT_ROOT_WITH_CONNECTION_RETURN_REJECTED(
+            "@service at root returning a Connection-shaped type → UnclassifiedField (Invariants §1)",
+            """
+            type Film @table(name: "film") { title: String }
+            type FilmConnection {
+                edges: [FilmEdge]
+                pageInfo: PageInfo!
+            }
+            type FilmEdge {
+                node: Film
+                cursor: String!
+            }
+            type PageInfo {
+                hasNextPage: Boolean!
+                hasPreviousPage: Boolean!
+                startCursor: String
+                endCursor: String
+            }
+            type Query {
+                externalFilms(first: Int, after: String): FilmConnection
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"})
+            }
+            """,
+            schema -> {
+                var f = schema.field("Query", "externalFilms");
+                assertThat(f).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) f).reason())
+                    .contains("@service at the root does not support Connection return types");
+            }),
+
+        TABLEMETHOD_AT_ROOT_WITH_CONNECTION_RETURN_REJECTED(
+            "@tableMethod at root returning a Connection-shaped type → UnclassifiedField (Invariants §1)",
+            """
+            type Film @table(name: "film") { title: String }
+            type FilmConnection {
+                edges: [FilmEdge]
+                pageInfo: PageInfo!
+            }
+            type FilmEdge {
+                node: Film
+                cursor: String!
+            }
+            type PageInfo {
+                hasNextPage: Boolean!
+                hasPreviousPage: Boolean!
+                startCursor: String
+                endCursor: String
+            }
+            type Query {
+                methodFilms(first: Int, after: String): FilmConnection
+                    @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "get"})
+            }
+            """,
+            schema -> {
+                var f = schema.field("Query", "methodFilms");
+                assertThat(f).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) f).reason())
+                    .contains("@tableMethod at the root does not support Connection return types");
+            }),
+
+        SERVICE_AT_ROOT_WITH_SOURCES_PARAM_REJECTED(
+            "@service at root with List<Row1<Integer>> parameter → UnclassifiedField (Invariants §2)",
+            """
+            type Film @table(name: "film") { title: String }
+            type Query {
+                batchedFilms: Film @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getWithSources"})
+            }
+            """,
+            schema -> {
+                var f = schema.field("Query", "batchedFilms");
+                assertThat(f).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) f).reason())
+                    .contains("@service at the root does not support List<Row>/List<Record>/List<Object> batch parameters");
+            });
 
         final String sdl;
         final Consumer<GraphitronSchema> assertions;
