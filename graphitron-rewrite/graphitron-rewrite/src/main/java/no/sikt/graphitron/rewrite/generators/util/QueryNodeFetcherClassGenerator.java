@@ -35,7 +35,7 @@ import java.util.List;
  *
  * <p>Emitted only when at least one {@link NodeType} is classified for the schema.
  *
- * <p>See plan-nodeid-directives.md "{@code Query.node(id:)} dispatch is core".
+ * <p>See rewrite-roadmap.md "{@code Query.node(id:)} dispatch is core".
  */
 public class QueryNodeFetcherClassGenerator {
 

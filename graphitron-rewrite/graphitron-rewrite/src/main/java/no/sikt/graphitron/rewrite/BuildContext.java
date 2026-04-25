@@ -850,14 +850,14 @@ class BuildContext {
         // routes produce InputField.NodeIdField here: the declared form (field carries @nodeId)
         // and the migration-shim form (bare scalar ID on a node-type table). The shim fires a
         // per-site deprecation diagnostic — the canonical form is to declare @nodeId explicitly.
-        // Shim is retired at R7. See plan-nodeid-directives.md.
+        // Shim is retired at R7. See rewrite-roadmap.md.
         if ("ID".equals(typeName) && !list) {
             Optional<JooqCatalog.NodeIdMetadata> nodeIdMeta = catalog.nodeIdMetadata(tableName);
             if (nodeIdMeta.isPresent()) {
                 if (!field.hasAppliedDirective(DIR_NODE_ID)) {
                     NODE_ID_SHIM_LOGGER.warn("input field '{}.{}' synthesizes NodeIdField without"
                         + " '@nodeId' — declare the directive explicitly; synthesis shim will be"
-                        + " removed in a future release. See plan-nodeid-directives.md",
+                        + " removed in a future release. See rewrite-roadmap.md",
                         parentTypeName, name);
                 }
                 return new InputFieldResolution.Resolved(new InputField.NodeIdField(

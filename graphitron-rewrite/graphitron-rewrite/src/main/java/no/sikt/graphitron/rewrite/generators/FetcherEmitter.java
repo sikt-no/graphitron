@@ -134,7 +134,7 @@ public final class FetcherEmitter {
                 DATA_FETCHING_ENV, UnsupportedOperationException.class,
                 "NodeIdReferenceField '" + nrf.parentTypeName() + "." + nrf.name()
                     + "' requires the JOIN-projection form (composite FK or multi-hop) which "
-                    + "is not yet implemented; the FK-mirror case is supported. See plan-nodeid-directives.md.");
+                    + "is not yet implemented; the FK-mirror case is supported. See rewrite-roadmap.md.");
         }
         return CodeBlock.of("$T::$L", fetchersClass, field.name());
     }
