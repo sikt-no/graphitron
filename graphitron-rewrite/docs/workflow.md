@@ -41,6 +41,14 @@ themselves from approving that revision — another party must sign off.
 - Plans describe *what* to do, not *how many commits* to land it in. Implementation
   commit structure is the implementer's judgment — split when the seams add review
   value, keep unified when they don't.
+- Default plan shape is flat sections (`## Implementation`, `## Tests`, `## Roadmap
+  entries`), not numbered steps. Reach for "Step 1, Step 2, ..." only when the
+  numbering reflects a real seam: separate PRs, a feature-flagged rollout, or
+  sequencing where intermediate states are observable. If every step has to land
+  before the next one compiles, the numbering is bookkeeping; collapse to a flat
+  file-by-file list under `## Implementation` so the actual diff shape is obvious.
+  Numbering implies "stop and verify between steps" — don't imply it when there's
+  nothing to verify between them.
 - A plan deleted on Done has its file removed outright. Git history preserves it;
   leaving a tombstone file encourages staleness.
 
