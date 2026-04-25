@@ -544,7 +544,7 @@ class TypeFetcherGeneratorTest {
         assertThat(code).contains("ordering.columns()");
     }
 
-    // ===== plan-service-root-fetchers.md — service / tableMethod root fetchers =====
+    // ===== Service / tableMethod root fetchers =====
 
     @Test
     void queryTableMethodTableField_emittedFetcher_declaresSpecificTableLocalAndProjects() {

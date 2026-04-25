@@ -9,8 +9,8 @@ import no.sikt.graphitron.rewrite.test.jooq.tables.Language;
  * {@code @tableMethod} fields are correctly classified when the method class exists on the classpath.
  *
  * <p>Each method's return type is the specific generated jOOQ table class (e.g. {@link Film},
- * {@link Language}, {@link Actor}) — the classifier-time return-type strictness check
- * (plan-service-root-fetchers.md Invariants §3) requires this. The {@code Table<?>}-returning
+ * {@link Language}, {@link Actor}); the classifier-time return-type strictness check in
+ * {@code ServiceCatalog.reflectTableMethod} requires this. The {@code Table<?>}-returning
  * methods further down ({@link #get}, {@link #getWithContext}) intentionally violate that
  * rule and exist solely so tests can assert the rejection path.
  *

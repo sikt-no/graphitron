@@ -14,10 +14,11 @@ import org.jooq.Result;
  * the field's resolved return type (parameter-classification tests, return-type
  * mismatch negative cases). Methods returning specific jOOQ record classes
  * ({@link FilmRecord}, {@link LanguageRecord}, etc.) exercise the strict
- * service-return-type validation introduced by plan-service-root-fetchers.md:
- * a {@code @service} field whose resolved return type is {@code @table}-bound
- * (or a {@code @record} with a backing class) requires the developer's method
- * to declare a matching parameterized return type.
+ * service-return-type validation in {@code ServiceCatalog.reflectServiceMethod}
+ * against {@code FieldBuilder.computeExpectedServiceReturnType}: a {@code @service}
+ * field whose resolved return type is {@code @table}-bound (or a {@code @record}
+ * with a backing class) requires the developer's method to declare a matching
+ * parameterized return type.
  *
  * <p>Requires the {@code -parameters} compiler flag for context-arg variants
  * (the project's {@code pom.xml} already sets this flag).
