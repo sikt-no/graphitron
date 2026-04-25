@@ -1,6 +1,6 @@
 # Service-backed and method-backed root fetchers
 
-> **Status:** Ready
+> **Status:** In Review
 >
 > Lift three root-`Query` leaves out of `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS`:
 > `QueryField.QueryTableMethodTableField`, `QueryField.QueryServiceTableField`,
@@ -82,19 +82,40 @@ Both shapes share the same argument-list emission (params-walk, with DSLContext 
 
 ## Invariants
 
-The three leaves share one invariant and two variant-specific ones:
+Five invariants, all enforced at classifier time and surfacing through `GraphitronSchemaValidator.validateUnclassifiedField` as build-time errors. §1 and §2 share a `FieldBuilder.validateRootServiceInvariants(ServiceResolution)` helper called from both `classifyQueryField` and `classifyMutationField` (mutation `@service` flows through `resolveServiceField` with `parentPkColumns = List.of()`, so it needs the same root-shape constraints; see Implementation notes). §3 and §5 are strict typed-shape gates that let the emitter declare narrow types without defensive casts.
 
-1. **Cardinality (all three).** Wrapper must be `Single` or `List`, not `Connection`. Reject at **classifier time** in `FieldBuilder.classifyQueryField` by returning `UnclassifiedField` — consistent with the existing polymorphic `@service` rejection at `:1467-1468` and the single-cardinality-`@splitQuery` plan's §1b/§1c pattern. `UnclassifiedField` surfaces through `GraphitronSchemaValidator.validateUnclassifiedField` (`:664-669`) as a build-time error. Sites:
-   - `@service` arm at `:1455-1470`: before the `switch (svcResult.returnType())`, check the resolved wrapper (`svcResult.returnType().wrapper()` — `wrapper()` is defined on all four `ReturnTypeRef` variants). If `Connection`, return `UnclassifiedField` with `"@service at the root does not support Connection return types — use [T] or T instead"`.
-   - `@tableMethod` arm at `:1495-1519`: after the `TableBoundReturnType tb` check but before `reflectTableMethod`, if `tb.wrapper() instanceof FieldWrapper.Connection` return `UnclassifiedField` with `"@tableMethod at the root does not support Connection return types — use [T] or T instead"`.
+1. **Cardinality (root @service / @tableMethod).** Wrapper must be `Single` or `List`, not `Connection`. The pattern follows the existing polymorphic `@service` rejection in `FieldBuilder.classifyQueryField` and the single-cardinality-`@splitQuery` plan's §1b/§1c rejections.
+   - `@service` arm: before the `switch (svcResult.returnType())`, the helper checks `svcResult.returnType().wrapper() instanceof FieldWrapper.Connection`. If so, returns `UnclassifiedField` with `"@service at the root does not support Connection return types, use [T] or T instead"`.
+   - `@tableMethod` arm: after the `TableBoundReturnType tb` check but before `reflectTableMethod`, if `tb.wrapper() instanceof FieldWrapper.Connection`, returns `UnclassifiedField` with `"@tableMethod at the root does not support Connection return types, use [T] or T instead"`.
 
-   The existing no-op `validateCardinality(...)` call in `validateQueryTableMethodTableField` is load-bearing on nothing; delete it as part of this plan. `validateCardinality` itself stays (its other ~15 callers legitimately accept `Connection`).
+   The existing no-op `validateCardinality(...)` call in `validateQueryTableMethodTableField` is deleted; the rejection now happens at classifier time. `validateCardinality` itself stays (its other ~15 callers legitimately accept `Connection`).
 
-2. **No `Sources` parameter at root (both service variants).** `ServiceCatalog.reflectServiceMethod` admits a `ParamSource.Sources` parameter when the method takes `List<RowN<?>>` / `List<RecordN<?>>` / `List<SomeClass>`. At the root, `parentPkColumns` is `List.of()`, so a `RowKeyed`/`RecordKeyed` param carries an empty key column list — the DataLoader batching semantics that shape presumes are not available. Reject at classifier time, same site as §1's `@service` check (before the `switch`), using `svcResult.method().params().stream().anyMatch(p -> p.source() instanceof ParamSource.Sources)` → return `UnclassifiedField` with `"@service at the root does not support List<Row>/List<Record>/List<Object> batch parameters — the root has no parent context to batch against"`. This prevents the classifier from ever producing a `QueryServiceTableField`/`QueryServiceRecordField` with a Sources param, so the emitter's `Sources` arm in `buildMethodBackedCallArgs` remains genuinely unreachable.
+2. **No `Sources` parameter at root (both service variants, query and mutation).** `ServiceCatalog.reflectServiceMethod` admits a `ParamSource.Sources` parameter when the method takes `List<RowN<?>>` / `List<RecordN<?>>` / `List<SomeClass>`. At the root, `parentPkColumns` is `List.of()`, so a `RowKeyed` / `RecordKeyed` param carries an empty key column list, and the DataLoader batching semantics that shape presumes are not available. The shared helper rejects via `svcResult.method().params().stream().anyMatch(p -> p.source() instanceof ParamSource.Sources)`, returning `UnclassifiedField` with `"@service at the root does not support List<Row>/List<Record>/List<Object> batch parameters, the root has no parent context to batch against"`. The classifier therefore never produces a `QueryServiceTableField` / `QueryServiceRecordField` (or `MutationServiceTableField` / `MutationServiceRecordField`) with a Sources param, so the emitter's `Sources` arm in `buildMethodBackedCallArgs` remains genuinely unreachable.
 
-3. **`@tableMethod` signature (already enforced).** `ServiceCatalog.reflectTableMethod` enforces exactly one `Table<?>` parameter at reflection time; no classifier branch produces `QueryTableMethodTableField` without it. It also currently rejects `DSLContext` parameters on `@tableMethod` methods — that's tracked as the separate Backlog item "`DSLContext` on `@condition` / `@tableMethod` methods". This plan does not lift that gate; `QueryTableMethodTableField` params are limited to `Table` / `Arg` / `Context`.
+3. **`@tableMethod` parameters and return type (strict class-equality check).** `ServiceCatalog.reflectTableMethod` enforces exactly one `Table<?>` parameter at reflection time; no classifier branch produces `QueryTableMethodTableField` without it. It also strictly checks that the method's return type equals the specific generated jOOQ table class for the field's `@table`-bound return: the classifier passes an `expectedReturnClass: ClassName` (built from `<jooqPackage>.tables.<TableName>`), `reflectTableMethod` computes `actual = ClassName.get(method.getReturnType())`, and the comparison is `expectedReturnClass.equals(actual)`. Wider returns like `Table<R>` are rejected with `UnclassifiedField` carrying `"method 'X' in class 'Y' must return the generated jOOQ table class 'Z' for @tableMethod with a @table-bound return type, got 'W'"`. The emitter then declares `<SpecificTable> table = Method.x(...)` with no cast and feeds it into `<SpecificTable>Type.$fields(...)`. See `rewrite-design-principles.md`'s "Classifier guarantees shape emitter assumptions".
 
-4. **`DslContext` parameter supported only on `@service` (not `@tableMethod`).** `reflectServiceMethod` admits a `DSLContext` parameter (classified as `ParamSource.DslContext`). The emitter for `QueryServiceTableField` / `QueryServiceRecordField` must thread `graphitronContext(env).getDslContext(env)` into the call at the parameter's declaration-index slot.
+   `reflectTableMethod` currently rejects `DSLContext` parameters on `@tableMethod` methods. That's tracked as the separate Backlog item "`DSLContext` on `@condition` / `@tableMethod` methods". This plan does not lift that gate; `QueryTableMethodTableField` params are limited to `Table` / `Arg` / `Context`.
+
+4. **`DslContext` parameter supported only on `@service` (not `@tableMethod`).** `reflectServiceMethod` admits a `DSLContext` parameter (classified as `ParamSource.DslContext`). The emitter for `QueryServiceTableField` / `QueryServiceRecordField` threads `graphitronContext(env).getDslContext(env)` into the call at the parameter's declaration-index slot.
+
+5. **Strict `@service` return type (root @service only).** The developer's method must declare a return type that matches the field's resolved shape exactly. `FieldBuilder.computeExpectedServiceReturnType(ReturnTypeRef)` derives an `expectedReturnType: TypeName` from the field's `ReturnTypeRef` and cardinality; `ServiceCatalog.reflectServiceMethod` captures the actual via `TypeName.get(method.getGenericReturnType())` and compares structurally with `TypeName.equals`. Mismatched returns surface as `UnclassifiedField` with `"method 'X' in class 'Y' must return 'Z' to match the field's declared return type, got 'W'"`.
+
+   Per `ReturnTypeRef` variant:
+
+   | Variant | Cardinality | Expected `TypeName` |
+   |---|---|---|
+   | `TableBoundReturnType` | Single | `<jooqPackage>.tables.records.<TableName>Record` |
+   | `TableBoundReturnType` | List   | `org.jooq.Result<<RecordFqcn>>` |
+   | `ResultReturnType` (non-null `fqClassName`) | Single | `<fqClassName>` |
+   | `ResultReturnType` (non-null `fqClassName`) | List   | `java.util.List<<fqClassName>>` |
+   | `ResultReturnType` (null `fqClassName`)     | any    | `null` (no validation; emitter declares whatever the method actually returns) |
+   | `ScalarReturnType`                          | any    | `null` (no validation; graphql-java coerces) |
+   | `PolymorphicReturnType`                     | any    | `null` (rejected separately by the polymorphic-`@service` check) |
+   | any                                         | Connection | `null` (rejected by §1; this skip avoids masking the §1 message with a less-specific return-type mismatch) |
+
+   Skipped for **child @service** (`parentPkColumns` non-empty): child @service uses DataLoader-batched semantics where the method takes Sources keys and returns a flat or keyed shape that does not directly match the field's return type. That shape is the child-service plan's concern.
+
+   Comparison is structural (`TypeName.equals`) rather than string-based, so wildcards (`? extends X`), array depth, and multi-arg generics participate in equality. The captured `TypeName` on `MethodRef.Basic` is also the structural form, so emitters declare the matching fetcher return type directly without parsing a string back. See Implementation notes for the divergence from the original spec, which used `Object` as the service-fetcher return type.
 
 ## Plan
 
@@ -200,7 +221,10 @@ Body-string assertions stay minimal — structural properties only, per the test
 
 Fixture additions to `graphitron-rewrite-test/graphitron-rewrite-test`:
 
-- **Java service class** (new file under `src/main/java`): e.g. `SampleQueryService` with three methods — one returning `Table<?>` (for `@tableMethod`), one returning `Result<FilmRecord>` (for service-table), one returning a scalar (for service-record).
+- **Java service class** (new file under `src/main/java`): e.g. `SampleQueryService` with three methods, one per leaf:
+  - `popularFilms(Film filmTable, Double minRentalRate) -> Film` for `@tableMethod`. Returns `filmTable.where(filmTable.RENTAL_RATE.ge(...))`. The generated jOOQ `Film` class overrides `where(...)` / `as(...)` / `rename(...)` to return `Film` (not `Table<R>`), so filtering inside `@tableMethod` is fully compatible with §3 strict-return; the filtered derived table preserves the specific type and feeds directly into `FilmType.$fields(...)`.
+  - `filmsByService(DSLContext, List<Integer> ids) -> Result<FilmRecord>` for service-table.
+  - `filmCount(DSLContext) -> Integer` for service-record.
 
 - **SDL additions** (`schema.graphqls`):
   ```graphql
@@ -211,11 +235,10 @@ Fixture additions to `graphitron-rewrite-test/graphitron-rewrite-test`:
   }
   ```
 
-- **`GraphQLQueryTest` cases**:
-  - `queryTableMethod_returnsFilteredFilms_projectsOnlySelectedColumns` — calls `popularFilms(minRating: 4.0) { title }`, asserts projection (`title` populated) and that the method's filter shaped the `Table<?>`.
-  - `queryServiceTable_returnsFilmsByIds` — calls `filmsByService(ids: [1, 2])`, asserts the service-returned records flow through column fetchers.
-  - `queryServiceRecord_returnsScalar` — calls `filmCount`, asserts scalar returned as-is.
-  - Round-trip count: tableMethod = 1 query (the projection SELECT), service variants = whatever the service itself issues.
+- **`GraphQLQueryTest` cases** (landed names):
+  - `queryTableMethod_popularFilms_filtersAndProjectsSelectedColumns`: calls `popularFilms(minRentalRate: 3.0) { title }`, asserts only the seeded film with `rental_rate >= 3.0` returns and `QUERY_COUNT == 1` (one projection SELECT over the developer-returned filtered Film table).
+  - `queryServiceTable_filmsByService_returnsRecordsThatFlowThroughColumnFetchers`: calls `filmsByService(ids: [1, 2])`, asserts the service-returned records flow through graphql-java's column fetchers.
+  - `queryServiceRecord_filmCount_returnsScalar`: calls `filmCount`, asserts scalar coerced to GraphQL `Int!`.
 
 ## Non-goals
 
@@ -236,3 +259,17 @@ Fixture additions to `graphitron-rewrite-test/graphitron-rewrite-test`:
 - **`TextMapLookup` on service-method args without a return-type `*Conditions` class.** Referenced from the `conditionsClassName resolution` subsection above. For `QueryServiceRecordField` (both `ScalarReturnType` and `ResultReturnType` sub-cases), the return type has no associated `*Conditions` class and thus no natural home for a text-map lookup field. Two options: (a) synthesise the map reference against the nearest `*Conditions` class the schema already has; (b) validate-time reject `TextMapLookup` on service-record args entirely and require the service to accept the raw enum. The service-table and tableMethod variants are unaffected — they resolve to the return type's `*Conditions` class. **Tentative default: (b)** — rejecting at validate time is cheap, gives a clear error, and avoids guessing which `*Conditions` class is "nearest". Revisit when a fixture forces option (a). Implementer is free to escalate if the fixture set surfaces a concrete motivating case.
 
 - **Stub-reason-string reference for #7.** When the three entries leave `NOT_IMPLEMENTED_REASONS`, no other stub entry currently references `#7` in its message — so `#7`'s number in the roadmap stops being load-bearing. Nothing to do unless a future stub falls under #7.
+
+## Implementation notes
+
+Five things diverged from the Spec → Ready plan during implementation and review. Captured here so a future reader of the plan finds the actual landed shape, not the spec's initial sketch.
+
+1. **Strict `@service` return-type validation (Invariants §5) was added on top of the spec.** The original plan declared the `QueryServiceTableField` / `QueryServiceRecordField` emitter signatures as `Result<Record>` / `Record` / `Object` and let graphql-java coerce. Review surfaced the ergonomics question, "what if the developer's method returns the wrong concrete record class": today the spec would compile cleanly and fail at runtime with a `ClassCastException` deep inside graphql-java's column fetchers. The strict check lifts that to classifier time and lets the emitter declare typed return types (`Result<FilmRecord>`, `Integer`) instead of `Object`. Symmetric story to §3 strict-class-equality on `@tableMethod`. See §5 above for the per-variant table and the structural-comparison details.
+
+2. **Filtering inside `@tableMethod` preserves the specific table type.** The spec's worked example was `popularFilms(Tables.FILM, env.getArgument("minRating"))` filtered. During implementation we initially thought §3's strict-class check would forbid filtering, since `Tables.FILM.where(...)` was assumed to return a wider `Table<R>`. That was wrong: jOOQ's generated table classes (`Film`, `Language`, etc.) override every `where(...)` / `as(...)` / `rename(...)` overload to return the specific subtype. The fixture `SampleQueryService.popularFilms` filters via `filmTable.where(filmTable.RENTAL_RATE.ge(...))` and the resulting `Film` feeds straight into `FilmType.$fields(...)` with no cast. §3 strict-return and the canonical filter-in-`@tableMethod` use case are fully compatible. Documented under "Execution tests" above; lesson preserved here so a future reader does not repeat the wrong assumption.
+
+3. **`MethodRef.Basic.returnType()` is a structured `TypeName`, not a string FQCN.** The spec's emitters parsed a string FQCN back into javapoet `TypeName` to declare fetcher return types. We replaced that with a `TypeName returnType()` field captured once at reflection time via `TypeName.get(java.lang.reflect.Type)`. Two consequences: emitters read the structured value directly without a parse step, and the §5 strict-return comparison uses `TypeName.equals` instead of string equality (so wildcards, multi-arg generics, array depth, and primitives all participate in equality faithfully). The previous round-trip parser (`parseTypeName` + `splitTopLevelTypeArgs` in `TypeFetcherGenerator`) was deleted.
+
+4. **§1 / §2 are shared between query and mutation `@service` arms via `validateRootServiceInvariants`.** The spec described §1 / §2 only on the query arm. `classifyMutationField`'s `@service` path also calls `resolveServiceField` with `parentPkColumns = List.of()`, so the same root-shape constraints apply. Extracting the helper and calling it from both arms closes the gap before mutation-`@service` emitters land (covered by Stubs #4). The mutation `@service` strict-return check (§5) was always correctly applied via `resolveServiceField`'s `parentPkColumns.isEmpty()` gate; only §1 / §2 needed lifting.
+
+5. **The "load-bearing classifier guarantees → tight emitter code" pattern was named.** §3 / §5 strict checks let the emitter declare narrow types without defensive casts (e.g., `Film table = Method.x(...)` with no cast, `Result<FilmRecord>` instead of `Object`). The compile-time failure of the generated `*Fetchers` source at the rewrite-test compile gate is the safety net for any classifier/emitter mismatch. That pattern is now codified in `rewrite-design-principles.md` ("Classifier guarantees shape emitter assumptions") with both this plan's `@tableMethod` no-cast local and the pre-existing `ColumnField` requires-table-parent check as named instances.

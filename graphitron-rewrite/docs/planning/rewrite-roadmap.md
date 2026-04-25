@@ -11,7 +11,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `@asConnection` `totalCount` field (release blocker) | Spec | [plan](plan-asconnection-totalcount.md) |
 | Rebase and squash rewrite branch onto main | Ready | [plan](plan-history-squash.md) |
 | `BatchKey.ObjectBased` removal | Spec | [plan](plan-batchkey-remove-objectbased.md) |
-| Service-backed and method-backed root fetchers | Ready | [plan](plan-service-root-fetchers.md) |
+| Service-backed and method-backed root fetchers | In Review | [plan](plan-service-root-fetchers.md) |
 | `IdReferenceField` input filter variant | Spec | [plan](plan-id-reference-input-field.md) |
 | Classification vocabulary follow-ups | Spec | [plan](plan-classification-vocabulary-followups.md) |
 | Multi-parent NestingField sharing — `TableField` arm | Spec | [plan](plan-nestingfield-multiparent-tablefield.md) |
