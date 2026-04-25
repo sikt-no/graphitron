@@ -323,7 +323,7 @@ class TypeBuilder {
             String missing = implementsNode(objType) ? "@node" : "implements Node @node";
             LOGGER.warn("table '{}' has KjerneJooqGenerator metadata but type '{}' is missing '{}'"
                 + " — synthesis shim will be removed in a future release; declare '{}' to opt into"
-                + " node-identity semantics explicitly. See plan-nodeid-directives.md",
+                + " node-identity semantics explicitly. See rewrite-roadmap.md",
                 tableRef.tableName(), name, missing, missing);
             return new NodeType(name, location, tableRef, metadata.get().typeId(),
                 List.copyOf(metadata.get().keyColumns()));
