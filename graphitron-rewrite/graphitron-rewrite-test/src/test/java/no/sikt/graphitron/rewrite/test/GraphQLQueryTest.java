@@ -1599,4 +1599,43 @@ class GraphQLQueryTest {
         var pageInfo2 = (Map<String, Object>) conn2.get("pageInfo");
         assertThat(pageInfo2.get("hasNextPage")).isEqualTo(false);
     }
+
+    // ===== plan-service-root-fetchers.md — service / tableMethod root fetchers =====
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void queryTableMethod_popularFilms_returnsFilteredAndProjectsSelectedColumns() {
+        // SampleQueryService.popularFilms returns Tables.FILM.where(rental_rate >= minRentalRate).
+        // With minRentalRate = 3.0, only ACE GOLDFINGER (4.99) qualifies; films at 0.99 / 2.99 are filtered out.
+        QUERY_COUNT.set(0);
+        Map<String, Object> data = execute("{ popularFilms(minRentalRate: 3.0) { title rentalRate } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("popularFilms");
+        assertThat(films).extracting(f -> f.get("title")).containsExactly("ACE GOLDFINGER");
+        assertThat(films.get(0).get("rentalRate")).isNotNull();
+        // tableMethod path runs exactly one SQL query (the projection SELECT over the developer-returned Table).
+        assertThat(QUERY_COUNT.get()).isEqualTo(1);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void queryServiceTable_filmsByService_returnsRecordsThatFlowThroughColumnFetchers() {
+        // SampleQueryService.filmsByService runs its own SELECT and returns Result<FilmRecord>.
+        // The framework does no projection; graphql-java's column fetchers walk the records via
+        // field-name lookup. Asserting on title / rentalRate confirms the record traversal path works.
+        Map<String, Object> data = execute(
+            "{ filmsByService(ids: [1, 2]) { filmId title rentalRate } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmsByService");
+        assertThat(films).extracting(f -> f.get("title"))
+            .containsExactly("ACADEMY DINOSAUR", "ACE GOLDFINGER");
+        assertThat(films).extracting(f -> f.get("filmId"))
+            .containsExactly(1, 2);
+    }
+
+    @Test
+    void queryServiceRecord_filmCount_returnsScalar() {
+        // SampleQueryService.filmCount returns Integer; graphql-java coerces to Int!.
+        // Five films are seeded by init.sql.
+        Map<String, Object> data = execute("{ filmCount }");
+        assertThat(data.get("filmCount")).isEqualTo(5);
+    }
 }
