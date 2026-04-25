@@ -271,8 +271,8 @@ now references `graphitron-rewrite-maven` (landed in `76754b33`), not
 the legacy plugin.
 
 **`plan-rewrite-maven-plugin.md`**: implementation landed on trunk and
-the plan was subsequently marked Done and deleted (`1abf0e85`). No action
-needed.
+the plan was subsequently marked Done and deleted per the delete-on-done
+rule. No action needed.
 
 ## Branches invalidated by this squash
 

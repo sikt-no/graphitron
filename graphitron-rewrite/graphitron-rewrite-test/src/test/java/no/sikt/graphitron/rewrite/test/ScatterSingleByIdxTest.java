@@ -26,7 +26,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * <p>The emitted helper is {@code private static}; invoked reflectively. Result construction
  * uses a standalone {@link DSLContext} (no JDBC connection) so the test is fully in-memory.
  *
- * <p>Cases mirror plan-single-cardinality-split-query.md §5:
+ * <p>Cases:
  * <ul>
  *   <li>empty result + keyCount=3 → three-null list</li>
  *   <li>full match in order → records at matching slots</li>

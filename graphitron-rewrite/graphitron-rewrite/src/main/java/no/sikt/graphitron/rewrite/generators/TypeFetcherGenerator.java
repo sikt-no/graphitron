@@ -455,7 +455,7 @@ public class TypeFetcherGenerator {
 
         // Single-cardinality sibling: scatterSingleByIdx returns List<Record> (one slot per key,
         // null where no match) rather than List<List<Record>>. Gated on any single-cardinality
-        // Split* field in the class. See plan-single-cardinality-split-query.md §4.
+        // Split* field in the class.
         boolean hasSingleSplitField = fields.stream().anyMatch(f ->
             f instanceof ChildField.SplitTableField stf
                 && !stf.returnType().wrapper().isList());
@@ -1327,8 +1327,7 @@ public class TypeFetcherGenerator {
 
         // Single cardinality: NULL-FK short-circuit. The parent row's FK column may be nullable,
         // and no `terminal.pk = parentInput.fk_value` match can exist under ANSI NULL semantics —
-        // skip the DataLoader round-trip and return null directly. See
-        // plan-single-cardinality-split-query.md §4.
+        // skip the DataLoader round-trip and return null directly.
         if (isList) {
             methodBuilder.addCode(GeneratorUtils.buildKeyExtraction(batchKey, parentTable, jooqPackage));
         } else {

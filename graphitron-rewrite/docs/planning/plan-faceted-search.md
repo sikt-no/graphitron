@@ -119,14 +119,12 @@ into a single `ConnectionResult` carrier.
   by passing a skip name; the filter-class generator owns that
   assembly. This shapes Phase 4's condition-minus-self strategy (see
   below).
-- **Coordination with `plan-generated-fetcher-quality` [Ready]**: that
-  plan extracts pagination boilerplate into `ConnectionHelper.pageRequest(...)`,
-  extracts condition orchestration into a new generated `QueryConditions`
-  class, drops `var` from generated code, and renames the local jOOQ-table
-  variable from `table` to `<entity>Table`. Whichever ships first owns
-  the extraction; the follow-up rebases. Phase 4 below is written
-  against the post-quality shape and notes the coordination points
-  inline.
+- **Builds on shipped fetcher-quality primitives**: pagination boilerplate
+  lives in `ConnectionHelper.pageRequest(...)`, condition orchestration in
+  generated `QueryConditions` classes, the local jOOQ-table variable is
+  named `<entity>Table`, and emitted code is `var`-free (see "Generated-fetcher
+  quality pass" in roadmap Done). Phase 4 below is written against this
+  post-quality shape and notes the coordination points inline.
 
 ## Desired End State
 
@@ -717,20 +715,15 @@ per-facet `GROUP BY` arms. Each arm applies the full Connection
 filter *minus that facet's own predicate*. The paginated `edges` /
 `nodes` query is unchanged.
 
-**Coordination with `plan-generated-fetcher-quality` [Ready].** Three
-of that plan's cleanups land in the same method body this phase
-rewrites: pagination boilerplate moves into
-`ConnectionHelper.pageRequest(...)`; condition orchestration moves
-into a new generated `QueryConditions` class (extracted from
-`buildConditionCall` + `TypeConditionsGenerator`); and the local
-jOOQ-table variable is renamed from `table` to `<entity>Table`.
-Whichever plan ships first owns those extractions. This phase then
-reads: "call `ConnectionHelper.pageRequest(...)` for the pagination
-block, add a `applyNonFacet` method to `QueryConditions` alongside
-the existing `applyFull`, and refer to the jOOQ table through the
-`<entity>Table` local." If facet-search lands first, the extractions
-happen inline here and the quality plan rebases onto the new shape.
-Everything below is written against the post-quality shape.
+**Builds on shipped fetcher-quality primitives.** The "Generated-fetcher
+quality pass" entry in roadmap Done already extracted pagination
+boilerplate into `ConnectionHelper.pageRequest(...)`, condition
+orchestration into generated `QueryConditions` classes, and the
+`table` → `<entity>Table` rename. This phase reads: "call
+`ConnectionHelper.pageRequest(...)` for the pagination block, add an
+`applyNonFacet` method to `QueryConditions` alongside the existing
+`applyFull`, and refer to the jOOQ table through the `<entity>Table`
+local." Everything below is written against this post-quality shape.
 
 After the main SELECT is emitted, determine the set of facets
 present in the GraphQL selection set (a facet whose field is not
@@ -1125,6 +1118,6 @@ reviewers can confirm the v1 design does not foreclose it.
 - `graphitron-rewrite/.../TypeFetcherGenerator.buildQueryConnectionFetcher` —
   Phase 4 emitter target.
 - `graphitron-rewrite/.../BuildContext` — `DIR_*` constants.
-- [plan-generated-fetcher-quality.md] — upstream cleanup plan; Phase 4
-  coordinates on `QueryConditions` extraction, `<entity>Table` rename,
-  and `ConnectionHelper.pageRequest`.
+- "Generated-fetcher quality pass" (roadmap Done) — Phase 4 builds on
+  the shipped `QueryConditions` extraction, `<entity>Table` rename, and
+  `ConnectionHelper.pageRequest` primitives.

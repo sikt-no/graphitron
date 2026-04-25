@@ -197,11 +197,10 @@ public class TypeClassGenerator {
         flat.addAll(nestingFields);
         emitSelectionSwitch(builder, 0, flat, "table", entryType, outputPackage, jooqPackage);
 
-        // Required-projection set (plan-single-cardinality-split-query.md §2): BatchKey columns of
-        // every DataLoader-backed Split* child on this type must land in the SELECT regardless of
-        // selection, so parent key extraction in the fetcher reads non-null values. Dedup at
-        // runtime against whatever the selection switch appended (jOOQ Field identity on the
-        // aliased table).
+        // Required-projection set: BatchKey columns of every DataLoader-backed Split* child on
+        // this type must land in the SELECT regardless of selection, so parent key extraction
+        // in the fetcher reads non-null values. Dedup at runtime against whatever the selection
+        // switch appended (jOOQ Field identity on the aliased table).
         for (ColumnRef col : requiredProjectionColumns) {
             builder.addStatement("if (!fields.contains(table.$L)) fields.add(table.$L)",
                 col.javaName(), col.javaName());

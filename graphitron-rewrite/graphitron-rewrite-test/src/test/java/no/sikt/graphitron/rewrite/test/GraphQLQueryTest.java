@@ -761,7 +761,7 @@ class GraphQLQueryTest {
             assertThat((List<?>) f.get("actorsBySplitLookup")).isEmpty());
     }
 
-    // ===== single-cardinality @splitQuery (plan-single-cardinality-split-query.md) =====
+    // ===== single-cardinality @splitQuery =====
 
     @Test
     void splitTableField_singleCardinality_returnsAddressPerCustomer() {

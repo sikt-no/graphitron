@@ -219,8 +219,7 @@ class GeneratorUtils {
      * Extracts each key column into a typed local and returns {@code CompletableFuture.completedFuture(null)}
      * before building the {@code RowN} key if any component is {@code null} — a {@code NULL} FK
      * on the parent can never match {@code terminal.pk = parentInput.fk_value}, so dispatching
-     * to the DataLoader is a wasted round-trip. See
-     * plan-single-cardinality-split-query.md §4.
+     * to the DataLoader is a wasted round-trip.
      *
      * <p>Only the {@link BatchKey.RowKeyed} variant is handled; single-cardinality
      * {@code @splitQuery} on a {@code @table} parent is the only caller today.
