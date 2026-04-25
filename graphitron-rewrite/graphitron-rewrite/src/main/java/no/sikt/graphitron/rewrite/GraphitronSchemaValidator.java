@@ -251,7 +251,8 @@ public class GraphitronSchemaValidator {
         validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
     }
     private void validateQueryTableMethodTableField(no.sikt.graphitron.rewrite.model.QueryField.QueryTableMethodTableField field, List<ValidationError> errors) {
-        validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
+        // Connection rejection happens at classifier time (FieldBuilder Invariants §1);
+        // no per-variant validation needed here.
     }
     private void validateQueryNodeField(no.sikt.graphitron.rewrite.model.QueryField.QueryNodeField field, List<ValidationError> errors) {}
     private void validateQueryEntityField(no.sikt.graphitron.rewrite.model.QueryField.QueryEntityField field, List<ValidationError> errors) {}
