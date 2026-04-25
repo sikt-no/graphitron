@@ -94,6 +94,116 @@ public final class SplitRowsMethodEmitter {
     private SplitRowsMethodEmitter() {}
 
     /**
+     * Bindings produced by {@link #emitParentInputAndFkChain} that the three sibling rows-method
+     * builders consume at their divergence points. Carries only what is re-derived in more than
+     * one sibling; per-sibling locals (typed Row/Record/Table type names, the projection list,
+     * etc.) stay in the sibling.
+     */
+    private record PreludeBindings(
+        List<String> aliases,
+        String terminalAlias,
+        String firstAlias,
+        JoinStep.FkJoin firstHop,
+        TypeName keyElement,
+        List<ColumnRef> pkCols
+    ) {}
+
+    /**
+     * Emits the five-act prelude shared by {@link #buildListMethod}, {@link #buildSingleMethod},
+     * and {@link #buildConnectionMethod}: empty-input short-circuit, {@code dsl} resolution,
+     * typed {@code parentRows[]} VALUES with its {@code @SuppressWarnings} cast,
+     * {@code parentInput} derived-table aliasing, and the FK-chain alias declarations. Mutates
+     * {@code body} and returns the bindings each sibling needs at its divergence point.
+     *
+     * <p>Single-cardinality callers pass a single-hop {@code joinPath}; the FK-chain loop emits
+     * one declaration in that case.
+     */
+    private static PreludeBindings emitParentInputAndFkChain(
+            CodeBlock.Builder body,
+            String fieldName,
+            BatchKey batchKey,
+            ReturnTypeRef.TableBoundReturnType returnType,
+            List<JoinStep> joinPath,
+            String jooqPackage) {
+        TableRef terminalTable = returnType.table();
+        ClassName tablesClass = ClassName.get(jooqPackage, "Tables");
+
+        BatchKey.RowKeyed rowKeyed = (BatchKey.RowKeyed) batchKey;
+        List<ColumnRef> pkCols = rowKeyed.keyColumns();
+        TypeName keyElement = GeneratorUtils.keyElementType(batchKey);
+
+        int parentRowArity = pkCols.size() + 1;
+        if (parentRowArity > 22) {
+            throw new IllegalStateException(
+                "Parent PK arity " + pkCols.size() + " + idx exceeds jOOQ's typed Row/Record arity limit (22)");
+        }
+        TypeName[] parentRowTypeArgs = new TypeName[parentRowArity];
+        parentRowTypeArgs[0] = ClassName.get(Integer.class);
+        for (int i = 0; i < pkCols.size(); i++) {
+            parentRowTypeArgs[i + 1] = ClassName.bestGuess(pkCols.get(i).columnClass());
+        }
+        TypeName parentRowType = ParameterizedTypeName.get(rowClass(parentRowArity), parentRowTypeArgs);
+        TypeName parentRecordType = ParameterizedTypeName.get(recordClass(parentRowArity), parentRowTypeArgs);
+        TypeName parentInputTableType = ParameterizedTypeName.get(TABLE, parentRecordType);
+
+        List<String> aliases = JoinPathEmitter.generateAliases(joinPath, terminalTable);
+        String terminalAlias = aliases.get(aliases.size() - 1);
+        String firstAlias = aliases.get(0);
+        // Classifier contract: joinPath is non-empty and its first step is an FkJoin. Empty paths
+        // are rejected in BuildContext.parsePath; ConditionJoin-first paths are short-circuited
+        // by unsupportedReason on each enclosing variant.
+        JoinStep.FkJoin firstHop = (JoinStep.FkJoin) joinPath.get(0);
+
+        // Empty-input short-circuit — before touching the DSL context.
+        body.beginControlFlow("if (keys.isEmpty())");
+        body.addStatement("return $T.of()", LIST);
+        body.endControlFlow();
+
+        body.addStatement("$T dsl = graphitronContext(env).getDslContext(env)",
+            ClassName.get("org.jooq", "DSLContext"));
+
+        // Parent-input VALUES rows — fully typed. One Row<N+1><Integer, pkType1, …> per key[i].
+        // Generic array creation is the one unavoidable unchecked cast: Java forbids
+        //   new Row2<Integer, Integer>[n]
+        // so we cast a raw Row<N+1>[] up to the typed array. Scoped to this one line.
+        body.add("@$T({$S, $S})\n", ClassName.get("java.lang", "SuppressWarnings"), "unchecked", "rawtypes");
+        body.addStatement("$T[] parentRows = ($T[]) new $T[keys.size()]",
+            parentRowType, parentRowType, rowClass(parentRowArity));
+        body.beginControlFlow("for (int i = 0; i < keys.size(); i++)");
+        body.addStatement("$T k = keys.get(i)", keyElement);
+        var rowArgs = CodeBlock.builder();
+        rowArgs.add("$T.inline(i)", DSL);
+        for (int i = 0; i < pkCols.size(); i++) {
+            rowArgs.add(", k.field$L()", i + 1);
+        }
+        body.addStatement("parentRows[i] = $T.row($L)", DSL, rowArgs.build());
+        body.endControlFlow();
+
+        // VALUES derived-table alias: "parentInput", "idx", pk_col1_sqlName, pk_col2_sqlName, …
+        var parentInputAlias = CodeBlock.builder();
+        parentInputAlias.add("$S, $S", "parentInput", "idx");
+        for (var col : pkCols) {
+            parentInputAlias.add(", $S", col.sqlName());
+        }
+        body.addStatement("$T parentInput = $T.values(parentRows).as($L)",
+            parentInputTableType, DSL, parentInputAlias.build());
+
+        // FK chain aliases — one declaration per hop. Single-cardinality emits a single
+        // declaration (joinPath.size() == 1).
+        for (int i = 0; i < joinPath.size(); i++) {
+            JoinStep.FkJoin fk = (JoinStep.FkJoin) joinPath.get(i);
+            ClassName jooqTableClass = ClassName.get(
+                jooqPackage + ".tables",
+                fk.targetTable().javaClassName());
+            body.addStatement("$T $L = $T.$L.as($S)",
+                jooqTableClass, aliases.get(i), tablesClass, fk.targetTable().javaFieldName(),
+                fieldName + "_" + aliases.get(i));
+        }
+
+        return new PreludeBindings(aliases, terminalAlias, firstAlias, firstHop, keyElement, pkCols);
+    }
+
+    /**
      * Builds the rows-method for a {@link ChildField.SplitTableField} or
      * {@link ChildField.SplitLookupTableField}. The returned {@link MethodSpec} is complete
      * (signature + body) and is added directly to the enclosing {@code *Fetchers} class.
@@ -283,96 +393,25 @@ public final class SplitRowsMethodEmitter {
             LookupMapping lookupMapping,
             String outputPackage,
             String jooqPackage) {
-        TableRef terminalTable = returnType.table();
-        ClassName tablesClass = ClassName.get(jooqPackage, "Tables");
         ClassName keysClass = ClassName.get(jooqPackage, "Keys");
         ClassName typeClass = ClassName.get(
             outputPackage + ".types",
             returnType.returnTypeName());
 
-        BatchKey.RowKeyed rowKeyed = (BatchKey.RowKeyed) batchKey;
-        List<ColumnRef> pkCols = rowKeyed.keyColumns();
-        TypeName keyElement = GeneratorUtils.keyElementType(batchKey);
-        TypeName keysListType = ParameterizedTypeName.get(LIST, keyElement);
         TypeName listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
         TypeName listOfListOfRecord = ParameterizedTypeName.get(LIST, listOfRecord);
 
-        // Typed RowN+1 and RecordN+1 for parentInput: idx + parent PK columns. Arity known at
-        // codegen time, capped at 22 (jOOQ's typed Row/Record classes).
-        int parentRowArity = pkCols.size() + 1;
-        if (parentRowArity > 22) {
-            throw new IllegalStateException(
-                "Parent PK arity " + pkCols.size() + " + idx exceeds jOOQ's typed Row/Record arity limit (22)");
-        }
-        TypeName[] parentRowTypeArgs = new TypeName[parentRowArity];
-        parentRowTypeArgs[0] = ClassName.get(Integer.class);  // idx
-        for (int i = 0; i < pkCols.size(); i++) {
-            parentRowTypeArgs[i + 1] = ClassName.bestGuess(pkCols.get(i).columnClass());
-        }
-        TypeName parentRowType = ParameterizedTypeName.get(rowClass(parentRowArity), parentRowTypeArgs);
-        TypeName parentRecordType = ParameterizedTypeName.get(recordClass(parentRowArity), parentRowTypeArgs);
-        TypeName parentInputTableType = ParameterizedTypeName.get(TABLE, parentRecordType);
-
-        List<JoinStep> path = joinPath;
-        List<String> aliases = JoinPathEmitter.generateAliases(path, terminalTable);
-        String terminalAlias = aliases.get(aliases.size() - 1);
-        String firstAlias = aliases.get(0);
-        // Classifier contract: path is non-empty and its first step is an FkJoin. Empty paths
-        // are rejected in BuildContext.parsePath (inference failure → UnclassifiedField) and the
-        // RecordTableField/RecordLookupTableField caller's deriveBatchKeyForResultType arm;
-        // ConditionJoin-first paths are short-circuited by unsupportedReason above this call.
-        JoinStep.FkJoin firstHop = (JoinStep.FkJoin) path.get(0);
-
         var body = CodeBlock.builder();
-
-        // Empty-input short-circuit — before touching the DSL context.
-        body.beginControlFlow("if (keys.isEmpty())");
-        body.addStatement("return $T.of()", LIST);
-        body.endControlFlow();
-
-        body.addStatement("$T dsl = graphitronContext(env).getDslContext(env)",
-            ClassName.get("org.jooq", "DSLContext"));
-
-        // Parent-input VALUES rows — fully typed. One Row<N+1><Integer, pkType1, …> per key[i].
-        // Generic array creation is the one unavoidable unchecked cast: Java forbids
-        //   new Row2<Integer, Integer>[n]
-        // so we cast a raw Row<N+1>[] up to the typed array. Scoped to this one line.
-        // DSL.row(Field<T1>, Field<T2>, …) picks the typed Row<N> overload (not Row(Object...)
-        // which would return untyped RowN), so we keep type info from DSL.inline(i) and
-        // k.fieldJ() all the way into parentRows[i].
-        body.add("@$T({$S, $S})\n", ClassName.get("java.lang", "SuppressWarnings"), "unchecked", "rawtypes");
-        body.addStatement("$T[] parentRows = ($T[]) new $T[keys.size()]",
-            parentRowType, parentRowType, rowClass(parentRowArity));
-        body.beginControlFlow("for (int i = 0; i < keys.size(); i++)");
-        body.addStatement("$T k = keys.get(i)", keyElement);
-        var rowArgs = CodeBlock.builder();
-        rowArgs.add("$T.inline(i)", DSL);
-        for (int i = 0; i < pkCols.size(); i++) {
-            rowArgs.add(", k.field$L()", i + 1);
-        }
-        body.addStatement("parentRows[i] = $T.row($L)", DSL, rowArgs.build());
-        body.endControlFlow();
-
-        // VALUES derived-table alias: "parentInput", "idx", pk_col1_sqlName, pk_col2_sqlName, …
-        // DSL.values(Row<N>... rows) returns Table<Record<N>> — typed through to field access.
-        var parentInputAlias = CodeBlock.builder();
-        parentInputAlias.add("$S, $S", "parentInput", "idx");
-        for (var col : pkCols) {
-            parentInputAlias.add(", $S", col.sqlName());
-        }
-        body.addStatement("$T parentInput = $T.values(parentRows).as($L)",
-            parentInputTableType, DSL, parentInputAlias.build());
-
-        // FK chain aliases — declare terminal first (FROM target), then each bridging hop.
-        for (int i = 0; i < path.size(); i++) {
-            JoinStep.FkJoin fk = (JoinStep.FkJoin) path.get(i);
-            ClassName jooqTableClass = ClassName.get(
-                jooqPackage + ".tables",
-                fk.targetTable().javaClassName());
-            body.addStatement("$T $L = $T.$L.as($S)",
-                jooqTableClass, aliases.get(i), tablesClass, fk.targetTable().javaFieldName(),
-                fieldName + "_" + aliases.get(i));
-        }
+        PreludeBindings p = emitParentInputAndFkChain(
+            body, fieldName, batchKey, returnType, joinPath, jooqPackage);
+        List<JoinStep> path = joinPath;
+        List<String> aliases = p.aliases();
+        String terminalAlias = p.terminalAlias();
+        String firstAlias = p.firstAlias();
+        JoinStep.FkJoin firstHop = p.firstHop();
+        TypeName keyElement = p.keyElement();
+        TypeName keysListType = ParameterizedTypeName.get(LIST, keyElement);
+        List<ColumnRef> pkCols = p.pkCols();
 
         // Projection: $fields(env.getSelectionSet(), terminalAlias, env) + idx.as("__idx__").
         // env.getSelectionSet() is the child-selection for the Split field itself — exactly what
@@ -537,74 +576,22 @@ public final class SplitRowsMethodEmitter {
             BatchKey batchKey,
             String outputPackage,
             String jooqPackage) {
-        TableRef terminalTable = returnType.table();
-        ClassName tablesClass = ClassName.get(jooqPackage, "Tables");
         ClassName typeClass = ClassName.get(
             outputPackage + ".types",
             returnType.returnTypeName());
 
-        BatchKey.RowKeyed rowKeyed = (BatchKey.RowKeyed) batchKey;
-        List<ColumnRef> pkCols = rowKeyed.keyColumns();
-        TypeName keyElement = GeneratorUtils.keyElementType(batchKey);
-        TypeName keysListType = ParameterizedTypeName.get(LIST, keyElement);
         TypeName listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
 
-        int parentRowArity = pkCols.size() + 1;
-        if (parentRowArity > 22) {
-            throw new IllegalStateException(
-                "Parent FK arity " + pkCols.size() + " + idx exceeds jOOQ's typed Row/Record arity limit (22)");
-        }
-        TypeName[] parentRowTypeArgs = new TypeName[parentRowArity];
-        parentRowTypeArgs[0] = ClassName.get(Integer.class);
-        for (int i = 0; i < pkCols.size(); i++) {
-            parentRowTypeArgs[i + 1] = ClassName.bestGuess(pkCols.get(i).columnClass());
-        }
-        TypeName parentRowType = ParameterizedTypeName.get(rowClass(parentRowArity), parentRowTypeArgs);
-        TypeName parentRecordType = ParameterizedTypeName.get(recordClass(parentRowArity), parentRowTypeArgs);
-        TypeName parentInputTableType = ParameterizedTypeName.get(TABLE, parentRecordType);
-
-        // Classifier guarantees single-hop (§1c rejects multi-hop single-cardinality).
-        JoinStep.FkJoin firstHop = (JoinStep.FkJoin) joinPath.get(0);
-        List<String> aliases = JoinPathEmitter.generateAliases(joinPath, terminalTable);
-        String firstAlias = aliases.get(0);
-
         var body = CodeBlock.builder();
-
-        body.beginControlFlow("if (keys.isEmpty())");
-        body.addStatement("return $T.of()", LIST);
-        body.endControlFlow();
-
-        body.addStatement("$T dsl = graphitronContext(env).getDslContext(env)",
-            ClassName.get("org.jooq", "DSLContext"));
-
-        body.add("@$T({$S, $S})\n", ClassName.get("java.lang", "SuppressWarnings"), "unchecked", "rawtypes");
-        body.addStatement("$T[] parentRows = ($T[]) new $T[keys.size()]",
-            parentRowType, parentRowType, rowClass(parentRowArity));
-        body.beginControlFlow("for (int i = 0; i < keys.size(); i++)");
-        body.addStatement("$T k = keys.get(i)", keyElement);
-        var rowArgs = CodeBlock.builder();
-        rowArgs.add("$T.inline(i)", DSL);
-        for (int i = 0; i < pkCols.size(); i++) {
-            rowArgs.add(", k.field$L()", i + 1);
-        }
-        body.addStatement("parentRows[i] = $T.row($L)", DSL, rowArgs.build());
-        body.endControlFlow();
-
-        var parentInputAlias = CodeBlock.builder();
-        parentInputAlias.add("$S, $S", "parentInput", "idx");
-        for (var col : pkCols) {
-            parentInputAlias.add(", $S", col.sqlName());
-        }
-        body.addStatement("$T parentInput = $T.values(parentRows).as($L)",
-            parentInputTableType, DSL, parentInputAlias.build());
-
-        // Single-hop terminal alias.
-        ClassName jooqTableClass = ClassName.get(
-            jooqPackage + ".tables",
-            firstHop.targetTable().javaClassName());
-        body.addStatement("$T $L = $T.$L.as($S)",
-            jooqTableClass, firstAlias, tablesClass, firstHop.targetTable().javaFieldName(),
-            fieldName + "_" + firstAlias);
+        // Classifier guarantees single-hop (§1c rejects multi-hop single-cardinality), so the
+        // shared prelude's FK-chain loop emits exactly one declaration.
+        PreludeBindings p = emitParentInputAndFkChain(
+            body, fieldName, batchKey, returnType, joinPath, jooqPackage);
+        String firstAlias = p.firstAlias();
+        JoinStep.FkJoin firstHop = p.firstHop();
+        TypeName keyElement = p.keyElement();
+        TypeName keysListType = ParameterizedTypeName.get(LIST, keyElement);
+        List<ColumnRef> pkCols = p.pkCols();
 
         TypeName wildField = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
         TypeName listOfField = ParameterizedTypeName.get(LIST, wildField);
@@ -701,8 +688,6 @@ public final class SplitRowsMethodEmitter {
             String outputPackage,
             String jooqPackage) {
 
-        TableRef terminalTable = returnType.table();
-        ClassName tablesClass = ClassName.get(jooqPackage, "Tables");
         ClassName keysClass = ClassName.get(jooqPackage, "Keys");
         ClassName typeClass = ClassName.get(
             outputPackage + ".types",
@@ -719,72 +704,17 @@ public final class SplitRowsMethodEmitter {
         TypeName listOfSortField = ParameterizedTypeName.get(LIST, sortFieldWildcard);
         TypeName listOfConnectionResult = ParameterizedTypeName.get(LIST, connectionResultClass);
 
-        BatchKey.RowKeyed rowKeyed = (BatchKey.RowKeyed) batchKey;
-        List<ColumnRef> pkCols = rowKeyed.keyColumns();
-        TypeName keyElement = GeneratorUtils.keyElementType(batchKey);
-        TypeName keysListType = ParameterizedTypeName.get(LIST, keyElement);
-
-        int parentRowArity = pkCols.size() + 1;
-        if (parentRowArity > 22) {
-            throw new IllegalStateException(
-                "Parent PK arity " + pkCols.size() + " + idx exceeds jOOQ's typed Row/Record arity limit (22)");
-        }
-        TypeName[] parentRowTypeArgs = new TypeName[parentRowArity];
-        parentRowTypeArgs[0] = ClassName.get(Integer.class);
-        for (int i = 0; i < pkCols.size(); i++) {
-            parentRowTypeArgs[i + 1] = ClassName.bestGuess(pkCols.get(i).columnClass());
-        }
-        TypeName parentRowType = ParameterizedTypeName.get(rowClass(parentRowArity), parentRowTypeArgs);
-        TypeName parentRecordType = ParameterizedTypeName.get(recordClass(parentRowArity), parentRowTypeArgs);
-        TypeName parentInputTableType = ParameterizedTypeName.get(TABLE, parentRecordType);
-
-        List<JoinStep> path = joinPath;
-        List<String> aliases = JoinPathEmitter.generateAliases(path, terminalTable);
-        String terminalAlias = aliases.get(aliases.size() - 1);
-        String firstAlias = aliases.get(0);
-        JoinStep.FkJoin firstHop = (JoinStep.FkJoin) path.get(0);
-
         var body = CodeBlock.builder();
-
-        body.beginControlFlow("if (keys.isEmpty())");
-        body.addStatement("return $T.of()", LIST);
-        body.endControlFlow();
-
-        body.addStatement("$T dsl = graphitronContext(env).getDslContext(env)",
-            ClassName.get("org.jooq", "DSLContext"));
-
-        // parentInput VALUES — identical shape to buildListMethod.
-        body.add("@$T({$S, $S})\n", ClassName.get("java.lang", "SuppressWarnings"), "unchecked", "rawtypes");
-        body.addStatement("$T[] parentRows = ($T[]) new $T[keys.size()]",
-            parentRowType, parentRowType, rowClass(parentRowArity));
-        body.beginControlFlow("for (int i = 0; i < keys.size(); i++)");
-        body.addStatement("$T k = keys.get(i)", keyElement);
-        var rowArgs = CodeBlock.builder();
-        rowArgs.add("$T.inline(i)", DSL);
-        for (int i = 0; i < pkCols.size(); i++) {
-            rowArgs.add(", k.field$L()", i + 1);
-        }
-        body.addStatement("parentRows[i] = $T.row($L)", DSL, rowArgs.build());
-        body.endControlFlow();
-
-        var parentInputAlias = CodeBlock.builder();
-        parentInputAlias.add("$S, $S", "parentInput", "idx");
-        for (var col : pkCols) {
-            parentInputAlias.add(", $S", col.sqlName());
-        }
-        body.addStatement("$T parentInput = $T.values(parentRows).as($L)",
-            parentInputTableType, DSL, parentInputAlias.build());
-
-        // FK chain aliases — terminal first, then bridging hops.
-        for (int i = 0; i < path.size(); i++) {
-            JoinStep.FkJoin fk = (JoinStep.FkJoin) path.get(i);
-            ClassName jooqTableClass = ClassName.get(
-                jooqPackage + ".tables",
-                fk.targetTable().javaClassName());
-            body.addStatement("$T $L = $T.$L.as($S)",
-                jooqTableClass, aliases.get(i), tablesClass, fk.targetTable().javaFieldName(),
-                fieldName + "_" + aliases.get(i));
-        }
+        PreludeBindings p = emitParentInputAndFkChain(
+            body, fieldName, batchKey, returnType, joinPath, jooqPackage);
+        List<JoinStep> path = joinPath;
+        List<String> aliases = p.aliases();
+        String terminalAlias = p.terminalAlias();
+        String firstAlias = p.firstAlias();
+        JoinStep.FkJoin firstHop = p.firstHop();
+        TypeName keyElement = p.keyElement();
+        TypeName keysListType = ParameterizedTypeName.get(LIST, keyElement);
+        List<ColumnRef> pkCols = p.pkCols();
 
         // Extract pagination args up front. Invariant: same values across every key in the batch,
         // because the DataLoader name is path-scoped and graphql-java resolves args per-field-path.
