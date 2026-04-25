@@ -28,10 +28,9 @@ class SplitLookupTableFieldValidationTest {
 
     private static final BatchKey PARENT_BATCH_KEY = new BatchKey.RowKeyed(List.of());
 
-    // Single-cardinality @splitQuery @lookupKey is rejected at classifier time
-    // (FieldBuilder §1b per plan-single-cardinality-split-query.md); the emitter-level
-    // validator no longer carries a fallback check for it. Classifier-level coverage lives in
-    // GraphitronSchemaBuilderTest.
+    // Single-cardinality @splitQuery @lookupKey is rejected at classifier time in
+    // FieldBuilder; the emitter-level validator no longer carries a fallback check
+    // for it. Classifier-level coverage lives in GraphitronSchemaBuilderTest.
 
     enum Case implements ValidatorCase {
 

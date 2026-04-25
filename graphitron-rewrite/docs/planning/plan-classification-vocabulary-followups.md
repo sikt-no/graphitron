@@ -180,11 +180,10 @@ through the model.
 ## 7. `InlineTableFieldEmitter.buildInnerSelect` passes wrong alias to `@condition(filter:)` methods
 
 **Scope of this item.** The `ArgCallEmitter.buildCallArgs` signature change (adding an
-explicit source-alias parameter) is **owned by item 4 of
-[plan-generated-fetcher-quality.md](plan-generated-fetcher-quality.md)** — it falls out of
-the `table` → `<entity>Table` rename. This item is the downstream consumer: fix the
-inline-subquery caller once the signature is available. It can land independently if the
-fetcher-quality plan hasn't landed yet, in which case it owns the signature change itself.
+explicit source-alias parameter) shipped under the "Generated-fetcher quality pass" entry
+in the roadmap (Done) — it fell out of the `table` → `<entity>Table` rename. This item
+is the downstream consumer: fix the inline-subquery caller now that the signature is
+available.
 
 **Current state.** `buildCallArgs` emits `"table"` as the literal first argument of every
 filter-method call. On the fetcher path this is correct — `TypeFetcherGenerator`'s

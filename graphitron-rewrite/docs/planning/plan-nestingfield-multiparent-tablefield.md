@@ -46,7 +46,7 @@ Verification: a two-parent NestingField fixture where both parents' inline `Tabl
 - **Deeper inline recursion.** Already works via the existing `NestingField` recursion branch in `compareNestedFieldsShape`.
 - **`ConstructorField` / `NodeIdField` / reference-scalar leaves.** No known real-world demand; stay rejected.
 - **Shape-compat of `filters` / `orderBy` / `pagination`.** Deliberately left per-parent (see "Desired end state" rationale). If a future schema author wants to enforce them matching, that's a separate opt-in directive.
-- **Inline-subquery alias rename.** Orthogonal to this plan. The `table` → `<entity>Table` rename tracked in [plan-generated-fetcher-quality.md](plan-generated-fetcher-quality.md) and the `ArgCallEmitter.buildCallArgs` hardcoded `"table"` fix tracked in [plan-classification-vocabulary-followups.md](plan-classification-vocabulary-followups.md) §7 both touch inline-subquery alias identity but neither interacts with the multi-parent shape check landing here.
+- **Inline-subquery alias rename.** Orthogonal to this plan. The `table` → `<entity>Table` rename shipped under "Generated-fetcher quality pass" (Done in roadmap) and the `ArgCallEmitter.buildCallArgs` hardcoded `"table"` fix tracked in [plan-classification-vocabulary-followups.md](plan-classification-vocabulary-followups.md) §7 both touch inline-subquery alias identity but neither interacts with the multi-parent shape check landing here.
 
 ## Implementation approach
 

@@ -37,10 +37,10 @@ class SplitTableFieldValidationTest {
 
     enum Case implements ValidatorCase {
 
-        // Single-cardinality @splitQuery with a single FK hop — emittable after
-        // plan-single-cardinality-split-query.md §3. Positive case: the emitter-level validator
-        // produces no errors. Classifier-level rejection of empty / multi-hop single cardinality
-        // lives in FieldBuilder (§1c) and is exercised by GraphitronSchemaBuilderTest, not here.
+        // Single-cardinality @splitQuery with a single FK hop — emittable. Positive case:
+        // the emitter-level validator produces no errors. Classifier-level rejection of
+        // empty / multi-hop single cardinality lives in FieldBuilder and is exercised by
+        // GraphitronSchemaBuilderTest, not here.
         SINGLE_CARDINALITY_EMITTABLE("single cardinality with one-hop FK path — emittable, no errors",
             new SplitTableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)),
                 List.of(new JoinStep.FkJoin("film_actor_film_id_fkey", "", null, List.of(), new TableRef("film_actor", "", "", List.of()), List.of(), null, "")),
