@@ -68,6 +68,19 @@ Every classifier decision that implies a generator branch must fail at validate 
 
 The rule extends beyond stubbed variants: when a classifier introduces a new invariant (e.g. "`@asConnection` not allowed on inline `TableField`"), the validator should reject it by the same mechanism the generator relies on — no generator-side invariant goes unchecked at validate time. This keeps "problems caught at build time" honest and the generator's builder-invariant assumptions emitter-side safe.
 
+## Classifier guarantees shape emitter assumptions
+
+The rule above flows in one direction: a classifier rejection becomes a build-time error via the validator. The reverse direction also matters. A classifier acceptance can let an emitter assume narrower shapes, so the emitted code reads as tight as if it were hand-written: no defensive casts, no wildcard locals, no `instanceof` guards. When that pattern lands, the classifier check becomes load-bearing for the emitter's correctness; relaxing the check breaks the generated source.
+
+This is a feature, not a fragility. Compile failure of the emitted source at `mvn compile -pl :graphitron-rewrite-test` is the safety net: any classifier/emitter mismatch surfaces during the build, before any code reaches a consumer. Compared with defensive runtime casts (which can throw `ClassCastException` on a real request, days after the build passed) or `var`-typed locals fed into parameterised entry points (which abandon the strict-shape guarantee entirely), the load-bearing-guarantee shape is the safest expression of the contract.
+
+Two instances on trunk today:
+
+- **`@tableMethod` root fetcher.** `ServiceCatalog.reflectTableMethod` rejects developer methods whose return type is wider than the generated jOOQ table class. `TypeFetcherGenerator.buildQueryTableMethodFetcher` then declares `<SpecificTable> table = Method.x(...)` with no cast, and feeds the local directly into `<SpecificTable>Type.$fields(...)` which expects exactly that type. Plan: `plan-service-root-fetchers.md` Invariants §3.
+- **`ColumnField` parent table.** The classifier produces a `ColumnField` only on a table-backed parent. `TypeFetcherGenerator`'s switch arm throws `IllegalStateException` when it sees a `ColumnField` with `parentTable == null`, treating that reachability as a classifier-invariant violation rather than emitting a defensive null-check.
+
+Rule: if you relax a classifier check that an emitter relies on, audit every emitter site that consumes the corresponding shape, in the same commit. The compile-time failure of the generated `*Fetchers` source is the safety net; the audit is the cheap upstream version of the same signal.
+
 ## Pipeline tests are the primary behavioural tier
 
 Behaviour is asserted at the SDL → classified model → generated `TypeSpec` pipeline layer — not at the per-variant unit tier. Per-variant structural tests (method names, return types, which methods exist) are bookkeeping; the primary signal that a feature works is that a realistic SDL produces a realistic `TypeSpec` end-to-end through the classifier. New features earn a pipeline test first; unit tests cover structural invariants that pipeline coverage would make repetitive.
