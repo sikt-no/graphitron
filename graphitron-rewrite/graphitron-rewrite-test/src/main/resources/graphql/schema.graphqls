@@ -1,3 +1,5 @@
+interface Node { id: ID! }
+
 type Query {
     customers(active: Boolean @field(name: "ACTIVEBOOL")): [Customer!]!
     films(
@@ -6,6 +8,10 @@ type Query {
         maxRentalRate: Float @field(name: "RENTAL_RATE")
     ): [Film!]!
     filmById(film_id: [ID] @lookupKey): [Film!]!
+    # Relay Global Object Identification entry point — dispatches by typeId prefix
+    # (extracted from the opaque base64 id) to the matching NodeType's table.
+    # See plan-nodeid-directives.md "Query.node(id:) dispatch is core".
+    node(id: ID!): Node
     languageByKey(language_id: [Int] @lookupKey @field(name: "language_id")): [Language!]!
     customerById(customer_id: [ID] @lookupKey, store_id: ID @lookupKey): [Customer!]!
     storeById(store_id: [Int] @lookupKey @field(name: "store_id")): [Store!]!
@@ -91,7 +97,8 @@ type Query {
     filmsWithNestedImplicit(filter: NestedImplicitInput): [Film!]!
 }
 
-type Customer @table(name: "customer") {
+type Customer implements Node @table(name: "customer") @node {
+    id:         ID!      @nodeId
     customerId: Int!     @field(name: "CUSTOMER_ID")
     firstName:  String!  @field(name: "FIRST_NAME")
     lastName:   String!  @field(name: "LAST_NAME")
@@ -174,7 +181,8 @@ type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jo
     ])
 }
 
-type Film @table(name: "film") {
+type Film implements Node @table(name: "film") @node {
+    id:          ID!          @nodeId
     filmId:      Int!         @field(name: "FILM_ID")
     title:       String!      @field(name: "TITLE")
     description: String       @field(name: "DESCRIPTION")

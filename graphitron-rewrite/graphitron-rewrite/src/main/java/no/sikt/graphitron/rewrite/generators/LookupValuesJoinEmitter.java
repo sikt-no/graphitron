@@ -401,7 +401,7 @@ final class LookupValuesJoinEmitter {
     /**
      * Generates the fetcher body for a {@link LookupMapping.NodeIdMapping} lookup field.
      * Skips VALUES + JOIN entirely; instead extracts the base64 node ID from the env and
-     * emits a {@code NodeIdStrategy.hasId} / {@code hasIds} WHERE predicate.
+     * emits a {@code NodeIdEncoder.hasId} / {@code hasIds} WHERE predicate.
      *
      * <p>Generated code (scalar key):
      * <pre>{@code
@@ -411,16 +411,17 @@ final class LookupValuesJoinEmitter {
      *     .select(Foo.$fields(env.getSelectionSet(), table, env))
      *     .from(table)
      *     .where(condition.and(id == null ? DSL.noCondition()
-     *         : new NodeIdStrategy().hasId("Bar", id, table.ID_1, table.ID_2)))
+     *         : NodeIdEncoder.hasId("Bar", id, table.ID_1, table.ID_2)))
      *     .fetch();
      * }</pre>
      *
      * <p>List variant replaces the scalar extraction with {@code List<String> ids = env.getArgument("ids");}
-     * and the predicate with {@code new NodeIdStrategy().hasIds("Bar", new HashSet<>(ids), table.ID_1, ...)}.
+     * and the predicate with {@code NodeIdEncoder.hasIds("Bar", ids, table.ID_1, ...)}.
      */
-    static CodeBlock buildNodeIdFetcherBody(LookupField field, CodeBlock typeFieldsCall, String srcAlias) {
+    static CodeBlock buildNodeIdFetcherBody(LookupField field, CodeBlock typeFieldsCall, String srcAlias, String outputPackage) {
         var mapping = (LookupMapping.NodeIdMapping) field.lookupMapping();
-        var nodeIdStrategyClass = ClassName.get("no.sikt.graphql", "NodeIdStrategy");
+        var nodeIdEncoder = ClassName.get(outputPackage + ".util",
+            no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator.CLASS_NAME);
         var dslContextClass = ClassName.get("org.jooq", "DSLContext");
 
         var code = CodeBlock.builder();
@@ -441,22 +442,21 @@ final class LookupValuesJoinEmitter {
             keyColArgs.add("$L.$L", srcAlias, mapping.nodeKeyColumns().get(i).javaName());
         }
 
-        // Build the nodeIdStrategy predicate
+        // Build the NodeIdEncoder predicate
         CodeBlock nodeIdPredicate;
         String localName = toCamelCase(mapping.argName());
         if (mapping.list()) {
             String keysLocal = localName + "Keys";
             nodeIdPredicate = CodeBlock.of(
-                "$L == null || $L.isEmpty() ? $T.noCondition() : new $T().hasIds($S, new $T<>($L), $L)",
+                "$L == null || $L.isEmpty() ? $T.noCondition() : $T.hasIds($S, $L, $L)",
                 keysLocal, keysLocal, DSL,
-                nodeIdStrategyClass, mapping.nodeTypeId(),
-                ClassName.get("java.util", "HashSet"), keysLocal,
+                nodeIdEncoder, mapping.nodeTypeId(), keysLocal,
                 keyColArgs.build());
         } else {
             nodeIdPredicate = CodeBlock.of(
-                "$L == null ? $T.noCondition() : new $T().hasId($S, $L, $L)",
+                "$L == null ? $T.noCondition() : $T.hasId($S, $L, $L)",
                 localName, DSL,
-                nodeIdStrategyClass, mapping.nodeTypeId(), localName,
+                nodeIdEncoder, mapping.nodeTypeId(), localName,
                 keyColArgs.build());
         }
 
