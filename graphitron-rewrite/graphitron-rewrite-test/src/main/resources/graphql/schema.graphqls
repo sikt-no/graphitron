@@ -95,6 +95,26 @@ type Query {
     # ColumnField two levels deep. Implicit predicate binds to the outer @table's film_id
     # column; NestedInputField path is ["inner", "filmId"].
     filmsWithNestedImplicit(filter: NestedImplicitInput): [Film!]!
+    # plan-service-root-fetchers.md: @tableMethod root fetcher. Developer returns a
+    # Table<FilmRecord>; framework projects via FilmType.$fields(...).
+    popularFilms(minRentalRate: Float!): [Film!]!
+        @tableMethod(tableMethodReference: {
+            className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
+            method: "popularFilms"
+        })
+    # plan-service-root-fetchers.md: @service root fetcher with @table-bound return.
+    # Service hands back Result<FilmRecord> directly; framework does no projection.
+    filmsByService(ids: [Int!]!): [Film!]!
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
+            method: "filmsByService"
+        })
+    # plan-service-root-fetchers.md: @service root fetcher with scalar return.
+    filmCount: Int!
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
+            method: "filmCount"
+        })
 }
 
 type Customer implements Node @table(name: "customer") @node {
