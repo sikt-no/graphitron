@@ -106,7 +106,6 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.InputField.NodeIdField f            -> {} // no extra validation yet
             case no.sikt.graphitron.rewrite.model.InputField.NodeIdReferenceField f  -> {} // no extra validation yet
             case no.sikt.graphitron.rewrite.model.InputField.NestingField f          -> validateInputNestingField(f, errors);
-            case no.sikt.graphitron.rewrite.model.GraphitronField.NotGeneratedField f -> validateNotGeneratedField(f, errors);
             case no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField f -> validateUnclassifiedField(f, errors);
         }
         validatePaginationRequiresOrdering(field, errors);
@@ -648,12 +647,6 @@ public class GraphitronSchemaValidator {
     }
     private void validateInputNestingField(no.sikt.graphitron.rewrite.model.InputField.NestingField field, List<ValidationError> errors) {
         // Nested field columns are resolved at classification time; no additional structural checks needed.
-    }
-    private void validateNotGeneratedField(no.sikt.graphitron.rewrite.model.GraphitronField.NotGeneratedField field, List<ValidationError> errors) {
-        errors.add(new ValidationError(RejectionKind.INVALID_SCHEMA,
-            "Field '" + field.qualifiedName() + "': @notGenerated is not supported by the rewrite pipeline; the field must be fully described by the schema.",
-            field.location()
-        ));
     }
     private void validateUnclassifiedType(no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType type, List<ValidationError> errors) {
         errors.add(new ValidationError(RejectionKind.AUTHOR_ERROR,

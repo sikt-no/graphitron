@@ -99,7 +99,6 @@ public final class FetcherRegistrationsEmitter {
             String fetchersPackage, String outputPackage, String jooqPackage) {
         var type = schema.type(typeName);
         var fields = schema.fieldsOf(typeName).stream()
-            .filter(f -> !(f instanceof GraphitronField.NotGeneratedField))
             .filter(f -> !(f instanceof GraphitronField.UnclassifiedField))
             .sorted(Comparator.comparing(GraphitronField::name))
             .toList();

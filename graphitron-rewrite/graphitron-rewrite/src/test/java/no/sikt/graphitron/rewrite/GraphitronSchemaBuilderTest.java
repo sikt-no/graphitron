@@ -32,7 +32,6 @@ import no.sikt.graphitron.rewrite.model.ChildField.UnionField;
 import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
-import no.sikt.graphitron.rewrite.model.GraphitronField.NotGeneratedField;
 import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
 import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.BodyParam;
@@ -319,33 +318,6 @@ class GraphitronSchemaBuilderTest {
     @ParameterizedTest(name = "{0}")
     @EnumSource(ColumnReferenceFieldCase.class)
     void columnReferenceFieldClassification(ColumnReferenceFieldCase tc) {
-        tc.assertions.accept(build(tc.sdl));
-    }
-
-    // ===== NotGeneratedField =====
-
-    enum NotGeneratedFieldCase implements ClassificationCase {
-        BASIC(
-            "@notGenerated fields are classified as NotGeneratedField regardless of return type",
-            """
-            type Film @table(name: "film") { title: String @notGenerated }
-            type Query { film: Film }
-            """,
-            schema -> assertThat(schema.field("Film", "title")).isInstanceOf(NotGeneratedField.class));
-
-        final String sdl;
-        final Consumer<GraphitronSchema> assertions;
-        NotGeneratedFieldCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
-            this.sdl = sdl;
-            this.assertions = assertions;
-        }
-        @Override public Set<Class<?>> variants() { return Set.of(NotGeneratedField.class); }
-        @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
-    }
-
-    @ParameterizedTest(name = "{0}")
-    @EnumSource(NotGeneratedFieldCase.class)
-    void notGeneratedFieldClassification(NotGeneratedFieldCase tc) {
         tc.assertions.accept(build(tc.sdl));
     }
 
@@ -3375,6 +3347,18 @@ class GraphitronSchemaBuilderTest {
                 assertThat(f).isInstanceOf(UnclassifiedField.class);
                 assertThat(((UnclassifiedField) f).reason())
                     .contains("must return 'no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord'");
+            }),
+
+        NOT_GENERATED_DIRECTIVE_REJECTED(
+            "@notGenerated is no longer supported → UnclassifiedField with reason saying so",
+            """
+            type Film @table(name: "film") { title: String @notGenerated }
+            type Query { film: Film }
+            """,
+            schema -> {
+                assertThat(schema.field("Film", "title")).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) schema.field("Film", "title")).reason())
+                    .contains("@notGenerated", "no longer supported");
             });
 
         final String sdl;
@@ -3457,8 +3441,8 @@ class GraphitronSchemaBuilderTest {
     }
 
     // ===== Child field directive mutual exclusivity =====
-    // @service, @externalField, @tableMethod, (@nodeId || @reference), @notGenerated, and
-    // @multitableReference are mutually exclusive. @nodeId and @reference CAN be combined.
+    // @service, @externalField, @tableMethod, (@nodeId || @reference), and @multitableReference
+    // are mutually exclusive. @nodeId and @reference CAN be combined.
     // The builder produces UnclassifiedField with a reason naming the conflicting directives.
 
     enum ChildFieldDirectiveConflictCase implements ClassificationCase {
@@ -3508,16 +3492,6 @@ class GraphitronSchemaBuilderTest {
             type Query { film: Film }
             """,
             "Film", "language", "@externalField", "@tableMethod"),
-
-        NOT_GENERATED_AND_SERVICE_CONFLICT(
-            "@notGenerated and @service → UnclassifiedField with reason naming both",
-            """
-            type Film @table(name: "film") {
-                title: String @notGenerated @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"})
-            }
-            type Query { film: Film }
-            """,
-            "Film", "title", "@notGenerated", "@service"),
 
         MULTITABLE_REFERENCE_AND_SERVICE_CONFLICT(
             "@multitableReference and @service → UnclassifiedField with reason naming both",
