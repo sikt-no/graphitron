@@ -1,12 +1,15 @@
 package no.sikt.graphitron.lsp.state;
 
 import no.sikt.graphitron.lsp.parsing.GraphqlLanguage;
+import no.sikt.graphitron.lsp.parsing.TypeNames;
 import org.treesitter.TSInputEdit;
 import org.treesitter.TSParser;
 import org.treesitter.TSPoint;
 import org.treesitter.TSTree;
 
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 /**
  * A schema file open in the workspace: source bytes + tree-sitter tree, both
@@ -37,6 +40,8 @@ public final class WorkspaceFile {
     private byte[] source;
     private TSTree tree;
     private int version;
+    private Set<String> declaredTypes;
+    private Set<String> dependsOnDeclarations;
 
     public WorkspaceFile(int version, String content) {
         this.parser = new TSParser();
@@ -44,6 +49,7 @@ public final class WorkspaceFile {
         this.source = content.getBytes(StandardCharsets.UTF_8);
         this.tree = parser.parseString(null, content);
         this.version = version;
+        refreshTypeIndex();
     }
 
     public TSTree tree() {
@@ -94,6 +100,44 @@ public final class WorkspaceFile {
         this.source = updated;
         this.tree = parser.parseString(tree, new String(updated, StandardCharsets.UTF_8));
         this.version = newVersion;
+        refreshTypeIndex();
+    }
+
+    /**
+     * Replace the file's contents wholesale. Used for the LSP "full sync"
+     * change variant (no range, just new text) and for tests.
+     */
+    public void replaceContent(int newVersion, String content) {
+        if (newVersion < version) {
+            return;
+        }
+        this.source = content.getBytes(StandardCharsets.UTF_8);
+        this.tree = parser.parseString(null, content);
+        this.version = newVersion;
+        refreshTypeIndex();
+    }
+
+    /** Type names declared in this file (objects, interfaces, unions, enums, inputs, scalars). */
+    public Set<String> declaredTypes() {
+        return declaredTypes;
+    }
+
+    /**
+     * Type names this file references but does not declare, minus built-in
+     * scalars. When another file's declarations change to add or remove one
+     * of these names, this file's diagnostics need to be recomputed.
+     */
+    public Set<String> dependsOnDeclarations() {
+        return dependsOnDeclarations;
+    }
+
+    private void refreshTypeIndex() {
+        var extracted = TypeNames.extract(tree.getRootNode(), source);
+        this.declaredTypes = Set.copyOf(extracted.declared());
+        var deps = new LinkedHashSet<>(extracted.referenced());
+        deps.removeAll(extracted.declared());
+        deps.removeAll(TypeNames.BUILTIN_SCALARS);
+        this.dependsOnDeclarations = Set.copyOf(deps);
     }
 
     private static TSPoint computeNewEndPoint(TSPoint startPoint, String inserted) {

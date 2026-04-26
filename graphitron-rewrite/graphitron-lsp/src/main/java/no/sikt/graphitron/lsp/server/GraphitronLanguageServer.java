@@ -1,5 +1,7 @@
 package no.sikt.graphitron.lsp.server;
 
+import no.sikt.graphitron.lsp.state.Workspace;
+import org.eclipse.lsp4j.CompletionOptions;
 import org.eclipse.lsp4j.InitializeParams;
 import org.eclipse.lsp4j.InitializeResult;
 import org.eclipse.lsp4j.ServerCapabilities;
@@ -13,24 +15,37 @@ import org.eclipse.lsp4j.services.WorkspaceService;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * lsp4j entry point. Spike scope: advertises capabilities and stubs the
- * service surfaces. The real handlers (completion, hover, goto-definition)
- * land as the spike grows. Mirrors the {@code main_loop} structure in the
- * Rust LSP's {@code main.rs}, except that lsp4j drives the message loop
- * for us; we only register handlers.
+ * lsp4j entry point. Holds a single {@link Workspace} per server instance
+ * (one server per editor connection); the workspace owns parsed files plus
+ * the catalog. The {@code dev} Mojo (slice 2) constructs the catalog from
+ * the rewrite generator and passes it in here.
  */
 public class GraphitronLanguageServer implements LanguageServer, LanguageClientAware {
 
-    private final TextDocumentService textService = new GraphitronTextDocumentService();
+    private final Workspace workspace;
+    private final TextDocumentService textService;
     private final WorkspaceService workspaceService = new GraphitronWorkspaceService();
     private LanguageClient client;
+
+    public GraphitronLanguageServer() {
+        this(new Workspace());
+    }
+
+    public GraphitronLanguageServer(Workspace workspace) {
+        this.workspace = workspace;
+        this.textService = new GraphitronTextDocumentService(workspace);
+    }
+
+    public Workspace workspace() {
+        return workspace;
+    }
 
     @Override
     public CompletableFuture<InitializeResult> initialize(InitializeParams params) {
         var capabilities = new ServerCapabilities();
         capabilities.setTextDocumentSync(TextDocumentSyncKind.Incremental);
         capabilities.setHoverProvider(true);
-        capabilities.setCompletionProvider(new org.eclipse.lsp4j.CompletionOptions(false, null));
+        capabilities.setCompletionProvider(new CompletionOptions(false, null));
         capabilities.setDefinitionProvider(true);
         return CompletableFuture.completedFuture(new InitializeResult(capabilities));
     }
