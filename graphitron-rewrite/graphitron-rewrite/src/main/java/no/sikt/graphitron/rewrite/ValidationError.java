@@ -24,12 +24,4 @@ import graphql.language.SourceLocation;
  * classifier-supplied kind rather than re-deriving it.
  */
 public record ValidationError(RejectionKind kind, String coordinate, String message, SourceLocation location) {
-
-    /**
-     * Backward-compatible 3-arg constructor for legacy call sites and tests that do not yet
-     * carry a schema coordinate. New code should use the 4-arg form.
-     */
-    public ValidationError(RejectionKind kind, String message, SourceLocation location) {
-        this(kind, null, message, location);
-    }
 }
