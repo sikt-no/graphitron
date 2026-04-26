@@ -12,6 +12,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | Item | Status | Plan |
 |---|---|---|
+| Stub #3: Interface / union fetchers | Spec | [plan](stub-interface-union-fetchers.md) |
 | `IdReferenceField` input filter variant | Spec | [plan](id-reference-input-field.md) |
 | Classification vocabulary follow-ups | Spec | [plan](classification-vocabulary-followups.md) |
 | Context-value registry + native multi-tenant fan-out for `@service` | Spec | [plan](service-context-value-registry.md) |
@@ -46,7 +47,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 ### Stubs
 
-- [**Stub #3: Interface / union fetchers**](stub-interface-union-fetchers.md): Lift these leaves out of `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS`: `QueryField.QueryInterfaceField`, `QueryTableInterfaceField`, `QueryUnionField`, `ChildField.InterfaceField`, `UnionField`, `TableInterfaceField`.
 - [**Stub #8: Non-table / scalar / reference child leaves**](stub-non-table-scalar-child-leaves.md): Lift these leaves out of `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS`: `ChildField.ColumnReferenceField`, `ComputedField`, `TableMethodField`, `ServiceRecordField`, `MultitableReferenceField`.
 
 ### Cleanup
