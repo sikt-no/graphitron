@@ -25,23 +25,28 @@ method` (already populated by `classifyMutationField`).
 
 ### Classifier
 
-`FieldBuilder.classifyMutationField` (`FieldBuilder.java:1544`) already routes mutation fields:
-`@service` → service variants; `@mutation(typeName: ...)` → INSERT / UPDATE / DELETE / UPSERT
-switch at `:1575`.  For the four DML variants, the classifier resolves `returnType` but does **not**
-classify the field's arguments.  The arguments carry the `@table` input type that identifies the
-target table and the column bindings — this data is currently discarded at classify time.
+`FieldBuilder.classifyMutationField` (`FieldBuilder.java:1661`) already routes mutation fields:
+`@service` → service variants (constructed at `:1679-1688`); `@mutation(typeName: ...)` → INSERT /
+UPDATE / DELETE / UPSERT switch at `:1696`.  For the four DML variants, the classifier resolves
+`returnType` but does **not** classify the field's arguments.  The arguments carry the `@table`
+input type that identifies the target table and the column bindings — this data is currently
+discarded at classify time.
 
 ### Generator stubs
 
 `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS` has entries for all six variants
-(`:227-238`); `generateTypeSpec` routes each to `stub(f)` (`:353-358`).
+(`:224-235`); `generateTypeSpec` routes each to `stub(f)` (`:354-359`).
 
 ### Neighbouring references
 
 - `ArgumentRef.InputTypeArg.TableInputArg` — carries `inputTable` (`TableRef`), `fieldBindings`
   (`List<InputColumnBinding>`, `@lookupKey`-bound columns), `fields` (`List<InputField>`, all
-  input fields).  Already populated by `FieldBuilder.classifyArgument` (`FieldBuilder.java:699-704`)
-  for `@table` input types.
+  input fields).  Already populated by `FieldBuilder.classifyArgument` (`FieldBuilder.java:779-783`)
+  for `@table` input types.  `buildLookupBindings` (`FieldBuilder.java:906`) takes a mutable
+  `List<String> errors` and pushes per-field `@lookupKey` validation errors onto it (e.g. lookupKey
+  on a list-typed input field, lookupKey on a non-`ColumnField`).  Phase 1b's `classifyMutationInput`
+  must thread these errors back into the `UnclassifiedField` reason — losing them would silently
+  swallow schema-author mistakes.
 - `InputField.ColumnField` — carries `name` (GraphQL field name), `column` (`ColumnRef` with
   `sqlName`, `javaName`, `columnClass`), and `nonNull`.  The `javaName` field is the jOOQ column
   constant (e.g. `CUSTOMER_ID`).
@@ -105,6 +110,13 @@ target table and the column bindings — this data is currently discarded at cla
 9. **`InputField.ColumnReferenceField` (cross-table reference) in a mutation input is deferred.**
    Gate: `"ColumnReferenceField in @mutation inputs is not yet supported"`.
 
+9b. **`InputField.NodeIdReferenceField` (cross-table NodeID reference) in a mutation input is
+    deferred.**  Same rationale as #9 — cross-table refs would need a join-and-resolve step on the
+    write side.  Gate: `"NodeIdReferenceField in @mutation inputs is not yet supported"`.  Full set
+    of currently-allowed `InputField` variants in a mutation `@table` input is therefore
+    `ColumnField` only; everything else (`NestingField`, `NodeIdField`, `NodeIdReferenceField`,
+    `ColumnReferenceField`) is gated.
+
 10. **Listed inputs (`in: [CustomerInputTable]`) are deferred for Phase 1.**  The initial
     implementation handles only single-record inputs.  Listed-input support is a follow-up
     (see Non-goals).
@@ -153,50 +165,75 @@ target table and the column bindings — this data is currently discarded at cla
 
 **Goal:** populate the DML variants with the data the emitter needs.  No emission changes.
 
-#### 1a. Extend the four DML `MutationField` variants
+#### 1a. Extend the four DML `MutationField` variants and add a `DmlTableField` supertype
 
-Add `TableInputArg tableInputArg` to each record:
+Add `TableInputArg tableInputArg` to each record, and introduce a sealed intermediate
+`MutationField.DmlTableField` so Phase 2's `buildMutationReturnExpression` can dispatch over a
+single supertype:
 
 ```java
+sealed interface DmlTableField extends MutationField
+        permits MutationInsertTableField, MutationUpdateTableField,
+                MutationDeleteTableField, MutationUpsertTableField {
+    ReturnTypeRef returnType();
+    ArgumentRef.InputTypeArg.TableInputArg tableInputArg();
+    SourceLocation location();
+}
+
 record MutationInsertTableField(
     String parentTypeName,
     String name,
     SourceLocation location,
     ReturnTypeRef returnType,
     ArgumentRef.InputTypeArg.TableInputArg tableInputArg
-) implements MutationField {}
+) implements DmlTableField {}
 
 // Same addition on MutationUpdateTableField, MutationDeleteTableField, MutationUpsertTableField.
 ```
 
+The supertype is purely additive: no downstream code reads `MutationField` exhaustively today
+that would care about a new sealed level.  Introducing it here (rather than in Phase 2 as the
+earlier draft did) keeps Phases 2–5 wiring uniform from day one and avoids an interleaved record
+edit during emission work.
+
 #### 1b. Extend `classifyMutationField`
 
-Inside the existing `if (typeName != null)` gate at `FieldBuilder.java:1572`, before the
-`switch (typeName)` at `:1575`, add a `TableInputArg` extraction step.  Placement matters: a
+Inside the existing `if (typeName != null)` gate at `FieldBuilder.java:1693`, before the
+`switch (typeName)` at `:1696`, add a `TableInputArg` extraction step.  Placement matters: a
 missing or malformed `@mutation()` directive leaves `typeName == null` and must continue to
-fall through to the existing "both absent" error at `:1586-1587`; do not run the extraction
+fall through to the existing "both absent" error at `:1707-1708`; do not run the extraction
 outside this gate.
 
 ```java
 // Find the single @table input argument; reject any other argument shape.
 var tiaOrError = classifyMutationInput(fieldDef, typeName /* INSERT|UPDATE|DELETE|UPSERT */);
 if (tiaOrError.error() != null) {
-    return new UnclassifiedField(parentTypeName, name, location, fieldDef, tiaOrError.error());
+    return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+        RejectionKind.AUTHOR_ERROR, tiaOrError.error());
 }
 ArgumentRef.InputTypeArg.TableInputArg tia = tiaOrError.value();
 ```
 
+(The `UnclassifiedField` constructor takes a `RejectionKind` between `fieldDef` and the
+reason string; see the existing call at `FieldBuilder.java:1707-1708`.  Use `AUTHOR_ERROR` for
+schema-author mistakes — missing/duplicate `@table`, deferred input variants, return-type
+violations.  Use `INVALID_SCHEMA` only for hard schema-validity violations like the existing
+`@service` + `@mutation` mutual-exclusion check.)
+
 **`classifyMutationInput` is a purpose-built helper, not a caller of the existing
-`classifyArgument`.**  `classifyArgument(FieldBuilder.java:675)` takes a `TableRef rt` and uses
-it to bind un-directived scalar args against the parent table's columns (`:725-726`); a mutation
+`classifyArgument`.**  `classifyArgument(FieldBuilder.java:749)` takes a `TableRef rt` and uses
+it to bind un-directived scalar args against the parent table's columns (`:822-823`); a mutation
 field has no parent `@table` (its parent is `Mutation`), so threading a sentinel would mis-bind.
 Instead, `classifyMutationInput` walks `fieldDef.getArguments()` directly in two staged passes:
 
 **Pass 1 — shape gate (Invariants #1, #11).**  For each argument, unwrap its GraphQL type to a
 named type and look up `ctx.types.get(typeName)`.  If the resolved type is a
 `GraphitronType.TableInputType`, build a `TableInputArg` via the same path `classifyArgument`
-uses at `:703-704` (`buildLookupBindings` + `tit.inputFields()`) and collect it.  Otherwise,
-record a rejection per Invariant #11.  At the end of Pass 1:
+uses at `:781-782` (`buildLookupBindings` + `tit.inputFields()`) and collect it.  Allocate a fresh
+`List<String> bindingErrors` per call and pass it into `buildLookupBindings`; if non-empty after
+the call, prepend its entries to the rejection reason and return as an `UnclassifiedField`
+(don't drop them silently).  Otherwise, record a rejection per Invariant #11.  At the end of
+Pass 1:
 - Zero `TableInputArg` found → error "no `@table` input argument found on `@mutation` field".
 - Two or more found → error per Invariant #1.
 - Any non-`TableInputArg` argument → error per Invariant #11.
@@ -204,8 +241,9 @@ record a rejection per Invariant #11.  At the end of Pass 1:
 **Pass 2 — invariant checks on the single `tia`.**  Only reached when Pass 1 produced exactly one
 `TableInputArg`:
 1. `tia.list()` true → error per Invariant #10.
-2. Any `tia.fields()` entry is `NestingField` / `PlatformIdField` / `ColumnReferenceField` →
-   error per Invariants #7–9.
+2. Any `tia.fields()` entry is `NestingField` / `NodeIdField` / `NodeIdReferenceField` /
+   `ColumnReferenceField` → error per Invariants #7–9 / #9b.  `ColumnField` is the only
+   permitted variant in Phase 1.
 3. UPDATE / DELETE / UPSERT: `tia.fieldBindings()` empty → error per Invariants #2–3.
 4. UPDATE: every `ColumnField` in `tia.fields()` has its name in `tia.fieldBindings()` →
    error per Invariant #4.
@@ -235,9 +273,14 @@ before validation is invoked.
 | `deleteFilm(in: FilmInput): ID @mutation(typeName: DELETE)` with `@lookupKey` | `MutationDeleteTableField` |
 | `upsertFilm(in: FilmInput): ID @mutation(typeName: UPSERT)` with `@lookupKey` | `MutationUpsertTableField` |
 | Any DML variant with `NestingField` in input | `UnclassifiedField` with Invariant #7 message |
+| Any DML variant with `NodeIdField` in input | `UnclassifiedField` with Invariant #8 message |
+| Any DML variant with `NodeIdReferenceField` in input | `UnclassifiedField` with Invariant #9b message |
+| Any DML variant with `ColumnReferenceField` in input | `UnclassifiedField` with Invariant #9 message |
 | DML variant with a plain (non-`@table`) input arg | `UnclassifiedField` with Invariant #11 message |
 | DML variant with listed input (`in: [FilmInput]`) | `UnclassifiedField` with Invariant #10 message |
-| `@service` + `@mutation` together | `UnclassifiedField` (existing check at `FieldBuilder.java:1548-1551`) |
+| DML variant with `@lookupKey` on a list-typed input field (e.g. `ids: [ID!]! @lookupKey`) | `UnclassifiedField` whose reason includes the `buildLookupBindings` per-field error |
+| DML variant with non-`ID`/non-`T` return (e.g. `: Int`, `: Boolean`, `Connection<T>`) | `UnclassifiedField` with Invariant #12 message |
+| `@service` + `@mutation` together | `UnclassifiedField` (existing check at `FieldBuilder.java:1665-1668`) |
 | `@mutation` with no `typeName` argument | `UnclassifiedField` with existing "both absent" message — Phase 1b's `classifyMutationInput` must not fire before this fallthrough |
 
 ---
@@ -312,12 +355,10 @@ semantics differ between INSERT (always 1) and UPDATE/DELETE (affected-row count
 `returningResult(DSL.val(1))` cannot express either honestly.  Future demand for `Int` returns
 will be met by extending this helper with an `.execute()`-based arm (see Non-goals).
 
-Note on the `DmlTableField` supertype: the four DML variants are already distinct `MutationField`
-records.  Add a sealed intermediate `MutationField.DmlTableField` with accessors for the three
-fields the helper reads (`returnType`, `tableInputArg`, `location`) and let the four variants
-implement it.  Call sites stay lighter (one parameter instead of three) and new DML variants
-(e.g. bulk-INSERT in a follow-up) pick up the helper for free.  No downstream code reads the
-supertype today, so this is purely additive.
+Note on the `DmlTableField` supertype: introduced in Phase 1a (see above) so this helper has a
+stable supertype to dispatch over from day one.  The four DML variants implement it with the
+three accessors the helper reads (`returnType`, `tableInputArg`, `location`).  New DML variants
+(e.g. bulk-INSERT in a follow-up) pick up the helper for free.
 
 NodeId-encoded IDs (via the locally-emitted `NodeIdEncoder.encode(...)`) on mutation return
 values are deferred to argres Phase 3's `NodeIdBinding` work.  For now, scalar `ID` returns
@@ -337,7 +378,7 @@ phase's landing commit.
 
 - New `buildMutationInsertFetcher(MutationInsertTableField, String outputPackage, String jooqPackage)`
   in `TypeFetcherGenerator`.
-- Switch arm at `TypeFetcherGenerator.java:353` changes from `stub(f)` to the new emitter call.
+- Switch arm at `TypeFetcherGenerator.java:354` changes from `stub(f)` to the new emitter call.
 - `MutationInsertTableField` moves from `NOT_IMPLEMENTED_REASONS` to `IMPLEMENTED_LEAVES`.
 
 #### Tests
@@ -361,9 +402,10 @@ phase's landing commit.
   asserts returned ID matches the inserted film's PK column value.
 - Nested-selection test: `createFilm(...) { title, language { name } }` against a
   `TableBoundReturnType`-returning variant to exercise `RETURNING (multiset)` per the note above.
-- Negative test: an SDL with `createFilm(...): Int @mutation(typeName: INSERT)` is rejected at
-  build time per Invariant #12.
 - Compile gate: `mvn compile -pl :graphitron-test -Plocal-db`.
+
+(Negative `Invariant #12` cases — `Int` / `Boolean` / `Connection<T>` returns — are exercised at
+the classifier level in Phase 1d's pipeline tests; no execution-test repeat is needed here.)
 
 ---
 
@@ -539,7 +581,7 @@ Implementation: add `buildMutationServiceTableFetcher(MutationServiceTableField,
 
 #### `MutationServiceRecordField`
 
-The classifier at `FieldBuilder.java:1561-1564` maps this variant to two distinct
+The classifier at `FieldBuilder.java:1682-1685` maps this variant to two distinct
 `ReturnTypeRef` shapes, both of which this emitter must handle:
 
 - **`ReturnTypeRef.ScalarReturnType`** — scalar (e.g. `Int`, `String`, `Boolean`), plain DTO,
@@ -603,7 +645,7 @@ through graphql-java's registered fetchers.
 - **Non-PostgreSQL dialects**: `RETURNING` and `ON CONFLICT DO UPDATE` are PostgreSQL-specific.
   The rewrite targets PostgreSQL; no cross-dialect abstraction is added.
 - **`@mutation` + `@service` combination**: already rejected at classifier time
-  (`FieldBuilder.java:1548-1551`).
+  (`FieldBuilder.java:1665-1668`).
 
 ---
 
