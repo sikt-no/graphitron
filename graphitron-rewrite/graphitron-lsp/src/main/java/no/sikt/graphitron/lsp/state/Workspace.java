@@ -1,6 +1,6 @@
 package no.sikt.graphitron.lsp.state;
 
-import no.sikt.graphitron.lsp.catalog.CompletionData;
+import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.lsp.parsing.Positions;
 import org.eclipse.lsp4j.TextDocumentContentChangeEvent;
 
