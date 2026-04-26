@@ -10,12 +10,15 @@ import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.generators.util.QueryNodeFetcherClassGenerator;
 import no.sikt.graphitron.rewrite.model.GraphitronType.NodeType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.RootType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.TableInterfaceType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType;
+import no.sikt.graphitron.rewrite.model.ParticipantRef;
 
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
 
@@ -90,6 +93,35 @@ public final class GraphitronSchemaClassGenerator {
             body.addStatement("$T.$L(codeRegistry)", queryNodeFetcher,
                 QueryNodeFetcherClassGenerator.REGISTER_RESOLVER_METHOD);
         }
+
+        // TableInterfaceType TypeResolvers — one per discriminated single-table interface.
+        var JOOQ_DSL    = ClassName.get("org.jooq.impl", "DSL");
+        var JOOQ_RECORD = ClassName.get("org.jooq", "Record");
+        schema.types().entrySet().stream()
+            .filter(e -> e.getValue() instanceof TableInterfaceType)
+            .sorted(Map.Entry.comparingByKey())
+            .forEach(e -> {
+                var tit = (TableInterfaceType) e.getValue();
+                var tableBound = tit.participants().stream()
+                    .filter(p -> p instanceof ParticipantRef.TableBound tb && tb.discriminatorValue() != null)
+                    .map(p -> (ParticipantRef.TableBound) p)
+                    .toList();
+                if (tableBound.isEmpty()) return;
+                var cb = CodeBlock.builder();
+                cb.add("codeRegistry.typeResolver($S, env -> {\n", tit.name()).indent();
+                cb.addStatement("$T record = ($T) env.getObject()", JOOQ_RECORD, JOOQ_RECORD);
+                cb.addStatement("String discriminatorValue = record.get($T.field($T.name($S)), String.class)",
+                    JOOQ_DSL, JOOQ_DSL, tit.discriminatorColumn());
+                cb.add("return switch (discriminatorValue) {\n").indent();
+                for (var p : tableBound) {
+                    cb.add("case $S -> env.getSchema().getObjectType($S);\n",
+                        p.discriminatorValue(), p.typeName());
+                }
+                cb.add("default -> null;\n");
+                cb.unindent().add("};\n");
+                cb.unindent().add("});\n");
+                body.add(cb.build());
+            });
 
         body.add("$T schemaBuilder = $T.newSchema()", SCHEMA_BUILDER, GRAPHQL_SCHEMA).indent();
 

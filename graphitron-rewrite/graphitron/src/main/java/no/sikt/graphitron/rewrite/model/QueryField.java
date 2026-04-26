@@ -91,6 +91,7 @@ public sealed interface QueryField extends RootField
         String name,
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
+        String discriminatorColumn,
         List<WhereFilter> filters,
         OrderBySpec orderBy,
         PaginationSpec pagination

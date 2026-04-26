@@ -176,6 +176,7 @@ public sealed interface ChildField extends GraphitronField
         String name,
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
+        String discriminatorColumn,
         List<JoinStep> joinPath,
         List<WhereFilter> filters,
         OrderBySpec orderBy,

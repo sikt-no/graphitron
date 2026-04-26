@@ -115,6 +115,11 @@ type Query {
             className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
             method: "filmCount"
         })
+    # stub-interface-union-fetchers.md Track A: QueryTableInterfaceField fixture.
+    # Content is a TableInterfaceType (@table + @discriminate); the generator emits a
+    # fetcher that selects from the shared 'content' table and projects the discriminator
+    # column so the TypeResolver can route to FilmContent or ShortContent at runtime.
+    allContent: [Content!]!
 }
 
 type Customer implements Node @table(name: "customer") @node {
@@ -263,6 +268,10 @@ type Film implements Node @table(name: "film") @node {
         {key: "film_actor_film_id_fkey"},
         {key: "film_actor_actor_id_fkey"}
     ]) @defaultOrder(primaryKey: true)
+    # stub-interface-union-fetchers.md Track A: ChildField.TableInterfaceField fixture.
+    # content.film_id FK links a Content entry back to its Film. The generator emits a
+    # per-parent fetcher that conditions on the FK and projects the discriminator column.
+    filmContent: Content @reference(path: [{key: "content_film_id_fkey"}])
 }
 
 type Actor @table(name: "actor") {
@@ -483,4 +492,25 @@ input NestedImplicitInput @table(name: "film") {
 
 input InnerImplicitInput {
     filmId: ID @field(name: "film_id")
+}
+
+# stub-interface-union-fetchers.md Track A: TableInterfaceType fixture.
+# Content is a single-table discriminated interface: all rows live in the 'content' table
+# and are distinguished by the CONTENT_TYPE column ('FILM' or 'SHORT').
+interface Content @table(name: "content") @discriminate(on: "CONTENT_TYPE") {
+    contentId: Int!    @field(name: "CONTENT_ID")
+    title:     String! @field(name: "TITLE")
+}
+
+# Implements Content; discriminator value 'FILM'. Adds a length field.
+type FilmContent implements Content @table(name: "content") @discriminator(value: "FILM") {
+    contentId: Int!    @field(name: "CONTENT_ID")
+    title:     String! @field(name: "TITLE")
+    length:    Int     @field(name: "LENGTH")
+}
+
+# Implements Content; discriminator value 'SHORT'.
+type ShortContent implements Content @table(name: "content") @discriminator(value: "SHORT") {
+    contentId: Int!    @field(name: "CONTENT_ID")
+    title:     String! @field(name: "TITLE")
 }
