@@ -19,6 +19,7 @@ import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
+import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.MethodBackedField;
 import no.sikt.graphitron.rewrite.model.MethodRef;
@@ -155,7 +156,9 @@ public class TypeFetcherGenerator {
         ChildField.RecordField.class,
         ChildField.RecordTableField.class,
         ChildField.RecordLookupTableField.class,
-        ChildField.ConstructorField.class);
+        ChildField.ConstructorField.class,
+        QueryField.QueryTableInterfaceField.class,
+        ChildField.TableInterfaceField.class);
 
     /**
      * Leaves that can never reach the fetcher switch at runtime: {@link InputField} leaves are
@@ -214,8 +217,6 @@ public class TypeFetcherGenerator {
             // QueryField stubs
             Map.entry(QueryField.QueryEntityField.class,
                 "QueryEntityField not yet implemented — see graphitron-rewrite/roadmap/federation-via-federation-jvm.md"),
-            Map.entry(QueryField.QueryTableInterfaceField.class,
-                "QueryTableInterfaceField not yet implemented — see graphitron-rewrite/roadmap/stub-interface-union-fetchers.md"),
             Map.entry(QueryField.QueryInterfaceField.class,
                 "QueryInterfaceField not yet implemented — see graphitron-rewrite/roadmap/stub-interface-union-fetchers.md"),
             Map.entry(QueryField.QueryUnionField.class,
@@ -236,8 +237,6 @@ public class TypeFetcherGenerator {
             // ChildField stubs — TableTargetField sub-hierarchy
             // (ChildField.TableField and ChildField.LookupTableField are in PROJECTED_LEAVES —
             // inline emission via TypeClassGenerator.$fields; see G5 and argres Phase 2a)
-            Map.entry(ChildField.TableInterfaceField.class,
-                "TableInterfaceField not yet implemented — see graphitron-rewrite/roadmap/stub-interface-union-fetchers.md"),
             // ChildField stubs — remaining direct permits
             Map.entry(ChildField.ColumnReferenceField.class,
                 "ColumnReferenceField not yet implemented — see graphitron-rewrite/roadmap/stub-non-table-scalar-child-leaves.md"),
@@ -348,7 +347,7 @@ public class TypeFetcherGenerator {
                 case QueryField.QueryServiceRecordField f     -> builder.addMethod(buildQueryServiceRecordFetcher(f, outputPackage));
                 // Stub variants — see NOT_IMPLEMENTED_REASONS
                 case QueryField.QueryEntityField f            -> builder.addMethod(stub(f));
-                case QueryField.QueryTableInterfaceField f    -> builder.addMethod(stub(f));
+                case QueryField.QueryTableInterfaceField f    -> builder.addMethod(buildQueryTableInterfaceFieldFetcher(f, outputPackage, jooqPackage));
                 case QueryField.QueryInterfaceField f         -> builder.addMethod(stub(f));
                 case QueryField.QueryUnionField f             -> builder.addMethod(stub(f));
                 case MutationField.MutationInsertTableField f  -> builder.addMethod(stub(f));
@@ -366,7 +365,7 @@ public class TypeFetcherGenerator {
                 case ChildField.LookupTableField ignored        -> { }
                 case ChildField.NodeIdField ignored             -> { }
                 case ChildField.NodeIdReferenceField ignored    -> { }
-                case ChildField.TableInterfaceField f           -> builder.addMethod(stub(f));
+                case ChildField.TableInterfaceField f           -> builder.addMethod(buildTableInterfaceFieldFetcher(f, outputPackage, jooqPackage));
                 case ChildField.RecordTableField rtf -> {
                     builder.addMethod(buildRecordBasedDataFetcher(rtf, resultType, jooqPackage));
                     builder.addMethod(SplitRowsMethodEmitter.buildRowsMethod(rtf, outputPackage, jooqPackage));
@@ -550,14 +549,211 @@ public class TypeFetcherGenerator {
         return builder.build();
     }
 
+    /**
+     * Generates the fetcher for a {@link QueryField.QueryTableInterfaceField}.
+     *
+     * <p>Mirrors {@link #buildQueryTableFetcher} exactly, with one addition: the discriminator
+     * column is projected unconditionally alongside the selection-set columns so the
+     * {@code TypeResolver} registered by {@code GraphitronSchemaClassGenerator} can route each
+     * returned row to the correct concrete GraphQL type at runtime.
+     *
+     * <p>Generated code (list variant):
+     * <pre>{@code
+     * public static Result<Record> allContent(DataFetchingEnvironment env) {
+     *     ContentTable table = Tables.CONTENT;
+     *     Condition condition = QueryConditions.allContentCondition(table, env);
+     *     List<SortField<?>> orderBy = List.of();
+     *     DSLContext dsl = graphitronContext(env).getDslContext(env);
+     *     return dsl
+     *         .select(table.asterisk(), DSL.field(DSL.name("CONTENT_TYPE")))
+     *         .from(table)
+     *         .where(condition)
+     *         .orderBy(orderBy)
+     *         .fetch();
+     * }
+     * }</pre>
+     */
+    private static MethodSpec buildQueryTableInterfaceFieldFetcher(
+            QueryField.QueryTableInterfaceField qtif, String outputPackage, String jooqPackage) {
+        var tableRef = qtif.returnType().table();
+        var names = GeneratorUtils.ResolvedTableNames.of(tableRef, qtif.returnType().returnTypeName(), outputPackage, jooqPackage);
+        boolean isList = qtif.returnType().wrapper().isList();
+        var returnType = isList ? ParameterizedTypeName.get(RESULT, RECORD) : RECORD;
+
+        var builder = MethodSpec.methodBuilder(qtif.name())
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(returnType)
+            .addParameter(ENV, "env");
+
+        builder.addCode(GeneratorUtils.declareTableLocal(names, tableRef));
+        String tableLocal = names.tableLocalName();
+        builder.addCode(buildConditionCall(qtif.parentTypeName(), qtif.name(), tableLocal, outputPackage));
+
+        var discriminatorField = CodeBlock.of("$T.field($T.name($S))", DSL, DSL, qtif.discriminatorColumn());
+        var dslContextClass = ClassName.get("org.jooq", "DSLContext");
+
+        if (isList) {
+            builder.addCode(buildOrderByCode(qtif.orderBy(), qtif.name(), tableLocal));
+            builder.addStatement("$T dsl = graphitronContext(env).getDslContext(env)", dslContextClass);
+            builder.addCode(CodeBlock.builder()
+                .add("return dsl\n")
+                .indent()
+                .add(".select($L.asterisk(), $L)\n", tableLocal, discriminatorField)
+                .add(".from($L)\n", tableLocal)
+                .add(".where(condition)\n")
+                .add(".orderBy(orderBy)\n")
+                .add(".fetch();\n")
+                .unindent()
+                .build());
+        } else {
+            builder.addStatement("$T dsl = graphitronContext(env).getDslContext(env)", dslContextClass);
+            builder.addCode(CodeBlock.builder()
+                .add("return dsl\n")
+                .indent()
+                .add(".select($L.asterisk(), $L)\n", tableLocal, discriminatorField)
+                .add(".from($L)\n", tableLocal)
+                .add(".where(condition)\n")
+                .add(".fetchOne();\n")
+                .unindent()
+                .build());
+        }
+
+        return builder.build();
+    }
+
+    /**
+     * Generates the fetcher for a {@link ChildField.TableInterfaceField}.
+     *
+     * <p>Executes a per-parent SQL query: conditions on the single-hop FK join path extracted
+     * from {@code env.getSource()}, then projects all columns via {@code table.asterisk()} plus
+     * the discriminator column so the {@code TypeResolver} can route the result to the correct
+     * concrete type. Only single-hop {@link JoinStep.FkJoin} paths are fully supported; a
+     * multi-hop or {@link JoinStep.ConditionJoin} path emits a runtime {@link UnsupportedOperationException}.
+     *
+     * <p>Generated code (single-value variant, one-hop FK where child holds the FK):
+     * <pre>{@code
+     * public static Record filmContent(DataFetchingEnvironment env) {
+     *     Record parentRecord = (Record) env.getSource();
+     *     ContentTable table = Tables.CONTENT;
+     *     DSLContext dsl = graphitronContext(env).getDslContext(env);
+     *     Condition condition = DSL.field(DSL.name("FILM_ID")).eq(parentRecord.get(DSL.name("FILM_ID")));
+     *     return dsl
+     *         .select(table.asterisk(), DSL.field(DSL.name("CONTENT_TYPE")))
+     *         .from(table)
+     *         .where(condition)
+     *         .fetchOne();
+     * }
+     * }</pre>
+     */
+    private static MethodSpec buildTableInterfaceFieldFetcher(
+            ChildField.TableInterfaceField tif, String outputPackage, String jooqPackage) {
+        var tableRef = tif.returnType().table();
+        var names = GeneratorUtils.ResolvedTableNames.of(tableRef, tif.returnType().returnTypeName(), outputPackage, jooqPackage);
+        boolean isList = tif.returnType().wrapper().isList();
+        var returnType = isList ? ParameterizedTypeName.get(RESULT, RECORD) : RECORD;
+
+        var builder = MethodSpec.methodBuilder(tif.name())
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(returnType)
+            .addParameter(ENV, "env");
+
+        builder.addStatement("$T parentRecord = ($T) env.getSource()", RECORD, RECORD);
+        builder.addCode(GeneratorUtils.declareTableLocal(names, tableRef));
+        String tableLocal = names.tableLocalName();
+
+        var dslContextClass = ClassName.get("org.jooq", "DSLContext");
+        builder.addStatement("$T dsl = graphitronContext(env).getDslContext(env)", dslContextClass);
+
+        // Build join-path condition. Only single-hop FkJoin is supported for now; multi-hop and
+        // ConditionJoin paths require additional work and throw at runtime to make the gap visible.
+        builder.addCode(buildJoinPathCondition(tif.joinPath(), tableRef.tableName()));
+
+        var discriminatorField = CodeBlock.of("$T.field($T.name($S))", DSL, DSL, tif.discriminatorColumn());
+
+        if (isList) {
+            builder.addCode(CodeBlock.builder()
+                .add("return dsl\n")
+                .indent()
+                .add(".select($L.asterisk(), $L)\n", tableLocal, discriminatorField)
+                .add(".from($L)\n", tableLocal)
+                .add(".where(condition)\n")
+                .add(".fetch();\n")
+                .unindent()
+                .build());
+        } else {
+            builder.addCode(CodeBlock.builder()
+                .add("return dsl\n")
+                .indent()
+                .add(".select($L.asterisk(), $L)\n", tableLocal, discriminatorField)
+                .add(".from($L)\n", tableLocal)
+                .add(".where(condition)\n")
+                .add(".fetchOne();\n")
+                .unindent()
+                .build());
+        }
+
+        return builder.build();
+    }
+
+    /**
+     * Builds the {@code Condition} declaration from a single-hop {@link JoinStep.FkJoin} path.
+     * Emits {@code Condition condition = DSL.field(DSL.name(fkCol)).eq(parentRecord.get(DSL.name(pkCol)));}
+     * where {@code fkCol} is the FK-holder column and {@code pkCol} is the PK column on the
+     * traversal-origin (parent) side.
+     *
+     * <p>Multi-hop paths and {@link JoinStep.ConditionJoin} steps are not yet supported.
+     */
+    /**
+     * Builds the {@code Condition} declaration from a single-hop {@link JoinStep.FkJoin} path
+     * for a {@link ChildField.TableInterfaceField} fetcher.
+     *
+     * <p>FK direction is inferred from {@code targetTable}: if {@code fkJoin.targetTable()}
+     * matches the child table name, the parent holds the FK (parent.fk → child.pk); otherwise
+     * the child holds the FK (child.fk → parent.pk). {@code ColumnRef} carries no table reference,
+     * so {@code targetTable} is the only available signal.
+     *
+     * <p>Multi-hop paths and {@link JoinStep.ConditionJoin} steps throw at runtime.
+     */
+    private static CodeBlock buildJoinPathCondition(List<JoinStep> joinPath, String childTableName) {
+        if (joinPath.size() == 1 && joinPath.get(0) instanceof JoinStep.FkJoin fkJoin
+                && !fkJoin.sourceColumns().isEmpty() && !fkJoin.targetColumns().isEmpty()) {
+            String fkHolderCol = fkJoin.sourceColumns().get(0).javaName();
+            String pkCol       = fkJoin.targetColumns().get(0).javaName();
+
+            // targetTable is the PK side (the table the FK points to).
+            // If it matches the child table, the parent holds the FK: parent.fk → child.pk.
+            // Otherwise the child holds the FK: child.fk → parent.pk.
+            boolean parentHoldsFk = fkJoin.targetTable().tableName().equals(childTableName);
+
+            String childCol       = parentHoldsFk ? pkCol       : fkHolderCol;
+            String parentRecordCol = parentHoldsFk ? fkHolderCol : pkCol;
+
+            return CodeBlock.builder()
+                .addStatement("$T condition = $T.field($T.name($S)).eq(parentRecord.get($T.name($S)))",
+                    CONDITION, DSL, DSL, childCol, DSL, parentRecordCol)
+                .build();
+        }
+        // Multi-hop or ConditionJoin: not yet supported; throw at runtime.
+        return CodeBlock.builder()
+            .addStatement("throw new $T($S + $S)",
+                UnsupportedOperationException.class,
+                "TableInterfaceField fetcher: multi-hop and ConditionJoin paths are not yet supported. ",
+                "See stub-interface-union-fetchers.md Track A.")
+            .build();
+    }
+
     private static CodeBlock buildConditionCall(QueryField.QueryTableField qtf, String srcAlias, String outputPackage) {
+        return buildConditionCall(qtf.parentTypeName(), qtf.name(), srcAlias, outputPackage);
+    }
+
+    private static CodeBlock buildConditionCall(String parentTypeName, String fieldName, String srcAlias, String outputPackage) {
         var queryConditionsClass = ClassName.get(
             outputPackage + ".conditions",
-            qtf.parentTypeName() + QueryConditionsGenerator.CLASS_NAME_SUFFIX);
+            parentTypeName + QueryConditionsGenerator.CLASS_NAME_SUFFIX);
         return CodeBlock.builder()
             .addStatement("$T condition = $T.$L($L, env)",
                 CONDITION, queryConditionsClass,
-                QueryConditionsGenerator.conditionMethodName(qtf.name()), srcAlias)
+                QueryConditionsGenerator.conditionMethodName(fieldName), srcAlias)
             .build();
     }
 

@@ -172,6 +172,21 @@ CREATE TABLE film_list (
     category    varchar(25)
 );
 
+-- -------------------------
+-- content: discriminated-interface fixture for TableInterfaceType tests.
+-- content_type distinguishes FilmContent ('FILM') from ShortContent ('SHORT').
+-- film_id optionally links a content entry back to a film (used by ChildField.TableInterfaceField fixture).
+-- -------------------------
+
+CREATE TABLE content (
+    content_id    serial       PRIMARY KEY,
+    content_type  varchar(10)  NOT NULL,
+    title         varchar(255) NOT NULL,
+    length        smallint,
+    film_id       int          REFERENCES film(film_id),
+    last_update   timestamp    NOT NULL DEFAULT now()
+);
+
 -- ===========================
 -- Seed data
 -- ===========================
@@ -251,6 +266,13 @@ INSERT INTO film_actor (actor_id, film_id) VALUES
     (1, 3),
     (2, 4),
     (3, 5);
+
+-- content seed data: two FilmContent rows linked to films 1 and 2, two ShortContent rows.
+INSERT INTO content (content_type, title, length, film_id) VALUES
+    ('FILM',  'ACADEMY DINOSAUR (extended)',  120, 1),
+    ('FILM',  'ACE GOLDFINGER (extended)',     90, 2),
+    ('SHORT', 'Sunrise',                       12, NULL),
+    ('SHORT', 'Interlude',                      8, NULL);
 
 -- ===========================
 -- nodeidfixture schema
