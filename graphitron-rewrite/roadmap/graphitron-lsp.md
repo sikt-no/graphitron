@@ -686,9 +686,9 @@ choice we made up front.
 ## Roadmap integration
 
 This plan owns the umbrella sub-item "Java LSP rewrite + introspect
-retirement + `dev` goal" under "Retire `graphitron-maven-plugin` +
-`graphitron-schema-transform`" in `rewrite-roadmap.md`. The roadmap
-entry summarises Phase 0's landing and lists Phases 1-7 as remaining.
+retirement + `dev` goal" under [retire-maven-plugin.md](retire-maven-plugin.md).
+The umbrella's body summarises Phase 0's landing and points back here for
+Phases 1-7.
 
 Implicitly retires the standalone watch-goal sub-item: the existing
 `graphitron-rewrite:watch` Mojo is deleted in Phase 1 and absorbed

@@ -1,6 +1,6 @@
 # Rewrite Changelog
 
-Historical record of completed rewrite work. Entries are roughly reverse-chronological; commit shas and plan slugs are preserved for archaeology. The forward-looking ledger lives in [`rewrite-roadmap.md`](rewrite-roadmap.md).
+Historical record of completed rewrite work. Entries are roughly reverse-chronological; commit shas and plan slugs are preserved for archaeology. The forward-looking ledger lives in [`README.md`](README.md), generated from per-item front-matter in this directory.
 
 ---
 

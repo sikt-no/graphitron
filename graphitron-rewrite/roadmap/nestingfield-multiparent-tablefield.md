@@ -17,7 +17,7 @@ Allow a plain-object (NestingField) type to be used under multiple `@table` pare
 - `ColumnField` — compared by `sqlName()` + `columnClass()`. Relies on jOOQ's name-based `Record.get(Field)` fallback at runtime to project the same-named column across parents.
 - Inner `NestingField` — recurses via `compareNestedFieldsShape(rnf, onf, repParent, otherParent, errors)`, threading the outer parent names so deep errors still name the original tables.
 
-Everything else — `TableField`, `LookupTableField`, `SplitTableField`, `SplitLookupTableField`, `RecordTableField`, `RecordLookupTableField`, `ConstructorField`, `NodeIdField` — lands in the catch-all arm with the message "classifies as X which is not yet supported across multiple parents — see rewrite-roadmap.md #8".
+Everything else — `TableField`, `LookupTableField`, `SplitTableField`, `SplitLookupTableField`, `RecordTableField`, `RecordLookupTableField`, `ConstructorField`, `NodeIdField` — lands in the catch-all arm with the "classifies as X which is not yet supported across multiple parents" message pointing at [stub-non-table-scalar-child-leaves.md](stub-non-table-scalar-child-leaves.md).
 
 Two problems with the status quo:
 
@@ -77,7 +77,7 @@ The arm exists only to prevent the catch-all from firing. `TableField` and `Nest
 
 **File:** `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewrite/GraphitronSchemaValidator.java` (catch-all arm in `compareNestedFieldsShape`).
 
-The catch-all message currently says "… which is not yet supported across multiple parents — see rewrite-roadmap.md #8". Drop the `#8` reference — replace with a self-contained sentence. Roadmap tracking for the remaining leaves lands in §3; the error text itself doesn't need to cite a roadmap item number that risks renumbering drift.
+The catch-all message currently points at `graphitron-rewrite/roadmap/stub-non-table-scalar-child-leaves.md`. Replace with a self-contained sentence. Roadmap tracking for the remaining leaves lands in §3; the error text itself doesn't need to cite a specific roadmap entry that risks drift if the entry is renamed or split.
 
 New message:
 ```
@@ -89,11 +89,17 @@ New message:
 
 ### 3. Roadmap entry — BatchKey leaves follow-up
 
-**File:** `docs/planning/rewrite-roadmap.md`
+Add a new backlog file under `graphitron-rewrite/roadmap/` (slug: `nestingfield-multiparent-batchkey-leaves.md`):
 
-Add to Backlog (Priority or Cleanup, implementer's call):
+```yaml
+---
+title: "Multi-parent NestingField sharing of `BatchKey` leaves"
+status: Backlog
+bucket: architecture
+---
+```
 
-> **Multi-parent NestingField sharing of `BatchKey` leaves** **[Backlog]** — `SplitTableField`, `LookupTableField`, `SplitLookupTableField`, `RecordTableField`, `RecordLookupTableField` under a NestingField shared across parents. DataLoader registration and per-parent rows-method emission need reconciling (each variant has its own considerations). `TableField` shipped separately via [plan-nestingfield-multiparent-tablefield.md](plan-nestingfield-multiparent-tablefield.md).
+Body: `SplitTableField`, `LookupTableField`, `SplitLookupTableField`, `RecordTableField`, `RecordLookupTableField` under a NestingField shared across parents. DataLoader registration and per-parent rows-method emission need reconciling (each variant has its own considerations). `TableField` shipped separately via [nestingfield-multiparent-tablefield.md](nestingfield-multiparent-tablefield.md).
 
 ### 4. Tests
 

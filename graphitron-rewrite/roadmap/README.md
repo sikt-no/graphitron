@@ -72,4 +72,4 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 ## Done
 
-See [`changelog.md`](../docs/planning/changelog.md) for the historical record of shipped rewrite work. Plan files are deleted on Done; git history preserves them.
+See [`changelog.md`](changelog.md) for the historical record of shipped rewrite work. Plan files are deleted on Done; git history preserves them.

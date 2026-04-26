@@ -2091,14 +2091,14 @@ class FieldBuilder {
             // already excluded above (`@nodeId` by the directive check, `@reference` by its own
             // block, and `@field` via the exclusion here). Fires a per-site deprecation diagnostic
             // — the canonical form is to declare `@nodeId` explicitly. Retired at R7. See plan:
-            // docs/planning/rewrite-roadmap.md.
+            // graphitron-rewrite/roadmap/retire-nodeid-synthesis-shim.md.
             if (tableType instanceof NodeType nodeType
                     && "ID".equals(typeName)
                     && !isList
                     && !hasFieldDirective) {
                 LOG.warn("field '{}.{}' synthesizes NodeIdField without '@nodeId' — declare the"
                     + " directive explicitly; synthesis shim will be removed in a future release."
-                    + " See rewrite-roadmap.md",
+                    + " See graphitron-rewrite/roadmap/retire-nodeid-synthesis-shim.md",
                     parentTypeName, name);
                 return new NodeIdField(parentTypeName, name, location,
                     nodeType.typeId(), nodeType.nodeKeyColumns());

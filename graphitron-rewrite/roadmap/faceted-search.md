@@ -233,7 +233,7 @@ facets after v1 lands.
 
 | Phase | Module / artefact | What lands |
 |---|---|---|
-| 1 | `docs/planning/plan-faceted-search.md` + hand-written SQL | Spike — benchmark SQL strategies against Sakila; confirm or swap v1 default; resolve NULL + ordering Open Questions |
+| 1 | `roadmap/faceted-search-sql.md` + hand-written SQL | Spike — benchmark SQL strategies against Sakila; confirm or swap v1 default; resolve NULL + ordering Open Questions |
 | 2 | `graphitron-rewrite` (directive + synthesis) | `@asFacet` directive definition; the `@asConnection` synthesis pipeline grows a facet arm that emits `*Facets` / `*FacetValue` TypeSpecs and adds the `facets` field on the rewritten Connection |
 | 3 | `graphitron-rewrite` (classifier) | `FieldWrapper.Connection` carries `FacetSpec`; validator rejects misuse |
 | 4 | `graphitron-rewrite` (emitter) | Fetcher emits the spike-chosen aggregate shape; helper + wiring expose the new field |
@@ -1052,7 +1052,7 @@ reviewers can confirm the v1 design does not foreclose it.
   Hard constraint from ticket: performance + query-shape driver.
 - **NULL facet buckets — preserve as their own group.** `GROUP BY`
   emits NULL as a distinct key automatically; Scenario 7 of the
-  spike (`docs/planning/spike-faceted-search-sql.md`, §OQ #4)
+  spike (`roadmap/faceted-search-sql.md`, §OQ #4)
   confirmed all three measured shapes pass NULL through unchanged.
   v1 emits no `IS NOT NULL` scrubbing; `*FacetValue.value` is
   **nullable** on the schema side to accommodate. Consumers that
@@ -1063,7 +1063,7 @@ reviewers can confirm the v1 design does not foreclose it.
   Spike measured ~0.4 ms overhead at 200× Sakila scale (27.3 →
   27.7 ms median on shape C) — negligible, and the deterministic
   tiebreaker on `value` means test assertions stay stable. See
-  `docs/planning/spike-faceted-search-sql.md` §OQ #5.
+  `roadmap/faceted-search-sql.md` §OQ #5.
 
 ## Open Questions
 
