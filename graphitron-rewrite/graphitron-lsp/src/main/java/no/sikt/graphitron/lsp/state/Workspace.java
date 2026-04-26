@@ -103,8 +103,16 @@ public final class Workspace {
 
     public void setCatalog(CompletionData catalog) {
         this.catalog = catalog;
+        markAllForRecalculation();
+    }
+
+    /**
+     * Enqueue every open file for diagnostic recalculation. Used by the
+     * dev goal when the generator runs (the source tree changed even
+     * though no individual buffer did) and internally on catalog swaps.
+     */
+    public void markAllForRecalculation() {
         synchronized (lock) {
-            // Catalog change invalidates every open file's diagnostics.
             for (var uri : files.keySet()) {
                 if (!toRecalculate.contains(uri)) {
                     toRecalculate.add(uri);
