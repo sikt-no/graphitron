@@ -1,8 +1,8 @@
 package no.sikt.graphitron.lsp.state;
 
 import no.sikt.graphitron.lsp.catalog.CompletionData;
+import no.sikt.graphitron.lsp.parsing.Positions;
 import org.eclipse.lsp4j.TextDocumentContentChangeEvent;
-import org.treesitter.TSPoint;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -119,28 +119,10 @@ public final class Workspace {
             file.replaceContent(newVersion, change.getText());
             return;
         }
-        int startByte = byteOffset(file.source(), range.getStart().getLine(), range.getStart().getCharacter());
-        int oldEndByte = byteOffset(file.source(), range.getEnd().getLine(), range.getEnd().getCharacter());
-        var startPoint = new TSPoint(range.getStart().getLine(), range.getStart().getCharacter());
-        var oldEndPoint = new TSPoint(range.getEnd().getLine(), range.getEnd().getCharacter());
-        file.applyEdit(newVersion, startByte, oldEndByte, startPoint, oldEndPoint, change.getText());
-    }
-
-    /**
-     * Convert an LSP line/character position to a UTF-8 byte offset in
-     * {@code source}. ASCII-correct; UTF-16-to-UTF-8 reconciliation for
-     * multi-byte content lands when a non-ASCII test case forces it.
-     */
-    private static int byteOffset(byte[] source, int line, int character) {
-        int offset = 0;
-        int currentLine = 0;
-        while (currentLine < line && offset < source.length) {
-            if (source[offset] == '\n') {
-                currentLine++;
-            }
-            offset++;
-        }
-        return Math.min(offset + character, source.length);
+        var start = Positions.resolve(file.source(), range.getStart().getLine(), range.getStart().getCharacter());
+        var end = Positions.resolve(file.source(), range.getEnd().getLine(), range.getEnd().getCharacter());
+        file.applyEdit(newVersion, start.byteOffset(), end.byteOffset(),
+            start.tsPoint(), end.tsPoint(), change.getText());
     }
 
     private void enqueueTouched(String uri, Set<String> declaredBefore, Set<String> declaredAfter) {
