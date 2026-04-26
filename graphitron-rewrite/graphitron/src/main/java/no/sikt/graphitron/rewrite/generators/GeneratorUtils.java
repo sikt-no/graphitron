@@ -143,14 +143,12 @@ class GeneratorUtils {
      * <ul>
      *   <li>{@link BatchKey.RowKeyed} → {@code RowN<A, B, ...>}</li>
      *   <li>{@link BatchKey.RecordKeyed} → {@code RecordN<A, B, ...>}</li>
-     *   <li>{@link BatchKey.ObjectBased} → the fully-qualified class name</li>
      * </ul>
      */
     static TypeName keyElementType(BatchKey batchKey) {
         return switch (batchKey) {
             case BatchKey.RowKeyed rk    -> buildRowKeyType(rk.keyColumns());
             case BatchKey.RecordKeyed rk -> buildRecordNKeyType(rk.keyColumns());
-            case BatchKey.ObjectBased ob -> ClassName.bestGuess(ob.fqClassName());
         };
     }
 
@@ -287,10 +285,6 @@ class GeneratorUtils {
                     .addStatement("$T key = (($T) env.getSource()).into($L)", keyType, RECORD, intoArgs.build())
                     .build();
             }
-            case BatchKey.ObjectBased ob ->
-                CodeBlock.builder()
-                    .addStatement("$T key = ($T) env.getSource()", keyType, keyType)
-                    .build();
         };
     }
 }

@@ -1,6 +1,6 @@
 ---
 title: "`BatchKey.ObjectBased` removal"
-status: Spec
+status: Done
 priority: 3
 ---
 
@@ -185,8 +185,8 @@ adapt at the same time.
 
 ### Success criteria
 
-- [ ] `mvn test -pl graphitron-rewrite -Pquick`
-- [ ] Pipeline / unit test coverage (Phase 4) for: (a) `TableRecord` element + table
+- [x] `mvn test -pl graphitron-rewrite -Pquick`
+- [x] Pipeline / unit test coverage (Phase 4) for: (a) `TableRecord` element + table
       parent → `RowKeyed` classification succeeds; (b) non-`TableRecord` element →
       classification fails with a DataLoader-key-required message.
 
@@ -233,9 +233,9 @@ follows runs unconditionally.
 
 ### Success criteria
 
-- [ ] `mvn compile -pl graphitron-rewrite -Pquick` — no exhaustive-switch compile
+- [x] `mvn compile -pl graphitron-rewrite -Pquick` — no exhaustive-switch compile
       errors.
-- [ ] `mvn test -pl graphitron-rewrite -Pquick`
+- [x] `mvn test -pl graphitron-rewrite -Pquick`
 
 ---
 
@@ -255,7 +255,7 @@ earlier cleanup; nothing to do there.
 
 ### Success criteria
 
-- [ ] Roadmap reads cleanly; no dangling references to `ObjectBased`.
+- [x] Roadmap reads cleanly; no dangling references to `ObjectBased`.
 
 ---
 
@@ -288,11 +288,13 @@ classification-failure path. Rename to `DTO_SOURCES_REJECTED` for clarity.
 
 ### Success criteria
 
-- [ ] All new cases pass.
-- [ ] `ServiceFieldValidationTest` passes with rewritten `DTO_SOURCES_REJECTED` case.
-- [ ] `mvn test -pl graphitron-rewrite -Pquick` — zero failures.
-- [ ] `(cd graphitron-rewrite && mvn install -Plocal-db)`
-      — no regressions on execution suite (no `ObjectBased` execution coverage today).
+- [x] All new cases pass.
+- [x] `ServiceFieldValidationTest` `OBJECT_BASED` case removed (bypass gone); classifier-level
+      tests added in `ServiceCatalogTest` (`tableRecordSources_classifiedAsRowKeyed`,
+      `dtoSources_rejectedWithLifterDirectiveHint`).
+- [x] `mvn test -pl graphitron-rewrite -Pquick` — zero failures (747 tests).
+- [x] `mvn install -f graphitron-rewrite/pom.xml -Plocal-db`
+      — no regressions on execution suite.
 
 ---
 

@@ -19,7 +19,6 @@ import java.util.List;
 import java.util.Map;
 
 import no.sikt.graphitron.rewrite.model.MethodRef;
-import no.sikt.graphitron.rewrite.model.BatchKey;
 
 /**
  * Validates a {@link GraphitronSchema}, collecting all errors rather than failing on the first.
@@ -613,17 +612,6 @@ public class GraphitronSchemaValidator {
                 field.location()
             ));
             return;
-        }
-
-        // For Row-keyed and Record-keyed, the parent must have a PK so the key
-        // expression can be built. ObjectBased uses the whole parent as the key.
-        boolean hasRowOrRecordKeyed = smr.params().stream()
-            .filter(p -> p instanceof MethodRef.Param.Sourced)
-            .map(p -> ((MethodRef.Param.Sourced) p).batchKey())
-            .anyMatch(s -> s instanceof BatchKey.RowKeyed || s instanceof BatchKey.RecordKeyed);
-
-        if (!hasRowOrRecordKeyed) {
-            return; // ObjectBased — no PK constraint on the parent table
         }
 
         var parentType = types.get(field.parentTypeName());

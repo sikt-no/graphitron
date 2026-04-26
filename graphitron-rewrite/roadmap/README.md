@@ -13,7 +13,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | Item | Status | Plan |
 |---|---|---|
 | `@asConnection` `totalCount` field <sub>Release blocker.</sub> | Spec | [plan](asconnection-totalcount.md) |
-| `BatchKey.ObjectBased` removal | Spec | [plan](batchkey-remove-objectbased.md) |
 | `IdReferenceField` input filter variant | Spec | [plan](id-reference-input-field.md) |
 | Classification vocabulary follow-ups | Spec | [plan](classification-vocabulary-followups.md) |
 | Context-value registry + native multi-tenant fan-out for `@service` | Spec | [plan](service-context-value-registry.md) |
@@ -34,7 +33,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 ### Architecture
 
-- [**`BatchKey` lifter directive**](batchkey-lifter-directive.md): Mechanism for schema authors to supply a DTO-to-key conversion, enabling DataLoader batching on DTO parents; feeds the existing column-keyed path once `BatchKey.ObjectBased` removal lands. Co-closes the `RecordTableField` / `RecordLookupTableField` missing-FK-path rejection for DTO parents.
+- [**`BatchKey` lifter directive**](batchkey-lifter-directive.md): Mechanism for schema authors to supply a DTO-to-key conversion, enabling DataLoader batching on DTO parents. `BatchKey.ObjectBased` has been removed; free-form DTO sources are now rejected at classification time with a build error pointing here. This feature re-enables DTO-parent DataLoader batching by feeding the existing column-keyed path via a developer-supplied lifting function. Co-closes the `RecordTableField` / `RecordLookupTableField` missing-FK-path rejection for DTO parents.
 - [**Decompose `FieldBuilder`**](decompose-fieldbuilder.md): Split the 1,750-line builder along the field taxonomy. Blocked on argument-resolution unification. Proposed split: `QueryFieldBuilder`, `MutationFieldBuilder`, `ChildFieldBuilder` plus a shared argument-classification module.
 - [**Extract semantic-check helpers from `classifyQueryField`**](extract-semantic-check-helpers.md): The codebase rejects malformed fields at classifier time by returning `UnclassifiedField` (polymorphic `@service` at `FieldBuilder.java:1305-1306`; single-cardinality `@splitQuery @lookupKey` and multi-hop single-cardinality `@splitQuery` at `FieldBuilder.java:252-257` / `:266-271`; Connection / Sourced-param rejection on root `@service` and `@tableMethod` via `FieldBuilder.validateRootServiceInvariants`, plus the §3 strict-class and §5 strict-return checks inline in `classifyQueryField` and on `ServiceCatalog`).
 - [**Composite-key `@lookupKey` on list-of-input-object arguments**](composite-key-lookupkey.md): Add `ArgumentRef.CompositeLookupArg` carrying `(input-field-name, target-column)` pairs resolved from `@field(name:)` directives; `buildInputRowsMethod` already handles arbitrary-arity VALUES + JOIN.
