@@ -189,6 +189,44 @@ class TextDocumentServiceTest {
     }
 
     @Test
+    void hoverRequestRoundTripsCatalogMetadata() throws Exception {
+        var catalog = new CompletionData(
+            List.of(new CompletionData.Table(
+                "film",
+                "Movies the rental store carries",
+                CompletionData.SourceLocation.UNKNOWN,
+                List.of(),
+                List.of()
+            )),
+            List.of(),
+            List.of()
+        );
+        var server = new GraphitronLanguageServer(new no.sikt.graphitron.lsp.state.Workspace(catalog));
+        var proxy = startServer(server);
+        proxy.initialize(new InitializeParams()).get(5, TimeUnit.SECONDS);
+
+        String uri = "file:///hover.graphqls";
+        String source = """
+            type Foo @table(name: "film") { bar: Int }
+            """;
+        proxy.getTextDocumentService().didOpen(new DidOpenTextDocumentParams(
+            new TextDocumentItem(uri, "graphql", 1, source)));
+
+        // Cursor inside the "film" string value.
+        int filmStart = source.indexOf("film");
+        var hoverParams = new org.eclipse.lsp4j.HoverParams(
+            new TextDocumentIdentifier(uri),
+            new Position(0, filmStart + 1)
+        );
+        var hover = proxy.getTextDocumentService().hover(hoverParams).get(5, TimeUnit.SECONDS);
+
+        assertThat(hover).isNotNull();
+        var md = hover.getContents().getRight().getValue();
+        assertThat(md).contains("**Table** `film`");
+        assertThat(md).contains("Movies the rental store carries");
+    }
+
+    @Test
     void didCloseClearsDiagnosticsForFile() throws Exception {
         var server = new GraphitronLanguageServer(new no.sikt.graphitron.lsp.state.Workspace());
         var proxy = startServer(server);
