@@ -272,6 +272,12 @@ public class TypeFetcherGenerator {
      *                    or {@code null} for table-backed and root types
      * @param fields      the classified fields belonging to this type
      */
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "column-field-requires-table-backed-parent",
+        reliesOn = "The case ChildField.ColumnField switch arm throws IllegalStateException on "
+            + "parentTable == null rather than emitting a fallback path. The hard fail is the "
+            + "form the load-bearing guarantee takes here: navigation and drift annunciation, "
+            + "not guard elision.")
     static TypeSpec generateTypeSpec(String typeName, TableRef parentTable,
             GraphitronType.ResultType resultType, List<GraphitronField> fields,
             String outputPackage, String jooqPackage) {
@@ -569,6 +575,11 @@ public class TypeFetcherGenerator {
      * methods whose return type is wider than the generated jOOQ table class for the
      * field's {@code @table}-bound return type, so no downcast is needed in the emitter.
      */
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "service-catalog-strict-tablemethod-return",
+        reliesOn = "Declares <SpecificTable> table = Method.x(...) with no downcast and feeds "
+            + "the local directly into <SpecificTable>Type.$fields(...). A wider return type "
+            + "would require a cast or a wildcard local.")
     private static MethodSpec buildQueryTableMethodFetcher(QueryField.QueryTableMethodTableField qtmtf,
                                                             String outputPackage, String jooqPackage) {
         var tableRef = qtmtf.returnType().table();
@@ -622,6 +633,14 @@ public class TypeFetcherGenerator {
      * declared parameterized return type doesn't match the expected record class for the
      * field's {@code @table}-bound return type.
      */
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "service-catalog-strict-service-return",
+        reliesOn = "Declares the typed Result<XRecord> (or XRecord) return on the fetcher and "
+            + "lets graphql-java's column fetchers traverse it directly. A wider service "
+            + "return would force Object on the fetcher and lose static type safety. Note: the "
+            + "shared buildServiceFetcherCommon helper is also reached from "
+            + "buildQueryServiceRecordFetcher, whose PojoResultType / ScalarReturnType paths "
+            + "do not depend on this guarantee — annotating the helper would overclaim.")
     private static MethodSpec buildQueryServiceTableFetcher(QueryField.QueryServiceTableField qstf,
                                                              String outputPackage, String jooqPackage) {
         var tableRef = qstf.returnType().table();

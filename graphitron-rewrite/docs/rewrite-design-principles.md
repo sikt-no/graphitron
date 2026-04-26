@@ -81,6 +81,8 @@ Two instances on trunk today:
 
 Rule: if you relax a classifier check that an emitter relies on, audit every emitter site that consumes the corresponding shape, in the same commit. The compile-time failure of the generated `*Fetchers` source is the safety net; the audit is the cheap upstream version of the same signal.
 
+Enforcement: producers wear `@LoadBearingClassifierCheck(key = "...", description = "...")` and consumers wear `@DependsOnClassifierCheck(key = "...", reliesOn = "...")` (both under `no.sikt.graphitron.rewrite.model`). `LoadBearingGuaranteeAuditTest` walks the rewrite module's compiled output, groups by key, and fails on any consumer whose key has no producer (or any duplicate producer). When you add a new load-bearing classifier check, declare it with `@LoadBearingClassifierCheck` and tag every dependent emitter with `@DependsOnClassifierCheck`. The annotations also give you find-usages navigation between the two sides for free.
+
 ## Pipeline tests are the primary behavioural tier
 
 Behaviour is asserted at the SDL → classified model → generated `TypeSpec` pipeline layer — not at the per-variant unit tier. Per-variant structural tests (method names, return types, which methods exist) are bookkeeping; the primary signal that a feature works is that a realistic SDL produces a realistic `TypeSpec` end-to-end through the classifier. New features earn a pipeline test first; unit tests cover structural invariants that pipeline coverage would make repetitive.
