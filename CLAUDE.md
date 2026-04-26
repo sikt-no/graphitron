@@ -29,7 +29,9 @@ mvn clean install -Pquick    # Fast build, skips tests + javadocs
 
 ## Building and testing graphitron-rewrite
 
-Full pipeline (build-fixtures → test → compile-spec → execute-spec) and recovery from the fixtures-jar clobber: [`graphitron-rewrite/docs/claude-code-web-environment.md`](graphitron-rewrite/docs/claude-code-web-environment.md). Test-tier conventions (no code-string assertions on generated bodies; unit vs pipeline vs compilation vs execution): [`graphitron-rewrite/docs/rewrite-design-principles.md`](graphitron-rewrite/docs/rewrite-design-principles.md).
+Full pipeline (build-fixtures → test → compile-spec → execute-spec): [`graphitron-rewrite/docs/claude-code-web-environment.md`](graphitron-rewrite/docs/claude-code-web-environment.md). Test-tier conventions (no code-string assertions on generated bodies; unit vs pipeline vs compilation vs execution): [`graphitron-rewrite/docs/rewrite-design-principles.md`](graphitron-rewrite/docs/rewrite-design-principles.md).
+
+**Footgun: fixtures-jar clobber.** Any broad `mvn install` that hits `graphitron-rewrite-fixtures` without `-Plocal-db` silently re-emits the jar with an empty jOOQ catalog, cascading into `UnclassifiedType`, `NoSuchElement`, or "table … could not be resolved" failures across pipeline tests. Recovery: `mvn install -pl :graphitron-rewrite-fixtures -Plocal-db`. Always re-run the `-Plocal-db` fixtures install as the final step after a broad install. Full symptom list and rationale: [`claude-code-web-environment.md`](graphitron-rewrite/docs/claude-code-web-environment.md).
 
 ## Writing style
 
