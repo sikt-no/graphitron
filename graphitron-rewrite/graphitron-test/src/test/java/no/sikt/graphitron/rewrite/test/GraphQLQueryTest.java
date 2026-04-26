@@ -31,6 +31,12 @@ class GraphQLQueryTest {
     static DSLContext dsl;
     static GraphQL graphql;
     static final AtomicInteger QUERY_COUNT = new AtomicInteger();
+    /**
+     * Lower-cased rendered SQL for every statement issued through the test {@link DSLContext}.
+     * Tests that need to assert on which SQL ran (e.g. that {@code totalCount} was lazy on
+     * selection) call {@link #SQL_LOG}{@code .clear()} before executing the GraphQL query.
+     */
+    static final List<String> SQL_LOG = new java.util.concurrent.CopyOnWriteArrayList<>();
 
     @BeforeAll
     static void startDatabase() throws Exception {
@@ -47,12 +53,16 @@ class GraphQLQueryTest {
         }
 
         // Count JDBC round-trips via an ExecuteListener. Tests that care (DataLoader batching)
-        // call QUERY_COUNT.set(0) before executing and assert on the count afterward.
+        // call QUERY_COUNT.set(0) before executing and assert on the count afterward. The same
+        // listener captures the rendered SQL of every statement into SQL_LOG; the totalCount
+        // lazy-on-selection test asserts that no `select count` ran when the field wasn't picked.
         dsl.configuration().set(new org.jooq.impl.DefaultExecuteListenerProvider(
             new org.jooq.impl.DefaultExecuteListener() {
                 @Override
                 public void executeStart(org.jooq.ExecuteContext ctx) {
                     QUERY_COUNT.incrementAndGet();
+                    var sql = ctx.sql();
+                    if (sql != null) SQL_LOG.add(sql.toLowerCase(java.util.Locale.ROOT));
                 }
             }));
 
@@ -402,6 +412,62 @@ class GraphQLQueryTest {
         // "2 items before cursor(4)" in ascending order = items 2, 3: ACE GOLDFINGER, ADAPTATION HOLES.
         assertThat(nodes).extracting(n -> n.get("title"))
             .containsExactly("ACE GOLDFINGER", "ADAPTATION HOLES");
+    }
+
+    // ===== filmsConnection / stores — totalCount =====
+
+    @Test
+    void filmsConnection_totalCount_returnsTotalRowCount() {
+        // Structural FilmsConnection declares totalCount: Int; root fetcher binds (table, condition)
+        // onto ConnectionResult so ConnectionHelper.totalCount issues SELECT count(*) on demand.
+        Map<String, Object> data = execute(
+            "{ filmsConnection { totalCount } }");
+        var conn = (Map<String, Object>) data.get("filmsConnection");
+        assertThat(conn.get("totalCount")).isEqualTo(5);
+    }
+
+    @Test
+    void filmsOrderedConnection_totalCount_underFilter_appliesSamePredicate() {
+        // SELECT count(*) is run with the same Condition the page query used; rating=G filter
+        // restricts the count to the 2 G-rated films in the seed data.
+        Map<String, Object> data = execute(
+            "{ filmsOrderedConnection(rating: G, first: 1) { totalCount nodes { title } } }");
+        var conn = (Map<String, Object>) data.get("filmsOrderedConnection");
+        assertThat(conn.get("totalCount")).isEqualTo(2);
+        var nodes = (List<Map<String, Object>>) conn.get("nodes");
+        assertThat(nodes).hasSize(1); // page-trimmed by first:1
+    }
+
+    @Test
+    void synthesisedConnection_totalCount_returnsRowCount() {
+        // `stores: [Store!]! @asConnection` synthesises QueryStoresConnection which always carries
+        // totalCount: Int. Two stores are seeded.
+        Map<String, Object> data = execute(
+            "{ stores { totalCount } }");
+        var conn = (Map<String, Object>) data.get("stores");
+        assertThat(conn.get("totalCount")).isEqualTo(2);
+    }
+
+    @Test
+    void filmsConnection_totalCount_isLazyOnSelection_noCountSqlWhenUnselected() {
+        SQL_LOG.clear();
+        execute("{ filmsConnection(first: 2) { nodes { title } pageInfo { hasNextPage } } }");
+        // graphql-java only invokes the totalCount resolver when the client picks the field.
+        // No `select count` should appear among the rendered statements for this query.
+        assertThat(SQL_LOG)
+            .as("no SELECT count statement should be issued when totalCount is not selected")
+            .noneMatch(s -> s.contains("select count"));
+    }
+
+    @Test
+    void filmsConnection_totalCount_selected_doesIssueCountSql() {
+        // Companion ratchet: when totalCount IS selected, exactly one `select count` runs.
+        SQL_LOG.clear();
+        execute("{ filmsConnection { totalCount } }");
+        assertThat(SQL_LOG)
+            .filteredOn(s -> s.contains("select count"))
+            .as("selecting totalCount should issue exactly one SELECT count statement")
+            .hasSize(1);
     }
 
     // ===== filmsOrderedConnection — dynamic ordering pagination =====

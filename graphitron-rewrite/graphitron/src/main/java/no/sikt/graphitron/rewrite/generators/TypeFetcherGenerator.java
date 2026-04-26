@@ -797,7 +797,10 @@ public class TypeFetcherGenerator {
             .unindent()
             .build());
 
-        builder.addStatement("return new $T(result, page)", connectionResultClass);
+        // Bind (table, condition) onto ConnectionResult so ConnectionHelper.totalCount can issue
+        // SELECT count(*) using the same source and predicate as the page query. Lazy-on-selection:
+        // the totalCount resolver only runs when the client selects the field.
+        builder.addStatement("return new $T(result, page, $L, condition)", connectionResultClass, tableLocal);
 
         return builder.build();
     }

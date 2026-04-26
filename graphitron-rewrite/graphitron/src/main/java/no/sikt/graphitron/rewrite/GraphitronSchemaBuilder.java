@@ -406,11 +406,17 @@ public class GraphitronSchemaBuilder {
             .name("pageInfo")
             .type(GraphQLNonNull.nonNull(GraphQLTypeReference.typeRef("PageInfo")))
             .build();
+        // Nullable matches legacy and survives the count-skipped path on Split-Connection naturally.
+        var totalCountField = GraphQLFieldDefinition.newFieldDefinition()
+            .name("totalCount")
+            .type(GraphQLTypeReference.typeRef("Int"))
+            .build();
         var builder = GraphQLObjectType.newObject()
             .name(connName)
             .field(edgesField)
             .field(nodesField)
-            .field(pageInfoField);
+            .field(pageInfoField)
+            .field(totalCountField);
         if (shareable) builder.withAppliedDirective(GraphQLAppliedDirective.newDirective().name("shareable").build());
         return builder.build();
     }
