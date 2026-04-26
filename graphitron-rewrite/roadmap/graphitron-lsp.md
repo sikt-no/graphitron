@@ -14,12 +14,11 @@ priority: 12
 > regeneration in the same JVM. The standalone `lsp` and `watch`
 > Mojos disappear; nobody consumes them yet, so consolidation is free.
 >
-> tree-sitter (`tree-sitter-graphql`) for parsing; a new
-> `RewriteCatalogView` facade in the rewrite module exposes
-> `JooqCatalog`, `ServiceCatalog`, `MethodRef`, and `ParamSource`
-> in-process to the LSP without leaking package-private internals;
-> a small new `ScalarCatalog` covers the slot the legacy
-> `ScalarUtils` filled. The introspect goal closes by deletion.
+> tree-sitter (`tree-sitter-graphql`) for parsing; the rewrite
+> generator gains a `buildCatalog()` entry point that returns a
+> ready-made `CompletionData` to the LSP. The rewrite module owns
+> assembly; the LSP module imports only the data shape. The
+> introspect goal closes by deletion.
 >
 > Phase 0 (foundation module + interim stdio `lsp` Mojo) shipped as
 > part of this plan's introduction (commit `21c5e57`). Phase 1
@@ -42,20 +41,20 @@ sources:
 - **Legacy `IntrospectMojo`**:
   `graphitron-maven-plugin/src/main/java/no/sikt/graphitron/mojo/IntrospectMojo.java`
   (327 LOC; deletion target in Phase 7).
-- **Rewrite catalog API the LSP imports** (Phase 2): a new
-  public facade `RewriteCatalogView` under
-  `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/`
-  that exposes the catalog read-only. The facade delegates to
-  the existing rewrite internals (`JooqCatalog`, plus the
-  package-private `ServiceCatalog` and `BuildContext`), keeps
-  those internals package-private, and lets the LSP module
-  depend on a stable boundary. `MethodRef` / `ParamSource` (in
-  the rewrite `model/` package) are already public and consumed
-  directly by the facade-returned records. The legacy
+- **Rewrite catalog entry point the LSP imports** (Phase 2): a new
+  `buildCatalog()` method on
+  `no.sikt.graphitron.rewrite.GraphQLRewriteGenerator` that
+  assembles a `CompletionData` from `JooqCatalog` (already public),
+  the package-private `ServiceCatalog` (with a narrow read-only
+  surface added for the LSP, returning only `MethodRef` /
+  `ParamSource` data already public in the rewrite `model/`
+  package), and the parsed `GraphQLSchema` (for scalar definitions
+  and source positions). No facade class; no new
+  `ScalarCatalog`. The rewrite module produces what the LSP wants;
+  the LSP module imports only `CompletionData`. The legacy
   `TableReflection` and `ScalarUtils` classes (under
   `graphitron-codegen-parent/graphitron-java-codegen/`) are not
-  imported; their slots are filled by `JooqCatalog` and a new
-  rewrite-side `ScalarCatalog` (Phase 2 deliverable).
+  imported.
 - **Phase 0 spike code**: under
   `graphitron-rewrite/graphitron-lsp/`, with 5 passing tests.
 - **Existing watch goal that Phase 1 absorbs**:
@@ -84,16 +83,17 @@ details that get removed during Phase 1.
 Sikt is a Java shop. The Rust LSP is a historical accident; every
 new feature needs maintainers from a different ecosystem than the
 generator. Folding the LSP into rewrite means one team, one
-language, and direct reuse of the rewrite catalog through a new
-public `RewriteCatalogView` facade (delegating to `JooqCatalog`,
-`ServiceCatalog`, `MethodRef`, `ParamSource`, plus a new
-`ScalarCatalog`). The contract extensions the LSP roadmap
-wants next (`@service` / `@condition` help, Javadoc) are mechanical
-once the rewrite catalog is in-process; they are awkward across a
-JSON boundary. The spike has validated that tree-sitter ports
-cleanly to Java, that incremental parsing works through the bonede
-binding, and that the Rust LSP's responsiveness patterns survive
-the language swap.
+language, and direct reuse of the rewrite catalog: the rewrite
+generator gains a `buildCatalog()` method that produces the
+`CompletionData` the LSP consumes, sourced from the existing
+`JooqCatalog`, the package-private `ServiceCatalog` (with a small
+read-only surface added), and the parsed `GraphQLSchema`. The
+contract extensions the LSP roadmap wants next (`@service` /
+`@condition` help, Javadoc) are mechanical once the rewrite catalog
+is in-process; they are awkward across a JSON boundary. The spike
+has validated that tree-sitter ports cleanly to Java, that
+incremental parsing works through the bonede binding, and that the
+Rust LSP's responsiveness patterns survive the language swap.
 
 ## User documentation (first-client check)
 
@@ -303,24 +303,25 @@ tree under `catalog/CompletionData.java` (Phase 0):
 - `SourceLocation { uri, line, column }` with an `UNKNOWN`
   sentinel for entries without a real position.
 
-Phase 2 wires these through a new public `RewriteCatalogView`
-facade in the rewrite module so the LSP module does not depend
-on package-private internals. Source map:
+Phase 2 populates these through a new `buildCatalog()` method on
+`GraphQLRewriteGenerator` that returns a fully-assembled
+`CompletionData`. The rewrite module owns assembly; the LSP module
+imports only the data shape. Source map:
 
-- `Table` / `Column` / `Reference`: facade delegates to
+- `Table` / `Column` / `Reference`: read from the already-public
   `JooqCatalog` (table lookups, column metadata, foreign-key
   edges).
-- `TypeData` (scalars): facade delegates to a new `ScalarCatalog`
-  under `graphitron-rewrite/.../rewrite/`. The rewrite has no
-  `ScalarUtils` equivalent today; Phase 2 introduces
-  `ScalarCatalog` as the rewrite-side authority on built-in vs.
-  custom scalars and their Java-class aliases. The legacy
-  `graphitron-java-codegen` `ScalarUtils` is the reference
-  shape; the new class is small and read-only, populated from
-  the loaded SDL plus a fixed built-in set.
-- `ExternalReference` / `Method` / `Parameter`: facade delegates
-  to `ServiceCatalog` and exposes its `MethodRef` /
-  `ParamSource` data through the records.
+- `TypeData` (scalars): walked from the parsed `GraphQLSchema`
+  itself (`assembled.getAllTypesAsList()` filtered to
+  `GraphQLScalarType`), pulling `getName()` / `getDescription()`
+  / `getDefinition().getSourceLocation()`. No new
+  `ScalarCatalog` class; the parsed schema already carries
+  everything the LSP wants for hover and completion.
+- `ExternalReference` / `Method` / `Parameter`: read from
+  `ServiceCatalog` via a small read-only public surface added
+  in Phase 2 (e.g. an `allMethods()` enumeration returning the
+  already-public `MethodRef` / `ParamSource` data). The
+  `BuildContext`-coupled internals stay package-private.
 
 Until Phase 2, `CompletionData.empty()` serves and tests pass
 explicit fixtures.
@@ -527,32 +528,37 @@ Workspace lifecycle:
   loop` (matching the user-doc draft above);
   `graphitron.watch.*` properties rename to `graphitron.dev.*`.
 
-Exit criteria: a single `mvn graphitron-rewrite:dev` invocation
-from a schema module starts the LSP on `localhost:8487`, watches
+Exit criteria: a single `mvn graphitron:dev` invocation from a
+schema module starts the LSP on `localhost:8487`, watches
 `.graphqls` files, regenerates on save, watches consumer
-`.class` files for catalog refresh, and an editor configured for
-`localhost:8487` connects and gets table-name completions
-end-to-end. Tests cover three halves: workspace lifecycle
-through a piped lsp4j server, watch-trigger tests reusing the
-existing `SchemaWatcherTest` patterns, and a catalog-refresh
-test that touches a fixture `.class` file and asserts the next
-completion sees new tables.
+`.class` files (the trigger fires; the rebuild plugs in at
+Phase 2), and an editor configured for `localhost:8487` connects
+and gets table-name completions end-to-end against fixture
+catalog data. Tests cover workspace lifecycle through a piped
+lsp4j server and watch-trigger tests reusing the existing
+`SchemaWatcherTest` patterns. End-to-end catalog-refresh
+coverage waits for Phase 2.
 
-**Phase 2: catalog wiring.** Replace `CompletionData.empty()` with
-a builder that consumes a new public `RewriteCatalogView` facade
-in the rewrite module. The facade delegates to `JooqCatalog`
-(tables / columns / references), `ServiceCatalog` (external
-references and methods, exposing `MethodRef` / `ParamSource`
-data), and a new rewrite-side `ScalarCatalog` (built-in plus
-custom scalars, populated from the loaded SDL plus a fixed
-built-in set; mirrors the legacy `ScalarUtils` shape minus the
-mutable-state baggage). The package-private `ServiceCatalog` and
-`BuildContext` stay package-private; only the facade is public.
-Resolves OQ A1 (how the LSP acquires the consumer's classpath).
-Exit criteria: an aggregator with a real jOOQ catalog produces a
-non-empty `CompletionData`; the table completion path returns the
-actual table set; the catalog refresh hook (see Phase 1) swaps in
-new tables when the consumer recompiles.
+**Phase 2: catalog wiring.** Replace `CompletionData.empty()` by
+adding a `buildCatalog()` method on `GraphQLRewriteGenerator`
+that returns a fully-assembled `CompletionData`. The rewrite
+module owns assembly; the LSP module imports only the result.
+Source map: tables / columns / references read from the existing
+public `JooqCatalog`; scalars walked from the parsed
+`GraphQLSchema` directly (no new `ScalarCatalog` class); methods
+read from `ServiceCatalog` via a small read-only public surface
+added in this phase (e.g. an `allMethods()` enumeration
+returning the already-public `MethodRef` / `ParamSource` data).
+The `BuildContext`-coupled internals of `ServiceCatalog` stay
+package-private. `DevMojo` calls `buildCatalog()` once at
+startup and on every classpath-watcher trigger, swapping the
+result into `Workspace` atomically. Resolves OQ A1 (how the LSP
+acquires the consumer's classpath: through the same Maven-context
+that already builds the `RewriteContext`). Exit criteria: an
+aggregator with a real jOOQ catalog produces a non-empty
+`CompletionData`; the table-completion path returns the actual
+table set; the catalog-refresh hook swaps in new tables when the
+consumer recompiles.
 
 **Phase 3: directive ports.** Per-directive completions,
 diagnostics, and hover for `@field`, `@reference`, `@record`,
@@ -627,14 +633,19 @@ Per-phase additions:
   / `did_close` and the `dependsOnDeclarations` recalculation
   trigger. `TextDocumentServiceTest` with a piped lsp4j server,
   including a `completion` request that round-trips through
-  `TableCompletions`. `DevMojoSocketTest` covering bind, port
-  override, and bind-failure-message-points-at-property.
-  `CatalogRefreshTest` touching a fixture `.class` file and
-  asserting the next completion sees the new catalog.
-- **Phase 2:** `CatalogBuilderTest` with a fixture jOOQ catalog
-  (reuse `graphitron-fixtures` for the jOOQ classes).
-  `ScalarCatalogTest` covering built-in vs. custom-scalar
-  resolution and SDL-derived aliases.
+  `TableCompletions`. `DevServerTest` and `DevMojoTest` covering
+  bind, port override, bind-failure-message-points-at-property,
+  and warm-state across editor reconnects. End-to-end
+  catalog-refresh coverage waits for Phase 2 (the wire is in
+  place, but the rebuilder it feeds lands then).
+- **Phase 2:** `BuildCatalogTest` driving
+  `GraphQLRewriteGenerator.buildCatalog()` against a fixture jOOQ
+  catalog (reuse `graphitron-fixtures` for the jOOQ classes) and
+  asserting the returned `CompletionData` exposes the expected
+  tables, scalars (walked from the parsed `GraphQLSchema`), and
+  service methods. Catalog-refresh coverage moves here from
+  Phase 1's `CatalogRefreshTest` since it is what proves the
+  swap is observable through the dev goal.
 - **Phase 3:** one test per directive, mirroring the Rust LSP's
   `tests/mod.rs` cases. Cursor-marker fixture (`❌` like the
   Rust tests) is convenient.
@@ -705,9 +716,12 @@ Numbered to match phase-of-resolution. A1, A2, and A4 are
 resolved inline below; A3 closes when its phase reaches it.
 
 A1. ~~**Catalog classpath acquisition.**~~ **Resolved by `dev`
-   goal design.** The Mojo runs in full Maven context, builds the
-   classpath, and constructs the LSP-side reflection layer in the
-   same JVM. No discovery walk, no environment guessing.
+   goal design.** The Mojo runs in full Maven context with
+   `requiresDependencyResolution = COMPILE`, so the consumer's
+   compiled jOOQ classes are on the same classloader the
+   generator uses. Phase 2's `buildCatalog()` reads through that
+   classloader; no separate discovery walk, no environment
+   guessing.
 
 A2. ~~**Port-file location and lifecycle.**~~ **Resolved by
    fixed-default-port design.** No port file. The dev goal binds
