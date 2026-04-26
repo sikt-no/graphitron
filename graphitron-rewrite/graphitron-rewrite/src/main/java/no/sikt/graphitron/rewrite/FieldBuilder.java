@@ -1536,7 +1536,7 @@ class FieldBuilder {
             }
             String invariant = validateRootServiceInvariants(svcResult);
             if (invariant != null) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef, invariant);
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.INVALID_SCHEMA, invariant);
             }
             return switch (svcResult.returnType()) {
                 case ReturnTypeRef.TableBoundReturnType tb ->
@@ -1583,7 +1583,7 @@ class FieldBuilder {
             }
             // Invariants §1: Connection wrapper not supported on @tableMethod at root.
             if (tb.wrapper() instanceof FieldWrapper.Connection) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.INVALID_SCHEMA,
                     "@tableMethod at the root does not support Connection return types — use [T] or T instead");
             }
             var qtmRef = parseExternalRef(parentTypeName, fieldDef, DIR_TABLE_METHOD, ARG_TABLE_METHOD_REF);
@@ -1658,7 +1658,7 @@ class FieldBuilder {
             }
             String invariant = validateRootServiceInvariants(svcResult);
             if (invariant != null) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef, invariant);
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.INVALID_SCHEMA, invariant);
             }
             return switch (svcResult.returnType()) {
                 case ReturnTypeRef.TableBoundReturnType tb ->
