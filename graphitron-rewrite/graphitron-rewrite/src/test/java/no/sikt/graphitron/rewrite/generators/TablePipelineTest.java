@@ -95,16 +95,6 @@ class TablePipelineTest {
         assertThat(TypeSpecAssertions.hasFieldsArm(filmSpec, "filmId")).isTrue();
     }
 
-    @Test
-    void fieldsMethod_excludesNotGeneratedFields() {
-        var filmSpec = findSpec("Film", """
-            type Film @table(name: "film") { title: String, hidden: String @notGenerated }
-            type Query { dummy: String }
-            """);
-        assertThat(TypeSpecAssertions.hasFieldsArm(filmSpec, "title")).isTrue();
-        assertThat(TypeSpecAssertions.hasFieldsArm(filmSpec, "hidden")).isFalse();
-    }
-
     // ===== Helpers =====
 
     private no.sikt.graphitron.javapoet.TypeSpec findSpec(String className, String sdl) {

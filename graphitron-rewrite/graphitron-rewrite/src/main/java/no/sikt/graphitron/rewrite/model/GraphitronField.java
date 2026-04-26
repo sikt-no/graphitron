@@ -9,7 +9,7 @@ import no.sikt.graphitron.rewrite.RejectionKind;
  * Every leaf type is a Java record carrying the properties needed for code generation.
  */
 public sealed interface GraphitronField
-    permits RootField, ChildField, InputField, GraphitronField.NotGeneratedField, GraphitronField.UnclassifiedField {
+    permits RootField, ChildField, InputField, GraphitronField.UnclassifiedField {
 
     /** The name of the parent GraphQL type that defines this field. */
     String parentTypeName();
@@ -23,15 +23,6 @@ public sealed interface GraphitronField
 
     /** SDL source location, or {@code null} for runtime-wired fields with no SDL definition. */
     SourceLocation location();
-
-    /**
-     * A field annotated with {@code @notGenerated}. Classified but no data fetcher is generated.
-     */
-    record NotGeneratedField(
-        String parentTypeName,
-        String name,
-        SourceLocation location
-    ) implements GraphitronField {}
 
     /**
      * A field that could not be classified. A schema containing unclassified fields is invalid —

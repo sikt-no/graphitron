@@ -2,8 +2,10 @@
 directive @splitQuery on FIELD_DEFINITION
 
 """
-Any field with this directive set is exempt from code generation. This should be used on resolvers that are to be manually implemented.
-Can be set on an input field to prevent generation of record mappers.
+Removed. `@notGenerated` is no longer supported. The directive stays declared here only so the
+GraphQL parser does not fail with an "unknown directive" error; the rewrite classifier rejects
+any application with a "no longer supported" message. Remove any use of this directive from your
+schema. Fields must be fully described by the schema.
 """
 directive @notGenerated on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | INTERFACE | UNION
 

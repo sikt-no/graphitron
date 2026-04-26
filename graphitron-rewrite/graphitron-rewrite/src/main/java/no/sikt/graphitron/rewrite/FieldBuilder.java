@@ -47,7 +47,6 @@ import no.sikt.graphitron.rewrite.model.InputColumnBinding;
 import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
-import no.sikt.graphitron.rewrite.model.GraphitronField.NotGeneratedField;
 import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
@@ -417,14 +416,10 @@ class FieldBuilder {
             newExpanding.add(elementTypeName);
             var nestedFields = new ArrayList<ChildField>();
             for (var nestedDef : graphQLObjectType.getFieldDefinitions()) {
-                if (nestedDef.hasAppliedDirective(DIR_NOT_GENERATED)) continue;
                 var nested = classifyChildFieldOnTableType(nestedDef, elementTypeName, parentTableType, newExpanding);
                 if (nested instanceof UnclassifiedField unc) {
                     return new UnclassifiedField(parentTypeName, name, location, fieldDef, unc.kind(),
                         "nested type '" + elementTypeName + "' field '" + nestedDef.getName() + "': " + unc.reason());
-                }
-                if (nested instanceof NotGeneratedField) {
-                    continue;
                 }
                 if (nested instanceof ChildField cf) {
                     nestedFields.add(cf);
@@ -868,7 +863,10 @@ class FieldBuilder {
         var condErrors = new ArrayList<String>();
         var classified = new ArrayList<InputField>();
         for (var f : iot.getFieldDefinitions()) {
-            if (f.hasAppliedDirective(DIR_NOT_GENERATED)) continue;
+            if (f.hasAppliedDirective(DIR_NOT_GENERATED)) {
+                condErrors.add("input field '" + f.getName() + "': @notGenerated is no longer supported. Remove the directive; fields must be fully described by the schema.");
+                continue;
+            }
             var res = ctx.classifyInputField(f, typeName, rt, new LinkedHashSet<>(), condErrors);
             if (res instanceof InputFieldResolution.Resolved r) {
                 classified.add(r.field());
@@ -1463,8 +1461,16 @@ class FieldBuilder {
         String name = fieldDef.getName();
         SourceLocation location = locationOf(fieldDef);
 
-        // Detect conflicts among the child-field exclusive directives before the @notGenerated and
-        // @multitableReference early-returns — those returns would otherwise silently mask a
+        // @notGenerated is no longer supported. Reject any application before conflict detection
+        // so the user sees the no-longer-supported reason rather than a misleading "conflict with
+        // @service" message when both directives are present.
+        if (fieldDef.hasAppliedDirective(DIR_NOT_GENERATED)) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.INVALID_SCHEMA,
+                "@notGenerated is no longer supported. Remove the directive; fields must be fully described by the schema.");
+        }
+
+        // Detect conflicts among the child-field exclusive directives before the
+        // @multitableReference early-return; that return would otherwise silently mask a
         // conflicting directive on the same field.
         if (!(parentType instanceof RootType)) {
             String conflict = detectChildFieldConflict(fieldDef);
@@ -1473,9 +1479,6 @@ class FieldBuilder {
             }
         }
 
-        if (fieldDef.hasAppliedDirective(DIR_NOT_GENERATED)) {
-            return new NotGeneratedField(parentTypeName, name, location);
-        }
         if (fieldDef.hasAppliedDirective(DIR_MULTITABLE_REFERENCE)) {
             return new MultitableReferenceField(parentTypeName, name, location);
         }
@@ -1748,15 +1751,13 @@ class FieldBuilder {
      * {@link NodeIdReferenceField}). It is therefore not included in this check.
      */
     private String detectChildFieldConflict(GraphQLFieldDefinition fieldDef) {
-        boolean hasNotGenerated  = fieldDef.hasAppliedDirective(DIR_NOT_GENERATED);
         boolean hasMultitable    = fieldDef.hasAppliedDirective(DIR_MULTITABLE_REFERENCE);
         boolean hasService       = fieldDef.hasAppliedDirective(DIR_SERVICE);
         boolean hasExternalField = fieldDef.hasAppliedDirective(DIR_EXTERNAL_FIELD);
         boolean hasTableMethod   = fieldDef.hasAppliedDirective(DIR_TABLE_METHOD);
         boolean hasNodeId        = fieldDef.hasAppliedDirective(DIR_NODE_ID);
 
-        int slots = (hasNotGenerated  ? 1 : 0)
-                  + (hasMultitable    ? 1 : 0)
+        int slots = (hasMultitable    ? 1 : 0)
                   + (hasService       ? 1 : 0)
                   + (hasExternalField ? 1 : 0)
                   + (hasTableMethod   ? 1 : 0)
@@ -1765,7 +1766,6 @@ class FieldBuilder {
         if (slots <= 1) return null;
 
         var names = new ArrayList<String>();
-        if (hasNotGenerated)  names.add("@" + DIR_NOT_GENERATED);
         if (hasMultitable)    names.add("@" + DIR_MULTITABLE_REFERENCE);
         if (hasService)       names.add("@" + DIR_SERVICE);
         if (hasExternalField) names.add("@" + DIR_EXTERNAL_FIELD);

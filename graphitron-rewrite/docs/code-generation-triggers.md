@@ -182,8 +182,7 @@ Fields are classified separately for root types (Query/Mutation) and nested type
 | Return plain object (no `@table`) | `NestingField` | Field method stub (inherits parent table context) |
 | Constructor-mapped field | `ConstructorField` | Field method stub |
 | `@reference` to multi-table interface | `MultitableReferenceField` | Field method stub |
-| `@notGenerated` | `NotGeneratedField`** | Nothing — field is omitted from `wiring()` |
-| Conflicting directives | `UnclassifiedField`** | Validation error — build fails |
+| Conflicting directives or `@notGenerated` | `UnclassifiedField`** | Validation error; build fails |
 
 ### Child Fields (on `@record` parent)
 
@@ -206,7 +205,7 @@ Fields are classified separately for root types (Query/Mutation) and nested type
 
 `InputField` is a separate top-level sub-hierarchy of `GraphitronField`, alongside `RootField` and `ChildField`. It classifies fields on `TableInputType` for mutation input processing.
 
-**\*\* `UnclassifiedField` and `NotGeneratedField`** are direct permits of `GraphitronField` — they are not nested under `QueryField`, `MutationField`, or `ChildField`. They are listed in the tables above for completeness, but structurally they sit at the top level of the sealed hierarchy. `TableTargetField` is an intermediate sealed sub-interface of `ChildField` grouping all 8 SQL-generating child field variants (`TableField`, `SplitTableField`, `LookupTableField`, `SplitLookupTableField`, `TableInterfaceField`, `ServiceTableField`, `RecordTableField`, `RecordLookupTableField`).
+**\*\* `UnclassifiedField`** is a direct permit of `GraphitronField`; it is not nested under `QueryField`, `MutationField`, or `ChildField`. It is listed in the tables above for completeness, but structurally it sits at the top level of the sealed hierarchy. `TableTargetField` is an intermediate sealed sub-interface of `ChildField` grouping all 8 SQL-generating child field variants (`TableField`, `SplitTableField`, `LookupTableField`, `SplitLookupTableField`, `TableInterfaceField`, `ServiceTableField`, `RecordTableField`, `RecordLookupTableField`).
 
 ### DataLoader-backed field categories
 
