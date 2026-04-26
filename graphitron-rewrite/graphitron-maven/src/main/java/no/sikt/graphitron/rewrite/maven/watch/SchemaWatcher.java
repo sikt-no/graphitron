@@ -76,7 +76,7 @@ public final class SchemaWatcher implements AutoCloseable {
     /** Registers {@code root} and every existing subdirectory beneath it. */
     private void registerRecursive(Path root) throws IOException {
         if (!Files.isDirectory(root)) {
-            LOGGER.warn("graphitron:watch: skipping non-directory watch root: {}", root);
+            LOGGER.warn("graphitron:dev: skipping non-directory watch root: {}", root);
             return;
         }
         try (Stream<Path> walk = Files.walk(root)) {
@@ -131,7 +131,7 @@ public final class SchemaWatcher implements AutoCloseable {
                 }
             }
         } catch (RuntimeException e) {
-            LOGGER.error("graphitron:watch: event loop terminated abnormally", e);
+            LOGGER.error("graphitron:dev: event loop terminated abnormally", e);
             throw e;
         }
     }
@@ -144,7 +144,7 @@ public final class SchemaWatcher implements AutoCloseable {
     void dispatch(Path dir, WatchEvent<?> event) {
         WatchEvent.Kind<?> kind = event.kind();
         if (kind == StandardWatchEventKinds.OVERFLOW) {
-            LOGGER.info("graphitron:watch: OVERFLOW; rescheduling regeneration");
+            LOGGER.info("graphitron:dev: OVERFLOW; rescheduling regeneration");
             debounce.schedule(onTrigger);
             return;
         }
@@ -155,7 +155,7 @@ public final class SchemaWatcher implements AutoCloseable {
             try {
                 registerRecursive(resolved);
             } catch (IOException e) {
-                LOGGER.warn("graphitron:watch: failed to register new directory {}: {}", resolved, e.getMessage());
+                LOGGER.warn("graphitron:dev: failed to register new directory {}: {}", resolved, e.getMessage());
             }
             return;
         }
@@ -169,7 +169,7 @@ public final class SchemaWatcher implements AutoCloseable {
         try {
             watchService.close();
         } catch (IOException e) {
-            LOGGER.warn("graphitron:watch: error closing WatchService: {}", e.getMessage());
+            LOGGER.warn("graphitron:dev: error closing WatchService: {}", e.getMessage());
         }
     }
 

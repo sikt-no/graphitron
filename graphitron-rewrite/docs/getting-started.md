@@ -181,8 +181,8 @@ Avoid:
 ### What you do
 
 Edit your `.graphqls` source files, then run `mvn generate-sources` (or let
-your build tool re-trigger it). For a hands-off loop, run
-`mvn graphitron-rewrite:watch` in a side terminal: see [Watch mode](#watch-mode)
+your build tool re-trigger it). For a hands-off loop with editor integration,
+run `mvn graphitron:dev` in a side terminal: see [Dev loop](#dev-loop-detail)
 below.
 
 ### What the generator does
@@ -229,27 +229,42 @@ behaviour composes with standard incremental-compile paths:
 - **Spring Boot DevTools** — same mtime-based detection; unchanged files
   are ignored.
 
-### Watch mode
+### Dev loop <a id="dev-loop-detail"></a>
 
-Run `mvn graphitron-rewrite:watch` in a side terminal. The goal:
+Run `mvn graphitron:dev` in a side terminal. One JVM, one terminal,
+one socket: the goal binds an LSP server on `localhost:8487` and watches
+your `.graphqls` files. Saving a schema regenerates the affected Java
+sources under `target/generated-sources/graphitron`; only changed files
+touch disk.
 
-1. Runs the generator once on startup, so the output tree is fresh.
-2. Watches every directory that backs a `<schemaInputs>` entry (recursively)
-   for `.graphqls` changes.
-3. On any change, re-runs the generator. Idempotent writes mean only the
-   files whose rendered content actually changed are written; the IDE
-   recompiles only those classes (same three-clause contract pinned by
+Connect your editor or agent to the LSP by pointing its LSP client at
+`localhost:8487` (TCP). The default port is the only number you need; it
+stays the same across sessions, machines, and projects, so each editor
+needs one one-time configuration line.
+
+If `8487` is already in use (another dev session, an unrelated service),
+pass `-Dgraphitron.dev.port=N` to pick a different port, and use the
+matching port in the editor config. The Mojo fails fast on bind conflict
+with a message naming the override property; no silent rebind to a
+different port the editor would not know about.
+
+What the loop does on each schema save:
+
+1. Re-runs the generator. Idempotent writes mean only the files whose
+   rendered content actually changed are written; the IDE recompiles only
+   those classes (same three-clause contract pinned by
    `IdempotentWriterTest` and `GeneratorDeterminismTest`).
-4. Validation failures are logged to the console; the watch loop keeps
-   running so a typo does not kill the session.
+2. Validation failures are logged to the console with grouped per-file
+   trees; the loop keeps running so a typo does not kill the session.
+3. Open editor buffers see refreshed diagnostics on the next request.
 
-Stop the loop with Ctrl+C (a JVM shutdown hook closes the watch service and
-the debounce executor cleanly).
+The dev goal also watches the consumer's compiled jOOQ output
+(`target/classes/<jooqPackage>/`) for `.class` changes. Running
+`mvn compile` in another terminal after a jOOQ schema change picks up
+new tables and columns automatically; no `dev`-session restart needed.
 
-Caveat: the generator reads jOOQ classes off the compiled classpath, so
-changing the jOOQ schema requires a full Maven build and a fresh
-`graphitron-rewrite:watch` session. The watch loop covers `.graphqls` edits
-only.
+Stop the loop with Ctrl+C (a JVM shutdown hook closes the LSP socket,
+the watch service, and the debounce executor cleanly).
 
 ## Notes
 

@@ -23,7 +23,7 @@ public final class DebounceExecutor implements AutoCloseable {
     public DebounceExecutor(long windowMs) {
         this.windowMs = windowMs;
         this.executor = Executors.newSingleThreadScheduledExecutor(r -> {
-            Thread t = new Thread(r, "graphitron-watch-debounce");
+            Thread t = new Thread(r, "graphitron-dev-debounce");
             t.setDaemon(true);
             return t;
         });
