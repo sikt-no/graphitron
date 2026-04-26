@@ -28,7 +28,6 @@ graph LR
     GF --> CF["ChildField\n«sealed»"]:::core
     GF --> INPF["InputField\n«sealed»"]:::rootf
     GF --> UNF["UnclassifiedField"]:::val
-    GF --> NGF["NotGeneratedField"]:::val
 
     RF --> QF["QueryField\n«sealed»"]:::rootf
     RF --> MF["MutationField\n«sealed»"]:::rootf

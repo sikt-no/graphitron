@@ -222,17 +222,6 @@ class FetcherPipelineTest {
     // wrong Tables.FILM.<X> reference; execution tier catches wrong values. The classifier's
     // @field(name:) handling is covered separately by GraphitronSchemaBuilderTest.
 
-    @Test
-    void notGeneratedField_isExcluded() {
-        var sdl = """
-            type Film @table(name: "film") { title: String, hidden: String @notGenerated }
-            type Query { dummy: String }
-            """;
-        var bodies = fetcherBodies(sdl);
-        assertThat(TypeSpecAssertions.wiringFor(bodies, "Film", "title")).isPresent();
-        assertThat(TypeSpecAssertions.wiringFor(bodies, "Film", "hidden")).isEmpty();
-    }
-
     // ===== Root query table fields =====
 
     @Test

@@ -112,7 +112,6 @@ public class TypeFetcherGenerator {
     private static TypeSpec generateForType(GraphitronSchema schema, String typeName, String outputPackage, String jooqPackage) {
         var type = schema.type(typeName);
         var fields = schema.fieldsOf(typeName).stream()
-            .filter(f -> !(f instanceof GraphitronField.NotGeneratedField))
             .filter(f -> !(f instanceof GraphitronField.UnclassifiedField))
             .sorted(Comparator.comparing(GraphitronField::name))
             .toList();
@@ -161,13 +160,11 @@ public class TypeFetcherGenerator {
     /**
      * Leaves that can never reach the fetcher switch at runtime: {@link InputField} leaves are
      * only attached to input-object types (which {@link #generate} doesn't process), and
-     * {@link GraphitronField.NotGeneratedField}/{@link GraphitronField.UnclassifiedField} are
-     * filtered out inside {@link #generateForType} before dispatch. The switch still has
-     * "cannot occur" arms for these (so the compiler sees the switch as exhaustive) but those
-     * arms throw {@link AssertionError} rather than emitting code.
+     * {@link GraphitronField.UnclassifiedField} is filtered out inside {@link #generateForType}
+     * before dispatch. The switch still has a "cannot occur" arm for it (so the compiler sees the
+     * switch as exhaustive) but the arm throws {@link AssertionError} rather than emitting code.
      */
     public static final Set<Class<? extends GraphitronField>> NOT_DISPATCHED_LEAVES = Set.of(
-        GraphitronField.NotGeneratedField.class,
         GraphitronField.UnclassifiedField.class,
         InputField.ColumnField.class,
         InputField.ColumnReferenceField.class,
@@ -393,8 +390,6 @@ public class TypeFetcherGenerator {
                 // Cannot occur — filtered by generateForType before dispatch
                 case InputField ignored ->
                     throw new AssertionError("InputField in type dispatch: " + ignored.qualifiedName());
-                case GraphitronField.NotGeneratedField ignored ->
-                    throw new AssertionError("NotGeneratedField in type dispatch: " + ignored.qualifiedName());
                 case GraphitronField.UnclassifiedField ignored ->
                     throw new AssertionError("UnclassifiedField in type dispatch: " + ignored.qualifiedName());
             }
