@@ -8,9 +8,10 @@ import java.util.Optional;
  * requests. Mirrors the data shapes the Rust LSP's
  * {@code completion_data} module deserialises from
  * {@code graphitron-lsp-config.json}, minus the JSON layer; this version is
- * populated directly from {@code MethodRef} / {@code ServiceCatalog} /
- * {@code TableReflection} / {@code ScalarUtils} when the catalog wiring
- * lands (Phase 2).
+ * populated by Phase 2 through a {@code RewriteCatalogView} facade that
+ * delegates to {@code JooqCatalog} (tables / columns / references),
+ * {@code ServiceCatalog} (methods, exposing {@code MethodRef} /
+ * {@code ParamSource}), and a new rewrite-side {@code ScalarCatalog}.
  *
  * <p>Records are immutable; the catalog is rebuilt rather than mutated when
  * the consumer's compiled classpath changes.

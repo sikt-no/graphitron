@@ -1,0 +1,161 @@
+package no.sikt.graphitron.lsp;
+
+import no.sikt.graphitron.lsp.catalog.CompletionData;
+import no.sikt.graphitron.lsp.server.GraphitronLanguageServer;
+import no.sikt.graphitron.lsp.state.Workspace;
+import org.eclipse.lsp4j.CompletionParams;
+import org.eclipse.lsp4j.DidChangeTextDocumentParams;
+import org.eclipse.lsp4j.DidOpenTextDocumentParams;
+import org.eclipse.lsp4j.InitializeParams;
+import org.eclipse.lsp4j.Position;
+import org.eclipse.lsp4j.TextDocumentContentChangeEvent;
+import org.eclipse.lsp4j.TextDocumentIdentifier;
+import org.eclipse.lsp4j.TextDocumentItem;
+import org.eclipse.lsp4j.VersionedTextDocumentIdentifier;
+import org.eclipse.lsp4j.jsonrpc.Launcher;
+import org.eclipse.lsp4j.services.LanguageClient;
+import org.eclipse.lsp4j.services.LanguageServer;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
+
+import java.io.PipedInputStream;
+import java.io.PipedOutputStream;
+import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+/**
+ * Drives a real lsp4j {@code Launcher} pair (server / client) over piped
+ * streams. Validates that the wire protocol, capabilities advertisement,
+ * and slice-1 handlers (didOpen, didChange, completion) round-trip
+ * end-to-end the same way an editor would exercise them.
+ *
+ * <p>Capability-advertisement coverage stays trivial here; the round-trip
+ * confirmation is the bigger value.
+ */
+class TextDocumentServiceTest {
+
+    private ExecutorService serverThread;
+    private ExecutorService clientThread;
+    private Future<Void> serverListening;
+    private Future<Void> clientListening;
+
+    @AfterEach
+    void tearDown() {
+        if (serverListening != null) serverListening.cancel(true);
+        if (clientListening != null) clientListening.cancel(true);
+        if (serverThread != null) serverThread.shutdownNow();
+        if (clientThread != null) clientThread.shutdownNow();
+    }
+
+    @Test
+    void completionRequestRoundTripsThroughTableCompletions() throws Exception {
+        var catalog = new CompletionData(
+            List.of(
+                table("FILM"),
+                table("ACTOR")
+            ),
+            List.of(),
+            List.of()
+        );
+        var server = new GraphitronLanguageServer(new Workspace(catalog));
+        var proxy = startServer(server);
+
+        proxy.initialize(new InitializeParams()).get(5, TimeUnit.SECONDS);
+
+        String uri = "file:///schema.graphqls";
+        String source = """
+            type Foo @table(name: "") {
+              bar: Int
+            }
+            """;
+        var item = new TextDocumentItem(uri, "graphql", 1, source);
+        proxy.getTextDocumentService().didOpen(new DidOpenTextDocumentParams(item));
+
+        // Cursor inside the empty quoted argument value.
+        int quoteCol = source.indexOf("\"") + 1;
+        var params = new CompletionParams(
+            new TextDocumentIdentifier(uri),
+            new Position(0, quoteCol)
+        );
+        var result = proxy.getTextDocumentService().completion(params)
+            .get(5, TimeUnit.SECONDS);
+
+        assertThat(result.isLeft()).isTrue();
+        var labels = result.getLeft().stream().map(c -> c.getLabel()).toList();
+        assertThat(labels).containsExactly("FILM", "ACTOR");
+    }
+
+    @Test
+    void incrementalDidChangeUpdatesWorkspaceBuffer() throws Exception {
+        var workspace = new Workspace();
+        var server = new GraphitronLanguageServer(workspace);
+        var proxy = startServer(server);
+
+        proxy.initialize(new InitializeParams()).get(5, TimeUnit.SECONDS);
+
+        String uri = "file:///schema.graphqls";
+        var item = new TextDocumentItem(uri, "graphql", 1, "type Foo { x: Int }\n");
+        proxy.getTextDocumentService().didOpen(new DidOpenTextDocumentParams(item));
+
+        var range = new org.eclipse.lsp4j.Range(new Position(0, 5), new Position(0, 8));
+        var change = new TextDocumentContentChangeEvent(range, "Bar");
+        proxy.getTextDocumentService().didChange(new DidChangeTextDocumentParams(
+            new VersionedTextDocumentIdentifier(uri, 2),
+            List.of(change)
+        ));
+
+        // Notifications are fire-and-forget; round-trip a request to flush.
+        proxy.getTextDocumentService().completion(new CompletionParams(
+            new TextDocumentIdentifier(uri), new Position(0, 0)
+        )).get(5, TimeUnit.SECONDS);
+
+        var file = workspace.get(uri).orElseThrow();
+        assertThat(new String(file.source())).startsWith("type Bar");
+        assertThat(file.version()).isEqualTo(2);
+    }
+
+    private LanguageServer startServer(GraphitronLanguageServer server) throws Exception {
+        var clientToServer = new PipedOutputStream();
+        var serverIn = new PipedInputStream(clientToServer, 1 << 16);
+        var serverToClient = new PipedOutputStream();
+        var clientIn = new PipedInputStream(serverToClient, 1 << 16);
+
+        var serverLauncher = new Launcher.Builder<LanguageClient>()
+            .setLocalService(server)
+            .setRemoteInterface(LanguageClient.class)
+            .setInput(serverIn)
+            .setOutput(serverToClient)
+            .create();
+        server.connect(serverLauncher.getRemoteProxy());
+
+        var clientStub = new TestLanguageClient();
+        var clientLauncher = new Launcher.Builder<LanguageServer>()
+            .setLocalService(clientStub)
+            .setRemoteInterface(LanguageServer.class)
+            .setInput(clientIn)
+            .setOutput(clientToServer)
+            .create();
+
+        serverThread = Executors.newSingleThreadExecutor();
+        clientThread = Executors.newSingleThreadExecutor();
+        serverListening = serverThread.submit(() -> { serverLauncher.startListening().get(); return null; });
+        clientListening = clientThread.submit(() -> { clientLauncher.startListening().get(); return null; });
+
+        return clientLauncher.getRemoteProxy();
+    }
+
+    private static CompletionData.Table table(String name) {
+        return new CompletionData.Table(
+            name,
+            "",
+            CompletionData.SourceLocation.UNKNOWN,
+            List.of(),
+            List.of()
+        );
+    }
+}
