@@ -67,6 +67,7 @@ public final class Main {
             return s
                 .filter(p -> p.getFileName().toString().endsWith(".md"))
                 .filter(p -> !p.getFileName().toString().equals("README.md"))
+                .filter(p -> !p.getFileName().toString().equals("changelog.md"))
                 .map(Main::readItem)
                 .sorted(Comparator
                     .comparingInt((Item i) -> i.priority() == null ? Integer.MAX_VALUE : i.priority())
@@ -130,7 +131,7 @@ public final class Main {
         renderBacklog(sb, items);
         sb.append("\n---\n\n");
         sb.append("## Done\n\n");
-        sb.append("See [`changelog.md`](../docs/planning/changelog.md) for the historical record of shipped rewrite work. ");
+        sb.append("See [`changelog.md`](changelog.md) for the historical record of shipped rewrite work. ");
         sb.append("Plan files are deleted on Done; git history preserves them.\n");
         return sb.toString();
     }
