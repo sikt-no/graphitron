@@ -24,9 +24,10 @@ priority: 12
 > Phase 0 (foundation module + interim stdio `lsp` Mojo) shipped as
 > part of this plan's introduction (commit `21c5e57`). Phase 1
 > introduces the `dev` goal, wires `Completion` into the service
-> surface, vendors the tree-sitter-graphql grammar (drops the
-> `master-a` snapshot dep), and retires both `lsp` and the existing
-> `watch` Mojo. Phases 2-7 below describe the remaining work.
+> surface, and retires both `lsp` and the existing `watch` Mojo.
+> Phases 2-7 below describe the remaining work; grammar vendoring
+> moves into Phase 6 alongside the jtreesitter binding swap (see
+> A4).
 
 ## References
 
@@ -458,8 +459,8 @@ The bonede tree-sitter binding ships native binaries for Linux
 x86_64 / macOS x86_64 / macOS arm64 / Windows x86_64; Phase 1
 gates the goal's CI matrix on those four targets so a non-Linux
 developer is not surprised at first invocation. Phase 6's
-jtreesitter migration replaces the binding but not the platform
-list.
+jtreesitter migration takes over native sourcing for those four
+platforms (see A4) and the platform list does not change.
 
 ## Phasing
 
@@ -520,13 +521,6 @@ Workspace lifecycle:
 - Adds a second `SchemaWatcher` instance over
   `target/classes/<jooqPackage>/` for `.class` events; the
   callback rebuilds the catalog (see "Catalog freshness").
-- Vendors the tree-sitter-graphql grammar source under
-  `graphitron-lsp/src/main/resources/grammars/` and replaces the
-  `io.github.bonede:tree-sitter-graphql:master-a` snapshot
-  dependency with a build-time compilation of the vendored
-  source. Drops the snapshot-style coordinate from `pom.xml`.
-  The bonede `tree-sitter` runtime stays as the binding until
-  Phase 6.
 - Deletes `LspMojo` (Phase 0 stub) and `WatchMojo` (existing
   trunk goal). No deprecation cycle: there are no users yet.
   `getting-started.md` `### Watch mode` rewrites to `### Dev
@@ -588,18 +582,24 @@ author gets parameter completion on `@service(method:)` /
 `@condition`, and hovers on a column show the column's `COMMENT
 ON COLUMN` text.
 
-**Phase 6: jtreesitter migration.** Bump `<release>21</release>`
-to `<release>25</release>` in the parent pom; swap the
-`io.github.bonede:tree-sitter` runtime for
+**Phase 6: jtreesitter migration + grammar vendoring.** Bump
+`<release>21</release>` to `<release>25</release>` in the parent
+pom; swap the `io.github.bonede:tree-sitter` runtime for
 `io.github.tree-sitter:jtreesitter` (latest stable at the time
-the bump is authorised; pin then). The grammar source already
-vendored in Phase 1 stays put, only the binding swaps. Phase 1
-already resolved grammar sourcing, so this phase collapses to a
-binding swap plus a Java-floor bump. Exit criteria: official
-FFM-based binding active; `GraphqlLanguage` is the only file
-that changed on the LSP side; tests pass on the four CI
-platforms (Linux x86_64, macOS x86_64, macOS arm64, Windows
-x86_64).
+the bump is authorised; pin then). jtreesitter does not publish
+per-language grammar artefacts; `Language.load` expects the
+consumer to provision the native library via
+`NativeLibraryLookup`, so this phase also vendors the
+`tree-sitter-graphql` grammar source under
+`graphitron-lsp/src/main/resources/grammars/` and produces a
+per-platform native library at build time, shipped as a
+classpath resource. Phase 1 deliberately did not vendor (the
+bonede artefact handles native distribution today), so the
+binding swap and the grammar work land together rather than
+straddling two phases. Exit criteria: official FFM-based binding
+active; grammar source vendored and built per platform; tests
+pass on the four CI platforms (Linux x86_64, macOS x86_64,
+macOS arm64, Windows x86_64).
 
 **Phase 7: polish + retire.** Release the Java LSP through
 graphitron-rewrite's normal release cycle. Archive
@@ -729,15 +729,24 @@ A3. **`-parameters` propagation for service Javadoc.** The
    Closes in Phase 5.
 
 A4. ~~**Grammar-binary sourcing for the jtreesitter migration.**~~
-   **Resolved by Phase 1 grammar vendoring.** The
-   `tree-sitter-graphql` grammar source lands under
-   `graphitron-lsp/src/main/resources/grammars/` in Phase 1,
-   compiled per platform by our build. This drops the
-   `io.github.bonede:tree-sitter-graphql:master-a` snapshot
-   dependency immediately and turns Phase 6 into a pure binding
-   swap (the runtime artifact changes; the grammar source does
-   not). Per-platform native artefacts produced by the build
-   ship as classpath resources under
+   **Resolved by deferring vendoring to Phase 6.** Research after
+   the slice-2 landing turned up two facts that invalidate the
+   original "vendor in Phase 1, swap binding in Phase 6" plan:
+   (a) `io.github.tree-sitter` publishes only the `jtreesitter`
+   binding on Maven Central, with no per-grammar artefact,
+   and `Language.load` expects the consumer to provision the
+   native library via OS search path / `java.library.path` /
+   `NativeLibraryLookup`; (b) the bonede `tree-sitter-graphql`
+   coordinate (`master-a`) is published-and-immutable on Maven
+   Central even though the label looks snapshot-y, and the
+   bonede umbrella project is actively maintained (latest
+   release 2026-03-01). Conclusion: vendoring is needed exactly
+   when jtreesitter goes live, not before; staying on the
+   bonede artefact in Phase 1 buys nothing back if we vendor
+   now. Phase 6 lands the grammar source under
+   `graphitron-lsp/src/main/resources/grammars/`, builds it per
+   platform, and ships per-platform natives as classpath
+   resources under
    `graphitron-lsp/src/main/resources/native/<platform>/`.
 
 ## Appendix: spike learnings
