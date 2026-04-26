@@ -195,12 +195,6 @@ class ServiceFieldValidationTest {
             serviceField(new BatchKey.RecordKeyed(FILM_TABLE_COMPOSITE_PK.primaryKeyColumns())),
             List.of()),
 
-        OBJECT_BASED(
-            "ObjectBased — no PK constraint on parent table — no errors",
-            filmTableType(FILM_TABLE_NO_PK),
-            serviceField(new BatchKey.ObjectBased("no.sikt.graphitron.jooq.generated.tables.records.FilmRecord")),
-            List.of()),
-
         MULTIPLE_SOURCES_ROW_KEYED(
             "two RowKeyed SOURCES params — no errors when parent has PK",
             filmTableType(FILM_TABLE_SINGLE_PK),

@@ -206,6 +206,11 @@ class ServiceCatalog {
                                 "parameter names not available for method '" + methodName + "' in class '" + className
                                 + "' — compile with -parameters flag (see warning above for instructions)");
                         }
+                        String dtoReason = dtoSourcesRejectionReason(p.getParameterizedType());
+                        if (dtoReason != null) {
+                            return new ServiceReflectionResult(null,
+                                "parameter '" + displayName + "' in method '" + methodName + "': " + dtoReason);
+                        }
                         return new ServiceReflectionResult(null,
                             "parameter '" + displayName + "' in method '" + methodName
                             + "' has an unrecognized sources type: '" + typeName + "'");
@@ -388,14 +393,35 @@ class ServiceCatalog {
                     return Optional.of(new BatchKey.RecordKeyed(parentPkColumns));
                 }
             }
-        } else if (elementType instanceof Class<?> elementClass) {
-            // Object-based parent: a jOOQ TableRecord subclass or a plain result-DTO class. Both
-            // shapes emit identical codegen ({@code (FqClass) env.getSource()}), so they collapse
-            // to the same BatchKey variant.
-            return Optional.of(new BatchKey.ObjectBased(elementClass.getName()));
+        } else if (elementType instanceof Class<?> elementClass
+                && org.jooq.TableRecord.class.isAssignableFrom(elementClass)) {
+            return Optional.of(new BatchKey.RowKeyed(parentPkColumns));
         }
 
         return Optional.empty();
+    }
+
+    /**
+     * Returns a descriptive rejection reason when {@code paramType} is a {@code List<?>}
+     * whose element is a plain class that is not a jOOQ {@link org.jooq.TableRecord} subtype,
+     * indicating DTO-parent sources are unsupported. Returns {@code null} for any other shape
+     * (not a DTO rejection; handled by the generic unrecognized-sources path).
+     */
+    private static String dtoSourcesRejectionReason(java.lang.reflect.Type paramType) {
+        if (!(paramType instanceof java.lang.reflect.ParameterizedType pt)
+                || pt.getRawType() != java.util.List.class) {
+            return null;
+        }
+        java.lang.reflect.Type[] typeArgs = pt.getActualTypeArguments();
+        if (typeArgs.length != 1 || !(typeArgs[0] instanceof Class<?> elementClass)) {
+            return null;
+        }
+        if (org.jooq.TableRecord.class.isAssignableFrom(elementClass)) {
+            return null;
+        }
+        return "sources type '" + elementClass.getName() + "' is not backed by a jOOQ TableRecord"
+            + " — free-form DTO sources are not supported until the 'BatchKey lifter directive'"
+            + " feature lands (see roadmap/batchkey-lifter-directive.md)";
     }
 
     // ===== Result container =====

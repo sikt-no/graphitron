@@ -3,6 +3,8 @@ package no.sikt.graphitron.rewrite;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
+import no.sikt.graphitron.rewrite.model.BatchKey;
+import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.ParamSource;
 import org.junit.jupiter.api.Test;
@@ -84,6 +86,32 @@ class ServiceCatalogTest {
 
         assertThat(result.failed()).isTrue();
         assertThat(result.failureReason()).contains("unrecognized sources type");
+    }
+
+    @Test
+    void reflectServiceMethod_tableRecordSources_classifiedAsRowKeyed() {
+        var filmPk = List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"));
+        var result = newCatalog().reflectServiceMethod(
+            STUB_CLASS, "getFilmsWithTableRecordSources", Set.of(), Set.of(), filmPk, null);
+
+        assertThat(result.failed()).isFalse();
+        var sourced = result.ref().params().stream()
+            .filter(p -> p instanceof MethodRef.Param.Sourced)
+            .map(p -> (MethodRef.Param.Sourced) p)
+            .findFirst()
+            .orElseThrow();
+        assertThat(sourced.batchKey()).isEqualTo(new BatchKey.RowKeyed(filmPk));
+    }
+
+    @Test
+    void reflectServiceMethod_dtoSources_rejectedWithLifterDirectiveHint() {
+        var result = newCatalog().reflectServiceMethod(
+            STUB_CLASS, "getFilmsWithDtoSources", Set.of(), Set.of(), List.of(), null);
+
+        assertThat(result.failed()).isTrue();
+        assertThat(result.failureReason())
+            .contains("not backed by a jOOQ TableRecord")
+            .contains("lifter directive");
     }
 
     // ===== Strict-return-type validation =====
