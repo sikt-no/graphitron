@@ -96,4 +96,22 @@ class TestServiceStub {
     public static String getWithSources(java.util.List<org.jooq.Row1<Integer>> keys) {
         throw new UnsupportedOperationException();
     }
+
+    // ===== Sources classification tests =====
+
+    /**
+     * Takes a {@code List<FilmRecord>} — a jOOQ {@code TableRecord} subtype. Used to verify
+     * that a {@code TableRecord} element type classifies as {@link no.sikt.graphitron.rewrite.model.BatchKey.RowKeyed}.
+     */
+    public static Result<FilmRecord> getFilmsWithTableRecordSources(java.util.List<FilmRecord> keys) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Takes a {@code List<TestDtoStub>} — a plain class with no jOOQ semantics. Used to verify
+     * that a non-{@code TableRecord} element type is rejected with a DTO-sources error.
+     */
+    public static Result<FilmRecord> getFilmsWithDtoSources(java.util.List<TestDtoStub> keys) {
+        throw new UnsupportedOperationException();
+    }
 }
