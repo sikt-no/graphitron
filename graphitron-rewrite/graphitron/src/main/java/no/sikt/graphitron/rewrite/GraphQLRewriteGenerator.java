@@ -2,6 +2,8 @@ package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.javapoet.JavaFile;
 import no.sikt.graphitron.javapoet.TypeSpec;
+import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
+import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.generators.QueryConditionsGenerator;
 import no.sikt.graphitron.rewrite.generators.TypeClassGenerator;
 import no.sikt.graphitron.rewrite.generators.TypeConditionsGenerator;
@@ -67,6 +69,21 @@ public class GraphQLRewriteGenerator {
      */
     public void generate() {
         runPipeline(loadAttributedRegistry());
+    }
+
+    /**
+     * Loads the schema and assembles a {@link CompletionData} snapshot for
+     * the LSP. Skips validation deliberately: a half-edited buffer with
+     * validation errors should still expose tables and scalars so the
+     * editor can autocomplete its way out of the typo.
+     *
+     * <p>The dev goal calls this once at startup and on every classpath
+     * watcher trigger; the result swaps into {@code Workspace} atomically.
+     */
+    public CompletionData buildCatalog() {
+        var bundle = GraphitronSchemaBuilder.buildBundle(loadAttributedRegistry(), ctx);
+        var jooq = new JooqCatalog(ctx.jooqPackage());
+        return CatalogBuilder.build(jooq, bundle.assembled());
     }
 
     /**

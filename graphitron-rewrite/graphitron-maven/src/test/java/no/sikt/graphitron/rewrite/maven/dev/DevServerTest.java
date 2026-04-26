@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite.maven.dev;
 
-import no.sikt.graphitron.lsp.catalog.CompletionData;
+import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.lsp.state.Workspace;
 import org.eclipse.lsp4j.CompletionParams;
 import org.eclipse.lsp4j.DidOpenTextDocumentParams;

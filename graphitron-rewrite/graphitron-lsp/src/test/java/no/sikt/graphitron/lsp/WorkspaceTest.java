@@ -1,6 +1,6 @@
 package no.sikt.graphitron.lsp;
 
-import no.sikt.graphitron.lsp.catalog.CompletionData;
+import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.lsp.state.Workspace;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;

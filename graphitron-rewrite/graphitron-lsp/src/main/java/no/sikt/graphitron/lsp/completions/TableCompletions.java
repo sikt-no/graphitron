@@ -1,6 +1,6 @@
 package no.sikt.graphitron.lsp.completions;
 
-import no.sikt.graphitron.lsp.catalog.CompletionData;
+import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.Nodes;
 import org.eclipse.lsp4j.CompletionItem;
