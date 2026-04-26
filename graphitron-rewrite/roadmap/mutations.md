@@ -174,9 +174,9 @@ discarded at classify time.
 
 #### 1a. Extend the four DML `MutationField` variants and add a `DmlTableField` supertype
 
-Add `TableInputArg tableInputArg` and `ColumnRef pkColumn` to each record, and introduce a sealed
-intermediate `MutationField.DmlTableField` so Phase 2's `buildMutationReturnExpression` can
-dispatch over a single supertype:
+Add `TableInputArg tableInputArg` and `Optional<JooqCatalog.NodeIdMetadata> nodeIdMeta` to each
+record, and introduce a sealed intermediate `MutationField.DmlTableField` so Phase 2's
+`buildMutationReturnExpression` can dispatch over a single supertype:
 
 ```java
 sealed interface DmlTableField extends MutationField
@@ -184,7 +184,7 @@ sealed interface DmlTableField extends MutationField
                 MutationDeleteTableField, MutationUpsertTableField {
     ReturnTypeRef returnType();
     ArgumentRef.InputTypeArg.TableInputArg tableInputArg();
-    Optional<ColumnRef> pkColumn();   // present only when returnType is ScalarReturnType(ID)
+    Optional<JooqCatalog.NodeIdMetadata> nodeIdMeta();  // present only when returnType is ScalarReturnType(ID)
     SourceLocation location();
 }
 
@@ -194,7 +194,7 @@ record MutationInsertTableField(
     SourceLocation location,
     ReturnTypeRef returnType,
     ArgumentRef.InputTypeArg.TableInputArg tableInputArg,
-    Optional<ColumnRef> pkColumn
+    Optional<JooqCatalog.NodeIdMetadata> nodeIdMeta
 ) implements DmlTableField {}
 
 // Same addition on MutationUpdateTableField, MutationDeleteTableField, MutationUpsertTableField.
@@ -270,16 +270,19 @@ Invariant #14 before entering the `switch (typeName)`.  This ordering ensures th
 input-shape error surfaces ahead of a return-type error when both are present (input errors are
 more actionable to the schema author).
 
-**`pkColumn` resolution (scoped to `ScalarReturnType(ID)` only).**  After the return-type check,
-if and only if `returnType` is `ScalarReturnType(ID)`, resolve the target table's primary key
-from the jOOQ catalog via `tia.inputTable()`.  A composite PK cannot be expressed as a single
-GraphQL `ID` scalar, so if the table has a composite PK reject with
-`"@mutation field '<name>' returns ID but table '<tableName>' has a composite primary key; use a @table return type"`.
-For single-column PKs, set `pkColumn = Optional.of(resolvedCol)`.  For all other return types
-(`TableBoundReturnType`, etc.), set `pkColumn = Optional.empty()` — no catalog lookup is
-performed and composite-PK tables are fully supported.
+**NodeId metadata resolution (scoped to `ScalarReturnType(ID)` only).**  After the return-type
+check, if and only if `returnType` is `ScalarReturnType("ID")`, call
+`ctx.catalog.nodeIdMetadata(tia.inputTable().sqlName())`.  `JooqCatalog.NodeIdMetadata` carries
+`(String typeId, List<ColumnRef> keyColumns)` — the type identifier and all key columns, exactly
+the data needed to call `NodeIdEncoder.encode(typeId, r.get(col1), r.get(col2), ...)` in the
+emitter.  If the metadata is absent (the table carries no `__NODE_TYPE_ID` / `__NODE_KEY_COLUMNS`
+constants, i.e. it is not a `@node` type), reject with `UnclassifiedField` reason:
+`"@mutation field '<name>' returns ID but table '<tableName>' is not a @node type; annotate the type with @node or use a @table return type"`.
+Set `nodeIdMeta = Optional.of(meta)` on success.  For all other return types
+(`TableBoundReturnType`, etc.), set `nodeIdMeta = Optional.empty()` — no catalog lookup is
+performed and composite-key tables are fully supported via `$fields` projection.
 
-Then the `switch (typeName)` passes `tia` and `pkColumn` to each constructor.
+Then the `switch (typeName)` passes `tia` and `nodeIdMeta` to each constructor.
 
 #### 1c. Validator additions
 
@@ -310,8 +313,9 @@ before validation is invoked.
 | DML variant whose `@table` input arg carries `@condition` | `UnclassifiedField` with Invariant #12 message |
 | DML variant with `@lookupKey` on a list-typed input field (e.g. `ids: [ID!]! @lookupKey`) | `UnclassifiedField` whose reason includes the `buildLookupBindings` per-field error |
 | DML variant with non-`ID`/non-`T` return (e.g. `: Int`, `: Boolean`, `Connection<T>`) | `UnclassifiedField` with Invariant #14 message |
-| DML variant targeting a composite-PK table with `ScalarReturnType(ID)` return | `UnclassifiedField` with composite-PK + ID message |
-| DML variant targeting a composite-PK table with `TableBoundReturnType` return | classified successfully (`pkColumn` is `Optional.empty()`; no PK restriction applies) |
+| DML variant targeting a `@node` table with composite key and `ScalarReturnType(ID)` return | classified successfully; `nodeIdMeta.keyColumns()` carries both key columns |
+| DML variant targeting a non-`@node` table with `ScalarReturnType(ID)` return | `UnclassifiedField` with "not a @node type" message |
+| DML variant targeting a non-`@node` (or composite-key) table with `TableBoundReturnType` return | classified successfully (`nodeIdMeta` is `Optional.empty()`; no node restriction applies) |
 | `@service` + `@mutation` together | `UnclassifiedField` (existing check at `FieldBuilder.java:1665-1668`) |
 | `@mutation` with no `typeName` argument | `UnclassifiedField` with existing "both absent" message — Phase 1b's `classifyMutationInput` must not fire before this fallthrough |
 
@@ -373,8 +377,8 @@ Dispatch over `f.returnType()`:
 
 | `ReturnTypeRef` | `returningResult` | `terminalCall` |
 |---|---|---|
-| `ScalarReturnType` with SDL type `ID`, wrapper `Single` | `$T.$N` using `names.jooqTableClass()` + `f.pkColumn().javaName()` | `.fetchOne(r -> r.get($T.$N))` (same refs) |
-| `ScalarReturnType` with SDL type `ID`, wrapper `List` | same | `.fetch(r -> r.get($T.$N))` |
+| `ScalarReturnType` with SDL type `ID`, wrapper `Single` | all `nodeIdMeta.keyColumns()` as varargs: `Tables.T.COL1, Tables.T.COL2, ...` | `.fetchOne(r -> NodeIdEncoder.encode(typeId, r.get(Tables.T.COL1), r.get(Tables.T.COL2), ...))` |
+| `ScalarReturnType` with SDL type `ID`, wrapper `List` | same key-column varargs | `.fetch(r -> NodeIdEncoder.encode(typeId, r.get(Tables.T.COL1), ...))` |
 | `ScalarReturnType` with SDL type `Int`/`Boolean`/other non-`ID` | **Reject at classifier time, Phase 1.** | (n/a) |
 | `TableBoundReturnType`, wrapper `Single` | `<Type>.$fields(env.getSelectionSet(), table, env)` | `.fetchOne(r -> r)` |
 | `TableBoundReturnType`, wrapper `List` | same | `.fetch(r -> r)` |
@@ -394,16 +398,17 @@ will be met by extending this helper with an `.execute()`-based arm (see Non-goa
 
 Note on the `DmlTableField` supertype: introduced in Phase 1a (see above) so this helper has a
 stable supertype to dispatch over from day one.  The four DML variants implement it with the
-four accessors the helper reads (`returnType`, `tableInputArg`, `pkColumn`, `location`).
-`pkColumn` is `Optional.of(col)` for `ScalarReturnType(ID)` returns and `Optional.empty()`
-otherwise; the `ScalarReturnType(ID)` arm of the dispatch calls `.orElseThrow()` (safe: the
-classifier guarantees presence when this arm is reached).  New DML variants pick up the helper
-for free.
+four accessors the helper reads (`returnType`, `tableInputArg`, `nodeIdMeta`, `location`).
+`nodeIdMeta` is `Optional.of(meta)` for `ScalarReturnType(ID)` returns and `Optional.empty()`
+otherwise; the `ScalarReturnType(ID)` arm calls `.orElseThrow()` (safe: the classifier
+guarantees presence when this arm is reached).  New DML variants pick up the helper for free.
 
-NodeId-encoded IDs (via the locally-emitted `NodeIdEncoder.encode(...)`) on mutation return
-values are deferred to argres Phase 3's `NodeIdBinding` work.  For now, scalar `ID` returns
-emit the raw PK column value wrapped in
-`Object`; graphql-java's `ID` scalar handles the `Long → String` coercion.
+Scalar `ID` returns call the locally-emitted `NodeIdEncoder.encode(typeId, keyCol1Value, ...)`,
+mirroring exactly how `FetcherEmitter` encodes child `NodeIdField`s.  `nodeIdMeta.keyColumns()`
+may carry one column (simple key) or several (composite key); `NodeIdEncoder.encode` is varargs
+so both shapes emit identical code patterns.  The `nodeIdMeta` is populated from
+`JooqCatalog.nodeIdMetadata(tableSqlName)` at classification time using the same catalog path
+that `ChildField.NodeIdField` uses.
 
 **`RETURNING` with nested selections (`TableBoundReturnType`):** `Type.$fields` emits
 `DSL.multiset(...)` for child `TableField`/`NestingField` selections, which run as correlated
@@ -697,9 +702,9 @@ through graphql-java's registered fetchers.
   `returningResult(DSL.val(1))` cannot express either honestly.  When a consumer needs an `Int`
   return, a follow-up plan will extend `buildMutationReturnExpression` with an arm that uses
   `.execute()` (returns affected-row count) and skips `returningResult` entirely.
-- **NodeId-encoded IDs in return values** (via the locally-emitted `NodeIdEncoder.encode(...)`):
-  the returned scalar `ID` is the raw PK column value until argres Phase 3 lands the
-  `NodeIdBinding` variant of `InputColumnBinding`.
+- **`ScalarReturnType(ID)` on non-`@node` tables**: gated at classifier time with a descriptive
+  message.  A follow-up could add a raw-PK fallback (no NodeId encoding) for tables that lack
+  `__NODE_TYPE_ID` metadata, but the common case is that mutation target tables are node types.
 - **Transaction wrapping**: the emitted DML statements run within whatever transaction context
   the caller provides via `dsl`.  Explicit transaction wrapping (e.g. `dsl.transactionResult(...)`)
   is not added here; service variants already control their own transactions through the
