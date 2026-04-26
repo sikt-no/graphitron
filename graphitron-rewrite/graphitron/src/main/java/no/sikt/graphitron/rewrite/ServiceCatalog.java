@@ -145,6 +145,12 @@ class ServiceCatalog {
      * the parameterised form so emitters can declare matching fetcher return types
      * directly without parsing a string.
      */
+    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
+        key = "service-catalog-strict-service-return",
+        description = "The strict TypeName.equals arm rejects developer @service methods whose "
+            + "parameterised return type doesn't match the expected record class for the field's "
+            + "@table-bound return type. Lets the emitter declare a typed Result<XRecord> "
+            + "(or XRecord) return rather than Object.")
     ServiceReflectionResult reflectServiceMethod(String className, String methodName,
             Set<String> argNames, Set<String> ctxKeys, List<ColumnRef> parentPkColumns,
             TypeName expectedReturnType) {
@@ -235,6 +241,12 @@ class ServiceCatalog {
      * (e.g. {@code Film table = Service.method(...)}) and feed it into
      * {@code FilmType.$fields(...)} without a downcast.
      */
+    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
+        key = "service-catalog-strict-tablemethod-return",
+        description = "The strict ClassName.equals arm rejects developer @tableMethod methods "
+            + "whose return type is wider than the generated jOOQ table class for the field's "
+            + "@table-bound return type. Lets the emitter declare <SpecificTable> table = "
+            + "Method.x(...) without a downcast.")
     ServiceReflectionResult reflectTableMethod(String className, String methodName,
             Set<String> argNames, Set<String> ctxKeys, ClassName expectedReturnClass) {
         if (className == null || methodName == null) {
