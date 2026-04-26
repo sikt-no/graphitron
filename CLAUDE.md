@@ -49,6 +49,19 @@ Full spec — state table, file conventions, canonical path: [`graphitron-rewrit
 
 Trunk-based development against `claude/graphitron-rewrite`.
 
+**Default: every commit you push ships to trunk.** Trunk-based means no holding
+pen; if the commit is good enough to push to your own branch, fast-forward trunk
+right after. The only exceptions are work the author has explicitly flagged as
+not-for-trunk, with a clear marker:
+
+- `wip:` / `draft:` / `spike:` commit-message prefix, or
+- a branch named `wip/...`, `draft/...`, or `spike/...`, or
+- the user telling you out-loud "don't ship this to trunk yet".
+
+If none of those apply, the work is trunk-bound. This includes review fixes,
+docs-only commits, and plan updates: they're all real changes and they all
+ship.
+
 **Sync before starting any work:**
 ```bash
 git fetch origin claude/graphitron-rewrite
@@ -59,7 +72,9 @@ git rebase origin/claude/graphitron-rewrite
 ```bash
 git push origin <your-branch>:claude/graphitron-rewrite
 ```
-A push to your branch not followed by a trunk fast-forward is unfinished.
+A push to your branch not followed by a trunk fast-forward is unfinished. The
+sole reason to skip the fast-forward is one of the explicit not-for-trunk
+markers above; otherwise, ship it.
 
 **Your own branch:** rebase on trunk frequently, force-push freely after rebasing (`git push --force-with-lease origin <your-branch>`).
 
