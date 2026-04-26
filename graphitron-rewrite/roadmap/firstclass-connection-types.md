@@ -1,7 +1,11 @@
+---
+title: "First-class Connection, Edge, PageInfo type variants"
+status: In Review
+priority: 8
+---
+
 # Plan: first-class Connection type variants + classifier-authoritative emission
 
-> **Status:** In Review
->
 > First installment (Phases 1-3) shipped: `ConnectionType` / `EdgeType` /
 > `PageInfoType` are first-class `GraphitronType` variants, `ConnectionSynthesis`
 > is deleted, `FieldWrapper.Connection` is down to per-site metadata. The original

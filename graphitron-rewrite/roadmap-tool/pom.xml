@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>no.sikt</groupId>
+        <artifactId>graphitron-rewrite-parent</artifactId>
+        <version>9-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>graphitron-rewrite-roadmap-tool</artifactId>
+    <name>${project.groupId}:${project.artifactId}</name>
+    <description>Renders graphitron-rewrite/roadmap/*.md (YAML front-matter) into roadmap/README.md.</description>
+
+    <properties>
+        <version.snakeyaml>2.5</version.snakeyaml>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.yaml</groupId>
+            <artifactId>snakeyaml</artifactId>
+            <version>${version.snakeyaml}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.5.0</version>
+                <configuration>
+                    <mainClass>no.sikt.graphitron.roadmap.Main</mainClass>
+                    <arguments>
+                        <argument>generate</argument>
+                        <argument>${project.basedir}/../roadmap</argument>
+                    </arguments>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>verify-roadmap-readme</id>
+                        <phase>verify</phase>
+                        <goals><goal>java</goal></goals>
+                        <configuration>
+                            <mainClass>no.sikt.graphitron.roadmap.Main</mainClass>
+                            <arguments>
+                                <argument>verify</argument>
+                                <argument>${project.basedir}/../roadmap</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>

@@ -1,7 +1,11 @@
+---
+title: "Java LSP rewrite + introspect retirement + `dev` goal"
+status: Ready
+priority: 12
+---
+
 # Plan: Java LSP rewrite + introspect retirement + `dev` goal
 
-> **Status:** Ready
->
 > Replaces the Rust `graphitron-lsp` and the legacy
 > `graphitron-maven-plugin:introspect` JSON producer with a Java LSP
 > module under `graphitron-rewrite/graphitron-lsp`. Single user-facing

@@ -1,6 +1,10 @@
-# Plan: Rebase and squash rewrite branch onto main
+---
+title: Rebase and squash rewrite branch onto main
+status: Ready
+priority: 2
+---
 
-> **Status:** Ready
+# Plan: Rebase and squash rewrite branch onto main
 
 ## Goal
 

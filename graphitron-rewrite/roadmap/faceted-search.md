@@ -1,7 +1,12 @@
-# Faceted search on `@asConnection` — `@asFacet` directive
+---
+title: "Faceted search on `@asConnection`"
+status: Spec
+priority: 7
+notes: "[spike](faceted-search-sql.md)"
+---
 
-> **Status:** Spec
->
+# Faceted search on `@asConnection`: `@asFacet` directive
+
 > Add a `@asFacet` directive for filter-input fields. The `@asConnection`
 > emit-time synthesis pipeline grows a facet arm: each marked input field
 > becomes an entry on a synthesized `XConnectionFacets` object that is

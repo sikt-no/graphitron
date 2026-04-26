@@ -19,6 +19,7 @@
         <module>graphitron-rewrite-maven</module>
         <module>graphitron-rewrite-test</module>
         <module>graphitron-lsp</module>
+        <module>roadmap-tool</module>
     </modules>
 
     <properties>

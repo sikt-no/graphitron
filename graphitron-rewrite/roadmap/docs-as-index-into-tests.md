@@ -1,7 +1,12 @@
-# Plan — Docs as an Index into the Classification Tests
+---
+title: Docs as an index into classification tests
+status: Ready
+deferred: true
+priority: 10
+---
 
-> **Status:** Ready
->
+# Plan: Docs as an Index into the Classification Tests
+
 > Steps 1-2 shipped on `claude/review-docs-plan-adYJW`. Step 5 is superseded by the variant-coverage meta-test — `GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus` + `VariantCoverageTest.everySealedLeafHasAClassificationCase`. Steps 3-4 remain, deferred until the sealed hierarchy stabilises (Active work and Stubs still in motion).
 
 Goal: position `code-generation-triggers.md` as a **map** into the existing classification tests, so that the detailed truth table (every schema pattern → every variant) lives as executable spec, and the doc engages the reader by pointing into it. No deletion — the doc keeps its tables as a one-glance overview; each table row ends with a pointer to the test that asserts it.
