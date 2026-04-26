@@ -5,19 +5,24 @@
 > Replaces the Rust `graphitron-lsp` and the legacy
 > `graphitron-maven-plugin:introspect` JSON producer with a Java LSP
 > module under `graphitron-rewrite/graphitron-lsp`. Single user-facing
-> entry point: `mvn graphitron-rewrite:dev`, which runs the LSP on a
-> loopback socket and watches `<schemaInputs>` for regeneration in the
-> same JVM. The standalone `lsp` and `watch` Mojos disappear; nobody
-> consumes them yet, so consolidation is free.
+> entry point: `mvn graphitron-rewrite:dev`, which binds the LSP to a
+> fixed default loopback port and watches `<schemaInputs>` for
+> regeneration in the same JVM. The standalone `lsp` and `watch`
+> Mojos disappear; nobody consumes them yet, so consolidation is free.
 >
-> tree-sitter (`tree-sitter-graphql`) for parsing; `MethodRef` /
-> `ServiceCatalog` / `TableReflection` / `ScalarUtils` imported
-> in-process for catalog data. The introspect goal closes by deletion.
+> tree-sitter (`tree-sitter-graphql`) for parsing; a new
+> `RewriteCatalogView` facade in the rewrite module exposes
+> `JooqCatalog`, `ServiceCatalog`, `MethodRef`, and `ParamSource`
+> in-process to the LSP without leaking package-private internals;
+> a small new `ScalarCatalog` covers the slot the legacy
+> `ScalarUtils` filled. The introspect goal closes by deletion.
 >
 > Phase 0 (foundation module + interim stdio `lsp` Mojo) shipped as
-> part of this plan's introduction. Phase 1 introduces the `dev` goal
-> and retires both `lsp` and the existing `watch` Mojo. Phases 2-7
-> below describe the remaining work.
+> part of this plan's introduction (commit `21c5e57`). Phase 1
+> introduces the `dev` goal, wires `Completion` into the service
+> surface, vendors the tree-sitter-graphql grammar (drops the
+> `master-a` snapshot dep), and retires both `lsp` and the existing
+> `watch` Mojo. Phases 2-7 below describe the remaining work.
 
 ## References
 
@@ -31,11 +36,21 @@ sources:
   repo evolves, so reviewers should treat them as approximate).
 - **Legacy `IntrospectMojo`**:
   `graphitron-maven-plugin/src/main/java/no/sikt/graphitron/mojo/IntrospectMojo.java`
-  (~280 LOC; deletion target in Phase 7).
-- **Generator catalog API the LSP imports** (Phase 2): `MethodRef`
-  / `ParamSource` /  `ServiceCatalog` /  `TableReflection` /
-  `ScalarUtils` under
-  `graphitron-rewrite/graphitron-rewrite/src/main/java/no/sikt/graphitron/rewrite/`.
+  (327 LOC; deletion target in Phase 7).
+- **Rewrite catalog API the LSP imports** (Phase 2): a new
+  public facade `RewriteCatalogView` under
+  `graphitron-rewrite/graphitron-rewrite/src/main/java/no/sikt/graphitron/rewrite/`
+  that exposes the catalog read-only. The facade delegates to
+  the existing rewrite internals (`JooqCatalog`, plus the
+  package-private `ServiceCatalog` and `BuildContext`), keeps
+  those internals package-private, and lets the LSP module
+  depend on a stable boundary. `MethodRef` / `ParamSource` (in
+  the rewrite `model/` package) are already public and consumed
+  directly by the facade-returned records. The legacy
+  `TableReflection` and `ScalarUtils` classes (under
+  `graphitron-codegen-parent/graphitron-java-codegen/`) are not
+  imported; their slots are filled by `JooqCatalog` and a new
+  rewrite-side `ScalarCatalog` (Phase 2 deliverable).
 - **Phase 0 spike code**: under
   `graphitron-rewrite/graphitron-lsp/`, with 5 passing tests.
 - **Existing watch goal that Phase 1 absorbs**:
@@ -47,31 +62,33 @@ Stand up a Java LSP under `graphitron-rewrite/graphitron-lsp` that
 replaces the Rust `graphitron-lsp` at feature parity, then extends
 the contract to surface `@service` / `@condition` method help and
 Javadoc on tables, columns, scalars, and methods. Catalog data
-arrives in-process from the generator's reflection layer; no JSON
-producer, no separate LSP binary. The introspect Maven goal in the
-legacy plugin closes by deletion.
+arrives in-process from the rewrite generator's catalog API; no
+JSON producer, no separate LSP binary. The introspect Maven goal
+in the legacy plugin closes by deletion.
 
 User-facing surface: a single `mvn graphitron-rewrite:dev` goal
-runs both the LSP (on a loopback socket) and the schema-input watch
-loop in one JVM. The editor's LSP client connects to the socket;
-schema saves trigger regeneration in the same JVM. The standalone
-`lsp` and `watch` goals are not exposed to users; they are
-implementation details that get removed during Phase 1.
+runs both the LSP (bound to a fixed default loopback port) and the
+schema-input watch loop in one JVM. The editor's LSP client
+connects to `localhost:<defaultPort>`; schema saves on disk
+trigger regeneration in the same JVM. The standalone `lsp` and
+`watch` goals are not exposed to users; they are implementation
+details that get removed during Phase 1.
 
 ## Motivation
 
 Sikt is a Java shop. The Rust LSP is a historical accident; every
 new feature needs maintainers from a different ecosystem than the
 generator. Folding the LSP into rewrite means one team, one
-language, and direct reuse of the generator's catalog API
-(`MethodRef` / `ServiceCatalog` / `TableReflection` /
-`ScalarUtils`). The contract extensions the LSP roadmap wants next
-(`@service` / `@condition` help, Javadoc) are mechanical once the
-rewrite catalog is in-process; they are awkward across a JSON
-boundary. The spike has validated that tree-sitter ports cleanly
-to Java, that incremental parsing works through the bonede binding,
-and that the Rust LSP's responsiveness patterns survive the
-language swap.
+language, and direct reuse of the rewrite catalog through a new
+public `RewriteCatalogView` facade (delegating to `JooqCatalog`,
+`ServiceCatalog`, `MethodRef`, `ParamSource`, plus a new
+`ScalarCatalog`). The contract extensions the LSP roadmap
+wants next (`@service` / `@condition` help, Javadoc) are mechanical
+once the rewrite catalog is in-process; they are awkward across a
+JSON boundary. The spike has validated that tree-sitter ports
+cleanly to Java, that incremental parsing works through the bonede
+binding, and that the Rust LSP's responsiveness patterns survive
+the language swap.
 
 ## User documentation (first-client check)
 
@@ -105,11 +122,16 @@ LSP clients; the dev goal serves them through the same socket.
    disconnect; no subprocess management.
 
 Schema-file regeneration is triggered by the dev goal's filesystem
-watch loop, not by the LSP itself. Reason: agents often edit files
-through filesystem APIs, not LSP `didChange` notifications; a
-filesystem watch catches both LSP-mediated saves and direct file
-writes. The LSP receives the resulting source-tree updates the
-same way it would for any other consumer-side change.
+watch loop, not by the LSP itself. Reason: regeneration must only
+fire on completed, intentional edits, never on the
+keystroke-by-keystroke unsaved buffer the LSP sees. The LSP serves
+completions and diagnostics against the unsaved buffer as it
+changes; a save (filesystem write) is the user's signal that the
+edit is ready, and only that flushes through the generator. This
+also catches edits agents make via filesystem APIs without going
+through LSP `didChange`. The LSP receives the resulting
+source-tree updates the same way it would for any other
+consumer-side change.
 
 ### Draft user-facing copy
 
@@ -122,15 +144,18 @@ Start your dev session from the schema module:
 
     mvn graphitron-rewrite:dev
 
-This runs the graphitron LSP and watches your `.graphqls` files.
-Saving a schema regenerates the affected Java sources under
-`target/generated-sources/graphitron`; only changed files touch
-disk.
+This runs the graphitron LSP on `localhost:8487` and watches your
+`.graphqls` files. Saving a schema regenerates the affected Java
+sources under `target/generated-sources/graphitron`; only changed
+files touch disk.
 
 Connect your editor or agent to the LSP by pointing its LSP client
-at the socket address written to `target/graphitron-lsp.port`.
-Setup recipes for IntelliJ, VS Code, and Claude Code are in
-[editor-setup.md].
+at `localhost:8487` (TCP). Setup recipes for IntelliJ, VS Code,
+and Claude Code are in [editor-setup.md].
+
+If `8487` is already in use (another dev session, an unrelated
+service), pass `-Dgraphitron.dev.port=N` to pick a different port,
+and use the matching port in the editor config.
 
 Stop with Ctrl+C.
 ```
@@ -138,22 +163,26 @@ Stop with Ctrl+C.
 ---
 
 That is the entire user-facing surface. Three steps: run, connect,
-edit. No flags, no toggles, no choice between `lsp` and `watch`,
-no stdio piping. Anything the docs cannot fit into that shape
-without qualification is a design failure.
+edit. The default port is the only number a developer ever sees,
+and it stays the same across sessions, machines, and projects, so
+each editor needs one one-time configuration line.
 
 Tests for design / docs alignment:
 
 - A new contributor (human or agent) can copy the snippet, run it,
   and have a working dev loop without reading anything else.
-- The plan introduces no Mojo parameter that getting-started.md
-  has to describe to make the basic case work. System-property
-  knobs for advanced users are fine, like the watch goal's
-  `graphitron.watch.debounceMs`; they live below the basic recipe.
+- The basic recipe uses no Mojo parameters at all. The
+  `graphitron.dev.port` and `graphitron.dev.debounceMs` knobs are
+  documented below the basic recipe for advanced users.
 - The error path "I forgot to start `mvn graphitron-rewrite:dev`"
   produces an editor / agent message a non-graphitron developer
-  can act on (typically "Connection refused; check the dev session
-  is running"). The port-file absence is itself a hint.
+  can act on (typically "Connection refused on localhost:8487;
+  check the dev session is running"). The fixed port makes the
+  error message specific enough to act on without consulting any
+  per-project file.
+- The error path "port already in use" surfaces as a clear Mojo
+  startup failure pointing at the override property; no silent
+  rebind to a different port that the editor would not know about.
 
 ## Scope boundaries
 
@@ -161,7 +190,8 @@ Tests for design / docs alignment:
 
 - Java LSP module `graphitron-rewrite/graphitron-lsp`, lsp4j-based.
 - `graphitron-rewrite-maven:dev` Mojo as the single user-facing
-  goal: LSP-on-socket + schema-watch + regeneration, all one JVM.
+  goal: LSP-on-fixed-port + schema-watch + classpath-watch +
+  regeneration, all one JVM.
 - Per-directive completions, diagnostics, hover, goto-definition for
   `@table`, `@field`, `@reference`, `@record`, `@connect`.
 - `@service` / `@condition` directive support (new vs. the Rust
@@ -234,16 +264,23 @@ graphitron-rewrite/graphitron-lsp/
 `graphitron-rewrite-maven` gains `LspMojo` (P0-interim, registered
 as `mvn graphitron-rewrite:lsp`) that wraps `Launcher.main`. Phase 1
 deletes both `LspMojo` and the existing `WatchMojo`, replacing
-them with `DevMojo` (`mvn graphitron-rewrite:dev`) over a loopback
-socket.
+them with `DevMojo` (`mvn graphitron-rewrite:dev`) bound to a
+fixed loopback port.
+
+`GraphitronTextDocumentService` ships in Phase 0 as empty
+notification stubs only (the spike validates the launcher and the
+in-process `TableCompletions.generate(...)` call shape). Wiring
+the `completion` request handler to dispatch into
+`TableCompletions` is Phase 1's responsibility, alongside
+workspace lifecycle.
 
 ### Catalog API
 
 The LSP holds an immutable `CompletionData` populated from the
-generator's reflection layer (no JSON serialisation, no producer).
-Records mirror what the Rust LSP's `completion_data` module
-deserialises today, so the consumer-side surface is the same.
-Already in tree under `catalog/CompletionData.java` (Phase 0):
+rewrite catalog API (no JSON serialisation, no producer). Records
+mirror what the Rust LSP's `completion_data` module deserialises
+today, so the consumer-side data surface is the same. Already in
+tree under `catalog/CompletionData.java` (Phase 0):
 
 - `Table { name, description, definition: SourceLocation, columns,
   references }`
@@ -261,9 +298,27 @@ Already in tree under `catalog/CompletionData.java` (Phase 0):
 - `SourceLocation { uri, line, column }` with an `UNKNOWN`
   sentinel for entries without a real position.
 
-Phase 2 wires these to `MethodRef` / `ServiceCatalog` /
-`TableReflection` / `ScalarUtils` directly. Until then,
-`CompletionData.empty()` serves and tests pass it explicit fixtures.
+Phase 2 wires these through a new public `RewriteCatalogView`
+facade in the rewrite module so the LSP module does not depend
+on package-private internals. Source map:
+
+- `Table` / `Column` / `Reference`: facade delegates to
+  `JooqCatalog` (table lookups, column metadata, foreign-key
+  edges).
+- `TypeData` (scalars): facade delegates to a new `ScalarCatalog`
+  under `graphitron-rewrite/.../rewrite/`. The rewrite has no
+  `ScalarUtils` equivalent today; Phase 2 introduces
+  `ScalarCatalog` as the rewrite-side authority on built-in vs.
+  custom scalars and their Java-class aliases. The legacy
+  `graphitron-java-codegen` `ScalarUtils` is the reference
+  shape; the new class is small and read-only, populated from
+  the loaded SDL plus a fixed built-in set.
+- `ExternalReference` / `Method` / `Parameter`: facade delegates
+  to `ServiceCatalog` and exposes its `MethodRef` /
+  `ParamSource` data through the records.
+
+Until Phase 2, `CompletionData.empty()` serves and tests pass
+explicit fixtures.
 
 ### Workspace and file lifecycle
 
@@ -292,6 +347,31 @@ the project root. The LSP receives the resolved root and the
 catalog from the Mojo. This differs from the Rust LSP, which walks
 parents from each opened file looking for `target/graphitron-lsp-config.json`
 (`src/state/workspace.rs`).
+
+### Catalog freshness
+
+The catalog reads from the consumer's compiled jOOQ classes, so
+catalog content can drift from reality when the consumer
+recompiles their database schema mid-session (`mvn compile` after
+a jOOQ regeneration). Two cheap mechanisms keep it in sync without
+a session restart:
+
+- The dev Mojo registers a second watcher (a `SchemaWatcher`
+  reused with a different filename predicate) on the consumer's
+  `target/classes/<jooqPackage>/` directory. A debounced
+  `.class`-file event triggers a catalog rebuild: drop the old
+  `CompletionData`, rerun the Phase 2 builder, swap atomically.
+  Rebuild is cheap (one reflection pass over the jOOQ tables
+  class).
+- The reload runs on the dev-goal's executor, not on the LSP
+  message loop, so in-flight LSP requests are never blocked by a
+  catalog swap. The next request observes the new catalog through
+  a `volatile` reference.
+
+This closes the watch-mode caveat in `getting-started.md` (line
+249-252) for the dev goal: the consumer can run `mvn compile` in
+a side terminal and the LSP picks up new tables and columns
+within the debounce window.
 
 ### Per-directive dispatch
 
@@ -329,15 +409,26 @@ equivalent constraint; the GC keeps the references alive.
 `mvn graphitron-rewrite:dev` is the single user-facing entry point.
 One JVM, one Maven session, one terminal:
 
-- Binds an LSP server on `127.0.0.1:NNNN` (random free port).
-- Writes the chosen port to `target/graphitron-lsp.port` so the
-  editor's LSP client can find it without configuration.
-- Watches `<schemaInputs>` directories for `.graphqls` changes.
+- Binds an LSP server on `127.0.0.1:8487` by default. Override
+  via `-Dgraphitron.dev.port=N` for the rare case of multiple
+  concurrent sessions or a port conflict. If the chosen port is
+  taken, the Mojo fails fast with a message naming the property,
+  not a silent rebind that the editor would not know about.
+- Watches `<schemaInputs>` directories for filesystem-level
+  `.graphqls` writes. A save (not a `did_change` notification)
+  is the regeneration trigger, so partial / broken edits in the
+  editor never touch the generator. Edits propagate to the LSP
+  through `did_change` and surface as live diagnostics; only
+  saves flush through the generator pipeline.
+- Watches `target/classes/<jooqPackage>/` for `.class` writes and
+  rebuilds the in-process catalog on change (see "Catalog
+  freshness" above). Removes the "restart `dev` after jOOQ
+  schema changes" caveat that the watch goal had to document.
 - Regenerates affected output on save (reusing the
   `graphitron-rewrite:generate` pipeline in-process). Idempotent
   writes already in trunk mean only changed files touch disk.
-- Logs build progress, watcher events, and regeneration outcomes
-  to Maven's stdout/stderr.
+- Logs build progress, watcher events, regeneration outcomes,
+  and catalog rebuilds to Maven's stdout/stderr.
 
 Editor lifecycle: the editor connects to the socket on attach and
 disconnects on close. The LSP outlives editor restarts; reattach
@@ -348,7 +439,9 @@ Mojo lives in `graphitron-rewrite-maven` as `DevMojo`, extending
 `AbstractRewriteMojo` (so `<schemaInputs>` / `<jooqPackage>` /
 `<outputPackage>` configuration is shared with `generate`). The
 existing `WatchMojo` and the Phase 0 `LspMojo` are deleted as
-part of Phase 1.
+part of Phase 1; the watch goal's `graphitron.watch.debounceMs`
+property is renamed to `graphitron.dev.debounceMs` (existing CI
+flags update in the same change).
 
 Catalog and aggregator-root discovery happen in the Mojo, which
 runs with full Maven context (effective POM, classpath, source
@@ -356,13 +449,21 @@ roots). The LSP receives a pre-built `RewriteContext` plus a
 classloader for the consumer's compiled classes. This closes
 OQ A1.
 
+Cross-platform: lsp4j's `ServerSocket` path is platform-neutral.
+The bonede tree-sitter binding ships native binaries for Linux
+x86_64 / macOS x86_64 / macOS arm64 / Windows x86_64; Phase 1
+gates the goal's CI matrix on those four targets so a non-Linux
+developer is not surprised at first invocation. Phase 6's
+jtreesitter migration replaces the binding but not the platform
+list.
+
 ## Phasing
 
 Each phase is a coherent landing unit with its own commit set, tests,
 and exit criteria. Consumers see the LSP improve incrementally; the
 Rust LSP keeps running until Phase 7.
 
-**Phase 0: foundation module.** Shipped at landing of this plan.
+**Phase 0: foundation module.** Shipped in commit `21c5e57`.
 `graphitron-rewrite/graphitron-lsp` module wired into the parent
 reactor; bonede tree-sitter binding + lsp4j on the classpath;
 `GraphqlLanguage`, `Directives`, `Nodes`, `WorkspaceFile`,
@@ -370,14 +471,17 @@ reactor; bonede tree-sitter binding + lsp4j on the classpath;
 scaffold, P0-interim `LspMojo` registered. 5 passing tests
 (`TreeSitterSmokeTest`, `IncrementalParseTest` x2,
 `TableCompletionsTest` x2). Exit criteria: all of the above on
-trunk; `mvn graphitron-rewrite:lsp` resolves; the spike's
-end-to-end completion path works against an in-memory catalog.
-The `lsp` Mojo and stdio `Launcher` are interim; Phase 1 removes
-both.
+trunk; `mvn graphitron-rewrite:lsp` resolves; the
+`TableCompletions.generate(...)` call returns the catalog table
+set against in-memory `CompletionData` fixtures.
+`GraphitronTextDocumentService` ships as empty notification
+stubs; the `completion` request handler is wired into the
+service surface in Phase 1. The `lsp` Mojo and stdio `Launcher`
+are interim; Phase 1 removes both.
 
-**Phase 1: `dev` goal + workspace and file lifecycle.** Two
-landings, coherent as one phase because the goal needs the
-workspace to do anything useful.
+**Phase 1: `dev` goal + workspace and file lifecycle.** Bundled
+in one phase because the goal needs the workspace to do anything
+useful.
 
 Workspace lifecycle:
 - `Workspace` class mapping path → `WorkspaceFile`.
@@ -385,37 +489,72 @@ Workspace lifecycle:
   `GraphitronTextDocumentService` route through it.
 - `dependsOnDeclarations` per file plus `toRecalculate` queue
   ported from Rust.
+- `completion` request handler wired to dispatch into
+  `TableCompletions.generate(...)`. Closes the Phase 0 gap where
+  the service surface advertised completion capability without
+  implementing it.
 
 `dev` goal:
 - New `DevMojo` in `graphitron-rewrite-maven` extending
   `AbstractRewriteMojo`. Binds a `ServerSocket` on
-  `127.0.0.1:0` (kernel-chosen free port), writes
-  `target/graphitron-lsp.port`, accepts one connection, hands
-  the streams to lsp4j's `Launcher`.
+  `127.0.0.1:8487` by default, configurable via
+  `-Dgraphitron.dev.port=N`, accepts editor connections, hands
+  each connection's streams to a fresh lsp4j `Launcher`. Bind
+  failure ("port in use") is a Mojo error pointing at the
+  override property.
 - Reuses the existing `SchemaWatcher` / `DebounceExecutor` from
-  the watch goal. The trigger callback now does both: notify
-  the LSP of a regeneration event (so it can refresh diagnostics
-  for the new generated context) and re-run
-  `GraphQLRewriteGenerator.generate()`.
+  the watch goal. The save callback re-runs
+  `GraphQLRewriteGenerator.generate()` and then notifies the
+  LSP that the generated source tree changed, which prompts a
+  diagnostic refresh of any open files whose
+  `dependsOnDeclarations` overlap the regenerated set. Save and
+  generation are synchronous within the debounce thread; LSP
+  notification fires after the generator returns (or after a
+  caught `ValidationFailedException`, so diagnostics still
+  update on a typo). Generator failure does not kill the LSP
+  socket; the loop survives just as `WatchMojo` survives today.
+- Adds a second `SchemaWatcher` instance over
+  `target/classes/<jooqPackage>/` for `.class` events; the
+  callback rebuilds the catalog (see "Catalog freshness").
+- Vendors the tree-sitter-graphql grammar source under
+  `graphitron-lsp/src/main/resources/grammars/` and replaces the
+  `io.github.bonede:tree-sitter-graphql:master-a` snapshot
+  dependency with a build-time compilation of the vendored
+  source. Drops the snapshot-style coordinate from `pom.xml`.
+  The bonede `tree-sitter` runtime stays as the binding until
+  Phase 6.
 - Deletes `LspMojo` (Phase 0 stub) and `WatchMojo` (existing
   trunk goal). No deprecation cycle: there are no users yet.
-- Plan-watch-goal.md retires; its content is absorbed here.
+  `getting-started.md` `### Watch mode` rewrites to `### Dev
+  loop` (matching the user-doc draft above);
+  `graphitron.watch.*` properties rename to `graphitron.dev.*`.
 
 Exit criteria: a single `mvn graphitron-rewrite:dev` invocation
-from a schema module starts the LSP on a known port, watches
-`.graphqls` files, regenerates on save, and an editor configured
-to read the port file connects and gets table-name completions
-end-to-end. Tests cover both halves: workspace lifecycle through
-a piped lsp4j server, plus a watch-trigger test reusing the
-existing `SchemaWatcherTest` patterns.
+from a schema module starts the LSP on `localhost:8487`, watches
+`.graphqls` files, regenerates on save, watches consumer
+`.class` files for catalog refresh, and an editor configured for
+`localhost:8487` connects and gets table-name completions
+end-to-end. Tests cover three halves: workspace lifecycle
+through a piped lsp4j server, watch-trigger tests reusing the
+existing `SchemaWatcherTest` patterns, and a catalog-refresh
+test that touches a fixture `.class` file and asserts the next
+completion sees new tables.
 
 **Phase 2: catalog wiring.** Replace `CompletionData.empty()` with
-a builder that imports `MethodRef` / `ServiceCatalog` /
-`TableReflection` / `ScalarUtils` directly and populates the full
-record set. Resolves OQ A1 (how the LSP acquires the consumer's
-classpath). Exit criteria: an aggregator with a real jOOQ catalog
-produces a non-empty `CompletionData`; the table completion path
-returns the actual table set.
+a builder that consumes a new public `RewriteCatalogView` facade
+in the rewrite module. The facade delegates to `JooqCatalog`
+(tables / columns / references), `ServiceCatalog` (external
+references and methods, exposing `MethodRef` / `ParamSource`
+data), and a new rewrite-side `ScalarCatalog` (built-in plus
+custom scalars, populated from the loaded SDL plus a fixed
+built-in set; mirrors the legacy `ScalarUtils` shape minus the
+mutable-state baggage). The package-private `ServiceCatalog` and
+`BuildContext` stay package-private; only the facade is public.
+Resolves OQ A1 (how the LSP acquires the consumer's classpath).
+Exit criteria: an aggregator with a real jOOQ catalog produces a
+non-empty `CompletionData`; the table completion path returns the
+actual table set; the catalog refresh hook (see Phase 1) swaps in
+new tables when the consumer recompiles.
 
 **Phase 3: directive ports.** Per-directive completions,
 diagnostics, and hover for `@field`, `@reference`, `@record`,
@@ -435,23 +574,28 @@ reference-level goto-def replace the Rust LSP's `todo!()` stubs.
 extensions that motivated this work. Method signatures populate
 `Method.parameters` from `MethodRef`; Javadoc for tables /
 columns / scalars / methods is read from aggregator source files
-via JavaParser or `com.sun.source` and attached to the
-corresponding `description` slot. Exit criteria: schema author
-gets parameter completion on `@service(method:)` / `@condition`,
-and hovers on a column show the column's `COMMENT ON COLUMN`
-text.
+via JavaParser (`com.github.javaparser:javaparser-symbol-solver-core`)
+and attached to the corresponding `description` slot. JavaParser
+is the chosen tool: it works against classpath sources (jars
+containing source attachments included), it does not depend on
+JDK-internal `com.sun.source` APIs, and the rewrite already has
+no stake in either; new dependency only. Exit criteria: schema
+author gets parameter completion on `@service(method:)` /
+`@condition`, and hovers on a column show the column's `COMMENT
+ON COLUMN` text.
 
 **Phase 6: jtreesitter migration.** Bump `<release>21</release>`
-to `<release>25</release>` in the parent pom; swap
-`io.github.bonede:tree-sitter` /
-`io.github.bonede:tree-sitter-graphql` for
-`io.github.tree-sitter:jtreesitter:0.26.0` plus a separately
-packaged `tree-sitter-graphql` grammar; vendor the grammar's
-native libraries under
-`graphitron-lsp/src/main/resources/native/`. Resolves OQ A2
-(grammar-binary sourcing). Exit criteria: official FFM-based
-binding active; `GraphqlLanguage` is the only file that changed
-on the LSP side; tests pass.
+to `<release>25</release>` in the parent pom; swap the
+`io.github.bonede:tree-sitter` runtime for
+`io.github.tree-sitter:jtreesitter` (latest stable at the time
+the bump is authorised; pin then). The grammar source already
+vendored in Phase 1 stays put, only the binding swaps. Phase 1
+already resolved grammar sourcing, so this phase collapses to a
+binding swap plus a Java-floor bump. Exit criteria: official
+FFM-based binding active; `GraphqlLanguage` is the only file
+that changed on the LSP side; tests pass on the four CI
+platforms (Linux x86_64, macOS x86_64, macOS arm64, Windows
+x86_64).
 
 **Phase 7: polish + retire.** Release the Java LSP through
 graphitron-rewrite's normal release cycle. Archive
@@ -468,17 +612,25 @@ Per-phase, with the spike's pattern as the seed. The unit tier
 covers parsing / completion / diagnostic / hover logic against
 in-memory schemas and `CompletionData` fixtures; the spike's
 `TableCompletionsTest` is the template. The integration tier
-spins up a real lsp4j server against a `Connection.PIPE` and
-sends synthetic LSP messages; this tier lands in Phase 1
-alongside the workspace lifecycle.
+spins up a real lsp4j `Launcher` over paired
+`PipedInputStream` / `PipedOutputStream` and sends synthetic
+LSP messages; this tier lands in Phase 1 alongside the
+workspace lifecycle.
 
 Per-phase additions:
 
 - **Phase 1:** `WorkspaceTest` covering `did_open` / `did_change`
   / `did_close` and the `dependsOnDeclarations` recalculation
-  trigger. `TextDocumentServiceTest` with a piped lsp4j server.
+  trigger. `TextDocumentServiceTest` with a piped lsp4j server,
+  including a `completion` request that round-trips through
+  `TableCompletions`. `DevMojoSocketTest` covering bind, port
+  override, and bind-failure-message-points-at-property.
+  `CatalogRefreshTest` touching a fixture `.class` file and
+  asserting the next completion sees the new catalog.
 - **Phase 2:** `CatalogBuilderTest` with a fixture jOOQ catalog
   (reuse `graphitron-rewrite-fixtures` for the jOOQ classes).
+  `ScalarCatalogTest` covering built-in vs. custom-scalar
+  resolution and SDL-derived aliases.
 - **Phase 3:** one test per directive, mirroring the Rust LSP's
   `tests/mod.rs` cases. Cursor-marker fixture (`❌` like the
   Rust tests) is convenient.
@@ -501,14 +653,20 @@ until the Java LSP reaches feature parity (end of Phase 4) plus the
 contract extensions they wanted (end of Phase 5). At that point:
 
 1. Consumer runs `mvn graphitron-rewrite:dev` in a terminal in their
-   schema module. The LSP starts; the watch loop starts; the port
-   file lands at `target/graphitron-lsp.port`.
-2. Consumer points their editor's LSP client at the socket address
-   in the port file (one-time editor configuration; pattern
-   documented in getting-started).
-3. Consumer drops the `<execution>` for
+   schema module. The LSP starts on `localhost:8487`; the watch
+   loops start.
+2. Consumer points their editor's LSP client at `localhost:8487`
+   (one-time editor configuration; recipes for IntelliJ, VS Code,
+   and Claude Code documented alongside Phase 1). The configured
+   address is the same on every machine and every project, so
+   recipes are copy-pasteable.
+3. Consumer disables the Rust LSP integration in the same editor
+   config: the two LSPs serve overlapping requests, and both
+   connected at once produces duplicated / conflicting
+   completions.
+4. Consumer drops the `<execution>` for
    `graphitron-maven-plugin:introspect` from their POM.
-4. Consumer drops the `graphitron-maven-plugin` dependency once
+5. Consumer drops the `graphitron-maven-plugin` dependency once
    nothing else uses it (separately tracked under the umbrella
    "Retire `graphitron-maven-plugin`").
 
@@ -517,7 +675,7 @@ Phase 7 then deletes the legacy `IntrospectMojo` from
 
 No breaking changes to the LSP protocol surface during the rollout:
 completions / hover / diagnostics behave the same on the wire. The
-editor-config change (stdio process spawn → socket connect) is the
+editor-config change (stdio process spawn → TCP connect) is the
 only consumer-visible difference, and it falls out of the design
 choice we made up front.
 
@@ -532,35 +690,30 @@ Implicitly retires the standalone watch-goal sub-item: the existing
 `graphitron-rewrite:watch` Mojo is deleted in Phase 1 and absorbed
 by `dev`. `plan-watch-goal.md` is already removed from trunk (the
 watch goal landed under its own plan and the plan was deleted on
-landing); no separate retirement step.
+landing per the delete-on-done rule); no separate retirement step.
 
 On Phase 7 landing, the umbrella entry collapses to a Done line
 citing the last commit and the test location.
 
 ## Open questions
 
-Numbered to match phase-of-resolution. A1 is the only resolved item
-kept inline; future phases close A2-A4 as they reach them.
+Numbered to match phase-of-resolution. A1, A2, and A4 are
+resolved inline below; A3 closes when its phase reaches it.
 
 A1. ~~**Catalog classpath acquisition.**~~ **Resolved by `dev`
    goal design.** The Mojo runs in full Maven context, builds the
    classpath, and constructs the LSP-side reflection layer in the
    same JVM. No discovery walk, no environment guessing.
 
-A2. **Port-file location and lifecycle.** The `dev` goal writes
-   the chosen port to `target/graphitron-lsp.port` on startup and
-   removes it on shutdown. Decide:
-   - File contents: just the port number, or an LSP `tcp://...`
-     URI? Recommend port number alone; clients can build the URI.
-   - Stale-file handling on crash: if `dev` dies hard, the file
-     stays. Recommend the file write also include a heartbeat
-     timestamp; clients treat files older than N minutes as stale.
-   - Multiple `dev` sessions in the same aggregator: prevented by
-     port-file lock or allowed with overwrite semantics? Recommend
-     prevented (one session at a time per aggregator); second
-     invocation fails with an actionable message pointing at the
-     existing port file.
-   Closes in Phase 1 when the goal is implemented.
+A2. ~~**Port-file location and lifecycle.**~~ **Resolved by
+   fixed-default-port design.** No port file. The dev goal binds
+   `127.0.0.1:8487` by default and refuses to start if the port
+   is taken (with an error pointing at `-Dgraphitron.dev.port=N`
+   for the override case). Editors configure the same address on
+   every machine; multi-session is the rare case and uses the
+   override on both sides. Crash handling collapses to the JVM
+   shutdown hook (already in `WatchMojo`); no stale-file
+   detection, no heartbeat, no policy.
 
 A3. **`-parameters` propagation for service Javadoc.** The
    rewrite generator already emits a one-shot warning when it
@@ -571,14 +724,17 @@ A3. **`-parameters` propagation for service Javadoc.** The
    LSP diagnostic / status message rather than a build-time log.
    Closes in Phase 5.
 
-A4. **Grammar-binary sourcing for the jtreesitter migration.**
-   Three options: build `tree-sitter-graphql` from source in CI
-   per platform, vendor pre-built binaries from upstream, or
-   publish our own Maven artefact mirroring the bonede shape.
-   Closes in Phase 6 when the migration starts. Recommend the
-   build-from-source-in-CI path: the grammar source lives at a
-   stable upstream, our build owns the per-platform compilation,
-   and the binaries land in `src/main/resources/native/`.
+A4. ~~**Grammar-binary sourcing for the jtreesitter migration.**~~
+   **Resolved by Phase 1 grammar vendoring.** The
+   `tree-sitter-graphql` grammar source lands under
+   `graphitron-lsp/src/main/resources/grammars/` in Phase 1,
+   compiled per platform by our build. This drops the
+   `io.github.bonede:tree-sitter-graphql:master-a` snapshot
+   dependency immediately and turns Phase 6 into a pure binding
+   swap (the runtime artifact changes; the grammar source does
+   not). Per-platform native artefacts produced by the build
+   ship as classpath resources under
+   `graphitron-lsp/src/main/resources/native/<platform>/`.
 
 ## Appendix: spike learnings
 
@@ -621,21 +777,22 @@ Phase 0. Findings worth carrying forward:
   worked without manual setup. Phase 6's jtreesitter migration
   needs to replicate this for the new binding.
 
-Phase 0 commits on trunk:
-`feat(lsp): foundation module + Maven launcher`,
-`feat(lsp): WorkspaceFile + incremental parse`,
-`refactor(lsp): centralise GraphQL binding; expand CompletionData
-shape`.
+Phase 0 landed in commit `21c5e57 feat(lsp): graphitron-lsp module
++ Maven launcher (Phase 0 foundation)`.
 
 The Phase 0 `LspMojo` uses stdio transport. That was the cheapest
 shape to validate the architecture; it is not the final transport.
-Phase 1 replaces it with a socket-based `dev` Mojo (loopback,
-random port, port-file at `target/graphitron-lsp.port`) which lets
+Phase 1 replaces it with a TCP `dev` Mojo (loopback, fixed default
+port `8487`, override via `-Dgraphitron.dev.port=N`) which lets
 the LSP and the schema-watch loop coexist in one JVM and decouples
 the LSP lifecycle from any individual editor / agent connection.
 The decision to use sockets emerged from asking whether the user
 docs read cleanly with two separate goals (`lsp` + `watch`); they
-did not.
+did not. The further decision to use a fixed default port instead
+of a dynamic port + port-file emerged from asking whether real
+editor LSP clients can read a port file and dial a socket without
+a wrapper script; mostly they cannot. A static address composes
+with stock LSP-client config.
 
 ## Appendix: alternatives rejected
 
