@@ -1,6 +1,6 @@
 ---
 title: "Stub #3: Interface / union fetchers"
-status: Spec
+status: In Progress
 bucket: stubs
 priority: 1
 ---
