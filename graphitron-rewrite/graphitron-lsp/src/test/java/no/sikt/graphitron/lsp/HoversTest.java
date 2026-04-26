@@ -147,17 +147,17 @@ class HoversTest {
             "Movies the rental store carries",
             CompletionData.SourceLocation.UNKNOWN,
             List.of(
-                new CompletionData.Column("film_id", "Integer", false, ""),
-                new CompletionData.Column("title", "String", false, "")
+                CompletionData.Column.of("film_id", "Integer", false, ""),
+                CompletionData.Column.of("title", "String", false, "")
             ),
             List.of(
-                new CompletionData.Reference("language", "FILM__FILM_LANGUAGE_ID_FKEY", false)
+                CompletionData.Reference.of("language", "FILM__FILM_LANGUAGE_ID_FKEY", false)
             )
         );
         var language = new CompletionData.Table(
             "language", "Spoken languages",
             CompletionData.SourceLocation.UNKNOWN,
-            List.of(new CompletionData.Column("language_id", "Integer", false, "")),
+            List.of(CompletionData.Column.of("language_id", "Integer", false, "")),
             List.of()
         );
         return new CompletionData(List.of(film, language), List.of(), List.of());

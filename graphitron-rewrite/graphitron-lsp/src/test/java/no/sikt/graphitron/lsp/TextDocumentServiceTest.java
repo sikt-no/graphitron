@@ -227,6 +227,37 @@ class TextDocumentServiceTest {
     }
 
     @Test
+    void definitionRequestRoundTripsCatalogUri() throws Exception {
+        var filmDef = new CompletionData.SourceLocation("file:///fake/jooq/Film.java", 0, 0);
+        var catalog = new CompletionData(
+            List.of(new CompletionData.Table(
+                "film", "", filmDef, List.of(), List.of()
+            )),
+            List.of(),
+            List.of()
+        );
+        var server = new GraphitronLanguageServer(new no.sikt.graphitron.lsp.state.Workspace(catalog));
+        var proxy = startServer(server);
+        proxy.initialize(new InitializeParams()).get(5, TimeUnit.SECONDS);
+
+        String uri = "file:///def.graphqls";
+        String source = "type Foo @table(name: \"film\") { bar: Int }\n";
+        proxy.getTextDocumentService().didOpen(new DidOpenTextDocumentParams(
+            new TextDocumentItem(uri, "graphql", 1, source)));
+
+        int filmStart = source.indexOf("film");
+        var defParams = new org.eclipse.lsp4j.DefinitionParams(
+            new TextDocumentIdentifier(uri),
+            new Position(0, filmStart + 1)
+        );
+        var result = proxy.getTextDocumentService().definition(defParams).get(5, TimeUnit.SECONDS);
+
+        assertThat(result.isLeft()).isTrue();
+        assertThat(result.getLeft()).hasSize(1);
+        assertThat(result.getLeft().get(0).getUri()).isEqualTo("file:///fake/jooq/Film.java");
+    }
+
+    @Test
     void didCloseClearsDiagnosticsForFile() throws Exception {
         var server = new GraphitronLanguageServer(new no.sikt.graphitron.lsp.state.Workspace());
         var proxy = startServer(server);

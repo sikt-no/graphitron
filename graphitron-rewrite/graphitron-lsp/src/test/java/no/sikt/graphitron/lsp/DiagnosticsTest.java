@@ -170,11 +170,11 @@ class DiagnosticsTest {
         var film = new CompletionData.Table(
             "film", "", CompletionData.SourceLocation.UNKNOWN,
             List.of(
-                new CompletionData.Column("film_id", "Integer", false, ""),
-                new CompletionData.Column("title", "String", false, "")
+                CompletionData.Column.of("film_id", "Integer", false, ""),
+                CompletionData.Column.of("title", "String", false, "")
             ),
             List.of(
-                new CompletionData.Reference("language", "FILM__FILM_LANGUAGE_ID_FKEY", false)
+                CompletionData.Reference.of("language", "FILM__FILM_LANGUAGE_ID_FKEY", false)
             )
         );
         var language = new CompletionData.Table(

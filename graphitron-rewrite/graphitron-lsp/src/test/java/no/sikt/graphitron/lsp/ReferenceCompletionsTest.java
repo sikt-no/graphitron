@@ -124,8 +124,8 @@ class ReferenceCompletionsTest {
             "film", "", CompletionData.SourceLocation.UNKNOWN,
             List.of(),
             List.of(
-                new CompletionData.Reference("language", "FILM__FILM_LANGUAGE_ID_FKEY", false),
-                new CompletionData.Reference("film_actor", "FILM_ACTOR__FILM_ACTOR_FILM_ID_FKEY", true)
+                CompletionData.Reference.of("language", "FILM__FILM_LANGUAGE_ID_FKEY", false),
+                CompletionData.Reference.of("film_actor", "FILM_ACTOR__FILM_ACTOR_FILM_ID_FKEY", true)
             )
         );
         var language = new CompletionData.Table(
