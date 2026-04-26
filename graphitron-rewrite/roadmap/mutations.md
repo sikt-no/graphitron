@@ -110,18 +110,25 @@ discarded at classify time.
 9. **`InputField.ColumnReferenceField` (cross-table reference) in a mutation input is deferred.**
    Gate: `"ColumnReferenceField in @mutation inputs is not yet supported"`.
 
-9b. **`InputField.NodeIdReferenceField` (cross-table NodeID reference) in a mutation input is
+10. **`InputField.NodeIdReferenceField` (cross-table NodeID reference) in a mutation input is
     deferred.**  Same rationale as #9 — cross-table refs would need a join-and-resolve step on the
     write side.  Gate: `"NodeIdReferenceField in @mutation inputs is not yet supported"`.  Full set
     of currently-allowed `InputField` variants in a mutation `@table` input is therefore
     `ColumnField` only; everything else (`NestingField`, `NodeIdField`, `NodeIdReferenceField`,
     `ColumnReferenceField`) is gated.
 
-10. **Listed inputs (`in: [CustomerInputTable]`) are deferred for Phase 1.**  The initial
+11. **Listed inputs (`in: [CustomerInputTable]`) are deferred for Phase 1.**  The initial
     implementation handles only single-record inputs.  Listed-input support is a follow-up
     (see Non-goals).
 
-11. **Non-`TableInputArg` arguments on DML `@mutation` fields are rejected.**  `classifyMutationInput`
+12. **`@condition` on a DML `@mutation` input argument is not supported.**  If
+    `tia.argCondition().isPresent()` after `buildLookupBindings`, return `UnclassifiedField` with
+    `"@condition on a @mutation field argument is not supported"`.  `@condition` is a query-side
+    directive whose projection into WHERE clauses is mediated by condition-method call sites;
+    DML mutations emit inline jOOQ predicates directly from `fieldBindings` and have no
+    concept of a condition method to invoke.  Gate: `classifyMutationInput` Pass 2.
+
+13. **Non-`TableInputArg` arguments on DML `@mutation` fields are rejected.**  `classifyMutationInput`
     (see Phase 1b) returns `UnclassifiedField` if any argument is anything other than a
     `TableInputArg`, including `PlainInputArg`, scalar args, pagination args, orderBy args.
     Mutations have no parent table context, so those argument shapes are nonsensical here and
@@ -137,7 +144,7 @@ discarded at classify time.
     authors to move those fields onto the `@table` input type.  Record the count and decision in
     the Phase 1 landing commit.
 
-12. **DML `@mutation` return type must be `ID` (Single or List), `T` (Single of
+14. **DML `@mutation` return type must be `ID` (Single or List), `T` (Single of
     `TableBoundReturnType`), or `[T]` (List of `TableBoundReturnType`).**  Other shapes (`Int`,
     `Boolean`, any non-`ID` scalar, `PolymorphicReturnType`, `ResultReturnType`, or `Connection`
     wrapper) are rejected at classifier time with
@@ -232,20 +239,21 @@ named type and look up `ctx.types.get(typeName)`.  If the resolved type is a
 uses at `:781-782` (`buildLookupBindings` + `tit.inputFields()`) and collect it.  Allocate a fresh
 `List<String> bindingErrors` per call and pass it into `buildLookupBindings`; if non-empty after
 the call, prepend its entries to the rejection reason and return as an `UnclassifiedField`
-(don't drop them silently).  Otherwise, record a rejection per Invariant #11.  At the end of
+(don't drop them silently).  Otherwise, record a rejection per Invariant #13.  At the end of
 Pass 1:
 - Zero `TableInputArg` found → error "no `@table` input argument found on `@mutation` field".
 - Two or more found → error per Invariant #1.
-- Any non-`TableInputArg` argument → error per Invariant #11.
+- Any non-`TableInputArg` argument → error per Invariant #13.
 
 **Pass 2 — invariant checks on the single `tia`.**  Only reached when Pass 1 produced exactly one
 `TableInputArg`:
-1. `tia.list()` true → error per Invariant #10.
-2. Any `tia.fields()` entry is `NestingField` / `NodeIdField` / `NodeIdReferenceField` /
-   `ColumnReferenceField` → error per Invariants #7–9 / #9b.  `ColumnField` is the only
+1. `tia.list()` true → error per Invariant #11.
+2. `tia.argCondition().isPresent()` → error per Invariant #12.
+3. Any `tia.fields()` entry is `NestingField` / `NodeIdField` / `NodeIdReferenceField` /
+   `ColumnReferenceField` → error per Invariants #7–10.  `ColumnField` is the only
    permitted variant in Phase 1.
-3. UPDATE / DELETE / UPSERT: `tia.fieldBindings()` empty → error per Invariants #2–3.
-4. UPDATE: every `ColumnField` in `tia.fields()` has its name in `tia.fieldBindings()` →
+4. UPDATE / DELETE / UPSERT: `tia.fieldBindings()` empty → error per Invariants #2–3.
+5. UPDATE: every `ColumnField` in `tia.fields()` has its name in `tia.fieldBindings()` →
    error per Invariant #4.
 
 Return shape: a small record carrying either `(TableInputArg value, null error)` or
@@ -274,12 +282,14 @@ before validation is invoked.
 | `upsertFilm(in: FilmInput): ID @mutation(typeName: UPSERT)` with `@lookupKey` | `MutationUpsertTableField` |
 | Any DML variant with `NestingField` in input | `UnclassifiedField` with Invariant #7 message |
 | Any DML variant with `NodeIdField` in input | `UnclassifiedField` with Invariant #8 message |
-| Any DML variant with `NodeIdReferenceField` in input | `UnclassifiedField` with Invariant #9b message |
+| Any DML variant with `NodeIdReferenceField` in input | `UnclassifiedField` with Invariant #10 message |
 | Any DML variant with `ColumnReferenceField` in input | `UnclassifiedField` with Invariant #9 message |
-| DML variant with a plain (non-`@table`) input arg | `UnclassifiedField` with Invariant #11 message |
-| DML variant with listed input (`in: [FilmInput]`) | `UnclassifiedField` with Invariant #10 message |
+| DML variant with two `@table` input arguments | `UnclassifiedField` with Invariant #1 message |
+| DML variant with a plain (non-`@table`) input arg | `UnclassifiedField` with Invariant #13 message |
+| DML variant with listed input (`in: [FilmInput]`) | `UnclassifiedField` with Invariant #11 message |
+| DML variant whose `@table` input arg carries `@condition` | `UnclassifiedField` with Invariant #12 message |
 | DML variant with `@lookupKey` on a list-typed input field (e.g. `ids: [ID!]! @lookupKey`) | `UnclassifiedField` whose reason includes the `buildLookupBindings` per-field error |
-| DML variant with non-`ID`/non-`T` return (e.g. `: Int`, `: Boolean`, `Connection<T>`) | `UnclassifiedField` with Invariant #12 message |
+| DML variant with non-`ID`/non-`T` return (e.g. `: Int`, `: Boolean`, `Connection<T>`) | `UnclassifiedField` with Invariant #14 message |
 | `@service` + `@mutation` together | `UnclassifiedField` (existing check at `FieldBuilder.java:1665-1668`) |
 | `@mutation` with no `typeName` argument | `UnclassifiedField` with existing "both absent" message — Phase 1b's `classifyMutationInput` must not fire before this fallthrough |
 
@@ -297,7 +307,7 @@ public static Object createFilm(DataFetchingEnvironment env) {
     Map<?, ?> in = (Map<?, ?>) env.getArgument("in");
     return dsl
         .insertInto(Tables.FILM, Tables.FILM.FILM_ID, /* … more columns … */)
-        .values(DSL.val((Long) in.get("filmId")), /* … */)
+        .values(DSL.val(in.get("filmId"), Tables.FILM.FILM_ID.getDataType()), /* … */)
         .returningResult(/* return expression */)
         .fetchOne(r -> r.get(/* return column */));
 }
@@ -312,8 +322,13 @@ public static Object createFilm(DataFetchingEnvironment env) {
 - **Column list**: every `InputField.ColumnField` in `tia.fields()`, in declaration order.
   `@lookupKey` fields are included — INSERT does not treat them specially.
 - **Values list**: parallel to the column list.  Each value is
-  `DSL.val((<JavaType>) in.get("<sdlFieldName>"))` where `sdlFieldName` is
-  `InputField.ColumnField.name()` and `<JavaType>` is derived from `ColumnRef.columnClass()`.
+  `DSL.val(in.get("<sdlFieldName>"), Tables.T.<col.javaName()>.getDataType())` where `sdlFieldName`
+  is `InputField.ColumnField.name()` and `col.javaName()` is `ColumnRef.javaName()` (the jOOQ
+  field-constant name, e.g. `FILM_ID`).  The two-argument form delegates coercion to the column's
+  registered `Converter` at bind time — no Java-side cast, no explicit type check.  Enum-typed
+  columns receive a `String` from graphql-java and are coerced by the column's `DataType`; `ID`-typed
+  columns receive a `String` and are coerced to the PK Java type.  See the "Column value binding"
+  convention in `rewrite-design-principles.md`.
 - **Return expression** (see below).
 
 #### Return expression: `buildMutationReturnExpression`
@@ -346,10 +361,10 @@ Dispatch over `f.returnType()`:
 | `ResultReturnType` | **Reject at classifier time, Phase 1.** | (n/a) |
 
 The `[ID]` and `[T]` List rows are exercised mainly by UPSERT / batch UPDATE over `@lookupKey`
-matching multiple rows.  Phase 1's listed-input gate (Invariant #10) still applies to the input
+matching multiple rows.  Phase 1's listed-input gate (Invariant #11) still applies to the input
 side; the return side is independent and does admit List wrappers today.
 
-The four "reject at classifier time" rows are enforced by Invariant #12.  This supersedes
+The four "reject at classifier time" rows are enforced by Invariant #14.  This supersedes
 an earlier sentinel approach (emit `DSL.val(1)` for non-`ID` scalar returns): the sentinel's
 semantics differ between INSERT (always 1) and UPDATE/DELETE (affected-row count), and
 `returningResult(DSL.val(1))` cannot express either honestly.  Future demand for `Int` returns
@@ -404,7 +419,7 @@ phase's landing commit.
   `TableBoundReturnType`-returning variant to exercise `RETURNING (multiset)` per the note above.
 - Compile gate: `mvn compile -pl :graphitron-test -Plocal-db`.
 
-(Negative `Invariant #12` cases — `Int` / `Boolean` / `Connection<T>` returns — are exercised at
+(Negative `Invariant #14` cases — `Int` / `Boolean` / `Connection<T>` returns — are exercised at
 the classifier level in Phase 1d's pipeline tests; no execution-test repeat is needed here.)
 
 ---
@@ -417,10 +432,9 @@ the classifier level in Phase 1d's pipeline tests; no execution-test repeat is n
 public static Object deleteFilm(DataFetchingEnvironment env) {
     var dsl = graphitronContext(env).getDslContext(env);
     Map<?, ?> in = (Map<?, ?>) env.getArgument("in");
-    Long filmId = (Long) in.get("filmId");
     return dsl
         .deleteFrom(Tables.FILM)
-        .where(Tables.FILM.FILM_ID.eq(filmId))
+        .where(Tables.FILM.FILM_ID.eq(DSL.val(in.get("filmId"), Tables.FILM.FILM_ID.getDataType())))
         .returningResult(Tables.FILM.FILM_ID)
         .fetchOne(r -> r.get(Tables.FILM.FILM_ID));
 }
@@ -432,6 +446,9 @@ public static Object deleteFilm(DataFetchingEnvironment env) {
 
 When `tia.fieldBindings()` has a single binding, emit `.where(col.eq(val))`.
 When multiple, emit `.where(col1.eq(v1).and(col2.eq(v2)))`.
+In both cases `val` is `DSL.val(in.get(binding.inputFieldName()), Tables.T.COL.getDataType())`
+— the two-argument form that delegates coercion to the column's `Converter` (see "Values list"
+description in Phase 2 and the "Column value binding" convention in `rewrite-design-principles.md`).
 
 The same `buildMutationReturnExpression` helper (introduced in Phase 2) is reused.
 
@@ -469,12 +486,10 @@ Negative execution test: `deleteFilm(in: {filmId: 99999})` on a nullable `ID` re
 public static Object updateFilm(DataFetchingEnvironment env) {
     var dsl = graphitronContext(env).getDslContext(env);
     Map<?, ?> in = (Map<?, ?>) env.getArgument("in");
-    Long filmId = (Long) in.get("filmId");         // @lookupKey → WHERE
-    String title = (String) in.get("title");       // regular field → SET
     return dsl
         .update(Tables.FILM)
-        .set(Tables.FILM.TITLE, title)
-        .where(Tables.FILM.FILM_ID.eq(filmId))
+        .set(Tables.FILM.TITLE, DSL.val(in.get("title"), Tables.FILM.TITLE.getDataType()))
+        .where(Tables.FILM.FILM_ID.eq(DSL.val(in.get("filmId"), Tables.FILM.FILM_ID.getDataType())))
         .returningResult(Tables.FILM.FILM_ID)
         .fetchOne(r -> r.get(Tables.FILM.FILM_ID));
 }
@@ -511,10 +526,10 @@ jOOQ supports `INSERT ... ON CONFLICT ... DO UPDATE SET ...` via:
 
 ```java
 dsl.insertInto(Tables.FILM, cols...)
-   .values(vals...)
+   .values(DSL.val(in.get("filmId"), Tables.FILM.FILM_ID.getDataType()), /* … */)
    .onConflict(Tables.FILM.FILM_ID)   // @lookupKey columns
    .doUpdate()
-   .set(Tables.FILM.TITLE, title)     // non-@lookupKey columns
+   .set(Tables.FILM.TITLE, DSL.val(in.get("title"), Tables.FILM.TITLE.getDataType()))
    .returningResult(/* … */)
    .fetchOne(/* … */);
 ```
@@ -599,7 +614,9 @@ currently doesn't — the only observable difference is in graphql-java's coerci
 generator output).
 
 Both service variants move from `NOT_IMPLEMENTED_REASONS` to `IMPLEMENTED_LEAVES`; both use the
-shared `buildMethodBackedCallArgs` helper.
+shared `buildMethodBackedCallArgs` helper.  Pass `null` for `tableExpression` — root mutation
+fields have no parent table context, so no `ParamSource.Table` slot will be present in the
+method's param list.  The emitter already handles `null` there for root service queries.
 
 #### Tests
 
@@ -613,14 +630,14 @@ through graphql-java's registered fetchers.
 ## Non-goals
 
 - **Listed inputs** (`in: [FilmInput]`): the `list` flag on `TableInputArg` causes a classifier
-  gate (Invariant #10).  Unblocking listed inputs requires iterating over the input list and
+  gate (Invariant #11).  Unblocking listed inputs requires iterating over the input list and
   constructing a batch INSERT / batch UPDATE / DELETE / UPSERT.  The legacy code uses jOOQ
   `batchInsert` / `batchUpdate` / `batchDelete` / `batchStore` for this.  Tracked as a follow-up.
 - **Nested input types** (`NestingField`): deferred per Invariant #7.
 - **`InputField.NodeIdField` in mutation inputs**: deferred to argres Phase 3's
   `NodeIdBinding` variant of `InputColumnBinding` (Invariant #8).
 - **`ColumnReferenceField` in mutation inputs**: deferred (Invariant #9).
-- **Non-`TableInputArg` arguments on DML fields**: deferred (Invariant #11).  A future plan could
+- **Non-`TableInputArg` arguments on DML fields**: deferred (Invariant #13).  A future plan could
   admit scalar context arguments alongside the `@table` input (e.g. a `reason: String` audit field
   routed to a column not in the input type); today we reject them rather than invent a precedence
   story.
@@ -629,7 +646,7 @@ through graphql-java's registered fetchers.
   layer.  Today the DB rejects incomplete INSERTs at execute time; the rewrite does not try
   to beat the DB to the punch.  Promote to Active if three or more production rejections trace
   back to runtime incomplete-INSERT errors that a classifier check would have caught cheaply.
-- **Non-`ID` / non-`TableBoundReturnType` return types on DML fields** (Invariant #12): deferred.
+- **Non-`ID` / non-`TableBoundReturnType` return types on DML fields** (Invariant #14): deferred.
   The previous position (emit `DSL.val(1)` as an affected-row sentinel) is withdrawn: the
   semantics differ between INSERT (always 1) and UPDATE/DELETE (actual affected count), and
   `returningResult(DSL.val(1))` cannot express either honestly.  When a consumer needs an `Int`
