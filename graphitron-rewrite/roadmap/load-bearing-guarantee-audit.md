@@ -1,6 +1,6 @@
 ---
 title: "Load-bearing classifier guarantee audit annotations"
-status: Spec
+status: Ready
 priority: 14
 ---
 
@@ -68,20 +68,35 @@ multiple checks via `@Repeatable`. Local-variable annotations don't
 survive past compile in stock Java, so both are method-level (or
 type-level for cases where the contract spans a class).
 
+Convention for `description` and `reliesOn`: name the *specific arm*,
+not the whole method. `reflectTableMethod` has many rejection arms; the
+load-bearing one is the strict `ClassName.equals` branch. The annotation
+lands on the method, but the string should read "rejects wider return
+types via the strict-equality arm" so a reader landing via find-usages
+knows which lines matter.
+
 ### Test
 
 `LoadBearingGuaranteeAuditTest` under
 `graphitron-rewrite/src/test/java/no/sikt/graphitron/rewrite/model/`
-discovers candidate classes by walking `target/classes` and
-`target/test-classes` under the rewrite module's package root
-(`no/sikt/graphitron/rewrite/`) directly via `Path` enumeration; loads
-each class via the test classloader; collects every method/class
-annotated with either annotation; groups by key; and asserts:
+discovers candidate classes by walking `target/classes` under the
+rewrite module's package root (`no/sikt/graphitron/rewrite/`) directly
+via `Path` enumeration; loads each class via the test classloader;
+collects every method/class annotated with either annotation; groups by
+key; and asserts:
 
-1. Every key with a `@DependsOnClassifierCheck` consumer has exactly one
+1. The walk yielded a non-zero count of candidate classes. A vacuous
+   empty walk (e.g., test invoked before the rewrite module compiled,
+   or from an output-dir that doesn't match `target/classes`) would
+   make every other assertion hold trivially; fail loudly with a
+   diagnostic naming the path that was scanned.
+2. Every key with a `@DependsOnClassifierCheck` consumer has exactly one
    `@LoadBearingClassifierCheck` producer. Failure names both sides.
-2. No key has more than one producer. Failure names both producers.
-3. `description` and `reliesOn` are non-blank.
+3. No key has more than one producer. Failure names both producers.
+4. `description` and `reliesOn` are non-blank.
+
+Test-only classes are not annotated, so the walk is scoped to
+`target/classes` only — no need to also walk `target/test-classes`.
 
 Producers without consumers are *allowed*. Some classifier checks reject
 shapes for hygiene rather than because an emitter relies on them, and
@@ -116,6 +131,18 @@ type (`computeServiceRecordReturnType`) and does *not* depend on the
 strict guarantee. Annotating the common helper would claim a contract
 that the helper alone does not uniformly enforce.
 
+Note on the third key: the framing for the first two keys is "the
+emitter omits a defensive cast or null guard because the classifier
+already rejected the bad shape". The `ColumnField` consumer doesn't
+quite fit that mould — it explicitly throws `IllegalStateException` on
+`parentTable == null`, so the null guard is present, just promoted to a
+hard fail. The annotation pair earns its keep here for navigation and
+drift annunciation rather than guard elision: a reader landing on the
+throw via find-usages jumps to the producer that makes it unreachable,
+and a producer-side relaxation that re-enables the path is named
+explicitly by the audit failure rather than only via the throw firing
+on a real schema.
+
 ## Implementation
 
 - `model/LoadBearingClassifierCheck.java`,
@@ -123,6 +150,8 @@ that the helper alone does not uniformly enforce.
   `model/DependsOnClassifierChecks.java`: the annotation triple.
 - Six annotations on the six sites in the table above.
 - `model/LoadBearingGuaranteeAuditTest.java`: the reflective test.
+- `model/auditfixture/OrphanedConsumer.java`: the deliberate-violation
+  fixture for the meta-test.
 
 ## Documentation
 
@@ -135,11 +164,27 @@ load-bearing classifier check, declare it with
 
 ## Tests
 
-The audit test itself is the test deliverable. To prove it actually
-fails on drift, the implementer mutation-tests once locally by removing
-one `@LoadBearingClassifierCheck` and confirming the test fails with the
-expected error pointing at the orphaned consumer. No fixture committed;
-implementer-then-reviewer loop verifies it.
+The audit test itself is the primary test deliverable. To keep
+confidence in the failure-detection durable across future refactors of
+the walker, a committed meta-test exercises the audit logic against a
+deliberately-broken fixture:
+
+- `src/test/java/no/sikt/graphitron/rewrite/model/auditfixture/`
+  contains a `OrphanedConsumer` class with a `@DependsOnClassifierCheck`
+  whose `key` references a producer that does not exist anywhere in the
+  module (e.g., `key = "audit-fixture-orphan"`).
+- `LoadBearingGuaranteeAuditTest` exposes the discovery + grouping
+  logic via a package-private static method that takes a class iterable
+  and returns the set of violations as a structured value
+  (`record AuditViolation(...)` or similar). The headline test feeds it
+  the production walk; the meta-test feeds it just the fixture class
+  and asserts the orphan is reported with the expected key.
+- The headline test scopes its walk to exclude `auditfixture/`, so the
+  fixture's deliberate violation never trips the production assertion.
+
+This trades a small amount of test surface (one fixture class, one
+extra test method) for an automated guarantee that the audit still
+detects what it claims to detect, even after the walker is refactored.
 
 ## Open questions
 
