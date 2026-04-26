@@ -23,10 +23,10 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
 | Docs as an index into classification tests | Ready (deferred) | [plan](docs-as-index-into-tests.md) |
 | Java LSP rewrite + introspect retirement + `dev` goal | Ready | [plan](graphitron-lsp.md) |
-| Load-bearing classifier guarantee audit annotations | Ready | [plan](load-bearing-guarantee-audit.md) |
 | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` | In Progress | [plan](retire-maven-plugin.md) |
 | First-class Connection, Edge, PageInfo type variants | In Review | [plan](firstclass-connection-types.md) |
 | `@notGenerated` directive removal | In Review | [plan](remove-notgenerated.md) |
+| Load-bearing classifier guarantee audit annotations | In Review | [plan](load-bearing-guarantee-audit.md) |
 
 ---
 

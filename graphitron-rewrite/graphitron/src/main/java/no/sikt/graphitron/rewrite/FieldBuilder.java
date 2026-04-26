@@ -1956,6 +1956,13 @@ class FieldBuilder {
         return new BatchKey.RowKeyed(fkJoin.sourceColumns());
     }
 
+    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
+        key = "column-field-requires-table-backed-parent",
+        description = "ChildField.ColumnField is constructed only inside this method (sole "
+            + "construction site at the tail return), and this method is only entered for "
+            + "parents that are table-backed types. Lets the TypeFetcherGenerator switch arm "
+            + "treat parentTable == null as a classifier-invariant violation rather than an "
+            + "expected runtime branch.")
     private GraphitronField classifyChildFieldOnTableType(GraphQLFieldDefinition fieldDef, String parentTypeName, TableBackedType tableType, Set<String> expandingTypes) {
         String name = fieldDef.getName();
         SourceLocation location = locationOf(fieldDef);
