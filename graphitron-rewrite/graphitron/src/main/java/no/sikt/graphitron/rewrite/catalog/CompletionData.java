@@ -4,14 +4,10 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * In-memory catalog the LSP queries to answer completion / hover / diagnostic
- * requests. Mirrors the data shapes the Rust LSP's
- * {@code completion_data} module deserialises from
- * {@code graphitron-lsp-config.json}, minus the JSON layer; this version is
- * populated by Phase 2 through a {@code RewriteCatalogView} facade that
- * delegates to {@code JooqCatalog} (tables / columns / references),
- * {@code ServiceCatalog} (methods, exposing {@code MethodRef} /
- * {@code ParamSource}), and a new rewrite-side {@code ScalarCatalog}.
+ * In-memory catalog the LSP queries to answer completion / hover /
+ * diagnostic / goto-definition requests. Built by
+ * {@link CatalogBuilder} from {@link no.sikt.graphitron.rewrite.JooqCatalog}
+ * and the parsed {@link graphql.schema.GraphQLSchema}.
  *
  * <p>Records are immutable; the catalog is rebuilt rather than mutated when
  * the consumer's compiled classpath changes.
@@ -55,13 +51,22 @@ public record CompletionData(
      *
      * @param description Javadoc for the column (e.g. lifted from
      *                    {@code COMMENT ON COLUMN}); empty if absent.
+     * @param definition  source location of the column declaration in the
+     *                    jOOQ-generated table class; {@link SourceLocation#UNKNOWN}
+     *                    when the source is not on disk.
      */
     public record Column(
         String name,
         String graphqlType,
         boolean nullable,
-        String description
-    ) {}
+        String description,
+        SourceLocation definition
+    ) {
+        /** Test-friendly factory: location defaults to {@link SourceLocation#UNKNOWN}. */
+        public static Column of(String name, String graphqlType, boolean nullable, String description) {
+            return new Column(name, graphqlType, nullable, description, SourceLocation.UNKNOWN);
+        }
+    }
 
     /**
      * FK relation between tables.
@@ -69,8 +74,22 @@ public record CompletionData(
      * @param targetTable other table name
      * @param keyName     jOOQ Java field name of the FK ({@code <TABLE>__<FK>})
      * @param inverse     {@code true} if the other table holds the FK
+     * @param definition  source location of the FK declaration in the
+     *                    jOOQ-generated {@code Keys} class;
+     *                    {@link SourceLocation#UNKNOWN} when the source is
+     *                    not on disk.
      */
-    public record Reference(String targetTable, String keyName, boolean inverse) {}
+    public record Reference(
+        String targetTable,
+        String keyName,
+        boolean inverse,
+        SourceLocation definition
+    ) {
+        /** Test-friendly factory: location defaults to {@link SourceLocation#UNKNOWN}. */
+        public static Reference of(String targetTable, String keyName, boolean inverse) {
+            return new Reference(targetTable, keyName, inverse, SourceLocation.UNKNOWN);
+        }
+    }
 
     /**
      * GraphQL scalar type known to the generator.

@@ -3,6 +3,7 @@ package no.sikt.graphitron.lsp.server;
 import no.sikt.graphitron.lsp.completions.FieldCompletions;
 import no.sikt.graphitron.lsp.completions.ReferenceCompletions;
 import no.sikt.graphitron.lsp.completions.TableCompletions;
+import no.sikt.graphitron.lsp.definition.Definitions;
 import no.sikt.graphitron.lsp.diagnostics.Diagnostics;
 import no.sikt.graphitron.lsp.hover.Hovers;
 import no.sikt.graphitron.lsp.parsing.Directives;
@@ -12,12 +13,15 @@ import no.sikt.graphitron.lsp.state.Workspace;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionList;
 import org.eclipse.lsp4j.CompletionParams;
+import org.eclipse.lsp4j.DefinitionParams;
 import org.eclipse.lsp4j.DidChangeTextDocumentParams;
 import org.eclipse.lsp4j.DidCloseTextDocumentParams;
 import org.eclipse.lsp4j.DidOpenTextDocumentParams;
 import org.eclipse.lsp4j.DidSaveTextDocumentParams;
 import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.HoverParams;
+import org.eclipse.lsp4j.Location;
+import org.eclipse.lsp4j.LocationLink;
 import org.eclipse.lsp4j.PublishDiagnosticsParams;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.eclipse.lsp4j.services.LanguageClient;
@@ -101,6 +105,21 @@ public class GraphitronTextDocumentService implements TextDocumentService {
                 client.publishDiagnostics(new PublishDiagnosticsParams(uri, diagnostics));
             });
         }
+    }
+
+    @Override
+    public CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>> definition(DefinitionParams params) {
+        return CompletableFuture.supplyAsync(() -> {
+            var fileOpt = workspace.get(params.getTextDocument().getUri());
+            if (fileOpt.isEmpty()) return Either.forLeft(List.of());
+            var file = fileOpt.get();
+            var pos = Positions.resolve(file.source(),
+                params.getPosition().getLine(),
+                params.getPosition().getCharacter()).tsPoint();
+            return Definitions.compute(file, workspace.catalog(), pos)
+                .map(loc -> Either.<List<? extends Location>, List<? extends LocationLink>>forLeft(List.of(loc)))
+                .orElseGet(() -> Either.forLeft(List.of()));
+        });
     }
 
     @Override
