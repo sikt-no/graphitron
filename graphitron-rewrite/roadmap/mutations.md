@@ -76,9 +76,17 @@ discarded at classify time.
    `UnclassifiedField` with a descriptive reason.  Multiple `@table` input args are also
    rejected at classifier time (`"@mutation field has more than one @table input argument"`).
 
-2. **UPDATE and DELETE require at least one `@lookupKey` binding.**  `fieldBindings` must be
-   non-empty; if empty, return `UnclassifiedField` with
+2. **UPDATE and DELETE `@lookupKey` bindings must cover the full primary key.**  `fieldBindings`
+   must be non-empty; if empty, return `UnclassifiedField` with
    `"@mutation(typeName: UPDATE/DELETE) requires at least one @lookupKey field in the input type"`.
+   Beyond non-empty: when `ctx.catalog.nodeIdMetadata(tia.inputTable().sqlName())` is present,
+   every column in `nodeIdMeta.keyColumns()` must appear in `tia.fieldBindings()` (matched by
+   SQL column name); if any key column is absent, return `UnclassifiedField` with
+   `"@mutation(typeName: UPDATE/DELETE) @lookupKey fields do not cover all PK column(s); missing: <names>"`.
+   For non-`@node` tables (no `nodeIdMetadata`), the basic non-empty check suffices — the DB will
+   reject a partial-key WHERE clause at runtime.
+   Composite-PK tables where all PK columns appear as `@lookupKey` fields are fully supported:
+   each PK column contributes one `.eq(val)` predicate, and the emitter chains them with `.and(...)`.
 
 3. **UPSERT requires at least one `@lookupKey` binding** (the ON CONFLICT key), same gate as #2.
 
@@ -90,13 +98,14 @@ discarded at classify time.
 
 5. **INSERT does not require `@lookupKey`.**  `fieldBindings` may be empty for INSERT.
 
-6. **INSERT column coverage is a runtime contract, not a classifier invariant.**  The classifier
-   does **not** verify that every NOT-NULL, no-default column of the target table is covered by an
-   input field.  The target DB rejects the INSERT at execute time if coverage is incomplete; this
-   is the declared contract.  Rationale: computing "NOT-NULL without default" from the jOOQ catalog
-   at classify time is feasible but non-trivial (default metadata is not always preserved through
-   the generator) and the DB error is actionable.  A follow-up item may promote this to a classifier
-   gate once the catalog metadata is reliably available; tracked in Non-goals.
+6. **INSERT and UPSERT column coverage is a runtime contract, not a classifier invariant.**  The
+   classifier does **not** verify that every NOT-NULL, no-default column of the target table is
+   covered by an input field, nor that the UPSERT's ON CONFLICT key aligns with any particular
+   unique index.  Whatever columns the schema author places in the input type are mapped to DML
+   verbatim; the DB rejects at execute time if coverage is wrong.  This is the declared contract:
+   computing "NOT-NULL without default" from the jOOQ catalog at classify time is non-trivial (default
+   metadata is not always preserved through the generator) and the DB error is actionable.  A
+   follow-up item may promote this to a classifier gate; tracked in Non-goals.
 
 7. **Nested `@table` input fields (`InputField.NestingField`) are deferred.**  If any field in
    `tia.fields()` is a `NestingField`, emit an `UnclassifiedField` at classify time
@@ -260,6 +269,10 @@ rejection per Invariant #13.  At the end of Pass 1:
 4. UPDATE / DELETE / UPSERT: `tia.fieldBindings()` empty → error per Invariants #2–3.
 5. UPDATE: every `ColumnField` in `tia.fields()` has its name in `tia.fieldBindings()` →
    error per Invariant #4.
+6. UPDATE / DELETE: when `ctx.catalog.nodeIdMetadata(tia.inputTable().sqlName())` is present,
+   check that every `nodeIdMeta.keyColumns()` entry has a matching SQL column name in
+   `tia.fieldBindings()`.  Missing columns → error per Invariant #2.  UPSERT is exempt: its
+   ON CONFLICT key is a unique-constraint choice, not required to match the full PK.
 
 Return shape: a file-private record inside `FieldBuilder`:
 `record MutationInputResult(ArgumentRef.InputTypeArg.TableInputArg value, String error) {}`.
@@ -298,11 +311,15 @@ before validation is invoked.
 | SDL shape | Expected outcome |
 |---|---|
 | `createFilm(in: FilmInput): ID @mutation(typeName: INSERT)` where `FilmInput @table(name: "film")` | `MutationInsertTableField(tableInputArg.inputTable = TableRef("film", "FILM", "Film", [...]))` |
-| `updateFilm(in: FilmInput): ID @mutation(typeName: UPDATE)` with `@lookupKey` on `FilmInput.id` | `MutationUpdateTableField` with `fieldBindings` non-empty |
+| `updateFilm(in: FilmInput): ID @mutation(typeName: UPDATE)` with `@lookupKey` on `FilmInput.filmId` covering the single-column PK | `MutationUpdateTableField` with `fieldBindings` non-empty |
 | `updateFilm` with no `@lookupKey` in input | `UnclassifiedField` with Invariant #2 message |
 | `updateFilm` where every input field is `@lookupKey` | `UnclassifiedField` with Invariant #4 message |
+| UPDATE on a composite-PK `@node` table where `@lookupKey` covers only one of two PK columns | `UnclassifiedField` with Invariant #2 PK-coverage message listing the missing column |
+| UPDATE on a composite-PK `@node` table where `@lookupKey` covers all PK columns | `MutationUpdateTableField` with `fieldBindings` carrying both bindings; emitter emits `.and(col1.eq(...), col2.eq(...))` |
+| DELETE on a composite-PK `@node` table where `@lookupKey` covers all PK columns | `MutationDeleteTableField` with `fieldBindings` carrying all key bindings |
 | `deleteFilm(in: FilmInput): ID @mutation(typeName: DELETE)` with `@lookupKey` | `MutationDeleteTableField` |
-| `upsertFilm(in: FilmInput): ID @mutation(typeName: UPSERT)` with `@lookupKey` | `MutationUpsertTableField` |
+| `upsertFilm(in: FilmInput): ID @mutation(typeName: UPSERT)` with `@lookupKey` on only one column of a composite PK | `MutationUpsertTableField` (UPSERT is exempt from the full-PK coverage check) |
+| `upsertFilm(in: FilmInput): ID @mutation(typeName: UPSERT)` with `@lookupKey` covering the full PK | `MutationUpsertTableField` |
 | Any DML variant with `NestingField` in input | `UnclassifiedField` with Invariant #7 message |
 | Any DML variant with `NodeIdField` in input | `UnclassifiedField` with Invariant #8 message |
 | Any DML variant with `NodeIdReferenceField` in input | `UnclassifiedField` with Invariant #10 message |
