@@ -83,13 +83,14 @@ class ConnectionTypeValidationTest {
             """);
         var errors = new GraphitronSchemaValidator().validate(schema);
         assertThat(errors)
-            .filteredOn(e -> e.coordinate().equals("FilmsConnection")
-                && e.message().contains("totalCount"))
+            .filteredOn(e -> e.coordinate().equals("FilmsConnection.totalCount"))
             .singleElement()
             .satisfies(e -> {
                 assertThat(e.kind()).isEqualTo(RejectionKind.INVALID_SCHEMA);
                 assertThat(e.message()).contains("must be of type 'Int'");
                 assertThat(e.message()).contains("String");
+                // Coordinate and location both point at the field, not the type.
+                assertThat(e.location()).isNotNull();
             });
     }
 
@@ -104,8 +105,7 @@ class ConnectionTypeValidationTest {
             """);
         var errors = new GraphitronSchemaValidator().validate(schema);
         assertThat(errors)
-            .filteredOn(e -> e.coordinate().equals("FilmsConnection")
-                && e.message().contains("totalCount"))
+            .filteredOn(e -> e.coordinate().equals("FilmsConnection.totalCount"))
             .singleElement()
             .satisfies(e -> assertThat(e.kind()).isEqualTo(RejectionKind.INVALID_SCHEMA));
     }

@@ -205,17 +205,26 @@ public class GraphitronSchemaValidator {
      * the field with any non-{@code Int} scalar (or a list / object type), the build fails with a
      * compiler-style error rather than silently mis-wiring the resolver. The synthesised path
      * always uses {@code Int}, so it never trips this check.
+     *
+     * <p>Coordinate and location point at the field, not the containing type, so editors and the
+     * watch-mode formatter highlight the exact line the author needs to fix. The field's AST
+     * {@code FieldDefinition} carries the structural source location; on the rare programmatic
+     * path where it is absent, fall back to the type-level location.
      */
     private void validateConnectionType(GraphitronType.ConnectionType type, List<ValidationError> errors) {
         var fd = type.schemaType().getFieldDefinition("totalCount");
         if (fd == null) return;
         var unwrapped = graphql.schema.GraphQLTypeUtil.unwrapNonNull(fd.getType());
         if (unwrapped != graphql.Scalars.GraphQLInt) {
+            var def = fd.getDefinition();
+            var location = def != null && def.getSourceLocation() != null
+                ? def.getSourceLocation()
+                : type.location();
             errors.add(new ValidationError(RejectionKind.INVALID_SCHEMA,
-                type.name(),
-                "Type '" + type.name() + "': field 'totalCount' must be of type 'Int' (got '"
+                type.name() + ".totalCount",
+                "Field '" + type.name() + ".totalCount' must be of type 'Int' (got '"
                     + graphql.schema.GraphQLTypeUtil.simplePrint(fd.getType()) + "')",
-                type.location()
+                location
             ));
         }
     }
