@@ -382,7 +382,7 @@ class FieldBuilder {
             if (tfc.error() != null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, tfc.error());
             return new TableInterfaceField(parentTypeName, name, location,
                 new ReturnTypeRef.TableBoundReturnType(elementTypeName, tableInterfaceType.table(), wrapper),
-                referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination());
+                tableInterfaceType.discriminatorColumn(), referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination());
         }
 
         if (elementType instanceof InterfaceType interfaceType) {
@@ -1642,7 +1642,8 @@ class FieldBuilder {
             var tfc = resolveTableFieldComponents(fieldDef, tableInterfaceType.table(), elementTypeName);
             if (tfc.error() != null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, tfc.error());
             return new QueryField.QueryTableInterfaceField(parentTypeName, name, location,
-                new ReturnTypeRef.TableBoundReturnType(elementTypeName, tableInterfaceType.table(), wrapper), tfc.filters(), tfc.orderBy(), tfc.pagination());
+                new ReturnTypeRef.TableBoundReturnType(elementTypeName, tableInterfaceType.table(), wrapper),
+                tableInterfaceType.discriminatorColumn(), tfc.filters(), tfc.orderBy(), tfc.pagination());
         }
         if (elementType instanceof InterfaceType interfaceType) {
             return new QueryField.QueryInterfaceField(parentTypeName, name, location,

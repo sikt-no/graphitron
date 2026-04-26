@@ -8,6 +8,8 @@ import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.QueryField;
+import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
+import no.sikt.graphitron.rewrite.model.WhereFilter;
 
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
@@ -53,7 +55,9 @@ public class QueryConditionsGenerator {
             var methods = new ArrayList<MethodSpec>();
             for (var field : schema.fieldsOf(rootType.name())) {
                 if (field instanceof QueryField.QueryTableField qtf) {
-                    methods.add(buildConditionMethod(qtf, outputPackage, jooqPackage));
+                    methods.add(buildConditionMethod(qtf.name(), qtf.returnType(), qtf.filters(), outputPackage, jooqPackage));
+                } else if (field instanceof QueryField.QueryTableInterfaceField qtif) {
+                    methods.add(buildConditionMethod(qtif.name(), qtif.returnType(), qtif.filters(), outputPackage, jooqPackage));
                 }
             }
             if (methods.isEmpty()) continue;
@@ -70,19 +74,23 @@ public class QueryConditionsGenerator {
         return fieldName + "Condition";
     }
 
-    private static MethodSpec buildConditionMethod(QueryField.QueryTableField qtf, String outputPackage, String jooqPackage) {
-        var tableRef = qtf.returnType().table();
-        var names = GeneratorUtils.ResolvedTableNames.of(tableRef, qtf.returnType().returnTypeName(), outputPackage, jooqPackage);
+    private static MethodSpec buildConditionMethod(
+            String fieldName,
+            ReturnTypeRef.TableBoundReturnType returnType,
+            List<WhereFilter> filters,
+            String outputPackage, String jooqPackage) {
+        var tableRef = returnType.table();
+        var names = GeneratorUtils.ResolvedTableNames.of(tableRef, returnType.returnTypeName(), outputPackage, jooqPackage);
         var jooqTableClass = names.jooqTableClass();
 
-        var builder = MethodSpec.methodBuilder(conditionMethodName(qtf.name()))
+        var builder = MethodSpec.methodBuilder(conditionMethodName(fieldName))
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(CONDITION)
             .addParameter(jooqTableClass, "table")
             .addParameter(ENV, "env");
 
         builder.addStatement("$T condition = $T.noCondition()", CONDITION, DSL);
-        for (var filter : qtf.filters()) {
+        for (var filter : filters) {
             // Pre-lift any JooqConvert+list arg into a local; the extraction expression
             // references it as `<name>Keys` when building the call args below.
             for (var param : filter.callParams()) {
