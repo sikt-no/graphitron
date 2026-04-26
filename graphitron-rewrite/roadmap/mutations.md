@@ -1,7 +1,11 @@
+---
+title: "Mutation bodies"
+status: Spec
+priority: 9
+---
+
 # Mutation bodies
 
-> **Status:** Spec
->
 > Lift all six mutation leaves out of `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS`:
 > `MutationField.MutationInsertTableField`, `MutationUpdateTableField`,
 > `MutationDeleteTableField`, `MutationUpsertTableField`,

@@ -1,6 +1,11 @@
-# `@asConnection` `totalCount` field
+---
+title: "`@asConnection` `totalCount` field"
+status: Spec
+priority: 1
+notes: Release blocker.
+---
 
-> **Status:** Spec
+# `@asConnection` `totalCount` field
 
 ## Overview
 

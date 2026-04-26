@@ -1,6 +1,11 @@
+---
+title: "Spike: SQL strategies for faceted search"
+status: Spike
+---
+
 # Spike: SQL strategies for faceted search
 
-> **Status:** Report. Feeds plan revision in [plan-faceted-search.md](plan-faceted-search.md).
+> Report. Feeds plan revision in [faceted-search.md](faceted-search.md).
 > Deleted together with the parent plan at Done.
 
 Hand-measured comparison of five SQL shapes for the filter-minus-self facet

@@ -1,7 +1,11 @@
-# Plan — Classification Vocabulary Follow-ups
+---
+title: Classification vocabulary follow-ups
+status: Spec
+priority: 5
+---
 
-> **Status:** Spec
->
+# Plan: Classification Vocabulary Follow-ups
+
 > Seven independent doc/generator-behaviour cleanups surfaced during the `code-generation-triggers.md` rewrite plus G5's Pending Review sweep; none picked up yet. Any of them can land independently; none is a release blocker.
 
 Each item below corrects a place where the doc or the code still treats `@lookupKey` as scope-defining, mis-states the `@condition` rule, or is missing the new **source context vs. target type** split. Items are prioritised rough-to-low effort.

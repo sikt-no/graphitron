@@ -1,7 +1,10 @@
 # Development Workflow
 
-Every code change in this repo moves through a fixed pipeline. The roadmap
-(`planning/rewrite-roadmap.md`) is the single ledger that tracks state per item.
+Every code change in this repo moves through a fixed pipeline. Each item has
+its own file under [`graphitron-rewrite/roadmap/`](../roadmap/), with YAML
+front-matter naming its current `status:`. The rolled-up
+[`roadmap/README.md`](../roadmap/README.md) is generated from those files by
+[`graphitron-rewrite-roadmap-tool`](../roadmap-tool/) and never edited by hand.
 
 ## States and transitions
 
@@ -11,13 +14,13 @@ stateDiagram-v2
     state "In Progress" as InProgress
     state "In Review" as InReview
     [*] --> Backlog
-    Backlog --> Spec        : pick / create plan-*.md
+    Backlog --> Spec        : pick / draft plan; status: Spec
     Spec --> Spec           : revise [reviewer ≠ last committer]
     Spec --> Ready          : sign off [reviewer ≠ last committer]
-    Ready --> InProgress    : start work / roadmap marker only
-    InProgress --> InReview : land implementation / update plan
-    InReview --> Ready      : rework [reviewer ≠ implementer] / update plan
-    InReview --> Done       : approve [reviewer ≠ implementer] / delete plan
+    Ready --> InProgress    : start work; status: In Progress
+    InProgress --> InReview : land implementation; status: In Review
+    InReview --> Ready      : rework [reviewer ≠ implementer]
+    InReview --> Done       : approve [reviewer ≠ implementer] / delete file
     Done --> [*]
 ```
 
@@ -27,12 +30,28 @@ the human user is the usual reviewer; an independent agent session (no prior con
 on the work) can also serve. A reviewer who lands substantive edits disqualifies
 themselves from approving that revision — another party must sign off.
 
-## Plan file conventions
+## Item file conventions
 
-- Location: `planning/plan-<slug>.md`. Slug describes the work, not the
-  phase (`plan-variant-coverage-meta-test.md`, not `plan-phase-2.md`).
-- First non-heading line is the status front-matter, verbatim:
-  `> **Status:** Spec | Ready | In Review`
+- Location: `graphitron-rewrite/roadmap/<slug>.md`. Slug describes the work,
+  not the phase (`variant-coverage-meta-test.md`, not `phase-2.md`).
+  No `plan-` prefix; backlog items live in the same directory and use the
+  same shape.
+- First lines are YAML front-matter, delimited by `---`:
+
+  ```yaml
+  ---
+  title: "Human-readable title"
+  status: Backlog | Spec | Ready | In Progress | In Review
+  bucket: architecture | stubs | cleanup    # backlog items only
+  priority: 5                                # ordering hint, lower first
+  deferred: true                             # optional, e.g. Ready (deferred)
+  ---
+  ```
+
+  GitHub renders this block as a table at the top of the file. The roll-up
+  [`roadmap/README.md`](../roadmap/README.md) is regenerated from these fields
+  by `mvn -pl :graphitron-rewrite-roadmap-tool exec:java` (or `mise r roadmap`)
+  and CI verifies it stays in sync via the tool's `verify` mode.
 - Plans may be multi-phase. When a phase ships, the implementation commit updates
   the plan to mark that phase done (typically by collapsing its section into a
   one-line "shipped at `<sha>`" note and capturing any learnings). The overall
@@ -60,18 +79,12 @@ themselves from approving that revision — another party must sign off.
   (first-client check)` section is the canonical example. Internal refactors
   with no user surface are exempt.
 
-## Roadmap conventions
+## Roadmap rendering
 
-Each roadmap item gets a status suffix and, if a plan exists, a link:
-
-- `- **Title** **[Ready]** — description ([plan-slug.md](plan-slug.md))`
-- `- **Title** **[Backlog]**`
-
-Use `[Done]` only for milestones worth keeping as history (e.g. "Sealed-switch
-dispatch landed at `3357928`"); routine completions disappear entirely.
-
-The roadmap is the source of truth for state. A plan file's status front-matter
-mirrors the roadmap; drift is caught because both move together in the same commit.
+The per-item front-matter is the source of truth. The roll-up README is
+derived. Use `Done` only for milestones worth keeping as history (capture the
+landing commit in [`changelog.md`](planning/changelog.md)); routine completions
+disappear entirely when their item file is deleted.
 
 ## Publishing
 
@@ -82,21 +95,24 @@ any push to your branch must be followed by a fast-forward to
 
 ## Adding to the roadmap
 
-Any session can add items to the roadmap at any time. Opportunities spotted during
-review, implementation, or unrelated work all land here as `[Backlog]` items. The
-expectation is that they're substantive enough to justify eventual planning — not
-every passing thought.
+Any session can add items at any time: drop a new `<slug>.md` under
+`graphitron-rewrite/roadmap/` with `status: Backlog` and the appropriate
+`bucket:`, then regenerate the README. Opportunities spotted during review,
+implementation, or unrelated work all land that way. The expectation is that
+they're substantive enough to justify eventual planning, not every passing
+thought.
 
 ## Canonical path
 
 Taking a feature from idea to Done. Minimum four commits by at least two parties;
 typical paths are five to six when reviews involve iteration:
 
-1. **Author** picks a `[Backlog]` item, drafts `planning/plan-foo.md`, sets
-   roadmap to `[Spec]`.
-2. **Reviewer (≠ author)** reads the plan, revises if needed (stays `[Spec]`),
-   then signs off (`[Ready]`).
+1. **Author** picks a Backlog item, expands its file with a real plan body,
+   updates `status:` to `Spec`, regenerates README.
+2. **Reviewer (≠ author)** reads the plan, revises if needed (stays `Spec`),
+   then signs off by flipping `status:` to `Ready`.
 3. **Implementer** writes code, updates the plan (remove shipped, keep pending),
-   sets roadmap to `[In Review]`.
-4. **Reviewer (≠ implementer)** approves (`[Done]`, plan deleted) or requests more
-   work (`[Ready]`, new cycle).
+   flips `status:` to `In Review`.
+4. **Reviewer (≠ implementer)** approves (delete the item file; entry in
+   [`changelog.md`](planning/changelog.md) if worth keeping) or requests more
+   work (flip back to `Ready`, new cycle).
