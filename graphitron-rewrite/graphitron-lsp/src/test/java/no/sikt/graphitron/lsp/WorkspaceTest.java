@@ -58,6 +58,59 @@ class WorkspaceTest {
     }
 
     @Test
+    void didChangeIncrementalAccountsForMultiByteUtf8() {
+        // Norwegian table-name argument: 'h' starts at UTF-16 char 23,
+        // but å expands to 2 UTF-8 bytes so byte and char offsets diverge
+        // partway through. The range edit must convert correctly or it
+        // will splice the source mid-codepoint.
+        var ws = new Workspace();
+        String original = "type Foo @table(name: \"håndtering\") { bar: Int }\n";
+        ws.didOpen("file:///a.graphqls", 1, original);
+        ws.drainRecalculate();
+
+        // UTF-16 character offsets: opening quote at 22, 'h' at 23,
+        // 'å' at 24 (still 1 UTF-16 unit), 'g' at 32, closing quote at 33.
+        var range = new Range(new Position(0, 23), new Position(0, 33));
+        var change = new TextDocumentContentChangeEvent(range, "FILM");
+        ws.didChange("file:///a.graphqls", 2, List.of(change));
+
+        var file = ws.get("file:///a.graphqls").orElseThrow();
+        assertThat(new String(file.source(), java.nio.charset.StandardCharsets.UTF_8))
+            .isEqualTo("type Foo @table(name: \"FILM\") { bar: Int }\n");
+        // Tree must re-parse cleanly after a multi-byte edit.
+        assertThat(file.tree().getRootNode().hasError()).isFalse();
+    }
+
+    @Test
+    void editAfterMultiByteDescriptionPreservesDownstreamLines() {
+        // Description on line 0 contains å (2 UTF-8 bytes). Line walking
+        // counts \n separators only, so subsequent-line edits should be
+        // unaffected by upstream multi-byte content.
+        var ws = new Workspace();
+        String original = """
+            "Tabell for å håndtere åremål"
+            type Foo @table(name: "OLD") {
+                bar: Int
+            }
+            """;
+        ws.didOpen("file:///a.graphqls", 1, original);
+        ws.drainRecalculate();
+
+        // Line 1: replace "OLD" with "FILM". UTF-16 columns map directly
+        // because line 1 itself is ASCII; the line-walker had to advance
+        // past the multi-byte description on line 0.
+        var range = new Range(new Position(1, 23), new Position(1, 26));
+        var change = new TextDocumentContentChangeEvent(range, "FILM");
+        ws.didChange("file:///a.graphqls", 2, List.of(change));
+
+        var file = ws.get("file:///a.graphqls").orElseThrow();
+        assertThat(new String(file.source(), java.nio.charset.StandardCharsets.UTF_8))
+            .contains("@table(name: \"FILM\")")
+            .contains("Tabell for å håndtere åremål");
+        assertThat(file.tree().getRootNode().hasError()).isFalse();
+    }
+
+    @Test
     void editingDeclaringFileEnqueuesDependents() {
         var ws = new Workspace();
         ws.didOpen("file:///decl.graphqls", 1, "type Foo { x: Int }\n");

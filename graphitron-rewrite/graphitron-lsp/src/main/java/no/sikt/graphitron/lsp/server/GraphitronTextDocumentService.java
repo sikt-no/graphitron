@@ -3,6 +3,7 @@ package no.sikt.graphitron.lsp.server;
 import no.sikt.graphitron.lsp.completions.TableCompletions;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.Nodes;
+import no.sikt.graphitron.lsp.parsing.Positions;
 import no.sikt.graphitron.lsp.state.Workspace;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionList;
@@ -13,7 +14,6 @@ import org.eclipse.lsp4j.DidOpenTextDocumentParams;
 import org.eclipse.lsp4j.DidSaveTextDocumentParams;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.eclipse.lsp4j.services.TextDocumentService;
-import org.treesitter.TSPoint;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -67,7 +67,9 @@ public class GraphitronTextDocumentService implements TextDocumentService {
                 return Either.forLeft(List.of());
             }
             var file = fileOpt.get();
-            var pos = new TSPoint(params.getPosition().getLine(), params.getPosition().getCharacter());
+            var pos = Positions.resolve(file.source(),
+                params.getPosition().getLine(),
+                params.getPosition().getCharacter()).tsPoint();
             var directiveOpt = Directives.findContaining(file.tree().getRootNode(), pos);
             if (directiveOpt.isEmpty()) {
                 return Either.forLeft(List.of());

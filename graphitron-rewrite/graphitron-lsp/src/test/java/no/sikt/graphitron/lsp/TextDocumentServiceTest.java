@@ -91,6 +91,44 @@ class TextDocumentServiceTest {
     }
 
     @Test
+    void completionAfterMultiByteDescriptionResolvesCorrectDirective() throws Exception {
+        // Description on line 0 contains å (multi-byte UTF-8). The cursor
+        // sits inside the @table empty-string argument on line 1; the
+        // server must convert the LSP UTF-16 column to a UTF-8 byte
+        // column before tree-sitter looks up the directive node.
+        var catalog = new CompletionData(
+            List.of(table("FILM"), table("ACTOR")),
+            List.of(),
+            List.of()
+        );
+        var server = new GraphitronLanguageServer(new Workspace(catalog));
+        var proxy = startServer(server);
+        proxy.initialize(new InitializeParams()).get(5, TimeUnit.SECONDS);
+
+        String uri = "file:///norsk.graphqls";
+        String source = """
+            "Tabell for å håndtere åremål"
+            type Foo @table(name: "") {
+              bar: Int
+            }
+            """;
+        var item = new TextDocumentItem(uri, "graphql", 1, source);
+        proxy.getTextDocumentService().didOpen(new DidOpenTextDocumentParams(item));
+
+        // Line 1, column 23: just inside the empty @table(name: "") quotes.
+        var params = new CompletionParams(
+            new TextDocumentIdentifier(uri),
+            new Position(1, 23)
+        );
+        var result = proxy.getTextDocumentService().completion(params)
+            .get(5, TimeUnit.SECONDS);
+
+        assertThat(result.isLeft()).isTrue();
+        var labels = result.getLeft().stream().map(c -> c.getLabel()).toList();
+        assertThat(labels).containsExactly("FILM", "ACTOR");
+    }
+
+    @Test
     void incrementalDidChangeUpdatesWorkspaceBuffer() throws Exception {
         var workspace = new Workspace();
         var server = new GraphitronLanguageServer(workspace);
