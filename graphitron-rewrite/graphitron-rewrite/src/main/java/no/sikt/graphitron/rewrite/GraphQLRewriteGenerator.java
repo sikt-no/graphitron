@@ -71,7 +71,7 @@ public class GraphQLRewriteGenerator {
 
     /**
      * Runs schema loading, attribution, classification, and validation without writing any output.
-     * Throws {@link RuntimeException} if validation errors are found.
+     * Throws {@link ValidationFailedException} if validation errors are found.
      */
     public void validate() {
         var bundle = GraphitronSchemaBuilder.buildBundle(loadAttributedRegistry(), ctx);
@@ -79,7 +79,7 @@ public class GraphQLRewriteGenerator {
         logWarnings(schema);
         var errors = validateAndLogErrors(schema);
         if (!errors.isEmpty()) {
-            throw new RuntimeException(errors.size() + " validation error(s); see log for details");
+            throw new ValidationFailedException(errors);
         }
     }
 
@@ -105,7 +105,7 @@ public class GraphQLRewriteGenerator {
 
         var errors = validateAndLogErrors(schema);
         if (!errors.isEmpty()) {
-            throw new RuntimeException("Rewrite schema validation failed with " + errors.size() + " error(s)");
+            throw new ValidationFailedException(errors);
         }
 
         String outputPackage = ctx.outputPackage();

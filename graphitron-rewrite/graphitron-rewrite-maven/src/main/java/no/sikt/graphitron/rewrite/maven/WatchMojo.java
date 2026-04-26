@@ -2,8 +2,10 @@ package no.sikt.graphitron.rewrite.maven;
 
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.rewrite.RewriteContext;
+import no.sikt.graphitron.rewrite.ValidationFailedException;
 import no.sikt.graphitron.rewrite.maven.watch.DebounceExecutor;
 import no.sikt.graphitron.rewrite.maven.watch.SchemaWatcher;
+import no.sikt.graphitron.rewrite.maven.watch.WatchErrorFormatter;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
@@ -40,6 +42,13 @@ public class WatchMojo extends AbstractRewriteMojo {
 
     private SchemaWatcher watcher;
 
+    /**
+     * Errors observed in the previous regeneration cycle, used by the formatter to emit a
+     * {@code +N new, -M fixed, K unchanged} delta line. {@code null} means "no prior cycle yet"
+     * and suppresses the delta on the first run; an empty set means "previous cycle was clean".
+     */
+    private Set<WatchErrorFormatter.DeltaKey> previousErrorKeys = null;
+
     @Override
     protected boolean packagesRequired() {
         return true;
@@ -50,11 +59,8 @@ public class WatchMojo extends AbstractRewriteMojo {
         var initialCtx = buildContext();
 
         if (!skipInitial) {
-            try {
-                new GraphQLRewriteGenerator(initialCtx).generate();
-            } catch (RuntimeException e) {
-                getLog().error("graphitron:watch: initial generator run failed", e);
-            }
+            getLog().info(banner("initial run"));
+            runOnce(initialCtx, "initial run");
         }
 
         Set<Path> roots = resolveWatchRoots(initialCtx);
@@ -93,24 +99,59 @@ public class WatchMojo extends AbstractRewriteMojo {
 
     /**
      * Re-expands {@code <schemaInputs>} (so newly-matched files are picked up), runs the
-     * generator, and registers any newly-discovered watch directories. Catches every
-     * {@link RuntimeException} so the watch loop survives validation and I/O failures; the
-     * generator already log-surfaces validation errors via SLF4J before throwing.
+     * generator, and registers any newly-discovered watch directories. The watch loop survives
+     * both validation failures (rendered as a grouped tree) and infrastructure failures
+     * (rendered as a stack trace); see {@link #runOnce}.
      */
     private void trigger() {
         try {
             var ctx = buildContext();
-            new GraphQLRewriteGenerator(ctx).generate();
-            for (Path root : resolveWatchRoots(ctx)) {
-                try {
-                    watcher.addRoot(root);
-                } catch (IOException e) {
-                    getLog().warn("graphitron:watch: failed to register new watch root " + root + ": " + e.getMessage());
+            getLog().info(banner("regenerate"));
+            boolean ok = runOnce(ctx, "regenerate");
+            if (ok) {
+                for (Path root : resolveWatchRoots(ctx)) {
+                    try {
+                        watcher.addRoot(root);
+                    } catch (IOException e) {
+                        getLog().warn("graphitron:watch: failed to register new watch root " + root + ": " + e.getMessage());
+                    }
                 }
             }
-        } catch (MojoExecutionException | RuntimeException e) {
-            getLog().error("graphitron:watch: regeneration failed", e);
+        } catch (MojoExecutionException e) {
+            getLog().error("graphitron:watch: failed to rebuild context", e);
         }
+    }
+
+    /**
+     * Runs one generator pass and renders the outcome. {@link ValidationFailedException} is
+     * caught and rendered via {@link WatchErrorFormatter} (no stack trace, since the structured
+     * info is already in the tree); other {@link RuntimeException}s carry a stack trace because
+     * they indicate an infrastructure or generator-side bug, not author input.
+     *
+     * @return {@code true} if the run completed without throwing
+     */
+    private boolean runOnce(RewriteContext ctx, String label) {
+        try {
+            new GraphQLRewriteGenerator(ctx).generate();
+            previousErrorKeys = Set.of();
+            getLog().info("graphitron:watch: " + label + " ok");
+            return true;
+        } catch (ValidationFailedException e) {
+            String tree = WatchErrorFormatter.format(e.errors(), previousErrorKeys);
+            previousErrorKeys = WatchErrorFormatter.keysOf(e.errors());
+            getLog().error("graphitron:watch: " + label + " failed validation\n" + tree);
+            return false;
+        } catch (RuntimeException e) {
+            // Reset delta tracking; an infra failure means the validator did not complete and a
+            // delta computed against the prior validation cycle would be misleading.
+            previousErrorKeys = null;
+            getLog().error("graphitron:watch: " + label + " failed (infrastructure)", e);
+            return false;
+        }
+    }
+
+    private static String banner(String label) {
+        return "── graphitron:watch: " + label + " ──";
     }
 
     private static Set<Path> resolveWatchRoots(RewriteContext ctx) {
