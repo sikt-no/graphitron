@@ -1,5 +1,6 @@
 package no.sikt.graphitron.lsp.server;
 
+import no.sikt.graphitron.lsp.completions.FieldCompletions;
 import no.sikt.graphitron.lsp.completions.TableCompletions;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.Nodes;
@@ -78,6 +79,7 @@ public class GraphitronTextDocumentService implements TextDocumentService {
             var directiveName = Nodes.text(directive.nameNode(), file.source());
             List<CompletionItem> items = switch (directiveName) {
                 case "table" -> TableCompletions.generate(workspace.catalog(), directive, pos, file.source());
+                case "field" -> FieldCompletions.generate(workspace.catalog(), directive, pos, file.source());
                 default -> List.of();
             };
             return Either.forLeft(items);
