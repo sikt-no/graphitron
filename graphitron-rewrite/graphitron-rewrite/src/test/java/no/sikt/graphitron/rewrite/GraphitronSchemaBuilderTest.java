@@ -2430,7 +2430,40 @@ class GraphitronSchemaBuilderTest {
             type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
             type Query { films(filter: FilterInput): [Film] }
             """,
-            schema -> assertThat(schema.type("FilterInput")).isInstanceOf(PojoInputType.class));
+            schema -> assertThat(schema.type("FilterInput")).isInstanceOf(PojoInputType.class)),
+
+        NOT_GENERATED_REJECTED_TABLE_INPUT(
+            "@notGenerated on a @table input field → UnclassifiedType with reason saying so",
+            """
+            input CustomerInput @table(name: "customer") {
+                customerId: Int! @field(name: "customer_id")
+                hidden: String @notGenerated
+            }
+            type Query { x: String }
+            """,
+            schema -> {
+                var t = schema.type("CustomerInput");
+                assertThat(t).isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType.class);
+                assertThat(((no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType) t).reason())
+                    .contains("@notGenerated", "no longer supported");
+            }),
+
+        NOT_GENERATED_REJECTED_NESTED_INPUT(
+            "@notGenerated on a field of a plain input nested inside a @table input → UnclassifiedType with reason saying so",
+            """
+            input InnerFilter { hidden: String @notGenerated }
+            input CustomerInput @table(name: "customer") {
+                customerId: Int! @field(name: "customer_id")
+                inner: InnerFilter
+            }
+            type Query { x: String }
+            """,
+            schema -> {
+                var t = schema.type("CustomerInput");
+                assertThat(t).isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType.class);
+                assertThat(((no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType) t).reason())
+                    .contains("@notGenerated", "no longer supported");
+            });
 
         final String sdl;
         final Consumer<GraphitronSchema> assertions;
@@ -3358,6 +3391,20 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 assertThat(schema.field("Film", "title")).isInstanceOf(UnclassifiedField.class);
                 assertThat(((UnclassifiedField) schema.field("Film", "title")).reason())
+                    .contains("@notGenerated", "no longer supported");
+            }),
+
+        NOT_GENERATED_REJECTED_PLAIN_INPUT_ARG(
+            "@notGenerated on a plain input-arg field → surrounding query field is UnclassifiedField with reason saying so",
+            """
+            input FilmFilter { title: String, hidden: String @notGenerated }
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Query { films(f: FilmFilter): [Film] }
+            """,
+            schema -> {
+                var f = schema.field("Query", "films");
+                assertThat(f).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) f).reason())
                     .contains("@notGenerated", "no longer supported");
             });
 
