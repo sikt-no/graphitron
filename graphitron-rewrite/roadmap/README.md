@@ -16,6 +16,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `BatchKey.ObjectBased` removal | Spec | [plan](batchkey-remove-objectbased.md) |
 | `IdReferenceField` input filter variant | Spec | [plan](id-reference-input-field.md) |
 | Classification vocabulary follow-ups | Spec | [plan](classification-vocabulary-followups.md) |
+| Context-value registry + native multi-tenant fan-out for `@service` | Spec | [plan](service-context-value-registry.md) |
 | Multi-parent `NestingField` sharing: `TableField` arm | Spec | [plan](nestingfield-multiparent-tablefield.md) |
 | Faceted search on `@asConnection` <sub>[spike](faceted-search-sql.md)</sub> | Spec | [plan](faceted-search.md) |
 | Mutation bodies | Spec | [plan](mutations.md) |
@@ -38,6 +39,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 - [**Composite-key `@lookupKey` on list-of-input-object arguments**](composite-key-lookupkey.md): Add `ArgumentRef.CompositeLookupArg` carrying `(input-field-name, target-column)` pairs resolved from `@field(name:)` directives; `buildInputRowsMethod` already handles arbitrary-arity VALUES + JOIN.
 - [**Apollo Federation via federation-jvm transform**](federation-via-federation-jvm.md): Replace the `QueryEntityField` stub with a `GraphitronSchemaBuilder` post-step wrapping the Graphitron schema via `Federation.transform`; deletes the stub after migration.
 - [**`DSLContext` on `@condition` / `@tableMethod` methods**](dslcontext-on-condition-tablemethod.md): Lift the `reflectTableMethod` gate. Requires `ArgCallEmitter` to walk `params()` instead of `callParams()` so the injected `DSLContext` lands at its declaration-index slot.
+- [**Auto-emit Relay `nodes` when `node` exists**](auto-nodes-relay-resolver.md): The Relay `nodes(ids: [ID!]!): [Node]!` resolver is mechanical composition over the `node(id: ID!): Node` resolver: call `node` per id, `allOf` the results. It's not a `@service` extension because the service would have to know about `DataFetcher` to express it; it's resolver-level composition.
 - [**`Set<T>` parent-keys on `@service` methods**](set-parent-keys-on-service.md): Decide: require `List<T>` (predictable batching order, the current direction) or broaden `BatchKey`. One known offender (`navnAlleSprak`).
 - [**Checked exceptions on `@service` / `@tableMethod` for typed GraphQL errors**](checked-exceptions-typed-errors.md): Explore mapping developer-declared checked exceptions on service / table-method methods to typed GraphQL errors (`@error` types, mutation payload error unions). Today `ServiceCatalog.reflectServiceMethod` / `reflectTableMethod` ignore `getExceptionTypes()`; the emitted fetcher has no `throws` clause, so a developer method declaring `throws SQLException` (or any checked exception) breaks the rewrite-test compile gate.
 - [**Rebalance test pyramid**](rebalance-test-pyramid.md): Shift new test investment from per-variant structural tests toward SDL-to-classification-to-emission pipeline tests keyed off `graphitron-rewrite-fixtures`.
