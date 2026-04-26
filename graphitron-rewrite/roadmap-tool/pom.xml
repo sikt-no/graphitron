@@ -8,10 +8,10 @@
     <parent>
         <groupId>no.sikt</groupId>
         <artifactId>graphitron-rewrite-parent</artifactId>
-        <version>9-SNAPSHOT</version>
+        <version>10-SNAPSHOT</version>
     </parent>
 
-    <artifactId>graphitron-rewrite-roadmap-tool</artifactId>
+    <artifactId>graphitron-roadmap-tool</artifactId>
     <name>${project.groupId}:${project.artifactId}</name>
     <description>Renders graphitron-rewrite/roadmap/*.md (YAML front-matter) into roadmap/README.md.</description>
 

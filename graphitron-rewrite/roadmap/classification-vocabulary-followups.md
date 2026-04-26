@@ -117,7 +117,7 @@ Questions to answer:
 **Action.** Before wiring lookup execution tests (see Generator stubs #6–7 in the roadmap), nail down the signature,
 document it in
 [graphitron-java-codegen README](../../../graphitron-codegen-parent/graphitron-java-codegen/README.md)
-alongside `@condition`, and add an execution test in `graphitron-rewrite-test` that
+alongside `@condition`, and add an execution test in `graphitron-test` that
 verifies the N × M contract holds end-to-end.
 
 This item is the real blocker — it gates G5 and G6 execution tests. Items 1–4 are doc
@@ -134,7 +134,7 @@ Empirical data from attempting ConditionJoin inline emission during G5 C3/C4:
   and emitting a `throw new UnsupportedOperationException(…)` stub for the arm. Generated code
   compiles; runtime throws only if the field is selected.
 - **Schema fixture landed in C4.** `Category.similar` in
-  `graphitron-rewrite/graphitron-rewrite-test/src/main/resources/graphql/schema.graphqls` uses
+  `graphitron-rewrite/graphitron-test/src/main/resources/graphql/schema.graphqls` uses
   `@reference(path: [{condition: {className: "…CategoryConditions", method: "sameNamePrefix"}}])`.
   The classifier builds a `TableField` with `joinPath = [ConditionJoin]` successfully; generated
   code compiles; runtime throw is in place. Item 5 can use this fixture as the ready-made

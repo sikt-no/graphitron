@@ -4,9 +4,9 @@
     <parent>
         <groupId>no.sikt</groupId>
         <artifactId>graphitron-rewrite-parent</artifactId>
-        <version>9-SNAPSHOT</version>
+        <version>10-SNAPSHOT</version>
     </parent>
-    <artifactId>graphitron-rewrite-javapoet</artifactId>
+    <artifactId>graphitron-javapoet</artifactId>
     <name>${project.groupId}:${project.artifactId}</name>
     <url>https://github.com/sikt-no/graphitron</url>
 

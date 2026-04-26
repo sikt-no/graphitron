@@ -8,7 +8,7 @@
     <parent>
         <groupId>no.sikt</groupId>
         <artifactId>graphitron-rewrite-parent</artifactId>
-        <version>9-SNAPSHOT</version>
+        <version>10-SNAPSHOT</version>
     </parent>
 
     <artifactId>graphitron-lsp</artifactId>
@@ -23,7 +23,7 @@
     <dependencies>
         <dependency>
             <groupId>no.sikt</groupId>
-            <artifactId>graphitron-rewrite</artifactId>
+            <artifactId>graphitron</artifactId>
             <version>${project.version}</version>
         </dependency>
 

@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>no.sikt.graphitron.it</groupId>
+  <artifactId>missing-schema-inputs</artifactId>
+  <version>1.0-SNAPSHOT</version>
+  <packaging>jar</packaging>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>no.sikt</groupId>
+        <artifactId>graphitron-maven</artifactId>
+        <version>@project.version@</version>
+        <executions>
+          <execution>
+            <id>rewrite-generate</id>
+            <goals>
+              <goal>generate</goal>
+            </goals>
+            <configuration>
+              <schemaInputs>
+                <schemaInput>
+                  <!-- Pattern deliberately matches nothing to test the zero-match error path. -->
+                  <pattern>nonexistent/**/*.graphqls</pattern>
+                </schemaInput>
+              </schemaInputs>
+              <outputPackage>no.sikt.it.generated</outputPackage>
+              <jooqPackage>no.sikt.graphitron.rewrite.test.jooq</jooqPackage>
+            </configuration>
+          </execution>
+        </executions>
+        <dependencies>
+          <dependency>
+            <groupId>no.sikt</groupId>
+            <artifactId>graphitron-fixtures</artifactId>
+            <version>@project.version@</version>
+          </dependency>
+        </dependencies>
+      </plugin>
+    </plugins>
+  </build>
+</project>
