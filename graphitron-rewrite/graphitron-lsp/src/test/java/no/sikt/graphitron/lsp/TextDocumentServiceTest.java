@@ -43,6 +43,7 @@ class TextDocumentServiceTest {
     private ExecutorService clientThread;
     private Future<Void> serverListening;
     private Future<Void> clientListening;
+    private TestLanguageClient clientStub;
 
     @AfterEach
     void tearDown() {
@@ -157,6 +158,61 @@ class TextDocumentServiceTest {
         assertThat(file.version()).isEqualTo(2);
     }
 
+    @Test
+    void didOpenPublishesDiagnosticsForUnknownTable() throws Exception {
+        var catalog = new CompletionData(
+            List.of(table("FILM")),
+            List.of(),
+            List.of()
+        );
+        var server = new GraphitronLanguageServer(new no.sikt.graphitron.lsp.state.Workspace(catalog));
+        var proxy = startServer(server);
+        proxy.initialize(new InitializeParams()).get(5, TimeUnit.SECONDS);
+
+        String uri = "file:///bad.graphqls";
+        String source = """
+            type Foo @table(name: "MISSING") { bar: Int }
+            """;
+        proxy.getTextDocumentService().didOpen(new DidOpenTextDocumentParams(
+            new TextDocumentItem(uri, "graphql", 1, source)));
+
+        // Notifications are fire-and-forget; round-trip a request to flush
+        // the queued didOpen + diagnostic publish.
+        proxy.getTextDocumentService().completion(new CompletionParams(
+            new TextDocumentIdentifier(uri), new Position(0, 0))
+        ).get(5, TimeUnit.SECONDS);
+
+        var diagnostics = clientStub.latestDiagnostics.get(uri);
+        assertThat(diagnostics).isNotNull();
+        assertThat(diagnostics.getDiagnostics()).hasSize(1);
+        assertThat(diagnostics.getDiagnostics().get(0).getMessage()).contains("MISSING");
+    }
+
+    @Test
+    void didCloseClearsDiagnosticsForFile() throws Exception {
+        var server = new GraphitronLanguageServer(new no.sikt.graphitron.lsp.state.Workspace());
+        var proxy = startServer(server);
+        proxy.initialize(new InitializeParams()).get(5, TimeUnit.SECONDS);
+
+        String uri = "file:///clean.graphqls";
+        proxy.getTextDocumentService().didOpen(new DidOpenTextDocumentParams(
+            new TextDocumentItem(uri, "graphql", 1, "type Foo @table(name: \"MISSING\") { bar: Int }\n")));
+        proxy.getTextDocumentService().completion(new CompletionParams(
+            new TextDocumentIdentifier(uri), new Position(0, 0))
+        ).get(5, TimeUnit.SECONDS);
+
+        proxy.getTextDocumentService().didClose(new org.eclipse.lsp4j.DidCloseTextDocumentParams(
+            new TextDocumentIdentifier(uri)));
+        // Round-trip again to flush the close + cleared diagnostics.
+        proxy.getTextDocumentService().completion(new CompletionParams(
+            new TextDocumentIdentifier(uri), new Position(0, 0))
+        ).get(5, TimeUnit.SECONDS);
+
+        var diagnostics = clientStub.latestDiagnostics.get(uri);
+        assertThat(diagnostics).isNotNull();
+        assertThat(diagnostics.getDiagnostics()).isEmpty();
+    }
+
     private LanguageServer startServer(GraphitronLanguageServer server) throws Exception {
         var clientToServer = new PipedOutputStream();
         var serverIn = new PipedInputStream(clientToServer, 1 << 16);
@@ -171,7 +227,7 @@ class TextDocumentServiceTest {
             .create();
         server.connect(serverLauncher.getRemoteProxy());
 
-        var clientStub = new TestLanguageClient();
+        this.clientStub = new TestLanguageClient();
         var clientLauncher = new Launcher.Builder<LanguageServer>()
             .setLocalService(clientStub)
             .setRemoteInterface(LanguageServer.class)
