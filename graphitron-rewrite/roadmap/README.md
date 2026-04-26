@@ -12,13 +12,13 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | Item | Status | Plan |
 |---|---|---|
-| `@asConnection` `totalCount` field <sub>Release blocker.</sub> | Spec | [plan](asconnection-totalcount.md) |
 | `IdReferenceField` input filter variant | Spec | [plan](id-reference-input-field.md) |
 | Classification vocabulary follow-ups | Spec | [plan](classification-vocabulary-followups.md) |
 | Context-value registry + native multi-tenant fan-out for `@service` | Spec | [plan](service-context-value-registry.md) |
 | Multi-parent `NestingField` sharing: `TableField` arm | Spec | [plan](nestingfield-multiparent-tablefield.md) |
 | Faceted search on `@asConnection` <sub>[spike](faceted-search-sql.md)</sub> | Spec | [plan](faceted-search.md) |
 | Mutation bodies | Spec | [plan](mutations.md) |
+| `@asConnection` `totalCount` field <sub>Release blocker.</sub> | Ready | [plan](asconnection-totalcount.md) |
 | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
 | Docs as an index into classification tests | Ready (deferred) | [plan](docs-as-index-into-tests.md) |
 | Java LSP rewrite + introspect retirement + `dev` goal | Ready | [plan](graphitron-lsp.md) |
