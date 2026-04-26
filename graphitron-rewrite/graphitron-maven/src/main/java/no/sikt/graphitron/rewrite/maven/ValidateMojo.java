@@ -9,7 +9,7 @@ import org.apache.maven.plugins.annotations.ResolutionScope;
 /**
  * Validates the GraphQL schema without writing any generated sources.
  * Runs schema loading, attribution, classification, and validation only.
- * Invoke as {@code mvn graphitron-rewrite:validate}. The outputPackage
+ * Invoke as {@code mvn graphitron:validate}. The outputPackage
  * and jooqPackage parameters are optional for this goal; a sentinel is
  * substituted so the classifier stage still type-checks without emitting code.
  */

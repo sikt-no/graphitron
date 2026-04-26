@@ -78,7 +78,7 @@ public final class DevServer implements AutoCloseable {
                 client = socket.accept();
             } catch (IOException e) {
                 if (!closed.get()) {
-                    LOGGER.warn("graphitron-rewrite:dev: accept failed: {}", e.getMessage());
+                    LOGGER.warn("graphitron:dev: accept failed: {}", e.getMessage());
                 }
                 return;
             }
@@ -98,7 +98,7 @@ public final class DevServer implements AutoCloseable {
             server.connect(launcher.getRemoteProxy());
             launcher.startListening().get();
         } catch (Exception e) {
-            LOGGER.warn("graphitron-rewrite:dev: client session ended with error: {}", e.getMessage());
+            LOGGER.warn("graphitron:dev: client session ended with error: {}", e.getMessage());
         } finally {
             try {
                 client.close();
@@ -116,7 +116,7 @@ public final class DevServer implements AutoCloseable {
         try {
             socket.close();
         } catch (IOException e) {
-            LOGGER.warn("graphitron-rewrite:dev: error closing socket: {}", e.getMessage());
+            LOGGER.warn("graphitron:dev: error closing socket: {}", e.getMessage());
         }
         acceptExecutor.shutdownNow();
         connectionExecutor.shutdownNow();

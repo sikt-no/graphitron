@@ -47,7 +47,7 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
      * Returns {@code true} if this goal needs {@code <outputPackage>} and
      * {@code <jooqPackage>}, {@code false} if it tolerates their absence
      * (validate-only goals substitute an inert sentinel). The sentinel lets
-     * {@code mvn graphitron-rewrite:validate} work standalone from the CLI
+     * {@code mvn graphitron:validate} work standalone from the CLI
      * without per-consumer execution wiring; the validate pipeline never
      * emits code, so the package strings are only used to satisfy
      * {@link RewriteContext}'s non-null contract.
