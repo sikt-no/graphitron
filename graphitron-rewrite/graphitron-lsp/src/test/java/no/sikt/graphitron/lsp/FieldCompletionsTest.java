@@ -127,9 +127,9 @@ class FieldCompletionsTest {
                 "Movies the rental store carries",
                 CompletionData.SourceLocation.UNKNOWN,
                 List.of(
-                    new CompletionData.Column("film_id", "Integer", false, ""),
-                    new CompletionData.Column("title", "String", false, ""),
-                    new CompletionData.Column("language_id", "Integer", true, "")
+                    CompletionData.Column.of("film_id", "Integer", false, ""),
+                    CompletionData.Column.of("title", "String", false, ""),
+                    CompletionData.Column.of("language_id", "Integer", true, "")
                 ),
                 List.of()
             )),

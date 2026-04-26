@@ -21,7 +21,7 @@ class CatalogBuilderTest {
         var jooq = new JooqCatalog(DEFAULT_JOOQ_PACKAGE);
         var bundle = TestSchemaHelper.buildBundle("type Query { x: Int }");
 
-        var data = CatalogBuilder.build(jooq, bundle.assembled());
+        var data = CatalogBuilder.build(jooq, bundle.assembled(), no.sikt.graphitron.common.configuration.TestConfiguration.testContext());
 
         assertThat(data.tables()).extracting(CompletionData.Table::name)
             .contains("film", "actor", "language");
@@ -32,7 +32,7 @@ class CatalogBuilderTest {
         var jooq = new JooqCatalog(DEFAULT_JOOQ_PACKAGE);
         var bundle = TestSchemaHelper.buildBundle("type Query { x: Int }");
 
-        var data = CatalogBuilder.build(jooq, bundle.assembled());
+        var data = CatalogBuilder.build(jooq, bundle.assembled(), no.sikt.graphitron.common.configuration.TestConfiguration.testContext());
         var film = data.getTable("film").orElseThrow();
 
         assertThat(film.columns()).extracting(CompletionData.Column::name)
@@ -48,7 +48,7 @@ class CatalogBuilderTest {
         var jooq = new JooqCatalog(DEFAULT_JOOQ_PACKAGE);
         var bundle = TestSchemaHelper.buildBundle("type Query { x: Int }");
 
-        var data = CatalogBuilder.build(jooq, bundle.assembled());
+        var data = CatalogBuilder.build(jooq, bundle.assembled(), no.sikt.graphitron.common.configuration.TestConfiguration.testContext());
         var film = data.getTable("film").orElseThrow();
 
         // film has an outbound FK to language (film.language_id -> language.language_id).
@@ -64,7 +64,7 @@ class CatalogBuilderTest {
         var jooq = new JooqCatalog(DEFAULT_JOOQ_PACKAGE);
         var bundle = TestSchemaHelper.buildBundle("type Query { x: Int }");
 
-        var data = CatalogBuilder.build(jooq, bundle.assembled());
+        var data = CatalogBuilder.build(jooq, bundle.assembled(), no.sikt.graphitron.common.configuration.TestConfiguration.testContext());
         var language = data.getTable("language").orElseThrow();
 
         // language is the FK target; film holds the FK, so language sees an
@@ -91,7 +91,7 @@ class CatalogBuilderTest {
             }
             """);
 
-        var data = CatalogBuilder.build(jooq, bundle.assembled());
+        var data = CatalogBuilder.build(jooq, bundle.assembled(), no.sikt.graphitron.common.configuration.TestConfiguration.testContext());
 
         assertThat(data.types()).extracting(CompletionData.TypeData::name)
             .contains("Int", "String", "Boolean", "Float", "ID");
@@ -105,7 +105,7 @@ class CatalogBuilderTest {
             type Query { now: DateTime }
             """);
 
-        var data = CatalogBuilder.build(jooq, bundle.assembled());
+        var data = CatalogBuilder.build(jooq, bundle.assembled(), no.sikt.graphitron.common.configuration.TestConfiguration.testContext());
 
         var dateTime = data.getType("DateTime").orElseThrow();
         assertThat(dateTime.name()).isEqualTo("DateTime");
@@ -119,7 +119,7 @@ class CatalogBuilderTest {
         var jooq = new JooqCatalog(DEFAULT_JOOQ_PACKAGE);
         var bundle = TestSchemaHelper.buildBundle("type Query { x: Int }");
 
-        var data = CatalogBuilder.build(jooq, bundle.assembled());
+        var data = CatalogBuilder.build(jooq, bundle.assembled(), no.sikt.graphitron.common.configuration.TestConfiguration.testContext());
 
         // GraphQL's __schema / __type / etc. introspection types contribute
         // some scalars; they should never appear in completion lists.
@@ -132,7 +132,7 @@ class CatalogBuilderTest {
         var jooq = new JooqCatalog(DEFAULT_JOOQ_PACKAGE);
         var bundle = TestSchemaHelper.buildBundle("type Query { x: Int }");
 
-        var data = CatalogBuilder.build(jooq, bundle.assembled());
+        var data = CatalogBuilder.build(jooq, bundle.assembled(), no.sikt.graphitron.common.configuration.TestConfiguration.testContext());
 
         // Service-method enumeration is Phase 5 work; Phase 2 deliberately
         // leaves this slot empty (see plan, OQ A1/Phase 5).

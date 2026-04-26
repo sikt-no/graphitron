@@ -3,9 +3,12 @@ package no.sikt.graphitron.rewrite.catalog;
 import graphql.schema.GraphQLScalarType;
 import graphql.schema.GraphQLSchema;
 import no.sikt.graphitron.rewrite.JooqCatalog;
+import no.sikt.graphitron.rewrite.RewriteContext;
 import org.jooq.ForeignKey;
 import org.jooq.Table;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -13,57 +16,75 @@ import java.util.Optional;
 /**
  * Assembles a {@link CompletionData} snapshot the LSP queries against. Sources
  * tables / columns / FK references from {@link JooqCatalog} and scalar types
- * from the parsed {@link GraphQLSchema}; everything else stays empty in
- * Phase 2 (service methods need their own enumeration source, picked up in
- * Phase 5).
+ * from the parsed {@link GraphQLSchema}; {@code externalReferences} stays
+ * empty until Phase 5 wires service-class enumeration.
  *
  * <p>Designed to run hot: a single pass over the jOOQ catalog plus a single
  * pass over the assembled schema's type list. The dev goal calls
  * {@link no.sikt.graphitron.rewrite.GraphQLRewriteGenerator#buildCatalog()}
  * on every classpath-watcher trigger; this class is the workhorse behind
  * that call.
+ *
+ * <p>Source-location URIs follow the jOOQ Maven plugin's default output
+ * layout under {@code <basedir>/target/generated-sources/jooq/}: each
+ * table maps to {@code <pkgPath>/tables/<ClassName>.java}, columns share
+ * that file (line refinement deferred), and FK references map to
+ * {@code <pkgPath>/Keys.java}. URIs that do not exist on disk are reduced
+ * to {@link CompletionData.SourceLocation#UNKNOWN} so goto-definition
+ * silently no-ops on consumers with non-default jOOQ output paths.
  */
 public final class CatalogBuilder {
 
     private CatalogBuilder() {}
 
-    public static CompletionData build(JooqCatalog jooq, GraphQLSchema assembled) {
+    public static CompletionData build(JooqCatalog jooq, GraphQLSchema assembled, RewriteContext ctx) {
+        Path jooqSourceRoot = ctx.basedir().resolve("target/generated-sources/jooq");
+        String jooqPkgPath = ctx.jooqPackage().replace('.', '/');
         return new CompletionData(
-            buildTables(jooq),
+            buildTables(jooq, jooqSourceRoot, jooqPkgPath),
             buildScalars(assembled),
             List.of()
         );
     }
 
-    private static List<CompletionData.Table> buildTables(JooqCatalog jooq) {
+    private static List<CompletionData.Table> buildTables(
+        JooqCatalog jooq, Path sourceRoot, String pkgPath
+    ) {
         var tables = new ArrayList<CompletionData.Table>();
         for (String tableName : jooq.allTableSqlNames()) {
-            tables.add(buildTable(jooq, tableName));
+            tables.add(buildTable(jooq, tableName, sourceRoot, pkgPath));
         }
         return List.copyOf(tables);
     }
 
-    private static CompletionData.Table buildTable(JooqCatalog jooq, String tableName) {
+    private static CompletionData.Table buildTable(
+        JooqCatalog jooq, String tableName, Path sourceRoot, String pkgPath
+    ) {
         Optional<JooqCatalog.TableEntry> entryOpt = jooq.findTable(tableName);
         Table<?> jooqTable = entryOpt.map(JooqCatalog.TableEntry::table).orElse(null);
+
+        var tableDefinition = jooqTable == null
+            ? CompletionData.SourceLocation.UNKNOWN
+            : tableSourceLocation(sourceRoot, pkgPath, jooqTable);
 
         var columns = jooq.allColumnsOf(tableName).stream()
             .map(c -> new CompletionData.Column(
                 c.sqlName(),
                 c.columnClass(),
                 c.nullable(),
-                ""
+                "",
+                tableDefinition
             ))
             .toList();
 
         var references = jooqTable == null
             ? List.<CompletionData.Reference>of()
-            : buildReferencesFor(jooq, jooqTable);
+            : buildReferencesFor(jooq, jooqTable, sourceRoot, pkgPath);
 
         return new CompletionData.Table(
             tableName,
             commentOf(jooqTable),
-            CompletionData.SourceLocation.UNKNOWN,
+            tableDefinition,
             columns,
             references
         );
@@ -77,11 +98,14 @@ public final class CatalogBuilder {
      * constraint name is the fallback when the {@code Keys} class is not
      * resolvable.
      */
-    private static List<CompletionData.Reference> buildReferencesFor(JooqCatalog jooq, Table<?> table) {
+    private static List<CompletionData.Reference> buildReferencesFor(
+        JooqCatalog jooq, Table<?> table, Path sourceRoot, String pkgPath
+    ) {
+        var keysLocation = keysSourceLocation(sourceRoot, pkgPath);
         var refs = new ArrayList<CompletionData.Reference>();
         for (ForeignKey<?, ?> fk : table.getReferences()) {
             String targetTable = fk.getKey().getTable().getName();
-            refs.add(new CompletionData.Reference(targetTable, keyConstant(jooq, fk), false));
+            refs.add(new CompletionData.Reference(targetTable, keyConstant(jooq, fk), false, keysLocation));
         }
         // Inbound: any FK on another table that points at this one.
         String thisName = table.getName();
@@ -91,11 +115,30 @@ public final class CatalogBuilder {
             if (other == null) continue;
             for (ForeignKey<?, ?> fk : other.getReferences()) {
                 if (fk.getKey().getTable().getName().equalsIgnoreCase(thisName)) {
-                    refs.add(new CompletionData.Reference(otherName, keyConstant(jooq, fk), true));
+                    refs.add(new CompletionData.Reference(otherName, keyConstant(jooq, fk), true, keysLocation));
                 }
             }
         }
         return List.copyOf(refs);
+    }
+
+    private static CompletionData.SourceLocation tableSourceLocation(
+        Path sourceRoot, String pkgPath, Table<?> jooqTable
+    ) {
+        Path tableFile = sourceRoot
+            .resolve(pkgPath)
+            .resolve("tables")
+            .resolve(jooqTable.getClass().getSimpleName() + ".java");
+        return Files.exists(tableFile)
+            ? new CompletionData.SourceLocation(tableFile.toUri().toString(), 0, 0)
+            : CompletionData.SourceLocation.UNKNOWN;
+    }
+
+    private static CompletionData.SourceLocation keysSourceLocation(Path sourceRoot, String pkgPath) {
+        Path keysFile = sourceRoot.resolve(pkgPath).resolve("Keys.java");
+        return Files.exists(keysFile)
+            ? new CompletionData.SourceLocation(keysFile.toUri().toString(), 0, 0)
+            : CompletionData.SourceLocation.UNKNOWN;
     }
 
     private static String keyConstant(JooqCatalog jooq, ForeignKey<?, ?> fk) {
