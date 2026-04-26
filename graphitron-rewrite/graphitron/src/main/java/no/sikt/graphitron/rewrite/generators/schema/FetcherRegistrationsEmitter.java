@@ -29,8 +29,8 @@ import java.util.TreeMap;
  *   <li>Nested object types with {@link BatchKeyField} leaves — mixes fetcher references with
  *       inline {@code ColumnFetcher} bindings.</li>
  *   <li>Nested object types without {@link BatchKeyField} leaves — inline bindings only.</li>
- *   <li>Connection types — binds {@code edges}, {@code nodes}, {@code pageInfo} to
- *       {@link ConnectionHelperClassGenerator}.</li>
+ *   <li>Connection types — binds {@code edges}, {@code nodes}, {@code pageInfo}, and (when the
+ *       schema declares it) {@code totalCount} to {@link ConnectionHelperClassGenerator}.</li>
  *   <li>Edge types — binds {@code node}, {@code cursor} to {@link ConnectionHelperClassGenerator}.</li>
  * </ol>
  *
@@ -43,8 +43,6 @@ import java.util.TreeMap;
 public final class FetcherRegistrationsEmitter {
 
     private static final ClassName FIELD_COORDS = ClassName.get("graphql.schema", "FieldCoordinates");
-
-    private record ConnectionWiring(String connectionTypeName, String edgeTypeName) {}
 
     /**
      * @param nestedTypeName            the GraphQL type name (e.g. {@code "FilmMeta"})
@@ -63,15 +61,6 @@ public final class FetcherRegistrationsEmitter {
         String fetchersPackage = outputPackage + ".fetchers";
         String utilPackage     = outputPackage + ".util";
 
-        // Connection / Edge wiring is driven by the classifier's first-class type entries
-        // (populated for both directive-driven and structural carriers).
-        var connectionTypeMap = new LinkedHashMap<String, String>();
-        schema.types().forEach((name, type) -> {
-            if (type instanceof GraphitronType.ConnectionType ct) {
-                connectionTypeMap.putIfAbsent(ct.name(), ct.edgeTypeName());
-            }
-        });
-
         var nestedTypeMap = new LinkedHashMap<String, NestedTypeWiring>();
         schema.fields().values().forEach(field -> collectNestedTypes(field, nestedTypeMap));
 
@@ -87,9 +76,15 @@ public final class FetcherRegistrationsEmitter {
         nestedTypeMap.values().forEach(ntw ->
             result.put(ntw.nestedTypeName(), nestedBody(ntw, fetchersPackage, outputPackage, jooqPackage)));
 
-        connectionTypeMap.forEach((connName, edgeName) -> {
-            result.put(connName, connectionBody(connName, utilPackage));
-            result.put(edgeName,  edgeBody(edgeName, utilPackage));
+        // Connection / Edge wiring is driven by the classifier's first-class type entries
+        // (populated for both directive-driven and structural carriers). Iterate the type map
+        // directly — no need for an intermediate (name, edgeName) projection because connectionBody
+        // reads the full ConnectionType to inspect schemaType().getFieldDefinition("totalCount").
+        schema.types().values().forEach(type -> {
+            if (type instanceof GraphitronType.ConnectionType ct) {
+                result.put(ct.name(),         connectionBody(ct, utilPackage));
+                result.put(ct.edgeTypeName(), edgeBody(ct.edgeTypeName(), utilPackage));
+            }
         });
 
         return result;
@@ -131,16 +126,24 @@ public final class FetcherRegistrationsEmitter {
         return body.build();
     }
 
-    private static CodeBlock connectionBody(String connectionTypeName, String utilPackage) {
+    private static CodeBlock connectionBody(GraphitronType.ConnectionType connectionType, String utilPackage) {
         var helper = ClassName.get(utilPackage, ConnectionHelperClassGenerator.CLASS_NAME);
-        return CodeBlock.builder()
+        var connName = connectionType.name();
+        var body = CodeBlock.builder()
             .add("codeRegistry")
             .indent()
-            .add("\n.dataFetcher($T.coordinates($S, $S), $T::edges)",    FIELD_COORDS, connectionTypeName, "edges",    helper)
-            .add("\n.dataFetcher($T.coordinates($S, $S), $T::nodes)",    FIELD_COORDS, connectionTypeName, "nodes",    helper)
-            .add("\n.dataFetcher($T.coordinates($S, $S), $T::pageInfo);\n", FIELD_COORDS, connectionTypeName, "pageInfo", helper)
-            .unindent()
-            .build();
+            .add("\n.dataFetcher($T.coordinates($S, $S), $T::edges)",    FIELD_COORDS, connName, "edges",    helper)
+            .add("\n.dataFetcher($T.coordinates($S, $S), $T::nodes)",    FIELD_COORDS, connName, "nodes",    helper)
+            .add("\n.dataFetcher($T.coordinates($S, $S), $T::pageInfo)", FIELD_COORDS, connName, "pageInfo", helper);
+        // totalCount is always present on synthesised connection types; on structural connections
+        // it is wired only when the SDL author declared it. GraphitronSchemaValidator already
+        // rejected non-Int totalCount, so a present field is guaranteed to be Int / Int!.
+        var totalCount = connectionType.schemaType().getFieldDefinition("totalCount");
+        if (totalCount != null) {
+            body.add("\n.dataFetcher($T.coordinates($S, $S), $T::totalCount)", FIELD_COORDS, connName, "totalCount", helper);
+        }
+        body.add(";\n").unindent();
+        return body.build();
     }
 
     private static CodeBlock edgeBody(String edgeTypeName, String utilPackage) {

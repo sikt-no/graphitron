@@ -18,11 +18,11 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | Multi-parent `NestingField` sharing: `TableField` arm | Spec | [plan](nestingfield-multiparent-tablefield.md) |
 | Faceted search on `@asConnection` <sub>[spike](faceted-search-sql.md)</sub> | Spec | [plan](faceted-search.md) |
 | Mutation bodies | Spec | [plan](mutations.md) |
-| `@asConnection` `totalCount` field <sub>Release blocker.</sub> | Ready | [plan](asconnection-totalcount.md) |
 | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
 | Docs as an index into classification tests | Ready (deferred) | [plan](docs-as-index-into-tests.md) |
 | Java LSP rewrite + introspect retirement + `dev` goal | Ready | [plan](graphitron-lsp.md) |
 | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` | In Progress | [plan](retire-maven-plugin.md) |
+| `@asConnection` `totalCount` field <sub>Release blocker.</sub> | In Review | [plan](asconnection-totalcount.md) |
 | First-class Connection, Edge, PageInfo type variants | In Review | [plan](firstclass-connection-types.md) |
 | `@notGenerated` directive removal | In Review | [plan](remove-notgenerated.md) |
 | Load-bearing classifier guarantee audit annotations | In Review | [plan](load-bearing-guarantee-audit.md) |

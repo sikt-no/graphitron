@@ -18,6 +18,9 @@ import java.util.List;
  *   <li>{@code edges(env)} — trims result to page size, wraps each Record into an Edge</li>
  *   <li>{@code nodes(env)} — trims result to page size, returns Records directly</li>
  *   <li>{@code pageInfo(env)} — computes hasNextPage, hasPreviousPage, startCursor, endCursor</li>
+ *   <li>{@code totalCount(env)} — issues {@code SELECT count(*)} against the parent field's
+ *       {@code (table, condition)} carried on {@code ConnectionResult}; returns {@code null}
+ *       when those are absent (Split-Connection scatter path)</li>
  *   <li>{@code edgeNode(env)} — returns the Record from an Edge</li>
  *   <li>{@code edgeCursor(env)} — returns the cursor string from an Edge</li>
  * </ul>
@@ -253,6 +256,33 @@ public class ConnectionHelperClassGenerator {
             .addStatement("return info")
             .build();
 
+        // --- totalCount(DataFetchingEnvironment) → Integer ---
+        // Lazy on selection: graphql-java only invokes the registered resolver when the client
+        // selects totalCount, so the count SQL is skipped on every query that does not ask for
+        // it. Returns null when (table, condition) are absent — the Split-Connection scatter
+        // path supplies a ConnectionResult without (table, condition); selecting totalCount on
+        // those carriers returns null until per-parent count plumbing lands (see roadmap follow-up).
+        var dslContextClass = ClassName.get("org.jooq", "DSLContext");
+        var graphitronContextClass = ClassName.get(outputPackage + ".schema", "GraphitronContext");
+        var totalCountMethod = MethodSpec.methodBuilder("totalCount")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(Integer.class)
+            .addParameter(ENV, "env")
+            .addStatement("$T cr = env.getSource()", connectionResultClass)
+            .addCode("if (cr.table() == null || cr.condition() == null) return null;\n")
+            .addStatement("$T dsl = graphitronContext(env).getDslContext(env)", dslContextClass)
+            .addStatement("return dsl.selectCount().from(cr.table()).where(cr.condition()).fetchOne(0, $T.class)", Integer.class)
+            .build();
+
+        // Mirrors TypeFetcherGenerator.buildGraphitronContextHelper. Emitted on this helper so
+        // totalCount can resolve the per-request DSLContext without leaning on a fetcher class.
+        var graphitronContextShim = MethodSpec.methodBuilder("graphitronContext")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(graphitronContextClass)
+            .addParameter(ENV, "env")
+            .addStatement("return env.getGraphQlContext().get($T.class)", graphitronContextClass)
+            .build();
+
         // --- edgeNode(DataFetchingEnvironment) → Record ---
         var edgeNodeMethod = MethodSpec.methodBuilder("edgeNode")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -280,6 +310,8 @@ public class ConnectionHelperClassGenerator {
             .addMethod(edgesMethod)
             .addMethod(nodesMethod)
             .addMethod(pageInfoMethod)
+            .addMethod(totalCountMethod)
+            .addMethod(graphitronContextShim)
             .addMethod(edgeNodeMethod)
             .addMethod(edgeCursorMethod)
             .build();

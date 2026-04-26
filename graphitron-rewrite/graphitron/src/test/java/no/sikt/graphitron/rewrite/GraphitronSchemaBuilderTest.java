@@ -3777,6 +3777,10 @@ class GraphitronSchemaBuilderTest {
                 assertThat(conn.schemaType().getFieldDefinition("edges")).isNotNull();
                 assertThat(conn.schemaType().getFieldDefinition("nodes")).isNotNull();
                 assertThat(conn.schemaType().getFieldDefinition("pageInfo")).isNotNull();
+                // Synthesised connections always carry totalCount: Int (nullable).
+                var totalCount = conn.schemaType().getFieldDefinition("totalCount");
+                assertThat(totalCount).isNotNull();
+                assertThat(totalCount.getType()).isEqualTo(graphql.Scalars.GraphQLInt);
 
                 var edge = (EdgeType) schema.type("QueryFilmsEdge");
                 assertThat(edge.elementTypeName()).isEqualTo("Film");
@@ -3832,6 +3836,24 @@ class GraphitronSchemaBuilderTest {
                 // Structural path: schemaType is the SDL-parsed instance, reused verbatim.
                 assertThat(schema.type("FilmsEdge")).isInstanceOf(EdgeType.class);
                 assertThat(schema.type("PageInfo")).isInstanceOf(PageInfoType.class);
+                // No totalCount declared in SDL; structural path leaves the field absent.
+                assertThat(conn.schemaType().getFieldDefinition("totalCount")).isNull();
+            }),
+
+        STRUCTURAL_CONNECTION_WITH_TOTALCOUNT(
+            "a hand-written Connection that declares totalCount: Int keeps the field on schemaType()",
+            """
+            type Film @table(name: "film") { id: ID }
+            type FilmsConnection { edges: [FilmsEdge!]! nodes: [Film!]! pageInfo: PageInfo! totalCount: Int }
+            type FilmsEdge { cursor: String! node: Film! }
+            type PageInfo { hasNextPage: Boolean! hasPreviousPage: Boolean! startCursor: String endCursor: String }
+            type Query { films: FilmsConnection }
+            """,
+            schema -> {
+                var conn = (ConnectionType) schema.type("FilmsConnection");
+                var fd = conn.schemaType().getFieldDefinition("totalCount");
+                assertThat(fd).isNotNull();
+                assertThat(fd.getType()).isEqualTo(graphql.Scalars.GraphQLInt);
             }),
 
         DEDUP_SAME_EXPLICIT_NAME(
