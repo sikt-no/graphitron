@@ -1,37 +1,39 @@
 # Graphitron Project - Claude Code Reference
 
-Rules and constraints for working in this repo. Background and architecture live in [`docs/README.md`](docs/README.md).
+Rules and constraints for working in this repo. **Scope: only [`graphitron-rewrite/`](graphitron-rewrite/).** The legacy modules at the repo root (`graphitron-codegen-parent`, `graphitron-common`, `graphitron-example`, `graphitron-maven-plugin`, `graphitron-schema-transform`, `graphitron-servlet-parent`) are out of scope for AI work; do not modify them. Background and architecture for the rewrite live in [`graphitron-rewrite/docs/README.md`](graphitron-rewrite/docs/README.md).
 
-## What Graphitron is
+## What graphitron-rewrite is
 
-Maven-based code generator that turns GraphQL schemas + jOOQ-generated database models into Java resolvers. Developed by Sikt.
+The next-generation Graphitron generator: a Maven-based code generator that turns GraphQL schemas + jOOQ-generated database models into Java resolvers. Lives as a nested monorepo under `graphitron-rewrite/` with its own parent pom (`graphitron-rewrite-parent`, `10-SNAPSHOT`). Modules: `graphitron-javapoet`, `graphitron`, `graphitron-fixtures-codegen`, `graphitron-fixtures`, `graphitron-maven`, `graphitron-test`, `graphitron-lsp`, `roadmap-tool`. Developed by Sikt.
 
 ## Technology constraints
 
-- **Java 21** for generator code; **Java 17** for generated output. Generator implementation may use Java 21 features freely. Generated source files must target Java 17 — consumers may still be on 17, and we control what syntax appears in those files.
-- **jOOQ 3.19.18**, **GraphQL-Java 24.2** (with Apollo Federation), **JUnit 5 + AssertJ**, **PostgreSQL**. Don't add dependencies without checking `pom.xml` first.
+- **Java 21** for generator code (`<release>21</release>` in `graphitron-rewrite/pom.xml` and most child modules); **Java 17** for generated output (`graphitron-test` compiles with `<release>17</release>` to verify this). Generator implementation may use Java 21 features freely. Generated source files must target Java 17, consumers may still be on 17, and we control what syntax appears in those files.
+- **jOOQ 3.20.11**, **GraphQL-Java 25.0**, **JUnit 6.0.3 + AssertJ 3.27.7**, **PostgreSQL 42.7.10** (Testcontainers 2.0.4). Versions are pinned in `graphitron-rewrite/pom.xml` properties; don't add dependencies without checking that pom first.
 
 ## Environment (agent sessions)
 
-Maven 3.9.11 at `/opt/maven`; Java 21 default. Pre-configured — no installation needed.
+Maven 3.9.11 at `/opt/maven`; Java 21 default. Pre-configured, no installation needed.
 
 **Claude Code Web:** see [`graphitron-rewrite/docs/claude-code-web-environment.md`](graphitron-rewrite/docs/claude-code-web-environment.md) for the web-sandbox setup (no Docker, native PostgreSQL via `-Plocal-db`).
 
 ## Common commands
 
 ```bash
-mise r build-all             # Full build + install
-mise r start                 # Start example server in dev mode
-mise r sakila                # Start Sakila example DB
-mise r jooq                  # Regenerate jOOQ classes
-mvn clean install -Pquick    # Fast build, skips tests + javadocs
+# Build the rewrite (always include -Plocal-db; see footgun below)
+mvn -f graphitron-rewrite/pom.xml install -Plocal-db
+
+# Regenerate graphitron-rewrite/roadmap/README.md from item front-matter
+mvn -f graphitron-rewrite/pom.xml -pl roadmap-tool exec:java -q
 ```
 
-## Building and testing graphitron-rewrite
+The full install is fast; prefer it over targeted `-pl` builds. If you do need `-pl`, always pair it with `-am` (also-make) or `-amd` (also-make-dependents); a bare `-pl` skips dependent modules and produces stale results.
 
-Full pipeline (build-fixtures → test → compile-spec → execute-spec): [`graphitron-rewrite/docs/claude-code-web-environment.md`](graphitron-rewrite/docs/claude-code-web-environment.md). Test-tier conventions (no code-string assertions on generated bodies; unit vs pipeline vs compilation vs execution): [`graphitron-rewrite/docs/rewrite-design-principles.md`](graphitron-rewrite/docs/rewrite-design-principles.md).
+## Building and testing
 
-**Footgun: fixtures-jar clobber.** Any broad `mvn install` that hits `graphitron-fixtures` without `-Plocal-db` silently re-emits the jar with an empty jOOQ catalog, cascading into `UnclassifiedType`, `NoSuchElement`, or "table … could not be resolved" failures across pipeline tests. Recovery: `mvn install -pl :graphitron-fixtures -Plocal-db`. Always re-run the `-Plocal-db` fixtures install as the final step after a broad install. Full symptom list and rationale: [`claude-code-web-environment.md`](graphitron-rewrite/docs/claude-code-web-environment.md).
+Full pipeline (build-fixtures → test → compile-spec → execute-spec): [`graphitron-rewrite/docs/claude-code-web-environment.md`](graphitron-rewrite/docs/claude-code-web-environment.md). Test-tier conventions (no code-string assertions on generated bodies; unit vs pipeline vs compilation vs execution): [`graphitron-rewrite/docs/rewrite-design-principles.md`](graphitron-rewrite/docs/rewrite-design-principles.md). Architectural orientation (sealed variant hierarchy, classification taxonomy, runtime extension points): [`graphitron-rewrite/docs/README.md`](graphitron-rewrite/docs/README.md).
+
+**Footgun: fixtures-jar clobber.** Any `mvn install` that builds `graphitron-fixtures` without `-Plocal-db` silently re-emits the jar with an empty jOOQ catalog, cascading into `UnclassifiedType`, `NoSuchElement`, or "table … could not be resolved" failures across pipeline tests. Always include `-Plocal-db`. Recovery: rerun the full install command above. Full symptom list and rationale: [`claude-code-web-environment.md`](graphitron-rewrite/docs/claude-code-web-environment.md).
 
 ## Writing style
 
@@ -43,7 +45,7 @@ Prefer many small `Edit` calls over one large `Write` when trimming or rewriting
 
 ## Development Workflow
 
-Every change moves Backlog → Spec → Ready → In Progress → In Review → Done. Each item has its own file in [`graphitron-rewrite/roadmap/`](graphitron-rewrite/roadmap/) carrying YAML front-matter (`status:`, `bucket:`, etc.); [`graphitron-rewrite/roadmap/README.md`](graphitron-rewrite/roadmap/README.md) is the rendered roll-up, regenerated by `mvn -pl :graphitron-roadmap-tool exec:java`. Reviewer must be a different party than the author (for Spec → Ready) and the implementer (for In Review → Done). Any session can add Backlog items.
+Every change moves Backlog → Spec → Ready → In Progress → In Review → Done. Each item has its own file in [`graphitron-rewrite/roadmap/`](graphitron-rewrite/roadmap/) carrying YAML front-matter (`status:`, `bucket:`, etc.); [`graphitron-rewrite/roadmap/README.md`](graphitron-rewrite/roadmap/README.md) is the rendered roll-up, regenerated by `mvn -f graphitron-rewrite/pom.xml -pl roadmap-tool exec:java -q`. Reviewer must be a different party than the author (for Spec → Ready) and the implementer (for In Review → Done). Any session can add Backlog items.
 
 Full spec, state table, file conventions, canonical path: [`graphitron-rewrite/docs/workflow.md`](graphitron-rewrite/docs/workflow.md). Read it once; it's short.
 
