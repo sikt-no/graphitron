@@ -2,6 +2,8 @@
 
 Tracks remaining generator work. For the model taxonomy, see [Code Generation Triggers](../code-generation-triggers.md). For design principles, see [Rewrite Design Principles](../rewrite-design-principles.md).
 
+**First time contributing?** Read in this order: [Workflow](../workflow.md) (state machine and plan conventions), [Rewrite Design Principles](../rewrite-design-principles.md) (the architectural rules every classifier and emitter obeys), [Code Generation Triggers](../code-generation-triggers.md) (how directives map to model variants and generator output). Then read an Active plan below to see the shape, and pick a `[Backlog]` item or take a Ready item off the Active table.
+
 ---
 
 ## Active

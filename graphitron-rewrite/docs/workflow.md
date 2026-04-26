@@ -51,6 +51,14 @@ themselves from approving that revision — another party must sign off.
   nothing to verify between them.
 - A plan deleted on Done has its file removed outright. Git history preserves it;
   leaving a tombstone file encourages staleness.
+- Plans with a user-visible surface (a new Mojo goal, a new directive, a new
+  output format, a wire-protocol change) include a draft of the user docs as
+  the first client of the design. If the docs do not read simply, the design
+  is wrong and must change before implementation. The draft lives inside the
+  plan and moves into its real home (`getting-started.md`, the relevant
+  README) when the feature ships. The LSP plan's `## User documentation
+  (first-client check)` section is the canonical example. Internal refactors
+  with no user surface are exempt.
 
 ## Roadmap conventions
 
