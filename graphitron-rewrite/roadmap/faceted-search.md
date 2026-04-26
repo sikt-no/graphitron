@@ -162,7 +162,7 @@ into a single `ConnectionResult` carrier.
 
 1. New pipeline test in `GraphitronSchemaBuilderTest` classifies a schema with
    `@asFacet` into a `FieldWrapper.Connection` whose `facets()` is non-empty.
-2. New execution test in `graphitron-rewrite-test` asserts facet counts
+2. New execution test in `graphitron-test` asserts facet counts
    match a hand-written jOOQ aggregate over the same filter.
 3. Existing `filmsConnection*` tests unchanged (no `@asFacet` in their filters).
 
@@ -237,7 +237,7 @@ facets after v1 lands.
 | 2 | `graphitron-rewrite` (directive + synthesis) | `@asFacet` directive definition; the `@asConnection` synthesis pipeline grows a facet arm that emits `*Facets` / `*FacetValue` TypeSpecs and adds the `facets` field on the rewritten Connection |
 | 3 | `graphitron-rewrite` (classifier) | `FieldWrapper.Connection` carries `FacetSpec`; validator rejects misuse |
 | 4 | `graphitron-rewrite` (emitter) | Fetcher emits the spike-chosen aggregate shape; helper + wiring expose the new field |
-| 5 | `graphitron-rewrite-test` | Execution tests against Sakila |
+| 5 | `graphitron-test` | Execution tests against Sakila |
 | 6 | deferred | Hierarchical facets (`includeChildrenOf` + `parentValue`) |
 
 ---
@@ -877,7 +877,7 @@ unchanged.
 
 ### Changes
 
-#### `graphitron-rewrite/graphitron-rewrite-test/.../graphql/schema.graphqls`
+#### `graphitron-rewrite/graphitron-test/.../graphql/schema.graphqls`
 
 Add (alongside existing `filmsConnection`):
 

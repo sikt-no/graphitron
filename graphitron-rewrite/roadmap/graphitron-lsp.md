@@ -44,7 +44,7 @@ sources:
   (327 LOC; deletion target in Phase 7).
 - **Rewrite catalog API the LSP imports** (Phase 2): a new
   public facade `RewriteCatalogView` under
-  `graphitron-rewrite/graphitron-rewrite/src/main/java/no/sikt/graphitron/rewrite/`
+  `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/`
   that exposes the catalog read-only. The facade delegates to
   the existing rewrite internals (`JooqCatalog`, plus the
   package-private `ServiceCatalog` and `BuildContext`), keeps
@@ -59,7 +59,7 @@ sources:
 - **Phase 0 spike code**: under
   `graphitron-rewrite/graphitron-lsp/`, with 5 passing tests.
 - **Existing watch goal that Phase 1 absorbs**:
-  `graphitron-rewrite/graphitron-rewrite-maven/src/main/java/no/sikt/graphitron/rewrite/maven/{WatchMojo.java,watch/}`.
+  `graphitron-rewrite/graphitron-maven/src/main/java/no/sikt/graphitron/rewrite/maven/{WatchMojo.java,watch/}`.
 
 ## Goal
 
@@ -194,7 +194,7 @@ Tests for design / docs alignment:
 **In scope**
 
 - Java LSP module `graphitron-rewrite/graphitron-lsp`, lsp4j-based.
-- `graphitron-rewrite-maven:dev` Mojo as the single user-facing
+- `graphitron-maven:dev` Mojo as the single user-facing
   goal: LSP-on-fixed-port + schema-watch + classpath-watch +
   regeneration, all one JVM.
 - Per-directive completions, diagnostics, hover, goto-definition for
@@ -266,7 +266,7 @@ graphitron-rewrite/graphitron-lsp/
     TableCompletionsTest
 ```
 
-`graphitron-rewrite-maven` gains `LspMojo` (P0-interim, registered
+`graphitron-maven` gains `LspMojo` (P0-interim, registered
 as `mvn graphitron-rewrite:lsp`) that wraps `Launcher.main`. Phase 1
 deletes both `LspMojo` and the existing `WatchMojo`, replacing
 them with `DevMojo` (`mvn graphitron-rewrite:dev`) bound to a
@@ -440,7 +440,7 @@ disconnects on close. The LSP outlives editor restarts; reattach
 is sub-second because all state (workspace, parsed trees, catalog)
 stays warm in the JVM.
 
-Mojo lives in `graphitron-rewrite-maven` as `DevMojo`, extending
+Mojo lives in `graphitron-maven` as `DevMojo`, extending
 `AbstractRewriteMojo` (so `<schemaInputs>` / `<jooqPackage>` /
 `<outputPackage>` configuration is shared with `generate`). The
 existing `WatchMojo` and the Phase 0 `LspMojo` are deleted as
@@ -500,7 +500,7 @@ Workspace lifecycle:
   implementing it.
 
 `dev` goal:
-- New `DevMojo` in `graphitron-rewrite-maven` extending
+- New `DevMojo` in `graphitron-maven` extending
   `AbstractRewriteMojo`. Binds a `ServerSocket` on
   `127.0.0.1:8487` by default, configurable via
   `-Dgraphitron.dev.port=N`, accepts editor connections, hands
@@ -632,7 +632,7 @@ Per-phase additions:
   `CatalogRefreshTest` touching a fixture `.class` file and
   asserting the next completion sees the new catalog.
 - **Phase 2:** `CatalogBuilderTest` with a fixture jOOQ catalog
-  (reuse `graphitron-rewrite-fixtures` for the jOOQ classes).
+  (reuse `graphitron-fixtures` for the jOOQ classes).
   `ScalarCatalogTest` covering built-in vs. custom-scalar
   resolution and SDL-derived aliases.
 - **Phase 3:** one test per directive, mirroring the Rust LSP's
@@ -723,7 +723,7 @@ A3. **`-parameters` propagation for service Javadoc.** The
    rewrite generator already emits a one-shot warning when it
    reads a service class compiled without `-parameters`
    (`ServiceCatalog.emitParametersWarning` in
-   `graphitron-rewrite/graphitron-rewrite/src/main/java/no/sikt/graphitron/rewrite/ServiceCatalog.java`).
+   `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/ServiceCatalog.java`).
    The LSP needs the same behaviour but should surface it as an
    LSP diagnostic / status message rather than a build-time log.
    Closes in Phase 5.
@@ -814,7 +814,7 @@ locked. Brief tombstones for the record; git history (the
 ancestors of this plan, slug `plan-introspect-goal.md` before
 rename) carries the full discussion.
 
-- **Port `introspect` to `graphitron-rewrite-maven` (Java
+- **Port `introspect` to `graphitron-maven` (Java
   producer + existing Rust LSP).** Keeps the JSON contract and
   the producer-consumer split; doesn't fix on-demand refresh and
   doesn't enable in-process catalog reuse. Worse than D for a

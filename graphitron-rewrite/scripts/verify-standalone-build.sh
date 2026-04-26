@@ -9,7 +9,6 @@
 #   graphitron-java-codegen
 #   graphitron-maven-plugin
 #   graphitron-schema-transform
-#   graphitron-javapoet               (the rewrite tree uses graphitron-rewrite-javapoet instead)
 #
 # Usage: graphitron-rewrite/scripts/verify-standalone-build.sh [extra mvn args...]
 #
@@ -32,7 +31,6 @@ FORBIDDEN_COORDS=(
     graphitron-java-codegen
     graphitron-maven-plugin
     graphitron-schema-transform
-    graphitron-javapoet
 )
 
 TMPREPO="$(mktemp -d)"

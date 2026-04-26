@@ -347,8 +347,8 @@ phase's landing commit.
 - Method signature is `public static <ReturnType> createFilm(DataFetchingEnvironment env)`.
 - Body contains `insertInto` and `returningResult`.
 
-**Execution** (new `GraphQLMutationTest` in `graphitron-rewrite-test`):
-- **Fixture gap**: `graphitron-rewrite-test/src/main/resources/graphql/schema.graphqls` currently
+**Execution** (new `GraphQLMutationTest` in `graphitron-test`):
+- **Fixture gap**: `graphitron-test/src/main/resources/graphql/schema.graphqls` currently
   has no `Mutation` type.  Phase 2 adds the first one; subsequent phases extend it.  This mirrors
   the fixture gap that the service-root-fetchers work (Done) closed for `@service` / `@tableMethod`
   via `SampleQueryService` and the three new Query fields.
@@ -363,7 +363,7 @@ phase's landing commit.
   `TableBoundReturnType`-returning variant to exercise `RETURNING (multiset)` per the note above.
 - Negative test: an SDL with `createFilm(...): Int @mutation(typeName: INSERT)` is rejected at
   build time per Invariant #12.
-- Compile gate: `mvn compile -pl :graphitron-rewrite-test -Plocal-db`.
+- Compile gate: `mvn compile -pl :graphitron-test -Plocal-db`.
 
 ---
 

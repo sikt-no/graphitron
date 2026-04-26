@@ -72,7 +72,7 @@ The rule extends beyond stubbed variants: when a classifier introduces a new inv
 
 The rule above flows in one direction: a classifier rejection becomes a build-time error via the validator. The reverse direction also matters. A classifier acceptance can let an emitter assume narrower shapes, so the emitted code reads as tight as if it were hand-written: no defensive casts, no wildcard locals, no `instanceof` guards. When that pattern lands, the classifier check becomes load-bearing for the emitter's correctness; relaxing the check breaks the generated source.
 
-This is a feature, not a fragility. Compile failure of the emitted source at `mvn compile -pl :graphitron-rewrite-test` is the safety net: any classifier/emitter mismatch surfaces during the build, before any code reaches a consumer. Compared with defensive runtime casts (which can throw `ClassCastException` on a real request, days after the build passed) or `var`-typed locals fed into parameterised entry points (which abandon the strict-shape guarantee entirely), the load-bearing-guarantee shape is the safest expression of the contract.
+This is a feature, not a fragility. Compile failure of the emitted source at `mvn compile -pl :graphitron-test` is the safety net: any classifier/emitter mismatch surfaces during the build, before any code reaches a consumer. Compared with defensive runtime casts (which can throw `ClassCastException` on a real request, days after the build passed) or `var`-typed locals fed into parameterised entry points (which abandon the strict-shape guarantee entirely), the load-bearing-guarantee shape is the safest expression of the contract.
 
 Two instances on trunk today:
 
@@ -85,7 +85,7 @@ Rule: if you relax a classifier check that an emitter relies on, audit every emi
 
 Behaviour is asserted at the SDL → classified model → generated `TypeSpec` pipeline layer — not at the per-variant unit tier. Per-variant structural tests (method names, return types, which methods exist) are bookkeeping; the primary signal that a feature works is that a realistic SDL produces a realistic `TypeSpec` end-to-end through the classifier. New features earn a pipeline test first; unit tests cover structural invariants that pipeline coverage would make repetitive.
 
-Complementary tiers layered above: compilation of `graphitron-rewrite-test` against real jOOQ classes (type correctness); execution of the generated code against real PostgreSQL (behaviour correctness). Code-string assertions on generated method bodies are banned at every tier — they test implementation, not behaviour, and break on every refactor.
+Complementary tiers layered above: compilation of `graphitron-test` against real jOOQ classes (type correctness); execution of the generated code against real PostgreSQL (behaviour correctness). Code-string assertions on generated method bodies are banned at every tier — they test implementation, not behaviour, and break on every refactor.
 
 ## Documentation names only live tests/code
 
@@ -93,7 +93,7 @@ Javadoc, plan prose, and README references that name a test, method, or class mu
 
 ## Compilation against real jOOQ is a test tier
 
-`mvn compile -pl :graphitron-rewrite-test -Plocal-db` against a real jOOQ catalog is the primary check that generated emission is type-correct. Unit tests assert structure; pipeline tests assert SDL → TypeSpec shape; compilation catches "the `Field<Record4<Int,Str,Int,Str>>` parameter doesn't line up with the emitted DSL call" without a hand-written assertion. Every generator change must pass `-Plocal-db` compile before merging.
+`mvn compile -pl :graphitron-test -Plocal-db` against a real jOOQ catalog is the primary check that generated emission is type-correct. Unit tests assert structure; pipeline tests assert SDL → TypeSpec shape; compilation catches "the `Field<Record4<Int,Str,Int,Str>>` parameter doesn't line up with the emitted DSL call" without a hand-written assertion. Every generator change must pass `-Plocal-db` compile before merging.
 
 The complementary tier above it — execution against a real PostgreSQL via the same fixture database — is the behaviour check. Together, compile + execute replace the body-content assertions that the "generation-thinking" principle bans.
 
@@ -101,18 +101,18 @@ The complementary tier above it — execution against a real PostgreSQL via the 
 
 Graphitron is a code generator. The Java version used to build the generator is independent of the Java version of the source it emits.
 
-- **Generator implementation** (everything in `graphitron-rewrite`, `graphitron-java-codegen`, etc.) may freely use Java 21 features — sealed classes, pattern matching, records, switch expressions, text blocks, and so on.
+- **Generator implementation** (everything in `graphitron`, `graphitron-java-codegen`, etc.) may freely use Java 21 features — sealed classes, pattern matching, records, switch expressions, text blocks, and so on.
 - **Generated source files** must target Java 17. Consumers compile Graphitron's output with their own toolchain, which may be Java 17. Generator authors are responsible for ensuring that any syntax emitted into generated files is valid Java 17 — no switch patterns, no sequenced collections API, nothing that requires 21.
 
 The practical implication: when adding code to a generator, distinguish between code *in* the generator (unrestricted) and code *emitted by* the generator (Java 17).
 
 ## Rewrite builds independently of legacy Graphitron modules
 
-`graphitron-rewrite/pom.xml` is a self-contained Maven aggregator. `mvn install -f graphitron-rewrite/pom.xml` on a clean local repo builds the five rewrite modules (`graphitron-rewrite-javapoet`, `graphitron-rewrite`, `graphitron-rewrite-fixtures`, `graphitron-rewrite-maven`, `graphitron-rewrite-test`) without resolving any legacy artifact (`graphitron-common`, `graphitron-java-codegen`, `graphitron-maven-plugin`, `graphitron-schema-transform`, or the legacy `graphitron-javapoet` coord).
+`graphitron-rewrite/pom.xml` is a self-contained Maven aggregator. `mvn install -f graphitron-rewrite/pom.xml` on a clean local repo builds the five rewrite modules (`graphitron-javapoet`, `graphitron`, `graphitron-fixtures`, `graphitron-maven`, `graphitron-test`) without resolving any legacy artifact (`graphitron-common`, `graphitron-java-codegen`, `graphitron-maven-plugin`, `graphitron-schema-transform`). The rewrite tree publishes its own `graphitron-javapoet` at `10-SNAPSHOT`, distinct from the legacy `9-SNAPSHOT` coord.
 
 The invariant is enforced by `graphitron-rewrite/scripts/verify-standalone-build.sh`, which runs the aggregator against a fresh empty local repo and greps the resulting repo for forbidden legacy coords. Any future change that pulls a legacy dep back into the rewrite tree fails this check.
 
-Rationale: rewrite is the successor; consumers migrating off the legacy generator should be able to depend on the rewrite aggregator alone. The rewrite-owned Maven plugin (`graphitron-rewrite-maven`) is the entry point; the legacy plugin and schema-transform module remain available for consumers who haven't migrated yet, but rewrite code does not import from them.
+Rationale: rewrite is the successor; consumers migrating off the legacy generator should be able to depend on the rewrite aggregator alone. The rewrite-owned Maven plugin (`graphitron-maven`) is the entry point; the legacy plugin and schema-transform module remain available for consumers who haven't migrated yet, but rewrite code does not import from them.
 
 ---
 

@@ -285,7 +285,7 @@ classification-failure path. Rename to `DTO_SOURCES_REJECTED` for clarity.
 
 ### Compilation + execution
 
-- `graphitron-rewrite-test` compile must pass — catches any stray `BatchKey`
+- `graphitron-test` compile must pass — catches any stray `BatchKey`
   switch that wasn't updated.
 - Execution suite runs unchanged — there are no `ObjectBased` execution tests today.
 
