@@ -24,7 +24,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` | In Progress | [plan](retire-maven-plugin.md) |
 | `@asConnection` `totalCount` field <sub>Release blocker.</sub> | In Review | [plan](asconnection-totalcount.md) |
 | First-class Connection, Edge, PageInfo type variants | In Review | [plan](firstclass-connection-types.md) |
-| `@notGenerated` directive removal | In Review | [plan](remove-notgenerated.md) |
 | Load-bearing classifier guarantee audit annotations | In Review | [plan](load-bearing-guarantee-audit.md) |
 
 ---
