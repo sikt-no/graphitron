@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite.maven;
 
-import no.sikt.graphitron.lsp.catalog.CompletionData;
+import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.lsp.state.Workspace;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.rewrite.RewriteContext;
@@ -81,7 +81,7 @@ public class DevMojo extends AbstractRewriteMojo {
             runGeneratorPass(initialCtx, "initial run");
         }
 
-        var workspace = new Workspace(CompletionData.empty());
+        var workspace = new Workspace(buildCatalogQuietly(initialCtx));
         bindServer(workspace);
         Set<Path> schemaRoots = startSchemaWatcher(initialCtx, workspace);
         startClasspathWatcher(initialCtx, workspace);
@@ -168,22 +168,53 @@ public class DevMojo extends AbstractRewriteMojo {
                         + root + ": " + e.getMessage());
                 }
             }
+            // The schema may have changed which scalars are declared,
+            // so refresh the catalog from the freshly-parsed bundle.
+            try {
+                workspace.setCatalog(new GraphQLRewriteGenerator(ctx).buildCatalog());
+            } catch (RuntimeException e) {
+                getLog().warn("graphitron:dev: catalog refresh after save failed; "
+                    + "keeping previous: " + e.getMessage());
+                workspace.markAllForRecalculation();
+            }
         } catch (MojoExecutionException e) {
             getLog().error("graphitron:dev: failed to rebuild context", e);
+            workspace.markAllForRecalculation();
         }
-        // Notify the LSP that generated sources changed; Phase 3 turns
-        // this into a real diagnostic refresh, slice 2 just records the
-        // intent so open files end up in the recalc queue.
-        workspace.markAllForRecalculation();
     }
 
     private void rebuildCatalog(Workspace workspace) {
-        // The trigger lands in Phase 1 so Phase 2 only has to plug the
-        // RewriteCatalogView builder in here. We deliberately do not
-        // touch the workspace catalog yet: Phase 2 will ship a builder
-        // and the swap will become workspace.setCatalog(builder.build()).
-        getLog().info("graphitron:dev: classpath change detected; "
-            + "catalog rebuild deferred to Phase 2");
+        getLog().info("graphitron:dev: classpath change detected; rebuilding catalog");
+        try {
+            var ctx = buildContext();
+            var catalog = new GraphQLRewriteGenerator(ctx).buildCatalog();
+            workspace.setCatalog(catalog);
+            getLog().info("graphitron:dev: catalog refreshed (" + catalog.tables().size()
+                + " tables, " + catalog.types().size() + " scalars)");
+        } catch (MojoExecutionException e) {
+            getLog().error("graphitron:dev: catalog rebuild failed (context)", e);
+        } catch (RuntimeException e) {
+            // Bad schema mid-edit: keep the previous catalog so completions
+            // do not silently disappear. The next save will re-trigger.
+            getLog().warn("graphitron:dev: catalog rebuild failed; keeping previous: "
+                + e.getMessage());
+        }
+    }
+
+    /**
+     * Initial catalog at dev-goal startup. A schema parse / classification
+     * failure is surfaced as a warning and an empty catalog: the LSP must
+     * still come up so the developer can fix the schema, and the schema
+     * watcher will re-build on the next save.
+     */
+    private CompletionData buildCatalogQuietly(RewriteContext ctx) {
+        try {
+            return new GraphQLRewriteGenerator(ctx).buildCatalog();
+        } catch (RuntimeException e) {
+            getLog().warn("graphitron:dev: initial catalog build failed; "
+                + "starting with empty catalog: " + e.getMessage());
+            return CompletionData.empty();
+        }
     }
 
     private boolean runGeneratorPass(RewriteContext ctx, String label) {

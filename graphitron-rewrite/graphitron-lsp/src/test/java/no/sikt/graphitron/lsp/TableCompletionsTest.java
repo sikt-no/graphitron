@@ -1,6 +1,6 @@
 package no.sikt.graphitron.lsp;
 
-import no.sikt.graphitron.lsp.catalog.CompletionData;
+import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.lsp.completions.TableCompletions;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import org.junit.jupiter.api.Test;

@@ -1,4 +1,4 @@
-package no.sikt.graphitron.lsp.catalog;
+package no.sikt.graphitron.rewrite.catalog;
 
 import java.util.List;
 import java.util.Optional;
