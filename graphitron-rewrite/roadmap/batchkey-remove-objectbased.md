@@ -218,11 +218,10 @@ Delete lines 10–11 (the "blocked on `BatchKey.ObjectBased`" note for
 trunk via record-fields Phase 1) and note that `RecordLookupTableField` will join once
 Phase 2 of record-fields lands — no remaining hierarchy-level blocker.
 
-#### `docs/planning/rewrite-roadmap.md`
+#### Roadmap
 
-- The Backlog item *"`BatchKey.ObjectBased` generator path decision"* is already moved
-  to Active Draft (this plan).
-- The Backlog already carries an Unplanned *"`BatchKey` lifter directive"* entry.
+- This plan's item file is `roadmap/batchkey-remove-objectbased.md` (status: Spec).
+- The Backlog already carries a [`BatchKey` lifter directive](batchkey-lifter-directive.md) entry.
 - Delete any remaining *"`ObjectBased` batch loading is unimplemented"* Known Gap if
   still present.
 
@@ -309,4 +308,4 @@ Phase 1.
 - Capability interface: `BatchKeyField.java`
 - Emit arms: `GeneratorUtils.java:135` + `GeneratorUtils.java:242–245`
 - Record-fields path (unaffected): `FieldBuilder.deriveBatchKeyForResultType` (Phase 1 + 2 Done on trunk)
-- Lifter directive backlog entry: `rewrite-roadmap.md` → "`BatchKey` lifter directive"
+- Lifter directive backlog entry: [`batchkey-lifter-directive.md`](batchkey-lifter-directive.md)

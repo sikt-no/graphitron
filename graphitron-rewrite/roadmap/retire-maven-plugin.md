@@ -8,7 +8,7 @@ priority: 11
 
 Umbrella tracker. Fold the remaining transform passes and the Maven surface into `graphitron-rewrite` so every schema pass has a single code-owner and consumers depend on `graphitron-rewrite-maven` only. End state: `mvn install -f graphitron-rewrite/pom.xml` produces a self-contained plugin jar and the legacy modules delete.
 
-Most of this umbrella has shipped; see [`changelog.md`](../docs/planning/changelog.md) for the build surface (schema loading, tagged inputs, Maven plugin, aggregator-standalone, content-idempotent writes) and `@asConnection` emit-time synthesis.
+Most of this umbrella has shipped; see [`changelog.md`](changelog.md) for the build surface (schema loading, tagged inputs, Maven plugin, aggregator-standalone, content-idempotent writes) and `@asConnection` emit-time synthesis.
 
 ## Remaining sub-items
 

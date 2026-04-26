@@ -225,6 +225,6 @@ class NestingFieldValidationTest {
         assertThat(validate(schema))
             .extracting(ValidationError::message)
             .contains(
-                "Nested type 'FilmDetails' shared across 'Film' and 'Advertisement': field 'langName' classifies as ColumnReferenceField which is not yet supported across multiple parents — see rewrite-roadmap.md #8");
+                "Nested type 'FilmDetails' shared across 'Film' and 'Advertisement': field 'langName' classifies as ColumnReferenceField which is not yet supported across multiple parents — see graphitron-rewrite/roadmap/stub-non-table-scalar-child-leaves.md");
     }
 }

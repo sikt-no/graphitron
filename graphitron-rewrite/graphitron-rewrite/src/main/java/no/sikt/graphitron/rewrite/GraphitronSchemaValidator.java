@@ -467,7 +467,7 @@ public class GraphitronSchemaValidator {
             errors.add(new ValidationError(RejectionKind.DEFERRED,
                 field.qualifiedName(),
                 "Field '" + field.qualifiedName() + "': " + field.getClass().getSimpleName()
-                    + " is not yet supported under NestingField — see rewrite-roadmap.md #8",
+                    + " is not yet supported under NestingField — see graphitron-rewrite/roadmap/stub-non-table-scalar-child-leaves.md",
                 field.location()
             ));
         }
@@ -579,7 +579,7 @@ public class GraphitronSchemaValidator {
                     "Nested type '" + nestedTypeName + "' shared across '" + repParent
                         + "' and '" + otherParent + "': field '" + name
                         + "' classifies as " + rf.getClass().getSimpleName()
-                        + " which is not yet supported across multiple parents — see rewrite-roadmap.md #8",
+                        + " which is not yet supported across multiple parents — see graphitron-rewrite/roadmap/stub-non-table-scalar-child-leaves.md",
                     other.location()
                 ));
             }

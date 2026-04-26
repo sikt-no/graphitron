@@ -83,7 +83,7 @@ themselves from approving that revision — another party must sign off.
 
 The per-item front-matter is the source of truth. The roll-up README is
 derived. Use `Done` only for milestones worth keeping as history (capture the
-landing commit in [`changelog.md`](planning/changelog.md)); routine completions
+landing commit in [`changelog.md`](../roadmap/changelog.md)); routine completions
 disappear entirely when their item file is deleted.
 
 ## Publishing
@@ -114,5 +114,5 @@ typical paths are five to six when reviews involve iteration:
 3. **Implementer** writes code, updates the plan (remove shipped, keep pending),
    flips `status:` to `In Review`.
 4. **Reviewer (≠ implementer)** approves (delete the item file; entry in
-   [`changelog.md`](planning/changelog.md) if worth keeping) or requests more
+   [`changelog.md`](../roadmap/changelog.md) if worth keeping) or requests more
    work (flip back to `Ready`, new cycle).

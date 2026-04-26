@@ -322,7 +322,7 @@ class TypeBuilder {
             String missing = implementsNode(objType) ? "@node" : "implements Node @node";
             LOGGER.warn("table '{}' has KjerneJooqGenerator metadata but type '{}' is missing '{}'"
                 + " — synthesis shim will be removed in a future release; declare '{}' to opt into"
-                + " node-identity semantics explicitly. See rewrite-roadmap.md",
+                + " node-identity semantics explicitly. See graphitron-rewrite/roadmap/retire-nodeid-synthesis-shim.md",
                 tableRef.tableName(), name, missing, missing);
             return new NodeType(name, location, tableRef, metadata.get().typeId(),
                 List.copyOf(metadata.get().keyColumns()));
@@ -500,10 +500,10 @@ class TypeBuilder {
         String name = inputType.getName();
         SourceLocation location = locationOf(inputType);
         // @record dominates @table on input types: legacy treats the combination as @record-only
-        // (six legacy paths skip when hasJavaRecordReference() is true; see
-        // docs/planning/bug-record-input-table-validation.md). The rewrite used to fall into the
-        // @table branch first, attempt to resolve the input's fields as columns, and fail. Warn
-        // and route through @record instead so schemas using the combination still classify.
+        // (six legacy paths skip when hasJavaRecordReference() is true). The rewrite used to fall
+        // into the @table branch first, attempt to resolve the input's fields as columns, and
+        // fail. Warn and route through @record instead so schemas using the combination still
+        // classify. See `@table + @record input-type fix` in graphitron-rewrite/roadmap/changelog.md.
         if (inputType.hasAppliedDirective(DIR_TABLE) && inputType.hasAppliedDirective(DIR_RECORD)) {
             ctx.addWarning(new BuildWarning(
                 "Input type '" + name + "': @table is shadowed by @record and is ignored. "

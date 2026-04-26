@@ -213,46 +213,46 @@ public class TypeFetcherGenerator {
         Map.ofEntries(
             // QueryField stubs
             Map.entry(QueryField.QueryEntityField.class,
-                "QueryEntityField not yet implemented — see rewrite-roadmap.md"),
+                "QueryEntityField not yet implemented — see graphitron-rewrite/roadmap/federation-via-federation-jvm.md"),
             Map.entry(QueryField.QueryTableInterfaceField.class,
-                "QueryTableInterfaceField not yet implemented — see rewrite-roadmap.md 'Stubs to complete' #3"),
+                "QueryTableInterfaceField not yet implemented — see graphitron-rewrite/roadmap/stub-interface-union-fetchers.md"),
             Map.entry(QueryField.QueryInterfaceField.class,
-                "QueryInterfaceField not yet implemented — see rewrite-roadmap.md 'Stubs to complete' #3"),
+                "QueryInterfaceField not yet implemented — see graphitron-rewrite/roadmap/stub-interface-union-fetchers.md"),
             Map.entry(QueryField.QueryUnionField.class,
-                "QueryUnionField not yet implemented — see rewrite-roadmap.md 'Stubs to complete' #3"),
-            // MutationField stubs — see rewrite-roadmap.md 'Stubs to complete' #4
+                "QueryUnionField not yet implemented — see graphitron-rewrite/roadmap/stub-interface-union-fetchers.md"),
+            // MutationField stubs — see graphitron-rewrite/roadmap/mutations.md
             Map.entry(MutationField.MutationInsertTableField.class,
-                "Mutation insert not yet implemented — see rewrite-roadmap.md 'Stubs to complete' #4"),
+                "Mutation insert not yet implemented — see graphitron-rewrite/roadmap/mutations.md"),
             Map.entry(MutationField.MutationUpdateTableField.class,
-                "Mutation update not yet implemented — see rewrite-roadmap.md 'Stubs to complete' #4"),
+                "Mutation update not yet implemented — see graphitron-rewrite/roadmap/mutations.md"),
             Map.entry(MutationField.MutationDeleteTableField.class,
-                "Mutation delete not yet implemented — see rewrite-roadmap.md 'Stubs to complete' #4"),
+                "Mutation delete not yet implemented — see graphitron-rewrite/roadmap/mutations.md"),
             Map.entry(MutationField.MutationUpsertTableField.class,
-                "Mutation upsert not yet implemented — see rewrite-roadmap.md 'Stubs to complete' #4"),
+                "Mutation upsert not yet implemented — see graphitron-rewrite/roadmap/mutations.md"),
             Map.entry(MutationField.MutationServiceTableField.class,
-                "MutationServiceTableField not yet implemented — see rewrite-roadmap.md 'Stubs to complete' #4"),
+                "MutationServiceTableField not yet implemented — see graphitron-rewrite/roadmap/mutations.md"),
             Map.entry(MutationField.MutationServiceRecordField.class,
-                "MutationServiceRecordField not yet implemented — see rewrite-roadmap.md 'Stubs to complete' #4"),
+                "MutationServiceRecordField not yet implemented — see graphitron-rewrite/roadmap/mutations.md"),
             // ChildField stubs — TableTargetField sub-hierarchy
             // (ChildField.TableField and ChildField.LookupTableField are in PROJECTED_LEAVES —
             // inline emission via TypeClassGenerator.$fields; see G5 and argres Phase 2a)
             Map.entry(ChildField.TableInterfaceField.class,
-                "TableInterfaceField not yet implemented — see rewrite-roadmap.md 'Stubs to complete' #3"),
+                "TableInterfaceField not yet implemented — see graphitron-rewrite/roadmap/stub-interface-union-fetchers.md"),
             // ChildField stubs — remaining direct permits
             Map.entry(ChildField.ColumnReferenceField.class,
-                "ColumnReferenceField not yet implemented — see rewrite-roadmap.md"),
+                "ColumnReferenceField not yet implemented — see graphitron-rewrite/roadmap/stub-non-table-scalar-child-leaves.md"),
             Map.entry(ChildField.TableMethodField.class,
-                "TableMethodField not yet implemented — see rewrite-roadmap.md"),
+                "TableMethodField not yet implemented — see graphitron-rewrite/roadmap/stub-non-table-scalar-child-leaves.md"),
             Map.entry(ChildField.InterfaceField.class,
-                "InterfaceField not yet implemented — see rewrite-roadmap.md 'Stubs to complete' #3"),
+                "InterfaceField not yet implemented — see graphitron-rewrite/roadmap/stub-interface-union-fetchers.md"),
             Map.entry(ChildField.UnionField.class,
-                "UnionField not yet implemented — see rewrite-roadmap.md 'Stubs to complete' #3"),
+                "UnionField not yet implemented — see graphitron-rewrite/roadmap/stub-interface-union-fetchers.md"),
             Map.entry(ChildField.ServiceRecordField.class,
-                "ServiceRecordField not yet implemented — see rewrite-roadmap.md"),
+                "ServiceRecordField not yet implemented — see graphitron-rewrite/roadmap/stub-non-table-scalar-child-leaves.md"),
             Map.entry(ChildField.ComputedField.class,
-                "ComputedField not yet implemented — see rewrite-roadmap.md"),
+                "ComputedField not yet implemented — see graphitron-rewrite/roadmap/stub-non-table-scalar-child-leaves.md"),
             Map.entry(ChildField.MultitableReferenceField.class,
-                "MultitableReferenceField not yet implemented — see rewrite-roadmap.md")
+                "MultitableReferenceField not yet implemented — see graphitron-rewrite/roadmap/stub-non-table-scalar-child-leaves.md")
         );
 
     /**

@@ -63,10 +63,10 @@ rejection so every input-field call site surfaces the same error.
 
 **Docs**
 
-- `graphitron-rewrite/docs/planning/changelog.md`: amend the existing `@notGenerated` entry to note that the input-field path now centralises the rejection in `BuildContext.classifyInputField` and that `TableInputType` / nested-input fields also surface the no-longer-supported reason. Reconcile the test-count drift between the commit message ("733") and the changelog ("703") with the post-fix count.
+- `graphitron-rewrite/roadmap/changelog.md`: amend the existing `@notGenerated` entry to note that the input-field path now centralises the rejection in `BuildContext.classifyInputField` and that `TableInputType` / nested-input fields also surface the no-longer-supported reason. Reconcile the test-count drift between the commit message ("733") and the changelog ("703") with the post-fix count.
 
 ## Roadmap entries
 
-`graphitron-rewrite/docs/planning/rewrite-roadmap.md` sub-item already flipped
-to `[In Review]` linking this plan. On review approval of this revision, flip
-to `[Done]` and delete this plan file.
+This plan is its own item file at `graphitron-rewrite/roadmap/remove-notgenerated.md`
+with `status: In Review`. On review approval of this revision, delete the file
+and add an entry to `roadmap/changelog.md`.
