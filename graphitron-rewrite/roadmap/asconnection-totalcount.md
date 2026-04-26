@@ -1,6 +1,6 @@
 ---
 title: "`@asConnection` `totalCount` field"
-status: Spec
+status: Ready
 priority: 1
 notes: Release blocker.
 ---
@@ -31,7 +31,7 @@ Synthesised Connection types carry a `totalCount: Int` field (nullable, matching
 
 The carrier-not-closure shape keeps `ConnectionResult` general: future per-connection derivables (faceted search, aggregates) read the same `(table, condition)` pair and add their own helper methods without changing `ConnectionResult`'s constructor surface.
 
-Structural (hand-written) Connection types that declare `totalCount: Int` get the same wiring registration, gated on both presence and `Int`-typing of the field. Structural connections that do not declare one are unchanged: emitting a fetcher coordinate for a non-existent field is a build-time error in graphql-java, so the registrations emitter must check the `ConnectionType.schemaType()` field shape. Structural fields named `totalCount` with any other type are quietly ignored rather than mis-wired.
+Structural (hand-written) Connection types that declare `totalCount: Int` get the same wiring registration, gated on the field's presence on `ConnectionType.schemaType()`. Structural connections that do not declare one are unchanged: emitting a fetcher coordinate for a non-existent field is a build-time error in graphql-java, so the registrations emitter must check the `ConnectionType.schemaType()` field shape. Structural fields named `totalCount` whose type is not `Int` (or `Int!`) are a schema error: `GraphitronSchemaValidator` reports an `INVALID_SCHEMA` `ValidationError` so the build fails with a clear message rather than silently mis-wiring the resolver.
 
 The behaviour is on by default; no Maven flag mirrors the legacy `totalCountFieldInConnectionsEnabled`. The rewrite has no production users yet, so making it conditional now would only add surface to retire later.
 
@@ -95,17 +95,19 @@ public static Integer totalCount(DataFetchingEnvironment env) {
 
 Register `totalCount` on the `TypeSpec` builder. Update the class Javadoc bullet list to include it.
 
-**`FetcherRegistrationsEmitter`** — change `connectionBody` to take the full `ConnectionType` (instead of `(connectionTypeName, utilPackage)`) and append a fourth registration line gated on the field's presence and `Int`-typing:
+**`FetcherRegistrationsEmitter`** — change `connectionBody` to take the full `ConnectionType` (instead of `(connectionTypeName, utilPackage)`) and append a fourth registration line gated on the field's presence:
 
 ```java
 GraphQLFieldDefinition fd = connectionType.schemaType().getFieldDefinition("totalCount");
-if (fd != null && GraphQLTypeUtil.unwrapAll(fd.getType()) == Scalars.GraphQLInt) {
+if (fd != null) {
     body.add("\n.dataFetcher($T.coordinates($S, $S), $T::totalCount)",
         FIELD_COORDS, connectionType.name(), "totalCount", helper);
 }
 ```
 
-The synthesised path always trips the gate. Structural connections trip only when the SDL author declared `totalCount: Int` (or `Int!`); fields named `totalCount` with any other type are quietly ignored rather than mis-wired.
+The synthesised path always trips the gate. Structural connections trip when the SDL author declared a `totalCount` field; the validator (below) rejects any non-`Int` declaration before this code runs, so the registration emitter does not need a type guard.
+
+**`GraphitronSchemaValidator`** — promote `validateConnectionType` from a no-op stub to a real check: when `connectionType.schemaType().getFieldDefinition("totalCount")` is non-null, assert that `GraphQLTypeUtil.unwrapNonNull(fd.getType()) == Scalars.GraphQLInt` (so `Int` and `Int!` both pass; lists or non-Int scalars do not). On mismatch, emit an `INVALID_SCHEMA` `ValidationError` whose message names the connection type and the offending type. The synthesised path always passes the check; structural authors get a build error with a SourceLocation pointing at their declaration.
 
 While editing the file, fold in two incidental cleanups (small, in scope):
 
@@ -117,7 +119,7 @@ While editing the file, fold in two incidental cleanups (small, in scope):
 Per `rewrite-design-principles.md`: no code-string assertions on generated bodies; tiers are unit, pipeline, compilation, execution.
 
 - **Pipeline (synthesised)** — `GraphitronSchemaBuilderTest` asserts the synthesised `ConnectionType` for an `@asConnection` carrier has a `totalCount: Int` (nullable) field on its `schemaType()`. One fixture; synthesis is unconditional.
-- **Pipeline (structural)** — three fixtures: a hand-written Connection-shaped type with `totalCount: Int`, one without, and one with `totalCount: String` (or some other non-Int type). Only the first ends up with `totalCount` wired. Verify by inspecting the emitted `FetcherRegistrationsClass` source via the existing pipeline-test scaffolding for "what coordinates were registered", which the firstclass-connections work already exercises.
+- **Pipeline (structural)** — three fixtures: a hand-written Connection-shaped type with `totalCount: Int`, one without, and one with `totalCount: String` (or some other non-Int type). The first ends up with `totalCount` wired (verify via the pipeline-test scaffolding for "what coordinates were registered"). The second has no `totalCount` registration. The third produces an `INVALID_SCHEMA` `ValidationError` from `GraphitronSchemaValidator` and the build does not progress to emission.
 - **Compilation** — `GeneratedSourcesSmokeTest`'s normal job; nothing new to add beyond ensuring the new `(table, condition)` constructor parameters, the helper's `graphitronContext` shim, and the `totalCount` resolver are reached by an existing fixture.
 - **Execution (positive)** — in `graphitron-test`, query `edges { node { ... } } totalCount` against an existing connection fixture. Assert the count matches `dsl.fetchCount(<table>)` for the unfiltered case, and equals the WHERE-filtered count for a filter-bearing case.
 - **Execution (negative)** — a second query that omits `totalCount` must not issue a count SQL statement. Register a jOOQ `ExecuteListener` on the test `DSLContext` that records the rendered SQL for each statement; the test fails if any captured statement begins with `select count`. The lazy-on-selection property is the whole point of the design and deserves a real assertion.
