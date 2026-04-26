@@ -23,7 +23,7 @@ import java.util.concurrent.CompletableFuture;
 public class GraphitronLanguageServer implements LanguageServer, LanguageClientAware {
 
     private final Workspace workspace;
-    private final TextDocumentService textService;
+    private final GraphitronTextDocumentService textService;
     private final WorkspaceService workspaceService = new GraphitronWorkspaceService();
     private LanguageClient client;
 
@@ -73,5 +73,6 @@ public class GraphitronLanguageServer implements LanguageServer, LanguageClientA
     @Override
     public void connect(LanguageClient client) {
         this.client = client;
+        textService.setClient(client);
     }
 }
