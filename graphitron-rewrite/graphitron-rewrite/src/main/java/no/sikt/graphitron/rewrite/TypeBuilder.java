@@ -63,7 +63,6 @@ import static no.sikt.graphitron.rewrite.BuildContext.DIR_ERROR;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_FIELD;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_MUTATION;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_NODE;
-import static no.sikt.graphitron.rewrite.BuildContext.DIR_NOT_GENERATED;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_RECORD;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_SERVICE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_TABLE;
@@ -500,9 +499,6 @@ class TypeBuilder {
     private GraphitronType buildInputType(GraphQLInputObjectType inputType) {
         String name = inputType.getName();
         SourceLocation location = locationOf(inputType);
-        var filteredFields = inputType.getFieldDefinitions().stream()
-            .filter(f -> !f.hasAppliedDirective(DIR_NOT_GENERATED))
-            .toList();
         // @record dominates @table on input types: legacy treats the combination as @record-only
         // (six legacy paths skip when hasJavaRecordReference() is true; see
         // docs/planning/bug-record-input-table-validation.md). The rewrite used to fall into the
@@ -522,7 +518,7 @@ class TypeBuilder {
                 return new UnclassifiedType(name, location, "table '" + tableName + "' could not be resolved in the jOOQ catalog"
                     + candidateHint(tableName, ctx.catalog.allTableSqlNames()));
             }
-            return buildTableInputType(name, location, filteredFields, tableOpt.get());
+            return buildTableInputType(name, location, inputType.getFieldDefinitions(), tableOpt.get());
         }
         if (isUsedWithOverrideCondition(name)) {
             return buildNonTableInputType(inputType, name, location);
@@ -534,7 +530,7 @@ class TypeBuilder {
         if (tables.size() > 1) {
             return buildNonTableInputType(inputType, name, location);
         }
-        return buildTableInputType(name, location, filteredFields, tables.values().iterator().next());
+        return buildTableInputType(name, location, inputType.getFieldDefinitions(), tables.values().iterator().next());
     }
 
     /**

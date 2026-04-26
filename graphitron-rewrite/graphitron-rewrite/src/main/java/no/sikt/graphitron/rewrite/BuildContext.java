@@ -722,6 +722,10 @@ class BuildContext {
             GraphQLInputObjectField field, String parentTypeName, TableRef resolvedTable,
             Set<String> expandingTypes, List<String> errors) {
         String name = field.getName();
+        if (field.hasAppliedDirective(DIR_NOT_GENERATED)) {
+            return new InputFieldResolution.Unresolved(name, null,
+                "@notGenerated is no longer supported. Remove the directive; fields must be fully described by the schema.");
+        }
         GraphQLType type = field.getType();
         boolean nonNull = type instanceof GraphQLNonNull;
         boolean list = GraphQLTypeUtil.unwrapNonNull(type) instanceof GraphQLList;
@@ -810,8 +814,7 @@ class BuildContext {
             newExpanding.add(typeName);
             var failures = new ArrayList<InputFieldResolution.Unresolved>();
             var resolvedFields = new ArrayList<InputField>();
-            for (var nested : nestedInputType.getFieldDefinitions().stream()
-                    .filter(f -> !f.hasAppliedDirective(DIR_NOT_GENERATED)).toList()) {
+            for (var nested : nestedInputType.getFieldDefinitions()) {
                 var res = classifyInputField(nested, typeName, resolvedTable, newExpanding, errors);
                 switch (res) {
                     case InputFieldResolution.Resolved r -> resolvedFields.add(r.field());

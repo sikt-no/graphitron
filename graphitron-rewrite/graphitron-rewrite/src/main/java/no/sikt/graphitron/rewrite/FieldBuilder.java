@@ -785,6 +785,21 @@ class FieldBuilder {
             || (resolvedType instanceof GraphitronType.UnclassifiedType
                 && ctx.schema.getType(typeName) instanceof GraphQLInputObjectType);
         if (isInputLike) {
+            // The plain-input path's per-field errors are silently dropped by projectFilters
+            // unless paired with @condition / @lookupKey gates. @notGenerated is a hard policy
+            // violation, so reject the whole arg up front via UnclassifiedArg, which sets
+            // hadError in projectFilters and propagates as an UnclassifiedField on the
+            // surrounding query field.
+            if (ctx.schema.getType(typeName) instanceof GraphQLInputObjectType iot) {
+                var rejected = iot.getFieldDefinitions().stream()
+                    .filter(f -> f.hasAppliedDirective(DIR_NOT_GENERATED))
+                    .findFirst();
+                if (rejected.isPresent()) {
+                    return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
+                        "input field '" + rejected.get().getName()
+                        + "': @notGenerated is no longer supported. Remove the directive; fields must be fully described by the schema.");
+                }
+            }
             List<InputField> plainFields = classifyPlainInputFields(typeName, rt, errors);
             return new ArgumentRef.InputTypeArg.PlainInputArg(
                 name, typeName, nonNull, list, argCondition, plainFields);
@@ -855,6 +870,8 @@ class FieldBuilder {
      * Used to populate {@link ArgumentRef.InputTypeArg.PlainInputArg#fields()}.
      * Returns {@link List#of()} when {@code rt} is {@code null} or the type is not an input object.
      * Fields that fail column resolution are silently skipped (their conditions cannot be built).
+     * {@code @notGenerated} fields are rejected up front by {@link #classifyArgument} as an
+     * {@link ArgumentRef.UnclassifiedArg}, so they never reach this classifier.
      */
     private List<InputField> classifyPlainInputFields(String typeName, TableRef rt, List<String> errors) {
         if (rt == null) return List.of();
@@ -863,10 +880,6 @@ class FieldBuilder {
         var condErrors = new ArrayList<String>();
         var classified = new ArrayList<InputField>();
         for (var f : iot.getFieldDefinitions()) {
-            if (f.hasAppliedDirective(DIR_NOT_GENERATED)) {
-                condErrors.add("input field '" + f.getName() + "': @notGenerated is no longer supported. Remove the directive; fields must be fully described by the schema.");
-                continue;
-            }
             var res = ctx.classifyInputField(f, typeName, rt, new LinkedHashSet<>(), condErrors);
             if (res instanceof InputFieldResolution.Resolved r) {
                 classified.add(r.field());
