@@ -40,40 +40,44 @@ reached `ObjectBased`. This plan does not touch them.
 ## Current state
 
 - `BatchKey.java:27` permits three variants; `ObjectBased(String fqClassName)` is one.
-- `ServiceCatalog.classifySourcesType` (`ServiceCatalog.java:334–339`) produces
-  `ObjectBased` for both `TableRecord` element types (line 335–336 — misclassification:
-  the `TableRecord` carries a jOOQ table whose PK can supply `RowKeyed` columns) and
-  non-`TableRecord` element types (line 337–339 — free-form DTOs with no jOOQ
-  semantics).
-- `GeneratorUtils.keyElementType` (`GeneratorUtils.java:135`) and
-  `GeneratorUtils.buildKeyExtraction` (`GeneratorUtils.java:242–245`) have `ObjectBased`
-  switch arms. No rows-method body is emitted for them; any classified `ObjectBased`
-  field fails at request time with `UnsupportedOperationException`.
+- `ServiceCatalog.classifySourcesType` (`ServiceCatalog.java:391–396`) routes any
+  non-`RowN`/`RecordN` `Class<?>` element type — both jOOQ `TableRecord` subclasses
+  (whose PK can supply `RowKeyed` columns) and free-form DTOs with no jOOQ semantics —
+  through a single arm that emits `ObjectBased(elementClass.getName())`. The two
+  shapes used to live in separate arms; they were collapsed when both produced
+  identical codegen.
+- `GeneratorUtils.keyElementType` (`GeneratorUtils.java:153`) and
+  `GeneratorUtils.buildKeyExtraction` (`GeneratorUtils.java:290–293`) have `ObjectBased`
+  switch arms. No `ServiceTableField` rows-method body is emitted for them
+  (`SplitRowsMethodEmitter.buildRowsMethod` throws `IllegalArgumentException` for
+  `ServiceTableField`; only `Split*`/`Record*` variants are handled), so any classified
+  `ObjectBased` `ServiceTableField` would fail at generation time.
 - `GraphitronSchemaValidator.validateServiceTableField`
-  (`GraphitronSchemaValidator.java:426–434`) has an early-return for `ObjectBased` that
+  (`GraphitronSchemaValidator.java:618–627`) has an early-return for `ObjectBased` that
   intentionally skips the "parent table must have PK" check. With no `ObjectBased`
   variant this escape hatch is unreachable.
-- `BatchKeyField.java:10–11` names `ObjectBased` as the blocker for
-  `RecordLookupTableField` implementing the capability. Stale after record-fields
-  Phase 1 — that plan's `RowKeyed` path is the resolution, not an `ObjectBased` fix.
+- `BatchKeyField.java` no longer carries the "blocked on `ObjectBased`" javadoc note —
+  that cleanup landed independently. Phase 3's `BatchKeyField` edit is a no-op today.
 
 ## Desired end state
 
 - `BatchKey permits RowKeyed, RecordKeyed` — exhaustive switches narrow by one arm.
-- `ServiceCatalog.classifySourcesType`:
-  - **`TableRecord` element type** → `RowKeyed` constructed from the parent table's
-    `primaryKeyColumns()`. Matches the invariant that `BatchKey` column sets always
-    come from `TableRef.primaryKeyColumns()`, never from reflection.
+- `ServiceCatalog.classifySourcesType` splits the single `Class<?>` arm into two:
+  - **`TableRecord` element type** → `RowKeyed(parentPkColumns)` (or `Optional.empty()`
+    when `parentPkColumns.isEmpty()`, i.e. the parent has no `TableRef`). Matches the
+    invariant that `BatchKey` column sets always come from `TableRef.primaryKeyColumns()`,
+    never from reflection.
   - **Non-`TableRecord` element type** → `Optional.empty()`. The caller
     (`ServiceCatalog.reflectServiceMethod` / downstream `ServiceTableField` classifier)
     surfaces the failure as `UnclassifiedField`; `ValidateMojo` fails the build via the
-    existing stubbed-variant plumbing.
+    existing stubbed-variant plumbing. The error message names the field, the sources
+    parameter, and the lifter-directive backlog item (see Phase 1 for the threading
+    mechanism).
 - `GeneratorUtils` `ObjectBased` switch arms deleted; the two remaining arms
   (`RowKeyed`, `RecordKeyed`) become exhaustive.
 - `validateServiceTableField` escape hatch deleted; the PK-present check runs
   unconditionally once the field is classified (non-table-backed cases can never reach
   it, since they fail earlier with `UnclassifiedField`).
-- `BatchKeyField.java` javadoc drops the "blocked on `ObjectBased`" note.
 
 **Migration note (user-facing).** Any DTO flowing through a DataLoader path — service
 sources today, `@splitQuery` sources for record-fields — must be backed by a jOOQ
@@ -98,7 +102,7 @@ The build-time error message names the field and points at the lifter backlog it
   and `GeneratorUtils.buildKeyExtraction`. Both are small switch arms.
 - Only one production classifier produces `ObjectBased` today:
   `ServiceCatalog.classifySourcesType`. No other model-construction site references it.
-- `ServiceFieldValidationTest.OBJECT_BASED` (`ServiceFieldValidationTest.java:196–200`)
+- `ServiceFieldValidationTest.OBJECT_BASED` (`ServiceFieldValidationTest.java:198–202`)
   is the only test asserting current `ObjectBased` behaviour; it asserts "no errors"
   for a PK-less parent. Rewritten to assert the rejection path.
 - Row equality for `DSL.row(…)` is value-based via `AbstractRow.equals` →
@@ -119,39 +123,65 @@ deletes the sealed variant. Phase 3 tidies docs. Phase 4 covers tests.
 ### Overview
 
 `ServiceCatalog.classifySourcesType` stops producing `ObjectBased`. The `TableRecord`
-branch produces `RowKeyed` from the parent `TableRef.primaryKeyColumns()`; the
-non-`TableRecord` branch returns `Optional.empty()`.
+branch produces `RowKeyed` from the parent's PK columns; the non-`TableRecord` branch
+returns `Optional.empty()` and is surfaced upstream as a classification failure with a
+message that points at the lifter-directive backlog item.
 
 ### Changes
 
-#### `ServiceCatalog.java` (lines 334–339)
+#### `ServiceCatalog.java` — `classifySourcesType` (single `Class<?>` arm at lines 391–396)
+
+The signature is `classifySourcesType(Type paramType, List<ColumnRef> parentPkColumns)`
+— there is no `parentTable` here; callers pass `List.of()` when no parent table context
+is available (existing javadoc).
 
 ```java
 // before
-} else if (elementType instanceof Class<?> elementClass
-        && org.jooq.TableRecord.class.isAssignableFrom(elementClass)) {
-    return Optional.of(new BatchKey.ObjectBased(elementClass.getName()));
 } else if (elementType instanceof Class<?> elementClass) {
+    // Object-based parent: a jOOQ TableRecord subclass or a plain result-DTO class. Both
+    // shapes emit identical codegen ({@code (FqClass) env.getSource()}), so they collapse
+    // to the same BatchKey variant.
     return Optional.of(new BatchKey.ObjectBased(elementClass.getName()));
 }
 
 // after
 } else if (elementType instanceof Class<?> elementClass
         && org.jooq.TableRecord.class.isAssignableFrom(elementClass)) {
-    if (parentTable == null) return Optional.empty();
-    return Optional.of(new BatchKey.RowKeyed(parentTable.primaryKeyColumns()));
+    if (parentPkColumns.isEmpty()) return Optional.empty();
+    return Optional.of(new BatchKey.RowKeyed(parentPkColumns));
 }
 return Optional.empty();
 ```
 
-`parentTable` is the `TableRef` of the parent type, already resolved by the caller. If
-the parent is not table-backed (DTO parent with no `TableRef`), the first branch falls
-through to `Optional.empty()` — the `UnclassifiedField` path catches it with the
-standard message.
+The non-`TableRecord` `Class<?>` case (free-form DTO) falls through to the trailing
+`return Optional.empty();` already at the end of the method. The `TableRecord` case
+with no parent PK (parent has no `TableRef`) likewise returns empty.
 
-`Optional.empty()` surfaces upstream as classification failure. Confirm the existing
-error message names the field and the sources parameter; otherwise thread a reason
-through `ServiceCatalog.reflectServiceMethod`.
+#### `ServiceCatalog.java` — `reflectServiceMethod` error message (around line 209–211)
+
+Today, when `classifySourcesType` returns empty, the caller emits
+*"parameter '…' has an unrecognized sources type: '…'"*. After this plan there are two
+distinct empty-causes (truly unrecognized type versus non-`TableRecord` DTO, versus
+`TableRecord` with no parent PK), and at least the DTO case wants a message that points
+at the lifter directive.
+
+Mechanism: replace `Optional<BatchKey>` with a small result type local to
+`ServiceCatalog`:
+
+```java
+sealed interface SourcesClassification {
+    record Classified(BatchKey key) implements SourcesClassification {}
+    record Unrecognized() implements SourcesClassification {}
+    record DtoSourcesUnsupported(String fqClassName) implements SourcesClassification {}
+    record ParentLacksPrimaryKey() implements SourcesClassification {}
+}
+```
+
+`reflectServiceMethod` switches on the result and produces a parameter-named message per
+case; the `DtoSourcesUnsupported` arm names the rejected class and references the
+`batchkey-lifter-directive.md` backlog item by title (path-relative wording, not a URL).
+Existing call sites that consume `Optional<BatchKey>` (only `reflectServiceMethod` does)
+adapt at the same time.
 
 ### Success criteria
 
@@ -190,14 +220,16 @@ public sealed interface BatchKey permits BatchKey.RowKeyed, BatchKey.RecordKeyed
 
 #### `GeneratorUtils.java`
 
-Delete the `ObjectBased` arms in `keyElementType` (line 135) and `buildKeyExtraction`
-(lines 242–245). Surrounding switches become exhaustive over two variants.
+Delete the `ObjectBased` arms in `keyElementType` (line 153) and `buildKeyExtraction`
+(lines 290–293). Surrounding switches become exhaustive over two variants.
 
-#### `GraphitronSchemaValidator.java` (lines 426–434)
+#### `GraphitronSchemaValidator.java` (lines 618–627)
 
-Delete the `ObjectBased` escape hatch in `validateServiceTableField`. The
-`hasRowOrRecordKeyed` boolean is now trivially true for every classified `Sourced`
-parameter; the block collapses to an unconditional parent-table-PK check.
+Delete the `ObjectBased` escape hatch in `validateServiceTableField`: the
+`hasRowOrRecordKeyed` boolean and its `if (!hasRowOrRecordKeyed) return;` early-return
+become dead code (every classified `Sourced` parameter is now `RowKeyed` or
+`RecordKeyed`). Drop the variable and the early-return; the parent-table-PK check that
+follows runs unconditionally.
 
 ### Success criteria
 
@@ -211,12 +243,8 @@ parameter; the block collapses to an unconditional parent-table-PK check.
 
 ### Changes
 
-#### `BatchKeyField.java`
-
-Delete lines 10–11 (the "blocked on `BatchKey.ObjectBased`" note for
-`RecordLookupTableField`). Add `RecordTableField` to the implementer list (shipped on
-trunk via record-fields Phase 1) and note that `RecordLookupTableField` will join once
-Phase 2 of record-fields lands — no remaining hierarchy-level blocker.
+`BatchKeyField.java` already dropped the "blocked on `BatchKey.ObjectBased`" note in an
+earlier cleanup; nothing to do there.
 
 #### Roadmap
 
@@ -228,7 +256,6 @@ Phase 2 of record-fields lands — no remaining hierarchy-level blocker.
 ### Success criteria
 
 - [ ] Roadmap reads cleanly; no dangling references to `ObjectBased`.
-- [ ] `BatchKeyField` javadoc matches the post-delete reality.
 
 ---
 
@@ -254,7 +281,7 @@ One case covering the end-to-end rejection: an SDL with a `@ResultType` parent +
 service-backed child whose `List<Sources>` element is a bare DTO class. Assert the
 resulting `ValidationError` names the field and the DataLoader-key requirement.
 
-#### `ServiceFieldValidationTest.java` (lines 196–200)
+#### `ServiceFieldValidationTest.java` (lines 198–202)
 
 Rewrite the `OBJECT_BASED` case: previously asserted "no errors"; now asserts the
 classification-failure path. Rename to `DTO_SOURCES_REJECTED` for clarity.
@@ -295,17 +322,19 @@ classification-failure path. Rename to `DTO_SOURCES_REJECTED` for clarity.
 
 None outstanding. The prior "TableRecord vs. reject" open question was resolved as
 "TableRecord → `RowKeyed` from parent PK"; the prior "non-TableRecord Optional.empty()"
-open question was resolved yes. Error-message wording is a doc polish and lands with
-Phase 1.
+open question was resolved yes. The error-message threading mechanism (sealed
+`SourcesClassification` result vs. simpler `Optional` + post-hoc `Class<?>` check in
+`reflectServiceMethod`) is implementer's judgement; Phase 1 sketches the sealed-result
+form because it keeps the failure cause typed at the boundary.
 
 ---
 
 ## References
 
-- Sealed interface: `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewrite/model/BatchKey.java`
-- Classifier site: `ServiceCatalog.java:334–339`
-- Validator site: `GraphitronSchemaValidator.java:426–434`
-- Capability interface: `BatchKeyField.java`
-- Emit arms: `GeneratorUtils.java:135` + `GeneratorUtils.java:242–245`
+- Sealed interface: `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/model/BatchKey.java`
+- Classifier site: `ServiceCatalog.java:391–396` (single `Class<?>` arm); error-message threading at `ServiceCatalog.java:202–214`
+- Validator site: `GraphitronSchemaValidator.java:618–627`
+- Capability interface: `BatchKeyField.java` (already cleaned up; no edit required)
+- Emit arms: `GeneratorUtils.java:153` + `GeneratorUtils.java:290–293`
 - Record-fields path (unaffected): `FieldBuilder.deriveBatchKeyForResultType` (Phase 1 + 2 Done on trunk)
 - Lifter directive backlog entry: [`batchkey-lifter-directive.md`](batchkey-lifter-directive.md)
