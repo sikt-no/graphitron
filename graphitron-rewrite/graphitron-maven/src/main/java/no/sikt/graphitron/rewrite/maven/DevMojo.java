@@ -178,11 +178,12 @@ public class DevMojo extends AbstractRewriteMojo {
     }
 
     private void rebuildCatalog(Workspace workspace) {
-        // Phase 2 deliverable: rebuild the catalog from the consumer's
-        // compiled jOOQ classes via RewriteCatalogView. Slice 2 wires
-        // the trigger so Phase 2 only has to fill in the builder.
-        getLog().info("graphitron-rewrite:dev: classpath change detected; catalog rebuild placeholder (Phase 2)");
-        workspace.setCatalog(CompletionData.empty());
+        // The trigger lands in Phase 1 so Phase 2 only has to plug the
+        // RewriteCatalogView builder in here. We deliberately do not
+        // touch the workspace catalog yet: Phase 2 will ship a builder
+        // and the swap will become workspace.setCatalog(builder.build()).
+        getLog().info("graphitron-rewrite:dev: classpath change detected; "
+            + "catalog rebuild deferred to Phase 2");
     }
 
     private boolean runGeneratorPass(RewriteContext ctx, String label) {
