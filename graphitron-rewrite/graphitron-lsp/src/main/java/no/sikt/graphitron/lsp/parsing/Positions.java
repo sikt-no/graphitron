@@ -62,6 +62,33 @@ public final class Positions {
         return new Resolved(byteOffset, new TSPoint(line, byteOffset - lineStart));
     }
 
+    /**
+     * Inverse of {@link #resolve}: convert a UTF-8 byte offset within
+     * {@code source} back to an LSP {@code (line, character)} pair where
+     * {@code character} is in UTF-16 code units. Used by diagnostics and
+     * goto-definition to report ranges in the wire format clients expect.
+     */
+    public static org.eclipse.lsp4j.Position toLspPosition(byte[] source, int byteOffset) {
+        int clamped = Math.max(0, Math.min(byteOffset, source.length));
+        int line = 0;
+        int lineStart = 0;
+        for (int i = 0; i < clamped; i++) {
+            if (source[i] == '\n') {
+                line++;
+                lineStart = i + 1;
+            }
+        }
+        int charUtf16 = 0;
+        int b = lineStart;
+        while (b < clamped) {
+            int lead = source[b] & 0xFF;
+            int codepointBytes = utf8CodepointLength(lead);
+            charUtf16 += lead < 0xF0 ? 1 : 2;
+            b += codepointBytes;
+        }
+        return new org.eclipse.lsp4j.Position(line, charUtf16);
+    }
+
     private static int utf8CodepointLength(int leadByte) {
         if (leadByte < 0x80) return 1;
         if ((leadByte & 0xE0) == 0xC0) return 2;
