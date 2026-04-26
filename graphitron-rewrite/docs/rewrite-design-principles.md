@@ -138,6 +138,35 @@ Selection-driven queries produce different SQL per request, preventing cached qu
 
 `BuildContext.candidateHint(attempt, candidates)` sorts candidates by Levenshtein distance. Used in 14 places (5 in `FieldBuilder`, 5 in `TypeBuilder`, 2 in `BuildContext`, 2 in `ServiceCatalog`). When adding new jOOQ existence checks in the validator or builder, follow the same pattern — pass the relevant candidate list from `JooqCatalog` to `candidateHint`.
 
+### Column value binding: `DSL.val(rawValue, col.getDataType())`
+
+When emitting code that binds a raw GraphQL input value (from an input map or `env.getArgument(...)`)
+to a specific jOOQ column, always use the two-argument form:
+
+```java
+DSL.val(rawValue, table.COL.getDataType())
+```
+
+Do **not** use the one-argument form with a Java-side cast (`DSL.val((JavaType) rawValue)`):
+
+- GraphQL-Java delivers enum values as `String` — a Java cast to the jOOQ enum class throws
+  `ClassCastException` at runtime.
+- GraphQL-Java delivers `ID` scalars as `String` — a cast to `Long` (or any numeric PK type)
+  also throws.
+- The one-argument form ignores the column's registered jOOQ `Converter` entirely.
+
+The two-argument form hands `rawValue` to the column's `DataType` and its registered `Converter`
+at bind time.  No SQL `CAST` is rendered; the coercion is purely Java-side, inside jOOQ.
+
+**`CallSiteExtraction` solves a different problem.**  `Direct`, `EnumValueOf`, `TextMapLookup`,
+and `JooqConvert` exist to produce a typed Java value for a *condition/ordering method parameter*
+— code paths where a developer-written method expects the column's Java type, not a jOOQ `Field<T>`.
+For inline jOOQ DSL expressions (INSERT `values(...)`, UPDATE `set(...)`, DELETE/UPDATE `where(...)`
+predicates), `DSL.val(rawValue, col.getDataType())` does the coercion inside jOOQ without any
+Java-side step, and no `CallSiteExtraction` switch is needed.
+
+Precedent: `LookupValuesJoinEmitter.addRowBuildingCore` (search for `DSL.val` with two arguments).
+
 ### Helper-locality
 
 Emitted helper methods that bind column references to a specific aliased jOOQ `Table` instance always take the `Table` as a parameter — never declare it locally. Callers from different paths (root fetcher, inline subquery, Split-rows method) need to pass distinct aliases for the same target table; a locally-declared `Table` forces the wrong alias on every caller but the one the helper was first written for.
