@@ -51,7 +51,7 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType t          -> {} // no structural validation needed
             case no.sikt.graphitron.rewrite.model.GraphitronType.InputType t          -> validateInputType(t, types, errors);
             case no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType t     -> validateTableInputType(t, errors);
-            case no.sikt.graphitron.rewrite.model.GraphitronType.ConnectionType t     -> {} // structural validation is a downstream concern
+            case no.sikt.graphitron.rewrite.model.GraphitronType.ConnectionType t     -> validateConnectionType(t, errors);
             case no.sikt.graphitron.rewrite.model.GraphitronType.EdgeType t           -> {} // structural validation is a downstream concern
             case no.sikt.graphitron.rewrite.model.GraphitronType.PageInfoType t       -> {} // structural validation is a downstream concern
             case no.sikt.graphitron.rewrite.model.GraphitronType.PlainObjectType t    -> {} // no domain directives, nothing to validate structurally
@@ -198,6 +198,26 @@ public class GraphitronSchemaValidator {
     }
     private void validateUnionType(no.sikt.graphitron.rewrite.model.GraphitronType.UnionType type, List<ValidationError> errors) {
         validateParticipants(type.name(), type.participants(), errors);
+    }
+
+    /**
+     * Connections carry an optional {@code totalCount: Int} field. When the SDL author declares
+     * the field with any non-{@code Int} scalar (or a list / object type), the build fails with a
+     * compiler-style error rather than silently mis-wiring the resolver. The synthesised path
+     * always uses {@code Int}, so it never trips this check.
+     */
+    private void validateConnectionType(GraphitronType.ConnectionType type, List<ValidationError> errors) {
+        var fd = type.schemaType().getFieldDefinition("totalCount");
+        if (fd == null) return;
+        var unwrapped = graphql.schema.GraphQLTypeUtil.unwrapNonNull(fd.getType());
+        if (unwrapped != graphql.Scalars.GraphQLInt) {
+            errors.add(new ValidationError(RejectionKind.INVALID_SCHEMA,
+                type.name(),
+                "Type '" + type.name() + "': field 'totalCount' must be of type 'Int' (got '"
+                    + graphql.schema.GraphQLTypeUtil.simplePrint(fd.getType()) + "')",
+                type.location()
+            ));
+        }
     }
 
     private void validateInputType(no.sikt.graphitron.rewrite.model.GraphitronType.InputType type, Map<String, GraphitronType> types, List<ValidationError> errors) {

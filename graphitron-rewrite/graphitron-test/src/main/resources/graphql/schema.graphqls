@@ -343,6 +343,7 @@ type FilmsConnection {
     edges: [FilmsEdge!]!
     nodes: [Film!]!
     pageInfo: PageInfo!
+    totalCount: Int
 }
 
 type FilmsEdge {

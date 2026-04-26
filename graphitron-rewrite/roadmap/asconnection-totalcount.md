@@ -1,6 +1,6 @@
 ---
 title: "`@asConnection` `totalCount` field"
-status: Ready
+status: In Review
 priority: 1
 notes: Release blocker.
 ---
