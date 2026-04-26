@@ -37,9 +37,13 @@ public final class SchemaWatcher implements AutoCloseable {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(SchemaWatcher.class);
 
+    /** Default suffix for the schema-input watch loop. */
+    public static final String GRAPHQLS_SUFFIX = ".graphqls";
+
     private final WatchService watchService;
     private final DebounceExecutor debounce;
     private final Runnable onTrigger;
+    private final String filenameSuffix;
     /**
      * Shared between the watch-loop thread (reads in {@link #run()}, writes from
      * {@link #dispatch} on directory-create) and the debounce-executor thread
@@ -51,9 +55,19 @@ public final class SchemaWatcher implements AutoCloseable {
     private final Map<WatchKey, Path> registry = new ConcurrentHashMap<>();
 
     public SchemaWatcher(Set<Path> roots, DebounceExecutor debounce, Runnable onTrigger) throws IOException {
+        this(roots, debounce, onTrigger, GRAPHQLS_SUFFIX);
+    }
+
+    /**
+     * Same watch contract, parameterised by filename suffix. Used by the
+     * dev goal's catalog-refresh watcher to listen on {@code .class} files
+     * under the consumer's compiled jOOQ output.
+     */
+    public SchemaWatcher(Set<Path> roots, DebounceExecutor debounce, Runnable onTrigger, String filenameSuffix) throws IOException {
         this.watchService = FileSystems.getDefault().newWatchService();
         this.debounce = debounce;
         this.onTrigger = onTrigger;
+        this.filenameSuffix = filenameSuffix;
         for (Path root : roots) {
             registerRecursive(root);
         }
@@ -145,7 +159,7 @@ public final class SchemaWatcher implements AutoCloseable {
             }
             return;
         }
-        if (relative.toString().endsWith(".graphqls")) {
+        if (relative.toString().endsWith(filenameSuffix)) {
             debounce.schedule(onTrigger);
         }
     }
