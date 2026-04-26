@@ -8,16 +8,26 @@
 > implementation language (Java port into `graphitron-rewrite-maven`
 > vs. Rust port into the LSP itself) is a deliberate open question
 > resolved before moving to Ready.
+>
+> The plan also covers a near-term contract extension: the LSP will
+> grow `@service` and `@condition` method help (parameter completion,
+> return-type validation, method-existence checks). That requires
+> richer per-method information than the legacy goal emits, so the
+> new producer is designed for the extended contract from day one
+> rather than shipping a 1:1 port and then revisiting.
 
 ## Goal
 
 Stand up a replacement producer for `graphitron-lsp-config.json` so the
 legacy `graphitron-maven-plugin` can be retired without dropping the
-LSP's catalog feed. The replacement reads the same conceptual inputs
-(jOOQ-generated catalog, GraphQL scalar definitions, external
-reference classes), emits the same JSON contract the LSP already
-parses, and runs from a single invocation in the consumer's build (or
-LSP session) without depending on any other graphitron goal.
+LSP's catalog feed, and extend its contract so the LSP can offer
+help on `@service` and `@condition` method references in addition to
+the existing table catalog. The replacement reads the same conceptual
+inputs (jOOQ-generated catalog, GraphQL scalar definitions, external
+reference classes), emits a superset of the JSON contract the LSP
+already parses, and runs from a single invocation in the consumer's
+build (or LSP session) without depending on any other graphitron
+goal.
 
 ## Motivation
 
@@ -37,6 +47,18 @@ LSP would stop depending on a separate Maven invocation for the
 freshness of its catalog and the introspect goal would disappear
 entirely instead of being ported. That trade is worth deciding
 deliberately rather than by default.
+
+The LSP's planned `@service` / `@condition` work also wants more than
+the legacy goal emits today. The current `external_references` entry
+is a flat list of method names per class: enough to autocomplete the
+`method:` argument, not enough to validate that the chosen method's
+signature matches what Graphitron expects (parameter sources, return
+type, parameter list). The rewrite generator already extracts that
+richer view internally (`MethodRef`, `ParamSource`, `ServiceCatalog`),
+so the cost of teaching the LSP is mostly about exposing what the
+generator already knows rather than computing anything new. Doing
+that exposure during the introspect-replacement work avoids paying
+the producer-and-consumer migration cost twice.
 
 ## What the legacy goal does today
 
@@ -75,6 +97,9 @@ deliberately rather than by default.
      listing `.class` entries on the consumer's compile classpath,
      across both directory and JAR sources).
    - Per resolved class: list of distinct public method names.
+   - Method *signatures* are not emitted today: each method is just
+     a string. That is the gap the `@service` / `@condition` LSP
+     work needs closed.
 
 The output is consumed by the Rust LSP. Two fields in the current
 output are stub data and not authored by the legacy goal:
@@ -109,10 +134,48 @@ is:
      "definition": {"file": "file:///builtin", "line": 1, "col": 1}}
   ],
   "external_references": [
-    {"name": <short-name>, "class_name": <fqcn>, "methods": [<method-name>, ...]}
+    {
+      "name": <short-name>,
+      "class_name": <fqcn>,
+      "methods": [
+        {
+          "name": <method-name>,
+          "return_type": <fqcn-or-erased-type-name>,
+          "params": [
+            {"name": <param-name-or-null>, "type": <fqcn>, "source": <source-tag>}
+          ]
+        }
+      ]
+    }
   ]
 }
 ```
+
+The `methods` element is the contract extension. The legacy plugin
+emits each method as a bare string (`"createCustomer"`); the
+replacement emits an object per method with the signature data the
+LSP needs for `@service` / `@condition` help. `source` is one of the
+classifications the rewrite pipeline already uses (`Arg`, `Context`,
+`Sources`, `DslContext`, `Table`, `SourceTable`, see
+`MethodRef.ParamSource`); when the consumer hasn't compiled with
+`-parameters`, `params[].name` is `null` and the LSP falls back to
+positional naming. Overloads are emitted as separate entries (one
+object per signature) so the LSP can match by arity and argument
+types; the producer does not collapse them. Open question 9
+revisits this if a different strategy is preferred.
+
+LSP back-compat: the existing field name `methods` is reused, but
+its element type changes from `string` to `object`. That is a
+breaking change for any LSP build still on the legacy parser.
+Mitigations:
+
+(a) emit both shapes during a transition window (`methods` as the
+    new objects, `method_names` as the legacy strings), and drop
+    `method_names` once the LSP releases the parser update; or
+(b) flip the parser first, then the producer.
+
+Pick one once the LSP team confirms a release window. (a) is the
+default unless the LSP can hard-cut.
 
 `external_references` is omitted (not emitted as `[]`) when disabled
 via configuration. `inverse: false` means the table that owns the
@@ -165,6 +228,27 @@ The replacement, regardless of where it lives, must:
    recursively. Toggleable from configuration; off-state omits the
    field entirely.
 
+   For each method, emit:
+
+   - method name,
+   - return type (fully qualified, erased),
+   - parameter list in declaration order, each parameter carrying
+     `(name, type, source)` where `source` is the rewrite-pipeline
+     classification (`Arg`, `Context`, `Sources`, `DslContext`,
+     `Table`, `SourceTable`).
+
+   When the class was compiled without `-parameters`, parameter
+   names are unavailable; emit `null` and let the LSP decide whether
+   to surface a fix-it hint pointing at maven-compiler-plugin's
+   `<compilerArgs>`. The rewrite generator already emits a one-shot
+   warning for this case (`ServiceCatalog.emitParametersWarning`);
+   the producer should match that behaviour.
+
+   The classification rules for `source` are the same ones rewrite
+   uses today; a producer that lives inside the rewrite codebase
+   reuses `ServiceCatalog` directly, a producer that lives outside
+   it must mirror the same rules to avoid contract drift.
+
 6. Be invokable on demand without going through `generate` or
    `validate`: the LSP does not want to wait on schema codegen to
    refresh its catalog.
@@ -195,6 +279,10 @@ Pros:
   no risk of drift between what the generator emits and what the LSP
   is told about.
 - External reference scanning has direct classloader access.
+- The `@service` / `@condition` extension reuses
+  `ServiceCatalog` / `MethodRef` directly: same parameter
+  classification, same `-parameters` handling, same overload
+  resolution as the generator. No second source of truth.
 
 Cons:
 - Adds ~280 LOC to a module the umbrella plan (`Retire
@@ -238,10 +326,18 @@ Cons:
   This is more classpath-walking machinery than (A).
 - External reference enumeration needs to read every `.class` in
   configured packages and extract public method names: another
-  bytecode-reader code path.
+  bytecode-reader code path. For the `@service` / `@condition`
+  extension this code path also has to recover parameter types
+  (Signature attribute), parameter names (MethodParameters
+  attribute, only present if `-parameters` was set), erased return
+  type (descriptor parse), and the rewrite-side `ParamSource`
+  classification (which depends on parameter types and on whether
+  the surrounding field is a service / condition / table-method
+  context). Each of those is a separate bytecode-reading concern.
 - The contract drifts away from "what the generator believes" toward
   "what the LSP can deduce". Risk of subtle disagreement (e.g. on a
-  custom-scalar Java type) that doesn't manifest until a consumer
+  custom-scalar Java type, or on parameter-source classification
+  for `@service` methods) that doesn't manifest until a consumer
   schema breaks.
 - Locks in Rust as the LSP's permanent home. If the LSP later moves
   language (e.g. to share more code with rewrite by living in Java),
@@ -264,6 +360,9 @@ Pros:
   IPC payload, removing the freshness-management problem.
 - Migration story for consumers: drop the introspect Maven execution,
   install the LSP with the helper bundled.
+- Like (A), the `@service` / `@condition` extension reuses
+  `ServiceCatalog` / `MethodRef` and stays in lockstep with the
+  generator's classification rules.
 
 Cons:
 - LSP has to manage a JVM child process: cold-start cost, lifecycle,
@@ -283,7 +382,11 @@ Lock the choice on:
    "rerun maven on jOOQ regen" is acceptable UX, (A) is the cheapest.
 2. **Appetite for bytecode reading in Rust.** If the LSP team is
    willing to take on `cafebabe`-level code paths and the maintenance
-   tail, (B) wins on long-term simplicity. If not, (C).
+   tail, (B) wins on long-term simplicity. If not, (C). The
+   `@service` / `@condition` extension significantly raises the (B)
+   cost: parameter / signature / annotation parsing on top of the
+   class-discovery work. Re-evaluate (B) with that scope in mind,
+   not the catalog-only baseline.
 3. **Consumer migration cost.** (A) is one POM coordinate change.
    (B) and (C) require an LSP install / upgrade and removal of the
    introspect execution. None of these are heavy.
@@ -326,7 +429,43 @@ this same plan before promoting to Ready.
    JSON" helper inside `graphitron-rewrite` (callable from a Maven
    goal or from a CLI) could reduce options (A) and (C) to "wire up
    the producer, do not write a parser". Worth checking for in the
-   rewrite codebase before settling.
+   rewrite codebase before settling. (`MethodRef` and `ServiceCatalog`
+   are the obvious reuse seam for the `@service` / `@condition`
+   extension; their visibility is currently package-private and
+   would need to be lifted.)
+
+6. **Cut-over plan for the `methods` field.** Picking (a) "emit
+   both shapes" vs. (b) "flip parser then producer" depends on the
+   LSP's release rhythm and how widely the legacy LSP is deployed.
+   Confirm with the LSP team before promoting Spec to Ready.
+
+7. **Methods to include in the extended emission.** The legacy
+   external-references walk lists every public method on a scanned
+   class. For `@service` / `@condition` help, only methods that
+   could plausibly be referenced from a directive matter; methods
+   that obviously can't (return type incompatible, parameters
+   nonsensical) are noise. Decide whether to filter at producer
+   time or let the LSP filter on display. Default: emit
+   everything; the producer doesn't know schema-side context.
+
+8. **Return-type representation.** Rewrite's `MethodRef.returnType`
+   is a structured `javapoet.TypeName` (preserves generics);
+   the legacy goal would have emitted only the erased FQCN. Decide
+   whether the JSON's `return_type` is a flat FQCN string (cheap,
+   loses generics) or a structured object (richer, but the LSP has
+   to learn a TypeName-like grammar). Recommend the flat string
+   plus an optional `return_type_generics` array for the parameter
+   types when present.
+
+9. **Overload handling.** Java permits same-name methods with
+   different signatures. The legacy goal already collapses these
+   by name. The rewrite generator rejects directive references
+   that resolve to multiple overloads. Decide whether the producer
+   should: emit one method object per overload (LSP picks), emit
+   one merged entry with a list of signatures, or keep the
+   collapse-by-name behaviour and drop the duplicates with a
+   warning. Recommend "one object per overload" so the LSP can
+   match by arity / argument types.
 
 ## Tests
 
@@ -352,6 +491,15 @@ common to all options:
 
 - External-references toggle: enabled run produces the field with
   expected entries; disabled run omits the field entirely (not `[]`).
+
+- `@service` / `@condition` signature emission: a fixture class with
+  one method per `ParamSource` variant (`Arg`, `Context`, `Sources`,
+  `DslContext`, `Table`, `SourceTable`), one overloaded method, and
+  one method on a class compiled without `-parameters`. Assert that
+  the JSON's `params[].source` matches the rewrite-side
+  classification, that overloads round-trip, and that
+  unavailable parameter names are emitted as `null` (not as
+  positional placeholders generated by the producer).
 
 Option-specific test work (Maven `verify.groovy` IT, LSP integration
 test, JVM-helper protocol test) lands when the option is chosen.
