@@ -184,7 +184,7 @@ sealed interface DmlTableField extends MutationField
                 MutationDeleteTableField, MutationUpsertTableField {
     ReturnTypeRef returnType();
     ArgumentRef.InputTypeArg.TableInputArg tableInputArg();
-    ColumnRef pkColumn();   // single PK column; used by buildMutationReturnExpression for ID returns
+    Optional<ColumnRef> pkColumn();   // present only when returnType is ScalarReturnType(ID)
     SourceLocation location();
 }
 
@@ -194,7 +194,7 @@ record MutationInsertTableField(
     SourceLocation location,
     ReturnTypeRef returnType,
     ArgumentRef.InputTypeArg.TableInputArg tableInputArg,
-    ColumnRef pkColumn
+    Optional<ColumnRef> pkColumn
 ) implements DmlTableField {}
 
 // Same addition on MutationUpdateTableField, MutationDeleteTableField, MutationUpsertTableField.
@@ -265,17 +265,19 @@ Return shape: a file-private record inside `FieldBuilder`:
 `record MutationInputResult(ArgumentRef.InputTypeArg.TableInputArg value, String error) {}`.
 Carrying either a resolved `tia` with `null` error, or `null` value with a non-null error string.
 
-**`pkColumn` resolution.**  After `classifyMutationInput` returns a successful `tia`, resolve
-the target table's primary key from the jOOQ catalog via `tia.inputTable()`.  If the table has
-no single-column primary key (absent PK or composite PK), return `UnclassifiedField` with reason
-`"@mutation target table '<tableName>' must have a single-column primary key"`.  This gate fires
-for all DML variants, including `TableBoundReturnType`-returning ones, so that the emitter can
-always reference `f.pkColumn()` without a null check.
-
-**Return-type validation ordering.**  After resolving `tia` and `pkColumn`, validate `returnType`
-against Invariant #14 before entering the `switch (typeName)`.  This ordering ensures that an
+**Return-type validation ordering.**  After resolving `tia`, validate `returnType` against
+Invariant #14 before entering the `switch (typeName)`.  This ordering ensures that an
 input-shape error surfaces ahead of a return-type error when both are present (input errors are
 more actionable to the schema author).
+
+**`pkColumn` resolution (scoped to `ScalarReturnType(ID)` only).**  After the return-type check,
+if and only if `returnType` is `ScalarReturnType(ID)`, resolve the target table's primary key
+from the jOOQ catalog via `tia.inputTable()`.  A composite PK cannot be expressed as a single
+GraphQL `ID` scalar, so if the table has a composite PK reject with
+`"@mutation field '<name>' returns ID but table '<tableName>' has a composite primary key; use a @table return type"`.
+For single-column PKs, set `pkColumn = Optional.of(resolvedCol)`.  For all other return types
+(`TableBoundReturnType`, etc.), set `pkColumn = Optional.empty()` — no catalog lookup is
+performed and composite-PK tables are fully supported.
 
 Then the `switch (typeName)` passes `tia` and `pkColumn` to each constructor.
 
@@ -308,6 +310,8 @@ before validation is invoked.
 | DML variant whose `@table` input arg carries `@condition` | `UnclassifiedField` with Invariant #12 message |
 | DML variant with `@lookupKey` on a list-typed input field (e.g. `ids: [ID!]! @lookupKey`) | `UnclassifiedField` whose reason includes the `buildLookupBindings` per-field error |
 | DML variant with non-`ID`/non-`T` return (e.g. `: Int`, `: Boolean`, `Connection<T>`) | `UnclassifiedField` with Invariant #14 message |
+| DML variant targeting a composite-PK table with `ScalarReturnType(ID)` return | `UnclassifiedField` with composite-PK + ID message |
+| DML variant targeting a composite-PK table with `TableBoundReturnType` return | classified successfully (`pkColumn` is `Optional.empty()`; no PK restriction applies) |
 | `@service` + `@mutation` together | `UnclassifiedField` (existing check at `FieldBuilder.java:1665-1668`) |
 | `@mutation` with no `typeName` argument | `UnclassifiedField` with existing "both absent" message — Phase 1b's `classifyMutationInput` must not fire before this fallthrough |
 
@@ -390,8 +394,11 @@ will be met by extending this helper with an `.execute()`-based arm (see Non-goa
 
 Note on the `DmlTableField` supertype: introduced in Phase 1a (see above) so this helper has a
 stable supertype to dispatch over from day one.  The four DML variants implement it with the
-four accessors the helper reads (`returnType`, `tableInputArg`, `pkColumn`, `location`).  New DML
-variants (e.g. bulk-INSERT in a follow-up) pick up the helper for free.
+four accessors the helper reads (`returnType`, `tableInputArg`, `pkColumn`, `location`).
+`pkColumn` is `Optional.of(col)` for `ScalarReturnType(ID)` returns and `Optional.empty()`
+otherwise; the `ScalarReturnType(ID)` arm of the dispatch calls `.orElseThrow()` (safe: the
+classifier guarantees presence when this arm is reached).  New DML variants pick up the helper
+for free.
 
 NodeId-encoded IDs (via the locally-emitted `NodeIdEncoder.encode(...)`) on mutation return
 values are deferred to argres Phase 3's `NodeIdBinding` work.  For now, scalar `ID` returns
