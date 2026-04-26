@@ -14,7 +14,7 @@ import java.util.stream.Collectors;
 
 /**
  * Renders a {@link ValidationError} list into a grouped, line-wrapped tree intended for the
- * {@code graphitron-rewrite:watch} loop. Output is deterministic and stable across cycles so a
+ * {@code graphitron:dev} loop. Output is deterministic and stable across cycles so a
  * downstream delta tracker can compare line-by-line.
  *
  * <p>Layout (one block per source file):
@@ -52,7 +52,7 @@ public final class WatchErrorFormatter {
      */
     public static String format(List<ValidationError> errors, Set<DeltaKey> previous) {
         if (errors.isEmpty()) {
-            return "graphitron:watch: no validation errors";
+            return "graphitron:dev: no validation errors";
         }
         var byFile = groupByFile(errors);
         StringBuilder sb = new StringBuilder();

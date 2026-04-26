@@ -15,7 +15,7 @@ class WatchErrorFormatterTest {
     @Test
     void emptyInput_rendersClearMessage() {
         assertThat(WatchErrorFormatter.format(List.of(), null))
-            .isEqualTo("graphitron:watch: no validation errors");
+            .isEqualTo("graphitron:dev: no validation errors");
     }
 
     @Test

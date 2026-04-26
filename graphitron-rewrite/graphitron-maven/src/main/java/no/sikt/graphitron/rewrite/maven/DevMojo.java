@@ -89,7 +89,7 @@ public class DevMojo extends AbstractRewriteMojo {
         Thread shutdown = new Thread(this::cleanup, "graphitron-dev-shutdown");
         Runtime.getRuntime().addShutdownHook(shutdown);
 
-        getLog().info("graphitron-rewrite:dev: LSP listening on " + LOOPBACK_HOST + ":" + server.port()
+        getLog().info("graphitron:dev: LSP listening on " + LOOPBACK_HOST + ":" + server.port()
             + "; watching " + schemaRoots + "; Ctrl+C to stop");
         try {
             schemaWatcher.run();
@@ -108,11 +108,11 @@ public class DevMojo extends AbstractRewriteMojo {
             this.server = new DevServer(new InetSocketAddress(LOOPBACK_HOST, port), workspace);
         } catch (BindException e) {
             throw new MojoExecutionException(
-                "graphitron-rewrite:dev: port " + port + " is already in use. "
+                "graphitron:dev: port " + port + " is already in use. "
                     + "Pass -Dgraphitron.dev.port=N to pick a different port.", e);
         } catch (IOException e) {
             throw new MojoExecutionException(
-                "graphitron-rewrite:dev: failed to bind " + LOOPBACK_HOST + ":" + port, e);
+                "graphitron:dev: failed to bind " + LOOPBACK_HOST + ":" + port, e);
         }
     }
 
@@ -121,7 +121,7 @@ public class DevMojo extends AbstractRewriteMojo {
         if (roots.isEmpty()) {
             cleanup();
             throw new MojoExecutionException(
-                "graphitron-rewrite:dev: no watch directories resolved from <schemaInputs>");
+                "graphitron:dev: no watch directories resolved from <schemaInputs>");
         }
         this.schemaDebounce = new DebounceExecutor(debounceMs);
         try {
@@ -129,7 +129,7 @@ public class DevMojo extends AbstractRewriteMojo {
         } catch (IOException e) {
             cleanup();
             throw new MojoExecutionException(
-                "graphitron-rewrite:dev: failed to start schema watcher", e);
+                "graphitron:dev: failed to start schema watcher", e);
         }
         return roots;
     }
@@ -137,7 +137,7 @@ public class DevMojo extends AbstractRewriteMojo {
     private void startClasspathWatcher(RewriteContext ctx, Workspace workspace) throws MojoExecutionException {
         Set<Path> roots = resolveClasspathRoots(ctx);
         if (roots.isEmpty()) {
-            getLog().info("graphitron-rewrite:dev: skipping classpath watcher; "
+            getLog().info("graphitron:dev: skipping classpath watcher; "
                 + "no compiled jOOQ output yet at " + ctx.basedir().resolve("target/classes"));
             return;
         }
@@ -148,7 +148,7 @@ public class DevMojo extends AbstractRewriteMojo {
         } catch (IOException e) {
             cleanup();
             throw new MojoExecutionException(
-                "graphitron-rewrite:dev: failed to start classpath watcher", e);
+                "graphitron:dev: failed to start classpath watcher", e);
         }
         Thread classpathThread = new Thread(classpathWatcher::run, "graphitron-dev-classpath");
         classpathThread.setDaemon(true);
@@ -164,12 +164,12 @@ public class DevMojo extends AbstractRewriteMojo {
                 try {
                     schemaWatcher.addRoot(root);
                 } catch (IOException e) {
-                    getLog().warn("graphitron-rewrite:dev: failed to register new watch root "
+                    getLog().warn("graphitron:dev: failed to register new watch root "
                         + root + ": " + e.getMessage());
                 }
             }
         } catch (MojoExecutionException e) {
-            getLog().error("graphitron-rewrite:dev: failed to rebuild context", e);
+            getLog().error("graphitron:dev: failed to rebuild context", e);
         }
         // Notify the LSP that generated sources changed; Phase 3 turns
         // this into a real diagnostic refresh, slice 2 just records the
@@ -182,7 +182,7 @@ public class DevMojo extends AbstractRewriteMojo {
         // RewriteCatalogView builder in here. We deliberately do not
         // touch the workspace catalog yet: Phase 2 will ship a builder
         // and the swap will become workspace.setCatalog(builder.build()).
-        getLog().info("graphitron-rewrite:dev: classpath change detected; "
+        getLog().info("graphitron:dev: classpath change detected; "
             + "catalog rebuild deferred to Phase 2");
     }
 
@@ -190,16 +190,16 @@ public class DevMojo extends AbstractRewriteMojo {
         try {
             new GraphQLRewriteGenerator(ctx).generate();
             previousErrorKeys = Set.of();
-            getLog().info("graphitron-rewrite:dev: " + label + " ok");
+            getLog().info("graphitron:dev: " + label + " ok");
             return true;
         } catch (ValidationFailedException e) {
             String tree = WatchErrorFormatter.format(e.errors(), previousErrorKeys);
             previousErrorKeys = WatchErrorFormatter.keysOf(e.errors());
-            getLog().error("graphitron-rewrite:dev: " + label + " failed validation\n" + tree);
+            getLog().error("graphitron:dev: " + label + " failed validation\n" + tree);
             return false;
         } catch (RuntimeException e) {
             previousErrorKeys = null;
-            getLog().error("graphitron-rewrite:dev: " + label + " failed (infrastructure)", e);
+            getLog().error("graphitron:dev: " + label + " failed (infrastructure)", e);
             return false;
         }
     }
@@ -213,7 +213,7 @@ public class DevMojo extends AbstractRewriteMojo {
     }
 
     private static String banner(String label) {
-        return "── graphitron-rewrite:dev: " + label + " ──";
+        return "── graphitron:dev: " + label + " ──";
     }
 
     private static Set<Path> resolveSchemaRoots(RewriteContext ctx) {

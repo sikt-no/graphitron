@@ -8,7 +8,7 @@ import org.apache.maven.plugins.annotations.ResolutionScope;
 
 /**
  * Runs the rewrite code-generation pipeline and writes generated Java sources.
- * Invoke as {@code mvn graphitron-rewrite:generate}.
+ * Invoke as {@code mvn graphitron:generate}.
  */
 @Mojo(
     name = "generate",
