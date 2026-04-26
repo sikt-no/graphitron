@@ -1,6 +1,10 @@
-# Plan: Remove `@notGenerated` directive support
+---
+title: "`@notGenerated` directive removal"
+status: In Review
+priority: 13
+---
 
-> **Status:** In Review
+# Plan: Remove `@notGenerated` directive support
 
 ## Why
 

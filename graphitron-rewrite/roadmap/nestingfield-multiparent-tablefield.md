@@ -1,6 +1,10 @@
-# Multi-parent `NestingField` sharing — `TableField` arm
+---
+title: "Multi-parent `NestingField` sharing: `TableField` arm"
+status: Spec
+priority: 6
+---
 
-> **Status:** Spec
+# Multi-parent `NestingField` sharing: `TableField` arm
 
 ## Overview
 

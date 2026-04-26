@@ -45,3 +45,7 @@ sources = ["graphitron-example/graphitron-example-spec/src/main/resources/graphq
 [tasks.debug-generate]
 description = "Debug generate for graphitron-example"
 run = "mvnDebug install -pl :graphitron-example-spec"
+
+[tasks.roadmap]
+description = "Regenerate graphitron-rewrite/roadmap/README.md from item front-matter"
+run = "mvn -f graphitron-rewrite/pom.xml -pl roadmap-tool exec:java -q"
