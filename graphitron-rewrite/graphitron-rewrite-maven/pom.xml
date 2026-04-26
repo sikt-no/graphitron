@@ -26,6 +26,11 @@
             <artifactId>graphitron-rewrite</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <dependency>
+            <groupId>no.sikt</groupId>
+            <artifactId>graphitron-lsp</artifactId>
+            <version>${project.version}</version>
+        </dependency>
 
         <dependency>
             <groupId>org.apache.maven</groupId>
