@@ -21,7 +21,7 @@ The rewrite has no `totalCount` anywhere in the Connection pipeline.
 - **Connection-result carrier.** `ConnectionResultClassGenerator` emits a class with `result`, `pageSize`, `afterCursor`, `beforeCursor`, `backward`, `orderByColumns`. `trimmedResult()`, `hasNextPage()`, `hasPreviousPage()` are the only derivations.
 - **Helper resolvers.** `ConnectionHelperClassGenerator` emits `edges`, `nodes`, `pageInfo`, `edgeNode`, `edgeCursor`. The `pageInfo` resolver returns a `LinkedHashMap` containing only `hasNextPage`, `hasPreviousPage`, `startCursor`, `endCursor`.
 - **Wiring registration.** `FetcherRegistrationsEmitter.connectionBody` registers `edges`, `nodes`, `pageInfo` against the connection-type coordinates and nothing else.
-- **Tests / fixtures.** No fixture in `graphitron-rewrite-fixtures` or the rewrite test schema selects `totalCount`; no pipeline or execution test covers it.
+- **Tests / fixtures.** No fixture in `graphitron-fixtures` or the rewrite test schema selects `totalCount`; no pipeline or execution test covers it.
 
 For comparison, the legacy `graphitron-schema-transform/.../MakeConnections.java` (lines 313-320) appends `totalCount: Int` to every synthesised Connection by default, and `graphitron-codegen-parent` emits a per-table count method (`FetchCountDBMethodGenerator`) that the runtime helper invokes only when the field is selected (`ServiceDataFetcherHelper#L102`). The rewrite has neither half.
 
@@ -119,7 +119,7 @@ Per `rewrite-design-principles.md`: no code-string assertions on generated bodie
 - **Pipeline (synthesised)** — `GraphitronSchemaBuilderTest` asserts the synthesised `ConnectionType` for an `@asConnection` carrier has a `totalCount: Int` (nullable) field on its `schemaType()`. One fixture; synthesis is unconditional.
 - **Pipeline (structural)** — three fixtures: a hand-written Connection-shaped type with `totalCount: Int`, one without, and one with `totalCount: String` (or some other non-Int type). Only the first ends up with `totalCount` wired. Verify by inspecting the emitted `FetcherRegistrationsClass` source via the existing pipeline-test scaffolding for "what coordinates were registered", which the firstclass-connections work already exercises.
 - **Compilation** — `GeneratedSourcesSmokeTest`'s normal job; nothing new to add beyond ensuring the new `(table, condition)` constructor parameters, the helper's `graphitronContext` shim, and the `totalCount` resolver are reached by an existing fixture.
-- **Execution (positive)** — in `graphitron-rewrite-test`, query `edges { node { ... } } totalCount` against an existing connection fixture. Assert the count matches `dsl.fetchCount(<table>)` for the unfiltered case, and equals the WHERE-filtered count for a filter-bearing case.
+- **Execution (positive)** — in `graphitron-test`, query `edges { node { ... } } totalCount` against an existing connection fixture. Assert the count matches `dsl.fetchCount(<table>)` for the unfiltered case, and equals the WHERE-filtered count for a filter-bearing case.
 - **Execution (negative)** — a second query that omits `totalCount` must not issue a count SQL statement. Register a jOOQ `ExecuteListener` on the test `DSLContext` that records the rendered SQL for each statement; the test fails if any captured statement begins with `select count`. The lazy-on-selection property is the whole point of the design and deserves a real assertion.
 
 ## Roadmap entries

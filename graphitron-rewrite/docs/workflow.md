@@ -4,7 +4,7 @@ Every code change in this repo moves through a fixed pipeline. Each item has
 its own file under [`graphitron-rewrite/roadmap/`](../roadmap/), with YAML
 front-matter naming its current `status:`. The rolled-up
 [`roadmap/README.md`](../roadmap/README.md) is generated from those files by
-[`graphitron-rewrite-roadmap-tool`](../roadmap-tool/) and never edited by hand.
+[`graphitron-roadmap-tool`](../roadmap-tool/) and never edited by hand.
 
 ## States and transitions
 
@@ -50,7 +50,7 @@ themselves from approving that revision — another party must sign off.
 
   GitHub renders this block as a table at the top of the file. The roll-up
   [`roadmap/README.md`](../roadmap/README.md) is regenerated from these fields
-  by `mvn -pl :graphitron-rewrite-roadmap-tool exec:java` (or `mise r roadmap`)
+  by `mvn -pl :graphitron-roadmap-tool exec:java` (or `mise r roadmap`)
   and CI verifies it stays in sync via the tool's `verify` mode.
 - Plans may be multi-phase. When a phase ships, the implementation commit updates
   the plan to mark that phase done (typically by collapsing its section into a
