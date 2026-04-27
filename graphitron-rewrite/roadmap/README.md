@@ -23,6 +23,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | Java LSP rewrite + introspect retirement + `dev` goal | Ready | [plan](graphitron-lsp.md) |
 | Stub #3: Interface / union fetchers | In Progress | [plan](stub-interface-union-fetchers.md) |
 | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` | In Progress | [plan](retire-maven-plugin.md) |
+| Rewrite `runtime-extension-points.md` for the rewrite runtime | In Review | [plan](runtime-extension-points-rewrite.md) |
 | Load-bearing classifier guarantee audit annotations | In Review | [plan](load-bearing-guarantee-audit.md) |
 
 ---
@@ -55,7 +56,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 - [**Unify `FkJoin` construction in `parsePathElement`**](unify-fkjoin-construction-parsepathelement.md): The `{key:}` branch at `BuildContext.java:557-564` hand-builds `FkJoin`. Delegate to `synthesizeFkJoin` for the source-validated success path, keeping the null-source fallback and connectivity-error arms bespoke.
 - [**Collapse `TableTargetField` structural redundancy**](collapse-tabletargetfield-redundancy.md): Six `Table*Field` variants share identical components; evaluate sealed intermediates (`StandardTableField`, `RecordBoundField`).
 - [**Make `graphitron-rewrite/docs/README.md` a real entry point**](rewrite-docs-entrypoint.md): The rewrite docs index is currently a fragment: it starts at numbered item **#4** with no preamble, because the numbering is intended to continue from `/docs/README.md` at the repo root. Readers landing here directly via a roadmap link, a code search hit, or a GitHub directory listing see items 4-7 with no anchor.
-- [**Rewrite `runtime-extension-points.md` for the rewrite runtime**](runtime-extension-points-rewrite.md): `graphitron-rewrite/docs/runtime-extension-points.md` describes the legacy `graphitron-common` runtime, not the rewrite. It is the single most misleading doc in the rewrite tree today: a new contributor reading it to understand how to wire `GraphitronContext` will write code that does not match what the generator actually emits.
 - [**Fix stale legacy references in rewrite docs**](fix-legacy-refs-in-rewrite-docs.md): Mechanical sweep over `graphitron-rewrite/docs/` to update references that still point at `graphitron-common` or describe the rewrite tree as it stood several landings ago. Three known sites; a grep pass for `graphitron-common` and the module count should turn up any others.
 - [**Shared interface for `QueryField` / `ChildField` table-bound parallels**](shared-interface-queryfield-childfield.md): Root variants drop `joinPath` but share `filters · orderBy · pagination`.
 - [**`JoinConditionRef` wrapper**](joinconditionref-wrapper.md): Distinguish `ConditionJoin` / `FkJoin` calling convention from `ConditionFilter` at the type level.
