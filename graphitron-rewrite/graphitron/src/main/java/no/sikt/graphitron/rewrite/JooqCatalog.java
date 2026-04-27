@@ -11,10 +11,12 @@ import org.slf4j.LoggerFactory;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 /**
  * Thin wrapper around jOOQ's {@link Catalog}. Loads the catalog once via reflection
@@ -32,6 +34,7 @@ public class JooqCatalog {
 
     private final Catalog catalog;
     private final Map<String, NodeIdMetadataLookup> metadataCache = new ConcurrentHashMap<>();
+    private final Map<String, Map<String, String>> qualifierMapCache = new ConcurrentHashMap<>();
 
     public JooqCatalog(String generatedJooqPackage) {
         this.catalog = loadDefaultCatalog(generatedJooqPackage);
@@ -171,6 +174,74 @@ public class JooqCatalog {
                     || (fkSide.equalsIgnoreCase(tableB) && keySide.equalsIgnoreCase(tableA));
             })
             .toList();
+    }
+
+    /**
+     * Returns the FK constraint name when exactly one outgoing FK from {@code sourceTableSqlName}
+     * references {@code targetTableSqlName}; empty otherwise (zero or many).
+     *
+     * <p>Directional: only FKs where {@code sourceTableSqlName} is the FK source (not the target)
+     * are counted. Uses {@link #findForeignKeysBetweenTables} and filters to the source side.
+     */
+    public Optional<String> findUniqueFkToTable(String sourceTableSqlName, String targetTableSqlName) {
+        var matches = findForeignKeysBetweenTables(sourceTableSqlName, targetTableSqlName).stream()
+            .filter(fk -> fk.getTable().getName().equalsIgnoreCase(sourceTableSqlName))
+            .toList();
+        return matches.size() == 1 ? Optional.of(matches.get(0).getName()) : Optional.empty();
+    }
+
+    /**
+     * Builds and caches a field-name → FK-constraint-name lookup map for all outgoing FKs from
+     * {@code sourceTableSqlName}. For each FK three lowercase keys are inserted:
+     * <ul>
+     *   <li>the raw qualifier lowercased ({@code role + targetTable + "_id"}), matching
+     *       {@code @field(name:)} values case-insensitively (e.g. {@code "language_id"});</li>
+     *   <li>{@code lowerFirst(qualifier).toLowerCase()}, matching bare singular field names
+     *       (e.g. {@code "languageid"});</li>
+     *   <li>the plural of the above (e.g. {@code "languageids"}), matching bare list field names
+     *       like {@code languageIds: [ID!]}.</li>
+     * </ul>
+     * The shim arm looks up {@code columnName.toLowerCase()} so SDL case differences never miss.
+     * The map is cached; if two FKs on the same source table produce a colliding key (implying
+     * duplicate methods in the generated record class) {@link IllegalStateException} is thrown.
+     * Returns an empty map when the catalog is unavailable or the table has no outgoing FKs.
+     */
+    public Map<String, String> buildQualifierMap(String sourceTableSqlName) {
+        return qualifierMapCache.computeIfAbsent(sourceTableSqlName, this::doBuildQualifierMap);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, String> doBuildQualifierMap(String sourceTableSqlName) {
+        var tableEntry = findTable(sourceTableSqlName);
+        if (tableEntry.isEmpty()) return Map.of();
+        var result = new HashMap<String, String>();
+        for (var fk : (List<ForeignKey<?, ?>>) (List<?>) tableEntry.get().table().getReferences()) {
+            var qualifier = localGetQualifier(fk);
+            var raw = (generateRolePrefix(fk) + fk.getKey().getTable().getName() + "_id").toLowerCase();
+            var camel = lowerFirst(qualifier).toLowerCase();
+            for (var key : List.of(raw, camel, camel + "s")) {
+                var prev = result.put(key, fk.getName());
+                if (prev != null && !prev.equals(fk.getName())) {
+                    throw new IllegalStateException(
+                        "FK qualifier map collision on key '" + key + "' for table '"
+                        + sourceTableSqlName + "': FKs '" + prev + "' and '" + fk.getName()
+                        + "' produce the same map key.");
+                }
+            }
+        }
+        return Map.copyOf(result);
+    }
+
+    /**
+     * Returns the UpperCamelCase qualifier that {@code KjerneJooqGenerator.getQualifier} would
+     * produce for the FK named {@code fkName} on {@code sourceTableSqlName}
+     * (e.g. {@code "LanguageId"} for {@code film_language_id_fkey} on {@code film}).
+     * Empty when the FK is not found or does not originate from {@code sourceTableSqlName}.
+     */
+    public Optional<String> qualifierForFk(String sourceTableSqlName, String fkName) {
+        return findForeignKey(fkName)
+            .filter(fk -> fk.getTable().getName().equalsIgnoreCase(sourceTableSqlName))
+            .map(JooqCatalog::localGetQualifier);
     }
 
     private Optional<Class<?>> keysClass(Schema schema) {
@@ -449,6 +520,55 @@ public class JooqCatalog {
             throw new RuntimeException(
                 "Could not access " + generatedJooqPackage + ".DefaultCatalog.DEFAULT_CATALOG.", e);
         }
+    }
+
+    // --- Qualifier reproduction (KjerneJooqGenerator.getQualifier) ---
+    // Keep these helpers in sync with upstream KjerneJooqGenerator. They reproduce the
+    // qualifier algorithm so the rewrite can map FK constraint names to has<Q>(s) predicate
+    // method names and reverse-map field names back to FK constraints without a runtime
+    // dependency on KjerneJooqGenerator itself.
+
+    /**
+     * Reproduces {@code KjerneJooqGenerator.generateRoleName}. Returns the role discriminator
+     * derived from the last source/target column pair. {@code "HAR"} means the columns are equal
+     * (no role prefix needed).
+     */
+    static String generateRoleName(List<String> sourceColumns, List<String> targetColumns) {
+        var last = sourceColumns.size() - 1;
+        var src = sourceColumns.get(last);
+        var tgt = targetColumns.get(last);
+        if (src.equals(tgt))         return "HAR";
+        if (src.startsWith(tgt))     return src.substring(tgt.length() + 1);
+        if (tgt.startsWith(src))     return tgt.substring(src.length() + 1);
+        return src;
+    }
+
+    /**
+     * Reproduces {@code KjerneJooqGenerator.generateRolePrefix}. Returns {@code ""} when the
+     * role is {@code "HAR"} (no distinguishing prefix), otherwise {@code role + "_"}.
+     */
+    static String generateRolePrefix(ForeignKey<?, ?> fk) {
+        var srcCols = fk.getFields().stream().map(f -> f.getName().toLowerCase()).toList();
+        var tgtCols = fk.getKey().getFields().stream().map(f -> f.getName().toLowerCase()).toList();
+        var role = generateRoleName(srcCols, tgtCols);
+        return "HAR".equals(role) ? "" : role + "_";
+    }
+
+    /**
+     * Reproduces {@code KjerneJooqGenerator.getQualifier}. Returns an UpperCamelCase qualifier
+     * derived from the FK's role prefix and target table name, e.g. {@code "LanguageId"} or
+     * {@code "OriginalLanguageIdLanguageId"}.
+     */
+    static String localGetQualifier(ForeignKey<?, ?> fk) {
+        var role = generateRolePrefix(fk);
+        var raw = (role + fk.getKey().getTable().getName() + "_id").toLowerCase();
+        return Arrays.stream(raw.split("_"))
+            .map(s -> s.isEmpty() ? s : Character.toUpperCase(s.charAt(0)) + s.substring(1))
+            .collect(Collectors.joining());
+    }
+
+    private static String lowerFirst(String s) {
+        return s.isEmpty() ? s : Character.toLowerCase(s.charAt(0)) + s.substring(1);
     }
 
     public record TableEntry(String javaFieldName, Table<?> table) {}
