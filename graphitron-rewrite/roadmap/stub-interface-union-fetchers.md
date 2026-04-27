@@ -103,29 +103,35 @@ The rewrite only orders when the schema carries an explicit `OrderBySpec.Fixed` 
 
 **Fix**: When `orderBy` is `OrderBySpec.None` for a `QueryTableInterfaceField` (and `TableInterfaceField` list variant), fall back to PK ordering. The PK columns are available via `tableRef` and the jOOQ catalog. This matches the behaviour of the legacy and of `buildQueryTableFetcher` in the rewrite, which already has PK-based default ordering logic elsewhere.
 
-### C. Projected columns: asterisk vs explicit select list
+### C. `asterisk()` instead of `$fields` — an anti-pattern, not a minor style difference
 
-The legacy projects only the columns it needs — one explicit entry per interface field and each overridden implementation-specific field:
+The regular `buildQueryTableFetcher` uses selection-set-aware projection:
 
 ```java
-// Legacy — one entry per field
-_a_address.DISTRICT.as("_iv_discriminator"),
-_a_address.POSTAL_CODE.as("postalCode"),
-_a_address.getId().as("id"),
+// Regular table fetcher — selection-set aware, only fetches requested columns
+.select(Film.$fields(env.getSelectionSet(), table, env))
 ```
 
-The rewrite projects every column via `table.asterisk()` plus a second explicit discriminator reference:
+`TypeClassGenerator.generate()` produces a `$fields(sel, table, env)` method for every `TableType` and `NodeType` in the schema. Each method inspects the GraphQL selection set at runtime and returns only the columns actually requested. A query for `{ films { title } }` fetches only the `title` column; a query for `{ films { title rentalRate } }` fetches both.
+
+The interface fetchers ignore the selection set entirely:
 
 ```java
-// Rewrite — asterisk + explicit discriminator = discriminator column appears twice
+// Interface fetcher — asterisk, fetches every column unconditionally
 .select(contentTable.asterisk(), DSL.field(DSL.name("CONTENT_TYPE")))
 ```
 
-`asterisk()` already includes `content_type`; the explicit addition creates a duplicate column in the result set. jOOQ handles this gracefully, but it is wasteful on wide tables.
+Every request for `allContent` or `filmContent` fetches all six columns of the `content` table regardless of which fields the GraphQL client requested. On tables with many or wide columns this is a serious over-fetch. The explicit `DSL.field(DSL.name("CONTENT_TYPE"))` also duplicates the discriminator column, which is already included in `asterisk()`.
 
-The root cause is that the rewrite delegates field-level resolution to graphql-java's column fetchers rather than resolving to a typed DTO inline. `asterisk()` ensures every column is available for those fetchers. This is an intentional architectural divergence (not a bug), but the explicit discriminator addition is redundant when `asterisk()` is used. The TypeResolver's `record.get(DSL.field(DSL.name(col)), String.class)` lookup works on any column in the record, whether projected via asterisk or explicitly. The explicit addition can be removed once the team is satisfied that `asterisk()` is always used for interface fetchers.
+The root cause is that `TypeClassGenerator` does not generate a `$fields` method for `TableInterfaceType` entries. The concrete participants (`FilmContent`, `ShortContent`) each get their own `$fields`, but the interface fetcher doesn't know at code-generation time which participant will be returned for any given row, so it cannot call a single participant's `$fields`.
 
-This is low priority relative to items A and B above.
+**Fix options (choose one):**
+
+1. **Emit a combined `$fields` on the interface type class.** Add `TableInterfaceType` to `TypeClassGenerator.generate()`. The generated `$fields` method takes the union of all participant field sets based on the selection set, including concrete-type inline fragments (`... on FilmContent { length }`). This mirrors the legacy's explicit select-list approach and fully restores selection-set awareness.
+
+2. **Union participant `$fields` calls at the call site.** At code-generation time, enumerate the participant types and emit code that calls each participant's `$fields` and unions the results, deduplicating on column identity. More verbose but avoids adding a new generated class.
+
+Either option must also ensure the discriminator column is always included in the SELECT list (it is not necessarily covered by the selection set).
 
 ---
 
