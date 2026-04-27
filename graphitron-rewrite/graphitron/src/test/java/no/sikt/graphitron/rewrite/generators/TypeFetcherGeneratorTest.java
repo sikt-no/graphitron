@@ -15,6 +15,7 @@ import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.LookupMapping;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
@@ -682,6 +683,138 @@ class TypeFetcherGeneratorTest {
 
         assertThat(method(spec, "nums").returnType().toString())
             .isEqualTo("java.util.List<? extends java.lang.Number>");
+    }
+
+    // ===== QueryTableInterfaceField =====
+
+    private static QueryField.QueryTableInterfaceField queryTableInterfaceField(String name, boolean isList) {
+        var wrapper = isList ? (FieldWrapper) nonNullList() : single();
+        var returnType = tableBoundFilm(wrapper);
+        return new QueryField.QueryTableInterfaceField("Query", name, null, returnType,
+            "FILM_TYPE", List.of("FILM", "SHORT"),
+            List.of(), new OrderBySpec.None(), null);
+    }
+
+    @Test
+    void queryTableInterfaceField_list_returnsResultRecord() {
+        var field = queryTableInterfaceField("allContent", true);
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(field));
+        assertThat(method(spec, "allContent").returnType().toString())
+            .isEqualTo("org.jooq.Result<org.jooq.Record>");
+    }
+
+    @Test
+    void queryTableInterfaceField_single_returnsRecord() {
+        var field = queryTableInterfaceField("content", false);
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(field));
+        assertThat(method(spec, "content").returnType().toString())
+            .isEqualTo("org.jooq.Record");
+    }
+
+    @Test
+    void queryTableInterfaceField_hasEnvParameter() {
+        var field = queryTableInterfaceField("allContent", true);
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(field));
+        assertThat(method(spec, "allContent").parameters())
+            .extracting(p -> p.type().toString())
+            .containsExactly("graphql.schema.DataFetchingEnvironment");
+    }
+
+    @Test
+    void queryTableInterfaceField_isPublicStatic() {
+        var field = queryTableInterfaceField("allContent", true);
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(field));
+        assertThat(method(spec, "allContent").modifiers())
+            .containsExactlyInAnyOrder(
+                javax.lang.model.element.Modifier.PUBLIC, javax.lang.model.element.Modifier.STATIC);
+    }
+
+    @Test
+    void queryTableInterfaceField_discriminatorFilter_appearsInBody() {
+        // Intentional body-content assertion: no structural equivalent for the IN-filter.
+        // The discriminator filter restricts to known concrete types; if dropped, queries
+        // silently return rows of unknown type that the TypeResolver cannot route.
+        var field = queryTableInterfaceField("allContent", true);
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(field));
+        var code = method(spec, "allContent").code().toString();
+        assertThat(code).contains("\"FILM\"");
+        assertThat(code).contains("\"SHORT\"");
+        assertThat(code).contains(".in(");
+    }
+
+    @Test
+    void queryTableInterfaceField_emptyKnownValues_noInFilter() {
+        // When no discriminator values are known, the filter must not be emitted.
+        var returnType = tableBoundFilm(nonNullList());
+        var field = new QueryField.QueryTableInterfaceField("Query", "allContent", null, returnType,
+            "FILM_TYPE", List.of(), List.of(), new OrderBySpec.None(), null);
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(field));
+        var code = method(spec, "allContent").code().toString();
+        assertThat(code).doesNotContain(".in(");
+    }
+
+    // ===== TableInterfaceField =====
+
+    private static ChildField.TableInterfaceField tableInterfaceField(String name, boolean isList) {
+        var wrapper = isList ? (FieldWrapper) nonNullList() : single();
+        var returnType = tableBoundFilm(wrapper);
+        // Fixture: parent (Language) holds the FK → child (Film) PK.
+        // FkJoin: source=Film(language_id), target=Language(language_id).
+        List<JoinStep> joinPath = List.of(new JoinStep.FkJoin(
+            "film_language_id_fkey", "", LANGUAGE_TABLE,
+            List.of(languageIdCol()), FILM_TABLE, List.of(languageIdCol()), null, name + "_0"));
+        return new ChildField.TableInterfaceField("Language", name, null, returnType,
+            "FILM_TYPE", List.of("FILM", "SHORT"),
+            joinPath, List.of(), new OrderBySpec.None(), null);
+    }
+
+    @Test
+    void tableInterfaceField_list_returnsResultRecord() {
+        var field = tableInterfaceField("content", true);
+        var spec = TypeFetcherGenerator.generateTypeSpec("Language", LANGUAGE_TABLE, List.of(field));
+        assertThat(method(spec, "content").returnType().toString())
+            .isEqualTo("org.jooq.Result<org.jooq.Record>");
+    }
+
+    @Test
+    void tableInterfaceField_single_returnsRecord() {
+        var field = tableInterfaceField("content", false);
+        var spec = TypeFetcherGenerator.generateTypeSpec("Language", LANGUAGE_TABLE, List.of(field));
+        assertThat(method(spec, "content").returnType().toString())
+            .isEqualTo("org.jooq.Record");
+    }
+
+    @Test
+    void tableInterfaceField_hasEnvParameter() {
+        var field = tableInterfaceField("content", true);
+        var spec = TypeFetcherGenerator.generateTypeSpec("Language", LANGUAGE_TABLE, List.of(field));
+        assertThat(method(spec, "content").parameters())
+            .extracting(p -> p.type().toString())
+            .containsExactly("graphql.schema.DataFetchingEnvironment");
+    }
+
+    @Test
+    void tableInterfaceField_discriminatorFilter_appearsInBody() {
+        // Intentional body-content assertion: mirrors queryTableInterfaceField test above.
+        var field = tableInterfaceField("content", true);
+        var spec = TypeFetcherGenerator.generateTypeSpec("Language", LANGUAGE_TABLE, List.of(field));
+        var code = method(spec, "content").code().toString();
+        assertThat(code).contains("\"FILM\"");
+        assertThat(code).contains("\"SHORT\"");
+        assertThat(code).contains(".in(");
+    }
+
+    @Test
+    void tableInterfaceField_emptyKnownValues_noInFilter() {
+        var returnType = tableBoundFilm(nonNullList());
+        List<JoinStep> joinPath = List.of(new JoinStep.FkJoin(
+            "film_language_id_fkey", "", LANGUAGE_TABLE,
+            List.of(languageIdCol()), FILM_TABLE, List.of(languageIdCol()), null, "content_0"));
+        var field = new ChildField.TableInterfaceField("Language", "content", null, returnType,
+            "FILM_TYPE", List.of(), joinPath, List.of(), new OrderBySpec.None(), null);
+        var spec = TypeFetcherGenerator.generateTypeSpec("Language", LANGUAGE_TABLE, List.of(field));
+        var code = method(spec, "content").code().toString();
+        assertThat(code).doesNotContain(".in(");
     }
 
     @Test

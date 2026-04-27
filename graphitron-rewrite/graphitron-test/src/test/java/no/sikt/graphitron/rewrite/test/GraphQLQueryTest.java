@@ -1708,4 +1708,83 @@ class GraphQLQueryTest {
         Map<String, Object> data = execute("{ filmCount }");
         assertThat(data.get("filmCount")).isEqualTo(5);
     }
+
+    // ===== TableInterfaceType (Track A) =====
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void allContent_returnsAllRowsWithTypeName() {
+        // allContent selects from the shared 'content' table and routes each row to FilmContent
+        // or ShortContent via the TypeResolver. init.sql seeds 2 FILM rows and 2 SHORT rows.
+        Map<String, Object> data = execute(
+            "{ allContent { __typename contentId title } }");
+        List<Map<String, Object>> items = (List<Map<String, Object>>) data.get("allContent");
+        assertThat(items).hasSize(4);
+        assertThat(items).extracting(i -> i.get("__typename"))
+            .containsExactlyInAnyOrder("FilmContent", "FilmContent", "ShortContent", "ShortContent");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void allContent_typeRouting_filmContentHasLength() {
+        // FilmContent-typed rows expose the 'length' field; ShortContent rows do not.
+        // This exercises inline fragment dispatch and confirms that the TypeResolver
+        // correctly routes FILM rows to FilmContent.
+        Map<String, Object> data = execute("""
+            { allContent {
+                __typename
+                ... on FilmContent { length }
+            } }
+            """);
+        List<Map<String, Object>> items = (List<Map<String, Object>>) data.get("allContent");
+        var filmItems = items.stream()
+            .filter(i -> "FilmContent".equals(i.get("__typename")))
+            .toList();
+        assertThat(filmItems).hasSize(2);
+        assertThat(filmItems).allSatisfy(i ->
+            assertThat(i.get("length")).as("FilmContent.length").isNotNull());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void allContent_onlyReturnsKnownDiscriminatorValues() {
+        // The generated WHERE IN ('FILM','SHORT') filter must exclude any rows with unknown
+        // discriminator values that cannot be routed by the TypeResolver. If the filter is
+        // missing, those rows would cause a null type resolution and an opaque runtime error.
+        // init.sql seeds only FILM and SHORT rows so this test confirms no mystery rows appear.
+        Map<String, Object> data = execute("{ allContent { __typename } }");
+        List<Map<String, Object>> items = (List<Map<String, Object>>) data.get("allContent");
+        assertThat(items).extracting(i -> i.get("__typename"))
+            .allSatisfy(t -> assertThat(t).isIn("FilmContent", "ShortContent"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void filmContent_singleValue_routesToFilmContent() {
+        // Film #1 (ACADEMY DINOSAUR) has a content entry with CONTENT_TYPE='FILM' and film_id=1.
+        // filmContent is a ChildField.TableInterfaceField on Film, resolved via the FK
+        // content.film_id → film.film_id. The TypeResolver must route it to FilmContent.
+        Map<String, Object> data = execute(
+            "{ filmById(film_id: [\"1\"]) { filmContent { __typename contentId title } } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmById");
+        assertThat(films).hasSize(1);
+        var film = films.get(0);
+        var content = (Map<String, Object>) film.get("filmContent");
+        assertThat(content).isNotNull();
+        assertThat(content.get("__typename")).isEqualTo("FilmContent");
+        assertThat(content.get("title")).isEqualTo("ACADEMY DINOSAUR (extended)");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void filmContent_filmWithNoContent_returnsNull() {
+        // Film #3 has no linked content entry; the FK join produces no match so the
+        // single-value fetcher must return null (not an error).
+        Map<String, Object> data = execute(
+            "{ filmById(film_id: [\"3\"]) { filmContent { __typename } } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmById");
+        assertThat(films).hasSize(1);
+        var content = films.get(0).get("filmContent");
+        assertThat(content).isNull();
+    }
 }

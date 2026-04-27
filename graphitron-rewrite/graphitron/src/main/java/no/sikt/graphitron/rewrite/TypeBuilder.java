@@ -9,6 +9,7 @@ import graphql.schema.GraphQLNamedType;
 import graphql.schema.GraphQLObjectType;
 import graphql.schema.GraphQLTypeUtil;
 import graphql.schema.GraphQLUnionType;
+import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.model.ErrorHandlerType;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
@@ -478,7 +479,14 @@ class TypeBuilder {
             return new UnclassifiedType(name, location, "table '" + tableName + "' could not be resolved in the jOOQ catalog"
                 + candidateHint(tableName, ctx.catalog.allTableSqlNames()));
         }
-        String discriminatorColumn = argString(iface, DIR_DISCRIMINATE, ARG_ON).orElse(null);
+        String discriminatorRaw = argString(iface, DIR_DISCRIMINATE, ARG_ON).orElse(null);
+        // Resolve to the SQL column name (lowercase) so generators can use DSL.name(col) safely.
+        // findColumn uses equalsIgnoreCase so the jOOQ Java name (e.g. "CONTENT_TYPE") resolves
+        // to the SQL name (e.g. "content_type"). Falls back to the raw value when unresolvable.
+        String discriminatorColumn = discriminatorRaw == null ? null
+            : ctx.catalog.findColumn(tableOpt.get().tableName(), discriminatorRaw)
+                .map(JooqCatalog.ColumnEntry::sqlName)
+                .orElse(discriminatorRaw);
         return new TableInterfaceType(name, location, discriminatorColumn, tableOpt.get(), List.of());
     }
 
