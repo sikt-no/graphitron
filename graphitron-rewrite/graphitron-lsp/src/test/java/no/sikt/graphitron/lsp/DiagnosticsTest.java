@@ -60,7 +60,21 @@ class DiagnosticsTest {
     }
 
     @Test
-    void knownColumnNameProducesNoError() {
+    void javaFieldNameProducesNoError() {
+        var file = file("""
+            type Foo @table(name: "film") {
+                bar: Int @field(name: "TITLE")
+            }
+            """);
+
+        var diags = Diagnostics.compute(file, filmCatalog());
+
+        assertThat(diags).isEmpty();
+    }
+
+    @Test
+    void sqlColumnNameProducesWarning() {
+        // SQL names are accepted but flagged: the author should use the Java field name.
         var file = file("""
             type Foo @table(name: "film") {
                 bar: Int @field(name: "title")
@@ -69,7 +83,9 @@ class DiagnosticsTest {
 
         var diags = Diagnostics.compute(file, filmCatalog());
 
-        assertThat(diags).isEmpty();
+        assertThat(diags).hasSize(1);
+        assertThat(diags.get(0).getSeverity()).isEqualTo(DiagnosticSeverity.Warning);
+        assertThat(diags.get(0).getMessage()).contains("title").contains("TITLE");
     }
 
     @Test
@@ -170,8 +186,8 @@ class DiagnosticsTest {
         var film = new CompletionData.Table(
             "film", "", CompletionData.SourceLocation.UNKNOWN,
             List.of(
-                CompletionData.Column.of("film_id", "Integer", false, ""),
-                CompletionData.Column.of("title", "String", false, "")
+                CompletionData.Column.of("FILM_ID", "Integer", false, ""),
+                CompletionData.Column.of("TITLE", "String", false, "")
             ),
             List.of(
                 CompletionData.Reference.of("language", "FILM__FILM_LANGUAGE_ID_FKEY", false)

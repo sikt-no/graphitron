@@ -36,7 +36,7 @@ class FieldCompletionsTest {
         var items = run(filmCatalog(), source, cursor);
 
         assertThat(items).extracting(c -> c.getLabel())
-            .containsExactly("film_id", "title", "language_id");
+            .containsExactly("FILM_ID", "TITLE", "LANGUAGE_ID");
     }
 
     @Test
@@ -105,7 +105,7 @@ class FieldCompletionsTest {
         var items = run(filmCatalog(), source, cursor);
 
         assertThat(items).extracting(c -> c.getLabel())
-            .contains("film_id", "title");
+            .contains("FILM_ID", "TITLE");
     }
 
     private static List<org.eclipse.lsp4j.CompletionItem> run(
@@ -127,9 +127,9 @@ class FieldCompletionsTest {
                 "Movies the rental store carries",
                 CompletionData.SourceLocation.UNKNOWN,
                 List.of(
-                    CompletionData.Column.of("film_id", "Integer", false, ""),
-                    CompletionData.Column.of("title", "String", false, ""),
-                    CompletionData.Column.of("language_id", "Integer", true, "")
+                    CompletionData.Column.of("FILM_ID", "Integer", false, ""),
+                    CompletionData.Column.of("TITLE", "String", false, ""),
+                    CompletionData.Column.of("LANGUAGE_ID", "Integer", true, "")
                 ),
                 List.of()
             )),

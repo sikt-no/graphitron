@@ -49,6 +49,9 @@ public record CompletionData(
     /**
      * Column on a table.
      *
+     * @param name        jOOQ Java field name (e.g. {@code "FILM_ID"}), not the SQL column name
+     *                    (e.g. {@code "film_id"}). LSP completions suggest this form; diagnostics
+     *                    accept SQL names via case-insensitive matching but emit a Warning.
      * @param description Javadoc for the column (e.g. lifted from
      *                    {@code COMMENT ON COLUMN}); empty if absent.
      * @param definition  source location of the column declaration in the
