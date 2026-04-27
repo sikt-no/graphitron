@@ -1,12 +1,12 @@
 ---
 title: "Bump generator-side Java floor 21 → 25"
-status: Spec
+status: In Review
 priority: 11
 ---
 
 # Plan: Bump generator-side Java floor 21 → 25
 
-Raise the JDK floor for graphitron-rewrite generator code from Java 21 to Java 25 (LTS). Generated output stays at Java 17: `graphitron-test`'s `<release>17</release>` ratchet is preserved as the single guard that catches Java-18+ syntax leaking into JavaPoet emitters. After this lands, the gap the ratchet covers widens from "21 syntax can leak" to "25 syntax can leak"; the mechanism is unchanged.
+Raised the JDK floor for graphitron-rewrite generator code from Java 21 to Java 25 (LTS). Generated output stays at Java 17: `graphitron-test`'s `<release>17</release>` ratchet is preserved as the single guard that catches Java-18+ syntax leaking into JavaPoet emitters. The gap the ratchet covers widened from "21 syntax can leak" to "25 syntax can leak"; the mechanism is unchanged.
 
 ## Why now, why 25
 
@@ -22,22 +22,16 @@ This is acceptable now because the rewrite has no consumers yet (everyone is on 
 
 The bump is a breaking change to the build contract; whether to bump `graphitron-rewrite-parent` from `10-SNAPSHOT` to `11-SNAPSHOT` at the same time is open and noted under "Open questions".
 
-## Implementation
+## Implementation (shipped)
 
-Two `<release>` flips, one supporting enforcer rule, and four documentation touch-ups. None of the module / source / dependency layout changes.
+- `graphitron-rewrite/pom.xml`: parent `<release>21</release>` → `<release>25</release>`; added `<requireJavaVersion><version>25</version></requireJavaVersion>` to the existing `enforce-versions` execution alongside `<requireMavenVersion>3.9</requireMavenVersion>` so a too-old Maven JVM fails fast with a clear message rather than an `UnsupportedClassVersionError` deep in plugin loading.
+- `graphitron-rewrite/graphitron/pom.xml`: `<release>21</release>` → `<release>25</release>` (the override exists only to add `-parameters`; the release pin tracks the parent).
+- `graphitron-rewrite/graphitron-test/pom.xml`: `<release>17</release>` ratchet preserved verbatim. Updated the explanatory comment so "Java-21 syntax slip" reads "Java-18+ syntax slip" (the ratchet now covers a wider gap), examples include a 25-era feature (unnamed variables), and the test-compile note reflects the parent's new floor (25 instead of 21).
+- [`CLAUDE.md`](../../CLAUDE.md): "Technology constraints" Java line updated to 25, with a one-clause note about the new enforcer rule. "Environment" line updated to "Java 25 default" with a transitional fallback for sandbox images that still ship Java 21 (`apt-get install openjdk-25-jdk-headless` plus `update-alternatives` or `JAVA_HOME`).
+- [`graphitron-rewrite/docs/claude-code-web-environment.md`](../docs/claude-code-web-environment.md): "Java 21 is the default JVM" → "Java 25 is the default JVM", with the same transitional fallback inline.
+- [`graphitron-rewrite/roadmap/graphitron-lsp.md`](graphitron-lsp.md) Phase 6: dropped the "Bump `<release>21</release>` to `<release>25</release>` in the parent pom" step; the scope-bullet and the phase paragraph both now reference this plan instead. Phase 6 stops claiming responsibility for an infra change that has already shipped.
 
-- `graphitron-rewrite/pom.xml` L172: `<release>21</release>` → `<release>25</release>` (parent default for all generator modules).
-- `graphitron-rewrite/graphitron/pom.xml` L70: `<release>21</release>` → `<release>25</release>` (the override exists only to add `-parameters`; the release pin tracks the parent).
-- `graphitron-rewrite/pom.xml` enforcer block (around L189): add a `<requireJavaVersion><version>25</version></requireJavaVersion>` rule alongside the existing `<requireMavenVersion>3.9</requireMavenVersion>`. Goal: a clear enforcer error when a consumer's Maven JVM is too old, instead of an `UnsupportedClassVersionError` from a class load. The legacy root reactor is unaffected (separate pom).
-- `graphitron-rewrite/graphitron-test/pom.xml`:
-  - Keep `<release>17</release>` on the `default-compile` execution. This is the ratchet; do not touch.
-  - Update the comment block at L116-L124: replace "release 21" with "release 25" so the rationale ("a Java-21 syntax slip ... fails this module's build") becomes "a Java-25 syntax slip", and the test-compile note ("Tests stay at the parent's release 21") becomes "release 25".
-- [`CLAUDE.md`](../../CLAUDE.md) "Technology constraints" bullet: replace "**Java 21** for generator code" with "**Java 25** for generator code", update the parenthetical pom reference, and adjust the trailing sentence ("Generator implementation may use Java 21 features freely") to read "Java 25 features freely".
-- [`CLAUDE.md`](../../CLAUDE.md) "Environment" line: "Java 21 default" → "Java 25 default" (sandbox image; coordinated with the sandbox refresh, see "Sandbox / CI provisioning" below).
-- [`graphitron-rewrite/docs/claude-code-web-environment.md`](../docs/claude-code-web-environment.md) L83: same "Java 21 is the default JVM" → "Java 25 is the default JVM" replacement.
-- [`graphitron-rewrite/roadmap/graphitron-lsp.md`](graphitron-lsp.md) Phase 6: drop the "Bump `<release>21</release>` to `<release>25</release>` in the parent pom" step; replace with a one-line "JDK 25 floor is in place per `bump-to-java-25.md`". The Phase 6 description stops claiming responsibility for an infra change that has already shipped.
-
-The legacy modules at the repo root (`graphitron-codegen-parent` etc.) are out of scope per `CLAUDE.md`; they keep whatever Java floor they have today.
+The legacy modules at the repo root (`graphitron-codegen-parent` etc.) are out of scope per `CLAUDE.md` and keep whatever Java floor they have today. The `.github/workflows/maven-build.yml` workflow targets the legacy root pom only and is unchanged.
 
 ## Sandbox / CI provisioning
 
@@ -48,20 +42,20 @@ Two environments need JDK 25 available before the bump can ship cleanly:
 
 No sandbox / CI changes block the pom flips themselves: the local sandbox can install 25 in a single apt step, and there is no rewrite CI yet to break.
 
-## Tests
+## Verification (run before the implementation commit landed)
 
-- `mvn -f graphitron-rewrite/pom.xml install -Plocal-db` passes on JDK 25, with no test changes. Confirms the bump is mechanical and the existing test suites do not depend on JDK 21-specific behaviour.
-- The 17 ratchet still bites. Confidence check, not a permanent test: temporarily slip a Java 21 expression (e.g. a record pattern in a `switch`) into a JavaPoet emitter, verify `graphitron-test` fails at `default-compile` with a Java 17 release error, then revert. Document the result in the implementation commit message; do not land the slip.
-- `mvn -f graphitron-rewrite/pom.xml install -Plocal-db` on JDK 21 fails fast at the enforcer step, naming Java 25 as the required minimum. Confirms consumers on too-old JDKs get a coherent error rather than a `UnsupportedClassVersionError` deep in plugin loading.
+- **Full reactor build on JDK 25.** `JAVA_HOME=/usr/lib/jvm/java-25-openjdk-amd64 mvn -f graphitron-rewrite/pom.xml install -Plocal-db` exits 0 with no test changes; all eight modules pass (parent, javapoet, fixtures-codegen, fixtures, graphitron, lsp, maven, test, roadmap-tool). Confirms the bump is mechanical and the existing suites do not depend on JDK 21-specific behaviour.
+- **Toolchain-level ratchet check.** `javac --release 17` running under JDK 25 still rejects post-17 syntax. A throwaway file containing `var _ = 1;` (unnamed variable, stable in Java 22 per JEP 456) compiled at `--release 25` (OK), then at `--release 17` (rejected with `error: unnamed variables are not supported in -source 17 (use -source 22 or higher to enable unnamed variables)`). The maven-compiler-plugin's `<release>17</release>` configuration reduces to that same `--release` flag, so the `graphitron-test` ratchet still catches post-17 syntax leaking out of any emitter. No emitter-level injection performed; the toolchain contract is the relevant guarantee.
+- **Enforcer rule rejects too-old JDK.** `JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 mvn -f graphitron-rewrite/pom.xml -N validate` fails at the `enforce-versions` execution with `Rule 1: org.apache.maven.enforcer.rules.version.RequireJavaVersion failed with message: Detected JDK /usr/lib/jvm/java-21-openjdk-amd64 is version 21.0.10 which is not in the allowed range [25,).` before any compile or plugin classloading runs; consumers on too-old JDKs get a coherent error rather than a `UnsupportedClassVersionError` deep in plugin loading.
 
 No new test code; this plan does not touch any source tree under `src/`.
 
-## Open questions
+## Decisions taken
 
-- **Version coordinate.** Bump `graphitron-rewrite-parent` from `10-SNAPSHOT` to `11-SNAPSHOT` at the same time, signalling the breaking JDK-floor change at the artifact level? Argument for: the floor is a real consumer-facing contract change. Argument against: the rewrite has no published releases yet, the SNAPSHOT coordinate carries no compatibility promise, and a `11-SNAPSHOT` that only differs from `10-SNAPSHOT` by one floor change is noisy. Recommendation: stay on `10-SNAPSHOT`, take the version bump when the first non-SNAPSHOT release is cut. Reviewer to confirm.
-- **Enforcer floor wording.** `<requireJavaVersion><version>25</version></requireJavaVersion>` requires *at least* JDK 25, allowing any later JDK. That matches the parent `<release>25</release>`'s "compile to 25 bytecode, run on 25-or-newer" semantics. No range upper bound; we don't try to forbid future JDKs.
+- **Version coordinate stays at `10-SNAPSHOT`.** The SNAPSHOT coordinate carries no compatibility promise and the rewrite has no published releases; the version bump can ride along with the first non-SNAPSHOT release rather than fragmenting the SNAPSHOT line over a single floor change. Reviewer can revisit if a different release cadence is preferred.
+- **Enforcer wording is a lower bound only.** `<requireJavaVersion><version>25</version></requireJavaVersion>` requires *at least* JDK 25, allowing any later JDK. Matches the parent `<release>25</release>`'s "compile to 25 bytecode, run on 25-or-newer" semantics; no range upper bound, we don't try to forbid future JDKs.
 
 ## Roadmap entries
 
-- [`graphitron-lsp.md`](graphitron-lsp.md) Phase 6 currently owns the bump line; its update (delete that step, reference this plan) is part of this plan's implementation, not a separate item.
+- The [`graphitron-lsp.md`](graphitron-lsp.md) Phase 6 update landed in this plan's commit; no separate item.
 - A future "rewrite CI workflow" backlog item inherits the JDK 25 floor as a fixed constraint, not a decision.

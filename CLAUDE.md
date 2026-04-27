@@ -8,12 +8,12 @@ The next-generation Graphitron generator: a Maven-based code generator that turn
 
 ## Technology constraints
 
-- **Java 21** for generator code (`<release>21</release>` in `graphitron-rewrite/pom.xml` and most child modules); **Java 17** for generated output (`graphitron-test` compiles with `<release>17</release>` to verify this). Generator implementation may use Java 21 features freely. Generated source files must target Java 17, consumers may still be on 17, and we control what syntax appears in those files.
+- **Java 25** for generator code (`<release>25</release>` in `graphitron-rewrite/pom.xml` and most child modules); **Java 17** for generated output (`graphitron-test` compiles with `<release>17</release>` to verify this). Generator implementation may use Java 25 features freely. Generated source files must target Java 17, consumers may still be on 17, and we control what syntax appears in those files. The parent pom's `requireJavaVersion` enforcer rule fails the build with a clear message when run on a JDK older than 25.
 - **jOOQ 3.20.11**, **GraphQL-Java 25.0**, **JUnit 6.0.3 + AssertJ 3.27.7**, **PostgreSQL 42.7.10** (Testcontainers 2.0.4). Versions are pinned in `graphitron-rewrite/pom.xml` properties; don't add dependencies without checking that pom first.
 
 ## Environment (agent sessions)
 
-Maven 3.9.11 at `/opt/maven`; Java 21 default. Pre-configured, no installation needed.
+Maven 3.9.11 at `/opt/maven`; Java 25 default. Pre-configured, no installation needed. (On older sandbox images that still default to Java 21, install JDK 25 with `sudo apt-get install -y openjdk-25-jdk-headless` and either `sudo update-alternatives --set java /usr/lib/jvm/java-25-openjdk-amd64/bin/java` or export `JAVA_HOME=/usr/lib/jvm/java-25-openjdk-amd64`.)
 
 **Claude Code Web:** see [`graphitron-rewrite/docs/claude-code-web-environment.md`](graphitron-rewrite/docs/claude-code-web-environment.md) for the web-sandbox setup (no Docker, native PostgreSQL via `-Plocal-db`).
 
