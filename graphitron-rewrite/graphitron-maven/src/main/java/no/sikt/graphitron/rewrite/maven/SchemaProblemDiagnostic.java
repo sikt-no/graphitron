@@ -57,9 +57,32 @@ final class SchemaProblemDiagnostic {
             }
         }
 
-        sb.append("\n\nHint: declare a 'type Query { ... }' in one of the loaded files,");
-        sb.append("\nor add the missing file to <schemaInputs> in graphitron-maven.");
+        String hint = pickHint(problem);
+        if (hint != null) {
+            sb.append("\n\n").append(hint);
+        }
         return sb.toString();
+    }
+
+    private static String pickHint(SchemaProblem problem) {
+        boolean missingQuery = false;
+        boolean undeclaredDirective = false;
+        for (GraphQLError e : problem.getErrors()) {
+            String m = e.getMessage();
+            if (m == null) continue;
+            if (m.contains("'query' operation")) missingQuery = true;
+            if (m.contains("undeclared directive")) undeclaredDirective = true;
+        }
+        if (missingQuery) {
+            return "Hint: declare a 'type Query { ... }' in one of the loaded files,"
+                + "\nor add the missing file to <schemaInputs> in graphitron-maven.";
+        }
+        if (undeclaredDirective) {
+            return "Hint: graphql-java does not bundle Apollo Federation directives."
+                + "\nDeclare the directives in one of the loaded files,"
+                + "\nor add a federation-directives schema file to <schemaInputs>.";
+        }
+        return null;
     }
 
     private static Set<Path> normaliseLoaded(List<String> sourceNames, Path basedir) {
