@@ -146,6 +146,7 @@ public class TypeFetcherGenerator {
         ChildField.ColumnField.class,
         ChildField.NodeIdReferenceField.class,
         QueryField.QueryNodeField.class,
+        QueryField.QueryNodesField.class,
         QueryField.QueryLookupTableField.class,
         QueryField.QueryTableField.class,
         QueryField.QueryTableMethodTableField.class,
@@ -344,6 +345,7 @@ public class TypeFetcherGenerator {
                     }
                 }
                 case QueryField.QueryNodeField f              -> builder.addMethod(buildQueryNodeFetcher(f, outputPackage));
+                case QueryField.QueryNodesField f             -> builder.addMethod(buildQueryNodesFetcher(f, outputPackage));
                 case QueryField.QueryTableMethodTableField f  -> builder.addMethod(buildQueryTableMethodFetcher(f, outputPackage, jooqPackage));
                 case QueryField.QueryServiceTableField f      -> builder.addMethod(buildQueryServiceTableFetcher(f, outputPackage, jooqPackage));
                 case QueryField.QueryServiceRecordField f     -> builder.addMethod(buildQueryServiceRecordFetcher(f, outputPackage));
@@ -1410,6 +1412,18 @@ public class TypeFetcherGenerator {
             .addParameter(ENV, "env")
             .addStatement("return $T.$L(env)", queryNodeFetcher,
                 no.sikt.graphitron.rewrite.generators.util.QueryNodeFetcherClassGenerator.DISPATCH_METHOD)
+            .build();
+    }
+
+    private static MethodSpec buildQueryNodesFetcher(QueryField.QueryNodesField field, String outputPackage) {
+        var queryNodeFetcher = ClassName.get(outputPackage + ".fetchers",
+            no.sikt.graphitron.rewrite.generators.util.QueryNodeFetcherClassGenerator.CLASS_NAME);
+        return MethodSpec.methodBuilder(field.name())
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(ParameterizedTypeName.get(LIST, RECORD))
+            .addParameter(ENV, "env")
+            .addStatement("return $T.$L(env)", queryNodeFetcher,
+                no.sikt.graphitron.rewrite.generators.util.QueryNodeFetcherClassGenerator.DISPATCH_NODES_METHOD)
             .build();
     }
 

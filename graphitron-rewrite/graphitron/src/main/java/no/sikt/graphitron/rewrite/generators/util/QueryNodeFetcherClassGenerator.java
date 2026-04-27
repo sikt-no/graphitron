@@ -42,11 +42,13 @@ public class QueryNodeFetcherClassGenerator {
 
     public static final String CLASS_NAME                = "QueryNodeFetcher";
     public static final String DISPATCH_METHOD           = "getNode";
+    public static final String DISPATCH_NODES_METHOD     = "getNodes";
     public static final String REGISTER_RESOLVER_METHOD  = "registerTypeResolver";
     public static final String TYPENAME_COLUMN           = "__typename";
     public static final String NODE_INTERFACE_NAME       = "Node";
 
     private static final ClassName ENV               = ClassName.get("graphql.schema", "DataFetchingEnvironment");
+    private static final ClassName LIST              = ClassName.get("java.util", "List");
     private static final ClassName RECORD            = ClassName.get("org.jooq", "Record");
     private static final ClassName DSL_CONTEXT       = ClassName.get("org.jooq", "DSLContext");
     private static final ClassName FIELD             = ClassName.get("org.jooq", "Field");
@@ -69,6 +71,39 @@ public class QueryNodeFetcherClassGenerator {
         var graphitronContext = ClassName.get(outputPackage + ".schema", "GraphitronContext");
         var nodeIdEncoder    = ClassName.get(outputPackage + ".util", NodeIdEncoderClassGenerator.CLASS_NAME);
 
+        // fetchById: the type-dispatch logic shared by getNode and getNodes.
+        // Callers guarantee id is non-null; null/garbage typeId is handled here.
+        var fetchById = MethodSpec.methodBuilder("fetchById")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(RECORD)
+            .addParameter(DSL_CONTEXT, "dsl")
+            .addParameter(ENV, "env")
+            .addParameter(String.class, "id")
+            .addStatement("$T typeId = $T.peekTypeId(id)", String.class, nodeIdEncoder)
+            .addStatement("if (typeId == null) return null");
+
+        // Emitted as an if-else chain rather than a switch statement: JavaPoet doesn't reliably
+        // handle arrow-case blocks containing return-with-block, and the readability cost of an
+        // if chain over N NodeTypes is small compared to the structural-coverage cost.
+        for (var nt : nodeTypes) {
+            var jooqTableClass = ClassName.get(jooqPackage + ".tables", nt.table().javaClassName());
+            var typeClass      = ClassName.get(outputPackage + ".types", nt.name());
+            String tableSingleton = nt.table().javaFieldName();
+            fetchById.beginControlFlow("if ($S.equals(typeId))", nt.typeId());
+            fetchById.addStatement("$T t = $T.$L", jooqTableClass, jooqTableClass, tableSingleton);
+            fetchById.addStatement("$T fields = new $T($T.$$fields(env.getSelectionSet(), t, env))",
+                arrayListOfField, arrayListOfField, typeClass);
+            fetchById.addStatement("fields.add($T.inline($S).as($S))", DSL, nt.name(), TYPENAME_COLUMN);
+            var hasIdArgs = CodeBlock.builder().add("$S, id", nt.typeId());
+            for (var col : nt.nodeKeyColumns()) {
+                hasIdArgs.add(", t.$L", col.javaName());
+            }
+            fetchById.addStatement("return dsl.select(fields).from(t).where($T.hasId($L)).fetchOne()",
+                nodeIdEncoder, hasIdArgs.build());
+            fetchById.endControlFlow();
+        }
+        fetchById.addStatement("return null");
+
         var dispatch = MethodSpec.methodBuilder(DISPATCH_METHOD)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(RECORD)
@@ -78,31 +113,24 @@ public class QueryNodeFetcherClassGenerator {
                 + "Returns {@code null} for null/garbage/unknown IDs (Relay spec).\n")
             .addStatement("$T id = env.getArgument($S)", String.class, "id")
             .addStatement("if (id == null) return null")
-            .addStatement("$T typeId = $T.peekTypeId(id)", String.class, nodeIdEncoder)
-            .addStatement("if (typeId == null) return null")
-            .addStatement("$T dsl = graphitronContext(env).getDslContext(env)", DSL_CONTEXT);
+            .addStatement("$T dsl = graphitronContext(env).getDslContext(env)", DSL_CONTEXT)
+            .addStatement("return fetchById(dsl, env, id)")
+            .build();
 
-        // Emitted as an if-else chain rather than a switch statement: JavaPoet doesn't reliably
-        // handle arrow-case blocks containing return-with-block, and the readability cost of an
-        // if chain over N NodeTypes is small compared to the structural-coverage cost.
-        for (var nt : nodeTypes) {
-            var jooqTableClass = ClassName.get(jooqPackage + ".tables", nt.table().javaClassName());
-            var typeClass      = ClassName.get(outputPackage + ".types", nt.name());
-            String tableSingleton = nt.table().javaFieldName();
-            dispatch.beginControlFlow("if ($S.equals(typeId))", nt.typeId());
-            dispatch.addStatement("$T t = $T.$L", jooqTableClass, jooqTableClass, tableSingleton);
-            dispatch.addStatement("$T fields = new $T($T.$$fields(env.getSelectionSet(), t, env))",
-                arrayListOfField, arrayListOfField, typeClass);
-            dispatch.addStatement("fields.add($T.inline($S).as($S))", DSL, nt.name(), TYPENAME_COLUMN);
-            var hasIdArgs = CodeBlock.builder().add("$S, id", nt.typeId());
-            for (var col : nt.nodeKeyColumns()) {
-                hasIdArgs.add(", t.$L", col.javaName());
-            }
-            dispatch.addStatement("return dsl.select(fields).from(t).where($T.hasId($L)).fetchOne()",
-                nodeIdEncoder, hasIdArgs.build());
-            dispatch.endControlFlow();
-        }
-        dispatch.addStatement("return null");
+        var listOfString = ParameterizedTypeName.get(LIST, ClassName.get(String.class));
+        var listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
+        var dispatchNodes = MethodSpec.methodBuilder(DISPATCH_NODES_METHOD)
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(listOfRecord)
+            .addParameter(ENV, "env")
+            .addJavadoc("Dispatches a Relay {@code Query.nodes(ids:)} call, fanning out to\n"
+                + "{@link #fetchById} per id. Returns {@code null} entries for null/garbage/unknown\n"
+                + "IDs (Relay spec).\n")
+            .addStatement("$T ids = env.getArgument($S)", listOfString, "ids")
+            .addStatement("if (ids == null || ids.isEmpty()) return $T.of()", LIST)
+            .addStatement("$T dsl = graphitronContext(env).getDslContext(env)", DSL_CONTEXT)
+            .addStatement("return ids.stream().map(id -> id == null ? null : fetchById(dsl, env, id)).toList()")
+            .build();
 
         var contextHelper = MethodSpec.methodBuilder("graphitronContext")
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
@@ -131,11 +159,14 @@ public class QueryNodeFetcherClassGenerator {
 
         var spec = TypeSpec.classBuilder(CLASS_NAME)
             .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
-            .addJavadoc("Runtime dispatcher for the Relay {@code Query.node(id:)} field. See\n"
+            .addJavadoc("Runtime dispatcher for the Relay {@code Query.node(id:)} and\n"
+                + "{@code Query.nodes(ids:)} fields. See\n"
                 + "{@link QueryNodeFetcherClassGenerator} for emission semantics.\n")
             .addMethod(MethodSpec.constructorBuilder().addModifiers(Modifier.PRIVATE).build())
-            .addMethod(dispatch.build())
+            .addMethod(dispatch)
+            .addMethod(dispatchNodes)
             .addMethod(registerResolver)
+            .addMethod(fetchById.build())
             .addMethod(contextHelper)
             .build();
         return List.of(spec);

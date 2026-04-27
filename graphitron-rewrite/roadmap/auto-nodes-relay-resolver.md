@@ -1,6 +1,6 @@
 ---
 title: "Auto-emit Relay `nodes` when `node` exists"
-status: Backlog
+status: Done
 bucket: architecture
 priority: 7
 ---
