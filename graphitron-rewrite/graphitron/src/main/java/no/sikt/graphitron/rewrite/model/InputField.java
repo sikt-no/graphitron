@@ -18,6 +18,7 @@ import java.util.Optional;
 public sealed interface InputField extends GraphitronField
         permits InputField.ColumnField, InputField.ColumnReferenceField,
                 InputField.NodeIdField, InputField.NodeIdReferenceField,
+                InputField.IdReferenceField,
                 InputField.NestingField {
 
     /**
@@ -114,6 +115,38 @@ public sealed interface InputField extends GraphitronField
         List<ColumnRef> nodeKeyColumns,
         List<JoinStep> joinPath,
         Optional<ArgConditionRef> condition
+    ) implements InputField {}
+
+    /**
+     * A filter field typed {@code ID!} or {@code [ID!]} whose predicate is a
+     * {@code has<Qualifier>(s)} method on the jOOQ record class of the input's resolved table
+     * (i.e. the FK source). The method is emitted by {@code KjerneJooqGenerator} from a single
+     * FK out of that table, identified here by {@code fkName}.
+     *
+     * <p>{@code targetTypeName} is the GraphQL type the IDs encode (from
+     * {@code @nodeId(typeName:)} on the canonical forms, or synthesized from the FK's target
+     * table on the shim arm). {@code fkName} is the jOOQ FK constraint name (from
+     * {@code @reference(path: [{key:}])} when explicit, or inferred by walking FKs from the
+     * resolved table to the table backing {@code targetTypeName} when unique). {@code qualifier}
+     * is the UpperCamelCase string returned by the local reproduction of
+     * {@code KjerneJooqGenerator.getQualifier(fk)} (e.g. {@code "StudieprogramId"}); code
+     * generation derives the predicate method names by prepending {@code "has"}.
+     *
+     * <p>{@code synthesized} is {@code true} when the variant was emitted by the column-miss
+     * shim arm (legacy {@code @field(name:)}-only SDL); the classifier also logs a per-site
+     * WARN in that case.
+     */
+    record IdReferenceField(
+        String parentTypeName,
+        String name,
+        SourceLocation location,
+        String typeName,
+        boolean nonNull,
+        boolean list,
+        String targetTypeName,
+        String fkName,
+        String qualifier,
+        boolean synthesized
     ) implements InputField {}
 
     /**
