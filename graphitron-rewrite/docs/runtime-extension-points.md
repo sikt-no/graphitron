@@ -29,7 +29,7 @@ by anything Graphitron emits.
 
 The interface is **emitted per app**, not imported from a shared module. Every
 code-generation run produces one `GraphitronContext.java` file under
-`<outputPackage>.rewrite.schema`, written by
+`<outputPackage>.schema`, written by
 `GraphitronContextInterfaceGenerator`. The generated interface depends only on
 graphql-java's `DataFetchingEnvironment` and jOOQ's `DSLContext`; it does not
 pull in any Graphitron runtime jar.
