@@ -22,7 +22,7 @@ import java.util.List;
 public sealed interface QueryField extends RootField
     permits QueryField.QueryLookupTableField, QueryField.QueryTableField,
             QueryField.QueryTableMethodTableField,
-            QueryField.QueryNodeField, QueryField.QueryEntityField,
+            QueryField.QueryNodeField, QueryField.QueryNodesField, QueryField.QueryEntityField,
             QueryField.QueryTableInterfaceField, QueryField.QueryInterfaceField,
             QueryField.QueryUnionField,
             QueryField.QueryServiceTableField, QueryField.QueryServiceRecordField {
@@ -73,6 +73,13 @@ public sealed interface QueryField extends RootField
     ) implements QueryField, MethodBackedField {}
 
     record QueryNodeField(
+        String parentTypeName,
+        String name,
+        SourceLocation location,
+        ReturnTypeRef.PolymorphicReturnType returnType
+    ) implements QueryField {}
+
+    record QueryNodesField(
         String parentTypeName,
         String name,
         SourceLocation location,

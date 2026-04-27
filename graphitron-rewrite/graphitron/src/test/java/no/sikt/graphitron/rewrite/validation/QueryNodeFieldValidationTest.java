@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.validation;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.QueryField.QueryNodeField;
+import no.sikt.graphitron.rewrite.model.QueryField.QueryNodesField;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -19,6 +20,10 @@ class QueryNodeFieldValidationTest {
 
         IMPLEMENTED_NO_ERRORS("node query field is implemented (R4b) — no per-variant validation errors",
             new QueryNodeField("Query", "node", null, new ReturnTypeRef.PolymorphicReturnType("Node", new FieldWrapper.Single(true))),
+            List.of()),
+
+        NODES_IMPLEMENTED_NO_ERRORS("nodes query field is implemented — no per-variant validation errors",
+            new QueryNodesField("Query", "nodes", null, new ReturnTypeRef.PolymorphicReturnType("Node", new FieldWrapper.List(false, true))),
             List.of());
 
         private final String description;

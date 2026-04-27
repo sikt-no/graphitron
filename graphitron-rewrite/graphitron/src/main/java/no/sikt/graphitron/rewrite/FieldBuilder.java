@@ -1585,6 +1585,11 @@ class FieldBuilder {
                 new ReturnTypeRef.PolymorphicReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef)));
         }
 
+        if (name.equals("nodes")) {
+            return new QueryField.QueryNodesField(parentTypeName, name, location,
+                new ReturnTypeRef.PolymorphicReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef)));
+        }
+
         if (hasLookupKeyAnywhere(fieldDef)) {
             String lookupTypeName = baseTypeName(fieldDef);
             var returnType = ctx.resolveReturnType(lookupTypeName, buildWrapper(fieldDef));
