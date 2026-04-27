@@ -93,6 +93,7 @@ public sealed interface QueryField extends RootField
         ReturnTypeRef.TableBoundReturnType returnType,
         String discriminatorColumn,
         List<String> knownDiscriminatorValues,
+        List<ParticipantRef> participants,
         List<WhereFilter> filters,
         OrderBySpec orderBy,
         PaginationSpec pagination
