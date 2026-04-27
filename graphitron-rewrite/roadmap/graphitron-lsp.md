@@ -62,8 +62,9 @@ already-shipped rationale lives in the commit messages.
   `CatalogBuilder` and the `CompletionData` data shape live in the
   rewrite module under
   `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/catalog/`.
-- **Service-method enumeration sources** (Phase 5 candidates): see
-  the Phase 5 description below.
+- **Service-method enumeration source** (Phase 5): a JavaParser
+  walk over the consumer's source roots; see the Phase 5
+  description below for the rationale.
 
 ## Goal
 
@@ -115,8 +116,8 @@ endpoint.
   (Phase 5).
 - Javadoc surfacing on table / column / scalar / method elements
   (Phase 5).
-- Service-class enumeration source: picked from the three
-  candidates listed in Phase 5.
+- Service-class enumeration source: a JavaParser walk over the
+  consumer's source roots (Phase 5).
 - jtreesitter binding swap and grammar vendoring (Phase 6; the
   Java 25 floor it depends on is now in place per
   [`bump-to-java-25.md`](bump-to-java-25.md)).
@@ -223,29 +224,40 @@ Two new capabilities:
 1. **Service / record class enumeration.** `ServiceCatalog` is a
    stateless reflector that only knows what the schema explicitly
    references, so it cannot answer "what service classes /
-   methods exist?" for autocomplete. Two candidate sources, to
-   choose between on phase open:
+   methods exist?" for autocomplete. Source: a JavaParser walk
+   over the consumer's source roots. Two reinforcing reasons:
 
-   - A classpath scan for an annotation marker (e.g. a new
-     `@RewriteService` annotation consumers attach to service
-     classes). Bounded, explicit, but adds an authoring step.
-   - A JavaParser walk over the consumer's source roots. Heavy
-     in isolation, but Phase 5 already adopts JavaParser for the
-     Javadoc work below, so the marginal cost is mostly walking
-     additional files.
+   - Phase 5 already adopts JavaParser for the Javadoc work
+     below, so the marginal cost is mostly walking additional
+     files.
+   - Source roots are a naturally bounded set with no new config
+     knob. The previous Maven plugin's `externalReferenceImports`
+     element (a package search path for unqualified refs) was
+     dropped in the rewrite plugin alongside the move to FQN-only
+     `@service(class:)`; reintroducing a search-path config for
+     the LSP would contradict that direction.
 
-   The POM's `<namedReferences>` map was considered and ruled
-   out: it covers only the legacy `@service(name:)` form, and we
-   want our advanced tooling to push consumers off that form
-   rather than entrench it. Modern `@service(class:)` and
-   `@record(record: {className:})` schemas do not populate the
-   map at all, so supporting it would also leave the autocomplete
-   surface mostly empty for current schemas.
+   Two alternatives were considered and ruled out:
 
-   Pick between the remaining two on phase open; the data shape
-   (`ExternalReference` / `Method` / `Parameter` records on
-   `CompletionData`, with `Parameter.source` matching the
-   `MethodRef.ParamSource` taxonomy) is already defined and
+   - A classpath scan for an `@RewriteService` annotation marker
+     consumers attach to service classes. Adds an authoring step,
+     and without an `externalReferenceImports` equivalent the
+     scan must either walk the entire classpath or take a new
+     config knob; neither is appealing. (The annotation marker
+     can still serve as an opt-in filter inside the JavaParser
+     walk if the unmarked surface turns out too noisy; that is a
+     follow-up call, not a Phase 5 decision.)
+   - The POM's `namedReferences` map. Covers only the legacy
+     `@service(name:)` form, and we want our advanced tooling to
+     push consumers off that form rather than entrench it.
+     Modern `@service(class:)` and `@record(record: {className:})`
+     schemas do not populate the map at all, so supporting it
+     would also leave the autocomplete surface mostly empty for
+     current schemas.
+
+   The data shape (`ExternalReference` / `Method` / `Parameter`
+   records on `CompletionData`, with `Parameter.source` matching
+   the `MethodRef.ParamSource` taxonomy) is already defined and
    unchanged.
 
 2. **Javadoc surfacing.** Method signatures populate
