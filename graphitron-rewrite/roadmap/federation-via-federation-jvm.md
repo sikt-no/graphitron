@@ -46,12 +46,13 @@ Three landing markers:
 - **Generator.** `TypeFetcherGenerator` routes `QueryEntityField` to
   `stub(f)` with reason "QueryEntityField not yet implemented" pointing
   at this plan (`TypeFetcherGenerator.java:218-219, 349`).
-- **Directive declarations.** Only `@tag` is auto-injected, narrowly
-  (`TagApplier.ensureTagDirectiveDeclared`, `TagApplier.java:264-285`).
-  `@key`, `@shareable`, `@inaccessible`, `@override`, `@link` itself,
-  and the rest of the federation set are not. graphql-java's load step
-  rejects them with "tried to use an undeclared directive ..."
-  surfaced verbatim through `ValidationFailedException`.
+- **Directive declarations.** Only `@tag` is auto-injected
+  (`TagApplier.ensureTagDirectiveDeclared`, `TagApplier.java:264-298`),
+  with federation-2 parity on the location set. `@key`, `@shareable`,
+  `@inaccessible`, `@override`, `@link` itself, and the rest of the
+  federation set are not. graphql-java's load step rejects them with
+  "tried to use an undeclared directive ..." surfaced verbatim through
+  `ValidationFailedException`.
 - **Runtime guidance** lives in
   `graphitron-rewrite/docs/getting-started.md:80-102`: consumers wrap
   the built schema in `Federation.transform(base)` themselves. The doc
@@ -195,8 +196,9 @@ parse → preflight scan (Phase 1) → registry build
 ```
 
 `FederationLinkApplier` runs before `TagApplier` so that when `@tag` is
-imported via `@link`, the federation declaration (with the full
-location set) wins and `TagApplier`'s narrow auto-injection is bypassed.
+imported via `@link`, the federation declaration wins and `TagApplier`'s
+auto-injection is bypassed (the existing "skip if already declared"
+guard at `TagApplier.java:265` handles the bypass).
 
 **Detection.**
 1. Walk `registry.schemaDefinition()` and `registry.getSchemaExtensionDefinitions()`.
@@ -381,10 +383,6 @@ Single-arg call sites stay unchanged.
 - **Subgraph SDL artefact emission.** `_service.sdl` is reconstructed
   at runtime by `federation-graphql-java-support` from the programmatic
   schema; no build-time SDL artefact is emitted.
-- **`@tag` location-set widening.** Tracked separately from this plan;
-  Phase 2's `@link` import path supplies the full federation set when a
-  consumer opts in via `@link(import: ["@tag"])`, which covers the
-  common case.
 - **Per-version `@link` URL parsing.** The plan recognises any
   `specs.apollo.dev/federation/v2.x` URL and treats them all as v2.6
   for the canonical-declaration table. A v2.5 consumer importing
