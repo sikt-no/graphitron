@@ -49,18 +49,15 @@ class NodeIdPipelineTest {
     // ===== Type-level NodeType synthesis =====
 
     enum TypeCase {
-        METADATA_ONLY(
-            "`@table` on a metadata-carrying table synthesizes NodeType with the metadata values",
+        METADATA_ONLY_NO_PROMOTION(
+            "`@table` on a metadata-carrying table without `implements Node @node` stays a TableType "
+                + "(NodeType promotion is opt-in; auto-promotion previously collided typeIds across "
+                + "tables that shared `__NODE_TYPE_ID`)",
             """
             type Foo @table(name: "bar") { name: String }
             type Query { foo: Foo }
             """,
-            schema -> {
-                var t = (GraphitronType.NodeType) schema.type("Foo");
-                assertThat(t.typeId()).isEqualTo("Bar");
-                assertThat(t.nodeKeyColumns()).extracting(ColumnRef::sqlName)
-                    .containsExactly("id_1", "id_2");
-            }),
+            schema -> assertThat(schema.type("Foo")).isInstanceOf(GraphitronType.TableType.class)),
 
         NODE_AND_METADATA_AGREE(
             "`@node(typeId:, keyColumns:)` matching metadata exactly → NodeType (accepted)",
@@ -201,6 +198,21 @@ class NodeIdPipelineTest {
                     .contains("typeId 'Shared'")
                     .contains("Foo, Zed")
                     .contains("nondeterministic");
+            }),
+
+        METADATA_ONLY_TYPES_DO_NOT_COLLIDE(
+            "two `@table`-only types backed by metadata-carrying tables stay TableType — no NodeType "
+                + "promotion, so no typeId collision even when the tables share `__NODE_TYPE_ID`-style "
+                + "metadata. Regression for the sis bug where ~200 `@table` event types were silently "
+                + "promoted and then mass-demoted via the registry-uniqueness check.",
+            """
+            type Foo @table(name: "bar") { name: String }
+            type Zed @table(name: "baz") { name: String }
+            type Query { foo: Foo zed: Zed }
+            """,
+            schema -> {
+                assertThat(schema.type("Foo")).isInstanceOf(GraphitronType.TableType.class);
+                assertThat(schema.type("Zed")).isInstanceOf(GraphitronType.TableType.class);
             });
 
         final String sdl;
@@ -388,9 +400,10 @@ class NodeIdPipelineTest {
 
     enum OutputCase {
         IMPLICIT_ID(
-            "output `id: ID!` on a NodeId-metadata table → NodeType parent, synthesized NodeIdField",
+            "output `id: ID!` on a `implements Node @node` parent backed by a metadata-carrying "
+                + "table → synthesized NodeIdField using the metadata values",
             """
-            type Foo @table(name: "bar") { id: ID! }
+            type Foo implements Node @table(name: "bar") @node { id: ID! }
             type Query { foo: Foo }
             """,
             schema -> {
@@ -413,10 +426,11 @@ class NodeIdPipelineTest {
                     .isInstanceOf(GraphitronField.UnclassifiedField.class);
             }),
 
-        NODE_ID_DIRECTIVE_ON_SYNTHESIZED_NODE(
-            "`id: ID! @nodeId` on a metadata-carrying table → NodeIdField (synthesized NodeType satisfies the @nodeId guard)",
+        NODE_ID_DIRECTIVE_ON_NODE_TYPE(
+            "`id: ID! @nodeId` on a `implements Node @node` parent → NodeIdField via the "
+                + "@nodeId guard (canonical opt-in form; no synthesis from `@table` alone)",
             """
-            type Foo @table(name: "bar") { id: ID! @nodeId }
+            type Foo implements Node @table(name: "bar") @node { id: ID! @nodeId }
             type Query { foo: Foo }
             """,
             schema -> {
