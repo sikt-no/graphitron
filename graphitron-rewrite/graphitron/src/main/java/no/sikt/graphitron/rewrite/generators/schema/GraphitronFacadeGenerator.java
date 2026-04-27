@@ -10,7 +10,7 @@ import java.util.List;
 import java.util.function.Consumer;
 
 /**
- * Generates the {@code Graphitron} facade class in {@code <outputPackage>.rewrite.schema}.
+ * Generates the {@code Graphitron} facade class in {@code <outputPackage>} (the root output package).
  * The single public static {@code buildSchema(Consumer<GraphQLSchema.Builder> customizer)}
  * method delegates to {@link GraphitronSchemaClassGenerator}'s emitted
  * {@code GraphitronSchema.build(...)}; the user-facing surface stays at one method with
