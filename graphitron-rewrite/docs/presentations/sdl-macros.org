@@ -1,0 +1,438 @@
+#+TITLE: SDL-makroer
+#+SUBTITLE: usability win for både produsent og konsument
+#+AUTHOR: Sikt
+#+OPTIONS: toc:nil num:nil reveal_title_slide:auto
+
+#+REVEAL_THEME: white
+#+REVEAL_TRANS: slide
+#+REVEAL_HLEVEL: 1
+#+REVEAL_PLUGINS: (highlight notes)
+#+REVEAL_EXTRA_CSS: ./custom.css
+
+#+REVEAL_DEFAULT_FRAG_STYLE: appear
+
+* Ingressen
+#+BEGIN_QUOTE
+Vi på Sikt skriver skjemaet vårt først for deretter å koble dette opp mot
+våre datakilder. Dette er ganske enkelt og smertefritt, men hva gjør du
+når det dukker opp verbose mønster som GraphQL SDL ikke lar oss
+generalisere?
+#+END_QUOTE
+
+#+BEGIN_NOTES
+Lukk loopen på slutten med samme bilde: vi løste det med makroer som
+løfter frem semantikken, ikke bare ekspanderer tekst.
+#+END_NOTES
+
+* SDL er deklarativt. Det er styrken.
+
+Men SDL har ingen abstraksjons­mekanisme:
+
+- ingen funksjoner
+- ingen generics over feltdefinisjoner
+- ingen include
+
+Når et mønster gjentar seg, ender du med å copy-paste det.
+
+* Eksempel: Relay-paginering, håndskrevet
+
+#+ATTR_REVEAL: :code_attribs data-line-numbers=1-5|7-11|13-15|17-23|25-30
+#+BEGIN_SRC graphql
+type Query {
+    films(first: Int, after: String,
+          last: Int, before: String): FilmsConnection!
+    students(first: Int, after: String,
+             last: Int, before: String): StudentsConnection!
+}
+
+type FilmsConnection {
+    edges: [FilmsEdge!]!
+    nodes: [Film!]!
+    pageInfo: PageInfo!
+}
+
+type FilmsEdge {
+    cursor: String!
+    node: Film!
+}
+
+type StudentsConnection {
+    edges: [StudentsEdge!]!
+    nodes: [Student!]!
+    pageInfo: PageInfo!
+}
+
+type StudentsEdge {
+    cursor: String!
+    node: Student!
+}
+
+type PageInfo {
+    hasNextPage: Boolean!
+    hasPreviousPage: Boolean!
+    startCursor: String
+    endCursor: String
+}
+#+END_SRC
+
+#+BEGIN_NOTES
+Pek og si: tre typer per paginerte felt, ti dersom du har ti felt. Spec
+står i Relay-dokumentet. Vi har ingen mekanisme for å si "dette er en
+connection" på en kort måte.
+#+END_NOTES
+
+* Sett scenen
+
+- Sikt skriver skjemaet først; det er kontrakten med konsumenten.
+- Graphitron kobler skjemaet til jOOQ og genererer resolvere.
+- Frem til verbose mønstre dukket opp var dette enkelt og smertefritt.
+- Så kom Relay, federation, feature-flagg.
+
+* Det første instinktet: tekstmakroer
+
+#+ATTR_REVEAL: :code_attribs data-line-numbers=1-3
+#+BEGIN_SRC graphql
+type Query {
+    films: [Film!]! @asConnection
+}
+#+END_SRC
+
+Direktivet leses, /MakeConnections.transform/ skriver nye =ObjectTypeDefinition=
+inn i =TypeDefinitionRegistry=, generatoren ser ferdig­ekspandert SDL.
+
+Pre-prosessor. Direktivet er borte før generatoren ser noe.
+
+#+BEGIN_NOTES
+Dette er legacy-tilnærmingen. Det fungerer. Men det er bare det
+mekaniske. Generatoren vet ikke at dette er en connection, bare at det
+finnes en type =FilmsConnection= med =edges= og =nodes=. Vi reiser oss
+opp ett abstraksjonslag og oppdager at vi ikke har tatt det med.
+#+END_NOTES
+
+* Hvor knirker det?
+
+To hull i den mekaniske tilnærmingen:
+
+#+ATTR_REVEAL: :frag (appear)
+- *Håndskrevne connections.* Vil konsumenten ha et tilpasset =edge=-felt,
+  må vedkommende håndskrive hele Relay-shapen. Du har to parallelle
+  veier i koden.
+- *Direktiver gror i generatorene.* Hver generator må selv vite hvilke
+  direktiver den bryr seg om. N steder å oppdatere når makroen vokser.
+
+* Det semantiske løftet
+
+Tre poenger.
+
+* (a) Direktiver leses én gang
+
+Ved parse-grensen, av =GraphitronSchemaBuilder=. Etter den finnes
+ingen =if (field.hasDirective("asConnection"))= i kodebasen.
+
+#+BEGIN_QUOTE
+Generators receive a model in terms of "what to emit", not "what to
+interpret".
+#+END_QUOTE
+
+/rewrite-design-principles.md:9/
+
+* (b) Makroen blir en variant i en sealed type
+
+#+ATTR_REVEAL: :code_attribs data-line-numbers=1|2-9|11-12
+#+BEGIN_SRC java
+sealed interface GraphitronType {
+    record ConnectionType(
+        String name,
+        SourceLocation location,
+        String elementTypeName,
+        String edgeTypeName,
+        boolean itemNullable,
+        boolean shareable,
+        GraphQLObjectType schemaType
+    ) implements GraphitronType {}
+
+    record EdgeType(...)         implements GraphitronType {}
+    record TableBackedType(...)  implements GraphitronType {}
+    // ...
+}
+#+END_SRC
+
+Generatoren bytter på modellen. Compileren tvinger uttømmende switch.
+
+* (c) To input-veier, én modell
+
+#+BEGIN_SRC text
+Classifier produces this variant for two inputs that are
+semantically the same:
+
+  Directive-driven: a field carrying @asConnection on a bare list.
+                    The classifier synthesises the Connection type.
+
+  Structural:       a hand-written object type whose field shape
+                    matches the Relay connection pattern.
+                    The classifier recognises the pattern and
+                    routes the declared type here.
+#+END_SRC
+
+/GraphitronType.java:350/
+
+#+BEGIN_NOTES
+Dette er hjertet av talen. Les sitatet sakte. Gjenta med egne ord:
+makroen er ikke en tekst-transformasjon, den er gjenkjenning av en
+intensjon. Hvis konsumenten skriver mønsteret ut for hånd, ruter
+klassifikatoren det til samme variant. Generatoren ser ikke forskjell.
+#+END_NOTES
+
+* Demo: to skjemaer, én modell
+
+** Variant A: terse
+
+#+BEGIN_SRC graphql
+type Query {
+    films: [Film!]! @asConnection
+}
+#+END_SRC
+
+** Variant B: ekspressiv
+
+#+ATTR_REVEAL: :code_attribs data-line-numbers=1-5|7-10|12-17|19-24
+#+BEGIN_SRC graphql
+type FilmsConnection {
+    edges: [FilmsEdge!]!
+    nodes: [Film!]!
+    pageInfo: PageInfo!
+}
+
+type FilmsEdge {
+    cursor: String!
+    node: Film!
+}
+
+type PageInfo {
+    hasNextPage: Boolean!
+    hasPreviousPage: Boolean!
+    startCursor: String
+    endCursor: String
+}
+
+type Query {
+    films(first: Int, after: String): FilmsConnection!
+}
+#+END_SRC
+
+** Begge klassifiseres til samme
+
+#+BEGIN_SRC java
+ConnectionType(
+    name="FilmsConnection",
+    elementTypeName="Film",
+    edgeTypeName="FilmsEdge",
+    ...
+)
+#+END_SRC
+
+Samme =ConnectionHelperClassGenerator=.
+Samme cursor-encoding. Samme =totalCount=-resolver.
+
+* Hva får vi når arkitekturen er på plass?
+
+Den neste makroen vi planlegger: =@asFacet=.
+
+#+BEGIN_NOTES
+Vi har ikke bygget den enda. Status er Spec, fem faser planlagt, Phase 1
+SQL-spike er kjørt og bekreftet. Den er interessant fordi den viser at
+investeringen i den semantiske arkitekturen betaler seg på neste makro.
+#+END_NOTES
+
+* Problemet: fasettering
+
+Brukeren har filtrert på =rating: [PG]= i et søk.
+
+UI-en vil vise:
+
+#+BEGIN_QUOTE
+"Hvis jeg fjerner denne, hvor mange treff får jeg på hver av de andre
+rating-verdiene? Og hvor mange får jeg per kategori, gitt at PG fortsatt
+er valgt?"
+#+END_QUOTE
+
+Det er omtrent det styggeste mønsteret du kan håndskrive i SDL og SQL.
+
+* =@asFacet=: hva forfatteren skriver
+
+#+ATTR_REVEAL: :code_attribs data-line-numbers=1-3|5-9|7|8
+#+BEGIN_SRC graphql
+type Query {
+    filmer(filter: FilmFilter): [Film!]! @asConnection
+}
+
+input FilmFilter {
+    rating:   [MpaaRating!] @field(name: "RATING")        @asFacet
+    category: [String!]     @field(name: "CATEGORY_NAME") @asFacet
+    title:    String        @field(name: "TITLE")
+}
+#+END_SRC
+
+Én annotasjon per fasett-felt. Det er hele inngrepet.
+
+#+BEGIN_NOTES
+Pek på at =title= ikke har =@asFacet=. Ikke alle filterfelt skal være
+fasetter; det er forfatterens valg.
+#+END_NOTES
+
+* =@asFacet=: hva konsumenten ser
+
+#+ATTR_REVEAL: :code_attribs data-line-numbers=1-7|7|9-12|14-15
+#+BEGIN_SRC graphql
+type QueryFilmerConnection {
+    edges: [QueryFilmerConnectionEdge!]!
+    nodes: [Film!]!
+    pageInfo: PageInfo!
+    totalCount: Int
+    facets: QueryFilmerConnectionFacets
+}
+
+type QueryFilmerConnectionFacets {
+    rating:   [MpaaRatingFacetValue!]!
+    category: [StringFacetValue!]!
+}
+
+type MpaaRatingFacetValue { value: MpaaRating! count: Int! }
+type StringFacetValue     { value: String!     count: Int! }
+#+END_SRC
+
+* Tre nøkkelpoenger
+
+* (i) Det er en kontrakt, ikke en ekspansjon
+
+=@asFacet= etablerer et bånd mellom filter-input og facet-output.
+
+Modellen vet at fasetten =rating= kommer /fra/ filterfeltet =rating=.
+
+* Filter-minus-self
+
+Når filteret er =rating: [PG]=:
+
+- =facets.rating= viser /alle/ rating-verdier (slik at brukeren kan pivotere).
+- =facets.category= viser kun tellinger der =rating = PG= er aktivt.
+
+Dette er semantikk du *ikke* kan uttrykke som tekst-ekspansjon.
+
+#+BEGIN_NOTES
+Tekstmakroer ekspanderer; de etablerer ikke kontrakter. Filter-minus-self
+er en kontrakt mellom input og output som runtime må respektere. Det
+kommer av at klassifikatoren har båndet i modellen.
+#+END_NOTES
+
+* (ii) Round-trip-symmetri er typesikret
+
+#+ATTR_REVEAL: :code_attribs data-line-numbers=1|3|5
+#+BEGIN_SRC graphql
+type MpaaRatingFacetValue { value: MpaaRating! count: Int! }
+
+input FilmFilter { rating: [MpaaRating!] @asFacet ... }
+
+filter: { rating: [facetValue.value] }   # virker, ingen coercion
+#+END_SRC
+
+Verdien har /samme skalar/ som filterfeltet den kom fra. Klienten kan
+fôre =facetValue.value= rett tilbake i neste filter.
+
+GraphQL-typesjekken passer på.
+
+#+BEGIN_NOTES
+Original Jira-ticket foreslo å kode alle fasett-verdier som =String=. Vi
+avviser det. Det er nettopp den semantiske kontrakten makroen er der for
+å bevare; en stringly-typed API ville bryte den.
+#+END_NOTES
+
+* (iii) Additiv arkitektur
+
+Hvorfor er dette enkelt nå?
+
+* Fordi sporet er lagt
+
+#+ATTR_REVEAL: :frag (appear)
+- =ConnectionSynthesis.buildPlan()= finnes fra før. =@asFacet= gir ett
+  ekstra felt på =ConnectionDef=: =List<FacetSpec>=.
+- =FieldWrapper.Connection= finnes fra før. Den får ett ekstra
+  recordfelt: =facets=.
+- Klassifikatoren har valideringsmekanikken. =@asFacet= på et
+  =@reference=-bundet felt avvises ved build-tid, samme måte som
+  =@asConnection= på en inline =TableField=.
+- =*FacetValue=-typene er gjenbrukbare på tvers av hele skjemaet (én
+  =StringFacetValue=, ikke én per connection).
+
+* Hele "intelligensen" i en record
+
+#+BEGIN_SRC java
+public record FacetSpec(
+    String inputFieldName,    // "rating"
+    String columnName,        // "RATING"
+    String valueTypeName,     // "MpaaRating"
+    String facetValueTypeName // "MpaaRatingFacetValue"
+) {}
+#+END_SRC
+
+Generatoren får én ny svitsj-arm. Ingen direktiv-parsing. Ingen
+tekst-rewrite. =FacetSpec= forteller den hva den skal emitte.
+
+#+BEGIN_NOTES
+Sammenlign med tekstmakro-tilnærmingen: vi måtte ekspandert ny SDL,
+gjettet hva filter-bindingen var, mistet typeinformasjonen om
+=MpaaRating= underveis, og generatoren ville aldri visst at det var en
+filter-pluss-fasett-konstruksjon. Den semantiske kontrakten finnes ikke
+i SDL-streng-formen.
+#+END_NOTES
+
+* Win for produsenten
+
+#+ATTR_REVEAL: :frag (appear)
+- *Direktiver leses ett sted.* Ny makro = ny variant + nye generator-armer
+  som kompilatoren krever.
+- *Validatoren speiler klassifikatoren.* Ulovlige kombinasjoner fanges
+  ved build-tid, ikke runtime.
+- *Stram emitter.* =ConnectionType= inn, pagineringskode ut. Ingen
+  casts, ingen =instanceof=.
+- *=@asFacet= legger seg på samme rygg.* Andre makro tar dager, ikke uker.
+
+* Win for konsumenten
+
+#+ATTR_REVEAL: :frag (appear)
+- *Connection:* velg nivå. =@asConnection= for det vanlige; håndskriv for
+  spesial. Samme genererte oppførsel.
+- *Fasett:* ett ord i skjemaet gir hele kontrakten. Riktige typer,
+  filter-minus-self, round-trip uten coercion.
+- Klienten kan ikke bruke fasetten /feil/, fordi typene tvinger korrekt
+  bruk.
+- Konsumenten ser aldri makroen, bare det ekspanderte resultatet i
+  introspection.
+
+* Avslutning
+
+SDL-makroer i rewriten er ikke pre-prosessor-tekst.
+
+De er navngitte semantiske kontrakter:
+
+#+ATTR_REVEAL: :frag (appear)
+- klassifikatoren *oppdager* dem
+- modellen *bærer* dem
+- generatoren *materialiserer* dem
+
+#+ATTR_REVEAL: :frag appear
+=@asConnection= kostet oss arkitektur-arbeid å etablere.
+
+#+ATTR_REVEAL: :frag appear
+=@asFacet= koster nesten ingenting fordi sporet er lagt.
+
+#+ATTR_REVEAL: :frag appear
+*Det er den ekte usability-vinningen.*
+
+* Spørsmål?
+
+/Referanser:/
+
+- =graphitron-rewrite/docs/rewrite-design-principles.md=
+- =graphitron-rewrite/graphitron/.../model/GraphitronType.java=
+- =graphitron-rewrite/roadmap/faceted-search.md=
+- =graphitron-rewrite/roadmap/faceted-search-sql.md=
