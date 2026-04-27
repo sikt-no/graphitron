@@ -1,6 +1,6 @@
 ---
 title: "Interface fetchers: selection-set-aware projection"
-status: Spec
+status: In Review
 bucket: cleanup
 priority: 2
 ---
