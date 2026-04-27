@@ -12,6 +12,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | Item | Status | Plan |
 |---|---|---|
+| Apollo Federation via federation-jvm transform | Spec | [plan](federation-via-federation-jvm.md) |
 | `IdReferenceField` input filter variant | Spec | [plan](id-reference-input-field.md) |
 | Classification vocabulary follow-ups | Spec | [plan](classification-vocabulary-followups.md) |
 | Context-value registry + native multi-tenant fan-out for `@service` | Spec | [plan](service-context-value-registry.md) |
@@ -36,7 +37,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 - [**Decompose `FieldBuilder`**](decompose-fieldbuilder.md): Split the 1,750-line builder along the field taxonomy. Blocked on argument-resolution unification. Proposed split: `QueryFieldBuilder`, `MutationFieldBuilder`, `ChildFieldBuilder` plus a shared argument-classification module.
 - [**Extract semantic-check helpers from `classifyQueryField`**](extract-semantic-check-helpers.md): The codebase rejects malformed fields at classifier time by returning `UnclassifiedField` (polymorphic `@service` at `FieldBuilder.java:1305-1306`; single-cardinality `@splitQuery @lookupKey` and multi-hop single-cardinality `@splitQuery` at `FieldBuilder.java:252-257` / `:266-271`; Connection / Sourced-param rejection on root `@service` and `@tableMethod` via `FieldBuilder.validateRootServiceInvariants`, plus the §3 strict-class and §5 strict-return checks inline in `classifyQueryField` and on `ServiceCatalog`).
 - [**Composite-key `@lookupKey` on list-of-input-object arguments**](composite-key-lookupkey.md): Add `ArgumentRef.CompositeLookupArg` carrying `(input-field-name, target-column)` pairs resolved from `@field(name:)` directives; `buildInputRowsMethod` already handles arbitrary-arity VALUES + JOIN.
-- [**Apollo Federation via federation-jvm transform**](federation-via-federation-jvm.md): Replace the `QueryEntityField` stub with a `GraphitronSchemaBuilder` post-step wrapping the Graphitron schema via `Federation.transform`; deletes the stub after migration.
 - [**`DSLContext` on `@condition` / `@tableMethod` methods**](dslcontext-on-condition-tablemethod.md): Lift the `reflectTableMethod` gate. Requires `ArgCallEmitter` to walk `params()` instead of `callParams()` so the injected `DSLContext` lands at its declaration-index slot.
 - [**Auto-emit Relay `nodes` when `node` exists**](auto-nodes-relay-resolver.md): The Relay `nodes(ids: [ID!]!): [Node]!` resolver is mechanical composition over the `node(id: ID!): Node` resolver: call `node` per id, `allOf` the results. It's not a `@service` extension because the service would have to know about `DataFetcher` to express it; it's resolver-level composition.
 - [**`Set<T>` parent-keys on `@service` methods**](set-parent-keys-on-service.md): Decide: require `List<T>` (predictable batching order, the current direction) or broaden `BatchKey`. One known offender (`navnAlleSprak`).
