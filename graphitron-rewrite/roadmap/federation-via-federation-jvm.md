@@ -97,11 +97,19 @@ final wording moves into the doc when the relevant phase ships.
 >
 > **`<schemaInput tag>` is federation-specific.** If you set
 > `<schemaInput><tag>...</tag></schemaInput>` in the plugin config,
-> the resulting `@tag(name: "...")` directives are only meaningful to
-> a federation gateway. The build emits a warning if you use
-> `<tag>` without importing `@tag` via Option 1; add `"@tag"` to your
-> `@link` import list to clear the warning. Option 2 (manual
-> `directive @tag` declaration) also clears the warning.
+> the resulting `@tag(name: "...")` directives are only meaningful
+> to a federation gateway. The plugin treats this as an implicit
+> opt-in to Federation 2:
+>
+> - If you have not declared `@link`, the plugin synthesises one
+>   with `import: ["@tag"]` for you. Nothing else changes; you can
+>   still author `@key` / `@shareable` / etc. with manual
+>   declarations if you want.
+> - If you *have* declared `@link` but `"@tag"` is missing from your
+>   `import` list, the build fails with a fatal error pointing at
+>   your `@link`. Add `"@tag"` to clear it.
+> - If `<schemaInput tag>` is unset, the plugin makes no federation
+>   choice on your behalf.
 
 ### `_entities` (replacement for the existing `## Federation` snippet)
 
@@ -203,10 +211,14 @@ parse → preflight scan (Phase 1) → registry build
       → DescriptionNoteApplier (existing)
 ```
 
-`FederationLinkApplier` runs before `TagApplier` so that when `@tag` is
-imported via `@link`, the federation declaration wins and `TagApplier`'s
-auto-injection is bypassed (the existing "skip if already declared"
-guard at `TagApplier.java:265` handles the bypass).
+`FederationLinkApplier` runs before `TagApplier` because Phase 2 also
+synthesises an `@link` import on `<schemaInput tag>`'s behalf when
+appropriate (see "`<schemaInput tag>` and `@link` interaction" below);
+that synthesis must land before `TagApplier` walks the registry, so
+the federation `@tag` declaration is in scope when tags are applied.
+`TagApplier.ensureTagDirectiveDeclared` deletes in this phase
+(see the same sub-step), so post-Phase-2 the only `@tag` declaration
+in any registry comes from the `@link` import path.
 
 **Detection.**
 1. Walk `registry.schemaDefinition()` and `registry.getSchemaExtensionDefinitions()`.
@@ -283,52 +295,70 @@ enum link__Purpose { SECURITY EXECUTION }
   `ValidationError("unknown federation import: '@madeUp'; supported
   imports are: @key, @shareable, ...")`.
 
-**`<schemaInput tag>` without federation `@tag` import.**
+**`<schemaInput tag>` and `@link` interaction.**
 
 `<schemaInput tag>` config emits `@tag(name: "...")` directives. `@tag`
 is inherently a federation construct: only a federation gateway
-consumes the resulting tags. Consumers using `<schemaInput tag>`
-should opt in to Apollo Federation 2 by importing `@tag` via `@link`,
-not rely on the auto-injected declaration. Auto-importing on the
-consumer's behalf is too invasive (it commits the entire schema to
-Federation 2 semantics from one config string), so this phase emits
-a friendly `BuildWarning` instead.
+consumes the resulting tags. Setting `<schemaInput tag>` is therefore
+an implicit opt-in to Apollo Federation 2; the canonical declaration
+path for the resulting `@tag` uses is `@link(import: ["@tag"])`, not
+`TagApplier`'s directive-declaration auto-injection. This phase makes
+the canonical path the only path:
 
-Detection rule. After `FederationLinkApplier` runs, if any
-`SchemaInput.tag().isPresent()` *and* no detected `@link` has `"@tag"`
-in its import list (under any alias), emit one `BuildWarning` keyed
-on the schema's `SourceLocation` (or a synthetic location naming the
-plugin config when the schema declaration is absent):
+| Schema state | `<schemaInput tag>` set? | Action |
+|---|---|---|
+| No `@link` declaration | yes | Auto-inject `extend schema @link(url: "https://specs.apollo.dev/federation/v2.6", import: ["@tag"])` before `FederationLinkApplier`'s normal pass; the existing applier then injects federation's `@tag` declaration via the standard import path. |
+| `@link` declared, `"@tag"` in `import` list | yes | No-op. |
+| `@link` declared, `"@tag"` *absent* from `import` list | yes | Fatal `ValidationError` keyed on the `@link` directive's `SourceLocation`: "`<schemaInput tag>` is configured but `'@tag'` is not in the `@link` import list at `<file>:<line>`. Add `\"@tag\"` to the `import` array." |
+| (any) | no | No action; `<schemaInput tag>` is not in play. |
 
-> `<schemaInput tag>` is configured but federation `@tag` is not
-> imported via `@link`. Recommended: add
-> `extend schema @link(url:
-> "https://specs.apollo.dev/federation/v2.6", import: ["@tag"])` to
-> one of your schema files. The auto-injected `@tag` declaration is a
-> compatibility fallback and may be deprecated in a future release.
+Single auto-injection / single error, not per-tagged-input: the action
+is the same regardless of how many tagged inputs the consumer has.
 
-Single warning, not per-tagged-input: the action is the same regardless
-of how many tagged inputs the consumer has.
+The auto-inject path synthesises the `@link` SDL element at the start
+of Phase 2's pass and lets the existing `FederationLinkApplier`
+process it normally; one code path handles both
+"author wrote `@link`" and "we synthesised `@link`," with no
+special-case branch in the federation directive injection logic.
 
-`TagApplier`'s auto-injection of `@tag` (`TagApplier.java:264-298`)
-remains the fallback during this phase so existing non-federation
-consumers continue to work unchanged. Once the consumer adopts
-`@link(import: ["@tag"])`, federation's declaration takes precedence
-via the existing "skip if already declared" guard at
-`TagApplier.java:265`. Whether the auto-injection eventually deletes is
-listed under Open decisions.
+The hard error on `@link`-without-`"@tag"`-import is the explicit-author
+counterpart to the auto-inject: an author who has chosen to declare
+`@link` themselves has taken control of the federation surface, so a
+mismatch between plugin config and `@link` import list is an author
+bug, not a defaulting decision the plugin should make silently.
+
+**`TagApplier.ensureTagDirectiveDeclared` deletes in this phase.**
+After Phase 2 lands, every `@tag` declaration comes from the `@link`
+import path: either the author's own `@link`, or the auto-injected one
+above. The directive-declaration auto-inject at
+`TagApplier.java:264-298` becomes dead code and should be removed in
+the same commit as this sub-step lands. Authors who manually use
+`@tag` in their SDL without `<schemaInput tag>` and without `@link`
+fall through to Phase 1's "undeclared federation directive"
+diagnostic, which already names both the `@link` and manual recipes.
 
 Tests:
-- `<schemaInput tag>` set, no `@link` declaration in SDL: warning fires,
-  exactly one entry in `BuildWarning` list, message names
-  `extend schema @link(...)`.
+- `<schemaInput tag>` set, no `@link` in SDL: registry post-apply
+  contains a synthesised `@link` schema extension and federation's
+  `@tag` declaration; no error, no warning.
 - `<schemaInput tag>` set, SDL has `@link(import: ["@tag"])`: no
-  warning.
+  injection (idempotent), no error.
 - `<schemaInput tag>` set, SDL has `@link(import: [{name: "@tag", as:
-  "@maturity"}])`: no warning (alias respected; `@maturity` is the
-  in-scope name).
-- `<schemaInput tag>` *not* set, regardless of `@link`: no warning.
-- Two tagged inputs, no `@link`: still one warning, not two.
+  "@maturity"}])`: alias counts as importing `@tag`; no injection,
+  no error.
+- `<schemaInput tag>` set, SDL has `@link(import: ["@key"])` (no
+  `"@tag"`): fatal `ValidationError` keyed on the `@link` directive's
+  source location; error message contains the file path and the line
+  of the offending `@link`.
+- `<schemaInput tag>` *not* set, no `@link`, no `@tag` use anywhere:
+  no injection, no error (regression guard against blanket federation
+  opt-in).
+- `<schemaInput tag>` *not* set, manual `@tag` use in SDL, no
+  `@link`: Phase 1's federation-directive diagnostic fires (no
+  fallback declaration auto-inject, since `TagApplier`'s
+  `ensureTagDirectiveDeclared` is gone).
+- Two tagged inputs, no `@link`: still one synthesised `@link`, not
+  two.
 
 ### Phase 3 — `_entities` runtime wiring + `QueryEntityField` removal
 
@@ -473,13 +503,12 @@ Single-arg call sites stay unchanged.
   configuration. Alternative: a field on the bundle returned from
   `loadAttributedRegistry`. Pick whichever lands cleanly in
   implementation; either is acceptable.
-- **Future of `TagApplier`'s auto-injected `@tag` declaration.** Phase
-  2's warning steers consumers toward `@link(import: ["@tag"])`.
-  Once that path is the documented norm, the auto-injection is dead
-  code: every consumer either imports `@tag` via `@link`, declares it
-  manually, or accepts the warning indefinitely. Default position:
-  keep the auto-injection through this plan and revisit deletion in a
-  follow-up plan once consumer telemetry shows the warning rate has
-  decayed. Alternative: escalate the warning to a `ValidationError`
-  in a later phase and delete the auto-injection in the same commit.
-  Reviewer to confirm preferred trajectory.
+- **Phase 2: hard error vs warning when `@link` is declared without
+  `"@tag"` in imports and `<schemaInput tag>` is set.** Default:
+  fatal `ValidationError`, since an explicit `@link` declaration is
+  the author taking control of the federation surface and a missing
+  import while `<schemaInput tag>` is configured is an author bug.
+  Alternative: warn and synthesise a separate `@link` extension that
+  imports only `"@tag"`. The alternative produces two `@link`
+  declarations on the schema, which Apollo Federation 2 permits but
+  is harder for a reader to reason about. Lean toward the default.
