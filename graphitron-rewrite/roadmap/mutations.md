@@ -79,12 +79,13 @@ discarded at classify time.
 2. **UPDATE and DELETE `@lookupKey` bindings must cover the full primary key.**  `fieldBindings`
    must be non-empty; if empty, return `UnclassifiedField` with
    `"@mutation(typeName: UPDATE/DELETE) requires at least one @lookupKey field in the input type"`.
-   Beyond non-empty: when `ctx.catalog.nodeIdMetadata(tia.inputTable().sqlName())` is present,
-   every column in `nodeIdMeta.keyColumns()` must appear in `tia.fieldBindings()` (matched by
-   SQL column name); if any key column is absent, return `UnclassifiedField` with
+   Beyond non-empty: call `ctx.catalog.findPkColumns(tia.inputTable().sqlName())` — this method
+   works for all jOOQ-generated tables (not just `@node` types) by reading `Table.getPrimaryKey()`
+   via reflection.  If the result is non-empty, every `ColumnEntry.sqlName()` in it must appear
+   in `tia.fieldBindings()` (matched by `binding.column().sqlName()`); if any PK column is absent,
+   return `UnclassifiedField` with
    `"@mutation(typeName: UPDATE/DELETE) @lookupKey fields do not cover all PK column(s); missing: <names>"`.
-   For non-`@node` tables (no `nodeIdMetadata`), the basic non-empty check suffices — the DB will
-   reject a partial-key WHERE clause at runtime.
+   If `findPkColumns` returns empty (table has no PK), the basic non-empty check suffices.
    Composite-PK tables where all PK columns appear as `@lookupKey` fields are fully supported:
    each PK column contributes one `.eq(val)` predicate, and the emitter chains them with `.and(...)`.
 
@@ -269,10 +270,12 @@ rejection per Invariant #13.  At the end of Pass 1:
 4. UPDATE / DELETE / UPSERT: `tia.fieldBindings()` empty → error per Invariants #2–3.
 5. UPDATE: every `ColumnField` in `tia.fields()` has its name in `tia.fieldBindings()` →
    error per Invariant #4.
-6. UPDATE / DELETE: when `ctx.catalog.nodeIdMetadata(tia.inputTable().sqlName())` is present,
-   check that every `nodeIdMeta.keyColumns()` entry has a matching SQL column name in
-   `tia.fieldBindings()`.  Missing columns → error per Invariant #2.  UPSERT is exempt: its
-   ON CONFLICT key is a unique-constraint choice, not required to match the full PK.
+6. UPDATE / DELETE: call `ctx.catalog.findPkColumns(tia.inputTable().sqlName())`; if non-empty,
+   check that every `ColumnEntry.sqlName()` has a matching `binding.column().sqlName()` in
+   `tia.fieldBindings()`.  Missing → error per Invariant #2.  Works for all tables (not just
+   `@node` types); if the table has no PK, `findPkColumns` returns empty and this step is skipped.
+   UPSERT is exempt: its ON CONFLICT key is a unique-constraint choice, not required to match
+   the full PK.
 
 Return shape: a file-private record inside `FieldBuilder`:
 `record MutationInputResult(ArgumentRef.InputTypeArg.TableInputArg value, String error) {}`.
@@ -314,9 +317,9 @@ before validation is invoked.
 | `updateFilm(in: FilmInput): ID @mutation(typeName: UPDATE)` with `@lookupKey` on `FilmInput.filmId` covering the single-column PK | `MutationUpdateTableField` with `fieldBindings` non-empty |
 | `updateFilm` with no `@lookupKey` in input | `UnclassifiedField` with Invariant #2 message |
 | `updateFilm` where every input field is `@lookupKey` | `UnclassifiedField` with Invariant #4 message |
-| UPDATE on a composite-PK `@node` table where `@lookupKey` covers only one of two PK columns | `UnclassifiedField` with Invariant #2 PK-coverage message listing the missing column |
-| UPDATE on a composite-PK `@node` table where `@lookupKey` covers all PK columns | `MutationUpdateTableField` with `fieldBindings` carrying both bindings; emitter emits `.and(col1.eq(...), col2.eq(...))` |
-| DELETE on a composite-PK `@node` table where `@lookupKey` covers all PK columns | `MutationDeleteTableField` with `fieldBindings` carrying all key bindings |
+| UPDATE on a composite-PK table where `@lookupKey` covers only one of two PK columns | `UnclassifiedField` with Invariant #2 PK-coverage message listing the missing column |
+| UPDATE on a composite-PK table where `@lookupKey` covers all PK columns | `MutationUpdateTableField` with `fieldBindings` carrying both bindings; emitter emits `.and(col1.eq(...), col2.eq(...))` |
+| DELETE on a composite-PK table where `@lookupKey` covers all PK columns | `MutationDeleteTableField` with `fieldBindings` carrying all key bindings |
 | `deleteFilm(in: FilmInput): ID @mutation(typeName: DELETE)` with `@lookupKey` | `MutationDeleteTableField` |
 | `upsertFilm(in: FilmInput): ID @mutation(typeName: UPSERT)` with `@lookupKey` on only one column of a composite PK | `MutationUpsertTableField` (UPSERT is exempt from the full-PK coverage check) |
 | `upsertFilm(in: FilmInput): ID @mutation(typeName: UPSERT)` with `@lookupKey` covering the full PK | `MutationUpsertTableField` |
