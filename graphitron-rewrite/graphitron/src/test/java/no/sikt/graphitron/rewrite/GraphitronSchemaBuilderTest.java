@@ -2967,6 +2967,17 @@ class GraphitronSchemaBuilderTest {
             @Override public Set<Class<?>> variants() { return Set.of(QueryField.QueryNodeField.class); }
         },
 
+        NODES_QUERY_FIELD(
+            "field named 'nodes' → QueryNodesField",
+            """
+            interface Node { id: ID! }
+            type Film implements Node @table(name: "film") { id: ID! title: String }
+            type Query { node(id: ID!): Node nodes(ids: [ID!]!): [Node] }
+            """,
+            schema -> assertThat(schema.field("Query", "nodes")).isInstanceOf(QueryField.QueryNodesField.class)) {
+            @Override public Set<Class<?>> variants() { return Set.of(QueryField.QueryNodesField.class); }
+        },
+
         ENTITY_QUERY_FIELD(
             "field named '_entities' → QueryEntityField",
             """
