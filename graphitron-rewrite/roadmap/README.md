@@ -75,6 +75,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 ### Other
 
+- [**Retire `IdReferenceField` synthesis shim**](retire-id-reference-synthesis-shim.md): Promote the `IdReferenceField` synthesis shim WARN to a terminal classifier error once sis schemas have migrated to canonical `@nodeId(typeName:)` form.
 - [**Validate that list fields on tables without a PK require explicit ordering**](validate-list-fields-require-ordering.md): `FieldBuilder.resolveDefaultOrderSpec()` falls back to `OrderBySpec.Fixed([pk ASC])` when a list field has no `@defaultOrder` or `@orderBy` and the table has a PK. For tables without a PK, it returns `OrderBySpec.None` instead, which the generators faithfully emit as an empty `List.of()` — no `ORDER BY` clause. The result is a non-deterministic list every time the query runs.
 
 

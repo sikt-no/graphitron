@@ -1295,6 +1295,7 @@ class FieldBuilder {
                 }
                 case InputField.NodeIdField ignored -> {}
                 case InputField.NodeIdReferenceField ignored -> {}
+                case InputField.IdReferenceField ignored -> {}
             }
         }
     }
