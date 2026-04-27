@@ -87,14 +87,16 @@ The catalog probes the first pattern via static-field reflection
 *method*-reflection probe; that probe does not yet exist (Phase 2 adds it).
 
 The `<Name>` token in the second pattern is `KjerneJooqGenerator.getQualifier(fk)`, a
-function of the FK's column structure. For an FK from `STUDIERETT` to `STUDIEPROGRAM`
-with no role-distinguishing source-column prefix, the qualifier is `STUDIEPROGRAM_ID`
-and the methods emitted on `StudierettRecord` are `setStudieprogramId`,
-`getStudieprogramId`, `hasStudieprogramId`, `hasStudieprogramIds`. When multiple FKs
-between the same source and target exist, `generateRolePrefix(fk)` derives a role
-prefix from the source columns to disambiguate (e.g. `REGISTRAR_STUDIEPROGRAM_ID`).
-The qualifier↔FK mapping is therefore 1:1 on a given source table; if it weren't, the
-generated record class would have duplicate method names and fail to compile upstream.
+function of the FK's column structure. `getQualifier` returns an UpperCamelCase string
+derived from `role + targetTable + "_ID"` lowercased and snake-to-camel converted. For
+an FK from `STUDIERETT` to `STUDIEPROGRAM` with no role-distinguishing source-column
+prefix (HAR role), the qualifier is `"StudieprogramId"` and the methods emitted on
+`StudierettRecord` are `setStudieprogramId`, `getStudieprogramId`, `hasStudieprogramId`,
+`hasStudieprogramIds`. When multiple FKs between the same source and target exist,
+`generateRolePrefix(fk)` derives a role prefix from the source columns to disambiguate
+(e.g. qualifier `"RegistrarStudieprogramId"`). The qualifier↔FK mapping is therefore
+1:1 on a given source table; if it weren't, the generated record class would have
+duplicate method names and fail to compile upstream.
 
 For a field like `studieprogrammer: [ID!] @nodeId(typeName: "Studieprogram")` on
 `input ... @table(name: "STUDIERETT")`:
@@ -140,15 +142,14 @@ error and consumers must have migrated to one of the canonical forms.
   method name is derived from the FK qualifier (`getQualifier(fk)`), not from
   `@field(name:)`. Authors are free to leave `@field(name:)` off the canonical forms;
   if present, it is informational and ignored by classification.
-- **Locale- or pluralisation-aware field-name inference** — the bare-field-name shim
-  upper-snake-converts the GraphQL field name and looks up FK qualifiers by exact
-  match (with a single trailing-`s` strip for plural forms like `languageIds`). It
-  does NOT do general English/Norwegian/etc. plural normalisation. A field named
+- **Locale- or pluralisation-aware field-name inference** — the qualifier map has one
+  lowerCamelPlural entry per FK (`lowerFirst(qualifier) + "s"`), covering the
+  well-named English plural (`languageIds`, `filmIds`). A field named
   `studieprogrammer: [ID!]` (Norwegian plural of `studieprogram`) will NOT shim
-  because `STUDIEPROGRAMMER` does not match the FK qualifier `STUDIEPROGRAM_ID`. The
-  author must declare `@field(name: "STUDIEPROGRAM_ID")` or `@nodeId(typeName:)`
-  explicitly. The bare-field-name path covers the well-named subset; it is not a
-  universal escape hatch.
+  because `"studieprogrammer"` is not a key in the map (the map has `"studieprogramId"`
+  and `"studieprogramIds"` for the HAR-role FK). The author must declare
+  `@field(name: "STUDIEPROGRAM_ID")` or `@nodeId(typeName:)` explicitly. The
+  bare-field-name path covers the well-named subset; it is not a universal escape hatch.
 - **Hint fix** — `TypeBuilder.buildTableInputType` (`TypeBuilder.java:555-560`) uses the
   source table's columns for "did you mean" suggestions even when the failure is on a
   reference-path or qualifier match. Separate usability improvement, tracked
@@ -171,20 +172,26 @@ error and consumers must have migrated to one of the canonical forms.
   record class. The new method-reflection probe builds on it the same way
   `nodeIdMetadata` (line 246) builds on a different reflection target.
 - The qualifier↔FK mapping is 1:1 on a given source table by construction:
-  `KjerneJooqGenerator.getQualifier(fk)` derives a qualifier from the FK's columns plus
-  a role prefix from `generateRolePrefix(fk)`; if two FKs collided on the same
-  qualifier the generated record class would have duplicate methods and fail to compile
-  upstream. The classifier can therefore reverse-map a qualifier (whether from a
-  schema author's `@field(name:)` or from internal recomputation) to a unique FK.
-- The legacy probes BOTH capitalisation styles: `hasTERMIN_ID(s)` (upper, via
-  `MethodMapping.asHas()`) and `hasTerminId(s)` (camel, via `MethodMapping.asCamelHas()`).
-  The catalog probe must accept all four candidate names. With the canonical-form
-  pipeline computing the qualifier from FK metadata the candidate set collapses, but
-  the four-name probe is still the simplest contract for the shim arm and unit tests.
-- The legacy classifier never gates on probe presence: `FetchDBMethodGenerator.generateHasForID`
-  (line 649) falls through to `asHasCall` even when no method is found. This plan
-  classifies optimistically (probe is advisory only) to preserve the legacy contract;
-  see *Open Questions*.
+  `KjerneJooqGenerator.getQualifier(fk)` derives an UpperCamelCase qualifier
+  (e.g. `"StudieprogramId"`) from `role + targetTable + "_ID"` lowercased and then
+  snake-to-camel converted; if two FKs collided on the same qualifier the generated
+  record class would have duplicate methods and fail to compile upstream. The catalog
+  builds a reverse map from field-name variants to FK constraint name once per source
+  table (and caches it), allowing O(1) lookup without any input-side normalisation.
+  Map keys for a qualifier `Q` from FK `fk`: the UPPER_SNAKE raw form
+  `(role + targetTable + "_ID").toUpperCase()` (matching `@field(name:)` values),
+  `lowerFirst(Q)` (bare singular camelCase field name), and `lowerFirst(Q) + "s"`
+  (bare plural camelCase field name). All three map to the FK constraint name.
+- The `has*` methods emitted by `KjerneJooqGenerator` are `"has" + qualifier` and
+  `"has" + qualifier + "s"` (singular and plural). Because the qualifier is already
+  UpperCamelCase these are the only two probe candidates — no separate upper-snake /
+  camel duality is needed.
+- The probe is **advisory for the canonical arm** (author declared intent with `@nodeId`)
+  and **required for the shim arm** (inferred from field name alone). If the probe
+  returns false on the shim arm the field falls through to column lookup and the
+  existing `NodeIdField` shim — it is never synthesised as `IdReferenceField`. This
+  prevents false-positive classification on projects that do not use
+  `KjerneJooqGenerator`.
 - The existing scalar `NodeIdField` synthesis shim at `BuildContext.java:857-869` is
   the structural template for the new shim arm: column-miss → catalog metadata
   recognition → variant synthesis with a per-site WARN naming the offending
@@ -198,8 +205,8 @@ error and consumers must have migrated to one of the canonical forms.
 
 ## Implementation Approach
 
-Closest existing variants are `InputField.NodeIdReferenceField` (`InputField.java:106`)
-and `InputField.NodeIdField`. The new variant is the list-tolerant cousin of the
+Closest existing variants are `InputField.NodeIdReferenceField` and
+`InputField.NodeIdField`. The new variant is the list-tolerant cousin of the
 former and shares the synthesis-shim pattern of the latter:
 
 - `NodeIdReferenceField`: scalar `ID!` with `@nodeId(typeName:)` pointing at a NodeType
@@ -210,10 +217,9 @@ former and shares the synthesis-shim pattern of the latter:
 - `IdReferenceField` (new): `ID!` or `[ID!]` with `@nodeId(typeName: T)`, optionally
   pinned by `@reference(path: [{key: K}])`. FK is inferred from the input's resolved
   table to the table backing `T` when unique; explicit `@reference` is required when
-  ambiguous. Predicate method probe (advisory) checks for `has<Name>(s)` on the
-  *resolved* table's record class (FK source). The shim arm runs ahead of column
-  lookup for ID-typed fields and reverse-maps `@field(name:)` to a unique FK,
-  synthesizing the canonical form when it matches.
+  ambiguous. The shim arm runs ahead of column lookup for ID-typed fields, looks up
+  the field's column name in a pre-built qualifier map, and synthesizes the canonical
+  form when both a FK match and a `has*` probe succeed.
 
 The classifier branches live in `BuildContext.classifyInputField`. The canonical-form
 branch sits between the existing scalar-`@nodeId` branch (line 737) and the existing
@@ -260,9 +266,11 @@ public sealed interface InputField extends GraphitronField
      * FK's target table on the shim arm). {@code fkName} is the jOOQ FK constraint
      * name (from {@code @reference(path: [{key:}])} when explicit, or inferred by
      * walking FKs from the resolved table to the table backing
-     * {@code targetTypeName} when unique). {@code qualifier} is the SQL form of
-     * {@code KjerneJooqGenerator.getQualifier(fk)} (e.g. {@code "STUDIEPROGRAM_ID"});
-     * code generation derives the candidate method names from it.
+     * {@code targetTypeName} when unique). {@code qualifier} is the UpperCamelCase
+     * string returned by the local reproduction of
+     * {@code KjerneJooqGenerator.getQualifier(fk)} (e.g. {@code "StudieprogramId"});
+     * code generation derives the predicate method names by prepending {@code "has"}:
+     * {@code hasStudieprogramId} and {@code hasStudieprogramIds}.
      *
      * <p>{@code synthesized} is {@code true} when the variant was emitted by the
      * column-miss shim arm (legacy {@code @field(name:)}-only SDL); the classifier
@@ -317,11 +325,21 @@ attached to input-object types and don't flow through `generateForType`).
 every sealed leaf belongs to exactly one of four sets. Add `InputField.IdReferenceField.class`
 to `NOT_DISPATCHED_LEAVES` alongside the other `InputField` entries.
 
+#### Retirement roadmap stub
+
+Create `graphitron-rewrite/roadmap/retire-id-reference-synthesis-shim.md` with status
+`Backlog`. The file is referenced by the shim's log message and by the Retirement
+section of this spec; it must exist at merge time even as a stub. Minimum content:
+title, status, and a one-line description ("Promote the `IdReferenceField` synthesis
+shim WARN to a terminal classifier error once sis schemas have migrated to canonical
+`@nodeId(typeName:)` form.").
+
 ### Success Criteria
 
 - [ ] Project compiles (`mvn compile -pl graphitron-rewrite -Pquick`)
 - [ ] `GeneratorCoverageTest` passes (variant registered in `NOT_DISPATCHED_LEAVES`)
 - [ ] Existing tests pass (`mvn test -pl graphitron-rewrite -Pquick`)
+- [ ] `roadmap/retire-id-reference-synthesis-shim.md` exists
 
 ---
 
@@ -329,31 +347,36 @@ to `NOT_DISPATCHED_LEAVES` alongside the other `InputField` entries.
 
 ### Overview
 
-Add five additive helpers on `JooqCatalog`, all reflection- or jOOQ-metadata-based:
+Add four additive helpers on `JooqCatalog`, all reflection- or jOOQ-metadata-based:
 
-1. `hasIdSetPredicateMethod(tableSqlName, candidateNames...)` — advisory presence
-   check on the resolved table's record class. Mirrors the legacy
-   `searchTableForMethodWithName` contract; result does not gate classification.
+1. `hasIdSetPredicateMethod(tableSqlName, candidateNames...)` — presence check on the
+   resolved table's record class. Advisory for the canonical arm; required for the shim
+   arm (shim does not fire if the method is absent). Mirrors the legacy
+   `searchTableForMethodWithName` contract.
 2. `findUniqueFkToTable(sourceTableSqlName, targetTableSqlName)` — returns the unique
-   FK whose source is `sourceTableSqlName` and whose referenced table is
-   `targetTableSqlName`, or empty if zero or more than one such FK exists. Backs the
-   FK-inferred canonical form.
-3. `findFkByQualifier(sourceTableSqlName, qualifier)` — reverse-maps a qualifier
-   (e.g. `"STUDIEPROGRAM_ID"`) to the unique FK on `sourceTableSqlName` whose
-   `KjerneJooqGenerator.getQualifier(fk)` equals it. Backs the shim arm. Implemented
-   by recomputing the qualifier for each FK using a local copy of
-   `getQualifier`/`generateRolePrefix`. The duplication is intentional: Sikt owns
-   both KjerneJooqGenerator and graphitron-rewrite, so the two implementations are
-   kept in lockstep by the same maintainer rather than coupled across a runtime
-   dependency the rewrite would otherwise have to drag in.
-4. `qualifierForFk(sourceTableSqlName, fkName)` — returns the qualifier the local
-   reproduction of `getQualifier` produces for a FK identified by name. Used by the
-   canonical-form branch (where the FK is resolved by name from `@reference` or
-   inferred via `findUniqueFkToTable`) to obtain the qualifier used to derive
-   `idSetPredicateCandidates`. Empty when the FK is not on `sourceTableSqlName`.
+   FK constraint name when exactly one FK on `sourceTableSqlName` references
+   `targetTableSqlName`; empty when zero or multiple. One-liner directional wrapper on
+   the existing `findForeignKeysBetweenTables`, filtering to FKs where the source side
+   matches `sourceTableSqlName`. Backs the FK-inferred canonical form.
+3. `buildQualifierMap(sourceTableSqlName)` — builds and caches a
+   `Map<String, String>` (field-name-variant → FK constraint name) for all outgoing
+   FKs from `sourceTableSqlName`. For each FK, three keys are inserted: the UPPER_SNAKE
+   raw form `(role + targetTable + "_ID").toUpperCase()` (matching `@field(name:)`
+   values), `lowerFirst(getQualifier(fk))` (bare singular camelCase field name), and
+   `lowerFirst(getQualifier(fk)) + "s"` (bare plural). The map is cached per source
+   table on `JooqCatalog` (a `ConcurrentHashMap<String, Map<String, String>>`). Backs
+   the shim arm via O(1) direct lookup. If two FKs on the same source table produce a
+   colliding key (which would imply duplicate methods in the generated record class),
+   the map builder throws `IllegalStateException` — it should never occur in a valid
+   KjerneJooqGenerator project.
+4. `qualifierForFk(sourceTableSqlName, fkName)` — returns the UpperCamelCase qualifier
+   that the local reproduction of `getQualifier` produces for the named FK on
+   `sourceTableSqlName`. Used by both the canonical-form branch (FK resolved via
+   `@reference` or `findUniqueFkToTable`) and the shim arm (FK resolved via
+   `buildQualifierMap`) to obtain the value stored in `IdReferenceField.qualifier`.
+   Empty when the FK is not found on `sourceTableSqlName`.
 5. `referencedTable(fkName)` — returns the SQL name of the table the FK references.
-   Used by the shim arm after `findFkByQualifier` to discover the target table for
-   `findGraphQLTypeForTable`.
+   Used by the shim arm to discover the target table for `findGraphQLTypeForTable`.
 
 ### Changes
 
@@ -363,12 +386,12 @@ Add five additive helpers on `JooqCatalog`, all reflection- or jOOQ-metadata-bas
 /**
  * Returns {@code true} when the jOOQ record class for {@code tableSqlName} exposes any
  * public method whose name matches one of {@code candidateNames}. {@code KjerneJooqGenerator}
- * emits these for tables with an ID-set filter predicate (e.g. {@code hasStudieprogramIds},
- * {@code hasSTUDIEPROGRAM_IDs}). Returns {@code false} when the catalog is unavailable,
- * the table is not found, or no candidate matches.
+ * emits {@code has<Qualifier>} and {@code has<Qualifier>s} for tables that carry an
+ * ID-set filter predicate (e.g. {@code hasStudieprogramId}, {@code hasStudieprogramIds}).
+ * Returns {@code false} when the catalog is unavailable, the table is not found, or no
+ * candidate matches.
  *
- * <p>Presence-only check; return type and parameter types are not validated. The legacy
- * uses the same approach via {@code searchTableForMethodWithName}.
+ * <p>Presence-only check; return type and parameter types are not validated.
  */
 public boolean hasIdSetPredicateMethod(String tableSqlName, String... candidateNames) {
     return findRecordClass(tableSqlName)
@@ -386,30 +409,86 @@ static boolean recordHasIdSetPredicateMethod(Class<?> recordClass, String... can
 }
 
 /**
- * Returns the FK constraint name when exactly one FK on {@code sourceTableSqlName}
+ * Returns the FK constraint name when exactly one outgoing FK on {@code sourceTableSqlName}
  * references {@code targetTableSqlName}; empty otherwise (zero or many).
- * Used by the FK-inferred canonical form.
+ * Directional wrapper on {@link #findForeignKeysBetweenTables}: filters to FKs where
+ * the source side matches {@code sourceTableSqlName}.
  */
 public Optional<String> findUniqueFkToTable(String sourceTableSqlName,
                                              String targetTableSqlName) { /* ... */ }
 
 /**
- * Returns the FK constraint name on {@code sourceTableSqlName} whose computed
- * qualifier (per the local reproduction of {@code getQualifier} /
- * {@code generateRolePrefix}) equals {@code qualifier} (case-insensitive). Empty if
- * no FK matches. By the qualifier↔FK 1:1 invariant on a given source table, at
- * most one FK can match. Used by the shim arm.
+ * Builds and caches a field-name → FK-constraint-name lookup map for all outgoing FKs
+ * from {@code sourceTableSqlName}. For each FK three keys are inserted:
+ * <ul>
+ *   <li>The UPPER_SNAKE raw form {@code (role + targetTable + "_ID").toUpperCase()},
+ *       matching {@code @field(name:)} values in the SDL.</li>
+ *   <li>{@code lowerFirst(getQualifier(fk))}: the natural bare singular field name
+ *       (e.g. {@code "filmId"}).</li>
+ *   <li>{@code lowerFirst(getQualifier(fk)) + "s"}: the natural bare plural field name
+ *       (e.g. {@code "filmIds"}).</li>
+ * </ul>
+ * The map is cached per source table. If two FKs on the same source table produce a
+ * colliding key (implying duplicate methods in the generated record class, which would
+ * fail to compile upstream) {@link IllegalStateException} is thrown.
+ *
+ * <p>Returns an empty map when the catalog is unavailable or the table has no outgoing FKs.
  */
-public Optional<String> findFkByQualifier(String sourceTableSqlName, String qualifier) { /* ... */ }
+public Map<String, String> buildQualifierMap(String sourceTableSqlName) { /* ... */ }
 ```
 
-The qualifier computation is pulled into a small static helper on `JooqCatalog` (or a
-package-private utility class) and unit-tested directly. Tests assert it produces the
-same string as `KjerneJooqGenerator.getQualifier` for a representative set of FK
-shapes (single column, composite, with/without role prefix, role == "HAR"). The
-helper carries a javadoc note pointing at the upstream class with a "keep in sync"
-directive; any change to the upstream qualifier algorithm requires a paired change
-here.
+#### Qualifier algorithm (local reproduction of `KjerneJooqGenerator`)
+
+The qualifier computation is a local static helper on `JooqCatalog` (or a package-private
+utility class). It reproduces the following logic from `KjerneJooqGenerator` exactly; Sikt
+owns both codebases, so the two are kept in lockstep by the same maintainer rather than
+coupled via a runtime dependency:
+
+```java
+/**
+ * Reproduces KjerneJooqGenerator.generateRoleName. Keep in sync with upstream.
+ * Returns the role discriminator for the FK's last source/target column pair.
+ * "HAR" signals no role prefix (source column equals target column).
+ */
+static String generateRoleName(List<String> sourceColumns, List<String> targetColumns) {
+    var last = sourceColumns.size() - 1;
+    var src = sourceColumns.get(last);
+    var tgt = targetColumns.get(last);
+    if (src.equals(tgt))             return "HAR";
+    if (src.startsWith(tgt))         return src.substring(tgt.length() + 1);
+    if (tgt.startsWith(src))         return tgt.substring(src.length() + 1);
+    return src;
+}
+
+/**
+ * Reproduces KjerneJooqGenerator.generateRolePrefix. Keep in sync with upstream.
+ * Returns "" when the role is "HAR" (no distinguishing prefix needed).
+ */
+static String generateRolePrefix(ForeignKey<?, ?> fk) {
+    var srcCols = fk.getFields().stream().map(f -> f.getName().toLowerCase()).toList();
+    var tgtCols = fk.getKey().getFields().stream().map(f -> f.getName().toLowerCase()).toList();
+    var role = generateRoleName(srcCols, tgtCols);
+    return "HAR".equals(role) ? "" : role + "_";
+}
+
+/**
+ * Reproduces KjerneJooqGenerator.getQualifier. Keep in sync with upstream.
+ * Returns an UpperCamelCase qualifier, e.g. "FilmId" or "OriginalLanguageIdLanguageId".
+ */
+static String localGetQualifier(ForeignKey<?, ?> fk) {
+    var role = generateRolePrefix(fk);
+    var raw = (role + fk.getKey().getTable().getName() + "_id").toLowerCase();
+    // Convert snake_case to UpperCamelCase: capitalise each segment after "_".
+    return Arrays.stream(raw.split("_"))
+        .map(s -> s.isEmpty() ? s : Character.toUpperCase(s.charAt(0)) + s.substring(1))
+        .collect(Collectors.joining());
+}
+```
+
+The helpers carry a "keep in sync with upstream" javadoc note; any change to the
+upstream qualifier algorithm in `KjerneJooqGenerator` requires a paired change here.
+Unit tests (Phase 4 `QualifierReproductionTest`) assert the output matches hand-checked
+expectations for representative FK shapes (HAR role, role prefix, composite key).
 
 ### Success Criteria
 
@@ -437,19 +516,20 @@ Two changes in `BuildContext.classifyInputField` (`BuildContext.java:721`):
 2. **Add a synthesis shim arm** *before* the column lookup at line 843, gated on
    `typeName == "ID"` and the absence of `@nodeId`/`@reference`. The shim runs ahead
    of `findColumn` because the lookup is case-insensitive on both jOOQ Java name and
-   SQL name, so an ID-typed field whose name (or `@field(name:)` value) reverse-maps
-   to a FK qualifier on the resolved table would otherwise resolve as a `ColumnField`
-   first. When the qualifier reverse-map matches, synthesize the canonical form and
-   emit `IdReferenceField` with `synthesized = true` and a per-site WARN; when it
-   misses, fall through to the existing column lookup (preserving the legacy
-   column-mapped `ID @field` path) and then to the existing scalar `NodeIdField`
-   shim at lines 857-869. Modelled on the existing scalar shim.
+   SQL name, so an ID-typed field whose name (or `@field(name:)` value) maps to a FK
+   qualifier on the resolved table would otherwise resolve as a `ColumnField` first.
+   The shim looks up `columnName` directly in the qualifier map built by
+   `catalog.buildQualifierMap(resolvedTable.tableName())` — an O(1) lookup with no
+   input-side normalisation. When the map has a match AND the `has*` probe succeeds,
+   synthesize `IdReferenceField` with `synthesized = true` and a per-site WARN. When
+   either condition misses, fall through to the existing column lookup and then to the
+   existing scalar `NodeIdField` shim.
 
-The catalog probe is **advisory** in both branches: when it returns false but the FK
-resolved, the classifier still emits `IdReferenceField` and logs a build warning.
-This preserves legacy behaviour (`FetchDBMethodGenerator.generateHasForID` falls
-through to `asHasCall` unconditionally) and keeps classification testable against
-catalogs whose record classes were not augmented with `has*` methods.
+The catalog probe is **advisory for the canonical arm**: when it returns false but the
+FK resolved, the classifier still emits `IdReferenceField` and logs a build warning.
+The probe is **required for the shim arm**: when it returns false the shim does not
+fire, preventing false-positive classification on projects that do not use
+`KjerneJooqGenerator`.
 
 ### Changes
 
@@ -514,7 +594,9 @@ if ("ID".equals(typeName) && field.hasAppliedDirective(DIR_NODE_ID) && list) {
     }
 
     String qualifier = catalog.qualifierForFk(resolvedTable.tableName(), fkName)
-        .orElseThrow(); // FK is on the source table; qualifier always computable (Phase 2)
+        .orElseThrow(() -> new IllegalStateException(
+            "qualifierForFk returned empty for FK '" + fkName + "' on table '"
+            + resolvedTable.tableName() + "' — should be unreachable"));
     String[] candidates = idSetPredicateCandidates(qualifier);
     if (!catalog.hasIdSetPredicateMethod(resolvedTable.tableName(), candidates)) {
         addWarning(new BuildWarning(
@@ -534,9 +616,10 @@ Notes:
 - `parsePath` is called with the target table populated when `@reference` is present,
   unlike the bare `@reference` branch at line 793. The single-hop assertion is
   enforced after parsing; multi-hop falls through with a clear diagnostic.
-- `catalog.qualifierForFk(sourceTable, fkName)` is part of Phase 2's API
-  (helper #4); it runs the local reproduction of `getQualifier` against a
-  named FK on `sourceTable`.
+- `catalog.qualifierForFk(sourceTable, fkName)` runs the local reproduction of
+  `localGetQualifier` (Phase 2) against the named FK and returns its UpperCamelCase
+  result, e.g. `"FilmId"`. `orElseThrow` is safe here because the FK was just resolved
+  from the same catalog; the explicit message is included for diagnosability.
 
 #### Synthesis shim arm
 
@@ -552,65 +635,48 @@ unchanged.
 This placement is required because `findColumn` is case-insensitive on both jOOQ
 Java name and SQL name. Sis's typical legacy SDL `[ID!] @field(name: "STUDIEPROGRAM_ID")`
 on `STUDIERETT` would otherwise match a column named `STUDIEPROGRAM_ID` on the
-source table (case-insensitive match against either Java field `studieprogramId` or
-SQL column `studieprogram_id`) and resolve as a `list`-shaped `ColumnField` before
-the column-miss tail is ever reached. By moving the shim ahead of column lookup,
-qualifier-driven fields take precedence; column-mapped `ID @field` (rare, but valid)
-still works because column lookup remains the fallback.
+source table and resolve as a `list`-shaped `ColumnField` before the column-miss tail
+is ever reached. By moving the shim ahead of column lookup, qualifier-driven fields
+take precedence; column-mapped `ID @field` (rare, but valid) still works because
+column lookup remains the fallback.
 
-The trigger covers all three of the author's mental-model cases:
+The qualifier map covers all field-name forms the author can write:
 
-- `id: ID` on a node-typed table → `columnName = "id"` → upper-snake `"ID"` → no
-  FK qualifier matches → fall through to column lookup → fall through to existing
-  `NodeIdField` shim, which classifies as the input's own table id. Unchanged
-  behaviour.
-- `otherId: ID` (no directives) → `columnName = "otherId"` → upper-snake `"OTHER_ID"`
-  → if the input's resolved table has exactly one FK whose qualifier is `OTHER_ID`,
-  synthesize `IdReferenceField`. Otherwise, fall through to column lookup.
-- `yetAnotherId: [ID!]` (no directives) → same path, with `list = true`.
+- `id: ID` on a node-typed table → `columnName = "id"` → map lookup misses (no FK
+  produces a key `"id"`) → fall through to column lookup → fall through to existing
+  `NodeIdField` shim. Unchanged behaviour.
+- `filmId: ID` (no directives) → `columnName = "filmId"` → map has lowerCamelSingular
+  entry `"filmId"` → probe succeeds → synthesize `IdReferenceField`.
+- `filmIds: [ID!]` (no directives) → `columnName = "filmIds"` → map has
+  lowerCamelPlural entry `"filmIds"` → probe → synthesize.
 - `studieprogrammer: [ID!] @field(name: "STUDIEPROGRAM_ID")` (legacy sis form) →
-  `columnName = "STUDIEPROGRAM_ID"` (already upper-snake from `@field`) → FK lookup
-  by qualifier, synthesize. Without the pre-column placement this case would
-  resolve as `ColumnField` against the case-insensitively matching column.
+  `columnName = "STUDIEPROGRAM_ID"` → map has UPPER_SNAKE entry → probe → synthesize.
+  Without the pre-column placement this case would resolve as `ColumnField` first.
 
 ```java
 // IdReferenceField synthesis shim: ID!/[ID!] on a @table input whose column name
-// (from @field(name:) or defaulted from the GraphQL field name) reverse-maps to a
-// unique FK qualifier on the resolved table. Synthesizes the canonical @nodeId
+// (from @field(name:) or the GraphQL field name) hits the qualifier map for the
+// resolved table AND the has* probe succeeds. Synthesizes the canonical @nodeId
 // (+ @reference) form internally. Emits a per-site WARN naming
 // parentTypeName.fieldName; deprecate-and-retire path same as the scalar NodeIdField
 // shim. Retirement: roadmap/retire-id-reference-synthesis-shim.md.
 if ("ID".equals(typeName)
         && !field.hasAppliedDirective(DIR_NODE_ID)
         && !field.hasAppliedDirective(DIR_REFERENCE)) {
-    // Two qualifier candidates: the upper-snake form as-is, and (for plural list
-    // fields) the form with a single trailing `S` stripped. "otherId" → "OTHER_ID";
-    // "languageIds" → ["LANGUAGE_IDS", "LANGUAGE_ID"]; "STUDIEPROGRAM_ID" → as-is.
-    // Stops at single-S strip; no general pluralisation. See "Open Questions".
-    String primary = toUpperSnake(columnName);
-    Optional<String> fkOpt = catalog.findFkByQualifier(resolvedTable.tableName(), primary);
-    String qualifierCandidate = primary;
-    if (fkOpt.isEmpty() && primary.endsWith("S") && primary.length() > 1) {
-        String stripped = primary.substring(0, primary.length() - 1);
-        fkOpt = catalog.findFkByQualifier(resolvedTable.tableName(), stripped);
-        if (fkOpt.isPresent()) qualifierCandidate = stripped;
-    }
-    if (fkOpt.isPresent()) {
-        String fkName = fkOpt.get();
+    String fkName = catalog.buildQualifierMap(resolvedTable.tableName()).get(columnName);
+    if (fkName != null) {
+        String qualifier = catalog.qualifierForFk(resolvedTable.tableName(), fkName)
+            .orElseThrow(() -> new IllegalStateException(
+                "qualifierForFk returned empty for FK '" + fkName + "' on table '"
+                + resolvedTable.tableName() + "' — should be unreachable"));
+        String[] candidates = idSetPredicateCandidates(qualifier);
         Optional<String> targetTableOpt = catalog.referencedTable(fkName);
         Optional<String> targetTypeOpt = targetTableOpt.flatMap(this::findGraphQLTypeForTable);
-        if (targetTypeOpt.isPresent()) {
-            String[] candidates = idSetPredicateCandidates(qualifierCandidate);
-            if (!catalog.hasIdSetPredicateMethod(resolvedTable.tableName(), candidates)) {
-                addWarning(new BuildWarning(
-                    "input field '" + parentTypeName + "." + name + "': no has-accessor on"
-                    + " '" + resolvedTable.tableName() + "' for synthesized qualifier '"
-                    + qualifierCandidate + "'.", locationOf(field)));
-            }
-            // Compute the exact canonical replacement so the WARN tells the author
-            // (and any future SDL-rewrite Maven goal) precisely what to write.
-            // If the FK from source to target is unique, @nodeId alone suffices;
-            // otherwise the migrated form must pin the FK with @reference.
+        if (catalog.hasIdSetPredicateMethod(resolvedTable.tableName(), candidates)
+                && targetTypeOpt.isPresent()) {
+            // Compute the canonical replacement so the WARN tells the author precisely
+            // what to write. If the FK from source to target is unique, @nodeId alone
+            // suffices; otherwise pin the FK with @reference.
             boolean fkAmbiguous = catalog
                 .findUniqueFkToTable(resolvedTable.tableName(), targetTableOpt.get())
                 .isEmpty();
@@ -622,55 +688,44 @@ if ("ID".equals(typeName)
                 + " from qualifier '{}' (FK '{}'); replace the legacy form with {}"
                 + " to drop the synthesis shim. The shim will be removed in a future"
                 + " release; see graphitron-rewrite/roadmap/retire-id-reference-synthesis-shim.md",
-                parentTypeName, name, qualifierCandidate, fkName, canonical);
+                parentTypeName, name, qualifier, fkName, canonical);
             return new InputFieldResolution.Resolved(new InputField.IdReferenceField(
                 parentTypeName, name, locationOf(field), typeName, nonNull, list,
-                targetTypeOpt.get(), fkName, qualifierCandidate, /* synthesized */ true));
+                targetTypeOpt.get(), fkName, qualifier, /* synthesized */ true));
         }
     }
 }
 ```
 
 Notes:
-- `toUpperSnake(s)` is a small helper that converts `lowerCamelCase` to
-  `UPPER_SNAKE_CASE` and leaves already-upper-snake strings untouched. Idempotent
-  on the typical `@field(name: "STUDIEPROGRAM_ID")` value. Inverse of the existing
-  `toCamelCase` helper (which is used in `idSetPredicateCandidates`).
+- `catalog.buildQualifierMap` returns an already-computed map; the lookup is O(1) with
+  no normalisation of `columnName`. The map keys cover all three forms an author can
+  write: UPPER_SNAKE (`@field(name:)` value), lowerCamelSingular, lowerCamelPlural.
+- The probe gates synthesis: if `hasIdSetPredicateMethod` returns false the `if` body
+  is skipped and control falls through to column lookup. This distinguishes
+  KjerneJooqGenerator projects (method present) from others (method absent).
 - `findGraphQLTypeForTable(sqlTableName)` is a new helper on `BuildContext` that
   iterates `schema.getAllTypesAsList()` looking for the unique `GraphQLObjectType`
   with `@table(name:)` matching (case-insensitive). Returns the type name. If zero
-  or multiple types match, returns empty and the shim does not fire (the field falls
-  through to `Unresolved` or the next shim). The lookup is memoized as a
-  `Map<String, String>` populated lazily on first call so that repeated shim
-  invocations across a build don't re-walk the schema. Both sides of the comparison
-  are normalized to the same form (lower-cased, schema prefix preserved) so that
-  `@table(name: "idreffixture.studieprogram")` matches the catalog's
-  `idreffixture.studieprogram` and not the bare `studieprogram`. Mismatched-prefix
-  cases (one side schema-qualified, the other not) do not match; authors must use
-  the same form on both sides, which the existing classifier branches already
-  assume.
-- `ID_REF_SHIM_LOGGER` parallels the existing `NODE_ID_SHIM_LOGGER` declaration near
-  the top of `BuildContext.java`.
-- The shim does not require `@field(name:)`. Both the explicit form
-  (`@field(name: "STUDIEPROGRAM_ID")`) and the implicit form (bare `otherId: ID`)
-  enter via the same code path; `columnName` already carries the right value
-  whichever form the author chose.
+  or multiple types match, returns empty and the shim does not fire. The lookup is
+  memoized as a `Map<String, String>` populated lazily on first call so that repeated
+  shim invocations across a build don't re-walk the schema. Both sides of the
+  comparison are lower-cased with schema prefix preserved; mismatched-prefix cases do
+  not match.
+- `ID_REF_SHIM_LOGGER` parallels the existing `NODE_ID_SHIM_LOGGER` at
+  `BuildContext.java:59`; declare it as a separate field with a distinguishing logger
+  name (e.g. `BuildContext.class.getName() + ".idRefShim"`) so build-log filtering
+  can target the shim independently.
 
 #### Name-derivation helper (private, in `BuildContext`)
 
 ```java
-// "STUDIEPROGRAM_ID" → ["hasSTUDIEPROGRAM_ID", "hasSTUDIEPROGRAM_IDs",
-//                      "hasStudieprogramId", "hasStudieprogramIds"]
-// Mirrors legacy MethodMapping.asHas() / asCamelHas(), each in singular and plural form.
+// qualifier is UpperCamelCase from localGetQualifier, e.g. "StudieprogramId"
+// → ["hasStudieprogramId", "hasStudieprogramIds"]
 private static String[] idSetPredicateCandidates(String qualifier) {
-    String upper = "has" + qualifier;
-    String camel = "has" + capitalize(toCamelCase(qualifier));
-    return new String[] { upper, upper + "s", camel, camel + "s" };
+    return new String[] { "has" + qualifier, "has" + qualifier + "s" };
 }
 ```
-
-Reuse the existing `toCamelCase` / `capitalize` helpers if they're already on the
-classpath; otherwise inline a small `UPPER_UNDERSCORE → LOWER_CAMEL` conversion.
 
 ### Success Criteria
 
@@ -765,7 +820,7 @@ ID_REFERENCE_NODEID_INFERRED(
         assertThat(f.targetTypeName()).isEqualTo("Film");
         assertThat(f.synthesized()).isFalse();
         assertThat(f.fkName()).isNotBlank();  // resolved by findUniqueFkToTable
-        assertThat(f.qualifier()).isEqualTo("FILM_ID");
+        assertThat(f.qualifier()).isEqualTo("FilmId");
     }) {
     @Override public Set<Class<?>> variants() { return Set.of(InputField.IdReferenceField.class); }
 },
@@ -833,7 +888,7 @@ ID_REFERENCE_SHIM_EXPLICIT_FIELD(
             .filter(InputField.IdReferenceField.class::isInstance).findFirst().orElseThrow();
         assertThat(f.synthesized()).isTrue();
         assertThat(f.targetTypeName()).isEqualTo("Language");
-        assertThat(f.qualifier()).isEqualTo("LANGUAGE_ID");
+        assertThat(f.qualifier()).isEqualTo("LanguageId");
     }),
 ```
 
@@ -841,12 +896,12 @@ ID_REFERENCE_SHIM_EXPLICIT_FIELD(
 
 ```java
 ID_REFERENCE_SHIM_BARE_LIST(
-    "[ID!] with bare field name (camelCase → upper-snake) → IdReferenceField (synthesized + WARN)",
+    "[ID!] with bare plural field name → IdReferenceField (synthesized + WARN)",
     """
     type Language @table(name: "language") @node(typeId: "lang") { name: String }
     type Film @table(name: "film") { title: String }
     input FilmFilterInput @table(name: "film") {
-      languageIds: [ID!]   # no directives; "languageIds" → "LANGUAGE_ID" qualifier
+      languageIds: [ID!]   # no directives; map key "languageIds" → qualifier "LanguageId"
     }
     type Query { film: Film }
     """,
@@ -855,14 +910,13 @@ ID_REFERENCE_SHIM_BARE_LIST(
         var f = (InputField.IdReferenceField) tit.inputFields().stream()
             .filter(InputField.IdReferenceField.class::isInstance).findFirst().orElseThrow();
         assertThat(f.synthesized()).isTrue();
-        assertThat(f.qualifier()).isEqualTo("LANGUAGE_ID");
+        assertThat(f.qualifier()).isEqualTo("LanguageId");
     }),
 ```
 
-(Field name is `languageIds`. `toUpperSnake` produces `LANGUAGE_IDS`; the shim's
-single-S strip retries with `LANGUAGE_ID`, which matches the FK qualifier. Both
-the strip behaviour and its limits are documented under "What We're NOT Doing"
-and "Open Questions": the strip is single-S only, no general pluralisation.)
+(Field name `languageIds` matches the lowerCamelPlural map key `"languageIds"` built
+from qualifier `"LanguageId"`. No strip or normalisation needed at lookup time — the
+map already has this key.)
 
 **Case 4c — synthesis shim, scalar bare field name**:
 
@@ -873,7 +927,7 @@ ID_REFERENCE_SHIM_BARE_SCALAR(
     type Language @table(name: "language") @node(typeId: "lang") { name: String }
     type Film @table(name: "film") { title: String }
     input FilmFilterInput @table(name: "film") {
-      languageId: ID    # "languageId" → "LANGUAGE_ID" qualifier
+      languageId: ID    # map key "languageId" → qualifier "LanguageId"
     }
     type Query { film: Film }
     """,
@@ -909,21 +963,25 @@ ID_REFERENCE_DOES_NOT_SHIM_OWN_ID(
 **Case 4e — synthesis shim, role-prefixed qualifier (qualifier ≠ source column)**:
 
 This case is the reason the `idreffixture` schema exists. On Sakila's `film`, every
-FK qualifier coincides with a source column name (`LANGUAGE_ID`, `ORIGINAL_LANGUAGE_ID`),
-so the shim-before-column-lookup ordering is exercised but the column-lookup-as-fallback
-branch is not (column lookup *would* have matched). On `idreffixture.studierett`,
-the qualifier `PRIMARY_STUDIEPROGRAM_ID` does not match any source column, so the
-shim is the *only* path that resolves the field; without the pre-column placement
-the field would resolve as `Unresolved` and propagate as `UnclassifiedType`.
+FK's UPPER_SNAKE map key coincides with a source column name (`LANGUAGE_ID`,
+`ORIGINAL_LANGUAGE_ID`), so the shim-before-column-lookup ordering is exercised but
+the column-lookup-as-fallback branch is not (column lookup *would* have matched the
+column). On `idreffixture.studierett`, the UPPER_SNAKE map key for the
+`primary_studieprogram` FK (e.g. `PRIMARY_STUDIEPROGRAM_STUDIEPROGRAM_ID` — exact
+value determined by `localGetQualifier` / `generateRolePrefix` for this FK shape)
+does not match any source column, so the shim is the *only* path that resolves the
+field; without the pre-column placement the field would resolve as `Unresolved` and
+propagate as `UnclassifiedType`.
 
 ```java
 ID_REFERENCE_SHIM_ROLE_PREFIXED(
-    "[ID!] @field(name: <role-prefixed qualifier>) where qualifier ≠ any column → IdReferenceField (synthesized + WARN)",
+    "[ID!] @field(name: <role-prefixed UPPER_SNAKE key>) where key ≠ any column → IdReferenceField (synthesized + WARN)",
     """
     type Studieprogram @table(name: "idreffixture.studieprogram") @node(typeId: "sp") { id: ID }
     type Studierett @table(name: "idreffixture.studierett") { id: ID }
     input StudierettFilterInput @table(name: "idreffixture.studierett") {
-      primaryStudieprogramIds: [ID!] @field(name: "PRIMARY_STUDIEPROGRAM_ID")
+      # @field value must be the UPPER_SNAKE map key for this FK — verify via buildQualifierMap
+      primaryStudieprogramIds: [ID!] @field(name: "<UPPER_SNAKE_KEY_FROM_BUILD>")
     }
     type Query { studierett: Studierett }
     """,
@@ -933,17 +991,18 @@ ID_REFERENCE_SHIM_ROLE_PREFIXED(
             .filter(InputField.IdReferenceField.class::isInstance).findFirst().orElseThrow();
         assertThat(f.synthesized()).isTrue();
         assertThat(f.targetTypeName()).isEqualTo("Studieprogram");
-        assertThat(f.qualifier()).isEqualTo("PRIMARY_STUDIEPROGRAM_ID");
-        // Critical: this qualifier is NOT a column on idreffixture.studierett —
+        assertThat(f.qualifier()).isNotBlank(); // UpperCamelCase from localGetQualifier
+        // Critical: the map key is NOT a column on idreffixture.studierett —
         // the shim-before-column-lookup ordering is what makes this resolve.
     }),
 ```
 
-The expected qualifier string (`PRIMARY_STUDIEPROGRAM_ID` here) depends on the
-Phase 2 reproduction of `KjerneJooqGenerator.getQualifier`/`generateRolePrefix`.
-If the implementer's algorithm produces a different string for this FK shape,
-update the expectation and the SDL's `@field(name:)` value to match — the case's
-purpose is to demonstrate qualifier ≠ column, not to pin a specific string.
+The implementer must first run `buildQualifierMap("idreffixture.studierett")` against
+the test catalog to discover the actual UPPER_SNAKE key and UpperCamelCase qualifier
+for the `primary_studieprogram` FK, then substitute those values into the SDL's
+`@field(name:)` and the `isEqualTo` assertion. The case's purpose is to demonstrate
+that a key not matching any column still resolves via the shim — not to pin a
+specific string.
 
 **Case 5 — bad explicit reference path → UnclassifiedField**:
 
@@ -1002,7 +1061,7 @@ ID_REFERENCE_MIXED_DIRECTIVES_CANONICAL_WINS(
             .filter(InputField.IdReferenceField.class::isInstance).findFirst().orElseThrow();
         assertThat(f.synthesized()).isFalse();              // canonical, not shim
         assertThat(f.targetTypeName()).isEqualTo("Film");
-        assertThat(f.qualifier()).isEqualTo("FILM_ID");     // derived from FK, NOT from @field(name:)
+        assertThat(f.qualifier()).isEqualTo("FilmId");     // derived from FK, NOT from @field(name:)
     }),
 ```
 
@@ -1022,25 +1081,24 @@ alongside `JooqCatalogNodeIdMetadataTest`.
 
 ```java
 class JooqCatalogIdSetPredicateTest {
-    @Test void detectsUpperCaseHasMethod() {
+    // qualifier = "TerminId" → candidates are "hasTerminId" and "hasTerminIds"
+    @Test void detectsSingularHasMethod() {
         assertTrue(JooqCatalog.recordHasIdSetPredicateMethod(
-            StubWithUpperCase.class,
-            "hasTERMIN_ID", "hasTERMIN_IDs", "hasTerminId", "hasTerminIds"));
+            StubWithSingular.class, "hasTerminId", "hasTerminIds"));
     }
-    @Test void detectsCamelCaseHasMethod() {
+    @Test void detectsPluralHasMethod() {
         assertTrue(JooqCatalog.recordHasIdSetPredicateMethod(
-            StubWithCamelCase.class,
-            "hasTERMIN_ID", "hasTERMIN_IDs", "hasTerminId", "hasTerminIds"));
+            StubWithPlural.class, "hasTerminId", "hasTerminIds"));
     }
     @Test void returnsFalseWhenAbsent() {
         assertFalse(JooqCatalog.recordHasIdSetPredicateMethod(
             Object.class, "hasTerminId", "hasTerminIds"));
     }
 
-    static class StubWithUpperCase {
-        public void hasTERMIN_IDs(java.util.Collection<String> ids) {}
+    static class StubWithSingular {
+        public void hasTerminId(String id) {}
     }
-    static class StubWithCamelCase {
+    static class StubWithPlural {
         public void hasTerminIds(java.util.Collection<String> ids) {}
     }
 }
@@ -1059,12 +1117,15 @@ class JooqCatalogIdSetPredicateTest {
 ## Testing Strategy
 
 ### Unit tests
-- `JooqCatalogIdSetPredicateTest` — probe detects upper-case, camel-case, and plural
-  variants; returns false when absent.
-- `QualifierForFkTest` (or equivalent) — the local reproduction of
-  `KjerneJooqGenerator.getQualifier(fk)` produces the same string for representative
-  FK shapes (single column, composite, with/without role prefix, role == "HAR").
-  Hand-checked expectations.
+- `JooqCatalogIdSetPredicateTest` — probe detects singular and plural UpperCamelCase
+  `has*` methods; returns false when absent.
+- `QualifierReproductionTest` (or equivalent) — `localGetQualifier` / `generateRoleName`
+  produce the correct UpperCamelCase string for representative FK shapes: HAR role
+  (source column equals target column), role prefix (columns differ), composite key,
+  HAR-fallback (unrelated column names). Hand-checked expectations.
+- `BuildQualifierMapTest` — `buildQualifierMap` inserts all three key forms for a known
+  FK, the cache returns the same map instance on repeated calls, and a collision between
+  two FKs on the same source table throws `IllegalStateException`.
 
 ### Pipeline tests
 - `GraphitronSchemaBuilderTest.TableInputTypeCase` — eleven new cases covering the
@@ -1106,23 +1167,21 @@ The retirement item lists:
 
 ## Open Questions
 
-**Resolved: probe is advisory.** The catalog method probe returns a boolean that the
-classifier uses only to emit a build warning; it does not gate classification. Rationale:
-the legacy (`FetchDBMethodGenerator.generateHasForID`, line 649) emits the `has*` call
-unconditionally, never failing on absence. Strict probing would be a behaviour change
-and would require extending `NodeIdFixtureGenerator` to emit `has*` methods on a fixture
-table before any happy-path test could pass, which is out of scope for the
-classification milestone. Revisit if/when code generation lands and we want a
-build-time guarantee that the predicate exists.
+**Resolved: probe is required for the shim arm, advisory for the canonical arm.**
+For the canonical arm (`@nodeId` declared), the author has stated intent; a missing
+`has*` method logs a build warning but classification still succeeds (the method may
+be added later by a KjerneJooqGenerator run). For the shim arm, the trigger is
+name-based inference with no explicit author intent, so probe success is the
+confirmation that this is a KjerneJooqGenerator project. If the probe fails the shim
+does not fire and the field falls through to column lookup and the `NodeIdField` shim
+— no false-positive classification on non-KjerneJooqGenerator projects. Revisit if
+code generation lands and we want a build-time guarantee on the canonical arm too.
 
-**Open: bare list field-name pluralisation rule.** The shim strips a single trailing
-`s` from upper-snake-converted field names so that `languageIds` matches qualifier
-`LANGUAGE_ID`. This is the minimum rule that handles the well-named English case
-without invoking a general pluraliser. Norwegian-plural forms (`studieprogrammer`)
-will not match; those cases need explicit `@field(name:)` or `@nodeId(typeName:)`.
-The implementation should make the s-strip behaviour explicit in the helper's
-javadoc and in the `What We're NOT Doing` documentation. If sis schemas show the
-need for richer pluralisation, revisit; current scope is the s-strip rule only.
+**Resolved: pluralisation in the qualifier map.** The map's lowerCamelPlural key
+(`lowerFirst(qualifier) + "s"`) covers the well-named English plural case (`filmIds`,
+`languageIds`) without any input-side normalisation. Norwegian-plural forms
+(`studieprogrammer`) will not be a map key and those fields must use explicit
+`@field(name:)` or `@nodeId(typeName:)` — unchanged from the original constraint.
 
 **Resolved: shim runs before column lookup for `typeName == "ID"`.** `JooqCatalog.findColumn`
 matches both Java name (`languageId`) and SQL name (`language_id`) case-insensitively;
@@ -1130,11 +1189,11 @@ left at the column-miss tail, the new shim would never fire for sis's typical
 `[ID!] @field(name: "STUDIEPROGRAM_ID")` shape because `STUDIEPROGRAM_ID` would match
 a real column on the source table first. The shim therefore moves *in front of* the
 column lookup, gated on `typeName == "ID"` and the absence of `@nodeId`/`@reference`.
-When the qualifier reverse-map misses, the classifier falls through to the existing
-column lookup (preserving legacy column-mapped `ID @field` behaviour) and ultimately
-to the existing scalar `NodeIdField` shim. See Phase 3 for the rewritten branch
-order. The role-prefixed FK case (where the qualifier intentionally differs from any
-column name) is exercised by a new `idreffixture` schema added in Phase 4.
+When the map lookup misses (or the probe fails), the classifier falls through to the
+existing column lookup and ultimately to the existing scalar `NodeIdField` shim. See
+Phase 3 for the rewritten branch order. The role-prefixed FK case (where the map key
+intentionally differs from any column name) is exercised by the `idreffixture` schema
+added in Phase 4.
 
 ## References
 
@@ -1157,7 +1216,7 @@ column name) is exercised by a new `idreffixture` schema added in Phase 4.
   (probes upper- and camelCase forms but falls through to `asHasCall` unconditionally)
 - Legacy name helpers: `MethodMapping.asHas()` / `asCamelHas()` —
   `graphitron-codegen-parent/.../mapping/MethodMapping.java:94, 101`
-- Closest rewrite analogue: `InputField.NodeIdReferenceField` — `InputField.java:106`
+- Closest rewrite analogue: `InputField.NodeIdReferenceField` — `InputField.java`
   (the `@nodeId @reference` companion); catalog probe via
   `JooqCatalog.nodeIdMetadata` — `JooqCatalog.java:246`
 - Record-class lookup: `JooqCatalog.findRecordClass` — `JooqCatalog.java:88`
