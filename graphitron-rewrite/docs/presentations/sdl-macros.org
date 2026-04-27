@@ -144,21 +144,27 @@ To hull i den mekaniske tilnærmingen:
 
 * Det semantiske løftet
 
-Tre poenger.
+=Connection= og =Edge= er ikke shapes.
 
-* (a) Direktiver leses én gang
+De er /begreper med betydning/.
 
-Ved parse-grensen, av =GraphitronSchemaBuilder=. Etter den finnes
-ingen =if (field.hasDirective("asConnection"))= i kodebasen.
+#+BEGIN_NOTES
+Tesen for resten av talen. Vi har ikke bare flyttet ekspansjonen ett
+abstraksjonslag opp; vi har gitt navn på domenebegreper en plass i
+modellen. Det er det som gjør at neste makro (=@asFacet=) faller naturlig
+på plass.
+#+END_NOTES
 
-#+BEGIN_QUOTE
-Generators receive a model in terms of "what to emit", not "what to
-interpret".
-#+END_QUOTE
+* Hva /betyr/ disse typene?
 
-/rewrite-design-principles.md:9/
+#+ATTR_REVEAL: :frag (appear)
+- *Connection.* Paginert traversering av en samling.
+- *Edge.* En posisjon i traverseringen — cursor pluss node.
+- *PageInfo.* Kontroller for traverseringen.
 
-* (b) Makroen blir en variant i en sealed type
+Ikke vilkårlige felt-kombinasjoner. Navn på begreper i domenet vårt.
+
+* Modellen navngir begrepene
 
 #+ATTR_REVEAL: :code_attribs data-line-numbers=1|2-9|11-12
 #+BEGIN_SRC java
@@ -179,9 +185,16 @@ sealed interface GraphitronType {
 }
 #+END_SRC
 
-Generatoren bytter på modellen. Compileren tvinger uttømmende switch.
+En variant i modellen er et /navn/ på et begrep. Compileren tvinger
+hver generator til å håndtere alle begrepene.
 
-* (c) To input-veier, én modell
+#+BEGIN_NOTES
+Sitat fra rewrite-design-principles.md:9 å nevne her hvis det er tid:
+"Generators receive a model in terms of 'what to emit', not 'what to
+interpret'." Modellen bærer mening; generatoren oversetter mening til kode.
+#+END_NOTES
+
+* Klassifikatoren gjenkjenner /begrepet/
 
 #+BEGIN_SRC text
 Classifier produces this variant for two inputs that are
@@ -198,14 +211,16 @@ semantically the same:
 
 /GraphitronType.java:350/
 
+Direktiv-drevet eller strukturelt — det er samme /begrep/, samme variant,
+samme generator.
+
 #+BEGIN_NOTES
-Dette er hjertet av talen. Les sitatet sakte. Gjenta med egne ord:
-makroen er ikke en tekst-transformasjon, den er gjenkjenning av en
-intensjon. Hvis konsumenten skriver mønsteret ut for hånd, ruter
-klassifikatoren det til samme variant. Generatoren ser ikke forskjell.
+Dette er hjertet av talen. Les sitatet sakte. Direktivet sier "dette er
+en connection". Strukturen /viser/ "dette er en connection". Begge gir
+samme begrep i modellen, fordi det /er/ samme begrep.
 #+END_NOTES
 
-* Demo: to skjemaer, én modell
+* Demo: to skjemaer, ett begrep
 
 ** Variant A: terse
 
@@ -242,7 +257,7 @@ type Query {
 }
 #+END_SRC
 
-** Begge klassifiseres til samme
+** Begge er samme begrep
 
 #+BEGIN_SRC java
 ConnectionType(
@@ -256,14 +271,20 @@ ConnectionType(
 Samme =ConnectionHelperClassGenerator=.
 Samme cursor-encoding. Samme =totalCount=-resolver.
 
-* Hva får vi når arkitekturen er på plass?
+* Et nytt begrep i samme familie: Facet
 
-Den neste makroen vi planlegger: =@asFacet=.
+Connection er /navigasjon/ i en filtrert samling.
+
+Facet er /feedback/ om den samme samlingen — hvor mange treff finnes
+under hver mulige filter-verdi?
+
+To navn på beslektede domenebegreper.
 
 #+BEGIN_NOTES
-Vi har ikke bygget den enda. Status er Spec, fem faser planlagt, Phase 1
-SQL-spike er kjørt og bekreftet. Den er interessant fordi den viser at
-investeringen i den semantiske arkitekturen betaler seg på neste makro.
+Vi har ikke bygget =@asFacet=-makroen enda. Status er Spec, fem faser
+planlagt, Phase 1 SQL-spike er kjørt og bekreftet. Poenget her er at
+Facet ikke er "nok et tilfelle av samme arkitektur", men "nok et begrep
+i samme domene". Det er to forskjellige måter å si "ja, mer av dette".
 #+END_NOTES
 
 * Problemet: fasettering
@@ -432,20 +453,21 @@ i SDL-streng-formen.
 
 * Avslutning
 
-SDL-makroer i rewriten er ikke pre-prosessor-tekst.
+SDL-makroer er ikke pre-prosessor-tekst.
 
-De er navngitte semantiske kontrakter:
+De er /navn/ på domenebegreper rammeverket vårt forstår.
 
 #+ATTR_REVEAL: :frag (appear)
-- klassifikatoren *oppdager* dem
-- modellen *bærer* dem
-- generatoren *materialiserer* dem
+- *Connection.* Navigasjon.
+- *Edge.* Posisjon.
+- *PageInfo.* Kontroller.
+- *Facet.* Feedback.
 
 #+ATTR_REVEAL: :frag appear
-=@asConnection= kostet oss arkitektur-arbeid å etablere.
+Hvert begrep implementeres /én gang/, korrekt, av rammeverket.
 
 #+ATTR_REVEAL: :frag appear
-=@asFacet= koster nesten ingenting fordi sporet er lagt.
+Vi snakker om domenet vårt med presise navn — ikke om SDL-strenger.
 
 #+ATTR_REVEAL: :frag appear
 *Det er den ekte usability-vinningen.*
