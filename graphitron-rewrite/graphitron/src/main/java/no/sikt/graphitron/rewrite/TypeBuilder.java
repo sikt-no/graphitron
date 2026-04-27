@@ -299,10 +299,12 @@ class TypeBuilder {
         }
         TableRef tableRef = tableOpt.get();
 
-        // Platform-id synthesis — unconditional probe per the plan. Four branches on
-        // (has @node, has metadata); a fifth "metadata is malformed" surfaces here as
-        // UnclassifiedType regardless of @node presence, so consumers see the issue even when
-        // an SDL author tries to override with explicit @node values.
+        // Platform-id synthesis. The malformed-metadata diagnostic runs unconditionally so SDL
+        // authors see the issue even when they try to override values with explicit @node.
+        // Beyond that, NodeType promotion is opt-in via `implements Node @node`: a `@table` type
+        // without `@node` stays a TableType regardless of whether the backing jOOQ class carries
+        // node-id metadata. Auto-promoting on metadata alone silently collided typeIds across
+        // types whose backing tables shared `__NODE_TYPE_ID`, with no SDL-side opt-out.
         Optional<String> metadataDiagnostic = ctx.catalog.nodeIdMetadataDiagnostic(tableRef.tableName());
         if (metadataDiagnostic.isPresent()) {
             return new UnclassifiedType(name, location,
@@ -312,21 +314,8 @@ class TypeBuilder {
         Optional<JooqCatalog.NodeIdMetadata> metadata = ctx.catalog.nodeIdMetadata(tableRef.tableName());
 
         boolean hasNode = objType.hasAppliedDirective(DIR_NODE);
-        if (!hasNode && metadata.isEmpty()) {
-            return new TableType(name, location, tableRef);
-        }
         if (!hasNode) {
-            // Migration shim: metadata-carrying table promoted to NodeType without canonical
-            // `implements Node @node` in SDL. Fires a deprecation diagnostic per type; the shim
-            // is removed in R7 once consumers have finished migrating SDL. See plan-nodeid-
-            // directives.md "Migration".
-            String missing = implementsNode(objType) ? "@node" : "implements Node @node";
-            LOGGER.warn("table '{}' has KjerneJooqGenerator metadata but type '{}' is missing '{}'"
-                + " — synthesis shim will be removed in a future release; declare '{}' to opt into"
-                + " node-identity semantics explicitly. See graphitron-rewrite/roadmap/retire-nodeid-synthesis-shim.md",
-                tableRef.tableName(), name, missing, missing);
-            return new NodeType(name, location, tableRef, metadata.get().typeId(),
-                List.copyOf(metadata.get().keyColumns()));
+            return new TableType(name, location, tableRef);
         }
 
         // @node declared — the type must implement the Relay Node interface (id: ID!).
