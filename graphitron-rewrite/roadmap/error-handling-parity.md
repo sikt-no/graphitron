@@ -68,40 +68,92 @@ record Handler(
 ```
 
 Lift to a sealed interface so each variant carries exactly the fields it uses, and the emitter
-dispatches via exhaustive switch:
+dispatches via exhaustive switch. The variants are split by the **discriminator** the matcher
+keys off (not by vendor: vendor-named variants like `PostgresHandler` / `OracleHandler` bake
+brittle product names that don't fit MySQL/CockroachDB/Yugabyte cleanly):
 
 ```java
-sealed interface Handler permits DatabaseHandler, GenericHandler {
+sealed interface Handler permits ExceptionHandler, SqlStateHandler, VendorCodeHandler {
     Optional<String> matches();
     Optional<String> description();
 }
 
-record DatabaseHandler(
-    ClassName exceptionClass,    // resolved at classify time; defaults to DataAccessException per the directive grammar
-    Optional<String> sqlState,   // optional per directive: a `[{handler: DATABASE}]` entry with no sqlState/code is valid (databaseHandledError fixture)
-    Optional<String> code,
+record ExceptionHandler(
+    ClassName exceptionClass,        // resolved at classify time
     Optional<String> matches,
     Optional<String> description
 ) implements Handler {}
 
-record GenericHandler(
-    ClassName exceptionClass,    // resolved at classify time, not a String
+record SqlStateHandler(
+    String sqlState,                 // required (e.g. "23503"); Postgres / SQL-standard discriminator
+    Optional<String> matches,
+    Optional<String> description
+) implements Handler {}
+
+record VendorCodeHandler(
+    String vendorCode,               // required (e.g. "1" for ORA-00001); Oracle / vendor-specific discriminator
     Optional<String> matches,
     Optional<String> description
 ) implements Handler {}
 ```
 
-`exceptionClass` resolves the FQN to a `ClassName` at classify time. For `GenericHandler` the
-directive requires `className`. For `DatabaseHandler` it defaults to
-`org.jooq.exception.DataAccessException` per the directive's documented grammar
-(`directives.graphqls`); the rewrite continues to default it to that FQN to preserve schema
-parity, even though §3's runtime matcher no longer requires the exception to actually be a
-`DataAccessException` (see "Behaviour change vs legacy" below). If the class cannot be resolved
-on the classifier classpath, the parent `ErrorType` becomes `UnclassifiedType` with a descriptive
-reason (mirrors how `@record(record: {className: ...})` already validates Java reflection at
-build time).
+`SqlStateHandler` and `VendorCodeHandler` carry no `exceptionClass` field. They implicitly match
+any `SQLException` reachable in the cause chain (the rewrite's structural-match rule from §3's
+"Behaviour change vs legacy"). The legacy DATABASE handler's `className` defaulted to
+`DataAccessException` and was always defaulted in practice (no legacy fixture sets it
+explicitly), so dropping the field on these two variants sheds an unused string. Schema authors
+needing exception-class-narrowed SQL-state matching combine an `ExceptionHandler` and a
+`SqlStateHandler` as two separate channel entries; the dispatch ordering rule in §3 makes the
+intersection deterministic.
 
-`ErrorHandlerType` then collapses to a private discriminator, or disappears entirely.
+`ExceptionHandler.exceptionClass` is required and validated at classify time. If the class
+cannot be resolved on the classifier classpath, the parent `ErrorType` becomes
+`UnclassifiedType` with a descriptive reason (mirrors how `@record(record: {className: ...})`
+already validates Java reflection at build time).
+
+`ErrorHandlerType` (the legacy `DATABASE | GENERIC` enum) disappears from the model entirely.
+
+#### Parse-time lift from the legacy SDL grammar
+
+The SDL grammar stays byte-identical to legacy
+(`directive @error(handlers: [ErrorHandler!]!)` with `ErrorHandler { handler, className, code,
+sqlState, matches, description }`); existing schemas keep parsing. `TypeBuilder.parseErrorHandler`
+lifts each entry into one of the three model variants by inspecting which fields are present,
+and rejects combinations that are ambiguous or vendor-conflicting:
+
+| SDL entry                                              | Model variant                                |
+|--------------------------------------------------------|----------------------------------------------|
+| `{handler: GENERIC, className: "X"}`                   | `ExceptionHandler(X, ...)`                   |
+| `{handler: DATABASE, sqlState: "23503"}`               | `SqlStateHandler("23503", ...)`              |
+| `{handler: DATABASE, code: "1"}`                       | `VendorCodeHandler("1", ...)`                |
+| `{handler: DATABASE}` (no sqlState, no code)           | `ExceptionHandler(SQLException, ...)`        |
+
+Reject (each surfaces as `UnclassifiedType` with a descriptive reason, so the validator reports
+it at build time):
+
+1. **`GENERIC` without `className`**: the directive doc already requires it for GENERIC, but
+   the legacy generator silently produced an unmatched mapping. Reject explicitly.
+2. **`GENERIC` with `sqlState` or `code`**: these fields are not consulted on `GENERIC` in
+   legacy; the schema almost certainly meant DATABASE. Reject with a hint.
+3. **`DATABASE` with both `sqlState` and `code`**: vendor-conflicting. Postgres populates
+   `getSQLState()` and leaves `getErrorCode()` at 0; Oracle populates `getErrorCode()` and
+   leaves `getSQLState()` mostly stubbed. A handler ANDing both is unreachable in practice
+   (legacy `DataAccessMatcher.java:28-30` ANDs them silently). Reject and instruct the author
+   to split into two entries: a `SqlStateHandler` and a `VendorCodeHandler`.
+4. **`DATABASE` with a non-default `className`**: the rewrite's runtime no longer matches on
+   class identity for the SQL variants (§3 behaviour change), so a non-default `className`
+   has no effect and is misleading. Reject with a hint pointing at `GENERIC` for
+   class-narrowed matching.
+5. **Duplicate match-criteria across handlers in the same channel**: covered by the §3
+   classifier check; listed here so the parse-time rules are exhaustive.
+
+The DATABASE-with-no-discriminator case (last row of the lift table above) deserves a note:
+legacy's default `className` was `DataAccessException`, but the rewrite's runtime walks the
+cause chain for any `SQLException` (§3 behaviour change). The lift to
+`ExceptionHandler(SQLException)` makes the rewrite's actual semantic visible in the model
+rather than hidden in the runtime matcher. Schemas that relied on legacy's
+"DataAccessException-only" nominal match (rare; Spring-
+specific) get a documented behaviour shift, not a silent one.
 
 #### Field structural requirements on `@error` types
 
@@ -218,7 +270,7 @@ public final class ErrorRouter {
             Function<List<Object>, P> payloadFactory     // (errors) -> payload
     ) throws Throwable { ... }
 
-    public sealed interface Mapping permits DatabaseMapping, GenericMapping {
+    public sealed interface Mapping permits ExceptionMapping, SqlStateMapping, VendorCodeMapping {
         Object build(List<String> path, String message);  // constructs the @error instance
     }
 }
@@ -270,11 +322,17 @@ specific FK-violation `sqlState` before a generic `DataAccessException`) put the
 handler first.
 
 A classifier check rejects a channel that contains two handlers with **identical
-match-criteria** (same `exceptionClass`, same `sqlState`, same `code`, same `matches`) on
-different `@error` types: the second is unreachable and almost certainly an author mistake. A
-duplicate within a single `@error` type's `handlers` array is similarly rejected. This closes
-the legacy gap where duplicates were silently allowed
-(`ExceptionStrategyConfigurationGenerator.java:107-117`).
+match-criteria** on different `@error` types. The match-criteria tuple per variant:
+
+- `ExceptionHandler`: `(exceptionClass, matches)`
+- `SqlStateHandler`: `(sqlState, matches)`
+- `VendorCodeHandler`: `(vendorCode, matches)`
+
+Cross-variant collisions don't apply (an `ExceptionHandler` and a `SqlStateHandler` discriminate
+on different fields, so they can't have "identical" criteria). The second occurrence is
+unreachable and almost certainly an author mistake; a duplicate within a single `@error` type's
+`handlers` array is similarly rejected. This closes the legacy gap where duplicates were
+silently allowed (`ExceptionStrategyConfigurationGenerator.java:107-117`).
 
 #### Top-level handler
 
@@ -292,21 +350,20 @@ Consumer override path: the existing `Consumer<GraphQLSchema.Builder>` slot on
 
 #### Behaviour change vs legacy
 
-The rewrite drops the Spring `DataAccessException` requirement on the runtime side: a
-`DatabaseHandler` matches any cause-chain entry that exposes `getSQLState()` / `getErrorCode()`
-(i.e. any `SQLException`), not only one wrapped in a Spring `DataAccessException`. Two
-implications:
+The rewrite drops the Spring `DataAccessException` requirement on the runtime side:
+`SqlStateHandler` / `VendorCodeHandler` match any cause-chain entry that exposes
+`getSQLState()` / `getErrorCode()` (i.e. any `SQLException`), not only one wrapped in a Spring
+`DataAccessException`. Two implications:
 
 - A non-Spring app (which is the rewrite's primary target) gets database error mapping for
   free; legacy required `spring-jdbc` on the consumer classpath.
 - A Spring app where a `DataAccessException` wraps a `SQLException` continues to match because
   the chain walk reaches the inner `SQLException` regardless. The wrapping no longer matters.
 
-The `className` field on `DatabaseHandler` continues to default to
-`org.jooq.exception.DataAccessException` for SDL-parity, but the runtime match is structural
-(presence of `getSQLState()`) rather than nominal. This is documented in the non-goals section
-("Reverse-engineering DataAccessException") but the runtime semantic shift is worth flagging
-explicitly here so consumers writing schema for the rewrite understand the looser match.
+This is the runtime side of the parse-time lift in §1: `[{handler: DATABASE}]` (no
+discriminator) parses to `ExceptionHandler(SQLException)` rather than the legacy
+`DataAccessException`-nominal match. Consumers writing schemas for the rewrite see the looser
+match in the model variant the SDL lifts to, not just in the runtime behaviour.
 
 ### 4. `@service` checked exceptions fold into the same pipe
 
@@ -327,29 +384,35 @@ classifier rejection.
 
 #### Narrow-or-wide match rule
 
-A declared checked exception `T` matches an `ErrorChannel` `Handler` when `T` is assignable to
+For an `ExceptionHandler`, a declared checked exception `T` matches when `T` is assignable to
 the handler's `exceptionClass` (i.e. the handler is **wider or equal**, not narrower). This is
-the natural runtime semantic: a `DatabaseHandler(exceptionClass = DataAccessException)`
-catches a method declaring `throws SQLException` because at runtime any `SQLException` cause
+the natural runtime semantic: an `ExceptionHandler(exceptionClass = SQLException)` catches a
+method declaring `throws SQLDataException` because at runtime any `SQLException`-subclass cause
 in the chain matches via `isInstance`, but the inverse (a handler narrower than the declared
 exception) would let the runtime path slip past. Concretely: a method `throws Throwable` with
 no `Throwable`-wide handler in the channel is a build-time error.
+
+For `SqlStateHandler` / `VendorCodeHandler`, a declared `SQLException` (or any subclass)
+satisfies the channel because both variants match on any `SQLException` in the cause chain
+regardless of subclass. A declared exception that is *not* assignable to `SQLException` does
+not satisfy these variants (and is rejected unless the channel also carries an
+`ExceptionHandler` that is wider-or-equal).
 
 #### Special cases
 
 - **`InterruptedException`, `IOException` from non-database I/O.** These are usually
   infrastructure errors that should reach the top-level handler, not a typed `@error`. The
   rule above forces the schema to either (a) declare a wide handler (e.g. `Throwable`-wide
-  `GenericHandler`), which is usually wrong because it leaks infrastructure detail to clients,
+  `ExceptionHandler`), which is usually wrong because it leaks infrastructure detail to clients,
   or (b) wrap them in a domain exception in the service implementation. Document this in the
   spec; it's not
   load-bearing for the generator but is the prevailing pattern in real services.
 - **`IllegalArgumentException`.** Legacy
   (`SchemaBasedErrorStrategy.java:58-73`) treats `IllegalArgumentException` as a special arm,
   separate from the schema-mapped strategy. The rewrite folds it into the same pipe: an
-  `IllegalArgumentException` matches whichever channel includes a `GenericHandler` against it.
-  This is a behaviour simplification: legacy's separate arm exists only because its dispatch
-  was per-exception-type, not per-channel.
+  `IllegalArgumentException` matches whichever channel includes an `ExceptionHandler` against
+  it. This is a behaviour simplification: legacy's separate arm exists only because its
+  dispatch was per-exception-type, not per-channel.
 - **Unchecked `RuntimeException` thrown from non-`@service` code.** The same dispatch applies;
   the runtime cannot tell the difference between a checked and unchecked throw at the
   fetcher's boundary. The classifier check in this section gates only `@service` /
@@ -413,8 +476,10 @@ in-scope / out-of-scope, so the spec phase has a concrete checklist.
 - `default/`: single `@error` type with one `GENERIC` handler.
 - `databaseHandledError/`: `[{handler: DATABASE}]` with no sqlState/code (defaults to
   `DataAccessException`).
-- `databaseWithSqlState/`, `databaseWithCode/`, `databaseWithMatches/`: DATABASE handler with
-  each discriminator in turn.
+- `databaseWithSqlState/`, `databaseWithCode/`: DATABASE handler with sqlState / code in turn.
+  Lift to `SqlStateHandler` and `VendorCodeHandler` respectively per §1.
+- `databaseWithMatches/`: DATABASE handler with only `matches` (no sqlState, no code). Lifts to
+  `ExceptionHandler(SQLException, matches=...)` per §1's no-discriminator rule.
 - `bothGenericAndDatabase/`, `bothGenericAndDatabaseInMultipleErrorsForOneResponse/`: mixed
   handlers on the same / on different `@error` types in one channel.
 - `multipleHandlers/`, `unionMultipleHandlers/`: multiple handlers per `@error` type.
@@ -529,9 +594,11 @@ SDL alongside the mutation fixtures (mutations.md:457-465 closure).
   `ClassName` plus 3 optional Strings, and JVM constant-folding handles the array literals
   well).
 - **Fixture coverage.** The current `graphitron-test` schema has no `@error` types. Spec phase
-  needs to add at least one `@error` fixture exercising both `DatabaseHandler` (sqlState match
-  via a Sakila constraint violation; e.g. `23503` foreign-key on the `film_actor` link table)
-  and `GenericHandler` (developer-thrown business exception). The mutation-bodies fixture gap
+  needs to add at least three `@error` fixtures, one per Handler variant: a `SqlStateHandler`
+  (sqlState match via a Sakila constraint violation; e.g. `23503` foreign-key on the
+  `film_actor` link table), a `VendorCodeHandler` (any vendor-code-bearing fixture, even if
+  Postgres reports `0` at runtime; the parse-side classification is what's exercised), and an
+  `ExceptionHandler` (developer-thrown business exception). The mutation-bodies fixture gap
   closure (`mutations.md:457-465`) is the natural place to extend. The full fixture list to
   reproduce is in the "Legacy fixture coverage" section above.
 - **Phase ordering with `mutations.md`.** The author leans toward option (a) in the
