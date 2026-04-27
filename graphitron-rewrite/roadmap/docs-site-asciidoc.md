@@ -27,16 +27,17 @@ Out of scope:
 
 ## Why AsciiDoc, not Docusaurus / Jekyll / MkDocs
 
-- We're already a Maven shop. `asciidoctor-maven-plugin` slots into the reactor exactly like every other plugin we run; broken includes, dead xrefs, and missing assets fail `mvn install` the same way a compile error does.
+- We're already a Maven shop. `asciidoctor-maven-plugin` slots into the reactor exactly like every other plugin we run; broken includes, dead xrefs, and missing assets fail `mvn install` the same way a compile error does. (The rewrite reactor isn't currently built by any CI workflow; closing that gap is a Phase 1 deliverable, not a free side-effect of using Maven; see [CI integration](#ci-integration).)
 - AsciiDoc's technical-doc affordances (admonitions, includes, callouts on code blocks, automatic TOC, conditional sections) are a better fit for generator/codegen documentation than markdown.
-- GitHub renders `.adoc` natively in the web UI, so in-repo browsing is "good enough" without the Pages build (caveat: `include::` doesn't resolve in GitHub's preview; see "Authoring conventions" below).
+- GitHub renders `.adoc` natively in the web UI, so in-repo browsing works for plain prose. Caveats are real, though: GitHub's preview ignores `include::`, doesn't resolve `xref:` to other files, drops most attribute substitutions, and skips conditional blocks. Treat in-repo rendering as a fallback; the deployed site is canonical.
 - Single-source: no separate Node/JS toolchain, no separate repo, no separate CI, no separate review flow.
+- Authoring cost: `asciidoctor-maven-plugin` is JRuby-based and adds roughly 5-15 seconds of startup to a clean reactor build. Acceptable for CI; for local dev, see the `skip-docs` profile note in [Build wiring](#build-wiring).
 
 The light alternative considered and rejected was GitHub Pages' built-in Jekyll on plain markdown. It would be lower-touch (zero local build), but it lives outside the Maven build, so doc breakage doesn't fail CI; and it ties us to Jekyll's quirks if we ever want richer behaviour. Given the explicit "fold it into our workflow" goal, the Maven-integrated path wins.
 
 ## Module layout
 
-The Maven module lives at `/docs/` (repo root). Source files for the user-facing doc pages live directly at `/docs/<page>.adoc` for terminal/IDE discoverability: developers expect `cd repo && ls docs/` to work. The module is added to `graphitron-rewrite-parent`'s `<modules>` list as `<module>../docs</module>` (Maven supports relative `..` paths), so doc breakage fails the same `mvn install` that builds everything else.
+The Maven module lives at `/docs/` (repo root) with `<artifactId>graphitron-docs</artifactId>` (verified non-conflicting against the existing `graphitron`, `graphitron-rewrite-*`, and `graphitron-roadmap-tool` artifacts). Source files for the user-facing doc pages live directly at `/docs/<page>.adoc` for terminal/IDE discoverability: developers expect `cd repo && ls docs/` to work. The module is added to `graphitron-rewrite-parent`'s `<modules>` list as `<module>../docs</module>` (Maven supports relative `..` paths and emits a benign warning), so doc breakage fails the same `mvn install` that builds everything else.
 
 The build draws from multiple source directories (see [Content sources](#content-sources)) and stages them into one location before AsciiDoctor runs:
 
@@ -100,7 +101,7 @@ graphitron-rewrite/roadmap/              # AUTHORED, stays markdown
 - `${project.basedir}` → `target/staging/` (skip `pom.xml`, `target/`).
 - `${project.basedir}/../graphitron-rewrite/docs/` → `target/staging/architecture/` (every `.adoc` file).
 
-**2. `exec-maven-plugin` invoking `roadmap-tool` (process-resources, after the copy):** generate the rendered roadmap and plans into `target/staging/_generated/`. The existing `roadmap-tool` already reads `graphitron-rewrite/roadmap/*.md` to produce the GitHub README; this plan extends it (see [Roadmap, plans, and changelog rendering](#roadmap-plans-and-changelog-rendering) below) to additionally emit AsciiDoc output bound for the staged source tree.
+**2. `exec-maven-plugin` invoking `roadmap-tool` (process-resources, after the copy):** trigger `roadmap-tool` to emit AsciiDoc into its **own** `roadmap-tool/target/generated-adoc/` directory (a third command-line mode alongside the existing `generate` and `verify`), then a second `maven-resources-plugin` execution copies that directory into `target/staging/_generated/`. Each module writes only inside its own `target/`; the docs module never reaches into `roadmap-tool/target/`, only consumes its declared output. The reactor wiring guarantees ordering: `roadmap-tool` is listed as a build-scope `<dependency>` of the docs module, so Maven's reactor schedules it first.
 
 **3. `asciidoctor-maven-plugin` (compile):** read from `target/staging/`, write HTML to `target/generated-docs/`. Config:
 - `<sourceDirectory>${project.build.directory}/staging</sourceDirectory>`.
@@ -111,7 +112,24 @@ graphitron-rewrite/roadmap/              # AUTHORED, stays markdown
 
 Why staging instead of multi-source AsciiDoctor: `asciidoctor-maven-plugin`'s `<sourceDirectory>` accepts one path. Could be worked around with multiple `<execution>` blocks, but that fragments output handling and complicates cross-section `xref:`. Staging keeps AsciiDoctor's mental model of "one tree in, one tree out" intact.
 
+**`skip-docs` profile.** The AsciiDoctor execution is wrapped in a `<profile>` with `<activation><activeByDefault>true</activeByDefault></activation>` that's deactivated by `-P!docs` (or, equivalently, by activating a `skip-docs` profile via `-Pskip-docs`). Local dev loops that don't touch `.adoc` can opt out of the JRuby startup; CI always runs with the default profile so doc breakage is caught. Resources copy and roadmap-tool exec stay outside the profile (cheap, useful even when AsciiDoctor is skipped, and verifies that the staging tree is well-formed).
+
+**Errors-vs-warnings policy.** AsciiDoctor's `<logHandler>` is configured `<failIf><severity>WARN</severity></failIf>` so missing xrefs, missing includes, and unresolved attributes fail the build. We don't tolerate "warnings" in docs the way we sometimes do in compiler output: a missing xref *is* doc rot.
+
 The full `mvn -f graphitron-rewrite/pom.xml install -Plocal-db` command (per [`CLAUDE.md`](../CLAUDE.md)) keeps working unchanged; it just builds one extra module via the relative-path `<module>../docs</module>` entry in the rewrite parent pom.
+
+## CI integration
+
+Today neither GitHub Actions workflow in `.github/workflows/` builds the rewrite reactor: `maven-build.yml` runs `mvn ... --file pom.xml`, which is the **root** pom and only contains the legacy modules; `maven-publish.yml` runs on release-tag and also targets the root pom. So the rewrite reactor (and, by extension, the docs module added by this plan) is currently **not** verified in CI.
+
+Phase 1 closes this gap with a new workflow rather than retrofitting `maven-build.yml`:
+
+- **`.github/workflows/rewrite-build.yml`** (new): triggers on push and pull_request to both `main` and `claude/graphitron-rewrite`. Sets up JDK 25 (the rewrite floor; `maven-build.yml` is still on Java 21 for the legacy build), runs `mvn -f graphitron-rewrite/pom.xml verify -Plocal-db`. This is the workflow that catches doc breakage on PRs.
+- The existing `maven-build.yml` (legacy, Java 21) stays unchanged.
+
+This split is intentional: legacy and rewrite are different reactors with different Java floors and different test setups. Coupling them in one workflow has cost, separating them is closer to how they already work locally.
+
+The new docs-deploy workflow (`.github/workflows/deploy-docs.yml`, see [Deployment](#deployment)) is a third workflow, distinct again.
 
 ## Content sources
 
@@ -146,13 +164,18 @@ Asciidoctor's HTML structure is different enough from Docusaurus that a 1-to-1 s
 
 New workflow at `.github/workflows/deploy-docs.yml`:
 
-- Trigger: push to `main` (and manual `workflow_dispatch` for one-off republishes).
-- Job 1 (build):
+- **Trigger:** push to `claude/graphitron-rewrite` (the rewrite trunk; this is where the docs source actually lives) plus `workflow_dispatch` for manual republishes. Pull requests get *built* but not deployed; see [PR preview](#pr-preview) below. We do not trigger on `main` because the rewrite reactor is not on `main` today and merging the rewrite into `main` is a separate decision outside the scope of this plan. If/when that decision lands, this trigger updates in one line.
+- **Concurrency:** `concurrency: { group: "pages", cancel-in-progress: false }`, so two close-together pushes don't race the Pages API. Pages itself only accepts one in-flight deployment per environment.
+- **Permissions** (workflow scope, not job scope, so both jobs inherit): `contents: read`, `pages: write`, `id-token: write`.
+- **Job 1 (build):**
   - Checkout, set up JDK 25, cache `~/.m2`.
-  - Run `mvn -f graphitron-rewrite/pom.xml -pl :graphitron-docs -am package -Plocal-db` (the `-am` is mandatory per `CLAUDE.md`'s "footgun" note; `:graphitron-docs` selects by artifactId so the `../docs` path doesn't need to appear on the command line).
+  - Run `mvn -f graphitron-rewrite/pom.xml -pl :graphitron-docs -am package` (no `-Plocal-db`: with `-am` rooted at `:graphitron-docs`, the dependency closure is `roadmap-tool` only, never `graphitron-fixtures`, so the fixtures-jar footgun does not apply; adding `-Plocal-db` here would only slow the deploy down to no purpose).
   - Upload `docs/target/generated-docs/` as a Pages artifact via `actions/upload-pages-artifact`.
-- Job 2 (deploy): `actions/deploy-pages@v4`, depends on job 1.
-- Permissions: `pages: write`, `id-token: write`, scoped to this workflow only.
+- **Job 2 (deploy):** `actions/deploy-pages@v4`, depends on job 1.
+
+### PR preview
+
+Render quality should be observable before merge, not only after deploy. A separate workflow (`.github/workflows/preview-docs.yml`, or a job in `rewrite-build.yml`) builds the docs module on every PR that touches `/docs/**`, `/graphitron-rewrite/docs/**`, or `/graphitron-rewrite/roadmap/**` and uploads `target/generated-docs/` as a regular workflow artifact (not a Pages artifact, no deploy). Reviewers download and open `index.html` locally to spot-check; this is cheaper and lower-risk than per-PR Pages environments. We can revisit per-PR Pages environments later if download-and-open friction proves too high.
 
 Two-stage hosting:
 
@@ -160,12 +183,14 @@ Two-stage hosting:
 
 The `baseUrl` for Asciidoctor needs to reflect the `/graphitron/` subpath while we're on the default Pages URL (relative-only links in the AsciiDoc source avoid the issue; absolute internal links would need rewriting at cutover). Prefer `xref:` over raw URLs throughout.
 
-**At Phase 5 cutover:** Add `CNAME` containing `graphitron.sikt.no` to `/docs/`, configure the custom domain in GitHub Pages settings, flip DNS from Sikt K8s ingress to `sikt-no.github.io`, retire the GitLab CI pipeline, decommission the Sikt K8s deployment, archive the `alf/graphitron-landingsside` repo. Matomo analytics is reattached via a small `<script>` injected into the AsciiDoctor template, or dropped; the call happens here at cutover, not earlier.
+**At Phase 5a cutover:** Add `CNAME` containing `graphitron.sikt.no` to `/docs/`, configure the custom domain in GitHub Pages settings, flip DNS from Sikt K8s ingress to `sikt-no.github.io`, **pause** (do not dismantle) the GitLab CI pipeline and Sikt K8s deployment so rollback stays cheap. Matomo analytics is reattached via a small `<script>` injected into the AsciiDoctor template, or dropped; the call happens at 5a, not earlier.
+
+**At Phase 5b decommission** (only after a buffer window with a stable 5a deploy): tear down the K8s manifests, retire the GitLab CI pipeline, archive the `alf/graphitron-landingsside` repo.
 
 Repo-level setup (one-time, has to be done in GitHub UI by a maintainer, not by Claude):
 
 - **Phase 1:** Settings → Pages → Source: GitHub Actions.
-- **Phase 5:** Settings → Pages → Custom domain: `graphitron.sikt.no`, enforce HTTPS, plus DNS update on `sikt.no` to point `graphitron` → `sikt-no.github.io`.
+- **Phase 5a:** Settings → Pages → Custom domain: `graphitron.sikt.no`, enforce HTTPS, plus DNS update on `sikt.no` to point `graphitron` → `sikt-no.github.io`.
 
 ## Content migration
 
@@ -282,26 +307,33 @@ This plan touches the conventions documented in [`workflow.md`](../docs/workflow
 - **`.md` → `.adoc` ripple in `CLAUDE.md`.** Phase 2 deletes the `/graphitron-rewrite/docs/*.md` files. `CLAUDE.md` currently links to several of those (`workflow.md`, `claude-code-web-environment.md`, etc.). The Phase 2 commit `git grep`s for every reference and rewrites them to the new `.adoc` paths. Same applies to inter-doc references inside the docs themselves.
 - **Documentation site reference.** `CLAUDE.md` gains a brief "Documentation site" section noting that `/docs/` is the source for `graphitron.sikt.no`, that `/graphitron-rewrite/docs/` and the roadmap also render there, and that doc changes ship through the same trunk-based flow as code.
 - `workflow.md`'s "Plans with a user-visible surface" rule already mandates that user-facing changes include a draft of the user docs in the plan. Once this site is live, that rule binds against `/docs/` (the draft moves into the real page when the feature ships). `workflow.md` itself stays authoritative for plan-file conventions; the rendered version on the site is the same content.
-- The existing `.github/workflows/maven-build.yml` doesn't need to change; it already builds the full reactor, and the docs module is part of that via the relative-path `<module>../docs</module>` entry.
+- The existing `.github/workflows/maven-build.yml` is the **legacy** reactor's CI (builds the root pom only, JDK 21). It stays unchanged. The new `rewrite-build.yml` (added in Phase 1) is what verifies the rewrite reactor and, by extension, the docs module on PR. See [CI integration](#ci-integration).
 
 ## Phases
 
-Five phases, each with an observable end state on a real URL. Each phase is independently shippable and trunk-bound; nothing in a later phase reaches back into an earlier one.
+Six phases (Phase 5 split into 5a cutover and 5b decommission), each with an observable end state on a real URL or in deployed infrastructure. Each phase is independently shippable and trunk-bound; nothing in a later phase reaches back into an earlier one.
 
 ### Phase 1: Pipeline (skeleton site, deployed to default Pages URL)
 
 End state: `https://sikt-no.github.io/graphitron/` serves a one-page AsciiDoc site built by `mvn install`, styled with SDS tokens, deployed by the new GitHub Action. The live `graphitron.sikt.no` continues to serve the old Docusaurus build, untouched. The page is a placeholder ("Documentation is being migrated") but the build, SDS bundling, deploy, and the visual identity all work end-to-end on the deployed Pages URL.
 
+Pre-Phase-1 verification (no code changes; do once before opening the Phase 1 PR):
+
+- Confirm `@sikt/sds-core` and `@sikt/sds-button` licenses permit vendoring into a public OSS repo. If unclear, ask SDS team.
+- Identify the maintainer who can flip Pages Source = GitHub Actions on `sikt-no/graphitron`.
+
 Deliverables:
 
-- `/docs/pom.xml` (asciidoctor-maven-plugin + maven-resources-plugin staging copy from `/docs/` only; no `architecture/` or `_generated/` yet).
+- `/docs/pom.xml` (asciidoctor-maven-plugin + maven-resources-plugin staging copy from `/docs/` only; no `architecture/` or `_generated/` yet; `skip-docs` profile wrapping the asciidoctor execution; `<failIf><severity>WARN</severity></failIf>` configured).
 - `graphitron-rewrite/pom.xml` updated `<modules>` list (adds `<module>../docs</module>`).
 - `/docs/index.adoc` (placeholder content).
 - `/docs/README.adoc` (replaces existing `/docs/README.md`; GitHub-rendered landing for the directory).
 - `/docs/css/sds-tokens.css`, `sds-button.css` (vendored from `@sikt/sds-core`, `@sikt/sds-button`, dated comment with source version).
 - `/docs/css/site.css` (initial port of `siktifisert.css` patterns onto AsciiDoctor classes).
 - Logo and favicon copied into `/docs/images/`.
-- `.github/workflows/deploy-docs.yml`.
+- `.github/workflows/rewrite-build.yml` (new; verifies the rewrite reactor including the docs module on push and PR to `main` and `claude/graphitron-rewrite`; uses JDK 25; `mvn -f graphitron-rewrite/pom.xml verify -Plocal-db`). This closes the existing CI gap noted in [CI integration](#ci-integration).
+- `.github/workflows/deploy-docs.yml` (new; deploys on push to `claude/graphitron-rewrite`; concurrency `pages`).
+- `.github/workflows/preview-docs.yml` (new; or a job in `rewrite-build.yml`; uploads `target/generated-docs/` as a workflow artifact on PRs touching docs paths).
 - `CLAUDE.md` scope-rule update: extend AI scope to include `/docs/` with a one-line note.
 - One-time GitHub Pages settings change: enable Pages, source = GitHub Actions (manual, by a maintainer; no custom domain yet).
 
@@ -352,24 +384,57 @@ Deliverables:
 
 Verification: the deployed Roadmap page reflects current `graphitron-rewrite/roadmap/*.md` contents; flipping an item's `status:` and pushing causes the next deploy to show the new status.
 
-### Phase 5: Cutover (custom domain, retire old infra)
+### Phase 5a: Cutover (custom domain flip, old infra still warm)
 
-End state: `https://graphitron.sikt.no/` serves the new Maven-built AsciiDoc site from GitHub Pages. The old Sikt K8s deployment is decommissioned. The `alf/graphitron-landingsside` repo is archived with a README pointing here.
+End state: `https://graphitron.sikt.no/` serves the new Maven-built AsciiDoc site from GitHub Pages. The old Sikt K8s deployment and GitLab CI are paused but **still rebuildable** for a defined buffer window. The `alf/graphitron-landingsside` repo is **not yet** archived.
 
-Deliverables:
+Deliverables (Claude-side, in this repo):
 
-- Add `/docs/CNAME` containing `graphitron.sikt.no`, configure custom domain in Pages settings, enforce HTTPS.
-- DNS update: `graphitron.sikt.no` → `sikt-no.github.io` (Sikt platform / DNS team).
-- Matomo decision: reattach via `<script>` injection in the AsciiDoctor template, or drop. Either way decided here at cutover; a small follow-up roadmap item lands if reattaching.
-- Decommission: stop the GitLab CI pipeline on `alf/graphitron-landingsside`, scale K8s deployment to 0, remove the K8s Deployment/Service/Ingress, archive the repo with a redirect README.
+- Add `/docs/CNAME` containing `graphitron.sikt.no`.
 - Update root `README.md` to keep the "Online documentation" link (URL doesn't change).
+- Matomo decision: reattach via `<script>` injection in the AsciiDoctor template, or drop. Whatever's decided lands as part of this phase; a small follow-up roadmap item is fine if reattaching turns into more than a 5-line edit.
 
-Verification: hit `https://graphitron.sikt.no/`, confirm HTTPS valid, confirm content matches Phase 4 deploy.
+Deliverables (Sikt platform / DNS team, coordinated, **not** Claude-driven):
+
+- Configure custom domain in repo Pages settings (Settings → Pages → Custom domain: `graphitron.sikt.no`, enforce HTTPS). Requires repo admin.
+- DNS update on `sikt.no`: `graphitron` → `sikt-no.github.io`.
+- **Pause** (don't dismantle) the GitLab CI pipeline and scale the Sikt K8s deployment to 0. Keep the manifests so a redeploy is one `kubectl apply` away.
+
+Buffer window: at least one full working week with the new site live. Watch for broken links, missing pages, regressions, Matomo data discontinuities, and any internal Sikt links that turn out to point at old-site paths the new site doesn't have.
+
+Verification: hit `https://graphitron.sikt.no/`, confirm HTTPS valid, confirm content matches Phase 4 deploy, run an external-link checker against the deployed site.
+
+**Rollback during 5a:** flip DNS back; bring K8s deployment back to its prior replica count; the old site is again serving. The new site continues to live at `sikt-no.github.io/graphitron/` while the issue is investigated.
+
+### Phase 5b: Decommission
+
+End state: the old Sikt K8s deployment is gone, `alf/graphitron-landingsside` is archived with a README pointing here, and the cutover is irreversible-by-default.
+
+Preconditions: Phase 5a's buffer window has elapsed without rollback; site is stable; no outstanding issues attributed to the cutover.
+
+Deliverables (Sikt platform team):
+
+- Remove the K8s Deployment/Service/Ingress objects.
+- Decommission the GitLab CI pipeline.
+
+Deliverables (Claude-driven, in `alf/graphitron-landingsside`):
+
+- Add a redirect README pointing to `https://graphitron.sikt.no/`.
+- Archive the repo (a maintainer action; not done by Claude).
+
+Verification: GitLab pipeline shows no recent runs; K8s namespace is clean; archived repo's README displays the redirect.
 
 ## Open questions for the reviewer
 
-None. Both prior open questions resolved:
-- Matomo: reattach-vs-drop decision lives inside Phase 5 cutover, not pre-blocking.
+These are not pre-blockers (Phases 1-4 can proceed without resolving them), but they need answers before Phase 5a:
+
+- **SDS license.** Vendoring `@sikt/sds-core` and `@sikt/sds-button` into `/docs/css/` requires the package licenses to permit redistribution as part of an OSS repo. Confirm with the SDS team. If proprietary, fall back to the CDN approach or re-evaluate.
+- **Repo Pages settings ownership.** Who can flip Pages Source = GitHub Actions on `sikt-no/graphitron`? Same person needed for the Phase 5a custom-domain step. Identify them at Phase 1 so 5a doesn't stall on access.
+- **DNS team coordination at Sikt.** Phase 5a depends on a `sikt.no` DNS update. Lead time? Change-management process? Identify the contact at Phase 1; queue the ticket at Phase 4.
+- **Branch source-of-truth for the docs site.** Plan deploys from `claude/graphitron-rewrite` (the rewrite trunk). When/if rewrite merges to `main`, the deploy trigger updates with it. No action needed today; flagged so the eventual merge doesn't surprise anyone.
+- **Matomo continuity.** Phase 5a-resolvable; flagged here so we're not surprised. If continuity-of-data matters, reattaching has to happen *at* cutover, not after, otherwise we get a gap.
+
+Resolved (no longer open):
 - Claude-internal docs: `claude-code-web-environment.md` moves to `.claude/web-environment.md`, not published.
 
 ## Risks and mitigations
@@ -377,8 +442,9 @@ None. Both prior open questions resolved:
 - **SDS is published as npm packages, not a public CDN.** Vendoring sidesteps this for the build; the residual risk is the vendored copy goes stale if SDS releases break compatibility. Mitigation: dated comment at the top of each vendored file noting `package@version` and source date; refresh as a roadmap item on SDS major releases.
 - **Default Asciidoctor styling looks dated.** Mitigation: that's exactly what `site.css` solves by porting the SDS-token usage from `siktifisert.css`. Phase 1 verifies the branding looks right *before* later phases pile content on top.
 - **The Maven build now fails when docs are broken.** Intent (catch rot in CI), but a typo in `.adoc` blocks a release. Mitigation: AsciiDoc errors-vs-warnings is configurable in the plugin; start with "fail on error, warn on missing xref" until settled, then tighten.
-- **Phase 5 DNS cutover requires Sikt platform / DNS team coordination.** Mitigation: Phases 1-4 are entirely independent of DNS; the new site is fully styled and content-complete on `sikt-no.github.io/graphitron/` before the cutover ticket is even raised. The cutover itself is then a single coordinated change.
-- **Matomo loss.** If we drop Matomo at Phase 5 cutover we lose continuity in usage data. Mitigation: the decision lives inside Phase 5; reattaching is a 5-line `<script>` injection in the AsciiDoctor template, dropping is the trivial alternative.
+- **Phase 5a DNS cutover requires Sikt platform / DNS team coordination.** Mitigation: Phases 1-4 are entirely independent of DNS; the new site is fully styled and content-complete on `sikt-no.github.io/graphitron/` before the cutover ticket is even raised. Identify the DNS contact at Phase 1 so Phase 4 can queue the ticket.
+- **Cutover loses rollback once K8s is decommissioned.** Mitigation: Phase 5 is split into 5a (DNS flip with K8s paused but warm) and 5b (decommission after a buffer window). Rollback during 5a is a DNS reversal plus a `kubectl scale`.
+- **Matomo loss.** If we drop Matomo at Phase 5a cutover we lose continuity in usage data. Mitigation: the decision lives at 5a (not later); reattaching is a 5-line `<script>` injection in the AsciiDoctor template, dropping is the trivial alternative. Either way it's chosen *at* the cutover, so there's no analytics gap.
 - **Subpath base URL during Phases 1-4.** While on `sikt-no.github.io/graphitron/`, absolute internal links break. Mitigation: enforce `xref:` and relative-path links in the authoring conventions, and configure Asciidoctor `:imagesdir: images` so image paths stay relative.
 - **Markdown→AsciiDoc conversion in `roadmap-tool` produces ugly output for some plans.** Mitigation: option-1 pass-through is the cheap default; if specific plans render poorly, escalate that one to option-2 library conversion or hand-tune the source `.md`. Plans deleted on Done means bad-render risk has a short half-life.
 - **Convert-and-delete of `/graphitron-rewrite/docs/*.md` breaks every existing inbound link.** Mitigation: Phase 2's CLAUDE.md update step is mandatory, not optional; grep the repo for the old `.md` paths and update all hits in the same PR.
@@ -386,7 +452,7 @@ None. Both prior open questions resolved:
 
 ## Roadmap entries
 
-- This file (`docs-site-asciidoc.md`): keep through all five phases. Collapse each phase to a "shipped at `<sha>`" note when it lands; remove the file when Phase 5 lands and the cutover is verified.
+- This file (`docs-site-asciidoc.md`): keep through all phases (1, 2, 3, 4, 5a, 5b). Collapse each phase to a "shipped at `<sha>`" note when it lands; remove the file when 5b lands and the cutover is verified.
 - Spinoff (Backlog, to be created when Phase 1 lands): **`refresh-sds-vendored-css.md`**, periodic refresh of the vendored SDS CSS files on SDS major releases. Low priority, low effort.
 - Spinoff (Backlog, possible after Phase 4 lands): **`roadmap-public-flag.md`**, opt-in `public: true` front-matter flag to filter which roadmap items appear on the site. Only worth doing if max-transparency proves too noisy in practice.
 - Other spinoffs may surface during Phases 2-3 (e.g., client-side search, versioned docs, autogenerated integration-tests page from real test sources); add them as Backlog when they appear, don't pre-spec.
