@@ -145,10 +145,25 @@ graphql-java's registry build sees it. Walking the parsed document
 the messages) gives us stable structured access to directive use sites
 without coupling to graphql-java's error wording.
 
+**Refactor required.** `RewriteSchemaLoader.load(...)` today inlines
+parse-then-build (`new Parser().parseDocument(...)` followed by
+`new SchemaParser().buildRegistry(document)`), with no hook between the
+two. Split this so callers can interpose: either expose
+`parseDocument(...)` and `buildRegistry(Document)` as separate public
+methods, or accept a `Consumer<Document>` preflight callback the
+loader runs before `buildRegistry`. Either shape keeps the source-name
+attribution and `MultiSourceReader.trackData(true)` plumbing intact.
+Failing the refactor and re-parsing in the preflight is also workable
+but wastes the work and is not the recommended path.
+
 **Federation directive catalogue:** baked-in `Set<String>` covering the
 v2.6 set: `key`, `requires`, `provides`, `external`, `shareable`,
 `inaccessible`, `override`, `tag`, `composeDirective`, `interfaceObject`,
-plus `link` itself.
+plus `link` itself. Phase 1 owns the catalogue *and* the canonical
+`DirectiveDefinition` table referenced from the diagnostic message
+below; Phase 2 reads the same table for injection. Centralising both
+in a single `FederationDirectives` collaborator (under
+`schema/input/`) keeps the two phases consistent.
 
 **Detection rule.** For each directive *use* in the parsed document:
 1. If the directive name is in the federation catalogue, *and*
@@ -157,8 +172,9 @@ plus `link` itself.
 3. the document does not contain `@link(import: [..., "@<name>", ...])`
    (textual or by-AST presence; tolerant to the `as` rename),
 
-emit a `ValidationError` keyed on the use site's `SourceLocation` with
-message:
+emit a `ValidationError(RejectionKind.AUTHOR_ERROR, "<Type>.<field>"
+or "<Type>" or null, <message>, <use-site location>)` with
+the message:
 
 ```
 Federation directive '@<name>' is not declared. Pick one:
@@ -170,17 +186,22 @@ Federation directive '@<name>' is not declared. Pick one:
 See graphitron-rewrite/docs/getting-started.md#build-time-federation-directives.
 ```
 
-The `<args>` / `<repeatable>` / `<locations>` are filled from the same
-canonical-declaration table Phase 2 will use to inject. Centralising
-the table here keeps Phase 2's injection a one-liner per directive.
+The `<args>` / `<repeatable>` / `<locations>` are filled from the
+canonical-declaration table this phase introduces (see catalogue
+note above); Phase 2's injection is then a one-liner per directive
+against the same table.
 
-**Hook site:** `GraphQLRewriteGenerator.loadAttributedRegistry` runs
-parse → applier passes → registry build. Insert the preflight scan
-between parse and registry build. If any federation diagnostic fires,
-collect *all* of them, then short-circuit with
-`ValidationFailedException` carrying the structured list. Today the
-loader throws on the first graphql-java error; the preflight gives a
-complete list to a migrating consumer in one go.
+**Hook site:** `GraphQLRewriteGenerator.loadAttributedRegistry` today
+runs `RewriteSchemaLoader.load(...)` (parse + registry build in one
+call) → `TagApplier.apply(...)` → `DescriptionNoteApplier.apply(...)`.
+After the `RewriteSchemaLoader` refactor above, the new sequence is
+`parse → preflight (Phase 1) → buildRegistry → appliers`. If any
+federation diagnostic fires, collect *all* of them, then short-circuit
+with `ValidationFailedException` carrying the structured list. Today
+graphql-java's `SchemaParser.buildRegistry` throws a `SchemaProblem`
+on the first undeclared-directive error; the preflight gives a
+complete list to a migrating consumer in one go before that throw
+ever fires.
 
 **Tests.**
 - `FederationDiagnosticsTest`: SDL with `@key` use, no declaration, no
@@ -259,17 +280,32 @@ non-goal (see below).
 1. For each imported directive, look up the canonical `DirectiveDefinition`.
 2. If `as` was present, rename the definition's `name` to the alias.
 3. If the registry already declares the (possibly aliased) directive,
-   skip injection and emit a
-   `ValidationError("@link imports '@<name>' but the schema also
-   declares 'directive @<name>'; remove one")`. Mixing the two paths
-   on a single directive is the open-decision default below.
+   skip injection and emit
+   `ValidationError(RejectionKind.AUTHOR_ERROR, null,
+   "@link imports '@<name>' but the schema also declares 'directive
+   @<name>'; remove one", <@link-application location>)`. Mixing the
+   two paths on a single directive is the open-decision default below.
 4. Otherwise add the declaration via `registry.add(...)`. Surface any
-   graphql-java error from `add()` as `ValidationError`.
+   graphql-java error from `add()` as a `ValidationError` with
+   `RejectionKind.INVALID_SCHEMA` (the registry refused a structurally
+   valid declaration; not an author-correctable name fix).
+
+**Alias scope.** `as` renames the directive itself; supporting types
+referenced from its argument list (e.g. `link__Import`,
+`link__Purpose`) are *not* renamed. Federation's spec mandates this:
+imports rename only the directive. The injection therefore aliases the
+top-level `DirectiveDefinition`'s `name` and leaves `Type` references
+inside `inputValueDefinition`s untouched.
 
 **`@link` itself.** The federation `@link` directive is also a
 declaration the registry needs. The applier injects its declaration
-unconditionally on detection, before processing the `import` array.
-Federation's `link` declaration is well-known:
+on detection, before processing the `import` array, *unless* the
+schema already declares `directive @link(...)` itself. In that case
+skip injection silently (the author has taken responsibility for the
+declaration); no `ValidationError`, since the redeclaration conflict
+rule for imported directives doesn't apply to `@link` itself (it is
+not in the `import` array). Federation's `link` declaration is
+well-known:
 
 ```graphql
 directive @link(url: String!, as: String, for: link__Purpose,
@@ -321,6 +357,15 @@ process it normally; one code path handles both
 "author wrote `@link`" and "we synthesised `@link`," with no
 special-case branch in the federation directive injection logic.
 
+**Source attribution for the synthesised extension.** The plugin emits
+the synthesised `SchemaExtensionDefinition` with a sentinel
+`SourceLocation` of `("<graphitron-synthesised:tag-link>", 1, 1)`.
+That keeps `MultiSourceReader.trackData(true)`'s round-trip happy and
+gives any downstream error message that points at the synthesised
+extension a stable, unmistakably-non-user source name. Existing
+attribution in `TagApplier` / `DescriptionNoteApplier` keys on
+authored sources only; the sentinel name does not collide.
+
 The hard error on `@link`-without-`"@tag"`-import is the explicit-author
 counterpart to the auto-inject: an author who has chosen to declare
 `@link` themselves has taken control of the federation surface, so a
@@ -371,10 +416,13 @@ stub generator branch all delete.
 **Trigger condition.** The post-step runs iff Phase 2 detected a valid
 federation `@link`. Non-federation consumers do not pay for the
 `Federation.transform` rebuild (which walks the full schema). Carry
-the boolean from `loadAttributedRegistry` to
-`GraphitronSchemaBuilder.buildBundle` via a new field on
-`RewriteContext` (or on the bundle, depending on phase ordering with
-the LSP work).
+the boolean on `GraphitronSchemaBuilder.Bundle` (the existing
+`record Bundle(GraphitronSchema model, GraphQLSchema assembled)`
+extends to a third `boolean federationLink` component). `RewriteContext`
+is the wrong carrier: it is constructed once by the Mojo before any
+parsing happens, while the federation-link bit is derived from the
+parsed schema. The bundle already pairs classifier output with the
+assembled schema and is the natural place for parsing-derived flags.
 
 **Wiring.** In `GraphitronSchemaClassGenerator` (or a new
 `FederationPostStep` co-located with the generator), after the base
@@ -437,6 +485,15 @@ The two-arg form is additive: the federation builder is pre-configured
 with Graphitron's resolvers, and the consumer adds or overrides on top.
 Single-arg call sites stay unchanged.
 
+**Facade generator change.** `Graphitron.buildSchema(...)` is emitted
+by `GraphitronFacadeGenerator`. Adding the two-arg overload requires a
+second `MethodSpec` in that generator and a corresponding
+`build(Consumer, Consumer)` overload on `GraphitronSchemaClassGenerator`.
+The customizer-contract javadoc on the existing one-arg method covers
+the schema builder; the new overload's javadoc enumerates the
+federation builder's contract (additive only on `fetchEntities` /
+`resolveEntityType`; do not call `.build()` from the customizer).
+
 **Tests.**
 - Pipeline: SDL with `extend schema @link(...federation/v2.6,
   import: ["@key"])` and a `Foo @key(fields: "id")` type emits a
@@ -451,6 +508,14 @@ Single-arg call sites stay unchanged.
   replaces the default fetcher; the override actually fires.
 - Determinism: `IdempotentWriterTest`-style ratchet over the federated
   schema's printed SDL across two runs.
+- Non-federation regression guard: pipeline test on a schema with no
+  `@link` returns the exact base `GraphQLSchema` reference (assert
+  `schema == base`); confirms the post-step is skipped, not just
+  benign.
+- Multi-key: a `Foo @key(fields: "id") @key(fields: "sku")` type
+  resolves both `_entities([{__typename: "Foo", id: "1"}])` and
+  `_entities([{__typename: "Foo", sku: "X"}])`; the fetcher dispatches
+  on the *set* of provided fields, not just `__typename`.
 
 ## Non-goals
 
@@ -458,10 +523,15 @@ Single-arg call sites stay unchanged.
   The legacy `<removeFederationDefinitions>` flag carried this; the
   rewrite drops it. Consumers on Federation 1 must migrate to v2's
   `@link` form before adopting this plan.
-- **Federation v2.7+ directives** (`@policy`, `@authenticated`,
-  `@requiresScopes`, `@cost`, `@listSize`). Add to the canonical
-  declaration table when a consumer needs them; the table extension
-  is mechanical.
+- **Authorisation and cost directives** that ship as part of v2.5+ /
+  v2.6 / v2.9 of the spec (`@authenticated`, `@requiresScopes`,
+  `@policy`, `@cost`, `@listSize`, plus progressive override's
+  `label`). The canonical-declaration table pins the v2.6 *core*
+  federation set listed in Phase 2; these additional directives are
+  not in the table for this round even though some are technically
+  v2.6. Add them when a consumer needs them; the table extension is
+  mechanical, and Phase 2's "unknown federation import" diagnostic
+  will name the missing entry today.
 - **`@composeDirective` runtime support** beyond the directive
   declaration. Composing custom directives across subgraphs is a
   supergraph concern, handled by the gateway, not this subgraph.
@@ -497,12 +567,6 @@ Single-arg call sites stay unchanged.
   consumers but adds a code path that is only exercised by an
   intermediate migration state. Lean toward the default; reconsider if
   a real consumer surfaces stuck halfway through migration.
-- **Where the federation-link bit lives.** `RewriteContext` is the
-  natural carrier (it already threads through the pipeline) but the
-  bit is derived from the parsed schema, not from plugin
-  configuration. Alternative: a field on the bundle returned from
-  `loadAttributedRegistry`. Pick whichever lands cleanly in
-  implementation; either is acceptable.
 - **Phase 2: hard error vs warning when `@link` is declared without
   `"@tag"` in imports and `<schemaInput tag>` is set.** Default:
   fatal `ValidationError`, since an explicit `@link` declaration is
