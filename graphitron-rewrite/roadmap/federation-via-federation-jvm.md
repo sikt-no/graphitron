@@ -94,6 +94,14 @@ final wording moves into the doc when the relevant phase ships.
 >
 > Mixing the two on the same directive (importing via `@link` and
 > redeclaring it) fails validation; pick one per directive.
+>
+> **`<schemaInput tag>` is federation-specific.** If you set
+> `<schemaInput><tag>...</tag></schemaInput>` in the plugin config,
+> the resulting `@tag(name: "...")` directives are only meaningful to
+> a federation gateway. The build emits a warning if you use
+> `<tag>` without importing `@tag` via Option 1; add `"@tag"` to your
+> `@link` import list to clear the warning. Option 2 (manual
+> `directive @tag` declaration) also clears the warning.
 
 ### `_entities` (replacement for the existing `## Federation` snippet)
 
@@ -275,6 +283,53 @@ enum link__Purpose { SECURITY EXECUTION }
   `ValidationError("unknown federation import: '@madeUp'; supported
   imports are: @key, @shareable, ...")`.
 
+**`<schemaInput tag>` without federation `@tag` import.**
+
+`<schemaInput tag>` config emits `@tag(name: "...")` directives. `@tag`
+is inherently a federation construct: only a federation gateway
+consumes the resulting tags. Consumers using `<schemaInput tag>`
+should opt in to Apollo Federation 2 by importing `@tag` via `@link`,
+not rely on the auto-injected declaration. Auto-importing on the
+consumer's behalf is too invasive (it commits the entire schema to
+Federation 2 semantics from one config string), so this phase emits
+a friendly `BuildWarning` instead.
+
+Detection rule. After `FederationLinkApplier` runs, if any
+`SchemaInput.tag().isPresent()` *and* no detected `@link` has `"@tag"`
+in its import list (under any alias), emit one `BuildWarning` keyed
+on the schema's `SourceLocation` (or a synthetic location naming the
+plugin config when the schema declaration is absent):
+
+> `<schemaInput tag>` is configured but federation `@tag` is not
+> imported via `@link`. Recommended: add
+> `extend schema @link(url:
+> "https://specs.apollo.dev/federation/v2.6", import: ["@tag"])` to
+> one of your schema files. The auto-injected `@tag` declaration is a
+> compatibility fallback and may be deprecated in a future release.
+
+Single warning, not per-tagged-input: the action is the same regardless
+of how many tagged inputs the consumer has.
+
+`TagApplier`'s auto-injection of `@tag` (`TagApplier.java:264-298`)
+remains the fallback during this phase so existing non-federation
+consumers continue to work unchanged. Once the consumer adopts
+`@link(import: ["@tag"])`, federation's declaration takes precedence
+via the existing "skip if already declared" guard at
+`TagApplier.java:265`. Whether the auto-injection eventually deletes is
+listed under Open decisions.
+
+Tests:
+- `<schemaInput tag>` set, no `@link` declaration in SDL: warning fires,
+  exactly one entry in `BuildWarning` list, message names
+  `extend schema @link(...)`.
+- `<schemaInput tag>` set, SDL has `@link(import: ["@tag"])`: no
+  warning.
+- `<schemaInput tag>` set, SDL has `@link(import: [{name: "@tag", as:
+  "@maturity"}])`: no warning (alias respected; `@maturity` is the
+  in-scope name).
+- `<schemaInput tag>` *not* set, regardless of `@link`: no warning.
+- Two tagged inputs, no `@link`: still one warning, not two.
+
 ### Phase 3 — `_entities` runtime wiring + `QueryEntityField` removal
 
 **Goal:** `Federation.transform` runs as a post-step inside
@@ -418,3 +473,13 @@ Single-arg call sites stay unchanged.
   configuration. Alternative: a field on the bundle returned from
   `loadAttributedRegistry`. Pick whichever lands cleanly in
   implementation; either is acceptable.
+- **Future of `TagApplier`'s auto-injected `@tag` declaration.** Phase
+  2's warning steers consumers toward `@link(import: ["@tag"])`.
+  Once that path is the documented norm, the auto-injection is dead
+  code: every consumer either imports `@tag` via `@link`, declares it
+  manually, or accepts the warning indefinitely. Default position:
+  keep the auto-injection through this plan and revisit deletion in a
+  follow-up plan once consumer telemetry shows the warning rate has
+  decayed. Alternative: escalate the warning to a `ValidationError`
+  in a later phase and delete the auto-injection in the same commit.
+  Reviewer to confirm preferred trajectory.
