@@ -111,7 +111,11 @@ cannot be resolved on the classifier classpath, the parent `ErrorType` becomes
 `UnclassifiedType` with a descriptive reason (mirrors how `@record(record: {className: ...})`
 already validates Java reflection at build time).
 
-`ErrorHandlerType` (the legacy `DATABASE | GENERIC` enum) disappears from the model entirely.
+`ErrorHandlerType` (the legacy `DATABASE | GENERIC` enum at
+`no.sikt.graphitron.rewrite.model.ErrorHandlerType`) and the legacy-shape `Handler` record at
+`GraphitronType.java:202-209` are deleted in the same edit that lands the sealed hierarchy.
+Validators and any in-tree references update in lockstep; otherwise the build breaks before
+the new shape compiles.
 
 #### Parse-time lift from the legacy SDL grammar
 
@@ -168,6 +172,12 @@ match the legacy `Error` GraphQL-interface contract that every legacy fixture un
 The validator rejects an `@error` type that lacks either field with a clear message; emission
 in §3 then assumes both are present, matching the load-bearing-classifier-check pattern in
 [`rewrite-design-principles.md`](../docs/rewrite-design-principles.md#classifier-guarantees-shape-emitter-assumptions).
+This is a [load-bearing classifier check](../docs/rewrite-design-principles.md#classifier-guarantees-shape-emitter-assumptions):
+the producer (the §1 structural check on `@error` field shape) wears
+`@LoadBearingClassifierCheck(key = "error-type.path-message-fields", ...)` and the consumer
+(§3's `ErrorRouter.dispatch` payload-factory call site, which constructs
+`new SomeError(path, message)` against the developer-supplied two-arg constructor) wears
+`@DependsOnClassifierCheck` with the same key.
 
 ### 2. Resolve operation-to-error wiring at classify time
 
@@ -179,15 +189,45 @@ Add a sub-taxonomy on the field model:
 record ErrorChannel(
     String errorsFieldName,                  // the "errors" field on the payload
     List<ErrorTypeRef> mappedErrorTypes,     // union members or list-element type
-    PayloadShape shape                       // PayloadObject | RootErrorsArrayOnly
+    PayloadShape shape
 ) {}
+
+sealed interface PayloadShape
+        permits PayloadShape.PayloadObject, PayloadShape.RootErrorsArrayOnly {
+
+    /** The fetcher returns a payload object whose `errorsFieldName` field is the errors list. */
+    record PayloadObject(ClassName payloadClass) implements PayloadShape {}
+
+    /** The fetcher returns the errors list directly (no wrapping payload). */
+    record RootErrorsArrayOnly() implements PayloadShape {}
+}
 ```
 
-Carry it as `Optional<ErrorChannel>` on `MutationField.DmlTableField` (the new sealed supertype
-introduced by [`mutations.md`](mutations.md) Phase 1a) and on
-`MutationField.MutationServiceTableField` / `MutationServiceRecordField`. Same pattern as
-`nodeIdMeta` in `mutations.md:197-208`: classifier resolves once, emitter dispatches over a
-settled shape. Consult [`rewrite-design-principles.md:43-47`](../docs/rewrite-design-principles.md#sub-taxonomies-for-resolution-outcomes)
+`PayloadShape` is a sub-taxonomy in the sense of
+[`rewrite-design-principles.md:43-47`](../docs/rewrite-design-principles.md#sub-taxonomies-for-resolution-outcomes):
+each variant carries exactly the data its emitter arm consumes. `PayloadObject` carries the
+`ClassName` the emitter needs to write the payload-factory reference (`FilmPayload::new`);
+`RootErrorsArrayOnly` carries nothing (the factory is `errors -> errors`). An enum + nullable
+`ClassName` would conflate the two and re-introduce the antipattern §1 dismantles for `Handler`.
+
+Carry it as `Optional<ErrorChannel>` on every field variant whose body is a candidate for the
+try/catch / `.exceptionally` wrapper in §3. Concretely:
+
+- `MutationField.DmlTableField` (the sealed supertype introduced by
+  [`mutations.md`](mutations.md) Phase 1a, covering insert/update/delete/upsert).
+- `MutationField.MutationServiceTableField`, `MutationServiceRecordField`.
+- `QueryField.QueryServiceTableField`, `QueryServiceRecordField`, `QueryRowsTableField` (and
+  any other Query-side variant that resolves to a fetcher body) when the field's payload type
+  matches the channel-detection rules below.
+
+The `DmlTableField` dependency is a *naming* convenience, not a structural one: this plan
+adds the same `Optional<ErrorChannel>` component to each affected variant individually. If
+[`mutations.md`](mutations.md) reshuffles Phase 1a (renames the supertype, splits it
+differently, or sequences the introduction later), this plan still works as long as the four
+DML variants exist somewhere; the spec phase only needs to revisit which sealed-type root is
+referenced. Same pattern as `nodeIdMeta` in [`mutations.md`](mutations.md) Phase 1a:
+classifier resolves once, emitter dispatches over a settled shape. Consult
+[`rewrite-design-principles.md:43-47`](../docs/rewrite-design-principles.md#sub-taxonomies-for-resolution-outcomes)
 for the sub-taxonomy contract.
 
 The classifier walks the field's payload return type, identifies the `errors` field by its
@@ -291,20 +331,63 @@ legacy fallback per `ExceptionToErrorMappingProviderGenerator.java:230-233`).
 Legacy `SchemaBasedErrorStrategy.java:84-88` does a one-level `CompletionException` unwrap
 before matching. The rewrite must do the same, with one improvement: walk the entire cause
 chain (Stream-based, like `GenericExceptionMatcher.streamCauses`) so a `CompletionException`
-wrapping an `ExecutionException` wrapping the real exception still routes correctly. This is a
-pure improvement over legacy's single-level unwrap and costs nothing.
+wrapping an `ExecutionException` wrapping the real exception still routes correctly. The walk
+direction is **outermost-first** (the same order `Stream.iterate(t, Throwable::getCause)`
+produces): the outer wrapper is examined first, then each `getCause()` hop, until either a
+mapping matches or the chain is exhausted. Combined with §3's source-order rule on `MAPPINGS`,
+the deterministic answer to "which mapping fires?" is: the first `(mapping, throwable-in-chain)`
+pair, scanning the chain outermost-first per mapping, that satisfies the mapping's predicate.
+This is a pure improvement over legacy's single-level unwrap and costs nothing.
 
-The async fetcher path matters here: every `QueryServiceTableField` and similar variant
-returns a `CompletableFuture` today (`FetcherRegistrationsEmitter` wraps DataLoader bodies in
-`CompletableFuture.supplyAsync`). The try/catch wrapper in §3 only catches synchronous throws.
-For async fetchers, the wrapper instead does:
+The async fetcher path matters here. Service-style fetchers in the rewrite return
+`CompletableFuture` from a DataLoader (`TypeFetcherGenerator.buildServiceDataFetcher`,
+`TypeFetcherGenerator.java:1456-1477`): the fetcher returns `loader.load(key, env)` and the
+batch lambda is registered with `DataLoaderFactory.newDataLoaderWithContext(...)`. The lambda
+body itself synchronously calls the rows method and wraps the result in
+`CompletableFuture.completedFuture(...)`; an exception thrown from the rows method therefore
+escapes synchronously from the lambda, which DataLoader catches and surfaces as a *failed*
+`CompletableFuture` to the fetcher's caller. Two consequences:
+
+1. The synchronous try/catch in §3 wrapping the body of the rows method (the developer-written
+   service call plus the projection) catches throws there directly, where the cause chain is
+   unwrapped and source locations are still in scope.
+2. The fetcher-level CompletableFuture surface still needs an `.exceptionally(...)` arm,
+   because graphql-java's `ExecutionStrategy` invokes the fetcher and observes the returned
+   future; any exception escaping past step 1 (e.g. thrown during DataLoader dispatch
+   bookkeeping, or by code outside the rows method) reaches the caller as a failed future
+   wrapped in `CompletionException`. The emitter therefore wraps both the rows-method body
+   (try/catch) and the fetcher-method return (`.exceptionally`).
 
 ```java
-return future.exceptionally(t -> ErrorRouter.dispatch(t, MAPPINGS, env, FilmPayload::new));
+public static CompletableFuture<Result<FilmRecord>> film(DataFetchingEnvironment env) {
+    // ... DataLoader registration ...
+    return loader.load(key, env)
+        .exceptionally(t -> ErrorRouter.dispatch(t, MAPPINGS, env, FilmPayload::new));
+}
 ```
 
-The classifier sub-taxonomy (§2) exposes whether the field is sync or async; the emitter forks
-on that. Both forks call into the same `ErrorRouter.dispatch`, so the runtime path is uniform.
+Whether a fetcher is sync (returns `Result<...>` directly) or async (returns
+`CompletableFuture<...>`) is a property of the existing classifier output (the field variant
+plus its `ReturnTypeRef.wrapper()`); §2's `ErrorChannel` does not need to encode it. The
+emitter forks on the field variant, as it already does for the rest of the body shape; both
+forks call into the same `ErrorRouter.dispatch`, so the runtime contract is uniform.
+
+Note on graphql-java's own wrapping: graphql-java internally wraps fetcher exceptions in
+`CompletionException` (and sometimes `ExecutionException`) inside `AsyncExecutionStrategy`
+*before* invoking the `DataFetcherExceptionHandler`. The rewrite's wrappers run
+*before* graphql-java sees the throw, so this layer of wrapping does not affect
+`ErrorRouter.dispatch`. The cause-chain walk handles only the wrappers visible at the fetcher
+boundary (DataLoader's `CompletionException`, jOOQ's `DataAccessException`, etc.).
+
+#### Validation short-circuit precedes channel matching
+
+Before any `MAPPINGS` iteration, `ErrorRouter.dispatch` checks whether the cause chain
+contains a `ValidationViolationGraphQLException` and rethrows immediately if so (§5). This
+runs ahead of source-order matching below; a `Throwable`-wide `ExceptionHandler` declared
+first cannot intercept a validation violation. Rationale: the carried `GraphQLError`s have a
+shape incompatible with the `@error` payload contract, so routing them through `MAPPINGS`
+would only construct meaningless instances. The arm exists at the top of `dispatch` and is
+not configurable.
 
 #### Dispatch ordering: source order, first match wins
 
@@ -328,19 +411,50 @@ match-criteria** on different `@error` types. The match-criteria tuple per varia
 - `SqlStateHandler`: `(sqlState, matches)`
 - `VendorCodeHandler`: `(vendorCode, matches)`
 
-Cross-variant collisions don't apply (an `ExceptionHandler` and a `SqlStateHandler` discriminate
-on different fields, so they can't have "identical" criteria). The second occurrence is
+Tuple equality treats absent `matches` as a distinct value from any present `matches`; two
+`ExceptionHandler(SQLException, matches=null)` entries collide, two `ExceptionHandler(SQLException,
+matches="foo")` entries collide, and `(SQLException, null)` does not collide with
+`(SQLException, "foo")`. The check is intra-variant: an `ExceptionHandler(SQLException, null)`
+and a `SqlStateHandler("23503", null)` discriminate on different fields and *can* both match the
+same Postgres FK violation; the §3 source-order rule resolves which `@error` type the runtime
+emits, and this overlap is intentional (it lets schemas declare a fallback `Throwable`/`SQLException`
+arm after vendor-specific arms). The second-occurrence-of-an-intra-variant-tuple case is
 unreachable and almost certainly an author mistake; a duplicate within a single `@error` type's
 `handlers` array is similarly rejected. This closes the legacy gap where duplicates were
 silently allowed (`ExceptionStrategyConfigurationGenerator.java:107-117`).
 
+This is a [load-bearing classifier check](../docs/rewrite-design-principles.md#classifier-guarantees-shape-emitter-assumptions):
+the producer (this duplicate-criteria check) wears
+`@LoadBearingClassifierCheck(key = "error-channel.unique-match-criteria", ...)` and the
+consumer (the `ErrorRouter.dispatch` arm that does `findFirst()` on `MAPPINGS` and treats the
+first match as authoritative) wears `@DependsOnClassifierCheck` with the same key. Without the
+check, two channel mappings with identical criteria would silently shadow each other at
+runtime in source order; with it, the only ambiguity left is the intentional cross-variant
+overlap.
+
 #### Top-level handler
 
-The vanilla `DataFetcherExceptionHandler` installed by `Graphitron.buildSchema` is a
-straightforward implementation: log at WARN, build a `GraphqlErrorBuilder` exception with the
-exception message and source location from the `DataFetchingEnvironment`. This matches
-graphql-java's `SimpleDataFetcherExceptionHandler`, which is what
-`AsyncExecutionStrategy.handleFetchingException` falls through to in legacy.
+The `DataFetcherExceptionHandler` installed by `Graphitron.buildSchema` mirrors legacy
+`TopLevelErrorHandler` (`graphitron-common/.../TopLevelErrorHandler.java:36-69`), which is
+*not* graphql-java's `SimpleDataFetcherExceptionHandler` despite extending it: legacy
+overrides `handleException` to hide internals. The rewrite preserves that arm shape:
+
+- `ValidationViolationGraphQLException`: emit the carried `List<GraphQLError>` verbatim
+  (this case actually fires only when validation throws *outside* a fetcher with a matching
+  channel; inside one, §5's router arm catches it first).
+- `IllegalArgumentException`: emit the raw `getMessage()` plus source location. Documented as
+  client-visible so authors who throw `IllegalArgumentException` know what surfaces.
+- Any other `Throwable` (including `SQLException`, jOOQ exceptions, NPEs, and unmatched
+  business exceptions): log at ERROR with a freshly-generated UUID and emit a generic
+  `"An exception occurred. The error has been logged with id <uuid>."` to the client. The
+  raw exception message is **never** included. This is the privacy property legacy preserves;
+  trivially adopting `SimpleDataFetcherExceptionHandler` would regress it.
+
+The legacy `DataAccessException` arm prefixed the generic message with a Spring-mapper-derived
+short message; the rewrite drops the Spring dependency (§5 below) and folds that arm into the
+generic case. Schema-mapped DB errors still surface through their `@error` payload; only
+*unmatched* DB errors reach the top-level handler, where exposing the raw SQL message is the
+behaviour we are deliberately hiding.
 
 Consumer override path: the existing `Consumer<GraphQLSchema.Builder>` slot on
 `Graphitron.buildSchema` doesn't reach the `DataFetcherExceptionHandler` (which is set on
@@ -423,30 +537,47 @@ not satisfy these variants (and is rejected unless the channel also carries an
 ### 5. Jakarta-only validation
 
 The `RecordValidator` two-module split exists only to bridge `javax.validation` vs
-`jakarta.validation` imports. Rewrite consumers are jakarta-only by assumption; the
-`graphitron-rewrite-runtime` (or wherever `ErrorRouter` and the validator land) imports
-`jakarta.validation-api` directly. One file, one dependency, no `<profile>` dance. This is a
-pom hygiene win, not architectural; flagged here only so the parity discussion is complete.
+`jakarta.validation` imports. Rewrite consumers are jakarta-only by assumption; the validator
+class (and the `ValidationViolationGraphQLException` it throws) lives wherever
+`recordValidator.validate(...)` is invoked from generated code, with `jakarta.validation-api`
+imported directly. Per the open-questions resolution above, `ErrorRouter` itself is emitted
+as a generated helper rather than living in a runtime jar; the validator follows the same
+convention or is emitted alongside the input-type fetcher that calls it. One file, one
+dependency, no `<profile>` dance. This is a pom hygiene win, not architectural; flagged here
+only so the parity discussion is complete.
 
 #### `ValidationViolationGraphQLException` path
 
 Legacy `SchemaBasedErrorStrategy` has a dedicated `handleValidationException` arm
 (`SchemaBasedErrorStrategy.java:58-65`) that intercepts `ValidationViolationGraphQLException`
-(an `AbortExecutionException` carrying a list of `GraphQLError`s pre-built by `RecordValidator`)
-and emits the carried errors verbatim. The rewrite preserves this arm but folds it into
-`ErrorRouter.dispatch` rather than a separate exception-strategy method:
+(an `AbortExecutionException` carrying a list of `GraphQLError`s pre-built by `RecordValidator`).
+The carried `GraphQLError`s do not have the `(path, message)` shape an `@error` payload
+expects, so they cannot be slotted into the same payload factory. The rewrite resolves this by
+treating `ValidationViolationGraphQLException` as a top-level exception, not a schema-mapped
+one:
 
-- The router unwraps a top-level `ValidationViolationGraphQLException` and short-circuits to
-  the carried `List<GraphQLError>` via the same payload-factory path as a schema-mapped
-  match. No matcher is consulted.
-- This requires `ValidationViolationGraphQLException` (or its rewrite equivalent) to live in
-  the same runtime module as `ErrorRouter`. Since the validator class itself lands there per
-  the section above, this is automatic.
+- When `ErrorRouter.dispatch` sees a `ValidationViolationGraphQLException` anywhere in the
+  cause chain, it does not consult `MAPPINGS` and does not invoke the payload factory. It
+  rethrows. The top-level handler (above) then emits the carried `List<GraphQLError>`
+  verbatim, which is the legacy on-the-wire shape (`GraphQLError`s appear in the response's
+  top-level `errors` array, not inside a payload's `errors` field).
+- The rethrow is unconditional and precedes any `@error`-based matching. A schema author
+  cannot route a validation violation into a typed `@error` payload; the carried errors
+  already have a fixed shape from `RecordValidator`. This matches legacy: the validation arm
+  in `SchemaBasedErrorStrategy.handleValidationException` is implemented per consumer to
+  produce a payload from the carried errors, but the *only* carrier is the validation
+  errors, not application-shaped `@error` instances. The rewrite consolidates by sending
+  them top-level, removing the per-consumer payload-conversion seam.
 
-The developer-facing flow stays identical: code calls `recordValidator.validate(...)`, which
-throws `ValidationViolationGraphQLException` if violations exist, which propagates to
-`ErrorRouter.dispatch`, which routes the carried errors into the payload's `errors` field. No
-auto-wiring; the trigger is still developer-invoked.
+Behaviour shift to document: legacy let consumers override `handleValidationException` to
+synthesise a payload from the `List<GraphQLError>`. The rewrite drops that hook; the
+violations always surface as top-level errors. Real usage of the legacy hook is rare (no
+`graphitron-test` fixture exercises it), but call this out in the spec so consumers
+relying on the override can plan a migration.
+
+The developer-facing flow upstream is unchanged: code calls `recordValidator.validate(...)`,
+which throws `ValidationViolationGraphQLException` if violations exist; the trigger is still
+developer-invoked, and no auto-wiring is added.
 
 ---
 
@@ -473,9 +604,10 @@ in-scope / out-of-scope, so the spec phase has a concrete checklist.
 
 **In-scope (Phase 1 of this item):**
 
-- `default/`: single `@error` type with one `GENERIC` handler.
-- `databaseHandledError/`: `[{handler: DATABASE}]` with no sqlState/code (defaults to
-  `DataAccessException`).
+- `default/`: single `@error` type with one `GENERIC` handler. Lifts to `ExceptionHandler`.
+- `databaseHandledError/`: `[{handler: DATABASE}]` with no sqlState/code. Lifts to
+  `ExceptionHandler(SQLException, ...)` per §1's no-discriminator rule (legacy default
+  `DataAccessException` becomes the documented behaviour shift in §3).
 - `databaseWithSqlState/`, `databaseWithCode/`: DATABASE handler with sqlState / code in turn.
   Lift to `SqlStateHandler` and `VendorCodeHandler` respectively per §1.
 - `databaseWithMatches/`: DATABASE handler with only `matches` (no sqlState, no code). Lifts to
@@ -484,27 +616,40 @@ in-scope / out-of-scope, so the spec phase has a concrete checklist.
   handlers on the same / on different `@error` types in one channel.
 - `multipleHandlers/`, `unionMultipleHandlers/`: multiple handlers per `@error` type.
 - `multiple/`, `multipleInOneResponse/`: multiple `@error` types per channel (list shape).
-- `union/`, `unionDatabase/`, `unionMultipleDatabaseHandlers/`, `unionMultipleErrorsWithMultipleMixedHandlers/`,
+- `multipleDatabaseHandlers/`: two DATABASE handlers with different `code` values on the same
+  `@error` type. Different match-criteria, both reachable; §3's ordering rule preserves the
+  legacy semantic (first matching `code` wins).
+- `union/`, `unionDatabase/`, `unionMultipleErrorsWithMultipleMixedHandlers/`,
   `unionMultipleMixedHandlers/`, `unionWithUnhandledError/`: union shape for `errors` field.
 - `withDescription/`, `withMatches/`: optional handler-fields populated.
-- `query/`: `@error` channel on a Query field, not just Mutation.
+- `query/`: `@error` channel on a Query field, not just Mutation. (Hinges on the open question
+  on query-side scope below; if narrowed to mutation-only, this fixture moves to "rejected"
+  with a documented behaviour shift.)
 - `service/`: `@error` on a `@service`-backed mutation.
 - `onlyOneHandled/`: partial schema coverage (some `@error` types in the union have no matching
   handler for the thrown exception).
+- `noErrors/`, `noHandlers/`: degenerate inputs (payload with no `errors` field; `@error` type
+  with empty `handlers` list). Asserts that classification produces "no `ErrorChannel`" for
+  the former and a classifier rejection (`UnclassifiedType`) for the latter, since an `@error`
+  type with zero handlers is unmatched by anything.
 
-**Out-of-scope or rejected (commit to in spec):**
+**Rejected by the classifier (rewrite is stricter; document in spec):**
 
-- `multipleDatabaseHandlers/`: two `DATABASE` handlers with different `code` values on the same
-  `@error` type. The §3 ordering rule requires this to be allowed (different match-criteria);
-  reproduce the legacy semantic.
-- `unionMultipleDatabaseHandlers/` (when criteria collide): duplicate match-criteria across
-  `@error` types is rejected by the §3 classifier check; legacy permitted it silently.
-  Document the rewrite as stricter and update the rejected fixture's expected output to a
-  classifier error.
+- `databaseWithCodeAndSqlState/`: legacy ANDed both `code` and `sqlState` silently
+  (`DataAccessMatcher.java:28-30`); §1's reject rule 3 forbids the combination and tells the
+  author to split into a `SqlStateHandler` + `VendorCodeHandler` pair. Update this fixture's
+  expected output to a classifier error.
+- `unionMultipleDatabaseHandlers/`: two `DATABASE` handlers across two `@error` types in the
+  same channel where the match-criteria collide. §3's duplicate-criteria classifier check
+  rejects; legacy permitted it silently and the second was unreachable. Update the expected
+  output to a classifier error. (If the fixture's two handlers actually differ on
+  match-criteria, it is in-scope and behaves like `multipleDatabaseHandlers/`; spec phase
+  reads the fixture once and partitions accordingly.)
 
 The pipeline-test set in `graphitron-test` covers each row above with one execution-test
 asserting the actual on-the-wire error shape; the per-row fixtures live in `graphitron-test`'s
-SDL alongside the mutation fixtures (mutations.md:457-465 closure).
+SDL alongside the mutation fixtures (the mutation-bodies fixture-gap closure in
+[`mutations.md`](mutations.md)).
 
 ---
 
@@ -558,15 +703,16 @@ SDL alongside the mutation fixtures (mutations.md:457-465 closure).
 
 ## Open questions for the Spec phase
 
-- **Where does `ErrorRouter` and the matcher code live?** Options: (a) a new
-  `graphitron-rewrite-runtime` module that emitted code depends on at runtime; (b) emit the
-  matcher classes alongside the fetchers, no runtime jar. (a) keeps the emitter tight; (b)
-  preserves the rewrite's "no runtime support library" property documented in
-  [`rewrite-design-principles.md:111-117`](../docs/rewrite-design-principles.md#rewrite-builds-independently-of-legacy-graphitron-modules).
-  Decide before Spec → Ready. The author's lean is (b): `ErrorRouter` is ~150 lines of pure
-  cause-chain walking and matcher application; emitting it as a single per-build static helper
-  class (alongside the existing `*Fetchers`) keeps the no-runtime-jar property and avoids
-  versioning the runtime jar against the generator.
+- **Where does `ErrorRouter` and the matcher code live?** Settled: emit the router as a
+  generated static helper class alongside the existing `*Fetchers`. A new runtime jar that
+  emitted code depends on would directly violate the
+  ["Rewrite builds independently of legacy Graphitron modules"](../docs/rewrite-design-principles.md#rewrite-builds-independently-of-legacy-graphitron-modules)
+  invariant (`rewrite-design-principles.md:111-117`); consumers depend on the rewrite
+  aggregator alone, with no separate runtime artifact to version against the generator.
+  `ErrorRouter` is ~150 lines of pure cause-chain walking and matcher application; emitting
+  it once per build is cheap and keeps the no-runtime-jar property intact. Spec phase commits
+  to this path; remaining open question is the file naming convention (one `ErrorRouter`
+  per `*Fetchers` class, or one shared `ErrorRouter` per generated package).
 - **Top-level `DataFetcherExceptionHandler` slot.** The existing
   `Consumer<GraphQLSchema.Builder>` slot on `Graphitron.buildSchema` is invoked after schema
   build but does not reach `AsyncExecutionStrategy.handleFetchingException`'s
@@ -598,9 +744,9 @@ SDL alongside the mutation fixtures (mutations.md:457-465 closure).
   (sqlState match via a Sakila constraint violation; e.g. `23503` foreign-key on the
   `film_actor` link table), a `VendorCodeHandler` (any vendor-code-bearing fixture, even if
   Postgres reports `0` at runtime; the parse-side classification is what's exercised), and an
-  `ExceptionHandler` (developer-thrown business exception). The mutation-bodies fixture gap
-  closure (`mutations.md:457-465`) is the natural place to extend. The full fixture list to
-  reproduce is in the "Legacy fixture coverage" section above.
+  `ExceptionHandler` (developer-thrown business exception). The mutation-bodies fixture-gap
+  closure in [`mutations.md`](mutations.md) is the natural place to extend. The full fixture
+  list to reproduce is in the "Legacy fixture coverage" section above.
 - **Phase ordering with `mutations.md`.** The author leans toward option (a) in the
   "Relationship to neighbouring items" section: land mutations Phases 2-6 first, then layer
   error-channel emission as a sweep across the new emitters. Rationale: every mutation phase's
