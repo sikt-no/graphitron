@@ -7,79 +7,11 @@ priority: 1
 
 # Stub #3: Interface / union fetchers
 
-Six leaves in `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS` covering GraphQL interface and union return types. The work splits by implementation complexity.
-
-**Track A** (`TableInterfaceType` variants) is fully mechanical: single-table polymorphism with a discriminator column, mirroring the existing `QueryTableField` / `TableTargetField` emission pattern. High confidence.
-
-**Track B** (multi-table polymorphic variants) requires a design decision before coding: these fields carry only a `PolymorphicReturnType` with no table or method binding, so no fetcher can be auto-generated without additional context.
+Track A (`TableInterfaceType` variants) is **done**. Track B (multi-table polymorphic variants) remains and requires a design decision before any code can be written.
 
 The companion cleanup item (`typeresolver-wiring-interface-union.md`) is absorbed here. Track A closes it for `TableInterfaceType`; Track B closes it for `InterfaceType` / `UnionType`.
 
 Priority number `#3` must stay stable: it is embedded in emitted reason strings consumed by existing schema authors.
-
----
-
-## Track A: `TableInterfaceType` (single-table discriminated)
-
-**Variants:** `QueryField.QueryTableInterfaceField`, `ChildField.TableInterfaceField`
-
-Both carry `TableBoundReturnType` and implement `SqlGeneratingField`. Both are structurally identical to their non-interface counterparts (`QueryTableField`, `SplitTableField`, etc.) except the SELECT must project the discriminator column so the TypeResolver can identify the concrete type at runtime.
-
-### Phase A1: Fixture additions
-
-No fixture SDL currently exercises `TableInterfaceType`, `InterfaceType`, or `UnionType` (other than `Node`). Add at minimum:
-
-- A `@table @discriminate` interface using an existing Sakila table that has a natural enum-like column, or extend the fixture DB with a small discriminated table. Both concrete implementor types must appear in the fixture query root.
-- At least one `@asConnection` wrapper on the field to confirm pagination interacts correctly.
-
-The `InterfaceType` and `UnionType` fixtures needed for Track B classification tests can be added in the same commit.
-
-### Phase A2: Classifier — add `discriminatorColumn` to field records
-
-`QueryTableInterfaceField` and `ChildField.TableInterfaceField` do not currently carry the discriminator column name; the generator cannot project it. The classifier has `tableInterfaceType.discriminatorColumn()` in scope and must pass it through.
-
-Touch points:
-- `QueryField.QueryTableInterfaceField` — add `String discriminatorColumn` component; classifier populates from `tableInterfaceType.discriminatorColumn()`.
-- `ChildField.TableInterfaceField` — same addition.
-- `FieldBuilder.classifyQueryField` (around line 1640) and `classifyObjectReturnChildField` (around line 375) — pass the value at construction.
-- Any existing tests constructing these records must add the new argument; `GeneratorCoverageTest` will fail to compile until the record arity is fixed.
-
-### Phase A3: Generator — fetcher methods
-
-**`buildQueryTableInterfaceFieldFetcher`** (new method in `TypeFetcherGenerator`):
-- Mirrors `buildQueryTableFetcher` exactly.
-- The `select(...)` clause adds the discriminator column alongside `$fields(...)` unconditionally: `DSL.field(DSL.name(tableLocalName, field.discriminatorColumn()))`.
-- Return type and `isList` / Connection branching follow `QueryTableField` precedent.
-
-**`buildTableInterfaceFieldFetcher`** (new method, child variant):
-- Mirrors the batch-key / rows-method pattern of `SplitTableField` / `RecordTableField`.
-- Same discriminator column projection.
-
-Switch arms in `generateTypeSpec` change from `stub(f)` to the new builder calls. Both classes move from `NOT_IMPLEMENTED_REASONS` to `IMPLEMENTED_LEAVES`. `needsGraphitronContextHelper` already activates for any `SqlGeneratingField`; no change needed there.
-
-### Phase A4: TypeResolver wiring
-
-Touch point: `GraphitronSchemaClassGenerator.generate()`, after the existing `hasNodeTypes` block (around line 92). For each `TableInterfaceType` in `schema.types()`, emit:
-
-```
-codeRegistry.typeResolver("<InterfaceName>", env -> {
-    Record record = (Record) env.getObject();
-    if (record == null) return null;
-    String value = String.valueOf(record.get("<discriminatorColumn>"));
-    if ("<value1>".equals(value)) return env.getSchema().getObjectType("<TypeName1>");
-    ...
-    return null;
-});
-```
-
-The `participants` list on `TableInterfaceType` provides the `(discriminatorValue, typeName)` pairs. Skip `ParticipantRef.Unbound` entries. No new generator class is needed: this is a CodeBlock loop in `GraphitronSchemaClassGenerator`.
-
-### Phase A5: Tests
-
-- **Classifier unit tests:** `QueryTableInterfaceField` and `ChildField.TableInterfaceField` construct with `discriminatorColumn` populated correctly.
-- **`TypeFetcherGeneratorTest` snapshots:** assert the discriminator column appears in the SELECT clause for both variants.
-- **`GraphitronSchemaClassGeneratorTest`:** assert `typeResolver(...)` registration appears for a schema with a `TableInterfaceType`.
-- **Pipeline / execution tests:** compile and run the fixture SDL; assert concrete type resolution works at runtime.
 
 ---
 
@@ -109,11 +41,7 @@ Pattern: emit `codeRegistry.typeResolver("<Name>", env -> { ... })` for each non
 
 ## Order and gating
 
-Track A is independent of Track B. Ship Track A first.
-
-Within Track A: A2 must land before A3 (record arity change breaks compilation). A4 is independent of A3 but logically belongs in the same PR. A1 can be a separate preparatory commit.
-
-Track B's design decision is a prerequisite for any Track B code.
+Track A is done. Track B's design decision (Option 1 vs. Option 2 above) is a prerequisite for any Track B code.
 
 ---
 
@@ -122,3 +50,9 @@ Track B's design decision is a prerequisite for any Track B code.
 - Per-participant sub-queries for multi-table interface fetchers without `@service` (requires a new directive or classification path).
 - `NodeIdReferenceField` JOIN-projection form (tracked separately under Cleanup).
 - TypeResolver for the built-in `Node` interface (already wired via `QueryNodeFetcher.registerTypeResolver`).
+
+---
+
+## Changelog
+
+- **2026-04-27** — Track A complete. `QueryTableInterfaceField` and `ChildField.TableInterfaceField` lifted from `NOT_IMPLEMENTED_REASONS` to `IMPLEMENTED_LEAVES`. `discriminatorColumn` added to both records; classifier, `QueryConditionsGenerator`, `TypeFetcherGenerator` (new `buildQueryTableInterfaceFieldFetcher`, `buildTableInterfaceFieldFetcher`, `buildJoinPathCondition`), and `GraphitronSchemaClassGenerator` (TypeResolver wiring) updated. Fixtures: `content` table, `allContent` root query, `Film.filmContent` child field, `Content` / `FilmContent` / `ShortContent` SDL.
