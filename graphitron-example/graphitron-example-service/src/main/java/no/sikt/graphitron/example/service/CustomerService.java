@@ -1,12 +1,13 @@
 package no.sikt.graphitron.example.service;
 
 import no.sikt.graphitron.example.generated.jooq.tables.records.CustomerRecord;
-import no.sikt.graphitron.example.service.records.HelloWorldInput;
 import no.sikt.graphitron.example.service.records.CustomerEmailsRecordPayload;
+import no.sikt.graphitron.example.service.records.HelloWorldInput;
 import no.sikt.graphitron.example.service.records.UpdateCustomerEmailRecord;
 import no.sikt.graphitron.example.service.records.UpdateCustomerEmailResult;
 import org.jooq.DSLContext;
 
+import java.util.ArrayList;
 import java.util.List;
 
 public class CustomerService {
@@ -25,6 +26,18 @@ public class CustomerService {
         return customer;
     }
 
+    public CustomerRecord customerReturningNull() {
+        return null;
+    }
+
+    public List<CustomerRecord> customersReturningNull() {
+        return null;
+    }
+
+    public List<CustomerRecord> customersReturningEmptyList() {
+        return List.of();
+    }
+
     public CustomerRecord customer(HelloWorldInput input) {
         // In a real scenario, the service would use the input to perform business logic
         // (e.g. look up a customer) and return a record with the PK set.
@@ -40,7 +53,11 @@ public class CustomerService {
         c1.setCustomerId(1);
         var c2 = new CustomerRecord();
         c2.setCustomerId(2);
-        return List.of(c1, c2);
+        var customers = new ArrayList<CustomerRecord>();
+        customers.add(c1);
+        customers.add(null);
+        customers.add(c2);
+        return customers;
     }
 
     public List<CustomerRecord> createCustomerEmail() {
