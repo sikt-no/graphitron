@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.maven;
 
+import graphql.schema.idl.errors.SchemaProblem;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.rewrite.RewriteContext;
 import org.apache.maven.plugin.AbstractMojo;
@@ -95,6 +96,12 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
         var ctx = buildContext();
         try {
             call.invoke(new GraphQLRewriteGenerator(ctx));
+        } catch (SchemaProblem e) {
+            var loaded = ctx.schemaInputs().stream()
+                .map(si -> si.sourceName())
+                .toList();
+            throw new MojoExecutionException(
+                SchemaProblemDiagnostic.format(e, loaded, ctx.basedir()), e);
         } catch (RuntimeException e) {
             throw new MojoExecutionException(e.getMessage(), e);
         }
