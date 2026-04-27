@@ -18,7 +18,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | Multi-parent `NestingField` sharing: `TableField` arm | Spec | [plan](nestingfield-multiparent-tablefield.md) |
 | Faceted search on `@asConnection` <sub>[spike](faceted-search-sql.md)</sub> | Spec | [plan](faceted-search.md) |
 | Mutation bodies | Spec | [plan](mutations.md) |
-| Bump generator-side Java floor 21 → 25 | Spec | [plan](bump-to-java-25.md) |
 | Fold graphitron.sikt.no into the Maven build (AsciiDoc + GitHub Pages) | Spec | [plan](docs-site-asciidoc.md) |
 | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
 | Docs as an index into classification tests | Ready (deferred) | [plan](docs-as-index-into-tests.md) |
@@ -26,6 +25,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | Stub #3: Interface / union fetchers | In Progress | [plan](stub-interface-union-fetchers.md) |
 | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` | In Progress | [plan](retire-maven-plugin.md) |
 | Rewrite `runtime-extension-points.md` for the rewrite runtime | In Review | [plan](runtime-extension-points-rewrite.md) |
+| Bump generator-side Java floor 21 → 25 | In Review | [plan](bump-to-java-25.md) |
 | Load-bearing classifier guarantee audit annotations | In Review | [plan](load-bearing-guarantee-audit.md) |
 
 ---

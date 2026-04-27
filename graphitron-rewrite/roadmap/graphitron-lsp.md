@@ -117,8 +117,9 @@ endpoint.
   (Phase 5).
 - Service-class enumeration source: picked from the three
   candidates listed in Phase 5.
-- jtreesitter binding swap and grammar vendoring (Phase 6, gated
-  on the Java 25 floor).
+- jtreesitter binding swap and grammar vendoring (Phase 6; the
+  Java 25 floor it depends on is now in place per
+  [`bump-to-java-25.md`](bump-to-java-25.md)).
 - Rust-LSP and `graphitron-maven-plugin:introspect` retirement
   (Phase 7).
 
@@ -270,11 +271,12 @@ Javadoc; the `-parameters`-missing warning surfaces in the
 editor; the legacy `file:///tables/<NAME>` Phase-4 URIs refine to
 per-line ranges. A3 closes here.
 
-**Phase 6: jtreesitter migration + grammar vendoring.** Bump
-`<release>21</release>` to `<release>25</release>` in the parent
-pom; swap the `io.github.bonede:tree-sitter` runtime for
+**Phase 6: jtreesitter migration + grammar vendoring.** The Java
+25 floor is in place per
+[`bump-to-java-25.md`](bump-to-java-25.md); this phase consumes
+it. Swap the `io.github.bonede:tree-sitter` runtime for
 `io.github.tree-sitter:jtreesitter` (latest stable at the time
-the bump is authorised; pin then). jtreesitter does not publish
+the swap lands; pin then). jtreesitter does not publish
 per-language grammar artefacts; `Language.load` expects the
 consumer to provision the native library via
 `NativeLibraryLookup`, so this phase also vendors the

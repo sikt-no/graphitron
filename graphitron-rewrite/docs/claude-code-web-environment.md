@@ -80,8 +80,13 @@ rewrite version (10-SNAPSHOT), distinct from the legacy 9-SNAPSHOT coord.
 - The `local-db` profile is defined in `graphitron-fixtures/pom.xml`
   and switches jOOQ codegen from `ContainerDatabaseDriver` to
   `org.postgresql.Driver` at `localhost:5432/rewrite_test`.
-- Maven is at `/opt/maven/bin/mvn`; Java 21 is the default JVM. Both are
-  pre-installed.
+- Maven is at `/opt/maven/bin/mvn`; Java 25 is the default JVM. Both are
+  pre-installed. Older sandbox images may still default to Java 21; in that case
+  install JDK 25 with `sudo apt-get install -y openjdk-25-jdk-headless` (lands at
+  `/usr/lib/jvm/java-25-openjdk-amd64`) and either run
+  `sudo update-alternatives --set java /usr/lib/jvm/java-25-openjdk-amd64/bin/java`
+  or export `JAVA_HOME=/usr/lib/jvm/java-25-openjdk-amd64`. The parent pom's
+  enforcer rule fails fast with a clear message if the JVM is older than 25.
 - The legacy repo-root `mvn install` still works as before, but it no longer
   builds the rewrite tree (dropped from the root reactor as part of the
   aggregator-standalone work).
