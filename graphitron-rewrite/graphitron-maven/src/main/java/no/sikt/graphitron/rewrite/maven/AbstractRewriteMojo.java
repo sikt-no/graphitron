@@ -100,8 +100,13 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
             var loaded = ctx.schemaInputs().stream()
                 .map(si -> si.sourceName())
                 .toList();
+            // Wrap the SchemaProblem in a null-message intermediary so Maven's
+            // DefaultExceptionHandler does not append SchemaProblem.getMessage()
+            // ("errors=[...]") to our formatted diagnostic. The original
+            // SchemaProblem stays on the cause chain for `-e` / `-X` consumers.
             throw new MojoExecutionException(
-                SchemaProblemDiagnostic.format(e, loaded, ctx.basedir()), e);
+                SchemaProblemDiagnostic.format(e, loaded, ctx.basedir()),
+                new RuntimeException((String) null, e));
         } catch (RuntimeException e) {
             throw new MojoExecutionException(e.getMessage(), e);
         }
