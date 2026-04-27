@@ -186,16 +186,35 @@ public class DataFetcherHelper extends AbstractFetcher {
         return mergedKeys;
     }
 
+    /**
+     * Load values for a list of resolver keys, preserving order and nulls.
+     *
+     * <p>The DB query is invoked only with the non-null subset of {@code keys}, but the returned
+     * list has the same length as {@code keys}, with {@code null} at every index where {@code keys}
+     * contained {@code null} or where no DB row matched.
+     *
+     * <p>{@code null} input and an empty input are distinguished and produce different results: a
+     * {@code null} {@code keys} list yields a completed future of {@code null}, while an empty list
+     * yields a completed future of an empty list. This distinction is preserved into the GraphQL
+     * response.
+     *
+     * @param keys ordered list of keys; may be {@code null} or contain {@code null} elements.
+     * @param dbFunction function to fetch values for the non-null keys.
+     * @return ordered result list, length-matched to {@code keys}; an empty list when {@code keys}
+     *         is empty, and {@code null} when {@code keys} is {@code null}.
+     */
     public <K, V> CompletableFuture<List<V>> loadByResolverKeys(List<K> keys, DBQuery<K, V> dbFunction) {
-        keys = keys == null ? List.of() : keys.stream().filter(Objects::nonNull).toList();
-        if (keys.isEmpty()) {
+        if (keys == null) {
+            return CompletableFuture.completedFuture(null);
+        } else if (keys.isEmpty()) {
             return CompletableFuture.completedFuture(List.of());
         }
         return loadByKeysOrdered(keys, dbFunction);
     }
 
     private <K, V> CompletableFuture<List<V>> loadByKeysOrdered(List<K> keys, DBQuery<K, V> dbFunction) {
-        var dbResult = dbFunction.callDBMethod(dslContext, new HashSet<>(keys), select);
+        var nonNullKeySet = keys.stream().filter(Objects::nonNull).collect(Collectors.toSet());
+        var dbResult = dbFunction.callDBMethod(dslContext, nonNullKeySet, select);
         var orderedResult = keys.stream().map(dbResult::get).toList();
         return CompletableFuture.completedFuture(orderedResult);
     }

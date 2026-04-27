@@ -186,7 +186,7 @@ public class ResolverTest extends GeneratorTest {
     void returningTableWithAutoFetch() {
         assertGeneratedContentContains(
                 "operation/returningTableWithAutoFetch", Set.of(CUSTOMER_TABLE),
-                "_iv_serviceResult.key().into(",
+                "_iv_serviceResult != null ? _iv_serviceResult.key().into(CustomerRecord.class) : null",
                 "new DataFetcherHelper(_iv_env).load(_iv_serviceKey"
         );
     }
@@ -205,7 +205,7 @@ public class ResolverTest extends GeneratorTest {
     void returningTableListWithAutoFetch() {
         assertGeneratedContentContains(
                 "operation/returningTableListWithAutoFetch", Set.of(CUSTOMER_TABLE),
-                "_iv_serviceResult.stream().map(_iv_r -> _iv_r.key().into(",
+                "_iv_serviceResult != null ? _iv_serviceResult.stream().map(_iv_r -> _iv_r != null ? _iv_r.key().into(CustomerRecord.class) : null).toList() : null",
                 "new DataFetcherHelper(_iv_env).loadByResolverKeys(_iv_serviceKeys"
         );
     }
