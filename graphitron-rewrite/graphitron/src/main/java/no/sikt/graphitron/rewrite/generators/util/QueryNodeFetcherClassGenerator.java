@@ -47,9 +47,11 @@ public class QueryNodeFetcherClassGenerator {
     public static final String TYPENAME_COLUMN           = "__typename";
     public static final String NODE_INTERFACE_NAME       = "Node";
 
-    private static final ClassName ENV               = ClassName.get("graphql.schema", "DataFetchingEnvironment");
-    private static final ClassName LIST              = ClassName.get("java.util", "List");
-    private static final ClassName RECORD            = ClassName.get("org.jooq", "Record");
+    private static final ClassName ENV                    = ClassName.get("graphql.schema", "DataFetchingEnvironment");
+    private static final ClassName DATA_FETCHING_ENV_IMPL = ClassName.get("graphql.schema", "DataFetchingEnvironmentImpl");
+    private static final ClassName LIST                   = ClassName.get("java.util", "List");
+    private static final ClassName MAP                    = ClassName.get("java.util", "Map");
+    private static final ClassName RECORD                 = ClassName.get("org.jooq", "Record");
     private static final ClassName DSL_CONTEXT       = ClassName.get("org.jooq", "DSLContext");
     private static final ClassName FIELD             = ClassName.get("org.jooq", "Field");
     private static final ClassName DSL               = ClassName.get("org.jooq.impl", "DSL");
@@ -72,15 +74,16 @@ public class QueryNodeFetcherClassGenerator {
         var nodeIdEncoder    = ClassName.get(outputPackage + ".util", NodeIdEncoderClassGenerator.CLASS_NAME);
 
         // fetchById: the type-dispatch logic shared by getNode and getNodes.
-        // Callers guarantee id is non-null; null/garbage typeId is handled here.
+        // Takes the per-ID DataFetchingEnvironment so getDslContext can determine the correct
+        // tenant from the individual ID. Callers guarantee id is non-null.
         var fetchById = MethodSpec.methodBuilder("fetchById")
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .returns(RECORD)
-            .addParameter(DSL_CONTEXT, "dsl")
             .addParameter(ENV, "env")
             .addParameter(String.class, "id")
             .addStatement("$T typeId = $T.peekTypeId(id)", String.class, nodeIdEncoder)
-            .addStatement("if (typeId == null) return null");
+            .addStatement("if (typeId == null) return null")
+            .addStatement("$T dsl = graphitronContext(env).getDslContext(env)", DSL_CONTEXT);
 
         // Emitted as an if-else chain rather than a switch statement: JavaPoet doesn't reliably
         // handle arrow-case blocks containing return-with-block, and the readability cost of an
@@ -113,23 +116,32 @@ public class QueryNodeFetcherClassGenerator {
                 + "Returns {@code null} for null/garbage/unknown IDs (Relay spec).\n")
             .addStatement("$T id = env.getArgument($S)", String.class, "id")
             .addStatement("if (id == null) return null")
-            .addStatement("$T dsl = graphitronContext(env).getDslContext(env)", DSL_CONTEXT)
-            .addStatement("return fetchById(dsl, env, id)")
+            .addStatement("return fetchById(env, id)")
             .build();
 
         var listOfString = ParameterizedTypeName.get(LIST, ClassName.get(String.class));
         var listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
+        // Each id gets its own DataFetchingEnvironment with arguments = {"id": id} so that
+        // getDslContext inside fetchById can determine the correct tenant for each individual ID.
         var dispatchNodes = MethodSpec.methodBuilder(DISPATCH_NODES_METHOD)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(listOfRecord)
             .addParameter(ENV, "env")
             .addJavadoc("Dispatches a Relay {@code Query.nodes(ids:)} call, fanning out to\n"
-                + "{@link #fetchById} per id. Returns {@code null} entries for null/garbage/unknown\n"
-                + "IDs (Relay spec).\n")
+                + "{@link #fetchById} per id. Each id gets its own\n"
+                + "{@link DataFetchingEnvironment} so tenant-scoped {@code getDslContext} calls\n"
+                + "resolve correctly. Returns {@code null} entries for null/garbage/unknown IDs\n"
+                + "(Relay spec).\n")
             .addStatement("$T ids = env.getArgument($S)", listOfString, "ids")
             .addStatement("if (ids == null || ids.isEmpty()) return $T.of()", LIST)
-            .addStatement("$T dsl = graphitronContext(env).getDslContext(env)", DSL_CONTEXT)
-            .addStatement("return ids.stream().map(id -> id == null ? null : fetchById(dsl, env, id)).toList()")
+            .addCode("return ids.stream()\n")
+            .addCode("    .map(id -> {\n")
+            .addCode("        if (id == null) return null;\n")
+            .addCode("        $T singleEnv = $T.newDataFetchingEnvironment(env).arguments($T.of($S, id)).build();\n",
+                ENV, DATA_FETCHING_ENV_IMPL, MAP, "id")
+            .addCode("        return fetchById(singleEnv, id);\n")
+            .addCode("    })\n")
+            .addCode("    .toList();\n")
             .build();
 
         var contextHelper = MethodSpec.methodBuilder("graphitronContext")
