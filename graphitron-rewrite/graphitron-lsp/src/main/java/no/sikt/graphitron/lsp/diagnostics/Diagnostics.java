@@ -79,11 +79,16 @@ public final class Diagnostics {
             // already flagged it. Skip the duplicate here.
             return;
         }
-        boolean found = table.get().columns().stream()
-            .anyMatch(c -> c.name().equalsIgnoreCase(columnName));
-        if (!found) {
-            out.add(diagnostic(file, argValue,
+        var matched = table.get().columns().stream()
+            .filter(c -> c.name().equalsIgnoreCase(columnName))
+            .findFirst();
+        if (matched.isEmpty()) {
+            out.add(diagnostic(file, argValue, DiagnosticSeverity.Error,
                 "Unknown column '" + columnName + "' on table '" + tableName.get() + "'."));
+        } else if (!columnName.equals(matched.get().name())) {
+            out.add(diagnostic(file, argValue, DiagnosticSeverity.Warning,
+                "'" + columnName + "' is a SQL column name; prefer the Java field name '"
+                    + matched.get().name() + "'."));
         }
     }
 
@@ -152,13 +157,17 @@ public final class Diagnostics {
         return null;
     }
 
-    private static Diagnostic diagnostic(WorkspaceFile file, TSNode node, String message) {
+    private static Diagnostic diagnostic(WorkspaceFile file, TSNode node, DiagnosticSeverity severity, String message) {
         var start = Positions.toLspPosition(file.source(), node.getStartByte());
         var end = Positions.toLspPosition(file.source(), node.getEndByte());
         var d = new Diagnostic(new Range(start, end), message);
-        d.setSeverity(DiagnosticSeverity.Error);
+        d.setSeverity(severity);
         d.setSource(SOURCE);
         return d;
+    }
+
+    private static Diagnostic diagnostic(WorkspaceFile file, TSNode node, String message) {
+        return diagnostic(file, node, DiagnosticSeverity.Error, message);
     }
 
     @FunctionalInterface

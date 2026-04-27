@@ -14,6 +14,7 @@ import no.sikt.graphitron.rewrite.RewriteContext;
 import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import org.eclipse.lsp4j.CompletionItem;
+import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.junit.jupiter.api.Test;
 import org.treesitter.TSParser;
 import org.treesitter.TSPoint;
@@ -113,15 +114,18 @@ class FixtureCatalogTest {
     }
 
     @Test
-    void sqlColumnNameAlsoAccepted() {
-        // SQL names resolve because Diagnostics.validateField uses equalsIgnoreCase on
-        // Column.name() (the Java field name); FILM_ID.equalsIgnoreCase(film_id) = true.
+    void sqlColumnNameProducesWarningNotError() {
+        // SQL names resolve (equalsIgnoreCase on the Java-name-keyed Column.name()),
+        // but the LSP emits a Warning suggesting the Java field name instead.
         var file = new WorkspaceFile(1, """
             type Foo @table(name: "film") {
                 x: Int @field(name: "film_id")
             }
             """);
-        assertThat(Diagnostics.compute(file, catalog())).isEmpty();
+        var diags = Diagnostics.compute(file, catalog());
+        assertThat(diags).hasSize(1);
+        assertThat(diags.get(0).getSeverity()).isEqualTo(DiagnosticSeverity.Warning);
+        assertThat(diags.get(0).getMessage()).contains("film_id").contains("FILM_ID");
     }
 
     @Test
