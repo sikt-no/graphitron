@@ -231,13 +231,13 @@ class TypeBuilder {
         if (namedType instanceof graphql.schema.GraphQLScalarType) {
             return null;
         }
-        if (namedType instanceof graphql.schema.GraphQLEnumType enumType) {
-            return new no.sikt.graphitron.rewrite.model.GraphitronType.EnumType(
-                enumType.getName(), locationOf(enumType), enumType);
-        }
         // Federation-injected types (e.g. _Service, _Any) are not Graphitron-managed.
         if (namedType.getName().startsWith("_")) {
             return null;
+        }
+        if (namedType instanceof graphql.schema.GraphQLEnumType enumType) {
+            return new no.sikt.graphitron.rewrite.model.GraphitronType.EnumType(
+                enumType.getName(), locationOf(enumType), enumType);
         }
         // Directive-argument input types (ErrorHandler, ReferencesForType, etc.) exist only to
         // shape Graphitron's own build-time directives. They must not reach emission, so the
@@ -518,7 +518,7 @@ class TypeBuilder {
                 return new UnclassifiedType(name, location, "table '" + tableName + "' could not be resolved in the jOOQ catalog"
                     + candidateHint(tableName, ctx.catalog.allTableSqlNames()));
             }
-            return buildTableInputType(name, location, inputType.getFieldDefinitions(), tableOpt.get());
+            return buildTableInputType(name, location, inputType.getFieldDefinitions(), tableOpt.get(), inputType);
         }
         if (isUsedWithOverrideCondition(name)) {
             return buildNonTableInputType(inputType, name, location);
@@ -530,14 +530,14 @@ class TypeBuilder {
         if (tables.size() > 1) {
             return buildNonTableInputType(inputType, name, location);
         }
-        return buildTableInputType(name, location, inputType.getFieldDefinitions(), tables.values().iterator().next());
+        return buildTableInputType(name, location, inputType.getFieldDefinitions(), tables.values().iterator().next(), inputType);
     }
 
     /**
      * Resolves a list of raw input fields against a {@link TableRef} into a {@link TableInputType}.
      */
     GraphitronType buildTableInputType(String name, SourceLocation location,
-            List<GraphQLInputObjectField> fields, TableRef tableRef) {
+            List<GraphQLInputObjectField> fields, TableRef tableRef, GraphQLInputObjectType inputType) {
         var failures = new ArrayList<InputFieldResolution.Unresolved>();
         var conditionErrors = new ArrayList<String>();
         var resolvedFields = new ArrayList<InputField>();
@@ -566,7 +566,7 @@ class TypeBuilder {
                 "mapped to table '" + tableRef.tableName() + "' — bad @condition on fields: "
                 + String.join("; ", conditionErrors));
         }
-        return new TableInputType(name, location, tableRef, List.copyOf(resolvedFields));
+        return new TableInputType(name, location, tableRef, List.copyOf(resolvedFields), inputType);
     }
 
     /**
@@ -574,29 +574,29 @@ class TypeBuilder {
      */
     private GraphitronType buildNonTableInputType(GraphQLInputObjectType inputType, String name, SourceLocation location) {
         var dir = inputType.getAppliedDirective(DIR_RECORD);
-        if (dir == null) return new GraphitronType.PojoInputType(name, location, null);
+        if (dir == null) return new GraphitronType.PojoInputType(name, location, null, inputType);
         var recordArg = dir.getArgument(ARG_RECORD);
         if (recordArg == null || recordArg.getValue() == null) {
-            return new GraphitronType.PojoInputType(name, location, null);
+            return new GraphitronType.PojoInputType(name, location, null, inputType);
         }
         Map<String, Object> ref = asMap(recordArg.getValue());
         String className = Optional.ofNullable(ref.get(ARG_CLASS_NAME)).map(Object::toString).orElse(null);
         if (className == null) {
-            return new GraphitronType.PojoInputType(name, location, null);
+            return new GraphitronType.PojoInputType(name, location, null, inputType);
         }
         try {
             Class<?> cls = Class.forName(className);
             if (cls.isRecord()) {
-                return new GraphitronType.JavaRecordInputType(name, location, className);
+                return new GraphitronType.JavaRecordInputType(name, location, className, inputType);
             }
             if (org.jooq.TableRecord.class.isAssignableFrom(cls)) {
                 TableRef table = svc.resolveTableByRecordClass(cls).orElse(null);
-                return new GraphitronType.JooqTableRecordInputType(name, location, className, table);
+                return new GraphitronType.JooqTableRecordInputType(name, location, className, table, inputType);
             }
             if (org.jooq.Record.class.isAssignableFrom(cls)) {
-                return new GraphitronType.JooqRecordInputType(name, location, className);
+                return new GraphitronType.JooqRecordInputType(name, location, className, inputType);
             }
-            return new GraphitronType.PojoInputType(name, location, className);
+            return new GraphitronType.PojoInputType(name, location, className, inputType);
         } catch (ClassNotFoundException e) {
             return new UnclassifiedType(name, location,
                 "record backing class '" + className + "' could not be loaded");

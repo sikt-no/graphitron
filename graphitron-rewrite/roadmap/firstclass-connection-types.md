@@ -1,6 +1,6 @@
 ---
 title: "First-class Connection, Edge, PageInfo type variants"
-status: In Review
+status: Done
 priority: 8
 ---
 
@@ -396,13 +396,10 @@ existing fixtures.
 - **Execution.** Existing `GraphQLQueryTest` cursor-pagination tests are the
   runtime safety net for Phase 5. They exercise classifier → emission →
   compilation → execution against Sakila.
-- **Plan-shipped gap (still open, blocking for Done).** Add a direct
-  `ObjectTypeGenerator` test that constructs a `ConnectionType` variant
-  without going through the classifier and passes it through emission. All
-  current `@asConnection` tests exercise the full classifier; a classifier
-  bug could mask an emitter bug. The test should build a minimal
-  `GraphitronSchema` with a hand-constructed `ConnectionType` record and
-  assert the emitted `TypeSpec` body.
+- **Plan-shipped gap.** Resolved: `connectionType_directVariant_emitsFieldsFromSchemaType`
+  added to `ObjectTypeGeneratorTest`. Builds `ConnectionType` and `EdgeType`
+  records directly (no classifier), passes them through emission, and asserts
+  field names in the emitted `TypeSpec` bodies.
 
 ## Risks and open questions
 
@@ -410,32 +407,20 @@ existing fixtures.
    used. `GraphQLSchema.newSchema(existing)` registers synthesised types
    first; `SchemaTransformer` then rewrites carrier fields against the
    updated schema. Spike invariants confirmed on the test-spec schema.
-2. **`defaultPageSize` redundancy.** Still open (low priority). Both
-   `FieldWrapper.Connection.defaultPageSize` and the `first` arg default on
-   the rebuilt carrier agree by construction but the invariant is
-   undocumented. Fix: one sentence in the `FieldWrapper.Connection.defaultPageSize`
-   Javadoc stating the invariant; one comment at the `resolveDefaultFirstValue`
-   call site in `rewriteCarrierField`.
+2. **`defaultPageSize` redundancy.** Resolved: invariant documented in
+   `FieldWrapper.Connection.defaultPageSize` Javadoc; call-site comment
+   added in `rewriteCarrierField`.
 3. **Enum variant richness.** Resolved: `EnumType` is thin (name, location,
    schemaType). No `@index` / `@order` usage on enum types was found in the
    classifier; per-value directives and deprecation pass through `schemaType`
    as-is.
-4. **`assembled` parameter on emitter signatures.** Partially resolved.
-   `EnumTypeGenerator` drops `assembled` entirely. `InputTypeGenerator`
-   still accepts it: `InputType` and `TableInputType` variants do not carry
-   a `schemaType` field, so the emitter calls `assembled.getType(name)` for
-   emission content even though iteration now comes from `schema.types()`.
-   Decision required before Done: (a) add `GraphQLInputObjectType schemaType`
-   to `InputType` sub-types and `TableInputType`, mirroring Phase 4/6, and
-   drop the parameter; or (b) defer with a new roadmap item documenting the
-   residual assembled read. **Blocking for Done.**
+4. **`assembled` parameter on emitter signatures.** Resolved: `schemaType`
+   added to all `InputType` sub-types and `TableInputType` (mirroring
+   Phase 4/6). `InputTypeGenerator` drops the `assembled` parameter and
+   reads `schemaType()` directly from the variant.
 5. **`_` prefix check ordering in `classifyType`** (identified at review).
-   The `GraphQLEnumType` branch in `TypeBuilder.classifyType` is tested
-   before the `name.startsWith("_")` guard. A federation-injected enum
-   would enter `ctx.types` rather than being skipped. Emission guards
-   (`if (name.startsWith("_")) continue`) prevent a functional bug today,
-   but the ordering is inconsistent with all other branches. Fix: move the
-   `startsWith("_")` check above the `GraphQLEnumType` branch.
+   Resolved: `startsWith("_")` guard moved above the `GraphQLEnumType`
+   branch in `TypeBuilder.classifyType`.
 
 ## References
 

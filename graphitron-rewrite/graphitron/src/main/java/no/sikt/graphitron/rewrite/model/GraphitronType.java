@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite.model;
 
 import graphql.language.SourceLocation;
 import graphql.schema.GraphQLEnumType;
+import graphql.schema.GraphQLInputObjectType;
 import graphql.schema.GraphQLObjectType;
 
 import no.sikt.graphitron.rewrite.model.ErrorHandlerType;
@@ -220,7 +221,15 @@ public sealed interface GraphitronType
      */
     sealed interface InputType extends GraphitronType
         permits GraphitronType.JavaRecordInputType, GraphitronType.PojoInputType,
-                GraphitronType.JooqRecordInputType, GraphitronType.JooqTableRecordInputType {}
+                GraphitronType.JooqRecordInputType, GraphitronType.JooqTableRecordInputType {
+
+        /**
+         * The graphql-java form of this input type from the assembled schema.
+         * Emission reads field list, descriptions, and applied directives through it.
+         * May be {@code null} when the record is constructed outside the classifier (e.g. in tests).
+         */
+        GraphQLInputObjectType schemaType();
+    }
 
     /**
      * A non-table input type backed by a Java {@code record} class.
@@ -229,7 +238,8 @@ public sealed interface GraphitronType
     record JavaRecordInputType(
         String name,
         SourceLocation location,
-        String fqClassName
+        String fqClassName,
+        GraphQLInputObjectType schemaType
     ) implements InputType {}
 
     /**
@@ -239,7 +249,8 @@ public sealed interface GraphitronType
     record PojoInputType(
         String name,
         SourceLocation location,
-        String fqClassName
+        String fqClassName,
+        GraphQLInputObjectType schemaType
     ) implements InputType {}
 
     /**
@@ -249,7 +260,8 @@ public sealed interface GraphitronType
     record JooqRecordInputType(
         String name,
         SourceLocation location,
-        String fqClassName
+        String fqClassName,
+        GraphQLInputObjectType schemaType
     ) implements InputType {}
 
     /**
@@ -263,7 +275,8 @@ public sealed interface GraphitronType
         String name,
         SourceLocation location,
         String fqClassName,
-        TableRef table
+        TableRef table,
+        GraphQLInputObjectType schemaType
     ) implements InputType {}
 
     /**
@@ -283,7 +296,8 @@ public sealed interface GraphitronType
         String name,
         SourceLocation location,
         TableRef table,
-        List<InputField> inputFields
+        List<InputField> inputFields,
+        GraphQLInputObjectType schemaType
     ) implements GraphitronType {}
 
     /**

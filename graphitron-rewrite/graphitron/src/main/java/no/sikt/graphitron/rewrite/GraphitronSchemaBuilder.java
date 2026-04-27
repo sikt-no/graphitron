@@ -198,6 +198,7 @@ public class GraphitronSchemaBuilder {
     private static GraphQLFieldDefinition rewriteCarrierField(GraphQLFieldDefinition original, CarrierRewrite rewrite) {
         var ref = GraphQLTypeReference.typeRef(rewrite.connectionName());
         GraphQLOutputType newType = rewrite.outerNonNull() ? GraphQLNonNull.nonNull(ref) : ref;
+        // defaultPageSize mirrors FieldWrapper.Connection.defaultPageSize at this carrier site.
         var firstArg = GraphQLArgument.newArgument()
             .name("first")
             .type(GraphQLTypeReference.typeRef("Int"))
