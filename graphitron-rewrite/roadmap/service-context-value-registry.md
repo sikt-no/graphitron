@@ -283,6 +283,15 @@ Files to touch, by area:
 - `ServiceCatalog.reflectServiceMethod()` (`ServiceCatalog.java:148-216`):
   add type-assignability check between catalog entry and Java parameter
   (element type for fan-out).
+- **Short class-name resolution (legacy parity):** `reflectServiceMethod`
+  currently calls `Class.forName(className)` directly, forcing an FQN.
+  Existing schemas carry short class names like `className: "PersonService"`
+  and rely on the Mojo's `externalReferenceImports` list to find them.
+  Port the lookup from `ExternalReferences.getClassFrom`
+  (`graphitron-codegen-parent/graphitron-java-codegen/src/main/java/no/sikt/graphitron/configuration/externalreferences/ExternalReferences.java:52-85`):
+  if the name resolves as-is, use it; otherwise prepend each
+  `externalReferenceImports` entry and load the unique match. Reject
+  zero-match and multi-match cases with a classification error.
 - New field model carrier on the existing service field types
   (`QueryServiceTableField`, `QueryServiceRecordField`, mutation /
   child equivalents): an optional `FanOutContextArg` ref pointing at the
