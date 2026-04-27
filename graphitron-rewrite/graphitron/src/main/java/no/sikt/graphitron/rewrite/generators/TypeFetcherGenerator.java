@@ -588,6 +588,7 @@ public class TypeFetcherGenerator {
         builder.addCode(GeneratorUtils.declareTableLocal(names, tableRef));
         String tableLocal = names.tableLocalName();
         builder.addCode(buildConditionCall(qtif.parentTypeName(), qtif.name(), tableLocal, outputPackage));
+        builder.addCode(buildDiscriminatorFilter(qtif.discriminatorColumn(), qtif.knownDiscriminatorValues()));
 
         var discriminatorField = CodeBlock.of("$T.field($T.name($S))", DSL, DSL, qtif.discriminatorColumn());
         var dslContextClass = ClassName.get("org.jooq", "DSLContext");
@@ -627,8 +628,8 @@ public class TypeFetcherGenerator {
      * <p>Executes a per-parent SQL query: conditions on the single-hop FK join path extracted
      * from {@code env.getSource()}, then projects all columns via {@code table.asterisk()} plus
      * the discriminator column so the {@code TypeResolver} can route the result to the correct
-     * concrete type. Only single-hop {@link JoinStep.FkJoin} paths are fully supported; a
-     * multi-hop or {@link JoinStep.ConditionJoin} path emits a runtime {@link UnsupportedOperationException}.
+     * concrete type. The classifier guarantees a single-hop {@link JoinStep.FkJoin} path;
+     * multi-hop and {@link JoinStep.ConditionJoin} paths are rejected at classification time.
      *
      * <p>Generated code (single-value variant, one-hop FK where child holds the FK):
      * <pre>{@code
@@ -665,18 +666,21 @@ public class TypeFetcherGenerator {
         builder.addStatement("$T dsl = graphitronContext(env).getDslContext(env)", dslContextClass);
 
         // Build join-path condition. Only single-hop FkJoin is supported for now; multi-hop and
-        // ConditionJoin paths require additional work and throw at runtime to make the gap visible.
+        // ConditionJoin paths are caught at classification time.
         builder.addCode(buildJoinPathCondition(tif.joinPath(), tableRef.tableName()));
+        builder.addCode(buildDiscriminatorFilter(tif.discriminatorColumn(), tif.knownDiscriminatorValues()));
 
         var discriminatorField = CodeBlock.of("$T.field($T.name($S))", DSL, DSL, tif.discriminatorColumn());
 
         if (isList) {
+            builder.addCode(buildOrderByCode(tif.orderBy(), tif.name(), tableLocal));
             builder.addCode(CodeBlock.builder()
                 .add("return dsl\n")
                 .indent()
                 .add(".select($L.asterisk(), $L)\n", tableLocal, discriminatorField)
                 .add(".from($L)\n", tableLocal)
                 .add(".where(condition)\n")
+                .add(".orderBy(orderBy)\n")
                 .add(".fetch();\n")
                 .unindent()
                 .build());
@@ -696,14 +700,6 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * Builds the {@code Condition} declaration from a single-hop {@link JoinStep.FkJoin} path.
-     * Emits {@code Condition condition = DSL.field(DSL.name(fkCol)).eq(parentRecord.get(DSL.name(pkCol)));}
-     * where {@code fkCol} is the FK-holder column and {@code pkCol} is the PK column on the
-     * traversal-origin (parent) side.
-     *
-     * <p>Multi-hop paths and {@link JoinStep.ConditionJoin} steps are not yet supported.
-     */
-    /**
      * Builds the {@code Condition} declaration from a single-hop {@link JoinStep.FkJoin} path
      * for a {@link ChildField.TableInterfaceField} fetcher.
      *
@@ -712,33 +708,42 @@ public class TypeFetcherGenerator {
      * the child holds the FK (child.fk → parent.pk). {@code ColumnRef} carries no table reference,
      * so {@code targetTable} is the only available signal.
      *
-     * <p>Multi-hop paths and {@link JoinStep.ConditionJoin} steps throw at runtime.
+     * <p>Precondition: the classifier guarantees exactly one {@link JoinStep.FkJoin} step
+     * (multi-hop and {@link JoinStep.ConditionJoin} paths are rejected at classification time).
      */
     private static CodeBlock buildJoinPathCondition(List<JoinStep> joinPath, String childTableName) {
-        if (joinPath.size() == 1 && joinPath.get(0) instanceof JoinStep.FkJoin fkJoin
-                && !fkJoin.sourceColumns().isEmpty() && !fkJoin.targetColumns().isEmpty()) {
-            String fkHolderCol = fkJoin.sourceColumns().get(0).javaName();
-            String pkCol       = fkJoin.targetColumns().get(0).javaName();
+        var fkJoin = (JoinStep.FkJoin) joinPath.get(0);
+        String fkHolderCol = fkJoin.sourceColumns().get(0).sqlName();
+        String pkCol       = fkJoin.targetColumns().get(0).sqlName();
 
-            // targetTable is the PK side (the table the FK points to).
-            // If it matches the child table, the parent holds the FK: parent.fk → child.pk.
-            // Otherwise the child holds the FK: child.fk → parent.pk.
-            boolean parentHoldsFk = fkJoin.targetTable().tableName().equals(childTableName);
+        // targetTable is the PK side (the table the FK points to).
+        // If it matches the child table, the parent holds the FK: parent.fk → child.pk.
+        // Otherwise the child holds the FK: child.fk → parent.pk.
+        boolean parentHoldsFk = fkJoin.targetTable().tableName().equals(childTableName);
 
-            String childCol       = parentHoldsFk ? pkCol       : fkHolderCol;
-            String parentRecordCol = parentHoldsFk ? fkHolderCol : pkCol;
+        String childCol        = parentHoldsFk ? pkCol        : fkHolderCol;
+        String parentRecordCol = parentHoldsFk ? fkHolderCol  : pkCol;
 
-            return CodeBlock.builder()
-                .addStatement("$T condition = $T.field($T.name($S)).eq(parentRecord.get($T.name($S)))",
-                    CONDITION, DSL, DSL, childCol, DSL, parentRecordCol)
-                .build();
-        }
-        // Multi-hop or ConditionJoin: not yet supported; throw at runtime.
         return CodeBlock.builder()
-            .addStatement("throw new $T($S + $S)",
-                UnsupportedOperationException.class,
-                "TableInterfaceField fetcher: multi-hop and ConditionJoin paths are not yet supported. ",
-                "See stub-interface-union-fetchers.md Track A.")
+            .addStatement("$T condition = $T.field($T.name($S)).eq(parentRecord.get($T.name($S)))",
+                CONDITION, DSL, DSL, childCol, DSL, parentRecordCol)
+            .build();
+    }
+
+    /**
+     * Emits {@code condition = condition.and(DSL.field(DSL.name(col)).in(val1, val2, ...))}
+     * to restrict results to rows with a known discriminator value. Mirrors the legacy generator
+     * which always emits {@code WHERE col IN (...known values...)}. When {@code knownValues} is
+     * empty, emits nothing (no restriction added).
+     */
+    private static CodeBlock buildDiscriminatorFilter(String discriminatorColumn, List<String> knownValues) {
+        if (knownValues.isEmpty()) return CodeBlock.of("");
+        var inArgs = knownValues.stream()
+            .map(v -> CodeBlock.of("$S", v))
+            .collect(CodeBlock.joining(", "));
+        return CodeBlock.builder()
+            .addStatement("condition = condition.and($T.field($T.name($S)).in($L))",
+                DSL, DSL, discriminatorColumn, inArgs)
             .build();
     }
 

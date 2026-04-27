@@ -17,47 +17,19 @@ Priority number `#3` must stay stable: it is embedded in emitted reason strings 
 
 ## Track A cleanup
 
-Review of the Track A implementation identified the following gaps to address before Track A is fully closed.
+All six items identified in the post-review are now resolved (2026-04-27).
 
-### 1. Missing `orderBy` in `buildTableInterfaceFieldFetcher` list branch (bug)
+1. **`orderBy` in child-field list branch** — fixed. `buildTableInterfaceFieldFetcher` now calls `buildOrderByCode` and emits `.orderBy(orderBy)` in the `isList` branch.
+2. **Multi-hop / ConditionJoin as classification error** — fixed. `FieldBuilder` now validates single-hop `FkJoin` at classification time via `validateSingleHopFkJoin()` and returns `UnclassifiedField(AUTHOR_ERROR)` instead of a runtime throw.
+3. **Execution tests** — added `allContent_returnsAllRowsWithTypeName`, `allContent_typeRouting_filmContentHasLength`, `allContent_onlyReturnsKnownDiscriminatorValues`, `filmContent_singleValue_routesToFilmContent`, `filmContent_filmWithNoContent_returnsNull` to `GraphQLQueryTest`.
+4. **Unit tests for the two new fetcher methods** — added structural tests (`_list_returnsResultRecord`, `_single_returnsRecord`, `_hasEnvParameter`, `_isPublicStatic`, `_discriminatorFilter_*`) to `TypeFetcherGeneratorTest`.
+5. **Unit tests for TypeResolver emission** — added five tests to `GraphitronSchemaClassGeneratorTest` covering presence, discriminator-value mapping, column name, empty-values skip, and alphabetical order.
+6. **Duplicate Javadoc on `buildJoinPathCondition`** — removed.
 
-`ChildField.TableInterfaceField` carries an `OrderBySpec orderBy` field but `buildTableInterfaceFieldFetcher` never calls `buildOrderByCode` and emits no `.orderBy(...)` clause in the list branch. The sibling `buildQueryTableInterfaceFieldFetcher` handles this correctly (line 596). Any list-cardinality `TableInterfaceField` with an ordering directive will silently return unordered results until this is fixed.
+Two additional bugs found and fixed during testing:
 
-Fix: call `buildOrderByCode(tif.orderBy(), tif.name(), tableLocal)` before the DSL chain in the `isList` branch, and add `.orderBy(orderBy)\n` to the emitted query.
-
-### 2. Multi-hop / ConditionJoin path should be a classification error, not a runtime throw
-
-`buildJoinPathCondition` emits an `UnsupportedOperationException` in the generated code for multi-hop and `ConditionJoin` paths. The classifier has full joinPath information at build time, so this should be caught as an `UnclassifiedField` with `RejectionKind.AUTHOR_ERROR` — consistent with how every other unsupported pattern is handled. A user should not have to deploy and execute a query to discover their schema is unsupported.
-
-Also: the current error message text says "See stub-interface-union-fetchers.md Track A" — Track A is done. Update the reference once the validation is moved to the classifier.
-
-### 3. Execution tests in `GraphQLQueryTest` (highest-value gap)
-
-The `content` table, seed data, `allContent` root query, and `Film.filmContent` child field are all in place. There are no execution-tier tests asserting that the TypeResolver routing actually works. Add at minimum:
-
-- `allContent_returnsFilmContentAndShortContentWithCorrectTypename` — queries `{ allContent { __typename title } }` and asserts that rows with `CONTENT_TYPE='FILM'` resolve to `FilmContent` and `CONTENT_TYPE='SHORT'` resolve to `ShortContent`.
-- `filmContent_childField_returnsDiscriminatedType` — queries `{ films { title filmContent { __typename title } } }` and asserts that films with a linked content row return the correct concrete type, and films without one return null.
-
-### 4. Unit tests for the two new generator methods
-
-`TypeFetcherGeneratorTest` tests structural properties (return type, parameter signature) for every other fetcher variant. Add:
-
-- `queryTableInterfaceField_list_returnsResultRecord`
-- `queryTableInterfaceField_single_returnsRecord`
-- `queryTableInterfaceField_hasEnvParameter`
-- `tableInterfaceField_list_returnsResultRecord`
-- `tableInterfaceField_single_returnsRecord`
-
-### 5. Unit tests for TypeResolver emission in `GraphitronSchemaClassGeneratorTest`
-
-The `GraphitronSchemaClassGenerator` conditionally emits `codeRegistry.typeResolver(...)` for each `TableInterfaceType`. No tests cover this new branch. Add at minimum:
-
-- A test asserting that a schema with a `@table @discriminate` interface produces a `typeResolver(...)` block that references the interface name and discriminator column.
-- A test asserting that a schema without any `@discriminate` interface emits no `typeResolver(...)` beyond the Node one.
-
-### 6. Duplicate Javadoc on `buildJoinPathCondition`
-
-`TypeFetcherGenerator.buildJoinPathCondition` (around line 698) has two consecutive `/** ... */` blocks. The first is a stale draft with an incomplete description; the second is correct. Remove the first block.
+- **Missing discriminator-value WHERE filter** (gap A from SQL comparison): `buildDiscriminatorFilter(col, values)` added to both `buildQueryTableInterfaceFieldFetcher` and `buildTableInterfaceFieldFetcher`. Both records now carry `List<String> knownDiscriminatorValues` extracted from `tit.participants()` at classification time. Test `allContent_onlyReturnsKnownDiscriminatorValues` exercises this path.
+- **SQL column name casing** (runtime bug): `TypeBuilder.buildTableInterfaceType` now resolves the `@discriminate(on: ...)` value via `JooqCatalog.findColumn` (case-insensitive) and stores the SQL column name (e.g. `content_type`). `buildJoinPathCondition` now uses `ColumnRef.sqlName()` instead of `javaName()` for FK column references. Both fixes are required for correct PostgreSQL execution.
 
 ---
 
@@ -169,3 +141,4 @@ Track A is done. Track B's design decision (Option 1 vs. Option 2 above) is a pr
 ## Changelog
 
 - **2026-04-27** — Track A complete. `QueryTableInterfaceField` and `ChildField.TableInterfaceField` lifted from `NOT_IMPLEMENTED_REASONS` to `IMPLEMENTED_LEAVES`. `discriminatorColumn` added to both records; classifier, `QueryConditionsGenerator`, `TypeFetcherGenerator` (new `buildQueryTableInterfaceFieldFetcher`, `buildTableInterfaceFieldFetcher`, `buildJoinPathCondition`), and `GraphitronSchemaClassGenerator` (TypeResolver wiring) updated. Fixtures: `content` table, `allContent` root query, `Film.filmContent` child field, `Content` / `FilmContent` / `ShortContent` SDL. Review identified six cleanup items (see Track A cleanup section above).
+- **2026-04-27** — Track A cleanup complete. All six review items resolved. Added discriminator-value WHERE filter (`buildDiscriminatorFilter`), `knownDiscriminatorValues` on both model records, SQL column name resolution via `JooqCatalog.findColumn` in `TypeBuilder`, FK column SQL-name fix in `buildJoinPathCondition`. Added 18 new unit tests (TypeFetcherGeneratorTest, GraphitronSchemaClassGeneratorTest) and 5 execution tests (GraphQLQueryTest). Track A is fully closed.

@@ -23,7 +23,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | Java LSP rewrite + introspect retirement + `dev` goal | Ready | [plan](graphitron-lsp.md) |
 | Stub #3: Interface / union fetchers | In Progress | [plan](stub-interface-union-fetchers.md) |
 | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` | In Progress | [plan](retire-maven-plugin.md) |
-| First-class Connection, Edge, PageInfo type variants | In Review | [plan](firstclass-connection-types.md) |
 | Load-bearing classifier guarantee audit annotations | In Review | [plan](load-bearing-guarantee-audit.md) |
 
 ---
@@ -64,6 +63,10 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 - [**`TypeResolver` wiring for interface/union types**](typeresolver-wiring-interface-union.md): `WiringClassGenerator` emits `DataFetcher` wiring only; GraphQL interface and union types also require a `TypeResolver` registered via `TypeRuntimeWiring.newTypeWiring("MyInterface").typeResolver(...)`. Currently no `TypeResolver` is wired for any interface or union type, so the runtime would get `Can't resolve type for object` errors.
 - [**Retire `@nodeId` synthesis shim**](retire-nodeid-synthesis-shim.md): `TypeBuilder.buildTableType` promotes a metadata-carrying type to `NodeType` even when SDL lacks `implements Node @node`; `FieldBuilder` Path-2 and `BuildContext.classifyInputField` similarly synthesize `NodeIdField` for bare scalar `ID` fields without `@nodeId`. Each site fires a per-occurrence WARN today.
 - [**`NodeIdReferenceField` JOIN-projection form**](nodeidreferencefield-join-projection-form.md): The `@nodeId` + `@node` plan shipped the FK-mirror collapse path (single-hop FK whose target columns positionally match the target NodeType's `keyColumns`; the parent's FK source columns encode directly with no JOIN). Composite-FK that doesn't mirror, multi-hop, and condition-join cases emit a runtime `UnsupportedOperationException` stub today (`FetcherEmitter#dataFetcherValue`'s `NodeIdReferenceField` arm).
+
+### Other
+
+- [**Validate that list fields on tables without a PK require explicit ordering**](validate-list-fields-require-ordering.md): `FieldBuilder.resolveDefaultOrderSpec()` falls back to `OrderBySpec.Fixed([pk ASC])` when a list field has no `@defaultOrder` or `@orderBy` and the table has a PK. For tables without a PK, it returns `OrderBySpec.None` instead, which the generators faithfully emit as an empty `List.of()` — no `ORDER BY` clause. The result is a non-deterministic list every time the query runs.
 
 
 ---
