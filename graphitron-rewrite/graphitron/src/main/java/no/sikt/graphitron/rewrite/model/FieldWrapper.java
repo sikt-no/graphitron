@@ -66,6 +66,9 @@ public sealed interface FieldWrapper
      * <p>{@code defaultPageSize} is the default page size when the client omits the {@code first}
      * argument (from {@code @asConnection(defaultFirstValue:)}). Defaults to 100. Per-site
      * because two carriers returning the same Connection type may declare different defaults.
+     * Invariant: equals the {@code defaultValueProgrammatic} set on the {@code first} argument
+     * of the rebuilt carrier field in the assembled schema; both are sourced from the same
+     * {@code resolveDefaultFirstValue} call in {@code GraphitronSchemaBuilder}.
      */
     record Connection(
         boolean connectionNullable,

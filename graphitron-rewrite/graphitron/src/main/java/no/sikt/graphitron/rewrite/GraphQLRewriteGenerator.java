@@ -140,7 +140,7 @@ public class GraphQLRewriteGenerator {
         write(OrderByResultClassGenerator.generate(),                                             "util",       emittedThisRun);
         write(GraphitronContextInterfaceGenerator.generate(),                                     "schema",     emittedThisRun);
         write(EnumTypeGenerator.generate(schema),                                                 "schema",     emittedThisRun);
-        write(InputTypeGenerator.generate(schema, assembled),                                     "schema",     emittedThisRun);
+        write(InputTypeGenerator.generate(schema),                                                "schema",     emittedThisRun);
         write(ObjectTypeGenerator.generate(schema, assembled, fetcherBodies),                     "schema",     emittedThisRun);
         write(GraphitronSchemaClassGenerator.generate(schema, assembled, fetcherBodies.keySet(), outputPackage), "schema", emittedThisRun);
         write(GraphitronFacadeGenerator.generate(outputPackage),                                  "",           emittedThisRun);
