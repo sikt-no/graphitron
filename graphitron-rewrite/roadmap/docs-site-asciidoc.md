@@ -7,9 +7,16 @@ priority: 20
 
 # Plan: AsciiDoc docs site, built by Maven, published via GitHub Pages
 
-Goal: replace the standalone Docusaurus app (separate repo, currently serving `graphitron.sikt.no`) with an AsciiDoc-based site that lives inside this repo, builds as part of the Maven reactor, and publishes to the same domain via GitHub Pages. Net effect: one source of truth, doc rot is caught by CI, contributors edit `.adoc` files next to the code they describe, and we drop the Node toolchain entirely.
+Goal: replace the standalone Docusaurus app (`github.com/alf/graphitron-landingsside`, currently serving `graphitron.sikt.no` from Sikt's internal Kubernetes via GitLab CI) with an AsciiDoc-based site that lives inside this repo, builds as part of the Maven reactor, and produces a hosting-agnostic static-site output. Net effect: one source of truth, doc rot is caught by CI, contributors edit `.adoc` files next to the code they describe, and we drop the Node toolchain entirely.
 
-Out of scope: rewriting the existing site's content (it's "very bare bones, does not contain much of value except the design", per the user). The migration step is mechanical, not editorial.
+The site must remain Sikt-branded: the existing visual identity is built on the Sikt Design System (`@sikt/sds-core` CSS tokens), and that's the one piece of the current site genuinely worth carrying over. SDS integration is a hard requirement, not an optional theming decision.
+
+Hosting target: **GitHub Pages**, deployed throughout development to the default `sikt-no.github.io/graphitron/` URL (or similar non-custom path). This keeps the live `graphitron.sikt.no` (currently Sikt-internal K8s nginx via GitLab CI) untouched while we build, lets us iterate visually on a real deployed URL, and reduces the cutover at the end to a single DNS flip and a one-time Pages settings change. The current Sikt K8s deployment + Matomo analytics + GitLab CI all get retired in Phase 3.
+
+Out of scope:
+- Rewriting the existing site's content (it's "very bare bones, does not contain much of value except the design", per the user). The migration step is mechanical, not editorial.
+- The custom **Integrasjonstester** page (Norwegian-language React component over `src/data/integrationTests.json`). Not linked from the rest of the site, the user wasn't aware of it, and the data is sparse. Leave behind on the old repo.
+- The default Docusaurus blog (template posts, no real content).
 
 ## Why AsciiDoc, not Docusaurus / Jekyll / MkDocs
 
@@ -30,12 +37,17 @@ graphitron-rewrite/graphitron-docs/
 └── src/
     └── docs/
         └── asciidoc/
-            ├── index.adoc                  # landing page
-            ├── getting-started.adoc
+            ├── index.adoc                  # landing page (replaces the Docusaurus hero + features)
+            ├── why.adoc                    # ported from docs/why.md
+            ├── faq.adoc                    # ported from docs/faq.md
+            ├── quick-start.adoc            # ported from docs/quick_start_guide.md
+            ├── documentation.adoc          # ported from docs/documentation.md
             ├── _includes/                  # shared snippets, partials
-            ├── images/
+            ├── images/                     # logo.svg, Person2/3.svg, Personer.svg, Creature1-3.svg, favicon
             └── css/
-                └── custom.css              # optional theme overrides
+                ├── sds-tokens.css          # vendored from @sikt/sds-core
+                ├── sds-button.css          # vendored from @sikt/sds-button
+                └── site.css                # adapts the old siktifisert.css onto AsciiDoc's class names
 ```
 
 - Packaging: `pom` (no Java code, no jar). Just plugin executions.
@@ -54,14 +66,21 @@ graphitron-rewrite/graphitron-docs/
 
 The full `mvn -f graphitron-rewrite/pom.xml install -Plocal-db` command (per [`CLAUDE.md`](../../CLAUDE.md)) keeps working unchanged; it just builds one extra module.
 
-## Theme and visual design
+## Sikt Design System integration
 
-Default Asciidoctor HTML output is functional but plain. We have two choices, in increasing order of effort:
+The current site is themed via the Sikt Design System: `@sikt/sds-core` (CSS custom properties for color, typography, spacing) and `@sikt/sds-button` (button styles). The existing `siktifisert.css` is mostly a thin layer of Docusaurus-specific selectors mapped onto SDS tokens (`--sds-color-*`, `--sds-typography-*`, `--sds-space-*`).
 
-1. **`asciidoctor-default` + small custom stylesheet.** Override fonts, colors, and the header/footer to match Sikt branding. ~½ day. Looks clean and professional, indistinguishable to most readers from a Material/Docusaurus site for technical content.
-2. **A community theme** like `asciidoctor-skins` (Foundation, Golo, Maker, Readthedocs styles) or pull the Antora UI bundle. More polish out of the box, but more moving parts to maintain.
+Our build needs the SDS CSS without dragging Node back in. Three approaches considered:
 
-Recommendation: start with option 1, salvage colors/typography from the existing Docusaurus design (which the user described as the only thing of value there). Revisit option 2 only if the result feels insufficient.
+1. **Vendor the CSS files.** One-time copy of the compiled CSS from `node_modules/@sikt/sds-core/dist/` and `node_modules/@sikt/sds-button/dist/` into `src/docs/asciidoc/css/`. Refresh on SDS upgrades, tracked as a roadmap item. Pros: zero build-time dependencies, fast, fully reproducible. Cons: stale unless we re-vendor; needs a dated comment in the file noting the source SDS version.
+2. **Maven `frontend-maven-plugin`.** Add Node + npm to the docs module build, run `npm install @sikt/sds-core @sikt/sds-button`, copy the dist CSS into the output. Pros: always fresh. Cons: re-introduces the exact Node toolchain we're leaving behind. Defeats half the point of the rewrite.
+3. **CDN reference.** Link directly to a published SDS CSS URL. Pros: zero local copy. Cons: requires Sikt to publish SDS to a public CDN (unconfirmed); offline dev breaks; site breaks if CDN host changes.
+
+**Decision: vendor.** Specifically: copy `dist/index.css` (or equivalent) from each SDS package into `src/docs/asciidoc/css/`, prepend a comment with `package@version, copied YYYY-MM-DD, source: <path>`, and add a roadmap item to refresh on SDS major releases. This keeps the build pure-Maven, the asset auditable, and contributors don't need Node installed to work on the docs.
+
+Site-specific styles live in `site.css` and adapt the patterns from `siktifisert.css` onto Asciidoctor's default class names (`#header`, `#content`, `.sect1`, `.admonitionblock`, etc.) instead of Docusaurus's (`.navbar`, `.hero`, `.theme-doc-markdown`). The class-name remapping is mechanical; the design intent (SDS tokens for color/space/type, the `advantage-box` callout style, footer dark variant) carries over directly.
+
+Asciidoctor's HTML structure is different enough from Docusaurus that a 1-to-1 stylesheet port isn't possible, but every SDS-token reference in the old CSS does port directly. Estimate: most of the visual work is rewiring selectors, not redesigning anything.
 
 ## Deployment
 
@@ -69,35 +88,52 @@ New workflow at `.github/workflows/deploy-docs.yml`:
 
 - Trigger: push to `main` (and manual `workflow_dispatch` for one-off republishes).
 - Job 1 (build):
-  - Checkout, set up JDK 21, cache `~/.m2`.
+  - Checkout, set up JDK 25, cache `~/.m2`.
   - Run `mvn -f graphitron-rewrite/pom.xml -pl graphitron-docs -am package -Plocal-db` (the `-am` is mandatory per `CLAUDE.md`'s "footgun" note).
   - Upload `graphitron-rewrite/graphitron-docs/target/generated-docs/` as a Pages artifact via `actions/upload-pages-artifact`.
 - Job 2 (deploy): `actions/deploy-pages@v4`, depends on job 1.
 - Permissions: `pages: write`, `id-token: write`, scoped to this workflow only.
 
+Two-stage hosting:
+
+**During Phases 1 and 2:** Pages serves the built site at the default GitHub URL (`https://sikt-no.github.io/graphitron/`). No custom domain configured yet, no `CNAME` file in the build output. The live `graphitron.sikt.no` continues to serve the old Docusaurus build from Sikt's internal K8s; nothing changes for end users. This gives us a real deployed URL to iterate against without disrupting the live site.
+
+The `baseUrl` for Asciidoctor needs to reflect the `/graphitron/` subpath while we're on the default Pages URL (relative-only links in the AsciiDoc source avoid the issue; absolute internal links would need rewriting at cutover). Prefer `xref:` over raw URLs throughout.
+
+**At Phase 3 cutover:** Add `CNAME` containing `graphitron.sikt.no` to `src/docs/asciidoc/`, configure the custom domain in GitHub Pages settings, flip DNS from Sikt K8s ingress to `sikt-no.github.io`, retire the GitLab CI pipeline, decommission the Sikt K8s deployment, archive the `alf/graphitron-landingsside` repo. Matomo analytics either gets reattached via a small `<script>` injected into the AsciiDoctor template, or dropped (decision deferred until the cutover plan is written).
+
 Repo-level setup (one-time, has to be done in GitHub UI by a maintainer, not by Claude):
 
-1. Settings → Pages → Source: GitHub Actions.
-2. Settings → Pages → Custom domain: `graphitron.sikt.no`, enforce HTTPS.
-3. DNS: confirm or create the `CNAME` record on `sikt.no` pointing `graphitron` → `sikt-no.github.io`. (The user owns this; it may already exist, since the domain is referenced in the README. If it currently points at the Docusaurus host, the cutover happens here.)
+- **Phase 1:** Settings → Pages → Source: GitHub Actions.
+- **Phase 3:** Settings → Pages → Custom domain: `graphitron.sikt.no`, enforce HTTPS, plus DNS update on `sikt.no` to point `graphitron` → `sikt-no.github.io`.
 
-A `CNAME` file at the site root is emitted by the asciidoctor build (copy a static `src/docs/asciidoc/CNAME` containing `graphitron.sikt.no` to the output directory) so Pages keeps the custom domain on each deploy.
+## Content migration from `alf/graphitron-landingsside`
 
-## Content migration from the Docusaurus repo
+Inventory complete (Phase 0 of this plan, already done while writing it). The full source-repo audit:
 
-Sequenced as Phase 2 (see "Phases" below) so the pipeline can be proven on a stub site first.
+**Migrate:**
+- `docs/why.md` (32 lines) → `why.adoc`. Includes one inline `<div class="advantage-box">` (bespoke SDS-styled callout); maps cleanly onto an AsciiDoc admonition or a passthrough block with the same class.
+- `docs/faq.md` (50 lines) → `faq.adoc`. Plain markdown, no special features.
+- `docs/quick_start_guide.md` (153 lines) → `quick-start.adoc`. Uses `<details>/<summary>` collapsibles around code samples; AsciiDoc has `[%collapsible]` blocks that produce equivalent HTML5 disclosure widgets.
+- `docs/documentation.md` (53 lines) → `documentation.adoc`. Plain markdown.
+- `static/img/` SVGs we want: `logo.svg`, `Favicon-Dark.svg`, `Person2.svg`, `Person3.svg`, `Personer.svg`, `Creature1.svg`, `Creature2.svg`, `Creature3.svg`. Move to `src/docs/asciidoc/images/`.
+- `src/css/siktifisert.css` design intent (SDS tokens, `.advantage-box`, footer dark style). Reimplemented in `site.css` against AsciiDoctor selectors.
+- The homepage hero + 3-feature row from `src/pages/index.js` and `src/components/HomepageFeatures/index.js`. Reimplemented as a static AsciiDoc landing page using a `[.hero]` block and a 3-column table or AsciiDoc `[.features]` blocks. The `<ButtonLink>` from `@sikt/sds-button` becomes a styled `<a>` with the SDS button class names.
 
-1. Inventory the existing Docusaurus repo (the user will need to point at it; not yet identified in this plan). Capture:
-   - Page list and sidebar structure.
-   - Custom React components, MDX features, plugins. Anything non-trivial gets noted as a conversion question rather than auto-converted.
-   - Theme assets (logo, colors, fonts) we want to carry over.
-2. Convert each `.md` / `.mdx` to `.adoc`. For straight markdown, `kramdoc` (a markdown-to-asciidoc converter) handles the bulk; spot-check by hand.
-3. MDX-only features (React components inline) get rewritten as AsciiDoc passthroughs, AsciiDoc Diagram blocks, or just static HTML, depending on what they were doing.
-4. Rewrite cross-references to AsciiDoc xref syntax (`xref:page.adoc#anchor[label]`).
-5. Move images into `src/docs/asciidoc/images/`, update paths.
-6. Verify the local build (`mvn -pl graphitron-docs -am package`) produces a clean site with no AsciiDoc warnings.
+**Drop (out of scope):**
+- `src/pages/integrasjonstester.js`, `src/components/IntegrationTests/`, `src/data/integrationTests.json`. Per the user, this page wasn't part of the intended site and isn't linked.
+- Default Docusaurus `blog/` posts. Template content, no value.
+- `static/img/undraw_docusaurus_*.svg` and `docusaurus.png`. Docusaurus boilerplate.
+- `src/css/custom.old.css`. Already labelled stale by the source repo.
+- `src/theme/Root.js`. Force-light-theme hack, won't be needed (we control the AsciiDoctor template directly).
+- `Dockerfile`, `deployment.yaml`, `.gitlab-ci.yml`. Replaced by GitHub Actions in Phase 3.
 
-Once Phase 2 is in, archive the Docusaurus repo with a README pointing here.
+Conversion mechanics:
+
+1. `kramdoc` (markdown-to-asciidoc) handles the bulk of each `.md` file.
+2. Spot-check each output: `<details>` to `[%collapsible]`, custom CSS classes preserved as inline passthroughs, links to other pages rewritten as `xref:`.
+3. Move images, update all references.
+4. Verify the build (`mvn -f graphitron-rewrite/pom.xml -pl graphitron-docs -am package`) produces a clean site with no AsciiDoc warnings, then push and check the deployed Pages URL.
 
 ## Authoring conventions
 
@@ -120,53 +156,73 @@ This plan touches the conventions documented in [`workflow.md`](../docs/workflow
 
 ## Phases
 
-Two phases, picked because the cutover from Docusaurus is observable on the live domain between them.
+Three phases, each with an observable end state on a real URL.
 
-### Phase 1: Pipeline (skeleton site)
+### Phase 1: Pipeline (skeleton site, deployed to default Pages URL)
 
-End state: `graphitron.sikt.no` serves a one-page AsciiDoc site built by `mvn install` and deployed by the new GitHub Action. The page can be a placeholder ("Documentation is being migrated"), but the build, deploy, custom domain, and HTTPS all work end-to-end.
+End state: `https://sikt-no.github.io/graphitron/` serves a one-page AsciiDoc site built by `mvn install`, styled with SDS tokens, deployed by the new GitHub Action. The live `graphitron.sikt.no` continues to serve the old Docusaurus build, untouched. The page is a placeholder ("Documentation is being migrated") but the build, SDS bundling, deploy, and the visual identity all work end-to-end on the deployed Pages URL.
 
 Deliverables:
 
 - `graphitron-rewrite/graphitron-docs/pom.xml`.
 - `graphitron-rewrite/pom.xml` updated `<modules>` list.
-- `src/docs/asciidoc/index.adoc` and `CNAME`.
-- Minimal custom CSS.
+- `src/docs/asciidoc/index.adoc` (placeholder content).
+- `src/docs/asciidoc/css/sds-tokens.css`, `sds-button.css` (vendored from `@sikt/sds-core`, `@sikt/sds-button`, dated comment with source version).
+- `src/docs/asciidoc/css/site.css` (initial port of `siktifisert.css` patterns onto AsciiDoctor classes).
+- Logo and favicon copied into `src/docs/asciidoc/images/`.
 - `.github/workflows/deploy-docs.yml`.
-- One-time GitHub Pages settings change (manual, by a maintainer).
-- DNS verified by maintainer.
+- One-time GitHub Pages settings change: enable Pages, source = GitHub Actions (manual, by a maintainer; no custom domain yet).
 
-Verification: push to `main`, observe deploy succeed, hit `https://graphitron.sikt.no/`, confirm HTTPS valid and content served.
+No `CNAME` file in this phase. No DNS changes. No touching the old Docusaurus deployment.
+
+Verification: push to `main`, observe deploy succeed, hit `https://sikt-no.github.io/graphitron/`, confirm SDS branding renders correctly (Sikt colors, typography, header/footer match), HTTPS valid.
 
 ### Phase 2: Content migration
 
-End state: every page that existed on the old Docusaurus site (with content worth keeping) is present, navigable, styled, and free of AsciiDoc warnings. Old repo archived.
+End state: the deployed Pages URL serves a fully-fledged Sikt-branded site with all of the in-scope content from `alf/graphitron-landingsside` ported to AsciiDoc. The live `graphitron.sikt.no` is still the old Docusaurus build, still untouched. Side-by-side review against the old site (browse both URLs) drives final polish.
 
 Deliverables:
 
-- Inventory of source pages (committed as a one-shot file, deleted once the migration lands).
-- Converted `.adoc` pages, images, and assets.
-- Sidebar / nav updated.
-- `graphitron-docs/README.adoc` for contributors (authoring conventions above).
-- Update root `README.md` to confirm the "Online documentation" link still resolves correctly (no actual URL change).
+- Converted `.adoc` pages: `index`, `why`, `faq`, `quick-start`, `documentation`.
+- Homepage hero + 3-feature layout reimplemented in static AsciiDoc.
+- All in-scope SVGs and assets copied over.
+- Site nav (top bar links: What and why, FAQ, Quick start guide, GitHub).
+- `site.css` finalized: Sikt brand colors, the `.advantage-box` callout, the dark footer, hero spacing.
+- `graphitron-docs/README.adoc` for contributors (authoring conventions).
 
-Verification: side-by-side comparison against the archived Docusaurus deploy (if reachable) for any page intentionally dropped.
+Verification: open `https://sikt-no.github.io/graphitron/` and `https://graphitron.sikt.no/` side by side; confirm the new site reaches feature parity (minus integrasjonstester) and looks at least as Sikt-branded as the old. Iterate on Pages URL freely; no risk to live site.
+
+### Phase 3: Cutover (custom domain, retire old infra)
+
+End state: `https://graphitron.sikt.no/` serves the new Maven-built AsciiDoc site from GitHub Pages. The old Sikt K8s deployment is decommissioned. The `alf/graphitron-landingsside` repo is archived with a README pointing here.
+
+Deliverables:
+
+- Add `src/docs/asciidoc/CNAME` containing `graphitron.sikt.no`, configure custom domain in Pages settings, enforce HTTPS.
+- DNS update: `graphitron.sikt.no` → `sikt-no.github.io` (Sikt platform / DNS team).
+- Decision on Matomo: reattach via `<script>` injection in the AsciiDoctor template, or drop. Plan a small follow-up roadmap item if reattaching, since SDS may publish a tracking-snippet helper.
+- Decommission: stop the GitLab CI pipeline on `alf/graphitron-landingsside`, scale K8s deployment to 0, remove the K8s Deployment/Service/Ingress, archive the repo with a redirect README.
+- Update root `README.md` to keep the "Online documentation" link (URL doesn't change).
+
+Verification: hit `https://graphitron.sikt.no/`, confirm HTTPS valid, confirm content matches Phase 2 deploy.
 
 ## Open questions for the reviewer
 
 1. **Module location.** This plan puts `graphitron-docs/` under `graphitron-rewrite/`, in line with the AI scope rule in `CLAUDE.md`. The site documents Graphitron-the-product, not just the rewrite. If the preferred home is the repo root (e.g., `/docs-site/`), the plan needs a small adjustment (root pom, not rewrite parent pom; a different scope discussion in `CLAUDE.md`).
-2. **Existing Docusaurus repo.** Where does it live? Phase 2 needs the inventory, so I need a pointer.
-3. **Theme effort.** Default Asciidoctor + custom CSS, or invest in `asciidoctor-skins` / Antora UI from the start? Current recommendation: start light.
-4. **Old `docs/` at repo root.** Files like `vision-and-goal.md`, `graphitron-principles.md`, `security.md` live there today. Migrate into the new site, or leave alone? My read: migrate, since they're public-facing prose; but they're in the legacy area which AI is scoped out of, so this needs a human decision.
+2. **Old `docs/` at repo root.** Files like `vision-and-goal.md`, `graphitron-principles.md`, `security.md` live there today. Migrate into the new site, or leave alone? My read: migrate, since they're public-facing prose; but they're in the legacy area which AI is scoped out of, so this needs a human decision.
+3. **Matomo at cutover (Phase 3).** Reattach via `<script>` injection in the AsciiDoctor template, or drop analytics entirely with the move to GitHub Pages? Defer until Phase 3, but flagging now so it's not a surprise.
 
 ## Risks and mitigations
 
-- **Docusaurus has features we can't easily port** (live demos, search, versioned docs). Mitigation: enumerate during Phase 2 inventory; for search, AsciiDoc sites can use `lunr.js` or similar client-side search added in a follow-up; versioning is unlikely to be needed pre-1.0.
-- **Default Asciidoctor styling looks dated.** Mitigation: phase 1 ships with custom CSS borrowing the Docusaurus design's typography and palette; if it still feels off, escalate to option 2 in "Theme and visual design".
-- **CNAME / DNS cutover races.** Mitigation: keep the Docusaurus deploy live until phase 1 is verified on a temporary `*.github.io` URL, then flip DNS in one step.
-- **The Maven build now fails when docs are broken.** This is the *intent* (catch rot in CI), but it means a typo in an `.adoc` file blocks a release. Mitigation: AsciiDoc warnings vs. errors are configurable in the plugin; we set "fail on error, warn on missing xref" until the workflow is settled, then tighten.
+- **SDS is published as npm packages, not a public CDN.** Vendoring sidesteps this for the build; the residual risk is the vendored copy goes stale if SDS releases break compatibility. Mitigation: dated comment at the top of each vendored file noting `package@version` and source date; refresh as a roadmap item on SDS major releases.
+- **Default Asciidoctor styling looks dated.** Mitigation: that's exactly what `site.css` solves by porting the SDS-token usage from `siktifisert.css`. Phase 1 verifies the branding looks right *before* Phase 2 piles content on top.
+- **The Maven build now fails when docs are broken.** Intent (catch rot in CI), but a typo in `.adoc` blocks a release. Mitigation: AsciiDoc errors-vs-warnings is configurable in the plugin; start with "fail on error, warn on missing xref" until settled, then tighten.
+- **Phase 3 DNS cutover requires Sikt platform / DNS team coordination.** Mitigation: Phase 1 and 2 are entirely independent of DNS; the new site is fully styled and content-complete on `sikt-no.github.io/graphitron/` before the cutover ticket is even raised. The cutover itself is then a single coordinated change.
+- **Matomo loss.** If we drop Matomo we lose continuity in usage data. Mitigation: deferred decision, see Open question 3. If reattaching, the Matomo `<script>` is small and well-documented; injection into the AsciiDoctor template is a 5-line change.
+- **Subpath base URL during Phases 1-2.** While on `sikt-no.github.io/graphitron/`, absolute internal links break. Mitigation: enforce `xref:` and relative-path links in the authoring conventions, and configure Asciidoctor `:imagesdir: images` so image paths stay relative.
 
 ## Roadmap entries
 
-- This file (`docs-site-asciidoc.md`): keep through both phases. Collapse Phase 1 to a "shipped at `<sha>`" note when it lands; remove the file when Phase 2 lands.
-- No spinoff items expected; if Phase 2 surfaces them (e.g., search, versioning), they'll be added as Backlog items at that time.
+- This file (`docs-site-asciidoc.md`): keep through all three phases. Collapse each phase to a "shipped at `<sha>`" note when it lands; remove the file when Phase 3 lands and the cutover is verified.
+- Spinoff (Backlog, to be created when Phase 1 lands): **`refresh-sds-vendored-css.md`**, periodic refresh of the vendored SDS CSS files on SDS major releases. Low priority, low effort.
+- Other spinoffs may surface during Phase 2 (e.g., client-side search, autogenerated integrasjonstester from real test sources, versioned docs); add them as Backlog when they appear, don't pre-spec.
