@@ -33,14 +33,20 @@ import java.util.Optional;
  * Applies {@code @tag(name: "<tag>")} to every in-scope element defined in a
  * source whose corresponding {@link SchemaInput} carries a {@code tag}.
  *
- * <p>Element scope (legacy parity): field definitions, input object fields,
+ * <p>Emission scope (legacy parity): field definitions, input object fields,
  * enum values, field arguments, and union type declarations themselves. Type
- * declarations (object, interface, enum, input) are never tagged.
+ * declarations (object, interface, enum, input) are never tagged by this
+ * applier. This is what {@code <schemaInput tag>} actually applies.
  *
- * <p>If the registry does not already declare a {@code @tag} directive (via
- * federation {@code @link} or an explicit declaration), the applier injects
- * the Apollo-federation-compatible declaration before walking. An element
- * that already declares {@code @tag} explicitly is never double-tagged.
+ * <p>Declaration scope (Apollo Federation 2 parity): if the registry does not
+ * already declare a {@code @tag} directive (via federation {@code @link} or an
+ * explicit declaration), the applier injects a declaration whose {@code on}
+ * clause matches federation's stock declaration, not the narrower emission
+ * scope above. The two are independent: the auto-injected declaration permits
+ * any author-written {@code @tag} use that federation permits (including on
+ * scalars, input objects, and type declarations), even though this applier
+ * never emits at those locations itself. An element that already declares
+ * {@code @tag} explicitly is never double-tagged.
  *
  * <p>Operates on {@link TypeDefinitionRegistry} via a two-pass collect-then-
  * replace pattern: new definitions are collected during the first walk, then
@@ -271,11 +277,19 @@ public final class TagApplier {
                 .name(TAG_NAME_ARG)
                 .type(NonNullType.newNonNullType(TypeName.newTypeName("String").build()).build())
                 .build())
+            // Apollo Federation 2 parity: declaration permits the full federation @tag location set,
+            // independent of the narrower emission scope this applier walks. See class javadoc.
             .directiveLocation(DirectiveLocation.newDirectiveLocation().name("FIELD_DEFINITION").build())
-            .directiveLocation(DirectiveLocation.newDirectiveLocation().name("INPUT_FIELD_DEFINITION").build())
-            .directiveLocation(DirectiveLocation.newDirectiveLocation().name("ENUM_VALUE").build())
-            .directiveLocation(DirectiveLocation.newDirectiveLocation().name("ARGUMENT_DEFINITION").build())
+            .directiveLocation(DirectiveLocation.newDirectiveLocation().name("INTERFACE").build())
+            .directiveLocation(DirectiveLocation.newDirectiveLocation().name("OBJECT").build())
             .directiveLocation(DirectiveLocation.newDirectiveLocation().name("UNION").build())
+            .directiveLocation(DirectiveLocation.newDirectiveLocation().name("ARGUMENT_DEFINITION").build())
+            .directiveLocation(DirectiveLocation.newDirectiveLocation().name("SCALAR").build())
+            .directiveLocation(DirectiveLocation.newDirectiveLocation().name("ENUM").build())
+            .directiveLocation(DirectiveLocation.newDirectiveLocation().name("ENUM_VALUE").build())
+            .directiveLocation(DirectiveLocation.newDirectiveLocation().name("INPUT_OBJECT").build())
+            .directiveLocation(DirectiveLocation.newDirectiveLocation().name("INPUT_FIELD_DEFINITION").build())
+            .directiveLocation(DirectiveLocation.newDirectiveLocation().name("SCHEMA").build())
             .build();
 
         Optional<graphql.GraphQLError> error = registry.add(decl);

@@ -195,10 +195,13 @@ class TagApplierTest {
 
         var decl = registry.getDirectiveDefinition("tag").orElseThrow();
         assertThat(decl.isRepeatable()).isTrue();
+        // Apollo Federation 2 parity: declaration permits the full federation @tag location
+        // set, independent of the narrower emission scope this applier walks.
         assertThat(decl.getDirectiveLocations()).extracting(l -> l.getName())
             .containsExactlyInAnyOrder(
-                "FIELD_DEFINITION", "INPUT_FIELD_DEFINITION", "ENUM_VALUE",
-                "ARGUMENT_DEFINITION", "UNION"
+                "FIELD_DEFINITION", "INTERFACE", "OBJECT", "UNION",
+                "ARGUMENT_DEFINITION", "SCALAR", "ENUM", "ENUM_VALUE",
+                "INPUT_OBJECT", "INPUT_FIELD_DEFINITION", "SCHEMA"
             );
         assertThat(decl.getInputValueDefinitions()).hasSize(1);
         var arg = decl.getInputValueDefinitions().getFirst();
