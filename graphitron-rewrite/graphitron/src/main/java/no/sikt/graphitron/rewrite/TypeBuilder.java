@@ -346,7 +346,7 @@ class TypeBuilder {
             Optional<ColumnRef> kc = svc.resolveKeyColumn(colName, tableRef.tableName());
             if (kc.isEmpty()) {
                 keyColumnErrors.add("key column '" + colName + "' in @node could not be resolved in the jOOQ table"
-                    + candidateHint(colName, ctx.catalog.columnSqlNamesOf(tableRef.tableName())));
+                    + candidateHint(colName, ctx.catalog.columnJavaNamesOf(tableRef.tableName())));
             } else {
                 sdlKeyColumns.add(kc.get());
             }
@@ -480,9 +480,9 @@ class TypeBuilder {
                 + candidateHint(tableName, ctx.catalog.allTableSqlNames()));
         }
         String discriminatorRaw = argString(iface, DIR_DISCRIMINATE, ARG_ON).orElse(null);
-        // Resolve to the SQL column name (lowercase) so generators can use DSL.name(col) safely.
-        // findColumn uses equalsIgnoreCase so the jOOQ Java name (e.g. "CONTENT_TYPE") resolves
-        // to the SQL name (e.g. "content_type"). Falls back to the raw value when unresolvable.
+        // Resolve to the SQL column name so generators can use DSL.name(col) with the correct
+        // casing. findColumn accepts both Java names and SQL names. Falls back to the raw value
+        // when unresolvable (the validator will report the bad column name).
         String discriminatorColumn = discriminatorRaw == null ? null
             : ctx.catalog.findColumn(tableOpt.get().tableName(), discriminatorRaw)
                 .map(JooqCatalog.ColumnEntry::sqlName)
@@ -564,7 +564,7 @@ class TypeBuilder {
                 .map(InputFieldResolution.Unresolved::lookupColumn)
                 .filter(c -> c != null)
                 .findFirst()
-                .map(c -> candidateHint(c, ctx.catalog.columnSqlNamesOf(tableRef.tableName())))
+                .map(c -> candidateHint(c, ctx.catalog.columnJavaNamesOf(tableRef.tableName())))
                 .orElse("");
             return new UnclassifiedType(name, location,
                 "mapped to table '" + tableRef.tableName() + "' — unresolvable fields: " + reasons + hint);

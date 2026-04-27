@@ -829,7 +829,7 @@ class FieldBuilder {
             return new ArgumentRef.ScalarArg.UnboundArg(
                 name, typeName, nonNull, list, columnName,
                 "column '" + columnName + "' could not be resolved in table '" + rt.tableName() + "'"
-                    + candidateHint(columnName, ctx.catalog.columnSqlNamesOf(rt.tableName())));
+                    + candidateHint(columnName, ctx.catalog.columnJavaNamesOf(rt.tableName())));
         }
         var columnRef = new ColumnRef(col.get().sqlName(), col.get().javaName(), col.get().columnClass());
         String enumClassName = validateEnumFilter(typeName, columnRef, errors);
@@ -2090,7 +2090,7 @@ class FieldBuilder {
                 String terminalTable = svc.terminalTableSqlNameForReference(refPath.elements(), tableType);
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
                     "column '" + columnName + "' could not be resolved in the jOOQ table"
-                    + (terminalTable != null ? candidateHint(columnName, ctx.catalog.columnSqlNamesOf(terminalTable)) : ""));
+                    + (terminalTable != null ? candidateHint(columnName, ctx.catalog.columnJavaNamesOf(terminalTable)) : ""));
             }
             return new ColumnReferenceField(parentTypeName, name, location, columnName, column.get(), refPath.elements(), javaNamePresent);
         }
@@ -2118,7 +2118,7 @@ class FieldBuilder {
             }
             return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
                 "column '" + columnName + "' could not be resolved in the jOOQ table"
-                + candidateHint(columnName, ctx.catalog.columnSqlNamesOf(tableSqlName)));
+                + candidateHint(columnName, ctx.catalog.columnJavaNamesOf(tableSqlName)));
         }
         return new ColumnField(parentTypeName, name, location, columnName, column.get(), javaNamePresent);
     }
