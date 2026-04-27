@@ -386,7 +386,8 @@ class FieldBuilder {
             var knownValues = knownDiscriminatorValues(tableInterfaceType);
             return new TableInterfaceField(parentTypeName, name, location,
                 new ReturnTypeRef.TableBoundReturnType(elementTypeName, tableInterfaceType.table(), wrapper),
-                tableInterfaceType.discriminatorColumn(), knownValues, referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination());
+                tableInterfaceType.discriminatorColumn(), knownValues, tableInterfaceType.participants(),
+                referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination());
         }
 
         if (elementType instanceof InterfaceType interfaceType) {
@@ -1652,7 +1653,8 @@ class FieldBuilder {
             var knownValues = knownDiscriminatorValues(tableInterfaceType);
             return new QueryField.QueryTableInterfaceField(parentTypeName, name, location,
                 new ReturnTypeRef.TableBoundReturnType(elementTypeName, tableInterfaceType.table(), wrapper),
-                tableInterfaceType.discriminatorColumn(), knownValues, tfc.filters(), tfc.orderBy(), tfc.pagination());
+                tableInterfaceType.discriminatorColumn(), knownValues, tableInterfaceType.participants(),
+                tfc.filters(), tfc.orderBy(), tfc.pagination());
         }
         if (elementType instanceof InterfaceType interfaceType) {
             return new QueryField.QueryInterfaceField(parentTypeName, name, location,

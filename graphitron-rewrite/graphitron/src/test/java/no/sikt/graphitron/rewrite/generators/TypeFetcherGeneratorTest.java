@@ -21,6 +21,7 @@ import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.PaginationSpec;
 import no.sikt.graphitron.rewrite.model.ParamSource;
+import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
@@ -691,7 +692,7 @@ class TypeFetcherGeneratorTest {
         var wrapper = isList ? (FieldWrapper) nonNullList() : single();
         var returnType = tableBoundFilm(wrapper);
         return new QueryField.QueryTableInterfaceField("Query", name, null, returnType,
-            "FILM_TYPE", List.of("FILM", "SHORT"),
+            "FILM_TYPE", List.of("FILM", "SHORT"), List.of(),
             List.of(), new OrderBySpec.None(), null);
     }
 
@@ -747,10 +748,40 @@ class TypeFetcherGeneratorTest {
         // When no discriminator values are known, the filter must not be emitted.
         var returnType = tableBoundFilm(nonNullList());
         var field = new QueryField.QueryTableInterfaceField("Query", "allContent", null, returnType,
-            "FILM_TYPE", List.of(), List.of(), new OrderBySpec.None(), null);
+            "FILM_TYPE", List.of(), List.of(), List.of(), new OrderBySpec.None(), null);
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(field));
         var code = method(spec, "allContent").code().toString();
         assertThat(code).doesNotContain(".in(");
+    }
+
+    @Test
+    void queryTableInterfaceField_noAsterisk_inSelectClause() {
+        var field = queryTableInterfaceField("allContent", true);
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(field));
+        assertThat(method(spec, "allContent").code().toString()).doesNotContain("asterisk()");
+    }
+
+    @Test
+    void queryTableInterfaceField_discriminatorAlwaysSelected() {
+        var field = queryTableInterfaceField("allContent", true);
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(field));
+        assertThat(method(spec, "allContent").code().toString()).contains("\"FILM_TYPE\"");
+    }
+
+    @Test
+    void queryTableInterfaceField_participants_emitFieldsCalls() {
+        var returnType = tableBoundFilm(nonNullList());
+        var participants = List.<ParticipantRef>of(
+            new ParticipantRef.TableBound("FilmContent", filmTable(), "FILM"),
+            new ParticipantRef.TableBound("ShortContent", filmTable(), "SHORT"));
+        var field = new QueryField.QueryTableInterfaceField("Query", "allContent", null, returnType,
+            "content_type", List.of("FILM", "SHORT"), participants,
+            List.of(), new OrderBySpec.None(), null);
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
+            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+        var code = method(spec, "allContent").code().toString();
+        assertThat(code).contains("FilmContent.$fields(");
+        assertThat(code).contains("ShortContent.$fields(");
     }
 
     // ===== TableInterfaceField =====
@@ -764,7 +795,7 @@ class TypeFetcherGeneratorTest {
             "film_language_id_fkey", "", LANGUAGE_TABLE,
             List.of(languageIdCol()), FILM_TABLE, List.of(languageIdCol()), null, name + "_0"));
         return new ChildField.TableInterfaceField("Language", name, null, returnType,
-            "FILM_TYPE", List.of("FILM", "SHORT"),
+            "FILM_TYPE", List.of("FILM", "SHORT"), List.of(),
             joinPath, List.of(), new OrderBySpec.None(), null);
     }
 
@@ -811,10 +842,43 @@ class TypeFetcherGeneratorTest {
             "film_language_id_fkey", "", LANGUAGE_TABLE,
             List.of(languageIdCol()), FILM_TABLE, List.of(languageIdCol()), null, "content_0"));
         var field = new ChildField.TableInterfaceField("Language", "content", null, returnType,
-            "FILM_TYPE", List.of(), joinPath, List.of(), new OrderBySpec.None(), null);
+            "FILM_TYPE", List.of(), List.of(), joinPath, List.of(), new OrderBySpec.None(), null);
         var spec = TypeFetcherGenerator.generateTypeSpec("Language", LANGUAGE_TABLE, List.of(field));
         var code = method(spec, "content").code().toString();
         assertThat(code).doesNotContain(".in(");
+    }
+
+    @Test
+    void tableInterfaceField_noAsterisk_inSelectClause() {
+        var field = tableInterfaceField("content", true);
+        var spec = TypeFetcherGenerator.generateTypeSpec("Language", LANGUAGE_TABLE, List.of(field));
+        assertThat(method(spec, "content").code().toString()).doesNotContain("asterisk()");
+    }
+
+    @Test
+    void tableInterfaceField_discriminatorAlwaysSelected() {
+        var field = tableInterfaceField("content", true);
+        var spec = TypeFetcherGenerator.generateTypeSpec("Language", LANGUAGE_TABLE, List.of(field));
+        assertThat(method(spec, "content").code().toString()).contains("\"FILM_TYPE\"");
+    }
+
+    @Test
+    void tableInterfaceField_participants_emitFieldsCalls() {
+        var returnType = tableBoundFilm(nonNullList());
+        List<JoinStep> joinPath = List.of(new JoinStep.FkJoin(
+            "film_language_id_fkey", "", LANGUAGE_TABLE,
+            List.of(languageIdCol()), FILM_TABLE, List.of(languageIdCol()), null, "content_0"));
+        var participants = List.<ParticipantRef>of(
+            new ParticipantRef.TableBound("FilmContent", filmTable(), "FILM"),
+            new ParticipantRef.TableBound("ShortContent", filmTable(), "SHORT"));
+        var field = new ChildField.TableInterfaceField("Language", "content", null, returnType,
+            "content_type", List.of("FILM", "SHORT"), participants,
+            joinPath, List.of(), new OrderBySpec.None(), null);
+        var spec = TypeFetcherGenerator.generateTypeSpec("Language", LANGUAGE_TABLE, null,
+            List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+        var code = method(spec, "content").code().toString();
+        assertThat(code).contains("FilmContent.$fields(");
+        assertThat(code).contains("ShortContent.$fields(");
     }
 
     @Test
