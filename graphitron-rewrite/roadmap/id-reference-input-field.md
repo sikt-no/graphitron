@@ -59,11 +59,14 @@ relevant behaviour today:
    column in the terminal table. The `@field(name:)` value is NOT a column for
    `[ID!]`-shaped filters; it is a method accessor suffix
    (`STUDIEPROGRAM_ID` → `hasStudieprogramIds`), so the column lookup always fails.
-3. Column-miss tail (line 871): when neither directive matches and the column lookup
-   on the resolved table misses, the field becomes `Unresolved`. The legacy SDL
-   `[ID!] @field(name: "X_ID")` lands here today and propagates as
-   `UnclassifiedType` on the containing input. The synthesis shim hooks before this
-   tail.
+3. Column lookup (line 843) and column-miss tail (line 871): the column lookup is
+   case-insensitive on both jOOQ Java name and SQL name. Today, `[ID!] @field(name:
+   "X_ID")` resolves either as a `ColumnField` (when the source table happens to
+   carry a column with that name, the common Sakila/sis shape) or, when it doesn't,
+   as `Unresolved` and `UnclassifiedType` on the containing input. The new shim
+   arm hooks *before* line 843 for ID-typed fields so a qualifier reverse-map wins
+   over the case-insensitive column match; column lookup remains the fallback when
+   the shim doesn't match.
 
 The existing scalar shim at lines 857-869 (bare `ID` on a `@table` whose record class
 carries `__NODE_TYPE_ID` / `__NODE_KEY_COLUMNS` synthesizes `NodeIdField` with a
@@ -208,14 +211,18 @@ former and shares the synthesis-shim pattern of the latter:
   pinned by `@reference(path: [{key: K}])`. FK is inferred from the input's resolved
   table to the table backing `T` when unique; explicit `@reference` is required when
   ambiguous. Predicate method probe (advisory) checks for `has<Name>(s)` on the
-  *resolved* table's record class (FK source). The shim arm at the column-miss tail
-  reverse-maps `@field(name:)` to a unique FK and synthesizes the canonical form.
+  *resolved* table's record class (FK source). The shim arm runs ahead of column
+  lookup for ID-typed fields and reverse-maps `@field(name:)` to a unique FK,
+  synthesizing the canonical form when it matches.
 
 The classifier branches live in `BuildContext.classifyInputField`. The canonical-form
 branch sits between the existing scalar-`@nodeId` branch (line 737) and the existing
-`@reference` branch (line 792). The shim arm sits at the column-miss tail (line 871),
-immediately *before* the existing scalar `NodeIdField` shim so a qualifier match wins
-over the bare-`id`-on-`@node`-table fallback.
+`@reference` branch (line 792). The shim arm sits *before* the column lookup at line
+843, gated on `typeName == "ID"` so it intercepts ID-typed fields before the
+case-insensitive column match would shadow the qualifier reverse-map. When the
+qualifier reverse-map misses, control falls through to the column lookup (preserving
+the legacy column-mapped `ID @field` path) and then to the existing scalar
+`NodeIdField` shim at line 857.
 
 ---
 
@@ -420,13 +427,16 @@ Two changes in `BuildContext.classifyInputField` (`BuildContext.java:721`):
    (inferred when unique, pinned by `@reference(path: [{key:}])` when explicit) and
    emits `IdReferenceField`. The downstream `@reference` branch (line 792) still
    requires `@reference` *without* `@nodeId`.
-2. **Add a synthesis shim arm** at the column-miss tail (line 871, immediately
-   *before* the existing scalar-`NodeIdField` shim at lines 857-869, so a qualifier
-   match wins over the bare-id-on-`@node`-table fallback). When neither directive is
-   declared, `@field(name:)` is present, the field type is `ID!` or `[ID!]`, and the
-   reverse-mapped FK is unique, synthesize the canonical form and emit
-   `IdReferenceField` with `synthesized = true` and a per-site WARN naming the
-   `parentTypeName.fieldName`. Modelled on the existing scalar shim.
+2. **Add a synthesis shim arm** *before* the column lookup at line 843, gated on
+   `typeName == "ID"` and the absence of `@nodeId`/`@reference`. The shim runs ahead
+   of `findColumn` because the lookup is case-insensitive on both jOOQ Java name and
+   SQL name, so an ID-typed field whose name (or `@field(name:)` value) reverse-maps
+   to a FK qualifier on the resolved table would otherwise resolve as a `ColumnField`
+   first. When the qualifier reverse-map matches, synthesize the canonical form and
+   emit `IdReferenceField` with `synthesized = true` and a per-site WARN; when it
+   misses, fall through to the existing column lookup (preserving the legacy
+   column-mapped `ID @field` path) and then to the existing scalar `NodeIdField`
+   shim at lines 857-869. Modelled on the existing scalar shim.
 
 The catalog probe is **advisory** in both branches: when it returns false but the FK
 resolved, the classifier still emits `IdReferenceField` and logs a build warning.
@@ -523,26 +533,38 @@ Notes:
 
 #### Synthesis shim arm
 
-Place at the column-miss tail (`BuildContext.java:871`), immediately *before* the
-existing scalar `NodeIdField` shim. The two are coordinated by ordering: this shim
-fires only when the column name (whether explicit `@field(name:)` or defaulted from
-the GraphQL field name) reverse-maps to a unique FK qualifier on the resolved table.
-The existing scalar `NodeIdField` shim still runs immediately after for bare `id: ID`
-on a node-typed table; that case has no matching FK qualifier (qualifiers always
-include the target table token like `STUDIEPROGRAM_ID`) and falls through naturally.
+Place immediately *before* the column lookup at `BuildContext.java:843`, gated on
+`typeName == "ID"` and the absence of `@nodeId`/`@reference`. The shim fires when
+the column name (whether from explicit `@field(name:)` or defaulted from the GraphQL
+field name) reverse-maps to a unique FK qualifier on the resolved table. When it
+fires, the classifier returns `IdReferenceField` and the column lookup never runs.
+When it doesn't, control falls through to the existing column lookup (line 843) and
+then to the existing scalar `NodeIdField` shim (lines 857-869), which both stay
+unchanged.
+
+This placement is required because `findColumn` is case-insensitive on both jOOQ
+Java name and SQL name. Sis's typical legacy SDL `[ID!] @field(name: "STUDIEPROGRAM_ID")`
+on `STUDIERETT` would otherwise match a column named `STUDIEPROGRAM_ID` on the
+source table (case-insensitive match against either Java field `studieprogramId` or
+SQL column `studieprogram_id`) and resolve as a `list`-shaped `ColumnField` before
+the column-miss tail is ever reached. By moving the shim ahead of column lookup,
+qualifier-driven fields take precedence; column-mapped `ID @field` (rare, but valid)
+still works because column lookup remains the fallback.
 
 The trigger covers all three of the author's mental-model cases:
 
-- `id: ID` → `columnName = "id"` → upper-snake `"ID"` → no FK qualifier matches →
-  falls through to existing `NodeIdField` shim, which classifies as the input's
-  own table id. Unchanged behaviour.
+- `id: ID` on a node-typed table → `columnName = "id"` → upper-snake `"ID"` → no
+  FK qualifier matches → fall through to column lookup → fall through to existing
+  `NodeIdField` shim, which classifies as the input's own table id. Unchanged
+  behaviour.
 - `otherId: ID` (no directives) → `columnName = "otherId"` → upper-snake `"OTHER_ID"`
   → if the input's resolved table has exactly one FK whose qualifier is `OTHER_ID`,
-  synthesize. Otherwise, fall through.
+  synthesize `IdReferenceField`. Otherwise, fall through to column lookup.
 - `yetAnotherId: [ID!]` (no directives) → same path, with `list = true`.
 - `studieprogrammer: [ID!] @field(name: "STUDIEPROGRAM_ID")` (legacy sis form) →
   `columnName = "STUDIEPROGRAM_ID"` (already upper-snake from `@field`) → FK lookup
-  by qualifier, synthesize.
+  by qualifier, synthesize. Without the pre-column placement this case would
+  resolve as `ColumnField` against the case-insensitively matching column.
 
 ```java
 // IdReferenceField synthesis shim: ID!/[ID!] on a @table input whose column name
@@ -641,12 +663,54 @@ classpath; otherwise inline a small `UPPER_UNDERSCORE → LOWER_CAMEL` conversio
 
 Add pipeline-level cases in `GraphitronSchemaBuilderTest.TableInputTypeCase` (Sakila
 catalog, exercises FK resolution and the warn-on-missing-method path), a unit test for
-the reflection probe, and a unit test for the qualifier reproduction.
+the reflection probe, a unit test for the qualifier reproduction, and a small
+`idreffixture` schema in `graphitron-fixtures/src/main/resources/init.sql` that
+exercises a role-prefixed FK (qualifier ≠ source-column name).
 
 Because the predicate-method probe is advisory (Phase 3), classification succeeds
 against Sakila even though `FilmRecord` has no `has*` method; the warning fires, the
 variant is still emitted. The qualifier reproduction is testable without
 `KjerneJooqGenerator` on the classpath, by parameterized hand-checked expectations.
+
+#### `idreffixture` schema (`init.sql`)
+
+Sakila's `film` table has two FKs to `language` (`language_id`,
+`original_language_id`) but each FK's qualifier coincides with its source column
+name, so the qualifier-vs-column distinction never surfaces. The new `idreffixture`
+schema introduces a source/target pair where the qualifier differs from any source
+column, so the shim's reverse-map is exercised against a name that does *not* match
+any column case-insensitively. Place alongside the existing `nodeidfixture` schema
+(see `init.sql:278+`):
+
+```sql
+-- idreffixture schema
+--
+-- Synthetic fixture exercising IdReferenceField classification with a role-prefixed
+-- FK whose qualifier differs from any source column. The legacy KjerneJooqGenerator
+-- emits hasRegistrarStudieprogramIds() on the source record class for this shape;
+-- the rewrite reproduces the qualifier (REGISTRAR_STUDIEPROGRAM_ID) and reverse-maps
+-- it to the FK without depending on the column name.
+CREATE SCHEMA idreffixture;
+
+CREATE TABLE idreffixture.studieprogram (
+    id varchar(50) PRIMARY KEY
+);
+
+CREATE TABLE idreffixture.studierett (
+    studierett_id        serial      PRIMARY KEY,
+    -- Two FKs to studieprogram, source columns deliberately do NOT carry the "_id"
+    -- suffix so KjerneJooqGenerator's qualifier (column + "_ID" or role-prefix +
+    -- target + "_ID") does not equal any column name.
+    primary_studieprogram   varchar(50) REFERENCES idreffixture.studieprogram(id),
+    secondary_studieprogram varchar(50) REFERENCES idreffixture.studieprogram(id)
+);
+```
+
+The fixture's exact schema is sketched here; the implementer must verify that the
+Phase 2 qualifier reproduction produces qualifier strings that genuinely differ from
+the source column names for both FKs (e.g. `PRIMARY_STUDIEPROGRAM_ID` vs column
+`primary_studieprogram`). If the algorithm collapses to a column-equal qualifier,
+adjust the source-column shape until the divergence holds.
 
 ### Changes
 
@@ -816,6 +880,45 @@ ID_REFERENCE_DOES_NOT_SHIM_OWN_ID(
     }),
 ```
 
+**Case 4e — synthesis shim, role-prefixed qualifier (qualifier ≠ source column)**:
+
+This case is the reason the `idreffixture` schema exists. On Sakila's `film`, every
+FK qualifier coincides with a source column name (`LANGUAGE_ID`, `ORIGINAL_LANGUAGE_ID`),
+so the shim-before-column-lookup ordering is exercised but the column-lookup-as-fallback
+branch is not (column lookup *would* have matched). On `idreffixture.studierett`,
+the qualifier `PRIMARY_STUDIEPROGRAM_ID` does not match any source column, so the
+shim is the *only* path that resolves the field; without the pre-column placement
+the field would resolve as `Unresolved` and propagate as `UnclassifiedType`.
+
+```java
+ID_REFERENCE_SHIM_ROLE_PREFIXED(
+    "[ID!] @field(name: <role-prefixed qualifier>) where qualifier ≠ any column → IdReferenceField (synthesized + WARN)",
+    """
+    type Studieprogram @table(name: "idreffixture.studieprogram") @node(typeId: "sp") { id: ID }
+    type Studierett @table(name: "idreffixture.studierett") { id: ID }
+    input StudierettFilterInput @table(name: "idreffixture.studierett") {
+      primaryStudieprogramIds: [ID!] @field(name: "PRIMARY_STUDIEPROGRAM_ID")
+    }
+    type Query { studierett: Studierett }
+    """,
+    schema -> {
+        var tit = (TableInputType) schema.type("StudierettFilterInput");
+        var f = (InputField.IdReferenceField) tit.inputFields().stream()
+            .filter(InputField.IdReferenceField.class::isInstance).findFirst().orElseThrow();
+        assertThat(f.synthesized()).isTrue();
+        assertThat(f.targetTypeName()).isEqualTo("Studieprogram");
+        assertThat(f.qualifier()).isEqualTo("PRIMARY_STUDIEPROGRAM_ID");
+        // Critical: this qualifier is NOT a column on idreffixture.studierett —
+        // the shim-before-column-lookup ordering is what makes this resolve.
+    }),
+```
+
+The expected qualifier string (`PRIMARY_STUDIEPROGRAM_ID` here) depends on the
+Phase 2 reproduction of `KjerneJooqGenerator.getQualifier`/`generateRolePrefix`.
+If the implementer's algorithm produces a different string for this FK shape,
+update the expectation and the SDL's `@field(name:)` value to match — the case's
+purpose is to demonstrate qualifier ≠ column, not to pin a specific string.
+
 **Case 5 — bad explicit reference path → UnclassifiedField**:
 
 ```java
@@ -894,11 +997,12 @@ class JooqCatalogIdSetPredicateTest {
   Hand-checked expectations.
 
 ### Pipeline tests
-- `GraphitronSchemaBuilderTest.TableInputTypeCase` — eight new cases covering the
+- `GraphitronSchemaBuilderTest.TableInputTypeCase` — nine new cases covering the
   three SDL forms: canonical FK-inferred (Case 1), canonical FK-explicit (Case 2),
   ambiguous-FK rejection (Case 3), shim with explicit `@field(name:)` (Case 4a),
   shim with bare list field name (Case 4b), shim with bare scalar field name
-  (Case 4c), bare `id: ID` falls through to `NodeIdField` (Case 4d), and bad
+  (Case 4c), bare `id: ID` falls through to `NodeIdField` (Case 4d), shim with
+  role-prefixed qualifier on the new `idreffixture` schema (Case 4e), and bad
   explicit reference key (Case 5).
 
 ### Manual verification
@@ -942,21 +1046,17 @@ The implementation should make the s-strip behaviour explicit in the helper's
 javadoc and in the `What We're NOT Doing` documentation. If sis schemas show the
 need for richer pluralisation, revisit; current scope is the s-strip rule only.
 
-**Open: column lookup shadows the shim arm in the Sakila catalog.** `JooqCatalog.findColumn`
-matches both Java name (`languageId`) and SQL name (`language_id`) case-insensitively,
-so a field declared `languageId: ID @field(name: "LANGUAGE_ID")` resolves to a
-`ColumnField` against `film.language_id` *before* the column-miss tail (and therefore
-the shim) ever runs. In Sakila most FK qualifiers equal the FK source column name,
-which means Cases 4a and 4c (as written against `film`) actually classify as
-`ColumnField`, not `IdReferenceField`. Cases 4b (`languageIds: [ID!]` — plural Java
-name has no matching column) and 4d (`id: ID` — qualifier `"ID"` matches no FK)
-still trigger the intended branches. Resolution options before Phase 4 lands:
-(a) introduce a fixture table whose FK qualifier differs from any column name (e.g.
-a role-prefixed FK), or (b) gate the column-resolution branch on `!list || typeName != "ID"`
-so list-shaped ID filters fall through, or (c) move the shim arm in front of the
-column lookup for `typeName == "ID"`. Option (b) is the smallest behaviour change but
-needs an audit of existing pipeline tests that rely on `[ID!] @field(name:)` resolving
-to a column. Pick before writing the test cases against the Sakila fixture.
+**Resolved: shim runs before column lookup for `typeName == "ID"`.** `JooqCatalog.findColumn`
+matches both Java name (`languageId`) and SQL name (`language_id`) case-insensitively;
+left at the column-miss tail, the new shim would never fire for sis's typical
+`[ID!] @field(name: "STUDIEPROGRAM_ID")` shape because `STUDIEPROGRAM_ID` would match
+a real column on the source table first. The shim therefore moves *in front of* the
+column lookup, gated on `typeName == "ID"` and the absence of `@nodeId`/`@reference`.
+When the qualifier reverse-map misses, the classifier falls through to the existing
+column lookup (preserving legacy column-mapped `ID @field` behaviour) and ultimately
+to the existing scalar `NodeIdField` shim. See Phase 3 for the rewritten branch
+order. The role-prefixed FK case (where the qualifier intentionally differs from any
+column name) is exercised by a new `idreffixture` schema added in Phase 4.
 
 ## References
 
