@@ -223,12 +223,9 @@ Two new capabilities:
 1. **Service / record class enumeration.** `ServiceCatalog` is a
    stateless reflector that only knows what the schema explicitly
    references, so it cannot answer "what service classes /
-   methods exist?" for autocomplete. Three candidate sources, to
+   methods exist?" for autocomplete. Two candidate sources, to
    choose between on phase open:
 
-   - The POM's `<namedReferences>` map. Covers the legacy
-     `@service(name:)` form only; modern `@service(class:)` and
-     `@record(record: {className:})` schemas do not populate it.
    - A classpath scan for an annotation marker (e.g. a new
      `@RewriteService` annotation consumers attach to service
      classes). Bounded, explicit, but adds an authoring step.
@@ -237,7 +234,15 @@ Two new capabilities:
      Javadoc work below, so the marginal cost is mostly walking
      additional files.
 
-   Pick the source on phase open; the data shape
+   The POM's `<namedReferences>` map was considered and ruled
+   out: it covers only the legacy `@service(name:)` form, and we
+   want our advanced tooling to push consumers off that form
+   rather than entrench it. Modern `@service(class:)` and
+   `@record(record: {className:})` schemas do not populate the
+   map at all, so supporting it would also leave the autocomplete
+   surface mostly empty for current schemas.
+
+   Pick between the remaining two on phase open; the data shape
    (`ExternalReference` / `Method` / `Parameter` records on
    `CompletionData`, with `Parameter.source` matching the
    `MethodRef.ParamSource` taxonomy) is already defined and
