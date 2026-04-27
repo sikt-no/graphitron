@@ -41,6 +41,7 @@ import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.*;
 import static no.sikt.graphitron.generators.context.NodeIdReferenceHelpers.resolveColumnNamesForNodeIdField;
 import static no.sikt.graphitron.generators.dto.DTOGenerator.getDTOGetterMethodNameForField;
 import static no.sikt.graphitron.javapoet.CodeBlock.declare;
+import static no.sikt.graphitron.javapoet.CodeBlock.ofVar;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.FUNCTION;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.RESOLVER_HELPERS;
 import static no.sikt.graphitron.mappings.TableReflection.getRecordClass;
@@ -238,9 +239,11 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
 
         var isIterable = target.isIterableWrapped();
         var keyVarName = isIterable ? VAR_SERVICE_KEYS : VAR_SERVICE_KEY;
-        var toTableRecord = extractKeyAsTableRecord(isIterable ? VAR_RECORD_ITERATOR : VAR_SERVICE_RESULT, recordClassName);
+        var toTableRecord = extractKeyAsTableRecordWithNullCheck(isIterable ? VAR_RECORD_ITERATOR : VAR_SERVICE_RESULT, recordClassName);
         var keyValue = isIterable
-                ? CodeBlock.of("$N.stream().map($N -> $L)$L", VAR_SERVICE_RESULT, VAR_RECORD_ITERATOR, toTableRecord, collectToList())
+                ? CodeBlock.transformIfNotNull(
+                        ofVar(VAR_SERVICE_RESULT),
+                        CodeBlock.of("$N.stream().map($N -> $L)$L", VAR_SERVICE_RESULT, VAR_RECORD_ITERATOR, toTableRecord, collectToList()))
                 : toTableRecord;
 
         return CodeBlock.builder()

@@ -1,0 +1,7 @@
+# Service with auto-fetch returning null instead of a list of resolver keys.
+# Expected output today is empty list, but this will be null in the next major version 10.0.0
+{
+    customerServiceListReturningNull {
+        id
+    }
+}

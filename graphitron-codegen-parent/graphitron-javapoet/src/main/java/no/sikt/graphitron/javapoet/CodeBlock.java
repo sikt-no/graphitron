@@ -171,6 +171,15 @@ public final class CodeBlock {
     }
 
     /**
+     * Null-safe transformation: emits {@code codeToCheck != null ? transformExpr : null}.
+     * <p>Use when {@code codeToCheck} may be null at runtime and {@code transformExpr} would NPE
+     * on a null source.
+     */
+    public static CodeBlock transformIfNotNull(CodeBlock codeToCheck, CodeBlock transformExpr) {
+        return CodeBlock.of("$L != null ? $L : null", codeToCheck, transformExpr);
+    }
+
+    /**
      * Creates a static method call: {@code Type.method(arg1, arg2, ...)}.
      * Empty arguments are filtered out. The type is emitted as {@code $T} for correct import handling.
      */

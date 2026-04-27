@@ -15,9 +15,12 @@ extend type Query {
     helloWorldWithNullResolverKeys: [HelloWorldObject] @service(service: {className: "no.sikt.graphitron.example.service.HelloWorldService"})
 
     customerService: Customer @service(service: {className: "no.sikt.graphitron.example.service.CustomerService", method: "customer"})
+    customerServiceReturningNull: Customer @service(service: {className: "no.sikt.graphitron.example.service.CustomerService", method: "customerReturningNull"})
     customerServiceWithJooqRecordInput(input: CustomerInput!): Customer @service(service: {className: "no.sikt.graphitron.example.service.CustomerService", method: "customer"})
     customerServiceWithJavaRecordInput(input: HelloWorldInputObject!): Customer @service(service: {className: "no.sikt.graphitron.example.service.CustomerService", method: "customer"})
     customerServiceList: [Customer] @service(service: {className: "no.sikt.graphitron.example.service.CustomerService", method: "customers"})
+    customerServiceListReturningNull: [Customer] @service(service: {className: "no.sikt.graphitron.example.service.CustomerService", method: "customersReturningNull"})
+    customerServiceListReturningEmptyList: [Customer] @service(service: {className: "no.sikt.graphitron.example.service.CustomerService", method: "customersReturningEmptyList"})
 
     mockUpdateAddressAndCustomer: MockUpdateAddressAndCustomerPayload @service(service: {className: "no.sikt.graphitron.example.service.MockService"})
 }
