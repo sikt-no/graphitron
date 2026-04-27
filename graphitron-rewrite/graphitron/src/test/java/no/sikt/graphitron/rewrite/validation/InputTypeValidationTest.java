@@ -33,12 +33,12 @@ class InputTypeValidationTest {
     enum Case {
 
         VALID("valid input type — no errors",
-            new PojoInputType("FilmInput", null, null),
+            new PojoInputType("FilmInput", null, null, null),
             List.of()),
 
         KNOWN_INPUT_TYPE_NO_ERROR("input field referencing another InputType in the schema — no error",
-            new PojoInputType("CreateFilmInput", null, null),
-            Map.of("TranslationInput", new PojoInputType("TranslationInput", null, null)),
+            new PojoInputType("CreateFilmInput", null, null, null),
+            Map.of("TranslationInput", new PojoInputType("TranslationInput", null, null, null)),
             List.of());
 
         private final String description;

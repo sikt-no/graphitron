@@ -5,7 +5,6 @@ import graphql.schema.GraphQLInputType;
 import graphql.schema.GraphQLList;
 import graphql.schema.GraphQLNamedType;
 import graphql.schema.GraphQLNonNull;
-import graphql.schema.GraphQLSchema;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
@@ -49,17 +48,17 @@ public final class InputTypeGenerator {
 
     private InputTypeGenerator() {}
 
-    public static List<TypeSpec> generate(GraphitronSchema schema, GraphQLSchema assembled) {
+    public static List<TypeSpec> generate(GraphitronSchema schema) {
         var result = new ArrayList<TypeSpec>();
         for (var entry : schema.types().entrySet()) {
-            String name = entry.getKey();
-            if (name.startsWith("_")) continue;
-            var variant = entry.getValue();
-            if (variant instanceof GraphitronType.InputType
-                    || variant instanceof GraphitronType.TableInputType) {
-                if (assembled.getType(name) instanceof GraphQLInputObjectType inputType) {
-                    result.add(buildInputTypeSpec(inputType));
-                }
+            if (entry.getKey().startsWith("_")) continue;
+            GraphQLInputObjectType inputType = switch (entry.getValue()) {
+                case GraphitronType.InputType it -> it.schemaType();
+                case GraphitronType.TableInputType tit -> tit.schemaType();
+                default -> null;
+            };
+            if (inputType != null) {
+                result.add(buildInputTypeSpec(inputType));
             }
         }
         result.sort(Comparator.comparing(TypeSpec::name));
