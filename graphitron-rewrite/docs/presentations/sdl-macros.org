@@ -88,25 +88,47 @@ connection" på en kort måte.
 - Frem til verbose mønstre dukket opp var dette enkelt og smertefritt.
 - Så kom Relay, federation, feature-flagg.
 
-* Det første instinktet: tekstmakroer
+* Første forsøk: ny syntaks
 
-#+ATTR_REVEAL: :code_attribs data-line-numbers=1-3
+#+ATTR_REVEAL: :code_attribs data-line-numbers=1-3|2
+#+BEGIN_SRC graphql
+type Query {
+    films: [Film!]! FilmConnection
+}
+#+END_SRC
+
+=FilmConnection= fantes ikke i utviklerens skjema. Pipeline produserte
+den.
+
+Resultatet: skjemaet utvikleren jobbet med var ikke gyldig GraphQL.
+
+#+BEGIN_NOTES
+LSP-en forsto det ikke. Federation-verktøy avviste det. Tooling-økosystemet
+rundt GraphQL forventer at filen du redigerer er en lovlig SDL-fil.
+Vi hadde laget vårt eget språk, ikke en utvidelse av et eksisterende.
+Det var første lærdom: skjemaet utvikleren skriver må være lovlig SDL.
+#+END_NOTES
+
+* Andre forsøk: tekstmakroer
+
+#+ATTR_REVEAL: :code_attribs data-line-numbers=1-3|2
 #+BEGIN_SRC graphql
 type Query {
     films: [Film!]! @asConnection
 }
 #+END_SRC
 
-Direktivet leses, /MakeConnections.transform/ skriver nye =ObjectTypeDefinition=
-inn i =TypeDefinitionRegistry=, generatoren ser ferdig­ekspandert SDL.
+Lovlig SDL nå. Direktivet leses, /MakeConnections.transform/ skriver nye
+=ObjectTypeDefinition= inn i =TypeDefinitionRegistry=, generatoren ser
+ferdig­ekspandert SDL.
 
 Pre-prosessor. Direktivet er borte før generatoren ser noe.
 
 #+BEGIN_NOTES
-Dette er legacy-tilnærmingen. Det fungerer. Men det er bare det
-mekaniske. Generatoren vet ikke at dette er en connection, bare at det
-finnes en type =FilmsConnection= med =edges= og =nodes=. Vi reiser oss
-opp ett abstraksjonslag og oppdager at vi ikke har tatt det med.
+Dette er legacy-tilnærmingen. Stort steg fra forrige forsøk: skjemaet
+validerer, tooling fungerer. Men det er fortsatt bare det mekaniske.
+Generatoren vet ikke at dette er en connection, bare at det finnes en
+type =FilmsConnection= med =edges= og =nodes=.
 #+END_NOTES
 
 * Hvor knirker det?
