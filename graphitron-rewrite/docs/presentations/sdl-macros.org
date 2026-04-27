@@ -220,6 +220,49 @@ en connection". Strukturen /viser/ "dette er en connection". Begge gir
 samme begrep i modellen, fordi det /er/ samme begrep.
 #+END_NOTES
 
+* Begrepet er bundet til feltet
+
+#+BEGIN_SRC graphql
+type Query {
+    films:      [Film!]! @asConnection
+    favoritter: [Film!]! @asConnection
+}
+#+END_SRC
+
+Produserer:
+
+#+BEGIN_SRC graphql
+QueryFilmsConnection
+QueryFavoritterConnection
+#+END_SRC
+
+Ikke én delt =FilmsConnection=. To begreper, fordi to feltkontekster.
+
+Det koster SDL-verbosity. Det er bevisst.
+
+* Hvorfor ikke gjenbruke?
+
+En Connection er ikke "en paginert liste av Film".
+
+Det er /denne/ traverseringen, fra /dette/ feltet:
+
+#+ATTR_REVEAL: :frag (appear)
+- cursor er bundet til sorteringen
+- =totalCount= er bundet til filtrene
+- fasettene (kommer) er bundet til filterinputen
+
+#+ATTR_REVEAL: :frag appear
+Gjenbruk ville kollapset to begreper til én struktur. Det er det
+/strukturelle/ synet, ikke det /semantiske/.
+
+#+BEGIN_NOTES
+Dette er det strukturell type-gjenkjenning ikke gir oss. Klassifikatoren
+ruter direktiv-drevne og strukturelt-detekterte connections til samme
+ConnectionType-variant — men varianten har feltkonteksten med seg fordi
+hver felt-Connection er sin egen. Det hindrer "structural detection" fra
+å smitte over til "structural sharing".
+#+END_NOTES
+
 * Demo: to skjemaer, ett begrep
 
 ** Variant A: terse
