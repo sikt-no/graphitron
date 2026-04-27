@@ -7,16 +7,23 @@ priority: 20
 
 # Plan: AsciiDoc docs site, built by Maven, published via GitHub Pages
 
-Goal: replace the standalone Docusaurus app (`github.com/alf/graphitron-landingsside`, currently serving `graphitron.sikt.no` from Sikt's internal Kubernetes via GitLab CI) with an AsciiDoc-based site that lives inside this repo, builds as part of the Maven reactor, and produces a hosting-agnostic static-site output. Net effect: one source of truth, doc rot is caught by CI, contributors edit `.adoc` files next to the code they describe, and we drop the Node toolchain entirely.
+Goal: consolidate every public-facing documentation artifact in this repo into a single Maven-built AsciiDoc site published to `graphitron.sikt.no`, replacing the separate Docusaurus app at `github.com/alf/graphitron-landingsside` (currently serving the live domain from Sikt's internal Kubernetes via GitLab CI). Net effect: one source of truth, doc rot is caught by CI, contributors edit `.adoc` files next to the code they describe, the Node toolchain goes away, and our roadmap and changelog become first-class citizens of the public site.
+
+Four sources of content fold into the site:
+- **`/docs/`** (repo root): the canonical home for product-level docs (vision, principles, security, dependencies, FAQ, quick-start, etc.). Existing `.md` files convert to `.adoc` as part of this plan; future authoring is `.adoc`.
+- **`/graphitron-rewrite/docs/`**: the canonical home for rewrite-specific architecture, design principles, and contributor docs (workflow, design principles, model, code-generation triggers, runtime extension points). Same treatment: existing `.md` files convert to `.adoc`.
+- **`/graphitron-rewrite/roadmap/`**: per-item plan files plus `changelog.md`. Stays `.md` (authoring convention pinned by `workflow.md`); `roadmap-tool` extension converts at build time and emits the rendered pages into the site.
+- **`alf/graphitron-landingsside`** (old Docusaurus site): treated as a fallback. Most of its content is likely already covered by the in-repo docs above; the absorption phase audits gap-by-gap and ports only what's genuinely missing (FAQ probably; some "why" framing maybe).
 
 The site must remain Sikt-branded: the existing visual identity is built on the Sikt Design System (`@sikt/sds-core` CSS tokens), and that's the one piece of the current site genuinely worth carrying over. SDS integration is a hard requirement, not an optional theming decision.
 
-Hosting target: **GitHub Pages**, deployed throughout development to the default `sikt-no.github.io/graphitron/` URL (or similar non-custom path). This keeps the live `graphitron.sikt.no` (currently Sikt-internal K8s nginx via GitLab CI) untouched while we build, lets us iterate visually on a real deployed URL, and reduces the cutover at the end to a single DNS flip and a one-time Pages settings change. The current Sikt K8s deployment + Matomo analytics + GitLab CI all get retired in Phase 3.
+Hosting target: **GitHub Pages**, deployed throughout development to the default `sikt-no.github.io/graphitron/` URL (or similar non-custom path). This keeps the live `graphitron.sikt.no` (currently Sikt-internal K8s nginx via GitLab CI) untouched while we build, lets us iterate visually on a real deployed URL, and reduces the cutover at the end to a single DNS flip and a one-time Pages settings change. The current Sikt K8s deployment + Matomo analytics + GitLab CI all get retired in the cutover phase.
 
 Out of scope:
-- Rewriting the existing site's content (it's "very bare bones, does not contain much of value except the design", per the user). The migration step is mechanical, not editorial.
+- Rewriting the existing site's content (it's "very bare bones, does not contain much of value except the design", per the user). The migration is mechanical, not editorial.
 - The custom **Integrasjonstester** page (Norwegian-language React component over `src/data/integrationTests.json`). Not linked from the rest of the site, the user wasn't aware of it, and the data is sparse. Leave behind on the old repo.
 - The default Docusaurus blog (template posts, no real content).
+- Filtering which roadmap items publish. The roadmap renders in full (max-transparency); a `public:` opt-in flag is a possible future refinement, not part of this plan.
 
 ## Why AsciiDoc, not Docusaurus / Jekyll / MkDocs
 
@@ -29,49 +36,95 @@ The light alternative considered and rejected was GitHub Pages' built-in Jekyll 
 
 ## Module layout
 
-The AsciiDoc source lives at `/docs/` (repo root) for terminal/IDE discoverability: developers expect `cd repo && ls docs/` to work. The Maven module's `pom.xml` lives in the same directory; `asciidoctor-maven-plugin`'s `<sourceDirectory>` is set to the module basedir so the source files sit at `/docs/<page>.adoc` rather than buried under `src/main/asciidoc/`.
+The Maven module lives at `/docs/` (repo root). Source files for the user-facing doc pages live directly at `/docs/<page>.adoc` for terminal/IDE discoverability: developers expect `cd repo && ls docs/` to work. The module is added to `graphitron-rewrite-parent`'s `<modules>` list as `<module>../docs</module>` (Maven supports relative `..` paths), so doc breakage fails the same `mvn install` that builds everything else.
 
-The module is added to `graphitron-rewrite-parent`'s `<modules>` list as `<module>../docs</module>`. Maven supports relative `..` paths in `<module>` elements; this keeps the docs module in the rewrite reactor (so doc breakage fails the same `mvn install` that builds everything else) without forcing the source files into a less-discoverable location.
+The build draws from multiple source directories (see [Content sources](#content-sources)) and stages them into one location before AsciiDoctor runs:
 
 ```
-docs/
+docs/                                    # AUTHORED, repo-root, product docs
 ├── pom.xml
-├── README.adoc                     # GitHub-rendered landing for the directory
-├── index.adoc                      # site landing page (replaces the Docusaurus hero + features)
-├── why.adoc                        # ported from alf/graphitron-landingsside docs/why.md
-├── faq.adoc                        # ported from alf/graphitron-landingsside docs/faq.md
-├── quick-start.adoc                # ported from alf/graphitron-landingsside docs/quick_start_guide.md
-├── documentation.adoc              # ported from alf/graphitron-landingsside docs/documentation.md
-├── vision-and-goal.adoc            # ported from existing /docs/vision-and-goal.md
-├── graphitron-principles.adoc      # ported from existing /docs/graphitron-principles.md
-├── security.adoc                   # ported from existing /docs/security.md
-├── dependencies.adoc               # ported from existing /docs/dependencies.md
-├── _includes/                      # shared snippets, partials
-├── images/                         # logo.svg, Person2/3.svg, Personer.svg, Creature1-3.svg, favicon
-└── css/
-    ├── sds-tokens.css              # vendored from @sikt/sds-core
-    ├── sds-button.css              # vendored from @sikt/sds-button
-    └── site.css                    # adapts the old siktifisert.css onto AsciiDoc's class names
+├── README.adoc                          # GitHub-rendered landing for the directory
+├── index.adoc                           # site landing page
+├── faq.adoc                             # if found missing during absorption phase
+├── quick-start.adoc                     # if found missing during absorption phase
+├── vision-and-goal.adoc
+├── graphitron-principles.adoc
+├── security.adoc
+├── dependencies.adoc
+├── _includes/                           # shared snippets, partials
+├── images/                              # logo.svg, Person2/3.svg, Personer.svg, Creature1-3.svg, favicon
+├── css/
+│   ├── sds-tokens.css                   # vendored from @sikt/sds-core
+│   ├── sds-button.css                   # vendored from @sikt/sds-button
+│   └── site.css                         # SDS-tokens-on-AsciiDoc styles
+└── target/                              # gitignored
+    ├── staging/                         # build-time merged source tree
+    │   ├── <copies of /docs/*.adoc>
+    │   ├── architecture/                # mirrors /graphitron-rewrite/docs/
+    │   │   ├── README.adoc
+    │   │   ├── workflow.adoc
+    │   │   └── ...
+    │   └── _generated/                  # roadmap-tool output
+    │       ├── roadmap.adoc
+    │       ├── changelog.adoc
+    │       └── plans/<slug>.adoc        # one per roadmap item
+    └── generated-docs/                  # AsciiDoctor's HTML output, served by Pages
+
+graphitron-rewrite/docs/                 # AUTHORED, rewrite-specific architecture
+├── README.adoc
+├── workflow.adoc
+├── rewrite-design-principles.adoc
+├── rewrite-model.adoc
+├── argument-resolution.adoc
+├── code-generation-triggers.adoc
+├── runtime-extension-points.adoc
+├── getting-started.adoc
+└── claude-code-web-environment.adoc
+
+graphitron-rewrite/roadmap/              # AUTHORED, stays markdown
+├── <slug>.md                            # one per item, YAML front-matter
+├── changelog.md
+└── README.md                            # GitHub-rendered roll-up, also stays markdown
 ```
 
 - Packaging: `pom` (no Java code, no jar). Just plugin executions.
-- Output: `target/generated-docs/` (asciidoctor-maven-plugin default).
-- The module has no runtime dependencies; it depends on no other module in the reactor. It builds early and in parallel with everything else.
+- Module has no compile-time dependencies on other modules; it depends on `roadmap-tool` only via a build-phase invocation (see [Build wiring](#build-wiring)).
+- `target/` and everything under it is gitignored.
 - The module path `../docs` in the rewrite parent pom is the only unusual bit; everything else is conventional Maven.
 
 ## Build wiring
 
-`/docs/pom.xml`:
+`/docs/pom.xml` chains three plugins in `process-resources` and `compile`:
 
-- `org.asciidoctor:asciidoctor-maven-plugin` (current stable, pinned via a property in the parent pom alongside the other plugin versions).
-- `<sourceDirectory>${project.basedir}</sourceDirectory>` so AsciiDoc files live directly at `/docs/<page>.adoc`, not buried under `src/main/asciidoc/`.
-- `<resources>` config copies `images/`, `css/`, and `_includes/` to the output verbatim.
-- Bind `process-asciidoc` to the `compile` phase (so a stock `mvn install` builds the site without needing a separate goal).
-- Backend: `html5`. Source highlighter: `rouge` (no extra dependency vs. `coderay`/`pygments`).
-- Attributes: `:source-highlighter: rouge`, `:icons: font`, `:toc: left`, `:sectanchors:`, `:sectlinks:`, `:experimental:`, plus a `:graphitron-version: ${project.version}` so docs can reference the current artifact version.
-- Optional: `asciidoctor-diagram` extension, gated behind a profile so `mvn install` doesn't pay for a Graphviz/PlantUML dependency by default. Turn on only if a doc actually needs a diagram.
+**1. `maven-resources-plugin` (process-resources):** copy authored `.adoc` and asset files into `target/staging/`. Two resource definitions:
+- `${project.basedir}` → `target/staging/` (skip `pom.xml`, `target/`).
+- `${project.basedir}/../graphitron-rewrite/docs/` → `target/staging/architecture/` (every `.adoc` file).
+
+**2. `exec-maven-plugin` invoking `roadmap-tool` (process-resources, after the copy):** generate the rendered roadmap and plans into `target/staging/_generated/`. The existing `roadmap-tool` already reads `graphitron-rewrite/roadmap/*.md` to produce the GitHub README; this plan extends it (see [Roadmap, plans, and changelog rendering](#roadmap-plans-and-changelog-rendering) below) to additionally emit AsciiDoc output bound for the staged source tree.
+
+**3. `asciidoctor-maven-plugin` (compile):** read from `target/staging/`, write HTML to `target/generated-docs/`. Config:
+- `<sourceDirectory>${project.build.directory}/staging</sourceDirectory>`.
+- `<resources>` copies `images/`, `css/`, `_includes/` from staging to output verbatim.
+- Backend: `html5`. Source highlighter: `rouge`.
+- Attributes: `:source-highlighter: rouge`, `:icons: font`, `:toc: left`, `:sectanchors:`, `:sectlinks:`, `:experimental:`, plus `:graphitron-version: ${project.version}`.
+- Optional: `asciidoctor-diagram` extension, gated behind a profile so `mvn install` doesn't pay for a Graphviz/PlantUML dependency by default.
+
+Why staging instead of multi-source AsciiDoctor: `asciidoctor-maven-plugin`'s `<sourceDirectory>` accepts one path. Could be worked around with multiple `<execution>` blocks, but that fragments output handling and complicates cross-section `xref:`. Staging keeps AsciiDoctor's mental model of "one tree in, one tree out" intact.
 
 The full `mvn -f graphitron-rewrite/pom.xml install -Plocal-db` command (per [`CLAUDE.md`](../CLAUDE.md)) keeps working unchanged; it just builds one extra module via the relative-path `<module>../docs</module>` entry in the rewrite parent pom.
+
+## Content sources
+
+The four sources from the Goal section, with each one's role and how it lands on the site:
+
+| Source | Format | Audience | Site section | Mechanism |
+|---|---|---|---|---|
+| `/docs/*.adoc` | AsciiDoc (authored) | All users | Top-level (Quick start, FAQ, Why, Vision) | Direct copy to staging |
+| `/graphitron-rewrite/docs/*.adoc` | AsciiDoc (authored) | Contributors / architects | "Architecture" subsection | Direct copy to staging under `architecture/` |
+| `/graphitron-rewrite/roadmap/*.md` | Markdown (authored) | Curious users + contributors | "Roadmap" + "Plans" subsection | `roadmap-tool` generates `.adoc` to staging under `_generated/` |
+| `alf/graphitron-landingsside` | Mixed | Historical | None directly; absorption only | One-time audit; gaps ported into `/docs/` as `.adoc` |
+
+Per [Phase 4](#phase-4-roadmap-plans-and-changelog-rendering), the navigation distinguishes user-facing top-level pages from the architecture and roadmap sections. Casual visitors stay in the top-level. Contributors and the curious drill in.
 
 ## Sikt Design System integration
 
@@ -103,54 +156,112 @@ New workflow at `.github/workflows/deploy-docs.yml`:
 
 Two-stage hosting:
 
-**During Phases 1 and 2:** Pages serves the built site at the default GitHub URL (`https://sikt-no.github.io/graphitron/`). No custom domain configured yet, no `CNAME` file in the build output. The live `graphitron.sikt.no` continues to serve the old Docusaurus build from Sikt's internal K8s; nothing changes for end users. This gives us a real deployed URL to iterate against without disrupting the live site.
+**During Phases 1-4:** Pages serves the built site at the default GitHub URL (`https://sikt-no.github.io/graphitron/`). No custom domain configured yet, no `CNAME` file in the build output. The live `graphitron.sikt.no` continues to serve the old Docusaurus build from Sikt's internal K8s; nothing changes for end users. This gives us a real deployed URL to iterate against without disrupting the live site.
 
 The `baseUrl` for Asciidoctor needs to reflect the `/graphitron/` subpath while we're on the default Pages URL (relative-only links in the AsciiDoc source avoid the issue; absolute internal links would need rewriting at cutover). Prefer `xref:` over raw URLs throughout.
 
-**At Phase 3 cutover:** Add `CNAME` containing `graphitron.sikt.no` to `/docs/`, configure the custom domain in GitHub Pages settings, flip DNS from Sikt K8s ingress to `sikt-no.github.io`, retire the GitLab CI pipeline, decommission the Sikt K8s deployment, archive the `alf/graphitron-landingsside` repo. Matomo analytics either gets reattached via a small `<script>` injected into the AsciiDoctor template, or dropped (decision deferred until the cutover plan is written).
+**At Phase 5 cutover:** Add `CNAME` containing `graphitron.sikt.no` to `/docs/`, configure the custom domain in GitHub Pages settings, flip DNS from Sikt K8s ingress to `sikt-no.github.io`, retire the GitLab CI pipeline, decommission the Sikt K8s deployment, archive the `alf/graphitron-landingsside` repo. Matomo analytics either gets reattached via a small `<script>` injected into the AsciiDoctor template, or dropped (decision deferred until the cutover plan is written).
 
 Repo-level setup (one-time, has to be done in GitHub UI by a maintainer, not by Claude):
 
 - **Phase 1:** Settings → Pages → Source: GitHub Actions.
-- **Phase 3:** Settings → Pages → Custom domain: `graphitron.sikt.no`, enforce HTTPS, plus DNS update on `sikt.no` to point `graphitron` → `sikt-no.github.io`.
+- **Phase 5:** Settings → Pages → Custom domain: `graphitron.sikt.no`, enforce HTTPS, plus DNS update on `sikt.no` to point `graphitron` → `sikt-no.github.io`.
 
 ## Content migration
 
-Two sources fold into `/docs/` during Phase 2: the existing root `/docs/*.md` files (already in this repo), and the in-scope content from `alf/graphitron-landingsside`. Inventory complete (Phase 0 of this plan, already done while writing it).
+Two distinct migration efforts: converting in-repo `.md` to `.adoc` (mostly mechanical), and absorbing what's worth keeping from the old Docusaurus site (Phase 3, audit-driven).
 
-**Migrate from `alf/graphitron-landingsside`:**
-- `docs/why.md` (32 lines) → `/docs/why.adoc`. Includes one inline `<div class="advantage-box">` (bespoke SDS-styled callout); maps cleanly onto an AsciiDoc admonition or a passthrough block with the same class.
-- `docs/faq.md` (50 lines) → `/docs/faq.adoc`. Plain markdown, no special features.
-- `docs/quick_start_guide.md` (153 lines) → `/docs/quick-start.adoc`. Uses `<details>/<summary>` collapsibles around code samples; AsciiDoc has `[%collapsible]` blocks that produce equivalent HTML5 disclosure widgets.
-- `docs/documentation.md` (53 lines) → `/docs/documentation.adoc`. Plain markdown.
-- `static/img/` SVGs we want: `logo.svg`, `Favicon-Dark.svg`, `Person2.svg`, `Person3.svg`, `Personer.svg`, `Creature1.svg`, `Creature2.svg`, `Creature3.svg`. Move to `/docs/images/`.
-- `src/css/siktifisert.css` design intent (SDS tokens, `.advantage-box`, footer dark style). Reimplemented in `/docs/css/site.css` against AsciiDoctor selectors.
-- The homepage hero + 3-feature row from `src/pages/index.js` and `src/components/HomepageFeatures/index.js`. Reimplemented as a static AsciiDoc landing page using a `[.hero]` block and a 3-column table or AsciiDoc `[.features]` blocks. The `<ButtonLink>` from `@sikt/sds-button` becomes a styled `<a>` with the SDS button class names.
+### In-repo `.md` → `.adoc` (Phase 2)
 
-**Migrate from existing root `/docs/`:**
-- `/docs/README.md` → `/docs/README.adoc`. Stays the GitHub-rendered landing for the directory; gains a short paragraph pointing readers at the deployed site.
-- `/docs/vision-and-goal.md` → `/docs/vision-and-goal.adoc`. Public-facing prose, fits naturally on the site.
+**`/docs/`** (5 files):
+- `/docs/README.md` → `/docs/README.adoc`. Stays the GitHub-rendered landing for the directory.
+- `/docs/vision-and-goal.md` → `/docs/vision-and-goal.adoc`.
 - `/docs/graphitron-principles.md` → `/docs/graphitron-principles.adoc`.
-- `/docs/security.md` → `/docs/security.adoc`. Likely pinned to the navbar or footer.
+- `/docs/security.md` → `/docs/security.adoc`.
 - `/docs/dependencies.md` → `/docs/dependencies.adoc`.
 
-These are currently in the repo's "legacy" area (per `CLAUDE.md`'s scope rule), but moving the docs into the AI-managed area is the point of this plan. Once converted, the originals are deleted.
+**`/graphitron-rewrite/docs/`** (9 files):
+- `README.md` → `README.adoc`. Architecture overview.
+- `workflow.md` → `workflow.adoc`. Backlog → Spec → Ready → ... pipeline.
+- `rewrite-design-principles.md` → `rewrite-design-principles.adoc`.
+- `rewrite-model.md` → `rewrite-model.adoc`.
+- `argument-resolution.md` → `argument-resolution.adoc`.
+- `code-generation-triggers.md` → `code-generation-triggers.adoc`.
+- `runtime-extension-points.md` → `runtime-extension-points.adoc`.
+- `getting-started.md` → `getting-started.adoc`.
+- `claude-code-web-environment.md` → `claude-code-web-environment.adoc`. (Internal-tooling note; render anyway, deciding to hide it from public nav can be a follow-up.)
 
-**Drop (out of scope):**
-- `src/pages/integrasjonstester.js`, `src/components/IntegrationTests/`, `src/data/integrationTests.json`. Per the user, this page wasn't part of the intended site and isn't linked.
-- Default Docusaurus `blog/` posts. Template content, no value.
-- `static/img/undraw_docusaurus_*.svg` and `docusaurus.png`. Docusaurus boilerplate.
-- `src/css/custom.old.css`. Already labelled stale by the source repo.
-- `src/theme/Root.js`. Force-light-theme hack, won't be needed (we control the AsciiDoctor template directly).
-- `Dockerfile`, `deployment.yaml`, `.gitlab-ci.yml`. Replaced by GitHub Actions in Phase 3.
+**Roadmap content** (`graphitron-rewrite/roadmap/*.md`, `changelog.md`): stays markdown, build-time conversion via `roadmap-tool` (see [Roadmap, plans, and changelog rendering](#roadmap-plans-and-changelog-rendering)).
 
 Conversion mechanics:
 
 1. `kramdoc` (markdown-to-asciidoc) handles the bulk of each `.md` file.
 2. Spot-check each output: `<details>` to `[%collapsible]`, custom CSS classes preserved as inline passthroughs, links to other pages rewritten as `xref:`.
-3. Move images, update all references.
+3. Update every reference to the original `.md` in `CLAUDE.md`, READMEs, and other docs to point at the new `.adoc`.
 4. Delete the original `.md` once the `.adoc` is in place and rendering correctly.
 5. Verify the build (`mvn -f graphitron-rewrite/pom.xml -pl :graphitron-docs -am package`) produces a clean site with no AsciiDoc warnings, then push and check the deployed Pages URL.
+
+### Absorption from `alf/graphitron-landingsside` (Phase 3)
+
+The user's framing: "the old site has some content that we might want to migrate, but most likely it's already covered by our current markdown content." Treat the old site as a fallback, not a primary source. Absorption is a gap-fill audit.
+
+Old-site content inventory:
+- `docs/why.md` (32 lines, "Why Graphitron"). Likely covered by `vision-and-goal.adoc`; check the framing and pull anything `vision-and-goal` lacks.
+- `docs/faq.md` (50 lines). **Probably net-new on our side**; we have no FAQ today. Port to `/docs/faq.adoc`.
+- `docs/quick_start_guide.md` (153 lines, with `<details>` collapsibles around code). Cross-reference against `/graphitron-rewrite/docs/getting-started.adoc`. If `getting-started` covers the same ground, drop the old one. If the old one has the user-facing quick-start framing and `getting-started` is contributor-oriented, port to `/docs/quick-start.adoc`.
+- `docs/documentation.md` (53 lines, technical-component overview). Mostly describes legacy plugins (`graphitron-maven-plugin`, `graphitron-schema-transformer`); for the rewrite era this content is partially obsolete. Audit for anything still relevant; the rest gets dropped.
+
+Visual / asset migration (Phase 1 deliverable, not absorption):
+- SVGs we keep: `logo.svg`, `Favicon-Dark.svg`, `Person2.svg`, `Person3.svg`, `Personer.svg`, `Creature1.svg`, `Creature2.svg`, `Creature3.svg`. Move to `/docs/images/`.
+- `src/css/siktifisert.css` design intent (SDS tokens, `.advantage-box`, footer dark style). Reimplemented in `/docs/css/site.css` against AsciiDoctor selectors.
+- The homepage hero + 3-feature row from `src/pages/index.js` and `src/components/HomepageFeatures/index.js`. Reimplemented as a static AsciiDoc landing page in `/docs/index.adoc`.
+
+**Drop entirely:**
+- `src/pages/integrasjonstester.js`, `src/components/IntegrationTests/`, `src/data/integrationTests.json`. Out of scope per the user.
+- Default Docusaurus `blog/` posts. Template content, no value.
+- `static/img/undraw_docusaurus_*.svg` and `docusaurus.png`. Docusaurus boilerplate.
+- `src/css/custom.old.css`. Already labelled stale by the source repo.
+- `src/theme/Root.js`. Force-light-theme hack, won't be needed.
+- `Dockerfile`, `deployment.yaml`, `.gitlab-ci.yml`. Replaced by GitHub Actions in the cutover phase.
+
+Absorption deliverable: a one-shot audit document (committed and removed in the same Phase 3 PR) listing each old-site page with one of three verdicts: *already-covered-by `<page>`*, *gap, ported to `<page>`*, *dropped (reason)*.
+
+## Roadmap, plans, and changelog rendering
+
+Treats the roadmap as first-class content. `roadmap-tool` (the existing Maven module that today regenerates `graphitron-rewrite/roadmap/README.md` from per-item front-matter) gets an additional output mode: emit AsciiDoc into `/docs/target/staging/_generated/`, then the asciidoctor build picks it up automatically. No human keeps anything in sync.
+
+### What gets generated
+
+- **`_generated/roadmap.adoc`**: the rendered status board. Items grouped by `status:` (Backlog → Spec → Ready → In Progress → In Review). Within each group, sorted by `bucket:` (architecture, stubs, cleanup) then `priority:`. Each row shows title, bucket, priority, and a link to the corresponding plan page. A short intro paragraph sets expectations: "this is our internal-and-external roadmap including refactors; substantive user-visible items are tagged `bucket: architecture`."
+- **`_generated/changelog.adoc`**: converted directly from `graphitron-rewrite/roadmap/changelog.md`. "Recently shipped" view.
+- **`_generated/plans/<slug>.adoc`**: one page per item, body converted from the markdown plan. Front-matter rendered as a small attribute box at the top (status, bucket, priority, deferred).
+
+### Markdown-to-AsciiDoc conversion in `roadmap-tool`
+
+Plans are written in markdown (per `workflow.md`'s authoring convention). `roadmap-tool` already parses front-matter as YAML and reads the body as a string. To emit AsciiDoc, two options:
+
+1. **Pure pass-through with a header.** Wrap the markdown body in an AsciiDoc passthrough block, prepend an AsciiDoc header (title, attribute box). AsciiDoctor's markdown-compat backend renders the body acceptably. Pros: no conversion logic needed in `roadmap-tool`. Cons: subtle markdown features (e.g., GitHub-flavored task lists) may render imperfectly.
+2. **Library conversion.** Use a Java markdown→AsciiDoc converter (CommonMark with a custom AsciiDoc renderer, or `kramdoc-java` if available). Pros: cleaner output, handles edge cases. Cons: adds a dependency to `roadmap-tool`.
+
+Recommendation: **option 1** to start. The plans are mostly prose and code fences; AsciiDoctor handles those cleanly via its built-in markdown compatibility mode. Escalate to option 2 if rendering quality proves a problem.
+
+### Navigation and discoverability
+
+- **Top-level nav (main user docs):** What and why, Quick start, FAQ, Documentation index. Casual visitor stays here.
+- **Secondary nav row or footer link:** *Architecture* (rewrite-internal docs), *Roadmap*, *Changelog*.
+- **Plans pages reachable only from the roadmap index**, not in any nav. Determined readers click through; jargon-heavy pages don't pollute primary navigation.
+
+This satisfies "max-transparency, full roadmap renders" while keeping casual visitors out of the deeply-internal plans.
+
+### Coupling
+
+The docs module's build depends on `roadmap-tool` running first. Three ways:
+
+1. **Reactor order.** `roadmap-tool` builds before `docs` because docs lists it as a `<dependency>`. The docs `pom.xml` declares `<dependency>` on `roadmap-tool` (scope `provided` or as a plugin dep), and `exec-maven-plugin` invokes it.
+2. **Build helper plugin.** Wrap `roadmap-tool`'s emit step in a small Maven plugin and bind it to `process-resources`. Heaviest, but most idiomatic.
+3. **Bash step in `<exec>`.** `exec-maven-plugin` runs `mvn -pl roadmap-tool exec:java -q -Doutput=...` before AsciiDoctor. Simple but brittle.
+
+Recommendation: **option 1** (reactor + exec). Keeps everything in one Maven invocation, no nested mvn, no plugin to maintain.
 
 ## Authoring conventions
 
@@ -168,13 +279,14 @@ A short `/docs/README.adoc` (rendered by GitHub) for contributors:
 This plan touches the conventions documented in [`workflow.md`](../docs/workflow.md) and [`CLAUDE.md`](../../CLAUDE.md):
 
 - **Scope carve-out for `/docs/`.** `CLAUDE.md`'s scope rule currently restricts AI work to `graphitron-rewrite/`. This plan moves AI-managed content into `/docs/` as well. The Phase 1 commit updates the scope rule to read "Scope: `graphitron-rewrite/` and `/docs/`" with a one-line note that `/docs/` is the source for the documentation site.
-- **Documentation site reference.** `CLAUDE.md` gains a brief "Documentation site" section noting that `/docs/` is the source for `graphitron.sikt.no` and that doc changes ship through the same trunk-based flow as code.
-- `workflow.md`'s "Plans with a user-visible surface" rule already mandates that user-facing changes include a draft of the user docs in the plan. Once this site is live, that rule binds against `/docs/` (the draft moves into the real page when the feature ships).
+- **`.md` → `.adoc` ripple in `CLAUDE.md`.** Phase 2 deletes the `/graphitron-rewrite/docs/*.md` files. `CLAUDE.md` currently links to several of those (`workflow.md`, `claude-code-web-environment.md`, etc.). The Phase 2 commit `git grep`s for every reference and rewrites them to the new `.adoc` paths. Same applies to inter-doc references inside the docs themselves.
+- **Documentation site reference.** `CLAUDE.md` gains a brief "Documentation site" section noting that `/docs/` is the source for `graphitron.sikt.no`, that `/graphitron-rewrite/docs/` and the roadmap also render there, and that doc changes ship through the same trunk-based flow as code.
+- `workflow.md`'s "Plans with a user-visible surface" rule already mandates that user-facing changes include a draft of the user docs in the plan. Once this site is live, that rule binds against `/docs/` (the draft moves into the real page when the feature ships). `workflow.md` itself stays authoritative for plan-file conventions; the rendered version on the site is the same content.
 - The existing `.github/workflows/maven-build.yml` doesn't need to change; it already builds the full reactor, and the docs module is part of that via the relative-path `<module>../docs</module>` entry.
 
 ## Phases
 
-Three phases, each with an observable end state on a real URL.
+Five phases, each with an observable end state on a real URL. Each phase is independently shippable and trunk-bound; nothing in a later phase reaches back into an earlier one.
 
 ### Phase 1: Pipeline (skeleton site, deployed to default Pages URL)
 
@@ -182,7 +294,7 @@ End state: `https://sikt-no.github.io/graphitron/` serves a one-page AsciiDoc si
 
 Deliverables:
 
-- `/docs/pom.xml`.
+- `/docs/pom.xml` (asciidoctor-maven-plugin + maven-resources-plugin staging copy from `/docs/` only; no `architecture/` or `_generated/` yet).
 - `graphitron-rewrite/pom.xml` updated `<modules>` list (adds `<module>../docs</module>`).
 - `/docs/index.adoc` (placeholder content).
 - `/docs/README.adoc` (replaces existing `/docs/README.md`; GitHub-rendered landing for the directory).
@@ -197,23 +309,49 @@ No `CNAME` file in this phase. No DNS changes. No touching the old Docusaurus de
 
 Verification: push to `main`, observe deploy succeed, hit `https://sikt-no.github.io/graphitron/`, confirm SDS branding renders correctly (Sikt colors, typography, header/footer match), HTTPS valid.
 
-### Phase 2: Content migration
+### Phase 2: In-repo content migration
 
-End state: the deployed Pages URL serves a fully-fledged Sikt-branded site with all of the in-scope content from both sources (`alf/graphitron-landingsside` and existing root `/docs/*.md`) ported to AsciiDoc. The live `graphitron.sikt.no` is still the old Docusaurus build, still untouched. Side-by-side review against the old site (browse both URLs) drives final polish.
+End state: the deployed Pages URL serves all of the existing in-repo doc content. Both `/docs/*.md` and `/graphitron-rewrite/docs/*.md` have been converted to `.adoc`, the originals deleted, and `CLAUDE.md` (plus any inbound links) updated. The site has a primary nav for product docs and a secondary "Architecture" section for the rewrite-internal docs. The live `graphitron.sikt.no` still serves the old Docusaurus build.
 
 Deliverables:
 
-- Converted `.adoc` pages from `alf/graphitron-landingsside`: `why`, `faq`, `quick-start`, `documentation`.
-- Converted `.adoc` pages from existing root `/docs/`: `vision-and-goal`, `graphitron-principles`, `security`, `dependencies`. Original `.md` files deleted in the same commit.
-- Homepage hero + 3-feature layout reimplemented in static AsciiDoc.
-- All in-scope SVGs and assets copied over.
-- Site nav (top bar links: What and why, FAQ, Quick start guide, GitHub).
-- `site.css` finalized: Sikt brand colors, the `.advantage-box` callout, the dark footer, hero spacing.
+- 5 converted pages from `/docs/`: `vision-and-goal`, `graphitron-principles`, `security`, `dependencies`, plus updated `README.adoc`. Original `.md` files deleted.
+- 9 converted pages from `/graphitron-rewrite/docs/`: `README`, `workflow`, `rewrite-design-principles`, `rewrite-model`, `argument-resolution`, `code-generation-triggers`, `runtime-extension-points`, `getting-started`, `claude-code-web-environment`. Original `.md` files deleted.
+- `/docs/pom.xml` updated: staging step now also copies `/graphitron-rewrite/docs/` to `target/staging/architecture/`.
+- `CLAUDE.md` and any other inbound links updated to point at the new `.adoc` paths.
 - Authoring conventions added to `/docs/README.adoc`.
+- Site nav: primary row (Vision, Quick start, FAQ, Documentation), secondary row or footer link to *Architecture*.
+- Homepage hero + 3-feature layout reimplemented in static AsciiDoc, using SDS-styled blocks.
 
-Verification: open `https://sikt-no.github.io/graphitron/` and `https://graphitron.sikt.no/` side by side; confirm the new site reaches feature parity (minus integrasjonstester) and looks at least as Sikt-branded as the old. Iterate on Pages URL freely; no risk to live site.
+Verification: every link in `CLAUDE.md` and inter-doc references resolve; the deployed Pages URL renders both sections cleanly.
 
-### Phase 3: Cutover (custom domain, retire old infra)
+### Phase 3: Old-site absorption
+
+End state: any content from `alf/graphitron-landingsside` worth keeping has been ported into `/docs/`; everything else is acknowledged and dropped. A short audit document accompanies the PR.
+
+Deliverables:
+
+- One-shot audit file (committed in this PR, deleted in the same PR after the listed changes land): for each old-site page, one of *already-covered-by `<page>`*, *gap, ported to `<page>`*, *dropped (reason)*.
+- New pages where gaps exist; current expectation: `/docs/faq.adoc` is genuinely net-new; `/docs/quick-start.adoc` may or may not be net-new depending on whether the existing `getting-started.adoc` covers the same ground.
+- Old-site visual assets (SVGs, logo, favicon) confirmed migrated. (May have already happened in Phase 1; absorption verifies completeness.)
+
+Verification: side-by-side comparison of `https://sikt-no.github.io/graphitron/` vs `https://graphitron.sikt.no/`; confirm the new site has feature parity (minus integrasjonstester and blog) and the audit's *dropped* verdicts are defensible.
+
+### Phase 4: Roadmap, plans, and changelog rendering
+
+End state: the deployed Pages URL has a Roadmap section linked from the secondary nav, with the per-status status board, a "Recently shipped" changelog, and per-plan pages reachable only from the roadmap index. Roadmap content auto-updates on every push: edit a `.md` in `graphitron-rewrite/roadmap/`, push, the next deploy reflects the change.
+
+Deliverables:
+
+- `roadmap-tool` extension: new code path emitting AsciiDoc into a configurable output directory. Existing GitHub-README emission keeps working unchanged.
+- `/docs/pom.xml` updated: staging step now also runs `roadmap-tool` to populate `target/staging/_generated/`. Reactor order ensures `roadmap-tool` builds before `docs`.
+- Roadmap index page wired into secondary nav; plan pages reachable from roadmap index only.
+- Recommended option 1 ("pass-through with header") used initially for markdown→AsciiDoc; revisit if rendering quality is poor.
+- Documentation: short note in `/docs/README.adoc` and `workflow.adoc` that the roadmap renders publicly.
+
+Verification: the deployed Roadmap page reflects current `graphitron-rewrite/roadmap/*.md` contents; flipping an item's `status:` and pushing causes the next deploy to show the new status.
+
+### Phase 5: Cutover (custom domain, retire old infra)
 
 End state: `https://graphitron.sikt.no/` serves the new Maven-built AsciiDoc site from GitHub Pages. The old Sikt K8s deployment is decommissioned. The `alf/graphitron-landingsside` repo is archived with a README pointing here.
 
@@ -221,27 +359,32 @@ Deliverables:
 
 - Add `/docs/CNAME` containing `graphitron.sikt.no`, configure custom domain in Pages settings, enforce HTTPS.
 - DNS update: `graphitron.sikt.no` → `sikt-no.github.io` (Sikt platform / DNS team).
-- Decision on Matomo: reattach via `<script>` injection in the AsciiDoctor template, or drop. Plan a small follow-up roadmap item if reattaching, since SDS may publish a tracking-snippet helper.
+- Decision on Matomo: reattach via `<script>` injection in the AsciiDoctor template, or drop. Plan a small follow-up roadmap item if reattaching.
 - Decommission: stop the GitLab CI pipeline on `alf/graphitron-landingsside`, scale K8s deployment to 0, remove the K8s Deployment/Service/Ingress, archive the repo with a redirect README.
 - Update root `README.md` to keep the "Online documentation" link (URL doesn't change).
 
-Verification: hit `https://graphitron.sikt.no/`, confirm HTTPS valid, confirm content matches Phase 2 deploy.
+Verification: hit `https://graphitron.sikt.no/`, confirm HTTPS valid, confirm content matches Phase 4 deploy.
 
 ## Open questions for the reviewer
 
-1. **Matomo at cutover (Phase 3).** Reattach via `<script>` injection in the AsciiDoctor template, or drop analytics entirely with the move to GitHub Pages? Defer until Phase 3, but flagging now so it's not a surprise.
+1. **Matomo at cutover (Phase 5).** Reattach via `<script>` injection in the AsciiDoctor template, or drop analytics entirely with the move to GitHub Pages? Defer until Phase 5, but flagging now so it's not a surprise.
+2. **`claude-code-web-environment.adoc` on the public site.** This file documents the AI-sandbox setup, which is genuinely contributor/AI-tooling content rather than user-facing. Two options: (a) ship it on the site under Architecture (lowest-friction, max-transparency, possibly confusing); (b) keep it `.adoc` for consistency but exclude it from the staged source via a glob. My read: ship it. It's already public on GitHub and the bar is "contributors/curious users", which fits Architecture.
 
 ## Risks and mitigations
 
 - **SDS is published as npm packages, not a public CDN.** Vendoring sidesteps this for the build; the residual risk is the vendored copy goes stale if SDS releases break compatibility. Mitigation: dated comment at the top of each vendored file noting `package@version` and source date; refresh as a roadmap item on SDS major releases.
-- **Default Asciidoctor styling looks dated.** Mitigation: that's exactly what `site.css` solves by porting the SDS-token usage from `siktifisert.css`. Phase 1 verifies the branding looks right *before* Phase 2 piles content on top.
+- **Default Asciidoctor styling looks dated.** Mitigation: that's exactly what `site.css` solves by porting the SDS-token usage from `siktifisert.css`. Phase 1 verifies the branding looks right *before* later phases pile content on top.
 - **The Maven build now fails when docs are broken.** Intent (catch rot in CI), but a typo in `.adoc` blocks a release. Mitigation: AsciiDoc errors-vs-warnings is configurable in the plugin; start with "fail on error, warn on missing xref" until settled, then tighten.
-- **Phase 3 DNS cutover requires Sikt platform / DNS team coordination.** Mitigation: Phase 1 and 2 are entirely independent of DNS; the new site is fully styled and content-complete on `sikt-no.github.io/graphitron/` before the cutover ticket is even raised. The cutover itself is then a single coordinated change.
+- **Phase 5 DNS cutover requires Sikt platform / DNS team coordination.** Mitigation: Phases 1-4 are entirely independent of DNS; the new site is fully styled and content-complete on `sikt-no.github.io/graphitron/` before the cutover ticket is even raised. The cutover itself is then a single coordinated change.
 - **Matomo loss.** If we drop Matomo we lose continuity in usage data. Mitigation: deferred decision, see Open question 1. If reattaching, the Matomo `<script>` is small and well-documented; injection into the AsciiDoctor template is a 5-line change.
-- **Subpath base URL during Phases 1-2.** While on `sikt-no.github.io/graphitron/`, absolute internal links break. Mitigation: enforce `xref:` and relative-path links in the authoring conventions, and configure Asciidoctor `:imagesdir: images` so image paths stay relative.
+- **Subpath base URL during Phases 1-4.** While on `sikt-no.github.io/graphitron/`, absolute internal links break. Mitigation: enforce `xref:` and relative-path links in the authoring conventions, and configure Asciidoctor `:imagesdir: images` so image paths stay relative.
+- **Markdown→AsciiDoc conversion in `roadmap-tool` produces ugly output for some plans.** Mitigation: option-1 pass-through is the cheap default; if specific plans render poorly, escalate that one to option-2 library conversion or hand-tune the source `.md`. Plans deleted on Done means bad-render risk has a short half-life.
+- **Convert-and-delete of `/graphitron-rewrite/docs/*.md` breaks every existing inbound link.** Mitigation: Phase 2's CLAUDE.md update step is mandatory, not optional; grep the repo for the old `.md` paths and update all hits in the same PR.
+- **Scope creep on the docs site.** This plan grew from "replace Docusaurus" to "consolidate four sources." Risk: each new addition slows the cutover. Mitigation: phases 1-3 are the minimum viable replacement; phase 4 (roadmap rendering) is additive and could ship after phase 5 if needed. Don't let phase 4 block the cutover.
 
 ## Roadmap entries
 
-- This file (`docs-site-asciidoc.md`): keep through all three phases. Collapse each phase to a "shipped at `<sha>`" note when it lands; remove the file when Phase 3 lands and the cutover is verified.
+- This file (`docs-site-asciidoc.md`): keep through all five phases. Collapse each phase to a "shipped at `<sha>`" note when it lands; remove the file when Phase 5 lands and the cutover is verified.
 - Spinoff (Backlog, to be created when Phase 1 lands): **`refresh-sds-vendored-css.md`**, periodic refresh of the vendored SDS CSS files on SDS major releases. Low priority, low effort.
-- Other spinoffs may surface during Phase 2 (e.g., client-side search, autogenerated integrasjonstester from real test sources, versioned docs); add them as Backlog when they appear, don't pre-spec.
+- Spinoff (Backlog, possible after Phase 4 lands): **`roadmap-public-flag.md`**, opt-in `public: true` front-matter flag to filter which roadmap items appear on the site. Only worth doing if max-transparency proves too noisy in practice.
+- Other spinoffs may surface during Phases 2-3 (e.g., client-side search, versioned docs, autogenerated integration-tests page from real test sources); add them as Backlog when they appear, don't pre-spec.
