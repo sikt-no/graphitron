@@ -142,14 +142,12 @@ error and consumers must have migrated to one of the canonical forms.
   method name is derived from the FK qualifier (`getQualifier(fk)`), not from
   `@field(name:)`. Authors are free to leave `@field(name:)` off the canonical forms;
   if present, it is informational and ignored by classification.
-- **Locale- or pluralisation-aware field-name inference** — the qualifier map has one
-  lowerCamelPlural entry per FK (`lowerFirst(qualifier) + "s"`), covering the
-  well-named English plural (`languageIds`, `filmIds`). A field named
-  `studieprogrammer: [ID!]` (Norwegian plural of `studieprogram`) will NOT shim
-  because `"studieprogrammer"` is not a key in the map (the map has `"studieprogramId"`
-  and `"studieprogramIds"` for the HAR-role FK). The author must declare
-  `@field(name: "STUDIEPROGRAM_ID")` or `@nodeId(typeName:)` explicitly. The
-  bare-field-name path covers the well-named subset; it is not a universal escape hatch.
+- **Plural or locale-aware field-name inference** — the qualifier map has two lowercase
+  keys per FK (raw qualifier, camelCase qualifier). Bare plural field names
+  (`filmIds: [ID!]`) without `@field(name:)` produce a lookup miss and fall through to
+  `UnclassifiedType`. Norwegian plurals (`studieprogrammer`) likewise do not shim. In
+  both cases the author must use `@field(name: "FILM_ID")` or `@nodeId(typeName:)`.
+  The bare singular-name path is a convenience; it is not a universal escape hatch.
 - **Hint fix** — `TypeBuilder.buildTableInputType` (`TypeBuilder.java:555-560`) uses the
   source table's columns for "did you mean" suggestions even when the failure is on a
   reference-path or qualifier match. Separate usability improvement, tracked
@@ -178,10 +176,11 @@ error and consumers must have migrated to one of the canonical forms.
   record class would have duplicate methods and fail to compile upstream. The catalog
   builds a reverse map from field-name variants to FK constraint name once per source
   table (and caches it), allowing O(1) lookup without any input-side normalisation.
-  Map keys for a qualifier `Q` from FK `fk`: the UPPER_SNAKE raw form
-  `(role + targetTable + "_ID").toUpperCase()` (matching `@field(name:)` values),
-  `lowerFirst(Q)` (bare singular camelCase field name), and `lowerFirst(Q) + "s"`
-  (bare plural camelCase field name). All three map to the FK constraint name.
+  Two lowercase keys per FK: `(role + targetTable + "_id")` (raw qualifier lowercased,
+  matching `@field(name:)` values case-insensitively) and
+  `lowerFirst(Q).toLowerCase()` (camelCase qualifier lowercased, matching bare singular
+  field names). The shim arm looks up `columnName.toLowerCase()`. No plural key: bare
+  plural field names without `@field(name:)` fall through to column lookup.
 - The `has*` methods emitted by `KjerneJooqGenerator` are `"has" + qualifier` and
   `"has" + qualifier + "s"` (singular and plural). Because the qualifier is already
   UpperCamelCase these are the only two probe candidates — no separate upper-snake /
@@ -360,13 +359,19 @@ Add four additive helpers on `JooqCatalog`, all reflection- or jOOQ-metadata-bas
    matches `sourceTableSqlName`. Backs the FK-inferred canonical form.
 3. `buildQualifierMap(sourceTableSqlName)` — builds and caches a
    `Map<String, String>` (field-name-variant → FK constraint name) for all outgoing
-   FKs from `sourceTableSqlName`. For each FK, three keys are inserted: the UPPER_SNAKE
-   raw form `(role + targetTable + "_ID").toUpperCase()` (matching `@field(name:)`
-   values), `lowerFirst(getQualifier(fk))` (bare singular camelCase field name), and
-   `lowerFirst(getQualifier(fk)) + "s"` (bare plural). The map is cached per source
-   table on `JooqCatalog` (a `ConcurrentHashMap<String, Map<String, String>>`). Backs
-   the shim arm via O(1) direct lookup. If two FKs on the same source table produce a
-   colliding key (which would imply duplicate methods in the generated record class),
+   FKs from `sourceTableSqlName`. For each FK, **two lowercase keys** are inserted:
+   - `(role + targetTable + "_id")` — the raw qualifier lowercased (e.g. `"film_id"`),
+     matching `@field(name:)` values regardless of the case the author used.
+   - `lowerFirst(getQualifier(fk)).toLowerCase()` — the camelCase qualifier lowercased
+     (e.g. `"filmid"`), matching bare singular field names.
+   The shim arm looks up `columnName.toLowerCase()`, so case differences in the SDL
+   never cause a miss. No plural key is inserted: bare plural field names
+   (`filmIds: [ID!]`) without `@field(name:)` fall through to column lookup; authors
+   who rely on the shim must write either `@field(name: "FILM_ID")` or
+   `@nodeId(typeName:)` explicitly. The map is cached per source table on `JooqCatalog`
+   (a `ConcurrentHashMap<String, Map<String, String>>`). Backs the shim arm via O(1)
+   direct lookup. If two FKs on the same source table produce a colliding key (which
+   would imply duplicate methods in the generated record class),
    the map builder throws `IllegalStateException` — it should never occur in a valid
    KjerneJooqGenerator project.
 4. `qualifierForFk(sourceTableSqlName, fkName)` — returns the UpperCamelCase qualifier
@@ -419,18 +424,18 @@ public Optional<String> findUniqueFkToTable(String sourceTableSqlName,
 
 /**
  * Builds and caches a field-name → FK-constraint-name lookup map for all outgoing FKs
- * from {@code sourceTableSqlName}. For each FK three keys are inserted:
+ * from {@code sourceTableSqlName}. For each FK two lowercase keys are inserted:
  * <ul>
- *   <li>The UPPER_SNAKE raw form {@code (role + targetTable + "_ID").toUpperCase()},
- *       matching {@code @field(name:)} values in the SDL.</li>
- *   <li>{@code lowerFirst(getQualifier(fk))}: the natural bare singular field name
- *       (e.g. {@code "filmId"}).</li>
- *   <li>{@code lowerFirst(getQualifier(fk)) + "s"}: the natural bare plural field name
- *       (e.g. {@code "filmIds"}).</li>
+ *   <li>{@code (role + targetTable + "_id")}: the raw qualifier in lowercase
+ *       (e.g. {@code "film_id"}), matching {@code @field(name:)} values case-insensitively.</li>
+ *   <li>{@code lowerFirst(getQualifier(fk)).toLowerCase()}: the camelCase qualifier
+ *       lowercased (e.g. {@code "filmid"}), matching bare singular field names.</li>
  * </ul>
- * The map is cached per source table. If two FKs on the same source table produce a
- * colliding key (implying duplicate methods in the generated record class, which would
- * fail to compile upstream) {@link IllegalStateException} is thrown.
+ * The shim arm looks up {@code columnName.toLowerCase()}, so SDL case variations never
+ * cause a miss. No plural key: bare plural field names without {@code @field(name:)}
+ * fall through to column lookup. The map is cached per source table. If two FKs on
+ * the same source table produce a colliding key (implying duplicate methods in the
+ * generated record class) {@link IllegalStateException} is thrown.
  *
  * <p>Returns an empty map when the catalog is unavailable or the table has no outgoing FKs.
  */
@@ -642,15 +647,16 @@ column lookup remains the fallback.
 
 The qualifier map covers all field-name forms the author can write:
 
-- `id: ID` on a node-typed table → `columnName = "id"` → map lookup misses (no FK
-  produces a key `"id"`) → fall through to column lookup → fall through to existing
-  `NodeIdField` shim. Unchanged behaviour.
-- `filmId: ID` (no directives) → `columnName = "filmId"` → map has lowerCamelSingular
-  entry `"filmId"` → probe succeeds → synthesize `IdReferenceField`.
-- `filmIds: [ID!]` (no directives) → `columnName = "filmIds"` → map has
-  lowerCamelPlural entry `"filmIds"` → probe → synthesize.
+- `id: ID` on a node-typed table → `columnName.toLowerCase() = "id"` → map lookup
+  misses → fall through to column lookup → fall through to existing `NodeIdField` shim.
+  Unchanged behaviour.
+- `filmId: ID` (no directives) → lookup key `"filmid"` → matches camelCase map entry
+  → probe succeeds → synthesize `IdReferenceField`.
+- `filmIds: [ID!]` (no directives, plural, no `@field`) → lookup key `"filmids"` →
+  no map entry (no plural key) → falls through to column lookup → `UnclassifiedType`.
+  Author must write `@field(name: "FILM_ID")` or `@nodeId(typeName:)` explicitly.
 - `studieprogrammer: [ID!] @field(name: "STUDIEPROGRAM_ID")` (legacy sis form) →
-  `columnName = "STUDIEPROGRAM_ID"` → map has UPPER_SNAKE entry → probe → synthesize.
+  lookup key `"studieprogram_id"` → matches raw-qualifier map entry → probe → synthesize.
   Without the pre-column placement this case would resolve as `ColumnField` first.
 
 ```java
@@ -663,7 +669,7 @@ The qualifier map covers all field-name forms the author can write:
 if ("ID".equals(typeName)
         && !field.hasAppliedDirective(DIR_NODE_ID)
         && !field.hasAppliedDirective(DIR_REFERENCE)) {
-    String fkName = catalog.buildQualifierMap(resolvedTable.tableName()).get(columnName);
+    String fkName = catalog.buildQualifierMap(resolvedTable.tableName()).get(columnName.toLowerCase());
     if (fkName != null) {
         String qualifier = catalog.qualifierForFk(resolvedTable.tableName(), fkName)
             .orElseThrow(() -> new IllegalStateException(
@@ -698,9 +704,10 @@ if ("ID".equals(typeName)
 ```
 
 Notes:
-- `catalog.buildQualifierMap` returns an already-computed map; the lookup is O(1) with
-  no normalisation of `columnName`. The map keys cover all three forms an author can
-  write: UPPER_SNAKE (`@field(name:)` value), lowerCamelSingular, lowerCamelPlural.
+- `catalog.buildQualifierMap` returns an already-computed map with lowercase keys;
+  the lookup normalises `columnName` to lowercase so `@field(name: "FILM_ID")` and
+  `@field(name: "film_id")` both hit the same entry. No plural key: `filmIds` without
+  `@field(name:)` falls through to column lookup.
 - The probe gates synthesis: if `hasIdSetPredicateMethod` returns false the `if` body
   is skipped and control falls through to column lookup. This distinguishes
   KjerneJooqGenerator projects (method present) from others (method absent).
@@ -892,31 +899,25 @@ ID_REFERENCE_SHIM_EXPLICIT_FIELD(
     }),
 ```
 
-**Case 4b — synthesis shim, bare field name (no directives at all)**:
+**Case 4b — plural bare field name falls through (no plural key in map)**:
 
 ```java
-ID_REFERENCE_SHIM_BARE_LIST(
-    "[ID!] with bare plural field name → IdReferenceField (synthesized + WARN)",
+ID_REFERENCE_PLURAL_BARE_FALLS_THROUGH(
+    "[ID!] with bare plural field name and no @field → UnclassifiedType (no plural map key)",
     """
     type Language @table(name: "language") @node(typeId: "lang") { name: String }
     type Film @table(name: "film") { title: String }
     input FilmFilterInput @table(name: "film") {
-      languageIds: [ID!]   # no directives; map key "languageIds" → qualifier "LanguageId"
+      languageIds: [ID!]   # no @field, no @nodeId; "languageids" not in map → falls through
     }
     type Query { film: Film }
     """,
-    schema -> {
-        var tit = (TableInputType) schema.type("FilmFilterInput");
-        var f = (InputField.IdReferenceField) tit.inputFields().stream()
-            .filter(InputField.IdReferenceField.class::isInstance).findFirst().orElseThrow();
-        assertThat(f.synthesized()).isTrue();
-        assertThat(f.qualifier()).isEqualTo("LanguageId");
-    }),
+    schema -> assertThat(schema.type("FilmFilterInput")).isInstanceOf(UnclassifiedType.class)),
 ```
 
-(Field name `languageIds` matches the lowerCamelPlural map key `"languageIds"` built
-from qualifier `"LanguageId"`. No strip or normalisation needed at lookup time — the
-map already has this key.)
+(Lookup key `"languageids"` has no entry in the map — the map only has `"language_id"`
+and `"languageid"`. Author must write `@field(name: "LANGUAGE_ID")` or
+`@nodeId(typeName: "Language")` to classify this field.)
 
 **Case 4c — synthesis shim, scalar bare field name**:
 
@@ -1123,9 +1124,10 @@ class JooqCatalogIdSetPredicateTest {
   produce the correct UpperCamelCase string for representative FK shapes: HAR role
   (source column equals target column), role prefix (columns differ), composite key,
   HAR-fallback (unrelated column names). Hand-checked expectations.
-- `BuildQualifierMapTest` — `buildQualifierMap` inserts all three key forms for a known
-  FK, the cache returns the same map instance on repeated calls, and a collision between
-  two FKs on the same source table throws `IllegalStateException`.
+- `BuildQualifierMapTest` — `buildQualifierMap` inserts exactly two lowercase keys for
+  a known FK (raw-qualifier and camelCase-qualifier forms), does NOT insert a plural
+  key, the cache returns the same map instance on repeated calls, and a collision
+  between two FKs on the same source table throws `IllegalStateException`.
 
 ### Pipeline tests
 - `GraphitronSchemaBuilderTest.TableInputTypeCase` — eleven new cases covering the
@@ -1177,11 +1179,13 @@ does not fire and the field falls through to column lookup and the `NodeIdField`
 — no false-positive classification on non-KjerneJooqGenerator projects. Revisit if
 code generation lands and we want a build-time guarantee on the canonical arm too.
 
-**Resolved: pluralisation in the qualifier map.** The map's lowerCamelPlural key
-(`lowerFirst(qualifier) + "s"`) covers the well-named English plural case (`filmIds`,
-`languageIds`) without any input-side normalisation. Norwegian-plural forms
-(`studieprogrammer`) will not be a map key and those fields must use explicit
-`@field(name:)` or `@nodeId(typeName:)` — unchanged from the original constraint.
+**Resolved: no plural key in the qualifier map.** The map has two lowercase keys per
+FK (raw qualifier and camelCase qualifier) and the lookup normalises `columnName` to
+lowercase. No plural key is inserted: bare plural field names (`filmIds: [ID!]`)
+without `@field(name:)` fall through to column lookup and produce `UnclassifiedType`.
+Authors must use `@field(name: "FILM_ID")` or `@nodeId(typeName:)` explicitly. This
+keeps the shim's trigger surface small and avoids false positives from coincidental
+name overlap.
 
 **Resolved: shim runs before column lookup for `typeName == "ID"`.** `JooqCatalog.findColumn`
 matches both Java name (`languageId`) and SQL name (`language_id`) case-insensitively;
