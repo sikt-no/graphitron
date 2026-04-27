@@ -831,6 +831,10 @@ class FieldBuilder {
                 "column '" + columnName + "' could not be resolved in table '" + rt.tableName() + "'"
                     + candidateHint(columnName, ctx.catalog.columnJavaNamesOf(rt.tableName())));
         }
+        if (!columnName.equals(col.get().javaName())) {
+            LOG.warn("@field(name: '{}') on arg '{}' resolved via SQL name; prefer Java field name '{}'",
+                columnName, name, col.get().javaName());
+        }
         var columnRef = new ColumnRef(col.get().sqlName(), col.get().javaName(), col.get().columnClass());
         String enumClassName = validateEnumFilter(typeName, columnRef, errors);
         if (enumClassName != null && enumClassName.isEmpty()) {
@@ -2092,6 +2096,10 @@ class FieldBuilder {
                     "column '" + columnName + "' could not be resolved in the jOOQ table"
                     + (terminalTable != null ? candidateHint(columnName, ctx.catalog.columnJavaNamesOf(terminalTable)) : ""));
             }
+            if (!columnName.equals(column.get().javaName())) {
+                LOG.warn("@field(name: '{}') on field '{}.{}' resolved via SQL name; prefer Java field name '{}'",
+                    columnName, parentTypeName, name, column.get().javaName());
+            }
             return new ColumnReferenceField(parentTypeName, name, location, columnName, column.get(), refPath.elements(), javaNamePresent);
         }
 
@@ -2119,6 +2127,10 @@ class FieldBuilder {
             return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
                 "column '" + columnName + "' could not be resolved in the jOOQ table"
                 + candidateHint(columnName, ctx.catalog.columnJavaNamesOf(tableSqlName)));
+        }
+        if (!columnName.equals(column.get().javaName())) {
+            LOG.warn("@field(name: '{}') on field '{}.{}' resolved via SQL name; prefer Java field name '{}'",
+                columnName, parentTypeName, name, column.get().javaName());
         }
         return new ColumnField(parentTypeName, name, location, columnName, column.get(), javaNamePresent);
     }

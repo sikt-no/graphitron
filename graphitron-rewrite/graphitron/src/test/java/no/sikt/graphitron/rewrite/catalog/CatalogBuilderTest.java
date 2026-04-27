@@ -36,9 +36,9 @@ class CatalogBuilderTest {
         var film = data.getTable("film").orElseThrow();
 
         assertThat(film.columns()).extracting(CompletionData.Column::name)
-            .contains("film_id", "title");
+            .contains("FILM_ID", "TITLE");
         var filmId = film.columns().stream()
-            .filter(c -> c.name().equals("film_id")).findFirst().orElseThrow();
+            .filter(c -> c.name().equals("FILM_ID")).findFirst().orElseThrow();
         // film_id is the PK and not nullable.
         assertThat(filmId.nullable()).isFalse();
     }

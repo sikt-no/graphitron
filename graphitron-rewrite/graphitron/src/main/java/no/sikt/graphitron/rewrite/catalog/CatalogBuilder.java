@@ -69,7 +69,7 @@ public final class CatalogBuilder {
 
         var columns = jooq.allColumnsOf(tableName).stream()
             .map(c -> new CompletionData.Column(
-                c.sqlName(),
+                c.javaName(),
                 c.columnClass(),
                 c.nullable(),
                 "",
