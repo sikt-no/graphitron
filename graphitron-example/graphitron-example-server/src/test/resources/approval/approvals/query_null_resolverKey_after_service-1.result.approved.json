@@ -3,9 +3,7 @@
         "helloWorldWithNullResolverKeys": [
             {
                 "film": null,
-                "films": [
-                    
-                ]
+                "films": null
             }
         ]
     }
