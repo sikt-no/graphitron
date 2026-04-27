@@ -61,6 +61,74 @@ The `GraphitronSchemaClassGenerator` conditionally emits `codeRegistry.typeResol
 
 ---
 
+## SQL comparison with the legacy implementation
+
+The legacy single-table interface generator (`FetchSingleTableInterfaceDBMethodGenerator`) was developed with significant care. Comparing its expected output (pinned in `queries/fetch/interfaces/singleTableInterface/*/expected/QueryDBQueries.java`) against the rewrite's generated code reveals three material differences.
+
+### A. Missing discriminator-value filter (correctness gap)
+
+The legacy always emits a WHERE clause restricting to known discriminator values:
+
+```java
+// Legacy — always present
+.where(_a_address.DISTRICT.in("ONE", "TWO"))
+```
+
+This means a row whose discriminator column holds an unknown value (e.g. a future `'TRAILER'` type added to the DB but not yet in the schema) is silently excluded rather than surfacing as a null entry.
+
+The rewrite emits no such guard. A row with an unknown discriminator value hits the TypeResolver's `default -> null` arm, which causes graphql-java to include a `null` element in a list result or return `null` for a single-value field, with no developer-visible error.
+
+**Fix**: `buildQueryTableInterfaceFieldFetcher` and `buildTableInterfaceFieldFetcher` should emit an additional WHERE condition filtering to the set of known discriminator values extracted from `tit.participants()`. Concretely, collect the discriminator values from all `ParticipantRef.TableBound` entries and emit:
+
+```java
+.where(condition.and(DSL.field(DSL.name(discriminatorColumn)).in(knownValues)))
+```
+
+This parallels what the legacy does and makes the "unknown discriminator" case fail loudly (no rows returned) rather than silently (null in result).
+
+The TypeResolver's `default -> null` arm should be changed to throw a `RuntimeException` (matching the legacy's behavior), or the above WHERE clause makes it unreachable for well-formed data.
+
+### B. No default ORDER BY (non-determinism)
+
+The legacy always orders by the table's PK:
+
+```java
+// Legacy — always present
+var _iv_orderFields = _a_address.fields(_a_address.getPrimaryKey().getFieldsArray());
+// ...
+.orderBy(_iv_orderFields)
+```
+
+The rewrite only orders when the schema carries an explicit `OrderBySpec.Fixed` or `OrderBySpec.Argument`. With `OrderBySpec.None`, the list branch emits `List<SortField<?>> orderBy = List.of()`, producing no `ORDER BY` clause. List results are therefore non-deterministic across queries.
+
+**Fix**: When `orderBy` is `OrderBySpec.None` for a `QueryTableInterfaceField` (and `TableInterfaceField` list variant), fall back to PK ordering. The PK columns are available via `tableRef` and the jOOQ catalog. This matches the behaviour of the legacy and of `buildQueryTableFetcher` in the rewrite, which already has PK-based default ordering logic elsewhere.
+
+### C. Projected columns: asterisk vs explicit select list
+
+The legacy projects only the columns it needs — one explicit entry per interface field and each overridden implementation-specific field:
+
+```java
+// Legacy — one entry per field
+_a_address.DISTRICT.as("_iv_discriminator"),
+_a_address.POSTAL_CODE.as("postalCode"),
+_a_address.getId().as("id"),
+```
+
+The rewrite projects every column via `table.asterisk()` plus a second explicit discriminator reference:
+
+```java
+// Rewrite — asterisk + explicit discriminator = discriminator column appears twice
+.select(contentTable.asterisk(), DSL.field(DSL.name("CONTENT_TYPE")))
+```
+
+`asterisk()` already includes `content_type`; the explicit addition creates a duplicate column in the result set. jOOQ handles this gracefully, but it is wasteful on wide tables.
+
+The root cause is that the rewrite delegates field-level resolution to graphql-java's column fetchers rather than resolving to a typed DTO inline. `asterisk()` ensures every column is available for those fetchers. This is an intentional architectural divergence (not a bug), but the explicit discriminator addition is redundant when `asterisk()` is used. The TypeResolver's `record.get(DSL.field(DSL.name(col)), String.class)` lookup works on any column in the record, whether projected via asterisk or explicitly. The explicit addition can be removed once the team is satisfied that `asterisk()` is always used for interface fetchers.
+
+This is low priority relative to items A and B above.
+
+---
+
 ## Track B: Multi-table polymorphic
 
 **Variants:** `QueryField.QueryInterfaceField`, `QueryField.QueryUnionField`, `ChildField.InterfaceField`, `ChildField.UnionField`
