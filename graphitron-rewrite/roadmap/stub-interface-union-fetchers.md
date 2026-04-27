@@ -88,20 +88,13 @@ This parallels what the legacy does and makes the "unknown discriminator" case f
 
 The TypeResolver's `default -> null` arm should be changed to throw a `RuntimeException` (matching the legacy's behavior), or the above WHERE clause makes it unreachable for well-formed data.
 
-### B. No default ORDER BY (non-determinism)
+### B. Child-field list variant silently discards `orderBy` (non-determinism)
 
-The legacy always orders by the table's PK:
+The rewrite's PK-based default ordering is correct for root queries. `FieldBuilder.resolveDefaultOrderSpec()` falls back to `OrderBySpec.Fixed([pk ASC])` when no `@defaultOrder` or `@orderBy` is present, and `buildQueryTableInterfaceFieldFetcher` calls `buildOrderByCode()` so the ORDER BY is emitted — matching the legacy.
 
-```java
-// Legacy — always present
-var _iv_orderFields = _a_address.fields(_a_address.getPrimaryKey().getFieldsArray());
-// ...
-.orderBy(_iv_orderFields)
-```
+The bug is in `buildTableInterfaceFieldFetcher` only: it never calls `buildOrderByCode` at all, so `tif.orderBy()` is silently discarded even when it carries a non-empty `Fixed` spec. A list-cardinality `TableInterfaceField` will produce an unordered result regardless of what the classifier resolved. The current fixture avoids this only because `filmContent` is declared as a single-value field; a list-cardinality interface child field would be non-deterministic.
 
-The rewrite only orders when the schema carries an explicit `OrderBySpec.Fixed` or `OrderBySpec.Argument`. With `OrderBySpec.None`, the list branch emits `List<SortField<?>> orderBy = List.of()`, producing no `ORDER BY` clause. List results are therefore non-deterministic across queries.
-
-**Fix**: When `orderBy` is `OrderBySpec.None` for a `QueryTableInterfaceField` (and `TableInterfaceField` list variant), fall back to PK ordering. The PK columns are available via `tableRef` and the jOOQ catalog. This matches the behaviour of the legacy and of `buildQueryTableFetcher` in the rewrite, which already has PK-based default ordering logic elsewhere.
+**Fix**: add `buildOrderByCode(tif.orderBy(), tif.name(), tableLocal)` before the DSL chain in the `isList` branch, and `.orderBy(orderBy)` in the query (already documented as cleanup item #1 above).
 
 ### C. `asterisk()` instead of `$fields` — an anti-pattern, not a minor style difference
 
