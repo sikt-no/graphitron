@@ -113,14 +113,14 @@
                 Java-17 output ratchet. Generated source files emitted into
                 target/generated-sources by graphitron-maven must compile under Java 17
                 syntax; consumers may be on Java 17 and cannot upgrade the language level of
-                their own build. Pin the compile goal to release 17 so a Java-21 syntax slip
-                (switch patterns, sealed permits, etc.) in a generator emitter fails this
-                module's build rather than the consumer's.
+                their own build. Pin the compile goal to release 17 so a Java-18+ syntax slip
+                (switch patterns, sealed permits, unnamed variables, etc.) in a generator
+                emitter fails this module's build rather than the consumer's.
 
-                Tests stay at the parent's release 21 (they may use 21 features freely).
+                Tests stay at the parent's release 25 (they may use 25 features freely).
                 -Werror is deliberately omitted: the parent pom sets -Xlint:all, and existing
                 generated code has raw-type warnings that are a separate concern; -Werror would
-                conflate "Java-21 syntax leaked through" (what this ratchet is for) with
+                conflate "post-17 syntax leaked through" (what this ratchet is for) with
                 "raw-type cleanup in the emitter" (a larger refactor).
             -->
             <plugin>
