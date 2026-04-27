@@ -300,8 +300,10 @@ requirement surfaces, add the field then; do not pre-empt it now.
 #### Exhaustive-switch arms
 
 `InputField` is sealed; the compiler will flag every site that switches over its leaves.
-Add a no-op `case InputField.IdReferenceField ignored -> {}` arm at each site below;
-Phase 3 will replace the validator arm with a real implementation.
+Add a no-op `case InputField.IdReferenceField ignored -> {}` arm at each site below.
+The validator arm stays a no-op for this milestone, mirroring the existing no-op
+arms for `NodeIdField` and `NodeIdReferenceField`; field-specific validation can be
+added later if a real check materializes.
 
 - `GraphitronSchemaValidator.java:103-107` — switch in the input-field validator.
 - `FieldBuilder.java:1270-1298` — switch in `walkInputFieldConditions`.
@@ -339,9 +341,11 @@ Add five additive helpers on `JooqCatalog`, all reflection- or jOOQ-metadata-bas
 3. `findFkByQualifier(sourceTableSqlName, qualifier)` — reverse-maps a qualifier
    (e.g. `"STUDIEPROGRAM_ID"`) to the unique FK on `sourceTableSqlName` whose
    `KjerneJooqGenerator.getQualifier(fk)` equals it. Backs the shim arm. Implemented
-   by recomputing the qualifier for each FK (the rewrite reproduces
-   `getQualifier`/`generateRolePrefix` rather than depending on KjerneJooqGenerator
-   directly, since the generator runs upstream and is not on the rewrite's classpath).
+   by recomputing the qualifier for each FK using a local copy of
+   `getQualifier`/`generateRolePrefix`. The duplication is intentional: Sikt owns
+   both KjerneJooqGenerator and graphitron-rewrite, so the two implementations are
+   kept in lockstep by the same maintainer rather than coupled across a runtime
+   dependency the rewrite would otherwise have to drag in.
 4. `qualifierForFk(sourceTableSqlName, fkName)` — returns the qualifier the local
    reproduction of `getQualifier` produces for a FK identified by name. Used by the
    canonical-form branch (where the FK is resolved by name from `@reference` or
@@ -402,7 +406,10 @@ public Optional<String> findFkByQualifier(String sourceTableSqlName, String qual
 The qualifier computation is pulled into a small static helper on `JooqCatalog` (or a
 package-private utility class) and unit-tested directly. Tests assert it produces the
 same string as `KjerneJooqGenerator.getQualifier` for a representative set of FK
-shapes (single column, composite, with/without role prefix, role == "HAR").
+shapes (single column, composite, with/without role prefix, role == "HAR"). The
+helper carries a javadoc note pointing at the upstream class with a "keep in sync"
+directive; any change to the upstream qualifier algorithm requires a paired change
+here.
 
 ### Success Criteria
 
@@ -600,11 +607,22 @@ if ("ID".equals(typeName)
                     + " '" + resolvedTable.tableName() + "' for synthesized qualifier '"
                     + qualifierCandidate + "'.", locationOf(field)));
             }
+            // Compute the exact canonical replacement so the WARN tells the author
+            // (and any future SDL-rewrite Maven goal) precisely what to write.
+            // If the FK from source to target is unique, @nodeId alone suffices;
+            // otherwise the migrated form must pin the FK with @reference.
+            boolean fkAmbiguous = catalog
+                .findUniqueFkToTable(resolvedTable.tableName(), targetTableOpt.get())
+                .isEmpty();
+            String canonical = fkAmbiguous
+                ? "@nodeId(typeName: \"" + targetTypeOpt.get() + "\")"
+                  + " @reference(path: [{key: \"" + fkName + "\"}])"
+                : "@nodeId(typeName: \"" + targetTypeOpt.get() + "\")";
             ID_REF_SHIM_LOGGER.warn("input field '{}.{}' synthesizes IdReferenceField"
-                + " from qualifier '{}' (FK '{}') — declare @nodeId(typeName: \"{}\")"
-                + " explicitly; synthesis shim will be removed in a future release."
-                + " See graphitron-rewrite/roadmap/retire-id-reference-synthesis-shim.md",
-                parentTypeName, name, qualifierCandidate, fkName, targetTypeOpt.get());
+                + " from qualifier '{}' (FK '{}'); replace the legacy form with {}"
+                + " to drop the synthesis shim. The shim will be removed in a future"
+                + " release; see graphitron-rewrite/roadmap/retire-id-reference-synthesis-shim.md",
+                parentTypeName, name, qualifierCandidate, fkName, canonical);
             return new InputFieldResolution.Resolved(new InputField.IdReferenceField(
                 parentTypeName, name, locationOf(field), typeName, nonNull, list,
                 targetTypeOpt.get(), fkName, qualifierCandidate, /* synthesized */ true));
@@ -622,7 +640,15 @@ Notes:
   iterates `schema.getAllTypesAsList()` looking for the unique `GraphQLObjectType`
   with `@table(name:)` matching (case-insensitive). Returns the type name. If zero
   or multiple types match, returns empty and the shim does not fire (the field falls
-  through to `Unresolved` or the next shim).
+  through to `Unresolved` or the next shim). The lookup is memoized as a
+  `Map<String, String>` populated lazily on first call so that repeated shim
+  invocations across a build don't re-walk the schema. Both sides of the comparison
+  are normalized to the same form (lower-cased, schema prefix preserved) so that
+  `@table(name: "idreffixture.studieprogram")` matches the catalog's
+  `idreffixture.studieprogram` and not the bare `studieprogram`. Mismatched-prefix
+  cases (one side schema-qualified, the other not) do not match; authors must use
+  the same form on both sides, which the existing classifier branches already
+  assume.
 - `ID_REF_SHIM_LOGGER` parallels the existing `NODE_ID_SHIM_LOGGER` declaration near
   the top of `BuildContext.java`.
 - The shim does not require `@field(name:)`. Both the explicit form
@@ -936,6 +962,50 @@ ID_REFERENCE_BAD_KEY(
     schema -> assertThat(schema.type("FilmFilterInput")).isInstanceOf(UnclassifiedType.class)),
 ```
 
+**Case 6 — zero FKs from source to target → UnclassifiedField** (distinct from Case 3,
+which fails on multiple FKs; here there are none). `actor` has no FK to `language`,
+so the inference path's "no unique FK" diagnostic must fire on the zero-FK side too,
+not crash:
+
+```java
+ID_REFERENCE_NO_FK_TO_TARGET(
+    "[ID!] @nodeId where source table has zero FKs to target → UnclassifiedField",
+    """
+    type Language @table(name: "language") @node(typeId: "lang") { name: String }
+    type Actor @table(name: "actor") { firstName: String }
+    input ActorFilterInput @table(name: "actor") {
+      languageIds: [ID!] @nodeId(typeName: "Language")
+    }
+    type Query { actor: Actor }
+    """,
+    schema -> assertThat(schema.type("ActorFilterInput")).isInstanceOf(UnclassifiedType.class)),
+```
+
+**Case 7 — both `@nodeId` and `@field(name:)` present → canonical branch wins,
+`@field(name:)` ignored**. Pins the documented "informational and ignored by
+classification" behaviour from *What We're NOT Doing*:
+
+```java
+ID_REFERENCE_MIXED_DIRECTIVES_CANONICAL_WINS(
+    "[ID!] with both @nodeId and @field(name:) → canonical branch wins, @field(name:) ignored",
+    """
+    type Film @table(name: "film") @node(typeId: "f") { title: String }
+    type Inventory @table(name: "inventory") { lastUpdate: String }
+    input InventoryFilterInput @table(name: "inventory") {
+      filmIds: [ID!] @nodeId(typeName: "Film") @field(name: "BOGUS_NAME")
+    }
+    type Query { inventory: Inventory }
+    """,
+    schema -> {
+        var tit = (TableInputType) schema.type("InventoryFilterInput");
+        var f = (InputField.IdReferenceField) tit.inputFields().stream()
+            .filter(InputField.IdReferenceField.class::isInstance).findFirst().orElseThrow();
+        assertThat(f.synthesized()).isFalse();              // canonical, not shim
+        assertThat(f.targetTypeName()).isEqualTo("Film");
+        assertThat(f.qualifier()).isEqualTo("FILM_ID");     // derived from FK, NOT from @field(name:)
+    }),
+```
+
 **Scalar `ID! @nodeId` is exclusively `NodeIdReferenceField`'s territory.** The
 canonical-form branch is gated on `list && @nodeId`, so a scalar `ID!` field with
 `@nodeId(typeName:)` always lands in the existing branch at `BuildContext.java:737`
@@ -997,13 +1067,21 @@ class JooqCatalogIdSetPredicateTest {
   Hand-checked expectations.
 
 ### Pipeline tests
-- `GraphitronSchemaBuilderTest.TableInputTypeCase` — nine new cases covering the
+- `GraphitronSchemaBuilderTest.TableInputTypeCase` — eleven new cases covering the
   three SDL forms: canonical FK-inferred (Case 1), canonical FK-explicit (Case 2),
   ambiguous-FK rejection (Case 3), shim with explicit `@field(name:)` (Case 4a),
   shim with bare list field name (Case 4b), shim with bare scalar field name
   (Case 4c), bare `id: ID` falls through to `NodeIdField` (Case 4d), shim with
-  role-prefixed qualifier on the new `idreffixture` schema (Case 4e), and bad
-  explicit reference key (Case 5).
+  role-prefixed qualifier on the new `idreffixture` schema (Case 4e), bad
+  explicit reference key (Case 5), zero-FK-to-target rejection (Case 6), and
+  mixed-directive canonical-wins (Case 7).
+- `IdReferenceShimWarnFormatTest` — a small dedicated test that attaches a
+  Logback `ListAppender` to `BuildContext`'s `ID_REF_SHIM_LOGGER`, runs a schema
+  build that triggers the shim once (Case 4a's SDL is sufficient), and asserts the
+  captured log line contains both `parentTypeName.fieldName` and the full
+  canonical replacement (e.g. `@nodeId(typeName: "Language")`). Pins the format
+  that future migration tooling, including the proposed Maven goal that rewrites
+  SDL files in place, will parse out of build logs.
 
 ### Manual verification
 - Apply the built snapshot to the FS platform `sis-graphql-spec` and confirm the
