@@ -160,7 +160,7 @@ Two-stage hosting:
 
 The `baseUrl` for Asciidoctor needs to reflect the `/graphitron/` subpath while we're on the default Pages URL (relative-only links in the AsciiDoc source avoid the issue; absolute internal links would need rewriting at cutover). Prefer `xref:` over raw URLs throughout.
 
-**At Phase 5 cutover:** Add `CNAME` containing `graphitron.sikt.no` to `/docs/`, configure the custom domain in GitHub Pages settings, flip DNS from Sikt K8s ingress to `sikt-no.github.io`, retire the GitLab CI pipeline, decommission the Sikt K8s deployment, archive the `alf/graphitron-landingsside` repo. Matomo analytics either gets reattached via a small `<script>` injected into the AsciiDoctor template, or dropped (decision deferred until the cutover plan is written).
+**At Phase 5 cutover:** Add `CNAME` containing `graphitron.sikt.no` to `/docs/`, configure the custom domain in GitHub Pages settings, flip DNS from Sikt K8s ingress to `sikt-no.github.io`, retire the GitLab CI pipeline, decommission the Sikt K8s deployment, archive the `alf/graphitron-landingsside` repo. Matomo analytics is reattached via a small `<script>` injected into the AsciiDoctor template, or dropped; the call happens here at cutover, not earlier.
 
 Repo-level setup (one-time, has to be done in GitHub UI by a maintainer, not by Claude):
 
@@ -180,7 +180,7 @@ Two distinct migration efforts: converting in-repo `.md` to `.adoc` (mostly mech
 - `/docs/security.md` → `/docs/security.adoc`.
 - `/docs/dependencies.md` → `/docs/dependencies.adoc`.
 
-**`/graphitron-rewrite/docs/`** (9 files):
+**`/graphitron-rewrite/docs/`** (8 files convert + 1 moves):
 - `README.md` → `README.adoc`. Architecture overview.
 - `workflow.md` → `workflow.adoc`. Backlog → Spec → Ready → ... pipeline.
 - `rewrite-design-principles.md` → `rewrite-design-principles.adoc`.
@@ -189,7 +189,7 @@ Two distinct migration efforts: converting in-repo `.md` to `.adoc` (mostly mech
 - `code-generation-triggers.md` → `code-generation-triggers.adoc`.
 - `runtime-extension-points.md` → `runtime-extension-points.adoc`.
 - `getting-started.md` → `getting-started.adoc`.
-- `claude-code-web-environment.md` → `claude-code-web-environment.adoc`. (Internal-tooling note; render anyway, deciding to hide it from public nav can be a follow-up.)
+- `claude-code-web-environment.md` → **moves to `.claude/web-environment.md`** (not converted to `.adoc`; not part of the public site). The `.claude/` directory is the existing Claude Code config home (`agents/`, `commands/`, `scripts/`, `settings.json`); the web-environment doc is purely AI-tooling content. Stays markdown for AI-agent readability. Inbound references in `CLAUDE.md`, root `README.md`, `graphitron-rewrite/roadmap/rewrite-test-tier-guide.md`, and `graphitron-rewrite/roadmap/changelog.md` are updated to the new path in the same commit. Root `README.md`'s "see [claude-code-web-environment.md] for the full rewrite build flow" reference is replaced with a pointer to the new public-facing `getting-started.adoc` instead, since the README is public-facing.
 
 **Roadmap content** (`graphitron-rewrite/roadmap/*.md`, `changelog.md`): stays markdown, build-time conversion via `roadmap-tool` (see [Roadmap, plans, and changelog rendering](#roadmap-plans-and-changelog-rendering)).
 
@@ -316,7 +316,8 @@ End state: the deployed Pages URL serves all of the existing in-repo doc content
 Deliverables:
 
 - 5 converted pages from `/docs/`: `vision-and-goal`, `graphitron-principles`, `security`, `dependencies`, plus updated `README.adoc`. Original `.md` files deleted.
-- 9 converted pages from `/graphitron-rewrite/docs/`: `README`, `workflow`, `rewrite-design-principles`, `rewrite-model`, `argument-resolution`, `code-generation-triggers`, `runtime-extension-points`, `getting-started`, `claude-code-web-environment`. Original `.md` files deleted.
+- 8 converted pages from `/graphitron-rewrite/docs/`: `README`, `workflow`, `rewrite-design-principles`, `rewrite-model`, `argument-resolution`, `code-generation-triggers`, `runtime-extension-points`, `getting-started`. Original `.md` files deleted.
+- `/graphitron-rewrite/docs/claude-code-web-environment.md` moved to `.claude/web-environment.md` (stays markdown, not on the public site; see [Content migration](#in-repo-md-adoc-phase-2)).
 - `/docs/pom.xml` updated: staging step now also copies `/graphitron-rewrite/docs/` to `target/staging/architecture/`.
 - `CLAUDE.md` and any other inbound links updated to point at the new `.adoc` paths.
 - Authoring conventions added to `/docs/README.adoc`.
@@ -359,7 +360,7 @@ Deliverables:
 
 - Add `/docs/CNAME` containing `graphitron.sikt.no`, configure custom domain in Pages settings, enforce HTTPS.
 - DNS update: `graphitron.sikt.no` → `sikt-no.github.io` (Sikt platform / DNS team).
-- Decision on Matomo: reattach via `<script>` injection in the AsciiDoctor template, or drop. Plan a small follow-up roadmap item if reattaching.
+- Matomo decision: reattach via `<script>` injection in the AsciiDoctor template, or drop. Either way decided here at cutover; a small follow-up roadmap item lands if reattaching.
 - Decommission: stop the GitLab CI pipeline on `alf/graphitron-landingsside`, scale K8s deployment to 0, remove the K8s Deployment/Service/Ingress, archive the repo with a redirect README.
 - Update root `README.md` to keep the "Online documentation" link (URL doesn't change).
 
@@ -367,8 +368,9 @@ Verification: hit `https://graphitron.sikt.no/`, confirm HTTPS valid, confirm co
 
 ## Open questions for the reviewer
 
-1. **Matomo at cutover (Phase 5).** Reattach via `<script>` injection in the AsciiDoctor template, or drop analytics entirely with the move to GitHub Pages? Defer until Phase 5, but flagging now so it's not a surprise.
-2. **`claude-code-web-environment.adoc` on the public site.** This file documents the AI-sandbox setup, which is genuinely contributor/AI-tooling content rather than user-facing. Two options: (a) ship it on the site under Architecture (lowest-friction, max-transparency, possibly confusing); (b) keep it `.adoc` for consistency but exclude it from the staged source via a glob. My read: ship it. It's already public on GitHub and the bar is "contributors/curious users", which fits Architecture.
+None. Both prior open questions resolved:
+- Matomo: reattach-vs-drop decision lives inside Phase 5 cutover, not pre-blocking.
+- Claude-internal docs: `claude-code-web-environment.md` moves to `.claude/web-environment.md`, not published.
 
 ## Risks and mitigations
 
@@ -376,7 +378,7 @@ Verification: hit `https://graphitron.sikt.no/`, confirm HTTPS valid, confirm co
 - **Default Asciidoctor styling looks dated.** Mitigation: that's exactly what `site.css` solves by porting the SDS-token usage from `siktifisert.css`. Phase 1 verifies the branding looks right *before* later phases pile content on top.
 - **The Maven build now fails when docs are broken.** Intent (catch rot in CI), but a typo in `.adoc` blocks a release. Mitigation: AsciiDoc errors-vs-warnings is configurable in the plugin; start with "fail on error, warn on missing xref" until settled, then tighten.
 - **Phase 5 DNS cutover requires Sikt platform / DNS team coordination.** Mitigation: Phases 1-4 are entirely independent of DNS; the new site is fully styled and content-complete on `sikt-no.github.io/graphitron/` before the cutover ticket is even raised. The cutover itself is then a single coordinated change.
-- **Matomo loss.** If we drop Matomo we lose continuity in usage data. Mitigation: deferred decision, see Open question 1. If reattaching, the Matomo `<script>` is small and well-documented; injection into the AsciiDoctor template is a 5-line change.
+- **Matomo loss.** If we drop Matomo at Phase 5 cutover we lose continuity in usage data. Mitigation: the decision lives inside Phase 5; reattaching is a 5-line `<script>` injection in the AsciiDoctor template, dropping is the trivial alternative.
 - **Subpath base URL during Phases 1-4.** While on `sikt-no.github.io/graphitron/`, absolute internal links break. Mitigation: enforce `xref:` and relative-path links in the authoring conventions, and configure Asciidoctor `:imagesdir: images` so image paths stay relative.
 - **Markdown→AsciiDoc conversion in `roadmap-tool` produces ugly output for some plans.** Mitigation: option-1 pass-through is the cheap default; if specific plans render poorly, escalate that one to option-2 library conversion or hand-tune the source `.md`. Plans deleted on Done means bad-render risk has a short half-life.
 - **Convert-and-delete of `/graphitron-rewrite/docs/*.md` breaks every existing inbound link.** Mitigation: Phase 2's CLAUDE.md update step is mandatory, not optional; grep the repo for the old `.md` paths and update all hits in the same PR.
