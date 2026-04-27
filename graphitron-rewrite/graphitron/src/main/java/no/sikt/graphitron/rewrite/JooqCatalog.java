@@ -353,6 +353,21 @@ public class JooqCatalog {
     }
 
     /**
+     * Returns all Java field names for the given table, in the order they appear in the generated
+     * jOOQ table class. Use this for error hints where the schema author is expected to supply
+     * a Java field name (e.g. {@code @field(name: "FILM_ID")}). Returns an empty list when the
+     * table cannot be found.
+     */
+    public java.util.List<String> columnJavaNamesOf(String tableSqlName) {
+        return findTable(tableSqlName)
+            .map(te -> Arrays.stream(te.table().getClass().getFields())
+                .filter(f -> org.jooq.Field.class.isAssignableFrom(f.getType()))
+                .map(f -> f.getName())
+                .toList())
+            .orElse(java.util.List.of());
+    }
+
+    /**
      * Returns all columns for the given table, in the order they appear in the generated jOOQ
      * table class. Each entry includes the Java field name, fully qualified column type, SQL name,
      * and nullability. Returns an empty list when the table cannot be found.
@@ -370,29 +385,30 @@ public class JooqCatalog {
     }
 
     /**
-     * Find a column in a table by its SQL name. Returns the Java field name in the generated table
-     * class (e.g. {@code "FILM_ID"}) and the fully qualified column type name. Uses reflection to
-     * read the actual Java identifier name, which respects custom jOOQ naming strategies rather
-     * than assuming a plain {@code toUpperCase()} transformation.
+     * Find a column in a table by either its Java field name or its SQL name. Java name is tried
+     * first (case-insensitive), then SQL name (case-insensitive). Directive values in GraphQL
+     * schemas may be either convention; trying Java name first handles custom jOOQ naming
+     * strategies where {@code javaName} is not a simple {@code toUpperCase(sqlName)}.
      */
-    public Optional<ColumnEntry> findColumn(Table<?> table, String sqlColumnName) {
-        return Arrays.stream(table.getClass().getFields())
+    public Optional<ColumnEntry> findColumn(Table<?> table, String columnName) {
+        var entries = Arrays.stream(table.getClass().getFields())
             .filter(f -> org.jooq.Field.class.isAssignableFrom(f.getType()))
             .map(f -> {
                 var col = (org.jooq.Field<?>) instanceFieldValue(f, table);
                 return new ColumnEntry(f.getName(), col.getType().getName(), col.getName(), col.getDataType().nullable());
             })
-            .filter(e -> sqlColumnName.equalsIgnoreCase(e.sqlName()))
-            .findFirst();
+            .toList();
+        return entries.stream().filter(e -> columnName.equalsIgnoreCase(e.javaName())).findFirst()
+            .or(() -> entries.stream().filter(e -> columnName.equalsIgnoreCase(e.sqlName())).findFirst());
     }
 
     /**
-     * Find a column by SQL table name and SQL column name. Delegates to
+     * Find a column by SQL table name and column name (Java or SQL). Delegates to
      * {@link #findTable(String)} followed by {@link #findColumn(Table, String)}.
      */
-    public Optional<ColumnEntry> findColumn(String tableSqlName, String columnSqlName) {
+    public Optional<ColumnEntry> findColumn(String tableSqlName, String columnName) {
         return findTable(tableSqlName)
-            .flatMap(e -> findColumn(e.table(), columnSqlName));
+            .flatMap(e -> findColumn(e.table(), columnName));
     }
 
     private Optional<Class<?>> tablesClass(Schema schema) {
