@@ -178,6 +178,7 @@ public sealed interface ChildField extends GraphitronField
         ReturnTypeRef.TableBoundReturnType returnType,
         String discriminatorColumn,
         List<String> knownDiscriminatorValues,
+        List<ParticipantRef> participants,
         List<JoinStep> joinPath,
         List<WhereFilter> filters,
         OrderBySpec orderBy,

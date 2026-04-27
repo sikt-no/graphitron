@@ -26,6 +26,7 @@ import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.ParamSource;
+import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.SqlGeneratingField;
@@ -37,6 +38,7 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.*;
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -589,8 +591,8 @@ public class TypeFetcherGenerator {
         String tableLocal = names.tableLocalName();
         builder.addCode(buildConditionCall(qtif.parentTypeName(), qtif.name(), tableLocal, outputPackage));
         builder.addCode(buildDiscriminatorFilter(qtif.discriminatorColumn(), qtif.knownDiscriminatorValues()));
+        builder.addCode(buildInterfaceFieldsList(qtif.participants(), qtif.discriminatorColumn(), tableLocal, outputPackage));
 
-        var discriminatorField = CodeBlock.of("$T.field($T.name($S))", DSL, DSL, qtif.discriminatorColumn());
         var dslContextClass = ClassName.get("org.jooq", "DSLContext");
 
         if (isList) {
@@ -599,7 +601,7 @@ public class TypeFetcherGenerator {
             builder.addCode(CodeBlock.builder()
                 .add("return dsl\n")
                 .indent()
-                .add(".select($L.asterisk(), $L)\n", tableLocal, discriminatorField)
+                .add(".select(new $T<>(fields))\n", ArrayList.class)
                 .add(".from($L)\n", tableLocal)
                 .add(".where(condition)\n")
                 .add(".orderBy(orderBy)\n")
@@ -611,7 +613,7 @@ public class TypeFetcherGenerator {
             builder.addCode(CodeBlock.builder()
                 .add("return dsl\n")
                 .indent()
-                .add(".select($L.asterisk(), $L)\n", tableLocal, discriminatorField)
+                .add(".select(new $T<>(fields))\n", ArrayList.class)
                 .add(".from($L)\n", tableLocal)
                 .add(".where(condition)\n")
                 .add(".fetchOne();\n")
@@ -669,15 +671,14 @@ public class TypeFetcherGenerator {
         // ConditionJoin paths are caught at classification time.
         builder.addCode(buildJoinPathCondition(tif.joinPath(), tableRef.tableName()));
         builder.addCode(buildDiscriminatorFilter(tif.discriminatorColumn(), tif.knownDiscriminatorValues()));
-
-        var discriminatorField = CodeBlock.of("$T.field($T.name($S))", DSL, DSL, tif.discriminatorColumn());
+        builder.addCode(buildInterfaceFieldsList(tif.participants(), tif.discriminatorColumn(), tableLocal, outputPackage));
 
         if (isList) {
             builder.addCode(buildOrderByCode(tif.orderBy(), tif.name(), tableLocal));
             builder.addCode(CodeBlock.builder()
                 .add("return dsl\n")
                 .indent()
-                .add(".select($L.asterisk(), $L)\n", tableLocal, discriminatorField)
+                .add(".select(new $T<>(fields))\n", ArrayList.class)
                 .add(".from($L)\n", tableLocal)
                 .add(".where(condition)\n")
                 .add(".orderBy(orderBy)\n")
@@ -688,7 +689,7 @@ public class TypeFetcherGenerator {
             builder.addCode(CodeBlock.builder()
                 .add("return dsl\n")
                 .indent()
-                .add(".select($L.asterisk(), $L)\n", tableLocal, discriminatorField)
+                .add(".select(new $T<>(fields))\n", ArrayList.class)
                 .add(".from($L)\n", tableLocal)
                 .add(".where(condition)\n")
                 .add(".fetchOne();\n")
@@ -728,6 +729,38 @@ public class TypeFetcherGenerator {
             .addStatement("$T condition = $T.field($T.name($S)).eq(parentRecord.get($T.name($S)))",
                 CONDITION, DSL, DSL, childCol, DSL, parentRecordCol)
             .build();
+    }
+
+    /**
+     * Emits a {@code LinkedHashSet<Field<?>> fields} declaration populated with the discriminator
+     * column and each table-bound participant's {@code $fields} contribution.
+     *
+     * <p>The {@code LinkedHashSet} preserves insertion order and deduplicates field references so
+     * shared columns (e.g. {@code title} declared on both {@code FilmContent} and
+     * {@code ShortContent}) appear only once in the SELECT list.
+     *
+     * <p>The discriminator column is always included first, unconditionally, so the TypeResolver
+     * can route each returned row to the correct concrete type even when the GraphQL selection set
+     * does not explicitly request it.
+     */
+    private static CodeBlock buildInterfaceFieldsList(
+            List<ParticipantRef> participants, String discriminatorColumn,
+            String tableLocal, String outputPackage) {
+        var b = CodeBlock.builder();
+        var fieldType = ParameterizedTypeName.get(
+            ClassName.get("org.jooq", "Field"),
+            WildcardTypeName.subtypeOf(Object.class));
+        var setType = ParameterizedTypeName.get(
+            ClassName.get(LinkedHashSet.class), fieldType);
+        b.addStatement("$T fields = new $T<>()", setType, LinkedHashSet.class);
+        b.addStatement("fields.add($T.field($T.name($S)))", DSL, DSL, discriminatorColumn);
+        for (var participant : participants) {
+            if (!(participant instanceof ParticipantRef.TableBound tb)) continue;
+            var typeClass = ClassName.get(outputPackage + ".types", tb.typeName());
+            b.addStatement("fields.addAll($T.$$fields(env.getSelectionSet(), $L, env))",
+                typeClass, tableLocal);
+        }
+        return b.build();
     }
 
     /**
