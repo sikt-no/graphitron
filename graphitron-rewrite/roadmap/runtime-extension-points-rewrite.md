@@ -26,7 +26,7 @@ Verified against `TypeFetcherGenerator.buildGraphitronContextHelper`,
 - Line 19 says the interface lives at
   `graphitron-common/src/main/java/no/sikt/graphql/GraphitronContext.java`.
   The rewrite emits its own interface per app under
-  `<outputPackage>.rewrite.schema.GraphitronContext`. The generator never
+  `<outputPackage>.schema.GraphitronContext`. The generator never
   references `graphitron-common`.
 - Lines 29-39 illustrate registration with
   `Map.of("graphitronContext", new DefaultGraphitronContext(ctx))` and
@@ -73,7 +73,7 @@ was deleted in the same split commit (`99b037e`).
 
 - **Interface description.** Replaced the legacy `graphitron-common` location
   with the rewrite-emitted shape: per-app generation under
-  `<outputPackage>.rewrite.schema`, written by
+  `<outputPackage>.schema`, written by
   `GraphitronContextInterfaceGenerator`, no shared runtime jar.
 - **Three actual methods.** `getDataLoaderName` was wrong; the emitted
   interface has `getTenantId`. Added a dedicated section for `getTenantId`
