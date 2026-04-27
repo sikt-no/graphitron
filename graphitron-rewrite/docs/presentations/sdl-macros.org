@@ -118,9 +118,8 @@ type Query {
 }
 #+END_SRC
 
-Lovlig SDL nå. Direktivet leses, /MakeConnections.transform/ skriver nye
-=ObjectTypeDefinition= inn i =TypeDefinitionRegistry=, generatoren ser
-ferdig­ekspandert SDL.
+Lovlig SDL. En transformasjons­fase ekspanderer direktivet til Connection-
+og Edge-typer før generatoren får skjemaet.
 
 Pre-prosessor. Direktivet er borte før generatoren ser noe.
 
@@ -136,9 +135,9 @@ type =FilmsConnection= med =edges= og =nodes=.
 To hull i den mekaniske tilnærmingen:
 
 #+ATTR_REVEAL: :frag (appear)
-- *Håndskrevne connections.* Vil konsumenten ha et tilpasset =edge=-felt,
-  må vedkommende håndskrive hele Relay-shapen. Du har to parallelle
-  veier i koden.
+- *Håndskrevne connections.* Vil skjemaforfatteren ha et tilpasset
+  =edge=-felt, må hele Relay-shapen håndskrives. To parallelle veier i
+  koden.
 - *Direktiver gror i generatorene.* Hver generator må selv vite hvilke
   direktiver den bryr seg om. N steder å oppdatere når makroen vokser.
 
@@ -439,15 +438,13 @@ Hvorfor er dette enkelt nå?
 * Fordi sporet er lagt
 
 #+ATTR_REVEAL: :frag (appear)
-- =ConnectionSynthesis.buildPlan()= finnes fra før. =@asFacet= gir ett
-  ekstra felt på =ConnectionDef=: =List<FacetSpec>=.
-- =FieldWrapper.Connection= finnes fra før. Den får ett ekstra
-  recordfelt: =facets=.
-- Klassifikatoren har valideringsmekanikken. =@asFacet= på et
-  =@reference=-bundet felt avvises ved build-tid, samme måte som
-  =@asConnection= på en inline =TableField=.
-- =*FacetValue=-typene er gjenbrukbare på tvers av hele skjemaet (én
-  =StringFacetValue=, ikke én per connection).
+- Pipelinen som ekspanderer Connection finnes. Fasett legger seg på som
+  en ny gren.
+- Modellen som bærer Connection-begrepet finnes. Den får ett nytt felt
+  for fasetter.
+- Valideringen finnes. Ulovlige kombinasjoner avvises ved build-tid.
+- Skalar-fasettypene gjenbrukes på tvers av hele skjemaet — én
+  =StringFacetValue=, ikke én per Connection.
 
 * Hele "intelligensen" i en record
 
@@ -460,8 +457,10 @@ public record FacetSpec(
 ) {}
 #+END_SRC
 
-Generatoren får én ny svitsj-arm. Ingen direktiv-parsing. Ingen
-tekst-rewrite. =FacetSpec= forteller den hva den skal emitte.
+Hele kontrakten lever i den lille recorden.
+
+Ingen tekst-rewrite, ingen ny direktiv-parsing. Klassifikatoren har
+allerede gjort jobben.
 
 #+BEGIN_NOTES
 Sammenlign med tekstmakro-tilnærmingen: vi måtte ekspandert ny SDL,
@@ -474,25 +473,25 @@ i SDL-streng-formen.
 * Win for produsenten
 
 #+ATTR_REVEAL: :frag (appear)
-- *Direktiver leses ett sted.* Ny makro = ny variant + nye generator-armer
-  som kompilatoren krever.
-- *Validatoren speiler klassifikatoren.* Ulovlige kombinasjoner fanges
-  ved build-tid, ikke runtime.
-- *Stram emitter.* =ConnectionType= inn, pagineringskode ut. Ingen
-  casts, ingen =instanceof=.
-- *=@asFacet= legger seg på samme rygg.* Andre makro tar dager, ikke uker.
+- *Korte skjemaer.* Én annotasjon der det før var 25 linjer.
+- *Verktøyet vet hva en Connection /betyr/.* Paginering, cursor-encoding
+  og totalCount implementeres én gang, korrekt, av rammeverket.
+- *Build-tid fanger feil.* Ulovlige kombinasjoner avvises før kompilering
+  er ferdig — ingen overraskelser i prod.
+- *Domenet kan vokse.* Connection. Edge. Facet. Neste begrep har en
+  plass å sette seg.
 
 * Win for konsumenten
 
 #+ATTR_REVEAL: :frag (appear)
-- *Connection:* velg nivå. =@asConnection= for det vanlige; håndskriv for
-  spesial. Samme genererte oppførsel.
-- *Fasett:* ett ord i skjemaet gir hele kontrakten. Riktige typer,
-  filter-minus-self, round-trip uten coercion.
-- Klienten kan ikke bruke fasetten /feil/, fordi typene tvinger korrekt
-  bruk.
-- Konsumenten ser aldri makroen, bare det ekspanderte resultatet i
-  introspection.
+- *Spec-konformt Relay.* Klienter virker ut av boksen og kan ikke gli ut
+  av spec.
+- *Typer i begge retninger.* En fasettverdi kan fôres rett tilbake i
+  filteret — samme skalar, ingen coercion.
+- *Filter-minus-self er kontrakt, ikke håp.* Endrer du selektoren på en
+  fasett, får du nye tellinger; alle andre er stabile.
+- *Ingen lekket implementasjon.* Du ser et vanlig GraphQL-skjema, aldri
+  en makro.
 
 * Avslutning
 
