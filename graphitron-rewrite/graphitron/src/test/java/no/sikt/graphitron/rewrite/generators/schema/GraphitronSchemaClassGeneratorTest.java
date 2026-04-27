@@ -227,6 +227,88 @@ class GraphitronSchemaClassGeneratorTest {
         assertThat(plan.additionalTypeNames()).containsSubsequence("Alpha", "Zebra");
     }
 
+    // ===== TableInterfaceType TypeResolver emission =====
+
+    private static final String INTERFACE_SDL = """
+        type Query { allContent: [Content!]! }
+        interface Content @table(name: "content") @discriminate(on: "CONTENT_TYPE") {
+            id: ID!
+        }
+        type Film implements Content @table(name: "content") @discriminator(value: "FILM") {
+            id: ID!
+            title: String
+        }
+        type Short implements Content @table(name: "content") @discriminator(value: "SHORT") {
+            id: ID!
+            duration: Int
+        }
+        """;
+
+    @Test
+    void build_emitsTypeResolver_forTableInterfaceType() {
+        // Intentional body-content assertion: the TypeResolver is runtime dispatch infrastructure
+        // — no structural equivalent. A missing typeResolver call means graphql-java cannot route
+        // fetched Records to their concrete GraphQL type, causing all interface queries to fail.
+        var body = buildBody(INTERFACE_SDL);
+        assertThat(body).contains("codeRegistry.typeResolver(\"Content\"");
+    }
+
+    @Test
+    void build_typeResolver_mapsEachDiscriminatorValueToConcreteType() {
+        var body = buildBody(INTERFACE_SDL);
+        assertThat(body).contains("case \"FILM\"");
+        assertThat(body).contains("getObjectType(\"Film\")");
+        assertThat(body).contains("case \"SHORT\"");
+        assertThat(body).contains("getObjectType(\"Short\")");
+    }
+
+    @Test
+    void build_typeResolver_readsDiscriminatorColumnFromRecord() {
+        // The discriminator column is resolved to its SQL name (lowercase) at classification
+        // time so DSL.name(...) generates a correctly-cased quoted identifier for PostgreSQL.
+        var body = buildBody(INTERFACE_SDL);
+        assertThat(body).contains("\"content_type\"");
+    }
+
+    @Test
+    void build_typeResolver_skipsInterfaceWithNoDiscriminatorValues() {
+        // An interface with @discriminate but no concrete types with @discriminator
+        // must not produce a typeResolver call (there's nothing to switch on).
+        var body = buildBody("""
+            type Query { x: Content }
+            interface Content @table(name: "content") @discriminate(on: "CONTENT_TYPE") {
+                id: ID!
+            }
+            type Film implements Content @table(name: "content") {
+                id: ID!
+            }
+            """);
+        assertThat(body).doesNotContain("codeRegistry.typeResolver(\"Content\"");
+    }
+
+    @Test
+    void build_typeResolverId_alphabeticalOrder_beforeSchemaBuilder() {
+        // TypeResolvers for multiple interfaces are registered in alphabetical order and
+        // always before .query/.additionalType so the code registry is fully populated before build.
+        // Uses real fixture tables (content, film) so TableInterfaceType classification succeeds.
+        var body = buildBody("""
+            type Query { z: ZebraContent  a: AlphaContent }
+            interface ZebraContent @table(name: "content") @discriminate(on: "CONTENT_TYPE") {
+                id: ID!
+            }
+            type ZebraFilm implements ZebraContent @table(name: "content") @discriminator(value: "FILM") { id: ID! }
+            interface AlphaContent @table(name: "film") @discriminate(on: "FILM_TYPE") {
+                id: ID!
+            }
+            type AlphaA implements AlphaContent @table(name: "film") @discriminator(value: "REGULAR") { id: ID! }
+            """);
+        int zebraIdx = body.indexOf("codeRegistry.typeResolver(\"ZebraContent\"");
+        int alphaIdx = body.indexOf("codeRegistry.typeResolver(\"AlphaContent\"");
+        int queryIdx = body.indexOf(".query(");
+        assertThat(alphaIdx).as("AlphaContent resolver before ZebraContent (alphabetical)").isLessThan(zebraIdx);
+        assertThat(zebraIdx).as("typeResolvers before .query()").isLessThan(queryIdx);
+    }
+
     private static TypeSpec generate(String sdl) {
         var bundle = TestSchemaHelper.buildBundle(sdl);
         return GraphitronSchemaClassGenerator.generate(bundle.model(), bundle.assembled(), Set.of(), OUTPUT_PKG).get(0);

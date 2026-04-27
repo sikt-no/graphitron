@@ -20,7 +20,7 @@ class QueryTableInterfaceFieldValidationTest {
     enum Case implements ValidatorCase {
 
         SINGLE_CARDINALITY("single cardinality — implemented, no errors expected",
-            new QueryTableInterfaceField("Query", "statuses", null, new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", List.of()), new FieldWrapper.Single(true)), "FILM_TYPE", List.of(), new OrderBySpec.None(), null),
+            new QueryTableInterfaceField("Query", "statuses", null, new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", List.of()), new FieldWrapper.Single(true)), "FILM_TYPE", List.of(), List.of(), new OrderBySpec.None(), null),
             List.of());
 
         private final String description;

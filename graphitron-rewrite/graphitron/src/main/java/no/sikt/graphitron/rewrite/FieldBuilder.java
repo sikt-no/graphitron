@@ -65,6 +65,7 @@ import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.PaginationSpec;
+import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
@@ -380,9 +381,12 @@ class FieldBuilder {
             }
             var tfc = resolveTableFieldComponents(fieldDef, tableInterfaceType.table(), elementTypeName);
             if (tfc.error() != null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, tfc.error());
+            var joinPathError = validateSingleHopFkJoin(referencePath.elements(), name);
+            if (joinPathError != null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, joinPathError);
+            var knownValues = knownDiscriminatorValues(tableInterfaceType);
             return new TableInterfaceField(parentTypeName, name, location,
                 new ReturnTypeRef.TableBoundReturnType(elementTypeName, tableInterfaceType.table(), wrapper),
-                tableInterfaceType.discriminatorColumn(), referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination());
+                tableInterfaceType.discriminatorColumn(), knownValues, referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination());
         }
 
         if (elementType instanceof InterfaceType interfaceType) {
@@ -1641,9 +1645,10 @@ class FieldBuilder {
             var wrapper = buildWrapper(fieldDef);
             var tfc = resolveTableFieldComponents(fieldDef, tableInterfaceType.table(), elementTypeName);
             if (tfc.error() != null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, tfc.error());
+            var knownValues = knownDiscriminatorValues(tableInterfaceType);
             return new QueryField.QueryTableInterfaceField(parentTypeName, name, location,
                 new ReturnTypeRef.TableBoundReturnType(elementTypeName, tableInterfaceType.table(), wrapper),
-                tableInterfaceType.discriminatorColumn(), tfc.filters(), tfc.orderBy(), tfc.pagination());
+                tableInterfaceType.discriminatorColumn(), knownValues, tfc.filters(), tfc.orderBy(), tfc.pagination());
         }
         if (elementType instanceof InterfaceType interfaceType) {
             return new QueryField.QueryInterfaceField(parentTypeName, name, location,
@@ -2164,6 +2169,31 @@ class FieldBuilder {
      */
     private List<String> parseContextArguments(GraphQLFieldDefinition fieldDef, String directiveName) {
         return argStringList(fieldDef, directiveName, ARG_CONTEXT_ARGUMENTS);
+    }
+
+    /** Collects the non-null discriminator values from all {@link ParticipantRef.TableBound} participants. */
+    private static List<String> knownDiscriminatorValues(GraphitronType.TableInterfaceType tit) {
+        return tit.participants().stream()
+            .filter(p -> p instanceof ParticipantRef.TableBound tb && tb.discriminatorValue() != null)
+            .map(p -> ((ParticipantRef.TableBound) p).discriminatorValue())
+            .toList();
+    }
+
+    /**
+     * Validates that a join path for a {@link ChildField.TableInterfaceField} is a single
+     * {@link JoinStep.FkJoin} step. Returns an error message if the path is multi-hop or
+     * contains a {@link JoinStep.ConditionJoin}, or {@code null} if the path is valid.
+     */
+    private static String validateSingleHopFkJoin(List<JoinStep> path, String fieldName) {
+        if (path.size() != 1) {
+            return "Field '" + fieldName + "': TableInterfaceField @reference paths must be a single FK hop "
+                + "(multi-hop paths are not yet supported — see stub-interface-union-fetchers.md)";
+        }
+        if (!(path.get(0) instanceof JoinStep.FkJoin)) {
+            return "Field '" + fieldName + "': TableInterfaceField @reference paths must use a foreign key "
+                + "(ConditionJoin paths are not yet supported — see stub-interface-union-fetchers.md)";
+        }
+        return null;
     }
 
     // ===== Inner records =====
