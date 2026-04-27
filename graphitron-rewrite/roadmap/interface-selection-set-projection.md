@@ -41,9 +41,51 @@ table from the interface's own table.
 ## Design
 
 The interface table is the spine of the query. The discriminator column is always
-selected from it. Each participant contributes its field selection; fields on the
-interface table are selected directly, fields on another table require a conditional
-LEFT JOIN.
+selected from it. Each participant contributes its field selection via its already-
+generated `$fields` method (participant types are classified as `TableType` in the
+first TypeBuilder pass, so `FilmContent.$fields` and `ShortContent.$fields` already
+exist). Fields on the interface table are selected directly; fields on another table
+require a conditional LEFT JOIN.
+
+**No SQL UNION.** For a single-table interface all participants live on the same
+table; the result is a single SELECT with an optional LEFT JOIN per cross-table
+participant field group. SQL UNION is only relevant for multi-table interfaces
+(Track B, a separate item).
+
+**Participant `$fields` calls.** The fetcher calls each participant's `$fields`
+with the selection set and the interface table, then unions the results into a
+`LinkedHashSet` (deduplication preserves order; shared fields like `title`
+appearing in both participants collapse to one column reference):
+
+```java
+var fields = new LinkedHashSet<Field<?>>();
+fields.add(DSL.field(DSL.name("content_type")));  // discriminator always first
+fields.addAll(FilmContent.$fields(env.getSelectionSet(), contentTable, env));
+fields.addAll(ShortContent.$fields(env.getSelectionSet(), contentTable, env));
+```
+
+`$fields` iterates `sel.getFieldsGroupedByResultKey()`, which flattens inline
+fragments, so `{ ... on FilmContent { length } }` naturally contributes `length`
+to the result just as a top-level `{ length }` would.
+
+**Cross-table fields and conditional LEFT JOINs.** When a participant has fields
+on a different table (e.g. `FilmContent.rating` on the `film` table), the fetcher
+must:
+
+1. Determine at runtime whether any such cross-table field is requested.
+2. If yes, include the LEFT JOIN and the field in the SELECT list.
+
+Determining this requires type-scoped selection-set checking. graphql-java's
+`DataFetchingFieldSelectionSet.contains(String)` accepts a `"TypeName/fieldName"`
+qualified name, so the JOIN guard is:
+
+```java
+if (env.getSelectionSet().contains("FilmContent/rating")) {
+    FilmTable filmTable = Tables.FILM.as(contentTable.getName() + "_film");
+    fields.add(filmTable.RATING);
+    // LEFT JOIN is added to the query after the .from() call
+}
+```
 
 **Critical invariant:** the LEFT JOIN condition includes the participant's
 discriminator value so that non-matching rows carry NULL for that participant's
@@ -164,25 +206,49 @@ Seed data: both FILM rows already reference film rows 1 and 2, which have non-nu
 
 Both `buildQueryTableInterfaceFieldFetcher` and `buildTableInterfaceFieldFetcher`
 share the same fix shape. The current `.select(table.asterisk(), discriminatorField)`
-expression is replaced by a runtime-built field list:
+expression is replaced by a runtime-built field list derived from per-participant
+`$fields` calls.
+
+**Participant `$fields` are already generated.** Participant types (`FilmContent`,
+`ShortContent`) are classified as `TableType` in TypeBuilder's first pass (they
+carry `@table`). `TypeClassGenerator` generates `$fields` for every `TableType`,
+so `FilmContent.$fields(sel, contentTable, env)` and
+`ShortContent.$fields(sel, contentTable, env)` already exist.
+
+**Same-table field union (current scope):**
 
 1. Always include the discriminator: `DSL.field(DSL.name(discriminatorColumn))`.
-2. For each participant, partition its fields into two groups at code-generation time:
-   - **Same-table fields** (field's table matches the interface table): contribute
-     `ParticipantType.$fields(env.getSelectionSet(), table, env)` — no JOIN.
-   - **Cross-table fields** (field's terminal table is a different table): contribute
-     a `LEFT JOIN participantTable ON <fkCondition> AND <discriminatorColumn> = '<value>'`
-     and `ParticipantType.$fields(env.getSelectionSet(), joinAlias, env)` from that
-     alias.
-3. Collect all field lists into a `LinkedHashSet<Field<?>>` (preserves order,
-   eliminates duplicates for shared columns like `title` appearing in both
-   participant `$fields` calls).
+2. For each participant, call `ParticipantType.$fields(env.getSelectionSet(), table, env)`.
+   `$fields` iterates `sel.getFieldsGroupedByResultKey()`, which flattens inline
+   fragments — `{ ... on FilmContent { length } }` contributes `length` naturally.
+3. Collect all results into a `LinkedHashSet<Field<?>>` to deduplicate shared columns
+   (e.g. `title` from both participants collapses to one reference).
 4. Emit `.select(new ArrayList<>(fields))` in place of `.select(asterisk(), ...)`.
-5. Emit any accumulated LEFT JOINs before the `.where(...)` clause.
 
-For Track A today all participants are on the same table, so step 2 produces only
-same-table entries and no JOINs — the generated code degenerates cleanly to a pure
-field-union.
+**Cross-table fields (needed for the `rating` fixture extension):**
+
+For each participant that has fields on a different table (determined at code-
+generation time by inspecting the participant's classified fields):
+
+5. Emit a type-scoped selection check at runtime:
+   ```java
+   if (env.getSelectionSet().contains("FilmContent/rating")) {
+   ```
+   `DataFetchingFieldSelectionSet.contains("TypeName/fieldName")` is the graphql-java
+   API for type-scoped inline-fragment fields.
+6. Inside the guard, declare the joined table alias, add the field(s) to the
+   `LinkedHashSet`, and record the LEFT JOIN to emit.
+7. After `.from(table)`, emit any accumulated LEFT JOINs:
+   ```java
+   LEFT JOIN film ON film.film_id = content.film_id
+                  AND content.content_type = 'FILM'
+   ```
+   The discriminator condition on the JOIN prevents spurious matches for non-FILM rows.
+
+**Emitting the query.** jOOQ's `SelectJoinStep` is returned by `.from(table)`; each
+`leftJoin(...).on(...)` call chains off it before `.where(condition)`. The code
+generator accumulates a list of `(joinTable, onCondition)` pairs and emits them in
+order between `.from` and `.where`.
 
 ### `init.sql` and `schema.graphqls`
 
@@ -240,3 +306,8 @@ For both `buildQueryTableInterfaceFieldFetcher` and `buildTableInterfaceFieldFet
 - **2026-04-27** — Spec drafted. Follows design session identifying that even Track A
   participants can have cross-table fields; the LEFT JOIN must be gated on both the
   selection set and the discriminator value.
+- **2026-04-27** — Spec revised: corrected that participant types (`FilmContent`,
+  `ShortContent`) already have `$fields` generated (they are `TableType` in
+  TypeBuilder's first pass); no SQL UNION for single-table interface (that is only
+  relevant for Track B multi-table); cross-table field JOIN guard uses
+  `sel.contains("TypeName/fieldName")` type-scoped API.
