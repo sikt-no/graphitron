@@ -91,7 +91,12 @@ public final class EntityResolutionBuilder {
             GraphQLNamedType assembledType = assembled.getType(typeName) instanceof GraphQLNamedType nt ? nt : null;
             if (!(assembledType instanceof GraphQLObjectType objType)) continue;
             var keys = objType.getAppliedDirectives(KEY_DIRECTIVE);
-            if (keys.isEmpty()) continue;
+            // NodeTypes always get an entity entry: their NODE_ID alternative is the
+            // canonical SELECT path used by Query.node, Query.nodes, and federation
+            // _entities — regardless of whether federation @link is present. Skip only
+            // when neither @key nor @node applies.
+            boolean isNodeType = gType instanceof NodeType;
+            if (keys.isEmpty() && !isNodeType) continue;
 
             // @key on a TableInterfaceType is rejected — see Non-goals on the federation plan.
             if (gType instanceof TableInterfaceType) {
@@ -109,13 +114,22 @@ public final class EntityResolutionBuilder {
 
             var alternatives = new ArrayList<KeyAlternative>();
             String error = null;
-            for (var key : keys) {
-                var alt = buildAlternative(typeName, gType, key, fields, warningSink);
-                if (alt instanceof AltResult.Ok ok) {
-                    alternatives.add(ok.alt());
-                } else if (alt instanceof AltResult.Err err) {
-                    error = err.message();
-                    break;
+            if (keys.isEmpty() && isNodeType) {
+                // No federation @link, so KeyNodeSynthesiser did not run; but the type is a
+                // NodeType, so we synthesise the NODE_ID alternative directly. This is the
+                // path Query.node / Query.nodes use to dispatch via the entity dispatcher.
+                NodeType nt = (NodeType) gType;
+                alternatives.add(new KeyAlternative(
+                    List.of(ID_FIELD), List.copyOf(nt.nodeKeyColumns()), true, KeyShape.NODE_ID));
+            } else {
+                for (var key : keys) {
+                    var alt = buildAlternative(typeName, gType, key, fields, warningSink);
+                    if (alt instanceof AltResult.Ok ok) {
+                        alternatives.add(ok.alt());
+                    } else if (alt instanceof AltResult.Err err) {
+                        error = err.message();
+                        break;
+                    }
                 }
             }
             if (error != null) {
@@ -123,8 +137,9 @@ public final class EntityResolutionBuilder {
                 continue;
             }
 
-            var tableRef = ((GraphitronType.TableBackedType) types.get(typeName)).table();
-            out.put(typeName, new EntityResolution(typeName, tableRef, List.copyOf(alternatives)));
+            var tableBacked = (GraphitronType.TableBackedType) types.get(typeName);
+            String nodeTypeId = tableBacked instanceof NodeType nt ? nt.typeId() : null;
+            out.put(typeName, new EntityResolution(typeName, tableBacked.table(), List.copyOf(alternatives), nodeTypeId));
         }
         return Map.copyOf(out);
     }
