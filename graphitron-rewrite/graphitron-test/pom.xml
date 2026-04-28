@@ -161,6 +161,27 @@
                             <outputPackage>${outputPackage}</outputPackage>
                         </configuration>
                     </execution>
+                    <!--
+                        Federation-only fixture, isolated from the shared schema.graphqls so
+                        federationLink stays off for the rest of the module's tests. The two
+                        executions write to disjoint subpackages of target/generated-sources;
+                        the orphan sweep is per-package so they don't clobber each other.
+                    -->
+                    <execution>
+                        <id>rewrite-generate-federated</id>
+                        <goals>
+                            <goal>generate</goal>
+                        </goals>
+                        <configuration>
+                            <schemaInputs>
+                                <schemaInput>
+                                    <pattern>src/main/resources/graphql/federated-schema.graphqls</pattern>
+                                </schemaInput>
+                            </schemaInputs>
+                            <jooqPackage>${jooqPackage}</jooqPackage>
+                            <outputPackage>no.sikt.graphitron.generated.federated</outputPackage>
+                        </configuration>
+                    </execution>
                 </executions>
                 <dependencies>
                     <dependency>

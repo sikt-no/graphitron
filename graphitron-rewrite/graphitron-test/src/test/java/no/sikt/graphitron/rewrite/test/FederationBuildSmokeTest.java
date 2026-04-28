@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.test;
 
 import graphql.schema.GraphQLSchema;
-import no.sikt.graphitron.generated.Graphitron;
+import no.sikt.graphitron.generated.federated.Graphitron;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
