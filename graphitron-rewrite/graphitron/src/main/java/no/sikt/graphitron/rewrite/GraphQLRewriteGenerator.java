@@ -10,8 +10,10 @@ import no.sikt.graphitron.rewrite.generators.TypeConditionsGenerator;
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
 import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
 import no.sikt.graphitron.rewrite.schema.input.DescriptionNoteApplier;
+import no.sikt.graphitron.rewrite.schema.input.FederationLinkApplier;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInputAttribution;
 import no.sikt.graphitron.rewrite.schema.input.TagApplier;
+import no.sikt.graphitron.rewrite.schema.input.TagLinkSynthesiser;
 import no.sikt.graphitron.rewrite.generators.schema.EnumTypeGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.FetcherRegistrationsEmitter;
 import no.sikt.graphitron.rewrite.generators.schema.GraphitronFacadeGenerator;
@@ -108,6 +110,8 @@ public class GraphQLRewriteGenerator {
     graphql.schema.idl.TypeDefinitionRegistry loadAttributedRegistry() {
         var bySource = SchemaInputAttribution.build(ctx.schemaInputs());
         var registry = RewriteSchemaLoader.load(bySource.keySet());
+        TagLinkSynthesiser.apply(registry, bySource);
+        FederationLinkApplier.apply(registry);
         TagApplier.apply(registry, bySource);
         DescriptionNoteApplier.apply(registry, bySource);
         return registry;
@@ -117,6 +121,7 @@ public class GraphQLRewriteGenerator {
         var bundle = GraphitronSchemaBuilder.buildBundle(registry, ctx);
         var schema = bundle.model();
         var assembled = bundle.assembled();
+        boolean federationLink = bundle.federationLink();
 
         logWarnings(schema);
 
@@ -142,8 +147,8 @@ public class GraphQLRewriteGenerator {
         write(EnumTypeGenerator.generate(schema),                                                 "schema",     emittedThisRun);
         write(InputTypeGenerator.generate(schema),                                                "schema",     emittedThisRun);
         write(ObjectTypeGenerator.generate(schema, assembled, fetcherBodies),                     "schema",     emittedThisRun);
-        write(GraphitronSchemaClassGenerator.generate(schema, assembled, fetcherBodies.keySet(), outputPackage), "schema", emittedThisRun);
-        write(GraphitronFacadeGenerator.generate(outputPackage),                                  "",           emittedThisRun);
+        write(GraphitronSchemaClassGenerator.generate(schema, assembled, fetcherBodies.keySet(), outputPackage, federationLink), "schema", emittedThisRun);
+        write(GraphitronFacadeGenerator.generate(outputPackage, federationLink),                  "",           emittedThisRun);
         write(TypeClassGenerator.generate(schema, outputPackage, jooqPackage),                   "types",      emittedThisRun);
         write(TypeConditionsGenerator.generate(schema, jooqPackage),                              "conditions", emittedThisRun);
         write(QueryConditionsGenerator.generate(schema, outputPackage, jooqPackage),             "conditions", emittedThisRun);

@@ -63,4 +63,36 @@ class GraphitronFacadeGeneratorTest {
             .contains(".codeRegistry(GraphQLCodeRegistry)")
             .contains("UnaryOperator");
     }
+
+    // ===== federation overload =====
+
+    @Test
+    void nonFederation_exposesSingleBuildSchemaMethod() {
+        var spec = GraphitronFacadeGenerator.generate("com.example", false).get(0);
+        assertThat(spec.methodSpecs()).extracting(m -> m.name()).containsExactly("buildSchema");
+    }
+
+    @Test
+    void federation_exposesTwoBuildSchemaMethods() {
+        var spec = GraphitronFacadeGenerator.generate("com.example", true).get(0);
+        assertThat(spec.methodSpecs()).extracting(m -> m.name())
+            .containsExactly("buildSchema", "buildSchema");
+    }
+
+    @Test
+    void federation_secondBuildSchemaMethod_hasFederationCustomizerParameter() {
+        var methods = GraphitronFacadeGenerator.generate("com.example", true).get(0).methodSpecs();
+        var twoArg = methods.get(1);
+        assertThat(twoArg.parameters()).hasSize(2);
+        assertThat(twoArg.parameters().get(1).type().toString())
+            .isEqualTo("java.util.function.Consumer<com.apollographql.federation.graphqljava.SchemaTransformer>");
+    }
+
+    @Test
+    void federation_secondBuildSchemaMethod_delegatesToGraphitronSchemaBuildTwoArg() {
+        var methods = GraphitronFacadeGenerator.generate("com.example", true).get(0).methodSpecs();
+        var body = methods.get(1).code().toString();
+        assertThat(body).contains(
+            "return com.example.schema.GraphitronSchema.build(schemaCustomizer, federationCustomizer)");
+    }
 }

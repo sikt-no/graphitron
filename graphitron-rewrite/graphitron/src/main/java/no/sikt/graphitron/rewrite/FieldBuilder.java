@@ -1576,11 +1576,6 @@ class FieldBuilder {
             };
         }
 
-        if (name.equals("_entities")) {
-            return new QueryField.QueryEntityField(parentTypeName, name, location,
-                new ReturnTypeRef.PolymorphicReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef)));
-        }
-
         if (name.equals("node")) {
             return new QueryField.QueryNodeField(parentTypeName, name, location,
                 new ReturnTypeRef.PolymorphicReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef)));

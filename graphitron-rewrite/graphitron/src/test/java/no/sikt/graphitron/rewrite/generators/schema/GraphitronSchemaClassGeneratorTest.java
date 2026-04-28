@@ -309,6 +309,58 @@ class GraphitronSchemaClassGeneratorTest {
         assertThat(zebraIdx).as("typeResolvers before .query()").isLessThan(queryIdx);
     }
 
+    // ===== federation overload =====
+
+    @Test
+    void nonFederation_emitsSingleBuildMethod() {
+        var spec = generate("type Query { x: String }");
+        assertThat(spec.methodSpecs()).extracting(m -> m.name()).containsExactly("build");
+    }
+
+    @Test
+    void federation_emitsTwoMethodsWhenFederationLinkTrue() {
+        var bundle = TestSchemaHelper.buildBundle("type Query { x: String }");
+        var spec = GraphitronSchemaClassGenerator.generate(
+            bundle.model(), bundle.assembled(), Set.of(), OUTPUT_PKG, true).get(0);
+        assertThat(spec.methodSpecs()).extracting(m -> m.name())
+            .containsExactly("build", "build");
+    }
+
+    @Test
+    void federation_oneArgMethodDelegatesToTwoArgForm() {
+        var bundle = TestSchemaHelper.buildBundle("type Query { x: String }");
+        var methods = GraphitronSchemaClassGenerator.generate(
+            bundle.model(), bundle.assembled(), Set.of(), OUTPUT_PKG, true).get(0).methodSpecs();
+        var oneArg = methods.get(0);
+        assertThat(oneArg.parameters()).hasSize(1);
+        assertThat(oneArg.code().toString()).contains("return build(customizer, fed -> {})");
+    }
+
+    @Test
+    void federation_twoArgBodyCallsFederationTransform() {
+        var bundle = TestSchemaHelper.buildBundle("type Query { x: String }");
+        var methods = GraphitronSchemaClassGenerator.generate(
+            bundle.model(), bundle.assembled(), Set.of(), OUTPUT_PKG, true).get(0).methodSpecs();
+        var twoArg = methods.get(1);
+        assertThat(twoArg.parameters()).hasSize(2);
+        var body = twoArg.code().toString();
+        assertThat(body).contains("Federation.transform(base)");
+        assertThat(body).contains(".setFederation2(true)");
+        assertThat(body).contains(".resolveEntityType(");
+        assertThat(body).contains(".fetchEntities(");
+    }
+
+    @Test
+    void federation_twoArgBodyInvokesFederationCustomizerBeforeBuild() {
+        var bundle = TestSchemaHelper.buildBundle("type Query { x: String }");
+        var body = GraphitronSchemaClassGenerator.generate(
+            bundle.model(), bundle.assembled(), Set.of(), OUTPUT_PKG, true).get(0)
+            .methodSpecs().get(1).code().toString();
+        int customizerIdx = body.indexOf("federationCustomizer.accept(fb)");
+        int buildIdx = body.indexOf("return fb.build()");
+        assertThat(customizerIdx).isGreaterThan(0).isLessThan(buildIdx);
+    }
+
     private static TypeSpec generate(String sdl) {
         var bundle = TestSchemaHelper.buildBundle(sdl);
         return GraphitronSchemaClassGenerator.generate(bundle.model(), bundle.assembled(), Set.of(), OUTPUT_PKG).get(0);
