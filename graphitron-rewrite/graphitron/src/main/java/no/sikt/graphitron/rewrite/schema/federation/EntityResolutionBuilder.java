@@ -114,27 +114,30 @@ public final class EntityResolutionBuilder {
 
             var alternatives = new ArrayList<KeyAlternative>();
             String error = null;
-            if (keys.isEmpty() && isNodeType) {
-                // No federation @link, so KeyNodeSynthesiser did not run; but the type is a
-                // NodeType, so we synthesise the NODE_ID alternative directly. This is the
-                // path Query.node / Query.nodes use to dispatch via the entity dispatcher.
-                NodeType nt = (NodeType) gType;
-                alternatives.add(new KeyAlternative(
-                    List.of(ID_FIELD), List.copyOf(nt.nodeKeyColumns()), true, KeyShape.NODE_ID));
-            } else {
-                for (var key : keys) {
-                    var alt = buildAlternative(typeName, gType, key, fields, warningSink);
-                    if (alt instanceof AltResult.Ok ok) {
-                        alternatives.add(ok.alt());
-                    } else if (alt instanceof AltResult.Err err) {
-                        error = err.message();
-                        break;
-                    }
+            for (var key : keys) {
+                var alt = buildAlternative(typeName, gType, key, fields, warningSink);
+                if (alt instanceof AltResult.Ok ok) {
+                    alternatives.add(ok.alt());
+                } else if (alt instanceof AltResult.Err err) {
+                    error = err.message();
+                    break;
                 }
             }
             if (error != null) {
                 types.put(typeName, new UnclassifiedType(typeName, gType.location(), error));
                 continue;
+            }
+            // NodeTypes always get a NODE_ID alternative: it's the canonical SELECT path used
+            // by Query.node, Query.nodes, and federation _entities. Add one synthetically when
+            // no explicit @key(fields: "id") is among the user-declared keys (in the federation
+            // pipeline KeyNodeSynthesiser fills this in at the registry level; tests that
+            // bypass loadAttributedRegistry rely on this synthesis instead). Prepend so the
+            // most-specific selection logic still finds the user's wider keys first when those
+            // are richer than the ["id"] alternative.
+            if (isNodeType && !hasNodeIdAlternative(alternatives)) {
+                NodeType nt = (NodeType) gType;
+                alternatives.add(0, new KeyAlternative(
+                    List.of(ID_FIELD), List.copyOf(nt.nodeKeyColumns()), true, KeyShape.NODE_ID));
             }
 
             var tableBacked = (GraphitronType.TableBackedType) types.get(typeName);
@@ -142,6 +145,10 @@ public final class EntityResolutionBuilder {
             out.put(typeName, new EntityResolution(typeName, tableBacked.table(), List.copyOf(alternatives), nodeTypeId));
         }
         return Map.copyOf(out);
+    }
+
+    private static boolean hasNodeIdAlternative(List<KeyAlternative> alternatives) {
+        return alternatives.stream().anyMatch(a -> a.shape() == KeyShape.NODE_ID);
     }
 
     private sealed interface AltResult {
