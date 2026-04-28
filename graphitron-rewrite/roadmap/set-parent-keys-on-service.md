@@ -1,6 +1,6 @@
 ---
 title: "`Set<T>` parent-keys on `@service` methods → `MappedBatchLoader`"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 7
 ---
@@ -242,8 +242,7 @@ TypeName keyType    = GeneratorUtils.keyElementType(batchKey);
 TypeName loaderType = ParameterizedTypeName.get(DATA_LOADER, keyType, valueType);
 
 String factoryMethod = isMapped ? "newMappedDataLoader" : "newDataLoader";
-TypeName lambdaKeysType = ParameterizedTypeName.get(
-    isMapped ? ClassName.get(java.util.Set.class) : LIST, keyType);
+TypeName lambdaKeysType = ParameterizedTypeName.get(isMapped ? SET : LIST, keyType);
 
 var lambdaBlock = CodeBlock.builder()
     .add("($T keys, $T batchEnv) -> {\n", lambdaKeysType, BATCH_LOADER_ENV)
@@ -279,9 +278,7 @@ boolean isMapped = bkf.batchKey() instanceof BatchKey.MappedRowKeyed
                    || bkf.batchKey() instanceof BatchKey.MappedRecordKeyed;
 TypeName keysElementType = GeneratorUtils.keyElementType(bkf.batchKey());
 
-TypeName keysContainerType = isMapped
-    ? ParameterizedTypeName.get(ClassName.get(java.util.Set.class), keysElementType)
-    : ParameterizedTypeName.get(LIST, keysElementType);
+TypeName keysContainerType = ParameterizedTypeName.get(isMapped ? SET : LIST, keysElementType);
 
 TypeName valuePerKey = isList ? ParameterizedTypeName.get(LIST, RECORD) : RECORD;
 TypeName rowsReturnType = isMapped
@@ -298,25 +295,37 @@ return MethodSpec.methodBuilder(bkf.rowsMethodName())
     .build();
 ```
 
-Add `MAP` as a constant: `ClassName.get(java.util.Map.class)` (alongside the existing
-`LIST` constant).
+`MAP` is already declared at `TypeFetcherGenerator.java:132`. Add a `SET` constant
+(`ClassName.get(java.util.Set.class)`) alongside it so the `Set<KeyType>` lambda /
+rows-method parameter doesn't need an inline `ClassName.get(...)` at each use site.
 
 ## Tests
 
 ### `ServiceCatalogTest` (unit)
 
-Add alongside `reflectServiceMethod_tableRecordSources_classifiedAsRowKeyed`:
+Add four `Set<...>`-shaped stub methods to `TestServiceStub` mirroring the existing
+`getFilmsWithTableRecordSources` / `getFilmsWithDtoSources` shapes
+(`getFilmsWithSetOfTableRecordSources(Set<FilmRecord>)`,
+`getFilmsWithSetOfRow1Sources(Set<Row1<Integer>>)`,
+`getFilmsWithSetOfRecord1Sources(Set<Record1<Integer>>)`,
+`getFilmsWithSetOfDtoSources(Set<TestDtoStub>)`); reflect off them via the existing
+`reflectServiceMethod` entry point so the new tests follow the existing
+`reflectServiceMethod_*` naming convention rather than hitting the package-private
+`classifySourcesType` directly. The new cases (named per the existing convention):
 
-- `classifySourcesType_setOfTableRecord_classifiedAsMappedRowKeyed`: `Set<FilmRecord>` →
-  `BatchKey.MappedRowKeyed(filmPk)`.
-- `classifySourcesType_setOfRow1_classifiedAsMappedRowKeyed`: `Set<Row1<Integer>>` →
-  `BatchKey.MappedRowKeyed(filmPk)`.
-- `classifySourcesType_setOfRecord1_classifiedAsMappedRecordKeyed`: `Set<Record1<Integer>>` →
-  `BatchKey.MappedRecordKeyed(filmPk)`.
-- `classifySourcesType_setOfDto_rejectWithDtoMessage`: `Set<SomeNonRecordClass>` →
-  failure reason contains "DTO sources" (not "unrecognized sources type").
-- `classifySourcesType_listOfRecord1_classifiedAsRecordKeyed` (regression): confirms
-  the existing `RecordKeyed` arm still fires for `List<Record1<...>>`.
+- `reflectServiceMethod_setOfTableRecordSources_classifiedAsMappedRowKeyed`:
+  `Set<FilmRecord>` → `BatchKey.MappedRowKeyed(filmPk)`.
+- `reflectServiceMethod_setOfRow1Sources_classifiedAsMappedRowKeyed`:
+  `Set<Row1<Integer>>` → `BatchKey.MappedRowKeyed(filmPk)`.
+- `reflectServiceMethod_setOfRecord1Sources_classifiedAsMappedRecordKeyed`:
+  `Set<Record1<Integer>>` → `BatchKey.MappedRecordKeyed(filmPk)`.
+- `reflectServiceMethod_setOfDtoSources_rejectedWithDtoMessage`:
+  `Set<TestDtoStub>` → failure reason contains "not backed by a jOOQ TableRecord"
+  (not "unrecognized sources type").
+- `reflectServiceMethod_listOfRecord1Sources_classifiedAsRecordKeyed` (regression):
+  confirms the existing `RecordKeyed` arm still fires for `List<Record1<...>>`. Add
+  a corresponding `getFilmsWithListOfRecord1Sources(List<Record1<Integer>>)` stub if
+  none of the existing stubs already exercises this shape.
 
 ### `TypeFetcherGeneratorTest` (structural)
 
