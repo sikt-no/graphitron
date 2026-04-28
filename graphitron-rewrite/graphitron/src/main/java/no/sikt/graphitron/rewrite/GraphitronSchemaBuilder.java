@@ -25,10 +25,12 @@ import graphql.util.TraversalControl;
 import graphql.util.TraverserContext;
 import graphql.util.TreeTransformerUtil;
 
+import no.sikt.graphitron.rewrite.model.EntityResolution;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ConnectionType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.EdgeType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.PageInfoType;
+import no.sikt.graphitron.rewrite.schema.federation.EntityResolutionBuilder;
 import no.sikt.graphitron.rewrite.schema.input.FederationLinkApplier;
 
 import java.util.ArrayList;
@@ -143,7 +145,10 @@ public class GraphitronSchemaBuilder {
             });
         var rewrites = promoteConnectionTypes(ctx);
         var rebuiltAssembled = rebuildAssembledForConnections(ctx.schema, ctx.types, rewrites);
-        var model = new GraphitronSchema(ctx.types, Collections.unmodifiableMap(fields), ctx.warnings());
+        Map<String, EntityResolution> entitiesByType =
+            EntityResolutionBuilder.build(ctx.types, fields, rebuiltAssembled, ctx::addWarning);
+        var model = new GraphitronSchema(
+            ctx.types, Collections.unmodifiableMap(fields), entitiesByType, ctx.warnings());
         return new BuildResult(model, rebuiltAssembled);
     }
 

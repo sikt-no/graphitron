@@ -298,7 +298,7 @@ keyed by `__typename`, populated at class load time from one entry per
    step, so the federation contract holds without a separate scatter
    pass.
 
-**`Query.node` and `Query.nodes` reuse this dispatcher.**
+**`Query.node` and `Query.nodes` reuse this dispatcher (deferred to follow-up).**
 `NodeIdEncoder.peekTypeId(id)` recovers the `__typename` from an
 opaque id, so the existing fetchers fold into the entity dispatcher:
 for each id, peek typeId → look up `__typename` → synthesise one rep
@@ -614,35 +614,38 @@ exercises the seam-0 wire-up rather than entity resolution.
 Hygiene items are independent of the dispatch work; each is a small
 targeted change with no shared seams. Order: smoke test first to lock
 the scaffold (shipped at `0014be7`), then the `AppliedDirectiveEmitter`
-delegation (refactors what the smoke test already exercises and
-removes a class of latent bugs before dispatch lands more directive
-shapes), then the dispatch as a single push, then the remaining
-hygiene items.
+delegation (shipped at `c964fc5`; refactors what the smoke test
+already exercises and removes a class of latent bugs before dispatch
+lands more directive shapes), then the dispatch — landing in a
+single commit on the feature branch — then the remaining hygiene
+items.
 
 The dispatch lands as one commit. The three pieces below describe
 what's inside it, not separate landings:
 
 1. `EntityResolution` model + `FederationKeyFieldsParser` +
-   `@node`-implies-`@key(fields: "id")` synthesis. Pure value types
-   and classify-time logic.
+   `@node`-implies-`@key(fields: "id")` synthesis (via a new
+   `KeyNodeSynthesiser` registry post-step) + `EntityResolutionBuilder`
+   classify-time pass + `entitiesByType` sidecar on `GraphitronSchema`.
 2. `EntityFetcherDispatchClassGenerator` plus the
    `VALUES (idx, col1, col2, ...)` derived-table SELECT emitter,
    keyed by `(type, alternative, tenantId)` and ordered by `idx`.
-   This is the canonical fetch path for both `_entities` and
-   `Query.node` / `Query.nodes`.
-3. `QueryNodeFetcherClassGenerator` rewired: the per-typeId loop in
-   `rowsNodes` is *replaced* by a call into the entity dispatcher
-   (peek typeId → look up `__typename` → synthesise rep → dispatch).
-   No new public entry point on `QueryNodeFetcher`; the dispatcher
-   becomes the single SELECT path. Plus the schema-builder wire-up
-   that replaces the placeholder lambdas, plus `getting-started.md`
-   updates.
+   Emits one `handle<TypeName>` method per entity type and one
+   `select<TypeName>Alt<N>` method per resolvable alternative.
+3. The schema-builder wire-up that replaces the placeholder
+   `fetchEntities`/`resolveEntityType` lambdas with calls into
+   `EntityFetcherDispatch` (when `entitiesByType` is non-empty) plus
+   `getting-started.md` updates. **`QueryNodeFetcherClassGenerator`
+   rewire (the per-typeId-loop replacement) is deferred to a
+   follow-up commit** — the existing `rowsNodes` and the new
+   dispatcher both work and emit the same SQL shape; consolidating
+   them is a refactor, not a feature, and the size of the dispatch
+   landing already justifies a separate review.
 
-Splitting these would either leave a dead dispatcher in tree
-(piece 2 alone) or a half-removed `rowsNodes` loop (piece 3 without 2),
-and piece 1 alone is unobservable to consumers. One push keeps the
-intermediate states out of trunk and gives the reviewer a coherent
-diff.
+Splitting (1) and (2) would leave a dead dispatcher in tree (piece 2
+alone) or pure value types unobservable to consumers (piece 1 alone).
+The `_entities` runtime path lands together with the schema-builder
+wire-up so consumers see a working surface immediately.
 
 ## User documentation (draft)
 

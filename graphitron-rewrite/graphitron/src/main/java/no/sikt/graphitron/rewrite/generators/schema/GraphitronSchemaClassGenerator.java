@@ -167,17 +167,35 @@ public final class GraphitronSchemaClassGenerator {
             var twoArgBody = CodeBlock.builder().add(body.build());
             twoArgBody.addStatement("schemaCustomizer.accept(schemaBuilder)");
             twoArgBody.addStatement("$T base = schemaBuilder.build()", GRAPHQL_SCHEMA);
-            twoArgBody.add(
-                "$T fb = $T.transform(base)\n", SCHEMA_TRANSFORMER, FEDERATION).indent()
-                .add(".setFederation2(true)\n")
-                .add(".resolveEntityType(env -> {\n").indent()
-                    .addStatement("Object rep = env.getObject()")
-                    .addStatement("if (!(rep instanceof java.util.Map<?, ?> m)) return null")
-                    .addStatement("Object tn = m.get(\"__typename\")")
-                    .addStatement("return tn != null ? ($T) env.getSchema().getObjectType(tn.toString()) : null", OBJ_TYPE)
-                    .unindent().add("})\n")
-                .add(".fetchEntities(env -> java.util.List.of());\n")
-                .unindent();
+            boolean hasEntities = !schema.entitiesByType().isEmpty();
+            if (hasEntities) {
+                var ENTITY_DISPATCH = ClassName.get(outputPackage + ".util",
+                    no.sikt.graphitron.rewrite.generators.util.EntityFetcherDispatchClassGenerator.CLASS_NAME);
+                twoArgBody.add(
+                    "$T fb = $T.transform(base)\n", SCHEMA_TRANSFORMER, FEDERATION).indent()
+                    .add(".setFederation2(true)\n")
+                    .add(".resolveEntityType($T::$L)\n", ENTITY_DISPATCH,
+                        no.sikt.graphitron.rewrite.generators.util.EntityFetcherDispatchClassGenerator.RESOLVE_TYPE_METHOD)
+                    .add(".fetchEntities($T::$L);\n", ENTITY_DISPATCH,
+                        no.sikt.graphitron.rewrite.generators.util.EntityFetcherDispatchClassGenerator.FETCH_ENTITIES_METHOD)
+                    .unindent();
+            } else {
+                // No classified entities; keep the placeholder fetcher so federation still
+                // wraps the schema cleanly. _entities([]) returns []; _entities([rep])
+                // surfaces federation's "entity resolution failed" since the placeholder
+                // returns an empty list.
+                twoArgBody.add(
+                    "$T fb = $T.transform(base)\n", SCHEMA_TRANSFORMER, FEDERATION).indent()
+                    .add(".setFederation2(true)\n")
+                    .add(".resolveEntityType(env -> {\n").indent()
+                        .addStatement("Object rep = env.getObject()")
+                        .addStatement("if (!(rep instanceof java.util.Map<?, ?> m)) return null")
+                        .addStatement("Object tn = m.get(\"__typename\")")
+                        .addStatement("return tn != null ? ($T) env.getSchema().getObjectType(tn.toString()) : null", OBJ_TYPE)
+                        .unindent().add("})\n")
+                    .add(".fetchEntities(env -> java.util.List.of());\n")
+                    .unindent();
+            }
             twoArgBody.addStatement("federationCustomizer.accept(fb)");
             twoArgBody.addStatement("return fb.build()");
 
