@@ -244,13 +244,20 @@ keyed by `__typename`, populated at class load time from one entry per
 3. **Decodes each rep into a column-value row.** `DIRECT`-shape
    alternatives copy the rep's required-field values index-by-index
    into the column-value row. `NODE_ID`-shape alternatives pass the
-   rep's `id` through `NodeIdEncoder.decode(__typename, id)`, which
-   yields the column values directly because we already know the type
-   (no per-id typeId-to-`__typename` peek is needed inside
-   `_entities`; the rep brought `__typename`). If `decode` returns
-   nothing or the encoded typeId disagrees with `__typename`, the rep
-   yields `null` and never enters any group's VALUES table; federation
-   surfaces its own resolution-failure error. After step 3, every
+   rep's `id` through `NodeIdEncoder.decodeValues(__typename, id)`,
+   which returns a `String[]` of column values directly because we
+   already know the type (no per-id typeId-to-`__typename` peek is
+   needed inside `_entities`; the rep brought `__typename`).
+   `decodeValues` is package-private on the generated `NodeIdEncoder`;
+   `EntityFetcherDispatch` is emitted into the same consumer-output
+   package as `NodeIdEncoder`, so the call is in scope. (If a future
+   change moves `EntityFetcherDispatch` to a different output package,
+   either lift `decodeValues` to package-private-with-an-accessor or
+   widen its visibility; do not duplicate the decode logic.) `decodeValues` returns `null` when the
+   input fails to decode or the embedded typeId disagrees with
+   `__typename`; in that case the rep yields `null` and never enters
+   any group's VALUES table, and federation surfaces its own
+   resolution-failure error. After step 3, every
    surviving rep has a column-value row plus its original
    pre-grouping index in the federation `representations` list.
 4. **Issues one SELECT per `(type, alternative, tenantId)` group via a
@@ -283,9 +290,9 @@ keyed by `__typename`, populated at class load time from one entry per
    means each result row arrives index-tagged; the dispatcher
    allocates a fixed-size `Object[representations.size()]` and slots
    each row into `result[row.idx]`. Reps that yielded `null` at step
-   3 (no resolvable alternative matched, or NodeId typeId
-   disagreement) never entered any VALUES table and stay `null` by
-   construction. Choosing the derived-table batching primitive over
+   3 (no resolvable alternative matched, NodeId decode failure, or
+   typeId disagreement) never entered any VALUES table and stay `null`
+   by construction. Choosing the derived-table batching primitive over
    `WHERE row(...) IN (...)` is deliberate: the index-carrying join
    makes order preservation a SQL property, not a Java post-processing
    step, so the federation contract holds without a separate scatter
@@ -413,6 +420,13 @@ tests:
   surfaces a federation-level error; no NPE in the dispatcher.
 - DataLoader / batch shape: two reps of the same type and same
   alternative result in one SQL execution (query-counting fixture).
+- Type-scoped selection set: a single `_entities` call with reps of
+  two `__typename`s and a unioned selection set using inline fragments
+  (`... on Foo { foo1 }`, `... on Bar { bar1 }`) emits per-type SELECTs
+  whose projection lists exclude the other type's fields. Locks the
+  load-bearing claim that graphql-java's `DataFetchingFieldSelectionSet`
+  is type-scoped at the `_entities` DFE call site, so `<TypeName>.$fields`
+  walking it picks up only the fragment scoped to that `__typename`.
 - Consumer override: `buildSchema(b -> {}, fed ->
   fed.fetchEntities(myCustomFetcher))` actually replaces the default
   fetcher (assert via a fetcher that records its calls).
@@ -598,17 +612,19 @@ exercises the seam-0 wire-up rather than entity resolution.
 ## Sequencing
 
 Hygiene items are independent of the dispatch work; each is a small
-targeted change with no shared seams. Recommended order: smoke test
-first to lock the scaffold, then the `AppliedDirectiveEmitter`
+targeted change with no shared seams. Order: smoke test first to lock
+the scaffold (shipped at `0014be7`), then the `AppliedDirectiveEmitter`
 delegation (refactors what the smoke test already exercises and
 removes a class of latent bugs before dispatch lands more directive
-shapes), then the dispatch in one push, then the remaining hygiene
-items. The dispatch itself has three plausible seams the implementer
-can split or fold at their discretion:
+shapes), then the dispatch as a single push, then the remaining
+hygiene items.
+
+The dispatch lands as one commit. The three pieces below describe
+what's inside it, not separate landings:
 
 1. `EntityResolution` model + `FederationKeyFieldsParser` +
    `@node`-implies-`@key(fields: "id")` synthesis. Pure value types
-   and classify-time logic, testable in isolation.
+   and classify-time logic.
 2. `EntityFetcherDispatchClassGenerator` plus the
    `VALUES (idx, col1, col2, ...)` derived-table SELECT emitter,
    keyed by `(type, alternative, tenantId)` and ordered by `idx`.
@@ -622,8 +638,11 @@ can split or fold at their discretion:
    that replaces the placeholder lambdas, plus `getting-started.md`
    updates.
 
-The runtime half is what consumers see, so don't sit on (1) and (2)
-for long.
+Splitting these would either leave a dead dispatcher in tree
+(piece 2 alone) or a half-removed `rowsNodes` loop (piece 3 without 2),
+and piece 1 alone is unobservable to consumers. One push keeps the
+intermediate states out of trunk and gives the reviewer a coherent
+diff.
 
 ## User documentation (draft)
 
