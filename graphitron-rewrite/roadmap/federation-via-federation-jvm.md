@@ -462,21 +462,105 @@ disappears. (Side-channelling on `TypeDefinitionRegistry` works too
 but couples a graphql-java type to Graphitron metadata; the context
 is the right home.)
 
-**Runtime smoke test for the federation `build()` overload.** A unit
-test that compiles the emitted `GraphitronSchema` and invokes
-`build(b -> {}, fed -> {})` against a tiny federated SDL, asserting
-`Federation.transform` accepts the schema and the result has
-`_Service` and `_entities` entries. Land this first: it locks the
-existing scaffold's behaviour before the dispatch work moves things,
-and catches the federation-jvm API drift class of bug independently.
+**Delegate applied-directive value coercion to graphql-java.**
+`AppliedDirectiveEmitter` translates each applied-directive argument's
+`InputValueWithState` to an AST literal that federation-jvm later casts
+to a specific subtype (`BooleanValue`, `StringValue`, `IntValue`, etc.).
+Doing the translation type-by-type in Graphitron means re-implementing
+the per-scalar AST shape that graphql-java already owns through
+`Coercing#valueToLiteral`, and getting it wrong for any scalar
+(`FloatValue`, custom scalars, input objects, internally-coerced enums,
+Long-range Ints) we forget to enumerate.
+
+Delegate the whole conversion to graphql-java instead:
+
+```java
+private static CodeBlock emitAstLiteralValue(GraphQLAppliedDirectiveArgument arg) {
+    Value<?> ast = ValuesResolver.valueToLiteral(
+        arg.getArgumentValue(),
+        arg.getType(),
+        GraphQLContext.getDefault(),
+        Locale.getDefault());
+    return CodeBlock.of("$T.parseValue($S)", PARSER, AstPrinter.printAst(ast));
+}
+```
+
+`ValuesResolver.valueToLiteral` dispatches through each scalar's
+`Coercing#valueToLiteral` to produce a canonical `Value<?>`;
+`AstPrinter.printAst` renders it; `Parser.parseValue` reparses it at
+class-init time on the consumer side. Custom scalars (federation-namespaced
+`FieldSet`, `Policy`, `Scope`, plus any user-defined scalar) work because
+their own `Coercing` decides the AST shape; `Float`, `BigDecimal`, input
+objects, and internally-coerced enums all get the right shape without
+further enumeration. Runtime cost is one `Parser.parseValue` per applied
+argument at class-init time, negligible against schema build.
+
+The hand-rolled `emitAstLiteralValue` / `emitAstNode` / `emitArrayAstNode`
+/ `javaValueToAstNode` cases delete with this change.
+`GraphQLValueEmitter`'s Javadoc still claims a connection to
+`AppliedDirectiveEmitter` that no longer holds; update it. The
+`emitInputType` method stays (the `.type(...)` slot on
+`GraphQLAppliedDirectiveArgument.Builder` is structural and orthogonal
+to the value coercion).
+
+**Runtime smoke test for the federation `build()` overload.** A pipeline
+test that compiles a federation-enabled `GraphitronSchema` and invokes
+`build(b -> {}, fed -> {})`, asserting `Federation.transform` accepts the
+schema and the federation surface is present. Land first: locks the
+existing scaffold before the dispatch work moves things, and catches the
+federation-jvm API drift class of bug independently.
+
+*Test fixture isolation.* The federated SDL is a separate file from the
+shared module fixture (`graphitron-test/src/main/resources/graphql/schema.graphqls`).
+Configure a second `graphitron-maven` execution in `graphitron-test/pom.xml`
+that points at the federated SDL (e.g.
+`src/main/resources/graphql/federated-schema.graphqls`) and generates into
+a distinct output package (e.g. `no.sikt.graphitron.generated.federated`).
+The smoke test imports the federated facade from that package;
+non-federation tests keep importing from `no.sikt.graphitron.generated`.
+Reasoning: putting `@link` + `@key` on the shared fixture flips
+`federationLink` for every test in the module, so every
+`Graphitron.buildSchema(b -> {})` call goes through `Federation.transform`,
+silently widening the seam-0 blast radius (`GraphQLQueryTest` and friends
+start exercising federation emitters), losing the non-federation
+regression guard, and adding `_Service` / `_entities` / `_Entity` to every
+schema-introspection assertion in the module.
+
+*Smoke-test assertions* (against the federated fixture):
+- `_Service` object type and `_entities` query field present.
+- `_Entity` union contains every `@key`-bearing type in the federated
+  fixture (one initially: `Film`). Catches the case where `@key` parsing
+  silently drops the type from the entity union.
+- Default `fetchEntities` is the placeholder no-op:
+  `_entities(representations: [{__typename: "Film", filmId: 1}])` returns
+  `[null]`. Locks the placeholder so the dispatch work has to move it
+  intentionally; without this assertion the seam-1/2/3 work can quietly
+  start resolving entities while the seam-0 test stays green.
+- A federation customizer that *replaces* `fetchEntities` wins over the
+  default: replace with a marker fetcher returning a sentinel and assert
+  the sentinel surfaces through `_entities`. Locks the customizer order
+  ("federation customizer runs after Graphitron's defaults attach"),
+  not just "the customizer was invoked".
+- One-arg `Graphitron.buildSchema(b -> {})` produces a federation-wrapped
+  result equivalent to the two-arg form (delegation is preserved).
+
+*Non-federation regression guard* (against the shared, non-federated
+fixture): `Graphitron.buildSchema(b -> {})` returns a schema with no
+`_Service` and no `_entities` field. Catches the case where federation
+accidentally turns on for a schema with no `@link`. This guard lives
+alongside the smoke test, not in the dispatch tests, because it
+exercises the seam-0 wire-up rather than entity resolution.
 
 ## Sequencing
 
 Hygiene items are independent of the dispatch work; each is a small
-targeted change with no shared seams. Recommended order: runtime
-smoke test first, then the dispatch in one push, then the remaining
-hygiene items. The dispatch itself has three plausible seams the
-implementer can split or fold at their discretion:
+targeted change with no shared seams. Recommended order: smoke test
+first to lock the scaffold, then the `AppliedDirectiveEmitter`
+delegation (refactors what the smoke test already exercises and
+removes a class of latent bugs before dispatch lands more directive
+shapes), then the dispatch in one push, then the remaining hygiene
+items. The dispatch itself has three plausible seams the implementer
+can split or fold at their discretion:
 
 1. `EntityResolution` model + `FederationKeyFieldsParser` +
    `@node`-implies-`@key(fields: "id")` synthesis. Pure value types
