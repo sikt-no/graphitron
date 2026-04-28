@@ -39,6 +39,16 @@ Three landing markers:
 
 ## Current state
 
+> **Note (audited 2026-04-28).** Phases 1-3 shipped at `a24feb4`; this
+> section reflects the **pre-implementation** state and is preserved for
+> reviewer context. The `QueryEntityField` references below, the
+> `validateQueryEntityField` method, and the `TypeFetcherGenerator` stub
+> arm have all been removed; the file:line refs no longer resolve. The
+> per-phase prose under `## Plan` is similarly historical. The In Review
+> → Done pass should collapse each phase to a "shipped at `a24feb4`"
+> one-liner per the workflow doc's guidance and prune this section to
+> the post-implementation shape.
+
 - **Model.** `QueryField.QueryEntityField` carries `(parentTypeName,
   name, location, returnType)` with no entity-resolution metadata
   (`model/QueryField.java:82`). Classification accepts `_entities`
