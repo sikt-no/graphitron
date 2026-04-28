@@ -1,0 +1,47 @@
+extend schema
+  @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
+
+# Slim federation-only test fixture. Types here exercise the entity dispatcher
+# (FederationEntitiesDispatchTest, FederationBuildSmokeTest) without putting
+# `@link` on the shared `schema.graphqls`, which would flip federationLink for
+# every test in the module.
+#
+# All types reference tables in the same jOOQ catalog
+# (no.sikt.graphitron.rewrite.test.jooq) used by the shared fixture, so the same
+# init.sql data populates both schemas.
+
+interface Node { id: ID! }
+
+type Query {
+    customers: [Customer!]!
+    films: [Film!]!
+}
+
+type Customer implements Node @table(name: "customer") @node {
+    id:         ID!      @nodeId
+    customerId: Int!     @field(name: "CUSTOMER_ID")
+    firstName:  String!  @field(name: "FIRST_NAME")
+    lastName:   String!  @field(name: "LAST_NAME")
+}
+
+type Address implements Node @table(name: "address") @node {
+    id:         ID!      @nodeId
+    addressId:  Int!     @field(name: "ADDRESS_ID")
+}
+
+# @key(fields: "filmId") layered onto a @node type gives Film both the synthesised
+# NODE_ID alternative (from @node) and a DIRECT alternative (from @key). Used by
+# the multi-alternative dispatch test.
+type Film implements Node @table(name: "film") @node @key(fields: "filmId") {
+    id:          ID!     @nodeId
+    filmId:      Int!    @field(name: "FILM_ID")
+    title:       String! @field(name: "TITLE")
+    rentalRate:  Float!  @field(name: "RENTAL_RATE")
+}
+
+# Compound @key on a junction table. Exercises multi-column Row arity emission
+# in the dispatcher's VALUES-derived-table SELECT.
+type FilmActor @table(name: "film_actor") @key(fields: "filmId actorId") {
+    filmId:  Int! @field(name: "film_id")
+    actorId: Int! @field(name: "actor_id")
+}
