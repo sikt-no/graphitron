@@ -38,6 +38,12 @@
             <version>${project.version}</version>
             <scope>test</scope>
         </dependency>
+        <!-- Compile scope: the federation-enabled generated GraphitronSchema.build()
+             references Federation and SchemaTransformer at compile time. -->
+        <dependency>
+            <groupId>com.apollographql.federation</groupId>
+            <artifactId>federation-graphql-java-support</artifactId>
+        </dependency>
         <dependency>
             <groupId>com.graphql-java</groupId>
             <artifactId>graphql-java</artifactId>
