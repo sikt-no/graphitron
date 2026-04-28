@@ -219,8 +219,6 @@ public class TypeFetcherGenerator {
     public static final Map<Class<? extends GraphitronField>, String> NOT_IMPLEMENTED_REASONS =
         Map.ofEntries(
             // QueryField stubs
-            Map.entry(QueryField.QueryEntityField.class,
-                "QueryEntityField not yet implemented — see graphitron-rewrite/roadmap/federation-via-federation-jvm.md"),
             Map.entry(QueryField.QueryInterfaceField.class,
                 "QueryInterfaceField not yet implemented — see graphitron-rewrite/roadmap/stub-interface-union-fetchers.md"),
             Map.entry(QueryField.QueryUnionField.class,
@@ -351,7 +349,6 @@ public class TypeFetcherGenerator {
                 case QueryField.QueryServiceTableField f      -> builder.addMethod(buildQueryServiceTableFetcher(f, outputPackage, jooqPackage));
                 case QueryField.QueryServiceRecordField f     -> builder.addMethod(buildQueryServiceRecordFetcher(f, outputPackage));
                 // Stub variants — see NOT_IMPLEMENTED_REASONS
-                case QueryField.QueryEntityField f            -> builder.addMethod(stub(f));
                 case QueryField.QueryTableInterfaceField f    -> builder.addMethod(buildQueryTableInterfaceFieldFetcher(f, outputPackage, jooqPackage));
                 case QueryField.QueryInterfaceField f         -> builder.addMethod(stub(f));
                 case QueryField.QueryUnionField f             -> builder.addMethod(stub(f));

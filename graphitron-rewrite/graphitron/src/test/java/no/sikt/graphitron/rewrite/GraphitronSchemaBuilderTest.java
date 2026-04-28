@@ -3080,15 +3080,15 @@ class GraphitronSchemaBuilderTest {
         },
 
         ENTITY_QUERY_FIELD(
-            "field named '_entities' → QueryEntityField",
+            "field named '_entities' has no special handling; classifies as UnclassifiedField (underscore-prefixed return type not in ctx.types)",
             """
             scalar _Any
             union _Entity = Film
             type Film @table(name: "film") { title: String }
             type Query { _entities(representations: [_Any!]!): [_Entity]! }
             """,
-            schema -> assertThat(schema.field("Query", "_entities")).isInstanceOf(QueryField.QueryEntityField.class)) {
-            @Override public Set<Class<?>> variants() { return Set.of(QueryField.QueryEntityField.class); }
+            schema -> assertThat(schema.field("Query", "_entities")).isInstanceOf(UnclassifiedField.class)) {
+            @Override public Set<Class<?>> variants() { return Set.of(); }
         },
 
         TABLE_INTERFACE_QUERY_FIELD(

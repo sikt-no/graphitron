@@ -2,8 +2,6 @@ package no.sikt.graphitron.rewrite.schema.input;
 
 import graphql.language.Argument;
 import graphql.language.Directive;
-import graphql.language.DirectiveDefinition;
-import graphql.language.DirectiveLocation;
 import graphql.language.EnumTypeDefinition;
 import graphql.language.EnumTypeExtensionDefinition;
 import graphql.language.EnumValueDefinition;
@@ -13,13 +11,11 @@ import graphql.language.InputObjectTypeExtensionDefinition;
 import graphql.language.InputValueDefinition;
 import graphql.language.InterfaceTypeDefinition;
 import graphql.language.InterfaceTypeExtensionDefinition;
-import graphql.language.NonNullType;
 import graphql.language.ObjectTypeDefinition;
 import graphql.language.ObjectTypeExtensionDefinition;
 import graphql.language.SDLDefinition;
 import graphql.language.SourceLocation;
 import graphql.language.StringValue;
-import graphql.language.TypeName;
 import graphql.language.UnionTypeDefinition;
 import graphql.language.UnionTypeExtensionDefinition;
 import graphql.schema.idl.TypeDefinitionRegistry;
@@ -27,7 +23,6 @@ import graphql.schema.idl.TypeDefinitionRegistry;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 /**
  * Applies {@code @tag(name: "<tag>")} to every in-scope element defined in a
@@ -38,14 +33,10 @@ import java.util.Optional;
  * declarations (object, interface, enum, input) are never tagged by this
  * applier. This is what {@code <schemaInput tag>} actually applies.
  *
- * <p>Declaration scope (Apollo Federation 2 parity): if the registry does not
- * already declare a {@code @tag} directive (via federation {@code @link} or an
- * explicit declaration), the applier injects a declaration whose {@code on}
- * clause matches federation's stock declaration, not the narrower emission
- * scope above. The two are independent: the auto-injected declaration permits
- * any author-written {@code @tag} use that federation permits (including on
- * scalars, input objects, and type declarations), even though this applier
- * never emits at those locations itself. An element that already declares
+ * <p>The {@code @tag} directive declaration is injected by {@link FederationLinkApplier} via
+ * {@code federation-graphql-java-support}'s {@code LinkDirectiveProcessor}, either from an
+ * author-written {@code @link} or from the {@code @link} that {@link TagLinkSynthesiser}
+ * synthesises when {@code <schemaInput tag>} is configured. An element that already carries
  * {@code @tag} explicitly is never double-tagged.
  *
  * <p>Operates on {@link TypeDefinitionRegistry} via a two-pass collect-then-
@@ -65,8 +56,6 @@ public final class TagApplier {
         if (bySource.values().stream().noneMatch(i -> i.tag().isPresent())) {
             return;
         }
-
-        ensureTagDirectiveDeclared(registry);
 
         var replacements = new ArrayList<Replacement>();
         registry.types().values().forEach(def -> collectReplacement(def, bySource, replacements));
@@ -267,34 +256,4 @@ public final class TagApplier {
             .build();
     }
 
-    private static void ensureTagDirectiveDeclared(TypeDefinitionRegistry registry) {
-        if (registry.getDirectiveDefinition(TAG_DIRECTIVE_NAME).isPresent()) return;
-
-        var decl = DirectiveDefinition.newDirectiveDefinition()
-            .name(TAG_DIRECTIVE_NAME)
-            .repeatable(true)
-            .inputValueDefinition(InputValueDefinition.newInputValueDefinition()
-                .name(TAG_NAME_ARG)
-                .type(NonNullType.newNonNullType(TypeName.newTypeName("String").build()).build())
-                .build())
-            // Apollo Federation 2 parity: declaration permits the full federation @tag location set,
-            // independent of the narrower emission scope this applier walks. See class javadoc.
-            .directiveLocation(DirectiveLocation.newDirectiveLocation().name("FIELD_DEFINITION").build())
-            .directiveLocation(DirectiveLocation.newDirectiveLocation().name("INTERFACE").build())
-            .directiveLocation(DirectiveLocation.newDirectiveLocation().name("OBJECT").build())
-            .directiveLocation(DirectiveLocation.newDirectiveLocation().name("UNION").build())
-            .directiveLocation(DirectiveLocation.newDirectiveLocation().name("ARGUMENT_DEFINITION").build())
-            .directiveLocation(DirectiveLocation.newDirectiveLocation().name("SCALAR").build())
-            .directiveLocation(DirectiveLocation.newDirectiveLocation().name("ENUM").build())
-            .directiveLocation(DirectiveLocation.newDirectiveLocation().name("ENUM_VALUE").build())
-            .directiveLocation(DirectiveLocation.newDirectiveLocation().name("INPUT_OBJECT").build())
-            .directiveLocation(DirectiveLocation.newDirectiveLocation().name("INPUT_FIELD_DEFINITION").build())
-            .directiveLocation(DirectiveLocation.newDirectiveLocation().name("SCHEMA").build())
-            .build();
-
-        Optional<graphql.GraphQLError> error = registry.add(decl);
-        if (error.isPresent()) {
-            throw new IllegalStateException("Failed to inject @tag directive declaration: " + error.get().getMessage());
-        }
-    }
 }

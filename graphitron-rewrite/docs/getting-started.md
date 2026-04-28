@@ -78,28 +78,75 @@ error naming the scalar and the referencing types.
 
 ## Federation
 
-`federation-graphql-java-support` consumes the prebuilt schema directly:
+When your SDL opens with an `extend schema @link(url: ".../federation/v2.x", ...)`,
+`Graphitron.buildSchema(...)` returns the federation-wrapped schema directly:
 
 ```java
-import com.apollographql.federation.graphqljava.Federation;
-
-GraphQLSchema base = Graphitron.buildSchema(b -> {});
-GraphQLSchema federated = Federation.transform(base)
-    .resolveEntityType(entityTypeResolver)
-    .fetchEntities(entityFetcher)
-    .build();
+GraphQLSchema schema = Graphitron.buildSchema(b -> {});
+// Federation directives, `_Service.sdl`, and `_entities` are wired automatically.
 ```
 
-All the federation directives declared in your SDL (`@key`, `@external`,
-`@provides`, `@requires`, `@shareable`, `@override`, `@tag`) land on the
-programmatic schema as applied directives, so
-`federation-graphql-java-support` picks them up on its own. `_Service.sdl`
-is serialized back out by the federation library from the programmatic
-schema; no extra wiring is needed.
+Do *not* wrap the result in `Federation.transform(...)` yourself; Graphitron has
+already done it, and a second wrap would double-add `_Service` / `_Entity` and
+break composition. Schemas without a `@link` skip the wrap entirely and behave
+exactly as before.
 
-If you need byte-stable SDL for supergraph compose testing, call
-`SchemaPrinter` against the built schema yourself and pass the result via
-`Federation.transform(schema, sdl).build()`.
+If you have entity types Graphitron does not classify (hand-rolled objects with
+`@key`, or types pulled in from a non-Graphitron source), register a custom
+fetcher via the two-arg form:
+
+```java
+GraphQLSchema schema = Graphitron.buildSchema(
+    b -> {},
+    fed -> fed.fetchEntities(myCustomFetcher));
+```
+
+The federation builder arrives pre-configured with Graphitron's resolvers; the
+customizer adds or replaces on top.
+
+### Build-time federation directives {#build-time-federation-directives}
+
+Two ways to declare federation directives in your SDL:
+
+**Option 1, recommended.** Open one of your `.graphqls` files with Apollo
+Federation 2's `@link`:
+
+```graphql
+extend schema
+  @link(
+    url: "https://specs.apollo.dev/federation/v2.10",
+    import: ["@key", "@shareable", "@inaccessible", "@override", "@tag"]
+  )
+```
+
+Pick whichever `v2.x` URL covers the directives you import; the generator
+delegates to `federation-graphql-java-support`, which tracks the Apollo spec
+and gates directives on their minimum version.
+
+**Option 2, manual.** If you do not want `@link`, declare each directive you use:
+
+```graphql
+directive @key(fields: String!, resolvable: Boolean = true) repeatable
+    on OBJECT | INTERFACE
+directive @shareable on OBJECT | FIELD_DEFINITION
+```
+
+Mixing the two on the same directive (importing via `@link` and redeclaring it)
+fails validation; pick one per directive.
+
+**`<schemaInput tag>` is federation-specific.** If you set
+`<schemaInput><tag>...</tag></schemaInput>` in the plugin config, the resulting
+`@tag(name: "...")` directives are only meaningful to a federation gateway. The
+plugin treats this as an implicit opt-in to Federation 2:
+
+- If you have not declared `@link`, the plugin synthesises one with
+  `import: ["@tag"]` for you. Nothing else changes; you can still author
+  `@key` / `@shareable` / etc. with manual declarations if you want.
+- If you *have* declared `@link` but `"@tag"` is missing from your `import`
+  list, the build fails with a fatal error pointing at your `@link`. Add
+  `"@tag"` to clear it.
+- If `<schemaInput tag>` is unset, the plugin makes no federation choice on
+  your behalf.
 
 ## Tenant-scoped DSLContext
 
