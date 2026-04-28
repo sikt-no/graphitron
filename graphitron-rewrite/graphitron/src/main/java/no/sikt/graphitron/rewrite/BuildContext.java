@@ -141,12 +141,13 @@ class BuildContext {
      * the plugin's validate / generate mojos; never fail the build. See {@link BuildWarning}.
      */
     private final List<BuildWarning> warnings = new ArrayList<>();
-    private Map<String, String> typeNameByTableKey; // lazy; null until findGraphQLTypeForTable is first called
+    private final Map<String, String> typeNameByTableKey;
 
     BuildContext(GraphQLSchema schema, JooqCatalog catalog, RewriteContext ctx) {
         this.schema = schema;
         this.catalog = catalog;
         this.ctx = ctx;
+        this.typeNameByTableKey = buildTypeNameByTableKey(schema);
     }
 
     RewriteContext ctx() {
@@ -967,23 +968,25 @@ class BuildContext {
 
     /**
      * Returns the GraphQL type name for the given SQL table name, or empty when zero or multiple
-     * {@code @table}-annotated object types claim that table name (case-insensitive). Memoized on
-     * first call; subsequent calls are O(1). Used by the IdReferenceField shim arm to map the FK's
-     * target table back to a GraphQL type name for {@link InputField.IdReferenceField#targetTypeName}.
+     * {@code @table}-annotated object types claim that table name (case-insensitive). Used by the
+     * IdReferenceField shim arm to map the FK's target table back to a GraphQL type name for
+     * {@link InputField.IdReferenceField#targetTypeName}.
      */
     private Optional<String> findGraphQLTypeForTable(String sqlTableName) {
-        if (typeNameByTableKey == null) {
-            var building = new HashMap<String, String>();
-            var ambiguous = new HashSet<String>();
-            for (var t : schema.getAllTypesAsList()) {
-                if (!(t instanceof GraphQLObjectType o) || !o.hasAppliedDirective(DIR_TABLE)) continue;
-                var key = argString(o, DIR_TABLE, ARG_NAME).orElse(o.getName()).toLowerCase();
-                if (ambiguous.contains(key)) continue;
-                if (building.containsKey(key)) { building.remove(key); ambiguous.add(key); }
-                else building.put(key, o.getName());
-            }
-            typeNameByTableKey = Map.copyOf(building);
-        }
         return Optional.ofNullable(typeNameByTableKey.get(sqlTableName.toLowerCase()));
+    }
+
+    private static Map<String, String> buildTypeNameByTableKey(GraphQLSchema schema) {
+        if (schema == null) return Map.of();
+        var building = new HashMap<String, String>();
+        var ambiguous = new HashSet<String>();
+        for (var t : schema.getAllTypesAsList()) {
+            if (!(t instanceof GraphQLObjectType o) || !o.hasAppliedDirective(DIR_TABLE)) continue;
+            var key = argString(o, DIR_TABLE, ARG_NAME).orElse(o.getName()).toLowerCase();
+            if (ambiguous.contains(key)) continue;
+            if (building.containsKey(key)) { building.remove(key); ambiguous.add(key); }
+            else building.put(key, o.getName());
+        }
+        return Map.copyOf(building);
     }
 }
