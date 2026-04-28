@@ -53,7 +53,9 @@ public final class EntityFetcherDispatchClassGenerator {
 
     public static final String CLASS_NAME = "EntityFetcherDispatch";
     public static final String FETCH_ENTITIES_METHOD = "fetchEntities";
+    public static final String RESOLVE_BY_REPS_METHOD = "resolveByReps";
     public static final String RESOLVE_TYPE_METHOD = "resolveType";
+    public static final String TYPENAME_FOR_TYPE_ID_METHOD = "typenameForTypeId";
     public static final String TYPENAME_COLUMN = "__typename";
 
     private static final ClassName ENV          = ClassName.get("graphql.schema", "DataFetchingEnvironment");
@@ -90,8 +92,10 @@ public final class EntityFetcherDispatchClassGenerator {
                 + "{@code Query._entities(representations:)} field. See\n"
                 + "{@link EntityFetcherDispatchClassGenerator} for emission semantics.\n")
             .addMethod(MethodSpec.constructorBuilder().addModifiers(Modifier.PRIVATE).build())
-            .addMethod(buildFetchEntitiesMethod(entities))
+            .addMethod(buildFetchEntitiesMethod())
+            .addMethod(buildResolveByRepsMethod(entities))
             .addMethod(buildResolveTypeMethod())
+            .addMethod(buildTypenameForTypeIdMethod(entities))
             .addMethod(buildContextHelper(graphitronContext));
 
         for (var entity : entities) {
@@ -108,14 +112,93 @@ public final class EntityFetcherDispatchClassGenerator {
 
     // ----- Method emitters (defined in companion methods below) -----
 
-    private static MethodSpec buildFetchEntitiesMethod(List<EntityResolution> entities) {
-        // Implemented in fetchEntities-method-body Edit
+    private static MethodSpec buildFetchEntitiesMethod() {
+        var b = CodeBlock.builder();
+        b.addStatement("$T<$T<String, Object>> reps = env.getArgument($S)",
+            LIST, MAP, "representations");
+        b.addStatement("if (reps == null || reps.isEmpty()) return $T.completedFuture($T.of())",
+            CF, LIST);
+        b.addStatement("Object[] result = $L(reps, env)", RESOLVE_BY_REPS_METHOD);
+        b.addStatement("return $T.completedFuture($T.asList(result))", CF, ARRAYS);
         return MethodSpec.methodBuilder(FETCH_ENTITIES_METHOD)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(ParameterizedTypeName.get(CF, ParameterizedTypeName.get(LIST, ClassName.get(Object.class))))
             .addParameter(ENV, "env")
-            .addCode(fetchEntitiesBody(entities))
+            .addCode(b.build())
             .build();
+    }
+
+    private static MethodSpec buildResolveByRepsMethod(List<EntityResolution> entities) {
+        var listOfMap = ParameterizedTypeName.get(LIST,
+            ParameterizedTypeName.get(MAP, ClassName.get(String.class), ClassName.get(Object.class)));
+        return MethodSpec.methodBuilder(RESOLVE_BY_REPS_METHOD)
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(no.sikt.graphitron.javapoet.ArrayTypeName.of(ClassName.get(Object.class)))
+            .addParameter(listOfMap, "reps")
+            .addParameter(ENV, "env")
+            .addJavadoc("Synchronous dispatch core. Takes a representations list directly\n"
+                + "(not via {@code DataFetchingEnvironment.getArgument}) so callers like\n"
+                + "{@code QueryNodeFetcher.rowsNodes} can synthesise reps from a list of\n"
+                + "Relay node ids and reuse the same SELECT path.\n"
+                + "Returns an {@code Object[]} sized to {@code reps.size()}; entries are\n"
+                + "jOOQ {@code Record}s for resolved reps or {@code null} for unresolved.\n")
+            .addCode(resolveByRepsBody(entities))
+            .build();
+    }
+
+    private static MethodSpec buildTypenameForTypeIdMethod(List<EntityResolution> entities) {
+        // Static initialised map, keyed by NodeType.typeId() (which differs from the typename
+        // when the consumer set @node(typeId: ...)). Used by QueryNodeFetcher.rowsNodes after
+        // peekTypeId to recover the GraphQL typename for synthesising reps.
+        var b = CodeBlock.builder();
+        b.add("$T<String, String> $L = $T.ofEntries(",
+            MAP, "MAP", MAP);
+        boolean first = true;
+        for (var entity : entities) {
+            if (entity.nodeTypeId() == null) continue; // only NodeType entities have a typeId
+            if (!first) b.add(",\n        ");
+            else b.add("\n        ");
+            first = false;
+            b.add("$T.entry($S, $S)", MAP, entity.nodeTypeId(), entity.typeName());
+        }
+        b.add(");\n");
+        var fieldInit = b.build();
+
+        var holder = MethodSpec.methodBuilder(TYPENAME_FOR_TYPE_ID_METHOD)
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(ClassName.get(String.class))
+            .addParameter(String.class, "typeId")
+            .addJavadoc("Returns the GraphQL typename for a given NodeId typeId prefix, or\n"
+                + "{@code null} when no {@code @node} type matches. Used by\n"
+                + "{@code QueryNodeFetcher.rowsNodes} to synthesise representations from\n"
+                + "Relay ids before dispatching to {@link #" + RESOLVE_BY_REPS_METHOD + "}.\n")
+            .addStatement("if (typeId == null) return null")
+            .addCode(fieldInit)
+            .addStatement("return MAP.get(typeId)")
+            .build();
+        return holder;
+    }
+
+    private static CodeBlock resolveByRepsBody(List<EntityResolution> entities) {
+        var b = CodeBlock.builder();
+        b.addStatement("Object[] result = new Object[reps.size()]");
+        b.addStatement("$T<String, $T> byType = new $T<>()",
+            MAP, ParameterizedTypeName.get(LIST, ClassName.get(Integer.class)), LINKED_HASH_MAP);
+        b.beginControlFlow("for (int i = 0; i < reps.size(); i++)");
+        b.addStatement("$T<String, Object> rep = reps.get(i)", MAP);
+        b.addStatement("if (rep == null) continue");
+        b.addStatement("Object tn = rep.get($S)", TYPENAME_COLUMN);
+        b.addStatement("if (!(tn instanceof String typeName)) continue");
+        b.addStatement("byType.computeIfAbsent(typeName, k -> new $T<>()).add(i)", ARRAY_LIST);
+        b.endControlFlow();
+        for (var entity : entities) {
+            b.beginControlFlow("if (byType.containsKey($S))", entity.typeName());
+            b.addStatement("handle$L(reps, byType.get($S), env, result)",
+                entity.typeName(), entity.typeName());
+            b.endControlFlow();
+        }
+        b.addStatement("return result");
+        return b.build();
     }
 
     private static MethodSpec buildResolveTypeMethod() {
@@ -138,34 +221,6 @@ public final class EntityFetcherDispatchClassGenerator {
             .addParameter(ENV, "env")
             .addStatement("return env.getGraphQlContext().get($T.class)", graphitronContext)
             .build();
-    }
-
-    // ----- Body emitters (filled in via Edit) -----
-
-    private static CodeBlock fetchEntitiesBody(List<EntityResolution> entities) {
-        var b = CodeBlock.builder();
-        b.addStatement("$T<$T<String, Object>> reps = env.getArgument($S)",
-            LIST, MAP, "representations");
-        b.addStatement("if (reps == null || reps.isEmpty()) return $T.completedFuture($T.of())",
-            CF, LIST);
-        b.addStatement("Object[] result = new Object[reps.size()]");
-        b.addStatement("$T<String, $T> byType = new $T<>()",
-            MAP, ParameterizedTypeName.get(LIST, ClassName.get(Integer.class)), LINKED_HASH_MAP);
-        b.beginControlFlow("for (int i = 0; i < reps.size(); i++)");
-        b.addStatement("$T<String, Object> rep = reps.get(i)", MAP);
-        b.addStatement("if (rep == null) continue");
-        b.addStatement("Object tn = rep.get($S)", TYPENAME_COLUMN);
-        b.addStatement("if (!(tn instanceof String typeName)) continue");
-        b.addStatement("byType.computeIfAbsent(typeName, k -> new $T<>()).add(i)", ARRAY_LIST);
-        b.endControlFlow();
-        for (var entity : entities) {
-            b.beginControlFlow("if (byType.containsKey($S))", entity.typeName());
-            b.addStatement("handle$L(reps, byType.get($S), env, result)",
-                entity.typeName(), entity.typeName());
-            b.endControlFlow();
-        }
-        b.addStatement("return $T.completedFuture($T.asList(result))", CF, ARRAYS);
-        return b.build();
     }
 
     // Per-type handle methods and per-alternative select methods are emitted by the helpers

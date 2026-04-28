@@ -109,9 +109,13 @@ final class HandleMethodBody {
         ClassName nodeIdEncoder
     ) {
         if (alt.shape() == KeyShape.NODE_ID) {
+            // expectedTypeId: NodeType.typeId() (defaults to type name when @node(typeId:) is
+            // omitted; differs only when the consumer set an explicit typeId). Passing the raw
+            // typename here would silently fail decode for typeId-overridden types.
+            String expectedTypeId = entity.nodeTypeId() != null ? entity.nodeTypeId() : entity.typeName();
             b.addStatement("Object idObj = rep.get($S)", "id");
             b.addStatement("if (!(idObj instanceof String idStr)) continue");
-            b.addStatement("String[] decoded = $T.decodeValues($S, idStr)", nodeIdEncoder, entity.typeName());
+            b.addStatement("String[] decoded = $T.decodeValues($S, idStr)", nodeIdEncoder, expectedTypeId);
             b.addStatement("if (decoded == null) continue");
             b.addStatement("Object[] cols = new Object[decoded.length]");
             b.addStatement("for (int j = 0; j < decoded.length; j++) cols[j] = decoded[j]");

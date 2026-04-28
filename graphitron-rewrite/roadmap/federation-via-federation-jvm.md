@@ -298,7 +298,7 @@ keyed by `__typename`, populated at class load time from one entry per
    step, so the federation contract holds without a separate scatter
    pass.
 
-**`Query.node` and `Query.nodes` reuse this dispatcher (deferred to follow-up).**
+**`Query.node` and `Query.nodes` reuse this dispatcher.**
 `NodeIdEncoder.peekTypeId(id)` recovers the `__typename` from an
 opaque id, so the existing fetchers fold into the entity dispatcher:
 for each id, peek typeId → look up `__typename` → synthesise one rep
@@ -635,12 +635,14 @@ what's inside it, not separate landings:
 3. The schema-builder wire-up that replaces the placeholder
    `fetchEntities`/`resolveEntityType` lambdas with calls into
    `EntityFetcherDispatch` (when `entitiesByType` is non-empty) plus
-   `getting-started.md` updates. **`QueryNodeFetcherClassGenerator`
-   rewire (the per-typeId-loop replacement) is deferred to a
-   follow-up commit** — the existing `rowsNodes` and the new
-   dispatcher both work and emit the same SQL shape; consolidating
-   them is a refactor, not a feature, and the size of the dispatch
-   landing already justifies a separate review.
+   `getting-started.md` updates. `QueryNodeFetcherClassGenerator`
+   rewire: the per-typeId loops in both `rowsNodes` and `fetchById`
+   are replaced by synthesise-rep + `resolveByReps` calls into the
+   dispatcher; the canonicalize-encode-scatter round-trip disappears
+   because `idx` carried through SQL preserves order directly. The
+   dispatcher also exposes `typenameForTypeId(typeId)` so
+   `QueryNodeFetcher` can recover the GraphQL typename after
+   `peekTypeId`.
 
 Splitting (1) and (2) would leave a dead dispatcher in tree (piece 2
 alone) or pure value types unobservable to consumers (piece 1 alone).
