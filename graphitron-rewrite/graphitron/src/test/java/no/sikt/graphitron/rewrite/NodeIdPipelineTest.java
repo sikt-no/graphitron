@@ -396,6 +396,95 @@ class NodeIdPipelineTest {
         tc.assertions.accept(TestSchemaHelper.buildSchema(tc.sdl, FIXTURE_CTX));
     }
 
+    // ===== IdReferenceField shim =====
+
+    /**
+     * Synthesis-shim cases for {@link InputField.IdReferenceField}. All use the nodeidfixture
+     * catalog so that {@code catalog.nodeIdMetadata("baz")} returns present (the shim's gate
+     * condition). {@code bar} carries FK {@code bar_id_1_fkey} to {@code baz}; the qualifier map
+     * keys for that FK are {@code "1_baz_id"} (raw), {@code "1bazid"} (camelCase), and
+     * {@code "1bazids"} (plural camelCase), all used via explicit {@code @field(name:)} since the
+     * qualifier starts with a digit and therefore cannot appear as a bare GraphQL field name.
+     */
+    enum InputIdReferenceCase {
+        SHIM_RAW_QUALIFIER_KEY(
+            "@field(name: \"1_baz_id\") hits raw-qualifier map key → IdReferenceField(synthesized=true)",
+            """
+            type Baz @table(name: "baz") { id: ID! }
+            input Foo @table(name: "bar") {
+              barRef: [ID!] @field(name: "1_baz_id")
+            }
+            type Query { x: String }
+            """,
+            schema -> {
+                var tit = (GraphitronType.TableInputType) schema.type("Foo");
+                var f = (InputField.IdReferenceField) tit.inputFields().get(0);
+                assertThat(f.synthesized()).isTrue();
+                assertThat(f.qualifier()).isEqualTo("1BazId");
+                assertThat(f.targetTypeName()).isEqualTo("Baz");
+                assertThat(f.list()).isTrue();
+            }),
+
+        SHIM_PLURAL_CAMEL_KEY(
+            "@field(name: \"1bazids\") hits plural camelCase map key → IdReferenceField(synthesized=true)",
+            """
+            type Baz @table(name: "baz") { id: ID! }
+            input Foo @table(name: "bar") {
+              barRef: [ID!] @field(name: "1bazids")
+            }
+            type Query { x: String }
+            """,
+            schema -> {
+                var tit = (GraphitronType.TableInputType) schema.type("Foo");
+                var f = (InputField.IdReferenceField) tit.inputFields().get(0);
+                assertThat(f.synthesized()).isTrue();
+                assertThat(f.qualifier()).isEqualTo("1BazId");
+            }),
+
+        SHIM_SINGULAR_CAMEL_KEY(
+            "scalar ID @field(name: \"1bazid\") hits singular camelCase map key → IdReferenceField(synthesized=true, list=false)",
+            """
+            type Baz @table(name: "baz") { id: ID! }
+            input Foo @table(name: "bar") {
+              barRef: ID @field(name: "1bazid")
+            }
+            type Query { x: String }
+            """,
+            schema -> {
+                var tit = (GraphitronType.TableInputType) schema.type("Foo");
+                var f = (InputField.IdReferenceField) tit.inputFields().get(0);
+                assertThat(f.synthesized()).isTrue();
+                assertThat(f.list()).isFalse();
+            }),
+
+        SHIM_BARE_ID_FALLS_THROUGH(
+            "bare id: ID on a KjerneJooqGenerator table — qualifier map miss → falls through to NodeIdField",
+            """
+            input Foo @table(name: "bar") {
+              id: ID
+            }
+            type Query { x: String }
+            """,
+            schema -> {
+                var tit = (GraphitronType.TableInputType) schema.type("Foo");
+                assertThat(tit.inputFields().get(0)).isInstanceOf(InputField.NodeIdField.class);
+            });
+
+        final String sdl;
+        final Consumer<GraphitronSchema> assertions;
+        InputIdReferenceCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
+            this.sdl = sdl;
+            this.assertions = assertions;
+        }
+        @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(InputIdReferenceCase.class)
+    void inputIdReferenceShimClassification(InputIdReferenceCase tc) {
+        tc.assertions.accept(TestSchemaHelper.buildSchema(tc.sdl, FIXTURE_CTX));
+    }
+
     // ===== Output side =====
 
     enum OutputCase {

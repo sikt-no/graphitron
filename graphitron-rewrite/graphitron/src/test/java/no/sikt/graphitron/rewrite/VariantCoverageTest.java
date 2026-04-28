@@ -32,9 +32,6 @@ class VariantCoverageTest {
      * leaf should have a case showing the classifier lands there.
      */
     private static final Map<Class<?>, String> NO_CASE_REQUIRED = Map.of(
-        InputField.IdReferenceField.class,
-            "Pipeline test cases for this variant are added in the id-reference-input-field roadmap item; "
-            + "remove this entry when TableInputTypeCase.ID_REFERENCE_NODEID_INFERRED (and companions) land.",
         InputField.NodeIdField.class,
             "Covered by NodeIdPipelineTest.InputCase (requires nodeid fixture with "
             + "__NODE_TYPE_ID/__NODE_KEY_COLUMNS metadata not available in the standard sakila catalog); "

@@ -1,6 +1,6 @@
 ---
 title: "`IdReferenceField` input filter variant"
-status: Spec
+status: Done
 priority: 4
 ---
 
