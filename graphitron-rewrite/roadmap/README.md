@@ -13,6 +13,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | Item | Status | Plan |
 |---|---|---|
 | Apollo Federation via federation-jvm transform | Spec | [plan](federation-via-federation-jvm.md) |
+| Stub #8: Non-table / scalar / reference child leaves | Spec | [plan](stub-non-table-scalar-child-leaves.md) |
 | `IdReferenceField` code generation | Spec | [plan](id-reference-input-field.md) |
 | Classification vocabulary follow-ups | Spec | [plan](classification-vocabulary-followups.md) |
 | Context-value registry + native multi-tenant fan-out for `@service` | Spec | [plan](service-context-value-registry.md) |
@@ -47,10 +48,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 - [**Clarify `FkJoin` direction semantics**](clarify-fkjoin-direction-semantics.md): `JoinStep.FkJoin.sourceTable` is written to the traversal-origin table in `BuildContext.synthesizeFkJoin:473` and `parsePathElement:559-560`, contradicting the docstring at `JoinStep.java:70-72` (which claims it resolves to the FK-holder table). Currently dead data (zero readers today) but was a bug magnet for the first candidate reader (the cardinality-driven `deriveSplitQueryBatchKey` helper, shipped under *Single-cardinality `@splitQuery` support* in Done).
 - [**Decompose `TypeFetcherGenerator`**](decompose-typefetchergenerator.md): `TypeFetcherGenerator.java` is 1 646 lines, one public entry point (`generate(GraphitronSchema)`), and ~30 private methods that implement per-field-variant emitters plus shared helpers. It is the counterpart to [`decompose-fieldbuilder.md`](decompose-fieldbuilder.md): a central generator that has accumulated coverage faster than its file shape can absorb.
 - [**NodeId emission from JSON-encoded row identity**](nodeid-from-json-row.md): Produce a relay nodeId for a row whose identity arrives as a JSON representation (typeName + key columns) rather than as a fully materialised jOOQ `TableRecord`. The shape mirrors what the legacy multi-table interface fetcher emits: `DSL.jsonbArray(DSL.inline("Customer"), CUSTOMER.CUSTOMER_ID)` produces a `JSONB` value whose first element is the GraphQL type name and whose remaining elements are the primary-key columns of the row's source table.
-
-### Stubs
-
-- [**Stub #8: Non-table / scalar / reference child leaves**](stub-non-table-scalar-child-leaves.md): Lift these leaves out of `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS`: `ChildField.ColumnReferenceField`, `ComputedField`, `TableMethodField`, `ServiceRecordField`, `MultitableReferenceField`.
 
 ### Cleanup
 
