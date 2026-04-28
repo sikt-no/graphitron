@@ -913,6 +913,16 @@ class BuildContext {
                 Optional<String> targetTableOpt = catalog.findForeignKey(shimFkName)
                     .map(fk -> fk.getKey().getTable().getName());
                 Optional<String> targetTypeOpt = targetTableOpt.flatMap(this::findGraphQLTypeForTable);
+                // Spec deviation: roadmap/id-reference-input-field.md gates the shim on
+                // catalog.hasIdSetPredicateMethod(sourceTable, hasQualifier, hasQualifier+"s")
+                // — i.e. the source record class actually exposing the has*() FK-set predicate.
+                // The shipped gate instead checks nodeIdMetadata on the *target* table (presence
+                // of __NODE_TYPE_ID, the same probe that gates the scalar NodeIdField shim).
+                // Either probe distinguishes KjerneJooqGenerator projects from ones that don't
+                // emit the FK-set helpers, but the target-side probe is strictly weaker: it
+                // accepts FKs whose source record class lacks the has*() method, which would
+                // surface as a compile error if codegen ever fires. Tracked for revisit when
+                // codegen lands; until then, classification stays Phase-2-deferred behaviour.
                 if (catalog.nodeIdMetadata(targetTableOpt.orElse("")).isPresent()
                         && targetTypeOpt.isPresent()) {
                     boolean fkAmbiguous = catalog

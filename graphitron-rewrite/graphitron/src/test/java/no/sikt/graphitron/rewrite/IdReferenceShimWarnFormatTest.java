@@ -23,6 +23,14 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>Pins the log-message contract at the point where the shim is introduced; any change to
  * the format should update this test and the corresponding migration tooling together.
+ *
+ * <p>Two fixtures cover the two canonical-replacement shapes:
+ * <ul>
+ *   <li>{@code idreffixture} (studierett → studieprogram): two FKs to the same target →
+ *       {@code fkAmbiguous=true} → WARN includes {@code @nodeId} <em>and</em> {@code @reference}.</li>
+ *   <li>{@code nodeidfixture} (bar → baz): single FK to a node-typed target →
+ *       {@code fkAmbiguous=false} → WARN includes {@code @nodeId} only.</li>
+ * </ul>
  */
 class IdReferenceShimWarnFormatTest {
 
@@ -34,6 +42,15 @@ class IdReferenceShimWarnFormatTest {
         Path.of(""),
         "fake.code.generated",
         "no.sikt.graphitron.rewrite.idreffixture",
+        Map.of()
+    );
+
+    private static final RewriteContext NODEID_CTX = new RewriteContext(
+        List.of(),
+        Path.of(""),
+        Path.of(""),
+        "fake.code.generated",
+        "no.sikt.graphitron.rewrite.nodeidfixture",
         Map.of()
     );
 
@@ -55,7 +72,10 @@ class IdReferenceShimWarnFormatTest {
         appender.stop();
     }
 
-    private static final String SHIM_SDL = """
+    // Both AMBIGUOUS_*_SDL trigger fkAmbiguous=true (studierett has two FKs to studieprogram).
+    // FK1 hits the HAR-role qualifier; FK2 hits the role-prefixed qualifier. The split exists
+    // so both qualifier shapes are exercised against the WARN format.
+    private static final String AMBIGUOUS_FK1_SDL = """
         type Studieprogram @table(name: "studieprogram") { studieprogramId: String }
         type Studierett @table(name: "studierett") { studierettId: ID }
         input StudierettFilterInput @table(name: "studierett") {
@@ -64,7 +84,7 @@ class IdReferenceShimWarnFormatTest {
         type Query { studierett: Studierett }
         """;
 
-    private static final String AMBIGUOUS_SDL = """
+    private static final String AMBIGUOUS_FK2_SDL = """
         type Studieprogram @table(name: "studieprogram") { studieprogramId: String }
         type Studierett @table(name: "studierett") { studierettId: ID }
         input StudierettFilterInput @table(name: "studierett") {
@@ -73,9 +93,23 @@ class IdReferenceShimWarnFormatTest {
         type Query { studierett: Studierett }
         """;
 
+    // Single FK to a node-typed target → fkAmbiguous=false → WARN must NOT include @reference.
+    // bar is the only outgoing-FK source in nodeidfixture; bar.id_1 → baz.id is the unique FK
+    // and baz carries __NODE_TYPE_ID = "Baz".  qualifier "1BazId" (digit-leading because the FK
+    // role is "1") → raw map key "1_baz_id"; @field(name:) supplies a digit-leading column name
+    // that GraphQL's identifier rules would otherwise prohibit.
+    private static final String UNIQUE_FK_SDL = """
+        type Baz @table(name: "baz") { id: ID }
+        type Bar @table(name: "bar") { name: String }
+        input BarFilterInput @table(name: "bar") {
+          bazIds: [ID!] @field(name: "1_BAZ_ID")
+        }
+        type Query { bar: Bar }
+        """;
+
     @Test
     void shimWarnContainsParentTypeAndFieldName() {
-        buildSchema(SHIM_SDL, IDREF_CTX);
+        buildSchema(AMBIGUOUS_FK1_SDL, IDREF_CTX);
 
         assertThat(appender.list).hasSize(1);
         String msg = appender.list.get(0).getFormattedMessage();
@@ -83,8 +117,8 @@ class IdReferenceShimWarnFormatTest {
     }
 
     @Test
-    void shimWarnContainsCanonicalReplacement() {
-        buildSchema(SHIM_SDL, IDREF_CTX);
+    void shimWarnContainsBothDirectivesWhenFkAmbiguous_fk1HarRole() {
+        buildSchema(AMBIGUOUS_FK1_SDL, IDREF_CTX);
 
         assertThat(appender.list).hasSize(1);
         String msg = appender.list.get(0).getFormattedMessage();
@@ -95,14 +129,29 @@ class IdReferenceShimWarnFormatTest {
     }
 
     @Test
-    void shimWarnContainsReferenceWhenFkAmbiguous() {
+    void shimWarnContainsBothDirectivesWhenFkAmbiguous_fk2RolePrefix() {
         // FK2 (registrar_studieprogram_fkey) is picked by the shim. Since studierett has two FKs
         // to studieprogram, findUniqueFkToTable returns empty, so the WARN must include @reference.
-        buildSchema(AMBIGUOUS_SDL, IDREF_CTX);
+        buildSchema(AMBIGUOUS_FK2_SDL, IDREF_CTX);
 
         assertThat(appender.list).hasSize(1);
         String msg = appender.list.get(0).getFormattedMessage();
         assertThat(msg).contains("@nodeId(typeName: \"Studieprogram\")");
         assertThat(msg).contains("@reference(path: [{key: \"studierett_registrar_studieprogram_fkey\"}])");
+    }
+
+    @Test
+    void shimWarnOmitsReferenceWhenFkUnique() {
+        // bar has exactly one FK to baz (bar.id_1 → baz.id), so findUniqueFkToTable resolves and
+        // fkAmbiguous=false. The canonical replacement is then @nodeId alone — @reference would be
+        // redundant noise on a single-FK source. This pins the false branch of the
+        // fkAmbiguous selector at BuildContext.classifyInputField.
+        buildSchema(UNIQUE_FK_SDL, NODEID_CTX);
+
+        assertThat(appender.list).hasSize(1);
+        String msg = appender.list.get(0).getFormattedMessage();
+        assertThat(msg).contains("BarFilterInput.bazIds");
+        assertThat(msg).contains("@nodeId(typeName: \"Baz\")");
+        assertThat(msg).doesNotContain("@reference");
     }
 }
