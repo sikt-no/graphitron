@@ -34,9 +34,9 @@ class AppliedDirectiveEmitterTest {
         assertThat(userBody)
             .contains("graphql.schema.GraphQLAppliedDirective.newDirective()")
             .contains(".name(\"key\")")
-            .contains(".valueLiteral(graphql.language.StringValue.of(\"id\"))")
             .contains(".name(\"shareable\")")
-            .contains(".withAppliedDirective(");
+            .contains(".withAppliedDirective(")
+            .contains("graphql.parser.Parser.parseValue(\"\\\"id\\\"\")");
     }
 
     @Test
@@ -51,9 +51,51 @@ class AppliedDirectiveEmitterTest {
         assertThat(queryBody)
             .contains(".name(\"auth\")")
             .contains(".name(\"roles\")")
-            .contains("graphql.language.ArrayValue.newArrayValue()")
-            .contains("graphql.language.StringValue.of(\"admin\")")
-            .contains("graphql.language.StringValue.of(\"ops\")");
+            .contains("graphql.parser.Parser.parseValue(")
+            .contains("\\\"admin\\\"")
+            .contains("\\\"ops\\\"");
+    }
+
+    /**
+     * Regression guard: the previous hand-rolled emitter rendered {@code FloatValue} as a
+     * {@code StringValue} (toPlainString()), changing the AST shape and breaking any consumer
+     * (e.g. federation-jvm) that casts the literal to {@link graphql.language.FloatValue}.
+     * Delegating to {@code ValuesResolver.valueToLiteral} preserves the FloatValue shape.
+     */
+    @Test
+    void floatArgumentValues_preserveFloatValueShape() {
+        String sdl = """
+            directive @threshold(min: Float!) on FIELD_DEFINITION
+            type Query {
+              risky: String @threshold(min: 3.14)
+            }
+            """;
+        var queryBody = findTypeBody(sdl, "QueryType");
+        assertThat(queryBody)
+            .contains(".name(\"threshold\")")
+            .contains(".name(\"min\")")
+            .contains("graphql.parser.Parser.parseValue(\"3.14\")");
+    }
+
+    /**
+     * Regression guard: graphql-java coerces Boolean-valued arguments to Java {@code Boolean}
+     * (internal state). Delegating to {@code ValuesResolver.valueToLiteral} renders them as
+     * {@link graphql.language.BooleanValue}, which is the shape federation-jvm casts to for
+     * arguments like {@code @key(resolvable: false)}.
+     */
+    @Test
+    void booleanArgumentValues_emitAsBooleanValueLiteral() {
+        String sdl = """
+            directive @flag(on: Boolean!) on FIELD_DEFINITION
+            type Query {
+              x: String @flag(on: true)
+            }
+            """;
+        var queryBody = findTypeBody(sdl, "QueryType");
+        assertThat(queryBody)
+            .contains(".name(\"flag\")")
+            .contains(".name(\"on\")")
+            .contains("graphql.parser.Parser.parseValue(\"true\")");
     }
 
     @Test

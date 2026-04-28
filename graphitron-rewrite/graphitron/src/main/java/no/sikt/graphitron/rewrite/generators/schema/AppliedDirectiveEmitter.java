@@ -1,12 +1,9 @@
 package no.sikt.graphitron.rewrite.generators.schema;
 
-import graphql.language.ArrayValue;
-import graphql.language.BooleanValue;
-import graphql.language.EnumValue;
-import graphql.language.FloatValue;
-import graphql.language.IntValue;
-import graphql.language.NullValue;
-import graphql.language.StringValue;
+import graphql.GraphQLContext;
+import graphql.execution.ValuesResolver;
+import graphql.language.AstPrinter;
+import graphql.language.Value;
 import graphql.schema.GraphQLAppliedDirective;
 import graphql.schema.GraphQLAppliedDirectiveArgument;
 import graphql.schema.GraphQLDirectiveContainer;
@@ -21,6 +18,7 @@ import no.sikt.graphitron.rewrite.generators.util.SchemaDirectiveRegistry;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Emits {@code .withAppliedDirective(GraphQLAppliedDirective.newDirective()...)} blocks for
@@ -47,13 +45,8 @@ public final class AppliedDirectiveEmitter {
         ClassName.get("graphql.schema", "GraphQLList");
     private static final ClassName CN_TYPE_REF =
         ClassName.get("graphql.schema", "GraphQLTypeReference");
-
-    private static final ClassName CN_STRING_VAL  = ClassName.get("graphql.language", "StringValue");
-    private static final ClassName CN_BOOL_VAL    = ClassName.get("graphql.language", "BooleanValue");
-    private static final ClassName CN_INT_VAL     = ClassName.get("graphql.language", "IntValue");
-    private static final ClassName CN_NULL_VAL    = ClassName.get("graphql.language", "NullValue");
-    private static final ClassName CN_ENUM_VAL    = ClassName.get("graphql.language", "EnumValue");
-    private static final ClassName CN_ARRAY_VAL   = ClassName.get("graphql.language", "ArrayValue");
+    private static final ClassName PARSER =
+        ClassName.get("graphql.parser", "Parser");
 
     private AppliedDirectiveEmitter() {}
 
@@ -97,57 +90,31 @@ public final class AppliedDirectiveEmitter {
     }
 
     /**
-     * Emits code that reconstructs the argument's value as a {@link graphql.language.Value}
-     * AST node via {@code valueLiteral(...)}.
+     * Re-renders the argument's value as an AST literal that the consumer-side schema builder
+     * passes to {@code valueLiteral(...)}.
      *
      * <p>Federation-jvm reads directive argument values as AST literals (e.g. it casts the
-     * {@code resolvable} argument value to {@link BooleanValue}). We must therefore preserve the
-     * AST shape, not coerce to a Java primitive via {@code valueProgrammatic}.
+     * {@code resolvable} argument value to {@link graphql.language.BooleanValue}). We must
+     * therefore preserve the AST shape, not coerce to a Java primitive via
+     * {@code valueProgrammatic}.
      *
-     * <p>When graphql-java has already coerced the value to a Java type (internal state, e.g.
-     * Boolean for standard scalars), we reconstruct the equivalent AST node. For literal state
-     * (custom scalars like {@code FieldSet} that graphql-java cannot coerce), the stored value
-     * is already a {@link graphql.language.Value} and we emit it directly.
+     * <p>Delegates the AST shape decision to graphql-java's
+     * {@link ValuesResolver#valueToLiteral}, which dispatches through each scalar's
+     * {@code Coercing#valueToLiteral}. Custom scalars (federation-namespaced {@code FieldSet},
+     * {@code Policy}, {@code Scope}, plus user-defined scalars), {@code Float},
+     * {@code BigDecimal}, input objects, and internally-coerced enums all get the right shape
+     * without per-type enumeration here. {@link AstPrinter#printAst} then renders the
+     * {@link Value}, and the emitted code re-parses it at consumer class-init time via
+     * {@link graphql.parser.Parser#parseValue}. Cost: one {@code parseValue} call per
+     * applied-directive argument at class-init, negligible against schema build.
      */
     private static CodeBlock emitAstLiteralValue(GraphQLAppliedDirectiveArgument arg) {
-        var ivs = arg.getArgumentValue();
-        if (ivs.isLiteral()) {
-            return emitAstNode((graphql.language.Value<?>) ivs.getValue());
-        }
-        return javaValueToAstNode(ivs.getValue());
-    }
-
-    private static CodeBlock emitAstNode(graphql.language.Value<?> value) {
-        if (value instanceof StringValue sv)  return CodeBlock.of("$T.of($S)", CN_STRING_VAL, sv.getValue());
-        if (value instanceof BooleanValue bv) return CodeBlock.of("$T.of($L)", CN_BOOL_VAL, bv.isValue());
-        if (value instanceof IntValue iv)     return CodeBlock.of("$T.of($L)", CN_INT_VAL, iv.getValue().intValueExact());
-        if (value instanceof NullValue)       return CodeBlock.of("$T.of()", CN_NULL_VAL);
-        if (value instanceof EnumValue ev)    return CodeBlock.of("$T.of($S)", CN_ENUM_VAL, ev.getName());
-        if (value instanceof FloatValue fv)   return CodeBlock.of("$T.of($S)", CN_STRING_VAL, fv.getValue().toPlainString());
-        if (value instanceof ArrayValue av)   return emitArrayAstNode(av);
-        return CodeBlock.of("$T.of($S)", CN_STRING_VAL, value.toString());
-    }
-
-    private static CodeBlock emitArrayAstNode(ArrayValue av) {
-        var b = CodeBlock.builder().add("$T.newArrayValue()", CN_ARRAY_VAL);
-        for (var v : av.getValues()) {
-            b.add(".value(").add(emitAstNode(v)).add(")");
-        }
-        return b.add(".build()").build();
-    }
-
-    private static CodeBlock javaValueToAstNode(Object value) {
-        if (value == null)              return CodeBlock.of("$T.of()", CN_NULL_VAL);
-        if (value instanceof Boolean b) return CodeBlock.of("$T.of($L)", CN_BOOL_VAL, b);
-        if (value instanceof String s)  return CodeBlock.of("$T.of($S)", CN_STRING_VAL, s);
-        if (value instanceof Integer i) return CodeBlock.of("$T.of($L)", CN_INT_VAL, i);
-        if (value instanceof Long l)    return CodeBlock.of("$T.of($L)", CN_INT_VAL, l.intValue());
-        if (value instanceof List<?> list) {
-            var b = CodeBlock.builder().add("$T.newArrayValue()", CN_ARRAY_VAL);
-            for (var elem : list) b.add(".value(").add(javaValueToAstNode(elem)).add(")");
-            return b.add(".build()").build();
-        }
-        return CodeBlock.of("$T.of($S)", CN_STRING_VAL, value.toString());
+        Value<?> ast = ValuesResolver.valueToLiteral(
+            arg.getArgumentValue(),
+            arg.getType(),
+            GraphQLContext.getDefault(),
+            Locale.getDefault());
+        return CodeBlock.of("$T.parseValue($S)", PARSER, AstPrinter.printAst(ast));
     }
 
     /**
