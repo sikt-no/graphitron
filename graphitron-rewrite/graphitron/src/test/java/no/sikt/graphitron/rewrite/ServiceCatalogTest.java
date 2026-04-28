@@ -114,6 +114,77 @@ class ServiceCatalogTest {
             .contains("lifter directive");
     }
 
+    @Test
+    void reflectServiceMethod_listOfRecord1Sources_classifiedAsRecordKeyed() {
+        var filmPk = List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"));
+        var result = newCatalog().reflectServiceMethod(
+            STUB_CLASS, "getFilmsWithListOfRecord1Sources", Set.of(), Set.of(), filmPk, null);
+
+        assertThat(result.failed()).isFalse();
+        var sourced = result.ref().params().stream()
+            .filter(p -> p instanceof MethodRef.Param.Sourced)
+            .map(p -> (MethodRef.Param.Sourced) p)
+            .findFirst()
+            .orElseThrow();
+        assertThat(sourced.batchKey()).isEqualTo(new BatchKey.RecordKeyed(filmPk));
+    }
+
+    @Test
+    void reflectServiceMethod_setOfTableRecordSources_classifiedAsMappedRowKeyed() {
+        var filmPk = List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"));
+        var result = newCatalog().reflectServiceMethod(
+            STUB_CLASS, "getFilmsWithSetOfTableRecordSources", Set.of(), Set.of(), filmPk, null);
+
+        assertThat(result.failed()).isFalse();
+        var sourced = result.ref().params().stream()
+            .filter(p -> p instanceof MethodRef.Param.Sourced)
+            .map(p -> (MethodRef.Param.Sourced) p)
+            .findFirst()
+            .orElseThrow();
+        assertThat(sourced.batchKey()).isEqualTo(new BatchKey.MappedRowKeyed(filmPk));
+    }
+
+    @Test
+    void reflectServiceMethod_setOfRow1Sources_classifiedAsMappedRowKeyed() {
+        var filmPk = List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"));
+        var result = newCatalog().reflectServiceMethod(
+            STUB_CLASS, "getFilmsWithSetOfRow1Sources", Set.of(), Set.of(), filmPk, null);
+
+        assertThat(result.failed()).isFalse();
+        var sourced = result.ref().params().stream()
+            .filter(p -> p instanceof MethodRef.Param.Sourced)
+            .map(p -> (MethodRef.Param.Sourced) p)
+            .findFirst()
+            .orElseThrow();
+        assertThat(sourced.batchKey()).isEqualTo(new BatchKey.MappedRowKeyed(filmPk));
+    }
+
+    @Test
+    void reflectServiceMethod_setOfRecord1Sources_classifiedAsMappedRecordKeyed() {
+        var filmPk = List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"));
+        var result = newCatalog().reflectServiceMethod(
+            STUB_CLASS, "getFilmsWithSetOfRecord1Sources", Set.of(), Set.of(), filmPk, null);
+
+        assertThat(result.failed()).isFalse();
+        var sourced = result.ref().params().stream()
+            .filter(p -> p instanceof MethodRef.Param.Sourced)
+            .map(p -> (MethodRef.Param.Sourced) p)
+            .findFirst()
+            .orElseThrow();
+        assertThat(sourced.batchKey()).isEqualTo(new BatchKey.MappedRecordKeyed(filmPk));
+    }
+
+    @Test
+    void reflectServiceMethod_setOfDtoSources_rejectedWithDtoMessage() {
+        var result = newCatalog().reflectServiceMethod(
+            STUB_CLASS, "getFilmsWithSetOfDtoSources", Set.of(), Set.of(), List.of(), null);
+
+        assertThat(result.failed()).isTrue();
+        assertThat(result.failureReason())
+            .contains("not backed by a jOOQ TableRecord")
+            .doesNotContain("unrecognized sources type");
+    }
+
     // ===== Strict-return-type validation =====
 
     @Test

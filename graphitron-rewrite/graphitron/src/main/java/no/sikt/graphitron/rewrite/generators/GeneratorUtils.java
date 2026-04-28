@@ -138,17 +138,19 @@ class GeneratorUtils {
 
     /**
      * Returns the JavaPoet {@link TypeName} for the DataLoader key element type
-     * corresponding to the given {@link BatchKey}.
+     * corresponding to the given {@link BatchKey}. The key element type is shape-determined
+     * (Row vs Record); the container axis (positional vs mapped) is decided at the lambda /
+     * rows-method site, not here.
      *
      * <ul>
-     *   <li>{@link BatchKey.RowKeyed} → {@code RowN<A, B, ...>}</li>
-     *   <li>{@link BatchKey.RecordKeyed} → {@code RecordN<A, B, ...>}</li>
+     *   <li>{@link BatchKey.RowKeyed} / {@link BatchKey.MappedRowKeyed} → {@code RowN<A, B, ...>}</li>
+     *   <li>{@link BatchKey.RecordKeyed} / {@link BatchKey.MappedRecordKeyed} → {@code RecordN<A, B, ...>}</li>
      * </ul>
      */
     static TypeName keyElementType(BatchKey batchKey) {
         return switch (batchKey) {
-            case BatchKey.RowKeyed rk    -> buildRowKeyType(rk.keyColumns());
-            case BatchKey.RecordKeyed rk -> buildRecordNKeyType(rk.keyColumns());
+            case BatchKey.RowKeyed _, BatchKey.MappedRowKeyed _       -> buildRowKeyType(batchKey.keyColumns());
+            case BatchKey.RecordKeyed _, BatchKey.MappedRecordKeyed _ -> buildRecordNKeyType(batchKey.keyColumns());
         };
     }
 
@@ -259,10 +261,10 @@ class GeneratorUtils {
     static CodeBlock buildKeyExtraction(BatchKey batchKey, TableRef parentTable, String jooqPackage) {
         TypeName keyType = keyElementType(batchKey);
         var tablesClass = ResolvedTableNames.ofTable(parentTable, jooqPackage).tablesClass();
+        String tableField = parentTable.javaFieldName();
+        List<ColumnRef> pkCols = batchKey.keyColumns();
         return switch (batchKey) {
-            case BatchKey.RowKeyed rk -> {
-                String tableField = parentTable.javaFieldName();
-                List<ColumnRef> pkCols = rk.keyColumns();
+            case BatchKey.RowKeyed _, BatchKey.MappedRowKeyed _ -> {
                 var rowArgs = CodeBlock.builder();
                 for (int i = 0; i < pkCols.size(); i++) {
                     if (i > 0) rowArgs.add(", ");
@@ -273,9 +275,7 @@ class GeneratorUtils {
                     .addStatement("$T key = $T.row($L)", keyType, DSL, rowArgs.build())
                     .build();
             }
-            case BatchKey.RecordKeyed rk -> {
-                String tableField = parentTable.javaFieldName();
-                List<ColumnRef> pkCols = rk.keyColumns();
+            case BatchKey.RecordKeyed _, BatchKey.MappedRecordKeyed _ -> {
                 var intoArgs = CodeBlock.builder();
                 for (int i = 0; i < pkCols.size(); i++) {
                     if (i > 0) intoArgs.add(", ");

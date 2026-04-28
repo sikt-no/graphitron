@@ -114,4 +114,46 @@ class TestServiceStub {
     public static Result<FilmRecord> getFilmsWithDtoSources(java.util.List<TestDtoStub> keys) {
         throw new UnsupportedOperationException();
     }
+
+    /**
+     * Takes a {@code List<Record1<Integer>>} — used to verify that a {@code RecordN} element
+     * type classifies as {@link no.sikt.graphitron.rewrite.model.BatchKey.RecordKeyed}.
+     */
+    public static Result<FilmRecord> getFilmsWithListOfRecord1Sources(java.util.List<org.jooq.Record1<Integer>> keys) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Takes a {@code Set<FilmRecord>} — verifies that a {@code TableRecord} element type with
+     * a {@code Set} container classifies as {@link no.sikt.graphitron.rewrite.model.BatchKey.MappedRowKeyed}
+     * (driving {@code newMappedDataLoader}).
+     */
+    public static Result<FilmRecord> getFilmsWithSetOfTableRecordSources(java.util.Set<FilmRecord> keys) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Takes a {@code Set<Row1<Integer>>} — verifies that a {@code RowN} element type with a
+     * {@code Set} container classifies as {@link no.sikt.graphitron.rewrite.model.BatchKey.MappedRowKeyed}.
+     */
+    public static Result<FilmRecord> getFilmsWithSetOfRow1Sources(java.util.Set<org.jooq.Row1<Integer>> keys) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Takes a {@code Set<Record1<Integer>>} — verifies that a {@code RecordN} element type with
+     * a {@code Set} container classifies as {@link no.sikt.graphitron.rewrite.model.BatchKey.MappedRecordKeyed}.
+     */
+    public static Result<FilmRecord> getFilmsWithSetOfRecord1Sources(java.util.Set<org.jooq.Record1<Integer>> keys) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Takes a {@code Set<TestDtoStub>} — verifies that a non-{@code TableRecord} element type
+     * with a {@code Set} container is rejected with the same DTO-sources error as the
+     * {@code List} variant (not the generic "unrecognized sources type" message).
+     */
+    public static Result<FilmRecord> getFilmsWithSetOfDtoSources(java.util.Set<TestDtoStub> keys) {
+        throw new UnsupportedOperationException();
+    }
 }

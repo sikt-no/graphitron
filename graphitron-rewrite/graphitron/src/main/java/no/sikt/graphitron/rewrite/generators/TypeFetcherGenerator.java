@@ -129,6 +129,7 @@ public class TypeFetcherGenerator {
     private static final ClassName DATA_LOADER_FACTORY  = ClassName.get("org.dataloader", "DataLoaderFactory");
     private static final ClassName BATCH_LOADER_ENV     = ClassName.get("org.dataloader", "BatchLoaderEnvironment");
     private static final ClassName ARRAY_LIST           = ClassName.get("java.util", "ArrayList");
+    private static final ClassName SET                  = ClassName.get("java.util", "Set");
     private static final ClassName MAP                  = ClassName.get("java.util", "Map");
     /** {@code List<SortField<?>>} — the return type of every {@code *OrderBy} helper method. */
     private static final TypeName SORT_FIELD_LIST       = ParameterizedTypeName.get(LIST,
@@ -1446,8 +1447,24 @@ public class TypeFetcherGenerator {
     /**
      * Generates a DataLoader-based async data fetcher for a {@link ChildField.ServiceTableField}.
      *
-     * <p>List/connection: returns {@code CompletableFuture<List<Record>>}.
-     * Single: returns {@code CompletableFuture<Record>}.
+     * <p>The data fetcher's return type is {@code CompletableFuture<V>} for all four
+     * {@link BatchKey} variants: {@code loader.load(key, env)} returns
+     * {@code CompletableFuture<V>} regardless of whether the underlying batch loader is
+     * positional ({@code List<V>}) or mapped ({@code Map<K, V>}); the DataLoader unwraps both
+     * shapes internally and fulfills each per-key promise.
+     *
+     * <p>List/connection: returns {@code CompletableFuture<List<Record>>}. Single: returns
+     * {@code CompletableFuture<Record>}.
+     *
+     * <p>Variant axis:
+     * <ul>
+     *   <li>{@link BatchKey.RowKeyed}/{@link BatchKey.RecordKeyed} → {@code newDataLoader(...)}
+     *       binds to {@code BatchLoaderWithContext<K, V>}; lambda keys parameter is
+     *       {@code List<KeyType>}.</li>
+     *   <li>{@link BatchKey.MappedRowKeyed}/{@link BatchKey.MappedRecordKeyed} →
+     *       {@code newMappedDataLoader(...)} binds to {@code MappedBatchLoaderWithContext<K, V>};
+     *       lambda keys parameter is {@code Set<KeyType>}.</li>
+     * </ul>
      */
     private static MethodSpec buildServiceDataFetcher(
             String fieldName,
@@ -1462,12 +1479,16 @@ public class TypeFetcherGenerator {
         var returnType = ParameterizedTypeName.get(COMPLETABLE_FUTURE, valueType);
 
         var batchKey = bkf.batchKey();
+        boolean isMapped = batchKey instanceof BatchKey.MappedRowKeyed
+                        || batchKey instanceof BatchKey.MappedRecordKeyed;
         TypeName keyType = GeneratorUtils.keyElementType(batchKey);
         var loaderType = ParameterizedTypeName.get(DATA_LOADER, keyType, valueType);
         String rowsMethodName = bkf.rowsMethodName();
 
+        String factoryMethod = isMapped ? "newMappedDataLoader" : "newDataLoader";
+        TypeName lambdaKeysType = ParameterizedTypeName.get(isMapped ? SET : LIST, keyType);
         var lambdaBlock = CodeBlock.builder()
-            .add("(keys, batchEnv) -> {\n")
+            .add("($T keys, $T batchEnv) -> {\n", lambdaKeysType, BATCH_LOADER_ENV)
             .indent()
             .addStatement("$T dfe = ($T) batchEnv.getKeyContextsList().get(0)", ENV, ENV)
             .addStatement("$T sel = dfe.getSelectionSet().getField($S)", SELECTED_FIELD, fieldName)
@@ -1483,8 +1504,8 @@ public class TypeFetcherGenerator {
             .addCode(buildDataLoaderName())
             .addCode(
                 "$T loader = env.getDataLoaderRegistry()\n" +
-                "    .computeIfAbsent(name, k -> $T.newDataLoaderWithContext($L));\n",
-                loaderType, DATA_LOADER_FACTORY, lambdaBlock);
+                "    .computeIfAbsent(name, k -> $T.$L($L));\n",
+                loaderType, DATA_LOADER_FACTORY, factoryMethod, lambdaBlock);
 
         methodBuilder.addCode(GeneratorUtils.buildKeyExtraction(batchKey, prt, jooqPackage));
         return methodBuilder.addStatement("return loader.load(key, env)").build();
@@ -1498,21 +1519,37 @@ public class TypeFetcherGenerator {
      * The body will be filled in when service field execution is implemented; it will call
      * the service method and then {@code Type.$fields(sel.getSelectionSet(), table, env)}
      * for projection.
+     *
+     * <p>Signature follows the batch-loader contract:
+     * <ul>
+     *   <li>{@link BatchKey.RowKeyed}/{@link BatchKey.RecordKeyed}: {@code keys} is
+     *       {@code List<KeyType>}; return is {@code List<List<Record>>} (list field) or
+     *       {@code List<Record>} (single).</li>
+     *   <li>{@link BatchKey.MappedRowKeyed}/{@link BatchKey.MappedRecordKeyed}: {@code keys}
+     *       is {@code Set<KeyType>}; return is {@code Map<KeyType, List<Record>>} (list field)
+     *       or {@code Map<KeyType, Record>} (single).</li>
+     * </ul>
      */
     private static MethodSpec buildServiceRowsMethod(
             BatchKeyField bkf,
             ReturnTypeRef.TableBoundReturnType tb) {
 
         boolean isList = tb.wrapper().isList();
-        var listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
-        var returnType = isList ? ParameterizedTypeName.get(LIST, listOfRecord) : listOfRecord;
-
+        boolean isMapped = bkf.batchKey() instanceof BatchKey.MappedRowKeyed
+                        || bkf.batchKey() instanceof BatchKey.MappedRecordKeyed;
         TypeName keysElementType = GeneratorUtils.keyElementType(bkf.batchKey());
+
+        TypeName keysContainerType = ParameterizedTypeName.get(isMapped ? SET : LIST, keysElementType);
+
+        TypeName valuePerKey = isList ? ParameterizedTypeName.get(LIST, RECORD) : RECORD;
+        TypeName returnType = isMapped
+            ? ParameterizedTypeName.get(MAP, keysElementType, valuePerKey)
+            : (isList ? ParameterizedTypeName.get(LIST, ParameterizedTypeName.get(LIST, RECORD)) : ParameterizedTypeName.get(LIST, RECORD));
 
         return MethodSpec.methodBuilder(bkf.rowsMethodName())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(returnType)
-            .addParameter(ParameterizedTypeName.get(LIST, keysElementType), "keys")
+            .addParameter(keysContainerType, "keys")
             .addParameter(ENV, "env")
             .addParameter(SELECTED_FIELD, "sel")
             .addStatement("throw new $T()", UnsupportedOperationException.class)

@@ -358,18 +358,29 @@ class ServiceCatalog {
     }
 
     /**
-     * Classifies the element type of a {@code List<?>} SOURCES parameter into a {@link BatchKey}
-     * variant, or returns {@link Optional#empty()} when the type is not recognised.
+     * Classifies the element type of a {@code List<?>} or {@code Set<?>} SOURCES parameter into
+     * a {@link BatchKey} variant, or returns {@link Optional#empty()} when the type is not
+     * recognised.
      *
-     * <p>For column-based variants ({@code RowN<?>}, {@code RecordN<?>}), {@code parentPkColumns}
-     * is used as the authoritative key column list. The column types from the parent PK are used
-     * in the generated method signature; the user's declared type args are used only to determine
-     * the arity and variant. Pass {@link List#of()} when no parent table context is available.
+     * <p>The container axis ({@code List} vs {@code Set}) and key-shape axis ({@code RowN} vs
+     * {@code RecordN}) combine into the four {@link BatchKey} variants. {@code List<?>} maps
+     * to the positional variants ({@link BatchKey.RowKeyed}/{@link BatchKey.RecordKeyed});
+     * {@code Set<?>} maps to the mapped variants ({@link BatchKey.MappedRowKeyed}/
+     * {@link BatchKey.MappedRecordKeyed}).
+     *
+     * <p>For all variants, {@code parentPkColumns} is used as the authoritative key column
+     * list. The column types from the parent PK are used in the generated method signature;
+     * the user's declared type args are used only to determine the arity and variant. Pass
+     * {@link List#of()} when no parent table context is available.
      */
     static Optional<BatchKey> classifySourcesType(java.lang.reflect.Type paramType,
             List<ColumnRef> parentPkColumns) {
-        if (!(paramType instanceof java.lang.reflect.ParameterizedType pt)
-                || pt.getRawType() != java.util.List.class) {
+        if (!(paramType instanceof java.lang.reflect.ParameterizedType pt)) {
+            return Optional.empty();
+        }
+        boolean isList = pt.getRawType() == java.util.List.class;
+        boolean isSet = pt.getRawType() == java.util.Set.class;
+        if (!isList && !isSet) {
             return Optional.empty();
         }
         java.lang.reflect.Type[] typeArgs = pt.getActualTypeArguments();
@@ -384,32 +395,43 @@ class ServiceCatalog {
             if (rawName.startsWith("org.jooq.Row")) {
                 String suffix = rawName.substring("org.jooq.Row".length());
                 if (suffix.matches("\\d+")) {
-                    return Optional.of(new BatchKey.RowKeyed(parentPkColumns));
+                    return Optional.of(isSet
+                        ? new BatchKey.MappedRowKeyed(parentPkColumns)
+                        : new BatchKey.RowKeyed(parentPkColumns));
                 }
             }
             if (rawName.startsWith("org.jooq.Record")) {
                 String suffix = rawName.substring("org.jooq.Record".length());
                 if (suffix.matches("\\d+")) {
-                    return Optional.of(new BatchKey.RecordKeyed(parentPkColumns));
+                    return Optional.of(isSet
+                        ? new BatchKey.MappedRecordKeyed(parentPkColumns)
+                        : new BatchKey.RecordKeyed(parentPkColumns));
                 }
             }
         } else if (elementType instanceof Class<?> elementClass
                 && org.jooq.TableRecord.class.isAssignableFrom(elementClass)) {
-            return Optional.of(new BatchKey.RowKeyed(parentPkColumns));
+            return Optional.of(isSet
+                ? new BatchKey.MappedRowKeyed(parentPkColumns)
+                : new BatchKey.RowKeyed(parentPkColumns));
         }
 
         return Optional.empty();
     }
 
     /**
-     * Returns a descriptive rejection reason when {@code paramType} is a {@code List<?>}
-     * whose element is a plain class that is not a jOOQ {@link org.jooq.TableRecord} subtype,
-     * indicating DTO-parent sources are unsupported. Returns {@code null} for any other shape
-     * (not a DTO rejection; handled by the generic unrecognized-sources path).
+     * Returns a descriptive rejection reason when {@code paramType} is a {@code List<?>} or
+     * {@code Set<?>} whose element is a plain class that is not a jOOQ
+     * {@link org.jooq.TableRecord} subtype, indicating DTO-parent sources are unsupported.
+     * Returns {@code null} for any other shape (not a DTO rejection; handled by the generic
+     * unrecognized-sources path).
      */
     private static String dtoSourcesRejectionReason(java.lang.reflect.Type paramType) {
-        if (!(paramType instanceof java.lang.reflect.ParameterizedType pt)
-                || pt.getRawType() != java.util.List.class) {
+        if (!(paramType instanceof java.lang.reflect.ParameterizedType pt)) {
+            return null;
+        }
+        boolean isList = pt.getRawType() == java.util.List.class;
+        boolean isSet = pt.getRawType() == java.util.Set.class;
+        if (!isList && !isSet) {
             return null;
         }
         java.lang.reflect.Type[] typeArgs = pt.getActualTypeArguments();
