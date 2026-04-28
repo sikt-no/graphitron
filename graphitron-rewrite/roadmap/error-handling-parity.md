@@ -7,17 +7,48 @@ priority: 7
 
 # Error-handling parity: emit per-fetcher error channels from `@error`
 
-The classifier already resolves `@error` types into `GraphitronType.ErrorType` with a
-`List<ErrorType.Handler>` (see `TypeBuilder.buildErrorType` at
-`graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/TypeBuilder.java:485`).
-Nothing emits the runtime exception-to-GraphQL-error mapping that legacy provides via
-`graphitron-common/src/main/java/no/sikt/graphql/exception/`. As of today, `@error` is a parse
-target with no consumer; mutation payload error fields and top-level typed-error responses are
-absent. `code-generation-triggers.md:109` records the gap as "No generation (error mapping config)".
+The classifier resolves `@error` types into `GraphitronType.ErrorType` with a
+`List<ErrorType.Handler>` (`TypeBuilder.buildErrorType` at `TypeBuilder.java:485`). Nothing
+consumes them. Two visible consequences on production schemas today:
 
-This item scopes the emission side and the model refactor that makes it tractable. Pairs with
-[`checked-exceptions-typed-errors.md`](checked-exceptions-typed-errors.md) (Backlog) and depends on
-[`mutations.md`](mutations.md) (Spec) for the mutation-payload carrier.
+1. A payload's `errors: [SomeUnion!]!` field hits one of five sibling `PolymorphicReturnType`
+   rejections in `FieldBuilder` and produces no fetcher (see "Current blocker" below).
+2. Even on a payload whose `errors` field is `[SomeError!]!` (single `@error` type, not a
+   union, so no rejection fires), the fetcher body produced today does not route a thrown
+   exception into the typed payload, and there is no top-level handler installed.
+
+`code-generation-triggers.md:109` records the gap as "No generation (error mapping config)".
+
+This item scopes the model refactor that makes the routing tractable, the classifier work that
+unblocks payload-shaped `errors` fields, and the emission story. Subsumes
+[`checked-exceptions-typed-errors.md`](checked-exceptions-typed-errors.md) (Backlog) per §4 below;
+phase 0 is independent of [`mutations.md`](mutations.md), phases 1-3 sweep across the emitters
+that plan introduces (see Phasing below).
+
+---
+
+## Current blocker (production)
+
+A payload field shaped `errors: [SomeUnion!]!` (or `[SomeInterface!]!`) where the union members
+or interface implementers are all `@error` types currently classifies as `UnclassifiedField`.
+Five sibling sites in `FieldBuilder.java` reject the same shape with `RejectionKind.DEFERRED`
+when the resolved return type is `ReturnTypeRef.PolymorphicReturnType`:
+
+| Line | Caller                                  | Context                                                |
+|------|-----------------------------------------|--------------------------------------------------------|
+| 1587 | `classifyQueryField`                    | Query root `@service` returning a polymorphic type     |
+| 1712 | `classifyMutationField`                 | Mutation root `@service` returning a polymorphic type  |
+| 1861 | `classifyChildFieldOnResultType`        | Child `@service` on a `@record` parent                 |
+| 1918 | `classifyChildFieldOnResultType`        | Child non-service field on a `@record` parent          |
+| 2015 | `classifyChildFieldOnTableType`         | Child `@service` on a `@table` parent                  |
+
+The canonical hit is the consumer's `BehandleSakPayload.errors: [BehandleSakError!]!` (a union of
+`@error` types) on a `@record`-typed payload returned by a `@service`-backed mutation. The
+mutation root field hits 1712; the payload's own `errors` field hits 1918 once the parent does
+classify. All five must be lifted in the same classifier pass: an `errors`-shaped field can
+land on any of them depending on whether the carrier is service-backed and whether the parent
+is `@record` or `@table`. Other polymorphic uses (non-`@error` interface/union returns) stay
+rejected as before; the lift is gated on "every member type is an `@error` type".
 
 ---
 
@@ -52,6 +83,30 @@ consumer wiring; the javax module duplicate; the abstract `SchemaBasedErrorStrat
 hooks (`handleValidationException`, `handleIllegalArgumentException`,
 `createDefaultDataAccessError`) — replaced by directive-side declarations per §5's migration
 table.
+
+---
+
+## Phasing
+
+The plan splits along a clean seam: phase 0 (the classifier lift) is independent of every
+other piece and can land on its own. Phases 1-3 build the runtime story; phase 4 folds in the
+checked-exception roadmap item. The table is the schedule recommendation.
+
+| Phase | Scope                                                                                                              | Depends on                          | Decouples |
+|-------|--------------------------------------------------------------------------------------------------------------------|-------------------------------------|-----------|
+| 0     | Lift the five `PolymorphicReturnType`-on-`@error` rejections in `FieldBuilder`. Add `ErrorsField` model variant; emit a passthrough fetcher (`(payload).errors`). No router, no try/catch, no mapping. | None.                               | Unblocks production schemas with `errors: [SomeUnion!]!`. The fetcher returns whatever the upstream payload object carries; runtime exceptions still escape to graphql-java's default handler, same as today. |
+| 1     | Sealed `Handler` taxonomy (§1); per-field `ErrorChannel` + `PayloadShape` sub-taxonomy (§2); validator changes (§1's reject rules + duplicate-criteria check from §3).                              | Phase 0.                            | Pure model + classifier work; emitters still call the phase-0 passthrough. |
+| 2     | Emit per-package `ErrorMappings` + `ErrorRouter` helpers; wrap fetcher bodies in try/catch / `.exceptionally`; install top-level `DataFetcherExceptionHandler` (emitted as a class consumers wire onto `GraphQL.Builder`). | Phase 1; the four DML mutation variants from `mutations.md` Phase 2 (each is a fetcher body that needs the wrapper). |  |
+| 3     | `VALIDATION` handler runtime + override-retirement (§5).                                                            | Phase 2.                            | Schema-author-visible migration story for the legacy override hooks. |
+| 4     | Fold checked exceptions on `@service` / `@tableMethod` into the same channel (§4); retire `checked-exceptions-typed-errors.md`. | Phase 2.                            |  |
+
+**Recommended order with `mutations.md`.** Land phase 0 ahead of `mutations.md` (it touches
+`FieldBuilder` only and unblocks the BehandleSakPayload-shaped consumer schemas immediately).
+Land phase 2 after `mutations.md` Phase 6 is Done, as a sweep across the new mutation
+emitters; folding the try/catch wrapper into each mutation phase would interleave concerns.
+Phases 1, 3, 4 can run on their own schedule once phase 2 has landed.
+
+This subsumes the earlier "phase ordering" open question.
 
 ---
 
@@ -175,8 +230,23 @@ vendor-conflicting, or contradict the new VALIDATION semantic:
 | `{handler: DATABASE}` (no sqlState, no code)           | `ExceptionHandler(SQLException, ...)`        |
 | `{handler: VALIDATION}`                                | `ValidationHandler(description=...)`         |
 
-Reject (each surfaces as `UnclassifiedType` with a descriptive reason, so the validator reports
-it at build time):
+Reject (rules split between two classifier sites; the table notes each):
+
+| # | Rule                                                 | Site                                         | Surfaces as       |
+|---|------------------------------------------------------|----------------------------------------------|-------------------|
+| 1 | `GENERIC` without `className`                        | `TypeBuilder.parseErrorHandler` (type-level) | `UnclassifiedType` |
+| 2 | `GENERIC` with `sqlState` or `code`                  | `TypeBuilder.parseErrorHandler` (type-level) | `UnclassifiedType` |
+| 3 | `DATABASE` with both `sqlState` and `code`           | `TypeBuilder.parseErrorHandler` (type-level) | `UnclassifiedType` |
+| 4 | `DATABASE` with a non-default `className`            | `TypeBuilder.parseErrorHandler` (type-level) | `UnclassifiedType` |
+| 5 | `VALIDATION` with any of `className`/`sqlState`/`code`/`matches` | `TypeBuilder.parseErrorHandler` (type-level) | `UnclassifiedType` |
+| 6 | More than one `VALIDATION` handler in the same channel | `FieldBuilder` (channel-level, see §2c)    | `UnclassifiedField` on the carrier |
+| 7 | Duplicate match-criteria across handlers in the same channel | `FieldBuilder` (channel-level, see §3)   | `UnclassifiedField` on the carrier |
+
+Rules 1-5 are intra-`@error`-type and check at parse time. Rules 6-7 span multiple `@error`
+types in one channel (the carrier's `ErrorChannel.mappedErrorTypes`) and must run after the
+carrier resolves which `@error` types apply; they live in the carrier classifier and surface
+as `UnclassifiedField` on the carrier (the field with the channel), not on the offending
+`@error` type itself. Detail per rule:
 
 1. **`GENERIC` without `className`**: the directive doc already requires it for GENERIC, but
    the legacy generator silently produced an unmatched mapping. Reject explicitly.
@@ -198,8 +268,9 @@ it at build time):
    migration table.
 6. **More than one `VALIDATION` handler in the same channel**: validation is a single fan-out
    target per payload; two `VALIDATION` handlers would compete for the same `@error` slot.
-   Reject. (Across separate channels on different fields, multiple `VALIDATION` handlers are
-   fine, each scoped to its own field's payload.)
+   Reject on the carrier, naming both offending `@error` types. Across separate channels on
+   different fields, multiple `VALIDATION` handlers are fine, each scoped to its own field's
+   payload.
 7. **Duplicate match-criteria across handlers in the same channel**: covered by the §3
    classifier check; listed here so the parse-time rules are exhaustive.
 
@@ -214,19 +285,29 @@ shift, not a silent one.
 #### Field structural requirements on `@error` types
 
 The current classifier (`FieldBuilder.classifyChildFieldOnErrorType`,
-`FieldBuilder.java:1525`) restricts fields on `@error` types to scalar or enum. Tighten this to
-match the legacy `Error` GraphQL-interface contract that every legacy fixture under
-`graphitron-codegen-parent/graphitron-java-codegen/src/test/resources/exceptions/` satisfies:
+`FieldBuilder.java:1538-1545`) restricts fields on `@error` types to scalar or enum. The runtime
+contract is tighter: the developer-supplied class needs a `(List<String> path, String message)`
+constructor (§2 below). Two ways to enforce that the SDL agrees:
 
-- A non-null `path` field of type `[String!]!`.
-- A non-null `message` field of type `String!`.
+- **Schema-level:** require a non-null `path: [String!]!` and `message: String!` on every
+  `@error` type. Every legacy fixture under
+  `graphitron-codegen-parent/graphitron-java-codegen/src/test/resources/exceptions/` satisfies
+  this; production schemas not covered by fixtures may not.
+- **Reflection-level:** require only that the developer-supplied class declare the
+  `(List<String>, String)` constructor (validated at classify time the same way `@record`
+  validates reflection). The SDL fields then become a documentation convention, not a hard rule.
 
-The validator rejects an `@error` type that lacks either field with a clear message; emission
-in §3 then assumes both are present, matching the load-bearing-classifier-check pattern in
-[`rewrite-design-principles.md`](../docs/rewrite-design-principles.md#classifier-guarantees-shape-emitter-assumptions).
-This is a [load-bearing classifier check](../docs/rewrite-design-principles.md#classifier-guarantees-shape-emitter-assumptions):
-the producer (the §1 structural check on `@error` field shape) wears
-`@LoadBearingClassifierCheck(key = "error-type.path-message-fields", ...)` and the consumer
+The plan recommends the **reflection-level** check as the load-bearing one, with the
+schema-level check downgraded to a build-time *warning* (not error) when `path` or `message`
+fields are absent or shaped differently. Rationale: the Java-side constructor is what the
+emission actually depends on, the SDL fields are surfaced through the carrier-side `errors`
+list to clients (so they have to be present in practice), and a warning gives schema authors a
+clear signal without breaking schemas that had a stylistic variant. Spec phase audits production
+schemas before deciding whether to escalate the warning to an error.
+
+The Java-side check is a [load-bearing classifier check](../docs/rewrite-design-principles.md#classifier-guarantees-shape-emitter-assumptions):
+the producer (constructor-shape validation in `TypeBuilder.buildErrorType`) wears
+`@LoadBearingClassifierCheck(key = "error-type.path-message-constructor", ...)` and the consumer
 (§3's `ErrorRouter.dispatch` payload-factory call site, which constructs
 `new SomeError(path, message)` against the developer-supplied two-arg constructor) wears
 `@DependsOnClassifierCheck` with the same key.
@@ -235,7 +316,65 @@ the producer (the §1 structural check on `@error` field shape) wears
 
 Legacy builds `Map<String, PayloadCreator>` at runtime construction because the legacy generator
 had no per-field resolution layer. The rewrite already classifies mutation and service fields.
-Add a sub-taxonomy on the field model:
+Two model additions, one per side of the carrier/payload split:
+
+#### 2a. `ErrorsField` — the payload-side variant the carrier walks
+
+The phase-0 lift (above) introduces a new sealed permit on `GraphitronField`:
+
+```java
+record ErrorsField(
+    String parentTypeName,
+    String name,
+    SourceLocation location,
+    ErrorListShape shape,                      // see below
+    List<ErrorTypeRef> mappedErrorTypes        // resolved at classify time
+) implements GraphitronField {}
+
+sealed interface ErrorListShape
+        permits ErrorListShape.SingleType, ErrorListShape.UnionMembers, ErrorListShape.InterfaceImpls {
+    /** [SomeError!]! — single @error type, no polymorphism. */
+    record SingleType(ErrorTypeRef errorType) implements ErrorListShape {}
+    /** [SomeUnion!]! where every union member carries @error. */
+    record UnionMembers(List<ErrorTypeRef> members) implements ErrorListShape {}
+    /** [SomeInterface!]! where every implementer carries @error. */
+    record InterfaceImpls(List<ErrorTypeRef> implementers) implements ErrorListShape {}
+}
+```
+
+`ErrorsField` exists so that `classifyChildFieldOnResultType` (and its `@table`-parent and
+`@service`-backed siblings) have an explicit arm to take when they encounter a list-of-error
+shape, rather than falling through to `PolymorphicReturnType`'s rejection. The emission for an
+`ErrorsField` is a passthrough fetcher: at request time the parent's payload object already
+carries the `errors` list (the carrier's `ErrorRouter.dispatch` produced it, or the
+service-method body did), so the fetcher reads it directly. Phase 0 emits exactly this; the
+typed shape information feeds phase 1's carrier-side `ErrorChannel`.
+
+#### 2b. Per-child classifier coordination
+
+The five rejection sites in "Current blocker" share a single check: when the resolved
+`ReturnTypeRef.PolymorphicReturnType` names a union or interface whose every member type is an
+`@error` type, lift to `ErrorsField` instead of returning `UnclassifiedField`. The check needs
+the `BuildContext`'s catalog of `ErrorType`s, which is populated before child-field
+classification runs (`TypeBuilder` resolves all object types before `FieldBuilder` walks
+fields). Two rules pin the coordination down:
+
+- **The lift is field-shape-driven, not parent-driven.** A field returning `[U!]!` where `U` is
+  a union of `@error` types lifts to `ErrorsField` regardless of whether its parent is `@table`,
+  `@record`, or root. The carrier-side `ErrorChannel` (next subsection) is built by the
+  *carrier's* classifier, not the child's; the child's job is to commit to a typed shape.
+- **The lift gates on the all-`@error` predicate.** A union with one non-`@error` member falls
+  through to the existing `PolymorphicReturnType` rejection. Mixed unions are out of scope; the
+  spec phase decides whether to make this a build-time error or a deferred-stub case.
+
+A schema author writing `errors: SomeError!` (single, non-list) is rejected: the legacy
+fixtures all use list shapes, the runtime fan-out semantics assume a list, and a non-list
+single-error shape would not survive the `VALIDATION`-fan-out arm in §5. The reject message
+points at the list shape.
+
+#### 2c. `ErrorChannel` — the carrier-side sub-taxonomy
+
+Phase 1 adds the carrier-side resolution:
 
 ```java
 record ErrorChannel(
@@ -259,10 +398,9 @@ sealed interface PayloadShape
 [`rewrite-design-principles.md:43-47`](../docs/rewrite-design-principles.md#sub-taxonomies-for-resolution-outcomes):
 each variant carries exactly the data its emitter arm consumes. `PayloadObject` carries the
 `ClassName` the emitter needs to write the payload-factory reference (`FilmPayload::new`);
-`RootErrorsArrayOnly` carries nothing (the factory is `errors -> errors`). An enum + nullable
-`ClassName` would conflate the two and re-introduce the antipattern §1 dismantles for `Handler`.
+`RootErrorsArrayOnly` carries nothing (the factory is `errors -> errors`).
 
-Carry it as `Optional<ErrorChannel>` on every field variant whose body is a candidate for the
+Carry `Optional<ErrorChannel>` on every field variant whose body is a candidate for the
 try/catch / `.exceptionally` wrapper in §3. Concretely:
 
 - `MutationField.DmlTableField` (the sealed supertype introduced by
@@ -273,32 +411,28 @@ try/catch / `.exceptionally` wrapper in §3. Concretely:
   matches the channel-detection rules below.
 
 The `DmlTableField` dependency is a *naming* convenience, not a structural one: this plan
-adds the same `Optional<ErrorChannel>` component to each affected variant individually. If
-[`mutations.md`](mutations.md) reshuffles Phase 1a (renames the supertype, splits it
-differently, or sequences the introduction later), this plan still works as long as the four
-DML variants exist somewhere; the spec phase only needs to revisit which sealed-type root is
-referenced. Same pattern as `nodeIdMeta` in [`mutations.md`](mutations.md) Phase 1a:
-classifier resolves once, emitter dispatches over a settled shape. Consult
-[`rewrite-design-principles.md:43-47`](../docs/rewrite-design-principles.md#sub-taxonomies-for-resolution-outcomes)
-for the sub-taxonomy contract.
+adds the same `Optional<ErrorChannel>` component to each affected variant individually. Same
+pattern as `nodeIdMeta` in [`mutations.md`](mutations.md) Phase 1a: classifier resolves once,
+emitter dispatches over a settled shape.
 
-The classifier walks the field's payload return type, identifies the `errors` field by its
-return type's relationship to declared `@error` types (list-of-`@error`, or union whose members
-are all `@error`), and resolves which `Handler`s apply. No global map; each field carries its
-own list. Query fields can also opt in: the legacy code applied `@error` to any operation whose
-return type carried an `errors` field, not just mutations.
+The carrier classifier walks the field's payload return type, identifies the `errors` field by
+its `ErrorsField` classification (committed in §2a), and resolves which `Handler`s apply. No
+global map; each field carries its own list. Query fields can also opt in: the legacy code
+applied `@error` to any operation whose return type carried an `errors` field.
 
-**Channel-detection rules (settled at classify time):**
+**Channel-detection rules (carrier classifier, phase 1):**
 
 1. The payload type must be a `@table` or `@record` object whose field set includes exactly
-   one field whose return type is either a list `[E]` or a list-of-union `[U]` where `E` is an
-   `@error` type or `U` is a union all of whose members are `@error` types. That field's name is
-   `errorsFieldName`; its element types populate `mappedErrorTypes`.
-2. A payload with no such field has no `ErrorChannel`. Throwing inside that fetcher takes the
-   top-level path (§3).
+   one `ErrorsField` (committed by §2a). That field's `name` becomes `errorsFieldName`; its
+   `mappedErrorTypes` populate the channel.
+2. A payload with no `ErrorsField` has no `ErrorChannel`. Throwing inside that fetcher takes
+   the top-level path (§3).
 3. The detection ignores the field's name; legacy convention is `errors:` but the rewrite keys
    off the structural relationship to `@error` types, not a hardcoded field name. This matches
-   how mutations.md keys off return-type shape rather than directive presence.
+   how `mutations.md` keys off return-type shape rather than directive presence.
+4. A payload with two `ErrorsField` children is rejected (`UnclassifiedField` on the second
+   one): the runtime contract assumes one channel per fetcher body. Spec phase confirms no
+   legacy fixture uses two; if one does, that fixture moves to "rejected".
 
 **`@error` type's Java class contract (developer-supplied, not generated).** Legacy never
 generates a Java class for an `@error` GraphQL type; the developer supplies it (the fixture
@@ -344,14 +478,46 @@ public static Object createFilm(DataFetchingEnvironment env) {
 }
 ```
 
-`MAPPINGS` is a static `final` array literal emitted into the same `*Fetchers` class, populated
-from the field's resolved `ErrorChannel`. `ErrorRouter.dispatch` is generated alongside the
-fetchers (see open questions; emitted, not shipped as a runtime jar), walks the cause chain
-with the legacy matcher logic, and returns either the populated payload (schema-mapped) or
-rethrows (top-level fallback). Top-level handling is a `DataFetcherExceptionHandler` installed
-by `Graphitron.buildSchema` and described under "Top-level handler" below. Consumers write no
-error-handling Java at all in the common case; the legacy `SchemaBasedErrorStrategy` subclass
-disappears in favour of `@error` directive declarations (see §5's migration table).
+`MAPPINGS` is a `private static final Mapping[]` reference *into* a shared
+`<outputPackage>.schema.ErrorMappings` class, not an inline array literal in each `*Fetchers`
+class. `ErrorMappings` defines one named constant per distinct channel-flattened mapping list:
+
+```java
+// GENERATED — ErrorMappings
+public final class ErrorMappings {
+    public static final ErrorRouter.Mapping[] FILM_PAYLOAD = new ErrorRouter.Mapping[] { ... };
+    public static final ErrorRouter.Mapping[] BEHANDLE_SAK_PAYLOAD = new ErrorRouter.Mapping[] { ... };
+    // ...
+}
+```
+
+Each `*Fetchers` class declares `private static final Mapping[] MAPPINGS = ErrorMappings.FILM_PAYLOAD;`
+and refers to it from the catch arm. Three reasons:
+
+1. **Dedup.** A schema with N fetchers each mapping the same K `@error` types produces K mapping
+   instances total instead of K·N. For the canonical Sikt schema this is a real saving, not just
+   a code-smell concern.
+2. **Testability.** Pipeline tests assert SDL → TypeSpec at one site (`ErrorMappings`) per
+   channel, rather than chasing inline literals across N `*Fetchers` classes. Aligns with the
+   tier model in `rewrite-design-principles.md:86-88`; fetcher pipeline tests focus on their
+   own variant and just confirm the static reference.
+3. **Naming as classifier output.** The constant name is produced by the classifier
+   (`ErrorChannel.mappingsConstantName`), not invented at print time. This makes the cross-class
+   reference eligible for the [load-bearing classifier check](../docs/rewrite-design-principles.md#classifier-guarantees-shape-emitter-assumptions)
+   pattern: producer wears `@LoadBearingClassifierCheck(key = "error-channel.mappings-constant", ...)`,
+   consumer wears `@DependsOnClassifierCheck`. Closes the same loop §1 already opened for the
+   `(List<String>, String)` constructor.
+
+`ErrorRouter` is also emitted at `<outputPackage>.schema.ErrorRouter` (one per output package,
+not one per `*Fetchers` class). It walks the cause chain with the legacy matcher logic and
+returns either the populated payload (schema-mapped) or rethrows (top-level fallback). Top-level
+handling is a `DataFetcherExceptionHandler` emitted as a sibling class consumers wire onto
+`GraphQL.Builder` (see "Top-level handler" below). Consumers write no error-handling Java at
+all in the common case; the legacy `SchemaBasedErrorStrategy` subclass disappears in favour of
+`@error` directive declarations (see §5's migration table).
+
+Both `ErrorRouter` and `ErrorMappings` are emitted, not shipped as a runtime jar; this preserves
+the [rewrite-builds-independently invariant](../docs/rewrite-design-principles.md#rewrite-builds-independently-of-legacy-graphitron-modules).
 
 #### Concrete dispatch signature
 
@@ -498,10 +664,27 @@ overlap.
 
 #### Top-level handler
 
-The `DataFetcherExceptionHandler` installed by `Graphitron.buildSchema` mirrors legacy
-`TopLevelErrorHandler` (`graphitron-common/.../TopLevelErrorHandler.java:36-69`), which is
-*not* graphql-java's `SimpleDataFetcherExceptionHandler` despite extending it: legacy
-overrides `handleException` to hide internals. The rewrite preserves that arm shape:
+A `DataFetcherExceptionHandler` is *emitted* as a generated class
+(`<outputPackage>.schema.GraphitronTopLevelErrorHandler`) sibling to the existing
+`GraphitronContext`. Consumers wire it onto `GraphQL.Builder` themselves:
+
+```java
+GraphQLSchema schema = Graphitron.buildSchema(b -> {});
+GraphQL engine = GraphQL.newGraphQL(schema)
+    .defaultDataFetcherExceptionHandler(new GraphitronTopLevelErrorHandler())
+    .build();
+```
+
+This keeps `Graphitron.buildSchema` at one method (the property documented at
+`GraphitronFacadeGenerator.java:85`); the runtime-engine concern stays where graphql-java
+already exposes it; consumers who want a different handler subclass or replace
+`GraphitronTopLevelErrorHandler` directly. No `GraphitronOptions` carrier is added; no second
+overload of `buildSchema`. This subsumes the earlier "top-level handler slot" open question.
+
+The emitted handler mirrors legacy `TopLevelErrorHandler`
+(`graphitron-common/.../TopLevelErrorHandler.java:36-69`), which is *not* graphql-java's
+`SimpleDataFetcherExceptionHandler` despite extending it: legacy overrides `handleException` to
+hide internals. The rewrite preserves that arm shape:
 
 - `ValidationViolationGraphQLException`: emit the carried `List<GraphQLError>` verbatim
   (this case actually fires only when validation throws *outside* a fetcher with a matching
@@ -520,11 +703,10 @@ generic case. Schema-mapped DB errors still surface through their `@error` paylo
 *unmatched* DB errors reach the top-level handler, where exposing the raw SQL message is the
 behaviour we are deliberately hiding.
 
-Consumer override path: the existing `Consumer<GraphQLSchema.Builder>` slot on
-`Graphitron.buildSchema` doesn't reach the `DataFetcherExceptionHandler` (which is set on
-`AsyncExecutionStrategy`, not `GraphQLSchema.Builder`). The plan adds a sibling slot, either
-`Graphitron.buildSchema(Consumer<Builder>, DataFetcherExceptionHandler)` or a builder-style
-`GraphitronOptions` carrier; this is covered in the open-questions list.
+Documentation: getting-started.md grows a one-line addition to the hello-world snippet
+showing the `defaultDataFetcherExceptionHandler` call. The class is generated regardless of
+whether any `@error` types are present (it has value as the no-internals-leaked default for
+generic errors too).
 
 #### Behaviour change vs legacy
 
@@ -582,9 +764,10 @@ not satisfy these variants (and is rejected unless the channel also carries an
   infrastructure errors that should reach the top-level handler, not a typed `@error`. The
   rule above forces the schema to either (a) declare a wide handler (e.g. `Throwable`-wide
   `ExceptionHandler`), which is usually wrong because it leaks infrastructure detail to clients,
-  or (b) wrap them in a domain exception in the service implementation. Document this in the
-  spec; it's not
-  load-bearing for the generator but is the prevailing pattern in real services.
+  or (b) wrap them in a domain exception in the service implementation. Path (b) is the
+  recommended pattern; the open question (see Open Questions) is whether the classifier should
+  also exempt these specific types from the wider-or-equal rule so a service declaring them
+  does not need a corresponding channel handler.
 - **`IllegalArgumentException`.** Legacy
   (`SchemaBasedErrorStrategy.java:58-73`) treats `IllegalArgumentException` as a special arm,
   separate from the schema-mapped strategy. The rewrite folds it into the same pipe: an
@@ -688,15 +871,12 @@ remaining Java is the `UgyldigInput(List<String> path, String message)` record i
 
 ## Relationship to neighbouring items
 
-- **[`mutations.md`](mutations.md)** (Spec, priority 9) is the carrier. Every mutation phase
-  emits a fetcher whose body is a candidate for the try/catch wrapper. Realistic options:
-  (a) land mutations Phases 2-6 first, then layer error-channel emission as a sweep across
-  the new emitters; (b) absorb error-channel emission as one extra phase inside `mutations.md`
-  before that plan moves to Done. Picking the order is part of moving this item from Backlog
-  to Spec; the work itself is independent of which order.
+- **[`mutations.md`](mutations.md)** (Spec, priority 9) is the carrier for phase 2 onward.
+  See the Phasing table near the top: phase 0 lands ahead of `mutations.md`; phase 2 lands
+  as a sweep after `mutations.md` Phase 6 is Done. Phase 1 (model + classifier scaffolding)
+  is independent and can land in parallel.
 - **[`checked-exceptions-typed-errors.md`](checked-exceptions-typed-errors.md)** (Backlog,
-  priority 8) is subsumed by §4 above. When this item moves to Spec, fold that one in or
-  retire it depending on how the spec partitions.
+  priority 8) is subsumed by §4 / phase 4 above. Retire it when this plan moves to In Review.
 
 ---
 
@@ -707,7 +887,7 @@ The legacy generator's behaviour is locked by ~25 fixtures under
 spec must commit to which scenarios are reproduced; the table below partitions them into
 in-scope / out-of-scope, so the spec phase has a concrete checklist.
 
-**In-scope (Phase 1 of this item):**
+**In-scope (phases 0-3 of this item; phase 0 unblocks the union-shaped fixtures by lifting the `PolymorphicReturnType` rejection, phases 1-3 wire the routing):**
 
 - `default/`: single `@error` type with one `GENERIC` handler. Lifts to `ExceptionHandler`.
 - `databaseHandledError/`: `[{handler: DATABASE}]` with no sqlState/code. Lifts to
@@ -777,7 +957,8 @@ SDL alongside the mutation fixtures (the mutation-bodies fixture-gap closure in
 - **Custom `ExecutionStrategy` for non-error reasons.** This item commits to graphql-java's
   default `AsyncExecutionStrategy` plus a `DataFetcherExceptionHandler`. Consumers needing a
   custom strategy for unrelated reasons (custom subscription dispatch, alternative async
-  scheduler) plug it in via the `Consumer<GraphQLSchema.Builder>` slot on `Graphitron.buildSchema`.
+  scheduler) install it via `GraphQL.Builder.queryExecutionStrategy(...)` themselves; this is
+  not a Graphitron-side concern.
 - **Bean-validation triggering.** `RecordValidator` integration with `@Valid`-style
   bean-validation triggering on input types is out of scope. The trigger is still
   developer-invoked: code calls `recordValidator.validate(...)` which throws
@@ -791,15 +972,14 @@ SDL alongside the mutation fixtures (the mutation-bodies fixture-gap closure in
   `GenericExceptionMatcher.java:streamCauses`. The DB-error variant of the matcher checks
   `SQLState`/`ErrorCode` directly on any `SQLException` it finds.
 - **A consumer-facing `ExceptionHandlingBuilder` analogue.** Auto-wiring is the goal. If a
-  consumer needs to override the top-level handler, the slot is the same
-  `Consumer<GraphQLSchema.Builder>` parameter on `Graphitron.buildSchema` (today's facade
-  already exposes it for federation, custom scalars, and tenant-scoped `DSLContext`). See the
-  open question below: the existing slot doesn't reach `DataFetcherExceptionHandler`, so a
-  small additional slot is needed.
+  consumer needs to override the top-level handler, they install their own
+  `DataFetcherExceptionHandler` on `GraphQL.Builder` (the standard graphql-java extension
+  point); the emitted `GraphitronTopLevelErrorHandler` is then optional. No Graphitron-side
+  builder, no `GraphitronOptions` carrier.
 - **Subscription error paths.** Legacy has no subscription-specific exception handling, and
   the rewrite does not generate subscription fetchers (`FieldBuilder.classifyRootField` rejects
-  `Subscription` with a `DEFERRED` rejection at `FieldBuilder.java:1544-1545`). Subscription
-  error handling is deferred until subscriptions land as a feature; that future plan owns
+  `Subscription` with a `DEFERRED` rejection at `FieldBuilder.java:1557`). Subscription error
+  handling is deferred until subscriptions land as a feature; that future plan owns
   subscription-specific routing.
 - **Batch-loader error handling.** Legacy's `DataLoaderMapper` propagates exceptions opaquely;
   the rewrite's split-query DataLoader emission inherits the same property. Routing inside a
@@ -811,8 +991,8 @@ SDL alongside the mutation fixtures (the mutation-bodies fixture-gap closure in
   one.
 - **Instrumentation / metrics hooks on error paths.** Counters, log forwarding, OTel spans on
   the error path are a runtime-observability concern. The rewrite's runtime path stays
-  graphql-java-vanilla; consumers wire instrumentation via the
-  `Consumer<GraphQLSchema.Builder>` slot or graphql-java's `Instrumentation` API.
+  graphql-java-vanilla; consumers wire instrumentation via graphql-java's `Instrumentation` API
+  on `GraphQL.Builder`.
 - **Transaction rollback semantics.** Whether a thrown exception rolls back a JDBC transaction
   is a `DSLContext` / connection-management concern, owned by the consumer's transaction
   strategy (`@Transactional`, manual `dsl.transaction(...)`, etc.). The rewrite's fetcher
@@ -823,56 +1003,55 @@ SDL alongside the mutation fixtures (the mutation-bodies fixture-gap closure in
 
 ## Open questions for the Spec phase
 
-- **Where does `ErrorRouter` and the matcher code live?** Settled: emit the router as a
-  generated static helper class alongside the existing `*Fetchers`. A new runtime jar that
-  emitted code depends on would directly violate the
-  ["Rewrite builds independently of legacy Graphitron modules"](../docs/rewrite-design-principles.md#rewrite-builds-independently-of-legacy-graphitron-modules)
-  invariant (`rewrite-design-principles.md:111-117`); consumers depend on the rewrite
-  aggregator alone, with no separate runtime artifact to version against the generator.
-  `ErrorRouter` is ~150 lines of pure cause-chain walking and matcher application; emitting
-  it once per build is cheap and keeps the no-runtime-jar property intact. Spec phase commits
-  to this path; remaining open question is the file naming convention (one `ErrorRouter`
-  per `*Fetchers` class, or one shared `ErrorRouter` per generated package).
-- **Top-level `DataFetcherExceptionHandler` slot.** The existing
-  `Consumer<GraphQLSchema.Builder>` slot on `Graphitron.buildSchema` is invoked after schema
-  build but does not reach `AsyncExecutionStrategy.handleFetchingException`'s
-  `DataFetcherExceptionHandler`. Spec phase decides between: (a) overload
-  `Graphitron.buildSchema(Consumer<Builder>, DataFetcherExceptionHandler)`; (b) introduce a
-  `GraphitronOptions` carrier object that bundles the customizer, the exception handler, and
-  any future global slots; (c) ship with no override slot and document that consumers wanting
-  a custom top-level handler use graphql-java's `GraphQL.Builder` directly. (b) is the safest
-  shape long-term but is the largest API surface change.
+The earlier list resolved several questions inline; what remains:
+
+- **`@error` on query fields.** Legacy applies error mapping to any operation whose return
+  type carries an `errors` field. Confirm against production schemas whether query-side error
+  channels are in use; if zero usage, narrow scope to mutation fields and document the cut.
+  Phase 0's `ErrorsField` lift is independent of this and lands either way.
+- **Mixed unions (some members `@error`, some not).** §2's lift gates on the all-`@error`
+  predicate. Spec phase decides whether a mixed union is a build-time error (probable schema
+  bug) or a deferred-stub case (re-classify to `PolymorphicReturnType` rejection). Audit
+  production schemas for any mixed-union `errors` fields before committing.
 - **`@error` Java class generation vs developer-supplied.** Today's contract is
   developer-supplied (matches legacy and `@record`). Generation is feasible (the SDL fully
   determines the Java shape) but breaks the `@record`-symmetric story and changes the
   `code-generation-triggers.md:109` line. Default position: keep developer-supplied. Revisit
   if a consumer survey shows the boilerplate is meaningful.
-- **`@error` on query fields.** Legacy applies error mapping to any operation whose return
-  type carries an `errors` field. Confirm against production schemas whether query-side error
-  channels are in use; if zero usage, narrow scope to mutation fields and document the cut.
-- **Generation-efficiency: matcher dedup across fetchers.** Legacy's
-  `ExceptionToErrorMappingProviderGenerator.java:189-193` dedupes matcher *variables* across
-  operations sharing the same `@error` type. The rewrite's per-fetcher static `MAPPINGS` array
-  duplicates handler instances across every fetcher in a channel that shares the same
-  `@error` types. For a schema with N fetchers each mapping the same 5 `@error` types, that's
-  5N `Mapping` instances vs legacy's 5. Decide whether to introduce a per-`*Fetchers`-class
-  static cache, or accept the duplication (mitigation: handler instances are tiny, just a
-  `ClassName` plus 3 optional Strings, and JVM constant-folding handles the array literals
-  well).
+- **Field-structural strictness on `@error` types.** §1's "schema-level vs reflection-level"
+  question. Plan recommends reflection-level as load-bearing, schema-level as a warning;
+  spec phase audits production schemas before deciding whether to escalate the warning.
+- **`InterruptedException`/`IOException` exemption from §4's wider-or-equal rule.** Plan
+  documents the rule but does not exempt infrastructure exceptions automatically. Spec phase
+  decides whether the classifier should silently exempt `InterruptedException`,
+  `IOException`, and similar from the channel-membership requirement (so a service method
+  declaring them does not force a `Throwable`-wide handler), or accept that schema authors
+  must wrap them in domain exceptions.
+- **`GraphQLError` extensions/locations on validation fan-out.** §5's fan-out projects each
+  carried `GraphQLError` to `(path, message)` only. Legacy did the same; the rewrite preserves
+  parity. Spec phase decides whether to flag this as a separate roadmap item for consumers
+  who care about extensions/locations on per-violation errors.
 - **Fixture coverage.** The current `graphitron-test` schema has no `@error` types. Spec phase
-  needs to add at least four `@error` fixtures, one per Handler variant: a `SqlStateHandler`
+  needs at least four `@error` fixtures, one per Handler variant: a `SqlStateHandler`
   (sqlState match via a Sakila constraint violation; e.g. `23503` foreign-key on the
-  `film_actor` link table), a `VendorCodeHandler` (any vendor-code-bearing fixture, even if
-  Postgres reports `0` at runtime; the parse-side classification is what's exercised), an
-  `ExceptionHandler` (developer-thrown business exception), and a `ValidationHandler`
-  (`{handler: VALIDATION}` plus a fetcher that throws `ValidationViolationGraphQLException`
-  with two underlying `GraphQLError`s, asserting fan-out into two payload instances). The
-  mutation-bodies fixture-gap closure in [`mutations.md`](mutations.md) is the natural place
-  to extend. The full fixture list to reproduce is in the "Legacy fixture coverage" section
-  above; the new fixtures are listed in "Net-new fixtures introduced by the rewrite" there.
-- **Phase ordering with `mutations.md`.** The author leans toward option (a) in the
-  "Relationship to neighbouring items" section: land mutations Phases 2-6 first, then layer
-  error-channel emission as a sweep across the new emitters. Rationale: every mutation phase's
-  emitter touches the same fetcher body, and adding a second axis of variation (error
-  wrapping) inside each phase would interleave concerns. Sweeping the error wrapper across
-  finished emitters in a single follow-up commit keeps each phase's diff focused.
+  `film_actor` link table), a `VendorCodeHandler` (parse-side only; Postgres reports `0` at
+  runtime), an `ExceptionHandler` (developer-thrown business exception), and a
+  `ValidationHandler` (`{handler: VALIDATION}` plus a fetcher that throws
+  `ValidationViolationGraphQLException` with two underlying `GraphQLError`s, asserting
+  fan-out into two payload instances). The mutation-bodies fixture-gap closure in
+  `mutations.md` is the natural place to extend. The full fixture list to reproduce is in
+  the "Legacy fixture coverage" section above.
+
+### Resolved (no longer open)
+
+- **`ErrorRouter` location.** Emitted as a generated class at `<outputPackage>.schema.ErrorRouter`,
+  one per output package (alongside `ErrorMappings` and the emitted top-level handler). No
+  runtime jar; preserves the no-runtime-jar invariant.
+- **Top-level handler "slot" on `Graphitron.buildSchema`.** Resolved by emitting
+  `GraphitronTopLevelErrorHandler` as a class consumers wire onto `GraphQL.Builder`. No new
+  parameter, no `GraphitronOptions` carrier; `Graphitron.buildSchema` stays at one method.
+- **Generation-efficiency: matcher dedup.** Resolved via the per-package `ErrorMappings` class
+  in §3. Each distinct channel gets one named `Mapping[]` constant; per-fetcher `MAPPINGS`
+  fields reference it.
+- **Phase ordering with `mutations.md`.** Resolved in the Phasing table near the top: phase 0
+  lands ahead of `mutations.md`; phase 2 lands as a sweep after `mutations.md` Phase 6 is Done.
