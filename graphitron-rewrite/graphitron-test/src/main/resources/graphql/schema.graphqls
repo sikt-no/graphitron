@@ -1,6 +1,3 @@
-extend schema
-  @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
-
 interface Node { id: ID! }
 
 type Query {
@@ -221,7 +218,7 @@ type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jo
     ])
 }
 
-type Film implements Node @table(name: "film") @node @key(fields: "filmId") {
+type Film implements Node @table(name: "film") @node {
     id:          ID!          @nodeId
     filmId:      Int!         @field(name: "FILM_ID")
     title:       String!      @field(name: "TITLE")
@@ -348,7 +345,7 @@ input FilmActorKey @table(name: "film_actor") {
     actorId: Int! @field(name: "actor_id") @lookupKey
 }
 
-type FilmActor @table(name: "film_actor") @key(fields: "filmId actorId") {
+type FilmActor @table(name: "film_actor") {
     filmId:  Int! @field(name: "film_id")
     actorId: Int! @field(name: "actor_id")
 }
