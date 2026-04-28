@@ -48,7 +48,10 @@ Mapping the rewrite work back to the parts of legacy worth preserving (and the p
 Preserve: dual-layer routing (schema-mapped vs top-level fallback); the three matcher inputs
 (class identity walking the cause chain, sqlState, message substring); per-operation scope.
 Drop: the global per-operation runtime maps; the custom `ExecutionStrategy`; the manual
-consumer wiring; the javax module duplicate.
+consumer wiring; the javax module duplicate; the abstract `SchemaBasedErrorStrategy` subclass
+hooks (`handleValidationException`, `handleIllegalArgumentException`,
+`createDefaultDataAccessError`) — replaced by directive-side declarations per §5's migration
+table.
 
 ---
 
@@ -73,7 +76,8 @@ keys off (not by vendor: vendor-named variants like `PostgresHandler` / `OracleH
 brittle product names that don't fit MySQL/CockroachDB/Yugabyte cleanly):
 
 ```java
-sealed interface Handler permits ExceptionHandler, SqlStateHandler, VendorCodeHandler {
+sealed interface Handler
+        permits ExceptionHandler, SqlStateHandler, VendorCodeHandler, ValidationHandler {
     Optional<String> matches();
     Optional<String> description();
 }
@@ -95,6 +99,12 @@ record VendorCodeHandler(
     Optional<String> matches,
     Optional<String> description
 ) implements Handler {}
+
+record ValidationHandler(
+    Optional<String> description     // matches and exceptionClass intentionally absent
+) implements Handler {
+    @Override public Optional<String> matches() { return Optional.empty(); }
+}
 ```
 
 `SqlStateHandler` and `VendorCodeHandler` carry no `exceptionClass` field. They implicitly match
@@ -111,19 +121,51 @@ cannot be resolved on the classifier classpath, the parent `ErrorType` becomes
 `UnclassifiedType` with a descriptive reason (mirrors how `@record(record: {className: ...})`
 already validates Java reflection at build time).
 
+`ValidationHandler` retires the legacy `CustomSchemaBasedErrorStrategy.handleValidationException`
+override entirely; see §5 for the runtime contract (one
+`ValidationViolationGraphQLException` fans out into N `(path, message)` instances of the
+parent `@error` type's developer-supplied class). It carries no fields the matcher
+discriminates on: the implicit exception class is `ValidationViolationGraphQLException`, the
+per-violation messages come from each carried `GraphQLError`, and a top-level message-substring
+filter would only short-circuit *all* violations (not "filter individual violations"), which is
+not a meaningful schema-author intent.
+
 `ErrorHandlerType` (the legacy `DATABASE | GENERIC` enum at
 `no.sikt.graphitron.rewrite.model.ErrorHandlerType`) and the legacy-shape `Handler` record at
 `GraphitronType.java:202-209` are deleted in the same edit that lands the sealed hierarchy.
-Validators and any in-tree references update in lockstep; otherwise the build breaks before
-the new shape compiles.
+The replacement enum (`GENERIC | DATABASE | VALIDATION`, see the SDL change below) only exists
+at the SDL parse boundary; downstream code consumes the sealed `Handler` variants. Validators
+and any in-tree references update in lockstep; otherwise the build breaks before the new shape
+compiles.
 
-#### Parse-time lift from the legacy SDL grammar
+#### SDL grammar change: add `VALIDATION` to `ErrorHandlerType`
 
-The SDL grammar stays byte-identical to legacy
-(`directive @error(handlers: [ErrorHandler!]!)` with `ErrorHandler { handler, className, code,
-sqlState, matches, description }`); existing schemas keep parsing. `TypeBuilder.parseErrorHandler`
-lifts each entry into one of the three model variants by inspecting which fields are present,
-and rejects combinations that are ambiguous or vendor-conflicting:
+The directive grammar stays compatible with legacy except for one additive change: the
+`ErrorHandlerType` enum gains a third value, `VALIDATION`. Existing schemas (which use only
+`GENERIC` and `DATABASE`) keep parsing without modification.
+
+```graphql
+enum ErrorHandlerType { GENERIC, DATABASE, VALIDATION }
+```
+
+The reason this enum value belongs in the directive rather than being a runtime-only special
+case: the rewrite is the chance to retire the legacy `SchemaBasedErrorStrategy` consumer
+override hooks, which forced every consumer to write near-identical Java to fan out
+`ValidationViolationGraphQLException.getUnderlyingErrors()` into typed `@error` instances. With
+`VALIDATION` declared at the schema level, the fan-out becomes a router-side responsibility
+the schema author never sees. See §5 for the runtime contract and the migration subsection
+below for the override → directive translation.
+
+The `ErrorHandler` input shape is otherwise unchanged. `handler`, `className`, `code`,
+`sqlState`, `matches`, `description` keep their current names and types. Existing GENERIC and
+DATABASE schemas behave the same as before (modulo the documented behaviour shift on
+DATABASE-with-no-discriminator, below).
+
+#### Parse-time lift
+
+`TypeBuilder.parseErrorHandler` lifts each entry into one of the four model variants by
+inspecting which fields are present, and rejects combinations that are ambiguous,
+vendor-conflicting, or contradict the new VALIDATION semantic:
 
 | SDL entry                                              | Model variant                                |
 |--------------------------------------------------------|----------------------------------------------|
@@ -131,6 +173,7 @@ and rejects combinations that are ambiguous or vendor-conflicting:
 | `{handler: DATABASE, sqlState: "23503"}`               | `SqlStateHandler("23503", ...)`              |
 | `{handler: DATABASE, code: "1"}`                       | `VendorCodeHandler("1", ...)`                |
 | `{handler: DATABASE}` (no sqlState, no code)           | `ExceptionHandler(SQLException, ...)`        |
+| `{handler: VALIDATION}`                                | `ValidationHandler(description=...)`         |
 
 Reject (each surfaces as `UnclassifiedType` with a descriptive reason, so the validator reports
 it at build time):
@@ -148,16 +191,25 @@ it at build time):
    class identity for the SQL variants (§3 behaviour change), so a non-default `className`
    has no effect and is misleading. Reject with a hint pointing at `GENERIC` for
    class-narrowed matching.
-5. **Duplicate match-criteria across handlers in the same channel**: covered by the §3
+5. **`VALIDATION` with any of `className`, `sqlState`, `code`, `matches`**: the implicit
+   exception class is `ValidationViolationGraphQLException`; SQL discriminators are
+   irrelevant; `matches` would short-circuit all violations rather than filter individual
+   ones, which is not a meaningful intent. Reject with a hint pointing at the override-
+   migration table.
+6. **More than one `VALIDATION` handler in the same channel**: validation is a single fan-out
+   target per payload; two `VALIDATION` handlers would compete for the same `@error` slot.
+   Reject. (Across separate channels on different fields, multiple `VALIDATION` handlers are
+   fine, each scoped to its own field's payload.)
+7. **Duplicate match-criteria across handlers in the same channel**: covered by the §3
    classifier check; listed here so the parse-time rules are exhaustive.
 
-The DATABASE-with-no-discriminator case (last row of the lift table above) deserves a note:
+The DATABASE-with-no-discriminator case (fourth row of the lift table) deserves a note:
 legacy's default `className` was `DataAccessException`, but the rewrite's runtime walks the
 cause chain for any `SQLException` (§3 behaviour change). The lift to
 `ExceptionHandler(SQLException)` makes the rewrite's actual semantic visible in the model
 rather than hidden in the runtime matcher. Schemas that relied on legacy's
-"DataAccessException-only" nominal match (rare; Spring-
-specific) get a documented behaviour shift, not a silent one.
+"DataAccessException-only" nominal match (rare; Spring-specific) get a documented behaviour
+shift, not a silent one.
 
 #### Field structural requirements on `@error` types
 
@@ -293,11 +345,13 @@ public static Object createFilm(DataFetchingEnvironment env) {
 ```
 
 `MAPPINGS` is a static `final` array literal emitted into the same `*Fetchers` class, populated
-from the field's resolved `ErrorChannel`. `ErrorRouter.dispatch` lives in the rewrite's
-runtime-support module, walks the cause chain with the legacy matcher logic, and returns either
-the populated payload (schema-mapped) or rethrows (top-level fallback). Top-level handling is a
-vanilla graphql-java `DataFetcherExceptionHandler` installed by `Graphitron.buildSchema`.
-Consumers plug in nothing.
+from the field's resolved `ErrorChannel`. `ErrorRouter.dispatch` is generated alongside the
+fetchers (see open questions; emitted, not shipped as a runtime jar), walks the cause chain
+with the legacy matcher logic, and returns either the populated payload (schema-mapped) or
+rethrows (top-level fallback). Top-level handling is a `DataFetcherExceptionHandler` installed
+by `Graphitron.buildSchema` and described under "Top-level handler" below. Consumers write no
+error-handling Java at all in the common case; the legacy `SchemaBasedErrorStrategy` subclass
+disappears in favour of `@error` directive declarations (see §5's migration table).
 
 #### Concrete dispatch signature
 
@@ -310,7 +364,8 @@ public final class ErrorRouter {
             Function<List<Object>, P> payloadFactory     // (errors) -> payload
     ) throws Throwable { ... }
 
-    public sealed interface Mapping permits ExceptionMapping, SqlStateMapping, VendorCodeMapping {
+    public sealed interface Mapping
+            permits ExceptionMapping, SqlStateMapping, VendorCodeMapping, ValidationMapping {
         Object build(List<String> path, String message);  // constructs the @error instance
     }
 }
@@ -379,15 +434,24 @@ Note on graphql-java's own wrapping: graphql-java internally wraps fetcher excep
 `ErrorRouter.dispatch`. The cause-chain walk handles only the wrappers visible at the fetcher
 boundary (DataLoader's `CompletionException`, jOOQ's `DataAccessException`, etc.).
 
-#### Validation short-circuit precedes channel matching
+#### Validation arm precedes channel matching
 
 Before any `MAPPINGS` iteration, `ErrorRouter.dispatch` checks whether the cause chain
-contains a `ValidationViolationGraphQLException` and rethrows immediately if so (§5). This
-runs ahead of source-order matching below; a `Throwable`-wide `ExceptionHandler` declared
-first cannot intercept a validation violation. Rationale: the carried `GraphQLError`s have a
-shape incompatible with the `@error` payload contract, so routing them through `MAPPINGS`
-would only construct meaningless instances. The arm exists at the top of `dispatch` and is
-not configurable.
+contains a `ValidationViolationGraphQLException`. If so:
+
+- If the channel includes a `ValidationHandler` (the `{handler: VALIDATION}` declaration from
+  §1), the router fans out `getUnderlyingErrors()` into typed instances and returns the
+  populated payload. See §5 for the full contract.
+- If the channel does not include a `ValidationHandler`, the router rethrows immediately
+  without consulting `MAPPINGS`. Top-level emission picks up the carried errors verbatim.
+
+The arm runs ahead of source-order `MAPPINGS` iteration. A `Throwable`-wide `ExceptionHandler`
+declared first cannot shadow it; the validation behaviour is the schema-author-visible
+declaration of intent, not an emergent property of dispatch order. Rationale: the carried
+`GraphQLError`s have a shape incompatible with the regular `(path, message)` factory contract
+when treated as a single error, so dispatching through `MAPPINGS` would only construct one
+meaningless instance from the wrapping exception's message. The fan-out arm and the rethrow
+arm are the only two correct dispositions.
 
 #### Dispatch ordering: source order, first match wins
 
@@ -546,38 +610,79 @@ convention or is emitted alongside the input-type fetcher that calls it. One fil
 dependency, no `<profile>` dance. This is a pom hygiene win, not architectural; flagged here
 only so the parity discussion is complete.
 
-#### `ValidationViolationGraphQLException` path
+#### `ValidationViolationGraphQLException` fan-out (the `VALIDATION` handler runtime)
 
-Legacy `SchemaBasedErrorStrategy` has a dedicated `handleValidationException` arm
-(`SchemaBasedErrorStrategy.java:58-65`) that intercepts `ValidationViolationGraphQLException`
-(an `AbortExecutionException` carrying a list of `GraphQLError`s pre-built by `RecordValidator`).
-The carried `GraphQLError`s do not have the `(path, message)` shape an `@error` payload
-expects, so they cannot be slotted into the same payload factory. The rewrite resolves this by
-treating `ValidationViolationGraphQLException` as a top-level exception, not a schema-mapped
-one:
+Legacy `SchemaBasedErrorStrategy.handleValidationException` is an *abstract* method: every
+consumer subclassed `SchemaBasedErrorStrategy` and wrote a near-identical body that walked
+`ValidationViolationGraphQLException.getUnderlyingErrors()` and constructed N typed `@error`
+instances from each `GraphQLError`'s `(path, message)`. The rewrite encodes that loop in the
+router so the consumer writes zero Java for it. The `VALIDATION` handler kind from §1 is what
+the schema author opts in with.
 
-- When `ErrorRouter.dispatch` sees a `ValidationViolationGraphQLException` anywhere in the
-  cause chain, it does not consult `MAPPINGS` and does not invoke the payload factory. It
-  rethrows. The top-level handler (above) then emits the carried `List<GraphQLError>`
-  verbatim, which is the legacy on-the-wire shape (`GraphQLError`s appear in the response's
-  top-level `errors` array, not inside a payload's `errors` field).
-- The rethrow is unconditional and precedes any `@error`-based matching. A schema author
-  cannot route a validation violation into a typed `@error` payload; the carried errors
-  already have a fixed shape from `RecordValidator`. This matches legacy: the validation arm
-  in `SchemaBasedErrorStrategy.handleValidationException` is implemented per consumer to
-  produce a payload from the carried errors, but the *only* carrier is the validation
-  errors, not application-shaped `@error` instances. The rewrite consolidates by sending
-  them top-level, removing the per-consumer payload-conversion seam.
+When `ErrorRouter.dispatch` sees a `ValidationViolationGraphQLException` anywhere in the cause
+chain, the dispatch differs from the regular one-exception-to-one-error path:
 
-Behaviour shift to document: legacy let consumers override `handleValidationException` to
-synthesise a payload from the `List<GraphQLError>`. The rewrite drops that hook; the
-violations always surface as top-level errors. Real usage of the legacy hook is rare (no
-`graphitron-test` fixture exercises it), but call this out in the spec so consumers
-relying on the override can plan a migration.
+1. Locate the channel's `ValidationHandler`. Per §1's reject rules, at most one exists per
+   channel; per §1's structural rule, the parent `@error` type has the `(List<String> path,
+   String message)` constructor.
+2. Walk `e.getUnderlyingErrors()`. For each carried `GraphQLError`, build a typed instance
+   via `mapping.build(err.getPath().stream().map(Object::toString).toList(), err.getMessage())`.
+   This is the same factory call the regular dispatch uses; only the *number* of calls differs
+   (one per violation instead of one per fetcher).
+3. Hand the resulting `List<Object>` to the payload factory. Same return path as a schema-
+   mapped match.
+
+If the channel has no `ValidationHandler`, the cause-chain walk falls through `MAPPINGS`
+(it won't match any `ExceptionHandler` because `ValidationViolationGraphQLException` is not
+declared there) and the router rethrows. The top-level handler then emits the carried
+`List<GraphQLError>` verbatim into the response's top-level `errors` array (the
+`TopLevelErrorHandler` arm in §3). This preserves the legacy fallback (consumers who returned
+`Optional.empty()` from `handleValidationException` got top-level emission); only the
+schema-mapped path now requires an explicit `VALIDATION` declaration in the schema.
+
+If a schema declares both a `VALIDATION` handler *and* an `ExceptionHandler` whose
+`exceptionClass` is `ValidationViolationGraphQLException` or a supertype (e.g.,
+`AbortExecutionException`, `RuntimeException`, `Throwable`), the `VALIDATION` arm wins
+unconditionally — it runs ahead of `MAPPINGS` iteration so the more general handler cannot
+shadow it. (Schema authors who declare such an `ExceptionHandler` alongside a `VALIDATION`
+handler probably want the `ExceptionHandler` to catch *other* abort-execution causes; the
+spec note in the migration table below covers this.)
 
 The developer-facing flow upstream is unchanged: code calls `recordValidator.validate(...)`,
 which throws `ValidationViolationGraphQLException` if violations exist; the trigger is still
 developer-invoked, and no auto-wiring is added.
+
+#### Migration: legacy override hooks → schema expression
+
+The legacy `CustomSchemaBasedErrorStrategy` subclass with three-or-four override methods is
+the artifact this plan retires. Production override code (canonical example used during the
+spec phase: a Sikt consumer with `UgyldigInput` as the typed validation error) maps directly
+onto schema declarations:
+
+| Legacy override                           | Replacement in rewrite                                                                                                                |
+|-------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------|
+| `handleValidationException(...)`          | Declare `{handler: VALIDATION}` on the relevant `@error` type. Router fans out the violations into typed instances per the rule above. |
+| `handleIllegalArgumentException(...)`     | Declare `{handler: GENERIC, className: "java.lang.IllegalArgumentException"}` on the `@error` type. Regular one-to-one dispatch.       |
+| `createDefaultDataAccessError(...)`       | Declare a *trailing* `{handler: DATABASE}` (no `sqlState`, no `code`) on the channel. §1 lifts to `ExceptionHandler(SQLException)`; §3 source-order makes it the catch-all after specific `SqlStateHandler`/`VendorCodeHandler` entries. |
+| `DataAccessExceptionMapper.getMsgFromException` | Out of scope here. Top-level `DataAccessException` no longer exposes a message (§3 generic-with-UUID); schema-mapped `DataAccessException` uses the `description` on the matched handler or the cause's `getMessage()`. A separate roadmap item can add a per-channel message-transform hook if real usage demands one. |
+
+Concrete before/after for the canonical consumer:
+
+```graphql
+# After (zero Java for the @error path):
+type UgyldigInput @error(handlers: [
+  {handler: VALIDATION},                                                # was handleValidationException
+  {handler: GENERIC, className: "java.lang.IllegalArgumentException"},  # was handleIllegalArgumentException
+  {handler: DATABASE}                                                   # was createDefaultDataAccessError
+]) {
+    path: [String!]!
+    message: String!
+}
+```
+
+The corresponding `CustomSchemaBasedErrorStrategy` subclass deletes; the consumer's only
+remaining Java is the `UgyldigInput(List<String> path, String message)` record itself
+(developer-supplied per §2).
 
 ---
 
@@ -633,6 +738,20 @@ in-scope / out-of-scope, so the spec phase has a concrete checklist.
   the former and a classifier rejection (`UnclassifiedType`) for the latter, since an `@error`
   type with zero handlers is unmatched by anything.
 
+**Net-new fixtures introduced by the rewrite (no legacy counterpart):**
+
+- `validation/`: a single `@error` type with `[{handler: VALIDATION}]`. A pipeline test
+  throws `ValidationViolationGraphQLException` with two underlying `GraphQLError`s and asserts
+  the response payload contains two typed instances, one per violation, each with the
+  violation's `path` and `message`. Covers the §5 fan-out arm.
+- `validationWithFallbacks/`: an `@error` type with the canonical
+  `[{handler: VALIDATION}, {handler: GENERIC, className: "java.lang.IllegalArgumentException"},
+  {handler: DATABASE}]` pattern from the migration table. Three pipeline tests, one per arm.
+  This is the consumer-zero-Java acceptance fixture for the override-retirement story.
+- `validationWithoutHandler/`: a payload whose `@error` type omits `VALIDATION`, with a fetcher
+  that throws `ValidationViolationGraphQLException`. Asserts the violations surface in the
+  response's top-level `errors` array (legacy-compatible fallback per §5's rethrow path).
+
 **Rejected by the classifier (rewrite is stricter; document in spec):**
 
 - `databaseWithCodeAndSqlState/`: legacy ANDed both `code` and `sqlState` silently
@@ -660,10 +779,11 @@ SDL alongside the mutation fixtures (the mutation-bodies fixture-gap closure in
   custom strategy for unrelated reasons (custom subscription dispatch, alternative async
   scheduler) plug it in via the `Consumer<GraphQLSchema.Builder>` slot on `Graphitron.buildSchema`.
 - **Bean-validation triggering.** `RecordValidator` integration with `@Valid`-style
-  bean-validation triggering on input types is out of scope. The current `ValidationViolationGraphQLException`
-  path in legacy converts violations to GraphQL errors after a developer-written caller invokes
-  the validator; the rewrite preserves the same shape (developer-driven; no auto-wire) when the
-  validator class lands.
+  bean-validation triggering on input types is out of scope. The trigger is still
+  developer-invoked: code calls `recordValidator.validate(...)` which throws
+  `ValidationViolationGraphQLException`. The §1 `VALIDATION` handler routes the carried
+  violations into a typed `@error` payload; the trigger-mechanism for *invoking* the
+  validator (auto-wiring, framework integration) is a separate roadmap item.
 - **Reverse-engineering `DataAccessException`.** The matcher unwraps `DataAccessException` to
   reach the nested `SQLException` because legacy depends on `spring-jdbc`. The rewrite runtime
   has no spring dependency; the matcher uses reflective `getCause()` walking the chain instead,
@@ -740,13 +860,16 @@ SDL alongside the mutation fixtures (the mutation-bodies fixture-gap closure in
   `ClassName` plus 3 optional Strings, and JVM constant-folding handles the array literals
   well).
 - **Fixture coverage.** The current `graphitron-test` schema has no `@error` types. Spec phase
-  needs to add at least three `@error` fixtures, one per Handler variant: a `SqlStateHandler`
+  needs to add at least four `@error` fixtures, one per Handler variant: a `SqlStateHandler`
   (sqlState match via a Sakila constraint violation; e.g. `23503` foreign-key on the
   `film_actor` link table), a `VendorCodeHandler` (any vendor-code-bearing fixture, even if
-  Postgres reports `0` at runtime; the parse-side classification is what's exercised), and an
-  `ExceptionHandler` (developer-thrown business exception). The mutation-bodies fixture-gap
-  closure in [`mutations.md`](mutations.md) is the natural place to extend. The full fixture
-  list to reproduce is in the "Legacy fixture coverage" section above.
+  Postgres reports `0` at runtime; the parse-side classification is what's exercised), an
+  `ExceptionHandler` (developer-thrown business exception), and a `ValidationHandler`
+  (`{handler: VALIDATION}` plus a fetcher that throws `ValidationViolationGraphQLException`
+  with two underlying `GraphQLError`s, asserting fan-out into two payload instances). The
+  mutation-bodies fixture-gap closure in [`mutations.md`](mutations.md) is the natural place
+  to extend. The full fixture list to reproduce is in the "Legacy fixture coverage" section
+  above; the new fixtures are listed in "Net-new fixtures introduced by the rewrite" there.
 - **Phase ordering with `mutations.md`.** The author leans toward option (a) in the
   "Relationship to neighbouring items" section: land mutations Phases 2-6 first, then layer
   error-channel emission as a sweep across the new emitters. Rationale: every mutation phase's
