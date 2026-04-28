@@ -258,10 +258,11 @@ keyed by `__typename`, populated at class load time from one entry per
    need.
 4. For a `ColumnsMode` group: builds a `WHERE (col1, col2, ...) IN
    ((v1a, v2a, ...), (v1b, v2b, ...), ...)` clause and runs it
-   against the type's table, projecting `inline("Foo").as("__typename")`
-   alongside the columns the consumer's selection set asked for. The
-   projection mechanism mirrors `QueryNodeFetcher.fetchById` so
-   `resolveType` can read the type back uniformly (next bullet).
+   against the type's table. Projection uses the same per-`__typename`
+   `<TypeName>.$fields(env.getSelectionSet(), table, env)` pattern
+   as bullet (3), with `inline("Foo").as("__typename")` added to the
+   list so `resolveType` can read the type back off each row. One
+   SELECT per group; no cross-`__typename` batching here either.
 5. Returns each result row as a jOOQ `Record` whose synthetic
    `__typename` column carries the GraphQL type name. Order
    preservation: the dispatcher records the input index of each rep
@@ -296,15 +297,21 @@ pre-emptive plumbing is unjustified. (Within `_entities` the
 `(type, alternative, tenantId)` grouping above already gives one
 SELECT per group.)
 
-**`getting-started.md` updates.** The two-arg-form example
-(`getting-started.md:94-105`) currently mentions `fetchEntities` only.
-After this lands, the default `fetchEntities` works for every type
-Graphitron classifies, but a consumer with a hand-rolled
-`fetchEntities` returning POJOs must override `resolveEntityType` too.
-Reword the lead as escape-hatch ("if you have entity types Graphitron
-does not classify, or want non-default resolution") and add a
-one-liner pointing at `resolveEntityType` for the POJO-fetcher case.
-The cosmetic `@link`-wording fix ships with the hygiene pass below.
+**`getting-started.md` updates.** Two changes ship with the
+dispatch landing:
+
+- The two-arg-form example (`getting-started.md:94-105`) currently
+  mentions `fetchEntities` only. After this lands, the default
+  `fetchEntities` works for every type Graphitron classifies, but a
+  consumer with a hand-rolled `fetchEntities` returning POJOs must
+  override `resolveEntityType` too. Reword the lead as escape-hatch
+  ("if you have entity types Graphitron does not classify, or want
+  non-default resolution") and add a one-liner pointing at
+  `resolveEntityType` for the POJO-fetcher case.
+- Cosmetic: the intro line "your SDL opens with `extend schema
+  @link(...)`" understates what the library accepts; a base
+  `schema { ... } @link` also works. Reword to "your SDL declares an
+  `@link` to a federation spec".
 
 **Tests.** The existing string-match tests in
 `GraphitronSchemaClassGeneratorTest.federation_*` stay. New runtime
@@ -455,13 +462,6 @@ disappears. (Side-channelling on `TypeDefinitionRegistry` works too
 but couples a graphql-java type to Graphitron metadata; the context
 is the right home.)
 
-**Doc fix in `getting-started.md` (cosmetic).** The intro line "your
-SDL opens with `extend schema @link(...)`" understates what the
-library accepts; a base `schema { ... } @link` also works. Reword to
-"your SDL declares an `@link` to a federation spec". (The two-arg
-form's example reword ships with the entity-dispatch landing; see the
-implementation section's `getting-started.md` block.)
-
 **Runtime smoke test for the federation `build()` overload.** A unit
 test that compiles the emitted `GraphitronSchema` and invokes
 `build(b -> {}, fed -> {})` against a tiny federated SDL, asserting
@@ -481,9 +481,14 @@ implementer can split or fold at their discretion:
 1. `EntityResolution` model + `FederationKeyFieldsParser` +
    `@node`-implies-`@key(fields: "id")` synthesis. Pure value types
    and classify-time logic, testable in isolation.
-2. `QueryNodeFetcher.rowsNodes` lift to a package-visible static
-   helper that takes `(keys, dsl, selectionSet)` instead of pulling
-   them off a `DataFetchingEnvironment`. No behaviour change.
+2. `QueryNodeFetcher.rowsNodes` per-typeId body lifted to a
+   package-visible static entry point callable for one
+   `__typename` at a time. Today's `rowsNodes` peeks the typeId,
+   groups by typeId, and loops one SELECT per typeId; the entities
+   dispatcher already knows the type per group, so it wants the
+   inner per-type body, not the dispatcher loop. No behaviour
+   change for `Query.nodes`; the existing call wraps the lifted
+   entry point with the same per-typeId grouping.
 3. `EntityFetcherDispatchClassGenerator` plus the schema-builder
    wire-up that replaces the placeholder lambdas, plus
    `getting-started.md` updates.
