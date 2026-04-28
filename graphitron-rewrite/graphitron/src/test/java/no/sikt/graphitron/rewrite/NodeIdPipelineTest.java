@@ -485,6 +485,81 @@ class NodeIdPipelineTest {
         tc.assertions.accept(TestSchemaHelper.buildSchema(tc.sdl, FIXTURE_CTX));
     }
 
+    // ===== Same-table @nodeId filter =====
+
+    /**
+     * Same-table {@code [ID!] @nodeId(typeName: T)} where T maps to the input's own table.
+     * Semantics: filter rows whose composite primary key matches one of the decoded node IDs;
+     * a primary-key IN predicate, not a FK join. The classifier short-circuits before
+     * {@code findUniqueFkToTable(t, t)} (which would always miss) and emits
+     * {@link InputField.NodeIdInFilterField}.
+     */
+    enum InputSameTableNodeIdCase {
+        SAME_TABLE_COMPOSITE_PK(
+            "input `[ID!] @nodeId(typeName: \"Bar\")` on a `bar`-bound input → NodeIdInFilterField "
+                + "with composite PK columns",
+            """
+            type Bar implements Node @table(name: "bar") @node { id: ID! }
+            input BarFilterInput @table(name: "bar") {
+              ids: [ID!] @nodeId(typeName: "Bar")
+            }
+            type Query { x: String }
+            """,
+            schema -> {
+                var tit = (GraphitronType.TableInputType) schema.type("BarFilterInput");
+                var f = (InputField.NodeIdInFilterField) tit.inputFields().stream()
+                    .filter(InputField.NodeIdInFilterField.class::isInstance).findFirst().orElseThrow();
+                assertThat(f.nodeTypeId()).isEqualTo("Bar");
+                assertThat(f.nodeKeyColumns()).extracting(ColumnRef::sqlName)
+                    .containsExactly("id_1", "id_2");
+            }),
+
+        SAME_TABLE_SINGLE_PK(
+            "single-PK same-table case → NodeIdInFilterField with one key column",
+            """
+            type Baz implements Node @table(name: "baz") @node { id: ID! }
+            input BazFilterInput @table(name: "baz") {
+              ids: [ID!] @nodeId(typeName: "Baz")
+            }
+            type Query { x: String }
+            """,
+            schema -> {
+                var tit = (GraphitronType.TableInputType) schema.type("BazFilterInput");
+                var f = (InputField.NodeIdInFilterField) tit.inputFields().stream()
+                    .filter(InputField.NodeIdInFilterField.class::isInstance).findFirst().orElseThrow();
+                assertThat(f.nodeTypeId()).isEqualTo("Baz");
+                assertThat(f.nodeKeyColumns()).extracting(ColumnRef::sqlName)
+                    .containsExactly("id");
+            }),
+
+        SAME_TABLE_TARGET_NOT_NODE(
+            "same-table reference where target table has no @node metadata → UnclassifiedType "
+                + "(no PK columns to encode)",
+            """
+            type Qux @table(name: "qux") { name: String }
+            input QuxFilterInput @table(name: "qux") {
+              ids: [ID!] @nodeId(typeName: "Qux")
+            }
+            type Query { x: String }
+            """,
+            schema -> assertThat(schema.type("QuxFilterInput"))
+                .isInstanceOf(GraphitronType.UnclassifiedType.class));
+
+        final String sdl;
+        final Consumer<GraphitronSchema> assertions;
+        InputSameTableNodeIdCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
+            this.sdl = sdl;
+            this.assertions = assertions;
+        }
+        @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(InputSameTableNodeIdCase.class)
+    void inputSameTableNodeIdClassification(InputSameTableNodeIdCase tc) {
+        tc.assertions.accept(TestSchemaHelper.buildSchema(tc.sdl, FIXTURE_CTX));
+    }
+
     // ===== Output side =====
 
     enum OutputCase {

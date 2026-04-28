@@ -205,6 +205,29 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void films_filteredBySameTableNodeId_returnsRowsMatchingDecodedIds() {
+        // self-table-nodeid-filter.md: [ID!] @nodeId(typeName: "Film") on a film-bound input
+        // → primary-key IN predicate. Encode 2 of the 5 PKs, expect exactly those 2 rows.
+        String id1 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 2);
+        String id3 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 4);
+        Map<String, Object> data = execute(
+            "{ filmsBySameTableNodeId(filter: {filmIds: [\"" + id1 + "\", \"" + id3 + "\"]}) "
+            + "{ filmId title } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmsBySameTableNodeId");
+        assertThat(films).extracting(f -> f.get("filmId")).containsExactlyInAnyOrder(2, 4);
+    }
+
+    @Test
+    void films_filteredBySameTableNodeId_emptyListReturnsAllRows() {
+        // Empty list → DSL.noCondition() (NodeIdEncoder.hasIds returns noCondition on empty).
+        // The filter must not silently collapse to zero rows.
+        Map<String, Object> data = execute(
+            "{ filmsBySameTableNodeId(filter: {filmIds: []}) { filmId } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmsBySameTableNodeId");
+        assertThat(films).hasSize(5);
+    }
+
+    @Test
     void films_filteredByRating() {
         // Test data: ACADEMY DINOSAUR=PG, ACE GOLDFINGER=G, ADAPTATION HOLES=NC_17,
         //            AFFAIR PREJUDICE=G, AGENT TRUMAN=PG

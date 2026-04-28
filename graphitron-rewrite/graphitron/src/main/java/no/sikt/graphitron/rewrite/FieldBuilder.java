@@ -1202,7 +1202,7 @@ class FieldBuilder {
                     // as GeneratedConditionFilter bodyParams (per docs/argument-resolution.md Phase 1).
                     if (!autoSuppressed && !ca.isLookupKey()) {
                         String javaType = javaTypeFor(ca.extraction(), ca.column());
-                        bodyParams.add(new BodyParam(ca.name(), ca.column(), javaType, ca.nonNull(), ca.list(), ca.extraction()));
+                        bodyParams.add(new BodyParam.ColumnEq(ca.name(), ca.column(), javaType, ca.nonNull(), ca.list(), ca.extraction()));
                     }
                     ca.argCondition().ifPresent(ac -> argConditions.add(ac.filter()));
                 }
@@ -1296,6 +1296,19 @@ class FieldBuilder {
                 case InputField.NodeIdField ignored -> {}
                 case InputField.NodeIdReferenceField ignored -> {}
                 case InputField.IdReferenceField ignored -> {}
+                case InputField.NodeIdInFilterField nf -> {
+                    // The body always guards `arg == null || arg.isEmpty()`, so the outer-list
+                    // nullability ([ID!] vs [ID!]!) does not matter for the emitted predicate.
+                    if (implicitBodyParams != null && !enclosingOverride
+                            && !lookupBoundNames.contains(nf.name())) {
+                        implicitBodyParams.add(new BodyParam.NodeIdIn(
+                            nf.name(),
+                            nf.nodeTypeId(),
+                            nf.nodeKeyColumns(),
+                            /* nonNull */ false,
+                            new CallSiteExtraction.NestedInputField(outerArgName, leafPath)));
+                    }
+                }
             }
         }
     }
@@ -1311,7 +1324,7 @@ class FieldBuilder {
                                                String graphqlTypeName, boolean nonNull,
                                                String outerArgName, List<String> leafPath) {
         String javaType = "ID".equals(graphqlTypeName) ? String.class.getName() : column.columnClass();
-        return new BodyParam(fieldName, column, javaType, nonNull, false,
+        return new BodyParam.ColumnEq(fieldName, column, javaType, nonNull, false,
             new CallSiteExtraction.NestedInputField(outerArgName, leafPath));
     }
 

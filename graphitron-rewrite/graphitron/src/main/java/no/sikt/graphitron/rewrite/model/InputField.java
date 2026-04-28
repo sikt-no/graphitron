@@ -19,6 +19,7 @@ public sealed interface InputField extends GraphitronField
         permits InputField.ColumnField, InputField.ColumnReferenceField,
                 InputField.NodeIdField, InputField.NodeIdReferenceField,
                 InputField.IdReferenceField,
+                InputField.NodeIdInFilterField,
                 InputField.NestingField {
 
     /**
@@ -147,6 +148,27 @@ public sealed interface InputField extends GraphitronField
         String fkName,
         String qualifier,
         boolean synthesized
+    ) implements InputField {}
+
+    /**
+     * A {@code [ID!]} field on a {@code @table} input type whose {@code @nodeId(typeName:)}
+     * references the <em>same</em> table as the input itself. Semantics: "filter results to rows
+     * whose composite primary key matches one of these decoded node IDs"; a primary-key IN
+     * predicate, not a FK join.
+     *
+     * <p>The generator decodes each base64 node ID into its component PK column values, then emits
+     * {@code WHERE (pk1, pk2, ...) IN ((v1a, v1b), (v2a, v2b), ...)}. No join path is involved.
+     *
+     * <p>{@code nodeTypeId} and {@code nodeKeyColumns} come from
+     * {@link no.sikt.graphitron.rewrite.JooqCatalog#nodeIdMetadata(String)} on the target table,
+     * which is the same table the enclosing input type already binds to.
+     */
+    record NodeIdInFilterField(
+        String parentTypeName,
+        String name,
+        SourceLocation location,
+        String nodeTypeId,
+        List<ColumnRef> nodeKeyColumns
     ) implements InputField {}
 
     /**

@@ -48,7 +48,7 @@ class ArgumentValidationTest {
             tableField(List.of(new GeneratedConditionFilter("TestConditions", "actorsCondition",
                 new TableRef("film", "FILM", "Film", List.of()),
                 List.of(new CallParam("id", new CallSiteExtraction.Direct(), false, "java.lang.Integer")),
-                List.of(new BodyParam("id", new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"),
+                List.of(new BodyParam.ColumnEq("id", new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"),
                     "java.lang.Integer", false, false, new CallSiteExtraction.Direct()))))),
             List.of()),
 
