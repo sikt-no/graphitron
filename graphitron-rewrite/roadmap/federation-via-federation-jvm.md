@@ -165,13 +165,11 @@ After parsing, the classifier resolves each field name to a
 a `ValidationError` ("@key references unknown field 'X' on type Y").
 
 Tests live alongside the parser. `GraphQLSelectionParser` is left
-untouched. The Backlog [`selection-parser-audit`](selection-parser-audit.md)
-item revisits whether `GraphQLSelectionParser` should be replaced
-with graphql-java's own `Parser`; the federation `fields:` grammar is
-narrower than even graphql-java exposes (no aliases, arguments,
-variables, comments) and a parser bound to the federation rejection
-diagnostics belongs separately regardless of how that audit lands.
-The new `FederationKeyFieldsParser` does not gate on that audit.
+untouched and the new parser stands on its own; the federation
+`fields:` grammar is narrow enough (no nesting, aliases, arguments,
+variables, comments) that a purpose-built parser tied to the
+federation rejection diagnostics is the right shape regardless of
+what happens to the existing selection parser.
 
 **Classify-time wiring.** A new `EntityResolutionBuilder` (in
 `no.sikt.graphitron.rewrite.schema.federation`, alongside
@@ -239,20 +237,25 @@ keyed by `__typename`, populated at class load time from one entry per
    per-id `DataFetchingEnvironment`; the lift is a real surface
    change in `QueryNodeFetcherClassGenerator`, not a free reuse.
 
-   Selection-set scoping caveat: `rowsNodes` projects via
-   `<TypeName>.$fields(env.getSelectionSet(), t, env)`. The
-   `_entities` DFE's selection set is the union of every inline
-   fragment across all `_Entity` types in the query, so each per-type
-   call must extract only the fragment scoped to that `__typename`.
-   The lifted entry point therefore takes a `DataFetchingFieldSelectionSet`
-   that is already narrowed to the type being fetched (or a separate
-   selected-fields list); it cannot pass the raw `_entities`
-   selection set straight through. Implementer's call whether to
-   narrow at the dispatcher (walk the selection set's
-   `getFields("__typename/...")` once per type) or to extend the
-   `<TypeName>.$fields` helper with a per-type-filter overload, but
-   the call site must not assume the federation DFE behaves like a
-   `Query.nodes` DFE.
+   Selection-set projection: dispatch by the rep's `__typename` to
+   the matching `<TypeName>.$fields(env.getSelectionSet(), table,
+   env)`, the same per-participant call shape
+   `TypeFetcherGenerator.buildInterfaceFieldsList` already uses for
+   single-table interfaces (`TypeFetcherGenerator.java:748-766`).
+   graphql-java's `DataFetchingFieldSelectionSet` is type-scoped, so
+   `$fields` walking the unioned `_entities` selection set picks up
+   only the inline fragment scoped to that `__typename`; no extra
+   narrowing step is needed.
+
+   No cross-`__typename` batching: one SELECT per
+   `(type, alternative, tenantId)` group. Reps of different
+   `__typename`s never share a SELECT even when their tables happen
+   to coincide; single-typename grouping keeps the projection
+   logic, the `inline("Foo").as("__typename")` literal, and the
+   `<TypeName>.$fields` invocation each pinned to a single type. A
+   future cross-type union (when the table and key columns match) is
+   a follow-up if a real consumer's `_entities` shape surfaces the
+   need.
 4. For a `ColumnsMode` group: builds a `WHERE (col1, col2, ...) IN
    ((v1a, v2a, ...), (v1b, v2b, ...), ...)` clause and runs it
    against the type's table, projecting `inline("Foo").as("__typename")`
