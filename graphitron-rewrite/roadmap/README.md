@@ -21,11 +21,11 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | Mutation bodies | Spec | [plan](mutations.md) |
 | Fold graphitron.sikt.no into the Maven build (AsciiDoc + GitHub Pages) | Spec | [plan](docs-site-asciidoc.md) |
 | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
-| `Set<T>` parent-keys on `@service` methods → `MappedBatchLoader` | Ready | [plan](set-parent-keys-on-service.md) |
 | Docs as an index into classification tests | Ready (deferred) | [plan](docs-as-index-into-tests.md) |
 | Java LSP rewrite + introspect retirement + `dev` goal | Ready | [plan](graphitron-lsp.md) |
 | Stub #3: Interface / union fetchers | In Progress | [plan](stub-interface-union-fetchers.md) |
 | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` | In Progress | [plan](retire-maven-plugin.md) |
+| `Set<T>` parent-keys on `@service` methods → `MappedBatchLoader` | In Review | [plan](set-parent-keys-on-service.md) |
 | Load-bearing classifier guarantee audit annotations | In Review | [plan](load-bearing-guarantee-audit.md) |
 
 ---

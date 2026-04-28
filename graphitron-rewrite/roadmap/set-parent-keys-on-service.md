@@ -1,6 +1,6 @@
 ---
 title: "`Set<T>` parent-keys on `@service` methods → `MappedBatchLoader`"
-status: Ready
+status: In Review
 bucket: architecture
 priority: 7
 ---
