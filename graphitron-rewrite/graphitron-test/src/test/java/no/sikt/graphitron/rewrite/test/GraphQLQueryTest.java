@@ -1781,6 +1781,26 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void nodes_idAndOtherFieldsTogether_resolvesBothFromSingleProjection() {
+        // Locks down the duplicate-projection invariant: when the GraphQL selection includes
+        // `id`, $fields adds the nodeKey columns, and rowsNodes also needs them for the
+        // result-scatter encode. The generator dedups so each key column is projected once;
+        // both the generated `id` resolver (NodeIdEncoder.encode(typeId, r.get(t.<col>))) and
+        // the encode call inside rowsNodes read the same column. Asserting the encoded id
+        // equals the canonical encode of the seeded customer_id verifies both reads agree.
+        String c1 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 1);
+        Map<String, Object> data = execute(
+            "{ nodes(ids: [\"" + c1 + "\"]) {"
+            + " __typename id ... on Customer { firstName customerId } } }");
+        List<Map<String, Object>> nodes = (List<Map<String, Object>>) data.get("nodes");
+        assertThat(nodes).hasSize(1);
+        assertThat(nodes.get(0).get("__typename")).isEqualTo("Customer");
+        assertThat(nodes.get(0).get("id")).isEqualTo(c1);
+        assertThat(nodes.get(0).get("firstName")).isEqualTo("Mary");
+        assertThat(nodes.get(0).get("customerId")).isEqualTo(1);
+    }
+
+    @Test
     void nodes_singleTenant_oneSqlQueryPerTypeId() {
         // 3 customer ids + 2 film ids in the default empty-tenant loader: expect exactly 2
         // SQL queries (one Customer batch + one Film batch). N+1 / per-id dispatch would be
