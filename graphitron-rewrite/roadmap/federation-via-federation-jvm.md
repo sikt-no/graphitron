@@ -1,6 +1,6 @@
 ---
 title: "Apollo Federation via federation-jvm transform"
-status: Spec
+status: Ready
 priority: 1
 ---
 
@@ -495,6 +495,41 @@ implementer can split or fold at their discretion:
 
 The runtime half is what consumers see, so don't sit on (1) and (2)
 for long.
+
+## User documentation (draft)
+
+Two targeted changes to `getting-started.md`; draft text below.
+
+**Revised `@link` intro (replaces line 81).**
+
+> When your SDL declares an `@link` to a federation spec,
+> `Graphitron.buildSchema(...)` returns the federation-wrapped schema directly:
+
+*(Previously overstated the form: `extend schema @link(...)` is not the only
+accepted shape; a base `schema { ... } @link(...)` also works.)*
+
+**Revised escape-hatch paragraph (replaces lines 94-105).**
+
+> For every type Graphitron classifies, `_entities` resolution is wired
+> automatically: `@node` types route through the NodeId path; types with a
+> `@key` directive route through a column-value lookup. No extra wiring is
+> needed beyond the existing `buildSchema(b -> {})` call.
+>
+> If you have entity types Graphitron does not classify (hand-rolled objects,
+> types pulled in from a non-Graphitron source, or POJOs without a `__typename`
+> column), override the defaults via the two-arg form:
+>
+> ```java
+> GraphQLSchema schema = Graphitron.buildSchema(
+>     b -> {},
+>     fed -> fed.fetchEntities(myCustomFetcher)
+>               .resolveEntityType(myTypeResolver));
+> ```
+>
+> If `fetchEntities` returns POJOs, you must also supply `resolveEntityType`;
+> the default resolver reads `__typename` off jOOQ `Record`s and `Map`s only.
+> The federation builder arrives pre-configured with Graphitron's resolvers; the
+> customizer adds or replaces on top.
 
 ## Non-goals
 
