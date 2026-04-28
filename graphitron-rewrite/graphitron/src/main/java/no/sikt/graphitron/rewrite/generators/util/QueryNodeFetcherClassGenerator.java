@@ -219,6 +219,15 @@ public class QueryNodeFetcherClassGenerator {
             rowsNodes.addStatement("$T fields = new $T($T.$$fields(env.getSelectionSet(), t, env))",
                 arrayListOfField, arrayListOfField, typeClass);
             rowsNodes.addStatement("fields.add($T.inline($S).as($S))", DSL, nt.name(), TYPENAME_COLUMN);
+            // Always project the nodeKey columns: rowsNodes encodes each result row back to its
+            // canonical id via NodeIdEncoder.encode for the position scatter, so the columns
+            // must be in the result regardless of what the GraphQL selection requested.
+            // $fields only adds them when the selection includes `id`, so a query like
+            // `nodes(ids: [...]) { ... on Customer { firstName } }` would otherwise fail with
+            // "field is not contained in row type" on the encode call.
+            for (var col : nt.nodeKeyColumns()) {
+                rowsNodes.addStatement("fields.add(t.$L)", col.javaName());
+            }
             var hasIdsArgs = CodeBlock.builder().add("$S, typeIds", nt.typeId());
             for (var col : nt.nodeKeyColumns()) {
                 hasIdsArgs.add(", t.$L", col.javaName());

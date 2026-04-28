@@ -125,6 +125,23 @@ class GraphQLQueryTest {
         return graphql.execute(input);
     }
 
+    /**
+     * Executes a query with a caller-supplied {@link GraphitronContext} (e.g. one whose
+     * {@code getTenantId} partitions per id). Asserts no errors. Used by the
+     * {@code Query.nodes} per-tenant fan-out test.
+     */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> executeWithContext(String query, GraphitronContext context) {
+        var input = ExecutionInput.newExecutionInput()
+            .query(query)
+            .graphQLContext(builder -> builder.put(GraphitronContext.class, context))
+            .dataLoaderRegistry(new org.dataloader.DataLoaderRegistry())
+            .build();
+        var result = graphql.execute(input);
+        assertThat(result.getErrors()).isEmpty();
+        return result.getData();
+    }
+
     // ===== Multi-field root query =====
 
     @Test
@@ -1647,6 +1664,169 @@ class GraphQLQueryTest {
         String fwd = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Foo", "1", "2");
         String rev = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Foo", "2", "1");
         assertThat(fwd).isNotEqualTo(rev);
+    }
+
+    // ===== Query.nodes — Relay batch dispatch =====
+
+    @Test
+    void nodes_emptyIds_returnsEmptyList() {
+        Map<String, Object> data = execute("{ nodes(ids: []) { __typename } }");
+        assertThat((List<?>) data.get("nodes")).isEmpty();
+    }
+
+    @Test
+    void nodes_mixedTypeIds_resolvesEachAndPreservesOrder() {
+        // Mixing typeIds in one call exercises the per-typeId hasIds branch in rowsNodes:
+        // each typeId becomes one query, results scatter back to original positions.
+        String c1 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 1);
+        String f1 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 1);
+        String c2 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 2);
+        Map<String, Object> data = execute(
+            "{ nodes(ids: [\"" + c1 + "\", \"" + f1 + "\", \"" + c2 + "\"]) {"
+            + " __typename ... on Customer { firstName } ... on Film { title } } }");
+        List<Map<String, Object>> nodes = (List<Map<String, Object>>) data.get("nodes");
+        assertThat(nodes).hasSize(3);
+        assertThat(nodes.get(0).get("__typename")).isEqualTo("Customer");
+        assertThat(nodes.get(0).get("firstName")).isEqualTo("Mary");
+        assertThat(nodes.get(1).get("__typename")).isEqualTo("Film");
+        assertThat(nodes.get(1).get("title")).isEqualTo("ACADEMY DINOSAUR");
+        assertThat(nodes.get(2).get("__typename")).isEqualTo("Customer");
+        assertThat(nodes.get(2).get("firstName")).isEqualTo("Patricia");
+    }
+
+    @Test
+    void nodes_garbageId_returnsNullEntry() {
+        // Malformed base64 — null at that position, others still resolve.
+        String c1 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 1);
+        Map<String, Object> data = execute(
+            "{ nodes(ids: [\"" + c1 + "\", \"not-a-valid-base64-id\"]) {"
+            + " __typename ... on Customer { firstName } } }");
+        List<Map<String, Object>> nodes = (List<Map<String, Object>>) data.get("nodes");
+        assertThat(nodes).hasSize(2);
+        assertThat(nodes.get(0).get("firstName")).isEqualTo("Mary");
+        assertThat(nodes.get(1)).isNull();
+    }
+
+    @Test
+    void nodes_unknownTypeId_returnsNullEntry() {
+        // typeId prefix no NodeType claims — null at that position (Relay spec).
+        String unknown = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("NotARegisteredType", "1");
+        String c1 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 1);
+        Map<String, Object> data = execute(
+            "{ nodes(ids: [\"" + unknown + "\", \"" + c1 + "\"]) {"
+            + " __typename ... on Customer { firstName } } }");
+        List<Map<String, Object>> nodes = (List<Map<String, Object>>) data.get("nodes");
+        assertThat(nodes).hasSize(2);
+        assertThat(nodes.get(0)).isNull();
+        assertThat(nodes.get(1).get("firstName")).isEqualTo("Mary");
+    }
+
+    @Test
+    void nodes_validPrefixNoSuchRow_returnsNullEntry() {
+        // Registered typeId but the row doesn't exist — null at that position.
+        String missing = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 999999);
+        String c1 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 1);
+        Map<String, Object> data = execute(
+            "{ nodes(ids: [\"" + c1 + "\", \"" + missing + "\"]) {"
+            + " __typename ... on Customer { firstName } } }");
+        List<Map<String, Object>> nodes = (List<Map<String, Object>>) data.get("nodes");
+        assertThat(nodes).hasSize(2);
+        assertThat(nodes.get(0).get("firstName")).isEqualTo("Mary");
+        assertThat(nodes.get(1)).isNull();
+    }
+
+    @Test
+    void nodes_paddedBase64Id_canonicalizesAndResolves() {
+        // Regression test for the canonicalisation fix: encoder emits no-padding URL base64,
+        // but the decoder accepts padded input where the total length is 4-byte-aligned.
+        // "Customer:1" (10 bytes) encodes to 14 chars unpadded; padding to 16 chars adds "==".
+        // Without canonicalize, rowsNodes keys positions by the literal padded id but encode()
+        // produces the no-padding form, so the result row would never match the requested
+        // position and result[i] would stay null. Pre-fix, nodes(ids:) silently disagreed with
+        // node(id:) on inputs the decoder accepts.
+        String canonical = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 1);
+        String padded = canonical + "==";
+        // Sanity: the padded form must round-trip via node(id:) too — pre-existing decoder
+        // leniency. If this assertion fails, the encoder changed and the test premise no
+        // longer holds.
+        Map<String, Object> nodeData = execute(
+            "{ node(id: \"" + padded + "\") { __typename ... on Customer { firstName } } }");
+        assertThat(((Map<String, Object>) nodeData.get("node")).get("firstName")).isEqualTo("Mary");
+
+        Map<String, Object> data = execute(
+            "{ nodes(ids: [\"" + padded + "\"]) {"
+            + " __typename ... on Customer { firstName } } }");
+        List<Map<String, Object>> nodes = (List<Map<String, Object>>) data.get("nodes");
+        assertThat(nodes).hasSize(1);
+        assertThat(nodes.get(0)).as("padded id must resolve under nodes(ids:)").isNotNull();
+        assertThat(nodes.get(0).get("__typename")).isEqualTo("Customer");
+        assertThat(nodes.get(0).get("firstName")).isEqualTo("Mary");
+    }
+
+    @Test
+    void nodes_duplicateIds_recordRepeatsAtAllPositions() {
+        // ids = [c1, c2, c1] — DataLoader caching dedups into the batch so the SQL hits the
+        // row once; the result fans back to all three positions. Asserts both shape (length 3,
+        // matching records) and that the duplicate slot is the same record value.
+        String c1 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 1);
+        String c2 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 2);
+        Map<String, Object> data = execute(
+            "{ nodes(ids: [\"" + c1 + "\", \"" + c2 + "\", \"" + c1 + "\"]) {"
+            + " __typename ... on Customer { firstName lastName } } }");
+        List<Map<String, Object>> nodes = (List<Map<String, Object>>) data.get("nodes");
+        assertThat(nodes).hasSize(3);
+        assertThat(nodes.get(0).get("firstName")).isEqualTo("Mary");
+        assertThat(nodes.get(1).get("firstName")).isEqualTo("Patricia");
+        assertThat(nodes.get(2).get("firstName")).isEqualTo("Mary");
+    }
+
+    @Test
+    void nodes_singleTenant_oneSqlQueryPerTypeId() {
+        // 3 customer ids + 2 film ids in the default empty-tenant loader: expect exactly 2
+        // SQL queries (one Customer batch + one Film batch). N+1 / per-id dispatch would be
+        // 5; cross-typeId merge would be 1 against an impossible UNION query.
+        String c1 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 1);
+        String c2 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 2);
+        String c3 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 3);
+        String f1 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 1);
+        String f2 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 2);
+
+        QUERY_COUNT.set(0);
+        execute("{ nodes(ids: [\"" + c1 + "\", \"" + f1 + "\", \"" + c2 + "\", \"" + f2 + "\", \"" + c3 + "\"]) { __typename } }");
+        assertThat(QUERY_COUNT.get()).isEqualTo(2);
+    }
+
+    @Test
+    void nodes_perTenantPartition_separateBatchPerTenant() {
+        // Custom GraphitronContext maps each id to a tenant. 4 customer ids, 2 per tenant.
+        // Expect 2 SQL queries (one Customer batch per tenant). The cbbc103 bug (resolve
+        // tenant against the outer ids[] argument) would put all four into one loader → 1
+        // query. Broken batching would be 4.
+        String c1 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 1);
+        String c2 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 2);
+        String c3 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 3);
+        String c4 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 4);
+        Map<String, String> idToTenant = Map.of(
+            c1, "tenantA", c3, "tenantA",
+            c2, "tenantB", c4, "tenantB");
+
+        var perIdTenantContext = new GraphitronContext() {
+            @Override public DSLContext getDslContext(DataFetchingEnvironment env) { return dsl; }
+            @Override public <T> T getContextArgument(DataFetchingEnvironment env, String name) { return null; }
+            @Override public String getTenantId(DataFetchingEnvironment env) {
+                String id = env.getArgument("id");
+                return id == null ? "" : idToTenant.getOrDefault(id, "");
+            }
+        };
+
+        QUERY_COUNT.set(0);
+        executeWithContext(
+            "{ nodes(ids: [\"" + c1 + "\", \"" + c2 + "\", \"" + c3 + "\", \"" + c4 + "\"]) {"
+            + " __typename ... on Customer { firstName } } }",
+            perIdTenantContext);
+        assertThat(QUERY_COUNT.get())
+            .as("two tenants, one Customer batch each")
+            .isEqualTo(2);
     }
 
     @Test
