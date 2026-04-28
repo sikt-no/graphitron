@@ -48,15 +48,20 @@ public class QueryNodeFetcherClassGenerator {
     public static final String NODE_INTERFACE_NAME       = "Node";
 
     private static final ClassName ENV                    = ClassName.get("graphql.schema", "DataFetchingEnvironment");
-    private static final ClassName DATA_FETCHING_ENV_IMPL = ClassName.get("graphql.schema", "DataFetchingEnvironmentImpl");
     private static final ClassName LIST                   = ClassName.get("java.util", "List");
     private static final ClassName MAP                    = ClassName.get("java.util", "Map");
     private static final ClassName RECORD                 = ClassName.get("org.jooq", "Record");
-    private static final ClassName DSL_CONTEXT       = ClassName.get("org.jooq", "DSLContext");
-    private static final ClassName FIELD             = ClassName.get("org.jooq", "Field");
-    private static final ClassName DSL               = ClassName.get("org.jooq.impl", "DSL");
-    private static final ClassName ARRAY_LIST        = ClassName.get("java.util", "ArrayList");
-    private static final ClassName CODE_REGISTRY_BLDR = ClassName.get("graphql.schema", "GraphQLCodeRegistry", "Builder");
+    private static final ClassName DSL_CONTEXT            = ClassName.get("org.jooq", "DSLContext");
+    private static final ClassName FIELD                  = ClassName.get("org.jooq", "Field");
+    private static final ClassName DSL                    = ClassName.get("org.jooq.impl", "DSL");
+    private static final ClassName ARRAY_LIST             = ClassName.get("java.util", "ArrayList");
+    private static final ClassName LINKED_HASH_MAP        = ClassName.get("java.util", "LinkedHashMap");
+    private static final ClassName ARRAYS                 = ClassName.get("java.util", "Arrays");
+    private static final ClassName COMPLETABLE_FUTURE     = ClassName.get("java.util.concurrent", "CompletableFuture");
+    private static final ClassName DATA_LOADER            = ClassName.get("org.dataloader", "DataLoader");
+    private static final ClassName DATA_LOADER_FACTORY    = ClassName.get("org.dataloader", "DataLoaderFactory");
+    private static final ClassName BATCH_LOADER_ENV       = ClassName.get("org.dataloader", "BatchLoaderEnvironment");
+    private static final ClassName CODE_REGISTRY_BLDR     = ClassName.get("graphql.schema", "GraphQLCodeRegistry", "Builder");
 
     public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage, String jooqPackage) {
         var nodeTypes = schema.types().values().stream()
@@ -119,30 +124,93 @@ public class QueryNodeFetcherClassGenerator {
             .addStatement("return fetchById(env, id)")
             .build();
 
-        var listOfString = ParameterizedTypeName.get(LIST, ClassName.get(String.class));
-        var listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
-        // Each id gets its own DataFetchingEnvironment with arguments = {"id": id} so that
-        // getDslContext inside fetchById can determine the correct tenant for each individual ID.
+        var STRING_CLASS    = ClassName.get(String.class);
+        var INTEGER_CLASS   = ClassName.get(Integer.class);
+        var listOfString    = ParameterizedTypeName.get(LIST, STRING_CLASS);
+        var listOfRecord    = ParameterizedTypeName.get(LIST, RECORD);
+        var listOfInteger   = ParameterizedTypeName.get(LIST, INTEGER_CLASS);
+        var cfRecord        = ParameterizedTypeName.get(COMPLETABLE_FUTURE, RECORD);
+        var cfListRecord    = ParameterizedTypeName.get(COMPLETABLE_FUTURE, listOfRecord);
+        var listOfCfRecord  = ParameterizedTypeName.get(LIST, cfRecord);
+        var loaderType      = ParameterizedTypeName.get(DATA_LOADER, STRING_CLASS, RECORD);
+        var mapStrListInt   = ParameterizedTypeName.get(MAP, STRING_CLASS, listOfInteger);
+        var mapStrListStr   = ParameterizedTypeName.get(MAP, STRING_CLASS, listOfString);
+
         var dispatchNodes = MethodSpec.methodBuilder(DISPATCH_NODES_METHOD)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(listOfRecord)
+            .returns(cfListRecord)
             .addParameter(ENV, "env")
-            .addJavadoc("Dispatches a Relay {@code Query.nodes(ids:)} call, fanning out to\n"
-                + "{@link #fetchById} per id. Each id gets its own\n"
-                + "{@link DataFetchingEnvironment} so tenant-scoped {@code getDslContext} calls\n"
-                + "resolve correctly. Returns {@code null} entries for null/garbage/unknown IDs\n"
-                + "(Relay spec).\n")
+            .addJavadoc("Dispatches a Relay {@code Query.nodes(ids:)} call via a DataLoader keyed\n"
+                + "by {@code getTenantId + path}. The batch function calls {@link #rowsNodes},\n"
+                + "which groups IDs by typeId and executes one query per type.\n"
+                + "Returns {@code null} entries for null/garbage/unknown IDs (Relay spec).\n")
             .addStatement("$T ids = env.getArgument($S)", listOfString, "ids")
-            .addStatement("if (ids == null || ids.isEmpty()) return $T.of()", LIST)
-            .addCode("return ids.stream()\n")
-            .addCode("    .map(id -> {\n")
-            .addCode("        if (id == null) return null;\n")
-            .addCode("        $T singleEnv = $T.newDataFetchingEnvironment(env).arguments($T.of($S, id)).build();\n",
-                ENV, DATA_FETCHING_ENV_IMPL, MAP, "id")
-            .addCode("        return fetchById(singleEnv, id);\n")
-            .addCode("    })\n")
+            .addStatement("if (ids == null || ids.isEmpty()) return $T.completedFuture($T.of())", COMPLETABLE_FUTURE, LIST)
+            .addStatement("$T name = graphitronContext(env).getTenantId(env) + $S + $T.join($S, env.getExecutionStepInfo().getPath().getKeysOnly())",
+                String.class, "/", String.class, "/")
+            .addCode("$T loader = env.getDataLoaderRegistry().computeIfAbsent(name, k ->\n", loaderType)
+            .addCode("    $T.newDataLoader(($T keys, $T batchEnv) -> {\n", DATA_LOADER_FACTORY, listOfString, BATCH_LOADER_ENV)
+            .addCode("        $T dfe = ($T) batchEnv.getKeyContextsList().get(0);\n", ENV, ENV)
+            .addCode("        return $T.completedFuture(rowsNodes(keys, dfe));\n", COMPLETABLE_FUTURE)
+            .addCode("    }));\n")
+            .addCode("$T futures = ids.stream()\n", listOfCfRecord)
+            .addCode("    .map(id -> id == null ? $T.completedFuture(($T) null) : loader.load(id, env))\n", COMPLETABLE_FUTURE, RECORD)
             .addCode("    .toList();\n")
+            .addCode("return $T.allOf(futures.toArray(new $T[0]))\n", COMPLETABLE_FUTURE, COMPLETABLE_FUTURE)
+            .addCode("    .thenApply(v -> futures.stream().map($T::join).toList());\n", COMPLETABLE_FUTURE)
             .build();
+
+        // rowsNodes: batch fetch for the DataLoader. Groups keys by typeId and executes one
+        // query per type via hasIds, then maps results back to original positions using encode.
+        var rowsNodes = MethodSpec.methodBuilder("rowsNodes")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(listOfRecord)
+            .addParameter(listOfString, "keys")
+            .addParameter(ENV, "env")
+            .addStatement("$T[] result = new $T[keys.size()]", RECORD, RECORD)
+            .addStatement("$T positions = new $T<>()", mapStrListInt, LINKED_HASH_MAP)
+            .beginControlFlow("for (int i = 0; i < keys.size(); i++)")
+            .addStatement("$T id = keys.get(i)", STRING_CLASS)
+            .addStatement("if (id != null) positions.computeIfAbsent(id, k -> new $T<>()).add(i)", ARRAY_LIST)
+            .endControlFlow()
+            .addStatement("$T byType = new $T<>()", mapStrListStr, LINKED_HASH_MAP)
+            .beginControlFlow("for ($T id : keys)", STRING_CLASS)
+            .addStatement("if (id == null) continue")
+            .addStatement("$T typeId = $T.peekTypeId(id)", STRING_CLASS, nodeIdEncoder)
+            .addStatement("if (typeId != null) byType.computeIfAbsent(typeId, k -> new $T<>()).add(id)", ARRAY_LIST)
+            .endControlFlow()
+            .addStatement("$T dsl = graphitronContext(env).getDslContext(env)", DSL_CONTEXT);
+
+        for (var nt : nodeTypes) {
+            var jooqTableClass = ClassName.get(jooqPackage + ".tables", nt.table().javaClassName());
+            var typeClass      = ClassName.get(outputPackage + ".types", nt.name());
+            String tableSingleton = nt.table().javaFieldName();
+            rowsNodes.beginControlFlow("if (!byType.getOrDefault($S, $T.of()).isEmpty())", nt.typeId(), LIST);
+            rowsNodes.addStatement("$T typeIds = byType.get($S)", listOfString, nt.typeId());
+            rowsNodes.addStatement("$T t = $T.$L", jooqTableClass, jooqTableClass, tableSingleton);
+            rowsNodes.addStatement("$T fields = new $T($T.$$fields(env.getSelectionSet(), t, env))",
+                arrayListOfField, arrayListOfField, typeClass);
+            rowsNodes.addStatement("fields.add($T.inline($S).as($S))", DSL, nt.name(), TYPENAME_COLUMN);
+            var hasIdsArgs = CodeBlock.builder().add("$S, typeIds", nt.typeId());
+            for (var col : nt.nodeKeyColumns()) {
+                hasIdsArgs.add(", t.$L", col.javaName());
+            }
+            rowsNodes.beginControlFlow("for ($T r : dsl.select(fields).from(t).where($T.hasIds($L)).fetch())",
+                RECORD, nodeIdEncoder, hasIdsArgs.build());
+            var encodeArgs = CodeBlock.builder().add("$S", nt.typeId());
+            for (var col : nt.nodeKeyColumns()) {
+                encodeArgs.add(", r.get(t.$L)", col.javaName());
+            }
+            rowsNodes.addStatement("$T encodedId = $T.encode($L)", STRING_CLASS, nodeIdEncoder, encodeArgs.build());
+            rowsNodes.addStatement("$T idxs = positions.get(encodedId)", listOfInteger);
+            rowsNodes.beginControlFlow("if (idxs != null)");
+            rowsNodes.addStatement("for (int idx : idxs) result[idx] = r");
+            rowsNodes.endControlFlow();
+            rowsNodes.endControlFlow(); // for r
+            rowsNodes.endControlFlow(); // if !isEmpty
+        }
+
+        rowsNodes.addStatement("return $T.asList(result)", ARRAYS);
 
         var contextHelper = MethodSpec.methodBuilder("graphitronContext")
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
@@ -179,6 +247,7 @@ public class QueryNodeFetcherClassGenerator {
             .addMethod(dispatchNodes)
             .addMethod(registerResolver)
             .addMethod(fetchById.build())
+            .addMethod(rowsNodes.build())
             .addMethod(contextHelper)
             .build();
         return List.of(spec);
