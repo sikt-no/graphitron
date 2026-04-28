@@ -56,7 +56,14 @@ public class GraphitronContextInterfaceGenerator {
             .addJavadoc("Returns the tenant identifier for the current request, or an empty string\n"
                 + "when tenant scoping does not apply. Graphitron concatenates this with the field\n"
                 + "path to build DataLoader names; two tenants issuing the same query must not\n"
-                + "share a DataLoader cache.\n")
+                + "share a DataLoader cache.\n"
+                + "\n"
+                + "<p>If your {@link #getDslContext} returns different contexts within one request\n"
+                + "(e.g. selected per id), {@code getTenantId} MUST partition by the same key.\n"
+                + "Graphitron uses the first key context's {@code DSLContext} for the entire batch,\n"
+                + "so keys colliding into one loader silently fall back to whichever id was\n"
+                + "submitted first. The default empty-string fallback assumes a single\n"
+                + "{@code DSLContext} for the request.\n")
             .build();
 
         var spec = TypeSpec.interfaceBuilder(CLASS_NAME)
