@@ -60,35 +60,43 @@ snapshots, matches how field-level classify-time output is already
 threaded, and confines federation knowledge to one map.
 
 ```java
-record EntityResolution(String typeName, List<KeyAlternative> alternatives) {}
+record EntityResolution(String typeName, TableRef table, List<KeyAlternative> alternatives) {}
 
 record KeyAlternative(
     List<String> requiredFields,
+    List<ColumnRef> columns,
     boolean resolvable,
-    Mode mode
+    KeyShape shape
 ) {
-    sealed interface Mode permits NodeIdMode, ColumnsMode {}
-
-    /** Decode requiredFields[0] as a base64 typed NodeId; route through
-     *  NodeIdEncoder + the per-type SELECT path used by Query.node(s). */
-    record NodeIdMode(String nodeTypeId, List<ColumnRef> nodeKeyColumns) implements Mode {}
-
-    /** Treat each requiredField as a literal column value; route through
-     *  a per-type SELECT-by-columns helper emitted alongside the dispatch. */
-    record ColumnsMode(TableRef table, List<ColumnRef> columns) implements Mode {}
+    /**
+     * Maps the rep's required-field values to the column values used by
+     * the SELECT. Two shapes; the dispatch path is otherwise identical
+     * (`Query.node` / `Query.nodes` and `_entities` all hit the same
+     * per-type SELECT-by-columns emitter, see "Runtime emission" below).
+     */
+    enum KeyShape {
+        /** requiredFields.size() == columns.size(); rep field values map
+         *  index-by-index to column values. Consumer-declared @key path. */
+        DIRECT,
+        /** requiredFields == ["id"]; the rep's id is a base64 NodeId
+         *  decoded by NodeIdEncoder into the columns list. @node path
+         *  (whether synthesised or carried by an explicit
+         *  `@key(fields: "id")` on a @node type). */
+        NODE_ID
+    }
 }
 ```
 
 Treat `@node` as implying `@key(fields: "id", resolvable: true)` with
-`NodeIdMode`: at classify time, every `NodeType` gets a synthesised
-alternative `KeyAlternative(["id"], true, NodeIdMode(...))`.
-Consumer-declared `@key` directives become `KeyAlternative(parsedFields,
-parsedResolvable, ColumnsMode(...))`.
+`NODE_ID` shape: at classify time, every `NodeType` gets a synthesised
+alternative `KeyAlternative(["id"], <node-key-columns>, true, NODE_ID)`.
+Consumer-declared `@key` directives become
+`KeyAlternative(parsedFields, <resolved-columns>, parsedResolvable, DIRECT)`.
 
 When a `@node` type also carries an explicit `@key(fields: "id", ...)`,
 dedup by **dropping the synthesised alternative and promoting the
-consumer's**: keep `parsedResolvable` from the directive and rewrite
-its `Mode` to `NodeIdMode(...)` so the dispatcher still routes through
+consumer's**: keep `parsedResolvable` from the directive and pin the
+shape to `NODE_ID` so the dispatcher still decodes `"id"` through
 `NodeIdEncoder` rather than treating the literal `"id"` string as a
 column value. This preserves the documented opt-out path (a consumer
 who writes `@key(fields: "id", resolvable: false)` keeps the type out
@@ -180,18 +188,23 @@ what happens to the existing selection parser.
 `entitiesByType` sidecar map (see "Classify-time model" above), keyed
 by GraphQL type name.
 
-For `ColumnsMode` resolution, `EntityResolutionBuilder` resolves each
-parsed field name to a `ColumnRef` against the type's `@table` by the
-same name-to-column mapping used by `@lookupKey` arg resolution. An
-unresolvable field name becomes a `ValidationError` (see above).
-`@key` on a `TableInterfaceType` is rejected at this point (see
-non-goals). Reuse of the *classification* helper
-(`BuildContext.resolveColumnByName` and neighbours) is real; reuse of
-the *generation* path (`LookupValuesJoinEmitter`,
-`LookupMapping.ColumnMapping`) is *not* straightforward because those
-are rooted at GraphQL argument names. Plan for a fresh per-type
-SELECT-by-columns emitter (next paragraph), not a `LookupMapping`
-reuse.
+For `DIRECT`-shape alternatives, `EntityResolutionBuilder` resolves
+each parsed field name to a `ColumnRef` against the type's `@table` by
+the same name-to-column mapping used by `@lookupKey` arg resolution.
+An unresolvable field name becomes a `ValidationError` (see above).
+For `NODE_ID`-shape alternatives, the columns list is the type's
+existing node-key columns (already classified onto `NodeType`), reused
+verbatim. `@key` on a `TableInterfaceType` is rejected at this point
+(see non-goals).
+
+Reuse of the *classification* helper (`BuildContext.resolveColumnByName`
+and neighbours) is real. Reuse of the *generation* path
+(`LookupValuesJoinEmitter`, `LookupMapping.ColumnMapping`) is not a
+drop-in: those are rooted at GraphQL argument names. The dispatcher's
+SELECT emitter is a sibling that shares the same SQL shape (a
+`VALUES (idx, col1, col2, ...)` derived table joined to the target
+table, ordered by `idx`; see "Runtime emission" below) without going
+through the argument-name plumbing.
 
 **Runtime emission.** `GraphitronSchemaClassGenerator` replaces the
 two-arg `build()`'s placeholder lambdas with calls into a new
@@ -228,64 +241,84 @@ keyed by `__typename`, populated at class load time from one entry per
    rows or violate tenant isolation, depending on how the consumer's
    `getTenantId`/`getDslContext` wires up; partition before issuing
    SQL.
-3. For a `NodeIdMode` group: peeks the typeId off each rep's `id`
-   value via `NodeIdEncoder.peekTypeId`, then issues the same
-   `hasIds(typeId, ids, keyColumns)` SELECT used by
-   `QueryNodeFetcher.rowsNodes`. Reuse here requires lifting
-   `rowsNodes` (or a subset of it) to a package-visible static entry
-   point so the dispatcher can call it without reconstructing a
-   per-id `DataFetchingEnvironment`; the lift is a real surface
-   change in `QueryNodeFetcherClassGenerator`, not a free reuse.
-
-   Selection-set projection: dispatch by the rep's `__typename` to
-   the matching `<TypeName>.$fields(env.getSelectionSet(), table,
-   env)`, the same per-participant call shape
-   `TypeFetcherGenerator.buildInterfaceFieldsList` already uses for
+3. **Decodes each rep into a column-value row.** `DIRECT`-shape
+   alternatives copy the rep's required-field values index-by-index
+   into the column-value row. `NODE_ID`-shape alternatives pass the
+   rep's `id` through `NodeIdEncoder.decode(__typename, id)`, which
+   yields the column values directly because we already know the type
+   (no per-id typeId-to-`__typename` peek is needed inside
+   `_entities`; the rep brought `__typename`). If `decode` returns
+   nothing or the encoded typeId disagrees with `__typename`, the rep
+   yields `null` and never enters any group's VALUES table; federation
+   surfaces its own resolution-failure error. After step 3, every
+   surviving rep has a column-value row plus its original
+   pre-grouping index in the federation `representations` list.
+4. **Issues one SELECT per `(type, alternative, tenantId)` group via a
+   `VALUES (idx, col1, col2, ...)` derived table joined to the type's
+   `@table` and ordered by `idx`.** Same SQL shape
+   `LookupMapping.ColumnMapping`, `SplitRowsMethodEmitter`, and
+   `TypeFetcherGenerator` already emit elsewhere in the rewrite
+   (`TypeFetcherGenerator.java:1340-1351`); the dispatcher uses a
+   sibling emitter that is not rooted at GraphQL argument names.
+   Projection includes `inline("Foo").as("__typename")` plus
+   `<TypeName>.$fields(env.getSelectionSet(), table, env)`, the same
+   per-participant projection shape
+   `TypeFetcherGenerator.buildInterfaceFieldsList` uses for
    single-table interfaces (`TypeFetcherGenerator.java:748-766`).
    graphql-java's `DataFetchingFieldSelectionSet` is type-scoped, so
    `$fields` walking the unioned `_entities` selection set picks up
    only the inline fragment scoped to that `__typename`; no extra
-   narrowing step is needed.
-
-   No cross-`__typename` batching: one SELECT per
-   `(type, alternative, tenantId)` group. Reps of different
-   `__typename`s never share a SELECT even when their tables happen
-   to coincide; single-typename grouping keeps the projection
-   logic, the `inline("Foo").as("__typename")` literal, and the
-   `<TypeName>.$fields` invocation each pinned to a single type. A
-   future cross-type union (when the table and key columns match) is
-   a follow-up if a real consumer's `_entities` shape surfaces the
+   narrowing step is needed. No cross-`__typename` batching: one
+   SELECT per group keeps the projection logic, the typename literal,
+   and the `<TypeName>.$fields` invocation each pinned to one type. A
+   future cross-type union (when table and key columns coincide) is a
+   follow-up if a real consumer's `_entities` shape surfaces the
    need.
-4. For a `ColumnsMode` group: builds a `WHERE (col1, col2, ...) IN
-   ((v1a, v2a, ...), (v1b, v2b, ...), ...)` clause and runs it
-   against the type's table. Projection uses the same per-`__typename`
-   `<TypeName>.$fields(env.getSelectionSet(), table, env)` pattern
-   as bullet (3), with `inline("Foo").as("__typename")` added to the
-   list so `resolveType` can read the type back off each row. One
-   SELECT per group; no cross-`__typename` batching here either.
-5. Returns each result row as a jOOQ `Record` whose synthetic
-   `__typename` column carries the GraphQL type name. Order
-   preservation: the dispatcher records the input index of each rep
-   before grouping and re-scatters the merged results to match.
+5. **Scatters results back to original positions via the derived
+   table's `idx` column.** Federation's contract is exact: from the
+   subgraph spec, "`Query._entities` must return a list of entity
+   objects that correspond to the provided representations, in the
+   exact same order. Entries in the list can be null if no entity
+   exists for a provided representation." Carrying `idx` through SQL
+   means each result row arrives index-tagged; the dispatcher
+   allocates a fixed-size `Object[representations.size()]` and slots
+   each row into `result[row.idx]`. Reps that yielded `null` at step
+   3 (no resolvable alternative matched, or NodeId typeId
+   disagreement) never entered any VALUES table and stay `null` by
+   construction. Choosing the derived-table batching primitive over
+   `WHERE row(...) IN (...)` is deliberate: the index-carrying join
+   makes order preservation a SQL property, not a Java post-processing
+   step, so the federation contract holds without a separate scatter
+   pass.
 
-`resolveType` reads `__typename` off the entity. Two cases:
-- The entity is a `Record` with a synthetic `__typename` column (the
-  default-fetcher path). Read the column and look up the
-  `GraphQLObjectType` by name.
-- The entity is a `Map` (the consumer-override path, where the
-  consumer's `fetchEntities` echoes the rep). Read `__typename` off
-  the map.
+**`Query.node` and `Query.nodes` reuse this dispatcher.**
+`NodeIdEncoder.peekTypeId(id)` recovers the `__typename` from an
+opaque id, so the existing fetchers fold into the entity dispatcher:
+for each id, peek typeId → look up `__typename` → synthesise one rep
+`{__typename, id}` → hand the list to the entity dispatcher. The
+`idx`-carrying derived-table SELECT covers `Query.nodes`'s
+exact-position contract the same way it covers federation's. The
+existing `rowsNodes` body in `QueryNodeFetcherClassGenerator` is
+*replaced* by the dispatcher call rather than lifted to a
+package-visible entry point; the per-typeId loop disappears because
+the dispatcher already groups by `(type, alternative, tenantId)`.
 
-Domain-object-typed entities (consumer overrides returning POJOs
-without a `__typename` column or map key) are out of scope; consumers
-in that case must register their own `resolveEntityType` via the
-two-arg `buildSchema` overload. When the default `resolveType` falls
-through (entity is neither `Record` nor `Map`, or carries no
-`__typename`), throw a targeted `IllegalStateException` naming the
-override that's missing ("custom `fetchEntities` returned a POJO; pair
-it with `fed.resolveEntityType(...)` in the same `buildSchema` call;
-see getting-started.md") rather than letting federation surface its
-generic "could not determine type" error.
+**`resolveType` reads `__typename` off the entity Record.** The
+default fetcher's projection always includes the
+`inline("Foo").as("__typename")` literal (step 4), so every entity
+the default path returns is a jOOQ `Record` carrying the column.
+`resolveType` reads it and looks up the `GraphQLObjectType` by name.
+If a consumer overrides `fetchEntities` and returns something else
+(`Map`, POJO, etc.), the default `resolveType` returns `null` and
+federation surfaces its own resolution-failure error. We do not
+expose `resolveEntityType` as a Graphitron customization extension
+point; consumers who need richer type resolution can call
+`fb.resolveEntityType(...)` from the federation customizer (the
+SchemaTransformer API permits it), but the behaviour is not
+documented or tested as a supported feature, and no `Map`-fallback
+or POJO-introspection path is shipped. Lift to a first-class
+extension point in a follow-up plan if a real consumer surfaces
+needing it.
 
 **Cross-field DataLoader sharing.** Out of scope. The existing
 per-type DataLoaders are keyed by `getTenantId(idEnv) + "/" + path`,
@@ -302,12 +335,15 @@ dispatch landing:
 
 - The two-arg-form example (`getting-started.md:94-105`) currently
   mentions `fetchEntities` only. After this lands, the default
-  `fetchEntities` works for every type Graphitron classifies, but a
-  consumer with a hand-rolled `fetchEntities` returning POJOs must
-  override `resolveEntityType` too. Reword the lead as escape-hatch
-  ("if you have entity types Graphitron does not classify, or want
-  non-default resolution") and add a one-liner pointing at
-  `resolveEntityType` for the POJO-fetcher case.
+  `fetchEntities` works for every type Graphitron classifies; the
+  two-arg form remains an escape hatch for entity types Graphitron
+  does not classify. Reword the lead as escape-hatch ("if you have
+  entity types Graphitron does not classify, supply your own
+  `fetchEntities` here") and note that custom fetchers must return
+  jOOQ `Record`s with a `__typename` column for the default
+  `resolveEntityType` to recognise them. Do not promote
+  `resolveEntityType` as a customizable extension point (see
+  Non-goals).
 - Cosmetic: the intro line "your SDL opens with `extend schema
   @link(...)`" understates what the library accepts; a base
   `schema { ... } @link` also works. Reword to "your SDL declares an
@@ -321,10 +357,17 @@ tests:
   import: ["@key"])` and a `Foo @key(fields: "id")` type emits a
   schema where `Query._entities(representations: [{__typename: "Foo",
   id: "1"}])` resolves to a `Foo` row from the test fixture DB.
-- `_entities` over a `@node` type uses the NodeId path (fixture row
-  whose ID was produced by the same encoder; assert no
-  `ColumnsMode` SELECT was issued via a query-counting fixture).
-- `_entities` over a non-`@node` `@key` type uses the columns path.
+- `_entities` over a `@node` type uses the NODE_ID shape: rep carries
+  a base64 id produced by the encoder; assert the SQL bound parameters
+  match the decoded column values (not the raw id string), via a
+  query-capturing fixture.
+- `_entities` over a non-`@node` `@key` type uses the DIRECT shape:
+  rep carries literal column values, dispatched through the same
+  `VALUES (idx, ...)` derived-table SELECT.
+- `Query.node` and `Query.nodes` go through the same dispatcher: a
+  fixture that intercepts the dispatcher entry point sees calls from
+  both surfaces; the per-typeId loop in `QueryNodeFetcher.rowsNodes`
+  is gone (asserted by absence in the emitted source).
 - Multi-key: a `Foo @key(fields: "id") @key(fields: "sku")` type
   resolves both `[{__typename: "Foo", id: "1"}]` and
   `[{__typename: "Foo", sku: "X"}]`; assert the dispatcher selected
@@ -339,7 +382,8 @@ tests:
   selects the compound alternative.
 - `@node` + explicit `@key(fields: "id")` dedup: assert the type
   classifies with one alternative, not two; the consumer's directive
-  wins (NodeIdMode preserved, `resolvable` carries through).
+  wins, the alternative's shape stays `NODE_ID`, and `resolvable`
+  carries through.
 - `@node` + explicit `@key(fields: "id", resolvable: false)` opt-out:
   the type drops out of `_entities` resolution. A representation for
   it does not run a SELECT (query-counting fixture) and federation
@@ -359,7 +403,10 @@ tests:
   type X"; no NPE.
 - Order preservation: a single `_entities` call with three
   representations of mixed `__typename` returns results in the same
-  order, with `null` slots for unresolvable reps.
+  order, with `null` slots for unresolvable reps. The derived
+  table's `idx` column is the mechanism; assert by inspecting the
+  emitted SQL that `idx` is in the SELECT list and the outer query
+  orders by it.
 - Empty representations: `_entities(representations: [])` returns
   `[]` cleanly.
 - Unknown `__typename`: a rep whose `__typename` is not in the schema
@@ -369,9 +416,6 @@ tests:
 - Consumer override: `buildSchema(b -> {}, fed ->
   fed.fetchEntities(myCustomFetcher))` actually replaces the default
   fetcher (assert via a fetcher that records its calls).
-- Consumer override returning a `Map`: `resolveType` reads
-  `__typename` off the map (regression guard for the `a24feb4`
-  placeholder semantics).
 - Compound key with non-String column types (Int, custom scalar):
   coercion path covered.
 - Nested-selection-key rejection: `@key(fields: "owner { id }")`
@@ -565,17 +609,18 @@ can split or fold at their discretion:
 1. `EntityResolution` model + `FederationKeyFieldsParser` +
    `@node`-implies-`@key(fields: "id")` synthesis. Pure value types
    and classify-time logic, testable in isolation.
-2. `QueryNodeFetcher.rowsNodes` per-typeId body lifted to a
-   package-visible static entry point callable for one
-   `__typename` at a time. Today's `rowsNodes` peeks the typeId,
-   groups by typeId, and loops one SELECT per typeId; the entities
-   dispatcher already knows the type per group, so it wants the
-   inner per-type body, not the dispatcher loop. No behaviour
-   change for `Query.nodes`; the existing call wraps the lifted
-   entry point with the same per-typeId grouping.
-3. `EntityFetcherDispatchClassGenerator` plus the schema-builder
-   wire-up that replaces the placeholder lambdas, plus
-   `getting-started.md` updates.
+2. `EntityFetcherDispatchClassGenerator` plus the
+   `VALUES (idx, col1, col2, ...)` derived-table SELECT emitter,
+   keyed by `(type, alternative, tenantId)` and ordered by `idx`.
+   This is the canonical fetch path for both `_entities` and
+   `Query.node` / `Query.nodes`.
+3. `QueryNodeFetcherClassGenerator` rewired: the per-typeId loop in
+   `rowsNodes` is *replaced* by a call into the entity dispatcher
+   (peek typeId → look up `__typename` → synthesise rep → dispatch).
+   No new public entry point on `QueryNodeFetcher`; the dispatcher
+   becomes the single SELECT path. Plus the schema-builder wire-up
+   that replaces the placeholder lambdas, plus `getting-started.md`
+   updates.
 
 The runtime half is what consumers see, so don't sit on (1) and (2)
 for long.
@@ -595,25 +640,26 @@ accepted shape; a base `schema { ... } @link(...)` also works.)*
 **Revised escape-hatch paragraph (replaces lines 94-105).**
 
 > For every type Graphitron classifies, `_entities` resolution is wired
-> automatically: `@node` types route through the NodeId path; types with a
-> `@key` directive route through a column-value lookup. No extra wiring is
-> needed beyond the existing `buildSchema(b -> {})` call.
+> automatically: `@node` types resolve via the NodeId path; types with a
+> `@key` directive resolve via a column-value lookup. Both share the same
+> per-type batched SELECT, so no extra wiring is needed beyond the
+> existing `buildSchema(b -> {})` call.
 >
-> If you have entity types Graphitron does not classify (hand-rolled objects,
-> types pulled in from a non-Graphitron source, or POJOs without a `__typename`
-> column), override the defaults via the two-arg form:
+> If you have entity types Graphitron does not classify (hand-rolled
+> objects, or types pulled in from a non-Graphitron source), supply your
+> own `fetchEntities` via the two-arg form:
 >
 > ```java
 > GraphQLSchema schema = Graphitron.buildSchema(
 >     b -> {},
->     fed -> fed.fetchEntities(myCustomFetcher)
->               .resolveEntityType(myTypeResolver));
+>     fed -> fed.fetchEntities(myCustomFetcher));
 > ```
 >
-> If `fetchEntities` returns POJOs, you must also supply `resolveEntityType`;
-> the default resolver reads `__typename` off jOOQ `Record`s and `Map`s only.
-> The federation builder arrives pre-configured with Graphitron's resolvers; the
-> customizer adds or replaces on top.
+> The federation builder arrives pre-configured with Graphitron's
+> defaults; the customizer replaces on top. Custom fetchers must return
+> entities the default `resolveEntityType` can recognise (jOOQ `Record`s
+> with a `__typename` column); richer type-resolution shapes are not
+> currently supported.
 
 ## Non-goals
 
@@ -648,22 +694,29 @@ accepted shape; a base `schema { ... } @link(...)` also works.)*
   `resolvable: false` flag. True opt-out via a Graphitron-side
   directive is a follow-up plan if anyone asks.
 - **`@interfaceObject`.** v2's interface-entity surface is not
-  classified or dispatched. Subgraphs that need it must register their
-  own `fetchEntities`/`resolveEntityType`. Lift in a follow-up plan
-  if a real consumer surfaces.
+  classified or dispatched. Subgraphs that need it must supply their
+  own `fetchEntities`. Lift in a follow-up plan if a real consumer
+  surfaces.
 - **`TableInterfaceType` as a federation entity.** `@key` on an
   interface-typed Graphitron classification is rejected at classify
   time; declare `@key` on the implementations instead. The dispatcher
   has no recursive fan-out across implementations, and adding one is
   unjustified speculation today. (`EntityResolutionBuilder` resolves
-  `ColumnsMode` columns against the `@table` of `TableType` /
+  `DIRECT`-shape columns against the `@table` of `TableType` /
   `NodeType` only; `TableInterfaceType` is not a permitted carrier.)
+- **Customizable `resolveEntityType` extension point.** The default
+  `resolveType` reads `__typename` off jOOQ `Record`s only. Consumers
+  who override `fetchEntities` and return a different shape (Map,
+  POJO, etc.) are on their own for type resolution; the
+  `SchemaTransformer` API permits calling `fb.resolveEntityType(...)`
+  from the federation customizer, but Graphitron does not document or
+  test that path as a supported extension. Lift to a first-class
+  customization point (with documented contract, tests, and a fallback
+  story for `Map` / POJO entities) in a follow-up plan if a real
+  consumer surfaces needing it. Until then, generating the
+  implementation directly (adding the type to the schema, classifying
+  it) is the preferred path.
 
 ## Open decisions
 
-None. The first-pass call on POJO-fetcher `resolveType`, throwing a
-targeted `IllegalStateException` naming the missing
-`resolveEntityType` override rather than introspecting Java class to
-GraphQL type name, has been signed off; see the implementation
-section for the error wording. Lift to a default introspection path
-in a follow-up plan if a real consumer surfaces wanting it.
+None.
