@@ -224,9 +224,13 @@ public class QueryNodeFetcherClassGenerator {
             // must be in the result regardless of what the GraphQL selection requested.
             // $fields only adds them when the selection includes `id`, so a query like
             // `nodes(ids: [...]) { ... on Customer { firstName } }` would otherwise fail with
-            // "field is not contained in row type" on the encode call.
+            // "field is not contained in row type" on the encode call. Dedup against $fields
+            // (which already added the columns when `id` was selected) so the SELECT projects
+            // each key column at most once; mirrors TypeClassGenerator's required-projection
+            // pattern.
             for (var col : nt.nodeKeyColumns()) {
-                rowsNodes.addStatement("fields.add(t.$L)", col.javaName());
+                rowsNodes.addStatement("if (!fields.contains(t.$L)) fields.add(t.$L)",
+                    col.javaName(), col.javaName());
             }
             var hasIdsArgs = CodeBlock.builder().add("$S, typeIds", nt.typeId());
             for (var col : nt.nodeKeyColumns()) {
