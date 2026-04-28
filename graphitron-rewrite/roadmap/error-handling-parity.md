@@ -15,7 +15,8 @@ consumes them. Two visible consequences on production schemas today:
    rejections in `FieldBuilder` and produces no fetcher (see "Current blocker" below).
 2. Even on a payload whose `errors` field is `[SomeError!]!` (single `@error` type, not a
    union, so no rejection fires), the fetcher body produced today does not route a thrown
-   exception into the typed payload, and there is no top-level handler installed.
+   exception into the typed payload, and graphql-java's default
+   `SimpleDataFetcherExceptionHandler` leaks the raw exception message to the client.
 
 `code-generation-triggers.md:109` records the gap as "No generation (error mapping config)".
 
@@ -96,7 +97,7 @@ checked-exception roadmap item. The table is the schedule recommendation.
 |-------|--------------------------------------------------------------------------------------------------------------------|-------------------------------------|-----------|
 | 0     | Lift the five `PolymorphicReturnType`-on-`@error` rejections in `FieldBuilder`. Add `ErrorsField` model variant; emit a passthrough fetcher (`(payload).errors`). No router, no try/catch, no mapping. | None.                               | Unblocks production schemas with `errors: [SomeUnion!]!`. The fetcher returns whatever the upstream payload object carries; runtime exceptions still escape to graphql-java's default handler, same as today. |
 | 1     | Sealed `Handler` taxonomy (§1); per-field `ErrorChannel` + `PayloadShape` sub-taxonomy (§2); validator changes (§1's reject rules + duplicate-criteria check from §3).                              | Phase 0.                            | Pure model + classifier work; emitters still call the phase-0 passthrough. |
-| 2     | Emit per-package `ErrorMappings` + `ErrorRouter` helpers; wrap fetcher bodies in try/catch / `.exceptionally`; install top-level `DataFetcherExceptionHandler` (emitted as a class consumers wire onto `GraphQL.Builder`). | Phase 1; the four DML mutation variants from `mutations.md` Phase 2 (each is a fetcher body that needs the wrapper). |  |
+| 2     | Emit per-package `ErrorMappings` + `ErrorRouter` helpers (with `dispatch` and `redact`); wrap *every* fetcher body in try/catch (channel → `dispatch`; no channel → `redact`). No engine-level handler; the privacy contract lives at the fetcher catch site. | Phase 1; the four DML mutation variants from `mutations.md` Phase 2 (each is a fetcher body that needs the wrapper). |  |
 | 3     | `VALIDATION` handler runtime + override-retirement (§5).                                                            | Phase 2.                            | Schema-author-visible migration story for the legacy override hooks. |
 | 4     | Fold checked exceptions on `@service` / `@tableMethod` into the same channel (§4); retire `checked-exceptions-typed-errors.md`. | Phase 2.                            |  |
 
@@ -466,7 +467,12 @@ mapping config)". Default for now: keep developer-supplied to match legacy and `
 Legacy needs `CustomExecutionStrategy` because it intercepts graphql-java's per-fetcher
 exception path before the engine surfaces it. The rewrite emits per-field bodies via
 `FetcherRegistrationsEmitter` and has a unified `Graphitron.buildSchema(Consumer<...>)` facade.
-The cleaner emission shape:
+Every emitted fetcher gets a try/catch — universally, even when the field's payload has no
+`@error` types — so the privacy contract (UUID-log unmatched throws, never expose internal
+messages) is enforced at the rewrite-controlled emission boundary rather than delegated to
+an engine-level handler the consumer might forget to install.
+
+For a fetcher with an `ErrorChannel`:
 
 ```java
 public static Object createFilm(DataFetchingEnvironment env) {
@@ -477,6 +483,24 @@ public static Object createFilm(DataFetchingEnvironment env) {
     }
 }
 ```
+
+For a fetcher without an `ErrorChannel` (no `@error` types declared on the payload — or no
+payload, e.g. a query field returning a scalar):
+
+```java
+public static Object getActorCount(DataFetchingEnvironment env) {
+    try {
+        // existing body
+    } catch (Throwable t) {
+        return ErrorRouter.redact(t, env);  // logs UUID, returns DataFetcherResult with redacted error
+    }
+}
+```
+
+`ErrorRouter.dispatch` and `ErrorRouter.redact` never rethrow. The unmatched arm in
+`dispatch` falls through to the same redaction logic as `redact`. graphql-java's default
+`DataFetcherExceptionHandler` therefore never fires for a Graphitron-emitted fetcher. The
+consumer wires nothing.
 
 `MAPPINGS` is a `private static final Mapping[]` reference *into* a shared
 `<outputPackage>.schema.ErrorMappings` class, not an inline array literal in each `*Fetchers`
@@ -510,11 +534,11 @@ and refers to it from the catch arm. Three reasons:
 
 `ErrorRouter` is also emitted at `<outputPackage>.schema.ErrorRouter` (one per output package,
 not one per `*Fetchers` class). It walks the cause chain with the legacy matcher logic and
-returns either the populated payload (schema-mapped) or rethrows (top-level fallback). Top-level
-handling is a `DataFetcherExceptionHandler` emitted as a sibling class consumers wire onto
-`GraphQL.Builder` (see "Top-level handler" below). Consumers write no error-handling Java at
-all in the common case; the legacy `SchemaBasedErrorStrategy` subclass disappears in favour of
-`@error` directive declarations (see §5's migration table).
+returns either the populated payload (schema-mapped) or a redacted `DataFetcherResult`
+(unmatched). Consumers write no error-handling Java at all in the common case; the legacy
+`SchemaBasedErrorStrategy` subclass disappears in favour of `@error` directive declarations
+(see §5's migration table) and there is no engine-level handler to install (see "No top-level
+handler" below).
 
 Both `ErrorRouter` and `ErrorMappings` are emitted, not shipped as a runtime jar; this preserves
 the [rewrite-builds-independently invariant](../docs/rewrite-design-principles.md#rewrite-builds-independently-of-legacy-graphitron-modules).
@@ -523,12 +547,16 @@ the [rewrite-builds-independently invariant](../docs/rewrite-design-principles.m
 
 ```java
 public final class ErrorRouter {
-    public static <P> P dispatch(
+    /** Channel-mapped dispatch: matched → payload via factory; unmatched → redacted DataFetcherResult. */
+    public static Object dispatch(
             Throwable thrown,
             Mapping[] mappings,                          // emitted MAPPINGS array
             DataFetchingEnvironment env,                 // for path/source-location
-            Function<List<Object>, P> payloadFactory     // (errors) -> payload
-    ) throws Throwable { ... }
+            Function<List<Object>, ?> payloadFactory     // (errors) -> payload
+    ) { ... }
+
+    /** No-channel disposition: log UUID, return DataFetcherResult with the generic redacted error. */
+    public static Object redact(Throwable thrown, DataFetchingEnvironment env) { ... }
 
     public sealed interface Mapping
             permits ExceptionMapping, SqlStateMapping, VendorCodeMapping, ValidationMapping {
@@ -536,6 +564,22 @@ public final class ErrorRouter {
     }
 }
 ```
+
+Neither method throws; the catch arm at the call site never rethrows either. The redaction
+arm builds:
+
+```java
+DataFetcherResult.newResult()
+    .data(null)
+    .error(GraphqlErrorBuilder.newError(env)
+        .message("An exception occurred. The error has been logged with id " + uuid + ".")
+        .build())
+    .build();
+```
+
+with the original `Throwable` logged at ERROR alongside the UUID. The raw exception message is
+never put into the response. This is the privacy property legacy preserved via its top-level
+handler; the rewrite preserves it at the fetcher catch site instead.
 
 The emitted call site supplies a payload factory rather than a no-arg constructor reference;
 this mirrors the legacy `PayloadCreator` shape (`SchemaBasedErrorStrategy.java:139-145`) but
@@ -545,7 +589,9 @@ itself, returned untouched.
 
 `path` resolves to `env.getExecutionStepInfo().getPath().toList()`; `message` resolves to the
 handler's `description` if present, otherwise the matched exception's `getMessage()` (preserves
-legacy fallback per `ExceptionToErrorMappingProviderGenerator.java:230-233`).
+legacy fallback per `ExceptionToErrorMappingProviderGenerator.java:230-233`). This applies only
+to the matched path; the unmatched path uses the redacted UUID message regardless of what the
+exception's `getMessage()` returned.
 
 #### CompletionException unwrap and async fetcher path
 
@@ -608,16 +654,21 @@ contains a `ValidationViolationGraphQLException`. If so:
 - If the channel includes a `ValidationHandler` (the `{handler: VALIDATION}` declaration from
   §1), the router fans out `getUnderlyingErrors()` into typed instances and returns the
   populated payload. See §5 for the full contract.
-- If the channel does not include a `ValidationHandler`, the router rethrows immediately
-  without consulting `MAPPINGS`. Top-level emission picks up the carried errors verbatim.
+- If the channel does not include a `ValidationHandler`, the router returns a
+  `DataFetcherResult` with `data=null` and the carried `List<GraphQLError>` attached verbatim
+  as the result's errors. Bean-validation messages are sanitized by definition (`"must not be
+  null"`, `"size must be between 1 and 64"`); they're meant to be client-visible, so this path
+  doesn't redact. Same client-visible outcome as legacy's "consumer returned `Optional.empty()`
+  from `handleValidationException`" fallback, just routed at the fetcher rather than the
+  engine.
 
 The arm runs ahead of source-order `MAPPINGS` iteration. A `Throwable`-wide `ExceptionHandler`
 declared first cannot shadow it; the validation behaviour is the schema-author-visible
 declaration of intent, not an emergent property of dispatch order. Rationale: the carried
 `GraphQLError`s have a shape incompatible with the regular `(path, message)` factory contract
 when treated as a single error, so dispatching through `MAPPINGS` would only construct one
-meaningless instance from the wrapping exception's message. The fan-out arm and the rethrow
-arm are the only two correct dispositions.
+meaningless instance from the wrapping exception's message. The fan-out arm and the
+verbatim-emission arm are the only two correct dispositions.
 
 #### Dispatch ordering: source order, first match wins
 
@@ -662,51 +713,35 @@ check, two channel mappings with identical criteria would silently shadow each o
 runtime in source order; with it, the only ambiguity left is the intentional cross-variant
 overlap.
 
-#### Top-level handler
+#### No top-level handler
 
-A `DataFetcherExceptionHandler` is *emitted* as a generated class
-(`<outputPackage>.schema.GraphitronTopLevelErrorHandler`) sibling to the existing
-`GraphitronContext`. Consumers wire it onto `GraphQL.Builder` themselves:
+There is no top-level `DataFetcherExceptionHandler` to install. Every Graphitron-emitted
+fetcher catches at its own boundary; the unmatched case is dispatched into a redacted
+`DataFetcherResult` (see "Concrete dispatch signature" above). graphql-java's default handler
+never sees a Graphitron-emitted throw.
 
-```java
-GraphQLSchema schema = Graphitron.buildSchema(b -> {});
-GraphQL engine = GraphQL.newGraphQL(schema)
-    .defaultDataFetcherExceptionHandler(new GraphitronTopLevelErrorHandler())
-    .build();
-```
+What this collapses, compared to legacy `TopLevelErrorHandler`'s three arms:
 
-This keeps `Graphitron.buildSchema` at one method (the property documented at
-`GraphitronFacadeGenerator.java:85`); the runtime-engine concern stays where graphql-java
-already exposes it; consumers who want a different handler subclass or replace
-`GraphitronTopLevelErrorHandler` directly. No `GraphitronOptions` carrier is added; no second
-overload of `buildSchema`. This subsumes the earlier "top-level handler slot" open question.
+- `ValidationViolationGraphQLException` is handled by §3's validation arm (channel with
+  `VALIDATION` handler → typed fan-out; channel without → carried errors verbatim). Both
+  dispositions live at the fetcher catch site. Validation thrown *outside* a fetcher (e.g.
+  during a custom directive's instrumentation) hits graphql-java's defaults; that case has
+  no Graphitron-emitted control point and nothing useful to add.
+- `IllegalArgumentException` becomes a regular dispatch arm: schemas that want the raw
+  `getMessage()` client-visible declare `{handler: GENERIC, className:
+  "java.lang.IllegalArgumentException"}` on their `@error` type. Unmatched IAEs redact like
+  any other unmatched throw. **Behaviour change vs legacy:** legacy's automatic IAE-message
+  exposure is removed; schemas relying on it must add the explicit declaration. The migration
+  table in §5 already names this transition.
+- Generic `Throwable` (including `SQLException`, jOOQ exceptions, NPEs, business exceptions
+  with no matching channel) → UUID-logged and redacted at the catch site. Same client-visible
+  shape and privacy guarantee as legacy.
 
-The emitted handler mirrors legacy `TopLevelErrorHandler`
-(`graphitron-common/.../TopLevelErrorHandler.java:36-69`), which is *not* graphql-java's
-`SimpleDataFetcherExceptionHandler` despite extending it: legacy overrides `handleException` to
-hide internals. The rewrite preserves that arm shape:
-
-- `ValidationViolationGraphQLException`: emit the carried `List<GraphQLError>` verbatim
-  (this case actually fires only when validation throws *outside* a fetcher with a matching
-  channel; inside one, §5's router arm catches it first).
-- `IllegalArgumentException`: emit the raw `getMessage()` plus source location. Documented as
-  client-visible so authors who throw `IllegalArgumentException` know what surfaces.
-- Any other `Throwable` (including `SQLException`, jOOQ exceptions, NPEs, and unmatched
-  business exceptions): log at ERROR with a freshly-generated UUID and emit a generic
-  `"An exception occurred. The error has been logged with id <uuid>."` to the client. The
-  raw exception message is **never** included. This is the privacy property legacy preserves;
-  trivially adopting `SimpleDataFetcherExceptionHandler` would regress it.
-
-The legacy `DataAccessException` arm prefixed the generic message with a Spring-mapper-derived
-short message; the rewrite drops the Spring dependency (§5 below) and folds that arm into the
-generic case. Schema-mapped DB errors still surface through their `@error` payload; only
-*unmatched* DB errors reach the top-level handler, where exposing the raw SQL message is the
-behaviour we are deliberately hiding.
-
-Documentation: getting-started.md grows a one-line addition to the hello-world snippet
-showing the `defaultDataFetcherExceptionHandler` call. The class is generated regardless of
-whether any `@error` types are present (it has value as the no-internals-leaked default for
-generic errors too).
+Out-of-fetcher exception paths (parsing, validation, coercion, custom scalar errors) still
+flow through graphql-java's defaults; Graphitron has no emission control there. None of these
+expose SQL or business-exception messages, so the privacy concern doesn't apply. If a future
+consumer wants uniform redaction even for these, that's an opt-in extension item, not part of
+this plan.
 
 #### Behaviour change vs legacy
 
@@ -761,13 +796,14 @@ not satisfy these variants (and is rejected unless the channel also carries an
 #### Special cases
 
 - **`InterruptedException`, `IOException` from non-database I/O.** These are usually
-  infrastructure errors that should reach the top-level handler, not a typed `@error`. The
-  rule above forces the schema to either (a) declare a wide handler (e.g. `Throwable`-wide
+  infrastructure errors that should redact rather than surface as a typed `@error`. The rule
+  above forces the schema to either (a) declare a wide handler (e.g. `Throwable`-wide
   `ExceptionHandler`), which is usually wrong because it leaks infrastructure detail to clients,
   or (b) wrap them in a domain exception in the service implementation. Path (b) is the
   recommended pattern; the open question (see Open Questions) is whether the classifier should
   also exempt these specific types from the wider-or-equal rule so a service declaring them
-  does not need a corresponding channel handler.
+  does not need a corresponding channel handler — they then flow through the catch arm's
+  redact path instead.
 - **`IllegalArgumentException`.** Legacy
   (`SchemaBasedErrorStrategy.java:58-73`) treats `IllegalArgumentException` as a special arm,
   separate from the schema-mapped strategy. The rewrite folds it into the same pipe: an
@@ -779,7 +815,7 @@ not satisfy these variants (and is rejected unless the channel also carries an
   fetcher's boundary. The classifier check in this section gates only `@service` /
   `@tableMethod` declared exceptions; unchecked exceptions thrown anywhere else reach
   `ErrorRouter.dispatch` via the catch arm in §3 and either match a channel handler or fall
-  through to the top-level handler.
+  through to the redact arm.
 
 ### 5. Jakarta-only validation
 
@@ -815,13 +851,12 @@ chain, the dispatch differs from the regular one-exception-to-one-error path:
 3. Hand the resulting `List<Object>` to the payload factory. Same return path as a schema-
    mapped match.
 
-If the channel has no `ValidationHandler`, the cause-chain walk falls through `MAPPINGS`
-(it won't match any `ExceptionHandler` because `ValidationViolationGraphQLException` is not
-declared there) and the router rethrows. The top-level handler then emits the carried
-`List<GraphQLError>` verbatim into the response's top-level `errors` array (the
-`TopLevelErrorHandler` arm in §3). This preserves the legacy fallback (consumers who returned
-`Optional.empty()` from `handleValidationException` got top-level emission); only the
-schema-mapped path now requires an explicit `VALIDATION` declaration in the schema.
+If the channel has no `ValidationHandler`, the validation arm in §3 returns a
+`DataFetcherResult` with `data=null` and the carried `List<GraphQLError>` attached verbatim,
+without consulting `MAPPINGS`. Same client-visible outcome as legacy's "consumer returned
+`Optional.empty()` from `handleValidationException`" fallback (the violations surface as
+top-level errors in the response), just routed at the fetcher rather than through an engine
+handler.
 
 If a schema declares both a `VALIDATION` handler *and* an `ExceptionHandler` whose
 `exceptionClass` is `ValidationViolationGraphQLException` or a supertype (e.g.,
@@ -845,7 +880,7 @@ onto schema declarations:
 | Legacy override                           | Replacement in rewrite                                                                                                                |
 |-------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------|
 | `handleValidationException(...)`          | Declare `{handler: VALIDATION}` on the relevant `@error` type. Router fans out the violations into typed instances per the rule above. |
-| `handleIllegalArgumentException(...)`     | Declare `{handler: GENERIC, className: "java.lang.IllegalArgumentException"}` on the `@error` type. Regular one-to-one dispatch.       |
+| `handleIllegalArgumentException(...)`     | Declare `{handler: GENERIC, className: "java.lang.IllegalArgumentException"}` on the `@error` type. Regular one-to-one dispatch. **Behaviour shift**: legacy emitted the raw IAE message at the top level even without a declaration; the rewrite redacts unmatched IAEs like any other unmatched throw. Schemas that relied on the legacy auto-leak must add the declaration explicitly. |
 | `createDefaultDataAccessError(...)`       | Declare a *trailing* `{handler: DATABASE}` (no `sqlState`, no `code`) on the channel. §1 lifts to `ExceptionHandler(SQLException)`; §3 source-order makes it the catch-all after specific `SqlStateHandler`/`VendorCodeHandler` entries. |
 | `DataAccessExceptionMapper.getMsgFromException` | Out of scope here. Top-level `DataAccessException` no longer exposes a message (§3 generic-with-UUID); schema-mapped `DataAccessException` uses the `description` on the matched handler or the cause's `getMessage()`. A separate roadmap item can add a per-channel message-transform hook if real usage demands one. |
 
@@ -929,8 +964,9 @@ in-scope / out-of-scope, so the spec phase has a concrete checklist.
   {handler: DATABASE}]` pattern from the migration table. Three pipeline tests, one per arm.
   This is the consumer-zero-Java acceptance fixture for the override-retirement story.
 - `validationWithoutHandler/`: a payload whose `@error` type omits `VALIDATION`, with a fetcher
-  that throws `ValidationViolationGraphQLException`. Asserts the violations surface in the
-  response's top-level `errors` array (legacy-compatible fallback per §5's rethrow path).
+  that throws `ValidationViolationGraphQLException`. Asserts the violations surface as a
+  `DataFetcherResult` with the carried errors verbatim (legacy-compatible fallback per §5's
+  no-`ValidationHandler` arm).
 
 **Rejected by the classifier (rewrite is stricter; document in spec):**
 
@@ -971,11 +1007,11 @@ SDL alongside the mutation fixtures (the mutation-bodies fixture-gap closure in
   which is what the legacy `streamCauses` already does at
   `GenericExceptionMatcher.java:streamCauses`. The DB-error variant of the matcher checks
   `SQLState`/`ErrorCode` directly on any `SQLException` it finds.
-- **A consumer-facing `ExceptionHandlingBuilder` analogue.** Auto-wiring is the goal. If a
-  consumer needs to override the top-level handler, they install their own
-  `DataFetcherExceptionHandler` on `GraphQL.Builder` (the standard graphql-java extension
-  point); the emitted `GraphitronTopLevelErrorHandler` is then optional. No Graphitron-side
-  builder, no `GraphitronOptions` carrier.
+- **A consumer-facing `ExceptionHandlingBuilder` analogue.** Auto-wiring is the goal. The
+  rewrite catches at every fetcher; there is no top-level handler to override. Consumers
+  who want to intercept exceptions for non-Graphitron-emitted code (parsing, validation,
+  custom scalars) install a `DataFetcherExceptionHandler` on `GraphQL.Builder` themselves —
+  graphql-java's standard extension point, unrelated to Graphitron's emission.
 - **Subscription error paths.** Legacy has no subscription-specific exception handling, and
   the rewrite does not generate subscription fetchers (`FieldBuilder.classifyRootField` rejects
   `Subscription` with a `DEFERRED` rejection at `FieldBuilder.java:1557`). Subscription error
@@ -1045,11 +1081,14 @@ The earlier list resolved several questions inline; what remains:
 ### Resolved (no longer open)
 
 - **`ErrorRouter` location.** Emitted as a generated class at `<outputPackage>.schema.ErrorRouter`,
-  one per output package (alongside `ErrorMappings` and the emitted top-level handler). No
-  runtime jar; preserves the no-runtime-jar invariant.
-- **Top-level handler "slot" on `Graphitron.buildSchema`.** Resolved by emitting
-  `GraphitronTopLevelErrorHandler` as a class consumers wire onto `GraphQL.Builder`. No new
-  parameter, no `GraphitronOptions` carrier; `Graphitron.buildSchema` stays at one method.
+  one per output package (alongside `ErrorMappings`). No runtime jar; preserves the
+  no-runtime-jar invariant.
+- **Top-level handler "slot" on `Graphitron.buildSchema`.** Resolved by removing the need for
+  one entirely. Every emitted fetcher catches at its own boundary; the privacy contract
+  (UUID-log unmatched, redact message) is enforced at the rewrite-controlled emission site
+  rather than delegated to a class consumers must remember to wire. graphql-java's default
+  `DataFetcherExceptionHandler` stays default. No new parameter, no `GraphitronOptions`
+  carrier, no consumer-facing handler class.
 - **Generation-efficiency: matcher dedup.** Resolved via the per-package `ErrorMappings` class
   in §3. Each distinct channel gets one named `Mapping[]` constant; per-fetcher `MAPPINGS`
   fields reference it.
