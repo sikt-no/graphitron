@@ -25,26 +25,55 @@ public final class GraphitronFacadeGenerator {
 
     private GraphitronFacadeGenerator() {}
 
-    public static List<TypeSpec> generate(String outputPackage) {
+    public static List<TypeSpec> generate(String outputPackage, boolean federationLink) {
         String schemaPackage = outputPackage + ".schema";
         var graphQLSchema = ClassName.get("graphql.schema", "GraphQLSchema");
         var schemaBuilder = ClassName.get("graphql.schema", "GraphQLSchema", "Builder");
         var customizerType = ParameterizedTypeName.get(ClassName.get(Consumer.class), schemaBuilder);
+        var graphitronSchema = ClassName.get(schemaPackage, GraphitronSchemaClassGenerator.CLASS_NAME);
 
         var buildSchema = MethodSpec.methodBuilder("buildSchema")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(graphQLSchema)
             .addParameter(customizerType, "customizer")
-            .addStatement("return $T.build(customizer)",
-                ClassName.get(schemaPackage, GraphitronSchemaClassGenerator.CLASS_NAME))
-            .addJavadoc(buildSchemaJavadoc())
+            .addStatement("return $T.build(customizer)", graphitronSchema)
+            .addJavadoc(buildSchemaJavadoc(federationLink))
             .build();
 
-        return List.of(TypeSpec.classBuilder(CLASS_NAME)
+        var classBuilder = TypeSpec.classBuilder(CLASS_NAME)
             .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
             .addJavadoc(classJavadoc())
-            .addMethod(buildSchema)
-            .build());
+            .addMethod(buildSchema);
+
+        if (federationLink) {
+            var SCHEMA_TRANSFORMER = ClassName.get("com.apollographql.federation.graphqljava", "SchemaTransformer");
+            var fedCustomizerType = ParameterizedTypeName.get(ClassName.get(Consumer.class), SCHEMA_TRANSFORMER);
+
+            var buildSchemaFed = MethodSpec.methodBuilder("buildSchema")
+                .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+                .returns(graphQLSchema)
+                .addParameter(customizerType, "schemaCustomizer")
+                .addParameter(fedCustomizerType, "federationCustomizer")
+                .addStatement("return $T.build(schemaCustomizer, federationCustomizer)", graphitronSchema)
+                .addJavadoc("Builds the federation-wrapped schema, optionally customizing the\n"
+                    + "{@link $T} builder after Graphitron's defaults are attached.\n"
+                    + "The {@code federationCustomizer} may call {@code .fetchEntities(...)}\n"
+                    + "to override the default entity fetcher. Do not call {@code .build()}\n"
+                    + "from the customizer.\n"
+                    + "@param schemaCustomizer hook applied to the base schema builder\n"
+                    + "@param federationCustomizer hook applied to the federation builder\n"
+                    + "@return the fully wired federation {@link graphql.schema.GraphQLSchema}\n",
+                    SCHEMA_TRANSFORMER)
+                .build();
+            classBuilder.addMethod(buildSchemaFed);
+        }
+
+        return List.of(classBuilder.build());
+    }
+
+    /** Convenience overload for non-federation usage. */
+    public static List<TypeSpec> generate(String outputPackage) {
+        return generate(outputPackage, false);
     }
 
     private static String classJavadoc() {
@@ -56,8 +85,15 @@ public final class GraphitronFacadeGenerator {
             + "the public surface is exactly one method.\n";
     }
 
-    private static String buildSchemaJavadoc() {
+    private static String buildSchemaJavadoc(boolean federationLink) {
         return "Builds the schema with all generator-emitted fetchers attached.\n"
+            + (federationLink
+               ? "\n<p>This schema was compiled with a federation {@code @link}; the returned\n"
+               + "{@link graphql.schema.GraphQLSchema} is wrapped with {@code Federation.transform}\n"
+               + "and includes {@code _Service} and {@code _entities}. Do not wrap it again.\n"
+               + "Use {@link #buildSchema(java.util.function.Consumer, java.util.function.Consumer)}\n"
+               + "to register a custom entity fetcher.\n"
+               : "")
             + "\n"
             + "<p>The {@code customizer} receives the underlying {@link graphql.schema.GraphQLSchema.Builder}\n"
             + "for adding scalars, additional types, or custom directives before {@code .build()} is\n"

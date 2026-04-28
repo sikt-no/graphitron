@@ -6,10 +6,8 @@ import graphql.language.DirectivesContainer;
 import graphql.language.EnumTypeDefinition;
 import graphql.language.InputObjectTypeDefinition;
 import graphql.language.InterfaceTypeDefinition;
-import graphql.language.NonNullType;
 import graphql.language.ObjectTypeDefinition;
 import graphql.language.StringValue;
-import graphql.language.TypeName;
 import graphql.language.UnionTypeDefinition;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import org.junit.jupiter.api.Test;
@@ -182,33 +180,18 @@ class TagApplierTest {
     }
 
     @Test
-    void tagDirectiveAutoInjectedWhenAbsent() {
+    void tagDirectiveNotInjectedByApplierAlone() {
+        // TagApplier no longer auto-injects the @tag declaration; that is the responsibility
+        // of TagLinkSynthesiser + FederationLinkApplier. This test is a regression guard.
         var registry = InMemoryRegistry.of(Map.of(
             "t.graphqls", "type Foo { id: ID! }"
         ));
-        assertThat(registry.getDirectiveDefinition("tag")).isEmpty();
-
         var inputs = SchemaInputAttribution.build(List.of(
             new SchemaInput("t.graphqls", Optional.of("x"), Optional.empty())
         ));
         TagApplier.apply(registry, inputs);
 
-        var decl = registry.getDirectiveDefinition("tag").orElseThrow();
-        assertThat(decl.isRepeatable()).isTrue();
-        // Apollo Federation 2 parity: declaration permits the full federation @tag location
-        // set, independent of the narrower emission scope this applier walks.
-        assertThat(decl.getDirectiveLocations()).extracting(l -> l.getName())
-            .containsExactlyInAnyOrder(
-                "FIELD_DEFINITION", "INTERFACE", "OBJECT", "UNION",
-                "ARGUMENT_DEFINITION", "SCALAR", "ENUM", "ENUM_VALUE",
-                "INPUT_OBJECT", "INPUT_FIELD_DEFINITION", "SCHEMA"
-            );
-        assertThat(decl.getInputValueDefinitions()).hasSize(1);
-        var arg = decl.getInputValueDefinitions().getFirst();
-        assertThat(arg.getName()).isEqualTo("name");
-        assertThat(arg.getType()).isInstanceOfSatisfying(NonNullType.class, nn ->
-            assertThat(((TypeName) nn.getType()).getName()).isEqualTo("String")
-        );
+        assertThat(registry.getDirectiveDefinition("tag")).isEmpty();
     }
 
     @Test

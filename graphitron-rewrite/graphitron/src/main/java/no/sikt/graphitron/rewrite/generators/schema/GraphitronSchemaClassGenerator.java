@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
+import java.util.function.UnaryOperator;
 
 /**
  * Generates {@code GraphitronSchema.java} in {@code <outputPackage>.rewrite.schema}. This is the
@@ -65,7 +66,8 @@ public final class GraphitronSchemaClassGenerator {
     private GraphitronSchemaClassGenerator() {}
 
     public static List<TypeSpec> generate(GraphitronSchema schema, GraphQLSchema assembled,
-                                          Set<String> typesWithFetchers, String outputPackage) {
+                                          Set<String> typesWithFetchers, String outputPackage,
+                                          boolean federationLink) {
         var plan = planFor(schema, assembled);
         String schemaPackage = outputPackage + ".schema";
 
@@ -143,31 +145,87 @@ public final class GraphitronSchemaClassGenerator {
             body.add("\n.additionalDirective(").add(DirectiveDefinitionEmitter.buildDefinition(dir)).add(")");
         }
         body.add("\n.codeRegistry(codeRegistry.build());\n").unindent();
-        body.addStatement("customizer.accept(schemaBuilder)");
-        body.addStatement("return schemaBuilder.build()");
 
-        var buildMethod = MethodSpec.methodBuilder("build")
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(GRAPHQL_SCHEMA)
-            .addParameter(customizerType, "customizer")
-            .addCode(body.build())
-            .build();
+        var classBuilder = TypeSpec.classBuilder(CLASS_NAME)
+            .addModifiers(Modifier.PUBLIC, Modifier.FINAL);
 
-        return List.of(TypeSpec.classBuilder(CLASS_NAME)
-            .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
-            .addMethod(buildMethod)
-            .build());
+        if (federationLink) {
+            // One-arg form delegates to two-arg form.
+            var oneArgMethod = MethodSpec.methodBuilder("build")
+                .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+                .returns(GRAPHQL_SCHEMA)
+                .addParameter(customizerType, "customizer")
+                .addStatement("return build(customizer, fed -> {})")
+                .build();
+
+            // Two-arg form: base schema + federation post-step.
+            var FEDERATION         = ClassName.get("com.apollographql.federation.graphqljava", "Federation");
+            var SCHEMA_TRANSFORMER = ClassName.get("com.apollographql.federation.graphqljava", "SchemaTransformer");
+            var OBJ_TYPE           = ClassName.get("graphql.schema", "GraphQLObjectType");
+            var fedCustomizerType  = ParameterizedTypeName.get(ClassName.get(Consumer.class), SCHEMA_TRANSFORMER);
+
+            var twoArgBody = CodeBlock.builder().add(body.build());
+            twoArgBody.addStatement("schemaCustomizer.accept(schemaBuilder)");
+            twoArgBody.addStatement("$T base = schemaBuilder.build()", GRAPHQL_SCHEMA);
+            twoArgBody.add(
+                "$T fb = $T.transform(base)\n", SCHEMA_TRANSFORMER, FEDERATION).indent()
+                .add(".setFederation2(true)\n")
+                .add(".resolveEntityType(env -> {\n").indent()
+                    .addStatement("Object rep = env.getObject()")
+                    .addStatement("if (!(rep instanceof java.util.Map<?, ?> m)) return null")
+                    .addStatement("Object tn = m.get(\"__typename\")")
+                    .addStatement("return tn != null ? ($T) env.getSchema().getObjectType(tn.toString()) : null", OBJ_TYPE)
+                    .unindent().add("})\n")
+                .add(".fetchEntities(env -> java.util.List.of());\n")
+                .unindent();
+            twoArgBody.addStatement("federationCustomizer.accept(fb)");
+            twoArgBody.addStatement("return fb.build()");
+
+            var twoArgMethod = MethodSpec.methodBuilder("build")
+                .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+                .returns(GRAPHQL_SCHEMA)
+                .addParameter(customizerType, "schemaCustomizer")
+                .addParameter(fedCustomizerType, "federationCustomizer")
+                .addJavadoc("Builds the schema and wraps it with {@code Federation.transform}.\n"
+                    + "The {@code federationCustomizer} receives the pre-configured\n"
+                    + "{@link $T} builder after Graphitron's defaults are attached;\n"
+                    + "call {@code .fetchEntities(...)} to override the default no-op fetcher.\n"
+                    + "Do not call {@code .build()} from the customizer.\n", SCHEMA_TRANSFORMER)
+                .addCode(twoArgBody.build())
+                .build();
+
+            classBuilder.addMethod(oneArgMethod).addMethod(twoArgMethod);
+        } else {
+            body.addStatement("customizer.accept(schemaBuilder)");
+            body.addStatement("return schemaBuilder.build()");
+
+            var buildMethod = MethodSpec.methodBuilder("build")
+                .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+                .returns(GRAPHQL_SCHEMA)
+                .addParameter(customizerType, "customizer")
+                .addCode(body.build())
+                .build();
+            classBuilder.addMethod(buildMethod);
+        }
+
+        return List.of(classBuilder.build());
     }
 
     /** Convenience overload for tests — empty fetcher set, no output-package prefix. */
     public static List<TypeSpec> generate(GraphitronSchema schema, GraphQLSchema assembled) {
-        return generate(schema, assembled, Set.of(), "");
+        return generate(schema, assembled, Set.of(), "", false);
     }
 
     /** Convenience overload for tests that pass a fetcher set but not an output-package. */
     public static List<TypeSpec> generate(GraphitronSchema schema, GraphQLSchema assembled,
                                           Set<String> typesWithFetchers) {
-        return generate(schema, assembled, typesWithFetchers, "");
+        return generate(schema, assembled, typesWithFetchers, "", false);
+    }
+
+    /** Convenience overload for tests that pass a fetcher set and an output-package but no federation. */
+    public static List<TypeSpec> generate(GraphitronSchema schema, GraphQLSchema assembled,
+                                          Set<String> typesWithFetchers, String outputPackage) {
+        return generate(schema, assembled, typesWithFetchers, outputPackage, false);
     }
 
     record Plan(

@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
+import com.apollographql.federation.graphqljava.FederationDirectives;
+import graphql.language.DirectiveDefinition;
 import graphql.schema.FieldCoordinates;
 import graphql.schema.GraphQLArgument;
 import graphql.schema.GraphQLFieldDefinition;
@@ -18,6 +20,7 @@ import graphql.schema.idl.EchoingWiringFactory;
 import graphql.schema.idl.ScalarInfo;
 import graphql.schema.idl.SchemaGenerator;
 import graphql.schema.idl.TypeDefinitionRegistry;
+import graphql.schema.idl.errors.SchemaProblem;
 import graphql.util.TraversalControl;
 import graphql.util.TraverserContext;
 import graphql.util.TreeTransformerUtil;
@@ -26,12 +29,15 @@ import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ConnectionType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.EdgeType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.PageInfoType;
+import no.sikt.graphitron.rewrite.schema.input.FederationLinkApplier;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.rewrite.BuildContext.*;
@@ -49,6 +55,18 @@ import static no.sikt.graphitron.rewrite.BuildContext.*;
  */
 public class GraphitronSchemaBuilder {
 
+    private static final Set<String> FEDERATION_DIRECTIVE_NAMES = loadFederationDirectiveNames();
+    private static final Pattern UNDECLARED_DIRECTIVE_PATTERN =
+            Pattern.compile("tried to use an undeclared directive '([^']+)'");
+
+    private static Set<String> loadFederationDirectiveNames() {
+        return FederationDirectives.loadFederationSpecDefinitions(
+                        FederationLinkApplier.DEFAULT_FEDERATION_SPEC_URL).stream()
+                .filter(d -> d instanceof DirectiveDefinition)
+                .map(d -> ((DirectiveDefinition) d).getName())
+                .collect(Collectors.toUnmodifiableSet());
+    }
+
     /**
      * Pairs the classified {@link GraphitronSchema} with the raw {@link GraphQLSchema} the
      * classifier built internally. The Commit B emitters read raw type structure (argument
@@ -58,7 +76,7 @@ public class GraphitronSchemaBuilder {
      * tests that only need the classified model continue to call
      * {@link #build(TypeDefinitionRegistry, RewriteContext)}.
      */
-    public record Bundle(GraphitronSchema model, graphql.schema.GraphQLSchema assembled) {}
+    public record Bundle(GraphitronSchema model, graphql.schema.GraphQLSchema assembled, boolean federationLink) {}
 
     /**
      * Classifies all types and fields in {@code registry} and returns the resulting
@@ -74,6 +92,7 @@ public class GraphitronSchemaBuilder {
      * {@link GraphQLSchema}. See {@link Bundle}.
      */
     public static Bundle buildBundle(TypeDefinitionRegistry registry, RewriteContext ctx) {
+        boolean federationLink = FederationLinkApplier.hasFederationLink(registry);
         var runtimeWiring = EchoingWiringFactory.newEchoingWiring(wiring ->
             registry.scalars().forEach((name, v) -> {
                 if (!ScalarInfo.isGraphqlSpecifiedScalar(name)) {
@@ -81,14 +100,23 @@ public class GraphitronSchemaBuilder {
                 }
             })
         );
-        var assembled = new SchemaGenerator().makeExecutableSchema(registry, runtimeWiring);
+        GraphQLSchema assembled;
+        try {
+            assembled = new SchemaGenerator().makeExecutableSchema(registry, runtimeWiring);
+        } catch (SchemaProblem e) {
+            var recipeErrors = buildRecipeErrors(e);
+            if (recipeErrors != null) {
+                throw new ValidationFailedException(recipeErrors);
+            }
+            throw e;
+        }
         var bctx = new BuildContext(assembled, new JooqCatalog(ctx.jooqPackage()), ctx);
         var svc = new ServiceCatalog(bctx);
         bctx.svc = svc;
         var typeBuilder = new TypeBuilder(bctx, svc);
         var fieldBuilder = new FieldBuilder(bctx, svc);
         var result = buildSchema(bctx, typeBuilder, fieldBuilder);
-        return new Bundle(result.model, result.assembled);
+        return new Bundle(result.model, result.assembled, federationLink);
     }
 
     private record BuildResult(GraphitronSchema model, GraphQLSchema assembled) {}
@@ -464,6 +492,35 @@ public class GraphitronSchemaBuilder {
                 .build());
         if (shareable) builder.withAppliedDirective(GraphQLAppliedDirective.newDirective().name("shareable").build());
         return builder.build();
+    }
+
+    private static List<ValidationError> buildRecipeErrors(SchemaProblem e) {
+        var errors = e.getErrors();
+        boolean anyFed = false;
+        var result = new ArrayList<ValidationError>();
+        for (var err : errors) {
+            var m = UNDECLARED_DIRECTIVE_PATTERN.matcher(err.getMessage());
+            var locs = err.getLocations();
+            var loc = (locs != null && !locs.isEmpty()) ? locs.get(0) : null;
+            if (m.find() && FEDERATION_DIRECTIVE_NAMES.contains(m.group(1))) {
+                anyFed = true;
+                result.add(new ValidationError(RejectionKind.INVALID_SCHEMA, null,
+                        buildRecipeMessage(m.group(1)), loc));
+            } else {
+                result.add(new ValidationError(RejectionKind.INVALID_SCHEMA, null,
+                        err.getMessage(), loc));
+            }
+        }
+        return anyFed ? result : null;
+    }
+
+    private static String buildRecipeMessage(String directiveName) {
+        return "Federation directive '@" + directiveName + "' is not declared. Pick one:\n"
+                + "  (1) Open one of your .graphqls files with\n"
+                + "      `extend schema @link(url: \"https://specs.apollo.dev/federation/v2.x\",\n"
+                + "                           import: [\"@" + directiveName + "\", ...])`\n"
+                + "  (2) Or declare it manually with `directive @" + directiveName + " ... on ...`.\n"
+                + "See graphitron-rewrite/docs/getting-started.md#build-time-federation-directives.";
     }
 
     private static void validateDirectiveSchema(BuildContext ctx) {
