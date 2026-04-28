@@ -1012,6 +1012,13 @@ typed instance and places it in `errors`. Unmatched exceptions are logged with a
 ID (the current OTel trace ID when a span is active, otherwise a random UUID) and returned
 to the client as a redacted error. No internal detail, no stack trace, no exception message.
 
+### `@error` type requirements
+
+Every `@error` type must declare `path: [String!]!` and `message: String!`. The
+developer-supplied Java class must provide a matching `(List<String> path, String message)`
+constructor. Both are validated at build time; a missing field or wrong-shape constructor
+produces a classifier error (not a runtime failure).
+
 ### Handler kinds
 
 **`GENERIC`** matches by exception class, walking the full cause chain. `className` is
@@ -1041,6 +1048,17 @@ constraint's message. At most one `VALIDATION` entry per error channel; `classNa
 {handler: VALIDATION}
 ```
 
+A mutation with two violated constraints produces two entries in `errors` — one per violation:
+
+```json
+{
+  "data": { "createFilm": { "film": null, "errors": [
+    { "path": ["input", "title"],   "message": "must not be blank" },
+    { "path": ["input", "release"], "message": "must not be null" }
+  ]}}
+}
+```
+
 ### Dispatch order
 
 Handlers are matched in source order; the first match wins. Place more-specific handlers
@@ -1068,15 +1086,9 @@ and redacted. The client receives:
 ```
 
 where `<id>` is the OTel trace ID when a span is active, otherwise a random UUID. The same ID
-appears in the server log at ERROR level alongside the original exception, making it findable
-in a distributed trace.
-
-### `@error` type requirements
-
-Every `@error` type must declare `path: [String!]!` and `message: String!`. The
-developer-supplied Java class must provide a matching `(List<String> path, String message)`
-constructor. Both are validated at build time; a missing field or wrong-shape constructor
-produces a classifier error (not a runtime failure).
+appears in the server log at ERROR level alongside the original exception. If your application
+uses OpenTelemetry, this makes the error directly findable from any distributed trace without
+a separate log search.
 
 ### Migrating from `SchemaBasedErrorStrategy`
 
