@@ -133,6 +133,22 @@ public class NodeIdEncoderClassGenerator {
             .addStatement("return field.getDataType().convert(value)")
             .build();
 
+        // Re-encodes a base64 id into its canonical no-padding form, or null when the input is
+        // malformed or the embedded typeId does not match. Used by Query.nodes(ids:) batch
+        // dispatch to fan rows back to all input positions: the URL base64 decoder accepts
+        // padded inputs, but encode() always emits the no-padding form, so a non-canonical
+        // input (e.g. a trailing '=') would never match the encoded result row otherwise.
+        var canonicalize = MethodSpec.methodBuilder("canonicalize")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(String.class)
+            .addParameter(String.class, "typeId")
+            .addParameter(String.class, "base64Id")
+            .addStatement("if (typeId == null) return null")
+            .addStatement("$T values = decodeValues(typeId, base64Id)", String[].class)
+            .addStatement("if (values == null) return null")
+            .addStatement("return encode(typeId, ($T[]) values)", Object.class)
+            .build();
+
         // Single-id WHERE condition. Delegates to hasIds. Garbage / typeId-mismatch input
         // collapses to noCondition() (the row never matches, the resolver returns null).
         var hasId = MethodSpec.methodBuilder("hasId")
@@ -179,6 +195,7 @@ public class NodeIdEncoderClassGenerator {
             .addMethod(privateCtor)
             .addMethod(encode)
             .addMethod(peekTypeId)
+            .addMethod(canonicalize)
             .addMethod(hasId)
             .addMethod(hasIds)
             .addMethod(decodeValues)

@@ -143,6 +143,11 @@ public class QueryNodeFetcherClassGenerator {
         // share a loader and batch into one hasIds query; ids from different tenants land in
         // separate loaders. This also makes batchEnv.getKeyContextsList().get(0) safe inside
         // the batch lambda: every key in a given loader shares a tenant by construction.
+        //
+        // Assumes the DataLoaderRegistry is request-scoped (the standard graphql-java pattern,
+        // one registry per ExecutionInput). A registry shared across requests would let loaders
+        // and their first-key contexts survive between calls — that's an app-level misconfig,
+        // not a generator concern, but it would break the tenant-scoping invariant.
         var dispatchNodes = MethodSpec.methodBuilder(DISPATCH_NODES_METHOD)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(cfListRecord)
@@ -179,6 +184,10 @@ public class QueryNodeFetcherClassGenerator {
 
         // rowsNodes: batch fetch for the DataLoader. Groups keys by typeId and executes one
         // query per type via hasIds, then maps results back to original positions using encode.
+        // Positions are keyed by canonicalize(peekTypeId(id), id) rather than the literal input
+        // so that non-canonical user inputs (e.g. base64 with trailing padding) still match the
+        // canonical encoded id produced from the result row. Otherwise nodes(ids:) would return
+        // null for non-canonical inputs that node(id:) accepts.
         var rowsNodes = MethodSpec.methodBuilder("rowsNodes")
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .returns(listOfRecord)
@@ -188,7 +197,9 @@ public class QueryNodeFetcherClassGenerator {
             .addStatement("$T positions = new $T<>()", mapStrListInt, LINKED_HASH_MAP)
             .beginControlFlow("for (int i = 0; i < keys.size(); i++)")
             .addStatement("$T id = keys.get(i)", STRING_CLASS)
-            .addStatement("if (id != null) positions.computeIfAbsent(id, k -> new $T<>()).add(i)", ARRAY_LIST)
+            .addStatement("$T canonicalId = $T.canonicalize($T.peekTypeId(id), id)",
+                STRING_CLASS, nodeIdEncoder, nodeIdEncoder)
+            .addStatement("if (canonicalId != null) positions.computeIfAbsent(canonicalId, k -> new $T<>()).add(i)", ARRAY_LIST)
             .endControlFlow()
             .addStatement("$T byType = new $T<>()", mapStrListStr, LINKED_HASH_MAP)
             .beginControlFlow("for ($T id : keys)", STRING_CLASS)
