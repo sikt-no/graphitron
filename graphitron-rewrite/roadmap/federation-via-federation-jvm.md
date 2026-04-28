@@ -6,114 +6,41 @@ priority: 1
 
 # Apollo Federation via federation-jvm transform
 
-> Land Federation 2 support across three surfaces:
-> `LinkDirectiveProcessor` from federation-graphql-java-support pre-runs
-> our schema build to inject the directive declarations a consumer's
-> `@link` imports; a small wrap diagnoses the no-`@link`-no-manual case
-> with a targeted recipe; a runtime post-step wraps the built schema in
-> `Federation.transform` so `_entities` resolves natively.
-
----
+> Finish Federation 2 entity dispatch. The build-time scaffolding
+> from `a24feb4` emits a federation-wrapped schema via
+> `Federation.transform`, but the default `fetchEntities` returns
+> `List.of()` and the default `resolveEntityType` only works when the
+> consumer's fetcher echoes the representation back. This plan makes
+> `Graphitron.buildSchema(b -> {})` against a schema with `@key` or
+> `@node` types resolve `_entities` natively, with per-tenant
+> partitioning matching `QueryNodeFetcher.dispatchNodes`. A short
+> hygiene pass on the shipped scaffold ships alongside.
 
 ## Goal
 
-Make a Federation-2 SDL build cleanly without consumer-side directive
-boilerplate, and make the rewrite-emitted schema a drop-in input to
-`federation-graphql-java-support` at runtime. Delegate as much
-work as possible to the library; add only the glue and the
-diagnostics it does not provide.
+`Query._entities(representations: [_Any!]!): [_Entity]!` resolves at
+runtime for every type Graphitron classifies, with no per-consumer
+wiring beyond the existing `Graphitron.buildSchema(...)` call.
 
-Three landing markers:
+The two-arg `buildSchema(Consumer, Consumer<SchemaTransformer>)`
+overload (emitted by `GraphitronSchemaClassGenerator` when
+`Bundle.federationLink=true`) already exposes `Federation.transform`'s
+builder so consumers can override defaults. The customizer order is
+fixed: `federation-graphql-java-support`'s setters overwrite, and the
+federation customizer runs after Graphitron's defaults attach, so a
+consumer's `fed.fetchEntities(...)` or `fed.resolveEntityType(...)`
+call replaces the default. This plan changes only what the defaults
+*do*; the surface stays as-is.
 
-1. A consumer SDL that opens with `extend schema @link(url:
-   "https://specs.apollo.dev/federation/v2.x", import: [...])`
-   validates without having to hand-declare each imported directive.
-2. A consumer who has not opted into `@link` and has not declared a
-   federation directive sees a targeted "use `@link` or declare it
-   yourself, here is the one-liner" diagnostic instead of
-   graphql-java's raw "tried to use an undeclared directive" error.
-3. `Query._entities(representations: [_Any!]!): [_Entity]!` resolves at
-   runtime via `Federation.transform`, with no per-consumer wiring
-   beyond the existing `Graphitron.buildSchema(...)` call.
+For build-time context: `FederationLinkApplier` wraps
+`LinkDirectiveProcessor.loadFederationImportedDefinitions` and runs
+between `TagLinkSynthesiser` and `TagApplier` in `loadAttributedRegistry`;
+`GraphitronSchemaBuilder.buildBundle` rewrites graphql-java's raw
+"undeclared directive" `SchemaProblem`s into a recipe pointing at
+`getting-started.md#build-time-federation-directives`; `Bundle`
+carries a `federationLink` boolean parsed from the SDL.
 
-Markers 1 and 2 ship at `a24feb4`. Marker 3's wiring is in place; the
-runtime dispatch that actually resolves entities is the remaining work.
-
-## Shipped (commit `a24feb4`)
-
-The build-time half of the plan plus the federation-transform shell
-landed in one commit; the entity-dispatch teeth did not. Concretely,
-the following pieces are in trunk and need no further change:
-
-- **Phase 1 (`@link` injection + recipe diagnostic).**
-  `FederationLinkApplier` (`schema/input/`) wraps
-  `LinkDirectiveProcessor.loadFederationImportedDefinitions` and runs
-  in `loadAttributedRegistry` between `TagLinkSynthesiser` and
-  `TagApplier`. `GraphitronSchemaBuilder.buildBundle` catches
-  `SchemaProblem` from `makeExecutableSchema` and rewrites
-  undeclared-federation-directive entries into a recipe message that
-  names both the `@link` and manual options and points at
-  `getting-started.md#build-time-federation-directives`.
-  `Bundle` carries a `federationLink` boolean so Phase 3 can gate on
-  the parsed-from-SDL bit.
-- **Phase 2 (`<schemaInput tag>` opt-in).** `TagLinkSynthesiser`
-  (`schema/input/`) synthesises `extend schema @link(url:
-  FederationLinkApplier.DEFAULT_FEDERATION_SPEC_URL, import: ["@tag"])`
-  when any `schemaInput` is tagged and no federation `@link` is already
-  present. When a federation `@link` is present without `"@tag"` in
-  imports, it raises a fatal `ValidationError` keyed on the `@link`'s
-  source location. Aliased imports (`{name: "@tag", as: "@maturity"}`)
-  count as importing `@tag`. `TagApplier.ensureTagDirectiveDeclared` is
-  deleted; every `@tag` declaration now flows through the `@link`
-  import path. The synthesised extension uses sentinel source name
-  `<graphitron-synthesised:tag-link>`.
-- **Phase 3 wiring shell.** `GraphitronSchemaClassGenerator` emits a
-  two-method `build()` when `federationLink=true`: the one-arg form
-  delegates to the two-arg form, which builds the base schema, applies
-  the schema customizer, then calls `Federation.transform(base)
-  .setFederation2(true).resolveEntityType(...).fetchEntities(...)`,
-  applies the federation customizer, and returns the wrapped schema.
-  `GraphitronFacadeGenerator` emits the matching two-arg
-  `buildSchema(Consumer, Consumer<SchemaTransformer>)` overload. The
-  `QueryEntityField` model variant, its `FieldBuilder` passthrough,
-  `TypeFetcherGenerator` stub arm, `NOT_IMPLEMENTED_REASONS` entry, and
-  empty `validateQueryEntityField` are all deleted; `_entities`
-  classifies as `UnclassifiedField` and is owned by the federation
-  wrap.
-
-## What did not ship
-
-The two-arg `build()`'s defaults are placeholders:
-
-- `resolveEntityType` returns `getObjectType(rep.get("__typename"))`,
-  which works only when the entity result is itself a representation
-  map (i.e. the consumer's `fetchEntities` echoes the representation
-  back). It returns `null` for any domain object, which surfaces as a
-  federation-level error.
-- `fetchEntities` returns `List.of()` unconditionally. Every
-  `_entities` query against a stock-built schema returns an empty
-  list, regardless of the representations passed.
-
-So a consumer's `_entities` works only if they pass a custom
-`fetchEntities` *and* a custom `resolveEntityType` matching their
-fetcher's return shape, via the two-arg `buildSchema(...)`. That is
-not the contract the docs describe (`docs/getting-started.md:81-92`
-promises `_entities` is wired automatically) and not what marker 3
-above demands.
-
-A handful of review findings on the shipped pieces also need follow-up;
-they are scoped into Phase 5 below rather than treated as "rework
-Phase 1/2/3" since the existing behaviour is correct, just fragile.
-
-## Plan
-
-### Phase 4: entity dispatch
-
-**Goal:** make the default `fetchEntities` resolve entities for every
-type Graphitron classifies, and make the default `resolveEntityType`
-work alongside it. After Phase 4 lands, `Graphitron.buildSchema(b ->
-{})` returns a federation-wrapped schema whose `_entities` resolves
-without any consumer code.
+## Implementation
 
 **Classify-time model.** Add an `EntityResolution` value type
 co-located with the existing classifier output. Every type whose
@@ -142,15 +69,21 @@ record KeyAlternative(
 }
 ```
 
-The single variant collapses the earlier "NodeBacked vs KeyBacked"
-split. Treat `@node` as implying `@key(fields: "id", resolvable: true)`
-with `NodeIdMode`: at classify time, every `NodeType` automatically
-gets a synthesised first alternative `KeyAlternative(["id"], true,
-NodeIdMode(...))`. Consumer-declared `@key` directives become
-`KeyAlternative(parsedFields, parsedResolvable, ColumnsMode(...))`. If
-a `@node` type also carries an explicit `@key(fields: "id")`, dedup
-in favour of the synthesised NodeId alternative (one alternative, not
-two with the same `requiredFields`).
+Treat `@node` as implying `@key(fields: "id", resolvable: true)` with
+`NodeIdMode`: at classify time, every `NodeType` gets a synthesised
+alternative `KeyAlternative(["id"], true, NodeIdMode(...))`.
+Consumer-declared `@key` directives become `KeyAlternative(parsedFields,
+parsedResolvable, ColumnsMode(...))`.
+
+When a `@node` type also carries an explicit `@key(fields: "id", ...)`,
+dedup by **dropping the synthesised alternative and promoting the
+consumer's**: keep `parsedResolvable` from the directive and rewrite
+its `Mode` to `NodeIdMode(...)` so the dispatcher still routes through
+`NodeIdEncoder` rather than treating the literal `"id"` string as a
+column value. This preserves the documented opt-out path (a consumer
+who writes `@key(fields: "id", resolvable: false)` keeps the type out
+of `_Entity`); silently preferring the synthesised resolvable=true
+alternative would defeat that opt-out.
 
 `KeyAlternative.resolvable` mirrors the federation-spec `resolvable`
 argument (`@key(fields:, resolvable: Boolean = true)`). When `false`,
@@ -171,11 +104,15 @@ must show that directive on every `@node` type so the supergraph
 composer sees the entity declaration. Implement as a small post-step
 in `loadAttributedRegistry` (after `FederationLinkApplier` so the
 `@key` definition is in scope): for each `@node` type that does not
-already carry `@key(fields: "id")`, attach a synthesised one. If the
-schema has no federation `@link`, skip; synthesising a `@key`
-without a declaration would fail validation. Source location for the
-synthesised directive points at the `@node`'s location so any
-downstream error message stays meaningful.
+already carry `@key(fields: "id")`, attach a synthesised one. The
+"already-present" check honours the consumer-side opt-out — if the
+SDL writes `@key(fields: "id", resolvable: false)`, no synthesis
+fires, and the classify-time alternative carries `resolvable: false`
+through to the dispatcher. If the schema has no federation `@link`,
+skip the whole step; synthesising a `@key` without its declaration
+would fail validation. Source location for the synthesised directive
+points at the `@node`'s location so any downstream error message
+stays meaningful.
 
 **Parsing `@key(fields:)`.** The federation `fields:` grammar is a
 strict subset of GraphQL selection-set syntax: a non-empty
@@ -220,25 +157,28 @@ a `ValidationError` ("@key references unknown field 'X' on type Y").
 Tests live alongside the parser. `GraphQLSelectionParser` is left
 untouched.
 
-**Classify-time wiring.** A new `EntityResolutionBuilder` invoked from
-`TypeBuilder` after the `NodeType` and `TableType` enrichment passes
-walks the registry's `@key` directives plus every `@node` type. It
-emits one `EntityResolution` per entity-bearing type and lands it on
-the type's `GraphitronType` entry via a small extension on
-`TableBackedType` (a `entityResolution()` accessor returning
-`EntityResolution` or `null`).
+**Classify-time wiring.** A new `EntityResolutionBuilder` (in
+`no.sikt.graphitron.rewrite.schema.federation`, alongside
+`FederationKeyFieldsParser`) invoked from `TypeBuilder` after the
+`NodeType` and `TableType` enrichment passes walks the registry's
+`@key` directives plus every `@node` type. It emits one
+`EntityResolution` per entity-bearing type and lands it on the type's
+`GraphitronType` entry via a small extension on `TableBackedType` (an
+`entityResolution()` accessor returning `EntityResolution` or
+`null`).
 
 For `ColumnsMode` resolution, `EntityResolutionBuilder` resolves each
-parsed field name to a `ColumnRef` against the type's `@table` (or
-the discriminator table for `TableInterfaceType`) by the same name-to-
-column mapping used by `@lookupKey` arg resolution. An unresolvable
-field name becomes a `ValidationError` (see above). Reuse of the
-*classification* helper (`BuildContext.resolveColumnByName` and
-neighbours) is real; reuse of the *generation* path
-(`LookupValuesJoinEmitter`, `LookupMapping.ColumnMapping`) is *not*
-straightforward because those are rooted at GraphQL argument names.
-Plan for a fresh per-type SELECT-by-columns emitter (next paragraph),
-not a `LookupMapping` reuse.
+parsed field name to a `ColumnRef` against the type's `@table` by the
+same name-to-column mapping used by `@lookupKey` arg resolution. An
+unresolvable field name becomes a `ValidationError` (see above).
+`@key` on a `TableInterfaceType` is rejected at this point (see
+non-goals). Reuse of the *classification* helper
+(`BuildContext.resolveColumnByName` and neighbours) is real; reuse of
+the *generation* path (`LookupValuesJoinEmitter`,
+`LookupMapping.ColumnMapping`) is *not* straightforward because those
+are rooted at GraphQL argument names. Plan for a fresh per-type
+SELECT-by-columns emitter (next paragraph), not a `LookupMapping`
+reuse.
 
 **Runtime emission.** `GraphitronSchemaClassGenerator` replaces the
 two-arg `build()`'s placeholder lambdas with calls into a new
@@ -263,11 +203,18 @@ keyed by `__typename`, populated at class load time from one entry per
 
 1. Selects, **per representation**, the most-specific *resolvable*
    `KeyAlternative` whose `requiredFields` is a subset of the rep's
-   keys (excluding `__typename`). Ties broken by alternative size; if
-   no alternative matches, the rep yields `null` and federation
-   surfaces the error.
-2. After per-rep selection, groups reps by `(type, alternative)` for
-   batching.
+   keys (excluding `__typename`). Ties broken first by alternative
+   size (more required fields wins), then by declaration order in the
+   classified `alternatives` list. If no alternative matches, the rep
+   yields `null` and federation surfaces the error.
+2. After per-rep selection, groups reps by `(type, alternative,
+   tenantId)` for batching, where `tenantId` is resolved per-rep via a
+   single-rep DFE the same way `QueryNodeFetcher.dispatchNodes` builds
+   one (`graphitronContext(repEnv).getTenantId(repEnv)`). Folding reps
+   from different tenants into one SELECT would either return wrong
+   rows or violate tenant isolation, depending on how the consumer's
+   `getTenantId`/`getDslContext` wires up; partition before issuing
+   SQL.
 3. For a `NodeIdMode` group: peeks the typeId off each rep's `id`
    value via `NodeIdEncoder.peekTypeId`, then issues the same
    `hasIds(typeId, ids, keyColumns)` SELECT used by
@@ -293,50 +240,42 @@ keyed by `__typename`, populated at class load time from one entry per
   `GraphQLObjectType` by name.
 - The entity is a `Map` (the consumer-override path, where the
   consumer's `fetchEntities` echoes the rep). Read `__typename` off
-  the map. This subsumes the current placeholder `resolveEntityType`
-  behaviour from `a24feb4`.
+  the map.
 
 Domain-object-typed entities (consumer overrides returning POJOs
 without a `__typename` column or map key) are out of scope; consumers
 in that case must register their own `resolveEntityType` via the
-two-arg `buildSchema` overload. Document in `getting-started.md`.
+two-arg `buildSchema` overload. When the default `resolveType` falls
+through (entity is neither `Record` nor `Map`, or carries no
+`__typename`), throw a targeted `IllegalStateException` naming the
+override that's missing ("custom `fetchEntities` returned a POJO; pair
+it with `fed.resolveEntityType(...)` in the same `buildSchema` call;
+see getting-started.md") rather than letting federation surface its
+generic "could not determine type" error.
 
-**Batching and DataLoader scope.** Within a single `_entities` call,
-`(type, alternative)` grouping issues one SELECT per group, matching
-the batching shape `Query.nodes(ids:)` uses internally. Cross-field
-DataLoader sharing with sibling per-field fetches in the same request
-is **not** in scope for Phase 4: the existing per-type DataLoaders are
-keyed by `getTenantId(idEnv) + "/" + path`, and `_entities`'s DFE path
-(`Query._entities[i]`) does not match any concrete `Query.foos[i]`
-path, so loaders would not coalesce naturally. If a real consumer
-surfaces a need, a per-`_entities`-scoped loader can be added in a
-follow-up; pre-emptive plumbing is unjustified.
+**Cross-field DataLoader sharing.** Out of scope. The existing
+per-type DataLoaders are keyed by `getTenantId(idEnv) + "/" + path`,
+and `_entities`'s DFE path (`Query._entities[i]`) does not match any
+concrete `Query.foos[i]` path, so loaders would not coalesce
+naturally. If a real consumer surfaces a need, a
+per-`_entities`-scoped loader can be added in a follow-up;
+pre-emptive plumbing is unjustified. (Within `_entities` the
+`(type, alternative, tenantId)` grouping above already gives one
+SELECT per group.)
 
-**Consumer override hook (already in place).** The two-arg
-`buildSchema(Consumer, Consumer<SchemaTransformer>)` overload from
-`a24feb4` keeps its current shape. Phase 4 only changes what the
-default `fetchEntities` and `resolveEntityType` *do*; the surface stays
-the same. A consumer who calls `fed.fetchEntities(myCustomFetcher)`
-replaces the Graphitron default; one who calls
-`fed.resolveEntityType(myResolver)` replaces it. The customizer order
-established at `a24feb4` (federation customizer runs after Graphitron
-defaults attach) is unchanged, so an additive setter call wins over
-the default.
-
-**`getting-started.md` updates that ship with Phase 4.** The two-arg-
-form example (`getting-started.md:94-105`) currently mentions
-`fetchEntities` only. After Phase 4 the default `fetchEntities` works
-for every type Graphitron classifies, but a consumer with a
-hand-rolled `fetchEntities` returning POJOs must override
-`resolveEntityType` too. Reword the lead as escape-hatch ("if you have
-entity types Graphitron does not classify, or want non-default
-resolution") and add a one-liner pointing at `resolveEntityType` for
-the POJO-fetcher case. The `@link`-wording cosmetic ("your SDL opens
-with...") stays in Phase 5.
+**`getting-started.md` updates.** The two-arg-form example
+(`getting-started.md:94-105`) currently mentions `fetchEntities` only.
+After this lands, the default `fetchEntities` works for every type
+Graphitron classifies, but a consumer with a hand-rolled
+`fetchEntities` returning POJOs must override `resolveEntityType` too.
+Reword the lead as escape-hatch ("if you have entity types Graphitron
+does not classify, or want non-default resolution") and add a
+one-liner pointing at `resolveEntityType` for the POJO-fetcher case.
+The cosmetic `@link`-wording fix ships with the hygiene pass below.
 
 **Tests.** The existing string-match tests in
-`GraphitronSchemaClassGeneratorTest.federation_*` stay; Phase 4 adds
-runtime tests:
+`GraphitronSchemaClassGeneratorTest.federation_*` stay. New runtime
+tests:
 
 - Pipeline: SDL with `extend schema @link(url: ".../federation/v2.x",
   import: ["@key"])` and a `Foo @key(fields: "id")` type emits a
@@ -359,10 +298,25 @@ runtime tests:
   "id sku")` and a representation containing both `id` and `sku`
   selects the compound alternative.
 - `@node` + explicit `@key(fields: "id")` dedup: assert the type
-  classifies with one alternative, not two; the NodeId-mode one wins.
-- `@key(resolvable: false)`: a representation matching the
-  non-resolvable alternative does not run a SELECT (assert via the
-  query-counting fixture); federation surfaces its own error.
+  classifies with one alternative, not two; the consumer's directive
+  wins (NodeIdMode preserved, `resolvable` carries through).
+- `@node` + explicit `@key(fields: "id", resolvable: false)` opt-out:
+  the type drops out of `_entities` resolution. A representation for
+  it does not run a SELECT (query-counting fixture) and federation
+  surfaces its own error. Regression guard for the dedup rule.
+- `@key(resolvable: false)` on a non-`@node` type: a representation
+  matching the non-resolvable alternative does not run a SELECT;
+  federation surfaces its own error.
+- Multi-tenancy: a single `_entities` call with two reps of the same
+  `__typename` whose ids resolve to different tenants issues two
+  SELECTs (one per tenant), not one. Use the same per-id DFE-rebinding
+  shape `QueryNodeFetcher.dispatchNodes` uses, asserted via a
+  `getTenantId` stub that records calls plus the query-counting
+  fixture.
+- Classified-but-non-entity type: a rep whose `__typename` names a
+  type Graphitron classifies but which has no `@key` or `@node`
+  yields `null` and federation surfaces "entity resolution failed for
+  type X"; no NPE.
 - Order preservation: a single `_entities` call with three
   representations of mixed `__typename` returns results in the same
   order, with `null` slots for unresolvable reps.
@@ -402,10 +356,11 @@ runtime tests:
   over the full emitted source set; no separate federation-only
   ratchet is needed.
 
-### Phase 5: review hygiene and determinism
+## Hygiene and determinism
 
-Findings from the `a24feb4` review that do not block Phase 4 but are
-in scope for the overall goal. Each is a small, targeted change.
+Review findings on the shipped scaffold that don't block entity
+dispatch but are in scope for the overall goal. Each is a small,
+targeted change.
 
 **Lazy-load the federation directive name set.**
 `GraphitronSchemaBuilder.FEDERATION_DIRECTIVE_NAMES` is computed in a
@@ -439,11 +394,11 @@ back.
 **Tighten `buildRecipeErrors` mixed-error semantics.** When a
 `SchemaProblem` mixes federation and non-federation undeclared-directive
 entries, the current code converts every error in the bag to a
-`ValidationError` with `RejectionKind.INVALID_SCHEMA`. The plan said
-non-federation errors should "flow through unchanged". Either:
-(a) document the trade-off in code (we cannot keep the
-`SchemaProblem` and also throw `ValidationFailedException`, so the
-preserved-message-but-rewrapped form is the chosen behaviour); or
+`ValidationError` with `RejectionKind.INVALID_SCHEMA`, losing the
+original exception type for the non-federation half. Either:
+(a) document the trade-off in code (we cannot keep the `SchemaProblem`
+and also throw `ValidationFailedException`, so the preserved-
+message-but-rewrapped form is the chosen behaviour); or
 (b) split into two passes, raise the recipe-rewrap `ValidationError`s,
 and rethrow the original `SchemaProblem` for the rest. Pick (a) unless
 a real consumer surfaces wanting the original exception type.
@@ -458,47 +413,50 @@ something else needs the URL.
 
 **Pass `federationLink` from `apply` to `buildBundle`.**
 `FederationLinkApplier.hasFederationLink(registry)` is called once in
-the pipeline (after `apply`) and would re-walk the registry. Cheap
-today, but the asymmetric "applier returns boolean / inspector returns
-boolean / both walk the registry" shape invites future drift. Thread
-the boolean through `RewriteContext` or a side-channel on the
-`TypeDefinitionRegistry` so the second call disappears.
+the pipeline (after `apply`) and re-walks the registry. Cheap today,
+but the asymmetric "applier returns boolean / inspector returns
+boolean / both walk the registry" shape invites future drift. Make
+`apply` return the boolean and store it on `RewriteContext`; readers
+go through the context, the registry-walking inspector method
+disappears. (Side-channelling on `TypeDefinitionRegistry` works too
+but couples a graphql-java type to Graphitron metadata; the context
+is the right home.)
 
 **Doc fix in `getting-started.md` (cosmetic).** The intro line "your
 SDL opens with `extend schema @link(...)`" understates what the
 library accepts; a base `schema { ... } @link` also works. Reword to
 "your SDL declares an `@link` to a federation spec". (The two-arg
-form's example reword ships in Phase 4; see the Phase 4 section's
-`getting-started.md` block.)
+form's example reword ships with the entity-dispatch landing; see the
+implementation section's `getting-started.md` block.)
 
-**Runtime smoke test for the federation `build()` overload.** Even
-before Phase 4 lands the dispatch, add a unit test that compiles the
-emitted `GraphitronSchema` and invokes `build(b -> {}, fed -> {})`
-against a tiny federated SDL, asserting `Federation.transform`
-accepts the schema and the result has `_Service` and `_entities`
-entries. Catches the federation-jvm API drift class of bug
-independently of Phase 4 progress.
+**Runtime smoke test for the federation `build()` overload.** A unit
+test that compiles the emitted `GraphitronSchema` and invokes
+`build(b -> {}, fed -> {})` against a tiny federated SDL, asserting
+`Federation.transform` accepts the schema and the result has
+`_Service` and `_entities` entries. Land this first: it locks the
+existing scaffold's behaviour before the dispatch work moves things,
+and catches the federation-jvm API drift class of bug independently.
 
 ## Sequencing
 
-Phase 5 is independent of Phase 4 and can land first, in parallel, or
-after; each item is a small targeted change with no shared seams. The
-recommended order is the runtime smoke test first (locks the existing
-behaviour before Phase 4 starts moving things), then Phase 4 in one
-push, then the remaining Phase 5 hygiene items. Splitting Phase 4
-itself into sub-commits is the implementer's call. Three plausible
-seams exist:
-1. `EntityResolution` model + `FederationKeyFieldsParser` +
-   `@node`-implies-`@key(fields: "id")` synthesis. Pure value types and
-   classify-time logic, testable in isolation.
-2. `QueryNodeFetcher` lift (move `rowsNodes`'s SELECT internals to a
-   package-visible static helper, no behaviour change).
-3. `EntityFetcherDispatchClassGenerator` plus the schema-builder wire-
-   up that replaces the placeholder lambdas, plus `getting-started.md`
-   updates.
+Hygiene items are independent of the dispatch work; each is a small
+targeted change with no shared seams. Recommended order: runtime
+smoke test first, then the dispatch in one push, then the remaining
+hygiene items. The dispatch itself has three plausible seams the
+implementer can split or fold at their discretion:
 
-Land as one commit or three; the seams are real but the runtime half
-is what consumers see, so don't sit on (1) and (2) for long.
+1. `EntityResolution` model + `FederationKeyFieldsParser` +
+   `@node`-implies-`@key(fields: "id")` synthesis. Pure value types
+   and classify-time logic, testable in isolation.
+2. `QueryNodeFetcher.rowsNodes` lift to a package-visible static
+   helper that takes `(keys, dsl, selectionSet)` instead of pulling
+   them off a `DataFetchingEnvironment`. No behaviour change.
+3. `EntityFetcherDispatchClassGenerator` plus the schema-builder
+   wire-up that replaces the placeholder lambdas, plus
+   `getting-started.md` updates.
+
+The runtime half is what consumers see, so don't sit on (1) and (2)
+for long.
 
 ## Non-goals
 
@@ -510,9 +468,9 @@ is what consumers see, so don't sit on (1) and (2) for long.
   `LinkDirectiveProcessor` owns the directive set, the per-version
   gating, and the canonical declarations. We bump the
   `federation-graphql-java-support` dependency when the spec gains
-  directives; we don't curate our own table. (Phase 5's "single source
-  of truth" item is about removing today's accidental duplicate, not
-  growing it.)
+  directives; we don't curate our own table. (The hygiene pass's
+  "single source of truth" item is about removing today's accidental
+  duplicate, not growing it.)
 - **`@composeDirective` runtime support** beyond the directive
   declaration. Composing custom directives across subgraphs is a
   supergraph concern, handled by the gateway, not this subgraph.
@@ -524,31 +482,32 @@ is what consumers see, so don't sit on (1) and (2) for long.
   Lift the restriction in a follow-up plan if a real consumer surfaces
   needing it; the dispatcher's grouping logic would have to grow a
   recursive lookup path that is wholly unjustified speculation today.
-- **Subgraph-private `@node` types.** Phase 4 makes every `@node`
-  type an entity (synthesises `@key(fields: "id", resolvable: true)`
-  when a federation `@link` is present). A consumer who wants a
-  globally-identified `@node` type kept out of `_Entity` must
-  declare `@key(fields: "id", resolvable: false)` themselves, which
-  the synthesis step respects (it only inserts when no `@key` already
-  exists). True opt-out via a Graphitron-side directive is a follow-up
-  plan if anyone asks.
+- **Subgraph-private `@node` types.** Every `@node` type becomes an
+  entity by default (synthesised `@key(fields: "id", resolvable:
+  true)` when a federation `@link` is present). A consumer who wants
+  a globally-identified `@node` type kept out of `_Entity` must
+  declare `@key(fields: "id", resolvable: false)` themselves; the
+  synthesis step skips, and the dedup rule preserves the
+  `resolvable: false` flag. True opt-out via a Graphitron-side
+  directive is a follow-up plan if anyone asks.
+- **`@interfaceObject`.** v2's interface-entity surface is not
+  classified or dispatched. Subgraphs that need it must register their
+  own `fetchEntities`/`resolveEntityType`. Lift in a follow-up plan
+  if a real consumer surfaces.
+- **`TableInterfaceType` as a federation entity.** `@key` on an
+  interface-typed Graphitron classification is rejected at classify
+  time; declare `@key` on the implementations instead. The dispatcher
+  has no recursive fan-out across implementations, and adding one is
+  unjustified speculation today. (`EntityResolutionBuilder` resolves
+  `ColumnsMode` columns against the `@table` of `TableType` /
+  `NodeType` only; `TableInterfaceType` is not a permitted carrier.)
 
 ## Open decisions
 
-- **Where `EntityFetcherDispatch` lives.** Lean: emitted under
-  `<outputPackage>.fetchers.EntityFetcherDispatch`, alongside the
-  per-type fetcher emitters. Alternative: inline into
-  `GraphitronSchema` itself. Inlining keeps the emitted-class count
-  down but makes `GraphitronSchema`'s body grow with every entity
-  type. Lean toward the standalone class.
-- **`QueryNodeFetcher` reuse surface.** Lean: lift `rowsNodes`'s
-  per-typeId SELECT logic to a package-visible static helper on
-  `QueryNodeFetcher` so `EntityFetcherDispatch` can call it without
-  reconstructing a per-id `DataFetchingEnvironment`. Alternative:
-  duplicate the SELECT shape inside the dispatcher. Lean toward the
-  lift; the duplication risk is high otherwise.
-- **POJO-fetcher `resolveType`.** Lean: out of scope; consumer
-  overrides returning POJOs without a synthetic `__typename` column
-  must register their own `resolveEntityType` via the two-arg
-  `buildSchema` overload. Documented in `getting-started.md`. Reviewer
-  to confirm or push back if a default introspection path is wanted.
+- **POJO-fetcher `resolveType`.** Default left out of scope: a
+  consumer override returning POJOs without a `__typename` column or
+  map key must pair its `fetchEntities` with a custom
+  `resolveEntityType`. The default `resolveType` raises a targeted
+  `IllegalStateException` naming the missing override (see
+  Implementation). Reviewer to confirm or push back if a default
+  introspection path is wanted instead of the targeted error.
