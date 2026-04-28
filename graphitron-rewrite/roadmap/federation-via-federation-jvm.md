@@ -45,9 +45,19 @@ carries a `federationLink` boolean parsed from the SDL.
 **Classify-time model.** Add an `EntityResolution` value type
 co-located with the existing classifier output. Every type whose
 declaration carries `@key` or `@node` gets an `EntityResolution`
-attached to its classified `GraphitronType` entry; types without
-either get none, and the dispatcher routes them through to a
-federation-level "entity resolution failed for type X" error.
+recorded against its name; types without either get none, and the
+dispatcher routes them through to a federation-level "entity
+resolution failed for type X" error.
+
+Storage shape: a sidecar `Map<String, EntityResolution> entitiesByType`
+on `GraphitronSchema`, paralleling the existing `fields` /
+`fieldsByType` sidecars. The alternative (lifting an
+`entityResolution()` accessor onto `TableBackedType`) blurs runtime
+dispatch into the classification record hierarchy and forces every
+permitted record to carry a federation-only optional; the sidecar
+keeps `GraphitronType` records as immutable per-classification
+snapshots, matches how field-level classify-time output is already
+threaded, and confines federation knowledge to one map.
 
 ```java
 record EntityResolution(String typeName, List<KeyAlternative> alternatives) {}
@@ -155,17 +165,22 @@ After parsing, the classifier resolves each field name to a
 a `ValidationError` ("@key references unknown field 'X' on type Y").
 
 Tests live alongside the parser. `GraphQLSelectionParser` is left
-untouched.
+untouched. The Backlog [`selection-parser-audit`](selection-parser-audit.md)
+item revisits whether `GraphQLSelectionParser` should be replaced
+with graphql-java's own `Parser`; the federation `fields:` grammar is
+narrower than even graphql-java exposes (no aliases, arguments,
+variables, comments) and a parser bound to the federation rejection
+diagnostics belongs separately regardless of how that audit lands.
+The new `FederationKeyFieldsParser` does not gate on that audit.
 
 **Classify-time wiring.** A new `EntityResolutionBuilder` (in
 `no.sikt.graphitron.rewrite.schema.federation`, alongside
 `FederationKeyFieldsParser`) invoked from `TypeBuilder` after the
 `NodeType` and `TableType` enrichment passes walks the registry's
 `@key` directives plus every `@node` type. It emits one
-`EntityResolution` per entity-bearing type and lands it on the type's
-`GraphitronType` entry via a small extension on `TableBackedType` (an
-`entityResolution()` accessor returning `EntityResolution` or
-`null`).
+`EntityResolution` per entity-bearing type into the
+`entitiesByType` sidecar map (see "Classify-time model" above), keyed
+by GraphQL type name.
 
 For `ColumnsMode` resolution, `EntityResolutionBuilder` resolves each
 parsed field name to a `ColumnRef` against the type's `@table` by the
@@ -223,6 +238,21 @@ keyed by `__typename`, populated at class load time from one entry per
    point so the dispatcher can call it without reconstructing a
    per-id `DataFetchingEnvironment`; the lift is a real surface
    change in `QueryNodeFetcherClassGenerator`, not a free reuse.
+
+   Selection-set scoping caveat: `rowsNodes` projects via
+   `<TypeName>.$fields(env.getSelectionSet(), t, env)`. The
+   `_entities` DFE's selection set is the union of every inline
+   fragment across all `_Entity` types in the query, so each per-type
+   call must extract only the fragment scoped to that `__typename`.
+   The lifted entry point therefore takes a `DataFetchingFieldSelectionSet`
+   that is already narrowed to the type being fetched (or a separate
+   selected-fields list); it cannot pass the raw `_entities`
+   selection set straight through. Implementer's call whether to
+   narrow at the dispatcher (walk the selection set's
+   `getFields("__typename/...")` once per type) or to extend the
+   `<TypeName>.$fields` helper with a per-type-filter overload, but
+   the call site must not assume the federation DFE behaves like a
+   `Query.nodes` DFE.
 4. For a `ColumnsMode` group: builds a `WHERE (col1, col2, ...) IN
    ((v1a, v2a, ...), (v1b, v2b, ...), ...)` clause and runs it
    against the type's table, projecting `inline("Foo").as("__typename")`
