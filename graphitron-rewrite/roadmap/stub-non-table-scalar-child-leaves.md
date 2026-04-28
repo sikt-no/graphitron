@@ -251,7 +251,22 @@ In passing, Phase A also corrects the element-shape carry-through note in
 re-reflecting the service method later to recover whether the user wrote
 `Set<TableRecord>` or `Set<RowN<...>>`, the classifier captures the element type
 at the same site as the `BatchKey` and surfaces it on `MethodRef.Param.Sourced`.
-See the "Element-shape carry-through" section below.
+See "Sources element-type capture" inside the Model section.
+
+#### Phase A trade-off
+
+Phase A removes the `[deferred]` validator gate on `ServiceRecordField`, so
+schemas that today fail validation start compiling cleanly and codegen
+succeeds. The rows-method stub still throws `UnsupportedOperationException` at
+request time, so any query that *selects* a `ServiceRecordField` errors at
+runtime instead of being rejected at validation. Callers who route around the
+field (don't select it) succeed; callers who select it get a runtime error
+pointing at this roadmap item.
+
+This is the same trade-off `ServiceTableField`'s Phase A made. The alternative,
+keeping the validator gate but switching it to a non-fatal warning while
+codegen skips the variant, is uniformly attractive but is its own design
+problem and would land across both variants together. Deferred for now.
 
 ### Model: `BatchKey` on `ServiceRecordField`
 
@@ -280,6 +295,31 @@ existing emitter dispatch. Adding `BatchKeyField` to the `implements` list lets
 generators pattern-match on the shared interface (already used by
 `TypeFetcherGenerator`'s service / split-query arms via
 `GeneratorUtils.keyElementType(BatchKey)` and friends).
+
+#### Sources element-type capture (correction to `set-parent-keys-on-service.md`)
+
+The shipped `BatchKey` design (`set-parent-keys-on-service.md`) discards the
+user's element shape (`Set<RowN<...>>` vs `Set<TableRecord>` vs
+`Set<RecordN<...>>`) at classification time and plans to recover it later by
+re-reflecting the service method in the body emitter. That decision is reversed
+here: the classifier already has the full `ParameterizedType` in hand at
+`ServiceCatalog.reflectServiceMethod` time, so capturing the element type V is
+a few lines and removes the re-reflection step entirely.
+
+Add `TypeName elementType` to `MethodRef.Param.Sourced` alongside the existing
+`batchKey` field. The two are read together by the generator and the Phase B
+body emitter; co-locating them is the minimal-surface fix.
+
+For batched signatures (`Map<KeyType, V>`, `Set<...>`-keyed mapped, `List<V>`
+positional), V is the inner element parameter (e.g. `String`, `FilmRecord`, a
+`@record`-backed POJO). The classifier unwraps the captured `ParameterizedType`
+to extract V at the same point it derives the `BatchKey`.
+
+This change lands in Phase A even though Phase A's generator only reads V
+indirectly (via `serviceRecordElementType`, which prefers the schema's
+`ReturnTypeRef` for `@record`-backed returns and falls back to the captured V
+for scalars). Phase B's body emitter reads both `elementType` and `batchKey`
+directly to emit the `Map<KeyType, V> rows = Service.method(keys, ...)` call.
 
 ### Builder: derive and attach `BatchKey`; reject deferred shapes
 
@@ -313,15 +353,33 @@ return switch (returnType) {
 Same `BatchKey` derivation already lands on `ServiceTableField`; pulling it into a
 small private helper (`extractSourcesBatchKey(MethodRef)`) is cheap and avoids drift.
 
-`FieldBuilder.classifyChildFieldOnResultType` (Site 1, lines 1857-1859): the parent is
-a `@record`, which has no backing-table PK to anchor the batch key against. Reject this
-case for now:
+#### Strict return-type validation
+
+`ServiceTableField` enforces that the developer's reflected return type matches
+the schema's declared `ReturnTypeRef` element (via
+`FieldBuilder.computeExpectedServiceReturnType`). The same enforcement must run
+on `ServiceRecordField`, anchored on the captured V from
+`MethodRef.Param.Sourced.elementType`:
+
+- `String` field: V is `String`. Method shape is `Map<KeyType, String>` (mapped) /
+  `List<String>` (positional) / `String` (single-cardinality root only).
+- `Boolean` field: V is `Boolean`. Same shape rules.
+- `@record`-backed `FilmDetails` field: V is `no.example.FilmDetails`. Same
+  shape rules; `@record` backing class is matched by FQN.
+
+Mismatches surface as classification-time `AUTHOR_ERROR`, not compile-tier.
+
+`FieldBuilder.classifyChildFieldOnResultType` (Site 1, lines 1857-1859): the parent
+is a `@record`. Deriving a batch key here would require lifting through the
+parent chain to the rooted `@table` whose PK provides the key columns, which is
+its own design problem (parallel to Track 5's interface-union dispatch). Reject
+for now until a real schema needs it:
 
 ```java
 return new UnclassifiedField(parentTypeName, name, location, fieldDef,
     RejectionKind.DEFERRED,
-    "@service on a @record-typed parent is not yet supported; only @table-backed "
-        + "parents can derive the DataLoader batch key. See "
+    "@service on a @record-typed parent is not yet supported; the batch key "
+        + "must be lifted through the parent chain to the rooted @table. See "
         + "roadmap/stub-non-table-scalar-child-leaves.md.");
 ```
 
@@ -390,34 +448,12 @@ The `serviceRecordElementType(field)` helper mirrors the policy already used by
 
 - `ResultReturnType` with non-null `fqClassName`: element is `ClassName.bestGuess(fqClassName)`.
 - `ScalarReturnType` / `PojoResultType`: element is the developer's reflected
-  return type, captured at `ServiceCatalog.reflectServiceMethod` time. For batched
-  signatures (`Map<RowN<...>, V>`, `Set<...>`-keyed mapped, `List<V>` positional),
-  V is the element parameter, captured at the same site as the `BatchKey` and
-  surfaced on the `MethodRef` (see "Reflection captures V" below).
+  V, captured at reflection time and surfaced on `MethodRef.Param.Sourced`
+  (see "Sources element-type capture" in the Model section).
 
 Data fetchers return Java types; graphql-java's registered scalar coercing handles
 the GraphQL-side coercion at output. No GraphQL-scalar-to-Java mapping table is
 needed in the generator.
-
-#### Reflection captures V
-
-Phase A change to `ServiceCatalog.reflectServiceMethod`: when the developer's
-method declares a batched return (`Map<KeyType, V>`, `List<V>`), capture V (as a
-`TypeName` or fully qualified class name) and surface it on the `MethodRef`
-record. The classifier already has the full `ParameterizedType` in hand at
-classification time; unwrapping V is a few lines and removes the need to
-re-reflect the method later.
-
-Two storage options, equivalent in surface:
-
-- Add `TypeName elementType` to `MethodRef.Param.Sourced` alongside `batchKey`.
-  Lives next to the key info; localised to the one param that needs it.
-- Add `Optional<TypeName> sourcesElementType` directly on `MethodRef`. Survives
-  even if the param list is reshuffled.
-
-Recommendation: the first form, since it co-locates the element type with the
-`BatchKey` it pairs with. Element type and batch key are read together by the
-generator and Phase B emitter.
 
 The rows-method stub mirrors `buildServiceRowsMethod` (`ServiceTableField`),
 parameterised by the element type:
@@ -516,8 +552,17 @@ Unit tier (`graphitron/src/test/`):
   - `serviceRecordField_recordBacked_list_dataFetcherReturnsCompletableFutureListPojo`.
   - `serviceRecordField_mappedRow_list_dataFetcherCallsNewMappedDataLoaderWithSetKeys`.
   - `serviceRecordField_mappedRow_list_rowsMethodReturnsMapToListOfElement`.
-  - `serviceRecordField_dataFetcherCallsNewDataLoader_notWithContext` (regression
-    parallel to the `ServiceTableField` regression).
+
+The `newDataLoader` vs `newMappedDataLoader` factory selection is shared
+infrastructure (factory-method-string + `BuildKeyExtraction`) covered by
+`ServiceTableField`'s test surface; no parallel regression on
+`ServiceRecordField` is needed.
+
+Add one classifier-level case in `ServiceCatalogTest` asserting V capture on
+`MethodRef.Param.Sourced`: e.g. for a method `Map<Row1<Integer>, String>
+forkortelser(Set<Row1<Integer>> ids, DSLContext dsl)`, the resulting Sourced
+param's `elementType` is `String`. Cover both batched containers and the
+backed-`@record` case.
 
 Pipeline tier: a `SchemaToFetchersPipelineTest` case running classifier + generator
 on a small schema with one scalar-returning `@service` child field on a `@table`
@@ -534,6 +579,11 @@ no end-to-end query test can assert a value yet. Phase B
 `@service` field and asserting the value.
 
 ### Fixture
+
+The fixture below exists for classification + reflection-time discovery only.
+Phase A does not execute the rows method; the stub's `UnsupportedOperationException`
+mirrors the generated rows-method body. Phase B replaces the body with the real
+`Service.method(keys, ...)` call.
 
 Add to `graphitron-test/src/main/resources/graphql/schema.graphqls`:
 
@@ -580,24 +630,6 @@ The fixture compiles and is reachable from the schema; Phase B fills the body.
   [`mutations.md`](mutations.md), unaffected by this track.
 - **Non-empty `joinPath`.** `DEFERRED` rejection on the validator surface;
   re-promote when a real schema needs the lift form.
-
-### Element-shape carry-through (correction to `set-parent-keys-on-service.md`)
-
-The shipped `BatchKey` design notes element-shape (`Set<RowN<...>>` vs
-`Set<TableRecord>`) as "discarded at classification time, recovered later by
-re-reflecting the service method". This was wrong: the user's element shape is
-known at parse time and should travel through the model, not be re-derived.
-
-Fix: at `ServiceCatalog.reflectServiceMethod` time, capture the element type
-(see "Reflection captures V" above) and store it on `MethodRef.Param.Sourced`
-alongside the existing `batchKey`. The Phase B body emitter for both
-`ServiceTableField` and `ServiceRecordField` reads it directly: no reflection,
-no string parsing.
-
-Phase A scope: this storage extension lands here (it costs almost nothing
-once the Sourced record is being touched anyway), even though Phase A's
-generator doesn't yet consume it. Carrying the data through the model now
-keeps Phase B's body work focused on emission.
 
 ### Open questions
 
