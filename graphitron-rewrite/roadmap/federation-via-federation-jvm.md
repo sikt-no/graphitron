@@ -6,10 +6,11 @@ priority: 1
 
 # Apollo Federation via federation-jvm transform
 
-> Land Federation 2 support across three surfaces: build-time `@link`
-> recognition with auto-injected directive declarations, validate-time
-> diagnostics that point migrating consumers at one of two declaration
-> recipes, and a runtime post-step that wraps the built schema in
+> Land Federation 2 support across three surfaces:
+> `LinkDirectiveProcessor` from federation-graphql-java-support pre-runs
+> our schema build to inject the directive declarations a consumer's
+> `@link` imports; a small wrap diagnoses the no-`@link`-no-manual case
+> with a targeted recipe; a runtime post-step wraps the built schema in
 > `Federation.transform` so `_entities` resolves natively. Closes the
 > `QueryEntityField` stub once the runtime path is live.
 
@@ -19,7 +20,9 @@ priority: 1
 
 Make a Federation-2 SDL build cleanly without consumer-side directive
 boilerplate, and make the rewrite-emitted schema a drop-in input to
-`federation-graphql-java-support` at runtime.
+`federation-graphql-java-support` at runtime. Delegate as much
+work as possible to the library; add only the glue and the
+diagnostics it does not provide.
 
 Three landing markers:
 
@@ -50,9 +53,20 @@ Three landing markers:
   (`TagApplier.ensureTagDirectiveDeclared`, `TagApplier.java:264-298`),
   with federation-2 parity on the location set. `@key`, `@shareable`,
   `@inaccessible`, `@override`, `@link` itself, and the rest of the
-  federation set are not. graphql-java's load step rejects them with
-  "tried to use an undeclared directive ..." surfaced verbatim through
-  `ValidationFailedException`.
+  federation set are not. The rejection fires from
+  `SchemaGenerator.makeExecutableSchema(registry, runtimeWiring)`
+  inside `GraphitronSchemaBuilder.buildBundle`, not from
+  `RewriteSchemaLoader.load()`'s `buildRegistry` call (which does not
+  validate directive declarations). Today the error surfaces as a
+  `SchemaProblem` from graphql-java with "tried to use an undeclared
+  directive ..." and propagates through `ValidationFailedException`.
+- **Library available.** `federation-graphql-java-support` exposes
+  `LinkDirectiveProcessor.loadFederationImportedDefinitions(registry)`
+  as `public static`. It reads `@link` on schema definitions and
+  extensions, handles `import` aliases (`as`), gates each directive on
+  its minimum spec version, and returns a `Stream<SDLNamedDefinition>`
+  the caller adds to the registry. Pinning a directive set in
+  Graphitron is unnecessary; the library tracks the spec.
 - **Runtime guidance** lives in
   `graphitron-rewrite/docs/getting-started.md:80-102`: consumers wrap
   the built schema in `Federation.transform(base)` themselves. The doc
@@ -74,14 +88,15 @@ final wording moves into the doc when the relevant phase ships.
 > ```graphql
 > extend schema
 >   @link(
->     url: "https://specs.apollo.dev/federation/v2.6",
+>     url: "https://specs.apollo.dev/federation/v2.10",
 >     import: ["@key", "@shareable", "@inaccessible", "@override", "@tag"]
 >   )
 > ```
 >
-> The generator recognises this declaration and injects each imported
-> directive's canonical declaration for you. The federation runtime
-> reads the same `@link` line.
+> Pick whichever `v2.x` URL covers the directives you import; the
+> generator delegates to `federation-graphql-java-support`, which
+> tracks the Apollo spec and gates directives on their minimum
+> version. The federation runtime reads the same `@link` line.
 >
 > **Option 2, manual.** If you do not want `@link`, declare each
 > directive you use:
@@ -127,209 +142,127 @@ needs to change before implementation lands.
 
 ## Plan
 
-Phase ordering is 1 → 2 → 3. Phase 1 is independent and lands the most
-visible improvement first. Phase 2 builds on Phase 1's directive-name
-catalogue. Phase 3 depends on Phase 2 because `Federation.transform`
-reads the `@link` declaration to discover the federation contract.
+Phase ordering is 1 → 2 → 3. Phase 1 lands the bulk of build-time
+behaviour by routing through `LinkDirectiveProcessor`. Phase 2 is the
+`<schemaInput tag>` glue that depends on Phase 1 having injected
+the federation `@tag` declaration. Phase 3 wires `_entities` runtime
+resolution and removes the `QueryEntityField` stub.
 
-### Phase 1 — Diagnostics for undeclared federation directives
+### Phase 1 — `@link` injection via federation-jvm + recipe diagnostic
 
-**Goal:** replace graphql-java's bare "tried to use an undeclared
-directive 'X'" with a structured `ValidationError` that names the
-recipe. No registry mutation; no behavioural change beyond the error
-message.
+**Goal:** make Option 1 work (`@link`-imported directives validate
+without manual declarations), and replace graphql-java's bare "tried
+to use an undeclared directive 'X'" with a structured `ValidationError`
+that names the two recipes.
 
-**Approach:** preflight scan over the parsed `Document` before
-graphql-java's registry build sees it. Walking the parsed document
-(rather than catching graphql-java's load errors and string-matching
-the messages) gives us stable structured access to directive use sites
-without coupling to graphql-java's error wording.
+**Dependency.** Add `com.apollographql.federation:federation-graphql-java-support`
+v6.0.0 to `graphitron-rewrite/pom.xml`'s dependency-management section
+and pull it into the `graphitron` module. The library already lives in
+the runtime path of consumers using federation today; this elevates it
+to a build-time dependency too.
 
-**Refactor required.** `RewriteSchemaLoader.load(...)` today inlines
-parse-then-build (`new Parser().parseDocument(...)` followed by
-`new SchemaParser().buildRegistry(document)`), with no hook between the
-two. Split this so callers can interpose: either expose
-`parseDocument(...)` and `buildRegistry(Document)` as separate public
-methods, or accept a `Consumer<Document>` preflight callback the
-loader runs before `buildRegistry`. Either shape keeps the source-name
-attribution and `MultiSourceReader.trackData(true)` plumbing intact.
-Failing the refactor and re-parsing in the preflight is also workable
-but wastes the work and is not the recommended path.
+**Approach.** Delegate the directive-injection work to
+`LinkDirectiveProcessor.loadFederationImportedDefinitions(registry)`,
+which Apollo already maintains and version-tracks. It walks
+`registry.schemaDefinition()` plus `getSchemaExtensionDefinitions()`
+for `@link`s pointing at any `https://specs.apollo.dev/federation/v2.x`
+URL, parses the `import` array (string and `{name, as}` object forms),
+gates each entry on its minimum spec version, and returns a
+`Stream<SDLNamedDefinition>` of declarations to add. Calling it as an
+applier-style step right after `RewriteSchemaLoader.load(...)`
+populates the registry before our existing
+`SchemaGenerator.makeExecutableSchema(registry, runtimeWiring)` validates
+directive uses.
 
-**Federation directive catalogue:** baked-in `Set<String>` covering the
-v2.6 set: `key`, `requires`, `provides`, `external`, `shareable`,
-`inaccessible`, `override`, `tag`, `composeDirective`, `interfaceObject`,
-plus `link` itself. Phase 1 owns the catalogue *and* the canonical
-`DirectiveDefinition` table referenced from the diagnostic message
-below; Phase 2 reads the same table for injection. Centralising both
-in a single `FederationDirectives` collaborator (under
-`schema/input/`) keeps the two phases consistent.
+No Graphitron-side directive catalogue, no canonical-declaration
+table, no version pin. The library tracks the spec; we depend on its
+v6.0.0 release (Feb 2026) and bump as the spec evolves.
 
-**Detection rule.** For each directive *use* in the parsed document:
-1. If the directive name is in the federation catalogue, *and*
-2. the document does not declare it (no top-level `directive @<name>`
-   matching), *and*
-3. the document does not contain `@link(import: [..., "@<name>", ...])`
-   (textual or by-AST presence; tolerant to the `as` rename),
+**Component:** new `FederationLinkApplier` (`schema/input/`) that wraps
+the library call:
 
-emit a `ValidationError(RejectionKind.AUTHOR_ERROR, "<Type>.<field>"
-or "<Type>" or null, <message>, <use-site location>)` with
-the message:
+```java
+var defs = LinkDirectiveProcessor.loadFederationImportedDefinitions(registry);
+if (defs == null) return;  // no federation @link present
+defs.forEach(def -> registry.add(def).ifPresent(err -> errors.add(toValidationError(err))));
+```
+
+A thin wrapper, but it carries the federation-bit detection (whether
+`defs != null`) into the bundle for Phase 3 and converts any
+`registry.add(...)` rejection into a `ValidationError` with
+`RejectionKind.INVALID_SCHEMA`.
+
+**Recipe diagnostic.** When a consumer uses a federation directive
+without `@link` and without a manual declaration, graphql-java's
+`SchemaGenerator.makeExecutableSchema` throws a `SchemaProblem` whose
+errors include "tried to use an undeclared directive". `GraphitronSchemaBuilder`
+already runs that call; wrap the `SchemaProblem` catch site to detect
+"undeclared directive '<name>'" entries where `<name>` is in
+federation-jvm's known directive set (read from `FederationDirectives.allNames`)
+and rewrite each one as:
 
 ```
 Federation directive '@<name>' is not declared. Pick one:
   (1) Open one of your .graphqls files with
-      `extend schema @link(url: "https://specs.apollo.dev/federation/v2.6",
+      `extend schema @link(url: "https://specs.apollo.dev/federation/v2.x",
                            import: ["@<name>", ...])`
-  (2) Or declare it yourself:
-      directive @<name>(<args>) <repeatable> on <locations>
+  (2) Or declare it manually with `directive @<name> ... on ...`.
 See graphitron-rewrite/docs/getting-started.md#build-time-federation-directives.
 ```
 
-The `<args>` / `<repeatable>` / `<locations>` are filled from the
-canonical-declaration table this phase introduces (see catalogue
-note above); Phase 2's injection is then a one-liner per directive
-against the same table.
+Non-federation undeclared-directive errors flow through unchanged.
+This is the only Graphitron-side string-match against graphql-java's
+error wording; if the wording shifts in a future graphql-java release,
+the test below catches it.
 
-**Hook site:** `GraphQLRewriteGenerator.loadAttributedRegistry` today
-runs `RewriteSchemaLoader.load(...)` (parse + registry build in one
-call) → `TagApplier.apply(...)` → `DescriptionNoteApplier.apply(...)`.
-After the `RewriteSchemaLoader` refactor above, the new sequence is
-`parse → preflight (Phase 1) → buildRegistry → appliers`. If any
-federation diagnostic fires, collect *all* of them, then short-circuit
-with `ValidationFailedException` carrying the structured list. Today
-graphql-java's `SchemaParser.buildRegistry` throws a `SchemaProblem`
-on the first undeclared-directive error; the preflight gives a
-complete list to a migrating consumer in one go before that throw
-ever fires.
+**Hook site.** `GraphQLRewriteGenerator.loadAttributedRegistry` runs
+`RewriteSchemaLoader.load(...)` → `TagApplier.apply(...)` →
+`DescriptionNoteApplier.apply(...)` today. Insert
+`FederationLinkApplier.apply(registry)` before `TagApplier` (Phase 2's
+`<schemaInput tag>` synthesis runs between them; see Phase 2). The
+recipe-diagnostic wrap lives in `GraphitronSchemaBuilder.buildBundle`
+around the `makeExecutableSchema` call.
 
 **Tests.**
-- `FederationDiagnosticsTest`: SDL with `@key` use, no declaration, no
-  `@link` → exactly one error keyed on the `@key` use site.
-- Same SDL with `@key` declared manually → no error.
-- Same SDL with `@link(import: ["@key"])` declared on `extend schema`
-  → no error.
-- SDL with three federation directives undeclared → three errors, in
-  source order.
-- SDL with `@link(import: [{name: "@key", as: "@primaryKey"}])` and a
-  `@primaryKey` use → no error (alias respected).
+- `FederationLinkApplierTest`: SDL with `extend schema @link(url:
+  ".../v2.x", import: ["@key"])` and a `Foo @key(fields: "id")` type;
+  registry post-apply has both `directive @link` and `directive @key`
+  declarations injected by the library; no error.
+- Multi-import: `import: ["@key", "@shareable", "@inaccessible"]`
+  injects three declarations.
+- Alias: `import: [{name: "@key", as: "@primaryKey"}]` injects under
+  `@primaryKey` (library's responsibility; we just assert it propagates).
+- No `@link`: `loadFederationImportedDefinitions` returns null;
+  applier no-ops, federation bit on the bundle stays false.
+- `RecipeDiagnosticTest`: SDL with `@key` use, no `@link`, no manual
+  declaration → `ValidationFailedException` whose error message contains
+  "Pick one: (1) ..." and the doc anchor; assert the recipe replaced
+  graphql-java's wording.
+- Non-federation undeclared directive (e.g. `@madeUp`): unchanged
+  graphql-java error, no recipe rewrite.
 
-### Phase 2 — `@link` recognition + directive injection
+### Phase 2 — `<schemaInput tag>` opt-in + `TagApplier` cleanup
 
-**Goal:** make Option 1 work: `extend schema @link(url:
-"...federation/v2.x", import: [...])` injects each imported
-directive's canonical declaration into the registry.
+**Goal:** route `<schemaInput tag>`'s `@tag` uses through the same
+`@link`-import path Phase 1 enabled, and delete `TagApplier`'s
+hand-rolled directive-declaration auto-inject.
 
-**Component:** new `FederationLinkApplier` mirroring `TagApplier`'s
-shape (`schema/input/FederationLinkApplier.java`).
+**Component:** new `TagLinkSynthesiser` (`schema/input/`) that adds a
+synthesised `@link(import: ["@tag"])` schema extension when
+`<schemaInput tag>` is configured and the SDL has no `@link`. Runs
+*before* `FederationLinkApplier` (from Phase 1), so the synthesised
+extension is processed by the same library call as author-written
+`@link`s. One code path handles both.
 
 **Order of pipeline passes** in `loadAttributedRegistry`:
 
 ```
-parse → preflight scan (Phase 1) → registry build
-      → FederationLinkApplier  (Phase 2)
-      → TagApplier             (existing)
-      → DescriptionNoteApplier (existing)
+RewriteSchemaLoader.load
+  → TagLinkSynthesiser     (Phase 2; conditional on <schemaInput tag>)
+  → FederationLinkApplier  (Phase 1)
+  → TagApplier             (existing, minus ensureTagDirectiveDeclared)
+  → DescriptionNoteApplier (existing)
 ```
-
-`FederationLinkApplier` runs before `TagApplier` because Phase 2 also
-synthesises an `@link` import on `<schemaInput tag>`'s behalf when
-appropriate (see "`<schemaInput tag>` and `@link` interaction" below);
-that synthesis must land before `TagApplier` walks the registry, so
-the federation `@tag` declaration is in scope when tags are applied.
-`TagApplier.ensureTagDirectiveDeclared` deletes in this phase
-(see the same sub-step), so post-Phase-2 the only `@tag` declaration
-in any registry comes from the `@link` import path.
-
-**Detection.**
-1. Walk `registry.schemaDefinition()` and `registry.getSchemaExtensionDefinitions()`.
-2. For each `@link` directive application, parse:
-   - `url: String!` (required). Match against
-     `https?://specs\.apollo\.dev/federation/v(2\.\d+)`. Other URLs are
-     a non-goal for this round; emit a
-     `BuildWarning("@link url '<url>' is not a recognised Apollo
-     Federation spec; imported directives are not auto-declared")`
-     and skip.
-   - `import: [Import!]!` (required). Each import is either a string
-     (`"@key"`) or an object (`{name: "@key", as: "@primaryKey"}`).
-     Strip the leading `@` to get the directive name; record the
-     optional alias.
-
-**Canonical declarations.** Baked-in table mapping each supported v2.6
-directive name to its `DirectiveDefinition`. Source: Apollo's federation
-spec at the matched version. Concretely (illustrative; full table lives
-in the implementation):
-
-| Name | Args | Repeatable | Locations |
-|---|---|---|---|
-| `key` | `fields: String!, resolvable: Boolean = true` | yes | `OBJECT \| INTERFACE` |
-| `shareable` | (none) | yes | `OBJECT \| FIELD_DEFINITION` |
-| `external` | `reason: String` | no | `OBJECT \| FIELD_DEFINITION` |
-| `requires` | `fields: String!` | no | `FIELD_DEFINITION` |
-| `provides` | `fields: String!` | no | `FIELD_DEFINITION` |
-| `override` | `from: String!` | no | `FIELD_DEFINITION` |
-| `inaccessible` | (none) | no | full federation set |
-| `tag` | `name: String!` | yes | full federation set incl. `INPUT_OBJECT` |
-| `composeDirective` | `name: String!` | yes | `SCHEMA` |
-| `interfaceObject` | (none) | no | `OBJECT` |
-
-Pinning v2.6 explicitly is intentional; v2.7+ directives are a
-non-goal (see below).
-
-**Injection.**
-1. For each imported directive, look up the canonical `DirectiveDefinition`.
-2. If `as` was present, rename the definition's `name` to the alias.
-3. If the registry already declares the (possibly aliased) directive,
-   skip injection and emit
-   `ValidationError(RejectionKind.AUTHOR_ERROR, null,
-   "@link imports '@<name>' but the schema also declares 'directive
-   @<name>'; remove one", <@link-application location>)`. Mixing the
-   two paths on a single directive is the open-decision default below.
-4. Otherwise add the declaration via `registry.add(...)`. Surface any
-   graphql-java error from `add()` as a `ValidationError` with
-   `RejectionKind.INVALID_SCHEMA` (the registry refused a structurally
-   valid declaration; not an author-correctable name fix).
-
-**Alias scope.** `as` renames the directive itself; supporting types
-referenced from its argument list (e.g. `link__Import`,
-`link__Purpose`) are *not* renamed. Federation's spec mandates this:
-imports rename only the directive. The injection therefore aliases the
-top-level `DirectiveDefinition`'s `name` and leaves `Type` references
-inside `inputValueDefinition`s untouched.
-
-**`@link` itself.** The federation `@link` directive is also a
-declaration the registry needs. The applier injects its declaration
-on detection, before processing the `import` array, *unless* the
-schema already declares `directive @link(...)` itself. In that case
-skip injection silently (the author has taken responsibility for the
-declaration); no `ValidationError`, since the redeclaration conflict
-rule for imported directives doesn't apply to `@link` itself (it is
-not in the `import` array). Federation's `link` declaration is
-well-known:
-
-```graphql
-directive @link(url: String!, as: String, for: link__Purpose,
-                import: [link__Import]) repeatable on SCHEMA
-scalar link__Import
-enum link__Purpose { SECURITY EXECUTION }
-```
-
-**Tests.**
-- `FederationLinkApplierTest`: minimal SDL with `extend schema
-  @link(url: ".../v2.6", import: ["@key"])` plus `type Foo @key(fields:
-  "id")`; registry post-apply has both `directive @link` and `directive
-  @key` declarations; no error.
-- Multi-import: `import: ["@key", "@shareable", "@inaccessible"]`
-  injects three declarations.
-- Alias: `import: [{name: "@key", as: "@primaryKey"}]` injects under
-  `@primaryKey`; `@key` remains undeclared.
-- Conflict: schema imports `@key` *and* declares `directive @key`;
-  applier emits the structured `ValidationError` named above.
-- Unknown URL: `url: "https://example.com/custom"` triggers a
-  `BuildWarning` and no injection.
-- Unknown import name: `import: ["@madeUp"]` fires a
-  `ValidationError("unknown federation import: '@madeUp'; supported
-  imports are: @key, @shareable, ...")`.
 
 **`<schemaInput tag>` and `@link` interaction.**
 
@@ -338,69 +271,63 @@ is inherently a federation construct: only a federation gateway
 consumes the resulting tags. Setting `<schemaInput tag>` is therefore
 an implicit opt-in to Apollo Federation 2; the canonical declaration
 path for the resulting `@tag` uses is `@link(import: ["@tag"])`, not
-`TagApplier`'s directive-declaration auto-injection. This phase makes
-the canonical path the only path:
+`TagApplier`'s hand-rolled auto-inject. This phase makes the canonical
+path the only path:
 
 | Schema state | `<schemaInput tag>` set? | Action |
 |---|---|---|
-| No `@link` declaration | yes | Auto-inject `extend schema @link(url: "https://specs.apollo.dev/federation/v2.6", import: ["@tag"])` before `FederationLinkApplier`'s normal pass; the existing applier then injects federation's `@tag` declaration via the standard import path. |
+| No `@link` declaration | yes | Synthesise `extend schema @link(url: "https://specs.apollo.dev/federation/v2.x", import: ["@tag"])`. `FederationLinkApplier` (Phase 1) processes it via `LinkDirectiveProcessor`, which injects the `@tag` declaration. Use whichever v2.x URL the project's federation runtime depends on; `v2.10` is fine. |
 | `@link` declared, `"@tag"` in `import` list | yes | No-op. |
 | `@link` declared, `"@tag"` *absent* from `import` list | yes | Fatal `ValidationError` keyed on the `@link` directive's `SourceLocation`: "`<schemaInput tag>` is configured but `'@tag'` is not in the `@link` import list at `<file>:<line>`. Add `\"@tag\"` to the `import` array." |
 | (any) | no | No action; `<schemaInput tag>` is not in play. |
 
-Single auto-injection / single error, not per-tagged-input: the action
+Single synthesis / single error, not per-tagged-input: the action
 is the same regardless of how many tagged inputs the consumer has.
 
-The auto-inject path synthesises the `@link` SDL element at the start
-of Phase 2's pass and lets the existing `FederationLinkApplier`
-process it normally; one code path handles both
-"author wrote `@link`" and "we synthesised `@link`," with no
-special-case branch in the federation directive injection logic.
-
-**Source attribution for the synthesised extension.** The plugin emits
-the synthesised `SchemaExtensionDefinition` with a sentinel
-`SourceLocation` of `("<graphitron-synthesised:tag-link>", 1, 1)`.
-That keeps `MultiSourceReader.trackData(true)`'s round-trip happy and
-gives any downstream error message that points at the synthesised
-extension a stable, unmistakably-non-user source name. Existing
-attribution in `TagApplier` / `DescriptionNoteApplier` keys on
-authored sources only; the sentinel name does not collide.
+**Source attribution for the synthesised extension.**
+`TagLinkSynthesiser` emits the synthesised `SchemaExtensionDefinition`
+with a sentinel `SourceLocation` of
+`("<graphitron-synthesised:tag-link>", 1, 1)`. That gives any
+downstream error message pointing at the synthesised extension a
+stable, unmistakably-non-user source name. Existing attribution in
+`TagApplier` / `DescriptionNoteApplier` keys on authored sources only;
+the sentinel name does not collide.
 
 The hard error on `@link`-without-`"@tag"`-import is the explicit-author
-counterpart to the auto-inject: an author who has chosen to declare
+counterpart to the synthesis: an author who has chosen to declare
 `@link` themselves has taken control of the federation surface, so a
 mismatch between plugin config and `@link` import list is an author
 bug, not a defaulting decision the plugin should make silently.
 
 **`TagApplier.ensureTagDirectiveDeclared` deletes in this phase.**
 After Phase 2 lands, every `@tag` declaration comes from the `@link`
-import path: either the author's own `@link`, or the auto-injected one
-above. The directive-declaration auto-inject at
-`TagApplier.java:264-298` becomes dead code and should be removed in
-the same commit as this sub-step lands. Authors who manually use
-`@tag` in their SDL without `<schemaInput tag>` and without `@link`
-fall through to Phase 1's "undeclared federation directive"
-diagnostic, which already names both the `@link` and manual recipes.
+import path: either the author's own `@link`, or the synthesised one
+above. The hand-rolled auto-inject at `TagApplier.java:264-298`
+becomes dead code and is removed in the same commit. Authors who
+manually use `@tag` without `<schemaInput tag>` and without `@link`
+fall through to Phase 1's recipe diagnostic, which already names both
+the `@link` and manual recipes.
 
 Tests:
 - `<schemaInput tag>` set, no `@link` in SDL: registry post-apply
   contains a synthesised `@link` schema extension and federation's
-  `@tag` declaration; no error, no warning.
+  `@tag` declaration (the latter contributed by `LinkDirectiveProcessor`);
+  no error, no warning.
 - `<schemaInput tag>` set, SDL has `@link(import: ["@tag"])`: no
-  injection (idempotent), no error.
+  synthesis, no error.
 - `<schemaInput tag>` set, SDL has `@link(import: [{name: "@tag", as:
-  "@maturity"}])`: alias counts as importing `@tag`; no injection,
+  "@maturity"}])`: alias counts as importing `@tag`; no synthesis,
   no error.
 - `<schemaInput tag>` set, SDL has `@link(import: ["@key"])` (no
   `"@tag"`): fatal `ValidationError` keyed on the `@link` directive's
   source location; error message contains the file path and the line
   of the offending `@link`.
 - `<schemaInput tag>` *not* set, no `@link`, no `@tag` use anywhere:
-  no injection, no error (regression guard against blanket federation
+  no synthesis, no error (regression guard against blanket federation
   opt-in).
 - `<schemaInput tag>` *not* set, manual `@tag` use in SDL, no
-  `@link`: Phase 1's federation-directive diagnostic fires (no
-  fallback declaration auto-inject, since `TagApplier`'s
+  `@link`: Phase 1's recipe diagnostic fires (no fallback
+  declaration auto-inject, since `TagApplier`'s
   `ensureTagDirectiveDeclared` is gone).
 - Two tagged inputs, no `@link`: still one synthesised `@link`, not
   two.
@@ -413,16 +340,24 @@ federation spec; `Query._entities` resolves natively; the
 `QueryEntityField` model variant, the empty validator method, and the
 stub generator branch all delete.
 
-**Trigger condition.** The post-step runs iff Phase 2 detected a valid
-federation `@link`. Non-federation consumers do not pay for the
-`Federation.transform` rebuild (which walks the full schema). Carry
-the boolean on `GraphitronSchemaBuilder.Bundle` (the existing
+**Trigger condition.** The post-step runs iff Phase 1 detected a
+federation `@link` (i.e. `LinkDirectiveProcessor.loadFederationImportedDefinitions`
+returned a non-null stream). Non-federation consumers do not pay for
+the `Federation.transform` rebuild (which walks the full schema).
+Carry the boolean on `GraphitronSchemaBuilder.Bundle` (the existing
 `record Bundle(GraphitronSchema model, GraphQLSchema assembled)`
 extends to a third `boolean federationLink` component). `RewriteContext`
 is the wrong carrier: it is constructed once by the Mojo before any
 parsing happens, while the federation-link bit is derived from the
 parsed schema. The bundle already pairs classifier output with the
 assembled schema and is the natural place for parsing-derived flags.
+
+The `GraphQLSchema` post-step uses the `Federation.transform(GraphQLSchema)`
+overload, *not* the registry overload. Phase 1's `FederationLinkApplier`
+has already injected the directive declarations into the registry, so
+by the time `makeExecutableSchema` runs the schema has the federation
+directives wired; the post-step only needs to add `_Service` /
+`_Entity` and the entity resolvers.
 
 **Wiring.** In `GraphitronSchemaClassGenerator` (or a new
 `FederationPostStep` co-located with the generator), after the base
@@ -495,13 +430,10 @@ federation builder's contract (additive only on `fetchEntities` /
 `resolveEntityType`; do not call `.build()` from the customizer).
 
 **Tests.**
-- Pipeline: SDL with `extend schema @link(...federation/v2.6,
+- Pipeline: SDL with `extend schema @link(...federation/v2.x,
   import: ["@key"])` and a `Foo @key(fields: "id")` type emits a
   schema where `Query._entities(representations: [{__typename: "Foo",
   id: "1"}])` resolves to a `Foo` row (against the test fixture DB).
-- Round-trip: federated schema printed via `SchemaPrinter` round-trips
-  through `Federation.transform(schema, sdl).build()` for supergraph
-  compose.
 - `_entities` over a `@node` type uses the NodeId path.
 - `_entities` over a non-`@node` `@key` type uses the column-key path.
 - Consumer override: `buildSchema(b -> {}, fed -> fed.fetchEntities(...))`
@@ -523,44 +455,28 @@ federation builder's contract (additive only on `fetchEntities` /
   The legacy `<removeFederationDefinitions>` flag carried this; the
   rewrite drops it. Consumers on Federation 1 must migrate to v2's
   `@link` form before adopting this plan.
-- **Authorisation and cost directives** that ship as part of v2.5+ /
-  v2.6 / v2.9 of the spec (`@authenticated`, `@requiresScopes`,
-  `@policy`, `@cost`, `@listSize`, plus progressive override's
-  `label`). The canonical-declaration table pins the v2.6 *core*
-  federation set listed in Phase 2; these additional directives are
-  not in the table for this round even though some are technically
-  v2.6. Add them when a consumer needs them; the table extension is
-  mechanical, and Phase 2's "unknown federation import" diagnostic
-  will name the missing entry today.
+- **Maintaining a Graphitron-side federation directive catalogue.**
+  `LinkDirectiveProcessor` owns the directive set, the per-version
+  gating, and the canonical declarations. We bump the
+  `federation-graphql-java-support` dependency when the spec gains
+  directives; we don't curate our own table.
 - **`@composeDirective` runtime support** beyond the directive
   declaration. Composing custom directives across subgraphs is a
   supergraph concern, handled by the gateway, not this subgraph.
 - **Subgraph SDL artefact emission.** `_service.sdl` is reconstructed
   at runtime by `federation-graphql-java-support` from the programmatic
   schema; no build-time SDL artefact is emitted.
-- **Per-version `@link` URL parsing.** The plan recognises any
-  `specs.apollo.dev/federation/v2.x` URL and treats them all as v2.6
-  for the canonical-declaration table. A v2.5 consumer importing
-  `@composeDirective` (added in v2.1) gets the v2.6 declaration, which
-  is forward-compatible. If a consumer needs strict per-version
-  declarations, that becomes its own follow-up.
 
 ## Open decisions
 
-- **Phase 1 diagnostic severity.** Default position: fatal
+- **Phase 1 recipe-diagnostic severity.** Default position: fatal
   `ValidationError`, since "undeclared directive" is fatal in
   graphql-java today and downgrading to a `BuildWarning` would mask
   real bugs. Reviewer to confirm. If a migrating consumer needs a
   warning-only mode while in transition, that lands as a separate
   flag, not as the default.
-- **Phase 2: import-the-same-directive-and-redeclare-it conflict.**
-  Default: hard error. Alternative: silent precedence (manual wins,
-  `@link` import is ignored for that name). Hard error gives a clearer
-  diagnostic with no ambiguity in subsequent passes; the cost is that
-  consumers cannot incrementally migrate manual declarations into
-  `@link` imports without a synchronised edit. Reviewer to confirm.
 - **Phase 3: condition for running `Federation.transform`.** Default:
-  only when Phase 2 detected a federation `@link`. Alternative: always
+  only when Phase 1 detected a federation `@link`. Alternative: always
   run when any federation directive is present (declared or imported).
   The default avoids paying the schema-rebuild cost for non-federation
   consumers; the alternative would cover hand-declared-directives-only
@@ -576,3 +492,9 @@ federation builder's contract (additive only on `fetchEntities` /
   imports only `"@tag"`. The alternative produces two `@link`
   declarations on the schema, which Apollo Federation 2 permits but
   is harder for a reader to reason about. Lean toward the default.
+- **Pinning the federation-jvm version.** Default: pin to v6.0.0 in
+  the rewrite parent pom and bump explicitly when a consumer needs
+  newer-spec directives. Alternative: track the latest 6.x via a
+  range. Lean toward the explicit pin to keep the consumer's
+  federation runtime version under the consumer's control; the
+  rewrite's build-time use should follow the runtime, not lead it.
