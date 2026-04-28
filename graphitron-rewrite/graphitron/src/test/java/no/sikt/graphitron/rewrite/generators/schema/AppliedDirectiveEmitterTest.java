@@ -34,7 +34,7 @@ class AppliedDirectiveEmitterTest {
         assertThat(userBody)
             .contains("graphql.schema.GraphQLAppliedDirective.newDirective()")
             .contains(".name(\"key\")")
-            .contains(".valueProgrammatic(\"id\")")
+            .contains(".valueLiteral(graphql.language.StringValue.of(\"id\"))")
             .contains(".name(\"shareable\")")
             .contains(".withAppliedDirective(");
     }
@@ -46,12 +46,14 @@ class AppliedDirectiveEmitterTest {
     }
 
     @Test
-    void listArgumentValues_translateViaListOf() {
+    void listArgumentValues_emitAsArrayValueLiteral() {
         var queryBody = findTypeBody(CUSTOM_DIR_SDL, "QueryType");
         assertThat(queryBody)
             .contains(".name(\"auth\")")
             .contains(".name(\"roles\")")
-            .contains("java.util.List.of(\"admin\", \"ops\")");
+            .contains("graphql.language.ArrayValue.newArrayValue()")
+            .contains("graphql.language.StringValue.of(\"admin\")")
+            .contains("graphql.language.StringValue.of(\"ops\")");
     }
 
     @Test

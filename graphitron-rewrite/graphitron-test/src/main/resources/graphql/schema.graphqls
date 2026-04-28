@@ -1,3 +1,6 @@
+extend schema
+  @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
+
 interface Node { id: ID! }
 
 type Query {
@@ -218,7 +221,7 @@ type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jo
     ])
 }
 
-type Film implements Node @table(name: "film") @node {
+type Film implements Node @table(name: "film") @node @key(fields: "filmId") {
     id:          ID!          @nodeId
     filmId:      Int!         @field(name: "FILM_ID")
     title:       String!      @field(name: "TITLE")
