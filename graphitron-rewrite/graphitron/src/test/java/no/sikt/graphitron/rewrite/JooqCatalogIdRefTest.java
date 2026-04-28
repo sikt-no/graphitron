@@ -21,6 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class JooqCatalogIdRefTest {
 
     private static final String NODEID_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.nodeidfixture";
+    private static final String IDREF_JOOQ_PACKAGE  = "no.sikt.graphitron.rewrite.idreffixture";
 
     private static JooqCatalog sakila() {
         return new JooqCatalog(DEFAULT_JOOQ_PACKAGE);
@@ -28,6 +29,10 @@ class JooqCatalogIdRefTest {
 
     private static JooqCatalog nodeid() {
         return new JooqCatalog(NODEID_JOOQ_PACKAGE);
+    }
+
+    private static JooqCatalog idref() {
+        return new JooqCatalog(IDREF_JOOQ_PACKAGE);
     }
 
     // --- findUniqueFkToTable ---
@@ -150,5 +155,35 @@ class JooqCatalogIdRefTest {
         // Neither starts with the other → role = src column name
         var result = JooqCatalog.generateRoleName(List.of("foo"), List.of("bar"));
         assertThat(result).isEqualTo("foo");
+    }
+
+    // --- idreffixture cases ---
+
+    @Test
+    void qualifierForFk_idrefFixture_harRoleReturnsStudieprogramId() {
+        // studierett.studieprogram_id → studieprogram.studieprogram_id: HAR role → qualifier "StudieprogramId"
+        var result = idref().qualifierForFk("studierett", "studierett_studieprogram_id_fkey");
+        assertThat(result).hasValue("StudieprogramId");
+    }
+
+    @Test
+    void qualifierForFk_idrefFixture_rolePrefixReturnsRegistrarQualifier() {
+        // studierett.registrar_studieprogram → studieprogram.studieprogram_id:
+        // role = "registrar_studieprogram" (src and tgt are unrelated) →
+        // qualifier "RegistrarStudieprogramStudieprogramId"
+        var result = idref().qualifierForFk("studierett", "studierett_registrar_studieprogram_fkey");
+        assertThat(result).hasValue("RegistrarStudieprogramStudieprogramId");
+    }
+
+    @Test
+    void buildQualifierMap_idrefFixture_containsRawAndPluralKeys() {
+        var map = idref().buildQualifierMap("studierett");
+        // FK1 (HAR role): raw key = "studieprogram_id", plural camel = "studieprogramids"
+        assertThat(map).containsEntry("studieprogram_id", "studierett_studieprogram_id_fkey");
+        assertThat(map).containsEntry("studieprogramids", "studierett_studieprogram_id_fkey");
+        // FK2 (role prefix): raw key differs from any source column
+        assertThat(map).containsEntry(
+            "registrar_studieprogram_studieprogram_id",
+            "studierett_registrar_studieprogram_fkey");
     }
 }

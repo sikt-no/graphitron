@@ -34,7 +34,8 @@ public class NodeIdFixtureGenerator extends JavaGenerator {
      */
     private static final Map<String, Metadata> METADATA = Map.of(
         "bar", new Metadata("Bar", List.of("ID_1", "ID_2")),
-        "baz", new Metadata("Baz", List.of("ID"))
+        "baz", new Metadata("Baz", List.of("ID")),
+        "studieprogram", new Metadata("Studieprogram", List.of("STUDIEPROGRAM_ID"))
     );
 
     @Override
