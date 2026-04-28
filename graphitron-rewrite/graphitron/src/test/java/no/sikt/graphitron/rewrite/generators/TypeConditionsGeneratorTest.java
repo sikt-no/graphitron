@@ -34,7 +34,7 @@ class TypeConditionsGeneratorTest {
     }
 
     private static BodyParam.NodeIdIn nodeIdIn(String name, String typeId, List<ColumnRef> keyCols) {
-        return new BodyParam.NodeIdIn(name, typeId, keyCols, false,
+        return new BodyParam.NodeIdIn(name, typeId, keyCols,
             new CallSiteExtraction.NestedInputField("filter", List.of("filter", name)));
     }
 

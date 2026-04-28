@@ -63,16 +63,18 @@ public sealed interface BodyParam permits BodyParam.ColumnEq, BodyParam.NodeIdIn
      * Body emits
      * {@code NodeIdEncoder.hasIds("typeId", arg, table.col1, ..., table.colN)}.
      * {@code javaType} is always {@code "java.lang.String"} and {@code list} is always
-     * {@code true}.
+     * {@code true}. The body's {@code arg == null || arg.isEmpty()} short-circuit makes
+     * outer-list nullability irrelevant for this variant, so no {@code nonNull} field is
+     * carried.
      */
     record NodeIdIn(
         String name,
         String nodeTypeId,
         List<ColumnRef> nodeKeyColumns,
-        boolean nonNull,
         CallSiteExtraction extraction
     ) implements BodyParam {
         @Override public String javaType() { return String.class.getName(); }
         @Override public boolean list() { return true; }
+        @Override public boolean nonNull() { return false; }
     }
 }
