@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite.generators;
 
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.model.CallParam;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
@@ -143,7 +144,7 @@ public final class ArgCallEmitter {
                 : CodeBlock.of("$L.$L.getDataType().convert((String) env.getArgument($S))",
                     srcAlias, jc.columnJavaName(), param.name());
             case CallSiteExtraction.NestedInputField nif ->
-                buildNestedInputFieldExtraction(nif.outerArgName(), nif.path(), param.typeName());
+                buildNestedInputFieldExtraction(nif.outerArgName(), nif.path(), param.typeName(), param.list());
         };
     }
 
@@ -170,8 +171,11 @@ public final class ArgCallEmitter {
      * the declared type, an unchecked raw-type cast is acceptable; if a parameterized leaf type
      * ever requires it, callers can suppress warnings at the enclosing method.
      */
-    private static CodeBlock buildNestedInputFieldExtraction(String outerArgName, List<String> path, String leafTypeName) {
-        TypeName leafType = ClassName.bestGuess(rawComponent(leafTypeName));
+    private static CodeBlock buildNestedInputFieldExtraction(String outerArgName, List<String> path, String leafTypeName, boolean list) {
+        ClassName rawLeaf = ClassName.bestGuess(rawComponent(leafTypeName));
+        TypeName leafType = list
+            ? ParameterizedTypeName.get(ClassName.get(List.class), rawLeaf)
+            : rawLeaf;
         CodeBlock root = CodeBlock.of("env.getArgument($S)", outerArgName);
         return buildMapChain(root, path, 0, leafType);
     }

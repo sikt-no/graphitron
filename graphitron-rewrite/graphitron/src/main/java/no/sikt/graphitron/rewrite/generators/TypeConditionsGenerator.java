@@ -8,6 +8,7 @@ import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
+import no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator;
 import no.sikt.graphitron.rewrite.model.BodyParam;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
@@ -39,7 +40,7 @@ public class TypeConditionsGenerator {
 
     // CONDITION and DSL come from GeneratorUtils via static import.
 
-    public static List<TypeSpec> generate(GraphitronSchema schema, String jooqPackage) {
+    public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage, String jooqPackage) {
         // Collect GeneratedConditionFilters grouped by their conditions class name
         var filtersByClass = new LinkedHashMap<String, List<GeneratedConditionFilter>>();
         for (var type : schema.types().values()) {
@@ -53,7 +54,7 @@ public class TypeConditionsGenerator {
 
         return filtersByClass.entrySet().stream()
             .sorted(Comparator.comparing(e -> e.getKey()))
-            .map(e -> generateConditionsClass(e.getKey(), e.getValue(), jooqPackage))
+            .map(e -> generateConditionsClass(e.getKey(), e.getValue(), outputPackage, jooqPackage))
             .toList();
     }
 
@@ -71,14 +72,15 @@ public class TypeConditionsGenerator {
             .findFirst();
     }
 
-    private static TypeSpec generateConditionsClass(String fqClassName, List<GeneratedConditionFilter> filters, String jooqPackage) {
+    private static TypeSpec generateConditionsClass(String fqClassName, List<GeneratedConditionFilter> filters,
+                                                    String outputPackage, String jooqPackage) {
         // Class simple name is the last segment of the fully qualified name
         String simpleName = fqClassName.substring(fqClassName.lastIndexOf('.') + 1);
         var builder = TypeSpec.classBuilder(simpleName)
             .addModifiers(Modifier.PUBLIC);
 
         for (var gcf : filters) {
-            builder.addMethod(buildConditionMethod(gcf, jooqPackage));
+            builder.addMethod(buildConditionMethod(gcf, outputPackage, jooqPackage));
             for (var bp : gcf.bodyParams()) {
                 if (bp.extraction() instanceof CallSiteExtraction.TextMapLookup tl) {
                     builder.addField(buildTextEnumMapField(tl));
@@ -89,9 +91,10 @@ public class TypeConditionsGenerator {
         return builder.build();
     }
 
-    static MethodSpec buildConditionMethod(GeneratedConditionFilter gcf, String jooqPackage) {
+    static MethodSpec buildConditionMethod(GeneratedConditionFilter gcf, String outputPackage, String jooqPackage) {
         var tableRef = gcf.tableRef();
         var jooqTableClass = GeneratorUtils.ResolvedTableNames.ofTable(tableRef, jooqPackage).jooqTableClass();
+        var nodeIdEncoder = ClassName.get(outputPackage + ".util", NodeIdEncoderClassGenerator.CLASS_NAME);
 
         var builder = MethodSpec.methodBuilder(gcf.methodName())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -107,21 +110,36 @@ public class TypeConditionsGenerator {
 
         builder.addStatement("$T condition = $T.noCondition()", CONDITION, DSL);
         for (var bp : gcf.bodyParams()) {
-            String col = bp.column().javaName();
-            if (bp.list()) {
-                if (bp.nonNull()) {
-                    builder.addStatement("condition = condition.and(table.$L.in($L))", col, bp.name());
-                } else {
-                    builder.addStatement("if ($L != null) condition = condition.and(table.$L.in($L))",
-                        bp.name(), col, bp.name());
+            switch (bp) {
+                case BodyParam.ColumnEq ce -> {
+                    String col = ce.column().javaName();
+                    if (ce.list()) {
+                        if (ce.nonNull()) {
+                            builder.addStatement("condition = condition.and(table.$L.in($L))", col, ce.name());
+                        } else {
+                            builder.addStatement("if ($L != null) condition = condition.and(table.$L.in($L))",
+                                ce.name(), col, ce.name());
+                        }
+                    } else {
+                        if (ce.nonNull()) {
+                            builder.addStatement("condition = condition.and(table.$L.eq($T.val($L, table.$L)))",
+                                col, DSL, ce.name(), col);
+                        } else {
+                            builder.addStatement("if ($L != null) condition = condition.and(table.$L.eq($T.val($L, table.$L)))",
+                                ce.name(), col, DSL, ce.name(), col);
+                        }
+                    }
                 }
-            } else {
-                if (bp.nonNull()) {
-                    builder.addStatement("condition = condition.and(table.$L.eq($T.val($L, table.$L)))",
-                        col, DSL, bp.name(), col);
-                } else {
-                    builder.addStatement("if ($L != null) condition = condition.and(table.$L.eq($T.val($L, table.$L)))",
-                        bp.name(), col, DSL, bp.name(), col);
+                case BodyParam.NodeIdIn ni -> {
+                    var keyColArgs = CodeBlock.builder();
+                    for (int i = 0; i < ni.nodeKeyColumns().size(); i++) {
+                        if (i > 0) keyColArgs.add(", ");
+                        keyColArgs.add("table.$L", ni.nodeKeyColumns().get(i).javaName());
+                    }
+                    builder.addStatement(
+                        "condition = condition.and($L == null || $L.isEmpty() ? $T.noCondition() : $T.hasIds($S, $L, $L))",
+                        ni.name(), ni.name(), DSL,
+                        nodeIdEncoder, ni.nodeTypeId(), ni.name(), keyColArgs.build());
                 }
             }
         }

@@ -248,7 +248,7 @@ class FetcherPipelineTest {
             type Film @table(name: "film") { title: String, film_id: Int }
             type Query { film(film_id: Int!): Film }
             """);
-        var conditionsClasses = TypeConditionsGenerator.generate(schema, DEFAULT_JOOQ_PACKAGE);
+        var conditionsClasses = TypeConditionsGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
         assertThat(conditionsClasses).extracting(TypeSpec::name).contains("FilmConditions");
         var filmConditions = conditionsClasses.stream()
             .filter(t -> t.name().equals("FilmConditions")).findFirst().orElseThrow();

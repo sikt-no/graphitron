@@ -148,6 +148,7 @@ class TypeFetcherGeneratorTest {
         // mapping from the fixture's "body params" (retaining the parameter name as a fixture
         // convenience — callers still talk in terms of logical arg rows).
         var columns = bodyParams.stream()
+            .map(bp -> (BodyParam.ColumnEq) bp)
             .map(bp -> new LookupMapping.ColumnMapping.LookupColumn(
                 new LookupMapping.ColumnMapping.SourcePath(List.of(bp.name())),
                 bp.column(), bp.extraction(), bp.list()))
@@ -158,17 +159,17 @@ class TypeFetcherGeneratorTest {
     }
 
     private static BodyParam listKeyParam(String name, String javaName, String javaType) {
-        return new BodyParam(name, col(name, javaName, javaType), javaType, false, true,
+        return new BodyParam.ColumnEq(name, col(name, javaName, javaType), javaType, false, true,
             new CallSiteExtraction.Direct());
     }
 
     private static BodyParam scalarKeyParam(String name, String javaName, String javaType) {
-        return new BodyParam(name, col(name, javaName, javaType), javaType, false, false,
+        return new BodyParam.ColumnEq(name, col(name, javaName, javaType), javaType, false, false,
             new CallSiteExtraction.Direct());
     }
 
     private static BodyParam listIdKeyParam(String name, String javaName, String javaType) {
-        return new BodyParam(name, col(name, javaName, javaType), javaType, false, true,
+        return new BodyParam.ColumnEq(name, col(name, javaName, javaType), javaType, false, true,
             new CallSiteExtraction.JooqConvert(javaName));
     }
 

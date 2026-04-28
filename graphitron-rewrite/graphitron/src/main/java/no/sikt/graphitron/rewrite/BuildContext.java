@@ -812,6 +812,45 @@ class BuildContext {
             }
             String targetTable = argString(targetObj, DIR_TABLE, ARG_NAME)
                 .orElse(refTypeName.toLowerCase());
+            // Same-table case: the referenced type maps to this filter's own table. Semantics
+            // are "filter by own primary key", not a FK join — route to NodeIdInFilterField
+            // instead of attempting findUniqueFkToTable(t, t). Resolve typeId/keyColumns the
+            // same way as NodeIdReferenceField above: catalog metadata first, then post-first-pass
+            // ctx.types, then SDL-only @node.
+            if (targetTable.equalsIgnoreCase(resolvedTable.tableName())) {
+                String sameTableTypeId;
+                List<ColumnRef> sameTableKeyColumns;
+                var sameTableMeta = catalog.nodeIdMetadata(targetTable);
+                if (sameTableMeta.isPresent()) {
+                    sameTableTypeId = sameTableMeta.get().typeId();
+                    sameTableKeyColumns = sameTableMeta.get().keyColumns();
+                } else if (types != null && types.get(refTypeName) instanceof NodeType nt) {
+                    sameTableTypeId = nt.typeId();
+                    sameTableKeyColumns = nt.nodeKeyColumns();
+                } else if (targetObj.hasAppliedDirective(DIR_NODE)) {
+                    // First-pass / SDL-only @node: fall back to the catalog primary key. The
+                    // resolved NodeType in TypeBuilder uses the same fallback (TypeBuilder.java
+                    // around line 355) when @node omits keyColumns; matching it here keeps the
+                    // emitted IN-predicate columns consistent across passes.
+                    sameTableTypeId = argString(targetObj, DIR_NODE, ARG_TYPE_ID).orElse(refTypeName);
+                    sameTableKeyColumns = catalog.findPkColumns(targetTable).stream()
+                        .map(e -> new ColumnRef(e.sqlName(), e.javaName(), e.columnClass()))
+                        .toList();
+                    if (sameTableKeyColumns.isEmpty()) {
+                        return new InputFieldResolution.Unresolved(name, null,
+                            "@nodeId(typeName: '" + refTypeName + "') targets table '" + targetTable
+                            + "' which has @node but no resolvable key columns (no catalog metadata, "
+                            + "no @node(keyColumns:), no primary key)");
+                    }
+                } else {
+                    return new InputFieldResolution.Unresolved(name, null,
+                        "@nodeId(typeName: '" + refTypeName + "') targets table '" + targetTable
+                        + "' which has no @node key metadata; cannot generate primary-key IN filter");
+                }
+                return new InputFieldResolution.Resolved(new InputField.NodeIdInFilterField(
+                    parentTypeName, name, locationOf(field),
+                    sameTableTypeId, sameTableKeyColumns));
+            }
             String fkName;
             if (field.hasAppliedDirective(DIR_REFERENCE)) {
                 var path = parsePath(field, name, resolvedTable.tableName(), targetTable);
