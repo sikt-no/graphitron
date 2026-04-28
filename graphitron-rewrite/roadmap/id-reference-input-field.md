@@ -15,6 +15,20 @@ priority: 4
 > `UnclassifiedType` because the rewrite treats `@field(name:)` as a column name,
 > not a method-accessor suffix. Code generation is a follow-up.
 
+> **Implementation note (post-merge).** The shim gate shipped against
+> `JooqCatalog.nodeIdMetadata(targetTable)` rather than the spec's
+> `hasIdSetPredicateMethod(sourceTable, ...)`. Both probes distinguish
+> KjerneJooqGenerator projects from ones that don't emit the FK-set helpers, but
+> the target-side probe is strictly weaker: it accepts FKs whose source record
+> class lacks the `has*()` method, which would surface as a compile error if
+> codegen ever fires. The Phase 4 tests exercise the shipped gate
+> (`IdReferenceShimClassificationTest`, `IdReferenceShimWarnFormatTest`,
+> `JooqCatalogIdRefTest`) — there is no `JooqCatalogIdSetPredicateTest` because
+> `hasIdSetPredicateMethod` / `recordHasIdSetPredicateMethod` were never added.
+> Revisit when codegen lands; until then, classification stays Phase-2-deferred
+> behaviour. Pointer in code: `BuildContext.classifyInputField`, IdReferenceField
+> synthesis-shim arm.
+
 ## Overview
 
 Add one `InputField.IdReferenceField` variant for `[ID!]` (and scalar `ID!`) filter
