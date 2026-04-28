@@ -12,6 +12,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | Item | Status | Plan |
 |---|---|---|
+| Apollo Federation via federation-jvm transform | Spec | [plan](federation-via-federation-jvm.md) |
 | Classification vocabulary follow-ups | Spec | [plan](classification-vocabulary-followups.md) |
 | Context-value registry + native multi-tenant fan-out for `@service` | Spec | [plan](service-context-value-registry.md) |
 | Multi-parent `NestingField` sharing: `TableField` arm | Spec | [plan](nestingfield-multiparent-tablefield.md) |
@@ -25,7 +26,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | Java LSP rewrite + introspect retirement + `dev` goal | Ready | [plan](graphitron-lsp.md) |
 | Stub #3: Interface / union fetchers | In Progress | [plan](stub-interface-union-fetchers.md) |
 | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` | In Progress | [plan](retire-maven-plugin.md) |
-| Apollo Federation via federation-jvm transform | In Review | [plan](federation-via-federation-jvm.md) |
 | Load-bearing classifier guarantee audit annotations | In Review | [plan](load-bearing-guarantee-audit.md) |
 
 ---
