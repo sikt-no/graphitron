@@ -332,4 +332,72 @@ class FederationEntitiesDispatchTest {
         assertThat(entities).hasSize(1);
         assertThat(entities.get(0)).containsEntry("__typename", "Customer");
     }
+
+    /**
+     * Compound key: {@code FilmActor @key(fields: "filmId actorId")} resolves a rep
+     * carrying both column values via a {@code VALUES (idx, film_id, actor_id) JOIN
+     * film_actor ON ...} derived-table SELECT. Verifies the dispatcher's multi-column
+     * Row arity emission.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void entities_compoundKey_resolvesWithBothColumnValues() {
+        Map<String, Object> data = execute(
+            "query Q($reps: [_Any!]!) { _entities(representations: $reps) {"
+            + " __typename ... on FilmActor { filmId actorId } } }",
+            Map.of("reps", List.of(Map.of(
+                "__typename", "FilmActor",
+                "filmId", 1,
+                "actorId", 2))));
+        List<Map<String, Object>> entities = (List<Map<String, Object>>) data.get("_entities");
+        assertThat(entities).hasSize(1);
+        assertThat(entities.get(0)).containsEntry("__typename", "FilmActor");
+        assertThat(entities.get(0)).containsEntry("filmId", 1);
+        assertThat(entities.get(0)).containsEntry("actorId", 2);
+    }
+
+    /**
+     * Compound key partial match: a rep that omits one of the two required fields does
+     * not match the alternative, so federation surfaces a resolution failure (null slot)
+     * rather than silently picking up a different match.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void entities_compoundKey_partialMatchYieldsNullSlot() {
+        Map<String, Object> data = execute(
+            "query Q($reps: [_Any!]!) { _entities(representations: $reps) {"
+            + " __typename } }",
+            Map.of("reps", List.of(Map.of(
+                "__typename", "FilmActor",
+                "filmId", 1)))); // actorId missing
+        List<Map<String, Object>> entities = (List<Map<String, Object>>) data.get("_entities");
+        assertThat(entities).hasSize(1);
+        assertThat(entities.get(0)).isNull();
+    }
+
+    /**
+     * Compound key batching: multiple reps of the same {@code (typename, alternative,
+     * tenantId)} batch into a single SELECT via the {@code VALUES (idx, ...)} derived
+     * table. Verifies the row-array machinery emits one SELECT for two reps, not two.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void entities_compoundKeyBatch_oneSelectForMultipleReps() {
+        SQL_LOG.clear();
+        Map<String, Object> data = execute(
+            "query Q($reps: [_Any!]!) { _entities(representations: $reps) {"
+            + " __typename ... on FilmActor { filmId actorId } } }",
+            Map.of("reps", List.of(
+                Map.of("__typename", "FilmActor", "filmId", 1, "actorId", 1),
+                Map.of("__typename", "FilmActor", "filmId", 1, "actorId", 2),
+                Map.of("__typename", "FilmActor", "filmId", 2, "actorId", 1))));
+        List<Map<String, Object>> entities = (List<Map<String, Object>>) data.get("_entities");
+        assertThat(entities).hasSize(3);
+        long filmActorSelects = SQL_LOG.stream()
+            .filter(s -> s.contains("'filmactor' as \"__typename\""))
+            .count();
+        assertThat(filmActorSelects)
+            .as("three reps of one (typename, alt, tenant) group → one SELECT")
+            .isEqualTo(1);
+    }
 }
