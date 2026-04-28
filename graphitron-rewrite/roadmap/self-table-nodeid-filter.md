@@ -1,7 +1,6 @@
 ---
 title: "Same-table `[ID!] @nodeId` filter → primary-key IN predicate"
-status: Spec
-bucket: architecture
+status: Ready
 priority: 6
 ---
 
@@ -214,7 +213,8 @@ case InputField.NodeIdInFilterField nf -> {
             nf.name(),
             nf.nodeTypeId(),
             nf.nodeKeyColumns(),
-            /* nonNull */ false,  // [ID!] non-nullity is on the *list*, not the input field
+            /* nonNull */ false,  // body always guards `arg == null || arg.isEmpty()`, so the
+                                  // outer-list nullability ([ID!] vs [ID!]!) does not matter here
             new CallSiteExtraction.NestedInputField(outerArgName, leafPath)));
     }
 }

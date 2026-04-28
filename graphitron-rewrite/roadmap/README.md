@@ -17,12 +17,12 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | Classification vocabulary follow-ups | Spec | [plan](classification-vocabulary-followups.md) |
 | Context-value registry + native multi-tenant fan-out for `@service` | Spec | [plan](service-context-value-registry.md) |
 | Multi-parent `NestingField` sharing: `TableField` arm | Spec | [plan](nestingfield-multiparent-tablefield.md) |
-| Same-table `[ID!] @nodeId` filter → primary-key IN predicate | Spec | [plan](self-table-nodeid-filter.md) |
 | Faceted search on `@asConnection` <sub>[spike](faceted-search-sql.md)</sub> | Spec | [plan](faceted-search.md) |
 | `Set<T>` parent-keys on `@service` methods → `MappedBatchLoader` | Spec | [plan](set-parent-keys-on-service.md) |
 | Mutation bodies | Spec | [plan](mutations.md) |
 | Fold graphitron.sikt.no into the Maven build (AsciiDoc + GitHub Pages) | Spec | [plan](docs-site-asciidoc.md) |
 | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
+| Same-table `[ID!] @nodeId` filter → primary-key IN predicate | Ready | [plan](self-table-nodeid-filter.md) |
 | Docs as an index into classification tests | Ready (deferred) | [plan](docs-as-index-into-tests.md) |
 | Java LSP rewrite + introspect retirement + `dev` goal | Ready | [plan](graphitron-lsp.md) |
 | Stub #3: Interface / union fetchers | In Progress | [plan](stub-interface-union-fetchers.md) |
