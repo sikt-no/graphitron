@@ -304,3 +304,35 @@ CREATE TABLE nodeidfixture.bar (
 CREATE TABLE nodeidfixture.qux (
     name varchar(50) PRIMARY KEY
 );
+
+-- ===========================
+-- idreffixture schema
+-- ===========================
+--
+-- Synthetic fixture for IdReferenceField synthesis shim tests. `studieprogram` is the
+-- target table; it receives __NODE_TYPE_ID / __NODE_KEY_COLUMNS via NodeIdFixtureGenerator
+-- so that catalog.nodeIdMetadata("studieprogram") returns present, satisfying the shim
+-- gate.  Two FKs from `studierett` to `studieprogram` exercise two qualifier shapes:
+--
+--   FK1 studierett.studieprogram_id -> studieprogram.studieprogram_id
+--       HAR role (src col = tgt col) -> qualifier "StudieprogramId"
+--       raw map key "studieprogram_id" coincides with the source column name, so the
+--       shim-before-column-lookup ordering determines whether the field becomes
+--       IdReferenceField (shim wins) or ColumnField (column lookup wins).
+--
+--   FK2 studierett.registrar_studieprogram -> studieprogram.studieprogram_id
+--       Role prefix "registrar_studieprogram_" -> qualifier "RegistrarStudieprogramStudieprogramId"
+--       raw map key "registrar_studieprogram_studieprogram_id" does NOT match any column
+--       on studierett, so without the shim the field is Unresolved.
+
+CREATE SCHEMA idreffixture;
+
+CREATE TABLE idreffixture.studieprogram (
+    studieprogram_id varchar(50) PRIMARY KEY
+);
+
+CREATE TABLE idreffixture.studierett (
+    studierett_id        serial      PRIMARY KEY,
+    studieprogram_id     varchar(50) REFERENCES idreffixture.studieprogram(studieprogram_id),
+    registrar_studieprogram varchar(50) REFERENCES idreffixture.studieprogram(studieprogram_id)
+);
