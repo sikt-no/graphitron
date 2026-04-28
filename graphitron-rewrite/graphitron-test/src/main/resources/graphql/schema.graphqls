@@ -12,6 +12,10 @@ type Query {
     # (extracted from the opaque base64 id) to the matching NodeType's table.
     # See plan-nodeid-directives.md "Query.node(id:) dispatch is core".
     node(id: ID!): Node
+    # Relay batch dispatch — fans ids out into per-tenant DataLoaders, batches one
+    # `hasIds` query per typeId per tenant, scatters rows back to the request's
+    # original positions via NodeIdEncoder.canonicalize. See QueryNodeFetcherClassGenerator.
+    nodes(ids: [ID!]!): [Node]
     languageByKey(language_id: [Int] @lookupKey @field(name: "language_id")): [Language!]!
     customerById(customer_id: [ID] @lookupKey, store_id: ID @lookupKey): [Customer!]!
     storeById(store_id: [Int] @lookupKey @field(name: "store_id")): [Store!]!
