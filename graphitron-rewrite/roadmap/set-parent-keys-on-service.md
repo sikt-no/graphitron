@@ -89,11 +89,16 @@ public sealed interface BatchKey
 }
 ```
 
-Note: `MappedRowKeyed.javaTypeName()` faithfully reflects what the user wrote
-(`Set<RowN<...>>` or `Set<TableRecord>` both classify as `MappedRowKeyed`; today only
-the `Row` shape is reported by `javaTypeName()`, mirroring how `RowKeyed` already
-reports `List<RowN<...>>` for `List<TableRecord>`). The element-shape information is
-preserved in the variant choice so a future `TableRecord`-aware emitter can distinguish.
+Note: `MappedRowKeyed.javaTypeName()` always renders the `Row` shape regardless of
+whether the user wrote `Set<RowN<...>>` or `Set<TableRecord>`; both classify as
+`MappedRowKeyed`. This mirrors `RowKeyed`'s existing behaviour for `List<RowN<...>>` vs
+`List<TableRecord>`. Element-shape (`RowN` vs `TableRecord`) is **not** preserved on the
+variant: `MethodRef.Param.Sourced.typeName()` derives from `BatchKey.javaTypeName()`, so
+the user's original type is gone after classification. The future rows-method body
+emitter (see Out of Scope and `service-rows-method-body.md`) recovers it by re-reflecting
+the service method or by adding a `BatchKey.elementShape()` accessor at that time;
+element-shape only affects one site (the optional conversion before invoking the user's
+service), so deferring is genuinely cheap.
 
 ## Classifier: `ServiceCatalog.classifySourcesType`
 
@@ -340,10 +345,16 @@ assertion strings accordingly.
 
 - **Executing the rows method.** The rows stub still throws `UnsupportedOperationException`.
   This spec adds correct classification, the new variants, and the stub shape; calling
-  the actual service method is a separate story (tracked by
-  `service-context-value-registry.md` and the broader service-field execution work).
-  The split into `MappedRowKeyed` / `MappedRecordKeyed` ensures that follow-up has the
-  shape information it needs without re-discriminating from a string.
+  the actual service method is tracked separately by `service-rows-method-body.md`
+  (Backlog), with `service-context-value-registry.md` covering the typed context-arg
+  surface that body will consume. The split into `MappedRowKeyed` /
+  `MappedRecordKeyed` gives that follow-up container × key-shape discrimination
+  directly on the variant. Element-shape (`RowN` vs `TableRecord`, `RecordN`) is **not**
+  carried on the variant; the future emitter recovers it by re-reflecting
+  `MethodRef.className()` + `methodName()`, or by adding `BatchKey.elementShape()` at
+  that time. Element-shape only affects one site in the body — the optional conversion
+  before invoking the user's service — since DataLoader keys stay `RowN` / `RecordN`
+  for hashing reasons regardless.
 - **`@splitQuery` fields.** Use `BatchKey.RowKeyed`/`RecordKeyed` and are generated
   by `buildSplitQueryDataFetcher`, not `buildServiceDataFetcher`. No change. The
   `SplitRowsMethodEmitter` cast at line 131 to `BatchKey.RowKeyed` remains safe; split
