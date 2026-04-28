@@ -364,10 +364,10 @@ class NodeIdPipelineTest {
             schema -> assertThat(schema.type("Foo")).isInstanceOf(GraphitronType.UnclassifiedType.class)),
 
         LIST_VARIANT(
-            "list `[ID!]!` with @nodeId(typeName:) → UnclassifiedType (list-gate applies before @nodeId check)",
+            "list `[ID!]!` with @nodeId(typeName:) and no FK from source to target → UnclassifiedType (no FK from 'qux' to 'baz')",
             """
             type Baz @table(name: "baz") { id: ID! }
-            input Foo @table(name: "bar") { relatedId: [ID!]! @nodeId(typeName: "Baz") }
+            input Foo @table(name: "qux") { relatedId: [ID!]! @nodeId(typeName: "Baz") }
             type Query { x: String }
             """,
             schema -> assertThat(schema.type("Foo")).isInstanceOf(GraphitronType.UnclassifiedType.class)),
