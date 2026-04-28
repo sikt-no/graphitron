@@ -1,6 +1,6 @@
 ---
 title: "Error-handling parity: emit per-fetcher error channels from `@error`"
-status: Backlog
+status: Spec
 bucket: architecture
 priority: 7
 ---
@@ -286,32 +286,24 @@ shift, not a silent one.
 #### Field structural requirements on `@error` types
 
 The current classifier (`FieldBuilder.classifyChildFieldOnErrorType`,
-`FieldBuilder.java:1538-1545`) restricts fields on `@error` types to scalar or enum. The runtime
-contract is tighter: the developer-supplied class needs a `(List<String> path, String message)`
-constructor (§2 below). Two ways to enforce that the SDL agrees:
+`FieldBuilder.java:1538-1545`) restricts fields on `@error` types to scalar or enum. The SDL
+contract is schema-first: every `@error` type must declare `path: [String!]!` and
+`message: String!`. Missing or differently-shaped fields produce `UnclassifiedType`. Every
+legacy fixture under
+`graphitron-codegen-parent/graphitron-java-codegen/src/test/resources/exceptions/` satisfies
+this constraint.
 
-- **Schema-level:** require a non-null `path: [String!]!` and `message: String!` on every
-  `@error` type. Every legacy fixture under
-  `graphitron-codegen-parent/graphitron-java-codegen/src/test/resources/exceptions/` satisfies
-  this; production schemas not covered by fixtures may not.
-- **Reflection-level:** require only that the developer-supplied class declare the
-  `(List<String>, String)` constructor (validated at classify time the same way `@record`
-  validates reflection). The SDL fields then become a documentation convention, not a hard rule.
+The developer-supplied Java class must also provide a `(List<String> path, String message)`
+constructor, validated at classify time via reflection (the same mechanism `@record` uses). A
+class without the matching constructor produces `UnclassifiedType` with a descriptive reason,
+even if the SDL fields are correctly declared.
 
-The plan recommends the **reflection-level** check as the load-bearing one, with the
-schema-level check downgraded to a build-time *warning* (not error) when `path` or `message`
-fields are absent or shaped differently. Rationale: the Java-side constructor is what the
-emission actually depends on, the SDL fields are surfaced through the carrier-side `errors`
-list to clients (so they have to be present in practice), and a warning gives schema authors a
-clear signal without breaking schemas that had a stylistic variant. Spec phase audits production
-schemas before deciding whether to escalate the warning to an error.
-
-The Java-side check is a [load-bearing classifier check](../docs/rewrite-design-principles.md#classifier-guarantees-shape-emitter-assumptions):
-the producer (constructor-shape validation in `TypeBuilder.buildErrorType`) wears
-`@LoadBearingClassifierCheck(key = "error-type.path-message-constructor", ...)` and the consumer
+The schema-level check is the [load-bearing classifier check](../docs/rewrite-design-principles.md#classifier-guarantees-shape-emitter-assumptions):
+the producer (`TypeBuilder.buildErrorType`) wears
+`@LoadBearingClassifierCheck(key = "error-type.path-message-fields", ...)` and the consumer
 (§3's `ErrorRouter.dispatch` payload-factory call site, which constructs
-`new SomeError(path, message)` against the developer-supplied two-arg constructor) wears
-`@DependsOnClassifierCheck` with the same key.
+`new SomeError(path, message)`) wears `@DependsOnClassifierCheck` with the same key. The
+reflection check is a secondary guarantee; both must pass for the type to classify.
 
 ### 2. Resolve operation-to-error wiring at classify time
 
@@ -385,21 +377,17 @@ record ErrorChannel(
 ) {}
 
 sealed interface PayloadShape
-        permits PayloadShape.PayloadObject, PayloadShape.RootErrorsArrayOnly {
+        permits PayloadShape.PayloadObject {
 
     /** The fetcher returns a payload object whose `errorsFieldName` field is the errors list. */
     record PayloadObject(ClassName payloadClass) implements PayloadShape {}
-
-    /** The fetcher returns the errors list directly (no wrapping payload). */
-    record RootErrorsArrayOnly() implements PayloadShape {}
 }
 ```
 
 `PayloadShape` is a sub-taxonomy in the sense of
 [`rewrite-design-principles.md:43-47`](../docs/rewrite-design-principles.md#sub-taxonomies-for-resolution-outcomes):
 each variant carries exactly the data its emitter arm consumes. `PayloadObject` carries the
-`ClassName` the emitter needs to write the payload-factory reference (`FilmPayload::new`);
-`RootErrorsArrayOnly` carries nothing (the factory is `errors -> errors`).
+`ClassName` the emitter needs to write the payload-factory reference (`FilmPayload::new`).
 
 Carry `Optional<ErrorChannel>` on every field variant whose body is a candidate for the
 try/catch / `.exceptionally` wrapper in §3. Concretely:
@@ -555,7 +543,7 @@ public final class ErrorRouter {
             Function<List<Object>, ?> payloadFactory     // (errors) -> payload
     ) { ... }
 
-    /** No-channel disposition: log UUID, return DataFetcherResult with the generic redacted error. */
+    /** No-channel disposition: log with correlation ID, return DataFetcherResult with a redacted error. */
     public static Object redact(Throwable thrown, DataFetchingEnvironment env) { ... }
 
     public sealed interface Mapping
@@ -572,26 +560,28 @@ arm builds:
 DataFetcherResult.newResult()
     .data(null)
     .error(GraphqlErrorBuilder.newError(env)
-        .message("An exception occurred. The error has been logged with id " + uuid + ".")
+        .message("An error occurred. Reference: " + correlationId + ".")
         .build())
     .build();
 ```
 
-with the original `Throwable` logged at ERROR alongside the UUID. The raw exception message is
-never put into the response. This is the privacy property legacy preserved via its top-level
-handler; the rewrite preserves it at the fetcher catch site instead.
+with the original `Throwable` logged at ERROR alongside the correlation ID. The correlation ID
+is the current OTel trace ID when an active span is present (using the OTel API if on the
+compile classpath), falling back to `UUID.randomUUID().toString()`. The emitter detects OTel
+availability at build time and generates the appropriate resolution. This makes the ID findable
+as a distributed trace, not just a log entry. The raw exception message is never put into the
+response. This is the privacy property legacy preserved via its top-level handler; the rewrite
+preserves it at the fetcher catch site instead.
 
 The emitted call site supplies a payload factory rather than a no-arg constructor reference;
 this mirrors the legacy `PayloadCreator` shape (`SchemaBasedErrorStrategy.java:139-145`) but
-binds the errors list explicitly rather than via a setter. For payloads whose `errors` field is
-their only field (the `RootErrorsArrayOnly` shape in §2), the factory is `errors -> errors`
-itself, returned untouched.
+binds the errors list explicitly rather than via a setter.
 
 `path` resolves to `env.getExecutionStepInfo().getPath().toList()`; `message` resolves to the
 handler's `description` if present, otherwise the matched exception's `getMessage()` (preserves
 legacy fallback per `ExceptionToErrorMappingProviderGenerator.java:230-233`). This applies only
-to the matched path; the unmatched path uses the redacted UUID message regardless of what the
-exception's `getMessage()` returned.
+to the matched path; the unmatched path uses the redacted correlation-ID message regardless of
+what the exception's `getMessage()` returned.
 
 #### CompletionException unwrap and async fetcher path
 
@@ -734,8 +724,8 @@ What this collapses, compared to legacy `TopLevelErrorHandler`'s three arms:
   exposure is removed; schemas relying on it must add the explicit declaration. The migration
   table in §5 already names this transition.
 - Generic `Throwable` (including `SQLException`, jOOQ exceptions, NPEs, business exceptions
-  with no matching channel) → UUID-logged and redacted at the catch site. Same client-visible
-  shape and privacy guarantee as legacy.
+  with no matching channel) → correlation-ID-logged and redacted at the catch site. Same
+  client-visible shape and privacy guarantee as legacy.
 
 Out-of-fetcher exception paths (parsing, validation, coercion, custom scalar errors) still
 flow through graphql-java's defaults; Graphitron has no emission control there. None of these
@@ -795,15 +785,13 @@ not satisfy these variants (and is rejected unless the channel also carries an
 
 #### Special cases
 
-- **`InterruptedException`, `IOException` from non-database I/O.** These are usually
-  infrastructure errors that should redact rather than surface as a typed `@error`. The rule
-  above forces the schema to either (a) declare a wide handler (e.g. `Throwable`-wide
-  `ExceptionHandler`), which is usually wrong because it leaks infrastructure detail to clients,
-  or (b) wrap them in a domain exception in the service implementation. Path (b) is the
-  recommended pattern; the open question (see Open Questions) is whether the classifier should
-  also exempt these specific types from the wider-or-equal rule so a service declaring them
-  does not need a corresponding channel handler — they then flow through the catch arm's
-  redact path instead.
+- **`InterruptedException`, `IOException` from non-database I/O.** These are infrastructure
+  errors that should redact rather than surface as a typed `@error`. They are exempt from the
+  wider-or-equal rule: a service method declaring `throws IOException` does not need a
+  corresponding channel handler. They flow through the catch arm's redact path, logged with a
+  correlation ID (see "Resolved" in Open Questions). Schema authors who want explicit handling
+  may still declare a matching `ExceptionHandler`; the exemption only means the absence of one
+  is not a classifier error.
 - **`IllegalArgumentException`.** Legacy
   (`SchemaBasedErrorStrategy.java:58-73`) treats `IllegalArgumentException` as a special arm,
   separate from the schema-mapped strategy. The rewrite folds it into the same pipe: an
@@ -942,9 +930,9 @@ in-scope / out-of-scope, so the spec phase has a concrete checklist.
 - `union/`, `unionDatabase/`, `unionMultipleErrorsWithMultipleMixedHandlers/`,
   `unionMultipleMixedHandlers/`, `unionWithUnhandledError/`: union shape for `errors` field.
 - `withDescription/`, `withMatches/`: optional handler-fields populated.
-- `query/`: `@error` channel on a Query field, not just Mutation. (Hinges on the open question
-  on query-side scope below; if narrowed to mutation-only, this fixture moves to "rejected"
-  with a documented behaviour shift.)
+- `query/`: `@error` channel on a Query field, not just Mutation. Query-side `ErrorChannel`
+  wiring is deferred (see Open Questions); this fixture is out of scope for phases 0-3 and
+  moves to "rejected" with a documented behaviour shift. Revisit after mutations land.
 - `service/`: `@error` on a `@service`-backed mutation.
 - `onlyOneHandled/`: partial schema coverage (some `@error` types in the union have no matching
   handler for the thrown exception).
@@ -985,6 +973,132 @@ The pipeline-test set in `graphitron-test` covers each row above with one execut
 asserting the actual on-the-wire error shape; the per-row fixtures live in `graphitron-test`'s
 SDL alongside the mutation fixtures (the mutation-bodies fixture-gap closure in
 [`mutations.md`](mutations.md)).
+
+---
+
+## User documentation (first-client check)
+
+This section drafts the schema-author-facing documentation. If it does not read simply, the
+design needs revision before implementation.
+
+### Declaring typed error payloads
+
+Graphitron routes exceptions thrown inside a generated fetcher into typed GraphQL error
+payloads. Declare an `@error` type, add the required `path` and `message` fields, and list
+its handlers:
+
+```graphql
+type UgyldigInput @error(handlers: [
+  {handler: VALIDATION},
+  {handler: GENERIC, className: "no.sikt.example.DomainException"},
+  {handler: DATABASE, sqlState: "23503"}
+]) {
+  path: [String!]!
+  message: String!
+}
+```
+
+Return it from a mutation payload's `errors` field:
+
+```graphql
+type CreateFilmPayload @record(record: {className: "no.sikt.example.CreateFilmPayload"}) {
+  film: Film
+  errors: [UgyldigInput!]!
+}
+```
+
+The generated fetcher catches all exceptions. When one matches a handler, it constructs a
+typed instance and places it in `errors`. Unmatched exceptions are logged with a correlation
+ID (the current OTel trace ID when a span is active, otherwise a random UUID) and returned
+to the client as a redacted error. No internal detail, no stack trace, no exception message.
+
+### Handler kinds
+
+**`GENERIC`** matches by exception class, walking the full cause chain. `className` is
+required. `matches` is an optional substring filter on the exception message.
+
+```graphql
+{handler: GENERIC, className: "no.sikt.example.DomainException"}
+{handler: GENERIC, className: "java.lang.IllegalArgumentException", matches: "unknown film id"}
+```
+
+**`DATABASE`** matches any `SQLException` in the cause chain. Narrow by SQL state
+(Postgres / standard SQL) or vendor code (Oracle / vendor-specific), but not both at once.
+`{handler: DATABASE}` with no discriminator is a catch-all for any `SQLException`.
+
+```graphql
+{handler: DATABASE, sqlState: "23503"}  # foreign-key violation
+{handler: DATABASE, code: "1"}          # ORA-00001 unique constraint
+{handler: DATABASE}                     # catch-all for any SQLException
+```
+
+**`VALIDATION`** catches `ValidationViolationGraphQLException` and fans out each constraint
+violation into a separate typed instance, each carrying the violated field's path and the
+constraint's message. At most one `VALIDATION` entry per error channel; `className`, `sqlState`,
+`code`, and `matches` are not allowed alongside it.
+
+```graphql
+{handler: VALIDATION}
+```
+
+### Dispatch order
+
+Handlers are matched in source order; the first match wins. Place more-specific handlers
+before broader ones:
+
+```graphql
+type MyError @error(handlers: [
+  {handler: DATABASE, sqlState: "23503"},  # specific FK violation first
+  {handler: DATABASE},                     # any other SQLException
+  {handler: GENERIC, className: "java.lang.Throwable"}  # final catch-all
+]) {
+  path: [String!]!
+  message: String!
+}
+```
+
+### Unmatched and infrastructure exceptions
+
+Exceptions that match no handler — including infrastructure exceptions like `IOException` and
+`InterruptedException` that a service method may declare — are caught at the fetcher boundary
+and redacted. The client receives:
+
+```json
+{ "errors": [{ "message": "An error occurred. Reference: <id>" }] }
+```
+
+where `<id>` is the OTel trace ID when a span is active, otherwise a random UUID. The same ID
+appears in the server log at ERROR level alongside the original exception, making it findable
+in a distributed trace.
+
+### `@error` type requirements
+
+Every `@error` type must declare `path: [String!]!` and `message: String!`. The
+developer-supplied Java class must provide a matching `(List<String> path, String message)`
+constructor. Both are validated at build time; a missing field or wrong-shape constructor
+produces a classifier error (not a runtime failure).
+
+### Migrating from `SchemaBasedErrorStrategy`
+
+Map each legacy override method to a handler declaration:
+
+| Legacy override | Replacement |
+|---|---|
+| `handleValidationException(...)` | `{handler: VALIDATION}` |
+| `handleIllegalArgumentException(...)` | `{handler: GENERIC, className: "java.lang.IllegalArgumentException"}` |
+| `createDefaultDataAccessError(...)` | `{handler: DATABASE}` (place last; catches any remaining `SQLException`) |
+
+Delete the `CustomSchemaBasedErrorStrategy` subclass and the `ExceptionHandlingBuilder` wiring.
+The generated fetchers install no engine-level handler.
+
+**Behaviour changes from legacy:**
+
+- `IllegalArgumentException` messages are no longer automatically exposed to clients. Add
+  `{handler: GENERIC, className: "java.lang.IllegalArgumentException"}` explicitly if your
+  schema relied on the automatic exposure.
+- `DATABASE` handlers now match any `SQLException` in the cause chain, not only those wrapped
+  in Spring's `DataAccessException`. Spring apps behave identically; non-Spring apps no longer
+  need Spring JDBC for database error mapping.
 
 ---
 
@@ -1039,12 +1153,11 @@ SDL alongside the mutation fixtures (the mutation-bodies fixture-gap closure in
 
 ## Open questions for the Spec phase
 
-The earlier list resolved several questions inline; what remains:
-
-- **`@error` on query fields.** Legacy applies error mapping to any operation whose return
-  type carries an `errors` field. Confirm against production schemas whether query-side error
-  channels are in use; if zero usage, narrow scope to mutation fields and document the cut.
-  Phase 0's `ErrorsField` lift is independent of this and lands either way.
+- **`@error` on query fields (deferred).** Query-side `ErrorChannel` wiring (phases 2-3
+  emitter scope) is out of scope for this item; mutation fields only. Phase 0's `ErrorsField`
+  lift still classifies `errors` fields on payloads returned by query fields, but no try/catch
+  wrapping or `ErrorMappings` emission targets query fields. Revisit after mutations land and
+  the pattern is understood.
 - **Mixed unions (some members `@error`, some not).** §2's lift gates on the all-`@error`
   predicate. Spec phase decides whether a mixed union is a build-time error (probable schema
   bug) or a deferred-stub case (re-classify to `PolymorphicReturnType` rejection). Audit
@@ -1054,15 +1167,6 @@ The earlier list resolved several questions inline; what remains:
   determines the Java shape) but breaks the `@record`-symmetric story and changes the
   `code-generation-triggers.md:109` line. Default position: keep developer-supplied. Revisit
   if a consumer survey shows the boilerplate is meaningful.
-- **Field-structural strictness on `@error` types.** §1's "schema-level vs reflection-level"
-  question. Plan recommends reflection-level as load-bearing, schema-level as a warning;
-  spec phase audits production schemas before deciding whether to escalate the warning.
-- **`InterruptedException`/`IOException` exemption from §4's wider-or-equal rule.** Plan
-  documents the rule but does not exempt infrastructure exceptions automatically. Spec phase
-  decides whether the classifier should silently exempt `InterruptedException`,
-  `IOException`, and similar from the channel-membership requirement (so a service method
-  declaring them does not force a `Throwable`-wide handler), or accept that schema authors
-  must wrap them in domain exceptions.
 - **`GraphQLError` extensions/locations on validation fan-out.** §5's fan-out projects each
   carried `GraphQLError` to `(path, message)` only. Legacy did the same; the rewrite preserves
   parity. Spec phase decides whether to flag this as a separate roadmap item for consumers
@@ -1085,10 +1189,24 @@ The earlier list resolved several questions inline; what remains:
   no-runtime-jar invariant.
 - **Top-level handler "slot" on `Graphitron.buildSchema`.** Resolved by removing the need for
   one entirely. Every emitted fetcher catches at its own boundary; the privacy contract
-  (UUID-log unmatched, redact message) is enforced at the rewrite-controlled emission site
-  rather than delegated to a class consumers must remember to wire. graphql-java's default
-  `DataFetcherExceptionHandler` stays default. No new parameter, no `GraphitronOptions`
+  (correlation-ID-log unmatched, redact message) is enforced at the rewrite-controlled
+  emission site rather than delegated to a class consumers must remember to wire. graphql-java's
+  default `DataFetcherExceptionHandler` stays default. No new parameter, no `GraphitronOptions`
   carrier, no consumer-facing handler class.
+- **Correlation ID for unmatched throws.** `ErrorRouter.redact` uses the current OTel trace ID
+  when an active span is present (OTel API on compile classpath), falling back to
+  `UUID.randomUUID()`. The emitter detects OTel availability at build time and generates
+  accordingly. Clients receive `"An error occurred. Reference: <id>."` The raw exception
+  message is never in the response.
+- **Field-structural strictness.** Schema-first: every `@error` type must declare
+  `path: [String!]!` and `message: String!`; missing or wrong-shaped fields produce
+  `UnclassifiedType`. The reflection check on the `(List<String>, String)` constructor is a
+  secondary guarantee. Both must pass.
+- **`InterruptedException`/`IOException` exemption.** Infrastructure exceptions
+  (`InterruptedException`, `IOException`, and similar) are exempt from §4's wider-or-equal
+  channel-membership rule. A service method declaring them does not need a corresponding
+  channel handler; they fall through to the `ErrorRouter.redact` path. Schema authors who want
+  explicit handling may declare a matching `ExceptionHandler` in the channel.
 - **Generation-efficiency: matcher dedup.** Resolved via the per-package `ErrorMappings` class
   in §3. Each distinct channel gets one named `Mapping[]` constant; per-fetcher `MAPPINGS`
   fields reference it.
