@@ -40,6 +40,8 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -57,6 +59,8 @@ import java.util.stream.Collectors;
 class BuildContext {
 
     private static final Logger NODE_ID_SHIM_LOGGER = LoggerFactory.getLogger(BuildContext.class);
+    private static final Logger ID_REF_SHIM_LOGGER =
+        LoggerFactory.getLogger(BuildContext.class.getName() + ".idRefShim");
 
     // ===== Directive names =====
 
@@ -137,6 +141,7 @@ class BuildContext {
      * the plugin's validate / generate mojos; never fail the build. See {@link BuildWarning}.
      */
     private final List<BuildWarning> warnings = new ArrayList<>();
+    private Map<String, String> typeNameByTableKey; // lazy; null until findGraphQLTypeForTable is first called
 
     BuildContext(GraphQLSchema schema, JooqCatalog catalog, RewriteContext ctx) {
         this.schema = schema;
@@ -789,6 +794,56 @@ class BuildContext {
                     nodeRefPath.elements(), cond));
             }
         }
+        // IdReferenceField (canonical): [ID!] with @nodeId(typeName: T), optionally pinned by
+        // @reference(path: [{key: K}]). FK is inferred when unique; @reference disambiguates when
+        // not. Single-hop only; synthesized=false.
+        if ("ID".equals(typeName) && list && field.hasAppliedDirective(DIR_NODE_ID)) {
+            String refTypeName = argString(field, DIR_NODE_ID, ARG_TYPE_NAME).orElse(null);
+            if (refTypeName == null) {
+                return new InputFieldResolution.Unresolved(name, null,
+                    "@nodeId on [ID!] requires typeName:");
+            }
+            var rawGqlType = schema.getType(refTypeName);
+            if (!(rawGqlType instanceof GraphQLObjectType targetObj)
+                    || !targetObj.hasAppliedDirective(DIR_TABLE)) {
+                return new InputFieldResolution.Unresolved(name, null,
+                    "@nodeId(typeName:) type '" + refTypeName + "' is not @table-annotated");
+            }
+            String targetTable = argString(targetObj, DIR_TABLE, ARG_NAME)
+                .orElse(refTypeName.toLowerCase());
+            String fkName;
+            if (field.hasAppliedDirective(DIR_REFERENCE)) {
+                var path = parsePath(field, name, resolvedTable.tableName(), targetTable);
+                if (path.hasError()) {
+                    return new InputFieldResolution.Unresolved(name, null, path.errorMessage());
+                }
+                if (path.elements().size() != 1) {
+                    return new InputFieldResolution.Unresolved(name, null,
+                        "@reference path on [ID!] @nodeId must be single-hop; "
+                        + "multi-hop FK filters are not supported");
+                }
+                if (!(path.elements().get(0) instanceof FkJoin fkStep)) {
+                    return new InputFieldResolution.Unresolved(name, null,
+                        "@reference path on [ID!] @nodeId must be a FK key, not a condition method");
+                }
+                fkName = fkStep.fkName();
+            } else {
+                var inferred = catalog.findUniqueFkToTable(resolvedTable.tableName(), targetTable);
+                if (inferred.isEmpty()) {
+                    return new InputFieldResolution.Unresolved(name, null,
+                        "no unique FK from '" + resolvedTable.tableName() + "' to '" + targetTable
+                        + "'; declare @reference(path: [{key: ...}]) to disambiguate");
+                }
+                fkName = inferred.get();
+            }
+            String qualifier = catalog.qualifierForFk(resolvedTable.tableName(), fkName)
+                .orElseThrow(() -> new IllegalStateException(
+                    "qualifierForFk returned empty for FK '" + fkName + "' on table '"
+                    + resolvedTable.tableName() + "' — should be unreachable"));
+            return new InputFieldResolution.Resolved(new InputField.IdReferenceField(
+                parentTypeName, name, locationOf(field), typeName, nonNull, list,
+                refTypeName, fkName, qualifier, /* synthesized */ false));
+        }
         if (field.hasAppliedDirective(DIR_REFERENCE)) {
             var path = parsePath(field, name, resolvedTable.tableName(), null);
             if (path.hasError()) return new InputFieldResolution.Unresolved(name, null, path.errorMessage());
@@ -840,6 +895,44 @@ class BuildContext {
                 List.copyOf(resolvedFields), cond));
         }
         String tableName = resolvedTable.tableName();
+        // IdReferenceField synthesis shim: ID! or [ID!] on a @table input whose column name
+        // (from @field(name:) or the GraphQL field name) hits the qualifier map for the resolved
+        // table AND the target table has KjerneJooqGenerator node metadata. Runs before column
+        // lookup so @field(name: "X_ID") fields are intercepted before the case-insensitive
+        // column match would shadow the qualifier reverse-map. Retirement: retire-id-reference-synthesis-shim.md.
+        if ("ID".equals(typeName)
+                && !field.hasAppliedDirective(DIR_NODE_ID)
+                && !field.hasAppliedDirective(DIR_REFERENCE)) {
+            String shimFkName = catalog.buildQualifierMap(tableName).get(columnName.toLowerCase());
+            if (shimFkName != null) {
+                String qualifier = catalog.qualifierForFk(tableName, shimFkName)
+                    .orElseThrow(() -> new IllegalStateException(
+                        "qualifierForFk returned empty for FK '" + shimFkName + "' on table '"
+                        + tableName + "' — should be unreachable"));
+                Optional<String> targetTableOpt = catalog.findForeignKey(shimFkName)
+                    .map(fk -> fk.getKey().getTable().getName());
+                Optional<String> targetTypeOpt = targetTableOpt.flatMap(this::findGraphQLTypeForTable);
+                if (catalog.nodeIdMetadata(targetTableOpt.orElse("")).isPresent()
+                        && targetTypeOpt.isPresent()) {
+                    boolean fkAmbiguous = catalog
+                        .findUniqueFkToTable(tableName, targetTableOpt.get())
+                        .isEmpty();
+                    String canonical = fkAmbiguous
+                        ? "@nodeId(typeName: \"" + targetTypeOpt.get() + "\")"
+                          + " @reference(path: [{key: \"" + shimFkName + "\"}])"
+                        : "@nodeId(typeName: \"" + targetTypeOpt.get() + "\")";
+                    ID_REF_SHIM_LOGGER.warn(
+                        "input field '{}.{}' synthesizes IdReferenceField from qualifier '{}'"
+                        + " (FK '{}'); replace the legacy form with {} to drop the synthesis shim."
+                        + " The shim will be removed in a future release;"
+                        + " see graphitron-rewrite/roadmap/retire-id-reference-synthesis-shim.md",
+                        parentTypeName, name, qualifier, shimFkName, canonical);
+                    return new InputFieldResolution.Resolved(new InputField.IdReferenceField(
+                        parentTypeName, name, locationOf(field), typeName, nonNull, list,
+                        targetTypeOpt.get(), shimFkName, qualifier, /* synthesized */ true));
+                }
+            }
+        }
         var colEntry = catalog.findColumn(tableName, columnName);
         if (colEntry.isPresent()) {
             var e = colEntry.get();
@@ -870,5 +963,27 @@ class BuildContext {
         }
         return new InputFieldResolution.Unresolved(name, columnName,
             "no column '" + columnName + "' found in table '" + tableName + "'");
+    }
+
+    /**
+     * Returns the GraphQL type name for the given SQL table name, or empty when zero or multiple
+     * {@code @table}-annotated object types claim that table name (case-insensitive). Memoized on
+     * first call; subsequent calls are O(1). Used by the IdReferenceField shim arm to map the FK's
+     * target table back to a GraphQL type name for {@link InputField.IdReferenceField#targetTypeName}.
+     */
+    private Optional<String> findGraphQLTypeForTable(String sqlTableName) {
+        if (typeNameByTableKey == null) {
+            var building = new HashMap<String, String>();
+            var ambiguous = new HashSet<String>();
+            for (var t : schema.getAllTypesAsList()) {
+                if (!(t instanceof GraphQLObjectType o) || !o.hasAppliedDirective(DIR_TABLE)) continue;
+                var key = argString(o, DIR_TABLE, ARG_NAME).orElse(o.getName()).toLowerCase();
+                if (ambiguous.contains(key)) continue;
+                if (building.containsKey(key)) { building.remove(key); ambiguous.add(key); }
+                else building.put(key, o.getName());
+            }
+            typeNameByTableKey = Map.copyOf(building);
+        }
+        return Optional.ofNullable(typeNameByTableKey.get(sqlTableName.toLowerCase()));
     }
 }
