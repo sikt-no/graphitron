@@ -43,7 +43,17 @@ directive @externalField(reference: ExternalCodeReference) on FIELD_DEFINITION
 
 A new constant `ARG_EXTERNAL_FIELD_REF = "reference"` lands in `BuildContext`.
 
-**Backward compatibility**: `reference` is optional. When `@externalField` is applied without a `reference` argument, the builder logs a deprecation warning at codegen time and falls back to the current stub behavior: a `ComputedField` with `method = null` is classified, no real fetcher is generated, and the emitted stub throws `UnsupportedOperationException` at request time. Existing schemas compile without errors; they receive a deprecation warning in the build log pointing toward adding `reference: {className: ..., method: ...}`. A forced migration shim is out of scope for this track.
+**Backward compatibility**: `reference` is optional. The legacy generator had no `reference` argument at all; it discovered the method at codegen time by scanning every class in the Maven plugin's `externalReferenceImports` list, calling `Class.getMethod(fieldName, tableClass)` on each, and using the first match. The rewrite does not carry forward `externalReferenceImports`. When `@externalField` is applied without a `reference` argument, the builder logs a deprecation warning and falls back to the current stub behavior: a `ComputedField` with `method = null` is classified, no real fetcher is generated, and the emitted stub throws `UnsupportedOperationException` at request time. Existing schemas compile without errors. A forced migration shim is out of scope for this track; migration is intentionally guided by the Phase 5 LSP tooling described below.
+
+**Phase 5 LSP integration (one up over legacy)**: Phase 5 of `graphitron-lsp` (see [`graphitron-lsp.md`](graphitron-lsp.md)) adopts a JavaParser walk over the consumer's source roots to enumerate service/condition/record methods for LSP completion. That same walk should be extended to cover `@externalField`: the LSP indexes every `public static Field<X> methodName(Table<ParentTable> t)` method it finds, then offers them as completions for the `reference: {className: ..., method: ...}` argument. The `Parameter.source = ParamSource.Table` slot in Phase 5's `CompletionData.Method` shape already models this parameter type.
+
+This is strictly better than the legacy implicit scan:
+- No naming constraint — the method can be called anything, not just the field name.
+- No `externalReferenceImports` config — source roots are already a bounded, config-free set.
+- Editor-guided migration — a developer on a no-arg `@externalField` sees the deprecation warning in the build log, opens the file in the editor, types `reference:`, and gets completions from the source walk.
+- Javadoc on hover — the LSP surfaces the method's Javadoc alongside the completion.
+
+The `graphitron-lsp.md` Phase 5 exit criteria should be updated to include `@externalField` reference-argument completion as a tracked deliverable when that phase is scoped.
 
 **Existing test fixtures**: `GraphitronSchemaBuilderTest` uses `@externalField` without `reference` at line 1201 and in conflict-directive cases at lines 3610-3653. After this track ships those fixtures continue to pass (no-arg form logs a warning and generates a stub); no schema changes are required. The warning assertion is a new test case: see the Tests section.
 
@@ -70,9 +80,11 @@ The `MethodRef.Basic` carries the captured return type (always `Field<X>` post-r
 
 **No-reference path (legacy)**: if the applied directive carries no `reference` argument (the directive argument is null or absent), log a deprecation warning via the builder's existing logger:
 ```
-log.warn("Field '{}': @externalField without a reference argument is deprecated; "
-    + "add reference: {{className: ..., method: ...}} to enable full code generation.",
-    qualifiedName);
+log.warn("Field '{}': @externalField without a reference argument is deprecated and generates "
+    + "a stub. Add reference: {{className: \"<FQN>\", method: \"<methodName>\"}} where the "
+    + "method is public static Field<X> methodName({} table). "
+    + "Phase 5 LSP tooling will suggest matching methods via source-root scan.",
+    qualifiedName, parentTableClass);
 ```
 Return `new ComputedField(parentTypeName, name, location, returnType, externalPath.elements(), null)`. The null method preserves backward-compatible stub behavior; see `TypeFetcherGenerator` cleanup below.
 
@@ -227,6 +239,7 @@ After ComputedField ships:
 
 - `code-generation-triggers.md` line 171: change "Column method in `wiring()` (developer supplies `Field<?>`)" to mention the new directive argument shape and link the runtime contract.
 - `directive reference` (currently legacy README): note that `@externalField` now takes an optional `reference: ExternalCodeReference` argument and that the no-argument form is deprecated.
+- `graphitron-lsp.md` Phase 5 exit criteria: add `@externalField` reference-argument completion (LSP indexes `public static Field<X> ?(Table<ParentTable> t)` methods from source roots and offers them as `reference:` completions). The `CompletionData` shape and `ParamSource.Table` taxonomy already accommodate this; only the per-directive dispatch and the source-walk filter need extending.
 - The matching changelog entry lands in `roadmap/changelog.md` on Done.
 
 ---
