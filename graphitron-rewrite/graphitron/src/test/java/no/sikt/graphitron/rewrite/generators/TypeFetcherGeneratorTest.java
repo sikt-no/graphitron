@@ -353,6 +353,96 @@ class TypeFetcherGeneratorTest {
         assertThat(m.parameters()).extracting(p -> p.name()).containsExactly("keys", "env", "sel");
     }
 
+    @Test
+    void serviceField_dataFetcherCallsNewDataLoader_notWithContext() {
+        // Regression: DataLoaderFactory has no `newDataLoaderWithContext` method; the lambda
+        // shape `(keys, batchEnv) -> ...` already binds to BatchLoaderWithContext through plain
+        // `newDataLoader(...)`. The split-query path was correct; the service path used to call
+        // a non-existent method (caught only at compile-tier).
+        var body = method(specWithServiceField("Language", "films", true), "films").code().toString();
+        assertThat(body).contains("newDataLoader(");
+        assertThat(body).doesNotContain("newDataLoaderWithContext");
+        assertThat(body).doesNotContain("newMappedDataLoader");
+    }
+
+    // ===== @service field with mapped (Set<...>) batch key =====
+
+    private static GraphitronField mappedServiceField(String parentType, String name, boolean isList, BatchKey batchKey) {
+        var returnWrapper = isList ? (FieldWrapper) listWrapper() : single();
+        var returnType = tableBoundFilm(returnWrapper);
+        var method = new MethodRef.Basic(
+            "no.example.FilmService", "getFilms", ClassName.get("java.util", "Set"),
+            List.of(new MethodRef.Param.Sourced("keys", batchKey)));
+        return new ChildField.ServiceTableField(
+            parentType, name, null, returnType,
+            List.of(), List.of(), new OrderBySpec.None(), null, method, batchKey);
+    }
+
+    private static TypeSpec specWithMappedServiceField(String parentType, String fieldName, boolean isList, BatchKey batchKey) {
+        return TypeFetcherGenerator.generateTypeSpec(parentType, LANGUAGE_TABLE,
+            List.of(mappedServiceField(parentType, fieldName, isList, batchKey)));
+    }
+
+    private static BatchKey.MappedRowKeyed mappedRowKey() {
+        return new BatchKey.MappedRowKeyed(List.of(new ColumnRef("language_id", "LANGUAGE_ID", "java.lang.Integer")));
+    }
+
+    private static BatchKey.MappedRecordKeyed mappedRecordKey() {
+        return new BatchKey.MappedRecordKeyed(List.of(new ColumnRef("language_id", "LANGUAGE_ID", "java.lang.Integer")));
+    }
+
+    @Test
+    void serviceField_mappedRow_list_dataFetcherCallsNewMappedDataLoaderWithSetKeys() {
+        var body = method(specWithMappedServiceField("Language", "films", true, mappedRowKey()), "films").code().toString();
+        assertThat(body).contains("newMappedDataLoader(");
+        assertThat(body).doesNotContain("newDataLoaderWithContext");
+        assertThat(body).contains("java.util.Set<org.jooq.Row1<java.lang.Integer>> keys");
+    }
+
+    @Test
+    void serviceField_mappedRow_list_dataFetcherReturnsCompletableFutureListRecord() {
+        assertThat(method(specWithMappedServiceField("Language", "films", true, mappedRowKey()), "films").returnType().toString())
+            .isEqualTo("java.util.concurrent.CompletableFuture<java.util.List<org.jooq.Record>>");
+    }
+
+    @Test
+    void serviceField_mappedRow_single_dataFetcherReturnsCompletableFutureRecord() {
+        // Mapped vs positional only changes the rows-method return shape (Map vs List); the
+        // data fetcher's return is always CompletableFuture<V> because loader.load(key, env)
+        // returns a per-key promise.
+        assertThat(method(specWithMappedServiceField("Language", "film", false, mappedRowKey()), "film").returnType().toString())
+            .isEqualTo("java.util.concurrent.CompletableFuture<org.jooq.Record>");
+    }
+
+    @Test
+    void serviceField_mappedRow_list_rowsMethodTakesSetAndReturnsMap() {
+        var m = method(specWithMappedServiceField("Language", "films", true, mappedRowKey()), "loadFilms");
+        assertThat(m.parameters()).extracting(p -> p.type().toString())
+            .containsExactly(
+                "java.util.Set<org.jooq.Row1<java.lang.Integer>>",
+                "graphql.schema.DataFetchingEnvironment",
+                "graphql.schema.SelectedField");
+        assertThat(m.returnType().toString())
+            .isEqualTo("java.util.Map<org.jooq.Row1<java.lang.Integer>, java.util.List<org.jooq.Record>>");
+    }
+
+    @Test
+    void serviceField_mappedRow_single_rowsMethodReturnsScalarMap() {
+        var m = method(specWithMappedServiceField("Language", "film", false, mappedRowKey()), "loadFilm");
+        assertThat(m.returnType().toString())
+            .isEqualTo("java.util.Map<org.jooq.Row1<java.lang.Integer>, org.jooq.Record>");
+    }
+
+    @Test
+    void serviceField_mappedRecord_list_keyTypeIsRecordN() {
+        var m = method(specWithMappedServiceField("Language", "films", true, mappedRecordKey()), "loadFilms");
+        assertThat(m.parameters().get(0).type().toString())
+            .isEqualTo("java.util.Set<org.jooq.Record1<java.lang.Integer>>");
+        var fetcherBody = method(specWithMappedServiceField("Language", "films", true, mappedRecordKey()), "films").code().toString();
+        // Record-shape extracts via record.into(...) rather than DSL.row(...).
+        assertThat(fetcherBody).contains(".into(");
+    }
+
     // ===== QueryTableField with OrderBySpec.Argument → orderBy helper method =====
 
     private static QueryField.QueryTableField queryTableFieldWithOrderByArg(String fieldName) {
