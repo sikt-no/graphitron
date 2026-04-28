@@ -1,0 +1,6 @@
+# Service with autofetch returning an empty list of resolver keys.
+{
+    customerServiceListReturningEmptyList {
+        id
+    }
+}

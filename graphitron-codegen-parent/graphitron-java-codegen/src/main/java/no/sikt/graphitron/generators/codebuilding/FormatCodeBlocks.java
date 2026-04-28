@@ -27,6 +27,7 @@ import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getGener
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapArrayList;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.*;
+import static no.sikt.graphitron.javapoet.CodeBlock.ofVar;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.TableReflection.*;
 import static org.apache.commons.lang3.StringUtils.capitalize;
@@ -855,5 +856,23 @@ public class FormatCodeBlocks {
      */
     public static CodeBlock extractKeyAsTableRecord(String variableName, TypeName recordClass) {
         return CodeBlock.of("$N.key().into($T.class)", variableName, recordClass);
+    }
+
+    /**
+     * Same as {@link #extractKeyAsTableRecord} but emits a null-guard so the expression is safe
+     * to evaluate when the source variable may be null at runtime (e.g. when a service returns
+     * null or a list element is null).
+     *
+     * <p>Example output: {@code myTableRecord != null ? myTableRecord.key().into(MyTableRecord.class) : null}
+     *
+     * @param variableName variable name of the table record to extract the key from.
+     * @param recordClass  the record class to map the key into. This should match the record class of the variable.
+     * @return CodeBlock that converts a possibly-null table record into a key-only record, or null.
+     */
+    public static CodeBlock extractKeyAsTableRecordWithNullCheck(String variableName, TypeName recordClass) {
+        return CodeBlock.transformIfNotNull(
+                ofVar(variableName),
+                extractKeyAsTableRecord(variableName, recordClass)
+        );
     }
 }
