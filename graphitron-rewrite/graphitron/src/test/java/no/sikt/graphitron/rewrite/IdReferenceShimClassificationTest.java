@@ -18,14 +18,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  * the shim gate requires {@code nodeIdMetadata(targetTable)} to be present — the
  * standard Sakila catalog tables have no {@code __NODE_TYPE_ID} metadata.
  *
- * <p><b>Spec deviation</b>: {@code roadmap/id-reference-input-field.md} specifies the
- * gate as {@code hasIdSetPredicateMethod} on the <em>source</em> record class. The
- * shipped implementation gates on {@code nodeIdMetadata} on the <em>target</em>
- * table instead (see {@code BuildContext.classifyInputField}, the IdReferenceField
- * synthesis-shim arm, for the rationale and the revisit hook). These tests exercise
- * the shipped gate, not the spec gate; the {@code studieprogram} fixture entry in
- * {@code NodeIdFixtureGenerator.METADATA} is what makes the gate fire.
- *
  * <p>The idreffixture schema provides:
  * <ul>
  *   <li>{@code studieprogram}: target table with {@code __NODE_TYPE_ID = "Studieprogram"}.

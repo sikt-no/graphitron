@@ -13,6 +13,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | Item | Status | Plan |
 |---|---|---|
 | Apollo Federation via federation-jvm transform | Spec | [plan](federation-via-federation-jvm.md) |
+| `IdReferenceField` code generation | Spec | [plan](id-reference-input-field.md) |
 | Classification vocabulary follow-ups | Spec | [plan](classification-vocabulary-followups.md) |
 | Context-value registry + native multi-tenant fan-out for `@service` | Spec | [plan](service-context-value-registry.md) |
 | Multi-parent `NestingField` sharing: `TableField` arm | Spec | [plan](nestingfield-multiparent-tablefield.md) |
