@@ -177,36 +177,48 @@ without a declaration would fail validation. Source location for the
 synthesised directive points at the `@node`'s location so any
 downstream error message stays meaningful.
 
-**Validating `@key(fields:)` via `GraphQLSelectionParser`.** Use the
-existing `no.sikt.graphitron.rewrite.selection.GraphQLSelectionParser`
-(it already supports the *naked* selection-set form `id sku` without
-braces, which is exactly the `@key(fields:)` shape). When using it
-for federation, the parser's tolerance becomes our problem; the
-federation spec's `fields:` grammar is a strict subset. Apply these
-rules after `parse(...)` returns:
+**Parsing `@key(fields:)`.** The federation `fields:` grammar is a
+strict subset of GraphQL selection-set syntax: a non-empty
+whitespace-separated list of field names, optionally enclosed in
+braces, optionally containing nested selections (which we reject per
+non-goal). It does not allow aliases, arguments, variables, dotted
+names, hash-comments, or string/numeric values.
 
-- Parser throws `GraphQLSelectionParseException` → `ValidationError`,
-  message preserves the parse exception text and points at the `@key`
-  directive's source location.
-- `parse(...)` returns an empty list → `ValidationError`,
-  "@key(fields:) cannot be empty".
-- For each top-level `ParsedField`:
-  - `hasAlias()` → reject ("aliases not permitted in @key fields").
-  - `hasArguments()` → reject ("arguments not permitted in @key fields").
-  - `hasSelectionSet()` → reject ("nested selections not permitted; see Non-goals").
-  - `name()` contains `.` → reject. The parser's lexer treats dots as
-    name characters (`some.dotted.field` is one NAME token), so a
-    user-typed `@key(fields: "owner.id")` parses silently otherwise.
-- Field name not present on the type → `ValidationError`,
-  "@key references unknown field 'X' on type Y".
+Graphitron already ships
+`no.sikt.graphitron.rewrite.selection.GraphQLSelectionParser`, but
+that parser is built for a different caller and tolerates several
+constructs forbidden by the federation grammar (dotted names like
+`some.dotted.field`, aliases, arguments, hash-comments, variables).
+Reusing it would force the federation path to defensively re-reject
+each of those constructs, and would couple us to whatever the
+selection parser grows in the future. Instead, copy the bones of its
+implementation (the lexer's whitespace handling and name reader) into
+a new purpose-built `FederationKeyFieldsParser` and drop the
+extensions we do not need. Suggested home:
+`no.sikt.graphitron.rewrite.schema.federation` (new package,
+co-located with the other federation classify-time pieces).
 
-Document these rules in `GraphQLSelectionParser`'s class javadoc with
-a short "Used by" note pointing at the federation entity-resolution
-path so the next reader does not relax the parser without considering
-this caller. The parser is otherwise a pure static function (no shared
-state, no I/O); its existing extensions (dotted names, hash-comments,
-commas) are tolerable in this caller as long as the post-parse walk
-catches them.
+The parser accepts:
+- A naked field list: `id sku tenantId`
+- A braced field list: `{ id sku }`
+- Standard GraphQL whitespace and line terminators between names
+
+The parser rejects (with `ValidationError` carrying the directive's
+source location):
+- Empty / whitespace-only input
+- Any character other than ASCII whitespace, `{`, `}`, and standard
+  GraphQL name characters (`[_A-Za-z][_0-9A-Za-z]*`)
+- Nested selections: any `{` after a name token. Diagnostic names the
+  offending field (e.g. `"@key(fields: \"owner { id }\"): nested
+  selections are not supported on this subgraph; see Non-goals"`)
+- Unbalanced or stray `{` / `}`
+
+After parsing, the classifier resolves each field name to a
+`ColumnRef` against the type's `@table`; an unresolvable name becomes
+a `ValidationError` ("@key references unknown field 'X' on type Y").
+
+Tests live alongside the parser. `GraphQLSelectionParser` is left
+untouched.
 
 **Classify-time wiring.** A new `EntityResolutionBuilder` invoked from
 `TypeBuilder` after the `NodeType` and `TableType` enrichment passes
@@ -372,10 +384,10 @@ runtime tests:
   surfaces a `ValidationError` at classify time naming the directive
   and the `owner { id }` selection.
 - Malformed `fields:` strings: empty string, whitespace-only,
-  trailing brace, dotted-path (`"owner.id"`), aliased
-  (`"foo: id"`), with arguments (`"id(x: 1)"`) all surface targeted
-  `ValidationError`s; no `GraphQLSelectionParseException` leaks
-  unwrapped.
+  unbalanced braces, dotted-path (`"owner.id"`), aliased
+  (`"foo: id"`), with arguments (`"id(x: 1)"`), comments (`"# nope"`),
+  variables (`"$id"`) all surface targeted `ValidationError`s pointing
+  at the `@key` directive's source location.
 - Build-time `@key(fields: "id")` synthesis for `@node` types is
   visible in the printed SDL (a federated schema's `_Service.sdl`
   output names `@key(fields: "id")` on every `@node` type, even when
@@ -476,7 +488,7 @@ behaviour before Phase 4 starts moving things), then Phase 4 in one
 push, then the remaining Phase 5 hygiene items. Splitting Phase 4
 itself into sub-commits is the implementer's call. Three plausible
 seams exist:
-1. `EntityResolution` model + `@key(fields:)` parsing/validation +
+1. `EntityResolution` model + `FederationKeyFieldsParser` +
    `@node`-implies-`@key(fields: "id")` synthesis. Pure value types and
    classify-time logic, testable in isolation.
 2. `QueryNodeFetcher` lift (move `rowsNodes`'s SELECT internals to a
