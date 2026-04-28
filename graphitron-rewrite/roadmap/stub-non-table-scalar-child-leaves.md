@@ -13,7 +13,7 @@ Priority number `#8` is referenced by emitted reason strings and must stay stabl
 
 `NodeIdReferenceField` shipped under *`@nodeId` + `@node` directive support* (Done) for the FK-mirror case; the non-FK-mirror form is tracked under [Cleanup -> `NodeIdReferenceField` JOIN-projection form](nodeidreferencefield-join-projection-form.md).
 
-Each variant is independent. The five tracks below ship in any order. The plan body for `ComputedField` is fully spec'd; the other four remain Backlog inside this umbrella, each waiting for its own author to draft a plan.
+Each variant is independent. The five tracks below ship in any order. Plan bodies for `ComputedField` and `ServiceRecordField` are fully spec'd; the remaining three (`ColumnReferenceField`, `TableMethodField`, `MultitableReferenceField`) remain Backlog inside this umbrella, each waiting for its own author to draft a plan.
 
 ---
 
@@ -216,9 +216,370 @@ After ComputedField ships:
 
 `@tableMethod` returning a non-table type (scalar / enum). The `@tableMethod` directive's reflection path is already in place; this track repurposes the call site against a `Field<?>`-typed result. Plan body pending.
 
-## Track 4: `ServiceRecordField` (Backlog)
+## Track 4: `ServiceRecordField`
 
-`@service` returning a non-table type (scalar / enum / `@record`). Plan body pending.
+### Decision
+
+`ServiceRecordField` is structurally identical to `ServiceTableField` going in:
+same `BatchKey` machinery (List/Set container axis cross Row/Record key-shape axis),
+same `Sources` parameter shape on the developer's service method, same DataLoader
+plumbing (`newDataLoader` for positional, `newMappedDataLoader` for mapped). It
+diverges going out: `ServiceTableField` lifts the resulting `Record` into a
+Graphitron-projected query via `$fields()`, while `ServiceRecordField` returns the
+developer's value directly to graphql-java, which dispatches subfield resolution
+through normal wiring (default `PropertyDataFetcher` on backing-class accessors,
+or registered fetchers for further `@service` / `@table` chains).
+
+The track ships in two phases mirroring the `ServiceTableField` cadence:
+
+- **Phase A (this spec)**: classification, BatchKey on the variant, DataLoader
+  registration, lambda + key-extraction emission, rows-method stub. The fetcher
+  compiles and the schema validates; the rows method throws
+  `UnsupportedOperationException` at request time.
+- **Phase B (deferred to [`service-rows-method-body.md`](service-rows-method-body.md))**:
+  fill the rows-method body for both `ServiceTableField` and `ServiceRecordField`.
+  The "call the developer's service and return the value" form for
+  `ServiceRecordField` is the simpler of the two (no projection step), so it slots
+  cleanly into that follow-up.
+
+Scope guards: `@record`-typed parents (Site 1 in `FieldBuilder.classifyChildFieldOnResultType`)
+and non-empty `joinPath` are rejected with `DEFERRED` for now, mirroring Track 1's
+approach to the `@externalField` lift case.
+
+### Model: `BatchKey` on `ServiceRecordField`
+
+`graphitron/src/main/java/no/sikt/graphitron/rewrite/model/ChildField.java`:
+
+```java
+record ServiceRecordField(
+    String parentTypeName,
+    String name,
+    SourceLocation location,
+    ReturnTypeRef returnType,
+    List<JoinStep> joinPath,
+    MethodRef method,
+    BatchKey batchKey  // NEW
+) implements ChildField, MethodBackedField, BatchKeyField {
+
+    @Override
+    public String rowsMethodName() {
+        return "load" + Character.toUpperCase(name().charAt(0)) + name().substring(1);
+    }
+}
+```
+
+Same `load<X>` naming convention as `ServiceTableField` for consistency with the
+existing emitter dispatch. Adding `BatchKeyField` to the `implements` list lets
+generators pattern-match on the shared interface (already used by
+`TypeFetcherGenerator`'s service / split-query arms via
+`GeneratorUtils.keyElementType(BatchKey)` and friends).
+
+### Builder: derive and attach `BatchKey`; reject deferred shapes
+
+`FieldBuilder.classifyChildFieldOnTableType` (Site 2, lines 2011-2013): the existing
+`resolveServiceField(...)` call already produces a `MethodRef` whose `Sources` parameter
+carries a `BatchKey` (via `ServiceCatalog.classifySourcesType`, shipped under
+[`set-parent-keys-on-service.md`](set-parent-keys-on-service.md)). Lift that key to the
+new variant field:
+
+```java
+var batchKey = svcResult.method().params().stream()
+    .filter(p -> p instanceof MethodRef.Param.Sourced)
+    .map(p -> ((MethodRef.Param.Sourced) p).batchKey())
+    .findFirst()
+    .orElse(null);
+if (batchKey == null) {
+    return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+        RejectionKind.AUTHOR_ERROR,
+        "@service on a child field requires a Sources parameter (List/Set of "
+            + "Row/Record keys); see roadmap/stub-non-table-scalar-child-leaves.md");
+}
+return switch (returnType) {
+    case ReturnTypeRef.ResultReturnType r ->
+        new ServiceRecordField(parentTypeName, name, location, r, servicePath.elements(), svcResult.method(), batchKey);
+    case ReturnTypeRef.ScalarReturnType s ->
+        new ServiceRecordField(parentTypeName, name, location, s, servicePath.elements(), svcResult.method(), batchKey);
+    // existing TableBoundReturnType arm continues to produce ServiceTableField
+};
+```
+
+Same `BatchKey` derivation already lands on `ServiceTableField`; pulling it into a
+small private helper (`extractSourcesBatchKey(MethodRef)`) is cheap and avoids drift.
+
+`FieldBuilder.classifyChildFieldOnResultType` (Site 1, lines 1857-1859): the parent is
+a `@record`, which has no backing-table PK to anchor the batch key against. Reject this
+case for now:
+
+```java
+return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+    RejectionKind.DEFERRED,
+    "@service on a @record-typed parent is not yet supported; only @table-backed "
+        + "parents can derive the DataLoader batch key. See "
+        + "roadmap/stub-non-table-scalar-child-leaves.md.");
+```
+
+Site 1's `ScalarReturnType` and `ResultReturnType` arms become a single `DEFERRED`
+rejection; the `TableBoundReturnType` arm at the same site already routes to a
+different code path and is unaffected.
+
+
+
+### Generator: `buildServiceRecordFetcher` + stub rows method
+
+`graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java`:
+
+The data fetcher's body is the same shape as `buildServiceDataFetcher`
+(`ServiceTableField`): build the DataLoader name, register / look up the loader,
+extract the parent key, return `loader.load(key, env)`. The only difference is the
+DataLoader value type, which is the field's element Java type rather than `Record`.
+
+```java
+private static MethodSpec buildServiceRecordFetcher(
+        String fieldName,
+        ChildField.ServiceRecordField field,
+        TableRef parentTable,
+        String jooqPackage) {
+
+    boolean isList = field.returnType().wrapper().isList();
+    TypeName elementType = serviceRecordElementType(field);
+    TypeName valueType   = isList ? ParameterizedTypeName.get(LIST, elementType) : elementType;
+    TypeName returnType  = ParameterizedTypeName.get(COMPLETABLE_FUTURE, valueType);
+
+    var batchKey = field.batchKey();
+    boolean isMapped = batchKey instanceof BatchKey.MappedRowKeyed
+                    || batchKey instanceof BatchKey.MappedRecordKeyed;
+    TypeName keyType    = GeneratorUtils.keyElementType(batchKey);
+    TypeName loaderType = ParameterizedTypeName.get(DATA_LOADER, keyType, valueType);
+    String factoryMethod = isMapped ? "newMappedDataLoader" : "newDataLoader";
+    TypeName lambdaKeysType = ParameterizedTypeName.get(isMapped ? SET : LIST, keyType);
+
+    var lambdaBlock = CodeBlock.builder()
+        .add("($T keys, $T batchEnv) -> {\n", lambdaKeysType, BATCH_LOADER_ENV)
+        .indent()
+        .addStatement("$T dfe = ($T) batchEnv.getKeyContextsList().get(0)", ENV, ENV)
+        .addStatement("$T sel = dfe.getSelectionSet().getField($S)", SELECTED_FIELD, fieldName)
+        .addStatement("return $T.completedFuture($L(keys, dfe, sel))", COMPLETABLE_FUTURE, field.rowsMethodName())
+        .unindent()
+        .add("}")
+        .build();
+
+    var methodBuilder = MethodSpec.methodBuilder(fieldName)
+        .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+        .returns(returnType)
+        .addParameter(ENV, "env")
+        .addCode(buildDataLoaderName())
+        .addCode(
+            "$T loader = env.getDataLoaderRegistry()\n" +
+            "    .computeIfAbsent(name, k -> $T.$L($L));\n",
+            loaderType, DATA_LOADER_FACTORY, factoryMethod, lambdaBlock);
+    methodBuilder.addCode(GeneratorUtils.buildKeyExtraction(batchKey, parentTable, jooqPackage));
+    return methodBuilder.addStatement("return loader.load(key, env)").build();
+}
+```
+
+The `serviceRecordElementType(field)` helper mirrors the policy already used by
+`computeServiceRecordReturnType(QueryServiceRecordField)` at
+`TypeFetcherGenerator.java:920`:
+
+- `ResultReturnType` with non-null `fqClassName`: element is `ClassName.bestGuess(fqClassName)`.
+- `ScalarReturnType` / `PojoResultType`: element is the GraphQL scalar's mapped Java
+  type (resolved through the same surface graphql-java already uses; route through
+  `BuildContext` if a helper exists, fall back to `Object` for Phase A and let
+  Phase B narrow if necessary).
+
+The rows-method stub mirrors `buildServiceRowsMethod` (`ServiceTableField`),
+parameterised by the element type:
+
+```java
+private static MethodSpec buildServiceRecordRowsMethod(ChildField.ServiceRecordField field) {
+    boolean isList = field.returnType().wrapper().isList();
+    boolean isMapped = field.batchKey() instanceof BatchKey.MappedRowKeyed
+                    || field.batchKey() instanceof BatchKey.MappedRecordKeyed;
+
+    TypeName keyElement = GeneratorUtils.keyElementType(field.batchKey());
+    TypeName keysContainer = ParameterizedTypeName.get(isMapped ? SET : LIST, keyElement);
+
+    TypeName element = serviceRecordElementType(field);
+    TypeName perKey  = isList ? ParameterizedTypeName.get(LIST, element) : element;
+    TypeName returnType = isMapped
+        ? ParameterizedTypeName.get(MAP, keyElement, perKey)
+        : (isList ? ParameterizedTypeName.get(LIST, ParameterizedTypeName.get(LIST, element))
+                  : ParameterizedTypeName.get(LIST, element));
+
+    return MethodSpec.methodBuilder(field.rowsMethodName())
+        .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+        .returns(returnType)
+        .addParameter(keysContainer, "keys")
+        .addParameter(ENV, "env")
+        .addParameter(SELECTED_FIELD, "sel")
+        .addStatement("throw new $T()", UnsupportedOperationException.class)
+        .build();
+}
+```
+
+### `TypeFetcherGenerator` cleanup
+
+1. Remove the `Map.entry(ChildField.ServiceRecordField.class, ...)` row from
+   `NOT_IMPLEMENTED_REASONS`.
+2. Add `ChildField.ServiceRecordField.class` to `IMPLEMENTED_LEAVES`.
+3. Replace the stub arm in the dispatch switch:
+   ```java
+   case ChildField.ServiceRecordField f -> {
+       builder.addMethod(buildServiceRecordFetcher(f.name(), f, parentTable, jooqPackage));
+       builder.addMethod(buildServiceRecordRowsMethod(f));
+   }
+   ```
+
+Both methods land on the same `<TypeName>Fetchers` class as the `ServiceTableField`
+fetcher / rows method; no new top-level emitter is introduced.
+
+### Validator
+
+`GraphitronSchemaValidator.validateServiceRecordField` (line 660) currently runs
+only `validateReferencePath`. Add a guard rejecting non-empty `joinPath`:
+
+```java
+private void validateServiceRecordField(ChildField.ServiceRecordField field,
+        Map<String, GraphitronType> types, List<ValidationError> errors) {
+    if (!field.joinPath().isEmpty()) {
+        errors.add(new ValidationError(RejectionKind.DEFERRED,
+            field.qualifiedName(),
+            "Field '" + field.qualifiedName() + "': @service with a @reference path "
+                + "(condition-join lift form) is not yet supported; see "
+                + "graphitron-rewrite/roadmap/stub-non-table-scalar-child-leaves.md",
+            field.location()));
+        return;
+    }
+    validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
+}
+```
+
+The variant-implementation gate (`validateVariantIsImplemented`,
+`GraphitronSchemaValidator.java:147`) reads `NOT_IMPLEMENTED_REASONS.keySet()`;
+removing the entry per the generator-cleanup step above is what flips the
+`[deferred]` error off for this field class.
+
+### Tests
+
+Unit tier (`graphitron/src/test/`):
+
+- `ServiceCatalogTest`: extend the existing `reflectServiceMethod_*` cases with one
+  per `BatchKey` variant cross scalar/record return: e.g.
+  `reflectServiceMethod_setOfRow1Sources_scalarReturn_classifiedAsServiceRecord`.
+  The classifier itself is shared with `ServiceTableField`; what we're verifying is
+  that the builder routes scalar/record returns to `ServiceRecordField` while
+  preserving the `BatchKey` derivation. This needs builder-level coverage, not
+  catalog-level (the catalog already classifies sources).
+- `GraphitronSchemaBuilderTest`: extend the existing `SERVICE_FIELD_ON_RESULT_TYPE`
+  case to assert (a) the field is `ServiceRecordField`, (b) it carries the expected
+  `BatchKey` for the parent's PK, (c) it implements `BatchKeyField`. Add a
+  `SERVICE_FIELD_ON_RECORD_PARENT_DEFERRED` case asserting the new `DEFERRED`
+  rejection for the @record-typed parent shape.
+- `TypeFetcherGeneratorTest`: add `serviceRecordField_*` fixtures mirroring the
+  `serviceField_*` fixtures shipped under
+  [`set-parent-keys-on-service.md`](set-parent-keys-on-service.md):
+  - `serviceRecordField_scalar_list_dataFetcherReturnsCompletableFutureListString`
+    (or whichever scalar shape; assert `CompletableFuture<List<...>>`).
+  - `serviceRecordField_scalar_single_dataFetcherReturnsCompletableFutureString`.
+  - `serviceRecordField_recordBacked_list_dataFetcherReturnsCompletableFutureListPojo`.
+  - `serviceRecordField_mappedRow_list_dataFetcherCallsNewMappedDataLoaderWithSetKeys`.
+  - `serviceRecordField_mappedRow_list_rowsMethodReturnsMapToListOfElement`.
+  - `serviceRecordField_dataFetcherCallsNewDataLoader_notWithContext` (regression
+    parallel to the `ServiceTableField` regression).
+
+Pipeline tier: a `SchemaToFetchersPipelineTest` case running classifier + generator
+on a small schema with one scalar-returning `@service` child field on a `@table`
+parent, asserting (a) the generated fetcher class compiles, (b) it contains the
+expected `newDataLoader` / `newMappedDataLoader` call.
+
+Compilation tier (`graphitron-test`, `<release>17</release>`): the existing
+compile harness picks up the new fetcher + rows method automatically once the
+fixture below is in place.
+
+Execution tier: deferred to Phase B. The rows method throws at request time, so
+no end-to-end query test can assert a value yet. Phase B
+(`service-rows-method-body.md`) adds a `GraphQLQueryTest` case selecting a scalar
+`@service` field and asserting the value.
+
+### Fixture
+
+Add to `graphitron-test/src/main/resources/graphql/schema.graphqls`:
+
+```graphql
+extend type Film @table(name: "film") {
+    titleUppercase: String @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.FilmService",
+        method: "titleUppercase"
+    })
+}
+```
+
+And the corresponding stub in `graphitron-test`:
+
+```java
+public final class FilmService {
+    private FilmService() {}
+
+    /** Phase A: signature only; the body throws to mirror the rows-method stub. */
+    public static java.util.Map<org.jooq.Row1<Integer>, String> titleUppercase(
+            java.util.Set<org.jooq.Row1<Integer>> filmIds, org.jooq.DSLContext dsl) {
+        throw new UnsupportedOperationException();
+    }
+}
+```
+
+The fixture compiles and is reachable from the schema; Phase B fills the body.
+
+### Out of scope
+
+- **Rows-method body** (Phase B): folded into
+  [`service-rows-method-body.md`](service-rows-method-body.md). For
+  `ServiceRecordField` the body shape is "call the developer's method, return the
+  values directly" with no projection step, simpler than the `ServiceTableField`
+  body. Both shapes share infrastructure (DSLContext local, arg-call emission via
+  `ArgCallEmitter.buildMethodBackedCallArgs`, scatter-result-into-Map for
+  positional variants), so they ship together.
+- **`@record`-typed parents.** Site 1 in `FieldBuilder` returns `DEFERRED` for the
+  scalar/record-return arms. The blocker is "what's the batch key when the parent
+  is a `@record`?". The `@record` parent might itself be reachable via a
+  `@table`-rooted chain whose terminal node has a derivable PK, but that's a
+  separate design problem (see also Track 5's interface-union dispatch).
+- **`MutationServiceRecordField`.** Tracked under
+  [`mutations.md`](mutations.md), unaffected by this track.
+- **Non-empty `joinPath`.** `DEFERRED` rejection on the validator surface;
+  re-promote when a real schema needs the lift form.
+
+### Open questions
+
+1. **Scalar Java-type resolution.** Where does the rewrite resolve a GraphQL scalar
+   to its Java type for codegen today? `BuildContext.scalarJavaType(...)` would be
+   the natural home, but if it doesn't yet exist, the fallback is to declare the
+   fetcher value type as `Object` for Phase A (correct at runtime, slightly looser
+   than necessary at compile time) and tighten in Phase B once we have to call the
+   developer's method anyway.
+2. **`Field<X>` vs raw scalar return.** Track 1 mandates `@externalField` methods
+   return `Field<X>` so the call inlines into `$fields()`. `ServiceRecordField`'s
+   developer method does NOT inline; it's invoked from a generated rows-method
+   body and the result is fed back through DataLoader. So the developer's return
+   type is just `V` (or `Map<K, V>` / `List<V>` for batched), no `Field<>` wrapper.
+   Confirm before locking in the test fixtures.
+3. **Element-shape preservation.** `BatchKey` discards `Set<TableRecord>` vs
+   `Set<RowN<...>>` distinction at classification time (see
+   [`set-parent-keys-on-service.md`](set-parent-keys-on-service.md)). Phase B's
+   "call the developer's method" needs to recover the element shape via
+   re-reflection of `MethodRef.className() + methodName()`, identically for both
+   `ServiceTableField` and `ServiceRecordField`. No extra work in Phase A.
+
+### Roadmap entry update
+
+After Phase A ships:
+
+- This file: collapse Track 4's body into a one-line "shipped at `<sha>`" pointer
+  and a brief note about what landed (DataLoader plumbing + stub body); the
+  remaining work cross-references `service-rows-method-body.md`.
+- `changelog.md`: standard "Done" entry.
+- The umbrella status stays Spec until all five tracks ship; do not flip the file
+  to Done on individual track completion.
 
 ## Track 5: `MultitableReferenceField` (Backlog)
 
