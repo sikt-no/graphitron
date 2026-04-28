@@ -1,6 +1,6 @@
 ---
 title: "Apollo Federation via federation-jvm transform"
-status: Spec
+status: Ready
 priority: 1
 ---
 
