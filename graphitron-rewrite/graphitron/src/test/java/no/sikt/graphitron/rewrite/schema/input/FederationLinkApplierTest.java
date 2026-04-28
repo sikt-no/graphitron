@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class FederationLinkApplierTest {
 
@@ -63,6 +64,26 @@ class FederationLinkApplierTest {
         // library injects under the alias name
         assertThat(registry.getDirectiveDefinition("primaryKey")).isPresent();
         assertThat(registry.getDirectiveDefinition("key")).isEmpty();
+    }
+
+    @Test
+    void manuallyDeclaredFederationDirectiveTellsDeveloperToRemoveIt() {
+        var registry = InMemoryRegistry.of(Map.of(
+            "schema.graphqls",
+            """
+            extend schema
+              @link(url: "https://specs.apollo.dev/federation/v2.10",
+                    import: ["@external"])
+            directive @external on OBJECT | FIELD_DEFINITION
+            type Foo { id: ID! }
+            """
+        ));
+
+        assertThatThrownBy(() -> FederationLinkApplier.apply(registry))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("'@external'")
+                .hasMessageContaining("Remove the manual")
+                .hasMessageContaining("directive definition from your schema SDL");
     }
 
     @Test
