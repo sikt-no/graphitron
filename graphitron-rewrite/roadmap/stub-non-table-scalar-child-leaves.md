@@ -36,14 +36,16 @@ using a static extension method implemented in Java. The referenced method takes
 the parent table as its single parameter and returns Field<X> matching the
 field's scalar type.
 """
-directive @externalField(reference: ExternalCodeReference!) on FIELD_DEFINITION
+directive @externalField(reference: ExternalCodeReference) on FIELD_DEFINITION
 ```
 
 `ExternalCodeReference` already ships for `@service` etc., with `className` (or deprecated `name` resolved through `RewriteContext.namedReferences()`) and `method`.
 
 A new constant `ARG_EXTERNAL_FIELD_REF = "reference"` lands in `BuildContext`.
 
-**Migration**: schemas using legacy `@externalField` (no argument) fail loudly with an `AUTHOR_ERROR` "missing required argument 'reference'" produced by graphql-java's directive validation. Hand-migration is mechanical: every existing call site has a known method in a known class (in `externalReferenceImports`). A separate migration shim is out of scope for this track.
+**Backward compatibility**: `reference` is optional. When `@externalField` is applied without a `reference` argument, the builder logs a deprecation warning at codegen time and falls back to the current stub behavior: a `ComputedField` with `method = null` is classified, no real fetcher is generated, and the emitted stub throws `UnsupportedOperationException` at request time. Existing schemas compile without errors; they receive a deprecation warning in the build log pointing toward adding `reference: {className: ..., method: ...}`. A forced migration shim is out of scope for this track.
+
+**Existing test fixtures**: `GraphitronSchemaBuilderTest` uses `@externalField` without `reference` at line 1201 and in conflict-directive cases at lines 3610-3653. After this track ships those fixtures continue to pass (no-arg form logs a warning and generates a stub); no schema changes are required. The warning assertion is a new test case: see the Tests section.
 
 ### Model: `ComputedField` carries a `MethodRef`
 
@@ -56,7 +58,7 @@ record ComputedField(
     SourceLocation location,
     ReturnTypeRef returnType,
     List<JoinStep> joinPath,
-    MethodRef method  // NEW
+    @Nullable MethodRef method  // NEW; null when @externalField has no reference arg (legacy no-arg form)
 ) implements ChildField {}
 ```
 
@@ -64,7 +66,17 @@ The `MethodRef.Basic` carries the captured return type (always `Field<X>` post-r
 
 ### Builder: reflect, classify, attach
 
-`FieldBuilder.classifyChildField` `if (fieldDef.hasAppliedDirective(DIR_EXTERNAL_FIELD))` arm (line 2019) currently wraps with empty path placeholder. Replace with:
+`FieldBuilder.classifyChildField` `if (fieldDef.hasAppliedDirective(DIR_EXTERNAL_FIELD))` arm (line 2019) currently resolves the join path but performs no method reflection. Replace with:
+
+**No-reference path (legacy)**: if the applied directive carries no `reference` argument (the directive argument is null or absent), log a deprecation warning via the builder's existing logger:
+```
+log.warn("Field '{}': @externalField without a reference argument is deprecated; "
+    + "add reference: {{className: ..., method: ...}} to enable full code generation.",
+    qualifiedName);
+```
+Return `new ComputedField(parentTypeName, name, location, returnType, externalPath.elements(), null)`. The null method preserves backward-compatible stub behavior; see `TypeFetcherGenerator` cleanup below.
+
+**Reference path (new)**:
 
 1. `parseExternalRef(parentTypeName, fieldDef, DIR_EXTERNAL_FIELD, ARG_EXTERNAL_FIELD_REF)`. Failure -> `UnclassifiedField(AUTHOR_ERROR, "external field reference could not be resolved - " + lookupError)`.
 2. Reflect via a new `ServiceCatalog.reflectExternalField(className, methodName, parentTableRecordClass, expectedScalarType)`:
@@ -81,12 +93,13 @@ The reflection helper mirrors `reflectTableMethod` (line 255 in `ServiceCatalog`
 `TypeClassGenerator.emitSelectionSwitch` (line 225) gains:
 
 ```java
-case ChildField.ComputedField cf -> {
+case ChildField.ComputedField cf when cf.method() != null -> {
     var ref = cf.method();
     var refClass = ClassName.bestGuess(ref.className());
     builder.addCode("        case $S -> fields.add($T.$L($L).as($S));\n",
         cf.name(), refClass, ref.methodName(), tableArg, cf.name());
 }
+// null-method (legacy no-arg @externalField): no projection entry; stub fetcher handles it
 ```
 
 Generated code for `Film.isEnglish`:
@@ -102,11 +115,13 @@ The `.as("<name>")` alias is required so the wiring side can look the field up b
 `FetcherEmitter.dataFetcherValue` (line 51) gains an arm matching `ChildField.ComputedField`:
 
 ```java
-if (field instanceof ChildField.ComputedField cf) {
+if (field instanceof ChildField.ComputedField cf && cf.method() != null) {
     var columnFetcherClass = ClassName.get(outputPackage + ".util",
         ColumnFetcherClassGenerator.CLASS_NAME);
     return CodeBlock.of("new $T<>($T.field($S))", columnFetcherClass, DSL, cf.name());
 }
+// null-method (legacy no-arg @externalField) falls through to the method-reference default,
+// which emits a reference to the stub generated in TypeFetcherGenerator
 ```
 
 Generated code:
@@ -121,22 +136,27 @@ The lookup-by-name pattern is the same one already used for `ChildField.LookupTa
 
 `graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java`:
 
-1. Remove the `Map.entry(ChildField.ComputedField.class, ...)` from `NOT_IMPLEMENTED_REASONS` (lines 254-255).
-2. Add `ChildField.ComputedField.class` to `IMPLEMENTED_LEAVES` (around line 145).
-3. Replace the `case ChildField.ComputedField f -> builder.addMethod(stub(f));` arm (line 395) with a no-op:
+1. Remove the `Map.entry(ChildField.ComputedField.class, ...)` from `NOT_IMPLEMENTED_REASONS` (actual lines 255-256).
+2. Add `ChildField.ComputedField.class` to `IMPLEMENTED_LEAVES` (around line 146).
+3. Replace the `case ChildField.ComputedField f -> builder.addMethod(stub(f));` arm (actual line 396) with two guarded arms:
    ```java
-   case ChildField.ComputedField ignored -> { }  // wired via FetcherEmitter; projected via $fields
+   case ChildField.ComputedField cf when cf.method() != null -> { }  // wired via FetcherEmitter; projected via $fields
+   case ChildField.ComputedField cf -> builder.addMethod(stub(cf));  // legacy: no reference arg, preserve stub behavior
    ```
 4. Update the `IMPLEMENTED_LEAVES` Javadoc reference list (line 51) to mention `ChildField.ComputedField` alongside `ChildField.ColumnField`.
 
 ### Validator
 
-`GraphitronSchemaValidator.validateComputedField` (line 680) already validates the join path; no change is needed beyond removing the variant from the stub gate (which reads `NOT_IMPLEMENTED_REASONS.keySet()`).
+`GraphitronSchemaValidator.validateComputedField` (line 680) gets two additions:
 
-Add a guard rejecting non-empty `joinPath` until the lift case ships:
+1. A short-circuit for the legacy no-arg case (warning was already logged at builder time; no further validation is warranted).
+2. A guard rejecting non-empty `joinPath` when a reference is present, until the lift case ships.
 
 ```java
 private void validateComputedField(ComputedField field, List<ValidationError> errors) {
+    if (field.method() == null) {
+        return;  // legacy no-arg @externalField: deprecation warning logged at builder time
+    }
     if (!field.joinPath().isEmpty()) {
         errors.add(new ValidationError(RejectionKind.DEFERRED,
             field.qualifiedName(),
@@ -155,8 +175,11 @@ private void validateComputedField(ComputedField field, List<ValidationError> er
 Unit tier (`graphitron/src/test/`):
 - `FetcherEmitterTest`: assert `dataFetcherValue` for a `ComputedField` emits `new ColumnFetcher<>(DSL.field("<name>"))`.
 - `TypeClassGeneratorTest`: assert `$fields()` arm emits `<Class>.<method>(table).as("<name>")`.
-- `GraphitronSchemaBuilderTest.computedFieldClassification`: extend the existing `ComputedFieldCase` enum with a case asserting `field.method()` reflects against a fixture `FilmExtensions.isEnglish` correctly. Add a failure case (method missing) returning `UnclassifiedField(AUTHOR_ERROR)`.
-- `ComputedFieldValidationTest`: keep the two existing stubbed cases by toggling them to expect "no errors" once the variant moves to `IMPLEMENTED_LEAVES`. Add a `WITH_LIFT_CONDITION` case asserting the new `DEFERRED` rejection.
+- `GraphitronSchemaBuilderTest.computedFieldClassification`: extend the existing `ComputedFieldCase` enum with:
+  - a `WITH_REFERENCE` case asserting `field.method()` reflects against fixture `FilmExtensions.isEnglish` correctly.
+  - a `WITHOUT_REFERENCE` case asserting `field.method()` is null and a deprecation warning was logged.
+  - a failure case (method not found during reflection) returning `UnclassifiedField(AUTHOR_ERROR)`.
+- `ComputedFieldValidationTest`: keep the two existing stubbed cases by toggling them to expect "no errors" once the variant moves to `IMPLEMENTED_LEAVES`. Add a `WITH_LIFT_CONDITION` case asserting the new `DEFERRED` rejection. Add a `LEGACY_NO_ARG` case asserting no validation errors (the validator short-circuits on null method).
 
 Pipeline tier (`FetcherPipelineTest`): run the classifier+generator pipeline on a small schema with one `@externalField` and assert the generated `Film.$fields()` body contains the inlined call and the wiring registers a `ColumnFetcher`.
 
@@ -195,7 +218,7 @@ type Film @table(name: "film") {
 ### Open questions
 
 1. **`namedReferences` shorthand**: should `@externalField` accept the deprecated `name:` form via `RewriteContext.namedReferences()` for parity with `@service`? Default: yes, since `parseExternalRef` already supports it; no extra work.
-2. **Return-type strictness for enums**: the rewrite emits `Field<EnumClass>` for enum scalars after `@enum` resolution. The reflection check needs to consume the enum's Java class via the existing `@enum` resolution path. If the schema's enum is not bound to a Java class, fall back to accepting `Field<String>`.
+2. **Return-type strictness for enums**: resolved. `ScalarTypeRef.javaType()` already returns the enum's Java class when the `@enum` directive is bound to a class, and falls back to `String.class` when unbound. The `reflectExternalField` check calls `scalarTypeRef.javaType()` to obtain the expected type argument for `Field<X>`; no extra enum-resolution logic is needed.
 3. **Lift case scoping**: the legacy supports an `@externalField` on a non-`@table` parent type by lifting through a join path. None of the current rewrite fixtures or production schemas under inspection use this shape; the deferred rejection above keeps the surface honest. Extract a follow-up roadmap item if a real schema needs it.
 
 ### Roadmap entry update
@@ -203,7 +226,7 @@ type Film @table(name: "film") {
 After ComputedField ships:
 
 - `code-generation-triggers.md` line 171: change "Column method in `wiring()` (developer supplies `Field<?>`)" to mention the new directive argument shape and link the runtime contract.
-- `directive reference` (currently legacy README): note that `@externalField` now takes a `reference: ExternalCodeReference!` argument.
+- `directive reference` (currently legacy README): note that `@externalField` now takes an optional `reference: ExternalCodeReference` argument and that the no-argument form is deprecated.
 - The matching changelog entry lands in `roadmap/changelog.md` on Done.
 
 ---
@@ -296,45 +319,33 @@ generators pattern-match on the shared interface (already used by
 `TypeFetcherGenerator`'s service / split-query arms via
 `GeneratorUtils.keyElementType(BatchKey)` and friends).
 
-#### Sources element-type capture (correction to `set-parent-keys-on-service.md`)
+#### Element-type derivation (resolves the `set-parent-keys-on-service.md` footnote)
 
-The shipped `BatchKey` design (`set-parent-keys-on-service.md`) discards the
-user's element shape (`Set<RowN<...>>` vs `Set<TableRecord>` vs
-`Set<RecordN<...>>`) at classification time and plans to recover it later by
-re-reflecting the service method in the body emitter. That decision is reversed
-here: the classifier already has the full `ParameterizedType` in hand at
-`ServiceCatalog.reflectServiceMethod` time, so capturing the element type V is
-a few lines and removes the re-reflection step entirely.
+The `set-parent-keys-on-service.md` spec defers element-type recovery to the Phase B
+body emitter, which would re-reflect the service method. That deferral is closed here
+without modifying `MethodRef.Param.Sourced`: `serviceRecordElementType(field)` derives
+the Java element type directly from the field's `ReturnTypeRef`, mirroring
+`computeServiceRecordReturnType(QueryServiceRecordField)` at `TypeFetcherGenerator.java:920`:
 
-Add `TypeName elementType` to `MethodRef.Param.Sourced` alongside the existing
-`batchKey` field. The two are read together by the generator and the Phase B
-body emitter; co-locating them is the minimal-surface fix.
+- `ResultReturnType` with non-null `fqClassName`: element is `ClassName.bestGuess(fqClassName)`.
+- All other cases: element is `field.method().returnType()`, the reflected return type
+  already captured on `MethodRef`.
 
-For batched signatures (`Map<KeyType, V>`, `Set<...>`-keyed mapped, `List<V>`
-positional), V is the inner element parameter (e.g. `String`, `FilmRecord`, a
-`@record`-backed POJO). The classifier unwraps the captured `ParameterizedType`
-to extract V at the same point it derives the `BatchKey`.
-
-This change lands in Phase A even though Phase A's generator only reads V
-indirectly (via `serviceRecordElementType`, which prefers the schema's
-`ReturnTypeRef` for `@record`-backed returns and falls back to the captured V
-for scalars). Phase B's body emitter reads both `elementType` and `batchKey`
-directly to emit the `Map<KeyType, V> rows = Service.method(keys, ...)` call.
+No change to `MethodRef.Param.Sourced` is needed for Phase A. Phase B's body emitter
+will determine the correct container-unwrapping logic (the `Map<KeyType, V>` call shape)
+from `batchKey` and the schema-side return type, without needing a separate V field on
+`Sourced`.
 
 ### Builder: derive and attach `BatchKey`; reject deferred shapes
 
-`FieldBuilder.classifyChildFieldOnTableType` (Site 2, lines 2011-2013): the existing
+`FieldBuilder.classifyChildFieldOnTableType` (Site 2, around line 2009): the existing
 `resolveServiceField(...)` call already produces a `MethodRef` whose `Sources` parameter
-carries a `BatchKey` (via `ServiceCatalog.classifySourcesType`, shipped under
-[`set-parent-keys-on-service.md`](set-parent-keys-on-service.md)). Lift that key to the
-new variant field:
+carries a `BatchKey`. Lift that key using `extractBatchKey(MethodRef)`, the private
+helper at `FieldBuilder.java:164` already used by the `ServiceTableField` arms at the
+same site:
 
 ```java
-var batchKey = svcResult.method().params().stream()
-    .filter(p -> p instanceof MethodRef.Param.Sourced)
-    .map(p -> ((MethodRef.Param.Sourced) p).batchKey())
-    .findFirst()
-    .orElse(null);
+var batchKey = extractBatchKey(svcResult.method());
 if (batchKey == null) {
     return new UnclassifiedField(parentTypeName, name, location, fieldDef,
         RejectionKind.AUTHOR_ERROR,
@@ -350,22 +361,19 @@ return switch (returnType) {
 };
 ```
 
-Same `BatchKey` derivation already lands on `ServiceTableField`; pulling it into a
-small private helper (`extractSourcesBatchKey(MethodRef)`) is cheap and avoids drift.
-
 #### Strict return-type validation
 
 `ServiceTableField` enforces that the developer's reflected return type matches
 the schema's declared `ReturnTypeRef` element (via
 `FieldBuilder.computeExpectedServiceReturnType`). The same enforcement must run
-on `ServiceRecordField`, anchored on the captured V from
-`MethodRef.Param.Sourced.elementType`:
+on `ServiceRecordField`, using `serviceRecordElementType` (see the Generator
+section) to derive the expected Java type from the schema:
 
-- `String` field: V is `String`. Method shape is `Map<KeyType, String>` (mapped) /
-  `List<String>` (positional) / `String` (single-cardinality root only).
-- `Boolean` field: V is `Boolean`. Same shape rules.
-- `@record`-backed `FilmDetails` field: V is `no.example.FilmDetails`. Same
-  shape rules; `@record` backing class is matched by FQN.
+- `String` field: expected element is `String`. Method shape is `Map<KeyType, String>` (mapped) /
+  `List<String>` (positional).
+- `Boolean` field: expected element is `Boolean`. Same shape rules.
+- `@record`-backed `FilmDetails` field: expected element is `no.example.FilmDetails`
+  (from `ResultReturnType.fqClassName()`); `@record` backing class matched by FQN.
 
 Mismatches surface as classification-time `AUTHOR_ERROR`, not compile-tier.
 
@@ -442,14 +450,10 @@ private static MethodSpec buildServiceRecordFetcher(
 }
 ```
 
-The `serviceRecordElementType(field)` helper mirrors the policy already used by
-`computeServiceRecordReturnType(QueryServiceRecordField)` at
-`TypeFetcherGenerator.java:920`:
+The `serviceRecordElementType(field)` helper mirrors `computeServiceRecordReturnType(QueryServiceRecordField)` at `TypeFetcherGenerator.java:920`:
 
 - `ResultReturnType` with non-null `fqClassName`: element is `ClassName.bestGuess(fqClassName)`.
-- `ScalarReturnType` / `PojoResultType`: element is the developer's reflected
-  V, captured at reflection time and surfaced on `MethodRef.Param.Sourced`
-  (see "Sources element-type capture" in the Model section).
+- All other cases: element is `field.method().returnType()`, the reflected return type already on `MethodRef`.
 
 Data fetchers return Java types; graphql-java's registered scalar coercing handles
 the GraphQL-side coercion at output. No GraphQL-scalar-to-Java mapping table is
@@ -633,8 +637,10 @@ The fixture compiles and is reachable from the schema; Phase B fills the body.
 
 ### Open questions
 
-None remaining; raw-V return shape, Java-type derivation, and element-shape
-carry-through are settled above.
+None remaining. The element-type derivation question (how to surface V without
+modifying `MethodRef.Param.Sourced` or changing `classifySourcesType`'s return type)
+is resolved: `serviceRecordElementType` reads the schema-side `ReturnTypeRef` directly,
+mirroring the existing `computeServiceRecordReturnType` at line 920.
 
 ### Roadmap entry update
 
