@@ -1421,7 +1421,7 @@ public class TypeFetcherGenerator {
             no.sikt.graphitron.rewrite.generators.util.QueryNodeFetcherClassGenerator.CLASS_NAME);
         return MethodSpec.methodBuilder(field.name())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(ParameterizedTypeName.get(LIST, RECORD))
+            .returns(ParameterizedTypeName.get(COMPLETABLE_FUTURE, ParameterizedTypeName.get(LIST, RECORD)))
             .addParameter(ENV, "env")
             .addStatement("return $T.$L(env)", queryNodeFetcher,
                 no.sikt.graphitron.rewrite.generators.util.QueryNodeFetcherClassGenerator.DISPATCH_NODES_METHOD)
