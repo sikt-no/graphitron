@@ -57,9 +57,12 @@ public final class FederationLinkApplier {
         defs.forEach(def -> {
             var error = registry.add(def);
             if (error.isPresent()) {
+                var name = def instanceof graphql.language.NamedNode<?> n ? n.getName() : null;
+                var ref = name != null ? "'@" + name + "'" : "a federation directive";
                 throw new IllegalStateException(
-                        "federation-graphql-java-support injected a duplicate definition: "
-                        + error.get().getMessage());
+                        "Your schema manually declares " + ref + ", but that directive is injected "
+                        + "automatically by federation-graphql-java-support based on your @link import. "
+                        + "Remove the manual " + ref + " directive definition from your schema SDL.");
             }
         });
         return true;
