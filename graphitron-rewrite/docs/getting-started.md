@@ -78,7 +78,7 @@ error naming the scalar and the referencing types.
 
 ## Federation
 
-When your SDL opens with an `extend schema @link(url: ".../federation/v2.x", ...)`,
+When your SDL declares an `@link` to a federation spec,
 `Graphitron.buildSchema(...)` returns the federation-wrapped schema directly:
 
 ```java
@@ -91,9 +91,15 @@ already done it, and a second wrap would double-add `_Service` / `_Entity` and
 break composition. Schemas without a `@link` skip the wrap entirely and behave
 exactly as before.
 
-If you have entity types Graphitron does not classify (hand-rolled objects with
-`@key`, or types pulled in from a non-Graphitron source), register a custom
-fetcher via the two-arg form:
+For every type Graphitron classifies, `_entities` resolution is wired
+automatically: `@node` types resolve via the NodeId path; types with a
+`@key` directive resolve via a column-value lookup. Both share the same
+per-type batched SELECT, so no extra wiring is needed beyond the existing
+`buildSchema(b -> {})` call.
+
+If you have entity types Graphitron does not classify (hand-rolled objects, or
+types pulled in from a non-Graphitron source), supply your own `fetchEntities`
+via the two-arg form:
 
 ```java
 GraphQLSchema schema = Graphitron.buildSchema(
@@ -101,8 +107,10 @@ GraphQLSchema schema = Graphitron.buildSchema(
     fed -> fed.fetchEntities(myCustomFetcher));
 ```
 
-The federation builder arrives pre-configured with Graphitron's resolvers; the
-customizer adds or replaces on top.
+The federation builder arrives pre-configured with Graphitron's defaults; the
+customizer replaces on top. Custom fetchers must return entities the default
+`resolveEntityType` can recognise (jOOQ `Record`s with a `__typename` column);
+richer type-resolution shapes are not currently supported.
 
 ### Build-time federation directives {#build-time-federation-directives}
 
