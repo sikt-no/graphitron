@@ -150,7 +150,7 @@ public class GraphQLRewriteGenerator {
         write(GraphitronSchemaClassGenerator.generate(schema, assembled, fetcherBodies.keySet(), outputPackage, federationLink), "schema", emittedThisRun);
         write(GraphitronFacadeGenerator.generate(outputPackage, federationLink),                  "",           emittedThisRun);
         write(TypeClassGenerator.generate(schema, outputPackage, jooqPackage),                   "types",      emittedThisRun);
-        write(TypeConditionsGenerator.generate(schema, jooqPackage),                              "conditions", emittedThisRun);
+        write(TypeConditionsGenerator.generate(schema, outputPackage, jooqPackage),               "conditions", emittedThisRun);
         write(QueryConditionsGenerator.generate(schema, outputPackage, jooqPackage),             "conditions", emittedThisRun);
         write(fetcherClasses,                                                                      "fetchers",   emittedThisRun);
         write(QueryNodeFetcherClassGenerator.generate(schema, outputPackage, jooqPackage),         "fetchers",   emittedThisRun);

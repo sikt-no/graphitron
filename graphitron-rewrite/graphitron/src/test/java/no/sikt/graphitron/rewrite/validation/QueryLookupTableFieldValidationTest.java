@@ -29,7 +29,7 @@ class QueryLookupTableFieldValidationTest {
     private static final LookupMapping EMPTY_LOOKUP = new LookupMapping.ColumnMapping(List.of(), FILM_TABLE);
 
     private static GeneratedConditionFilter columnFilter(String name, boolean nonNull, boolean list) {
-        var bodyParam = new BodyParam(name, FILM_ID_COL, "java.lang.Integer", nonNull, list, new CallSiteExtraction.Direct());
+        var bodyParam = new BodyParam.ColumnEq(name, FILM_ID_COL, "java.lang.Integer", nonNull, list, new CallSiteExtraction.Direct());
         var callParam = new CallParam(name, new CallSiteExtraction.Direct(), list, FILM_ID_COL.columnClass());
         return new GeneratedConditionFilter("TestConditions", "testCondition", FILM_TABLE,
             List.of(callParam), List.of(bodyParam));
