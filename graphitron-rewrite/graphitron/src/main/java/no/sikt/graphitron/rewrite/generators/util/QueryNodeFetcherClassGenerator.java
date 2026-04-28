@@ -79,9 +79,13 @@ public class QueryNodeFetcherClassGenerator {
         var graphitronContext = ClassName.get(outputPackage + ".schema", "GraphitronContext");
         var nodeIdEncoder    = ClassName.get(outputPackage + ".util", NodeIdEncoderClassGenerator.CLASS_NAME);
 
-        // fetchById: the type-dispatch logic shared by getNode and getNodes.
-        // Takes the per-ID DataFetchingEnvironment so getDslContext can determine the correct
-        // tenant from the individual ID. Callers guarantee id is non-null.
+        var entityDispatch = ClassName.get(outputPackage + ".util",
+            EntityFetcherDispatchClassGenerator.CLASS_NAME);
+
+        // fetchById: synthesise a single rep from id, dispatch through the entity dispatcher,
+        // return the resolved Record (or null when typeId/decode/SELECT yields nothing).
+        // The dispatcher is now the single SELECT path for Query.node, Query.nodes, and
+        // federation _entities.
         var fetchById = MethodSpec.methodBuilder("fetchById")
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .returns(RECORD)
@@ -89,29 +93,13 @@ public class QueryNodeFetcherClassGenerator {
             .addParameter(String.class, "id")
             .addStatement("$T typeId = $T.peekTypeId(id)", String.class, nodeIdEncoder)
             .addStatement("if (typeId == null) return null")
-            .addStatement("$T dsl = graphitronContext(env).getDslContext(env)", DSL_CONTEXT);
-
-        // Emitted as an if-else chain rather than a switch statement: JavaPoet doesn't reliably
-        // handle arrow-case blocks containing return-with-block, and the readability cost of an
-        // if chain over N NodeTypes is small compared to the structural-coverage cost.
-        for (var nt : nodeTypes) {
-            var jooqTableClass = ClassName.get(jooqPackage + ".tables", nt.table().javaClassName());
-            var typeClass      = ClassName.get(outputPackage + ".types", nt.name());
-            String tableSingleton = nt.table().javaFieldName();
-            fetchById.beginControlFlow("if ($S.equals(typeId))", nt.typeId());
-            fetchById.addStatement("$T t = $T.$L", jooqTableClass, jooqTableClass, tableSingleton);
-            fetchById.addStatement("$T fields = new $T($T.$$fields(env.getSelectionSet(), t, env))",
-                arrayListOfField, arrayListOfField, typeClass);
-            fetchById.addStatement("fields.add($T.inline($S).as($S))", DSL, nt.name(), TYPENAME_COLUMN);
-            var hasIdArgs = CodeBlock.builder().add("$S, id", nt.typeId());
-            for (var col : nt.nodeKeyColumns()) {
-                hasIdArgs.add(", t.$L", col.javaName());
-            }
-            fetchById.addStatement("return dsl.select(fields).from(t).where($T.hasId($L)).fetchOne()",
-                nodeIdEncoder, hasIdArgs.build());
-            fetchById.endControlFlow();
-        }
-        fetchById.addStatement("return null");
+            .addStatement("$T typename = $T.$L(typeId)", String.class, entityDispatch,
+                EntityFetcherDispatchClassGenerator.TYPENAME_FOR_TYPE_ID_METHOD)
+            .addStatement("if (typename == null) return null")
+            .addStatement("Object[] result = $T.$L($T.of($T.of($S, typename, $S, id)), env)",
+                entityDispatch, EntityFetcherDispatchClassGenerator.RESOLVE_BY_REPS_METHOD,
+                LIST, MAP, "__typename", "id")
+            .addStatement("return ($T) result[0]", RECORD);
 
         var dispatch = MethodSpec.methodBuilder(DISPATCH_METHOD)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -184,74 +172,40 @@ public class QueryNodeFetcherClassGenerator {
 
         // rowsNodes: batch fetch for the DataLoader. Groups keys by typeId and executes one
         // query per type via hasIds, then maps results back to original positions using encode.
-        // Positions are keyed by canonicalize(peekTypeId(id), id) rather than the literal input
-        // so that non-canonical user inputs (e.g. base64 with trailing padding) still match the
-        // canonical encoded id produced from the result row. Otherwise nodes(ids:) would return
-        // null for non-canonical inputs that node(id:) accepts.
+        // rowsNodes: synthesise a representation per non-null id (peek typeId → recover
+        // GraphQL typename via the dispatcher's emitted lookup → build a {__typename, id}
+        // map), then dispatch through EntityFetcherDispatch.resolveByReps. The dispatcher's
+        // own (type, alternative, tenantId) grouping issues one SELECT per group, and idx
+        // carried through the SELECT scatters rows back to their original positions in
+        // keys. Replaces the previous per-typeId loop and its encode-canonicalize-scatter
+        // round-trip; the dispatcher's idx-driven scatter handles non-canonical inputs
+        // directly because Base64.getUrlDecoder accepts both padded and unpadded forms.
+        var listOfMap = ParameterizedTypeName.get(LIST,
+            ParameterizedTypeName.get(MAP, STRING_CLASS, ClassName.get(Object.class)));
+        var arrayListOfMap = ParameterizedTypeName.get(ARRAY_LIST,
+            ParameterizedTypeName.get(MAP, STRING_CLASS, ClassName.get(Object.class)));
         var rowsNodes = MethodSpec.methodBuilder("rowsNodes")
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .returns(listOfRecord)
             .addParameter(listOfString, "keys")
             .addParameter(ENV, "env")
-            .addStatement("$T[] result = new $T[keys.size()]", RECORD, RECORD)
-            .addStatement("$T positions = new $T<>()", mapStrListInt, LINKED_HASH_MAP)
-            .beginControlFlow("for (int i = 0; i < keys.size(); i++)")
-            .addStatement("$T id = keys.get(i)", STRING_CLASS)
-            .addStatement("$T canonicalId = $T.canonicalize($T.peekTypeId(id), id)",
-                STRING_CLASS, nodeIdEncoder, nodeIdEncoder)
-            .addStatement("if (canonicalId != null) positions.computeIfAbsent(canonicalId, k -> new $T<>()).add(i)", ARRAY_LIST)
-            .endControlFlow()
-            .addStatement("$T byType = new $T<>()", mapStrListStr, LINKED_HASH_MAP)
+            .addStatement("$T reps = new $T(keys.size())", listOfMap, arrayListOfMap)
             .beginControlFlow("for ($T id : keys)", STRING_CLASS)
-            .addStatement("if (id == null) continue")
-            .addStatement("$T typeId = $T.peekTypeId(id)", STRING_CLASS, nodeIdEncoder)
-            .addStatement("if (typeId != null) byType.computeIfAbsent(typeId, k -> new $T<>()).add(id)", ARRAY_LIST)
+                .addStatement("if (id == null) { reps.add(null); continue; }")
+                .addStatement("$T typeId = $T.peekTypeId(id)", STRING_CLASS, nodeIdEncoder)
+                .addStatement("if (typeId == null) { reps.add(null); continue; }")
+                .addStatement("$T typename = $T.$L(typeId)", STRING_CLASS, entityDispatch,
+                    EntityFetcherDispatchClassGenerator.TYPENAME_FOR_TYPE_ID_METHOD)
+                .addStatement("if (typename == null) { reps.add(null); continue; }")
+                .addStatement("reps.add($T.of($S, typename, $S, id))", MAP, "__typename", "id")
             .endControlFlow()
-            .addStatement("$T dsl = graphitronContext(env).getDslContext(env)", DSL_CONTEXT);
-
-        for (var nt : nodeTypes) {
-            var jooqTableClass = ClassName.get(jooqPackage + ".tables", nt.table().javaClassName());
-            var typeClass      = ClassName.get(outputPackage + ".types", nt.name());
-            String tableSingleton = nt.table().javaFieldName();
-            rowsNodes.beginControlFlow("if (!byType.getOrDefault($S, $T.of()).isEmpty())", nt.typeId(), LIST);
-            rowsNodes.addStatement("$T typeIds = byType.get($S)", listOfString, nt.typeId());
-            rowsNodes.addStatement("$T t = $T.$L", jooqTableClass, jooqTableClass, tableSingleton);
-            rowsNodes.addStatement("$T fields = new $T($T.$$fields(env.getSelectionSet(), t, env))",
-                arrayListOfField, arrayListOfField, typeClass);
-            rowsNodes.addStatement("fields.add($T.inline($S).as($S))", DSL, nt.name(), TYPENAME_COLUMN);
-            // Always project the nodeKey columns: rowsNodes encodes each result row back to its
-            // canonical id via NodeIdEncoder.encode for the position scatter, so the columns
-            // must be in the result regardless of what the GraphQL selection requested.
-            // $fields only adds them when the selection includes `id`, so a query like
-            // `nodes(ids: [...]) { ... on Customer { firstName } }` would otherwise fail with
-            // "field is not contained in row type" on the encode call. Dedup against $fields
-            // (which already added the columns when `id` was selected) so the SELECT projects
-            // each key column at most once; mirrors TypeClassGenerator's required-projection
-            // pattern.
-            for (var col : nt.nodeKeyColumns()) {
-                rowsNodes.addStatement("if (!fields.contains(t.$L)) fields.add(t.$L)",
-                    col.javaName(), col.javaName());
-            }
-            var hasIdsArgs = CodeBlock.builder().add("$S, typeIds", nt.typeId());
-            for (var col : nt.nodeKeyColumns()) {
-                hasIdsArgs.add(", t.$L", col.javaName());
-            }
-            rowsNodes.beginControlFlow("for ($T r : dsl.select(fields).from(t).where($T.hasIds($L)).fetch())",
-                RECORD, nodeIdEncoder, hasIdsArgs.build());
-            var encodeArgs = CodeBlock.builder().add("$S", nt.typeId());
-            for (var col : nt.nodeKeyColumns()) {
-                encodeArgs.add(", r.get(t.$L)", col.javaName());
-            }
-            rowsNodes.addStatement("$T encodedId = $T.encode($L)", STRING_CLASS, nodeIdEncoder, encodeArgs.build());
-            rowsNodes.addStatement("$T idxs = positions.get(encodedId)", listOfInteger);
-            rowsNodes.beginControlFlow("if (idxs != null)");
-            rowsNodes.addStatement("for (int idx : idxs) result[idx] = r");
-            rowsNodes.endControlFlow();
-            rowsNodes.endControlFlow(); // for r
-            rowsNodes.endControlFlow(); // if !isEmpty
-        }
-
-        rowsNodes.addStatement("return $T.asList(result)", ARRAYS);
+            .addStatement("Object[] result = $T.$L(reps, env)", entityDispatch,
+                EntityFetcherDispatchClassGenerator.RESOLVE_BY_REPS_METHOD)
+            .addStatement("$T<$T> out = new $T<>(result.length)", LIST, RECORD, ARRAY_LIST)
+            .beginControlFlow("for (Object o : result)")
+                .addStatement("out.add(($T) o)", RECORD)
+            .endControlFlow()
+            .addStatement("return out");
 
         var contextHelper = MethodSpec.methodBuilder("graphitronContext")
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)

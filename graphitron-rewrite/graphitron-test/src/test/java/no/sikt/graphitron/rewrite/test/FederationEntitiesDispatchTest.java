@@ -30,6 +30,8 @@ class FederationEntitiesDispatchTest {
     static PostgreSQLContainer<?> postgres;
     static DSLContext dsl;
     static GraphQL graphql;
+    static final java.util.concurrent.atomic.AtomicInteger QUERY_COUNT = new java.util.concurrent.atomic.AtomicInteger();
+    static final List<String> SQL_LOG = new java.util.concurrent.CopyOnWriteArrayList<>();
 
     @BeforeAll
     static void startDatabase() throws Exception {
@@ -44,6 +46,15 @@ class FederationEntitiesDispatchTest {
             postgres.start();
             dsl = DSL.using(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
         }
+        dsl.configuration().set(new org.jooq.impl.DefaultExecuteListenerProvider(
+            new org.jooq.impl.DefaultExecuteListener() {
+                @Override
+                public void executeStart(org.jooq.ExecuteContext ctx) {
+                    QUERY_COUNT.incrementAndGet();
+                    var sql = ctx.sql();
+                    if (sql != null) SQL_LOG.add(sql.toLowerCase(java.util.Locale.ROOT));
+                }
+            }));
         GraphQLSchema schema = Graphitron.buildSchema(b -> {});
         graphql = GraphQL.newGraphQL(schema).build();
     }
@@ -171,5 +182,154 @@ class FederationEntitiesDispatchTest {
         List<Map<String, Object>> entities = (List<Map<String, Object>>) data.get("_entities");
         assertThat(entities).hasSize(1);
         assertThat(entities.get(0)).isNull();
+    }
+
+    /**
+     * DIRECT-shape alternative: Film carries {@code @key(fields: "filmId")} and a rep with
+     * {@code filmId: 1} resolves through the column-value path (not NodeId decode). Same
+     * SQL shape as the NODE_ID path; only the rep-to-column-values translation differs.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void entities_directShapeKey_resolvesViaColumnValue() {
+        Map<String, Object> data = execute(
+            "query Q($reps: [_Any!]!) { _entities(representations: $reps) {"
+            + " __typename ... on Film { title } } }",
+            Map.of("reps", List.of(Map.of("__typename", "Film", "filmId", 1))));
+        List<Map<String, Object>> entities = (List<Map<String, Object>>) data.get("_entities");
+        assertThat(entities).hasSize(1);
+        assertThat(entities.get(0)).containsEntry("__typename", "Film");
+        assertThat(entities.get(0)).containsKey("title");
+    }
+
+    /**
+     * Type-scoped selection set: a single _entities call with two __typenames and inline
+     * fragments produces per-type SELECTs whose projection lists exclude the other type's
+     * fields. Locks the load-bearing claim that graphql-java's
+     * {@code DataFetchingFieldSelectionSet} is type-scoped at the {@code _entities} DFE
+     * call site, so {@code <TypeName>.$fields} walking it picks up only the inline
+     * fragment scoped to that __typename.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void entities_typeScopedSelectionSet_perTypeProjectionDistinct() {
+        String customerId = NodeIdEncoder.encode("Customer", 1);
+        String filmId = NodeIdEncoder.encode("Film", 1);
+        SQL_LOG.clear();
+        execute(
+            "query Q($reps: [_Any!]!) { _entities(representations: $reps) {"
+            + " __typename"
+            + " ... on Customer { firstName lastName }"
+            + " ... on Film { title rentalRate }"
+            + " } }",
+            Map.of("reps", List.of(
+                Map.of("__typename", "Customer", "id", customerId),
+                Map.of("__typename", "Film", "id", filmId))));
+
+        var customerSelect = SQL_LOG.stream()
+            .filter(s -> s.contains("'customer' as \"__typename\""))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("Customer SELECT not found in SQL log: " + SQL_LOG));
+        var filmSelect = SQL_LOG.stream()
+            .filter(s -> s.contains("'film' as \"__typename\""))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("Film SELECT not found in SQL log: " + SQL_LOG));
+
+        assertThat(customerSelect)
+            .as("Customer SELECT projects Customer's fields, not Film's")
+            .contains("first_name").contains("last_name")
+            .doesNotContain("title").doesNotContain("rental_rate");
+        assertThat(filmSelect)
+            .as("Film SELECT projects Film's fields, not Customer's")
+            .contains("title").contains("rental_rate")
+            .doesNotContain("first_name").doesNotContain("last_name");
+    }
+
+    /**
+     * Multi-tenancy partition: a single {@code _entities} call with two reps of the same
+     * __typename whose ids resolve to different tenants issues two SELECTs (one per tenant),
+     * not one. The dispatcher's per-rep DFE rebinds {@code arguments} to the rep map so the
+     * consumer's {@code getTenantId(repEnv)} resolves against each individual rep.
+     */
+    @Test
+    void entities_multiTenancyPartition_oneSelectPerTenant() {
+        String c1 = NodeIdEncoder.encode("Customer", 1);
+        String c2 = NodeIdEncoder.encode("Customer", 2);
+        Map<String, String> idToTenant = Map.of(c1, "tenantA", c2, "tenantB");
+
+        var perRepTenantContext = new GraphitronContext() {
+            @Override public DSLContext getDslContext(DataFetchingEnvironment env) { return dsl; }
+            @Override public <T> T getContextArgument(DataFetchingEnvironment env, String name) { return null; }
+            @Override public String getTenantId(DataFetchingEnvironment env) {
+                String id = env.getArgument("id");
+                return id == null ? "" : idToTenant.getOrDefault(id, "");
+            }
+        };
+
+        var input = ExecutionInput.newExecutionInput()
+            .query("query Q($reps: [_Any!]!) { _entities(representations: $reps) {"
+                + " __typename ... on Customer { firstName } } }")
+            .variables(Map.of("reps", List.of(
+                Map.of("__typename", "Customer", "id", c1),
+                Map.of("__typename", "Customer", "id", c2))))
+            .graphQLContext(b -> b.put(GraphitronContext.class, perRepTenantContext))
+            .dataLoaderRegistry(new org.dataloader.DataLoaderRegistry())
+            .build();
+
+        QUERY_COUNT.set(0);
+        var result = graphql.execute(input);
+        assertThat(result.getErrors()).isEmpty();
+        assertThat(QUERY_COUNT.get())
+            .as("two tenants, one Customer SELECT each")
+            .isEqualTo(2);
+    }
+
+    /**
+     * Multi-alternative dispatch: Film carries both a synthesised NODE_ID alternative
+     * (from {@code @node}) and a DIRECT alternative (from {@code @key(fields: "filmId")}).
+     * Reps that supply only {@code id} pick the NODE_ID alternative; reps that supply only
+     * {@code filmId} pick the DIRECT alternative. The dispatcher selects per-rep and
+     * groups by alternative, so a mixed call issues two SELECTs.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void entities_multipleAlternatives_dispatchPerRep() {
+        String filmId1 = NodeIdEncoder.encode("Film", 1);
+        SQL_LOG.clear();
+        Map<String, Object> data = execute(
+            "query Q($reps: [_Any!]!) { _entities(representations: $reps) {"
+            + " __typename ... on Film { title } } }",
+            Map.of("reps", List.of(
+                Map.of("__typename", "Film", "id", filmId1),
+                Map.of("__typename", "Film", "filmId", 2))));
+
+        List<Map<String, Object>> entities = (List<Map<String, Object>>) data.get("_entities");
+        assertThat(entities).hasSize(2);
+        assertThat(entities.get(0)).containsEntry("__typename", "Film");
+        assertThat(entities.get(1)).containsEntry("__typename", "Film");
+
+        long filmSelectCount = SQL_LOG.stream()
+            .filter(s -> s.contains("'film' as \"__typename\""))
+            .count();
+        assertThat(filmSelectCount)
+            .as("two alternatives → two SELECTs")
+            .isEqualTo(2);
+    }
+
+    /**
+     * Empty selection-set sanity: querying only {@code __typename} on an entity returns
+     * the type discriminator without requesting any actual columns. The synthetic
+     * {@code __typename} literal is always projected, so the rep still resolves.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void entities_typenameOnly_resolvesWithoutFieldProjection() {
+        String customerId = NodeIdEncoder.encode("Customer", 1);
+        Map<String, Object> data = execute(
+            "query Q($reps: [_Any!]!) { _entities(representations: $reps) { __typename } }",
+            Map.of("reps", List.of(Map.of("__typename", "Customer", "id", customerId))));
+        List<Map<String, Object>> entities = (List<Map<String, Object>>) data.get("_entities");
+        assertThat(entities).hasSize(1);
+        assertThat(entities.get(0)).containsEntry("__typename", "Customer");
     }
 }
