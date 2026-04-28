@@ -23,9 +23,12 @@ import java.util.Map;
  * the argument type is declared as an enum, and we emit the same string unchanged; when passed
  * to {@code valueProgrammatic} on a target whose type is an enum, graphql-java re-coerces).
  *
- * <p>Used from {@link AppliedDirectiveEmitter} to render {@code @key(fields: "id")}-style
- * argument values, and (via follow-up) from {@link InputTypeGenerator} /
- * {@link ObjectTypeGenerator} for default-value emission.
+ * <p>Used from {@link InputTypeGenerator} and {@link ObjectTypeGenerator} for
+ * {@code .defaultValueProgrammatic(...)} emission on input fields and field arguments.
+ * Applied-directive argument values do not pass through here; they go through
+ * {@link AppliedDirectiveEmitter}, which preserves AST shape via graphql-java's
+ * {@code ValuesResolver.valueToLiteral} so federation-jvm can read them as
+ * {@link graphql.language.Value} nodes.
  */
 public final class GraphQLValueEmitter {
 
