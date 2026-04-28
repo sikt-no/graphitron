@@ -48,6 +48,7 @@ public class QueryNodeFetcherClassGenerator {
     public static final String NODE_INTERFACE_NAME       = "Node";
 
     private static final ClassName ENV                    = ClassName.get("graphql.schema", "DataFetchingEnvironment");
+    private static final ClassName ENV_IMPL               = ClassName.get("graphql.schema", "DataFetchingEnvironmentImpl");
     private static final ClassName LIST                   = ClassName.get("java.util", "List");
     private static final ClassName MAP                    = ClassName.get("java.util", "Map");
     private static final ClassName RECORD                 = ClassName.get("org.jooq", "Record");
@@ -136,25 +137,41 @@ public class QueryNodeFetcherClassGenerator {
         var mapStrListInt   = ParameterizedTypeName.get(MAP, STRING_CLASS, listOfInteger);
         var mapStrListStr   = ParameterizedTypeName.get(MAP, STRING_CLASS, listOfString);
 
+        // Per-id fan-out into tenant-scoped DataLoaders. The loader name is built per id from
+        // a per-id DFE (arguments rebound to {id: <thisId>}) so getTenantId resolves against
+        // the individual id rather than the outer ids[]. Ids that resolve to the same tenant
+        // share a loader and batch into one hasIds query; ids from different tenants land in
+        // separate loaders. This also makes batchEnv.getKeyContextsList().get(0) safe inside
+        // the batch lambda: every key in a given loader shares a tenant by construction.
         var dispatchNodes = MethodSpec.methodBuilder(DISPATCH_NODES_METHOD)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(cfListRecord)
             .addParameter(ENV, "env")
-            .addJavadoc("Dispatches a Relay {@code Query.nodes(ids:)} call via a DataLoader keyed\n"
-                + "by {@code getTenantId + path}. The batch function calls {@link #rowsNodes},\n"
-                + "which groups IDs by typeId and executes one query per type.\n"
-                + "Returns {@code null} entries for null/garbage/unknown IDs (Relay spec).\n")
+            .addJavadoc("Dispatches a Relay {@code Query.nodes(ids:)} call via per-tenant DataLoaders\n"
+                + "keyed by {@code getTenantId(idEnv) + path}, where {@code idEnv} is a per-id DFE.\n"
+                + "Ids resolving to the same tenant share a loader and batch into a single\n"
+                + "{@link #rowsNodes} call (one {@code hasIds} query per typeId); ids from\n"
+                + "different tenants get separate loaders. Returns {@code null} entries for\n"
+                + "null/garbage/unknown IDs (Relay spec).\n")
             .addStatement("$T ids = env.getArgument($S)", listOfString, "ids")
             .addStatement("if (ids == null || ids.isEmpty()) return $T.completedFuture($T.of())", COMPLETABLE_FUTURE, LIST)
-            .addStatement("$T name = graphitronContext(env).getTenantId(env) + $S + $T.join($S, env.getExecutionStepInfo().getPath().getKeysOnly())",
-                String.class, "/", String.class, "/")
-            .addCode("$T loader = env.getDataLoaderRegistry().computeIfAbsent(name, k ->\n", loaderType)
-            .addCode("    $T.newDataLoader(($T keys, $T batchEnv) -> {\n", DATA_LOADER_FACTORY, listOfString, BATCH_LOADER_ENV)
-            .addCode("        $T dfe = ($T) batchEnv.getKeyContextsList().get(0);\n", ENV, ENV)
-            .addCode("        return $T.completedFuture(rowsNodes(keys, dfe));\n", COMPLETABLE_FUTURE)
-            .addCode("    }));\n")
+            .addStatement("$T path = $T.join($S, env.getExecutionStepInfo().getPath().getKeysOnly())",
+                String.class, String.class, "/")
             .addCode("$T futures = ids.stream()\n", listOfCfRecord)
-            .addCode("    .map(id -> id == null ? $T.completedFuture(($T) null) : loader.load(id, env))\n", COMPLETABLE_FUTURE, RECORD)
+            .addCode("    .map(id -> {\n")
+            .addCode("        if (id == null) return $T.completedFuture(($T) null);\n", COMPLETABLE_FUTURE, RECORD)
+            .addCode("        $T idEnv = $T.newDataFetchingEnvironment(env).arguments($T.of($S, id)).build();\n",
+                ENV, ENV_IMPL, MAP, "id")
+            .addCode("        $T name = graphitronContext(idEnv).getTenantId(idEnv) + $S + path;\n",
+                String.class, "/")
+            .addCode("        $T loader = idEnv.getDataLoaderRegistry().computeIfAbsent(name, k ->\n", loaderType)
+            .addCode("            $T.newDataLoader(($T keys, $T batchEnv) -> {\n",
+                DATA_LOADER_FACTORY, listOfString, BATCH_LOADER_ENV)
+            .addCode("                $T dfe = ($T) batchEnv.getKeyContextsList().get(0);\n", ENV, ENV)
+            .addCode("                return $T.completedFuture(rowsNodes(keys, dfe));\n", COMPLETABLE_FUTURE)
+            .addCode("            }));\n")
+            .addCode("        return loader.load(id, idEnv);\n")
+            .addCode("    })\n")
             .addCode("    .toList();\n")
             .addCode("return $T.allOf(futures.toArray(new $T[0]))\n", COMPLETABLE_FUTURE, COMPLETABLE_FUTURE)
             .addCode("    .thenApply(v -> futures.stream().map($T::join).toList());\n", COMPLETABLE_FUTURE)
