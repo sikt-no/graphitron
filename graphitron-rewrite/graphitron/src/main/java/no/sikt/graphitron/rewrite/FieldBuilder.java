@@ -1305,7 +1305,6 @@ class FieldBuilder {
                             nf.name(),
                             nf.nodeTypeId(),
                             nf.nodeKeyColumns(),
-                            /* nonNull */ false,
                             new CallSiteExtraction.NestedInputField(outerArgName, leafPath)));
                     }
                 }
