@@ -542,10 +542,9 @@ for long.
 
 ## Open decisions
 
-- **POJO-fetcher `resolveType`.** Default left out of scope: a
-  consumer override returning POJOs without a `__typename` column or
-  map key must pair its `fetchEntities` with a custom
-  `resolveEntityType`. The default `resolveType` raises a targeted
-  `IllegalStateException` naming the missing override (see
-  Implementation). Reviewer to confirm or push back if a default
-  introspection path is wanted instead of the targeted error.
+None. The first-pass call on POJO-fetcher `resolveType`, throwing a
+targeted `IllegalStateException` naming the missing
+`resolveEntityType` override rather than introspecting Java class to
+GraphQL type name, has been signed off; see the implementation
+section for the error wording. Lift to a default introspection path
+in a follow-up plan if a real consumer surfaces wanting it.
