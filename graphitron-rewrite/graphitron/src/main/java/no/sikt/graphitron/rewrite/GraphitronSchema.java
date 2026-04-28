@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
 import graphql.schema.FieldCoordinates;
+import no.sikt.graphitron.rewrite.model.EntityResolution;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 
@@ -24,16 +25,17 @@ public record GraphitronSchema(
     Map<String, GraphitronType> types,
     Map<FieldCoordinates, GraphitronField> fields,
     Map<String, List<GraphitronField>> fieldsByType,
+    Map<String, EntityResolution> entitiesByType,
     List<BuildWarning> warnings
 ) {
 
     /**
      * Two-arg convenience constructor: groups fields by {@code parentTypeName} automatically,
      * preserving insertion order (declaration order when the fields map is a {@link LinkedHashMap}).
-     * No warnings.
+     * No entity resolutions, no warnings.
      */
     public GraphitronSchema(Map<String, GraphitronType> types, Map<FieldCoordinates, GraphitronField> fields) {
-        this(types, fields, groupByType(fields), List.of());
+        this(types, fields, groupByType(fields), Map.of(), List.of());
     }
 
     /**
@@ -43,8 +45,9 @@ public record GraphitronSchema(
      */
     public GraphitronSchema(Map<String, GraphitronType> types,
                             Map<FieldCoordinates, GraphitronField> fields,
+                            Map<String, EntityResolution> entitiesByType,
                             List<BuildWarning> warnings) {
-        this(types, fields, groupByType(fields), List.copyOf(warnings));
+        this(types, fields, groupByType(fields), Map.copyOf(entitiesByType), List.copyOf(warnings));
     }
 
     private static Map<String, List<GraphitronField>> groupByType(Map<FieldCoordinates, GraphitronField> fields) {
@@ -75,6 +78,17 @@ public record GraphitronSchema(
      */
     public List<GraphitronField> fieldsOf(String typeName) {
         return fieldsByType.getOrDefault(typeName, List.of());
+    }
+
+    /**
+     * Returns the federation entity-resolution metadata for {@code typeName}, or {@code null}
+     * if the type carries no {@code @key} (and is not a {@code @node}). The classifier records
+     * one entry here per type whose SDL declaration carries at least one resolvable
+     * {@code @key} alternative; the runtime entity dispatcher consumes these to wire the
+     * {@code _entities} fetcher.
+     */
+    public EntityResolution entityResolution(String typeName) {
+        return entitiesByType.get(typeName);
     }
 
 }
