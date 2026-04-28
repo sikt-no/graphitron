@@ -348,7 +348,7 @@ input FilmActorKey @table(name: "film_actor") {
     actorId: Int! @field(name: "actor_id") @lookupKey
 }
 
-type FilmActor @table(name: "film_actor") {
+type FilmActor @table(name: "film_actor") @key(fields: "filmId actorId") {
     filmId:  Int! @field(name: "film_id")
     actorId: Int! @field(name: "actor_id")
 }
