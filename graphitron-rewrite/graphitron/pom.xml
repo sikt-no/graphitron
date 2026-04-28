@@ -72,12 +72,7 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <configuration>
                     <release>25</release>
-                    <compilerArgs>
-                        <!-- Preserve parameter names at runtime so that service-method reflection
-                             (GraphitronSchemaBuilder.reflectServiceMethod) can classify each
-                             parameter of a @service method by name. -->
-                        <arg>-parameters</arg>
-                    </compilerArgs>
+                    <parameters>true</parameters>
                 </configuration>
             </plugin>
         </plugins>
