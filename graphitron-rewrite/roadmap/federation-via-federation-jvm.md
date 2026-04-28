@@ -128,14 +128,40 @@ final wording moves into the doc when the relevant phase ships.
 
 ### `_entities` (replacement for the existing `## Federation` snippet)
 
-> The rewrite emits `Query._entities` natively. You no longer need
-> `Federation.transform`'s `.fetchEntities(...)` callback unless you
-> have additional entity types not classified by Graphitron.
+> The rewrite handles `Federation.transform` for you. When your SDL
+> opens with an `extend schema @link(url: ".../federation/v2.x", ...)`,
+> `Graphitron.buildSchema(...)` returns the federation-wrapped schema
+> directly:
 >
 > ```java
 > GraphQLSchema schema = Graphitron.buildSchema(b -> {});
-> // Federation directives + `_entities` are wired automatically.
+> // Federation directives, `_Service.sdl`, and `_entities` are wired
+> // automatically. `_entities` resolves every type with a `@key` or
+> // `@node` directive on its definition.
 > ```
+>
+> Do *not* wrap the result in `Federation.transform(...)` yourself; the
+> rewrite has already done it, and a second wrap would double-add
+> `_Service` / `_Entity` and break composition. Schemas without an
+> `@link` skip the wrap entirely and behave exactly as before.
+>
+> If you have entity types Graphitron does not classify (hand-rolled
+> objects with `@key`, or types pulled in from a non-Graphitron source),
+> register a custom fetcher via the two-arg form:
+>
+> ```java
+> GraphQLSchema schema = Graphitron.buildSchema(
+>     b -> {},
+>     fed -> fed.fetchEntities(myCustomFetcher));
+> ```
+>
+> The federation builder arrives pre-configured with Graphitron's
+> resolvers; the customizer adds or replaces on top.
+
+(This snippet replaces the existing `## Federation` block in
+`getting-started.md:79-102` wholesale. The pre-collapse text walked
+consumers through calling `Federation.transform` themselves, which is
+no longer the supported path.)
 
 If either of these reads awkwardly to a first-time reader, the design
 needs to change before implementation lands.
@@ -276,13 +302,28 @@ path the only path:
 
 | Schema state | `<schemaInput tag>` set? | Action |
 |---|---|---|
-| No `@link` declaration | yes | Synthesise `extend schema @link(url: "https://specs.apollo.dev/federation/v2.x", import: ["@tag"])`. `FederationLinkApplier` (Phase 1) processes it via `LinkDirectiveProcessor`, which injects the `@tag` declaration. Use whichever v2.x URL the project's federation runtime depends on; `v2.10` is fine. |
+| No `@link` declaration | yes | Synthesise `extend schema @link(url: "<federation-spec-url>", import: ["@tag"])` where the URL is taken from a single Graphitron constant `FederationLinkApplier.DEFAULT_FEDERATION_SPEC_URL`. `FederationLinkApplier` (Phase 1) processes it via `LinkDirectiveProcessor`, which injects the `@tag` declaration. |
 | `@link` declared, `"@tag"` in `import` list | yes | No-op. |
 | `@link` declared, `"@tag"` *absent* from `import` list | yes | Fatal `ValidationError` keyed on the `@link` directive's `SourceLocation`: "`<schemaInput tag>` is configured but `'@tag'` is not in the `@link` import list at `<file>:<line>`. Add `\"@tag\"` to the `import` array." |
 | (any) | no | No action; `<schemaInput tag>` is not in play. |
 
 Single synthesis / single error, not per-tagged-input: the action
 is the same regardless of how many tagged inputs the consumer has.
+
+**Default spec URL for the synthesised `@link`.**
+`FederationLinkApplier.DEFAULT_FEDERATION_SPEC_URL` ships pinned to
+`https://specs.apollo.dev/federation/v2.10`, the latest spec that
+v6.0.0 of the federation library supports as of this plan. Holding the
+URL in a single source-of-truth constant (rather than scattering the
+v2.x choice through doc previews, tests, and the synthesiser) keeps
+the eventual bump to v2.11+ a one-line change. The URL is *not*
+exposed as a `<schemaInput>` config option in this plan: a consumer
+who needs a different version writes their own `extend schema @link`
+in their SDL, which already takes precedence over synthesis (see the
+table above). If a real consumer surfaces wanting the synthesised
+default to differ across modules of the same project, lift the
+constant into a config option then; pre-emptive plumbing is out of
+scope.
 
 **Source attribution for the synthesised extension.**
 `TagLinkSynthesiser` emits the synthesised `SchemaExtensionDefinition`
@@ -359,6 +400,18 @@ by the time `makeExecutableSchema` runs the schema has the federation
 directives wired; the post-step only needs to add `_Service` /
 `_Entity` and the entity resolvers.
 
+The `GraphQLSchema` overload defaults `isFederation2 = false` and does
+not auto-detect from the schema's `@link` applied directives. Only the
+registry overload sets the flag, by inspecting `LinkDirectiveProcessor`'s
+return value. Phase 3 must therefore call `.setFederation2(true)`
+explicitly on the builder; we already know the bit is true (it is the
+Phase-1 federation-link bit on the bundle). Without this call,
+`_Service.sdl` is generated by federation-jvm's v1 SDL printer, which a
+v2 gateway will reject during composition. The runtime `_entities`
+resolution path itself is unaffected by the flag (it controls SDL
+printing only), so functional fetcher tests stay green even if the
+setter is forgotten; federated-SDL ratchet tests catch the regression.
+
 **Wiring.** In `GraphitronSchemaClassGenerator` (or a new
 `FederationPostStep` co-located with the generator), after the base
 `GraphQLSchema` is built:
@@ -367,6 +420,7 @@ directives wired; the post-step only needs to add `_Service` /
 GraphQLSchema base = /* existing build */;
 if (ctx.hasFederationLink()) {
     return Federation.transform(base)
+        .setFederation2(true)
         .resolveEntityType(this::resolveEntityType)
         .fetchEntities(this::fetchEntities)
         .build();
@@ -395,6 +449,30 @@ The two sub-cases share a sealed `EntityResolution` model variant added
 during this phase; `FieldBuilder` populates it from the type's `@key`
 or `@node` directive at classify time.
 
+**Multiple `@key` directives and compound keys.** A type can carry more
+than one `@key`, and each `@key`'s `fields:` argument can name more than
+one column (`@key(fields: "id sku")`). Both shapes resolve through the
+same dispatch logic: at classify time, `FieldBuilder` parses each
+`@key`'s `fields:` selection into a normalised set of column names and
+records the alternatives on the type's `EntityResolution`. At runtime,
+`fetchEntities` matches the keys *present in each representation map*
+against the recorded alternatives:
+
+- `@key(fields: "id") @key(fields: "sku")`: the representation carries
+  one of `id` or `sku`; pick the matching alternative.
+- `@key(fields: "id sku")`: the representation carries both `id` and
+  `sku`; the sole alternative requires both keys to be present.
+- Mixed: `@key(fields: "id") @key(fields: "tenantId sku")` matches
+  either a single-`id` representation or a `{tenantId, sku}` pair.
+
+Picking the alternative is "the alternative whose required column set
+is a subset of the representation's keys, preferring the most-specific
+alternative when several match". Nested selections inside `fields:` (the
+`a { b }` form, used for entity references that span types) are
+out of scope for this phase and surface as a `ValidationError` at
+classify time; that scope can lift in a follow-up if a real consumer
+needs it.
+
 **Deletions.** All in the Phase-3 commit:
 - `QueryField.QueryEntityField` record (`model/QueryField.java:82-87`).
 - `validateQueryEntityField` (`GraphitronSchemaValidator.java:69, 294`).
@@ -419,6 +497,43 @@ GraphQLSchema schema = Graphitron.buildSchema(b -> { /* base customizer */ },
 The two-arg form is additive: the federation builder is pre-configured
 with Graphitron's resolvers, and the consumer adds or overrides on top.
 Single-arg call sites stay unchanged.
+
+**Ordering of the two customizers.** The emitted `build(Consumer,
+Consumer)` runs them in this order:
+
+```
+1. Build base schema from the registry.
+2. schemaCustomizer.accept(schemaBuilder)   // base GraphQLSchema.Builder
+3. base = schemaBuilder.build()
+4. if (federationLink) {
+       fb = Federation.transform(base).setFederation2(true)
+                .resolveEntityType(default).fetchEntities(default);
+       federationCustomizer.accept(fb)      // SchemaTransformer builder
+       return fb.build();
+   }
+   return base;
+```
+
+The first customizer sees the pre-federation builder, the second sees
+the federation `SchemaTransformer` builder after Graphitron's defaults
+are already attached. This matters in two cases:
+
+- *Type resolvers for federated unions/interfaces.* `Federation.transform`'s
+  `_Entity` union construction does not require a consumer-registered
+  `TypeResolver`; the entity union is dispatched by the federation
+  library through `resolveEntityType`, not through graphql-java's
+  type-resolver registry. So a consumer who needs a type resolver for
+  one of their own unions registers it on the schema builder (first
+  customizer) and the federation post-step preserves it.
+- *Overriding an entity fetcher for a Graphitron-classified type.*
+  Goes in the second customizer. The default fetcher Graphitron
+  installed is replaced because federation-jvm's `fetchEntities` is a
+  setter, not an aggregator.
+
+A consumer who needs to register both a type resolver *and* override
+an entity fetcher uses both customizers; the order above keeps the
+two operations independent. The two-arg method's javadoc states this
+order.
 
 **Facade generator change.** `Graphitron.buildSchema(...)` is emitted
 by `GraphitronFacadeGenerator`. Adding the two-arg overload requires a
@@ -448,6 +563,14 @@ federation builder's contract (additive only on `fetchEntities` /
   resolves both `_entities([{__typename: "Foo", id: "1"}])` and
   `_entities([{__typename: "Foo", sku: "X"}])`; the fetcher dispatches
   on the *set* of provided fields, not just `__typename`.
+- Compound key: a `Foo @key(fields: "tenantId sku")` type resolves
+  `_entities([{__typename: "Foo", tenantId: "T", sku: "X"}])`; a
+  representation that omits one of the two keys surfaces a
+  federation-level error rather than silently picking up a partial
+  match.
+- Nested-selection key: `@key(fields: "owner { id }")` is rejected at
+  classify time with a `ValidationError` naming the directive and the
+  unsupported selection (regression guard against the non-goal).
 
 ## Non-goals
 
