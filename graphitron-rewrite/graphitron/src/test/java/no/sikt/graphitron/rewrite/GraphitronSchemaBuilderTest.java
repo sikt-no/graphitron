@@ -1257,6 +1257,39 @@ class GraphitronSchemaBuilderTest {
                 var unc = (no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField) field;
                 assertThat(unc.kind()).isEqualTo(no.sikt.graphitron.rewrite.RejectionKind.AUTHOR_ERROR);
                 assertThat(unc.reason()).contains("collides with column 'title'");
+            }),
+
+        METHOD_DEFAULTS_TO_FIELD_NAME(
+            "@externalField with reference omitting `method:` → method defaults to field name",
+            """
+            type Film @table(name: "film") {
+                isEnglish: Boolean @externalField(reference: {className: "no.sikt.graphitron.rewrite.TestExternalFieldStub"})
+            }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var field = schema.field("Film", "isEnglish");
+                assertThat(field).isInstanceOf(ComputedField.class);
+                var cf = (ComputedField) field;
+                assertThat(cf.method()).isNotNull();
+                assertThat(cf.method().className()).isEqualTo("no.sikt.graphitron.rewrite.TestExternalFieldStub");
+                assertThat(cf.method().methodName()).isEqualTo("isEnglish");
+            }),
+
+        METHOD_DEFAULT_NOT_FOUND(
+            "@externalField omitting `method:` but field name has no matching static method → UnclassifiedField (AUTHOR_ERROR)",
+            """
+            type Film @table(name: "film") {
+                noSuchExternalMethod: Boolean @externalField(reference: {className: "no.sikt.graphitron.rewrite.TestExternalFieldStub"})
+            }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var field = schema.field("Film", "noSuchExternalMethod");
+                assertThat(field).isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class);
+                var unc = (no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField) field;
+                assertThat(unc.kind()).isEqualTo(no.sikt.graphitron.rewrite.RejectionKind.AUTHOR_ERROR);
+                assertThat(unc.reason()).contains("noSuchExternalMethod");
             });
 
         final String sdl;
