@@ -976,4 +976,105 @@ class TypeFetcherGeneratorTest {
             .as("keys on the typed class, not a string")
             .contains("env.getGraphQlContext().get(" + expectedFqn + ".class)");
     }
+
+    // ===== R49: ServiceRecordField (scalar / @record-backed return) =====
+    //
+    // ServiceRecordField shares the DataLoader emitters with ServiceTableField; the only axis
+    // of variation is the per-key value type (perKeyType): RECORD for table-bound,
+    // field.elementType() for record-bound. These tests assert that the parameterisation
+    // surfaces the correct loader signature, factory selection, and rows-method shape for
+    // each variant.
+
+    private static no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField scalarServiceRecordField(
+            String parentType, String name, boolean isList, BatchKey batchKey, no.sikt.graphitron.javapoet.TypeName perKeyType) {
+        var returnWrapper = isList ? (FieldWrapper) listWrapper() : single();
+        var returnType = new no.sikt.graphitron.rewrite.model.ReturnTypeRef.ScalarReturnType("String", returnWrapper);
+        var method = new MethodRef.Basic(
+            "no.example.Service", "getValues", perKeyType,
+            List.of(new MethodRef.Param.Sourced("keys", batchKey)));
+        return new no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField(
+            parentType, name, null, returnType, List.of(), method, batchKey);
+    }
+
+    private static no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField recordBackedServiceRecordField(
+            String parentType, String name, boolean isList, BatchKey batchKey, String fqBackingClass) {
+        var returnWrapper = isList ? (FieldWrapper) listWrapper() : single();
+        var returnType = new no.sikt.graphitron.rewrite.model.ReturnTypeRef.ResultReturnType(
+            "FilmDetails", returnWrapper, fqBackingClass);
+        var method = new MethodRef.Basic(
+            "no.example.Service", "getDetails", ClassName.bestGuess(fqBackingClass),
+            List.of(new MethodRef.Param.Sourced("keys", batchKey)));
+        return new no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField(
+            parentType, name, null, returnType, List.of(), method, batchKey);
+    }
+
+    private static TypeSpec specWith(GraphitronField field) {
+        return TypeFetcherGenerator.generateTypeSpec("Language", LANGUAGE_TABLE, List.of(field));
+    }
+
+    @Test
+    void serviceRecordField_scalar_single_loaderValueIsPerKeyType() {
+        var field = scalarServiceRecordField(
+            "Language", "displayName", false,
+            new BatchKey.RowKeyed(List.of(languageIdCol())),
+            ClassName.get(String.class));
+        assertThat(method(specWith(field), "displayName").returnType().toString())
+            .isEqualTo("java.util.concurrent.CompletableFuture<graphql.execution.DataFetcherResult<java.lang.String>>");
+    }
+
+    @Test
+    void serviceRecordField_scalar_list_loaderValueIsListOfPerKeyType() {
+        var field = scalarServiceRecordField(
+            "Language", "displayNames", true,
+            new BatchKey.RowKeyed(List.of(languageIdCol())),
+            ClassName.get(String.class));
+        assertThat(method(specWith(field), "displayNames").returnType().toString())
+            .isEqualTo("java.util.concurrent.CompletableFuture<graphql.execution.DataFetcherResult<java.util.List<java.lang.String>>>");
+    }
+
+    @Test
+    void serviceRecordField_recordBacked_single_loaderValueIsBackingClass() {
+        var field = recordBackedServiceRecordField(
+            "Language", "details", false,
+            new BatchKey.RowKeyed(List.of(languageIdCol())),
+            "no.example.FilmDetails");
+        assertThat(method(specWith(field), "details").returnType().toString())
+            .isEqualTo("java.util.concurrent.CompletableFuture<graphql.execution.DataFetcherResult<no.example.FilmDetails>>");
+    }
+
+    @Test
+    void serviceRecordField_mappedRow_list_dataFetcherCallsNewMappedDataLoaderWithSetKeys() {
+        var field = scalarServiceRecordField(
+            "Language", "displayNames", true,
+            new BatchKey.MappedRowKeyed(List.of(languageIdCol())),
+            ClassName.get(String.class));
+        var body = method(specWith(field), "displayNames").code().toString();
+        assertThat(body).contains("newMappedDataLoader(");
+        assertThat(body).doesNotContain("newDataLoaderWithContext");
+    }
+
+    @Test
+    void serviceRecordField_mappedRow_list_rowsMethodReturnsMapToListOfElement() {
+        var field = scalarServiceRecordField(
+            "Language", "displayNames", true,
+            new BatchKey.MappedRowKeyed(List.of(languageIdCol())),
+            ClassName.get(String.class));
+        // rowsMethodName follows ServiceTableField's "load<Pascal>" convention.
+        var rows = method(specWith(field), "loadDisplayNames");
+        assertThat(rows.returnType().toString())
+            .isEqualTo("java.util.Map<org.jooq.Row1<java.lang.Integer>, java.util.List<java.lang.String>>");
+    }
+
+    @Test
+    void serviceRecordField_positional_single_rowsMethodReturnsListOfElement() {
+        var field = scalarServiceRecordField(
+            "Language", "displayName", false,
+            new BatchKey.RowKeyed(List.of(languageIdCol())),
+            ClassName.get(String.class));
+        // Positional + single-cardinality field: rows-method returns List<V>, ordered by input
+        // key index (ServiceTableField shape parity).
+        var rows = method(specWith(field), "loadDisplayName");
+        assertThat(rows.returnType().toString())
+            .isEqualTo("java.util.List<java.lang.String>");
+    }
 }
