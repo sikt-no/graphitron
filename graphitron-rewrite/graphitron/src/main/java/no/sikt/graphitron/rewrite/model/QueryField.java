@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite.model;
 
 import graphql.language.SourceLocation;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * A field on the {@code Query} type. Read-only. All create a new scope or enter service scope.
@@ -118,26 +119,48 @@ public sealed interface QueryField extends RootField
      *
      * <p>Parameter binding (including context arguments) is fully encoded in
      * {@link MethodRef#params()} via {@link ParamSource}.
+     *
+     * <p>{@code errorChannel} carries the carrier-side typed-error wiring when this field's
+     * payload includes an {@code errors} field; populated by R12's C3 carrier classifier.
+     * Defaults to {@link Optional#empty()} via the no-channel convenience constructor.
      */
     record QueryServiceTableField(
         String parentTypeName,
         String name,
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
-        MethodRef method
-    ) implements QueryField, MethodBackedField {}
+        MethodRef method,
+        Optional<ErrorChannel> errorChannel
+    ) implements QueryField, MethodBackedField {
+
+        public QueryServiceTableField(String parentTypeName, String name, SourceLocation location,
+                                       ReturnTypeRef.TableBoundReturnType returnType, MethodRef method) {
+            this(parentTypeName, name, location, returnType, method, Optional.empty());
+        }
+    }
 
     /**
      * A root query field backed by a developer-provided service method, returning a non-table type.
      *
      * <p>Parameter binding (including context arguments) is fully encoded in
      * {@link MethodRef#params()} via {@link ParamSource}.
+     *
+     * <p>{@code errorChannel} carries the carrier-side typed-error wiring when this field's
+     * payload includes an {@code errors} field; populated by R12's C3 carrier classifier.
+     * Defaults to {@link Optional#empty()} via the no-channel convenience constructor.
      */
     record QueryServiceRecordField(
         String parentTypeName,
         String name,
         SourceLocation location,
         ReturnTypeRef returnType,
-        MethodRef method
-    ) implements QueryField, MethodBackedField {}
+        MethodRef method,
+        Optional<ErrorChannel> errorChannel
+    ) implements QueryField, MethodBackedField {
+
+        public QueryServiceRecordField(String parentTypeName, String name, SourceLocation location,
+                                        ReturnTypeRef returnType, MethodRef method) {
+            this(parentTypeName, name, location, returnType, method, Optional.empty());
+        }
+    }
 }

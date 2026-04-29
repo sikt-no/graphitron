@@ -18,7 +18,8 @@ public sealed interface ChildField extends GraphitronField
             ChildField.ServiceRecordField,
             ChildField.RecordField,
             ChildField.ComputedField, ChildField.PropertyField,
-            ChildField.MultitableReferenceField {
+            ChildField.MultitableReferenceField,
+            ChildField.ErrorsField {
 
     record ColumnField(
         String parentTypeName,
@@ -347,4 +348,33 @@ public sealed interface ChildField extends GraphitronField
         String name,
         SourceLocation location
     ) implements ChildField {}
+
+    /**
+     * The {@code errors} field on a payload type. Lift target for the payload-side of a
+     * fetcher's typed-error channel: a list-shaped field whose element type is a single
+     * {@code @error} type, a union of {@code @error} types, or an interface implemented
+     * by {@code @error} types.
+     *
+     * <p>{@code errorTypes} is the flattened list of mapped {@code @error} types, in source
+     * order: one entry for {@code [SomeError]}, the resolved members for {@code [SomeUnion]}
+     * or {@code [SomeInterface]}. Polymorphism is a classification-time concern that does
+     * not survive into the model; downstream the carrier-side
+     * {@link ErrorChannel} consumes this list uniformly.
+     *
+     * <p>Emission is a passthrough fetcher: at request time the parent's payload object
+     * already carries the list (the carrier's try/catch wrapper produced it, or the
+     * service-method body did), so the fetcher reads it directly via graphql-java's default
+     * {@code PropertyDataFetcher}.
+     */
+    record ErrorsField(
+        String parentTypeName,
+        String name,
+        SourceLocation location,
+        List<ErrorTypeRef> errorTypes
+    ) implements ChildField {
+
+        public ErrorsField {
+            errorTypes = List.copyOf(errorTypes);
+        }
+    }
 }

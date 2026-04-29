@@ -49,7 +49,12 @@ class VariantCoverageTest {
             + "add a case when a suitable fixture is introduced.",
         GraphitronType.JooqRecordInputType.class,
             "No plain jOOQ Record<?> (non-TableRecord) input fixture class in the test classpath; "
-            + "add a case when a suitable fixture is introduced."
+            + "add a case when a suitable fixture is introduced.",
+        ChildField.ErrorsField.class,
+            "Permit added in R12 (error-handling-parity) C2 alongside the ErrorChannel slot; "
+            + "the classifier doesn't produce it until C3 lifts the five PolymorphicReturnType "
+            + "rejection sites in FieldBuilder. Add a GraphitronSchemaBuilderTest case when "
+            + "that lift lands."
     );
 
     private static final List<Class<?>> ROOTS = List.of(
