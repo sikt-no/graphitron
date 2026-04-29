@@ -23,6 +23,7 @@ import no.sikt.graphitron.validation.ValidationHandler;
 import no.sikt.graphql.naming.GraphQLReservedName;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
+import org.jooq.Named;
 
 import java.util.*;
 import java.util.regex.Pattern;
@@ -42,6 +43,10 @@ import static no.sikt.graphitron.generators.dto.DTOGenerator.getDTOGetterMethodN
 import static no.sikt.graphitron.generators.context.NodeIdReferenceHelpers.isNodeIdReferenceField;
 import static no.sikt.graphitron.generators.context.NodeIdReferenceHelpers.resolveColumnNamesForNodeIdField;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
+import static no.sikt.graphitron.mappings.RoutineReflection.getInParameters;
+import static no.sikt.graphitron.mappings.RoutineReflection.getRoutineMethodName;
+import static no.sikt.graphitron.mappings.RoutineReflection.getRoutinesClassName;
+import static no.sikt.graphitron.mappings.RoutineReflection.resolveRoutine;
 import static no.sikt.graphitron.mappings.TableReflection.*;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
@@ -301,7 +306,41 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             return getExternalBlock(field, context);
         }
 
+        if (field.hasProcedureCall()) {
+            return generateProcedureCall(field, context);
+        }
+
         return generateForField(field, context);
+    }
+
+    /**
+     * Generates a static method call to the generated jOOQ {@code Routines} class for a field annotated with
+     * {@code @experimental_procedureCall}. Arguments are materialized as column references on the surrounding table,
+     * in the routine's declared IN-parameter order.
+     */
+    protected CodeBlock generateProcedureCall(GenerationField field, FetchContext context) {
+        var call = field.getProcedureCall();
+        var matches = resolveRoutine(call.procedureName());
+        if (matches.size() != 1) {
+            throw new IllegalStateException("Routine '" + call.procedureName() + "' could not be resolved. Validation should have caught this.");
+        }
+        var routineName = matches.get(0);
+        var routinesClass = ClassName.bestGuess(getRoutinesClassName(routineName).orElseThrow());
+        var methodName = getRoutineMethodName(routineName).orElseThrow();
+
+        var renderedSource = context.renderQuerySource(getLocalTable());
+        var argBlocks = getInParameters(routineName)
+                .stream()
+                .map(Named::getName)
+                .map(it -> call.argumentMap().get(it).toUpperCase())
+                .collect(CodeBlocks.varCollector())
+                .map(it -> CodeBlock.join(".", renderedSource, it));
+
+        return getProcedureCall(routinesClass, methodName, argBlocks);
+    }
+
+    protected CodeBlock getProcedureCall(TypeName routinesClass, String method, CodeBlocks args) {
+        return CodeBlock.methodCall(routinesClass, method, args);
     }
 
     private CodeBlock getExternalBlock(GenerationField field, FetchContext context) {

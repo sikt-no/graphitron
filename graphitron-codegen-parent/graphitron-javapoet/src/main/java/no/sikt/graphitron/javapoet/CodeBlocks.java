@@ -77,6 +77,18 @@ public final class CodeBlocks implements Iterable<CodeBlock> {
     }
 
     /**
+     * Returns a {@link Collector} that accumulates variable names into a {@link CodeBlocks}
+     * by wrapping each with {@link CodeBlock#ofVar(String)}.
+     */
+    public static Collector<String, ?, CodeBlocks> varCollector() {
+        return Collector.of(
+                CodeBlocks::create,
+                (result, v) -> result.blocks.add(CodeBlock.ofVar(v)),
+                (a, b) -> { a.blocks.addAll(b.blocks); return a; }
+        );
+    }
+
+    /**
      * Appends a code block built from the given format and arguments.
      */
     public CodeBlocks add(String format, Object... args) {

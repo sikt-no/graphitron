@@ -1,0 +1,7 @@
+interface SomeInterface {
+  heldBy: ID @experimental_procedureCall(procedure: "inventory_held_by_customer", arguments: "p_inventory_id: CUSTOMER_ID")
+}
+
+type Customer implements SomeInterface @table {
+  heldBy: ID @experimental_procedureCall(procedure: "inventory_held_by_customer", arguments: "p_inventory_id: CUSTOMER_ID")
+}

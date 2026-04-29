@@ -380,6 +380,46 @@ type Customer @table {
 - Nested object types are not supported.
 - All selection field names must exist in the target type.
 
+#### Resolve fields from database functions with @experimental_procedureCall
+The **experimental_procedureCall** directive resolves a field by calling a jOOQ-generated routine (a database function) inline
+as part of the query for the surrounding table. It is useful when the value of a field is produced by a database function
+whose inputs come from columns on the current row.
+
+The _procedure_ parameter is the routine name as returned by jOOQ's `Routine.getName()`, matching the database routine name
+(matched case-insensitively). When the same routine name exists in multiple database schemas, qualify it as `schema.routine`
+(e.g. `public.last_day`) to disambiguate. If the procedure is unique across schemas, the name will suffice.
+The _arguments_ parameter maps the routine's IN parameter names to columns on the current table,
+using the same selection syntax as [@experimental_constructType](#construct-nested-types-from-table-columns-with-experimental_constructtype):
+- The key side is the routine parameter name exactly as returned by jOOQ's `Parameter.getName()` - typically snake_case (e.g. `p_inventory_id`).
+- The value side is the column name on the current table context (e.g. `INVENTORY_ID`).
+- Argument order is deduced from the routine's IN parameter order; the map is keyed by parameter name, not positional.
+- _arguments_ may be omitted or empty only when the function has zero IN parameters.
+
+```graphql
+type InventoryWithHeldBy implements Node @node @table(name: "INVENTORY") {
+  id: ID! @nodeId
+  inventoryHeldBy: Int @experimental_procedureCall(
+    procedure: "inventory_held_by_customer",
+    arguments: "p_inventory_id: INVENTORY_ID"
+  )
+}
+```
+
+Multiple arguments can be provided:
+
+```graphql
+someField: Int @experimental_procedureCall(procedure: "some_func", arguments: "p_first: FIRST_COLUMN, p_second: SECOND_COLUMN")
+```
+
+**Restrictions:**
+- Only scalar-returning functions (`Field<T>`) are currently supported. OUT / INOUT parameters and record-returning procedures are not supported.
+- The containing type must have an associated table (via `@table` or inherited from an enclosing type).
+- The directive can not be placed on root `Query` or `Mutation` fields, on interface fields, or on fields with non-scalar return types.
+- Arguments are sourced exclusively from columns on the local table - GraphQL inputs, literals and context variables are not supported.
+- Every mapped column must exist on the surrounding table, and every IN parameter of the routine must be mapped.
+- The routine's return type must match the GraphQL field's Java type.
+- Can not be combined with `@field`, `@externalField`, or `@reference` on the same field.
+
 ### Tables, joins and records
 #### Link types to database tables with @table
 The **table** directive links the object, interface or input type to a jOOQ table and record. Any **field**-directives within

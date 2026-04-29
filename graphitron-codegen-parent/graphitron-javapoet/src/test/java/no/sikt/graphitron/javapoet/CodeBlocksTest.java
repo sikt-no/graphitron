@@ -94,8 +94,16 @@ public final class CodeBlocksTest {
     @Test
     public void collector() {
         CodeBlocks collected = Stream.of("a", "b", "c")
-                .map(CodeBlock::of)
+                .map(CodeBlock::ofVar)
                 .collect(CodeBlocks.collector());
+        assertThat(collected.size()).isEqualTo(3);
+        assertThat(collected.join(", ").toString()).isEqualTo("a, b, c");
+    }
+
+    @Test
+    public void varCollector() {
+        CodeBlocks collected = Stream.of("a", "b", "c")
+                .collect(CodeBlocks.varCollector());
         assertThat(collected.size()).isEqualTo(3);
         assertThat(collected.join(", ").toString()).isEqualTo("a, b, c");
     }

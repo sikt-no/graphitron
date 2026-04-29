@@ -1,6 +1,5 @@
 package no.sikt.graphitron.mappings;
 
-import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphitron.definitions.mapping.TableRelationType;
 import org.jetbrains.annotations.NotNull;
@@ -12,7 +11,6 @@ import org.jspecify.annotations.NonNull;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.*;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
@@ -20,7 +18,7 @@ import java.util.stream.Stream;
 /**
  * Helper class that takes care of any table reflection operations the code generator might require towards the jOOQ source.
  */
-public class TableReflection {
+public class TableReflection extends SchemaReflection {
     private final static Map<String, Table<?>> TABLES_BY_JAVA_FIELD_NAME = getTablesByJavaFieldName();
     private final static Map<String, String> TABLE_NAME_TO_JAVA_FIELD_NAME = TABLES_BY_JAVA_FIELD_NAME.entrySet().stream()
             .collect(Collectors.toMap(it -> it.getValue().getName(), Map.Entry::getKey));
@@ -44,9 +42,9 @@ public class TableReflection {
         return Optional.empty();
     }
 
-    /*
+    /**
     * @return an Optional list of foreign keys between leftTable and rightTable
-    * */
+    */
     public static Optional<List<? extends ForeignKey<?, ?>>> getForeignKeysBetweenTables(String leftTableName, String rightTableName) {
         var leftTable = getTableByJavaFieldName(leftTableName).orElse(null);
         var rightTable = getTableByJavaFieldName(rightTableName).orElse(null);
@@ -59,9 +57,9 @@ public class TableReflection {
         return Optional.of(new ArrayList<>(uniqueKeys));
     }
 
-    /*
+    /**
     * @return the number of foreign keys between leftTable and rightTable.
-    * */
+    */
     public static int getNumberOfForeignKeysBetweenTables(String leftTableName, String rightTableName) {
         return getForeignKeysBetweenTables(leftTableName,rightTableName)
                 .map(List::size)
@@ -356,7 +354,14 @@ public class TableReflection {
     public static Set<Class<?>> getClassFromSchemas(String className) {
         return getDefaultCatalog()
                 .schemaStream()
-                .map(getClassFromSchemaPackage(className))
+                .flatMap(schema -> {
+                    var pkg = schema.getClass().getPackageName();
+                    try {
+                        return Stream.of(Class.forName(pkg + "." + className));
+                    } catch (ClassNotFoundException e) {
+                        return Stream.empty();
+                    }
+                })
                 .collect(Collectors.toSet());
     }
 
@@ -447,50 +452,6 @@ public class TableReflection {
                 .orElse(false);
     }
 
-    private static Function<Schema, Stream<java.lang.reflect.Field>> getFieldsFromSchemaClass(String className) {
-        return getClassFromSchemaPackage(className)
-                .andThen(it -> Arrays.stream(it.getFields()));
-    }
-
-    @NotNull
-    private static Function<Schema, Class<?>> getClassFromSchemaPackage(String className) {
-        return schema -> {
-            var packageName = schema.getClass().getPackageName();
-            try {
-                return Class.forName(packageName + "." + className);
-            } catch (ClassNotFoundException e) {
-                throw new RuntimeException(packageName + " did not contain a " + className + " class. Inconceivable.", e);
-            }
-        };
-    }
-
-    private static String getJavaFieldName(java.lang.reflect.Field field) {
-        return field.getName();
-    }
-
-    private static Object getJavaFieldValue(java.lang.reflect.Field field) {
-        try {
-            return field.get(null);
-        } catch (IllegalAccessException e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    private static Catalog getDefaultCatalog() {
-        var generatedJooqPackage = GeneratorConfig.getGeneratedJooqPackage();
-
-        try {
-            var defaultCatalogClass = Class.forName(generatedJooqPackage + ".DefaultCatalog");
-            var defaultCatalogField = defaultCatalogClass.getField("DEFAULT_CATALOG");
-            return (Catalog) defaultCatalogField.get(null);
-        } catch (ClassNotFoundException e) {
-            throw new RuntimeException(generatedJooqPackage + " did not contain a DefaultCatalog class. This is probably a configuration error.", e);
-        } catch (NoSuchFieldException e) {
-            throw new RuntimeException(generatedJooqPackage + ".DefaultCatalog did not contain the DEFAULT_CATALOG field. Inconceivable.", e);
-        } catch (IllegalAccessException e) {
-            throw new RuntimeException("Could not get " + generatedJooqPackage + ".DefaultCatalog.DEFAULT_CATALOG. Inconceivable.", e);
-        }
-    }
 
     public static Optional<Class<?>> getTableClass(String name) {
         return getTableByJavaFieldName(name).map(Object::getClass);

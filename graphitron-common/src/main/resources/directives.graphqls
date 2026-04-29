@@ -277,3 +277,41 @@ directive @experimental_constructType(
   """
   selection: String
 ) on FIELD_DEFINITION
+
+"""
+Specifies that this field should be resolved by calling a jOOQ-generated routine (function) inline.
+
+Currently:
+- Only scalar-returning functions (`Field<T>`) are supported. OUT / INOUT parameters and record-returning procedures are not supported.
+- Arguments are sourced from columns on the local table (no GraphQL input, literals, or context variables).
+- Argument order is deduced from the routine's IN parameter order. The `arguments` map is keyed by parameter name, not positional.
+"""
+directive @experimental_procedureCall(
+  """
+  The routine name as returned by jOOQ's `Routine.getName()`, e.g. `inventory_held_by_customer`.
+  This matches the database name of the routine and is matched case-insensitively.
+
+  If the same routine name exists in multiple database schemas, qualify it with `schema.routine`
+  (e.g. `audit.last_day`) to disambiguate. The schema prefix is only required when the bare name
+  is ambiguous; unique names work unqualified.
+  """
+  procedure: String!,
+  """
+  Mapping of routine IN parameter names to columns on the current table, using the same syntax as `@experimental_constructType`'s `selection` argument.
+
+  The key side is the routine parameter name exactly as returned by jOOQ's `Parameter.getName()` - this is typically snake_case (e.g. `p_inventory_id`).
+  The value side is the column name on the current table context (e.g. `INVENTORY_ID`).
+
+  Empty `arguments` are only valid when the function has zero IN parameters.
+
+  Examples:
+  ```graphql
+  @experimental_procedureCall(procedure: "inventory_held_by_customer", arguments: "p_inventory_id: INVENTORY_ID")
+  @experimental_procedureCall(procedure: "some_func", arguments: \"""
+      p_first: FIRST_COLUMN,
+      p_second: SECOND_COLUMN
+  \""")
+  ```
+  """
+  arguments: String
+) on FIELD_DEFINITION

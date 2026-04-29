@@ -840,6 +840,20 @@ END $$
 ALTER FUNCTION public.last_updated() OWNER TO postgres;
 
 --
+-- Name: reset_film_rental_duration(integer); Type: PROCEDURE; Schema: public; Owner: postgres
+--
+
+CREATE PROCEDURE reset_film_rental_duration(p_film_id integer)
+    AS $$
+BEGIN
+    UPDATE film SET rental_duration = 3 WHERE film_id = p_film_id;
+END $$
+    LANGUAGE plpgsql;
+
+
+ALTER PROCEDURE public.reset_film_rental_duration(p_film_id integer) OWNER TO postgres;
+
+--
 -- Name: rewards_report(integer, numeric); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
@@ -1774,3 +1788,19 @@ CREATE TABLE public (
 
 ALTER TABLE ONLY public
     ADD CONSTRAINT public_vacation_fkey FOREIGN KEY (vacation_id) REFERENCES vacation(vacation_id);
+
+--
+-- Secondary schema to exercise cross-schema routine collisions in @experimental_procedureCall.
+-- utils.last_day collides with public.last_day (same name, different schema) so that the
+-- bare name is ambiguous and must be qualified as 'utils.last_day' or 'public.last_day'.
+-- utils.only_here is unique to utils to verify qualified lookup without collision.
+--
+CREATE SCHEMA utils;
+
+CREATE FUNCTION utils.last_day(timestamp without time zone) RETURNS date
+    LANGUAGE SQL IMMUTABLE
+    AS $_$SELECT CAST($1 AS date)$_$;
+
+CREATE FUNCTION utils.only_here(p_value bigint) RETURNS bigint
+    LANGUAGE SQL IMMUTABLE
+    AS $_$SELECT $1$_$;

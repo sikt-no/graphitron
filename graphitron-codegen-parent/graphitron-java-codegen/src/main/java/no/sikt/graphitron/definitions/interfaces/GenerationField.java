@@ -2,6 +2,7 @@ package no.sikt.graphitron.definitions.interfaces;
 
 import no.sikt.graphitron.definitions.fields.containedtypes.FieldReference;
 import no.sikt.graphitron.definitions.fields.containedtypes.MutationType;
+import no.sikt.graphitron.definitions.helpers.ProcedureCall;
 import no.sikt.graphitron.definitions.helpers.ServiceWrapper;
 import no.sikt.graphitron.definitions.mapping.MethodMapping;
 import no.sikt.graphitron.definitions.sql.SQLCondition;
@@ -69,6 +70,16 @@ public interface GenerationField extends GenerationTarget, FieldSpecification {
     boolean hasFieldDirective();
 
     boolean hasTableMethodDirective();
+
+    /**
+     * @return Procedure call configuration for this field, or {@code null} if {@code @experimental_procedureCall} was not used.
+     */
+    ProcedureCall getProcedureCall();
+
+    /**
+     * @return Does this field have an {@code @experimental_procedureCall} directive set?
+     */
+    boolean hasProcedureCall();
 
     String formatPath();
 }
