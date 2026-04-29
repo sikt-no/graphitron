@@ -27,11 +27,11 @@ R40 does **not** introduce a `NodeIdInArg` sibling and does **not** extend `Node
 
 ## Scope
 
-Same-table only: `typeName:` resolves to the field's own backing table. FK-target args (`typeName:` resolves to a different table) are a separate Backlog item; with the boundary-extraction shape in place, the FK-target case becomes "classify as `ColumnReferenceField`-style with an FK path plus the same `NodeIdDecodeKeys` extraction", which is an even smaller follow-up than the input-field analog. R20's `IdReferenceField` predates this framing and would be re-evaluated as part of the model-cleanup item below; R40 does not depend on R20.
+Same-table only: `typeName:` resolves to the field's own backing table. FK-target args (`typeName:` resolves to a different table) are a separate Backlog item; with the boundary-extraction shape in place, the FK-target case becomes "classify as `ColumnReferenceField`-style with an FK path plus the same `NodeIdDecodeKeys` extraction", which is an even smaller follow-up than the input-field analog. R20's `IdReferenceField` predates this framing and is re-evaluated as part of R42; R40 does not depend on R20.
 
-## Companion item: lift NodeId out of the model
+## Companion item
 
-A separate Backlog entry (to be filed alongside R40 moving to Spec) covers retiring the existing wire-shape leaks: `InputField.NodeIdField` / `NodeIdReferenceField` / `NodeIdInFilterField` / `IdReferenceField`, `ChildField.NodeIdField` / `NodeIdReferenceField`, `BodyParam.NodeIdIn`, `LookupMapping.NodeIdMapping`, `ArgumentRef.ScalarArg.NodeIdArg`, replacing each with the column-shaped variant plus a `NodeIdDecodeKeys` / `NodeIdEncodeKeys` extraction at the appropriate boundary. `GraphitronType.NodeType` stays (it carries identity, not wire format). That item is large; R40 does not block on it, but R40 is shaped so it does not add to the debt.
+R42 ([`lift-nodeid-out-of-model.md`](lift-nodeid-out-of-model.md)) retires the existing wire-shape leaks (`InputField.NodeIdField` / `NodeIdReferenceField` / `NodeIdInFilterField` / `IdReferenceField`, `ChildField.NodeIdField` / `NodeIdReferenceField`, `BodyParam.NodeIdIn`, `LookupMapping.NodeIdMapping`, `ArgumentRef.ScalarArg.NodeIdArg`) by replacing each with the column-shaped variant plus a `NodeIdDecodeKeys` / `NodeIdEncodeKeys` extraction at the appropriate boundary. `GraphitronType.NodeType` stays (it carries identity, not wire format). R42 is large; R40 does not block on it but is shaped so it does not add to the debt.
 
 ## Spec-day-one questions
 
