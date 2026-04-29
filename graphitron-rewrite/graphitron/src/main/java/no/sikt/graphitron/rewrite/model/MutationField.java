@@ -9,18 +9,15 @@ import java.util.Optional;
 /**
  * A field on the {@code Mutation} type. The only fields permitted to write to the database.
  *
- * <p>Every variant carries an {@code Optional<ErrorChannel>}; when present, the emitter wraps
- * the fetcher body in a try/catch that routes thrown exceptions into the payload's typed
- * {@code errors} field. The slot is populated by the carrier classifier (lands in the C3
- * pass of R12); for now it defaults to {@link Optional#empty()} via the no-channel
- * convenience constructor on each variant.
+ * <p>Every variant is fetcher-emitting and therefore implements {@link WithErrorChannel};
+ * when the carrier classifier resolves an {@code errors}-shaped field on the payload, the
+ * channel is populated and the emitter wraps the fetcher body in a try/catch routing thrown
+ * exceptions into the typed {@code errors} field. Until the C3 carrier classifier lands,
+ * call sites pass {@link Optional#empty()}.
  */
-public sealed interface MutationField extends RootField
+public sealed interface MutationField extends RootField, WithErrorChannel
     permits MutationField.DmlTableField, MutationField.MutationServiceTableField,
             MutationField.MutationServiceRecordField {
-
-    /** The typed-error channel resolved for this fetcher, when its payload carries an {@code errors} field. */
-    Optional<ErrorChannel> errorChannel();
 
     /**
      * Sealed common supertype of the four DML mutation variants. Carries the per-field data the
@@ -50,15 +47,7 @@ public sealed interface MutationField extends RootField
         ArgumentRef.InputTypeArg.TableInputArg tableInputArg,
         Optional<JooqCatalog.NodeIdMetadata> nodeIdMeta,
         Optional<ErrorChannel> errorChannel
-    ) implements DmlTableField {
-
-        public MutationInsertTableField(String parentTypeName, String name, SourceLocation location,
-                                         ReturnTypeRef returnType,
-                                         ArgumentRef.InputTypeArg.TableInputArg tableInputArg,
-                                         Optional<JooqCatalog.NodeIdMetadata> nodeIdMeta) {
-            this(parentTypeName, name, location, returnType, tableInputArg, nodeIdMeta, Optional.empty());
-        }
-    }
+    ) implements DmlTableField {}
 
     record MutationUpdateTableField(
         String parentTypeName,
@@ -68,15 +57,7 @@ public sealed interface MutationField extends RootField
         ArgumentRef.InputTypeArg.TableInputArg tableInputArg,
         Optional<JooqCatalog.NodeIdMetadata> nodeIdMeta,
         Optional<ErrorChannel> errorChannel
-    ) implements DmlTableField {
-
-        public MutationUpdateTableField(String parentTypeName, String name, SourceLocation location,
-                                         ReturnTypeRef returnType,
-                                         ArgumentRef.InputTypeArg.TableInputArg tableInputArg,
-                                         Optional<JooqCatalog.NodeIdMetadata> nodeIdMeta) {
-            this(parentTypeName, name, location, returnType, tableInputArg, nodeIdMeta, Optional.empty());
-        }
-    }
+    ) implements DmlTableField {}
 
     record MutationDeleteTableField(
         String parentTypeName,
@@ -86,15 +67,7 @@ public sealed interface MutationField extends RootField
         ArgumentRef.InputTypeArg.TableInputArg tableInputArg,
         Optional<JooqCatalog.NodeIdMetadata> nodeIdMeta,
         Optional<ErrorChannel> errorChannel
-    ) implements DmlTableField {
-
-        public MutationDeleteTableField(String parentTypeName, String name, SourceLocation location,
-                                         ReturnTypeRef returnType,
-                                         ArgumentRef.InputTypeArg.TableInputArg tableInputArg,
-                                         Optional<JooqCatalog.NodeIdMetadata> nodeIdMeta) {
-            this(parentTypeName, name, location, returnType, tableInputArg, nodeIdMeta, Optional.empty());
-        }
-    }
+    ) implements DmlTableField {}
 
     record MutationUpsertTableField(
         String parentTypeName,
@@ -104,15 +77,7 @@ public sealed interface MutationField extends RootField
         ArgumentRef.InputTypeArg.TableInputArg tableInputArg,
         Optional<JooqCatalog.NodeIdMetadata> nodeIdMeta,
         Optional<ErrorChannel> errorChannel
-    ) implements DmlTableField {
-
-        public MutationUpsertTableField(String parentTypeName, String name, SourceLocation location,
-                                         ReturnTypeRef returnType,
-                                         ArgumentRef.InputTypeArg.TableInputArg tableInputArg,
-                                         Optional<JooqCatalog.NodeIdMetadata> nodeIdMeta) {
-            this(parentTypeName, name, location, returnType, tableInputArg, nodeIdMeta, Optional.empty());
-        }
-    }
+    ) implements DmlTableField {}
 
     /**
      * A mutation field backed by a developer-provided service method, returning a table-mapped type.
@@ -127,13 +92,7 @@ public sealed interface MutationField extends RootField
         ReturnTypeRef.TableBoundReturnType returnType,
         MethodRef method,
         Optional<ErrorChannel> errorChannel
-    ) implements MutationField, MethodBackedField {
-
-        public MutationServiceTableField(String parentTypeName, String name, SourceLocation location,
-                                          ReturnTypeRef.TableBoundReturnType returnType, MethodRef method) {
-            this(parentTypeName, name, location, returnType, method, Optional.empty());
-        }
-    }
+    ) implements MutationField, MethodBackedField {}
 
     /**
      * A mutation field backed by a developer-provided service method, returning a non-table type.
@@ -148,11 +107,5 @@ public sealed interface MutationField extends RootField
         ReturnTypeRef returnType,
         MethodRef method,
         Optional<ErrorChannel> errorChannel
-    ) implements MutationField, MethodBackedField {
-
-        public MutationServiceRecordField(String parentTypeName, String name, SourceLocation location,
-                                           ReturnTypeRef returnType, MethodRef method) {
-            this(parentTypeName, name, location, returnType, method, Optional.empty());
-        }
-    }
+    ) implements MutationField, MethodBackedField {}
 }

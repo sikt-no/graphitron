@@ -487,6 +487,14 @@ class TypeBuilder {
         return new TableInterfaceType(name, location, discriminatorColumn, tableOpt.get(), List.of());
     }
 
+    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
+        key = "error-type.path-message-fields",
+        description = "Every @error type declares exactly path: [String!]! and message: String!; "
+            + "extras and structural mismatches are rejected as UnclassifiedType. The emitted "
+            + "ErrorRouter.Mapping.build call site (lands in C3g) constructs each developer-supplied "
+            + "@error class via its (List<String> path, String message) constructor, and the runtime "
+            + "fan-out for VALIDATION assumes the same shape. Relaxing this check breaks the generated "
+            + "factory call.")
     private GraphitronType buildErrorType(GraphQLObjectType objType) {
         String name = objType.getName();
         SourceLocation location = locationOf(objType);

@@ -11,6 +11,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
+import java.util.Optional;
 
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.stubbedError;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
@@ -23,7 +24,8 @@ class MutationServiceRecordFieldValidationTest {
         STUBBED("service mutation field with non-table return — not yet implemented, produces stubbed-variant error",
             new MutationServiceRecordField("Mutation", "externalMutation", null,
                 new ReturnTypeRef.ResultReturnType("Film", new FieldWrapper.Single(true), null),
-                new MethodRef.Basic("com.example.Service", "method", TypeName.VOID, List.of())),
+                new MethodRef.Basic("com.example.Service", "method", TypeName.VOID, List.of()),
+                Optional.empty()),
             List.of(stubbedError("Mutation.externalMutation", MutationServiceRecordField.class)));
 
         private final String description;

@@ -36,6 +36,7 @@ class MutationDeleteTableFieldValidationTest {
                         new CallSiteExtraction.Direct())),
                     Optional.empty(),
                     List.of()),
+                Optional.empty(),
                 Optional.empty()),
             List.of());
 

@@ -30,7 +30,8 @@ class MutationServiceTableFieldValidationTest {
         STUBBED("service mutation field with resolved method — not yet implemented, produces stubbed-variant error",
             new MutationServiceTableField("Mutation", "externalMutation", null,
                 FILM_RETURN,
-                new MethodRef.Basic("com.example.Service", "method", TypeName.VOID, List.of())),
+                new MethodRef.Basic("com.example.Service", "method", TypeName.VOID, List.of()),
+                Optional.empty()),
             List.of(stubbedError("Mutation.externalMutation", MutationServiceTableField.class)));
 
         private final String description;
