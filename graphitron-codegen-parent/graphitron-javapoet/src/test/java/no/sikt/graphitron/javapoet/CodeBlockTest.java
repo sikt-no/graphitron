@@ -580,4 +580,71 @@ public final class CodeBlockTest {
                 .build();
         assertThat(block.toString()).isEqualTo("x = a + b;\n");
     }
+
+    // --- apply / applyIf ---
+
+    @Test
+    public void applyRunsTheTransform() {
+        CodeBlock result = CodeBlock
+                .builder()
+                .add("inner")
+                .apply(b -> CodeBlock.builder().add("wrap($L)", b.build()))
+                .build();
+        assertThat(result.toString()).isEqualTo("wrap(inner)");
+    }
+
+    @Test
+    public void applyPreservesChain() {
+        CodeBlock result = CodeBlock
+                .builder()
+                .add("a")
+                .apply(b -> CodeBlock.builder().add("[$L]", b.build()))
+                .add("b")
+                .build();
+        assertThat(result.toString()).isEqualTo("[a]b");
+    }
+
+    @Test
+    public void applyIfTrueRunsTransform() {
+        CodeBlock result = CodeBlock
+                .builder()
+                .add("x")
+                .applyIf(true, b -> CodeBlock.builder().add("($L)", b.build()))
+                .build();
+        assertThat(result.toString()).isEqualTo("(x)");
+    }
+
+    @Test
+    public void applyIfFalseIsIdentity() {
+        CodeBlock result = CodeBlock
+                .builder()
+                .add("x")
+                .applyIf(false, b -> CodeBlock.builder().add("($L)", b.build()))
+                .build();
+        assertThat(result.toString()).isEqualTo("x");
+    }
+
+    @Test
+    public void applyFoldsTransformResultBackIntoReceiver() {
+        CodeBlock.Builder builder = CodeBlock.builder().add("x");
+        CodeBlock.Builder returned = builder.apply(b -> CodeBlock.builder().add("($L)", b.build()));
+        assertThat(returned).isSameAs(builder);
+        assertThat(builder.build().toString()).isEqualTo("(x)");
+    }
+
+    @Test
+    public void applyIfTrueFoldsResultBackIntoReceiver() {
+        CodeBlock.Builder builder = CodeBlock.builder().add("x");
+        CodeBlock.Builder returned = builder.applyIf(true, b -> CodeBlock.builder().add("($L)", b.build()));
+        assertThat(returned).isSameAs(builder);
+        assertThat(builder.build().toString()).isEqualTo("(x)");
+    }
+
+    @Test
+    public void applyIfFalseLeavesReceiverUnchanged() {
+        CodeBlock.Builder builder = CodeBlock.builder().add("x");
+        CodeBlock.Builder returned = builder.applyIf(false, b -> CodeBlock.builder().add("($L)", b.build()));
+        assertThat(returned).isSameAs(builder);
+        assertThat(builder.build().toString()).isEqualTo("x");
+    }
 }

@@ -19,10 +19,7 @@ import no.sikt.graphitron.generators.codeinterface.wiring.WiringContainer;
 import no.sikt.graphitron.generators.context.InputParser;
 import no.sikt.graphitron.generators.context.MapperContext;
 import no.sikt.graphitron.generators.db.FetchTableRecordDBMethodGenerator;
-import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.javapoet.CodeBlocks;
-import no.sikt.graphitron.javapoet.MethodSpec;
-import no.sikt.graphitron.javapoet.TypeName;
+import no.sikt.graphitron.javapoet.*;
 import no.sikt.graphql.GraphitronContext;
 import no.sikt.graphql.schema.ProcessedSchema;
 
@@ -592,7 +589,7 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
         if (context.hasTable() && !context.isTopLevelContext()) {
             var record = context.transformInputRecord();
             if (!context.getPreviousContext().wasIterable()) {
-                code.addStatement("$L = $L", inputPrefix(asListedRecordNameIf(sourceName, context.isIterable())), record);
+                code.assign(inputPrefix(asListedRecordNameIf(sourceName, context.isIterable())), record);
             } else {
                 code.addStatement("$N.add$L($L)", inputPrefix(asListedRecordName(sourceName)), context.isIterable() ? "All" : "", record);
             }
@@ -607,7 +604,10 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
             return code.build();
         }
 
-        return wrapNotNull(inputPrefix(sourceName), code.add(context.wrapFields(fieldCode.build())).build());
+        return code
+                .add(context.wrapFields(fieldCode.build()))
+                .apply(Wrappers.wrapNotNull(inputPrefix(sourceName)))
+                .build();
     }
 
     private CodeBlock declareContextArgs(ObjectField target) {
