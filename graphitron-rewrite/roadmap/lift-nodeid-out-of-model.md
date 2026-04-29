@@ -1,9 +1,9 @@
 ---
 id: R50
 title: "Lift NodeId out of the model"
-status: Backlog
+status: Spec
 bucket: architecture
-priority: 3
+priority: 1
 theme: nodeid
 depends-on: []
 ---
@@ -26,7 +26,14 @@ Each is the same wire-shape leak in a different position.
 
 1. **Boundary extractions.** `CallSiteExtraction.NodeIdDecodeKeys(typeId)` for inputs (decodes `String` / `List<String>` to a key tuple / list of key tuples; validates `typeId` prefix; short-circuits empty / null / typeid-mismatched input). `NodeIdEncodeKeys(typeId)` (or equivalent projection-side hook) for outputs. Both are first-class members of `CallSiteExtraction`'s sealed hierarchy with full arms in `ArgCallEmitter.buildArgExtraction` and the projection-side counterpart, including the top-level-argument case (today `NestedInputField` is the only nested-Map traversal; the new variant is needed at top-level args too).
 
-2. **Composite-key column carriers.** The column-shaped variants today are single-column (`InputField.ColumnField`, `ArgumentRef.ScalarArg.ColumnArg`, `BodyParam.ColumnEq`, `LookupMapping`'s key-list lives on the mapping itself). The replacements for the wire-shape variants need to carry a composite key: a multi-column field / arg / body param / mapping shape with row-IN body emission (`DSL.row(c1, ..., cN).in(rows)`), degenerating to single-column `c.in(...)` for arity-1. Either generalise the existing carriers to a `List<ColumnRef>` shape or introduce explicit composite siblings; the principle is "stay column-shaped, drop NodeId vocabulary".
+2. **Composite-key column carriers.** The column-shaped variants today are single-column: `InputField.ColumnField`, `ArgumentRef.ScalarArg.ColumnArg`, and `BodyParam.ColumnEq` each carry one `ColumnRef`; `LookupMapping.ColumnMapping` already carries a `List<LookupColumn>` and `LookupMapping.NodeIdMapping` already carries a `List<ColumnRef> nodeKeyColumns`, so composite is established on the mapping side. The replacements for the wire-shape variants need to carry a composite key with row-IN body emission (`DSL.row(c1, ..., cN).in(rows)`), degenerating to single-column `c.in(...)` / `c.eq(...)` for arity-1.
+
+   **Decision: generalise the existing single-column carriers to `List<ColumnRef> columns`** rather than introducing `Composite*` sibling variants. Rationale:
+   - The whole point of the lift is that arity is an emission detail, not a model axis. Sibling variants would re-encode arity into the sealed hierarchy and force every consumer to handle two arms for the same column-shaped concept.
+   - The codebase already mixes single-`ColumnRef` and `List<ColumnRef>` shapes; collapsing the column carriers onto the list shape regularises the model, it doesn't fragment it.
+   - The arity branch lives in exactly one place per carrier (the body / projection emitter), where `columns.size() == 1` chooses `c.eq(...)` or `c.in(...)` and `> 1` chooses `DSL.row(...).eq(...)` or `.in(...)`.
+
+   Concrete shape changes: `ColumnField.column` → `List<ColumnRef> columns`; `ColumnArg.column` → `List<ColumnRef> columns`; `ColumnEq.column` → `List<ColumnRef> columns`. Callers and switch arms (~17 sites across `BuildContext`, `FieldBuilder`, `TypeBuilder`, `TypeFetcherGenerator`, `GraphitronSchemaValidator`, `TypeConditionsGenerator`, and the body / projection emitters) migrate from `.column()` to `.columns()` with arity-1 as the common case. No new sealed arms; the wire-shape variants delete outright once their classifier arms route to the generalised carriers.
 
 3. **Variant-by-variant collapse.**
    - `InputField.NodeIdField` (output side, scalar) → column projection with `NodeIdEncodeKeys`.
@@ -49,11 +56,13 @@ Each is the same wire-shape leak in a different position.
 ## Coupling
 
 - **R40 (argument-level `@nodeId` support)** depends on R50. R40 is shaped as a small classifier-only follow-on once R50's foundation is in place: extend `FieldBuilder.classifyArgument` to read `@nodeId(typeName: T)` on an argument, validate same-table, build a column-shaped argument with `NodeIdDecodeKeys`. R40 does not land any new model variants and adds nothing to the wire-shape debt.
-- **R20 (`IdReferenceField` code generation)** is in Spec on the legacy variant. The right shape under R50's framing emits standard FK-equality (single FK) or row-IN (composite FK) through a column-shaped variant, not a `has<Qualifier>` method call. R20's emission shape dissolves into R50; flip R20 back to Backlog when R50 moves to Spec, or fold its execution-tier coverage into R50's test surface.
+- **R20 (`IdReferenceField` code generation)** had a Spec on the legacy variant; that Spec is invalidated by R50's framing because R20's emission shape dissolves into R50 (standard FK-equality or row-IN through a column-shaped variant, not a `has<Qualifier>` method call). R20 has been flipped back to Backlog as part of moving R50 to Spec; its execution-tier coverage is folded into R50's test surface above.
 - **R24 (`NodeIdReferenceField` JOIN-projection form)** also dissolves: the multi-hop / non-mirroring FK case becomes a column projection with `NodeIdEncodeKeys` once `NodeIdReferenceField` retires.
 
-## Test surface (sketch; refine before Ready)
+## Test surface
 
-- Pipeline-tier: every retired variant's existing classification cases re-pointed at the column-shaped successor; assert no `NodeId*Field` / `NodeIdArg` / `BodyParam.NodeIdIn` / `LookupMapping.NodeIdMapping` instance survives in any classified model.
-- Compilation-tier: `mvn compile -pl :graphitron-test -Plocal-db` against the `nodeidfixture` and `idreffixture` catalogs after the collapse.
-- Execution-tier: every existing `@nodeId` execution test (`Query.node(id:)`, federated entities, `Query.nodes(ids:)`, same-table filter, FK-mirror reference) continues to round-trip; SQL inspection via `ExecuteListener` confirms `hasIds` is gone from emitted bodies and replaced with row-IN / column-eq.
+- **Pipeline-tier.** Every retired variant's existing classification cases re-pointed at the column-shaped successor: `@nodeId` scalar output, `@nodeId` reference (FK-mirror and non-mirror), `@nodeId` filter on `[ID!]` arg, `@nodeId` argument on a top-level `[ID!]` arg, federated `_entities` resolver, `Query.node(id:)` and `Query.nodes(ids:)`. A coverage meta-test asserts that no `NodeIdField` / `NodeIdReferenceField` / `NodeIdInFilterField` / `IdReferenceField` / `ChildField.NodeIdField` / `ChildField.NodeIdReferenceField` / `BodyParam.NodeIdIn` / `LookupMapping.NodeIdMapping` / `ScalarArg.NodeIdArg` instance survives in any classified model across the rewrite's fixture catalogs (mirrors the existing variant-coverage meta-tests).
+- **Validator-tier.** `GraphitronSchemaValidator`'s coverage tests gain arms for the new `CallSiteExtraction.NodeIdDecodeKeys` / `NodeIdEncodeKeys` variants and lose arms for the retired model variants. `TypeFetcherGenerator.NOT_DISPATCHED_LEAVES` shrinks; the dispatch-coverage test asserts the retired leaves are gone.
+- **Compilation-tier.** `mvn compile -pl :graphitron-test -Plocal-db` against the `nodeidfixture` and `idreffixture` catalogs after the collapse, plus any new fixture columns the composite-key cases require (composite PK, multi-hop FK, non-mirroring FK).
+- **Execution-tier.** Every existing `@nodeId` execution test continues to round-trip end-to-end: `Query.node(id:)`, `Query.nodes(ids:)`, federated `_entities`, same-table `[ID!] @nodeId` filter, FK-mirror reference, and at least one composite-key fixture. SQL inspection via `ExecuteListener` confirms `NodeIdEncoder.hasIds` is gone from emitted bodies and is replaced with `c.in(...)` (arity-1) or `DSL.row(c1, ..., cN).in(...)` (arity-N), and that decoded key tuples flow as bind values rather than encoded `String` ids.
+- **Negative coverage.** A pipeline test asserts `NodeIdEncoder.hasIds` is unreferenced from generated query-builder code (string scan over the emitted source set), guarding against regressions that re-introduce the encoder helper from the query layer.
