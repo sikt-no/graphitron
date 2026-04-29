@@ -23,10 +23,10 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R22` | Mutation bodies | Spec | [plan](mutations.md) |
 | `R9` | Fold graphitron.sikt.no into the Maven build (AsciiDoc + GitHub Pages) | Spec | [plan](docs-site-asciidoc.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
-| `R12` | Error-handling parity: emit per-fetcher error channels from `@error` <sub>blocked by: [mutations](mutations.md)</sub> | Ready | [plan](error-handling-parity.md) |
 | `R8` | Docs as an index into classification tests | Ready (deferred) | [plan](docs-as-index-into-tests.md) |
 | `R18` | Java LSP rewrite + introspect retirement + `dev` goal | Ready | [plan](graphitron-lsp.md) |
 | `R36` | Stub #3: Interface / union fetchers | In Progress | [plan](stub-interface-union-fetchers.md) |
+| `R12` | Error-handling parity: emit per-fetcher error channels from `@error` <sub>blocked by: [mutations](mutations.md)</sub> | In Progress | [plan](error-handling-parity.md) |
 | `R26` | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` <sub>blocked by: [graphitron-lsp](graphitron-lsp.md)</sub> | In Progress | [plan](retire-maven-plugin.md) |
 | `R21` | Load-bearing classifier guarantee audit annotations | In Review | [plan](load-bearing-guarantee-audit.md) |
 
@@ -91,7 +91,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### mutations-errors
 
-- `R12` [**Error-handling parity: emit per-fetcher error channels from `@error`**](error-handling-parity.md) — Ready, architecture, blocked by [mutations](mutations.md)
+- `R12` [**Error-handling parity: emit per-fetcher error channels from `@error`**](error-handling-parity.md) — In Progress, architecture, blocked by [mutations](mutations.md)
 - `R2` [**Checked exceptions on `@service` / `@tableMethod` for typed GraphQL errors**](checked-exceptions-typed-errors.md) — Backlog, architecture, blocked by [error-handling-parity](error-handling-parity.md), [mutations](mutations.md)
 - `R22` [**Mutation bodies**](mutations.md) — Spec
 
