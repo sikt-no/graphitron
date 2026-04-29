@@ -83,6 +83,11 @@ public class TypeClassGenerator {
             .map(f -> (ChildField.NestingField) f)
             .sorted(Comparator.comparing(GraphitronField::name))
             .toList();
+        var computedFields = schema.fieldsOf(typeName).stream()
+            .filter(f -> f instanceof ChildField.ComputedField)
+            .map(f -> (ChildField.ComputedField) f)
+            .sorted(Comparator.comparing(GraphitronField::name))
+            .toList();
         // Split* fields don't appear in $fields (they're handled by DataLoader-backed fetchers),
         // but their BatchKey columns must land in the parent SELECT so key extraction reads
         // non-null values off env.getSource(). Recurse into NestingField.nestedFields() so nested
@@ -90,7 +95,7 @@ public class TypeClassGenerator {
         var requiredProjectionColumns = collectBatchKeyColumns(schema.fieldsOf(typeName))
             .distinct()
             .toList();
-        return buildTypeSpec(typeName, type.table(), columnFields, nodeIdFields, tableFields, lookupTableFields, nestingFields, requiredProjectionColumns, outputPackage, jooqPackage);
+        return buildTypeSpec(typeName, type.table(), columnFields, nodeIdFields, tableFields, lookupTableFields, nestingFields, computedFields, requiredProjectionColumns, outputPackage, jooqPackage);
     }
 
     /**
@@ -110,11 +115,12 @@ public class TypeClassGenerator {
             List<ChildField.TableField> tableFields,
             List<ChildField.LookupTableField> lookupTableFields,
             List<ChildField.NestingField> nestingFields,
+            List<ChildField.ComputedField> computedFields,
             List<ColumnRef> requiredProjectionColumns,
             String outputPackage, String jooqPackage) {
         var builder = TypeSpec.classBuilder(typeName)
             .addModifiers(Modifier.PUBLIC)
-            .addMethod(build$FieldsMethod(tableRef, columnFields, nodeIdFields, tableFields, lookupTableFields, nestingFields, requiredProjectionColumns, outputPackage, jooqPackage));
+            .addMethod(build$FieldsMethod(tableRef, columnFields, nodeIdFields, tableFields, lookupTableFields, nestingFields, computedFields, requiredProjectionColumns, outputPackage, jooqPackage));
         // Helpers for inline LookupTableFields are hoisted onto this outer type class — including
         // ones nested inside NestingField sub-types, which don't get their own type class (plain
         // objects share the parent's table context). The generated switch arm calls the helper
@@ -171,6 +177,7 @@ public class TypeClassGenerator {
             List<ChildField.TableField> tableFields,
             List<ChildField.LookupTableField> lookupTableFields,
             List<ChildField.NestingField> nestingFields,
+            List<ChildField.ComputedField> computedFields,
             List<ColumnRef> requiredProjectionColumns,
             String outputPackage, String jooqPackage) {
         var names = GeneratorUtils.ResolvedTableNames.ofTable(tableRef, jooqPackage);
@@ -195,6 +202,7 @@ public class TypeClassGenerator {
         flat.addAll(tableFields);
         flat.addAll(lookupTableFields);
         flat.addAll(nestingFields);
+        flat.addAll(computedFields);
         emitSelectionSwitch(builder, 0, flat, "table", entryType, outputPackage, jooqPackage);
 
         // Required-projection set: BatchKey columns of every DataLoader-backed Split* child on
