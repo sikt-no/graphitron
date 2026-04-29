@@ -10,12 +10,17 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Builder-internal classification of a single GraphQL argument.
+ * Classification of a single GraphQL argument.
  *
- * <p>Produced once per argument by {@code FieldBuilder.classifyArguments()}. Projected into
- * generation-ready model types (e.g. {@code WhereFilter}, {@code OrderBySpec},
+ * <p>Produced once per argument by {@code FieldBuilder.classifyArguments()}. Most variants are
+ * projected into generation-ready model types (e.g. {@code WhereFilter}, {@code OrderBySpec},
  * {@code PaginationSpec}, {@code LookupMapping}) by separate projection helpers
- * ({@code projectForFilter}, {@code projectForLookup}). Never reaches the generators.
+ * ({@code projectForFilter}, {@code projectForLookup}) and never reach the generators directly.
+ *
+ * <p>The exception is {@link InputTypeArg.TableInputArg}, which is carried verbatim on
+ * {@link no.sikt.graphitron.rewrite.model.MutationField.DmlTableField} so the mutation emitters
+ * can read its {@code inputTable}, {@code fieldBindings}, and {@code fields} directly. This is
+ * the only argument-classification type that crosses the model/generator boundary today.
  *
  * <p>See {@code docs/argument-resolution.md} for the design and projection semantics.
  *
@@ -36,7 +41,7 @@ import java.util.Optional;
  *       validation error.</li>
  * </ul>
  */
-sealed interface ArgumentRef {
+public sealed interface ArgumentRef {
     String name();
     String typeName();
     boolean nonNull();

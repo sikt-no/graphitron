@@ -21,8 +21,9 @@ class StubbedVariantPipelineTest {
     void mutationInsertOnATableType_surfacesStubbedError() {
         var errors = validate("""
             type Film @table(name: "film") { title: String }
+            input FilmInput @table(name: "film") { title: String }
             type Query { x: String }
-            type Mutation { createFilm: Film @mutation(typeName: INSERT) }
+            type Mutation { createFilm(in: FilmInput!): Film @mutation(typeName: INSERT) }
             """);
 
         assertThat(messages(errors))
