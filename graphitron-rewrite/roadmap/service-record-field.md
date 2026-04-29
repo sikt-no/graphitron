@@ -76,15 +76,11 @@ return switch (returnType) {
 };
 ```
 
-### Strict return-type validation
+### Strict return-type validation (deferred to Phase B)
 
-`ServiceTableField` enforces that the developer's reflected return type matches the schema's declared `ReturnTypeRef` element (via `FieldBuilder.computeExpectedServiceReturnType`). The same enforcement must run on `ServiceRecordField`, using a shared helper to derive the expected Java type from the schema. The helper lives at the classification layer (a default method on `ChildField.ServiceRecordField` itself), not on the Generator: both Builder and Generator need the same derivation, and Builder calling into the Generator package would invert the classify -> emit dependency that the rest of the codebase preserves. Suggested shape: `ChildField.ServiceRecordField#elementType()` returning a `ClassName`, mirroring the existing `qualifiedName()` accessor pattern on the same record hierarchy.
+The intent: `ServiceTableField`'s root-level strict-return-type check (against `FieldBuilder.computeExpectedServiceReturnType`) extends to `ServiceRecordField`, comparing the V in `Map<KeyType, V>` / `List<V>` against `field.elementType()`. The structural unwrapping (which V to compare depending on `BatchKey` variant + cardinality) is the same logic Phase B's body emitter encodes when constructing the loader.
 
-- `String` field: expected element is `String`. Method shape is `Map<KeyType, String>` (mapped) / `List<String>` (positional).
-- `Boolean` field: expected element is `Boolean`. Same shape rules.
-- `@record`-backed `FilmDetails` field: expected element is `no.example.FilmDetails` (from `ResultReturnType.fqClassName()`); `@record` backing class matched by FQN.
-
-Mismatches surface as classification-time `AUTHOR_ERROR`, not compile-tier.
+Phase A ships only the `elementType()` accessor (resolved); no Builder-level enforcement. Mismatches surface at codegen-time when Phase B's emitter compares — earlier than runtime, later than would be ideal. Phase B can pull the validation forward to Builder-time as part of its work since it already needs the same comparison logic. Premature plumbing here would duplicate that logic before its shape is settled.
 
 `FieldBuilder.classifyChildFieldOnResultType` (Site 1, lines 1857-1859): the parent is a `@record`. Deriving a batch key here would require lifting through the parent chain to the rooted `@table` whose PK provides the key columns, which is its own design problem. Reject for now until a real schema needs it:
 

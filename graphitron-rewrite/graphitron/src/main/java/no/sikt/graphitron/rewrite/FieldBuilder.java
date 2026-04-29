@@ -2086,10 +2086,20 @@ class FieldBuilder {
                     new ServiceTableField(parentTypeName, name, location, tb,
                         servicePath.elements(), List.of(), new OrderBySpec.None(), null,
                         svcResult.method(), extractBatchKey(svcResult.method()));
+                // @service on a @record-typed parent returning scalar/record is DEFERRED:
+                // deriving the batch key would require lifting through the parent chain to the
+                // rooted @table whose PK provides the key columns, which is its own design
+                // problem (parallel to interface-union dispatch).
                 case ReturnTypeRef.ResultReturnType r ->
-                    new ServiceRecordField(parentTypeName, name, location, r, servicePath.elements(), svcResult.method(), extractBatchKey(svcResult.method()));
+                    new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.DEFERRED,
+                        "@service on a @record-typed parent is not yet supported; the batch key "
+                            + "must be lifted through the parent chain to the rooted @table — see "
+                            + "graphitron-rewrite/roadmap/service-record-field.md");
                 case ReturnTypeRef.ScalarReturnType s ->
-                    new ServiceRecordField(parentTypeName, name, location, s, servicePath.elements(), svcResult.method(), extractBatchKey(svcResult.method()));
+                    new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.DEFERRED,
+                        "@service on a @record-typed parent is not yet supported; the batch key "
+                            + "must be lifted through the parent chain to the rooted @table — see "
+                            + "graphitron-rewrite/roadmap/service-record-field.md");
                 case ReturnTypeRef.PolymorphicReturnType p ->
                     new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.DEFERRED, "@service returning a polymorphic type is not yet supported");
             };
