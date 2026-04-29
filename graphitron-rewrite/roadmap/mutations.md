@@ -911,6 +911,17 @@ different review costs and the supertype is the easiest to get wrong.
   unchanged. Both calls share the same `dsl` obtained from `GraphitronContext`, which may or
   may not be inside an active transaction depending on the caller's setup. Document this as the
   caller's responsibility; no wrapper is added in this plan.
+- **DELETE inputs with non-`@lookupKey` `ColumnField` entries are silently ignored** —
+  *resolve before UPDATE lands*. Today's DELETE classifier walks `tia.fields()` and only the
+  `@lookupKey`-bound subset (`fieldBindings`) reaches the emitter; any other `ColumnField` on
+  the input type sits unused. The schema author most likely intended for those fields to
+  participate in the WHERE clause, but the current contract treats them as no-ops. UPDATE
+  doesn't have this question (non-`@lookupKey` fields go in the SET clause) and INSERT doesn't
+  either (every field goes in the column list), so DELETE is the variant where this needs an
+  explicit answer. Options: (a) reject at classifier time ("DELETE input types may only carry
+  `@lookupKey` fields"); (b) admit them as additional WHERE predicates; (c) keep the silent
+  ignore. Pick before UPDATE lands so the consolidation phase has a consistent contract to
+  generalise over; (a) reads cleanly to schema authors and is the recommended default.
 - **Promoting `ArgumentRef` (or `TableInputArg`) to `model/`** — *deferred*. Today the model
   variants carry the data the emitter needs as separate fields (DELETE precedent). Promoting
   the ArgumentRef hierarchy to `model/` is a possible consolidation step but needs a real driver:
