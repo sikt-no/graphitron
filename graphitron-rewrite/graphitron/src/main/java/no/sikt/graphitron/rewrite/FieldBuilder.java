@@ -2286,9 +2286,14 @@ class FieldBuilder {
             }
             ClassName parentTableClass = ClassName.get(
                 ctx.ctx().jooqPackage() + ".tables", tableType.table().javaClassName());
+            // When `method` is omitted from the @externalField reference, default to the GraphQL
+            // field name. The static-method-name-equals-field-name convention is the common case;
+            // requiring `method:` only when it diverges removes ceremony from the schema.
+            String resolvedMethodName = (extRef != null && extRef.methodName() != null)
+                ? extRef.methodName() : name;
             var extResult = svc.reflectExternalField(
                 extRef != null ? extRef.className() : null,
-                extRef != null ? extRef.methodName() : null,
+                resolvedMethodName,
                 parentTableClass);
             if (extResult.failed()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
