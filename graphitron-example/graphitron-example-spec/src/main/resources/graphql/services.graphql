@@ -162,6 +162,23 @@ extend type Mutation {
             method: "check"
         }
     )
+
+    """Service-mutation that calls record.insert() directly on a Graphitron-mapped UpdatableRecord, exercising the path where PK fields come from the input nodeId."""
+    insertFilmActorsViaService(in: FilmActorInsertWrapper!)
+    : FilmActorInsertResult @service(
+        service: {
+            className: "no.sikt.graphitron.example.service.FilmActorInsertService",
+            method: "insert"
+        }
+    )
+}
+
+input FilmActorInsertWrapper @record(record: {className: "no.sikt.graphitron.example.service.records.FilmActorInsertWrapper"}) {
+    filmActors: [FilmActorValidationInput!]!
+}
+
+type FilmActorInsertResult @record(record: {className: "no.sikt.graphitron.example.service.records.FilmActorInsertResult"}) {
+    insertedCount: Int
 }
 
 type CreateCustomerEmailPayload{

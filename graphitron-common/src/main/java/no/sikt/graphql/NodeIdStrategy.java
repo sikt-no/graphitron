@@ -82,11 +82,14 @@ public class NodeIdStrategy {
         return row(keyColumnFields).in(rows);
     }
 
+    /**
+     * Populates the record's PK columns from an encoded node ID. The PK fields end up
+     * with {@code changed=true}; under jOOQ's default {@code Settings.updatablePrimaryKeys=false}
+     * this has no effect on UPDATE statements, but consumers that flip that setting
+     * will see the PKs in UPDATE SET clauses.
+     */
     public void setId(UpdatableRecordImpl<?> record, String id, String typeId, Field<?>... idFields) {
         setFields(record, id, typeId, idFields);
-
-        Arrays.stream(idFields)
-                .forEach(field -> record.changed(field, false));
     }
 
     public void setReferenceId(UpdatableRecordImpl<?> record, String id, String typeId, Field<?>... idFields) {

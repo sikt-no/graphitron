@@ -49,7 +49,7 @@ class NodeIdStrategyTest {
         assertEquals(1234, vacationDestinationRecord.getDestinationId());
         assertEquals("Norway", vacationDestinationRecord.getCountryName());
 
-        assertFalse(vacationDestinationRecord.changed());
+        assertTrue(vacationDestinationRecord.changed());
     }
 
     @Test
@@ -67,7 +67,7 @@ class NodeIdStrategyTest {
         assertEquals(1234, vacationDestinationRecord.getDestinationId());
         assertEquals("Norway", vacationDestinationRecord.getCountryName());
 
-        assertFalse(vacationDestinationRecord.changed());
+        assertTrue(vacationDestinationRecord.changed());
     }
 
     @Test
