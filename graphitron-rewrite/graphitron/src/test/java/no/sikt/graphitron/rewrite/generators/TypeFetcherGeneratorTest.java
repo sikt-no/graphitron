@@ -320,7 +320,7 @@ class TypeFetcherGeneratorTest {
             List.of(
                 new MethodRef.Param.Sourced("keys",
                     new BatchKey.RowKeyed(List.of(languageIdCol()))),
-                new MethodRef.Param.Typed("filter", "java.lang.String", new ParamSource.Arg(new CallSiteExtraction.Direct())),
+                new MethodRef.Param.Typed("filter", "java.lang.String", new ParamSource.Arg(new CallSiteExtraction.Direct(), "filter")),
                 new MethodRef.Param.Typed("tenantId", "java.lang.String", new ParamSource.Context())
             )
         );
@@ -635,7 +635,7 @@ class TypeFetcherGeneratorTest {
                     "no.sikt.graphitron.rewrite.test.jooq.tables.Film",
                     new ParamSource.Table()),
                 new MethodRef.Param.Typed("minRentalRate", "java.lang.Double",
-                    new ParamSource.Arg(new CallSiteExtraction.Direct()))));
+                    new ParamSource.Arg(new CallSiteExtraction.Direct(), "minRentalRate"))));
         var field = new QueryField.QueryTableMethodTableField("Query", "popularFilms", null,
             TestFixtures.tableBoundFilm(nonNullList()), method);
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
@@ -663,7 +663,7 @@ class TypeFetcherGeneratorTest {
             List.of(
                 new MethodRef.Param.Typed("dsl", "org.jooq.DSLContext", new ParamSource.DslContext()),
                 new MethodRef.Param.Typed("ids", "java.util.List<java.lang.Integer>",
-                    new ParamSource.Arg(new CallSiteExtraction.Direct()))));
+                    new ParamSource.Arg(new CallSiteExtraction.Direct(), "ids"))));
         var field = new QueryField.QueryServiceTableField("Query", "filmsByService", null,
             TestFixtures.tableBoundFilm(nonNullList()), method);
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,

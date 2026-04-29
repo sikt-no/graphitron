@@ -23,35 +23,22 @@ class ColumnReferenceFieldValidationTest {
 
         RESOLVED_IMPLICIT("no @field — column name defaults to the GraphQL field name; path resolved via FK (stubbed)",
             new ColumnReferenceField("Film", "languageName", null, "languageName", new ColumnRef("NAME", "", ""),
-                List.of(new JoinStep.FkJoin("film_language_id_fkey", "", null, List.of(), new TableRef("language", "", "", List.of()), List.of(), null, "")), false),
+                List.of(new JoinStep.FkJoin("film_language_id_fkey", "", null, List.of(), new TableRef("language", "", "", List.of()), List.of(), null, ""))),
             List.of(stubbedError("Film.languageName", ColumnReferenceField.class))),
 
         RESOLVED_EXPLICIT("@field(name:) overrides the column name; path resolved via FK (stubbed)",
             new ColumnReferenceField("Film", "languageName", null, "language_name", new ColumnRef("NAME", "", ""),
-                List.of(new JoinStep.FkJoin("film_language_id_fkey", "", null, List.of(), new TableRef("language", "", "", List.of()), List.of(), null, "")), false),
+                List.of(new JoinStep.FkJoin("film_language_id_fkey", "", null, List.of(), new TableRef("language", "", "", List.of()), List.of(), null, ""))),
             List.of(stubbedError("Film.languageName", ColumnReferenceField.class))),
 
         CONDITION_METHOD("path resolved via condition method instead of a FK (stubbed)",
             new ColumnReferenceField("Film", "languageName", null, "languageName", new ColumnRef("NAME", "", ""),
-                List.of(new JoinStep.ConditionJoin(new MethodRef.Basic("com.example.Conditions", "languageCondition", ClassName.get("org.jooq", "Condition"), List.of()), "")), false),
+                List.of(new JoinStep.ConditionJoin(new MethodRef.Basic("com.example.Conditions", "languageCondition", ClassName.get("org.jooq", "Condition"), List.of()), ""))),
             List.of(stubbedError("Film.languageName", ColumnReferenceField.class))),
 
-        JAVA_NAME_PRESENT("@field(javaName:) is not supported — validation error (and stubbed)",
-            new ColumnReferenceField("Film", "languageName", null, "languageName", new ColumnRef("NAME", "", ""),
-                List.of(new JoinStep.FkJoin("film_language_id_fkey", "", null, List.of(), new TableRef("language", "", "", List.of()), List.of(), null, "")), true),
-            List.of("Field 'Film.languageName': @field(javaName:) is not supported in record-based output",
-                stubbedError("Film.languageName", ColumnReferenceField.class))),
-
         MISSING_PATH("no @reference directive — path is empty (and stubbed)",
-            new ColumnReferenceField("Film", "languageName", null, "languageName", new ColumnRef("NAME", "", ""), List.of(), false),
+            new ColumnReferenceField("Film", "languageName", null, "languageName", new ColumnRef("NAME", "", ""), List.of()),
             List.of("Field 'Film.languageName': @reference path is required",
-                stubbedError("Film.languageName", ColumnReferenceField.class))),
-
-        JAVA_NAME_AND_MISSING_PATH("@field(javaName:) present AND path is empty — both validators fire independently (and stubbed)",
-            new ColumnReferenceField("Film", "languageName", null, "languageName", new ColumnRef("NAME", "", ""), List.of(), true),
-            List.of(
-                "Field 'Film.languageName': @field(javaName:) is not supported in record-based output",
-                "Field 'Film.languageName': @reference path is required",
                 stubbedError("Film.languageName", ColumnReferenceField.class)));
 
         private final String description;

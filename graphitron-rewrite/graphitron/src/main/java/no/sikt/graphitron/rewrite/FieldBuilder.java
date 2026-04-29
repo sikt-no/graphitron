@@ -96,7 +96,6 @@ import static no.sikt.graphitron.rewrite.BuildContext.ARG_CONTEXT_ARGUMENTS;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_DIRECTION;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_FIELDS;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_INDEX;
-import static no.sikt.graphitron.rewrite.BuildContext.ARG_JAVA_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_KEY;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_METHOD;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_NAME;
@@ -188,7 +187,10 @@ class FieldBuilder {
             return new ServiceResolution(null, null, "service method could not be resolved — " + serviceRef.lookupError());
         }
         List<String> contextArgs = parseContextArguments(fieldDef, DIR_SERVICE);
-        Set<String> argNames = fieldDef.getArguments().stream().map(GraphQLArgument::getName).collect(Collectors.toSet());
+        var argMapResult = buildArgByJavaName(fieldDef);
+        if (argMapResult.errorMessage() != null) {
+            return new ServiceResolution(null, null, "service method could not be resolved — " + argMapResult.errorMessage());
+        }
         // Strict return-type validation applies to root @service fields only (parentPkColumns empty).
         // Child @service uses DataLoader-batched semantics where the method takes Sources keys and
         // returns a flat or keyed shape that doesn't directly match the field's return type — that
@@ -197,11 +199,43 @@ class FieldBuilder {
         TypeName expectedReturnType = parentPkColumns.isEmpty()
             ? computeExpectedServiceReturnType(returnType)
             : null;
-        var result = svc.reflectServiceMethod(serviceRef.className(), serviceRef.methodName(), argNames, new java.util.HashSet<>(contextArgs), parentPkColumns, expectedReturnType);
+        var result = svc.reflectServiceMethod(serviceRef.className(), serviceRef.methodName(),
+            argMapResult.map(), new java.util.HashSet<>(contextArgs), parentPkColumns, expectedReturnType);
         if (result.failed()) {
             return new ServiceResolution(null, null, "service method could not be resolved — " + result.failureReason());
         }
         return new ServiceResolution(enrichArgExtractions(result.ref(), fieldDef), returnType, null);
+    }
+
+    /**
+     * Result of {@link #buildArgByJavaName}: either a populated map (Java-target → GraphQL-arg)
+     * or a non-null {@code errorMessage} when {@code @field(name:)} overrides on the field's
+     * arguments produce a collision (two arguments target the same Java parameter name).
+     */
+    record ArgByJavaNameResult(Map<String, String> map, String errorMessage) {}
+
+    /**
+     * Builds the {@code argByJavaName} map for a field definition: each argument contributes one
+     * entry whose key is the Java-target parameter name (the {@code @field(name:)} override when
+     * present, otherwise the argument's own name) and whose value is the GraphQL argument name.
+     *
+     * <p>Pre-reflection collision detection: two arguments mapping to the same Java target produce
+     * an immediate error naming both arguments and the contested target.
+     */
+    private ArgByJavaNameResult buildArgByJavaName(GraphQLFieldDefinition fieldDef) {
+        var map = new java.util.LinkedHashMap<String, String>();
+        for (var arg : fieldDef.getArguments()) {
+            String argName = arg.getName();
+            String javaTarget = argString(arg, DIR_FIELD, ARG_NAME).orElse(argName);
+            String existingArg = map.put(javaTarget, argName);
+            if (existingArg != null) {
+                return new ArgByJavaNameResult(null,
+                    "arguments '" + existingArg + "' and '" + argName
+                    + "' both target Java parameter '" + javaTarget
+                    + "' — adjust @field(name:) so each Java parameter is targeted by at most one argument");
+            }
+        }
+        return new ArgByJavaNameResult(map, null);
     }
 
     /**
@@ -959,7 +993,7 @@ class FieldBuilder {
         if (cond == null) return Optional.empty();
         var argName = arg.getName();
         var result = svc.reflectTableMethod(cond.className(), cond.methodName(),
-            Set.of(argName), Set.copyOf(cond.contextArguments()), null);
+            Map.of(argName, argName), Set.copyOf(cond.contextArguments()), null);
         if (result.failed()) {
             errors.add("argument '" + argName + "' @condition: " + result.failureReason());
             return Optional.empty();
@@ -979,11 +1013,11 @@ class FieldBuilder {
     private ConditionFilter buildFieldCondition(GraphQLFieldDefinition fieldDef, List<String> errors) {
         var cond = ctx.readConditionDirective(fieldDef);
         if (cond == null) return null;
-        var argNames = fieldDef.getArguments().stream()
+        var argByJavaName = fieldDef.getArguments().stream()
             .map(GraphQLArgument::getName)
-            .collect(Collectors.toSet());
+            .collect(Collectors.toMap(n -> n, n -> n, (a, b) -> a, java.util.LinkedHashMap::new));
         var result = svc.reflectTableMethod(cond.className(), cond.methodName(),
-            argNames, Set.copyOf(cond.contextArguments()), null);
+            argByJavaName, Set.copyOf(cond.contextArguments()), null);
         if (result.failed()) {
             errors.add("field '" + fieldDef.getName() + "' @condition: " + result.failureReason());
             return null;
@@ -1339,9 +1373,10 @@ class FieldBuilder {
     private ConditionFilter rewrapForNested(ConditionFilter src, String outerArgName, List<String> leafPath) {
         var rewritten = new ArrayList<MethodRef.Param>();
         for (var p : src.params()) {
-            if (p.source() instanceof ParamSource.Arg) {
+            if (p.source() instanceof ParamSource.Arg arg) {
                 rewritten.add(new MethodRef.Param.Typed(p.name(), p.typeName(),
-                    new ParamSource.Arg(new CallSiteExtraction.NestedInputField(outerArgName, leafPath))));
+                    new ParamSource.Arg(new CallSiteExtraction.NestedInputField(outerArgName, leafPath),
+                        arg.graphqlArgName())));
             } else {
                 rewritten.add(p);
             }
@@ -1372,14 +1407,15 @@ class FieldBuilder {
             if (!(p.source() instanceof ParamSource.Arg arg)) return p;
             if (!(arg.extraction() instanceof CallSiteExtraction.Direct)) return p;
             if (!String.class.getName().equals(p.typeName())) return p;
-            String graphqlTypeName = argTypes.get(p.name());
+            String graphqlTypeName = argTypes.get(arg.graphqlArgName());
             if (graphqlTypeName == null) return p;
             var textMapping = buildTextEnumMapping(graphqlTypeName);
             if (textMapping == null) return p;
             String mapFieldName = fieldDef.getName().toUpperCase() + "_"
-                + p.name().toUpperCase() + "_MAP";
+                + arg.graphqlArgName().toUpperCase() + "_MAP";
             return (MethodRef.Param) new MethodRef.Param.Typed(p.name(), p.typeName(),
-                new ParamSource.Arg(new CallSiteExtraction.TextMapLookup(mapFieldName, textMapping)));
+                new ParamSource.Arg(new CallSiteExtraction.TextMapLookup(mapFieldName, textMapping),
+                    arg.graphqlArgName()));
         }).toList();
         return new MethodRef.Basic(method.className(), method.methodName(),
             method.returnType(), newParams);
@@ -1630,7 +1666,11 @@ class FieldBuilder {
                 return new GraphitronField.UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
                     "table method could not be resolved — " + qtmRef.lookupError());
             }
-            Set<String> qtmArgNames = fieldDef.getArguments().stream().map(GraphQLArgument::getName).collect(Collectors.toSet());
+            var qtmArgMap = buildArgByJavaName(fieldDef);
+            if (qtmArgMap.errorMessage() != null) {
+                return new GraphitronField.UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
+                    "table method could not be resolved — " + qtmArgMap.errorMessage());
+            }
             List<String> qtmCtxArgs = parseContextArguments(fieldDef, DIR_TABLE_METHOD);
             // Invariants §3 (return-type strictness): the developer's @tableMethod must return
             // the generated jOOQ table class exactly, not a wider Table<R>. Computed from the
@@ -1640,7 +1680,7 @@ class FieldBuilder {
             var qtmResult = svc.reflectTableMethod(
                 qtmRef != null ? qtmRef.className() : null,
                 qtmRef != null ? qtmRef.methodName() : null,
-                qtmArgNames, new java.util.HashSet<>(qtmCtxArgs),
+                qtmArgMap.map(), new java.util.HashSet<>(qtmCtxArgs),
                 expectedReturnClass);
             if (qtmResult.failed()) {
                 return new GraphitronField.UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
@@ -2259,7 +2299,11 @@ class FieldBuilder {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
                     "table method could not be resolved — " + tmRef.lookupError());
             }
-            Set<String> tmArgNames = fieldDef.getArguments().stream().map(GraphQLArgument::getName).collect(Collectors.toSet());
+            var tmArgMap = buildArgByJavaName(fieldDef);
+            if (tmArgMap.errorMessage() != null) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
+                    "table method could not be resolved — " + tmArgMap.errorMessage());
+            }
             List<String> tmCtxArgs = parseContextArguments(fieldDef, DIR_TABLE_METHOD);
             // Invariants §3 (return-type strictness) — applies to child @tableMethod too.
             ClassName tmExpectedReturnClass = returnType instanceof ReturnTypeRef.TableBoundReturnType tbr
@@ -2268,7 +2312,7 @@ class FieldBuilder {
             var tmResult = svc.reflectTableMethod(
                 tmRef != null ? tmRef.className() : null,
                 tmRef != null ? tmRef.methodName() : null,
-                tmArgNames, new java.util.HashSet<>(tmCtxArgs),
+                tmArgMap.map(), new java.util.HashSet<>(tmCtxArgs),
                 tmExpectedReturnClass);
             if (tmResult.failed()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
@@ -2315,8 +2359,6 @@ class FieldBuilder {
         String columnName = hasFieldDirective
             ? argString(fieldDef, DIR_FIELD, ARG_NAME).orElse(name)
             : name;
-        boolean javaNamePresent = hasFieldDirective
-            && argString(fieldDef, DIR_FIELD, ARG_JAVA_NAME).isPresent();
 
         if (fieldDef.hasAppliedDirective(DIR_REFERENCE)) {
             var refPath = ctx.parsePath(fieldDef, name, tableType.table().tableName(), null);
@@ -2334,7 +2376,7 @@ class FieldBuilder {
                 LOG.warn("@field(name: '{}') on field '{}.{}' resolved via SQL name; prefer Java field name '{}'",
                     columnName, parentTypeName, name, column.get().javaName());
             }
-            return new ColumnReferenceField(parentTypeName, name, location, columnName, column.get(), refPath.elements(), javaNamePresent);
+            return new ColumnReferenceField(parentTypeName, name, location, columnName, column.get(), refPath.elements());
         }
 
         Optional<ColumnRef> column = svc.resolveColumn(columnName, tableType);
@@ -2366,7 +2408,7 @@ class FieldBuilder {
             LOG.warn("@field(name: '{}') on field '{}.{}' resolved via SQL name; prefer Java field name '{}'",
                 columnName, parentTypeName, name, column.get().javaName());
         }
-        return new ColumnField(parentTypeName, name, location, columnName, column.get(), javaNamePresent);
+        return new ColumnField(parentTypeName, name, location, columnName, column.get());
     }
 
     private boolean isScalarOrEnum(GraphQLFieldDefinition fieldDef) {

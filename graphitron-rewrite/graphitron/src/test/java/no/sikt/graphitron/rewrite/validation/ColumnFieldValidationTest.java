@@ -20,22 +20,17 @@ class ColumnFieldValidationTest {
     enum Case {
 
         RESOLVED_IMPLICIT("no @field — column name defaults to the GraphQL field name",
-            new ColumnField("Film", "title", null, "title", new ColumnRef("TITLE", "", ""), false),
+            new ColumnField("Film", "title", null, "title", new ColumnRef("TITLE", "", "")),
             false,
             List.of()),
 
         RESOLVED_EXPLICIT("@field(name:) overrides the column name",
-            new ColumnField("Film", "title", null, "film_title", new ColumnRef("FILM_TITLE", "", ""), false),
+            new ColumnField("Film", "title", null, "film_title", new ColumnRef("FILM_TITLE", "", "")),
             false,
             List.of()),
 
-        JAVA_NAME_PRESENT("@field(javaName:) is not supported — validation error",
-            new ColumnField("Film", "title", null, "title", new ColumnRef("TITLE", "", ""), true),
-            false,
-            List.of("Field 'Film.title': @field(javaName:) is not supported in record-based output")),
-
         NON_TABLE_BACKED_PARENT("@column on a non-table-backed parent type is rejected",
-            new ColumnField("Film", "title", null, "title", new ColumnRef("TITLE", "", ""), false),
+            new ColumnField("Film", "title", null, "title", new ColumnRef("TITLE", "", "")),
             true,
             List.of("Field 'Film.title': @column is not valid on a non-table-backed type"));
 

@@ -13,14 +13,14 @@ directive @notGenerated on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_
 directive @table(name: String) on OBJECT | INPUT_OBJECT | INTERFACE
 
 """
-The default assumption for generating fields is that the name of each schema field corresponds exactly to a jOOQ table record field
-in the related jOOQ table (set by @table), or a field in a Java record if that is used instead.
-This directive overrides the assumption, allowing to correctly map schema field names that diverge from what is available in the record.
-
-The second parameter is used exclusively for Java records, and is kept separate to support cases where Java and jOOQ records need to interact.
-It defaults to the value of the first parameter.
+Names the underlying-binding target for the annotated GraphQL slot. The axis is determined by the
+directive site:
+- On FIELD_DEFINITION / INPUT_FIELD_DEFINITION of a @table-backed type, the column to bind to.
+- On ARGUMENT_DEFINITION of an @table-backed filter argument, the column to bind to.
+- On ARGUMENT_DEFINITION of an @service / @tableMethod argument, the Java method parameter to bind to.
+- On ENUM_VALUE, the database string (or, where applicable, the Java enum constant) the value maps to.
 """
-directive @field(name: String!, javaName: String) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE
+directive @field(name: String!) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE
 
 """
 The @externalField directive indicates that the annotated field is
