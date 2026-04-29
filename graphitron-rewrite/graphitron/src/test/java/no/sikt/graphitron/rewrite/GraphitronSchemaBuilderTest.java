@@ -3336,11 +3336,45 @@ class GraphitronSchemaBuilderTest {
             "@mutation(typeName: DELETE) → MutationDeleteTableField",
             """
             type Film @table(name: "film") { title: String }
+            input FilmKey @table(name: "film") { filmId: Int! @field(name: "film_id") @lookupKey }
             type Query { x: String }
-            type Mutation { deleteFilm: Film @mutation(typeName: DELETE) }
+            type Mutation { deleteFilm(in: FilmKey!): Film @mutation(typeName: DELETE) }
             """,
             schema -> assertThat(schema.field("Mutation", "deleteFilm")).isInstanceOf(MutationField.MutationDeleteTableField.class)) {
             @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationDeleteTableField.class); }
+        },
+
+        DELETE_MUTATION_NO_INPUT_ARG(
+            "@mutation(typeName: DELETE) without @table input arg → UnclassifiedField",
+            """
+            type Film @table(name: "film") { title: String }
+            type Query { x: String }
+            type Mutation { deleteFilm: Film @mutation(typeName: DELETE) }
+            """,
+            schema -> {
+                var field = schema.field("Mutation", "deleteFilm");
+                assertThat(field).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) field).reason())
+                    .contains("no @table input argument found on @mutation field");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
+        },
+
+        DELETE_MUTATION_MISSING_LOOKUP_KEY(
+            "@mutation(typeName: DELETE) with @table input but no @lookupKey → UnclassifiedField",
+            """
+            type Film @table(name: "film") { title: String }
+            input FilmKey @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Query { x: String }
+            type Mutation { deleteFilm(in: FilmKey!): Film @mutation(typeName: DELETE) }
+            """,
+            schema -> {
+                var field = schema.field("Mutation", "deleteFilm");
+                assertThat(field).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) field).reason())
+                    .contains("requires at least one @lookupKey field");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
         },
 
         UPSERT_MUTATION_FIELD(

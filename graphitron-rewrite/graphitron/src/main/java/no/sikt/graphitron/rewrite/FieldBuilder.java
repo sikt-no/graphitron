@@ -1721,7 +1721,7 @@ class FieldBuilder {
                 return switch (typeName) {
                     case "INSERT" -> new MutationField.MutationInsertTableField(parentTypeName, name, location, returnType);
                     case "UPDATE" -> new MutationField.MutationUpdateTableField(parentTypeName, name, location, returnType);
-                    case "DELETE" -> new MutationField.MutationDeleteTableField(parentTypeName, name, location, returnType);
+                    case "DELETE" -> classifyMutationDeleteField(fieldDef, parentTypeName, name, location, returnType);
                     case "UPSERT" -> new MutationField.MutationUpsertTableField(parentTypeName, name, location, returnType);
                     default       -> new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
                         "unknown @mutation(typeName:) value '" + typeName + "'");
@@ -1759,6 +1759,141 @@ class FieldBuilder {
             }
         }
         return false;
+    }
+
+    /**
+     * Classifies a {@code @mutation(typeName: DELETE)} field by extracting its single
+     * {@code @table} input argument and validating the {@code @lookupKey} bindings cover the
+     * full primary key of the target table. See {@code graphitron-rewrite/roadmap/mutations.md}
+     * Phase 1 invariants #1, #2, #7-#11, #13, #14.
+     */
+    private GraphitronField classifyMutationDeleteField(GraphQLFieldDefinition fieldDef,
+            String parentTypeName, String name, SourceLocation location, ReturnTypeRef returnType) {
+        // Pass 1 — find the single @table input argument.
+        ArgumentRef.InputTypeArg.TableInputArg tia = null;
+        var bindingErrors = new ArrayList<String>();
+        for (var arg : fieldDef.getArguments()) {
+            String argTypeName = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(arg.getType())).getName();
+            var resolved = ctx.types.get(argTypeName);
+            if (!(resolved instanceof GraphitronType.TableInputType tit)) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                    RejectionKind.AUTHOR_ERROR,
+                    "@mutation fields only accept @table input arguments; found '" + arg.getName()
+                        + "' of type '" + argTypeName + "'");
+            }
+            if (tia != null) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                    RejectionKind.AUTHOR_ERROR,
+                    "@mutation field has more than one @table input argument");
+            }
+            boolean argList = GraphQLTypeUtil.unwrapNonNull(arg.getType()) instanceof GraphQLList;
+            boolean argNonNull = arg.getType() instanceof GraphQLNonNull;
+            var argFieldErrors = new ArrayList<String>();
+            List<InputColumnBinding> bindings = buildLookupBindings(tit, arg, fieldDef, arg.getName(), argFieldErrors);
+            bindingErrors.addAll(argFieldErrors);
+            Optional<ArgConditionRef> argCondition = buildArgCondition(arg, argFieldErrors);
+            tia = new ArgumentRef.InputTypeArg.TableInputArg(
+                arg.getName(), argTypeName, argNonNull, argList, tit.table(), bindings, argCondition, tit.inputFields());
+        }
+        if (tia == null) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                RejectionKind.AUTHOR_ERROR,
+                "no @table input argument found on @mutation field");
+        }
+        if (!bindingErrors.isEmpty()) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                RejectionKind.AUTHOR_ERROR,
+                String.join("; ", bindingErrors));
+        }
+
+        // Pass 2 — invariant checks on the resolved tia.
+        if (tia.list()) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                RejectionKind.AUTHOR_ERROR,
+                "listed @mutation inputs are not yet supported");
+        }
+        if (tia.argCondition().isPresent()) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                RejectionKind.AUTHOR_ERROR,
+                "@condition on a @mutation field argument is not supported");
+        }
+        for (var f : tia.fields()) {
+            if (!(f instanceof InputField.ColumnField)) {
+                String variantName = switch (f) {
+                    case InputField.NestingField __ -> "nested input types";
+                    case InputField.NodeIdField __ -> "NodeIdField";
+                    case InputField.NodeIdReferenceField __ -> "NodeIdReferenceField";
+                    case InputField.ColumnReferenceField __ -> "ColumnReferenceField";
+                    default -> f.getClass().getSimpleName();
+                };
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                    RejectionKind.AUTHOR_ERROR,
+                    variantName + " in @mutation inputs is not yet supported");
+            }
+        }
+        if (tia.fieldBindings().isEmpty()) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                RejectionKind.AUTHOR_ERROR,
+                "@mutation(typeName: DELETE) requires at least one @lookupKey field in the input type");
+        }
+        var pkColumns = ctx.catalog.findPkColumns(tia.inputTable().tableName());
+        if (!pkColumns.isEmpty()) {
+            var boundSqlNames = tia.fieldBindings().stream()
+                .map(b -> b.targetColumn().sqlName())
+                .collect(Collectors.toSet());
+            var missing = pkColumns.stream()
+                .map(JooqCatalog.ColumnEntry::sqlName)
+                .filter(s -> !boundSqlNames.contains(s))
+                .toList();
+            if (!missing.isEmpty()) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                    RejectionKind.AUTHOR_ERROR,
+                    "@mutation(typeName: DELETE) @lookupKey fields do not cover all PK column(s); missing: "
+                        + String.join(", ", missing));
+            }
+        }
+
+        // Return-type validation (Invariant #14): allow ScalarReturnType(ID) or TableBoundReturnType.
+        Optional<JooqCatalog.NodeIdMetadata> nodeIdMeta = Optional.empty();
+        switch (returnType) {
+            case ReturnTypeRef.ScalarReturnType s -> {
+                if (!"ID".equals(s.returnTypeName())) {
+                    return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                        RejectionKind.AUTHOR_ERROR,
+                        "@mutation(typeName: DELETE) return type '" + s.returnTypeName()
+                            + "' is not yet supported; use ID or a @table type");
+                }
+                var meta = ctx.catalog.nodeIdMetadata(tia.inputTable().tableName());
+                if (meta.isEmpty()) {
+                    return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                        RejectionKind.AUTHOR_ERROR,
+                        "@mutation field '" + name + "' returns ID but table '" + tia.inputTable().tableName()
+                            + "' is not a @node type; annotate the type with @node or use a @table return type");
+                }
+                if (returnType.wrapper() instanceof FieldWrapper.Connection) {
+                    return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                        RejectionKind.AUTHOR_ERROR,
+                        "@mutation(typeName: DELETE) Connection return is not supported");
+                }
+                nodeIdMeta = meta;
+            }
+            case ReturnTypeRef.TableBoundReturnType tb -> {
+                if (tb.wrapper() instanceof FieldWrapper.Connection) {
+                    return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                        RejectionKind.AUTHOR_ERROR,
+                        "@mutation(typeName: DELETE) Connection return is not supported");
+                }
+            }
+            default -> {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                    RejectionKind.AUTHOR_ERROR,
+                    "@mutation(typeName: DELETE) return type '" + returnType.returnTypeName()
+                        + "' is not yet supported; use ID or a @table type");
+            }
+        }
+
+        return new MutationField.MutationDeleteTableField(parentTypeName, name, location, returnType,
+            tia.name(), tia.inputTable(), tia.fieldBindings(), nodeIdMeta);
     }
 
     private String getMutationTypeName(GraphQLFieldDefinition fieldDef) {

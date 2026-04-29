@@ -153,6 +153,7 @@ public class TypeFetcherGenerator {
         QueryField.QueryTableMethodTableField.class,
         QueryField.QueryServiceTableField.class,
         QueryField.QueryServiceRecordField.class,
+        MutationField.MutationDeleteTableField.class,
         ChildField.ServiceTableField.class,
         ChildField.SplitTableField.class,
         ChildField.SplitLookupTableField.class,
@@ -230,8 +231,6 @@ public class TypeFetcherGenerator {
                 "Mutation insert not yet implemented — see graphitron-rewrite/roadmap/mutations.md"),
             Map.entry(MutationField.MutationUpdateTableField.class,
                 "Mutation update not yet implemented — see graphitron-rewrite/roadmap/mutations.md"),
-            Map.entry(MutationField.MutationDeleteTableField.class,
-                "Mutation delete not yet implemented — see graphitron-rewrite/roadmap/mutations.md"),
             Map.entry(MutationField.MutationUpsertTableField.class,
                 "Mutation upsert not yet implemented — see graphitron-rewrite/roadmap/mutations.md"),
             Map.entry(MutationField.MutationServiceTableField.class,
@@ -291,8 +290,11 @@ public class TypeFetcherGenerator {
             .addModifiers(Modifier.PUBLIC);
 
         // Emit the graphitronContext() helper whenever any field executes inline SQL —
-        // i.e., whenever any SqlGeneratingField is present in this fetchers class.
-        boolean needsGraphitronContextHelper = fields.stream().anyMatch(f -> f instanceof SqlGeneratingField);
+        // i.e., whenever any SqlGeneratingField is present, or a DML mutation that emits
+        // its own jOOQ statement inline (e.g. MutationDeleteTableField).
+        boolean needsGraphitronContextHelper = fields.stream().anyMatch(f ->
+            f instanceof SqlGeneratingField
+            || f instanceof MutationField.MutationDeleteTableField);
 
         for (var field : fields) {
             switch (field) {
@@ -358,7 +360,7 @@ public class TypeFetcherGenerator {
                 case QueryField.QueryUnionField f             -> builder.addMethod(stub(f));
                 case MutationField.MutationInsertTableField f  -> builder.addMethod(stub(f));
                 case MutationField.MutationUpdateTableField f  -> builder.addMethod(stub(f));
-                case MutationField.MutationDeleteTableField f  -> builder.addMethod(stub(f));
+                case MutationField.MutationDeleteTableField f  -> builder.addMethod(buildMutationDeleteFetcher(f, outputPackage, jooqPackage));
                 case MutationField.MutationUpsertTableField f  -> builder.addMethod(stub(f));
                 case MutationField.MutationServiceTableField f -> builder.addMethod(stub(f));
                 case MutationField.MutationServiceRecordField f -> builder.addMethod(stub(f));
@@ -961,6 +963,90 @@ public class TypeFetcherGenerator {
             method.methodName(),
             ArgCallEmitter.buildMethodBackedCallArgs(method, null, conditionsClassName));
 
+        return builder.build();
+    }
+
+    /**
+     * Emits a fetcher for {@link MutationField.MutationDeleteTableField}: a synchronous static
+     * method that runs {@code dsl.deleteFrom(table).where(<lookupKey predicates>)
+     * .returningResult(<keys or $fields>).fetchOne(...)}. See
+     * {@code graphitron-rewrite/roadmap/mutations.md} Phase 3.
+     *
+     * <p>Empty-match semantics: {@code .fetchOne(...)} returns {@code null} when the WHERE clause
+     * matches no row. graphql-java surfaces that as a GraphQL null on a nullable field, or a
+     * non-null violation on {@code ID!}/{@code Type!}.
+     */
+    private static MethodSpec buildMutationDeleteFetcher(MutationField.MutationDeleteTableField f,
+                                                          String outputPackage, String jooqPackage) {
+        var tableRef = f.inputTable();
+        var names = GeneratorUtils.ResolvedTableNames.of(tableRef, f.returnType().returnTypeName(), outputPackage, jooqPackage);
+        var dslContextClass = ClassName.get("org.jooq", "DSLContext");
+
+        var builder = MethodSpec.methodBuilder(f.name())
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(Object.class)
+            .addParameter(ENV, "env");
+
+        builder.addStatement("$T dsl = graphitronContext(env).getDslContext(env)", dslContextClass);
+        builder.addStatement("$T<?, ?> in = ($T<?, ?>) env.getArgument($S)", MAP, MAP, f.inputArgName());
+
+        // WHERE predicate: chain bindings with .and(...)
+        var whereExpr = CodeBlock.builder();
+        var bindings = f.fieldBindings();
+        for (int i = 0; i < bindings.size(); i++) {
+            var binding = bindings.get(i);
+            if (i > 0) whereExpr.add(".and(");
+            whereExpr.add("$T.$L.eq($T.val(in.get($S), $T.$L.getDataType()))",
+                names.tablesClass(), tableRef.javaFieldName() + "." + binding.targetColumn().javaName(),
+                DSL,
+                binding.inputFieldName(),
+                names.tablesClass(), tableRef.javaFieldName() + "." + binding.targetColumn().javaName());
+            if (i > 0) whereExpr.add(")");
+        }
+
+        var body = CodeBlock.builder()
+            .add("return dsl\n").indent()
+            .add(".deleteFrom($T.$L)\n", names.tablesClass(), tableRef.javaFieldName())
+            .add(".where(").add(whereExpr.build()).add(")\n");
+
+        boolean isList = f.returnType().wrapper().isList();
+        if (f.returnType() instanceof ReturnTypeRef.ScalarReturnType) {
+            // ID return: project all node-id key columns and encode in the lambda.
+            var meta = f.nodeIdMeta().orElseThrow();
+            var keyCols = meta.keyColumns();
+            var encoderClass = ClassName.get(outputPackage + ".util",
+                no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator.CLASS_NAME);
+
+            body.add(".returningResult(");
+            for (int i = 0; i < keyCols.size(); i++) {
+                if (i > 0) body.add(", ");
+                body.add("$T.$L.$L", names.tablesClass(), tableRef.javaFieldName(), keyCols.get(i).javaName());
+            }
+            body.add(")\n");
+
+            var lambda = CodeBlock.builder().add("r -> $T.encode($S", encoderClass, meta.typeId());
+            for (var col : keyCols) {
+                lambda.add(", r.get($T.$L.$L)", names.tablesClass(), tableRef.javaFieldName(), col.javaName());
+            }
+            lambda.add(")");
+            body.add(isList ? ".fetch(" : ".fetchOne(").add(lambda.build()).add(");\n");
+        } else {
+            // TableBoundReturnType: use Type.$fields(env.getSelectionSet(), table, env) and
+            // return the row record. graphql-java's column fetchers walk it.
+            String tableLocal = names.tableLocalName();
+            // Need a local variable for the table to pass to $fields(...). Inject above the
+            // dsl.deleteFrom(...) chain — but we've already started the chain. Re-build the body.
+            body = CodeBlock.builder();
+            body.add("$T $L = $T.$L;\n", names.jooqTableClass(), tableLocal, names.tablesClass(), tableRef.javaFieldName());
+            body.add("return dsl\n").indent()
+                .add(".deleteFrom($L)\n", tableLocal)
+                .add(".where(").add(whereExpr.build()).add(")\n")
+                .add(".returningResult($T.$$fields(env.getSelectionSet(), $L, env))\n",
+                    names.typeClass(), tableLocal)
+                .add(isList ? ".fetch(r -> r);\n" : ".fetchOne(r -> r);\n");
+        }
+        body.unindent();
+        builder.addCode(body.build());
         return builder.build();
     }
 

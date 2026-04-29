@@ -1,7 +1,9 @@
 package no.sikt.graphitron.rewrite.model;
 
 import graphql.language.SourceLocation;
+import no.sikt.graphitron.rewrite.JooqCatalog;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -50,17 +52,35 @@ public sealed interface MutationField extends RootField
         }
     }
 
+    /**
+     * A {@code @mutation(typeName: DELETE)} field. Carries the resolved target table,
+     * the GraphQL argument name carrying the {@code @table} input, and the per-{@code @lookupKey}
+     * column bindings that drive the WHERE clause of the emitted
+     * {@code deleteFrom(...).where(...)} statement.
+     *
+     * <p>{@code nodeIdMeta} is populated only when {@code returnType} is
+     * {@code ScalarReturnType("ID")}; for other return shapes (e.g. {@code TableBoundReturnType})
+     * it is {@link Optional#empty()}.
+     */
     record MutationDeleteTableField(
         String parentTypeName,
         String name,
         SourceLocation location,
         ReturnTypeRef returnType,
+        String inputArgName,
+        TableRef inputTable,
+        List<InputColumnBinding> fieldBindings,
+        Optional<JooqCatalog.NodeIdMetadata> nodeIdMeta,
         Optional<ErrorChannel> errorChannel
     ) implements MutationField {
 
         public MutationDeleteTableField(String parentTypeName, String name,
-                                         SourceLocation location, ReturnTypeRef returnType) {
-            this(parentTypeName, name, location, returnType, Optional.empty());
+                                         SourceLocation location, ReturnTypeRef returnType,
+                                         String inputArgName, TableRef inputTable,
+                                         List<InputColumnBinding> fieldBindings,
+                                         Optional<JooqCatalog.NodeIdMetadata> nodeIdMeta) {
+            this(parentTypeName, name, location, returnType, inputArgName, inputTable,
+                 fieldBindings, nodeIdMeta, Optional.empty());
         }
     }
 
