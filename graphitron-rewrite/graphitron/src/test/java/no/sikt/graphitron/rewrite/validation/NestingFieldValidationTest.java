@@ -39,7 +39,7 @@ class NestingFieldValidationTest {
 
     private static ColumnField titleOn(String parent, String column, String javaType) {
         return new ColumnField(parent, "title", null, "title",
-            new ColumnRef(column, "TITLE", javaType), false);
+            new ColumnRef(column, "TITLE", javaType));
     }
 
     enum Case implements ValidatorCase {
@@ -68,8 +68,7 @@ class NestingFieldValidationTest {
                 List.of(new ColumnReferenceField("FilmDetails", "languageName", null, "languageName",
                     new ColumnRef("NAME", "", ""),
                     List.of(new JoinStep.FkJoin("film_language_id_fkey", "", null, List.of(),
-                        new TableRef("language", "", "", List.of()), List.of(), null, "")),
-                    false))),
+                        new TableRef("language", "", "", List.of()), List.of(), null, ""))))),
             List.of(stubbedError("FilmDetails.languageName", ColumnReferenceField.class))),
 
         STUBBED_NESTED_LEAF_INSIDE_NESTED_NESTING("stubbed variant inside a NestingField inside a NestingField → recursive walk surfaces it",
@@ -84,8 +83,7 @@ class NestingFieldValidationTest {
                     List.of(new ColumnReferenceField("FilmMeta", "languageName", null, "languageName",
                         new ColumnRef("NAME", "", ""),
                         List.of(new JoinStep.FkJoin("film_language_id_fkey", "", null, List.of(),
-                            new TableRef("language", "", "", List.of()), List.of(), null, "")),
-                        false))))),
+                            new TableRef("language", "", "", List.of()), List.of(), null, ""))))))),
             List.of(stubbedError("FilmMeta.languageName", ColumnReferenceField.class)));
 
         private final String description;
@@ -156,7 +154,7 @@ class NestingFieldValidationTest {
             List.of(
                 titleOn("FilmDetails", "title", "java.lang.String"),
                 new ColumnField("FilmDetails", "extra", null, "extra",
-                    new ColumnRef("extra", "EXTRA", "java.lang.String"), false)));
+                    new ColumnRef("extra", "EXTRA", "java.lang.String"))));
         assertThat(validate(schema))
             .extracting(ValidationError::message)
             .containsExactly(
@@ -194,11 +192,11 @@ class NestingFieldValidationTest {
         var filmMeta = new NestingField("FilmDetails", "meta", null,
             new ReturnTypeRef.TableBoundReturnType("FilmMeta", FILM_TABLE, new FieldWrapper.Single(true)),
             List.of(new ColumnField("FilmMeta", "label", null, "label",
-                new ColumnRef("title", "TITLE", "java.lang.String"), false)));
+                new ColumnRef("title", "TITLE", "java.lang.String"))));
         var adMeta = new NestingField("FilmDetails", "meta", null,
             new ReturnTypeRef.TableBoundReturnType("FilmMeta", ADVERTISEMENT_TABLE, new FieldWrapper.Single(true)),
             List.of(new ColumnField("FilmMeta", "label", null, "label",
-                new ColumnRef("headline", "HEADLINE", "java.lang.String"), false)));
+                new ColumnRef("headline", "HEADLINE", "java.lang.String"))));
         var schema = twoParentSchema(List.of(filmMeta), List.of(adMeta));
         assertThat(validate(schema))
             .extracting(ValidationError::message)
@@ -211,13 +209,11 @@ class NestingFieldValidationTest {
         var columnRefFirst = new ColumnReferenceField("FilmDetails", "langName", null, "langName",
             new ColumnRef("NAME", "", ""),
             List.of(new JoinStep.FkJoin("film_language_id_fkey", "", null, List.of(),
-                new TableRef("language", "", "", List.of()), List.of(), null, "")),
-            false);
+                new TableRef("language", "", "", List.of()), List.of(), null, "")));
         var columnRefSecond = new ColumnReferenceField("FilmDetails", "langName", null, "langName",
             new ColumnRef("NAME", "", ""),
             List.of(new JoinStep.FkJoin("advertisement_language_id_fkey", "", null, List.of(),
-                new TableRef("language", "", "", List.of()), List.of(), null, "")),
-            false);
+                new TableRef("language", "", "", List.of()), List.of(), null, "")));
         var schema = twoParentSchema(List.of(columnRefFirst), List.of(columnRefSecond));
         // Shape check reports "not yet supported" for the shared non-column leaf. The per-field
         // stubbed-variant walk fires twice — once per parent — surfacing the ColumnReferenceField

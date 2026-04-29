@@ -99,7 +99,7 @@ public final class TestFixtures {
     public static ChildField.ColumnField columnField(String parentType, String name, String columnName,
                                                       String javaName, String columnClass) {
         return new ChildField.ColumnField(parentType, name, null, columnName,
-            new ColumnRef(columnName, javaName, columnClass), false);
+            new ColumnRef(columnName, javaName, columnClass));
     }
 
     public static ChildField.NodeIdField nodeIdField(String parentType, String name, String nodeTypeId, List<ColumnRef> keyColumns) {

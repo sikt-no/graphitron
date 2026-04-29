@@ -17,6 +17,7 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -124,9 +125,21 @@ class ServiceCatalog {
     /**
      * Loads the service class and method via reflection and classifies each parameter.
      *
-     * <p>Parameters whose name matches a GraphQL argument get {@link ParamSource.Arg};
-     * parameters whose name matches a context key get {@link ParamSource.Context};
-     * all others are classified by {@link #classifySourcesType}.
+     * <p>{@code argByJavaName} maps each Java parameter name that should bind to a GraphQL argument
+     * to that argument's name. For a field without {@code @field(name:)} overrides on its arguments
+     * the map is identity ({@code argName -> argName}); for fields with overrides the key is the
+     * override target (the desired Java parameter name) and the value is the GraphQL argument name.
+     * The caller (FieldBuilder) is responsible for collision detection when building the map.
+     *
+     * <p>Parameters whose name appears as a key in {@code argByJavaName} get {@link ParamSource.Arg}
+     * with {@link ParamSource.Arg#graphqlArgName()} set to the corresponding value; parameters
+     * whose name matches a context key get {@link ParamSource.Context}; all others are classified
+     * by {@link #classifySourcesType}.
+     *
+     * <p>If a key in {@code argByJavaName} that constitutes an explicit override
+     * ({@code key != value}) does not appear among the resolved method's parameter names, the
+     * method fails with a typo-guard message naming the directive site, the override target, and
+     * the available parameter names.
      *
      * <p>{@code parentPkColumns} is the primary-key column list of the parent type's table.
      * Pass {@link List#of()} when the parent is a root operation type or has no backing table.
@@ -153,7 +166,7 @@ class ServiceCatalog {
             + "@table-bound return type. Lets the emitter declare a typed Result<XRecord> "
             + "(or XRecord) return rather than Object.")
     ServiceReflectionResult reflectServiceMethod(String className, String methodName,
-            Set<String> argNames, Set<String> ctxKeys, List<ColumnRef> parentPkColumns,
+            Map<String, String> argByJavaName, Set<String> ctxKeys, List<ColumnRef> parentPkColumns,
             TypeName expectedReturnType) {
         if (className == null || methodName == null) {
             return new ServiceReflectionResult(null, "service reference is incomplete");
@@ -184,6 +197,10 @@ class ServiceCatalog {
             if (Arrays.stream(javaMethod.getParameters()).anyMatch(p -> !p.isNamePresent())) {
                 emitParametersWarning();
             }
+            String typoGuard = checkOverrideTargets(argByJavaName, javaMethod, methodName, className);
+            if (typoGuard != null) {
+                return new ServiceReflectionResult(null, typoGuard);
+            }
             var params = new ArrayList<MethodRef.Param>();
             for (var p : javaMethod.getParameters()) {
                 if (org.jooq.DSLContext.class.isAssignableFrom(p.getType())) {
@@ -195,8 +212,10 @@ class ServiceCatalog {
                 String pName = p.isNamePresent() ? p.getName() : null;
                 String displayName = pName != null ? pName : p.getType().getSimpleName();
                 String typeName = p.getParameterizedType().getTypeName();
-                if (pName != null && argNames.contains(pName)) {
-                    params.add(new MethodRef.Param.Typed(displayName, typeName, new ParamSource.Arg(argExtraction(typeName))));
+                String resolvedArgName = pName != null ? argByJavaName.get(pName) : null;
+                if (resolvedArgName != null) {
+                    params.add(new MethodRef.Param.Typed(displayName, typeName,
+                        new ParamSource.Arg(argExtraction(typeName), resolvedArgName)));
                 } else if (pName != null && ctxKeys.contains(pName)) {
                     params.add(new MethodRef.Param.Typed(displayName, typeName, new ParamSource.Context()));
                 } else {
@@ -216,7 +235,7 @@ class ServiceCatalog {
                             return new ServiceReflectionResult(null,
                                 "parameter '" + displayName + "' in method '" + methodName
                                 + "' does not match any GraphQL argument or context key on this field"
-                                + " — available GraphQL arguments: " + formatNameSet(argNames)
+                                + " — available GraphQL arguments: " + formatNameSet(argByJavaName.keySet())
                                 + "; available context keys: " + formatNameSet(ctxKeys));
                         }
                         String dtoReason = dtoSourcesRejectionReason(p.getParameterizedType());
@@ -240,12 +259,53 @@ class ServiceCatalog {
     }
 
     /**
+     * Post-reflection typo guard for {@code @field(name:)} overrides on argument sites.
+     *
+     * <p>Iterates {@code argByJavaName} entries that constitute explicit overrides
+     * ({@code javaTarget != graphqlArgName}) and verifies each {@code javaTarget} is among the
+     * resolved method's parameter names. Returns a failure message when any override target is
+     * absent, naming the directive site (the GraphQL argument name), the override target, and
+     * the actual parameter list. Returns {@code null} when every override target resolves.
+     *
+     * <p>Identity entries ({@code javaTarget == graphqlArgName}) skip this guard: an unresolved
+     * identity entry produces the existing per-parameter "does not match any GraphQL argument"
+     * error inside the main loop, which is already actionable.
+     */
+    private static String checkOverrideTargets(Map<String, String> argByJavaName,
+                                               java.lang.reflect.Method javaMethod,
+                                               String methodName, String className) {
+        var paramNames = Arrays.stream(javaMethod.getParameters())
+            .filter(java.lang.reflect.Parameter::isNamePresent)
+            .map(java.lang.reflect.Parameter::getName)
+            .collect(Collectors.toCollection(java.util.LinkedHashSet::new));
+        for (var entry : argByJavaName.entrySet()) {
+            String javaTarget = entry.getKey();
+            String argName = entry.getValue();
+            if (javaTarget.equals(argName)) continue;
+            if (!paramNames.contains(javaTarget)) {
+                return "@field(name: \"" + javaTarget + "\") on argument '" + argName
+                    + "' references Java parameter '" + javaTarget
+                    + "', but method '" + methodName + "' in class '" + className
+                    + "' has parameters " + formatNameSet(paramNames);
+            }
+        }
+        return null;
+    }
+
+    /**
      * Loads the table-method class and method via reflection and classifies each parameter.
      *
      * <p>Parameters whose type is assignable to {@link org.jooq.Table} get {@link ParamSource.Table};
-     * parameters whose name matches a GraphQL argument get {@link ParamSource.Arg};
+     * parameters whose name appears as a key in {@code argByJavaName} get {@link ParamSource.Arg}
+     * with {@link ParamSource.Arg#graphqlArgName()} set to the corresponding value;
      * parameters whose name matches a context key get {@link ParamSource.Context}.
      * Any other parameter is an error.
+     *
+     * <p>{@code argByJavaName} carries the Java-target → GraphQL-arg-name mapping per
+     * {@link #reflectServiceMethod} (identity entries for unset overrides, override entries for
+     * arguments carrying {@code @field(name:)}). Override entries that target the {@code Table<?>}
+     * parameter, or that point at non-existent Java parameters, are rejected with a typo-guard
+     * message naming the directive site and the available parameter names.
      *
      * <p>If the compiler was not invoked with {@code -parameters}, any parameter may lack a name.
      * A warning is logged proactively as soon as any nameless parameter is detected — even if
@@ -266,7 +326,7 @@ class ServiceCatalog {
             + "@table-bound return type. Lets the emitter declare <SpecificTable> table = "
             + "Method.x(...) without a downcast.")
     ServiceReflectionResult reflectTableMethod(String className, String methodName,
-            Set<String> argNames, Set<String> ctxKeys, ClassName expectedReturnClass) {
+            Map<String, String> argByJavaName, Set<String> ctxKeys, ClassName expectedReturnClass) {
         if (className == null || methodName == null) {
             return new ServiceReflectionResult(null, "table method reference is incomplete");
         }
@@ -297,6 +357,10 @@ class ServiceCatalog {
             if (Arrays.stream(javaMethod.getParameters()).anyMatch(p -> !p.isNamePresent())) {
                 emitParametersWarning();
             }
+            String tableTypoGuard = checkTableMethodOverrideTargets(argByJavaName, javaMethod, methodName, className);
+            if (tableTypoGuard != null) {
+                return new ServiceReflectionResult(null, tableTypoGuard);
+            }
             var params = new ArrayList<MethodRef.Param>();
             boolean foundTable = false;
             for (var p : javaMethod.getParameters()) {
@@ -314,8 +378,10 @@ class ServiceCatalog {
                         + "' — compile with -parameters flag (see warning above for instructions)");
                 }
                 String typeName = p.getParameterizedType().getTypeName();
-                if (argNames.contains(pName)) {
-                    params.add(new MethodRef.Param.Typed(pName, typeName, new ParamSource.Arg(argExtraction(typeName))));
+                String resolvedArgName = argByJavaName.get(pName);
+                if (resolvedArgName != null) {
+                    params.add(new MethodRef.Param.Typed(pName, typeName,
+                        new ParamSource.Arg(argExtraction(typeName), resolvedArgName)));
                 } else if (ctxKeys.contains(pName)) {
                     params.add(new MethodRef.Param.Typed(pName, typeName, new ParamSource.Context()));
                 } else {
@@ -414,6 +480,33 @@ class ServiceCatalog {
         } catch (ClassNotFoundException e) {
             return new ServiceReflectionResult(null, "class '" + className + "' could not be loaded");
         }
+    }
+
+    /**
+     * {@code @tableMethod}-specific override-target check: rejects override entries that point
+     * at the {@code Table<?>} parameter slot, then defers to the same logic as
+     * {@link #checkOverrideTargets} for missing-parameter detection.
+     */
+    private static String checkTableMethodOverrideTargets(Map<String, String> argByJavaName,
+                                                          java.lang.reflect.Method javaMethod,
+                                                          String methodName, String className) {
+        var tableParamNames = Arrays.stream(javaMethod.getParameters())
+            .filter(p -> org.jooq.Table.class.isAssignableFrom(p.getType()))
+            .filter(java.lang.reflect.Parameter::isNamePresent)
+            .map(java.lang.reflect.Parameter::getName)
+            .collect(Collectors.toCollection(java.util.LinkedHashSet::new));
+        for (var entry : argByJavaName.entrySet()) {
+            String javaTarget = entry.getKey();
+            String argName = entry.getValue();
+            if (javaTarget.equals(argName)) continue;
+            if (tableParamNames.contains(javaTarget)) {
+                return "@field(name: \"" + javaTarget + "\") on argument '" + argName
+                    + "' targets the Table<?> parameter of @tableMethod '" + methodName
+                    + "' in class '" + className + "' — the Table<?> slot is reserved and cannot be"
+                    + " bound to a GraphQL argument";
+            }
+        }
+        return checkOverrideTargets(argByJavaName, javaMethod, methodName, className);
     }
 
     private void emitParametersWarning() {

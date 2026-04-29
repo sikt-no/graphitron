@@ -156,4 +156,25 @@ class TestServiceStub {
     public static Result<FilmRecord> getFilmsWithSetOfDtoSources(java.util.Set<TestDtoStub> keys) {
         throw new UnsupportedOperationException();
     }
+
+    // ===== @field(name:) override on argument site (R41) =====
+
+    /**
+     * Takes parameters {@code inputs} (plural) and {@code dryRun}. Used by override tests
+     * where the GraphQL mutation declares {@code input: [...] @field(name: "inputs")} so the
+     * Java parameter name binds to a differently-named GraphQL argument.
+     */
+    public static String runWithRenamedInputs(java.util.List<TestDtoStub> inputs, Boolean dryRun) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Takes a String parameter named {@code mode}. Used to verify the @field(name:) override
+     * on an enum-typed GraphQL argument: the GraphQL arg is named {@code direction} but binds
+     * to the Java parameter {@code mode}, exercising both the override and the text-enum
+     * mapping enrichment in {@code FieldBuilder.enrichArgExtractions}.
+     */
+    public static String runWithEnumOverride(String mode) {
+        throw new UnsupportedOperationException();
+    }
 }

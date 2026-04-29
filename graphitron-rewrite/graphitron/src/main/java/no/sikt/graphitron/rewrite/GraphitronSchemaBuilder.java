@@ -589,7 +589,7 @@ public class GraphitronSchemaBuilder {
         assertDirective(ctx, DIR_NOT_GENERATED);
         assertDirective(ctx, DIR_MULTITABLE_REFERENCE);
         assertDirective(ctx, DIR_NODE_ID, ARG_TYPE_NAME);
-        assertDirective(ctx, DIR_FIELD, ARG_NAME, ARG_JAVA_NAME);
+        assertDirective(ctx, DIR_FIELD, ARG_NAME);
         assertDirective(ctx, DIR_REFERENCE, ARG_PATH);
         assertDirective(ctx, DIR_ERROR, ARG_HANDLERS);
         assertDirective(ctx, DIR_TABLE_METHOD);

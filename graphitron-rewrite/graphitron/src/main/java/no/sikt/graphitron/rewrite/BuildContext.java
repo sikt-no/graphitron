@@ -100,7 +100,6 @@ class BuildContext {
     static final String ARG_TYPE_ID            = "typeId";
     static final String ARG_KEY_COLUMNS        = "keyColumns";
     static final String ARG_TYPE_NAME          = "typeName";
-    static final String ARG_JAVA_NAME          = "javaName";
     static final String ARG_PATH               = "path";
     static final String ARG_KEY                = "key";
     static final String ARG_CONDITION          = "condition";
@@ -621,7 +620,7 @@ class BuildContext {
             }
         }
         if (className == null || methodName == null || svc == null) return null;
-        var result = svc.reflectTableMethod(className, methodName, Set.of(), Set.of(), null);
+        var result = svc.reflectTableMethod(className, methodName, Map.of(), Set.of(), null);
         return result.failed() ? null : result.ref();
     }
 
@@ -686,7 +685,7 @@ class BuildContext {
         var cond = readConditionDirective(field);
         if (cond == null) return Optional.empty();
         var result = svc.reflectTableMethod(cond.className(), cond.methodName(),
-            Set.of(inputFieldName), Set.copyOf(cond.contextArguments()), null);
+            Map.of(inputFieldName, inputFieldName), Set.copyOf(cond.contextArguments()), null);
         if (result.failed()) {
             errors.add("input field '" + inputFieldName + "' @condition: " + result.failureReason());
             return Optional.empty();

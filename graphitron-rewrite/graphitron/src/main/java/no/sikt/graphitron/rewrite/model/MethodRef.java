@@ -63,8 +63,21 @@ public interface MethodRef {
     default List<CallParam> callParams() {
         return params().stream()
             .filter(p -> p.source() instanceof ParamSource.Arg || p.source() instanceof ParamSource.Context)
-            .map(p -> new CallParam(p.name(), toCallSiteExtraction(p), false, p.typeName()))
+            .map(p -> new CallParam(callParamName(p), toCallSiteExtraction(p), false, p.typeName()))
             .toList();
+    }
+
+    /**
+     * The runtime lookup key for {@link CallParam}: the GraphQL argument key for
+     * {@link ParamSource.Arg} (which may diverge from the Java identifier under
+     * {@code @field(name:)}), and the context key (= parameter name) for
+     * {@link ParamSource.Context}.
+     */
+    private static String callParamName(Param p) {
+        return switch (p.source()) {
+            case ParamSource.Arg arg -> arg.graphqlArgName();
+            default                  -> p.name();
+        };
     }
 
     private static CallSiteExtraction toCallSiteExtraction(Param p) {
