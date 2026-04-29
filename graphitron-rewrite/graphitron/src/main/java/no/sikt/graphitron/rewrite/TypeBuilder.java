@@ -2,11 +2,16 @@ package no.sikt.graphitron.rewrite;
 
 import graphql.language.SourceLocation;
 
+import graphql.schema.GraphQLFieldDefinition;
 import graphql.schema.GraphQLInputObjectField;
 import graphql.schema.GraphQLInputObjectType;
 import graphql.schema.GraphQLInterfaceType;
+import graphql.schema.GraphQLList;
 import graphql.schema.GraphQLNamedType;
+import graphql.schema.GraphQLNonNull;
 import graphql.schema.GraphQLObjectType;
+import graphql.schema.GraphQLScalarType;
+import graphql.schema.GraphQLType;
 import graphql.schema.GraphQLTypeUtil;
 import graphql.schema.GraphQLUnionType;
 import no.sikt.graphitron.rewrite.JooqCatalog;
@@ -482,18 +487,66 @@ class TypeBuilder {
         return new TableInterfaceType(name, location, discriminatorColumn, tableOpt.get(), List.of());
     }
 
-    private ErrorType buildErrorType(GraphQLObjectType objType) {
+    private GraphitronType buildErrorType(GraphQLObjectType objType) {
         String name = objType.getName();
         SourceLocation location = locationOf(objType);
+
+        // Structural field check (rule 6 + path/message contract):
+        // every @error type declares exactly path: [String!]! and message: String!.
+        // Producer side of the load-bearing classifier check
+        // "error-type.path-message-fields" — the consumer is the runtime payload-factory
+        // call site that lands in C3 (`new SomeError(path, msg)`).
+        List<String> rejectReasons = new ArrayList<>();
+        var pathField = objType.getFieldDefinition("path");
+        if (pathField == null) {
+            rejectReasons.add("missing required field 'path: [String!]!'");
+        } else if (!isStringNonNullListNonNull(pathField.getType())) {
+            rejectReasons.add("'path' must be declared as [String!]! (got '"
+                + GraphQLTypeUtil.simplePrint(pathField.getType()) + "')");
+        }
+        var messageField = objType.getFieldDefinition("message");
+        if (messageField == null) {
+            rejectReasons.add("missing required field 'message: String!'");
+        } else if (!isStringNonNull(messageField.getType())) {
+            rejectReasons.add("'message' must be declared as String! (got '"
+                + GraphQLTypeUtil.simplePrint(messageField.getType()) + "')");
+        }
+        var extraFields = objType.getFieldDefinitions().stream()
+            .map(GraphQLFieldDefinition::getName)
+            .filter(n -> !"path".equals(n) && !"message".equals(n))
+            .toList();
+        if (!extraFields.isEmpty()) {
+            rejectReasons.add("@error types may only declare 'path' and 'message'; additional fields not allowed: "
+                + String.join(", ", extraFields));
+        }
+
         var dir = objType.getAppliedDirective(DIR_ERROR);
         var handlersArg = dir.getArgument(ARG_HANDLERS);
         Object value = handlersArg.getValue();
-        List<?> items = value instanceof List<?> l ? l : List.of(value);
-        List<ErrorType.Handler> handlers = items.stream()
-            .filter(v -> v instanceof Map)
-            .map(v -> parseErrorHandler(asMap(v)))
-            .toList();
-        return new ErrorType(name, location, handlers);
+        List<?> items = value instanceof List<?> l ? l : value == null ? List.of() : List.of(value);
+        List<ErrorType.Handler> handlers = new ArrayList<>();
+        for (Object item : items) {
+            if (!(item instanceof Map)) continue;
+            ErrorType.Handler h = parseErrorHandler(asMap(item), rejectReasons);
+            if (h != null) handlers.add(h);
+        }
+
+        if (!rejectReasons.isEmpty()) {
+            return new UnclassifiedType(name, location,
+                "@error type rejected: " + String.join("; ", rejectReasons));
+        }
+        return new ErrorType(name, location, List.copyOf(handlers));
+    }
+
+    private static boolean isStringNonNull(GraphQLType type) {
+        if (!(type instanceof GraphQLNonNull nn)) return false;
+        return nn.getWrappedType() instanceof GraphQLScalarType st && "String".equals(st.getName());
+    }
+
+    private static boolean isStringNonNullListNonNull(GraphQLType type) {
+        if (!(type instanceof GraphQLNonNull outer)) return false;
+        if (!(outer.getWrappedType() instanceof GraphQLList list)) return false;
+        return isStringNonNull(list.getWrappedType());
     }
 
     private GraphitronType buildInputType(GraphQLInputObjectType inputType) {
@@ -670,20 +723,98 @@ class TypeBuilder {
         return false;
     }
 
-    private ErrorType.Handler parseErrorHandler(Map<String, Object> item) {
+    /**
+     * Lifts one entry from the {@code handlers} array on an {@code @error} directive into the
+     * sealed {@link ErrorType.Handler} variant matching the entry's discriminator. Returns
+     * {@code null} and appends a reason to {@code rejectReasons} if the entry is unparseable
+     * or violates one of the parse-time intra-handler reject rules (rules 1–5 and the
+     * no-handler case in the {@code error-handling-parity} spec). Channel-level reject rules
+     * (7–9) live with the carrier classifier; rule 6 (no fields beyond path/message) is
+     * applied by the caller.
+     */
+    private ErrorType.Handler parseErrorHandler(Map<String, Object> item, List<String> rejectReasons) {
         Object handlerRaw = item.get(ARG_HANDLER);
-        ErrorHandlerType handlerType = handlerRaw != null
-            ? ErrorHandlerType.valueOf(handlerRaw.toString())
-            : null;
-        if (handlerType == null) {
-            throw new IllegalStateException("Missing required 'handler' field in @error handler");
+        if (handlerRaw == null) {
+            rejectReasons.add("@error handler entry missing required 'handler' field");
+            return null;
         }
-        String className = Optional.ofNullable(item.get(ARG_CLASS_NAME)).map(Object::toString).map(String::strip).orElse(null);
-        String code = Optional.ofNullable(item.get(ARG_CODE)).map(Object::toString).map(String::strip).orElse(null);
-        String sqlState = Optional.ofNullable(item.get(ARG_SQL_STATE)).map(Object::toString).map(String::strip).orElse(null);
-        String matches = Optional.ofNullable(item.get(ARG_MATCHES)).map(Object::toString).map(String::strip).orElse(null);
-        String description = Optional.ofNullable(item.get(ARG_DESCRIPTION)).map(Object::toString).map(String::strip).orElse(null);
-        return new ErrorType.Handler(handlerType, className, code, sqlState, matches, description);
+        ErrorHandlerType handlerType;
+        try {
+            handlerType = ErrorHandlerType.valueOf(handlerRaw.toString());
+        } catch (IllegalArgumentException e) {
+            rejectReasons.add("@error handler entry has unknown 'handler' value '" + handlerRaw
+                + "' (expected GENERIC, DATABASE, or VALIDATION)");
+            return null;
+        }
+        String className = strip(item.get(ARG_CLASS_NAME));
+        String code = strip(item.get(ARG_CODE));
+        String sqlState = strip(item.get(ARG_SQL_STATE));
+        String matches = strip(item.get(ARG_MATCHES));
+        String description = strip(item.get(ARG_DESCRIPTION));
+        Optional<String> matchesOpt = Optional.ofNullable(matches);
+        Optional<String> descriptionOpt = Optional.ofNullable(description);
+
+        switch (handlerType) {
+            case GENERIC -> {
+                // Rule 1: GENERIC requires className.
+                if (className == null) {
+                    rejectReasons.add("@error handler {handler: GENERIC} missing required 'className'");
+                    return null;
+                }
+                // Rule 2: GENERIC ignores SQL discriminators.
+                if (sqlState != null || code != null) {
+                    rejectReasons.add("@error handler {handler: GENERIC} cannot carry 'sqlState' or 'code'"
+                        + " (those apply to DATABASE only)");
+                    return null;
+                }
+                return new ErrorType.ExceptionHandler(className, matchesOpt, descriptionOpt);
+            }
+            case DATABASE -> {
+                // Rule 3: DATABASE cannot AND both vendor discriminators.
+                if (sqlState != null && code != null) {
+                    rejectReasons.add("@error handler {handler: DATABASE} cannot carry both 'sqlState' and 'code'"
+                        + " (vendor-conflicting); split into two entries — one per discriminator");
+                    return null;
+                }
+                // Rule 4: DATABASE no longer matches on class identity; explicit className is misleading.
+                if (className != null) {
+                    rejectReasons.add("@error handler {handler: DATABASE} cannot carry 'className'"
+                        + " (DATABASE matches any SQLException; use {handler: GENERIC, className: \"...\"} for class-narrowed matching)");
+                    return null;
+                }
+                if (sqlState != null) {
+                    return new ErrorType.SqlStateHandler(sqlState, matchesOpt, descriptionOpt);
+                }
+                if (code != null) {
+                    return new ErrorType.VendorCodeHandler(code, matchesOpt, descriptionOpt);
+                }
+                // No-discriminator DATABASE lifts to ExceptionHandler(SQLException). The legacy
+                // "DataAccessException-only" nominal match becomes a documented behaviour shift.
+                return new ErrorType.ExceptionHandler("java.sql.SQLException", matchesOpt, descriptionOpt);
+            }
+            case VALIDATION -> {
+                // Rule 5: VALIDATION takes neither discriminators nor matches.
+                List<String> disallowed = new ArrayList<>();
+                if (className != null) disallowed.add("className");
+                if (sqlState != null) disallowed.add("sqlState");
+                if (code != null) disallowed.add("code");
+                if (matches != null) disallowed.add("matches");
+                if (!disallowed.isEmpty()) {
+                    rejectReasons.add("@error handler {handler: VALIDATION} cannot carry "
+                        + String.join(", ", disallowed)
+                        + " (the matched class is implicitly ValidationViolationGraphQLException; SQL discriminators do not apply)");
+                    return null;
+                }
+                return new ErrorType.ValidationHandler(descriptionOpt);
+            }
+        }
+        throw new IllegalStateException("unreachable: " + handlerType);
+    }
+
+    private static String strip(Object value) {
+        if (value == null) return null;
+        String s = value.toString().strip();
+        return s.isEmpty() ? null : s;
     }
 
     // ===== Conflict detection =====

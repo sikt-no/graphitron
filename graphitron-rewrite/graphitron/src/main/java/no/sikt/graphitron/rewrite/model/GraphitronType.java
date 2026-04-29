@@ -5,8 +5,8 @@ import graphql.schema.GraphQLEnumType;
 import graphql.schema.GraphQLInputObjectType;
 import graphql.schema.GraphQLObjectType;
 
-import no.sikt.graphitron.rewrite.model.ErrorHandlerType;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Classifies every named GraphQL type. Determines what Graphitron generates for a type
@@ -183,7 +183,8 @@ public sealed interface GraphitronType
      * An object type annotated with {@code @error}. Maps Java exceptions to GraphQL error responses.
      *
      * <p>{@code handlers} holds one {@link Handler} per entry in the {@code handlers}
-     * argument of the {@code @error} directive.
+     * argument of the {@code @error} directive, lifted into the variant whose discriminator
+     * the matcher keys off (exception class identity, SQL state, vendor code, validation kind).
      */
     record ErrorType(
         String name,
@@ -192,21 +193,63 @@ public sealed interface GraphitronType
     ) implements GraphitronType {
 
         /**
-         * One entry in the {@code handlers} argument of the {@code @error} directive.
-         *
-         * <p>{@code handlerType} is DATABASE or GENERIC.
-         * {@code className} is the fully-qualified Java exception class name; may be {@code null}
-         * for DATABASE handlers. {@code code}, {@code sqlState}, and {@code matches} are optional
-         * discriminators; {@code description} is an optional user-facing message.
+         * One entry in the {@code handlers} argument of the {@code @error} directive. Sealed by
+         * matcher discriminator; the parser lifts each SDL entry into one variant per the
+         * {@code error-handling-parity} spec's parse-time table.
          */
-        public record Handler(
-            ErrorHandlerType handlerType,
-            String className,
-            String code,
+        public sealed interface Handler
+            permits ExceptionHandler, SqlStateHandler, VendorCodeHandler, ValidationHandler {
+
+            /** Optional substring filter on the matched exception's {@code getMessage()}. */
+            Optional<String> matches();
+
+            /** Optional user-facing description. Falls back to the exception's message at runtime. */
+            Optional<String> description();
+        }
+
+        /**
+         * Matches by exception class identity, walking the cause chain.
+         * Lift target for {@code {handler: GENERIC, className: ...}} and the no-discriminator
+         * {@code {handler: DATABASE}} (which lifts to {@code ExceptionHandler(java.sql.SQLException)}).
+         */
+        public record ExceptionHandler(
+            String exceptionClassName,
+            Optional<String> matches,
+            Optional<String> description
+        ) implements Handler {}
+
+        /**
+         * Matches any {@link java.sql.SQLException} in the cause chain whose
+         * {@code getSQLState()} equals {@code sqlState}.
+         * Lift target for {@code {handler: DATABASE, sqlState: ...}}.
+         */
+        public record SqlStateHandler(
             String sqlState,
-            String matches,
-            String description
-        ) {}
+            Optional<String> matches,
+            Optional<String> description
+        ) implements Handler {}
+
+        /**
+         * Matches any {@link java.sql.SQLException} in the cause chain whose
+         * {@code getErrorCode()} string-equals {@code vendorCode}.
+         * Lift target for {@code {handler: DATABASE, code: ...}}.
+         */
+        public record VendorCodeHandler(
+            String vendorCode,
+            Optional<String> matches,
+            Optional<String> description
+        ) implements Handler {}
+
+        /**
+         * Catches {@code ValidationViolationGraphQLException} and fans the carried
+         * {@code GraphQLError}s out into typed {@code @error} instances at runtime.
+         * Lift target for {@code {handler: VALIDATION}}.
+         */
+        public record ValidationHandler(
+            Optional<String> description
+        ) implements Handler {
+            @Override public Optional<String> matches() { return Optional.empty(); }
+        }
     }
 
     /**
