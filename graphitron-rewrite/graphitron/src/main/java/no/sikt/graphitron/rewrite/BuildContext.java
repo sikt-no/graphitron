@@ -92,6 +92,7 @@ class BuildContext {
     static final String ARG_RECORD             = "record";
     static final String ARG_SERVICE_REF        = "service";
     static final String ARG_TABLE_METHOD_REF   = "tableMethodReference";
+    static final String ARG_EXTERNAL_FIELD_REF = "reference";
     static final String ARG_METHOD             = "method";
     static final String ARG_VALUE              = "value";
     static final String ARG_NAME               = "name";

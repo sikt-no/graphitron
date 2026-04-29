@@ -24,12 +24,18 @@ directive @field(name: String!, javaName: String) on FIELD_DEFINITION | ARGUMENT
 
 """
 The @externalField directive indicates that the annotated field is
-retrieved using a static method implemented in Java.
-This is typically used when the field's value requires custom logic implemented in Java."
+retrieved using a static method implemented in Java. The referenced
+method takes the parent table as its single parameter and returns a
+jOOQ Field<X> matching the field's scalar type.
+
+The `reference` argument is optional in SDL but required at the
+classifier; omitting it is rejected as an AUTHOR_ERROR. The optional-in-
+SDL shape preserves the order in which conflict-mutual-exclusion checks
+fire against missing-reference checks (the conflict check runs first).
 
 For more information, see documentation [here](https://github.com/sikt-no/graphitron/tree/main/graphitron-codegen-parent/graphitron-java-codegen/README.md#custom-field-logic-with-externalfield).
 """
-directive @externalField on FIELD_DEFINITION
+directive @externalField(reference: ExternalCodeReference) on FIELD_DEFINITION
 
 """Links this schema enum to a Java enum class. Available values are set in the plugin configuration."""
 directive @enum(enumReference: ExternalCodeReference!) on ENUM

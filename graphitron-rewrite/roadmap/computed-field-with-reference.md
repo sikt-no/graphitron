@@ -27,14 +27,14 @@ using a static extension method implemented in Java. The referenced method takes
 the parent table as its single parameter and returns Field<X> matching the
 field's scalar type.
 """
-directive @externalField(reference: ExternalCodeReference!) on FIELD_DEFINITION
+directive @externalField(reference: ExternalCodeReference) on FIELD_DEFINITION
 ```
 
-`ExternalCodeReference` already ships for `@service` etc., with `className` (or deprecated `name` resolved through `RewriteContext.namedReferences()`) and `method`. The `reference` argument is **non-null** on the schema side: omitting it is a graphql-java-side parse error.
+`ExternalCodeReference` already ships for `@service` etc., with `className` (or deprecated `name` resolved through `RewriteContext.namedReferences()`) and `method`. The `reference` argument is **optional in SDL but required at the classifier**: a no-arg `@externalField` parses cleanly, but the classifier rejects it as `AUTHOR_ERROR`. This shape (vs. `ExternalCodeReference!` with the non-null marker) is intentional: it preserves the order in which `detectChildFieldConflict` (in `FieldBuilder` line 1511) fires against missing-reference validation. Mutually-exclusive-directive conflicts (`@service` + `@externalField`, `@externalField` + `@tableMethod`, etc.) are detected before any directive-specific argument check, so existing conflict-test fixtures using `@externalField` no-arg continue to surface the conflict-classification path. Mirrors `@condition`'s `condition: ExternalCodeReference` (also optional-in-SDL with classifier-level handling).
 
 A new constant `ARG_EXTERNAL_FIELD_REF = "reference"` lands in `BuildContext`.
 
-**Existing test fixtures**: `GraphitronSchemaBuilderTest:1225` uses `@externalField` no-arg in the `@externalField on a @table parent → ComputedField` case; update the SDL to add `reference: { className: ..., method: ... }` and switch the assertion to assert classification as `ComputedField` with a populated `MethodRef`. The conflict-test fixtures at lines 3637 and 3672 still use `@externalField` no-arg; those test that mutually-exclusive directives are detected at the directive-presence level, which fires before reference-argument validation, so they continue to pass unchanged. Verify post-implementation.
+**Existing test fixtures**: `GraphitronSchemaBuilderTest:1224` uses `@externalField` no-arg in the `@externalField on a @table parent → ComputedField` case. Once the classifier requires `reference` (1.B), this fixture is split: a `WITH_REFERENCE` case using a valid reference asserts classification as `ComputedField` with a populated `MethodRef`; a `MISSING_REFERENCE` case asserts the no-arg form is rejected as `AUTHOR_ERROR`. The conflict-test fixtures at lines 3803 and 3838 still use `@externalField` no-arg; those test that mutually-exclusive directives (`@service`/`@externalField`, `@externalField`/`@tableMethod`) are detected by `detectChildFieldConflict` at `FieldBuilder.java:1511`, which fires before any directive-specific argument check. Those fixtures continue to surface the conflict-classification path unchanged.
 
 ## Model: `ComputedField` carries a non-null `MethodRef`
 
