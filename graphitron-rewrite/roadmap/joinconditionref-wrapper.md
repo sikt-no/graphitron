@@ -3,6 +3,8 @@ title: "`JoinConditionRef` wrapper"
 status: Backlog
 bucket: cleanup
 priority: 5
+theme: model-cleanup
+depends-on: []
 ---
 
 # `JoinConditionRef` wrapper

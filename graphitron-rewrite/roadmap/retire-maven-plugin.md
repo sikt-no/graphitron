@@ -2,6 +2,8 @@
 title: "Retire `graphitron-maven-plugin` + `graphitron-schema-transform`"
 status: In Progress
 priority: 11
+theme: legacy-migration
+depends-on: [graphitron-lsp]
 ---
 
 # Retire `graphitron-maven-plugin` + `graphitron-schema-transform`

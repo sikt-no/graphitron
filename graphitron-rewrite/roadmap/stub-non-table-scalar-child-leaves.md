@@ -3,6 +3,8 @@ title: "Stub #8: Non-table / scalar / reference child leaves"
 status: Spec
 bucket: stubs
 priority: 2
+theme: model-cleanup
+depends-on: []
 ---
 
 # Stub #8: Non-table / scalar / reference child leaves

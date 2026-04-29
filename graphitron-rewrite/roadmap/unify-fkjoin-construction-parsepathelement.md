@@ -3,6 +3,8 @@ title: "Unify `FkJoin` construction in `parsePathElement`"
 status: Backlog
 bucket: cleanup
 priority: 2
+theme: model-cleanup
+depends-on: []
 ---
 
 # Unify `FkJoin` construction in `parsePathElement`

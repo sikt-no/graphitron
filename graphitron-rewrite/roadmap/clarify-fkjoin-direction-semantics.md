@@ -3,6 +3,8 @@ title: "Clarify `FkJoin` direction semantics"
 status: Backlog
 bucket: architecture
 priority: 11
+theme: model-cleanup
+depends-on: []
 ---
 
 # Clarify `FkJoin` direction semantics

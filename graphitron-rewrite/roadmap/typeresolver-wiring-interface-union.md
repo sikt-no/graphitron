@@ -3,6 +3,8 @@ title: "`TypeResolver` wiring for interface/union types"
 status: Backlog
 bucket: cleanup
 priority: 11
+theme: interface-union
+depends-on: [stub-interface-union-fetchers]
 ---
 
 # `TypeResolver` wiring for interface/union types

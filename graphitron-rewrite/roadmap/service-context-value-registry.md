@@ -2,6 +2,8 @@
 title: "Context-value registry + native multi-tenant fan-out for `@service`"
 status: Spec
 priority: 5
+theme: service
+depends-on: [mutations]
 ---
 
 # Context-value registry + native multi-tenant fan-out for `@service`

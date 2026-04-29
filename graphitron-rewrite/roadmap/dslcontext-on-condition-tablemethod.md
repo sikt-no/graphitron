@@ -3,6 +3,8 @@ title: "`DSLContext` on `@condition` / `@tableMethod` methods"
 status: Backlog
 bucket: architecture
 priority: 6
+theme: service
+depends-on: []
 ---
 
 # `DSLContext` on `@condition` / `@tableMethod` methods

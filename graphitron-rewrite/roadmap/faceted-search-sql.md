@@ -1,6 +1,8 @@
 ---
 title: "Spike: SQL strategies for faceted search"
 status: Spike
+theme: pagination
+depends-on: [faceted-search]
 ---
 
 # Spike: SQL strategies for faceted search

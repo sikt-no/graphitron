@@ -3,6 +3,8 @@ title: "Composite-key `@lookupKey` on list-of-input-object arguments"
 status: Backlog
 bucket: architecture
 priority: 4
+theme: model-cleanup
+depends-on: []
 ---
 
 # Composite-key `@lookupKey` on list-of-input-object arguments

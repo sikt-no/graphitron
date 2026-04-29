@@ -3,6 +3,8 @@ title: "Extract semantic-check helpers from `classifyQueryField`"
 status: Backlog
 bucket: architecture
 priority: 3
+theme: structural-refactor
+depends-on: []
 ---
 
 # Extract semantic-check helpers from `classifyQueryField`

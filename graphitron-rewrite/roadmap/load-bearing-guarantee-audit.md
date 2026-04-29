@@ -2,6 +2,8 @@
 title: "Load-bearing classifier guarantee audit annotations"
 status: In Review
 priority: 14
+theme: structural-refactor
+depends-on: []
 ---
 
 # Load-bearing classifier guarantee audit annotations

@@ -3,6 +3,8 @@ title: "NodeId emission from JSON-encoded row identity"
 status: Backlog
 bucket: architecture
 priority: 12
+theme: nodeid
+depends-on: [stub-interface-union-fetchers, federation-via-federation-jvm]
 ---
 
 # NodeId emission from JSON-encoded row identity

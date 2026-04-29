@@ -2,6 +2,8 @@
 title: "Mutation bodies"
 status: Spec
 priority: 9
+theme: mutations-errors
+depends-on: []
 ---
 
 # Mutation bodies

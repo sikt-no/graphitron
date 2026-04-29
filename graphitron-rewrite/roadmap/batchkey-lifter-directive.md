@@ -3,6 +3,8 @@ title: "`BatchKey` lifter directive"
 status: Backlog
 bucket: architecture
 priority: 1
+theme: service
+depends-on: []
 ---
 
 # `BatchKey` lifter directive

@@ -3,6 +3,8 @@ title: "Drop the assembled-schema rebuild in favour of per-variant graphql-java 
 status: Backlog
 bucket: cleanup
 priority: 10
+theme: pagination
+depends-on: []
 ---
 
 # Drop the assembled-schema rebuild in favour of per-variant graphql-java forms
