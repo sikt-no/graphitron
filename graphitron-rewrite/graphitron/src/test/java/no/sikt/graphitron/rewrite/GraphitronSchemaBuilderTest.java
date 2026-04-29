@@ -1290,6 +1290,22 @@ class GraphitronSchemaBuilderTest {
                 var unc = (no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField) field;
                 assertThat(unc.kind()).isEqualTo(no.sikt.graphitron.rewrite.RejectionKind.AUTHOR_ERROR);
                 assertThat(unc.reason()).contains("noSuchExternalMethod");
+            }),
+
+        EMPTY_REFERENCE(
+            "@externalField with an empty reference {} → UnclassifiedField (AUTHOR_ERROR, missing className)",
+            """
+            type Film @table(name: "film") {
+                isEnglish: Boolean @externalField(reference: {})
+            }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var field = schema.field("Film", "isEnglish");
+                assertThat(field).isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class);
+                var unc = (no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField) field;
+                assertThat(unc.kind()).isEqualTo(no.sikt.graphitron.rewrite.RejectionKind.AUTHOR_ERROR);
+                assertThat(unc.reason()).contains("missing className");
             });
 
         final String sdl;

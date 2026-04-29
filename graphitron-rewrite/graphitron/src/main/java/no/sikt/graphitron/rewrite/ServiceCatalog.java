@@ -416,17 +416,14 @@ class ServiceCatalog {
      * {@code Field}, not the wider {@code Table<?>} that {@code @tableMethod} accepts) and a
      * fixed param shape (exactly one Table<?>, no GraphQL args, no context args).
      *
-     * <p>{@code methodName} is required: callers default it to the GraphQL field name when the
-     * directive omits {@code method:} (see {@code FieldBuilder}'s {@code @externalField} arm).
-     * {@code className} is nullable here because the schema-level {@code className} field is
-     * optional and named-reference resolution may fail upstream; the empty-reference case
-     * surfaces as "missing className".
+     * <p>Both {@code className} and {@code methodName} are required: the {@code @externalField}
+     * arm in {@code FieldBuilder} surfaces a targeted "missing className" error before this call
+     * and defaults {@code methodName} to the GraphQL field name when the directive omits
+     * {@code method:}. Empty-reference and named-reference-lookup-failure cases never reach this
+     * method.
      */
     ServiceReflectionResult reflectExternalField(String className, String methodName,
             ClassName parentTableClass) {
-        if (className == null) {
-            return new ServiceReflectionResult(null, "missing className");
-        }
         try {
             Class<?> cls = Class.forName(className);
             var methods = Arrays.stream(cls.getDeclaredMethods())
