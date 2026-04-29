@@ -300,7 +300,7 @@ public class TypeClassGenerator {
     static java.util.List<ColumnRef> fkMirrorSourceColumns(ChildField.NodeIdReferenceField nrf) {
         if (nrf.joinPath().size() != 1) return null;
         if (!(nrf.joinPath().get(0) instanceof no.sikt.graphitron.rewrite.model.JoinStep.FkJoin fk)) return null;
-        if (!fk.sourceTable().tableName().equalsIgnoreCase(nrf.parentTable().tableName())) return null;
+        if (!fk.originTable().tableName().equalsIgnoreCase(nrf.parentTable().tableName())) return null;
         if (fk.targetColumns().size() != nrf.nodeKeyColumns().size()) return null;
         for (int i = 0; i < fk.targetColumns().size(); i++) {
             if (!fk.targetColumns().get(i).sqlName().equalsIgnoreCase(nrf.nodeKeyColumns().get(i).sqlName())) {
