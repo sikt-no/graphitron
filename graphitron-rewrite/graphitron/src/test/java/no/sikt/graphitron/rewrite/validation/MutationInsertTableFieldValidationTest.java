@@ -9,6 +9,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
+import java.util.Optional;
 
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.stubbedError;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
@@ -19,7 +20,7 @@ class MutationInsertTableFieldValidationTest {
     enum Case implements ValidatorCase {
 
         STUBBED("insert mutation field — not yet implemented, produces stubbed-variant error",
-            new MutationInsertTableField("Mutation", "createFilm", null, new ReturnTypeRef.ScalarReturnType("Film", new FieldWrapper.Single(true))),
+            new MutationInsertTableField("Mutation", "createFilm", null, new ReturnTypeRef.ScalarReturnType("Film", new FieldWrapper.Single(true)), null, Optional.empty()),
             List.of(stubbedError("Mutation.createFilm", MutationInsertTableField.class)));
 
         private final String description;

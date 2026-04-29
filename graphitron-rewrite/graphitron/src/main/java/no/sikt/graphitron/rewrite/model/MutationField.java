@@ -1,9 +1,9 @@
 package no.sikt.graphitron.rewrite.model;
 
 import graphql.language.SourceLocation;
+import no.sikt.graphitron.rewrite.ArgumentRef;
 import no.sikt.graphitron.rewrite.JooqCatalog;
 
-import java.util.List;
 import java.util.Optional;
 
 /**
@@ -16,25 +16,47 @@ import java.util.Optional;
  * convenience constructor on each variant.
  */
 public sealed interface MutationField extends RootField
-    permits MutationField.MutationInsertTableField, MutationField.MutationUpdateTableField,
-            MutationField.MutationDeleteTableField,
-            MutationField.MutationUpsertTableField, MutationField.MutationServiceTableField,
+    permits MutationField.DmlTableField, MutationField.MutationServiceTableField,
             MutationField.MutationServiceRecordField {
 
     /** The typed-error channel resolved for this fetcher, when its payload carries an {@code errors} field. */
     Optional<ErrorChannel> errorChannel();
+
+    /**
+     * Sealed common supertype of the four DML mutation variants. Carries the per-field data the
+     * INSERT / UPDATE / DELETE / UPSERT emitters share: the {@code @table} input argument that
+     * drives the DML statement, and the optional NodeId metadata used when the return type is
+     * {@code ScalarReturnType("ID")}. Introduced so {@code buildMutationReturnExpression} can
+     * dispatch over a single supertype.
+     *
+     * <p>{@code nodeIdMeta} is {@link Optional#of(Object)} for {@code ScalarReturnType("ID")}
+     * returns and {@link Optional#empty()} otherwise; the classifier guarantees this invariant
+     * before constructing the variant.
+     */
+    sealed interface DmlTableField extends MutationField
+            permits MutationInsertTableField, MutationUpdateTableField,
+                    MutationDeleteTableField, MutationUpsertTableField {
+        ReturnTypeRef returnType();
+        ArgumentRef.InputTypeArg.TableInputArg tableInputArg();
+        Optional<JooqCatalog.NodeIdMetadata> nodeIdMeta();
+        SourceLocation location();
+    }
 
     record MutationInsertTableField(
         String parentTypeName,
         String name,
         SourceLocation location,
         ReturnTypeRef returnType,
+        ArgumentRef.InputTypeArg.TableInputArg tableInputArg,
+        Optional<JooqCatalog.NodeIdMetadata> nodeIdMeta,
         Optional<ErrorChannel> errorChannel
-    ) implements MutationField {
+    ) implements DmlTableField {
 
-        public MutationInsertTableField(String parentTypeName, String name,
-                                         SourceLocation location, ReturnTypeRef returnType) {
-            this(parentTypeName, name, location, returnType, Optional.empty());
+        public MutationInsertTableField(String parentTypeName, String name, SourceLocation location,
+                                         ReturnTypeRef returnType,
+                                         ArgumentRef.InputTypeArg.TableInputArg tableInputArg,
+                                         Optional<JooqCatalog.NodeIdMetadata> nodeIdMeta) {
+            this(parentTypeName, name, location, returnType, tableInputArg, nodeIdMeta, Optional.empty());
         }
     }
 
@@ -43,44 +65,34 @@ public sealed interface MutationField extends RootField
         String name,
         SourceLocation location,
         ReturnTypeRef returnType,
+        ArgumentRef.InputTypeArg.TableInputArg tableInputArg,
+        Optional<JooqCatalog.NodeIdMetadata> nodeIdMeta,
         Optional<ErrorChannel> errorChannel
-    ) implements MutationField {
+    ) implements DmlTableField {
 
-        public MutationUpdateTableField(String parentTypeName, String name,
-                                         SourceLocation location, ReturnTypeRef returnType) {
-            this(parentTypeName, name, location, returnType, Optional.empty());
+        public MutationUpdateTableField(String parentTypeName, String name, SourceLocation location,
+                                         ReturnTypeRef returnType,
+                                         ArgumentRef.InputTypeArg.TableInputArg tableInputArg,
+                                         Optional<JooqCatalog.NodeIdMetadata> nodeIdMeta) {
+            this(parentTypeName, name, location, returnType, tableInputArg, nodeIdMeta, Optional.empty());
         }
     }
 
-    /**
-     * A {@code @mutation(typeName: DELETE)} field. Carries the resolved target table,
-     * the GraphQL argument name carrying the {@code @table} input, and the per-{@code @lookupKey}
-     * column bindings that drive the WHERE clause of the emitted
-     * {@code deleteFrom(...).where(...)} statement.
-     *
-     * <p>{@code nodeIdMeta} is populated only when {@code returnType} is
-     * {@code ScalarReturnType("ID")}; for other return shapes (e.g. {@code TableBoundReturnType})
-     * it is {@link Optional#empty()}.
-     */
     record MutationDeleteTableField(
         String parentTypeName,
         String name,
         SourceLocation location,
         ReturnTypeRef returnType,
-        String inputArgName,
-        TableRef inputTable,
-        List<InputColumnBinding> fieldBindings,
+        ArgumentRef.InputTypeArg.TableInputArg tableInputArg,
         Optional<JooqCatalog.NodeIdMetadata> nodeIdMeta,
         Optional<ErrorChannel> errorChannel
-    ) implements MutationField {
+    ) implements DmlTableField {
 
-        public MutationDeleteTableField(String parentTypeName, String name,
-                                         SourceLocation location, ReturnTypeRef returnType,
-                                         String inputArgName, TableRef inputTable,
-                                         List<InputColumnBinding> fieldBindings,
+        public MutationDeleteTableField(String parentTypeName, String name, SourceLocation location,
+                                         ReturnTypeRef returnType,
+                                         ArgumentRef.InputTypeArg.TableInputArg tableInputArg,
                                          Optional<JooqCatalog.NodeIdMetadata> nodeIdMeta) {
-            this(parentTypeName, name, location, returnType, inputArgName, inputTable,
-                 fieldBindings, nodeIdMeta, Optional.empty());
+            this(parentTypeName, name, location, returnType, tableInputArg, nodeIdMeta, Optional.empty());
         }
     }
 
@@ -89,12 +101,16 @@ public sealed interface MutationField extends RootField
         String name,
         SourceLocation location,
         ReturnTypeRef returnType,
+        ArgumentRef.InputTypeArg.TableInputArg tableInputArg,
+        Optional<JooqCatalog.NodeIdMetadata> nodeIdMeta,
         Optional<ErrorChannel> errorChannel
-    ) implements MutationField {
+    ) implements DmlTableField {
 
-        public MutationUpsertTableField(String parentTypeName, String name,
-                                         SourceLocation location, ReturnTypeRef returnType) {
-            this(parentTypeName, name, location, returnType, Optional.empty());
+        public MutationUpsertTableField(String parentTypeName, String name, SourceLocation location,
+                                         ReturnTypeRef returnType,
+                                         ArgumentRef.InputTypeArg.TableInputArg tableInputArg,
+                                         Optional<JooqCatalog.NodeIdMetadata> nodeIdMeta) {
+            this(parentTypeName, name, location, returnType, tableInputArg, nodeIdMeta, Optional.empty());
         }
     }
 

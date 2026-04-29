@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.validation;
 
+import no.sikt.graphitron.rewrite.ArgumentRef;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
@@ -26,12 +27,15 @@ class MutationDeleteTableFieldValidationTest {
             new MutationDeleteTableField(
                 "Mutation", "deleteFilm", null,
                 new ReturnTypeRef.ScalarReturnType("ID", new FieldWrapper.Single(true)),
-                "in",
-                new TableRef("film", "FILM", "Film", List.of()),
-                List.of(new InputColumnBinding(
-                    "filmId",
-                    new ColumnRef("film_id", "FILM_ID", "java.lang.Long"),
-                    new CallSiteExtraction.Direct())),
+                new ArgumentRef.InputTypeArg.TableInputArg(
+                    "in", "FilmKey", true, false,
+                    new TableRef("film", "FILM", "Film", List.of()),
+                    List.of(new InputColumnBinding(
+                        "filmId",
+                        new ColumnRef("film_id", "FILM_ID", "java.lang.Long"),
+                        new CallSiteExtraction.Direct())),
+                    Optional.empty(),
+                    List.of()),
                 Optional.empty()),
             List.of());
 
