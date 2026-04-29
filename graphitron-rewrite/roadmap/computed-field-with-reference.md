@@ -27,14 +27,20 @@ using a static extension method implemented in Java. The referenced method takes
 the parent table as its single parameter and returns Field<X> matching the
 field's scalar type.
 """
-directive @externalField(reference: ExternalCodeReference) on FIELD_DEFINITION
+directive @externalField(reference: ExternalCodeReference!) on FIELD_DEFINITION
 ```
 
-`ExternalCodeReference` already ships for `@service` etc., with `className` (or deprecated `name` resolved through `RewriteContext.namedReferences()`) and `method`. The `reference` argument is **optional in SDL but required at the classifier**: a no-arg `@externalField` parses cleanly, but the classifier rejects it as `AUTHOR_ERROR`. This shape (vs. `ExternalCodeReference!` with the non-null marker) is intentional: it preserves the order in which `detectChildFieldConflict` (in `FieldBuilder` line 1511) fires against missing-reference validation. Mutually-exclusive-directive conflicts (`@service` + `@externalField`, `@externalField` + `@tableMethod`, etc.) are detected before any directive-specific argument check, so existing conflict-test fixtures using `@externalField` no-arg continue to surface the conflict-classification path. Mirrors `@condition`'s `condition: ExternalCodeReference` (also optional-in-SDL with classifier-level handling).
+`ExternalCodeReference` already ships for `@service` etc., with `className` (or deprecated `name` resolved through `RewriteContext.namedReferences()`) and `method`. The `reference` argument is **required**: graphql-java's schema validation rejects a no-arg `@externalField` at parse time, before any classifier code runs. This matches the convention used by every other directive that takes an `ExternalCodeReference`: `@service(service: ExternalCodeReference!)`, `@tableMethod(tableMethodReference: ExternalCodeReference!)`, `@enum(enumReference: ExternalCodeReference!)`.
+
+Mandatory-on-schema simplifies the classifier: the `@externalField` arm never has to defensively check for a null/absent `reference`, only for resolution failures (named-ref not registered in `RewriteContext.namedReferences()`, FQN not on classpath, method-not-found, signature mismatch). All such failures are `AUTHOR_ERROR`s, surfaced through the existing `parseExternalRef` and the new `reflectExternalField` paths.
+
+The conflict-test fixtures at `GraphitronSchemaBuilderTest` lines 3803 and 3838 currently use `@externalField` no-arg; they need `reference: { className: "...", method: "..." }` added so the schema parses. Their assertion (mutually-exclusive directives detected by `detectChildFieldConflict` at `FieldBuilder.java:1511`) is unchanged.
 
 A new constant `ARG_EXTERNAL_FIELD_REF = "reference"` lands in `BuildContext`.
 
-**Existing test fixtures**: `GraphitronSchemaBuilderTest:1224` uses `@externalField` no-arg in the `@externalField on a @table parent → ComputedField` case. Once the classifier requires `reference` (1.B), this fixture is split: a `WITH_REFERENCE` case using a valid reference asserts classification as `ComputedField` with a populated `MethodRef`; a `MISSING_REFERENCE` case asserts the no-arg form is rejected as `AUTHOR_ERROR`. The conflict-test fixtures at lines 3803 and 3838 still use `@externalField` no-arg; those test that mutually-exclusive directives (`@service`/`@externalField`, `@externalField`/`@tableMethod`) are detected by `detectChildFieldConflict` at `FieldBuilder.java:1511`, which fires before any directive-specific argument check. Those fixtures continue to surface the conflict-classification path unchanged.
+**Existing test fixtures**: `GraphitronSchemaBuilderTest:1224` uses `@externalField` no-arg in the `@externalField on a @table parent → ComputedField` case. Update the SDL to add `reference: { className: ..., method: ... }` (e.g. `TestExternalFieldStub.rating`); the assertion gains `field.method() != null` alongside the existing `instanceof ComputedField` check. The conflict-test fixtures at lines 3803 and 3838 also use `@externalField` no-arg; add `reference: { className: ..., method: ... }` to each so they parse. Their assertions (mutually-exclusive directives surfaced by `detectChildFieldConflict` at `FieldBuilder.java:1511`) are unchanged.
+
+No `MISSING_REFERENCE` builder-test case is needed: graphql-java rejects no-arg `@externalField` at schema-parse time, so the classifier never sees a missing-reference field.
 
 ## Model: `ComputedField` carries a non-null `MethodRef`
 
@@ -144,11 +150,12 @@ Unit tier (`graphitron/src/test/`):
 - `FetcherEmitterTest`: assert `dataFetcherValue` for a `ComputedField` emits `new ColumnFetcher<>(DSL.field("<name>"))`.
 - `TypeClassGeneratorTest`: assert `$fields()` arm emits `<Class>.<method>(table).as("<name>")`.
 - `GraphitronSchemaBuilderTest.computedFieldClassification`: extend `ComputedFieldCase`:
-  - a `WITH_REFERENCE` case asserting `field.method()` reflects against fixture `FilmExtensions.isEnglish` correctly.
+  - a `WITH_REFERENCE` case asserting `field.method()` reflects against fixture `FilmExtensions.isEnglish` correctly (replaces the existing `SCALAR_RETURN` case).
   - a `WITH_NAMED_REFERENCE` case asserting the deprecated `name:` form (resolved via `RewriteContext.namedReferences()`) works for `@externalField` parity with `@service`.
-  - a `MISSING_REFERENCE` case (no-arg) asserting `UnclassifiedField(AUTHOR_ERROR)` with the "requires a reference argument" message.
   - a `NAME_COLLIDES_WITH_COLUMN` case asserting `UnclassifiedField(AUTHOR_ERROR)` when the GraphQL field name matches a SQL column on the parent `@table` (regression guard for the alias-collision check).
   - a failure case (method not found during reflection) returning `UnclassifiedField(AUTHOR_ERROR)`.
+
+  No `MISSING_REFERENCE` case: graphql-java rejects no-arg `@externalField` at parse time per the schema-side change above. The classifier never sees that path.
 - `ComputedFieldValidationTest`: keep the two existing stubbed cases by toggling them to expect "no errors" once the variant moves to `IMPLEMENTED_LEAVES`. Add a `WITH_LIFT_CONDITION` case asserting the new `DEFERRED` rejection.
 
 Pipeline tier (`FetcherPipelineTest`): run the classifier+generator pipeline on a small schema with one `@externalField` and assert the generated `Film.$fields()` body contains the inlined call and the wiring registers a `ColumnFetcher`.

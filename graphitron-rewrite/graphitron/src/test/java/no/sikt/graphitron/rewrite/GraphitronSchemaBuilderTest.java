@@ -1221,7 +1221,9 @@ class GraphitronSchemaBuilderTest {
         SCALAR_RETURN(
             "@externalField on a @table parent → ComputedField",
             """
-            type Film @table(name: "film") { rating: String @externalField }
+            type Film @table(name: "film") {
+                rating: String @externalField(reference: {className: "no.sikt.graphitron.rewrite.TestExternalFieldStub", method: "rating"})
+            }
             type Query { film: Film }
             """,
             schema -> assertThat(schema.field("Film", "rating")).isInstanceOf(ComputedField.class));
@@ -3800,7 +3802,9 @@ class GraphitronSchemaBuilderTest {
             "@service and @externalField → UnclassifiedField with reason naming both",
             """
             type Film @table(name: "film") {
-                title: String @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"}) @externalField
+                title: String
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"})
+                    @externalField(reference: {className: "no.sikt.graphitron.rewrite.TestExternalFieldStub", method: "rating"})
             }
             type Query { film: Film }
             """,
@@ -3835,7 +3839,7 @@ class GraphitronSchemaBuilderTest {
             type Language @table(name: "language") { name: String }
             type Film @table(name: "film") {
                 language: Language
-                    @externalField
+                    @externalField(reference: {className: "no.sikt.graphitron.rewrite.TestExternalFieldStub", method: "rating"})
                     @tableMethod(tableMethodReference: {className: "com.example.Foo", method: "get"})
             }
             type Query { film: Film }
