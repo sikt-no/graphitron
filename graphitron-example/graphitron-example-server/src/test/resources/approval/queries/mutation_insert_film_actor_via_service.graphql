@@ -1,0 +1,5 @@
+mutation InsertFilmActorViaService($in: FilmActorInsertWrapper!) {
+    insertFilmActorsViaService(in: $in) {
+        insertedCount
+    }
+}
