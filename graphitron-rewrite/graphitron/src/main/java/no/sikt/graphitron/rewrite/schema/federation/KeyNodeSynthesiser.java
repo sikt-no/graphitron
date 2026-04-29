@@ -23,18 +23,16 @@ import java.util.List;
  *
  * <p>Runs in the {@code loadAttributedRegistry} pipeline after {@link FederationLinkApplier}
  * (so the {@code @key} directive declaration is in scope) and before {@code TagApplier}
- * (which iterates {@code @tag}s; ordering is independent but stable).
+ * (which iterates {@code @tag}s; ordering is independent but stable). The orchestrator only
+ * invokes this when {@code federationLink} is true; calling it on a registry without
+ * federation directives in scope would fail validation in
+ * {@code SchemaGenerator.makeExecutableSchema}.
  *
  * <h3>Opt-out</h3>
  * <p>A consumer who writes {@code @key(fields: "id", resolvable: false)} on a {@code @node}
  * type keeps it out of {@code _Entity}. The "already-present" check honours this: if any
  * {@code @key(fields: "id", ...)} is already on the type, no synthesis fires, and the
  * classify-time alternative carries {@code resolvable: false} through to the dispatcher.
- *
- * <h3>No-op when federation is not in use</h3>
- * <p>If the schema has no federation {@code @link}, the whole step is skipped: synthesising a
- * {@code @key} without its declaration would fail validation in
- * {@code SchemaGenerator.makeExecutableSchema}.
  */
 public final class KeyNodeSynthesiser {
 
@@ -50,12 +48,10 @@ public final class KeyNodeSynthesiser {
      * Walks {@code registry} and attaches a synthesised
      * {@code @key(fields: "id", resolvable: true)} directive to every {@code @node}
      * {@link ObjectTypeDefinition} that does not already carry an explicit
-     * {@code @key(fields: "id", ...)}. No-op when no federation {@code @link} is present.
+     * {@code @key(fields: "id", ...)}. Caller is responsible for skipping this step when no
+     * federation {@code @link} is present.
      */
     public static void apply(TypeDefinitionRegistry registry) {
-        if (!FederationLinkApplier.hasFederationLink(registry)) {
-            return;
-        }
         var replacements = new ArrayList<Replacement>();
         for (var def : registry.types().values()) {
             if (def instanceof ObjectTypeDefinition obj
