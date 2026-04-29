@@ -67,7 +67,7 @@ AND'd WHERE.
   have to work with; new encoder API surface, if needed, is its own piece of
   work.
 - **Retiring the synthesis shim.** Tracked at
-  [`retire-id-reference-synthesis-shim.md`](retire-id-reference-synthesis-shim.md).
+  [`retire-synthesis-shims.md`](retire-synthesis-shims.md).
 
 ## Phases (sketches; refine before Ready)
 
@@ -146,5 +146,5 @@ single-round-trip behaviour. Fixture choice covered in Open Questions §4.
   arm.
 - `JooqCatalog` — `findUniqueFkToTable`, `buildQualifierMap`,
   `qualifierForFk`, `localGetQualifier`.
-- `roadmap/retire-id-reference-synthesis-shim.md` — Backlog stub for promoting
-  the per-site WARN to a terminal classifier error post-migration.
+- `roadmap/retire-synthesis-shims.md` — Backlog stub for promoting the
+  per-site WARN to a terminal classifier error post-migration.

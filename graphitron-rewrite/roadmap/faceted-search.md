@@ -2,7 +2,6 @@
 title: "Faceted search on `@asConnection`"
 status: Spec
 priority: 7
-notes: "[spike](faceted-search-sql.md)"
 theme: pagination
 depends-on: []
 ---
@@ -17,7 +16,7 @@ depends-on: []
 > emits one `UNION ALL` aggregate query per Connection request, with
 > each arm computing one facet's counts under its filter-minus-self
 > predicate. Phase 1 spike confirmed this shape over `GROUPING SETS`
-> ([spike report](spike-faceted-search-sql.md)). Delivers the
+> (see Phase 1 Outcome below). Delivers the
 > "filter ↔ facet" contract the admissions UX needs without nested
 > queries.
 
@@ -235,7 +234,7 @@ facets after v1 lands.
 
 | Phase | Module / artefact | What lands |
 |---|---|---|
-| 1 | `roadmap/faceted-search-sql.md` + hand-written SQL | Spike — benchmark SQL strategies against Sakila; confirm or swap v1 default; resolve NULL + ordering Open Questions |
+| 1 | hand-written SQL (complete) | Spike — benchmarked SQL strategies against Sakila; confirmed shape C as v1 default; resolved NULL + ordering Open Questions. Outcome captured in Phase 1 Outcome below |
 | 2 | `graphitron-rewrite` (directive + synthesis) | `@asFacet` directive definition; the `@asConnection` synthesis pipeline grows a facet arm that emits `*Facets` / `*FacetValue` TypeSpecs and adds the `facets` field on the rewritten Connection |
 | 3 | `graphitron-rewrite` (classifier) | `FieldWrapper.Connection` carries `FacetSpec`; validator rejects misuse |
 | 4 | `graphitron-rewrite` (emitter) | Fetcher emits the spike-chosen aggregate shape; helper + wiring expose the new field |
@@ -280,7 +279,7 @@ One arm per facet. Each arm applies every filter *except its own*
 Java decoder demultiplexes by the `facet` label column; `value::text`
 unifies heterogeneous facet column types into one SQL type.
 
-Phase 1 spike ([report](spike-faceted-search-sql.md)) measured this
+Phase 1 spike (see Phase 1 Outcome below) measured this
 shape against four alternatives on a 200 000-row dataset. `UNION ALL`
 wins or ties every scenario because Postgres plans each arm
 independently — selective filters pick per-facet indexes; the
@@ -318,7 +317,7 @@ queries; each one's WHERE lets the planner pick a bitmap index scan
 when filters are selective, and Postgres parallelises arms via
 `Parallel Append`. Shape A's HashAggregate over N grouping keys runs
 single-threaded, so its CPU cost grows worst with facet count. On the
-spike data (see `spike-faceted-search-sql.md` for details):
+spike data (see Phase 1 Outcome below for details):
 
 - 200 000-row warm-cache S3 (multi-filter): C 27 ms vs A 38 ms.
 - 200 000-row warm-cache S5 (open-ended prefix): C 27 ms vs A 51 ms.
@@ -404,8 +403,9 @@ Five SQL shapes measured against a 200 000-row synthetic Sakila-shaped
 `film_scaled` table across five scenarios (no filter, one filter,
 multi-filter, open-ended prefix, NULL-bearing), then re-measured at
 5 000 000 rows (heap 444 MB, ~3.5× `shared_buffers`) with per-facet
-fan-out (2 / 5 / 8 facets) and cold-cache top-level Buffers. Full
-details in [`spike-faceted-search-sql.md`](spike-faceted-search-sql.md).
+fan-out (2 / 5 / 8 facets) and cold-cache top-level Buffers. Headline
+findings folded into this section; raw EXPLAIN plans and per-scenario
+timing tables live in git history (`git log -- graphitron-rewrite/roadmap/faceted-search-sql.md`).
 
 **Decision: v1 default is shape C (`UNION ALL` of per-facet
 `GROUP BY`s).**
@@ -1053,9 +1053,8 @@ reviewers can confirm the v1 design does not foreclose it.
 - **No nested `facets { parent { children { ... } } }` structure.**
   Hard constraint from ticket: performance + query-shape driver.
 - **NULL facet buckets — preserve as their own group.** `GROUP BY`
-  emits NULL as a distinct key automatically; Scenario 7 of the
-  spike (`roadmap/faceted-search-sql.md`, §OQ #4)
-  confirmed all three measured shapes pass NULL through unchanged.
+  emits NULL as a distinct key automatically; Phase 1's NULL-bearing
+  scenario confirmed all three measured shapes pass NULL through unchanged.
   v1 emits no `IS NOT NULL` scrubbing; `*FacetValue.value` is
   **nullable** on the schema side to accommodate. Consumers that
   want to hide NULL can apply `IS NOT NULL` as a regular filter or
@@ -1064,8 +1063,7 @@ reviewers can confirm the v1 design does not foreclose it.
   emits `ORDER BY facet, cnt DESC, value` at the top of the UNION.
   Spike measured ~0.4 ms overhead at 200× Sakila scale (27.3 →
   27.7 ms median on shape C) — negligible, and the deterministic
-  tiebreaker on `value` means test assertions stay stable. See
-  `roadmap/faceted-search-sql.md` §OQ #5.
+  tiebreaker on `value` means test assertions stay stable.
 
 ## Open Questions
 
@@ -1088,7 +1086,7 @@ reviewers can confirm the v1 design does not foreclose it.
    chain for a single `count(*) FILTER` aggregate per (facet, value)
    pair against one parallel seq scan. Spike v2 measured 2–3×
    warm-clock speedup at 5M rows with identical cold-read cost
-   (`spike-faceted-search-sql.md` §v2 re-measurement). Requires value
+   (see Phase 1 Outcome's v2 re-measurement). Requires value
    enumeration per facet — achievable from the jOOQ catalog for enum
    columns and from an optional `@asFacet(values: [...])` argument or a
    compile-time query on the referenced table for small FKs. Design
