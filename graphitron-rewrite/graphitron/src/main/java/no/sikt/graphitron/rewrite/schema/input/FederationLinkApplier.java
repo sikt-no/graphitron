@@ -15,16 +15,11 @@ import graphql.schema.idl.TypeDefinitionRegistry;
  * directive uses. Must run after any schema-extension synthesiser (e.g. {@link TagLinkSynthesiser})
  * that injects a {@code @link} the author omitted.
  *
- * <p>{@link #DEFAULT_FEDERATION_SPEC_URL} is the baseline URL used by {@link TagLinkSynthesiser}
- * when synthesising a {@code @link} for a consumer who sets {@code <schemaInput tag>} without
- * writing their own {@code @link}. It is pinned to the latest version supported by the
- * {@code federation-graphql-java-support} library bundled with this release; bump when a
- * consumer needs directives gated behind a newer spec version.
+ * <p>The canonical {@code @link} URL lives on
+ * {@link no.sikt.graphitron.rewrite.schema.federation.FederationSpec#URL FederationSpec.URL}; this
+ * class only consumes it indirectly via the registry contents.
  */
 public final class FederationLinkApplier {
-
-    public static final String DEFAULT_FEDERATION_SPEC_URL =
-            "https://specs.apollo.dev/federation/v2.10";
 
     private FederationLinkApplier() {}
 

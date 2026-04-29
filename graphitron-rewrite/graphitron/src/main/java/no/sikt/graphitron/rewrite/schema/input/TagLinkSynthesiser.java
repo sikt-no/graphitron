@@ -13,6 +13,7 @@ import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.rewrite.RejectionKind;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.ValidationFailedException;
+import no.sikt.graphitron.rewrite.schema.federation.FederationSpec;
 
 import java.util.List;
 import java.util.Map;
@@ -30,7 +31,7 @@ import java.util.stream.Stream;
  * <ol>
  *   <li>No {@code <schemaInput tag>} configured: no-op.</li>
  *   <li>No existing federation {@code @link}: synthesise
- *       {@code extend schema @link(url: DEFAULT_FEDERATION_SPEC_URL, import: ["@tag"])}
+ *       {@code extend schema @link(url: FederationSpec.URL, import: ["@tag"])}
  *       with a sentinel source name so downstream error messages identify it
  *       as generator-produced.</li>
  *   <li>Existing federation {@code @link} with {@code "@tag"} (or an alias) in
@@ -124,7 +125,7 @@ public final class TagLinkSynthesiser {
                 .name("link")
                 .argument(Argument.newArgument()
                         .name("url")
-                        .value(new StringValue(FederationLinkApplier.DEFAULT_FEDERATION_SPEC_URL))
+                        .value(new StringValue(FederationSpec.URL))
                         .build())
                 .argument(Argument.newArgument()
                         .name("import")
