@@ -4,7 +4,6 @@ import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.rewrite.BuildWarning;
 import no.sikt.graphitron.rewrite.RejectionKind;
-import no.sikt.graphitron.rewrite.model.ErrorHandlerType;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ChildField.ColumnField;
 import no.sikt.graphitron.rewrite.model.MutationField;
@@ -2673,11 +2672,12 @@ class GraphitronSchemaBuilderTest {
     // ===== ErrorType =====
 
     enum ErrorTypeCase implements ClassificationCase {
-        GENERIC_HANDLER_TYPE_AND_CLASS_NAME(
-            "GENERIC handler captures handlerType and className",
+        GENERIC_LIFTS_TO_EXCEPTION_HANDLER(
+            "GENERIC with className lifts to ExceptionHandler",
             """
             type MyError @error(handlers: [{handler: GENERIC, className: "com.example.MyException"}]) {
-                message: String
+                path: [String!]!
+                message: String!
             }
             type Query { x: String }
             """,
@@ -2685,55 +2685,225 @@ class GraphitronSchemaBuilderTest {
                 var errorType = (ErrorType) schema.type("MyError");
                 assertThat(errorType.handlers()).hasSize(1);
                 var h = errorType.handlers().get(0);
-                assertThat(h.handlerType()).isEqualTo(ErrorHandlerType.GENERIC);
-                assertThat(h.className()).isEqualTo("com.example.MyException");
+                assertThat(h).isInstanceOf(ErrorType.ExceptionHandler.class);
+                var eh = (ErrorType.ExceptionHandler) h;
+                assertThat(eh.exceptionClassName()).isEqualTo("com.example.MyException");
+                assertThat(eh.matches()).isEmpty();
+                assertThat(eh.description()).isEmpty();
             }),
 
-        DATABASE_OPTIONAL_FIELDS(
-            "DATABASE handler captures sqlState, code, and description; className is null",
+        DATABASE_SQL_STATE_LIFTS_TO_SQL_STATE_HANDLER(
+            "{handler: DATABASE, sqlState: ...} lifts to SqlStateHandler",
             """
-            type DbError @error(handlers: [{handler: DATABASE, sqlState: "23503", code: "1234", description: "FK violation"}]) {
-                message: String
+            type DbError @error(handlers: [{handler: DATABASE, sqlState: "23503", description: "FK violation"}]) {
+                path: [String!]!
+                message: String!
             }
             type Query { x: String }
             """,
             schema -> {
                 var h = ((ErrorType) schema.type("DbError")).handlers().get(0);
-                assertThat(h.handlerType()).isEqualTo(ErrorHandlerType.DATABASE);
-                assertThat(h.className()).isNull();
-                assertThat(h.sqlState()).isEqualTo("23503");
-                assertThat(h.code()).isEqualTo("1234");
-                assertThat(h.description()).isEqualTo("FK violation");
+                assertThat(h).isInstanceOf(ErrorType.SqlStateHandler.class);
+                var sh = (ErrorType.SqlStateHandler) h;
+                assertThat(sh.sqlState()).isEqualTo("23503");
+                assertThat(sh.description()).contains("FK violation");
+            }),
+
+        DATABASE_CODE_LIFTS_TO_VENDOR_CODE_HANDLER(
+            "{handler: DATABASE, code: ...} lifts to VendorCodeHandler",
+            """
+            type DbError @error(handlers: [{handler: DATABASE, code: "1"}]) {
+                path: [String!]!
+                message: String!
+            }
+            type Query { x: String }
+            """,
+            schema -> {
+                var h = ((ErrorType) schema.type("DbError")).handlers().get(0);
+                assertThat(h).isInstanceOf(ErrorType.VendorCodeHandler.class);
+                assertThat(((ErrorType.VendorCodeHandler) h).vendorCode()).isEqualTo("1");
+            }),
+
+        DATABASE_NO_DISCRIMINATOR_LIFTS_TO_EXCEPTION_HANDLER_SQL_EXCEPTION(
+            "{handler: DATABASE} (no discriminator) lifts to ExceptionHandler(java.sql.SQLException)",
+            """
+            type DbError @error(handlers: [{handler: DATABASE}]) {
+                path: [String!]!
+                message: String!
+            }
+            type Query { x: String }
+            """,
+            schema -> {
+                var h = ((ErrorType) schema.type("DbError")).handlers().get(0);
+                assertThat(h).isInstanceOf(ErrorType.ExceptionHandler.class);
+                assertThat(((ErrorType.ExceptionHandler) h).exceptionClassName())
+                    .isEqualTo("java.sql.SQLException");
+            }),
+
+        VALIDATION_LIFTS_TO_VALIDATION_HANDLER(
+            "{handler: VALIDATION} lifts to ValidationHandler",
+            """
+            type ValidationError @error(handlers: [{handler: VALIDATION, description: "input invalid"}]) {
+                path: [String!]!
+                message: String!
+            }
+            type Query { x: String }
+            """,
+            schema -> {
+                var h = ((ErrorType) schema.type("ValidationError")).handlers().get(0);
+                assertThat(h).isInstanceOf(ErrorType.ValidationHandler.class);
+                assertThat(h.matches()).isEmpty();
+                assertThat(h.description()).contains("input invalid");
             }),
 
         CAPTURES_MATCHES_FIELD(
-            "matches field is captured when present",
+            "matches field is captured on ExceptionHandler",
             """
             type MatchError @error(handlers: [{handler: GENERIC, className: "com.example.Ex", matches: "duplicate"}]) {
-                message: String
+                path: [String!]!
+                message: String!
             }
             type Query { x: String }
             """,
             schema -> assertThat(((ErrorType) schema.type("MatchError")).handlers().get(0).matches())
-                .isEqualTo("duplicate")),
+                .contains("duplicate")),
 
-        MULTIPLE_HANDLERS(
-            "multiple handler objects in the array are all captured",
+        MULTIPLE_HANDLERS_PRESERVE_ORDER(
+            "multiple handler objects in the array are captured in source order",
             """
             type MultiError @error(handlers: [
                 {handler: GENERIC, className: "com.example.Ex1"},
                 {handler: DATABASE, sqlState: "23505"}
             ]) {
-                message: String
+                path: [String!]!
+                message: String!
             }
             type Query { x: String }
             """,
             schema -> {
                 var handlers = ((ErrorType) schema.type("MultiError")).handlers();
                 assertThat(handlers).hasSize(2);
-                assertThat(handlers.get(0).handlerType()).isEqualTo(ErrorHandlerType.GENERIC);
-                assertThat(handlers.get(1).handlerType()).isEqualTo(ErrorHandlerType.DATABASE);
-            });
+                assertThat(handlers.get(0)).isInstanceOf(ErrorType.ExceptionHandler.class);
+                assertThat(handlers.get(1)).isInstanceOf(ErrorType.SqlStateHandler.class);
+            }),
+
+        REJECT_GENERIC_WITHOUT_CLASS_NAME(
+            "GENERIC without className → UnclassifiedType",
+            """
+            type BadError @error(handlers: [{handler: GENERIC}]) {
+                path: [String!]!
+                message: String!
+            }
+            type Query { x: String }
+            """,
+            schema -> {
+                var t = (UnclassifiedType) schema.type("BadError");
+                assertThat(t.reason()).contains("GENERIC").contains("className");
+            }),
+
+        REJECT_GENERIC_WITH_SQL_STATE(
+            "GENERIC with sqlState → UnclassifiedType",
+            """
+            type BadError @error(handlers: [{handler: GENERIC, className: "com.example.Ex", sqlState: "23503"}]) {
+                path: [String!]!
+                message: String!
+            }
+            type Query { x: String }
+            """,
+            schema -> {
+                var t = (UnclassifiedType) schema.type("BadError");
+                assertThat(t.reason()).contains("GENERIC").contains("sqlState");
+            }),
+
+        REJECT_DATABASE_WITH_BOTH_DISCRIMINATORS(
+            "DATABASE with both sqlState and code → UnclassifiedType",
+            """
+            type BadError @error(handlers: [{handler: DATABASE, sqlState: "23503", code: "1"}]) {
+                path: [String!]!
+                message: String!
+            }
+            type Query { x: String }
+            """,
+            schema -> {
+                var t = (UnclassifiedType) schema.type("BadError");
+                assertThat(t.reason()).contains("DATABASE").contains("sqlState").contains("code");
+            }),
+
+        REJECT_DATABASE_WITH_CLASS_NAME(
+            "DATABASE with explicit className → UnclassifiedType",
+            """
+            type BadError @error(handlers: [{handler: DATABASE, className: "org.springframework.dao.DataAccessException"}]) {
+                path: [String!]!
+                message: String!
+            }
+            type Query { x: String }
+            """,
+            schema -> {
+                var t = (UnclassifiedType) schema.type("BadError");
+                assertThat(t.reason()).contains("DATABASE").contains("className");
+            }),
+
+        REJECT_VALIDATION_WITH_DISALLOWED_FIELDS(
+            "VALIDATION with className → UnclassifiedType",
+            """
+            type BadError @error(handlers: [{handler: VALIDATION, className: "com.example.Ex"}]) {
+                path: [String!]!
+                message: String!
+            }
+            type Query { x: String }
+            """,
+            schema -> {
+                var t = (UnclassifiedType) schema.type("BadError");
+                assertThat(t.reason()).contains("VALIDATION").contains("className");
+            }),
+
+        REJECT_MISSING_PATH_FIELD(
+            "@error type missing 'path' field → UnclassifiedType",
+            """
+            type BadError @error(handlers: [{handler: GENERIC, className: "com.example.Ex"}]) {
+                message: String!
+            }
+            type Query { x: String }
+            """,
+            schema -> assertThat(((UnclassifiedType) schema.type("BadError")).reason())
+                .contains("path")),
+
+        REJECT_MISSING_MESSAGE_FIELD(
+            "@error type missing 'message' field → UnclassifiedType",
+            """
+            type BadError @error(handlers: [{handler: GENERIC, className: "com.example.Ex"}]) {
+                path: [String!]!
+            }
+            type Query { x: String }
+            """,
+            schema -> assertThat(((UnclassifiedType) schema.type("BadError")).reason())
+                .contains("message")),
+
+        REJECT_EXTRA_FIELD(
+            "@error type with field beyond path/message → UnclassifiedType",
+            """
+            enum Severity { LOW HIGH }
+            type BadError @error(handlers: [{handler: GENERIC, className: "com.example.Ex"}]) {
+                path: [String!]!
+                message: String!
+                severity: Severity!
+            }
+            type Query { x: String }
+            """,
+            schema -> assertThat(((UnclassifiedType) schema.type("BadError")).reason())
+                .contains("severity")),
+
+        REJECT_WRONG_PATH_SHAPE(
+            "@error type with path: String (not [String!]!) → UnclassifiedType",
+            """
+            type BadError @error(handlers: [{handler: GENERIC, className: "com.example.Ex"}]) {
+                path: String
+                message: String!
+            }
+            type Query { x: String }
+            """,
+            schema -> assertThat(((UnclassifiedType) schema.type("BadError")).reason())
+                .contains("path").contains("[String!]!"));
 
         final String sdl;
         final Consumer<GraphitronSchema> assertions;
@@ -2754,28 +2924,16 @@ class GraphitronSchemaBuilderTest {
     // ===== Fields on @error parents =====
 
     /**
-     * Child fields on an {@code @error} type. Fields are expected to be scalar or enum —
-     * they back a POJO exposed via graphql-java's default {@code PropertyDataFetcher}.
+     * Child fields on an {@code @error} type. The {@code @error} contract restricts the field
+     * set to exactly {@code path: [String!]!} and {@code message: String!} (enforced at type
+     * classification time); both classify as {@link PropertyField} so graphql-java's default
+     * {@code PropertyDataFetcher} resolves them off the developer-supplied @error class.
      */
     enum ErrorFieldCase implements ClassificationCase {
-        SCALAR_FIELD(
-            "@error parent — scalar field → PropertyField using field name as columnName",
+        PATH_AND_MESSAGE_CLASSIFY_AS_PROPERTY_FIELDS(
+            "@error parent — path and message both classify as PropertyField",
             """
             type MyError @error(handlers: [{handler: GENERIC, className: "com.example.Ex"}]) {
-                message: String!
-            }
-            type Query { x: String }
-            """,
-            schema -> {
-                var f = (PropertyField) schema.field("MyError", "message");
-                assertThat(f.columnName()).isEqualTo("message");
-            }),
-
-        LIST_OF_SCALARS_FIELD(
-            "@error parent — list-of-scalars field (Error.path pattern) → PropertyField",
-            """
-            interface Error { path: [String!]!, message: String! }
-            type MyError implements Error @error(handlers: [{handler: GENERIC, className: "com.example.Ex"}]) {
                 path: [String!]!
                 message: String!
             }
@@ -2784,32 +2942,6 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 assertThat(schema.field("MyError", "path")).isInstanceOf(PropertyField.class);
                 assertThat(schema.field("MyError", "message")).isInstanceOf(PropertyField.class);
-            }),
-
-        ENUM_FIELD(
-            "@error parent — enum field → PropertyField",
-            """
-            enum Severity { LOW HIGH }
-            type MyError @error(handlers: [{handler: GENERIC, className: "com.example.Ex"}]) {
-                severity: Severity!
-            }
-            type Query { x: String }
-            """,
-            schema -> assertThat(schema.field("MyError", "severity")).isInstanceOf(PropertyField.class)),
-
-        OBJECT_FIELD_REJECTED(
-            "@error parent — object return type → UnclassifiedField with reason",
-            """
-            type Detail { info: String }
-            type MyError @error(handlers: [{handler: GENERIC, className: "com.example.Ex"}]) {
-                detail: Detail
-            }
-            type Query { x: String }
-            """,
-            schema -> {
-                assertThat(schema.field("MyError", "detail")).isInstanceOf(UnclassifiedField.class);
-                var uf = (UnclassifiedField) schema.field("MyError", "detail");
-                assertThat(uf.reason()).contains("scalar or enum");
             });
 
         final String sdl;

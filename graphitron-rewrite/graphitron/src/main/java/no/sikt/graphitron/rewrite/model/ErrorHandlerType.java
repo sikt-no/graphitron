@@ -2,7 +2,8 @@ package no.sikt.graphitron.rewrite.model;
 
 public enum ErrorHandlerType {
     DATABASE,
-    GENERIC;
+    GENERIC,
+    VALIDATION;
 
     public String toCamelCaseString() {
         var lower = this.toString().toLowerCase();
