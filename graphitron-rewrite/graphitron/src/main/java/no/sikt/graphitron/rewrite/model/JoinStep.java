@@ -81,9 +81,9 @@ public sealed interface JoinStep permits JoinStep.FkJoin, JoinStep.ConditionJoin
      * child-to-parent. The field is not a direction signal — readers that need to know which
      * side holds the FK must compare {@code sourceColumns}' owning table against
      * {@code sourceTable}, or infer from the schema context (e.g. {@code @splitQuery}
-     * cardinality ⇒ FK direction; see {@code FieldBuilder.deriveSplitQueryBatchKey}). See the
-     * roadmap entry "Clarify {@code FkJoin} direction semantics" for the follow-up that
-     * straightens this out. Falls back to an empty {@link TableRef} when the jOOQ catalog is
+     * cardinality ⇒ FK direction; see {@code FieldBuilder.deriveSplitQueryBatchKey}). The
+     * roadmap entry "{@code FkJoin} model cleanup" tracks renaming this field to
+     * {@code originTable}. Falls back to an empty {@link TableRef} when the jOOQ catalog is
      * unavailable.
      *
      * <p>{@code alias} is the unique table alias for this step within the enclosing query, computed

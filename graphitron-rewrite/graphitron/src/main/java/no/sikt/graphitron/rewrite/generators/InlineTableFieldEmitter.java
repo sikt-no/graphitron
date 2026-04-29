@@ -166,8 +166,8 @@ public final class InlineTableFieldEmitter {
             sel.add("\n        .limit(1)");
         } else if (tf.pagination() != null && tf.pagination().first() != null) {
             sel.add("\n        .limit(env.getArgument($S) == null ? $T.MAX_VALUE : ($T) env.getArgument($S))",
-                tf.pagination().first().name(),
-                Integer.class, Integer.class, tf.pagination().first().name());
+                "first",
+                Integer.class, Integer.class, "first");
         }
 
         return sel.build();
