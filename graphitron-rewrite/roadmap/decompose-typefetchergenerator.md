@@ -3,6 +3,8 @@ title: Decompose `TypeFetcherGenerator`
 status: Backlog
 bucket: architecture
 priority: 11
+theme: structural-refactor
+depends-on: [stub-interface-union-fetchers]
 ---
 
 # Decompose `TypeFetcherGenerator`

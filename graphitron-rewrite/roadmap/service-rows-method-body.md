@@ -3,6 +3,8 @@ title: "Implement `@service` rows-method body"
 status: Backlog
 bucket: architecture
 priority: 6
+theme: service
+depends-on: []
 ---
 
 # Implement `@service` rows-method body

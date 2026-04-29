@@ -2,6 +2,8 @@
 title: "`IdReferenceField` code generation"
 status: Spec
 priority: 4
+theme: nodeid
+depends-on: []
 ---
 
 # `IdReferenceField` code generation

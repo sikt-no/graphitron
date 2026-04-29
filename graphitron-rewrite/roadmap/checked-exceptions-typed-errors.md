@@ -3,6 +3,8 @@ title: "Checked exceptions on `@service` / `@tableMethod` for typed GraphQL erro
 status: Backlog
 bucket: architecture
 priority: 8
+theme: mutations-errors
+depends-on: [error-handling-parity, mutations]
 ---
 
 # Checked exceptions on `@service` / `@tableMethod` for typed GraphQL errors

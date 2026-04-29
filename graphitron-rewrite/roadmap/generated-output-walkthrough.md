@@ -3,6 +3,8 @@ title: Annotated walkthrough of a generated file
 status: Backlog
 bucket: cleanup
 priority: 7
+theme: docs
+depends-on: [rewrite-docs-entrypoint, docs-site-asciidoc]
 ---
 
 # Annotated walkthrough of a generated file

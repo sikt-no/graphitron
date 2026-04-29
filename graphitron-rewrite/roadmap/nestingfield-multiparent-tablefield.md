@@ -2,6 +2,8 @@
 title: "Multi-parent `NestingField` sharing: `TableField` arm"
 status: Spec
 priority: 6
+theme: model-cleanup
+depends-on: []
 ---
 
 # Multi-parent `NestingField` sharing: `TableField` arm

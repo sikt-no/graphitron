@@ -6,11 +6,13 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
+import java.util.Set;
+import java.util.TreeMap;
 import java.util.stream.Stream;
 
 /**
@@ -24,11 +26,33 @@ import java.util.stream.Stream;
  *   <li>{@code verify &lt;dir&gt;}: exit non-zero if {@code dir/README.md} is
  *       out of date relative to the current item files.</li>
  * </ul>
+ *
+ * <p>Validation runs in both modes and fails the run on any of the following:
+ * unknown {@code theme:}, unknown {@code depends-on:} slug, dependency cycle.
  */
 public final class Main {
 
     private static final List<String> ACTIVE_STATES = List.of("Spec", "Ready", "In Progress", "In Review");
-    private static final List<String> BACKLOG_BUCKETS = List.of("architecture", "stubs", "cleanup");
+    private static final List<String> BACKLOG_BUCKETS = List.of("architecture", "stubs", "cleanup", "validation");
+
+    /**
+     * Closed set of cross-cutting tags. {@code theme:} answers "what area is
+     * this in?" orthogonal to {@code bucket:} (which answers "what kind of
+     * work?"). Adding a new theme requires editing this list and the
+     * accompanying docs.
+     */
+    static final List<String> VALID_THEMES = List.of(
+        "interface-union",
+        "nodeid",
+        "service",
+        "mutations-errors",
+        "pagination",
+        "model-cleanup",
+        "structural-refactor",
+        "docs",
+        "testing",
+        "legacy-migration"
+    );
 
     private Main() {}
 
@@ -45,6 +69,7 @@ public final class Main {
         }
 
         List<Item> items = readItems(dir);
+        validate(items);
         String rendered = render(items);
         Path readme = dir.resolve("README.md");
 
@@ -106,6 +131,71 @@ public final class Main {
         return new ParsedFile(map == null ? Map.of() : map, content.substring(bodyStart));
     }
 
+    /**
+     * Fails the run on any of: unknown {@code theme:}, {@code depends-on:}
+     * slug that does not match an existing item, or a dependency cycle.
+     * A {@code depends-on:} entry that has shipped is expected to be removed
+     * from the dependent item by the author who closes the dep; that keeps
+     * {@code depends-on:} a record of <em>currently</em> blocking work only.
+     */
+    static void validate(List<Item> items) {
+        Set<String> known = new java.util.HashSet<>();
+        for (Item i : items) {
+            known.add(i.slug());
+        }
+        List<String> errors = new ArrayList<>();
+        for (Item i : items) {
+            if (i.theme() != null && !VALID_THEMES.contains(i.theme())) {
+                errors.add(i.slug() + ": unknown theme '" + i.theme()
+                    + "'. Valid themes: " + VALID_THEMES);
+            }
+            for (String dep : i.dependsOn()) {
+                if (!known.contains(dep)) {
+                    errors.add(i.slug() + ": depends-on slug '" + dep
+                        + "' does not match any roadmap item file. Either fix the typo, "
+                        + "or remove it (if the dep has shipped, remove it from depends-on).");
+                }
+            }
+        }
+
+        // Cycle detection (DFS over depends-on edges)
+        Map<String, Item> bySlug = new java.util.HashMap<>();
+        for (Item i : items) bySlug.put(i.slug(), i);
+        Set<String> visited = new java.util.HashSet<>();
+        Set<String> onStack = new java.util.LinkedHashSet<>();
+        for (Item i : items) {
+            detectCycle(i.slug(), bySlug, visited, onStack, errors);
+        }
+
+        if (!errors.isEmpty()) {
+            System.err.println("roadmap front-matter validation failed:");
+            for (String e : errors) System.err.println("  " + e);
+            System.exit(1);
+        }
+    }
+
+    private static void detectCycle(
+        String slug,
+        Map<String, Item> bySlug,
+        Set<String> visited,
+        Set<String> onStack,
+        List<String> errors
+    ) {
+        if (visited.contains(slug)) return;
+        if (onStack.contains(slug)) {
+            errors.add("dependency cycle: " + String.join(" -> ", onStack) + " -> " + slug);
+            return;
+        }
+        Item it = bySlug.get(slug);
+        if (it == null) return;
+        onStack.add(slug);
+        for (String dep : it.dependsOn()) {
+            detectCycle(dep, bySlug, visited, onStack, errors);
+        }
+        onStack.remove(slug);
+        visited.add(slug);
+    }
+
     static String render(List<Item> items) {
         StringBuilder sb = new StringBuilder();
         sb.append("# Rewrite Roadmap\n\n");
@@ -125,10 +215,18 @@ public final class Main {
         sb.append("[Code Generation Triggers](../docs/code-generation-triggers.md). ");
         sb.append("Then read an Active plan to see the shape, and pick a Backlog item or take a Ready item from Active.\n\n");
 
+        sb.append("**Front-matter dimensions.** Each item carries `status:`, `bucket:`, `priority:`, ");
+        sb.append("`theme:` (cross-cutting tag, see the *By theme* index), and `depends-on:` ");
+        sb.append("(slugs of items that must ship first). When a dep ships, the dep file is deleted; ");
+        sb.append("the author closing it is responsible for removing the slug from any dependents' ");
+        sb.append("`depends-on:` list. The validator fails the build on a stale slug.\n\n");
+
         sb.append("---\n\n");
         renderActive(sb, items);
         sb.append("\n---\n\n");
         renderBacklog(sb, items);
+        sb.append("\n---\n\n");
+        renderByTheme(sb, items);
         sb.append("\n---\n\n");
         sb.append("## Done\n\n");
         sb.append("See [`changelog.md`](changelog.md) for the historical record of shipped rewrite work. ");
@@ -155,6 +253,9 @@ public final class Main {
             String item = i.title();
             if (i.notes() != null && !i.notes().isBlank()) {
                 item += " <sub>" + i.notes().strip() + "</sub>";
+            }
+            if (!i.dependsOn().isEmpty()) {
+                item += " <sub>blocked by: " + linkSlugs(i.dependsOn()) + "</sub>";
             }
             sb.append("| ").append(item).append(" | ")
               .append(status).append(" | [plan](")
@@ -201,11 +302,78 @@ public final class Main {
         }
     }
 
+    /**
+     * Secondary index: items grouped by {@code theme:}. Lets a reader see
+     * cross-cutting clusters that the bucket grouping spreads across multiple
+     * sections (e.g. all docs work, all interface/union work). Includes both
+     * Active and Backlog items so the cluster view is complete.
+     */
+    private static void renderByTheme(StringBuilder sb, List<Item> items) {
+        sb.append("## By theme\n\n");
+        sb.append("Cross-cutting view of every Active and Backlog item by `theme:`. ");
+        sb.append("Themes are a closed set; bucket and theme are orthogonal.\n\n");
+
+        Map<String, List<Item>> byTheme = new TreeMap<>();
+        for (Item i : items) {
+            if (!"Backlog".equals(i.status()) && !ACTIVE_STATES.contains(i.status())) {
+                continue;
+            }
+            String t = i.theme() == null ? "(untagged)" : i.theme();
+            byTheme.computeIfAbsent(t, k -> new ArrayList<>()).add(i);
+        }
+
+        for (String theme : VALID_THEMES) {
+            List<Item> in = byTheme.getOrDefault(theme, List.of());
+            if (in.isEmpty()) continue;
+            sb.append("### ").append(theme).append("\n\n");
+            in.stream()
+                .sorted(Comparator
+                    .comparingInt((Item i) -> i.priority() == null ? Integer.MAX_VALUE : i.priority())
+                    .thenComparing(Item::title))
+                .forEach(i -> {
+                    sb.append("- [**").append(i.title()).append("**](")
+                      .append(i.slug()).append(".md) — ")
+                      .append(i.status());
+                    if (i.bucket() != null) {
+                        sb.append(", ").append(i.bucket());
+                    }
+                    if (!i.dependsOn().isEmpty()) {
+                        sb.append(", blocked by ").append(linkSlugs(i.dependsOn()));
+                    }
+                    sb.append("\n");
+                });
+            sb.append("\n");
+        }
+
+        List<Item> untagged = byTheme.getOrDefault("(untagged)", List.of());
+        if (!untagged.isEmpty()) {
+            sb.append("### (untagged)\n\n");
+            untagged.stream()
+                .sorted(Comparator.comparing(Item::title))
+                .forEach(i -> sb.append("- [**").append(i.title()).append("**](")
+                    .append(i.slug()).append(".md)\n"));
+            sb.append("\n");
+        }
+    }
+
+    private static String linkSlugs(List<String> slugs) {
+        StringBuilder out = new StringBuilder();
+        for (int idx = 0; idx < slugs.size(); idx++) {
+            if (idx > 0) out.append(", ");
+            String s = slugs.get(idx);
+            out.append("[").append(s).append("](").append(s).append(".md)");
+        }
+        return out.toString();
+    }
+
     private static void appendBacklogLine(StringBuilder sb, Item i) {
         sb.append("- [**").append(i.title()).append("**](").append(i.slug()).append(".md)");
         String description = firstNonHeadingParagraph(i.body());
         if (!description.isEmpty()) {
             sb.append(": ").append(description);
+        }
+        if (!i.dependsOn().isEmpty()) {
+            sb.append(" _(blocked by ").append(linkSlugs(i.dependsOn())).append(")_");
         }
         sb.append("\n");
     }
@@ -235,7 +403,8 @@ public final class Main {
     record ParsedFile(Map<String, Object> frontMatter, String body) {}
 
     record Item(String slug, String title, String status, String bucket,
-                Integer priority, boolean deferred, String notes, String body) {
+                Integer priority, boolean deferred, String notes,
+                String theme, List<String> dependsOn, String body) {
 
         static Item from(String slug, Map<String, Object> fm, String body) {
             String title = (String) fm.getOrDefault("title", slug);
@@ -244,7 +413,25 @@ public final class Main {
             Integer priority = fm.get("priority") instanceof Integer p ? p : null;
             boolean deferred = Boolean.TRUE.equals(fm.get("deferred"));
             String notes = (String) fm.get("notes");
-            return new Item(slug, title, status, bucket, priority, deferred, notes, body);
+            String theme = (String) fm.get("theme");
+            List<String> dependsOn = parseSlugList(fm.get("depends-on"));
+            return new Item(slug, title, status, bucket, priority, deferred, notes,
+                theme, dependsOn, body);
+        }
+
+        @SuppressWarnings("unchecked")
+        private static List<String> parseSlugList(Object raw) {
+            if (raw == null) return List.of();
+            if (raw instanceof List<?> list) {
+                List<String> out = new ArrayList<>();
+                for (Object o : list) {
+                    if (o == null) continue;
+                    out.add(o.toString());
+                }
+                return List.copyOf(out);
+            }
+            throw new IllegalArgumentException(
+                "expected a YAML list for depends-on, got: " + raw.getClass().getName());
         }
     }
 }

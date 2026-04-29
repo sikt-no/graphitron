@@ -3,6 +3,8 @@ title: "sis-graphql-spec migration to graphitron-rewrite"
 status: Backlog
 bucket: cleanup
 priority: 13
+theme: legacy-migration
+depends-on: []
 ---
 
 # sis-graphql-spec migration to graphitron-rewrite

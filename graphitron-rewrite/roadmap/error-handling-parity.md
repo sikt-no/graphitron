@@ -3,6 +3,8 @@ title: "Error-handling parity: emit per-fetcher error channels from `@error`"
 status: Spec
 bucket: architecture
 priority: 7
+theme: mutations-errors
+depends-on: [mutations]
 ---
 
 # Error-handling parity: emit per-fetcher error channels from `@error`

@@ -3,6 +3,8 @@ title: "Collapse `BatchKeyField` validator/emitter redundancy"
 status: Backlog
 bucket: cleanup
 priority: 3
+theme: model-cleanup
+depends-on: []
 ---
 
 # Collapse `BatchKeyField` validator/emitter redundancy

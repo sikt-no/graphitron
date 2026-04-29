@@ -3,6 +3,8 @@ title: "Retire `@nodeId` synthesis shim"
 status: Backlog
 bucket: cleanup
 priority: 12
+theme: legacy-migration
+depends-on: [sis-rewrite-migration]
 ---
 
 # Retire `@nodeId` synthesis shim

@@ -3,6 +3,8 @@ title: Sweep doc drift between rewrite docs and `model/` taxonomy
 status: Backlog
 bucket: cleanup
 priority: 3
+theme: docs
+depends-on: [docs-site-asciidoc]
 ---
 
 # Sweep doc drift between rewrite docs and `model/` taxonomy

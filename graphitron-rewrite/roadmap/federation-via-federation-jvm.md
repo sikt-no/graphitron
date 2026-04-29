@@ -2,6 +2,8 @@
 title: "Apollo Federation via federation-jvm transform"
 status: In Progress
 priority: 1
+theme: interface-union
+depends-on: []
 ---
 
 # Apollo Federation via federation-jvm transform
