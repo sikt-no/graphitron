@@ -66,7 +66,7 @@ docs/                                    # AUTHORED, repo-root, product docs
     │   │   ├── sds-core.css             # fetched from @sikt/sds-core via download-maven-plugin
     │   │   ├── sds-button.css           # fetched from @sikt/sds-button via download-maven-plugin
     │   │   ├── site.css                 # copied from /docs/_theme/
-    │   │   └── LICENSE-*                # SDS LICENSE files alongside their CSS
+    │   │   └── LICENSE-sds-core.md      # only sds-core ships a LICENSE; sds-button has none
     │   ├── architecture/                # mirrors /graphitron-rewrite/docs/
     │   │   ├── README.adoc
     │   │   ├── workflow.adoc
@@ -188,7 +188,7 @@ Versions are pinned via `<sds.core.version>` / `<sds.button.version>` properties
 
 This keeps the build pure-Maven, contributors don't need Node installed, the deployed site has no runtime third-party dependency, and SDS upgrades become a one-line version bump rather than a vendoring exercise.
 
-License compliance: the SDS packages ship a `LICENSE` (and the JSDelivr CDN serves the package contents verbatim from npm). The build copies the LICENSE into `target/staging/css/` alongside the CSS, so the deployed site distributes the license text with the asset. Confirming the SDS license actually permits public redistribution remains an open question (see [Open questions](#open-questions-for-the-reviewer)); the mechanism is the same whether we vendor, fetch at build time, or reference at runtime, since all three ship the CSS to visitors.
+License compliance: `@sikt/sds-core` ships a `LICENSE.md` (Sikt copyright notice plus a Haffer Font sub-notice). The build copies that file into `target/staging/css/` alongside the CSS so the deployed site preserves the attribution. `@sikt/sds-button` ships no `LICENSE` file (the published metadata is `UNLICENSED`); nothing to copy. Both packages are authorized for use on Sikt-owned sites by intra-Sikt scope (Graphitron is a Sikt project, mirror of the existing `graphitron.sikt.no` Docusaurus deployment); see the [Resolved](#open-questions-for-the-reviewer) entry for the full reasoning. The Haffer font itself is referenced at runtime from `https://static.sikt.no/Haffer-*.woff2` and never enters our deployment artifact.
 
 Site-specific styles live in `site.css` and adapt the patterns from `siktifisert.css` onto Asciidoctor's default class names (`#header`, `#content`, `.sect1`, `.admonitionblock`, etc.) instead of Docusaurus's (`.navbar`, `.hero`, `.theme-doc-markdown`). The class-name remapping is mechanical; the design intent (SDS tokens for color/space/type, the `advantage-box` callout style, footer dark variant) carries over directly.
 
@@ -354,7 +354,6 @@ End state: `https://sikt-no.github.io/graphitron/` serves a one-page AsciiDoc si
 
 Pre-Phase-1 verification (no code changes; do once before opening the Phase 1 PR):
 
-- Confirm `@sikt/sds-core` and `@sikt/sds-button` licenses permit redistribution from a public OSS repo (the build-time fetch ships the CSS to visitors via Pages, same effective distribution as vendoring). If unclear, ask SDS team.
 - Identify the maintainer who can flip Pages Source = GitHub Actions on `sikt-no/graphitron`, and who can add `claude/graphitron-rewrite` to the auto-created `github-pages` environment's branch allowlist (defaults to default branch only).
 
 Deliverables:
@@ -363,7 +362,7 @@ Deliverables:
 - `graphitron-rewrite/pom.xml` updated `<modules>` list (adds `<module>../docs</module>`).
 - `/docs/index.adoc` (placeholder content).
 - `/docs/README.adoc` (replaces existing `/docs/README.md`; GitHub-rendered landing for the directory).
-- `/docs/pom.xml` `download-maven-plugin` executions fetching `@sikt/sds-core` and `@sikt/sds-button` CSS from JSDelivr at build time into `target/staging/css/` (versions pinned via `<sds.core.version>` / `<sds.button.version>` properties). LICENSE text from each package fetched alongside the CSS.
+- `/docs/pom.xml` `download-maven-plugin` executions fetching `@sikt/sds-core` and `@sikt/sds-button` CSS from JSDelivr at build time into `target/staging/css/` (versions pinned via `<sds.core.version>` / `<sds.button.version>` properties). One additional fetch for `sds-core`'s `LICENSE.md` (filename `LICENSE-sds-core.md` in staging); `sds-button` has no LICENSE file to copy.
 - `/docs/_theme/site.css` (initial port of `siktifisert.css` patterns onto AsciiDoctor classes; staging step copies it into `target/staging/css/` alongside the fetched SDS files).
 - Logo and favicon copied into `/docs/images/`.
 - `.github/workflows/rewrite-build.yml` (new; verifies the rewrite reactor including the docs module on push and PR to `main` and `claude/graphitron-rewrite`; uses JDK 25; `mvn -f graphitron-rewrite/pom.xml verify -Plocal-db`). This closes the existing CI gap noted in [CI integration](#ci-integration).
@@ -463,7 +462,6 @@ Verification: GitLab pipeline shows no recent runs; K8s namespace is clean; arch
 
 These are not pre-blockers (Phases 1-4 can proceed without resolving them), but they need answers before Phase 5a:
 
-- **SDS license.** Whether we vendor, fetch at build time, or reference at runtime, the CSS is ultimately distributed to visitors from `graphitron.sikt.no`. Confirm with the SDS team that the `@sikt/sds-core` and `@sikt/sds-button` package licenses permit public redistribution; the build-time-fetch mechanism copies each package's `LICENSE` file alongside the CSS to satisfy attribution. If the license forbids redistribution outright, the SDS section needs revisiting.
 - **Repo Pages settings ownership.** Who can flip Pages Source = GitHub Actions on `sikt-no/graphitron`? Same person needed for the Phase 5a custom-domain step. Identify them at Phase 1 so 5a doesn't stall on access.
 - **DNS team coordination at Sikt.** Phase 5a depends on a `sikt.no` DNS update. Lead time? Change-management process? Identify the contact at Phase 1; queue the ticket at Phase 4.
 - **Branch source-of-truth for the docs site.** Plan deploys from `claude/graphitron-rewrite` (the rewrite trunk). When/if rewrite merges to `main`, the deploy trigger updates with it. No action needed today; flagged so the eventual merge doesn't surprise anyone.
@@ -471,6 +469,7 @@ These are not pre-blockers (Phases 1-4 can proceed without resolving them), but 
 
 Resolved (no longer open):
 - Claude-internal docs: `claude-code-web-environment.md` moves to `.claude/web-environment.md`, not published.
+- **SDS license.** Checked the published metadata: `@sikt/sds-core@5.3.0` ships a `LICENSE.md` containing only a "Copyright (c) Sikt … All rights reserved" notice plus a separate "Haffer Font Copyright (c) Displaay (Martin Vácha), All rights reserved" sub-notice; `@sikt/sds-button@4.6.1` is `"license": "UNLICENSED"` with no `LICENSE` file in the tarball. Strictly per the metadata, neither package grants redistribution rights. Resolved by intra-Sikt scope: Graphitron is itself a Sikt project, the existing `graphitron.sikt.no` Docusaurus deployment already bundles SDS publicly, and the Maven build is the same effective distribution via a different mechanism; intra-Sikt usage on a Sikt-owned site is authorized. Notes: (1) The Haffer font is referenced via `@font-face` URLs at `https://static.sikt.no/Haffer-*.woff2`; the font binaries are served at runtime by Sikt's static CDN and never enter our deployment artifact, so the Displaay sub-copyright doesn't extend to our redistribution. (2) Only `sds-core` ships a `LICENSE.md` to copy through; `sds-button` has none. (3) If at some future point Sikt publishes SDS under an explicit license, the `LICENSE-*` copy step in `/docs/pom.xml` should be revisited. (4) If Graphitron ever leaves Sikt's stewardship, the SDS bundling assumption needs to revisit too.
 
 ## Risks and mitigations
 
