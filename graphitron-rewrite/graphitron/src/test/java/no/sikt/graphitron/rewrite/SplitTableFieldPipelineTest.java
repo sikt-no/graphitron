@@ -58,7 +58,7 @@ class SplitTableFieldPipelineTest {
             .findFirst().orElseThrow();
 
         assertThat(fetcherMethod.returnType().toString())
-            .isEqualTo("java.util.concurrent.CompletableFuture<java.util.List<org.jooq.Record>>");
+            .isEqualTo("java.util.concurrent.CompletableFuture<graphql.execution.DataFetcherResult<java.util.List<org.jooq.Record>>>");
         assertThat(fetcherMethod.parameters()).extracting(p -> p.type().toString())
             .containsExactly("graphql.schema.DataFetchingEnvironment");
     }
@@ -187,7 +187,7 @@ class SplitTableFieldPipelineTest {
         var fetcherMethod = customerFetchers.methodSpecs().stream()
             .filter(m -> m.name().equals("address")).findFirst().orElseThrow();
         assertThat(fetcherMethod.returnType().toString())
-            .isEqualTo("java.util.concurrent.CompletableFuture<org.jooq.Record>");
+            .isEqualTo("java.util.concurrent.CompletableFuture<graphql.execution.DataFetcherResult<org.jooq.Record>>");
 
         var rowsMethod = customerFetchers.methodSpecs().stream()
             .filter(m -> m.name().equals("rowsAddress")).findFirst().orElseThrow();
@@ -286,7 +286,7 @@ class SplitTableFieldPipelineTest {
             .filter(m -> m.name().equals("actorsConnection"))
             .findFirst().orElseThrow();
         assertThat(fetcher.returnType().toString())
-            .isEqualTo("java.util.concurrent.CompletableFuture<fake.code.generated.util.ConnectionResult>");
+            .isEqualTo("java.util.concurrent.CompletableFuture<graphql.execution.DataFetcherResult<fake.code.generated.util.ConnectionResult>>");
 
         var rowsMethod = filmFetchers.methodSpecs().stream()
             .filter(m -> m.name().equals("rowsActorsConnection"))

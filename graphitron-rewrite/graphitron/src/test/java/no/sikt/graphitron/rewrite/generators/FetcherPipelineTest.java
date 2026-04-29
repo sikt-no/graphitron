@@ -151,7 +151,7 @@ class FetcherPipelineTest {
     void recordTableField_onRecordType_asyncDataFetcherReturnsCompletableFuture() {
         var fetchers = findSpec("FilmDetailsFetchers", RECORD_TABLE_SDL);
         assertThat(method(fetchers, "language").returnType().toString())
-            .isEqualTo("java.util.concurrent.CompletableFuture<org.jooq.Record>");
+            .isEqualTo("java.util.concurrent.CompletableFuture<graphql.execution.DataFetcherResult<org.jooq.Record>>");
     }
 
     @Test
@@ -189,7 +189,7 @@ class FetcherPipelineTest {
     void recordLookupTableField_onRecordType_asyncDataFetcherReturnsCompletableFutureListRecord() {
         var fetchers = findSpec("FilmDetailsFetchers", RECORD_LOOKUP_TABLE_SDL);
         assertThat(method(fetchers, "actorsByLookup").returnType().toString())
-            .isEqualTo("java.util.concurrent.CompletableFuture<java.util.List<org.jooq.Record>>");
+            .isEqualTo("java.util.concurrent.CompletableFuture<graphql.execution.DataFetcherResult<java.util.List<org.jooq.Record>>>");
     }
 
     @Test
@@ -230,7 +230,8 @@ class FetcherPipelineTest {
             type Film @table(name: "film") { title: String }
             type Query { films: [Film!]! }
             """), "films");
-        assertThat(films.returnType().toString()).isEqualTo("org.jooq.Result<org.jooq.Record>");
+        assertThat(films.returnType().toString())
+            .isEqualTo("graphql.execution.DataFetcherResult<org.jooq.Result<org.jooq.Record>>");
     }
 
     @Test
@@ -239,7 +240,8 @@ class FetcherPipelineTest {
             type Film @table(name: "film") { title: String }
             type Query { film: Film }
             """), "film");
-        assertThat(film.returnType().toString()).isEqualTo("org.jooq.Record");
+        assertThat(film.returnType().toString())
+            .isEqualTo("graphql.execution.DataFetcherResult<org.jooq.Record>");
     }
 
     @Test
@@ -282,7 +284,7 @@ class FetcherPipelineTest {
             }
             """);
         assertThat(method(languageFetchers, "films").returnType().toString())
-            .isEqualTo("java.util.concurrent.CompletableFuture<java.util.List<org.jooq.Record>>");
+            .isEqualTo("java.util.concurrent.CompletableFuture<graphql.execution.DataFetcherResult<java.util.List<org.jooq.Record>>>");
     }
 
     @Test
@@ -314,7 +316,7 @@ class FetcherPipelineTest {
             }
             """);
         assertThat(method(languageFetchers, "films").returnType().toString())
-            .isEqualTo("java.util.concurrent.CompletableFuture<java.util.List<org.jooq.Record>>");
+            .isEqualTo("java.util.concurrent.CompletableFuture<graphql.execution.DataFetcherResult<java.util.List<org.jooq.Record>>>");
     }
 
     @Test
