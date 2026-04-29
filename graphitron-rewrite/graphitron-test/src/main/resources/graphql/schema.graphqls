@@ -228,6 +228,14 @@ type Film implements Node @table(name: "film") @node {
     textRating:  String       @field(name: "TEXT_RATING")
     length:      Int          @field(name: "LENGTH")
     languageId:  Int          @field(name: "LANGUAGE_ID")
+    # R48 ComputedField fixture: @externalField with a resolved reference.
+    # FilmExtensions.isEnglish returns Field<Boolean>(LANGUAGE_ID = 1); the
+    # generator inlines the call into Film.$fields() aliased "isEnglish" and
+    # registers a ColumnFetcher that reads the alias at request time.
+    isEnglish:   Boolean       @externalField(reference: {
+        className: "no.sikt.graphitron.rewrite.test.extensions.FilmExtensions",
+        method: "isEnglish"
+    })
     # NestingField fixture: plain-object summary type nested inside Film. Fields resolve
     # against the outer Film table via $fields recursion (Film.summary.title → FILM.TITLE).
     summary:     FilmSummary
