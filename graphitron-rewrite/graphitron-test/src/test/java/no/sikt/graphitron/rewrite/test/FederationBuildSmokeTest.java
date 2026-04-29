@@ -61,9 +61,10 @@ class FederationBuildSmokeTest {
     }
 
     /**
-     * The {@code _Entity} union must list every type Graphitron classifies as a federation entity
-     * (everything in the federated fixture: three {@code @node} types plus the {@code @key}-only
-     * {@code FilmActor}). Catches the case where {@code @key} parsing or
+     * The {@code _Entity} union must list every type Graphitron classifies as a federation entity:
+     * three {@code @node} types (Customer, Address, Film), the compound-key FilmActor, plus
+     * Language ({@code @key(resolvable: false)} types are reference-only but federation still
+     * includes them in the union). Catches the case where {@code @key} parsing or
      * {@code KeyNodeSynthesiser} silently drops a type from the entity union.
      */
     @Test
@@ -78,7 +79,7 @@ class FederationBuildSmokeTest {
             .toList();
         assertThat(memberNames)
             .as("_Entity union must contain every classified federation entity")
-            .containsExactlyInAnyOrder("Customer", "Address", "Film", "FilmActor");
+            .containsExactlyInAnyOrder("Customer", "Address", "Film", "FilmActor", "Language");
     }
 
     /**

@@ -31,8 +31,11 @@ type Address implements Node @table(name: "address") @node {
 
 # @key(fields: "filmId") layered onto a @node type gives Film both the synthesised
 # NODE_ID alternative (from @node) and a DIRECT alternative (from @key). Used by
-# the multi-alternative dispatch test.
-type Film implements Node @table(name: "film") @node @key(fields: "filmId") {
+# the multi-alternative dispatch test. The third @key(fields: "filmId title") is a
+# more-specific superset of the simple "filmId" alternative; reps that supply both
+# fields must select the compound (most-specific tie-break test).
+type Film implements Node @table(name: "film") @node
+        @key(fields: "filmId") @key(fields: "filmId title") {
     id:          ID!     @nodeId
     filmId:      Int!    @field(name: "FILM_ID")
     title:       String! @field(name: "TITLE")
@@ -44,4 +47,12 @@ type Film implements Node @table(name: "film") @node @key(fields: "filmId") {
 type FilmActor @table(name: "film_actor") @key(fields: "filmId actorId") {
     filmId:  Int! @field(name: "film_id")
     actorId: Int! @field(name: "actor_id")
+}
+
+# @key(resolvable: false) on a non-@node type: declared for reference only, never
+# resolved by this subgraph. The dispatcher must skip the alternative at match time;
+# a representation matching it must yield null without firing a SELECT.
+type Language @table(name: "language") @key(fields: "languageId", resolvable: false) {
+    languageId: Int!    @field(name: "LANGUAGE_ID")
+    name:       String! @field(name: "NAME")
 }
