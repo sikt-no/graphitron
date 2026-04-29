@@ -1004,7 +1004,8 @@ public class TypeFetcherGenerator {
      */
     private static MethodSpec buildMutationDeleteFetcher(MutationField.MutationDeleteTableField f,
                                                           String outputPackage, String jooqPackage) {
-        var tableRef = f.inputTable();
+        var tia = f.tableInputArg();
+        var tableRef = tia.inputTable();
         var names = GeneratorUtils.ResolvedTableNames.of(tableRef, f.returnType().returnTypeName(), outputPackage, jooqPackage);
         var dslContextClass = ClassName.get("org.jooq", "DSLContext");
 
@@ -1016,11 +1017,11 @@ public class TypeFetcherGenerator {
 
         builder.beginControlFlow("try");
         builder.addStatement("$T dsl = graphitronContext(env).getDslContext(env)", dslContextClass);
-        builder.addStatement("$T<?, ?> in = ($T<?, ?>) env.getArgument($S)", MAP, MAP, f.inputArgName());
+        builder.addStatement("$T<?, ?> in = ($T<?, ?>) env.getArgument($S)", MAP, MAP, tia.name());
 
         // WHERE predicate: chain bindings with .and(...)
         var whereExpr = CodeBlock.builder();
-        var bindings = f.fieldBindings();
+        var bindings = tia.fieldBindings();
         for (int i = 0; i < bindings.size(); i++) {
             var binding = bindings.get(i);
             if (i > 0) whereExpr.add(".and(");

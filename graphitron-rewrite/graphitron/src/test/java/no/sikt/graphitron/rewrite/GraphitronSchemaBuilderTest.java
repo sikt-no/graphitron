@@ -3357,8 +3357,9 @@ class GraphitronSchemaBuilderTest {
             "@mutation(typeName: INSERT) → MutationInsertTableField",
             """
             type Film @table(name: "film") { title: String }
+            input FilmInput @table(name: "film") { title: String }
             type Query { x: String }
-            type Mutation { createFilm: Film @mutation(typeName: INSERT) }
+            type Mutation { createFilm(in: FilmInput!): Film @mutation(typeName: INSERT) }
             """,
             schema -> assertThat(schema.field("Mutation", "createFilm")).isInstanceOf(MutationField.MutationInsertTableField.class)) {
             @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationInsertTableField.class); }
@@ -3368,8 +3369,9 @@ class GraphitronSchemaBuilderTest {
             "@mutation(typeName: UPDATE) → MutationUpdateTableField",
             """
             type Film @table(name: "film") { title: String }
+            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") @lookupKey, title: String }
             type Query { x: String }
-            type Mutation { updateFilm: Film @mutation(typeName: UPDATE) }
+            type Mutation { updateFilm(in: FilmInput!): Film @mutation(typeName: UPDATE) }
             """,
             schema -> assertThat(schema.field("Mutation", "updateFilm")).isInstanceOf(MutationField.MutationUpdateTableField.class)) {
             @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationUpdateTableField.class); }
@@ -3379,9 +3381,9 @@ class GraphitronSchemaBuilderTest {
             "@mutation(typeName: DELETE) → MutationDeleteTableField",
             """
             type Film @table(name: "film") { title: String }
-            input FilmKey @table(name: "film") { filmId: Int! @field(name: "film_id") @lookupKey }
+            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") @lookupKey }
             type Query { x: String }
-            type Mutation { deleteFilm(in: FilmKey!): Film @mutation(typeName: DELETE) }
+            type Mutation { deleteFilm(in: FilmInput!): Film @mutation(typeName: DELETE) }
             """,
             schema -> assertThat(schema.field("Mutation", "deleteFilm")).isInstanceOf(MutationField.MutationDeleteTableField.class)) {
             @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationDeleteTableField.class); }
@@ -3424,8 +3426,9 @@ class GraphitronSchemaBuilderTest {
             "@mutation(typeName: UPSERT) → MutationUpsertTableField",
             """
             type Film @table(name: "film") { title: String }
+            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") @lookupKey, title: String }
             type Query { x: String }
-            type Mutation { upsertFilm: Film @mutation(typeName: UPSERT) }
+            type Mutation { upsertFilm(in: FilmInput!): Film @mutation(typeName: UPSERT) }
             """,
             schema -> assertThat(schema.field("Mutation", "upsertFilm")).isInstanceOf(MutationField.MutationUpsertTableField.class)) {
             @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationUpsertTableField.class); }
@@ -3470,6 +3473,292 @@ class GraphitronSchemaBuilderTest {
     @ParameterizedTest(name = "{0}")
     @EnumSource(RootFieldCase.class)
     void rootFieldClassification(RootFieldCase tc) {
+        tc.assertions.accept(build(tc.sdl));
+    }
+
+    // ===== DML mutation classification (Phase 1 of mutation bodies; see roadmap/mutations.md) =====
+    //
+    // Rich assertions for the four DML variants: input-shape invariants (one @table arg, no
+    // listed input, no @condition, only ColumnField entries inside the input), @lookupKey gates
+    // for UPDATE / DELETE / UPSERT, return-type validation, and NodeId metadata resolution for
+    // ScalarReturnType(ID) returns.  Each rejection case asserts on the {@code reason} text so
+    // a regressed message would surface here, not silently in production.
+
+    enum MutationDmlCase implements ClassificationCase {
+
+        INSERT_HAPPY_PATH(
+            "INSERT with @table input → MutationInsertTableField, tableInputArg.inputTable matches the SDL @table",
+            """
+            type Film @table(name: "film") { title: String }
+            input FilmInput @table(name: "film") { title: String }
+            type Query { x: String }
+            type Mutation { createFilm(in: FilmInput!): Film @mutation(typeName: INSERT) }
+            """,
+            schema -> {
+                var f = (MutationField.MutationInsertTableField) schema.field("Mutation", "createFilm");
+                assertThat(f.tableInputArg().inputTable().tableName()).isEqualTo("film");
+                assertThat(f.tableInputArg().fieldBindings()).isEmpty();
+                assertThat(f.nodeIdMeta()).isEmpty();
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationInsertTableField.class); }
+        },
+
+        UPDATE_LOOKUP_KEY_COVERS_SINGLE_PK(
+            "UPDATE with @lookupKey on the single-column PK → MutationUpdateTableField with non-empty fieldBindings",
+            """
+            type Film @table(name: "film") { title: String }
+            input FilmInput @table(name: "film") {
+                filmId: Int! @field(name: "film_id") @lookupKey
+                title: String
+            }
+            type Query { x: String }
+            type Mutation { updateFilm(in: FilmInput!): Film @mutation(typeName: UPDATE) }
+            """,
+            schema -> {
+                var f = (MutationField.MutationUpdateTableField) schema.field("Mutation", "updateFilm");
+                assertThat(f.tableInputArg().fieldBindings()).hasSize(1);
+                assertThat(f.tableInputArg().fieldBindings().get(0).targetColumn().sqlName()).isEqualTo("film_id");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationUpdateTableField.class); }
+        },
+
+        UPDATE_NO_LOOKUP_KEY_REJECTED(
+            "UPDATE without @lookupKey → UnclassifiedField (Invariant #2)",
+            """
+            type Film @table(name: "film") { title: String }
+            input FilmInput @table(name: "film") { title: String }
+            type Query { x: String }
+            type Mutation { updateFilm(in: FilmInput!): Film @mutation(typeName: UPDATE) }
+            """,
+            schema -> {
+                var f = (UnclassifiedField) schema.field("Mutation", "updateFilm");
+                assertThat(f.reason()).contains("@mutation(typeName: UPDATE) requires at least one @lookupKey");
+            }),
+
+        UPDATE_ALL_FIELDS_LOOKUP_KEY_REJECTED(
+            "UPDATE where every input field is @lookupKey → UnclassifiedField (Invariant #4)",
+            """
+            type Film @table(name: "film") { title: String }
+            input FilmInput @table(name: "film") {
+                filmId: Int! @field(name: "film_id") @lookupKey
+            }
+            type Query { x: String }
+            type Mutation { updateFilm(in: FilmInput!): Film @mutation(typeName: UPDATE) }
+            """,
+            schema -> {
+                var f = (UnclassifiedField) schema.field("Mutation", "updateFilm");
+                assertThat(f.reason()).contains("@mutation(typeName: UPDATE) has no non-@lookupKey fields to set");
+            }),
+
+        UPDATE_PARTIAL_COMPOSITE_PK_REJECTED(
+            "UPDATE on composite-PK table where @lookupKey covers only one PK column → UnclassifiedField listing missing PK column (Invariant #2)",
+            """
+            type FilmActor @table(name: "film_actor") { actorId: Int! @field(name: "actor_id") }
+            input FilmActorInput @table(name: "film_actor") {
+                actorId: Int! @field(name: "actor_id") @lookupKey
+                lastUpdate: String @field(name: "last_update")
+            }
+            type Query { x: String }
+            type Mutation { updateFilmActor(in: FilmActorInput!): FilmActor @mutation(typeName: UPDATE) }
+            """,
+            schema -> {
+                var f = (UnclassifiedField) schema.field("Mutation", "updateFilmActor");
+                assertThat(f.reason())
+                    .contains("@lookupKey fields do not cover all PK column(s)")
+                    .contains("film_id");
+            }),
+
+        UPDATE_FULL_COMPOSITE_PK_HAPPY(
+            "UPDATE on composite-PK table where @lookupKey covers all PK columns → MutationUpdateTableField with both bindings",
+            """
+            type FilmActor @table(name: "film_actor") { actorId: Int! @field(name: "actor_id") }
+            input FilmActorInput @table(name: "film_actor") {
+                actorId: Int! @field(name: "actor_id") @lookupKey
+                filmId: Int! @field(name: "film_id") @lookupKey
+                lastUpdate: String @field(name: "last_update")
+            }
+            type Query { x: String }
+            type Mutation { updateFilmActor(in: FilmActorInput!): FilmActor @mutation(typeName: UPDATE) }
+            """,
+            schema -> {
+                var f = (MutationField.MutationUpdateTableField) schema.field("Mutation", "updateFilmActor");
+                assertThat(f.tableInputArg().fieldBindings())
+                    .extracting(b -> b.targetColumn().sqlName())
+                    .containsExactlyInAnyOrder("actor_id", "film_id");
+            }),
+
+        DELETE_FULL_COMPOSITE_PK_HAPPY(
+            "DELETE on composite-PK table where @lookupKey covers all PK columns → MutationDeleteTableField with both bindings",
+            """
+            type FilmActor @table(name: "film_actor") { actorId: Int! @field(name: "actor_id") }
+            input FilmActorInput @table(name: "film_actor") {
+                actorId: Int! @field(name: "actor_id") @lookupKey
+                filmId: Int! @field(name: "film_id") @lookupKey
+            }
+            type Query { x: String }
+            type Mutation { deleteFilmActor(in: FilmActorInput!): FilmActor @mutation(typeName: DELETE) }
+            """,
+            schema -> {
+                var f = (MutationField.MutationDeleteTableField) schema.field("Mutation", "deleteFilmActor");
+                assertThat(f.tableInputArg().fieldBindings())
+                    .extracting(b -> b.targetColumn().sqlName())
+                    .containsExactlyInAnyOrder("actor_id", "film_id");
+            }),
+
+        UPSERT_PARTIAL_COMPOSITE_PK_HAPPY(
+            "UPSERT exempt from full-PK coverage: @lookupKey on one column of a composite PK → MutationUpsertTableField",
+            """
+            type FilmActor @table(name: "film_actor") { actorId: Int! @field(name: "actor_id") }
+            input FilmActorInput @table(name: "film_actor") {
+                actorId: Int! @field(name: "actor_id") @lookupKey
+                filmId: Int! @field(name: "film_id")
+            }
+            type Query { x: String }
+            type Mutation { upsertFilmActor(in: FilmActorInput!): FilmActor @mutation(typeName: UPSERT) }
+            """,
+            schema -> {
+                var f = (MutationField.MutationUpsertTableField) schema.field("Mutation", "upsertFilmActor");
+                assertThat(f.tableInputArg().fieldBindings()).hasSize(1);
+            }),
+
+        DML_NESTING_FIELD_DEFERRED(
+            "DML mutation with NestingField in input → UnclassifiedField (Invariant #7)",
+            """
+            type Film @table(name: "film") { title: String }
+            input FilmTitleInput { title: String }
+            input FilmInput @table(name: "film") { details: FilmTitleInput }
+            type Query { x: String }
+            type Mutation { createFilm(in: FilmInput!): Film @mutation(typeName: INSERT) }
+            """,
+            schema -> {
+                var f = (UnclassifiedField) schema.field("Mutation", "createFilm");
+                assertThat(f.reason()).contains("nested input types in @mutation fields are not yet supported");
+            }),
+
+        DML_TWO_TABLE_INPUT_ARGS_REJECTED(
+            "DML mutation with two @table input arguments → UnclassifiedField (Invariant #1)",
+            """
+            type Film @table(name: "film") { title: String }
+            input FilmInputA @table(name: "film") { title: String }
+            input FilmInputB @table(name: "film") { description: String }
+            type Query { x: String }
+            type Mutation { createFilm(a: FilmInputA, b: FilmInputB): Film @mutation(typeName: INSERT) }
+            """,
+            schema -> {
+                var f = (UnclassifiedField) schema.field("Mutation", "createFilm");
+                assertThat(f.reason()).contains("more than one @table input argument");
+            }),
+
+        DML_PLAIN_INPUT_ARG_REJECTED(
+            "DML mutation with a plain (non-@table) input arg → UnclassifiedField (Invariant #13)",
+            """
+            type Film @table(name: "film") { title: String }
+            input PlainOptions { reason: String }
+            type Query { x: String }
+            type Mutation { createFilm(opts: PlainOptions!): Film @mutation(typeName: INSERT) }
+            """,
+            schema -> {
+                var f = (UnclassifiedField) schema.field("Mutation", "createFilm");
+                assertThat(f.reason()).contains("@mutation fields only accept @table input arguments");
+            }),
+
+        DML_LIST_INPUT_DEFERRED(
+            "DML mutation with listed input (in: [FilmInput]) → UnclassifiedField (Invariant #11)",
+            """
+            type Film @table(name: "film") { title: String }
+            input FilmInput @table(name: "film") { title: String }
+            type Query { x: String }
+            type Mutation { createFilm(in: [FilmInput!]!): Film @mutation(typeName: INSERT) }
+            """,
+            schema -> {
+                var f = (UnclassifiedField) schema.field("Mutation", "createFilm");
+                assertThat(f.reason()).contains("listed @table input arguments on @mutation fields are not yet supported");
+            }),
+
+        DML_NON_ID_RETURN_REJECTED(
+            "DML mutation with non-ID/non-@table return → UnclassifiedField (Invariant #14)",
+            """
+            input FilmInput @table(name: "film") { title: String }
+            type Query { x: String }
+            type Mutation { createFilm(in: FilmInput!): Int @mutation(typeName: INSERT) }
+            """,
+            schema -> {
+                var f = (UnclassifiedField) schema.field("Mutation", "createFilm");
+                assertThat(f.reason())
+                    .contains("@mutation(typeName: INSERT) return type 'Int' is not yet supported")
+                    .contains("use ID or a @table type");
+            }),
+
+        DML_BOOLEAN_RETURN_REJECTED(
+            "DML mutation with Boolean return → UnclassifiedField (Invariant #14)",
+            """
+            input FilmInput @table(name: "film") { title: String }
+            type Query { x: String }
+            type Mutation { createFilm(in: FilmInput!): Boolean @mutation(typeName: INSERT) }
+            """,
+            schema -> {
+                var f = (UnclassifiedField) schema.field("Mutation", "createFilm");
+                assertThat(f.reason())
+                    .contains("'Boolean' is not yet supported");
+            }),
+
+        DML_ID_RETURN_NON_NODE_TABLE_REJECTED(
+            "DML mutation returning ID on a non-@node table → UnclassifiedField (NodeId metadata absent)",
+            """
+            input FilmInput @table(name: "film") { title: String }
+            type Query { x: String }
+            type Mutation { createFilm(in: FilmInput!): ID @mutation(typeName: INSERT) }
+            """,
+            schema -> {
+                var f = (UnclassifiedField) schema.field("Mutation", "createFilm");
+                assertThat(f.reason())
+                    .contains("returns ID but table 'film' is not a @node type");
+            }),
+
+        DML_TABLE_RETURN_NON_NODE_HAPPY(
+            "DML mutation returning a @table type on a non-@node table → classified successfully (nodeIdMeta empty)",
+            """
+            type Film @table(name: "film") { title: String }
+            input FilmInput @table(name: "film") { title: String }
+            type Query { x: String }
+            type Mutation { createFilm(in: FilmInput!): Film @mutation(typeName: INSERT) }
+            """,
+            schema -> {
+                var f = (MutationField.MutationInsertTableField) schema.field("Mutation", "createFilm");
+                assertThat(f.nodeIdMeta()).isEmpty();
+            }),
+
+        DML_LIST_LOOKUP_KEY_FIELD_REJECTED(
+            "DML mutation with @lookupKey on a list-typed input field → UnclassifiedField with buildLookupBindings error",
+            """
+            type Film @table(name: "film") { title: String }
+            input FilmInput @table(name: "film") {
+                filmIds: [Int!]! @field(name: "film_id") @lookupKey
+                title: String
+            }
+            type Query { x: String }
+            type Mutation { updateFilm(in: FilmInput!): Film @mutation(typeName: UPDATE) }
+            """,
+            schema -> {
+                var f = (UnclassifiedField) schema.field("Mutation", "updateFilm");
+                assertThat(f.reason()).contains("@lookupKey on a list-typed input field is not supported");
+            });
+
+        final String description;
+        final String sdl;
+        final Consumer<GraphitronSchema> assertions;
+        MutationDmlCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
+            this.description = description;
+            this.sdl = sdl;
+            this.assertions = assertions;
+        }
+        @Override public Set<Class<?>> variants() { return Set.of(); }
+        @Override public String toString() { return description; }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(MutationDmlCase.class)
+    void mutationDmlClassification(MutationDmlCase tc) {
         tc.assertions.accept(build(tc.sdl));
     }
 
