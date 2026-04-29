@@ -80,12 +80,31 @@ class ServiceCatalogTest {
     }
 
     @Test
-    void reflectServiceMethod_unrecognisedParam_stillErrors() {
+    void reflectServiceMethod_unrecognisedParam_onChildField_stillErrors() {
+        // Non-empty parentPkColumns: child of a table-backed parent. SOURCES batching applies
+        // here, so an unrecognized-shape parameter still falls through to the SOURCES error.
+        var filmPk = List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"));
+        var result = newCatalog().reflectServiceMethod(
+            STUB_CLASS, "getWithUnknown", Set.of(), Set.of(), filmPk, null);
+
+        assertThat(result.failed()).isTrue();
+        assertThat(result.failureReason()).contains("unrecognized sources type");
+    }
+
+    @Test
+    void reflectServiceMethod_unrecognisedParam_onRootField_pointsAtArgCtxMismatch() {
+        // Empty parentPkColumns: root operation field or DTO-parent child. SOURCES batching
+        // cannot apply, so the rejection points at the actual problem (parameter name doesn't
+        // match any GraphQL argument or context key) rather than mentioning sources at all.
         var result = newCatalog().reflectServiceMethod(
             STUB_CLASS, "getWithUnknown", Set.of(), Set.of(), List.of(), null);
 
         assertThat(result.failed()).isTrue();
-        assertThat(result.failureReason()).contains("unrecognized sources type");
+        assertThat(result.failureReason())
+            .contains("does not match any GraphQL argument or context key")
+            .contains("available GraphQL arguments: (none)")
+            .contains("available context keys: (none)")
+            .doesNotContain("sources type");
     }
 
     @Test
@@ -104,14 +123,65 @@ class ServiceCatalogTest {
     }
 
     @Test
-    void reflectServiceMethod_dtoSources_rejectedWithLifterDirectiveHint() {
+    void reflectServiceMethod_dtoSources_onChildField_rejectedWithLifterDirectiveHint() {
+        // Non-empty parentPkColumns: child of a table-backed parent. This is the only context
+        // where the lifter-directive hint is genuinely actionable — DataLoader batching applies
+        // and the missing piece is a DTO-to-key conversion, the feature roadmap/R1 will add.
+        var filmPk = List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"));
         var result = newCatalog().reflectServiceMethod(
-            STUB_CLASS, "getFilmsWithDtoSources", Set.of(), Set.of(), List.of(), null);
+            STUB_CLASS, "getFilmsWithDtoSources", Set.of(), Set.of(), filmPk, null);
 
         assertThat(result.failed()).isTrue();
         assertThat(result.failureReason())
             .contains("not backed by a jOOQ TableRecord")
             .contains("lifter directive");
+    }
+
+    @Test
+    void reflectServiceMethod_dtoSources_onRootField_pointsAtArgCtxMismatch() {
+        // Empty parentPkColumns: root operation field. List<DTO> would have been classified as
+        // SOURCES, but root fields can't batch — the lifter-directive hint would mislead users
+        // who really just have a Java-param-name vs. GraphQL-argument-name mismatch (the most
+        // common cause). Surface the name mismatch directly.
+        var result = newCatalog().reflectServiceMethod(
+            STUB_CLASS, "getFilmsWithDtoSources", Set.of("inputs"), Set.of(), List.of(), null);
+
+        assertThat(result.failed()).isTrue();
+        assertThat(result.failureReason())
+            .contains("parameter 'keys'")
+            .contains("does not match any GraphQL argument or context key")
+            .contains("available GraphQL arguments: [inputs]")
+            .doesNotContain("lifter directive")
+            .doesNotContain("not backed by a jOOQ TableRecord");
+    }
+
+    @Test
+    void reflectServiceMethod_dtoListMatchingArgName_classifiedAsArg() {
+        // Happy path for the common batch-mutation pattern: Mutation with a single
+        // List<InputDto> argument whose Java parameter name matches the GraphQL argument
+        // name. This is what users hit on root operation fields once the name lines up.
+        var result = newCatalog().reflectServiceMethod(
+            STUB_CLASS, "getFilmsWithDtoSources", Set.of("keys"), Set.of(), List.of(), null);
+
+        assertThat(result.failed()).isFalse();
+        var params = result.ref().params();
+        assertThat(params).hasSize(1);
+        assertThat(params.get(0).source()).isInstanceOf(ParamSource.Arg.class);
+        assertThat(params.get(0).name()).isEqualTo("keys");
+    }
+
+    @Test
+    void reflectServiceMethod_rootFieldNameMismatch_listsAvailableNamesSorted() {
+        // The error message lists both the available GraphQL argument names and context keys,
+        // sorted, so users can spot typos. Multiple names exercise the join formatter.
+        var result = newCatalog().reflectServiceMethod(
+            STUB_CLASS, "getWithUnknown",
+            Set.of("inputs", "filter"), Set.of("tenantId", "locale"), List.of(), null);
+
+        assertThat(result.failed()).isTrue();
+        assertThat(result.failureReason())
+            .contains("available GraphQL arguments: [filter, inputs]")
+            .contains("available context keys: [locale, tenantId]");
     }
 
     @Test
@@ -175,9 +245,13 @@ class ServiceCatalogTest {
     }
 
     @Test
-    void reflectServiceMethod_setOfDtoSources_rejectedWithDtoMessage() {
+    void reflectServiceMethod_setOfDtoSources_onChildField_rejectedWithDtoMessage() {
+        // Non-empty parentPkColumns: child of a table-backed parent. The Set<DTO> rejection
+        // takes the same DTO-message path as List<DTO>, not the generic unrecognized-sources
+        // fallback.
+        var filmPk = List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"));
         var result = newCatalog().reflectServiceMethod(
-            STUB_CLASS, "getFilmsWithSetOfDtoSources", Set.of(), Set.of(), List.of(), null);
+            STUB_CLASS, "getFilmsWithSetOfDtoSources", Set.of(), Set.of(), filmPk, null);
 
         assertThat(result.failed()).isTrue();
         assertThat(result.failureReason())

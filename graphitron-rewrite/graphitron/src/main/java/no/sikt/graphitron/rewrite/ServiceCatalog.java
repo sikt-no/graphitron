@@ -19,6 +19,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Handles all reflection-based and jOOQ-catalog-based lookups: resolving Java service methods,
@@ -205,6 +206,18 @@ class ServiceCatalog {
                             return new ServiceReflectionResult(null,
                                 "parameter names not available for method '" + methodName + "' in class '" + className
                                 + "' — compile with -parameters flag (see warning above for instructions)");
+                        }
+                        // SOURCES batching is only meaningful when there is a parent table to batch
+                        // against. On root operation fields and DTO-parent children (parentPkColumns
+                        // empty) the parameter must match a GraphQL argument or context key — point
+                        // the user at the actual mismatch instead of an unrelated SOURCES-flavored
+                        // hint (the lifter-directive roadmap doesn't help with arg-name typos).
+                        if (parentPkColumns.isEmpty()) {
+                            return new ServiceReflectionResult(null,
+                                "parameter '" + displayName + "' in method '" + methodName
+                                + "' does not match any GraphQL argument or context key on this field"
+                                + " — available GraphQL arguments: " + formatNameSet(argNames)
+                                + "; available context keys: " + formatNameSet(ctxKeys));
                         }
                         String dtoReason = dtoSourcesRejectionReason(p.getParameterizedType());
                         if (dtoReason != null) {
@@ -416,6 +429,17 @@ class ServiceCatalog {
         }
 
         return Optional.empty();
+    }
+
+    /**
+     * Formats a set of names as a sorted bracketed list, or {@code (none)} when empty. Used by
+     * the parameter-classification error message on root operation fields to enumerate the
+     * GraphQL arguments and context keys the parameter could have matched.
+     */
+    private static String formatNameSet(Set<String> names) {
+        return names.isEmpty()
+            ? "(none)"
+            : names.stream().sorted().collect(Collectors.joining(", ", "[", "]"));
     }
 
     /**
