@@ -9,7 +9,7 @@ depends-on: []
 
 # sis-graphql-spec migration to graphitron-rewrite
 
-Track the consumer-side schema work needed to bring `sis-graphql-spec` cleanly onto graphitron-rewrite. This plan exists because sis is the canonical large-scale consumer; closing it out validates the rewrite's classification contracts end-to-end and lets us close courtesy windows on shims (notably [`retire-nodeid-synthesis-shim`](retire-nodeid-synthesis-shim.md), which gates on this work).
+Track the consumer-side schema work needed to bring `sis-graphql-spec` cleanly onto graphitron-rewrite. This plan exists because sis is the canonical large-scale consumer; closing it out validates the rewrite's classification contracts end-to-end and lets us close courtesy windows on shims (notably [`retire-synthesis-shims`](retire-synthesis-shims.md), which gates on this work).
 
 The earlier blocker, ~200 sis event types colliding on `__NODE_TYPE_ID = "195"` after silent promotion to `NodeType`, has been resolved upstream by retiring the type-level shim in `TypeBuilder.buildTableType`: a `@table` SDL type without `implements Node @node` is now a `TableType` regardless of metadata. The latest sis build against rewrite confirms no typeId-collision errors remain. The residual work splits into three independent phases plus one upstream bucket.
 
@@ -20,7 +20,7 @@ The two surviving field-level synthesis shims still fire today on bare scalar `I
 - `FieldBuilder` Path-2: output `ID` on a `NodeType` parent (parent type `implements Node @node`).
 - `BuildContext.classifyInputField`: input `ID` on a `@table` input whose backing jOOQ class carries `__NODE_TYPE_ID` / `__NODE_KEY_COLUMNS`.
 
-Each fires a per-occurrence WARN. The roadmap item [`retire-nodeid-synthesis-shim`](retire-nodeid-synthesis-shim.md) flips the WARN to a terminal classifier error once consumer schemas declare `@nodeId` explicitly.
+Each fires a per-occurrence WARN. The roadmap item [`retire-synthesis-shims`](retire-synthesis-shims.md) flips the WARN to a terminal classifier error once consumer schemas declare `@nodeId` explicitly.
 
 For every WARN line in the sis build log:
 
