@@ -1,4 +1,5 @@
 ---
+id: R9
 title: "Fold graphitron.sikt.no into the Maven build (AsciiDoc + GitHub Pages)"
 status: Spec
 bucket: architecture

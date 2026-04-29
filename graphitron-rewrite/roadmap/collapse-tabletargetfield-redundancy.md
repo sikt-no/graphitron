@@ -1,4 +1,5 @@
 ---
+id: R4
 title: "Collapse `BatchKeyField` validator/emitter redundancy"
 status: Backlog
 bucket: cleanup

@@ -8,11 +8,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 /**
@@ -36,6 +38,14 @@ public final class Main {
     private static final List<String> BACKLOG_BUCKETS = List.of("architecture", "stubs", "cleanup", "validation");
 
     /**
+     * Per-item identifier shape: literal {@code R} followed by a positive
+     * integer. IDs are monotonic across the roadmap and never reused, so a
+     * reference like "R24" stays meaningful even after the item file is
+     * deleted on Done. The next-id allocator returns {@code R<max+1>}.
+     */
+    private static final Pattern ID_PATTERN = Pattern.compile("^R(\\d+)$");
+
+    /**
      * Closed set of cross-cutting tags. {@code theme:} answers "what area is
      * this in?" orthogonal to {@code bucket:} (which answers "what kind of
      * work?"). Adding a new theme requires editing this list and the
@@ -57,9 +67,8 @@ public final class Main {
     private Main() {}
 
     public static void main(String[] args) throws IOException {
-        if (args.length < 2 || !(args[0].equals("generate") || args[0].equals("verify"))) {
-            System.err.println("usage: <generate|verify> <roadmap-dir>");
-            System.exit(64);
+        if (args.length < 2) {
+            usage();
         }
         String mode = args[0];
         Path dir = Path.of(args[1]).toAbsolutePath().normalize();
@@ -68,23 +77,138 @@ public final class Main {
             System.exit(64);
         }
 
+        switch (mode) {
+            case "generate" -> runGenerate(dir);
+            case "verify" -> runVerify(dir);
+            case "next-id" -> runNextId(dir);
+            case "create" -> runCreate(dir, sliceArgs(args, 2));
+            default -> usage();
+        }
+    }
+
+    private static void usage() {
+        System.err.println("usage:");
+        System.err.println("  generate <roadmap-dir>");
+        System.err.println("  verify   <roadmap-dir>");
+        System.err.println("  next-id  <roadmap-dir>");
+        System.err.println("  create   <roadmap-dir> <slug> --title \"<title>\""
+            + " [--bucket <bucket>] [--priority <n>] [--theme <theme>]");
+        System.exit(64);
+    }
+
+    private static List<String> sliceArgs(String[] args, int from) {
+        List<String> out = new ArrayList<>();
+        for (int i = from; i < args.length; i++) out.add(args[i]);
+        return out;
+    }
+
+    private static void runGenerate(Path dir) throws IOException {
         List<Item> items = readItems(dir);
         validate(items);
-        String rendered = render(items);
         Path readme = dir.resolve("README.md");
+        Files.writeString(readme, render(items));
+        System.out.println("wrote " + readme);
+    }
 
-        if (mode.equals("generate")) {
-            Files.writeString(readme, rendered);
-            System.out.println("wrote " + readme);
-        } else {
-            String existing = Files.exists(readme) ? Files.readString(readme) : "";
-            if (!existing.equals(rendered)) {
-                System.err.println("roadmap README.md is out of date. Regenerate with:");
-                System.err.println("  mvn -pl :graphitron-roadmap-tool exec:java");
-                System.exit(1);
-            }
-            System.out.println("roadmap README.md is up to date.");
+    private static void runVerify(Path dir) throws IOException {
+        List<Item> items = readItems(dir);
+        validate(items);
+        Path readme = dir.resolve("README.md");
+        String rendered = render(items);
+        String existing = Files.exists(readme) ? Files.readString(readme) : "";
+        if (!existing.equals(rendered)) {
+            System.err.println("roadmap README.md is out of date. Regenerate with:");
+            System.err.println("  mvn -pl :graphitron-roadmap-tool exec:java");
+            System.exit(1);
         }
+        System.out.println("roadmap README.md is up to date.");
+    }
+
+    private static void runNextId(Path dir) throws IOException {
+        List<Item> items = readItems(dir);
+        // No validate() here so a malformed sibling doesn't block ID allocation
+        // for the file the caller is about to write.
+        System.out.println(nextId(items));
+    }
+
+    /**
+     * Returns the next available ID as {@code R<max+1>}, or {@code R1} if no
+     * item carries an ID yet. Numbers are never reused: gaps left by deleted
+     * items stay as gaps so historical references in {@code changelog.md} or
+     * commit messages don't collide with future allocations.
+     */
+    static String nextId(List<Item> items) {
+        int max = 0;
+        for (Item i : items) {
+            if (i.id() == null) continue;
+            var m = ID_PATTERN.matcher(i.id());
+            if (m.matches()) {
+                max = Math.max(max, Integer.parseInt(m.group(1)));
+            }
+        }
+        return "R" + (max + 1);
+    }
+
+    private static void runCreate(Path dir, List<String> rest) throws IOException {
+        if (rest.isEmpty()) {
+            usage();
+        }
+        String slug = rest.get(0);
+        Map<String, String> opts = parseOptions(rest.subList(1, rest.size()));
+        String title = opts.get("title");
+        if (title == null || title.isBlank()) {
+            System.err.println("create: --title is required");
+            System.exit(64);
+        }
+        Path target = dir.resolve(slug + ".md");
+        if (Files.exists(target)) {
+            System.err.println("create: file already exists: " + target);
+            System.exit(1);
+        }
+        if (!slug.matches("[a-z0-9][a-z0-9-]*")) {
+            System.err.println("create: slug must be lowercase kebab-case: " + slug);
+            System.exit(64);
+        }
+        List<Item> items = readItems(dir);
+        validate(items);
+        String id = nextId(items);
+
+        StringBuilder fm = new StringBuilder();
+        fm.append("---\n");
+        fm.append("id: ").append(id).append('\n');
+        fm.append("title: \"").append(title.replace("\"", "\\\"")).append("\"\n");
+        fm.append("status: Backlog\n");
+        if (opts.containsKey("bucket")) fm.append("bucket: ").append(opts.get("bucket")).append('\n');
+        if (opts.containsKey("priority")) fm.append("priority: ").append(opts.get("priority")).append('\n');
+        if (opts.containsKey("theme")) fm.append("theme: ").append(opts.get("theme")).append('\n');
+        fm.append("depends-on: []\n");
+        fm.append("---\n\n");
+        fm.append("# ").append(title).append("\n\n");
+        fm.append("<One-paragraph problem statement: what is missing or broken, and why it matters."
+            + " Replace this and add a plan body when the item moves to Spec.>\n");
+
+        Files.writeString(target, fm.toString());
+        System.out.println("created " + target + " (" + id + ")");
+
+        // Refresh the rolled-up README so the new item shows up immediately.
+        runGenerate(dir);
+    }
+
+    private static Map<String, String> parseOptions(List<String> tokens) {
+        Map<String, String> out = new HashMap<>();
+        for (int i = 0; i < tokens.size(); i++) {
+            String t = tokens.get(i);
+            if (!t.startsWith("--")) {
+                System.err.println("create: unexpected positional argument: " + t);
+                System.exit(64);
+            }
+            if (i + 1 >= tokens.size()) {
+                System.err.println("create: missing value for " + t);
+                System.exit(64);
+            }
+            out.put(t.substring(2), tokens.get(++i));
+        }
+        return out;
     }
 
     static List<Item> readItems(Path dir) throws IOException {
@@ -144,7 +268,22 @@ public final class Main {
             known.add(i.slug());
         }
         List<String> errors = new ArrayList<>();
+        Map<String, String> idOwner = new HashMap<>();
         for (Item i : items) {
+            if (i.id() == null) {
+                errors.add(i.slug() + ": missing required 'id:' front-matter field. "
+                    + "Use the create subcommand to allocate one, or run next-id to "
+                    + "see what the next free ID would be.");
+            } else if (!ID_PATTERN.matcher(i.id()).matches()) {
+                errors.add(i.slug() + ": malformed id '" + i.id()
+                    + "'. Expected R<positive integer>, e.g. R24.");
+            } else {
+                String prev = idOwner.put(i.id(), i.slug());
+                if (prev != null) {
+                    errors.add(i.id() + ": duplicate id, used by '" + prev
+                        + "' and '" + i.slug() + "'. IDs are monotonic and never reused.");
+                }
+            }
             if (i.theme() != null && !VALID_THEMES.contains(i.theme())) {
                 errors.add(i.slug() + ": unknown theme '" + i.theme()
                     + "'. Valid themes: " + VALID_THEMES);
@@ -215,7 +354,8 @@ public final class Main {
         sb.append("[Code Generation Triggers](../docs/code-generation-triggers.md). ");
         sb.append("Then read an Active plan to see the shape, and pick a Backlog item or take a Ready item from Active.\n\n");
 
-        sb.append("**Front-matter dimensions.** Each item carries `status:`, `bucket:`, `priority:`, ");
+        sb.append("**Front-matter dimensions.** Each item carries `id:` (monotonic `R<n>`, never "
+            + "reused), `status:`, `bucket:`, `priority:`, ");
         sb.append("`theme:` (cross-cutting tag, see the *By theme* index), and `depends-on:` ");
         sb.append("(slugs of items that must ship first). When a dep ships, the dep file is deleted; ");
         sb.append("the author closing it is responsible for removing the slug from any dependents' ");
@@ -247,7 +387,7 @@ public final class Main {
             sb.append("_(none)_\n");
             return;
         }
-        sb.append("| Item | Status | Plan |\n|---|---|---|\n");
+        sb.append("| ID | Item | Status | Plan |\n|---|---|---|---|\n");
         for (Item i : active) {
             String status = i.status() + (i.deferred() ? " (deferred)" : "");
             String item = i.title();
@@ -257,7 +397,8 @@ public final class Main {
             if (!i.dependsOn().isEmpty()) {
                 item += " <sub>blocked by: " + linkSlugs(i.dependsOn()) + "</sub>";
             }
-            sb.append("| ").append(item).append(" | ")
+            sb.append("| `").append(i.id()).append("` | ")
+              .append(item).append(" | ")
               .append(status).append(" | [plan](")
               .append(i.slug()).append(".md) |\n");
         }
@@ -331,7 +472,8 @@ public final class Main {
                     .comparingInt((Item i) -> i.priority() == null ? Integer.MAX_VALUE : i.priority())
                     .thenComparing(Item::title))
                 .forEach(i -> {
-                    sb.append("- [**").append(i.title()).append("**](")
+                    sb.append("- `").append(i.id()).append("` [**")
+                      .append(i.title()).append("**](")
                       .append(i.slug()).append(".md) — ")
                       .append(i.status());
                     if (i.bucket() != null) {
@@ -350,7 +492,8 @@ public final class Main {
             sb.append("### (untagged)\n\n");
             untagged.stream()
                 .sorted(Comparator.comparing(Item::title))
-                .forEach(i -> sb.append("- [**").append(i.title()).append("**](")
+                .forEach(i -> sb.append("- `").append(i.id()).append("` [**")
+                    .append(i.title()).append("**](")
                     .append(i.slug()).append(".md)\n"));
             sb.append("\n");
         }
@@ -367,7 +510,8 @@ public final class Main {
     }
 
     private static void appendBacklogLine(StringBuilder sb, Item i) {
-        sb.append("- [**").append(i.title()).append("**](").append(i.slug()).append(".md)");
+        sb.append("- `").append(i.id()).append("` [**").append(i.title()).append("**](")
+          .append(i.slug()).append(".md)");
         String description = firstNonHeadingParagraph(i.body());
         if (!description.isEmpty()) {
             sb.append(": ").append(description);
@@ -402,11 +546,12 @@ public final class Main {
 
     record ParsedFile(Map<String, Object> frontMatter, String body) {}
 
-    record Item(String slug, String title, String status, String bucket,
+    record Item(String slug, String id, String title, String status, String bucket,
                 Integer priority, boolean deferred, String notes,
                 String theme, List<String> dependsOn, String body) {
 
         static Item from(String slug, Map<String, Object> fm, String body) {
+            String id = (String) fm.get("id");
             String title = (String) fm.getOrDefault("title", slug);
             String status = (String) fm.getOrDefault("status", "Backlog");
             String bucket = (String) fm.get("bucket");
@@ -415,7 +560,7 @@ public final class Main {
             String notes = (String) fm.get("notes");
             String theme = (String) fm.get("theme");
             List<String> dependsOn = parseSlugList(fm.get("depends-on"));
-            return new Item(slug, title, status, bucket, priority, deferred, notes,
+            return new Item(slug, id, title, status, bucket, priority, deferred, notes,
                 theme, dependsOn, body);
         }
 

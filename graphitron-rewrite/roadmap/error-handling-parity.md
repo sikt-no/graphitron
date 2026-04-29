@@ -1,4 +1,5 @@
 ---
+id: R12
 title: "Error-handling parity: emit per-fetcher error channels from `@error`"
 status: Spec
 bucket: architecture

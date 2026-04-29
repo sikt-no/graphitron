@@ -1,4 +1,5 @@
 ---
+id: R39
 title: "Validate that list fields on tables without a PK require explicit ordering"
 status: Backlog
 bucket: validation
