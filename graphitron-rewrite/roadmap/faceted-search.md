@@ -1,4 +1,5 @@
 ---
+id: R13
 title: "Faceted search on `@asConnection`"
 status: Spec
 priority: 7

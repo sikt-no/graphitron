@@ -36,10 +36,17 @@ themselves from approving that revision — another party must sign off.
   not the phase (`variant-coverage-meta-test.md`, not `phase-2.md`).
   No `plan-` prefix; backlog items live in the same directory and use the
   same shape.
+- Each item carries an `id:` of the form `R<n>` (literal `R` plus a positive
+  integer). IDs are monotonic across the whole roadmap and **never reused**:
+  when an item ships and its file is deleted on Done, the number stays a gap
+  so historical references in `changelog.md` and commit messages keep their
+  meaning. Refer to items by `R<n>` (or `R<n>: <slug>` when slug context helps);
+  the rendered README shows the ID in a leading column.
 - First lines are YAML front-matter, delimited by `---`:
 
   ```yaml
   ---
+  id: R<n>                                  # allocated by `roadmap-tool create`
   title: "Human-readable title"
   status: Backlog | Spec | Ready | In Progress | In Review
   bucket: architecture | stubs | cleanup    # backlog items only
@@ -52,6 +59,19 @@ themselves from approving that revision — another party must sign off.
   [`roadmap/README.md`](../roadmap/README.md) is regenerated from these fields
   by `mvn -pl :graphitron-roadmap-tool exec:java` (or `mise r roadmap`)
   and CI verifies it stays in sync via the tool's `verify` mode.
+- Allocate a new ID atomically with the tool rather than guessing. From the
+  repo root:
+
+  ```bash
+  mvn -f graphitron-rewrite/pom.xml -pl roadmap-tool exec:java -q \
+    -Dexec.args='create graphitron-rewrite/roadmap <slug> --title "<title>" \
+                 --bucket <bucket> --priority <n> --theme <theme>'
+  ```
+
+  The `create` subcommand picks the next free `R<n>`, writes the file with
+  the ID baked in, and refreshes the roll-up README. `next-id` is also
+  available as a read-only allocator if you need the number without writing
+  a file yet. Hand-creating an item file without an ID will fail the build.
 - Plans may be multi-phase. When a phase ships, the implementation commit updates
   the plan to mark that phase done (typically by collapsing its section into a
   one-line "shipped at `<sha>`" note and capturing any learnings). The overall

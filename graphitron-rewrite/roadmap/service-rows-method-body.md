@@ -1,4 +1,5 @@
 ---
+id: R32
 title: "Implement `@service` rows-method body"
 status: Backlog
 bucket: architecture

@@ -17,6 +17,13 @@
 
     <properties>
         <version.snakeyaml>2.5</version.snakeyaml>
+        <!--
+          Default subcommand for `mvn ... exec:java`. Override with
+          -Dexec.args="next-id <dir>" or -Dexec.args="create <dir> <slug> [opts]".
+          The verify-roadmap-readme execution below pins its own arguments and is
+          unaffected by this property.
+        -->
+        <exec.args>generate ${project.basedir}/../roadmap</exec.args>
     </properties>
 
     <dependencies>
@@ -46,10 +53,7 @@
                 <version>3.5.0</version>
                 <configuration>
                     <mainClass>no.sikt.graphitron.roadmap.Main</mainClass>
-                    <arguments>
-                        <argument>generate</argument>
-                        <argument>${project.basedir}/../roadmap</argument>
-                    </arguments>
+                    <commandlineArgs>${exec.args}</commandlineArgs>
                 </configuration>
                 <executions>
                     <execution>
