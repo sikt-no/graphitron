@@ -60,7 +60,12 @@ snapshots, matches how field-level classify-time output is already
 threaded, and confines federation knowledge to one map.
 
 ```java
-record EntityResolution(String typeName, TableRef table, List<KeyAlternative> alternatives) {}
+record EntityResolution(
+    String typeName,
+    TableRef table,
+    List<KeyAlternative> alternatives,
+    String nodeTypeId  // @node(typeId:) for NODE_ID-shape decode; null for non-@node entities
+) {}
 
 record KeyAlternative(
     List<String> requiredFields,
