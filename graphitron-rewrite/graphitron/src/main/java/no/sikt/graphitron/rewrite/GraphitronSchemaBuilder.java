@@ -57,12 +57,26 @@ import static no.sikt.graphitron.rewrite.BuildContext.*;
  */
 public class GraphitronSchemaBuilder {
 
-    private static final Set<String> FEDERATION_DIRECTIVE_NAMES = loadFederationDirectiveNames();
     private static final Pattern UNDECLARED_DIRECTIVE_PATTERN =
             Pattern.compile("tried to use an undeclared directive '([^']+)'");
 
-    private static Set<String> loadFederationDirectiveNames() {
-        return FederationDirectives.loadFederationSpecDefinitions(
+    /**
+     * Initialisation-on-demand holder for the federation directive name set. The set is computed
+     * by calling into {@code federation-graphql-java-support}, which loads the pinned spec URL
+     * and parses its directive definitions. If that call ever fails (network, classpath, or
+     * federation-jvm version mismatch) we want the failure to land only on schemas that actually
+     * use federation, not on every {@code GraphitronSchemaBuilder} class load. Putting the set
+     * behind a holder class delays the federation-jvm call until {@link #buildRecipeErrors}
+     * needs it; non-federation pipelines never trigger the load.
+     *
+     * <p>Also: we use {@link FederationDirectives#loadFederationSpecDefinitions(String)} rather
+     * than {@code FederationDirectives.allNames}, because in v6.0.0 {@code allNames} is the
+     * Federation 1 set only and would miss {@code @shareable}, {@code @inaccessible},
+     * {@code @override}, {@code @tag}, {@code @composeDirective}, and {@code @interfaceObject}.
+     * Don't "fix" this back to {@code allNames}.
+     */
+    private static final class FederationDirectiveNamesHolder {
+        static final Set<String> NAMES = FederationDirectives.loadFederationSpecDefinitions(
                         FederationLinkApplier.DEFAULT_FEDERATION_SPEC_URL).stream()
                 .filter(d -> d instanceof DirectiveDefinition)
                 .map(d -> ((DirectiveDefinition) d).getName())
@@ -499,6 +513,23 @@ public class GraphitronSchemaBuilder {
         return builder.build();
     }
 
+    /**
+     * Rewrites a {@link SchemaProblem} that includes at least one undeclared federation
+     * directive into a {@link ValidationError} list whose federation entries point at the
+     * getting-started recipe. Returns {@code null} when no error names a federation directive,
+     * letting the caller rethrow the original {@code SchemaProblem} unchanged.
+     *
+     * <p>Mixed-error trade-off: when a {@code SchemaProblem} contains both federation and
+     * non-federation undeclared-directive entries, every error in the bag is converted to
+     * {@link RejectionKind#INVALID_SCHEMA}, dropping the original exception type for the
+     * non-federation half. This is intentional: we cannot keep the {@code SchemaProblem}
+     * around (it is unrecoverable once unwrapped) and also throw {@code ValidationFailedException}
+     * with the recipe-rewrap entries for the federation half. The chosen behaviour preserves
+     * every error message; it loses only the original exception subtype distinction. If a real
+     * consumer surfaces wanting the original type back for the non-federation half, switch
+     * to a two-pass strategy here (raise {@code ValidationFailedException} for the federation
+     * half, rethrow the {@code SchemaProblem} for the rest).
+     */
     private static List<ValidationError> buildRecipeErrors(SchemaProblem e) {
         var errors = e.getErrors();
         boolean anyFed = false;
@@ -507,7 +538,7 @@ public class GraphitronSchemaBuilder {
             var m = UNDECLARED_DIRECTIVE_PATTERN.matcher(err.getMessage());
             var locs = err.getLocations();
             var loc = (locs != null && !locs.isEmpty()) ? locs.get(0) : null;
-            if (m.find() && FEDERATION_DIRECTIVE_NAMES.contains(m.group(1))) {
+            if (m.find() && FederationDirectiveNamesHolder.NAMES.contains(m.group(1))) {
                 anyFed = true;
                 result.add(new ValidationError(RejectionKind.INVALID_SCHEMA, null,
                         buildRecipeMessage(m.group(1)), loc));
