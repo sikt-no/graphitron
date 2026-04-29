@@ -1174,6 +1174,30 @@ class GraphitronSchemaBuilderTest {
                 assertThat(f.returnType().returnTypeName()).isEqualTo("Language");
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(ServiceTableField.class); }
+        },
+
+        NULL_SOURCE_KEY_PATH_ORIGIN_DEFAULTS_TO_FK_SIDE(
+            "@service field with @reference {key:} (null parent SQL source) defaults FkJoin originTable to the FK-side table",
+            """
+            type Language @table(name: "language") { name: String }
+            type Film @table(name: "film") {
+                language: Language
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getLanguage"})
+                    @reference(path: [{key: "film_language_id_fkey"}])
+            }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var f = (ServiceTableField) schema.field("Film", "language");
+                assertThat(f.joinPath()).hasSize(1);
+                var fk = (JoinStep.FkJoin) f.joinPath().get(0);
+                // @service path passes null currentSourceSqlName into parsePathElement, so the
+                // {key:} branch falls back to the FK-side ("film") as the implicit traversal
+                // origin (forward-traversal default).
+                assertThat(fk.originTable().tableName()).isEqualToIgnoringCase("film");
+                assertThat(fk.targetTable().tableName()).isEqualToIgnoringCase("language");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(ServiceTableField.class); }
         };
 
         final String sdl;
