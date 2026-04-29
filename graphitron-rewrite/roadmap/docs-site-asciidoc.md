@@ -104,7 +104,7 @@ graphitron-rewrite/roadmap/              # AUTHORED, stays markdown
 - `${project.basedir}` → `target/staging/` (skip `pom.xml`, `target/`).
 - `${project.basedir}/../graphitron-rewrite/docs/` → `target/staging/architecture/` (every `.adoc` file).
 
-**2. `exec-maven-plugin` invoking `roadmap-tool` (process-resources, after the copy):** trigger `roadmap-tool` to emit AsciiDoc into its **own** `roadmap-tool/target/generated-adoc/` directory (a third command-line mode alongside the existing `generate` and `verify`), then a second `maven-resources-plugin` execution copies that directory into `target/staging/_generated/`. Each module writes only inside its own `target/`; the docs module never reaches into `roadmap-tool/target/`, only consumes its declared output. The reactor wiring guarantees ordering: `roadmap-tool` is listed as a build-scope `<dependency>` of the docs module, so Maven's reactor schedules it first.
+**2. `exec-maven-plugin` invoking `roadmap-tool` (process-resources, after the copy):** trigger `roadmap-tool` to emit AsciiDoc into its **own** `roadmap-tool/target/generated-adoc/` directory via a new subcommand alongside the existing `generate`, `verify`, `next-id`, and `create`. Invocation follows the existing `-Dexec.args=...` / `commandlineArgs` convention introduced in `roadmap-tool/pom.xml` (so the new mode plugs into the same execution shape, no second exec stanza). A second `maven-resources-plugin` execution then copies the output directory into `target/staging/_generated/`. Each module writes only inside its own `target/`; the docs module never reaches into `roadmap-tool/target/`, only consumes its declared output. The reactor wiring guarantees ordering: `roadmap-tool` is listed as a build-scope `<dependency>` of the docs module, so Maven's reactor schedules it first.
 
 **3. `asciidoctor-maven-plugin` (compile):** read from `target/staging/`, write HTML to `target/generated-docs/`. Config:
 - `<sourceDirectory>${project.build.directory}/staging</sourceDirectory>`.
@@ -217,7 +217,7 @@ Two distinct migration efforts: converting in-repo `.md` to `.adoc` (mostly mech
 - `code-generation-triggers.md` → `code-generation-triggers.adoc`.
 - `runtime-extension-points.md` → `runtime-extension-points.adoc`.
 - `getting-started.md` → `getting-started.adoc`.
-- `claude-code-web-environment.md` → **moves to `.claude/web-environment.md`** (not converted to `.adoc`; not part of the public site). The `.claude/` directory is the existing Claude Code config home (`agents/`, `commands/`, `scripts/`, `settings.json`); the web-environment doc is purely AI-tooling content. Stays markdown for AI-agent readability. Inbound references in `CLAUDE.md`, root `README.md`, `graphitron-rewrite/roadmap/rewrite-test-tier-guide.md`, and `graphitron-rewrite/roadmap/changelog.md` are updated to the new path in the same commit. Root `README.md`'s "see [claude-code-web-environment.md] for the full rewrite build flow" reference is replaced with a pointer to the new public-facing `getting-started.adoc` instead, since the README is public-facing.
+- `claude-code-web-environment.md` → **moves to `.claude/web-environment.md`** (not converted to `.adoc`; not part of the public site). The `.claude/` directory is the existing Claude Code config home (`agents/`, `commands/`, `scripts/`, `skills/`, `settings.json`); the web-environment doc is purely AI-tooling content. Stays markdown for AI-agent readability. Inbound references in `CLAUDE.md`, root `README.md`, `graphitron-rewrite/roadmap/rewrite-test-tier-guide.md`, `graphitron-rewrite/roadmap/changelog.md`, and `.claude/scripts/session-start-web-env.sh` (banner comment + two error-message strings) are updated to the new path in the same commit. Root `README.md`'s "see [claude-code-web-environment.md] for the full rewrite build flow" reference is replaced with a pointer to the new public-facing `getting-started.adoc` instead, since the README is public-facing.
 
 **Roadmap content** (`graphitron-rewrite/roadmap/*.md`, `changelog.md`): stays markdown, build-time conversion via `roadmap-tool` (see [Roadmap, plans, and changelog rendering](#roadmap-plans-and-changelog-rendering)).
 
@@ -260,9 +260,10 @@ Treats the roadmap as first-class content. `roadmap-tool` (the existing Maven mo
 
 ### What gets generated
 
-- **`_generated/roadmap.adoc`**: the rendered status board. Items grouped by `status:` (Backlog → Spec → Ready → In Progress → In Review). Within each group, sorted by `bucket:` (architecture, stubs, cleanup) then `priority:`. Each row shows title, bucket, priority, and a link to the corresponding plan page. A short intro paragraph sets expectations: "this is our internal-and-external roadmap including refactors; substantive user-visible items are tagged `bucket: architecture`."
+- **`_generated/roadmap.adoc`**: the rendered status board. Items grouped by `status:` (Backlog → Spec → Ready → In Progress → In Review). Within each group, sorted by `bucket:` (architecture, stubs, cleanup) then `priority:`. Each row shows `id:` (R<n>), title, bucket, priority, theme, and a link to the corresponding plan page. Active and Backlog rows pick up "blocked by" annotations linking each `depends-on:` slug, mirroring the rendered README behaviour. A short intro paragraph sets expectations: "this is our internal-and-external roadmap including refactors; substantive user-visible items are tagged `bucket: architecture`."
+- **`_generated/by-theme.adoc`**: the cross-cutting "By theme" index already produced for the README, rendered as its own page so visitors can navigate via theme alongside status. Sources from the same `theme:` field; no duplicated logic.
 - **`_generated/changelog.adoc`**: converted directly from `graphitron-rewrite/roadmap/changelog.md`. "Recently shipped" view.
-- **`_generated/plans/<slug>.adoc`**: one page per item, body converted from the markdown plan. Front-matter rendered as a small attribute box at the top (status, bucket, priority, deferred).
+- **`_generated/plans/<slug>.adoc`**: one page per item, body converted from the markdown plan. URL slug stays slug-based (more readable than `R<n>`); the `id:` is rendered inside the page, not in the path. Front-matter rendered as a small attribute box at the top (id, status, bucket, priority, theme, depends-on, deferred).
 
 ### Markdown-to-AsciiDoc conversion in `roadmap-tool`
 
@@ -375,13 +376,13 @@ Verification: side-by-side comparison of `https://sikt-no.github.io/graphitron/`
 
 ### Phase 4: Roadmap, plans, and changelog rendering
 
-End state: the deployed Pages URL has a Roadmap section linked from the secondary nav, with the per-status status board, a "Recently shipped" changelog, and per-plan pages reachable only from the roadmap index. Roadmap content auto-updates on every push: edit a `.md` in `graphitron-rewrite/roadmap/`, push, the next deploy reflects the change.
+End state: the deployed Pages URL has a Roadmap section linked from the secondary nav, with the per-status status board, a "By theme" cross-cutting index, a "Recently shipped" changelog, and per-plan pages reachable only from the roadmap index. Roadmap content auto-updates on every push: edit a `.md` in `graphitron-rewrite/roadmap/`, push, the next deploy reflects the change.
 
 Deliverables:
 
-- `roadmap-tool` extension: new code path emitting AsciiDoc into a configurable output directory. Existing GitHub-README emission keeps working unchanged.
-- `/docs/pom.xml` updated: staging step now also runs `roadmap-tool` to populate `target/staging/_generated/`. Reactor order ensures `roadmap-tool` builds before `docs`.
-- Roadmap index page wired into secondary nav; plan pages reachable from roadmap index only.
+- `roadmap-tool` extension: new subcommand emitting AsciiDoc into a configurable output directory, sharing the existing parsing / validation path with `generate` and `verify` so the renderers can't drift on `id:`, `theme:`, or `depends-on:` semantics. Existing GitHub-README emission keeps working unchanged.
+- `/docs/pom.xml` updated: staging step now also runs `roadmap-tool` to populate `target/staging/_generated/`. Invocation uses the `-Dexec.args=...` / `commandlineArgs` convention introduced for `next-id` and `create`. Reactor order ensures `roadmap-tool` builds before `docs`.
+- Roadmap index page and "By theme" page wired into secondary nav; plan pages reachable from those entry points only.
 - Recommended option 1 ("pass-through with header") used initially for markdown→AsciiDoc; revisit if rendering quality is poor.
 - Documentation: short note in `/docs/README.adoc` and `workflow.adoc` that the roadmap renders publicly.
 
