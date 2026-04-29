@@ -14,6 +14,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Plan |
 |---|---|---|---|
+| `R1` | `BatchKey` lifter directive | Spec | [plan](batchkey-lifter-directive.md) |
 | `R37` | Stub #8: Non-table / scalar / reference child leaves | Spec | [plan](stub-non-table-scalar-child-leaves.md) |
 | `R20` | `IdReferenceField` code generation | Spec | [plan](id-reference-input-field.md) |
 | `R3` | Classification vocabulary follow-ups | Spec | [plan](classification-vocabulary-followups.md) |
@@ -36,7 +37,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 ### Architecture
 
-- `R1` [**`BatchKey` lifter directive**](batchkey-lifter-directive.md): Mechanism for schema authors to supply a DTO-to-key conversion, enabling DataLoader batching on DTO parents. `BatchKey.ObjectBased` has been removed; free-form DTO sources are now rejected at classification time with a build error pointing here. This feature re-enables DTO-parent DataLoader batching by feeding the existing column-keyed path via a developer-supplied lifting function. Co-closes the `RecordTableField` / `RecordLookupTableField` missing-FK-path rejection for DTO parents.
 - `R6` [**Decompose `FieldBuilder`**](decompose-fieldbuilder.md): Split the 2,217-line / 56-private-method builder along the field taxonomy. Argument-resolution unification has shipped (Phase 4 landed under Done), so this is no longer blocked. Proposed split: `QueryFieldBuilder`, `MutationFieldBuilder`, `ChildFieldBuilder` plus a shared argument-classification module.
 - `R41` [**@field(name:) on @service method args**](service-arg-java-name-override.md): `ServiceCatalog.reflectServiceMethod` matches Java parameters to GraphQL arguments by exact name. The Java parameter name (compiled with `-parameters`) must equal the GraphQL argument name. There is no override, so a schema author who follows one naming convention (e.g. singular `input`) and a service author who follows another (e.g. plural `inputs` for a `List<…>`) cannot both keep their preferred name. The only options today are renaming one side or the other.
 - `R5` [**Composite-key `@lookupKey` on list-of-input-object arguments**](composite-key-lookupkey.md): Add `ArgumentRef.CompositeLookupArg` carrying `(input-field-name, target-column)` pairs resolved from `@field(name:)` directives; `buildInputRowsMethod` already handles arbitrary-arity VALUES + JOIN.
@@ -87,7 +87,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### service
 
-- `R1` [**`BatchKey` lifter directive**](batchkey-lifter-directive.md) — Backlog, architecture
+- `R1` [**`BatchKey` lifter directive**](batchkey-lifter-directive.md) — Spec, architecture
 - `R41` [**@field(name:) on @service method args**](service-arg-java-name-override.md) — Backlog, architecture
 - `R31` [**Context-value registry + native multi-tenant fan-out for `@service`**](service-context-value-registry.md) — Spec, blocked by [mutations](mutations.md)
 - `R32` [**Implement `@service` rows-method body**](service-rows-method-body.md) — Backlog, architecture
