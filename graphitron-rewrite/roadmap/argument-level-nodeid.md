@@ -5,44 +5,40 @@ status: Backlog
 bucket: architecture
 priority: 2
 theme: nodeid
-depends-on: []
+depends-on: [lift-nodeid-out-of-model]
 ---
 
 # Argument-level `@nodeId` support
 
-`@nodeId` is declared on `ARGUMENT_DEFINITION` in [`directives.graphqls`](../graphitron/src/main/resources/no/sikt/graphitron/rewrite/schema/directives.graphqls) but `FieldBuilder.classifyArgument` (line 754) never inspects it. The scalar-ID branch at line 815 is gated on `!list` and fires only via `nodeIdMetadata` (synthesized route); an explicit `@nodeId(typeName: T)` on a `[ID!]` arg falls through to the column-binding fallthrough at line 826 and surfaces as `column 'X' could not be resolved in table 'Y'`. Reproducer from opptak: `kompetanseregelverkGittIdV2(ider: [ID!]! @nodeId(typeName: "Kompetanseregelverk")): [Kompetanseregelverk!] @asConnection`.
+`@nodeId` is declared on `ARGUMENT_DEFINITION` in [`directives.graphqls`](../graphitron/src/main/resources/no/sikt/graphitron/rewrite/schema/directives.graphqls) but `FieldBuilder.classifyArgument` (line 754) never inspects it. An explicit `@nodeId(typeName: T)` on a `[ID!]` arg falls through to the column-binding fallthrough at line 826 and surfaces as `column 'X' could not be resolved in table 'Y'`. Reproducer from opptak: `kompetanseregelverkGittIdV2(ider: [ID!]! @nodeId(typeName: "Kompetanseregelverk")): [Kompetanseregelverk!] @asConnection`.
 
-## Architectural framing
+## Assumes R42 has landed
 
-`@nodeId` is a wire-format encoding. The model below the DataFetcher boundary only needs key tuples and FK references; the encoded form should not propagate into the classifier model, the condition body, the projection body, or the lookup mapping. The existing `NodeIdField` / `NodeIdReferenceField` / `NodeIdInFilterField` / `IdReferenceField` / `BodyParam.NodeIdIn` / `LookupMapping.NodeIdMapping` / `ArgumentRef.ScalarArg.NodeIdArg` variants are wire-shape leaks into the model. The smoking gun: `BodyParam.NodeIdIn` emits `NodeIdEncoder.hasIds("typeId", arg, table.col1, ..., table.colN)` from inside a condition method, reaching the encoder across the DataFetcher / query-builder boundary; jOOQ should see decoded key tuples and a standard row-IN predicate.
-
-R40 takes the opportunity to land the right shape for arg-level support without growing that debt:
-
-- New `CallSiteExtraction.NodeIdDecodeKeys(typeId, keyColumns)` (or similarly named) variant: at the DataFetcher call site, decodes a `List<String>` of wire IDs into `List<Object[]>` of key tuples, validates the `typeId` prefix, and short-circuits empty / invalid input.
-- Classifier path for `[ID!] @nodeId(typeName: SameTable)` produces a column-shaped argument (single-PK case: ordinary `ColumnArg` over the PK column with the new extraction; composite-PK case: a `CompositeKeyArg` analog if needed, but column-shaped, not NodeId-shaped).
-- Body emits standard jOOQ: `table.pkCol.in(decodedKeys)` for single-PK, `DSL.row(table.col1, ..., table.colN).in(decodedKeys)` for composite. No reach into `NodeIdEncoder` from the body.
-- `NodeIdEncoder` keeps `decodeKeys` / `encode` (boundary helpers); it loses `hasIds` (a query-builder helper that should never have lived there).
-
-R40 does **not** introduce a `NodeIdInArg` sibling and does **not** extend `NodeIdArg` to cover the list IN cell. Both options propagate the wire shape into the model. The right move is to push encode/decode out to the boundary and let the model see columns.
+R42 (`lift-nodeid-out-of-model`) introduces `CallSiteExtraction.NodeIdDecodeKeys(typeId)`, the column-shaped composite-key carriers, and the row-IN body emission. R40 builds on that foundation; do not start R40 until R42 is Done. Without R42, R40 either has to ship a wire-shape variant (which R42 then deletes) or duplicate R42's foundation work, both of which the R42 framing already rejected.
 
 ## Scope
 
-Same-table only: `typeName:` resolves to the field's own backing table. FK-target args (`typeName:` resolves to a different table) are a separate Backlog item; with the boundary-extraction shape in place, the FK-target case becomes "classify as `ColumnReferenceField`-style with an FK path plus the same `NodeIdDecodeKeys` extraction", which is an even smaller follow-up than the input-field analog. R20's `IdReferenceField` predates this framing and is re-evaluated as part of R42; R40 does not depend on R20.
+Same-table only: `@nodeId(typeName: T)` on a top-level argument where `T` resolves to the field's own backing table. Produces a primary-key IN predicate (single-column or composite-row, depending on the target's `nodeKeyColumns`). FK-target args (`T` resolves to a different table) are a separate Backlog item; under R42's framing the shape is "classify as a `ColumnReferenceField`-style argument with an FK path plus `NodeIdDecodeKeys` extraction", trivially small once R42's column carriers exist.
 
-## Companion item
+## Work
 
-R42 ([`lift-nodeid-out-of-model.md`](lift-nodeid-out-of-model.md)) retires the existing wire-shape leaks (`InputField.NodeIdField` / `NodeIdReferenceField` / `NodeIdInFilterField` / `IdReferenceField`, `ChildField.NodeIdField` / `NodeIdReferenceField`, `BodyParam.NodeIdIn`, `LookupMapping.NodeIdMapping`, `ArgumentRef.ScalarArg.NodeIdArg`) by replacing each with the column-shaped variant plus a `NodeIdDecodeKeys` / `NodeIdEncodeKeys` extraction at the appropriate boundary. `GraphitronType.NodeType` stays (it carries identity, not wire format). R42 is large; R40 does not block on it but is shaped so it does not add to the debt.
+The whole change is a classifier extension in `FieldBuilder.classifyArgument`, sitting between the input-type arms (today lines 783-811) and the column-binding fallthrough (today line 826):
+
+1. If the argument is `ID` or `[ID!]` and carries `@nodeId(typeName: T)`:
+   - Resolve `T` against the schema. Reject non-existent types (UnclassifiedArg with candidate hint), non-`@table` object types (UnclassifiedArg), and FK-target `T` (out of scope; UnclassifiedArg pointing at the FK-target follow-on item).
+   - For same-table `T`: resolve `(typeId, keyColumns)` via R42's existing fallback (catalog `nodeIdMetadata` → post-first-pass `ctx.types` → SDL-only `@node` with `catalog.findPkColumns`). Reject if all three miss.
+   - Build a column-shaped `ArgumentRef` (R42's column carrier) over the resolved key columns, with `extraction = CallSiteExtraction.NodeIdDecodeKeys(typeId)`.
+2. The existing scalar synthesized-route block (today `NodeIdArg` at lines 813-824) is gone post-R42; the synthesized route already routes through R42's column carrier with the same extraction.
+
+Projection, body emission, lookup mapping, validator coverage, and call-site extraction are all R42's. R40 adds no new variants, no new emitter arms, no new validator arms.
 
 ## Spec-day-one questions
 
-- **Composite-key shape.** Single-PK fits ordinary `ColumnArg` cleanly. Composite-PK needs a column-shaped multi-column carrier. Pin whether to introduce a small `CompositeKeyArg(name, keyColumns: List<ColumnRef>, extraction)` or generalise `ColumnArg` to take a list of columns. Either way, it stays column-shaped, not NodeId-shaped.
 - **`@asConnection` composition.** `GraphitronSchemaBuilder.rewriteCarrierField` appends `first` / `after` before classifyArguments runs, so `isPaginationArg` claims those names first. Confirm filter + `PaginationSpec` compose (filter narrows, seek paginates within) with an execution test on the opptak reproducer.
-- **`@lookupKey` policy.** Reject `[ID!] @nodeId @lookupKey` at classify time, by symmetry with `buildLookupBindings`'s rejection of `@lookupKey` on list input fields and the `@asConnection` + `@lookupKey` rejection at lines 331/346. (The lookup-key-on-list case is already covered by the existing `NodeIdMapping` path in legacy debt; do not extend that path.)
-- **`@condition` policy.** With the model carrying only `ColumnArg` shapes, `@condition` co-existence is the same as on any other column-bound arg; no special case needed.
-- **Validator + dispatch coverage.** The new extraction needs an arm in `ArgCallEmitter.buildArgExtraction`; the classifier path is exercised by an existing `ColumnArg` projection arm. No new `NOT_DISPATCHED_LEAVES` entry; nothing for `GraphitronSchemaValidator` beyond what column-shaped args already trigger.
-- **Stale-docstring cleanup landing alongside.** `ArgumentRef.ScalarArg.NodeIdArg`'s javadoc references "Step 5 (the reference variant)" and `FieldBuilder.projectFilters` line 1211 references a "Step 4 follow-up"; neither step exists. Strike both as part of R40, or fold into the companion item.
-- **Edge cases the classifier must enumerate.** `typeName:` non-existent (UnclassifiedArg with candidate hint), non-`@table` target (UnclassifiedArg), same-table target with no metadata / no `@node` / no PK (UnclassifiedArg); messages mirror the input-field arm's error contract.
+- **`@lookupKey` policy.** `[ID!] @nodeId @lookupKey` rejects at classify time, matching `buildLookupBindings`'s rejection of `@lookupKey` on list input fields and the `@asConnection` + `@lookupKey` rejection at lines 331/346. (Single-id `@lookupKey` is the lookup-mapping path and stays via R42's `LookupMapping`-over-PK collapse, not R40's surface.)
+- **`@condition`.** With column-shaped arguments, `@condition` co-existence is the same as on any other column-bound arg; no special case needed.
+- **Scalar same-table case.** `ID @nodeId(typeName: SameTable)` (non-list, declared) routes through the same classifier arm; emission degenerates to single-column `c.eq(decodedKey)`. Pin whether R40 enables it or leaves it to a sibling line item; the only marginal cost is the extra test case.
 
 ## Test surface
 
-`nodeidfixture` catalog (Sakila lacks `__NODE_KEY_COLUMNS`). Pipeline-tier classification cases for composite-PK, single-PK, target-not-`@node` Unresolved, target-non-`@table` Unresolved, missing-`typeName` Unresolved. Execution-tier cases against PostgreSQL using the opptak reproducer shape: filter-by-ids returns exactly those rows; empty list passes through to `noCondition()` (or its column-eq equivalent); combined with `first` / `after` returns the paginated subset of the filtered set; `QUERY_COUNT == 1`. Generated SQL inspection (via `ExecuteListener`) should confirm the predicate is `pkCol IN (...)` (single-PK) or `(col1, col2) IN ((...), ...)` (composite), not a `hasIds` call.
+`nodeidfixture` catalog (Sakila lacks `__NODE_KEY_COLUMNS`). Pipeline-tier classification: composite-PK same-table, single-PK same-table, target-not-`@node` Unresolved, target-non-`@table` Unresolved, target-different-table Unresolved (FK-target follow-on placeholder), missing-`typeName` Unresolved. Execution-tier against PostgreSQL on the opptak reproducer shape: filter-by-ids returns exactly those rows; empty list passes through to no-condition; combined with `first` / `after` returns the paginated subset of the filtered set; `QUERY_COUNT == 1`. Generated SQL inspection via `ExecuteListener`: predicate is `pkCol IN (...)` (single-PK) or `(col1, col2) IN (...)` (composite), with no `hasIds` call surviving anywhere.
