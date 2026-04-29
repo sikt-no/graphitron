@@ -122,7 +122,7 @@ public sealed interface QueryField extends RootField
      *
      * <p>{@code errorChannel} carries the carrier-side typed-error wiring when this field's
      * payload includes an {@code errors} field; populated by R12's C3 carrier classifier.
-     * Defaults to {@link Optional#empty()} via the no-channel convenience constructor.
+     * Until that lands, call sites pass {@link Optional#empty()}.
      */
     record QueryServiceTableField(
         String parentTypeName,
@@ -131,13 +131,7 @@ public sealed interface QueryField extends RootField
         ReturnTypeRef.TableBoundReturnType returnType,
         MethodRef method,
         Optional<ErrorChannel> errorChannel
-    ) implements QueryField, MethodBackedField {
-
-        public QueryServiceTableField(String parentTypeName, String name, SourceLocation location,
-                                       ReturnTypeRef.TableBoundReturnType returnType, MethodRef method) {
-            this(parentTypeName, name, location, returnType, method, Optional.empty());
-        }
-    }
+    ) implements QueryField, MethodBackedField, WithErrorChannel {}
 
     /**
      * A root query field backed by a developer-provided service method, returning a non-table type.
@@ -147,7 +141,7 @@ public sealed interface QueryField extends RootField
      *
      * <p>{@code errorChannel} carries the carrier-side typed-error wiring when this field's
      * payload includes an {@code errors} field; populated by R12's C3 carrier classifier.
-     * Defaults to {@link Optional#empty()} via the no-channel convenience constructor.
+     * Until that lands, call sites pass {@link Optional#empty()}.
      */
     record QueryServiceRecordField(
         String parentTypeName,
@@ -156,11 +150,5 @@ public sealed interface QueryField extends RootField
         ReturnTypeRef returnType,
         MethodRef method,
         Optional<ErrorChannel> errorChannel
-    ) implements QueryField, MethodBackedField {
-
-        public QueryServiceRecordField(String parentTypeName, String name, SourceLocation location,
-                                        ReturnTypeRef returnType, MethodRef method) {
-            this(parentTypeName, name, location, returnType, method, Optional.empty());
-        }
-    }
+    ) implements QueryField, MethodBackedField, WithErrorChannel {}
 }

@@ -1615,11 +1615,11 @@ class FieldBuilder {
             }
             return switch (svcResult.returnType()) {
                 case ReturnTypeRef.TableBoundReturnType tb ->
-                    new QueryField.QueryServiceTableField(parentTypeName, name, location, tb, svcResult.method());
+                    new QueryField.QueryServiceTableField(parentTypeName, name, location, tb, svcResult.method(), Optional.empty());
                 case ReturnTypeRef.ResultReturnType r ->
-                    new QueryField.QueryServiceRecordField(parentTypeName, name, location, r, svcResult.method());
+                    new QueryField.QueryServiceRecordField(parentTypeName, name, location, r, svcResult.method(), Optional.empty());
                 case ReturnTypeRef.ScalarReturnType s ->
-                    new QueryField.QueryServiceRecordField(parentTypeName, name, location, s, svcResult.method());
+                    new QueryField.QueryServiceRecordField(parentTypeName, name, location, s, svcResult.method(), Optional.empty());
                 case ReturnTypeRef.PolymorphicReturnType p ->
                     new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.DEFERRED, "@service returning a polymorphic type is not yet supported");
             };
@@ -1744,11 +1744,11 @@ class FieldBuilder {
             }
             return switch (svcResult.returnType()) {
                 case ReturnTypeRef.TableBoundReturnType tb ->
-                    new MutationField.MutationServiceTableField(parentTypeName, name, location, tb, svcResult.method());
+                    new MutationField.MutationServiceTableField(parentTypeName, name, location, tb, svcResult.method(), Optional.empty());
                 case ReturnTypeRef.ResultReturnType r ->
-                    new MutationField.MutationServiceRecordField(parentTypeName, name, location, r, svcResult.method());
+                    new MutationField.MutationServiceRecordField(parentTypeName, name, location, r, svcResult.method(), Optional.empty());
                 case ReturnTypeRef.ScalarReturnType s ->
-                    new MutationField.MutationServiceRecordField(parentTypeName, name, location, s, svcResult.method());
+                    new MutationField.MutationServiceRecordField(parentTypeName, name, location, s, svcResult.method(), Optional.empty());
                 case ReturnTypeRef.PolymorphicReturnType p ->
                     new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.DEFERRED, "@service returning a polymorphic type is not yet supported");
             };
@@ -1792,10 +1792,10 @@ class FieldBuilder {
                 }
 
                 return switch (typeName) {
-                    case "INSERT" -> new MutationField.MutationInsertTableField(parentTypeName, name, location, returnType, tia, nodeIdMeta);
-                    case "UPDATE" -> new MutationField.MutationUpdateTableField(parentTypeName, name, location, returnType, tia, nodeIdMeta);
-                    case "DELETE" -> new MutationField.MutationDeleteTableField(parentTypeName, name, location, returnType, tia, nodeIdMeta);
-                    case "UPSERT" -> new MutationField.MutationUpsertTableField(parentTypeName, name, location, returnType, tia, nodeIdMeta);
+                    case "INSERT" -> new MutationField.MutationInsertTableField(parentTypeName, name, location, returnType, tia, nodeIdMeta, Optional.empty());
+                    case "UPDATE" -> new MutationField.MutationUpdateTableField(parentTypeName, name, location, returnType, tia, nodeIdMeta, Optional.empty());
+                    case "DELETE" -> new MutationField.MutationDeleteTableField(parentTypeName, name, location, returnType, tia, nodeIdMeta, Optional.empty());
+                    case "UPSERT" -> new MutationField.MutationUpsertTableField(parentTypeName, name, location, returnType, tia, nodeIdMeta, Optional.empty());
                     default       -> throw new IllegalStateException("unreachable: typeName=" + typeName);
                 };
             }

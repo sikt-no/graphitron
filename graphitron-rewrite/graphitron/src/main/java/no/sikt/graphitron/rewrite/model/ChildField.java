@@ -440,7 +440,7 @@ public sealed interface ChildField extends GraphitronField
         String parentTypeName,
         String name,
         SourceLocation location,
-        List<ErrorTypeRef> errorTypes
+        List<GraphitronType.ErrorType> errorTypes
     ) implements ChildField {
 
         public ErrorsField {

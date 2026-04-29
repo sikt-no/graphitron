@@ -29,7 +29,8 @@ class QueryServiceTableFieldValidationTest {
         VALID("service query field with resolved method — passes validation (Invariants §1/§2 enforced at classifier time)",
             new QueryServiceTableField("Query", "externalFilm", null,
                 FILM_RETURN,
-                new MethodRef.Basic("com.example.Service", "method", TypeName.VOID, List.of())),
+                new MethodRef.Basic("com.example.Service", "method", TypeName.VOID, List.of()),
+                Optional.empty()),
             List.of());
 
         private final String description;
