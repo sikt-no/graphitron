@@ -16,8 +16,9 @@ invoke the user's service method and project results back into GraphQL. Three co
 in one emitter:
 
 1. **Argument assembly.** Walk `MethodRef.params()` and emit each parameter:
-   `ParamSource.Context` via the typed registry from
-   [`service-context-value-registry.md`](service-context-value-registry.md);
+   `ParamSource.Context` via the existing `graphitronContext(env).getContextArgument(env, name)`
+   call (already typed via `<T>` inference; generate-time validation lands separately
+   under [`typed-context-value-registry.md`](typed-context-value-registry.md));
    `ParamSource.Arg` via the existing field-arg pattern; `ParamSource.DslContext` via
    `graphitronContext(env).getDslContext(env)`; `ParamSource.Sources` via `keys` (with
    conversion, see below); structural `Table` / `SourceTable` pass through.
@@ -51,7 +52,10 @@ service-call boundary.
 
 ## Dependencies
 
-- Hard requires [`set-parent-keys-on-service.md`](set-parent-keys-on-service.md) (the
-  four-variant `BatchKey` model is the contract this emitter switches on).
-- Hard requires [`service-context-value-registry.md`](service-context-value-registry.md)
-  for the typed context-arg surface the args walk consumes.
+- Builds on the four-variant `BatchKey` model shipped under `set-parent-keys-on-service`
+  (changelog SHA `eebf881`); the emitter switches on those variants.
+- Coordinates with [`typed-context-value-registry.md`](typed-context-value-registry.md):
+  this emitter's `ParamSource.Context` arm consumes `getContextArgument(env, name)` whose
+  `<T>` inference already gives the right cast at the call site, so no hard dependency on
+  the typed registry. When R45 lands, the args walk picks up generate-time validation
+  (unknown name, type mismatch) for free.

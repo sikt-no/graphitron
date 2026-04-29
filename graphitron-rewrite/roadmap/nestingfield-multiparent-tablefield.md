@@ -20,7 +20,7 @@ Allow a plain-object (NestingField) type to be used under multiple `@table` pare
 - `ColumnField` — compared by `sqlName()` + `columnClass()`. Relies on jOOQ's name-based `Record.get(Field)` fallback at runtime to project the same-named column across parents.
 - Inner `NestingField` — recurses via `compareNestedFieldsShape(rnf, onf, repParent, otherParent, errors)`, threading the outer parent names so deep errors still name the original tables.
 
-Everything else — `TableField`, `LookupTableField`, `SplitTableField`, `SplitLookupTableField`, `RecordTableField`, `RecordLookupTableField`, `ConstructorField`, `NodeIdField` — lands in the catch-all arm with the "classifies as X which is not yet supported across multiple parents" message pointing at [stub-non-table-scalar-child-leaves.md](stub-non-table-scalar-child-leaves.md).
+Everything else — `TableField`, `LookupTableField`, `SplitTableField`, `SplitLookupTableField`, `RecordTableField`, `RecordLookupTableField`, `ConstructorField`, `NodeIdField` — lands in the catch-all arm with the "classifies as X which is not yet supported across multiple parents" self-contained message.
 
 Two problems with the status quo:
 
@@ -80,7 +80,7 @@ The arm exists only to prevent the catch-all from firing. `TableField` and `Nest
 
 **File:** `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewrite/GraphitronSchemaValidator.java` (catch-all arm in `compareNestedFieldsShape`).
 
-The catch-all message currently points at `graphitron-rewrite/roadmap/stub-non-table-scalar-child-leaves.md`. Replace with a self-contained sentence. Roadmap tracking for the remaining leaves lands in §3; the error text itself doesn't need to cite a specific roadmap entry that risks drift if the entry is renamed or split.
+As of the R37 split, the catch-all message is already a self-contained sentence with no roadmap pointer (the pointer was removed when R37 split into per-variant items). Roadmap tracking for the remaining leaves lands in §3; the error text itself doesn't cite a specific roadmap entry to avoid drift when entries are renamed or split.
 
 New message:
 ```
