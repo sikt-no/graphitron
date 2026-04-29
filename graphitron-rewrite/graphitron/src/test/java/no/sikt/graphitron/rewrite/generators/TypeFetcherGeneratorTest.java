@@ -114,7 +114,7 @@ class TypeFetcherGeneratorTest {
         var field = queryTableField("films", true);
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(field));
         assertThat(method(spec, "films").returnType().toString())
-            .isEqualTo("org.jooq.Result<org.jooq.Record>");
+            .isEqualTo("graphql.execution.DataFetcherResult<org.jooq.Result<org.jooq.Record>>");
     }
 
     @Test
@@ -122,7 +122,7 @@ class TypeFetcherGeneratorTest {
         var field = queryTableField("film", false);
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(field));
         assertThat(method(spec, "film").returnType().toString())
-            .isEqualTo("org.jooq.Record");
+            .isEqualTo("graphql.execution.DataFetcherResult<org.jooq.Record>");
     }
 
     @Test
@@ -178,7 +178,7 @@ class TypeFetcherGeneratorTest {
         var field = lookupQueryField("filmById", List.of(listKeyParam("film_id", "FILM_ID", "java.lang.Integer")));
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(field));
         assertThat(method(spec, "filmById").returnType().toString())
-            .isEqualTo("org.jooq.Result<org.jooq.Record>");
+            .isEqualTo("graphql.execution.DataFetcherResult<org.jooq.Result<org.jooq.Record>>");
     }
 
     @Test
@@ -261,7 +261,7 @@ class TypeFetcherGeneratorTest {
             List.of(splitQueryField("Language", "films")));
         assertThat(spec.methodSpecs()).extracting(MethodSpec::name).contains("films", "rowsFilms");
         assertThat(method(spec, "films").returnType().toString())
-            .isEqualTo("java.util.concurrent.CompletableFuture<java.util.List<org.jooq.Record>>");
+            .isEqualTo("java.util.concurrent.CompletableFuture<graphql.execution.DataFetcherResult<java.util.List<org.jooq.Record>>>");
     }
 
     @Test
@@ -338,13 +338,13 @@ class TypeFetcherGeneratorTest {
     @Test
     void serviceField_list_dataFetcherReturnsCompletableFutureListRecord() {
         assertThat(method(specWithServiceField("Language", "films", true), "films").returnType().toString())
-            .isEqualTo("java.util.concurrent.CompletableFuture<java.util.List<org.jooq.Record>>");
+            .isEqualTo("java.util.concurrent.CompletableFuture<graphql.execution.DataFetcherResult<java.util.List<org.jooq.Record>>>");
     }
 
     @Test
     void serviceField_single_dataFetcherReturnsCompletableFutureRecord() {
         assertThat(method(specWithServiceField("Language", "film", false), "film").returnType().toString())
-            .isEqualTo("java.util.concurrent.CompletableFuture<org.jooq.Record>");
+            .isEqualTo("java.util.concurrent.CompletableFuture<graphql.execution.DataFetcherResult<org.jooq.Record>>");
     }
 
     @Test
@@ -402,16 +402,17 @@ class TypeFetcherGeneratorTest {
     @Test
     void serviceField_mappedRow_list_dataFetcherReturnsCompletableFutureListRecord() {
         assertThat(method(specWithMappedServiceField("Language", "films", true, mappedRowKey()), "films").returnType().toString())
-            .isEqualTo("java.util.concurrent.CompletableFuture<java.util.List<org.jooq.Record>>");
+            .isEqualTo("java.util.concurrent.CompletableFuture<graphql.execution.DataFetcherResult<java.util.List<org.jooq.Record>>>");
     }
 
     @Test
     void serviceField_mappedRow_single_dataFetcherReturnsCompletableFutureRecord() {
         // Mapped vs positional only changes the rows-method return shape (Map vs List); the
-        // data fetcher's return is always CompletableFuture<V> because loader.load(key, env)
-        // returns a per-key promise.
+        // data fetcher's return is always CompletableFuture<DataFetcherResult<V>> (R12 §3) because
+        // loader.load(key, env) returns a per-key promise that the wrapper lifts into the
+        // DataFetcherResult envelope.
         assertThat(method(specWithMappedServiceField("Language", "film", false, mappedRowKey()), "film").returnType().toString())
-            .isEqualTo("java.util.concurrent.CompletableFuture<org.jooq.Record>");
+            .isEqualTo("java.util.concurrent.CompletableFuture<graphql.execution.DataFetcherResult<org.jooq.Record>>");
     }
 
     @Test
@@ -552,7 +553,8 @@ class TypeFetcherGeneratorTest {
     @Test
     void connectionField_returnsConnectionResult() {
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(connectionField("films")));
-        assertThat(method(spec, "films").returnType().toString()).endsWith("ConnectionResult");
+        // Wrapped in DataFetcherResult<...> per R12 §3.
+        assertThat(method(spec, "films").returnType().toString()).endsWith("ConnectionResult>");
     }
 
     // Dropped connectionField_isNotStub: see queryTableField_isNotStub — partition test covers it.
@@ -643,7 +645,7 @@ class TypeFetcherGeneratorTest {
         assertThat(fetcher.parameters()).extracting(p -> p.type().toString())
             .containsExactly("graphql.schema.DataFetchingEnvironment");
         assertThat(fetcher.returnType().toString())
-            .isEqualTo("org.jooq.Result<org.jooq.Record>");
+            .isEqualTo("graphql.execution.DataFetcherResult<org.jooq.Result<org.jooq.Record>>");
     }
 
     @Test
@@ -668,7 +670,7 @@ class TypeFetcherGeneratorTest {
             List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
 
         assertThat(method(spec, "filmsByService").returnType().toString())
-            .isEqualTo("org.jooq.Result<no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord>");
+            .isEqualTo("graphql.execution.DataFetcherResult<org.jooq.Result<no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord>>");
     }
 
     @Test
@@ -687,13 +689,18 @@ class TypeFetcherGeneratorTest {
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
             List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
 
-        assertThat(method(spec, "filmCount").returnType().toString()).isEqualTo("java.lang.Integer");
+        // R12 §3 wraps every fetcher's return in DataFetcherResult<P>; ScalarReturnType still
+        // surfaces the developer's reflected return type as the inner P.
+        assertThat(method(spec, "filmCount").returnType().toString())
+            .isEqualTo("graphql.execution.DataFetcherResult<java.lang.Integer>");
     }
 
     @Test
     void queryServiceRecordField_emittedFetcher_handlesPrimitiveReturnType() {
         // Reflection of `int filmCount()` produces returnTypeName "int". The emitter must
-        // declare the primitive faithfully — no widening to Object or Integer.
+        // declare the primitive faithfully on the inner P slot — boxing to Integer only
+        // happens because DataFetcherResult<P> requires a reference type for P, and the
+        // primitive int boxes to Integer per R12 §3.
         var method = new MethodRef.Basic(
             "com.example.Service", "filmCount", TypeName.INT, List.of());
         var field = new QueryField.QueryServiceRecordField("Query", "filmCount", null,
@@ -701,7 +708,8 @@ class TypeFetcherGeneratorTest {
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
             List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
 
-        assertThat(method(spec, "filmCount").returnType().toString()).isEqualTo("int");
+        assertThat(method(spec, "filmCount").returnType().toString())
+            .isEqualTo("graphql.execution.DataFetcherResult<java.lang.Integer>");
     }
 
     @Test
@@ -716,7 +724,8 @@ class TypeFetcherGeneratorTest {
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
             List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
 
-        assertThat(method(spec, "tags").returnType().toString()).isEqualTo("java.lang.String[]");
+        assertThat(method(spec, "tags").returnType().toString())
+            .isEqualTo("graphql.execution.DataFetcherResult<java.lang.String[]>");
     }
 
     @Test
@@ -735,7 +744,7 @@ class TypeFetcherGeneratorTest {
             List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
 
         assertThat(method(spec, "stats").returnType().toString())
-            .isEqualTo("java.util.Map<java.lang.String, java.lang.Integer>");
+            .isEqualTo("graphql.execution.DataFetcherResult<java.util.Map<java.lang.String, java.lang.Integer>>");
     }
 
     @Test
@@ -753,7 +762,7 @@ class TypeFetcherGeneratorTest {
             List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
 
         assertThat(method(spec, "nums").returnType().toString())
-            .isEqualTo("java.util.List<? extends java.lang.Number>");
+            .isEqualTo("graphql.execution.DataFetcherResult<java.util.List<? extends java.lang.Number>>");
     }
 
     // ===== QueryTableInterfaceField =====
@@ -771,7 +780,7 @@ class TypeFetcherGeneratorTest {
         var field = queryTableInterfaceField("allContent", true);
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(field));
         assertThat(method(spec, "allContent").returnType().toString())
-            .isEqualTo("org.jooq.Result<org.jooq.Record>");
+            .isEqualTo("graphql.execution.DataFetcherResult<org.jooq.Result<org.jooq.Record>>");
     }
 
     @Test
@@ -779,7 +788,7 @@ class TypeFetcherGeneratorTest {
         var field = queryTableInterfaceField("content", false);
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(field));
         assertThat(method(spec, "content").returnType().toString())
-            .isEqualTo("org.jooq.Record");
+            .isEqualTo("graphql.execution.DataFetcherResult<org.jooq.Record>");
     }
 
     @Test
@@ -874,7 +883,7 @@ class TypeFetcherGeneratorTest {
         var field = tableInterfaceField("content", true);
         var spec = TypeFetcherGenerator.generateTypeSpec("Language", LANGUAGE_TABLE, List.of(field));
         assertThat(method(spec, "content").returnType().toString())
-            .isEqualTo("org.jooq.Result<org.jooq.Record>");
+            .isEqualTo("graphql.execution.DataFetcherResult<org.jooq.Result<org.jooq.Record>>");
     }
 
     @Test
@@ -882,7 +891,7 @@ class TypeFetcherGeneratorTest {
         var field = tableInterfaceField("content", false);
         var spec = TypeFetcherGenerator.generateTypeSpec("Language", LANGUAGE_TABLE, List.of(field));
         assertThat(method(spec, "content").returnType().toString())
-            .isEqualTo("org.jooq.Record");
+            .isEqualTo("graphql.execution.DataFetcherResult<org.jooq.Record>");
     }
 
     @Test

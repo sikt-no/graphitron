@@ -131,6 +131,7 @@ public class TypeFetcherGenerator {
     private static final ClassName ARRAY_LIST           = ClassName.get("java.util", "ArrayList");
     private static final ClassName SET                  = ClassName.get("java.util", "Set");
     private static final ClassName MAP                  = ClassName.get("java.util", "Map");
+    private static final ClassName DATA_FETCHER_RESULT  = ClassName.get("graphql.execution", "DataFetcherResult");
     /** {@code List<SortField<?>>} — the return type of every {@code *OrderBy} helper method. */
     private static final TypeName SORT_FIELD_LIST       = ParameterizedTypeName.get(LIST,
         ParameterizedTypeName.get(SORT_FIELD, WildcardTypeName.subtypeOf(Object.class)));
@@ -312,7 +313,7 @@ public class TypeFetcherGenerator {
                     var lookupTableRef = qlf.returnType().table();
                     var lookupTableClass = GeneratorUtils.ResolvedTableNames
                         .of(lookupTableRef, qlf.returnType().returnTypeName(), outputPackage, jooqPackage).jooqTableClass();
-                    builder.addMethod(buildQueryLookupFetcher(qlf));
+                    builder.addMethod(buildQueryLookupFetcher(qlf, outputPackage));
                     builder.addMethod(buildQueryLookupRowsMethod(qlf, outputPackage, jooqPackage));
                     // NodeIdMapping uses hasIds/hasId inline — no VALUES+JOIN input-rows helper needed.
                     if (qlf.lookupMapping() instanceof no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) {
@@ -327,7 +328,7 @@ public class TypeFetcherGenerator {
                     }
                 }
                 case ChildField.ServiceTableField stf -> {
-                    builder.addMethod(buildServiceDataFetcher(stf.name(), stf, stf.method(), stf.returnType(), parentTable, className, jooqPackage));
+                    builder.addMethod(buildServiceDataFetcher(stf.name(), stf, stf.method(), stf.returnType(), parentTable, className, jooqPackage, outputPackage));
                     builder.addMethod(buildServiceRowsMethod(stf, stf.returnType()));
                 }
                 case ChildField.SplitTableField stf -> {
@@ -356,15 +357,15 @@ public class TypeFetcherGenerator {
                 case QueryField.QueryServiceRecordField f     -> builder.addMethod(buildQueryServiceRecordFetcher(f, outputPackage));
                 // Stub variants — see NOT_IMPLEMENTED_REASONS
                 case QueryField.QueryTableInterfaceField f    -> builder.addMethod(buildQueryTableInterfaceFieldFetcher(f, outputPackage, jooqPackage));
-                case QueryField.QueryInterfaceField f         -> builder.addMethod(stub(f));
-                case QueryField.QueryUnionField f             -> builder.addMethod(stub(f));
-                case MutationField.MutationInsertTableField f  -> builder.addMethod(stub(f));
-                case MutationField.MutationUpdateTableField f  -> builder.addMethod(stub(f));
+                case QueryField.QueryInterfaceField f         -> builder.addMethod(stub(f, outputPackage));
+                case QueryField.QueryUnionField f             -> builder.addMethod(stub(f, outputPackage));
+                case MutationField.MutationInsertTableField f  -> builder.addMethod(stub(f, outputPackage));
+                case MutationField.MutationUpdateTableField f  -> builder.addMethod(stub(f, outputPackage));
                 case MutationField.MutationDeleteTableField f  -> builder.addMethod(buildMutationDeleteFetcher(f, outputPackage, jooqPackage));
-                case MutationField.MutationUpsertTableField f  -> builder.addMethod(stub(f));
-                case MutationField.MutationServiceTableField f -> builder.addMethod(stub(f));
-                case MutationField.MutationServiceRecordField f -> builder.addMethod(stub(f));
-                case ChildField.ColumnReferenceField f          -> builder.addMethod(stub(f));
+                case MutationField.MutationUpsertTableField f  -> builder.addMethod(stub(f, outputPackage));
+                case MutationField.MutationServiceTableField f -> builder.addMethod(stub(f, outputPackage));
+                case MutationField.MutationServiceRecordField f -> builder.addMethod(stub(f, outputPackage));
+                case ChildField.ColumnReferenceField f          -> builder.addMethod(stub(f, outputPackage));
                 // ChildField.TableField / LookupTableField / NodeIdField / NodeIdReferenceField
                 // have no fetcher — inline projection via TypeClassGenerator.$fields plus a
                 // DataFetcher value emitted by FetcherEmitter for the encode lambda (NodeIdField,
@@ -375,11 +376,11 @@ public class TypeFetcherGenerator {
                 case ChildField.NodeIdReferenceField ignored    -> { }
                 case ChildField.TableInterfaceField f           -> builder.addMethod(buildTableInterfaceFieldFetcher(f, outputPackage, jooqPackage));
                 case ChildField.RecordTableField rtf -> {
-                    builder.addMethod(buildRecordBasedDataFetcher(rtf, resultType, jooqPackage));
+                    builder.addMethod(buildRecordBasedDataFetcher(rtf, resultType, jooqPackage, outputPackage));
                     builder.addMethod(SplitRowsMethodEmitter.buildRowsMethod(rtf, outputPackage, jooqPackage));
                 }
                 case ChildField.RecordLookupTableField rltf -> {
-                    builder.addMethod(buildRecordBasedDataFetcher(rltf, resultType, jooqPackage));
+                    builder.addMethod(buildRecordBasedDataFetcher(rltf, resultType, jooqPackage, outputPackage));
                     builder.addMethod(SplitRowsMethodEmitter.buildRowsMethod(rltf, outputPackage, jooqPackage));
                     // Input-rows helper identical in shape to SplitLookupTableField's — reads
                     // @lookupKey args from env.getArgument(name) and emits the typed Row<M+1>[].
@@ -390,17 +391,17 @@ public class TypeFetcherGenerator {
                         builder.addMethod(LookupValuesJoinEmitter.buildInputRowsMethod(rltf, lookupTableClass));
                     }
                 }
-                case ChildField.TableMethodField f              -> builder.addMethod(stub(f));
-                case ChildField.InterfaceField f                -> builder.addMethod(stub(f));
-                case ChildField.UnionField f                    -> builder.addMethod(stub(f));
+                case ChildField.TableMethodField f              -> builder.addMethod(stub(f, outputPackage));
+                case ChildField.InterfaceField f                -> builder.addMethod(stub(f, outputPackage));
+                case ChildField.UnionField f                    -> builder.addMethod(stub(f, outputPackage));
                 case ChildField.NestingField ignored            -> { /* wired via FetcherRegistrationsEmitter: env -> env.getSource() */ }
                 case ChildField.ConstructorField ignored        -> { /* wired via FetcherRegistrationsEmitter: env -> env.getSource() */ }
-                case ChildField.ServiceRecordField f            -> builder.addMethod(stub(f));
+                case ChildField.ServiceRecordField f            -> builder.addMethod(stub(f, outputPackage));
                 case ChildField.RecordField ignored             -> { /* wired via FetcherRegistrationsEmitter.propertyOrRecordValue */ }
-                case ChildField.ComputedField f                 -> builder.addMethod(stub(f));
+                case ChildField.ComputedField f                 -> builder.addMethod(stub(f, outputPackage));
                 case ChildField.PropertyField ignored           -> { /* wired via FetcherRegistrationsEmitter.propertyOrRecordValue */ }
-                case ChildField.MultitableReferenceField f      -> builder.addMethod(stub(f));
-                case ChildField.ErrorsField f                   -> builder.addMethod(stub(f));
+                case ChildField.MultitableReferenceField f      -> builder.addMethod(stub(f, outputPackage));
+                case ChildField.ErrorsField f                   -> builder.addMethod(stub(f, outputPackage));
                 // Cannot occur — filtered by generateForType before dispatch
                 case InputField ignored ->
                     throw new AssertionError("InputField in type dispatch: " + ignored.qualifiedName());
@@ -515,15 +516,16 @@ public class TypeFetcherGenerator {
         var names = GeneratorUtils.ResolvedTableNames.of(tableRef, qtf.returnType().returnTypeName(), outputPackage, jooqPackage);
         boolean isList = qtf.returnType().wrapper().isList();
 
-        var returnType = isList
-            ? ParameterizedTypeName.get(RESULT, RECORD)
+        var valueType = isList
+            ? (TypeName) ParameterizedTypeName.get(RESULT, RECORD)
             : RECORD;
 
         var builder = MethodSpec.methodBuilder(qtf.name())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(returnType)
+            .returns(syncResultType(valueType))
             .addParameter(ENV, "env");
 
+        builder.beginControlFlow("try");
         builder.addCode(GeneratorUtils.declareTableLocal(names, tableRef));
         String tableLocal = names.tableLocalName();
         builder.addCode(buildConditionCall(qtf, tableLocal, outputPackage));
@@ -533,7 +535,7 @@ public class TypeFetcherGenerator {
             builder.addCode(buildOrderByCode(qtf.orderBy(), qtf.name(), tableLocal));
             builder.addStatement("$T dsl = graphitronContext(env).getDslContext(env)", dslContextClass);
             builder.addCode(CodeBlock.builder()
-                .add("return dsl\n")
+                .add("$T payload = dsl\n", valueType)
                 .indent()
                 .add(".select($T.$$fields(env.getSelectionSet(), $L, env))\n", names.typeClass(), tableLocal)
                 .add(".from($L)\n", tableLocal)
@@ -545,7 +547,7 @@ public class TypeFetcherGenerator {
         } else {
             builder.addStatement("$T dsl = graphitronContext(env).getDslContext(env)", dslContextClass);
             builder.addCode(CodeBlock.builder()
-                .add("return dsl\n")
+                .add("$T payload = dsl\n", valueType)
                 .indent()
                 .add(".select($T.$$fields(env.getSelectionSet(), $L, env))\n", names.typeClass(), tableLocal)
                 .add(".from($L)\n", tableLocal)
@@ -554,6 +556,10 @@ public class TypeFetcherGenerator {
                 .unindent()
                 .build());
         }
+        builder.addCode(returnSyncSuccess(valueType, "payload"));
+        builder.nextControlFlow("catch ($T e)", Exception.class);
+        builder.addCode(redactCatchArm(outputPackage));
+        builder.endControlFlow();
 
         return builder.build();
     }
@@ -587,13 +593,14 @@ public class TypeFetcherGenerator {
         var tableRef = qtif.returnType().table();
         var names = GeneratorUtils.ResolvedTableNames.of(tableRef, qtif.returnType().returnTypeName(), outputPackage, jooqPackage);
         boolean isList = qtif.returnType().wrapper().isList();
-        var returnType = isList ? ParameterizedTypeName.get(RESULT, RECORD) : RECORD;
+        var valueType = isList ? (TypeName) ParameterizedTypeName.get(RESULT, RECORD) : RECORD;
 
         var builder = MethodSpec.methodBuilder(qtif.name())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(returnType)
+            .returns(syncResultType(valueType))
             .addParameter(ENV, "env");
 
+        builder.beginControlFlow("try");
         builder.addCode(GeneratorUtils.declareTableLocal(names, tableRef));
         String tableLocal = names.tableLocalName();
         builder.addCode(buildConditionCall(qtif.parentTypeName(), qtif.name(), tableLocal, outputPackage));
@@ -606,7 +613,7 @@ public class TypeFetcherGenerator {
             builder.addCode(buildOrderByCode(qtif.orderBy(), qtif.name(), tableLocal));
             builder.addStatement("$T dsl = graphitronContext(env).getDslContext(env)", dslContextClass);
             builder.addCode(CodeBlock.builder()
-                .add("return dsl\n")
+                .add("$T payload = dsl\n", valueType)
                 .indent()
                 .add(".select(new $T<>(fields))\n", ArrayList.class)
                 .add(".from($L)\n", tableLocal)
@@ -618,7 +625,7 @@ public class TypeFetcherGenerator {
         } else {
             builder.addStatement("$T dsl = graphitronContext(env).getDslContext(env)", dslContextClass);
             builder.addCode(CodeBlock.builder()
-                .add("return dsl\n")
+                .add("$T payload = dsl\n", valueType)
                 .indent()
                 .add(".select(new $T<>(fields))\n", ArrayList.class)
                 .add(".from($L)\n", tableLocal)
@@ -627,6 +634,10 @@ public class TypeFetcherGenerator {
                 .unindent()
                 .build());
         }
+        builder.addCode(returnSyncSuccess(valueType, "payload"));
+        builder.nextControlFlow("catch ($T e)", Exception.class);
+        builder.addCode(redactCatchArm(outputPackage));
+        builder.endControlFlow();
 
         return builder.build();
     }
@@ -660,13 +671,14 @@ public class TypeFetcherGenerator {
         var tableRef = tif.returnType().table();
         var names = GeneratorUtils.ResolvedTableNames.of(tableRef, tif.returnType().returnTypeName(), outputPackage, jooqPackage);
         boolean isList = tif.returnType().wrapper().isList();
-        var returnType = isList ? ParameterizedTypeName.get(RESULT, RECORD) : RECORD;
+        var valueType = isList ? (TypeName) ParameterizedTypeName.get(RESULT, RECORD) : RECORD;
 
         var builder = MethodSpec.methodBuilder(tif.name())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(returnType)
+            .returns(syncResultType(valueType))
             .addParameter(ENV, "env");
 
+        builder.beginControlFlow("try");
         builder.addStatement("$T parentRecord = ($T) env.getSource()", RECORD, RECORD);
         builder.addCode(GeneratorUtils.declareTableLocal(names, tableRef));
         String tableLocal = names.tableLocalName();
@@ -683,7 +695,7 @@ public class TypeFetcherGenerator {
         if (isList) {
             builder.addCode(buildOrderByCode(tif.orderBy(), tif.name(), tableLocal));
             builder.addCode(CodeBlock.builder()
-                .add("return dsl\n")
+                .add("$T payload = dsl\n", valueType)
                 .indent()
                 .add(".select(new $T<>(fields))\n", ArrayList.class)
                 .add(".from($L)\n", tableLocal)
@@ -694,7 +706,7 @@ public class TypeFetcherGenerator {
                 .build());
         } else {
             builder.addCode(CodeBlock.builder()
-                .add("return dsl\n")
+                .add("$T payload = dsl\n", valueType)
                 .indent()
                 .add(".select(new $T<>(fields))\n", ArrayList.class)
                 .add(".from($L)\n", tableLocal)
@@ -703,6 +715,10 @@ public class TypeFetcherGenerator {
                 .unindent()
                 .build());
         }
+        builder.addCode(returnSyncSuccess(valueType, "payload"));
+        builder.nextControlFlow("catch ($T e)", Exception.class);
+        builder.addCode(redactCatchArm(outputPackage));
+        builder.endControlFlow();
 
         return builder.build();
     }
@@ -827,7 +843,7 @@ public class TypeFetcherGenerator {
         var names = GeneratorUtils.ResolvedTableNames.of(tableRef, qtmtf.returnType().returnTypeName(), outputPackage, jooqPackage);
         boolean isList = qtmtf.returnType().wrapper().isList();
 
-        TypeName returnType = isList ? ParameterizedTypeName.get(RESULT, RECORD) : RECORD;
+        TypeName valueType = isList ? ParameterizedTypeName.get(RESULT, RECORD) : RECORD;
         var dslContextClass = ClassName.get("org.jooq", "DSLContext");
 
         var methodClass = ClassName.bestGuess(qtmtf.method().className());
@@ -837,9 +853,10 @@ public class TypeFetcherGenerator {
 
         var builder = MethodSpec.methodBuilder(qtmtf.name())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(returnType)
+            .returns(syncResultType(valueType))
             .addParameter(ENV, "env");
 
+        builder.beginControlFlow("try");
         // <SpecificTableClass> table = MethodClass.method(<args>);
         // No cast: classifier-time return-type check (Invariants §3) guarantees the developer's
         // method returns the specific table class. A wider return type fails classification.
@@ -851,13 +868,17 @@ public class TypeFetcherGenerator {
 
         builder.addStatement("$T dsl = graphitronContext(env).getDslContext(env)", dslContextClass);
         builder.addCode(CodeBlock.builder()
-            .add("return dsl\n")
+            .add("$T payload = dsl\n", valueType)
             .indent()
             .add(".select($T.$$fields(env.getSelectionSet(), table, env))\n", names.typeClass())
             .add(".from(table)\n")
             .add(isList ? ".fetch();\n" : ".fetchOne();\n")
             .unindent()
             .build());
+        builder.addCode(returnSyncSuccess(valueType, "payload"));
+        builder.nextControlFlow("catch ($T e)", Exception.class);
+        builder.addCode(redactCatchArm(outputPackage));
+        builder.endControlFlow();
 
         return builder.build();
     }
@@ -941,7 +962,7 @@ public class TypeFetcherGenerator {
      * {@code return ServiceClass.method(<args>);}.
      */
     private static MethodSpec buildServiceFetcherCommon(String fieldName, MethodRef method,
-                                                        String parentTypeName, TypeName returnType,
+                                                        String parentTypeName, TypeName valueType,
                                                         String outputPackage) {
         var dslContextClass = ClassName.get("org.jooq", "DSLContext");
         var serviceClass = ClassName.bestGuess(method.className());
@@ -952,16 +973,22 @@ public class TypeFetcherGenerator {
 
         var builder = MethodSpec.methodBuilder(fieldName)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(returnType)
+            .returns(syncResultType(valueType))
             .addParameter(ENV, "env");
 
+        builder.beginControlFlow("try");
         if (needsDsl) {
             builder.addStatement("$T dsl = graphitronContext(env).getDslContext(env)", dslContextClass);
         }
-        builder.addStatement("return $T.$L($L)",
+        builder.addStatement("$T payload = $T.$L($L)",
+            valueType,
             serviceClass,
             method.methodName(),
             ArgCallEmitter.buildMethodBackedCallArgs(method, null, conditionsClassName));
+        builder.addCode(returnSyncSuccess(valueType, "payload"));
+        builder.nextControlFlow("catch ($T e)", Exception.class);
+        builder.addCode(redactCatchArm(outputPackage));
+        builder.endControlFlow();
 
         return builder.build();
     }
@@ -982,11 +1009,13 @@ public class TypeFetcherGenerator {
         var names = GeneratorUtils.ResolvedTableNames.of(tableRef, f.returnType().returnTypeName(), outputPackage, jooqPackage);
         var dslContextClass = ClassName.get("org.jooq", "DSLContext");
 
+        TypeName valueType = ClassName.OBJECT;
         var builder = MethodSpec.methodBuilder(f.name())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(Object.class)
+            .returns(syncResultType(valueType))
             .addParameter(ENV, "env");
 
+        builder.beginControlFlow("try");
         builder.addStatement("$T dsl = graphitronContext(env).getDslContext(env)", dslContextClass);
         builder.addStatement("$T<?, ?> in = ($T<?, ?>) env.getArgument($S)", MAP, MAP, f.inputArgName());
 
@@ -1005,7 +1034,7 @@ public class TypeFetcherGenerator {
         }
 
         var body = CodeBlock.builder()
-            .add("return dsl\n").indent()
+            .add("$T payload = dsl\n", valueType).indent()
             .add(".deleteFrom($T.$L)\n", names.tablesClass(), tableRef.javaFieldName())
             .add(".where(").add(whereExpr.build()).add(")\n");
 
@@ -1035,10 +1064,10 @@ public class TypeFetcherGenerator {
             // return the row record. graphql-java's column fetchers walk it.
             String tableLocal = names.tableLocalName();
             // Need a local variable for the table to pass to $fields(...). Inject above the
-            // dsl.deleteFrom(...) chain — but we've already started the chain. Re-build the body.
+            // dsl.deleteFrom(...) chain : but we've already started the chain. Re-build the body.
             body = CodeBlock.builder();
             body.add("$T $L = $T.$L;\n", names.jooqTableClass(), tableLocal, names.tablesClass(), tableRef.javaFieldName());
-            body.add("return dsl\n").indent()
+            body.add("$T payload = dsl\n", valueType).indent()
                 .add(".deleteFrom($L)\n", tableLocal)
                 .add(".where(").add(whereExpr.build()).add(")\n")
                 .add(".returningResult($T.$$fields(env.getSelectionSet(), $L, env))\n",
@@ -1047,6 +1076,10 @@ public class TypeFetcherGenerator {
         }
         body.unindent();
         builder.addCode(body.build());
+        builder.addCode(returnSyncSuccess(valueType, "payload"));
+        builder.nextControlFlow("catch ($T e)", Exception.class);
+        builder.addCode(redactCatchArm(outputPackage));
+        builder.endControlFlow();
         return builder.build();
     }
 
@@ -1066,12 +1099,14 @@ public class TypeFetcherGenerator {
         var connectionHelperClass = ClassName.get(
             outputPackage + ".util", ConnectionHelperClassGenerator.CLASS_NAME);
         var conn = (FieldWrapper.Connection) qtf.returnType().wrapper();
+        TypeName valueType = connectionResultClass;
 
         var builder = MethodSpec.methodBuilder(qtf.name())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(connectionResultClass)
+            .returns(syncResultType(valueType))
             .addParameter(ENV, "env");
 
+        builder.beginControlFlow("try");
         String tableLocal = names.tableLocalName();
         builder.addStatement("$T $L = $T.$L",
             names.jooqTableClass(), tableLocal, names.tablesClass(), tableRef.javaFieldName());
@@ -1086,7 +1121,7 @@ public class TypeFetcherGenerator {
         builder.addStatement("String after = env.getArgument($S)", "after");
         builder.addStatement("String before = env.getArgument($S)", "before");
 
-        // Pagination resolved in one call — first/last guard, backward/pageSize/cursor derivation,
+        // Pagination resolved in one call : first/last guard, backward/pageSize/cursor derivation,
         // cursor decode, backward-ordering reversal, and name-based selection+extraFields merge
         // all live inside ConnectionHelper.pageRequest. The fetcher keeps the four env.getArgument
         // calls above so pageRequest itself has no graphql-java dependency.
@@ -1100,7 +1135,7 @@ public class TypeFetcherGenerator {
         var dslContextClass = ClassName.get("org.jooq", "DSLContext");
         builder.addStatement("$T dsl = graphitronContext(env).getDslContext(env)", dslContextClass);
 
-        // Single-expression paginated query — seek is a no-op when page.seekFields() are noField()
+        // Single-expression paginated query : seek is a no-op when page.seekFields() are noField()
         var resultOfRecord = ParameterizedTypeName.get(
             ClassName.get("org.jooq", "Result"), ClassName.get("org.jooq", "Record"));
         builder.addCode(CodeBlock.builder()
@@ -1119,7 +1154,12 @@ public class TypeFetcherGenerator {
         // Bind (table, condition) onto ConnectionResult so ConnectionHelper.totalCount can issue
         // SELECT count(*) using the same source and predicate as the page query. Lazy-on-selection:
         // the totalCount resolver only runs when the client selects the field.
-        builder.addStatement("return new $T(result, page, $L, condition)", connectionResultClass, tableLocal);
+        builder.addStatement("$T payload = new $T(result, page, $L, condition)",
+            valueType, connectionResultClass, tableLocal);
+        builder.addCode(returnSyncSuccess(valueType, "payload"));
+        builder.nextControlFlow("catch ($T e)", Exception.class);
+        builder.addCode(redactCatchArm(outputPackage));
+        builder.endControlFlow();
 
         return builder.build();
     }
@@ -1407,13 +1447,19 @@ public class TypeFetcherGenerator {
      * rows method to be called independently (e.g. by an Apollo Federation {@code _entities}
      * resolver) without going through the GraphQL data fetcher path.
      */
-    private static MethodSpec buildQueryLookupFetcher(QueryField.QueryLookupTableField field) {
-        return MethodSpec.methodBuilder(field.name())
+    private static MethodSpec buildQueryLookupFetcher(QueryField.QueryLookupTableField field, String outputPackage) {
+        TypeName valueType = ParameterizedTypeName.get(RESULT, RECORD);
+        var builder = MethodSpec.methodBuilder(field.name())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(ParameterizedTypeName.get(RESULT, RECORD))
-            .addParameter(ENV, "env")
-            .addStatement("return $L(env)", field.lookupMethodName())
-            .build();
+            .returns(syncResultType(valueType))
+            .addParameter(ENV, "env");
+        builder.beginControlFlow("try");
+        builder.addStatement("$T payload = $L(env)", valueType, field.lookupMethodName());
+        builder.addCode(returnSyncSuccess(valueType, "payload"));
+        builder.nextControlFlow("catch ($T e)", Exception.class);
+        builder.addCode(redactCatchArm(outputPackage));
+        builder.endControlFlow();
+        return builder.build();
     }
 
     /**
@@ -1489,38 +1535,58 @@ public class TypeFetcherGenerator {
     private static MethodSpec buildQueryNodeFetcher(QueryField.QueryNodeField field, String outputPackage) {
         var queryNodeFetcher = ClassName.get(outputPackage + ".fetchers",
             no.sikt.graphitron.rewrite.generators.util.QueryNodeFetcherClassGenerator.CLASS_NAME);
-        return MethodSpec.methodBuilder(field.name())
+        TypeName valueType = RECORD;
+        var builder = MethodSpec.methodBuilder(field.name())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(RECORD)
-            .addParameter(ENV, "env")
-            .addStatement("return $T.$L(env)", queryNodeFetcher,
-                no.sikt.graphitron.rewrite.generators.util.QueryNodeFetcherClassGenerator.DISPATCH_METHOD)
-            .build();
+            .returns(syncResultType(valueType))
+            .addParameter(ENV, "env");
+        builder.beginControlFlow("try");
+        builder.addStatement("$T payload = $T.$L(env)",
+            valueType, queryNodeFetcher,
+            no.sikt.graphitron.rewrite.generators.util.QueryNodeFetcherClassGenerator.DISPATCH_METHOD);
+        builder.addCode(returnSyncSuccess(valueType, "payload"));
+        builder.nextControlFlow("catch ($T e)", Exception.class);
+        builder.addCode(redactCatchArm(outputPackage));
+        builder.endControlFlow();
+        return builder.build();
     }
 
     private static MethodSpec buildQueryNodesFetcher(QueryField.QueryNodesField field, String outputPackage) {
         var queryNodeFetcher = ClassName.get(outputPackage + ".fetchers",
             no.sikt.graphitron.rewrite.generators.util.QueryNodeFetcherClassGenerator.CLASS_NAME);
+        TypeName valueType = ParameterizedTypeName.get(LIST, RECORD);
         return MethodSpec.methodBuilder(field.name())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(ParameterizedTypeName.get(COMPLETABLE_FUTURE, ParameterizedTypeName.get(LIST, RECORD)))
+            .returns(asyncResultType(valueType))
             .addParameter(ENV, "env")
-            .addStatement("return $T.$L(env)", queryNodeFetcher,
-                no.sikt.graphitron.rewrite.generators.util.QueryNodeFetcherClassGenerator.DISPATCH_NODES_METHOD)
+            .addCode(CodeBlock.builder()
+                .add("return $T.$L(env)\n", queryNodeFetcher,
+                    no.sikt.graphitron.rewrite.generators.util.QueryNodeFetcherClassGenerator.DISPATCH_NODES_METHOD)
+                .add("    ").add(asyncWrapTail(valueType, outputPackage)).add(";\n")
+                .build())
             .build();
     }
 
-    private static MethodSpec stub(GraphitronField field) {
+    private static MethodSpec stub(GraphitronField field, String outputPackage) {
         var reason = Objects.requireNonNull(
             NOT_IMPLEMENTED_REASONS.get(field.getClass()),
             () -> "No stub reason registered for " + field.getClass().getSimpleName()
                   + " — either implement a real generator branch or add an entry to NOT_IMPLEMENTED_REASONS");
-        return MethodSpec.methodBuilder(field.name())
+        TypeName valueType = ClassName.OBJECT;
+        var builder = MethodSpec.methodBuilder(field.name())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(Object.class)
-            .addParameter(ENV, "env")
-            .addStatement("throw new $T($S)", UnsupportedOperationException.class, reason)
-            .build();
+            .returns(syncResultType(valueType))
+            .addParameter(ENV, "env");
+        // Stubs are unreachable in practice (validator rejects unimplemented variants at build
+        // time). The wrap is here for the same reason every other emitted fetcher has it: a
+        // uniform DataFetcherResult<P> return type and a redacted catch arm that mirrors the
+        // privacy contract. The thrown UnsupportedOperationException routes through redact.
+        builder.beginControlFlow("try");
+        builder.addStatement("throw new $T($S)", UnsupportedOperationException.class, reason);
+        builder.nextControlFlow("catch ($T e)", Exception.class);
+        builder.addCode(redactCatchArm(outputPackage));
+        builder.endControlFlow();
+        return builder.build();
     }
 
     // -----------------------------------------------------------------------
@@ -1555,11 +1621,11 @@ public class TypeFetcherGenerator {
             MethodRef smr,
             ReturnTypeRef.TableBoundReturnType tb,
             TableRef prt,
-            String className, String jooqPackage) {
+            String className, String jooqPackage,
+            String outputPackage) {
 
         boolean isList = tb.wrapper().isList();
-        var valueType = isList ? ParameterizedTypeName.get(LIST, RECORD) : RECORD;
-        var returnType = ParameterizedTypeName.get(COMPLETABLE_FUTURE, valueType);
+        TypeName valueType = isList ? ParameterizedTypeName.get(LIST, RECORD) : RECORD;
 
         var batchKey = bkf.batchKey();
         boolean isMapped = batchKey instanceof BatchKey.MappedRowKeyed
@@ -1582,7 +1648,7 @@ public class TypeFetcherGenerator {
 
         var methodBuilder = MethodSpec.methodBuilder(fieldName)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(returnType)
+            .returns(asyncResultType(valueType))
             .addParameter(ENV, "env")
             .addCode(buildDataLoaderName())
             .addCode(
@@ -1591,7 +1657,12 @@ public class TypeFetcherGenerator {
                 loaderType, DATA_LOADER_FACTORY, factoryMethod, lambdaBlock);
 
         methodBuilder.addCode(GeneratorUtils.buildKeyExtraction(batchKey, prt, jooqPackage));
-        return methodBuilder.addStatement("return loader.load(key, env)").build();
+        return methodBuilder
+            .addCode(CodeBlock.builder()
+                .add("return loader.load(key, env)\n")
+                .add("    ").add(asyncWrapTail(valueType, outputPackage)).add(";\n")
+                .build())
+            .build();
     }
 
     /**
@@ -1701,7 +1772,7 @@ public class TypeFetcherGenerator {
 
         var methodBuilder = MethodSpec.methodBuilder(fieldName)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(returnType)
+            .returns(asyncResultType(valueType))
             .addParameter(ENV, "env")
             .addCode(buildDataLoaderName())
             .addCode(
@@ -1717,7 +1788,12 @@ public class TypeFetcherGenerator {
         } else {
             methodBuilder.addCode(GeneratorUtils.buildKeyExtractionWithNullCheck(batchKey, parentTable, jooqPackage));
         }
-        return methodBuilder.addStatement("return loader.load(key, env)").build();
+        return methodBuilder
+            .addCode(CodeBlock.builder()
+                .add("return loader.load(key, env)\n")
+                .add("    ").add(asyncWrapTail(valueType, outputPackage)).add(";\n")
+                .build())
+            .build();
     }
 
     /**
@@ -1754,11 +1830,11 @@ public class TypeFetcherGenerator {
      *            {@code batchKey()} and {@code rowsMethodName()}).
      */
     private static <T extends ChildField.TableTargetField & BatchKeyField> MethodSpec
-            buildRecordBasedDataFetcher(T field, GraphitronType.ResultType resultType, String jooqPackage) {
+            buildRecordBasedDataFetcher(T field, GraphitronType.ResultType resultType, String jooqPackage,
+                    String outputPackage) {
 
         boolean isList = field.returnType().wrapper().isList();
-        var valueType = isList ? ParameterizedTypeName.get(LIST, RECORD) : RECORD;
-        var returnType = ParameterizedTypeName.get(COMPLETABLE_FUTURE, valueType);
+        TypeName valueType = isList ? ParameterizedTypeName.get(LIST, RECORD) : RECORD;
 
         var batchKey = field.batchKey();
         TypeName keyType = GeneratorUtils.keyElementType(batchKey);
@@ -1777,7 +1853,7 @@ public class TypeFetcherGenerator {
 
         return MethodSpec.methodBuilder(field.name())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(returnType)
+            .returns(asyncResultType(valueType))
             .addParameter(ENV, "env")
             .addCode(buildDataLoaderName())
             .addCode(
@@ -1785,7 +1861,10 @@ public class TypeFetcherGenerator {
                 "    .computeIfAbsent(name, k -> $T.newDataLoader($L));\n",
                 loaderType, DATA_LOADER_FACTORY, lambdaBlock)
             .addCode(GeneratorUtils.buildRecordKeyExtraction((BatchKey.RowKeyed) batchKey, resultType, jooqPackage))
-            .addStatement("return loader.load(key, env)")
+            .addCode(CodeBlock.builder()
+                .add("return loader.load(key, env)\n")
+                .add("    ").add(asyncWrapTail(valueType, outputPackage)).add(";\n")
+                .build())
             .build();
     }
 
@@ -1812,6 +1891,75 @@ public class TypeFetcherGenerator {
 
     private static String capitalize(String name) {
         return name.isEmpty() ? name : Character.toUpperCase(name.charAt(0)) + name.substring(1);
+    }
+
+    // -----------------------------------------------------------------------
+    // R12 §3 fetcher try/catch wrap helpers (C3d).
+    //
+    // Every emitted fetcher returns DataFetcherResult<P> (sync) or
+    // CompletableFuture<DataFetcherResult<P>> (async). The success arm wraps the
+    // produced payload; the catch arm funnels thrown exceptions through
+    // ErrorRouter.redact (no-channel disposition; C3g will swap to dispatch when
+    // the field carries an Optional<ErrorChannel>).
+    // -----------------------------------------------------------------------
+
+    /** Box primitive value types so they can sit inside {@code DataFetcherResult<P>}. */
+    private static TypeName boxed(TypeName valueType) {
+        return valueType.isPrimitive() ? valueType.box() : valueType;
+    }
+
+    /** {@code DataFetcherResult<P>}; primitives box to their wrapper. */
+    private static TypeName syncResultType(TypeName valueType) {
+        return ParameterizedTypeName.get(DATA_FETCHER_RESULT, boxed(valueType));
+    }
+
+    /** {@code CompletableFuture<DataFetcherResult<P>>}; primitives box. */
+    private static TypeName asyncResultType(TypeName valueType) {
+        return ParameterizedTypeName.get(COMPLETABLE_FUTURE, syncResultType(valueType));
+    }
+
+    private static ClassName errorRouterClass(String outputPackage) {
+        return ClassName.get(
+            outputPackage + ".schema",
+            no.sikt.graphitron.rewrite.generators.schema.ErrorRouterClassGenerator.CLASS_NAME);
+    }
+
+    /**
+     * Builds the standard catch arm for a synchronous fetcher: redact the throw via the
+     * {@code ErrorRouter} emitted at {@code <outputPackage>.schema.ErrorRouter}.
+     *
+     * <p>Used by every sync fetcher builder after emitting the success-path
+     * {@code return DataFetcherResult.<P>newResult().data(payload).build()}.
+     */
+    private static CodeBlock redactCatchArm(String outputPackage) {
+        return CodeBlock.of("return $T.redact(e, env);\n", errorRouterClass(outputPackage));
+    }
+
+    /**
+     * Builds the success-path return statement for a synchronous fetcher: wraps the named
+     * payload local in a {@code DataFetcherResult<P>}. Caller is responsible for declaring
+     * the local first.
+     */
+    private static CodeBlock returnSyncSuccess(TypeName valueType, String payloadLocal) {
+        return CodeBlock.of("return $T.<$T>newResult().data($L).build();\n",
+            DATA_FETCHER_RESULT, boxed(valueType), payloadLocal);
+    }
+
+    /**
+     * Async tail for fetchers whose body ends with a {@code CompletableFuture<P>} expression
+     * (typically {@code loader.load(key, env)}). Adds {@code .thenApply(...)} to lift the
+     * payload into a {@code DataFetcherResult<P>}, then {@code .exceptionally(...)} to redact
+     * any exception that escapes past the synchronous wrapper (DataLoader bookkeeping, etc.).
+     *
+     * <p>Spec: §3 "CompletionException unwrap and async fetcher path".
+     */
+    private static CodeBlock asyncWrapTail(TypeName valueType, String outputPackage) {
+        return CodeBlock.builder()
+            .add(".thenApply(payload -> $T.<$T>newResult().data(payload).build())\n",
+                DATA_FETCHER_RESULT, boxed(valueType))
+            .add(".exceptionally(t -> $T.redact(t, env))",
+                errorRouterClass(outputPackage))
+            .build();
     }
 
 }

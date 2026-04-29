@@ -408,14 +408,18 @@ class GraphQLQueryTest {
 
     @Test
     void filmsConnection_rejectsFirstAndLastTogether() {
-        // Relay spec: must reject when both first and last are supplied.
-        // graphql-java wraps the fetcher's IllegalArgumentException into an execution error.
+        // Relay spec: must reject when both first and last are supplied. The connection helper
+        // throws IllegalArgumentException with both arg names in the message; under R12 §3 the
+        // fetcher's redacting catch arm replaces the raw message with a UUID-keyed redaction
+        // (the privacy contract) so the client-visible payload no longer carries "first"/"last".
+        // Schemas that want the raw IAE message back must declare {handler: GENERIC, className:
+        // "java.lang.IllegalArgumentException"} on the payload's @error type.
         var result = executeRaw(
             "{ filmsConnection(first: 2, last: 2) { nodes { title } } }");
         assertThat(result.getErrors()).isNotEmpty();
         assertThat(result.getErrors().get(0).getMessage())
-            .containsIgnoringCase("first")
-            .containsIgnoringCase("last");
+            .startsWith("An error occurred. Reference: ")
+            .endsWith(".");
     }
 
     @Test
