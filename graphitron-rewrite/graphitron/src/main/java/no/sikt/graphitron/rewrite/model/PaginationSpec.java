@@ -11,8 +11,10 @@ package no.sikt.graphitron.rewrite.model;
  * <p>Exactly which arguments are present depends on the schema: forward-only pagination may
  * provide only {@code first} and {@code after}; bidirectional pagination provides all four.
  *
- * <p>{@link PaginationArg} carries the GraphQL argument name, type name, and non-null flag.
- * The {@code list} flag is not needed — pagination arguments are always scalars.
+ * <p>{@link PaginationArg} carries the GraphQL scalar type and non-null flag. The argument's
+ * GraphQL name is fixed by its slot ({@code first}/{@code last}/{@code after}/{@code before});
+ * the classifier rejects custom names, so the model never carries one. The {@code list} flag is
+ * not needed, pagination arguments are always scalars.
  */
 public record PaginationSpec(
     PaginationArg first,
@@ -24,10 +26,9 @@ public record PaginationSpec(
     /**
      * Metadata for one Relay pagination argument.
      *
-     * <p>{@code name} is the GraphQL argument name (e.g. {@code "first"}).
-     * {@code typeName} is the GraphQL scalar type (typically {@code "Int"} for first/last,
+     * <p>{@code typeName} is the GraphQL scalar type (typically {@code "Int"} for first/last,
      * {@code "String"} for after/before).
      * {@code nonNull} reflects whether the argument type has a {@code !} wrapper.
      */
-    public record PaginationArg(String name, String typeName, boolean nonNull) {}
+    public record PaginationArg(String typeName, boolean nonNull) {}
 }

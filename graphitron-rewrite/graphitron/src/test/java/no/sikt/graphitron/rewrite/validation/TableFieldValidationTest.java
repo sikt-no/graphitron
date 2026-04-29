@@ -88,9 +88,9 @@ class TableFieldValidationTest {
                 List.of(), List.of(),
                 new OrderBySpec.Fixed(List.of(new OrderBySpec.ColumnOrderEntry(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer"), null)), "ASC"),
                 new PaginationSpec(
-                    new PaginationSpec.PaginationArg("first", "Int", false),
+                    new PaginationSpec.PaginationArg("Int", false),
                     null,
-                    new PaginationSpec.PaginationArg("after", "String", false),
+                    new PaginationSpec.PaginationArg("String", false),
                     null)),
             List.of()),
 
@@ -100,9 +100,9 @@ class TableFieldValidationTest {
                 List.of(), List.of(),
                 new OrderBySpec.None(),
                 new PaginationSpec(
-                    new PaginationSpec.PaginationArg("first", "Int", false),
+                    new PaginationSpec.PaginationArg("Int", false),
                     null,
-                    new PaginationSpec.PaginationArg("after", "String", false),
+                    new PaginationSpec.PaginationArg("String", false),
                     null)),
             List.of("Field 'Film.actors': paginated fields must have ordering (add @defaultOrder or @orderBy)"));
 

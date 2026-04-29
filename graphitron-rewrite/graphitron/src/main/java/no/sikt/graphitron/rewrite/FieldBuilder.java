@@ -1454,7 +1454,7 @@ class FieldBuilder {
         PaginationSpec.PaginationArg first = null, last = null, after = null, before = null;
         for (var ref : refs) {
             if (!(ref instanceof ArgumentRef.PaginationArgRef p)) continue;
-            var paginationArg = new PaginationSpec.PaginationArg(p.name(), p.typeName(), p.nonNull());
+            var paginationArg = new PaginationSpec.PaginationArg(p.typeName(), p.nonNull());
             switch (p.role()) {
                 case FIRST  -> first  = paginationArg;
                 case LAST   -> last   = paginationArg;
@@ -1466,8 +1466,8 @@ class FieldBuilder {
         // @asConnection without explicit pagination args: synthesize forward-pagination defaults
         if (first == null && last == null && after == null && before == null
                 && fieldDef.hasAppliedDirective(DIR_AS_CONNECTION)) {
-            first = new PaginationSpec.PaginationArg("first", "Int", false);
-            after = new PaginationSpec.PaginationArg("after", "String", false);
+            first = new PaginationSpec.PaginationArg("Int", false);
+            after = new PaginationSpec.PaginationArg("String", false);
         }
 
         if (first == null && last == null && after == null && before == null) return null;
