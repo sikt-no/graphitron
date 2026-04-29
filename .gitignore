@@ -23,6 +23,7 @@ dist/
 CLAUDE.local.md
 thoughts/
 .claude/worktrees/
+.claude/commands/local/
 
 /graphitron-example/graphitron-example-server/.approval_tests**
 /graphitron-codegen-parent/graphitron-java-codegen/src/test/java/no/sikt/graphitron/jooq/generated/**
