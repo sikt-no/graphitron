@@ -4,7 +4,7 @@ title: "Mutation bodies"
 status: Spec
 priority: 9
 theme: mutations-errors
-depends-on: []
+depends-on: [lift-nodeid-out-of-model]
 ---
 
 # Mutation bodies
@@ -17,19 +17,37 @@ depends-on: []
 
 ---
 
+## Coupling
+
+R22 has a hard dependency on **R50 (Lift NodeId out of the model)**. Phase 1 (model + classifier across all four DML variants) and the DELETE emitter have already landed on `claude/graphitron-rewrite`, but the remaining DML emitters (INSERT, UPDATE, UPSERT) cannot land cleanly against the current model. The reasons:
+
+- **Wire-shape input handling.** Phase 2's value-binding shape (`DSL.val(in.get("<sdlFieldName>"), Tables.T.<col>.getDataType())`) reads the raw wire value and binds it to a single column. Mutation inputs that carry `id: ID! @nodeId` are encoded base64 strings, not column values; without R50's `CallSiteExtraction.NodeIdDecodeKeys` extraction at the DataFetcher boundary, the column converter receives an undecoded string and the bind fails. A pre-R50 INSERT emitter would either reintroduce wire-shape leaks (decode inline in the emitted body) or lock out `@nodeId` input fields entirely.
+- **Composite-key carriers.** R50 generalises `InputField.ColumnField.column: ColumnRef` to `columns: List<ColumnRef>`. Phase 2's emitter reads `column().javaName()` directly. Implementing Phase 2 today bakes in the single-`ColumnRef` shape and then has to migrate alongside R50's sweep; implementing Phase 2 after R50 lets the emitter walk `columns()` once.
+- **Deferred-variant rejections.** Invariants #8, #9, #10 (`NodeIdField`, `ColumnReferenceField` for the wire-shape forms, `NodeIdReferenceField`, `IdReferenceField`, `NodeIdInFilterField`) reject every wire-shape variant R50 retires. Post-R50 these become `ColumnField` with `NodeIdDecodeKeys` extraction and are natively supported; the rejection arms become dead code.
+
+**Status: paused pending R50.** Phase 1 shipped (commit `9e517b1`). No further mutation work should land against trunk until R50 reaches Done. The Phase 2 INSERT emission stays on the roadmap and is the next item to revisit once R50 lands.
+
+What is preserved across R50:
+
+- `MutationField.DmlTableField` sealed supertype with `(returnType, tableInputArg, nodeIdMeta, errorChannel)` — none of these fields are wire-shape leaks. `tableInputArg` is `ArgumentRef.InputTypeArg.TableInputArg`, untouched by R50. `nodeIdMeta` carries `(typeId, keyColumns)`, which is the same data R50's boundary `NodeIdEncodeKeys` extraction needs for output-side ID returns; `NodeType` (the source) explicitly stays per R50.
+- The classifier's `classifyMutationInput` helper, modulo Invariants #8–#10 dead-code cleanup.
+- The DELETE emitter's overall shape (`deleteFrom().where(...).returningResult(...).fetchOne(...)`); the `where` predicate's column-extraction arm migrates from `binding.targetColumn()` to whatever shape the post-R50 `InputColumnBinding` carries.
+
+---
+
 ## Status
 
 | Variant | Status | Notes |
 |---|---|---|
-| `MutationDeleteTableField` | **Landed** | Commit `31c64a2` (`claude/graphitron-rewrite`). Per-variant inline classifier + emitter; no shared helpers yet. |
-| `MutationInsertTableField` | Pending | Land next. Mirror DELETE's per-variant shape. |
-| `MutationUpdateTableField` | Pending | Lands after INSERT. Same shape; reuses INSERT's value-binding pattern + DELETE's WHERE-clause pattern. |
-| `MutationUpsertTableField` | Pending | Lands after UPDATE. Composite of INSERT (insert path) and UPDATE (DO UPDATE path). |
-| `MutationServiceTableField` | Pending | Lands alongside `MutationServiceRecordField`. Reuses `buildServiceFetcherCommon`. |
-| `MutationServiceRecordField` | Pending | See above. |
-| Consolidation | Deferred | `DmlTableField` supertype, shared `classifyMutationInput`, shared `buildMutationReturnExpression`. Triggered when 2+ DML variants are real. See bottom of plan. |
+| Phase 1 (model + classifier) | **Landed** | Commit `9e517b1`. `DmlTableField` sealed supertype across the four DML variants carrying `(tableInputArg, nodeIdMeta, errorChannel)`; shared `classifyMutationInput` enforces Invariants #1–#14. |
+| `MutationDeleteTableField` | **Landed (emitter)** | Commit `31c64a2` introduced `buildMutationDeleteFetcher`; commit `9e517b1` rebased the variant onto the unified `tableInputArg` shape. |
+| `MutationInsertTableField` | Paused (R50) | Phase 2 emission. Blocked on R50; see Coupling section. |
+| `MutationUpdateTableField` | Paused (R50) | Phase 4. Blocked on R50. |
+| `MutationUpsertTableField` | Paused (R50) | Phase 5. Blocked on R50. |
+| `MutationServiceTableField` | Paused (R50) | Phase 6. Service variants don't directly touch wire-shape variants, but consolidating them with the rest of R22 keeps the landing cohesive. |
+| `MutationServiceRecordField` | Paused (R50) | See above. |
 
-**Landing rule.** Each variant ships with its own inline classifier (`classifyMutation<Verb>Field`) and emitter (`buildMutation<Verb>Fetcher`), copy-paste-modified from DELETE's. Shared helpers and the `DmlTableField` sealed supertype are a follow-up — introducing them up front, before any variant was real, would have over-fitted the abstraction. Consolidate when the second variant lands and the duplication is real.
+**Landing rule (post-Phase-1).** All four DML records share `(tableInputArg, nodeIdMeta, errorChannel)` via `DmlTableField`. The DELETE emitter reads from `f.tableInputArg().{name(), inputTable(), fieldBindings()}` accessors. Subsequent emitters reuse this shape; the shared `buildMutationReturnExpression` planned for Phase 2 dispatches over `DmlTableField`.
 
 ---
 
@@ -97,24 +115,25 @@ arg's classified data is discarded at classify time pending each variant's landi
   validation already routes through `FieldBuilder.computeExpectedServiceReturnType` for the
   `parentPkColumns.isEmpty()` path; only the emitter side remains for Phase 6.
 
-### Cross-cutting decisions discovered during the DELETE landing
+### Cross-cutting decisions discovered during the Phase 1 landing
 
-- **`ArgumentRef` is package-private to `no.sikt.graphitron.rewrite`**, so a `MutationField`
-  variant in `model/` cannot carry a `TableInputArg` directly. DELETE works around this by
-  storing the data the emitter actually needs as separate fields on the variant:
-  `(String inputArgName, TableRef inputTable, List<InputColumnBinding> fieldBindings,
-  Optional<JooqCatalog.NodeIdMetadata> nodeIdMeta)`. INSERT/UPDATE/UPSERT should follow the
-  same pattern. Promoting `ArgumentRef` (or just `TableInputArg`) to `model/` is a possible
-  consolidation step, but only worth doing if the field set diverges between variants enough
-  that copying becomes a real maintenance burden — so far it doesn't.
-- **`Optional<ErrorChannel> errorChannel` is now part of every `MutationField` record**
+- **`ArgumentRef` is now public.** The pre-Phase-1 DELETE landing worked around its
+  package-private visibility by storing the data the emitter needed as separate fields on the
+  variant; Phase 1 promoted `ArgumentRef` to `public` so `MutationField.DmlTableField` can
+  carry `tableInputArg: ArgumentRef.InputTypeArg.TableInputArg` directly. The destructured
+  fields (`inputArgName`, `inputTable`, `fieldBindings`) are gone; emitters read them via
+  `f.tableInputArg().{name(), inputTable(), fieldBindings()}`.
+- **`Optional<ErrorChannel> errorChannel` is part of every `MutationField` record**
   (added by R12). Each variant carries it as its last component and exposes a no-channel
   convenience constructor. New variants must do the same; the classifier always passes
   `Optional.empty()` here, leaving population to R12's C3 carrier pass.
 - **`TableRef.tableName()`, `ColumnRef.sqlName()`, `InputColumnBinding.targetColumn()`.** The
   earlier draft was inconsistent about which type carried the SQL name accessor; the actual
   accessors are `TableRef.tableName()` for table SQL names and `ColumnRef.sqlName()` for column
-  SQL names. The binding's column accessor is `targetColumn()`, not `column()`.
+  SQL names. The binding's column accessor is `targetColumn()`, not `column()`. R50 generalises
+  the latter to a `targetColumns: List<ColumnRef>` shape; emitters that read it today do so in
+  exactly one place per variant (the WHERE-predicate emitter), keeping the post-R50 migration
+  surface narrow.
 
 ---
 
@@ -163,18 +182,27 @@ arg's classified data is discarded at classify time pending each variant's landi
    scope flat; nesting can land in a follow-up.
 
 8. **`InputField.NodeIdField` in a mutation input is deferred.**  Same gate:
-   `"NodeIdField in @mutation inputs is not yet supported"`; the binding-time NodeId decode
-   lands as part of argres Phase 3 (`InputColumnBinding` with a `NodeIdBinding` variant).
+   `"NodeIdField in @mutation inputs is not yet supported"`. **R50 retires this variant entirely:**
+   `id: ID! @nodeId` becomes a composite-column `ColumnField` with a `NodeIdDecodeKeys` extraction
+   at the DataFetcher boundary, and this rejection arm becomes unreachable. Remove during the R50
+   migration sweep.
 
 9. **`InputField.ColumnReferenceField` (cross-table reference) in a mutation input is deferred.**
-   Gate: `"ColumnReferenceField in @mutation inputs is not yet supported"`.
+   Gate: `"ColumnReferenceField in @mutation inputs is not yet supported"`. R50 keeps this
+   variant but generalises its column carrier to `List<ColumnRef>`; the rejection stays after
+   R50 and is the actual remaining "cross-table reference" gate.
 
 10. **`InputField.NodeIdReferenceField` (cross-table NodeID reference) in a mutation input is
     deferred.**  Same rationale as #9 — cross-table refs would need a join-and-resolve step on the
-    write side.  Gate: `"NodeIdReferenceField in @mutation inputs is not yet supported"`.  Full set
-    of currently-allowed `InputField` variants in a mutation `@table` input is therefore
-    `ColumnField` only; everything else (`NestingField`, `NodeIdField`, `NodeIdReferenceField`,
-    `ColumnReferenceField`) is gated.
+    write side.  Gate: `"NodeIdReferenceField in @mutation inputs is not yet supported"`.
+    **R50 retires this variant:** it collapses into `ColumnReferenceField` with `NodeIdEncodeKeys`
+    on the projection side and `NodeIdDecodeKeys` on the input side. Once R50 lands, the
+    `ColumnReferenceField` gate (#9) covers the cross-table cases this rejection used to handle;
+    this arm becomes unreachable. Phase 1 also gates `IdReferenceField` and `NodeIdInFilterField`
+    under the same rationale; R50 retires both. Full set of currently-allowed `InputField`
+    variants in a mutation `@table` input is therefore `ColumnField` only; everything else
+    (`NestingField`, `NodeIdField`, `NodeIdReferenceField`, `ColumnReferenceField`,
+    `IdReferenceField`, `NodeIdInFilterField`) is gated.
 
 11. **Listed inputs (`in: [CustomerInputTable]`) are deferred for Phase 1.**  The initial
     implementation handles only single-record inputs.  Listed-input support is a follow-up
