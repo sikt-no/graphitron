@@ -58,12 +58,15 @@ docs/                                    # AUTHORED, repo-root, product docs
 ├── _includes/                           # shared snippets, partials
 ├── images/                              # logo.svg, Person2/3.svg, Personer.svg, Creature1-3.svg, favicon
 ├── css/
-│   ├── sds-tokens.css                   # vendored from @sikt/sds-core
-│   ├── sds-button.css                   # vendored from @sikt/sds-button
-│   └── site.css                         # SDS-tokens-on-AsciiDoc styles
+│   └── site.css                         # SDS-tokens-on-AsciiDoc styles (authored)
 └── target/                              # gitignored
     ├── staging/                         # build-time merged source tree
     │   ├── <copies of /docs/*.adoc>
+    │   ├── css/
+    │   │   ├── sds-core.css             # fetched from @sikt/sds-core via download-maven-plugin
+    │   │   ├── sds-button.css           # fetched from @sikt/sds-button via download-maven-plugin
+    │   │   ├── site.css                 # copied from /docs/css/
+    │   │   └── LICENSE-*                # SDS LICENSE files alongside their CSS
     │   ├── architecture/                # mirrors /graphitron-rewrite/docs/
     │   │   ├── README.adoc
     │   │   ├── workflow.adoc
@@ -151,13 +154,40 @@ Per [Phase 4](#phase-4-roadmap-plans-and-changelog-rendering), the navigation di
 
 The current site is themed via the Sikt Design System: `@sikt/sds-core` (CSS custom properties for color, typography, spacing) and `@sikt/sds-button` (button styles). The existing `siktifisert.css` is mostly a thin layer of Docusaurus-specific selectors mapped onto SDS tokens (`--sds-color-*`, `--sds-typography-*`, `--sds-space-*`).
 
-Our build needs the SDS CSS without dragging Node back in. Three approaches considered:
+Our build needs the SDS CSS without dragging Node back in. Four approaches considered:
 
-1. **Vendor the CSS files.** One-time copy of the compiled CSS from `node_modules/@sikt/sds-core/dist/` and `node_modules/@sikt/sds-button/dist/` into `/docs/css/`. Refresh on SDS upgrades, tracked as a roadmap item. Pros: zero build-time dependencies, fast, fully reproducible. Cons: stale unless we re-vendor; needs a dated comment in the file noting the source SDS version.
-2. **Maven `frontend-maven-plugin`.** Add Node + npm to the docs module build, run `npm install @sikt/sds-core @sikt/sds-button`, copy the dist CSS into the output. Pros: always fresh. Cons: re-introduces the exact Node toolchain we're leaving behind. Defeats half the point of the rewrite.
-3. **CDN reference.** Link directly to a published SDS CSS URL. Pros: zero local copy. Cons: requires Sikt to publish SDS to a public CDN (unconfirmed); offline dev breaks; site breaks if CDN host changes.
+1. **Vendor the CSS files.** One-time copy of the compiled CSS from `node_modules/@sikt/sds-core/dist/` and `@sikt/sds-button/dist/` into `/docs/css/`. Pros: zero build-time dependencies, fully reproducible from a single git tree. Cons: stale unless a human re-vendors; needs refresh discipline tracked as a roadmap item.
+2. **Maven `frontend-maven-plugin`.** Add Node + npm to the docs module build, run `npm install @sikt/sds-core @sikt/sds-button`, copy the dist CSS into the output. Pros: always fresh. Cons: re-introduces a Node toolchain (~30MB Node download on cold cache, plus `package.json` and `node_modules/` in the docs module) for what is ultimately two CSS files.
+3. **Runtime CDN reference.** `<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@sikt/sds-core@<version>/dist/index.css">` from the rendered HTML. Pros: zero local copy, zero build dependency. Cons: every visitor's browser hits a third-party CDN (privacy / GDPR regression vs. today's same-origin Sikt K8s deployment); JSDelivr outage = unstyled site; old archived deploys silently rot if the CDN renames a path; CSP relaxation; SRI moves refresh discipline back to humans.
+4. **Build-time fetch via `download-maven-plugin`.** The npm registry is a plain HTTP server, and JSDelivr / unpkg auto-mirror every npm package. `com.googlecode.maven-download-plugin` fetches an HTTP URL (with optional tarball unpack) and drops it into a target directory. Pros: pure Maven, no Node; pinned to an exact version in the pom; bumping SDS = changing one version string; output is baked into our Pages deploy so visitors hit Pages same-origin (no third-party at runtime); deploy is self-contained and reproducible. Cons: build now depends on `registry.npmjs.org` (or JSDelivr) being reachable at build time, but Pages deploy itself doesn't.
 
-**Decision: vendor.** Specifically: copy `dist/index.css` (or equivalent) from each SDS package into `/docs/css/`, prepend a comment with `package@version, copied YYYY-MM-DD, source: <path>`, and add a roadmap item to refresh on SDS major releases. This keeps the build pure-Maven, the asset auditable, and contributors don't need Node installed to work on the docs.
+**Decision: option 4, `download-maven-plugin` against JSDelivr.** Specifically:
+
+```xml
+<plugin>
+  <groupId>com.googlecode.maven-download-plugin</groupId>
+  <artifactId>download-maven-plugin</artifactId>
+  <executions>
+    <execution>
+      <id>fetch-sds-core</id>
+      <phase>generate-resources</phase>
+      <goals><goal>wget</goal></goals>
+      <configuration>
+        <url>https://cdn.jsdelivr.net/npm/@sikt/sds-core@${sds.core.version}/dist/index.css</url>
+        <outputDirectory>${project.build.directory}/staging/css</outputDirectory>
+        <outputFileName>sds-core.css</outputFileName>
+      </configuration>
+    </execution>
+    <!-- analogous execution for @sikt/sds-button -->
+  </executions>
+</plugin>
+```
+
+Versions are pinned via `<sds.core.version>` / `<sds.button.version>` properties in `/docs/pom.xml`. JSDelivr is preferred over the npm-registry tarball because it serves the CSS as a single direct file; the registry tarball would force an unpack step to extract `package/dist/*.css`. Either source is acceptable; the pinned version makes the choice of mirror philosophical.
+
+This keeps the build pure-Maven, contributors don't need Node installed, the deployed site has no runtime third-party dependency, and SDS upgrades become a one-line version bump rather than a vendoring exercise.
+
+License compliance: the SDS packages ship a `LICENSE` (and the JSDelivr CDN serves the package contents verbatim from npm). The build copies the LICENSE into `target/staging/css/` alongside the CSS, so the deployed site distributes the license text with the asset. Confirming the SDS license actually permits public redistribution remains an open question (see [Open questions](#open-questions-for-the-reviewer)); the mechanism is the same whether we vendor, fetch at build time, or reference at runtime, since all three ship the CSS to visitors.
 
 Site-specific styles live in `site.css` and adapt the patterns from `siktifisert.css` onto Asciidoctor's default class names (`#header`, `#content`, `.sect1`, `.admonitionblock`, etc.) instead of Docusaurus's (`.navbar`, `.hero`, `.theme-doc-markdown`). The class-name remapping is mechanical; the design intent (SDS tokens for color/space/type, the `advantage-box` callout style, footer dark variant) carries over directly.
 
@@ -323,8 +353,8 @@ End state: `https://sikt-no.github.io/graphitron/` serves a one-page AsciiDoc si
 
 Pre-Phase-1 verification (no code changes; do once before opening the Phase 1 PR):
 
-- Confirm `@sikt/sds-core` and `@sikt/sds-button` licenses permit vendoring into a public OSS repo. If unclear, ask SDS team.
-- Identify the maintainer who can flip Pages Source = GitHub Actions on `sikt-no/graphitron`.
+- Confirm `@sikt/sds-core` and `@sikt/sds-button` licenses permit redistribution from a public OSS repo (the build-time fetch ships the CSS to visitors via Pages, same effective distribution as vendoring). If unclear, ask SDS team.
+- Identify the maintainer who can flip Pages Source = GitHub Actions on `sikt-no/graphitron`, and who can add `claude/graphitron-rewrite` to the auto-created `github-pages` environment's branch allowlist (defaults to default branch only).
 
 Deliverables:
 
@@ -332,7 +362,7 @@ Deliverables:
 - `graphitron-rewrite/pom.xml` updated `<modules>` list (adds `<module>../docs</module>`).
 - `/docs/index.adoc` (placeholder content).
 - `/docs/README.adoc` (replaces existing `/docs/README.md`; GitHub-rendered landing for the directory).
-- `/docs/css/sds-tokens.css`, `sds-button.css` (vendored from `@sikt/sds-core`, `@sikt/sds-button`, dated comment with source version).
+- `/docs/pom.xml` `download-maven-plugin` executions fetching `@sikt/sds-core` and `@sikt/sds-button` CSS from JSDelivr at build time into `target/staging/css/` (versions pinned via `<sds.core.version>` / `<sds.button.version>` properties). LICENSE text from each package fetched alongside the CSS.
 - `/docs/css/site.css` (initial port of `siktifisert.css` patterns onto AsciiDoctor classes).
 - Logo and favicon copied into `/docs/images/`.
 - `.github/workflows/rewrite-build.yml` (new; verifies the rewrite reactor including the docs module on push and PR to `main` and `claude/graphitron-rewrite`; uses JDK 25; `mvn -f graphitron-rewrite/pom.xml verify -Plocal-db`). This closes the existing CI gap noted in [CI integration](#ci-integration).
@@ -432,7 +462,7 @@ Verification: GitLab pipeline shows no recent runs; K8s namespace is clean; arch
 
 These are not pre-blockers (Phases 1-4 can proceed without resolving them), but they need answers before Phase 5a:
 
-- **SDS license.** Vendoring `@sikt/sds-core` and `@sikt/sds-button` into `/docs/css/` requires the package licenses to permit redistribution as part of an OSS repo. Confirm with the SDS team. If proprietary, fall back to the CDN approach or re-evaluate.
+- **SDS license.** Whether we vendor, fetch at build time, or reference at runtime, the CSS is ultimately distributed to visitors from `graphitron.sikt.no`. Confirm with the SDS team that the `@sikt/sds-core` and `@sikt/sds-button` package licenses permit public redistribution; the build-time-fetch mechanism copies each package's `LICENSE` file alongside the CSS to satisfy attribution. If the license forbids redistribution outright, the SDS section needs revisiting.
 - **Repo Pages settings ownership.** Who can flip Pages Source = GitHub Actions on `sikt-no/graphitron`? Same person needed for the Phase 5a custom-domain step. Identify them at Phase 1 so 5a doesn't stall on access.
 - **DNS team coordination at Sikt.** Phase 5a depends on a `sikt.no` DNS update. Lead time? Change-management process? Identify the contact at Phase 1; queue the ticket at Phase 4.
 - **Branch source-of-truth for the docs site.** Plan deploys from `claude/graphitron-rewrite` (the rewrite trunk). When/if rewrite merges to `main`, the deploy trigger updates with it. No action needed today; flagged so the eventual merge doesn't surprise anyone.
@@ -443,7 +473,7 @@ Resolved (no longer open):
 
 ## Risks and mitigations
 
-- **SDS is published as npm packages, not a public CDN.** Vendoring sidesteps this for the build; the residual risk is the vendored copy goes stale if SDS releases break compatibility. Mitigation: dated comment at the top of each vendored file noting `package@version` and source date; refresh as a roadmap item on SDS major releases.
+- **Build-time fetch depends on JSDelivr (or `registry.npmjs.org`) reachability.** A clean Maven build with no local cache fails if the mirror is unreachable. Mitigation: `download-maven-plugin` caches fetched files in `~/.m2/repository/.cache/download-maven-plugin/`, so warm builds are unaffected; CI caches `~/.m2`, so CI failures only happen on cold-cache runs while the mirror is down. The deployed Pages site itself has no runtime CDN dependency. Residual risk on SDS major releases breaking our `site.css` selectors is bounded by version pinning: nothing changes until someone bumps `<sds.core.version>`.
 - **Default Asciidoctor styling looks dated.** Mitigation: that's exactly what `site.css` solves by porting the SDS-token usage from `siktifisert.css`. Phase 1 verifies the branding looks right *before* later phases pile content on top.
 - **The Maven build now fails when docs are broken.** Intent (catch rot in CI), but a typo in `.adoc` blocks a release. Mitigation: AsciiDoc errors-vs-warnings is configurable in the plugin; start with "fail on error, warn on missing xref" until settled, then tighten.
 - **Phase 5a DNS cutover requires Sikt platform / DNS team coordination.** Mitigation: Phases 1-4 are entirely independent of DNS; the new site is fully styled and content-complete on `sikt-no.github.io/graphitron/` before the cutover ticket is even raised. Identify the DNS contact at Phase 1 so Phase 4 can queue the ticket.
@@ -457,6 +487,6 @@ Resolved (no longer open):
 ## Roadmap entries
 
 - This file (`docs-site-asciidoc.md`): keep through all phases (1, 2, 3, 4, 5a, 5b). Collapse each phase to a "shipped at `<sha>`" note when it lands; remove the file when 5b lands and the cutover is verified.
-- Spinoff (Backlog, to be created when Phase 1 lands): **`refresh-sds-vendored-css.md`**, periodic refresh of the vendored SDS CSS files on SDS major releases. Low priority, low effort.
+- No periodic-refresh spinoff needed. Build-time fetch via pinned version means SDS upgrades are a one-line `<sds.core.version>` / `<sds.button.version>` bump in `/docs/pom.xml` plus any selector adjustments in `site.css` if a major release changes class names. Anyone touching the docs can do this; no separate tracking item.
 - Spinoff (Backlog, possible after Phase 4 lands): **`roadmap-public-flag.md`**, opt-in `public: true` front-matter flag to filter which roadmap items appear on the site. Only worth doing if max-transparency proves too noisy in practice.
 - Other spinoffs may surface during Phases 2-3 (e.g., client-side search, versioned docs, autogenerated integration-tests page from real test sources); add them as Backlog when they appear, don't pre-spec.
