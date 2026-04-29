@@ -1219,14 +1219,55 @@ class GraphitronSchemaBuilderTest {
 
     enum ComputedFieldCase implements ClassificationCase {
         SCALAR_RETURN(
-            "@externalField on a @table parent → ComputedField",
+            "@externalField on a @table parent → ComputedField with resolved MethodRef",
             """
             type Film @table(name: "film") {
-                rating: String @externalField(reference: {className: "no.sikt.graphitron.rewrite.TestExternalFieldStub", method: "rating"})
+                displayTitle: String @externalField(reference: {className: "no.sikt.graphitron.rewrite.TestExternalFieldStub", method: "rating"})
             }
             type Query { film: Film }
             """,
-            schema -> assertThat(schema.field("Film", "rating")).isInstanceOf(ComputedField.class));
+            schema -> {
+                var field = schema.field("Film", "displayTitle");
+                assertThat(field).isInstanceOf(ComputedField.class);
+                var cf = (ComputedField) field;
+                assertThat(cf.method()).isNotNull();
+                assertThat(cf.method().className()).isEqualTo("no.sikt.graphitron.rewrite.TestExternalFieldStub");
+                assertThat(cf.method().methodName()).isEqualTo("rating");
+                assertThat(cf.method().params()).hasSize(1);
+                assertThat(cf.method().params().get(0).source()).isInstanceOf(no.sikt.graphitron.rewrite.model.ParamSource.Table.class);
+            }),
+
+        METHOD_NOT_FOUND(
+            "@externalField referencing a missing method → UnclassifiedField (AUTHOR_ERROR)",
+            """
+            type Film @table(name: "film") {
+                displayTitle: String @externalField(reference: {className: "no.sikt.graphitron.rewrite.TestExternalFieldStub", method: "doesNotExist"})
+            }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var field = schema.field("Film", "displayTitle");
+                assertThat(field).isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class);
+                var unc = (no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField) field;
+                assertThat(unc.kind()).isEqualTo(no.sikt.graphitron.rewrite.RejectionKind.AUTHOR_ERROR);
+                assertThat(unc.reason()).contains("doesNotExist");
+            }),
+
+        NAME_COLLIDES_WITH_COLUMN(
+            "@externalField name colliding with an existing column → UnclassifiedField (AUTHOR_ERROR)",
+            """
+            type Film @table(name: "film") {
+                title: String @externalField(reference: {className: "no.sikt.graphitron.rewrite.TestExternalFieldStub", method: "rating"})
+            }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var field = schema.field("Film", "title");
+                assertThat(field).isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class);
+                var unc = (no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField) field;
+                assertThat(unc.kind()).isEqualTo(no.sikt.graphitron.rewrite.RejectionKind.AUTHOR_ERROR);
+                assertThat(unc.reason()).contains("collides with column 'title'");
+            });
 
         final String sdl;
         final Consumer<GraphitronSchema> assertions;

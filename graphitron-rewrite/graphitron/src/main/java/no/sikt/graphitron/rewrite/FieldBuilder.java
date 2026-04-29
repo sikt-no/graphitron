@@ -104,6 +104,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.ARG_OVERRIDE;
 import static no.sikt.graphitron.rewrite.BuildContext.argBoolean;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_PATH;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_PRIMARY_KEY;
+import static no.sikt.graphitron.rewrite.BuildContext.ARG_EXTERNAL_FIELD_REF;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_SERVICE_REF;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_TABLE_METHOD_REF;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_TYPE_NAME;
@@ -2151,10 +2152,36 @@ class FieldBuilder {
             if (externalPath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, externalPath.errorMessage());
             }
+            // Alias-collision check: the wiring side looks up the field by name via
+            // DSL.field("<name>") against the result Record. If the GraphQL field name collides
+            // with a real SQL column on the parent @table, the alias shadows it and ColumnFetcher
+            // resolves to the wrong value.
+            if (ctx.catalog.findColumn(tableType.table().tableName(), name).isPresent()) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
+                    "@externalField name '" + name + "' collides with column '" + name
+                        + "' on table '" + tableType.table().tableName()
+                        + "'; rename the GraphQL field or use @field(name: ...) to disambiguate");
+            }
+            var extRef = parseExternalRef(parentTypeName, fieldDef, DIR_EXTERNAL_FIELD, ARG_EXTERNAL_FIELD_REF);
+            if (extRef != null && extRef.lookupError() != null) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
+                    "external field reference could not be resolved — " + extRef.lookupError());
+            }
+            ClassName parentTableClass = ClassName.get(
+                ctx.ctx().jooqPackage() + ".tables", tableType.table().javaClassName());
+            var extResult = svc.reflectExternalField(
+                extRef != null ? extRef.className() : null,
+                extRef != null ? extRef.methodName() : null,
+                parentTableClass);
+            if (extResult.failed()) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
+                    "external field reference could not be resolved — " + extResult.failureReason());
+            }
             String extTypeName = baseTypeName(fieldDef);
             return new ComputedField(parentTypeName, name, location,
                 ctx.resolveReturnType(extTypeName, buildWrapper(fieldDef)),
-                externalPath.elements());
+                externalPath.elements(),
+                extResult.ref());
         }
 
         if (fieldDef.hasAppliedDirective(DIR_TABLE_METHOD)) {

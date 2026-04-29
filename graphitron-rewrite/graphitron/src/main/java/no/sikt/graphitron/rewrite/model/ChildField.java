@@ -320,13 +320,27 @@ public sealed interface ChildField extends GraphitronField
         ColumnRef column
     ) implements ChildField {}
 
+    /**
+     * A child field using {@code @externalField} — the developer provides a static method
+     * returning a jOOQ {@code Field<X>} that is inlined into the parent's projection at
+     * generation time. The method handles the SQL-side computation; runtime wiring uses
+     * a {@code ColumnFetcher} keyed on the GraphQL field name.
+     *
+     * <p>The method signature is:
+     * <pre>
+     *     Field&lt;X&gt; methodName(&lt;ParentTable&gt; table)
+     * </pre>
+     * where the table parameter has {@link ParamSource.Table} as its source. Captured by
+     * {@link ServiceCatalog#reflectExternalField}.
+     */
     record ComputedField(
         String parentTypeName,
         String name,
         SourceLocation location,
         ReturnTypeRef returnType,
-        List<JoinStep> joinPath
-    ) implements ChildField {}
+        List<JoinStep> joinPath,
+        MethodRef method
+    ) implements ChildField, MethodBackedField {}
 
     /**
      * @param column the resolved parent-table column when the parent is a

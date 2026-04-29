@@ -679,6 +679,15 @@ public class GraphitronSchemaValidator {
     private void validateRecordField(no.sikt.graphitron.rewrite.model.ChildField.RecordField field, List<ValidationError> errors) {}
 
     private void validateComputedField(no.sikt.graphitron.rewrite.model.ChildField.ComputedField field, List<ValidationError> errors) {
+        if (!field.joinPath().isEmpty()) {
+            errors.add(new ValidationError(RejectionKind.DEFERRED,
+                field.qualifiedName(),
+                "Field '" + field.qualifiedName() + "': @externalField with a @reference path "
+                    + "(condition-join lift form) is not yet supported — see "
+                    + "graphitron-rewrite/roadmap/computed-field-with-reference.md",
+                field.location()));
+            return;
+        }
         validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
     }
     private void validatePropertyField(no.sikt.graphitron.rewrite.model.ChildField.PropertyField field, List<ValidationError> errors) {}

@@ -276,6 +276,11 @@ public class TypeClassGenerator {
                     emitSelectionSwitch(builder, depth + 1, nf.nestedFields(), tableArg, entryType, outputPackage, jooqPackage);
                     builder.addCode("        }\n");
                 }
+                case ChildField.ComputedField cf -> {
+                    var refClass = ClassName.bestGuess(cf.method().className());
+                    builder.addCode("        case $S -> fields.add($T.$L($L).as($S));\n",
+                        cf.name(), refClass, cf.method().methodName(), tableArg, cf.name());
+                }
                 default -> {
                     // Unexpected variants in a projection switch are skipped — validator rejects them.
                 }
