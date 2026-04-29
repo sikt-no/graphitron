@@ -50,12 +50,48 @@ tuples with cheap hashing/equality, while `TableRecord` carries dirty-flag state
 wrong for cache-key use. Element-shape is purely a conversion concern at the
 service-call boundary.
 
+## Status
+
+First iteration shipped at `befc156` (alongside R49 Phase B). The rows-method body now does:
+
+1. **Argument assembly walk** via `ArgCallEmitter.buildMethodBackedCallArgs` (`Sources` -> the
+   loader's `keys`, `DslContext` -> `dsl` local, `Arg` and `Context` via the existing extraction
+   path). Both `ServiceTableField` and `ServiceRecordField` use the same parameterised emitter.
+3. **Direct return.** Body shape is `[DSLContext dsl = ...; ] return ServiceClass.method(<args>);` —
+   the developer's method returns the loader's expected map / list shape directly, so no
+   per-record projection step is needed (graphql-java's downstream wiring resolves columns
+   off whatever records the developer returns).
+
+End-to-end exercised by `GraphQLQueryTest.films_titleUppercase_resolvesViaServiceRecordFieldDataLoader`:
+two SQL queries (parent SELECT + one batched DataLoader round-trip for all selected films).
+
+## Open follow-ups
+
+- **Element-shape conversion (R32 §2 in the original spec).** The `keys` parameter passes
+  through directly today. When the developer's signature uses `Set<TableRecord>` /
+  `List<TableRecord>` (which classifies as the same `Mapped/RowKeyed` BatchKey variant as
+  `Set<RowN>` / `List<RowN>`), the framework's emitted `Row1<...>` keys flow into the dev's
+  method as the wrong static type. Conversion needs re-reflection on the SOURCES param's
+  actual generic type at emission time; deferred until a real schema needs it.
+- **The `Row1` follow-up.** `Row1<T>` is jOOQ's SQL-expression type for tuple-IN comparisons,
+  not an application-side artifact — it has no value accessor. A developer who signs
+  `Set<Row1<Integer>>` cannot extract values from each key. The framework arguably should
+  emit `Record1<T>` keys regardless of whether the dev's source-shape choice was `RowN`,
+  `RecordN`, or `TableRecord` — `Record1` extends `Row1` (so SQL composition still works) and
+  adds `value1()` for application-side reading. Today the workaround is for the dev to sign
+  `Set<Record1<Integer>>` (classifies as `MappedRecordKeyed`, framework emits `Record1`).
+  Worth a separate roadmap item.
+- **Strict return-type validation against `field.elementType()`.** The structural unwrapping
+  (V from `Map<KeyType, V>` / `List<V>` per BatchKey + cardinality) lives in this emitter
+  and could surface mismatches to the Builder. R49's spec body documents this as a
+  follow-up; not yet wired.
+- **`ParamSource.Context`'s typed registry.** The emitter consumes `getContextArgument(env,
+  name)` with `<T>` inference. Generate-time validation (unknown name, type mismatch)
+  lands separately under [`typed-context-value-registry.md`](typed-context-value-registry.md).
+
 ## Dependencies
 
-- Builds on the four-variant `BatchKey` model shipped under `set-parent-keys-on-service`
+- Built on the four-variant `BatchKey` model shipped under `set-parent-keys-on-service`
   (changelog SHA `eebf881`); the emitter switches on those variants.
-- Coordinates with [`typed-context-value-registry.md`](typed-context-value-registry.md):
-  this emitter's `ParamSource.Context` arm consumes `getContextArgument(env, name)` whose
-  `<T>` inference already gives the right cast at the call site, so no hard dependency on
-  the typed registry. When R45 lands, the args walk picks up generate-time validation
-  (unknown name, type mismatch) for free.
+- Coordinates with [`typed-context-value-registry.md`](typed-context-value-registry.md): no
+  hard dependency, just generate-time-validation polish on top of the working emission.
