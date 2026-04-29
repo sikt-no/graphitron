@@ -243,19 +243,19 @@ public class TypeFetcherGenerator {
             // inline emission via TypeClassGenerator.$fields; see G5 and argres Phase 2a)
             // ChildField stubs — remaining direct permits
             Map.entry(ChildField.ColumnReferenceField.class,
-                "ColumnReferenceField not yet implemented — see graphitron-rewrite/roadmap/stub-non-table-scalar-child-leaves.md"),
+                "ColumnReferenceField not yet implemented — see graphitron-rewrite/roadmap/column-reference-on-scalar-field.md"),
             Map.entry(ChildField.TableMethodField.class,
-                "TableMethodField not yet implemented — see graphitron-rewrite/roadmap/stub-non-table-scalar-child-leaves.md"),
+                "TableMethodField not yet implemented — see graphitron-rewrite/roadmap/tablemethod-scalar-return.md"),
             Map.entry(ChildField.InterfaceField.class,
                 "InterfaceField not yet implemented — see graphitron-rewrite/roadmap/stub-interface-union-fetchers.md"),
             Map.entry(ChildField.UnionField.class,
                 "UnionField not yet implemented — see graphitron-rewrite/roadmap/stub-interface-union-fetchers.md"),
             Map.entry(ChildField.ServiceRecordField.class,
-                "ServiceRecordField not yet implemented — see graphitron-rewrite/roadmap/stub-non-table-scalar-child-leaves.md"),
+                "ServiceRecordField not yet implemented — see graphitron-rewrite/roadmap/service-record-field.md"),
             Map.entry(ChildField.ComputedField.class,
-                "ComputedField not yet implemented — see graphitron-rewrite/roadmap/stub-non-table-scalar-child-leaves.md"),
+                "ComputedField not yet implemented — see graphitron-rewrite/roadmap/computed-field-with-reference.md"),
             Map.entry(ChildField.MultitableReferenceField.class,
-                "MultitableReferenceField not yet implemented — see graphitron-rewrite/roadmap/stub-non-table-scalar-child-leaves.md"),
+                "MultitableReferenceField not yet implemented — see graphitron-rewrite/roadmap/multitable-reference-on-scalar.md"),
             Map.entry(ChildField.ErrorsField.class,
                 "ErrorsField not yet implemented — see graphitron-rewrite/roadmap/error-handling-parity.md")
         );
