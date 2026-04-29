@@ -157,6 +157,7 @@ public class TypeFetcherGenerator {
         QueryField.QueryServiceRecordField.class,
         MutationField.MutationDeleteTableField.class,
         ChildField.ServiceTableField.class,
+        ChildField.ServiceRecordField.class,
         ChildField.SplitTableField.class,
         ChildField.SplitLookupTableField.class,
         ChildField.PropertyField.class,
@@ -251,8 +252,6 @@ public class TypeFetcherGenerator {
                 "InterfaceField not yet implemented — see graphitron-rewrite/roadmap/stub-interface-union-fetchers.md"),
             Map.entry(ChildField.UnionField.class,
                 "UnionField not yet implemented — see graphitron-rewrite/roadmap/stub-interface-union-fetchers.md"),
-            Map.entry(ChildField.ServiceRecordField.class,
-                "ServiceRecordField not yet implemented — see graphitron-rewrite/roadmap/service-record-field.md"),
             Map.entry(ChildField.MultitableReferenceField.class,
                 "MultitableReferenceField not yet implemented — see graphitron-rewrite/roadmap/multitable-reference-on-scalar.md"),
             Map.entry(ChildField.ErrorsField.class,
@@ -327,8 +326,12 @@ public class TypeFetcherGenerator {
                     }
                 }
                 case ChildField.ServiceTableField stf -> {
-                    builder.addMethod(buildServiceDataFetcher(stf.name(), stf, stf.method(), stf.returnType(), parentTable, className, jooqPackage, outputPackage));
-                    builder.addMethod(buildServiceRowsMethod(stf, stf.returnType()));
+                    builder.addMethod(buildServiceDataFetcher(stf.name(), stf, stf.method(), stf.returnType(), parentTable, RECORD, className, jooqPackage, outputPackage));
+                    builder.addMethod(buildServiceRowsMethod(stf, stf.returnType(), RECORD));
+                }
+                case ChildField.ServiceRecordField srf -> {
+                    builder.addMethod(buildServiceDataFetcher(srf.name(), srf, srf.method(), srf.returnType(), parentTable, srf.elementType(), className, jooqPackage, outputPackage));
+                    builder.addMethod(buildServiceRowsMethod(srf, srf.returnType(), srf.elementType()));
                 }
                 case ChildField.SplitTableField stf -> {
                     builder.addMethod(buildSplitQueryDataFetcher(stf, stf.returnType(), parentTable, outputPackage, jooqPackage));
@@ -395,7 +398,9 @@ public class TypeFetcherGenerator {
                 case ChildField.UnionField f                    -> builder.addMethod(stub(f, outputPackage));
                 case ChildField.NestingField ignored            -> { /* wired via FetcherRegistrationsEmitter: env -> env.getSource() */ }
                 case ChildField.ConstructorField ignored        -> { /* wired via FetcherRegistrationsEmitter: env -> env.getSource() */ }
-                case ChildField.ServiceRecordField f            -> builder.addMethod(stub(f, outputPackage));
+                // ServiceRecordField is dispatched alongside ServiceTableField above (shared
+                // emitters parameterised by perKeyType). The "no-op" arm here keeps the switch
+                // exhaustive without re-emitting; the variant has IMPLEMENTED_LEAVES membership.
                 case ChildField.RecordField ignored             -> { /* wired via FetcherRegistrationsEmitter.propertyOrRecordValue */ }
                 case ChildField.ComputedField ignored           -> { /* wired via FetcherEmitter (ColumnFetcher); projected via TypeClassGenerator.$fields() */ }
                 case ChildField.PropertyField ignored           -> { /* wired via FetcherRegistrationsEmitter.propertyOrRecordValue */ }
@@ -1619,13 +1624,14 @@ public class TypeFetcherGenerator {
             String fieldName,
             BatchKeyField bkf,
             MethodRef smr,
-            ReturnTypeRef.TableBoundReturnType tb,
+            ReturnTypeRef returnType,
             TableRef prt,
+            TypeName perKeyType,
             String className, String jooqPackage,
             String outputPackage) {
 
-        boolean isList = tb.wrapper().isList();
-        TypeName valueType = isList ? ParameterizedTypeName.get(LIST, RECORD) : RECORD;
+        boolean isList = returnType.wrapper().isList();
+        TypeName valueType = isList ? ParameterizedTypeName.get(LIST, perKeyType) : perKeyType;
 
         var batchKey = bkf.batchKey();
         boolean isMapped = batchKey instanceof BatchKey.MappedRowKeyed
@@ -1686,19 +1692,20 @@ public class TypeFetcherGenerator {
      */
     private static MethodSpec buildServiceRowsMethod(
             BatchKeyField bkf,
-            ReturnTypeRef.TableBoundReturnType tb) {
+            ReturnTypeRef schemaReturnType,
+            TypeName perKeyType) {
 
-        boolean isList = tb.wrapper().isList();
+        boolean isList = schemaReturnType.wrapper().isList();
         boolean isMapped = bkf.batchKey() instanceof BatchKey.MappedRowKeyed
                         || bkf.batchKey() instanceof BatchKey.MappedRecordKeyed;
         TypeName keysElementType = GeneratorUtils.keyElementType(bkf.batchKey());
 
         TypeName keysContainerType = ParameterizedTypeName.get(isMapped ? SET : LIST, keysElementType);
 
-        TypeName valuePerKey = isList ? ParameterizedTypeName.get(LIST, RECORD) : RECORD;
+        TypeName valuePerKey = isList ? ParameterizedTypeName.get(LIST, perKeyType) : perKeyType;
         TypeName returnType = isMapped
             ? ParameterizedTypeName.get(MAP, keysElementType, valuePerKey)
-            : (isList ? ParameterizedTypeName.get(LIST, ParameterizedTypeName.get(LIST, RECORD)) : ParameterizedTypeName.get(LIST, RECORD));
+            : (isList ? ParameterizedTypeName.get(LIST, ParameterizedTypeName.get(LIST, perKeyType)) : ParameterizedTypeName.get(LIST, perKeyType));
 
         return MethodSpec.methodBuilder(bkf.rowsMethodName())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
