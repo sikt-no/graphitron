@@ -1,9 +1,11 @@
 package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.ChildField.ComputedField;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
+import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
@@ -13,22 +15,36 @@ import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
 
-import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.stubbedError;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class ComputedFieldValidationTest {
 
+    private static final MethodRef DUMMY_METHOD = new MethodRef.Basic(
+        "com.example.Ext", "fullTitle",
+        ParameterizedTypeName.get(ClassName.get("org.jooq", "Field"), ClassName.get(String.class)),
+        List.of(new MethodRef.Param.Typed("table", "com.example.tables.Film", new ParamSource.Table())));
+
     enum Case implements ValidatorCase {
 
-        NO_PATH("no @reference — no lift condition; valid when return type is not table-mapped (stubbed)",
-            new ComputedField("Film", "fullTitle", null, new ReturnTypeRef.ScalarReturnType("Film", new FieldWrapper.Single(true)), List.of()),
-            List.of(stubbedError("Film.fullTitle", ComputedField.class))),
+        NO_PATH("no @reference — no lift condition: passes validation now that ComputedField is implemented",
+            new ComputedField("Film", "fullTitle", null,
+                new ReturnTypeRef.ScalarReturnType("Film", new FieldWrapper.Single(true)),
+                List.of(),
+                DUMMY_METHOD),
+            List.of()),
 
-        WITH_LIFT_CONDITION("lift condition with a resolved method (stubbed)",
-            new ComputedField("Film", "fullTitle", null, new ReturnTypeRef.ScalarReturnType("Film", new FieldWrapper.Single(true)), List.of(
-                new JoinStep.ConditionJoin(new MethodRef.Basic("com.example.Conditions", "liftCondition", ClassName.get("org.jooq", "Condition"), List.of()), ""))),
-            List.of(stubbedError("Film.fullTitle", ComputedField.class)));
+        WITH_LIFT_CONDITION("lift condition with a resolved method — DEFERRED until the lift form ships",
+            new ComputedField("Film", "fullTitle", null,
+                new ReturnTypeRef.ScalarReturnType("Film", new FieldWrapper.Single(true)),
+                List.of(new JoinStep.ConditionJoin(
+                    new MethodRef.Basic("com.example.Conditions", "liftCondition",
+                        ClassName.get("org.jooq", "Condition"), List.of()),
+                    "")),
+                DUMMY_METHOD),
+            List.of("Field 'Film.fullTitle': @externalField with a @reference path "
+                + "(condition-join lift form) is not yet supported — see "
+                + "graphitron-rewrite/roadmap/computed-field-with-reference.md"));
 
         private final String description;
         private final GraphitronField field;

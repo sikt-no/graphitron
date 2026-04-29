@@ -337,6 +337,85 @@ class ServiceCatalog {
         }
     }
 
+    /**
+     * Reflects on a developer-supplied {@code @externalField} method.
+     *
+     * <p>Contract: the method must be {@code public static}, take exactly one parameter
+     * assignable from the parent's jOOQ {@code Table<?>} class, and return parameterised
+     * {@code org.jooq.Field<X>}. The captured return TypeName preserves the parameterised
+     * shape so the generated {@code $fields()} body compiles cleanly when projecting against
+     * a {@code List<Field<?>>}.
+     *
+     * <p>Mirrors {@link #reflectTableMethod} but with a stricter return-type rule (must be
+     * {@code Field}, not the wider {@code Table<?>} that {@code @tableMethod} accepts) and a
+     * fixed param shape (exactly one Table<?>, no GraphQL args, no context args).
+     */
+    ServiceReflectionResult reflectExternalField(String className, String methodName,
+            ClassName parentTableClass) {
+        if (className == null || methodName == null) {
+            return new ServiceReflectionResult(null, "external field reference is incomplete");
+        }
+        try {
+            Class<?> cls = Class.forName(className);
+            var methods = Arrays.stream(cls.getDeclaredMethods())
+                .filter(m -> m.getName().equals(methodName))
+                .toList();
+            if (methods.isEmpty()) {
+                var declaredMethodNames = Arrays.stream(cls.getDeclaredMethods())
+                    .map(java.lang.reflect.Method::getName)
+                    .distinct()
+                    .toList();
+                return new ServiceReflectionResult(null,
+                    "method '" + methodName + "' not found in class '" + className + "'"
+                    + BuildContext.candidateHint(methodName, declaredMethodNames));
+            }
+            var javaMethod = methods.get(0);
+            int mods = javaMethod.getModifiers();
+            if (!java.lang.reflect.Modifier.isStatic(mods) || !java.lang.reflect.Modifier.isPublic(mods)) {
+                return new ServiceReflectionResult(null,
+                    "method '" + methodName + "' in class '" + className
+                    + "' must be public static");
+            }
+            if (javaMethod.getParameterCount() != 1) {
+                return new ServiceReflectionResult(null,
+                    "method '" + methodName + "' in class '" + className
+                    + "' must take exactly one Table<?> parameter — got "
+                    + javaMethod.getParameterCount() + " parameter(s)");
+            }
+            var p = javaMethod.getParameters()[0];
+            if (!org.jooq.Table.class.isAssignableFrom(p.getType())) {
+                return new ServiceReflectionResult(null,
+                    "method '" + methodName + "' in class '" + className
+                    + "' parameter must be a jOOQ Table<?> subtype — got '"
+                    + p.getType().getName() + "'");
+            }
+            if (!org.jooq.Field.class.equals(javaMethod.getReturnType())) {
+                return new ServiceReflectionResult(null,
+                    "method '" + methodName + "' in class '" + className
+                    + "' must return org.jooq.Field<X> — got '"
+                    + javaMethod.getReturnType().getName() + "'");
+            }
+            var genericReturn = javaMethod.getGenericReturnType();
+            if (!(genericReturn instanceof java.lang.reflect.ParameterizedType)) {
+                return new ServiceReflectionResult(null,
+                    "method '" + methodName + "' in class '" + className
+                    + "' must return parameterized Field<X>, not raw Field");
+            }
+            if (!p.isNamePresent()) {
+                emitParametersWarning();
+            }
+            String paramName = p.isNamePresent() ? p.getName() : "table";
+            List<MethodRef.Param> params = List.of(new MethodRef.Param.Typed(
+                paramName, p.getParameterizedType().getTypeName(), new ParamSource.Table()));
+            TypeName returnTypeName = TypeName.get(genericReturn);
+            return new ServiceReflectionResult(
+                new MethodRef.Basic(className, methodName, returnTypeName, params),
+                null);
+        } catch (ClassNotFoundException e) {
+            return new ServiceReflectionResult(null, "class '" + className + "' could not be loaded");
+        }
+    }
+
     private void emitParametersWarning() {
         if (!parametersWarningEmitted) {
             parametersWarningEmitted = true;
