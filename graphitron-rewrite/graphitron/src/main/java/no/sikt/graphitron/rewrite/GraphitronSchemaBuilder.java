@@ -31,6 +31,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.ConnectionType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.EdgeType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.PageInfoType;
 import no.sikt.graphitron.rewrite.schema.federation.EntityResolutionBuilder;
+import no.sikt.graphitron.rewrite.schema.federation.FederationSpec;
 import no.sikt.graphitron.rewrite.schema.input.FederationLinkApplier;
 
 import java.util.ArrayList;
@@ -77,7 +78,7 @@ public class GraphitronSchemaBuilder {
      */
     private static final class FederationDirectiveNamesHolder {
         static final Set<String> NAMES = FederationDirectives.loadFederationSpecDefinitions(
-                        FederationLinkApplier.DEFAULT_FEDERATION_SPEC_URL).stream()
+                        FederationSpec.URL).stream()
                 .filter(d -> d instanceof DirectiveDefinition)
                 .map(d -> ((DirectiveDefinition) d).getName())
                 .collect(Collectors.toUnmodifiableSet());
