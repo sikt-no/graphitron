@@ -205,6 +205,21 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void films_isEnglish_resolvesViaExternalFieldExpression() {
+        // R48 ComputedField execution-tier fixture: @externalField(reference: ...) inlines
+        // FilmExtensions.isEnglish(table) (Field<Boolean>(LANGUAGE_ID = 1)) into Film.$fields().
+        // ColumnFetcher reads the projected alias from the result Record at request time.
+        // All seeded films have language_id=1, so the expression resolves to true for each.
+        Map<String, Object> data = execute("{ films { title isEnglish } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("films");
+        assertThat(films).hasSize(5);
+        assertThat(films).extracting(f -> f.get("isEnglish"))
+            .containsOnly(Boolean.TRUE);
+        assertThat(films).extracting(f -> f.get("title"))
+            .doesNotContainNull();
+    }
+
+    @Test
     void films_filteredBySameTableNodeId_returnsRowsMatchingDecodedIds() {
         // self-table-nodeid-filter.md: [ID!] @nodeId(typeName: "Film") on a film-bound input
         // → primary-key IN predicate. Encode 2 of the 5 PKs, expect exactly those 2 rows.

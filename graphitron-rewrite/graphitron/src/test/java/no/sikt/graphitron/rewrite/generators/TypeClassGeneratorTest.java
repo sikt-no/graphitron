@@ -36,6 +36,7 @@ class TypeClassGeneratorTest {
             List.of(),
             List.of(),
             List.of(),
+            List.of(),
             DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
     }
 
@@ -67,6 +68,7 @@ class TypeClassGeneratorTest {
             filmTable(),
             List.of(),
             List.of(nodeIdField("Film", "id", "Film", List.of(filmIdCol()))),
+            List.of(),
             List.of(),
             List.of(),
             List.of(),
