@@ -16,8 +16,8 @@ depends-on: []
 > the emitter feeds it into the existing `BatchKey.RowKeyed` path with a synthetic
 > first-hop `FkJoin`. Co-closes the `RecordTableField` / `RecordLookupTableField`
 > "missing FK join path and a typed backing class" rejection at
-> [`FieldBuilder.java:1900`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java)
-> and [`:1907`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java).
+> [`FieldBuilder.java:2035`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java)
+> and [`:2042`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java).
 
 ---
 
@@ -38,7 +38,7 @@ type SettKvotesporsmalAlgoritmePayload @record(record: {className: "no.example.S
 catalog entry. The `kvotesporsmal` field's classifier path lands at
 `FieldBuilder.classifyChildFieldOnResultType` →
 `deriveBatchKeyForResultType(joinPath, parentResultType)`
-([`:1973-1982`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java)).
+([`:2108-2117`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java)).
 That helper requires the join path's first hop to be a `JoinStep.FkJoin` so it can
 read `fkJoin.sourceColumns()` as the parent-side key columns. With no FK in the
 catalog, `parsePath` either fails outright or produces an empty / non-FK first
@@ -160,13 +160,13 @@ a per-field directive avoids inventing a second mapping language for the
 
 ### What is *not* in scope
 
-- `@table` parents (rejection arms at `FieldBuilder.java:2015` for
-  `@service` polymorphic returns; the FK on the parent table already
-  classifies). The directive is rejected on a `@table`-parent field with an
-  AUTHOR_ERROR pointing at `@reference`.
-- Plain Java records (`JavaRecordType` parent, e.g. `record FilmDto(...)`)
-  with a resolvable FK already work. The directive is rejected on those with
-  the same AUTHOR_ERROR pointer.
+- `@table` parents (the FK on the parent table already classifies; see
+  `classifyChildFieldOnTableType`). The directive is rejected on a
+  `@table`-parent field with an AUTHOR_ERROR pointing at `@reference`.
+- Plain Java records (`JavaRecordType` parent) with a resolvable FK in the
+  catalog: the existing FK-driven path classifies correctly and the directive
+  is unnecessary there. `JavaRecordType` parents *without* a catalog FK are
+  in scope and admitted (see Invariant #1).
 - `JooqTableRecordType` parents (the catalog FK is authoritative). Same
   rejection.
 - The directive on a non-`TableBoundReturnType` field. `RecordField` /
@@ -181,9 +181,18 @@ a per-field directive avoids inventing a second mapping language for the
 
 1. **Application context.** `@batchKeyLifter` may appear only on a child field
    whose:
-   - parent classifies as `GraphitronType.PojoResultType` with a non-null
-     `fqClassName`, **and**
+   - parent classifies as `GraphitronType.PojoResultType` **or**
+     `GraphitronType.JavaRecordType`, both with a non-null `fqClassName`,
+     **and**
    - return type resolves to `ReturnTypeRef.TableBoundReturnType`.
+
+   `JavaRecordType` is admitted because a Java `record` DTO with no jOOQ
+   catalog FK has the same problem as a POJO; the existing record-key
+   extraction in
+   [`GeneratorUtils.buildRecordKeyExtraction:200-202`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/GeneratorUtils.java)
+   already treats both as backing-class-driven. The lifter applies symmetrically.
+   `JooqRecordType` and `JooqTableRecordType` parents stay rejected (the catalog
+   record's columns are the keying contract; use the existing FK path).
 
    Other shapes (table parent, record-with-FK, scalar return, polymorphic
    return) are rejected with AUTHOR_ERROR. Untyped `PojoResultType` (null
@@ -198,7 +207,7 @@ a per-field directive avoids inventing a second mapping language for the
    from the parent's `fqClassName`. Each failure produces a precise
    AUTHOR_ERROR borrowing the exact message shapes already used by
    `ServiceCatalog.reflectServiceMethod`
-   ([`ServiceCatalog.java:154-227`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/ServiceCatalog.java)),
+   ([`ServiceCatalog.java:155-227`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/ServiceCatalog.java)),
    so error vocabulary stays uniform across `@service`, `@tableMethod`, and
    the new directive.
 
@@ -250,11 +259,11 @@ a per-field directive avoids inventing a second mapping language for the
    `RecordTableField` today. (`SplitRowsMethodEmitter.unsupportedReason` for
    `RecordTableField` rejects single-cardinality with a "not yet supported"
    stub at
-   [`SplitRowsMethodEmitter.java:330-333`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/SplitRowsMethodEmitter.java);
+   [`SplitRowsMethodEmitter.java:327-339`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/SplitRowsMethodEmitter.java);
    that stub stays in place and the lifter path inherits it.)
 
 8. **`@lookupKey` interaction.** The classifier branch at
-   [`FieldBuilder.java:1897-1903`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java)
+   [`FieldBuilder.java:2032-2038`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java)
    produces `RecordLookupTableField` when any argument carries `@lookupKey`.
    The lifter directive is orthogonal: a lifted-key `RecordLookupTableField`
    classifies the same way; only the synthetic first-hop FkJoin and the
@@ -390,9 +399,8 @@ added).
 #### 1b. Directive constants
 
 In the SDL constants file (`Directives.java` or wherever
-`DIR_SERVICE`/`DIR_TABLE`/etc. live; the FieldBuilder imports list at
-[`FieldBuilder.java:1-80`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java)
-is the discovery point), add:
+`DIR_SERVICE`/`DIR_TABLE`/etc. live; the `FieldBuilder` imports list is the
+discovery point), add:
 
 ```java
 public static final String DIR_BATCH_KEY_LIFTER = "batchKeyLifter";
@@ -414,7 +422,7 @@ verbatim per §Surface. Place it after `@reference` /
 #### 1d. `FieldBuilder.classifyChildFieldOnResultType` extension
 
 Inside the existing object-return arm at
-[`FieldBuilder.java:1873-1919`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java),
+[`FieldBuilder.java:2009-2055`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java),
 add a `hasBatchKeyLifter` branch ahead of the existing `parsePath` call:
 
 ```java
@@ -446,7 +454,7 @@ if (hasLifter) {
 }
 ```
 
-The non-lifter path (existing code at `:1885-1919`) is unchanged. The branch
+The non-lifter path (existing code at `:2020-2055`) is unchanged. The branch
 order matters: `hasBatchKeyLifter` runs first so the AUTHOR_ERROR cases for
 the directive on a wrong parent shape (`JooqTableRecordType`,
 `JavaRecordType`) surface with the directive-specific message rather than the
@@ -525,7 +533,10 @@ implementation should inline; lift to `ServiceCatalog` if R6
 `GraphitronSchemaBuilderTest` additions covering the classifier paths. Each
 row asserts the produced field variant and (where applicable) the rejection
 message. Place them adjacent to the existing `RecordTableField` cases at
-[`GraphitronSchemaBuilderTest.java:1415-1478`](../graphitron/src/test/java/no/sikt/graphitron/rewrite/GraphitronSchemaBuilderTest.java).
+the existing `RecordTableField` block in
+[`GraphitronSchemaBuilderTest.java`](../graphitron/src/test/java/no/sikt/graphitron/rewrite/GraphitronSchemaBuilderTest.java)
+(grep for `RecordTableField` to find the current cases — line numbers move
+with each landing).
 
 | SDL shape | Expected outcome |
 |---|---|
@@ -536,7 +547,7 @@ message. Place them adjacent to the existing `RecordTableField` cases at
 | Pojo parent (null `fqClassName`) + `@batchKeyLifter` | `UnclassifiedField` per Invariant #1 |
 | `@table` parent + `@batchKeyLifter` | `UnclassifiedField` AUTHOR_ERROR pointing at `@reference` |
 | `JooqTableRecordType` parent + `@batchKeyLifter` | `UnclassifiedField` AUTHOR_ERROR pointing at catalog FK |
-| `JavaRecordType` parent + `@batchKeyLifter` | `UnclassifiedField` AUTHOR_ERROR (catalog FK governs) |
+| `JavaRecordType` parent (non-null `fqClassName`) + `@batchKeyLifter` | `RecordTableField` with `BatchKey.LifterRowKeyed` (admitted, same as `PojoResultType`) |
 | Pojo parent + `@batchKeyLifter` on a scalar-return field | `UnclassifiedField` AUTHOR_ERROR (directive on non-`TableBoundReturnType`) |
 | `@batchKeyLifter` with missing class | `UnclassifiedField` with `ServiceCatalog`-style "class … could not be loaded" |
 | `@batchKeyLifter` with missing method | `UnclassifiedField` with candidate-hint suggestion |
@@ -547,6 +558,10 @@ message. Place them adjacent to the existing `RecordTableField` cases at
 | `@batchKeyLifter` empty `targetColumns` list | `UnclassifiedField` per Invariant #6 |
 | `@batchKeyLifter` `targetColumns` references a non-existent column | `UnclassifiedField` per Invariant #5 with candidate hint |
 | `@batchKeyLifter` on `@asConnection` field | `UnclassifiedField` per Invariant #9 |
+| Pojo parent + `@batchKeyLifter` + `@condition` arg on the field | `RecordTableField` with `BatchKey.LifterRowKeyed`; `tfc.filters()` carries the resolved `WhereFilter` (filter goes through `resolveTableFieldComponents`, not `parsePath`) |
+| Pojo parent + `@batchKeyLifter` + `@orderBy` arg on the field, list return | `RecordTableField` with `BatchKey.LifterRowKeyed`; `tfc.orderBy()` carries the resolved `OrderBySpec` |
+| Pojo parent + `@batchKeyLifter` + `@field(name: "x")` on the field | classifier ignores `@field(name:)` for the keying axis; `targetColumns` resolves independently of the schema field's column rename. Documents the v1 non-interaction (Open decisions §3) |
+| Pojo parent + `@batchKeyLifter` with `targetColumns` whose SQL name exists on multiple tables in the catalog | resolution scopes to the field's `@table` return type only (Invariant #5); a same-named column on an unrelated table is invisible. Test confirms the lookup uses `JooqCatalog` table-scoped resolution, not catalog-wide |
 
 ---
 
@@ -555,12 +570,15 @@ message. Place them adjacent to the existing `RecordTableField` cases at
 **Goal:** wire `BatchKey.LifterRowKeyed` through the emitters so the
 classified field actually generates a working DataFetcher and rows-method.
 
-#### 2a. `GeneratorUtils.keyElementType`
+#### 2a. `GeneratorUtils.keyElementType` and `buildKeyExtraction`
 
-Extend the four-arm switch at
+Two sealed-type switches must add an arm or compilation breaks.
+
+**`keyElementType`** at
 [`GeneratorUtils.java:150-155`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/GeneratorUtils.java)
-to a five-arm form. `LifterRowKeyed` reuses `buildRowKeyType(keyColumns())`
-(same `RowN` shape as `RowKeyed` / `MappedRowKeyed`). Switch becomes:
+extends to a five-arm form. `LifterRowKeyed` reuses
+`buildRowKeyType(keyColumns())` (same `RowN` shape as `RowKeyed` /
+`MappedRowKeyed`). Switch becomes:
 
 ```java
 return switch (batchKey) {
@@ -570,6 +588,24 @@ return switch (batchKey) {
         -> buildRecordNKeyType(batchKey.keyColumns());
 };
 ```
+
+**`buildKeyExtraction`** at
+[`GeneratorUtils.java:261-289`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/GeneratorUtils.java)
+is a separate sealed-type switch. It is the `@table`-parent
+`@splitQuery` accessor (`(($T) env.getSource()).get(...)`) and is never
+reached on the record-parent lifter path; the lifter goes through
+`buildLifterKeyExtraction` (§2b) via the split in §2c. To keep the switch
+exhaustive after the new permit lands, add:
+
+```java
+case BatchKey.LifterRowKeyed _ ->
+    throw new IllegalStateException(
+        "buildKeyExtraction is the @table-parent path; lifter-keyed fields "
+        + "go through buildLifterKeyExtraction");
+```
+
+The same compile-time guard catches any future caller that mis-routes a
+`LifterRowKeyed` here.
 
 #### 2b. `buildLifterKeyExtraction`
 
@@ -600,10 +636,11 @@ through a generic `Record`/`Object` reflective accessor.
 
 #### 2c. `TypeFetcherGenerator.buildRecordBasedDataFetcher` arm
 
-The existing record-based DataFetcher at
-[`TypeFetcherGenerator.java:1667-1701`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java)
+The existing record-based DataFetcher
+`buildRecordBasedDataFetcher` at
+[`TypeFetcherGenerator.java:1756-1790`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java)
 calls `buildRecordKeyExtraction((BatchKey.RowKeyed) batchKey, resultType,
-jooqPackage)` unconditionally on line 1698. Split that call:
+jooqPackage)` unconditionally on line `:1787`. Split that call:
 
 ```java
 CodeBlock keyExtraction = batchKey instanceof BatchKey.LifterRowKeyed lrk
@@ -617,14 +654,40 @@ Same DataLoader registration, same `loader.load(key, env)` terminal. Only the
 already takes a `List<RowN>`; it doesn't care whether the row came from a
 catalog FK or a developer lifter.
 
-#### 2d. `SplitRowsMethodEmitter.buildListMethod`
+#### 2d. `SplitRowsMethodEmitter.emitParentInputAndFkChain`
 
-No code change. The synthetic `JoinStep.FkJoin` produced in Phase 1d satisfies
-the emitter's first-hop contract: `path.get(0) instanceof FkJoin` is true,
-`fkJoin.targetColumns()` resolves, `fkJoin.targetTable()` is the field's
-`@table`, and the JOIN emits as `target.<col> = values.<col>`. Verify by
-inspection during Phase 2 (no behavioural change required) and add a comment
-on the synthetic-step builder pointing at this property as an invariant.
+One-line widening at the prelude's BatchKey access. The current site
+([`SplitRowsMethodEmitter.java:131`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/SplitRowsMethodEmitter.java))
+unconditionally casts:
+
+```java
+BatchKey.RowKeyed rowKeyed = (BatchKey.RowKeyed) batchKey;
+List<ColumnRef> pkCols = rowKeyed.keyColumns();
+```
+
+`LifterRowKeyed` is a sibling permit on the sealed `BatchKey`, not a subtype
+of `RowKeyed`, so this cast throws `ClassCastException` for the lifter path.
+Replace with the sealed-interface accessor (already declared on `BatchKey`):
+
+```java
+List<ColumnRef> pkCols = batchKey.keyColumns();
+```
+
+The local `rowKeyed` is unused beyond `keyColumns()`, so the line drops
+cleanly. No other change in `emitParentInputAndFkChain` is required: the FK
+chain loop reads only `fk.targetTable()` / `fk.javaFieldName()`, the JOIN-on
+predicate reads only `firstHop.sourceColumns()`, and bridging hops (`i >= 1`)
+never run on the single-step lifter path. Add a comment on
+`emitParentInputAndFkChain` pointing at this property as an invariant.
+
+The synthetic `JoinStep.FkJoin` produced in Phase 1d satisfies the
+first-hop contract that the rest of `buildListMethod` depends on:
+`path.get(0) instanceof FkJoin` is true, `fkJoin.targetColumns()` resolves,
+`fkJoin.targetTable()` is the field's `@table`, and the JOIN emits as
+`target.<col> = parentInput.field(i+1)`. The `parentInput` VALUES table's
+column types come from `batchKey.keyColumns()` directly (now via the sealed
+accessor), and on the lifter path those are the target-side columns, which
+match the lifter's `RowN` type-args by Invariant #4.
 
 #### 2e. Validator updates
 
@@ -680,15 +743,15 @@ sees a real reflective method, not a stubbed reference.
 ### Phase 3 — Documentation and rejection-message backreference
 
 **Goal:** the existing `RecordTableField` / `RecordLookupTableField`
-rejections at `FieldBuilder.java:1900` and `:1907` already reference this
+rejections at `FieldBuilder.java:2035` and `:2042` already reference this
 roadmap item by hint; tighten that into a directive recommendation now that
 the directive exists.
 
 #### 3a. Update rejection messages
 
 Change the strings at
-[`FieldBuilder.java:1899-1900`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java)
-and `:1906-1907` from:
+[`FieldBuilder.java:2034-2035`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java)
+and `:2041-2042` from:
 
 > "RecordTableField requires a FK join path and a typed backing class for batch key extraction"
 
@@ -699,7 +762,7 @@ to:
 > @batchKeyLifter on the field"
 
 Identical edit on the `RecordLookupTableField` arm two lines above. The
-existing `dtoSourcesRejectionReason` in `ServiceCatalog.java:444-446`
+existing `dtoSourcesRejectionReason` in `ServiceCatalog.java:452-470`
 already points at this roadmap file by name; update it to point at the
 directive instead now that the directive ships.
 
@@ -752,7 +815,7 @@ from the existing "Column value binding" section.
   single-cardinality with a runtime stub. The lifter directive inherits this
   stub. Lifting single-cardinality is a separate emitter expansion, tracked
   by the existing stub message at
-  [`SplitRowsMethodEmitter.java:329-333`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/SplitRowsMethodEmitter.java).
+  [`SplitRowsMethodEmitter.java:327-339`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/SplitRowsMethodEmitter.java).
 - **Condition-join steps after the synthetic FkJoin.** The synthetic step
   is a single hop; multi-hop paths from a DTO parent into a target table via
   intermediate join steps are not in scope. A schema author who needs that
