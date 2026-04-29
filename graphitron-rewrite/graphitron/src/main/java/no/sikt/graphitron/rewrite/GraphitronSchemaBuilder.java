@@ -89,27 +89,47 @@ public class GraphitronSchemaBuilder {
      * classifier built internally. The Commit B emitters read raw type structure (argument
      * default values, nested list/non-null wrapping, directive applications) off the assembled
      * schema and don't need the reclassification to carry it all, so we just surface both
-     * together. Production callers use {@link #buildBundle(TypeDefinitionRegistry, RewriteContext)};
-     * tests that only need the classified model continue to call
-     * {@link #build(TypeDefinitionRegistry, RewriteContext)}.
+     * together. Production callers pass an {@link AttributedRegistry} carrying the
+     * {@code federationLink} flag captured from
+     * {@link FederationLinkApplier#apply}'s return value; tests that hand-craft a registry use
+     * the convenience overload {@link #buildBundle(TypeDefinitionRegistry, RewriteContext)},
+     * which derives the flag via {@link AttributedRegistry#from(TypeDefinitionRegistry)}.
      */
     public record Bundle(GraphitronSchema model, graphql.schema.GraphQLSchema assembled, boolean federationLink) {}
 
     /**
-     * Classifies all types and fields in {@code registry} and returns the resulting
-     * {@link GraphitronSchema}. The registry must already include the Graphitron directive
-     * definitions.
+     * Convenience overload for tests that hand-craft a {@link TypeDefinitionRegistry} without
+     * running {@link GraphQLRewriteGenerator#loadAttributedRegistry}. Wraps via
+     * {@link AttributedRegistry#from(TypeDefinitionRegistry)}; production code uses
+     * {@link #build(AttributedRegistry, RewriteContext)} directly.
      */
     public static GraphitronSchema build(TypeDefinitionRegistry registry, RewriteContext ctx) {
-        return buildBundle(registry, ctx).model();
+        return build(AttributedRegistry.from(registry), ctx);
     }
 
     /**
-     * Classifies {@code registry} and returns both the classified model and the assembled
-     * {@link GraphQLSchema}. See {@link Bundle}.
+     * Classifies all types and fields in the {@link AttributedRegistry} and returns the
+     * resulting {@link GraphitronSchema}. The registry must already include the Graphitron
+     * directive definitions.
+     */
+    public static GraphitronSchema build(AttributedRegistry attributed, RewriteContext ctx) {
+        return buildBundle(attributed, ctx).model();
+    }
+
+    /**
+     * Convenience overload for tests; see {@link #build(TypeDefinitionRegistry, RewriteContext)}.
      */
     public static Bundle buildBundle(TypeDefinitionRegistry registry, RewriteContext ctx) {
-        boolean federationLink = FederationLinkApplier.hasFederationLink(registry);
+        return buildBundle(AttributedRegistry.from(registry), ctx);
+    }
+
+    /**
+     * Classifies the {@link AttributedRegistry} and returns both the classified model and the
+     * assembled {@link GraphQLSchema}. See {@link Bundle}.
+     */
+    public static Bundle buildBundle(AttributedRegistry attributed, RewriteContext ctx) {
+        var registry = attributed.registry();
+        boolean federationLink = attributed.federationLink();
         var runtimeWiring = EchoingWiringFactory.newEchoingWiring(wiring ->
             registry.scalars().forEach((name, v) -> {
                 if (!ScalarInfo.isGraphqlSpecifiedScalar(name)) {
