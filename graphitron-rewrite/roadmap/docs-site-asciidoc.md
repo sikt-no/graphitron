@@ -56,16 +56,16 @@ docs/                                    # AUTHORED, repo-root, product docs
 ├── security.adoc
 ├── dependencies.adoc
 ├── _includes/                           # shared snippets, partials
-├── images/                              # logo.svg, Person2/3.svg, Personer.svg, Creature1-3.svg, favicon
-├── css/
+├── _theme/                              # site theming (build-infrastructure, not content)
 │   └── site.css                         # SDS-tokens-on-AsciiDoc styles (authored)
+├── images/                              # logo.svg, Person2/3.svg, Personer.svg, Creature1-3.svg, favicon
 └── target/                              # gitignored
     ├── staging/                         # build-time merged source tree
     │   ├── <copies of /docs/*.adoc>
     │   ├── css/
     │   │   ├── sds-core.css             # fetched from @sikt/sds-core via download-maven-plugin
     │   │   ├── sds-button.css           # fetched from @sikt/sds-button via download-maven-plugin
-    │   │   ├── site.css                 # copied from /docs/css/
+    │   │   ├── site.css                 # copied from /docs/_theme/
     │   │   └── LICENSE-*                # SDS LICENSE files alongside their CSS
     │   ├── architecture/                # mirrors /graphitron-rewrite/docs/
     │   │   ├── README.adoc
@@ -103,8 +103,9 @@ graphitron-rewrite/roadmap/              # AUTHORED, stays markdown
 
 `/docs/pom.xml` chains three plugins in `process-resources` and `compile`:
 
-**1. `maven-resources-plugin` (process-resources):** copy authored `.adoc` and asset files into `target/staging/`. Two resource definitions:
-- `${project.basedir}` → `target/staging/` (skip `pom.xml`, `target/`).
+**1. `maven-resources-plugin` (process-resources):** copy authored `.adoc` and asset files into `target/staging/`. Three resource definitions:
+- `${project.basedir}` → `target/staging/` (skip `pom.xml`, `target/`, `_theme/`; the `_*` prefix excludes by glob).
+- `${project.basedir}/_theme/` → `target/staging/css/` (relocates authored `site.css` into the same `css/` directory as the SDS files fetched by `download-maven-plugin`, so AsciiDoctor's resource handling sees a single CSS directory).
 - `${project.basedir}/../graphitron-rewrite/docs/` → `target/staging/architecture/` (every `.adoc` file).
 
 **2. `exec-maven-plugin` invoking `roadmap-tool` (process-resources, after the copy):** trigger `roadmap-tool` to emit AsciiDoc into its **own** `roadmap-tool/target/generated-adoc/` directory via a new subcommand alongside the existing `generate`, `verify`, `next-id`, and `create`. Invocation follows the existing `-Dexec.args=...` / `commandlineArgs` convention introduced in `roadmap-tool/pom.xml` (so the new mode plugs into the same execution shape, no second exec stanza). A second `maven-resources-plugin` execution then copies the output directory into `target/staging/_generated/`. Each module writes only inside its own `target/`; the docs module never reaches into `roadmap-tool/target/`, only consumes its declared output. The reactor wiring guarantees ordering: `roadmap-tool` is listed as a build-scope `<dependency>` of the docs module, so Maven's reactor schedules it first.
@@ -271,7 +272,7 @@ Old-site content inventory:
 
 Visual / asset migration (Phase 1 deliverable, not absorption):
 - SVGs we keep: `logo.svg`, `Favicon-Dark.svg`, `Person2.svg`, `Person3.svg`, `Personer.svg`, `Creature1.svg`, `Creature2.svg`, `Creature3.svg`. Move to `/docs/images/`.
-- `src/css/siktifisert.css` design intent (SDS tokens, `.advantage-box`, footer dark style). Reimplemented in `/docs/css/site.css` against AsciiDoctor selectors.
+- `src/css/siktifisert.css` design intent (SDS tokens, `.advantage-box`, footer dark style). Reimplemented in `/docs/_theme/site.css` against AsciiDoctor selectors.
 - The homepage hero + 3-feature row from `src/pages/index.js` and `src/components/HomepageFeatures/index.js`. Reimplemented as a static AsciiDoc landing page in `/docs/index.adoc`.
 
 **Drop entirely:**
@@ -363,7 +364,7 @@ Deliverables:
 - `/docs/index.adoc` (placeholder content).
 - `/docs/README.adoc` (replaces existing `/docs/README.md`; GitHub-rendered landing for the directory).
 - `/docs/pom.xml` `download-maven-plugin` executions fetching `@sikt/sds-core` and `@sikt/sds-button` CSS from JSDelivr at build time into `target/staging/css/` (versions pinned via `<sds.core.version>` / `<sds.button.version>` properties). LICENSE text from each package fetched alongside the CSS.
-- `/docs/css/site.css` (initial port of `siktifisert.css` patterns onto AsciiDoctor classes).
+- `/docs/_theme/site.css` (initial port of `siktifisert.css` patterns onto AsciiDoctor classes; staging step copies it into `target/staging/css/` alongside the fetched SDS files).
 - Logo and favicon copied into `/docs/images/`.
 - `.github/workflows/rewrite-build.yml` (new; verifies the rewrite reactor including the docs module on push and PR to `main` and `claude/graphitron-rewrite`; uses JDK 25; `mvn -f graphitron-rewrite/pom.xml verify -Plocal-db`). This closes the existing CI gap noted in [CI integration](#ci-integration).
 - `.github/workflows/deploy-docs.yml` (new; deploys on push to `claude/graphitron-rewrite`; concurrency `pages`).
