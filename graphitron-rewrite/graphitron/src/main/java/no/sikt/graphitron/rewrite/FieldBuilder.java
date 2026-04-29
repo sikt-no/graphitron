@@ -1790,8 +1790,8 @@ class FieldBuilder {
             boolean argNonNull = arg.getType() instanceof GraphQLNonNull;
             var argFieldErrors = new ArrayList<String>();
             List<InputColumnBinding> bindings = buildLookupBindings(tit, arg, fieldDef, arg.getName(), argFieldErrors);
-            bindingErrors.addAll(argFieldErrors);
             Optional<ArgConditionRef> argCondition = buildArgCondition(arg, argFieldErrors);
+            bindingErrors.addAll(argFieldErrors);
             tia = new ArgumentRef.InputTypeArg.TableInputArg(
                 arg.getName(), argTypeName, argNonNull, argList, tit.table(), bindings, argCondition, tit.inputFields());
         }
@@ -1869,11 +1869,6 @@ class FieldBuilder {
                         RejectionKind.AUTHOR_ERROR,
                         "@mutation field '" + name + "' returns ID but table '" + tia.inputTable().tableName()
                             + "' is not a @node type; annotate the type with @node or use a @table return type");
-                }
-                if (returnType.wrapper() instanceof FieldWrapper.Connection) {
-                    return new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                        RejectionKind.AUTHOR_ERROR,
-                        "@mutation(typeName: DELETE) Connection return is not supported");
                 }
                 nodeIdMeta = meta;
             }
