@@ -3266,7 +3266,7 @@ class GraphitronSchemaBuilderTest {
         },
 
         NODE_QUERY_FIELD(
-            "field named 'node' → QueryNodeField",
+            "field returning Node (single) → QueryNodeField",
             """
             interface Node { id: ID! }
             type Film implements Node @table(name: "film") { id: ID! title: String }
@@ -3277,7 +3277,7 @@ class GraphitronSchemaBuilderTest {
         },
 
         NODES_QUERY_FIELD(
-            "field named 'nodes' → QueryNodesField",
+            "field returning [Node] → QueryNodesField",
             """
             interface Node { id: ID! }
             type Film implements Node @table(name: "film") { id: ID! title: String }
@@ -3285,6 +3285,17 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> assertThat(schema.field("Query", "nodes")).isInstanceOf(QueryField.QueryNodesField.class)) {
             @Override public Set<Class<?>> variants() { return Set.of(QueryField.QueryNodesField.class); }
+        },
+
+        ALIASED_NODE_QUERY_FIELD(
+            "non-'node' field returning Node → QueryNodeField (federation-style alias)",
+            """
+            interface Node { id: ID! }
+            type Film implements Node @table(name: "film") { id: ID! title: String }
+            type Query { node(id: ID!): Node internalFilmNode(id: ID): Node }
+            """,
+            schema -> assertThat(schema.field("Query", "internalFilmNode")).isInstanceOf(QueryField.QueryNodeField.class)) {
+            @Override public Set<Class<?>> variants() { return Set.of(QueryField.QueryNodeField.class); }
         },
 
         ENTITY_QUERY_FIELD(
