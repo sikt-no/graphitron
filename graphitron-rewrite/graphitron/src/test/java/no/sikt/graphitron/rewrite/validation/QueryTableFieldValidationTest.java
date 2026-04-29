@@ -88,9 +88,9 @@ class QueryTableFieldValidationTest {
                 filmReturn(new FieldWrapper.Connection(true, 100)),
                 List.of(), PK_ORDER,
                 new PaginationSpec(
-                    new PaginationSpec.PaginationArg("first", "Int", false),
+                    new PaginationSpec.PaginationArg("Int", false),
                     null,
-                    new PaginationSpec.PaginationArg("after", "String", false),
+                    new PaginationSpec.PaginationArg("String", false),
                     null)),
             List.of()),
 
@@ -99,9 +99,9 @@ class QueryTableFieldValidationTest {
                 filmReturn(new FieldWrapper.Connection(true, 100)),
                 List.of(), new OrderBySpec.None(),
                 new PaginationSpec(
-                    new PaginationSpec.PaginationArg("first", "Int", false),
+                    new PaginationSpec.PaginationArg("Int", false),
                     null,
-                    new PaginationSpec.PaginationArg("after", "String", false),
+                    new PaginationSpec.PaginationArg("String", false),
                     null)),
             List.of("Field 'Query.films': paginated fields must have ordering (add @defaultOrder or @orderBy)"));
 

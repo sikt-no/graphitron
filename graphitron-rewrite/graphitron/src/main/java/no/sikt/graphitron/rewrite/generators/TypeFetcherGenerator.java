@@ -991,17 +991,11 @@ public class TypeFetcherGenerator {
         // keeping them in sync when the client picks a dynamic named order.
         builder.addCode(buildConnectionOrderingBlock(qtf.orderBy(), qtf.name(), names, tableLocal, outputPackage));
 
-        // Extract all four Relay pagination arguments using arg names from the model
-        var pagination = qtf.pagination();
-        var firstArgName  = pagination != null && pagination.first()  != null ? pagination.first().name()  : "first";
-        var lastArgName   = pagination != null && pagination.last()   != null ? pagination.last().name()   : "last";
-        var afterArgName  = pagination != null && pagination.after()  != null ? pagination.after().name()  : "after";
-        var beforeArgName = pagination != null && pagination.before() != null ? pagination.before().name() : "before";
-
-        builder.addStatement("Integer first = env.getArgument($S)", firstArgName);
-        builder.addStatement("Integer last = env.getArgument($S)", lastArgName);
-        builder.addStatement("String after = env.getArgument($S)", afterArgName);
-        builder.addStatement("String before = env.getArgument($S)", beforeArgName);
+        // Pagination arg names are fixed by the slot (classifier rejects custom names).
+        builder.addStatement("Integer first = env.getArgument($S)", "first");
+        builder.addStatement("Integer last = env.getArgument($S)", "last");
+        builder.addStatement("String after = env.getArgument($S)", "after");
+        builder.addStatement("String before = env.getArgument($S)", "before");
 
         // Pagination resolved in one call — first/last guard, backward/pageSize/cursor derivation,
         // cursor decode, backward-ordering reversal, and name-based selection+extraFields merge

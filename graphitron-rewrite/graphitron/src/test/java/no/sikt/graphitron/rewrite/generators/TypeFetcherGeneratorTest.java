@@ -520,9 +520,9 @@ class TypeFetcherGeneratorTest {
 
     private static PaginationSpec forwardPagination() {
         return new PaginationSpec(
-            new PaginationSpec.PaginationArg("first", "Int", false),
+            new PaginationSpec.PaginationArg("Int", false),
             null,
-            new PaginationSpec.PaginationArg("after", "String", false),
+            new PaginationSpec.PaginationArg("String", false),
             null);
     }
 
@@ -571,30 +571,9 @@ class TypeFetcherGeneratorTest {
     // Dropped connectionField_withOrderByArg_fetcherCallsHelper: Pattern 2 — helper-reference
     // body assertion, covered by compile tier. Sibling test above asserts the helper exists.
 
-    @Test
-    void connectionField_customPaginationArgNames_emittedInFetcher() {
-        var orderBy = new OrderBySpec.Fixed(
-            List.of(new OrderBySpec.ColumnOrderEntry(TestFixtures.filmIdCol(), null)), "ASC");
-        var customPagination = new PaginationSpec(
-            new PaginationSpec.PaginationArg("pageSize", "Int", false),
-            null,
-            new PaginationSpec.PaginationArg("cursor", "String", false),
-            null);
-        var field = new QueryField.QueryTableField("Query", "films", null,
-            TestFixtures.tableBoundFilm(new FieldWrapper.Connection(true, 100)),
-            List.of(), orderBy, customPagination);
-        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(field));
-        // intentional body-content assertion — no structural equivalent.
-        // Custom pagination arg names are not exercised by any execution-tier fixture (the
-        // test-spec schema uses the default first/after/last/before). Until a fixture with
-        // renamed args lands, verify model-driven arg names are emitted and the defaults are
-        // *not* emitted.
-        var code = method(spec, "films").code().toString();
-        assertThat(code).contains("\"pageSize\"");
-        assertThat(code).contains("\"cursor\"");
-        assertThat(code).doesNotContain("\"first\"");
-        assertThat(code).doesNotContain("\"after\"");
-    }
+    // Dropped connectionField_customPaginationArgNames_emittedInFetcher: custom pagination arg
+    // names are no longer supported. The classifier (FieldBuilder.isPaginationArg) only accepts
+    // first/last/after/before, so the slot fixes the name and PaginationArg no longer carries one.
 
     // ===== Backward pagination and Relay validation =====
 
