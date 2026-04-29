@@ -18,10 +18,6 @@ import java.util.Set;
  * {@code schemaBuilder.additionalDirective(...)} for each. The per-type emitters
  * ({@code <TypeName>Type}) consult {@link #isSurvivor(String)} to decide whether to translate
  * an application onto the corresponding graphql-java builder.
- *
- * <p>Federation directives are listed as a convenience constant so callers can distinguish
- * federation applications (which must always survive for supergraph composition) from other
- * custom applications without depending on the federation-jvm artifact.
  */
 public final class SchemaDirectiveRegistry {
 
@@ -67,39 +63,11 @@ public final class SchemaDirectiveRegistry {
     );
 
     /**
-     * Apollo Federation v2 directives. These must always survive to the programmatic schema
-     * and any downstream SDL output so the federation-jvm runtime and the supergraph
-     * composer see them.
-     */
-    public static final Set<String> FEDERATION_DIRECTIVES = Set.of(
-        "key",
-        "external",
-        "provides",
-        "requires",
-        "shareable",
-        "override",
-        "tag",
-        "inaccessible",
-        "composeDirective",
-        "interfaceObject",
-        "extends"
-    );
-
-    /**
      * Returns {@code true} when an application of {@code directiveName} should reach the
      * programmatic schema. A directive survives if its name is not in
      * {@link #GENERATOR_ONLY_DIRECTIVES}.
      */
     public static boolean isSurvivor(String directiveName) {
         return !GENERATOR_ONLY_DIRECTIVES.contains(directiveName);
-    }
-
-    /**
-     * Returns {@code true} for Apollo Federation v2 directive names. Included to let callers
-     * label applications as federation-related without reaching for federation-jvm; every
-     * federation directive is also a {@link #isSurvivor(String) survivor}.
-     */
-    public static boolean isFederation(String directiveName) {
-        return FEDERATION_DIRECTIVES.contains(directiveName);
     }
 }
