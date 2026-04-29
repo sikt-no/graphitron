@@ -1,16 +1,14 @@
 # Graphitron Project - Claude Code Reference
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
 ## Project Overview
 Graphitron is a Maven-based code generation tool that creates Java source code by linking GraphQL schemas to underlying database models. It's developed by Sikt – the Norwegian Agency for Shared Services in Education and Research.
 
 ## Technology Stack
 - **Language**: Java 17 with Jakarta EE 
 - **Build Tool**: Maven (multi-module project)
-- **GraphQL**: GraphQL Java 24.2 with Apollo Federation support
-- **Database**: jOOQ 3.19.18 for database access
-- **Testing**: JUnit 5 with AssertJ assertions
+- **GraphQL**: GraphQL Java with Apollo Federation support
+- **Database**: jOOQ for database access
+- **Testing**: JUnit with AssertJ assertions
 - **Database**: PostgreSQL
 - **Example Server**: Quarkus framework
 
