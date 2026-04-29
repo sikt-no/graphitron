@@ -18,36 +18,20 @@ class SchemaDirectiveRegistryTest {
     }
 
     @Test
-    void federationSet_containsFederationV2Directives() {
-        assertThat(SchemaDirectiveRegistry.FEDERATION_DIRECTIVES).contains(
-            "key", "external", "provides", "requires",
-            "shareable", "override", "tag", "inaccessible",
-            "composeDirective", "interfaceObject", "extends"
-        );
-    }
-
-    @Test
-    void survivorSets_andGeneratorOnlySet_areDisjoint() {
-        SchemaDirectiveRegistry.FEDERATION_DIRECTIVES.forEach(name ->
-            assertThat(SchemaDirectiveRegistry.GENERATOR_ONLY_DIRECTIVES)
-                .as("federation directive @%s must not also be generator-only", name)
-                .doesNotContain(name)
-        );
+    void isSurvivor_trueForUnknownCustomDirective() {
+        assertThat(SchemaDirectiveRegistry.isSurvivor("myAppDirective")).isTrue();
+        assertThat(SchemaDirectiveRegistry.isSurvivor("deprecated")).isTrue();
     }
 
     @Test
     void isSurvivor_trueForFederationDirectives() {
-        SchemaDirectiveRegistry.FEDERATION_DIRECTIVES.forEach(name ->
-            assertThat(SchemaDirectiveRegistry.isSurvivor(name))
-                .as("federation directive @%s should be a survivor", name)
-                .isTrue()
-        );
-    }
-
-    @Test
-    void isSurvivor_trueForUnknownCustomDirective() {
-        assertThat(SchemaDirectiveRegistry.isSurvivor("myAppDirective")).isTrue();
-        assertThat(SchemaDirectiveRegistry.isSurvivor("deprecated")).isTrue();
+        // Sanity check that the dropped FEDERATION_DIRECTIVES set's contents would still survive
+        // the survivor filter (none of them is a Graphitron generator-only directive). Spot-check
+        // the most load-bearing ones; the full federation directive list is owned by federation-jvm.
+        assertThat(SchemaDirectiveRegistry.isSurvivor("key")).isTrue();
+        assertThat(SchemaDirectiveRegistry.isSurvivor("shareable")).isTrue();
+        assertThat(SchemaDirectiveRegistry.isSurvivor("tag")).isTrue();
+        assertThat(SchemaDirectiveRegistry.isSurvivor("external")).isTrue();
     }
 
     @Test
@@ -57,13 +41,5 @@ class SchemaDirectiveRegistryTest {
                 .as("generator-only directive @%s must not survive", name)
                 .isFalse()
         );
-    }
-
-    @Test
-    void isFederation_matchesTheFederationSet() {
-        assertThat(SchemaDirectiveRegistry.isFederation("key")).isTrue();
-        assertThat(SchemaDirectiveRegistry.isFederation("external")).isTrue();
-        assertThat(SchemaDirectiveRegistry.isFederation("deprecated")).isFalse();
-        assertThat(SchemaDirectiveRegistry.isFederation("table")).isFalse();
     }
 }
