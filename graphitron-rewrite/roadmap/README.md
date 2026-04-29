@@ -22,7 +22,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec | [plan](nestingfield-multiparent-tablefield.md) |
 | `R13` | Faceted search on `@asConnection` | Spec | [plan](faceted-search.md) |
-| `R22` | Mutation bodies | Spec | [plan](mutations.md) |
+| `R22` | Mutation bodies <sub>blocked by: [lift-nodeid-out-of-model](lift-nodeid-out-of-model.md)</sub> | Spec | [plan](mutations.md) |
 | `R9` | Fold graphitron.sikt.no into the Maven build (AsciiDoc + GitHub Pages) | Spec | [plan](docs-site-asciidoc.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
 | `R8` | Docs as an index into classification tests | Ready (deferred) | [plan](docs-as-index-into-tests.md) |
@@ -112,7 +112,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R12` [**Error-handling parity: emit per-fetcher error channels from `@error`**](error-handling-parity.md) — In Progress, architecture, blocked by [mutations](mutations.md)
 - `R2` [**Checked exceptions on `@service` / `@tableMethod` for typed GraphQL errors**](checked-exceptions-typed-errors.md) — Backlog, architecture, blocked by [error-handling-parity](error-handling-parity.md), [mutations](mutations.md)
-- `R22` [**Mutation bodies**](mutations.md) — Spec
+- `R22` [**Mutation bodies**](mutations.md) — Spec, blocked by [lift-nodeid-out-of-model](lift-nodeid-out-of-model.md)
 
 ### pagination
 
