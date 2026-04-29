@@ -1625,14 +1625,19 @@ class FieldBuilder {
             };
         }
 
-        if (name.equals("node")) {
-            return new QueryField.QueryNodeField(parentTypeName, name, location,
-                new ReturnTypeRef.PolymorphicReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef)));
-        }
-
-        if (name.equals("nodes")) {
-            return new QueryField.QueryNodesField(parentTypeName, name, location,
-                new ReturnTypeRef.PolymorphicReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef)));
+        // Relay-style node fetchers are recognised by signature, not by name. Any Query
+        // field whose element type is the `Node` interface is a node fetcher: single
+        // cardinality routes to QueryNodeField, list cardinality to QueryNodesField.
+        // Federation subgraphs commonly expose extra node-by-id entry points under
+        // distinct names (e.g. `internalOpptakNode(id: ID): Node @inaccessible`); name-
+        // based dispatch alone would misclassify those as QueryInterfaceField.
+        if (baseTypeName(fieldDef).equals("Node") && ctx.types.get("Node") instanceof InterfaceType) {
+            var wrapper = buildWrapper(fieldDef);
+            var returnType = new ReturnTypeRef.PolymorphicReturnType("Node", wrapper);
+            if (wrapper instanceof FieldWrapper.List) {
+                return new QueryField.QueryNodesField(parentTypeName, name, location, returnType);
+            }
+            return new QueryField.QueryNodeField(parentTypeName, name, location, returnType);
         }
 
         if (hasLookupKeyAnywhere(fieldDef)) {
