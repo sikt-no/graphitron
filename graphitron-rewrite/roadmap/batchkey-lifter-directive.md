@@ -93,8 +93,10 @@ Added to [`directives.graphqls`](../graphitron/src/main/resources/no/sikt/graphi
 ```graphql
 """
 Supplies a DTO-to-batch-key lifting function for a child field whose @record
-parent has no FK metadata in the jOOQ catalog (i.e. the parent's backing class
-is not a jOOQ TableRecord, or the parent type carries no @record class at all).
+parent has no FK metadata in the jOOQ catalog. Applies when the parent's
+backing class is a plain POJO or a Java record (not a jOOQ Record /
+TableRecord). The parent's @record(record: {className: ...}) must declare a
+backing class; the directive is rejected on @record types with no class.
 
 The lifter is a static Java method that extracts the batch-key value(s) from
 the parent instance. The lifted RowN is matched against the named target
@@ -103,9 +105,9 @@ columns on the field's @table return type to drive a column-keyed DataLoader.
 Required when a field on a non-table-backed @record parent returns a @table
 type and would otherwise be rejected as 'RecordTableField (or
 RecordLookupTableField) requires a FK join path and a typed backing class for
-batch key extraction'. Has no effect on @table parents (use @reference there)
-and no effect on JooqTableRecordType parents (the catalog FK already drives
-batching).
+batch key extraction'. Rejected on @table parents (use @reference there) and
+on jOOQ-backed @record parents (JooqTableRecordType / JooqRecordType — the
+catalog record already drives batching).
 """
 directive @batchKeyLifter(
   """
@@ -167,8 +169,9 @@ a per-field directive avoids inventing a second mapping language for the
   catalog: the existing FK-driven path classifies correctly and the directive
   is unnecessary there. `JavaRecordType` parents *without* a catalog FK are
   in scope and admitted (see Invariant #1).
-- `JooqTableRecordType` parents (the catalog FK is authoritative). Same
-  rejection.
+- jOOQ-backed `@record` parents (`JooqTableRecordType` and `JooqRecordType`).
+  The catalog record's columns are the keying contract; AUTHOR_ERROR points
+  the author at the existing FK path / catalog `@reference`.
 - The directive on a non-`TableBoundReturnType` field. `RecordField` /
   `PropertyField` (scalar-or-record returns) do not batch via DataLoader; the
   directive has no semantics there. AUTHOR_ERROR.
@@ -291,7 +294,7 @@ record LifterRowKeyed(
     List<ColumnRef> keyColumns,    // target-side columns from targetColumns:
     String lifterClassName,        // FQ name of the class declaring the lifter
     String lifterMethodName,       // simple method name on lifterClassName
-    String parentBackingClassFqn   // fqClassName of the parent PojoResultType
+    String parentBackingClassFqn   // fqClassName of the parent (PojoResultType or JavaRecordType)
 ) implements BatchKey {
     @Override
     public String javaTypeName() {
@@ -326,14 +329,21 @@ exercise multi-parent batching without explicit cache-correctness assertions
 because that contract is treated as a jOOQ guarantee.)
 
 The four existing variants (`RowKeyed`, `RecordKeyed`, `MappedRowKeyed`,
-`MappedRecordKeyed`) are untouched. Adding `LifterRowKeyed` requires updating
-the four switches in
-[`GeneratorUtils.keyElementType`, `buildKeyExtraction`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/GeneratorUtils.java)
-and
-[`TypeFetcherGenerator.buildServiceDataFetcher`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java).
-`keyElementType` adds a single arm reusing `buildRowKeyType`; the others
-either fall through with `RowKeyed` (mapped/non-lifter sites) or branch to a
-new `buildLifterKeyExtraction` (key-extraction sites; see Phase 2).
+`MappedRecordKeyed`) are untouched. Adding `LifterRowKeyed` requires
+touching four sites:
+
+- [`GeneratorUtils.keyElementType`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/GeneratorUtils.java)
+  — sealed-type switch, add a fifth arm reusing `buildRowKeyType` (§2a).
+- [`GeneratorUtils.buildKeyExtraction`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/GeneratorUtils.java)
+  — sealed-type switch on the `@table`-parent path; add an
+  `IllegalStateException` arm to keep exhaustive (§2a; the lifter path goes
+  through `buildLifterKeyExtraction` instead, §2b).
+- [`TypeFetcherGenerator.buildRecordBasedDataFetcher`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java)
+  — `instanceof` split between `buildLifterKeyExtraction` and
+  `buildRecordKeyExtraction` (§2c).
+- [`SplitRowsMethodEmitter.emitParentInputAndFkChain`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/SplitRowsMethodEmitter.java)
+  — the prelude's unconditional `(BatchKey.RowKeyed) batchKey` cast
+  widens to the sealed-interface accessor (§2d).
 
 ### Synthetic `JoinStep.FkJoin`
 
@@ -457,9 +467,11 @@ if (hasLifter) {
 The non-lifter path (existing code at `:2020-2055`) is unchanged. The branch
 order matters: `hasBatchKeyLifter` runs first so the AUTHOR_ERROR cases for
 the directive on a wrong parent shape (`JooqTableRecordType`,
-`JavaRecordType`) surface with the directive-specific message rather than the
-generic missing-FK rejection. Implement those rejections inside
-`resolveBatchKeyLifter` per Invariant #1.
+`JooqRecordType`, untyped `PojoResultType`) surface with the
+directive-specific message rather than the generic missing-FK rejection.
+Implement those rejections inside `resolveBatchKeyLifter` per Invariant #1.
+`PojoResultType` and `JavaRecordType` parents (both with non-null
+`fqClassName`) take the lifter path.
 
 **Parallel reject branch on `classifyChildFieldOnTableType`.** A schema author
 who places `@batchKeyLifter` on a child field of a `@table` parent must get
@@ -494,10 +506,11 @@ A new private method on `FieldBuilder`:
 private BatchKeyLifterResult resolveBatchKeyLifter(
         String parentTypeName, GraphQLFieldDefinition fieldDef,
         ResultType parentResultType, String targetSqlTableName) {
-    // 1. Parent shape: must be PojoResultType with non-null fqClassName.
-    //    (§Invariants 1.) If wrong shape, return error with AUTHOR_ERROR
-    //    pointing at the alternative directive (@reference for @table parents,
-    //    catalog FK for JooqTableRecordType, etc.).
+    // 1. Parent shape: must be PojoResultType or JavaRecordType, both with
+    //    non-null fqClassName. (§Invariants 1.) If wrong shape, return error
+    //    with AUTHOR_ERROR pointing at the alternative directive (@reference
+    //    for @table parents, catalog FK for JooqTableRecordType /
+    //    JooqRecordType, etc.).
     // 2. targetColumns: non-empty list (§Invariants 6); each resolves on the
     //    target table (§Invariants 5). Use BuildContext.candidateHint for misses.
     // 3. lifter: className + method via ExternalCodeReference. Class.forName,
@@ -547,6 +560,7 @@ with each landing).
 | Pojo parent (null `fqClassName`) + `@batchKeyLifter` | `UnclassifiedField` per Invariant #1 |
 | `@table` parent + `@batchKeyLifter` | `UnclassifiedField` AUTHOR_ERROR pointing at `@reference` |
 | `JooqTableRecordType` parent + `@batchKeyLifter` | `UnclassifiedField` AUTHOR_ERROR pointing at catalog FK |
+| `JooqRecordType` parent + `@batchKeyLifter` | `UnclassifiedField` AUTHOR_ERROR pointing at catalog FK |
 | `JavaRecordType` parent (non-null `fqClassName`) + `@batchKeyLifter` | `RecordTableField` with `BatchKey.LifterRowKeyed` (admitted, same as `PojoResultType`) |
 | Pojo parent + `@batchKeyLifter` on a scalar-return field | `UnclassifiedField` AUTHOR_ERROR (directive on non-`TableBoundReturnType`) |
 | `@batchKeyLifter` with missing class | `UnclassifiedField` with `ServiceCatalog`-style "class … could not be loaded" |
@@ -617,10 +631,10 @@ Emits the lifter-method invocation:
 static CodeBlock buildLifterKeyExtraction(BatchKey.LifterRowKeyed batchKey) {
     TypeName keyType = keyElementType(batchKey);
     var backingClass = ClassName.bestGuess(batchKey.parentBackingClassFqn());
-    var lifterClass  = ClassName.bestGuess(batchKey.lifterMethod().className());
+    var lifterClass  = ClassName.bestGuess(batchKey.lifterClassName());
     return CodeBlock.builder()
         .addStatement("$T key = $T.$L(($T) env.getSource())",
-            keyType, lifterClass, batchKey.lifterMethod().method(), backingClass)
+            keyType, lifterClass, batchKey.lifterMethodName(), backingClass)
         .build();
 }
 ```
@@ -675,9 +689,10 @@ List<ColumnRef> pkCols = batchKey.keyColumns();
 
 The local `rowKeyed` is unused beyond `keyColumns()`, so the line drops
 cleanly. No other change in `emitParentInputAndFkChain` is required: the FK
-chain loop reads only `fk.targetTable()` / `fk.javaFieldName()`, the JOIN-on
-predicate reads only `firstHop.sourceColumns()`, and bridging hops (`i >= 1`)
-never run on the single-step lifter path. Add a comment on
+chain loop reads only `fk.targetTable()` (and through it
+`javaClassName()` / `javaFieldName()` on `TableRef`), the JOIN-on predicate
+reads only `firstHop.sourceColumns()`, and bridging hops (`i >= 1`) never
+run on the single-step lifter path. Add a comment on
 `emitParentInputAndFkChain` pointing at this property as an invariant.
 
 The synthetic `JoinStep.FkJoin` produced in Phase 1d satisfies the
@@ -769,10 +784,11 @@ directive instead now that the directive ships.
 #### 3b. `code-generation-triggers.md`
 
 Add a row to the directive table covering `@batchKeyLifter` (parent shape:
-`PojoResultType` with non-null `fqClassName`; field return: `@table`-bound;
-emission: `RecordTableField` / `RecordLookupTableField` with
-`BatchKey.LifterRowKeyed`). The taxonomy doc is the canonical "what classifies
-to what" reference; new directives belong in it as part of the same landing.
+`PojoResultType` or `JavaRecordType`, both with non-null `fqClassName`; field
+return: `@table`-bound; emission: `RecordTableField` / `RecordLookupTableField`
+with `BatchKey.LifterRowKeyed`). The taxonomy doc is the canonical "what
+classifies to what" reference; new directives belong in it as part of the
+same landing.
 
 #### 3c. `rewrite-design-principles.md`
 
