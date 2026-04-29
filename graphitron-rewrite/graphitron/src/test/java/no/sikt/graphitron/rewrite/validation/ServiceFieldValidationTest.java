@@ -36,17 +36,16 @@ class ServiceFieldValidationTest {
 
     enum RecordCase implements ValidatorCase {
 
-        NO_PATH("no @reference — no lift condition (stubbed — ServiceRecordField not yet implemented)",
+        NO_PATH("no @reference — passes validation now that ServiceRecordField is implemented (Phase A)",
             new ServiceRecordField("Film", "externalChild", null, new ReturnTypeRef.ResultReturnType("Film", new FieldWrapper.Single(true), null), List.of(), RESOLVED_METHOD, RESOLVED_BATCH_KEY),
-            List.of(stubbedError("Film.externalChild", ServiceRecordField.class))),
+            List.of()),
 
-        WITH_LIFT_CONDITION("lift condition with a resolved method (stubbed + DEFERRED — ServiceRecordField not yet implemented and lift form not supported)",
+        WITH_LIFT_CONDITION("lift condition with a resolved method — DEFERRED until the lift form ships",
             new ServiceRecordField("Film", "externalChild", null, new ReturnTypeRef.ResultReturnType("Film", new FieldWrapper.Single(true), null), List.of(
                 new JoinStep.ConditionJoin(new MethodRef.Basic("com.example.Conditions", "liftCondition", ClassName.get("org.jooq", "Condition"),
                     List.of(new MethodRef.Param.Typed("ctx", "org.jooq.DSLContext", new ParamSource.DslContext()))), "")),
                 RESOLVED_METHOD, RESOLVED_BATCH_KEY),
-            List.of(stubbedError("Film.externalChild", ServiceRecordField.class),
-                "Field 'Film.externalChild': @service with a @reference path "
+            List.of("Field 'Film.externalChild': @service with a @reference path "
                 + "(condition-join lift form) is not yet supported — see "
                 + "graphitron-rewrite/roadmap/service-record-field.md"));
 
