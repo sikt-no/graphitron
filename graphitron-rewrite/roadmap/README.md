@@ -38,6 +38,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 ### Architecture
 
+- `R40` [**Argument-level @nodeId support**](argument-level-nodeid.md): `@nodeId` is declared on `ARGUMENT_DEFINITION` in [`directives.graphqls`](../graphitron/src/main/resources/no/sikt/graphitron/rewrite/schema/directives.graphqls) (line 264) but `FieldBuilder.classifyArgument` (line 754) never inspects it. The scalar-ID NodeId branch at line 815 is gated on `!list` and fires only for the synthesized case, so an explicit `@nodeId(typeName: T)` on an argument falls through to scalar column binding at line 826 and surfaces as `column 'X' could not be resolved in table 'Y'`. Reproducer from opptak: `kompetanseregelverkGittIdV2(ider: [ID!]! @nodeId(typeName: "Kompetanseregelverk")): [Kompetanseregelverk!] @asConnection`.
 - `R6` [**Decompose `FieldBuilder`**](decompose-fieldbuilder.md): Split the 2,217-line / 56-private-method builder along the field taxonomy. Argument-resolution unification has shipped (Phase 4 landed under Done), so this is no longer blocked. Proposed split: `QueryFieldBuilder`, `MutationFieldBuilder`, `ChildFieldBuilder` plus a shared argument-classification module.
 - `R5` [**Composite-key `@lookupKey` on list-of-input-object arguments**](composite-key-lookupkey.md): Add `ArgumentRef.CompositeLookupArg` carrying `(input-field-name, target-column)` pairs resolved from `@field(name:)` directives; `buildInputRowsMethod` already handles arbitrary-arity VALUES + JOIN.
 - `R32` [**Implement `@service` rows-method body**](service-rows-method-body.md): `buildServiceRowsMethod` (`TypeFetcherGenerator.java:1501`) emits a stub that throws `UnsupportedOperationException`. Fill the body so `@service` batched fields actually invoke the user's service method and project results back into GraphQL. Three concerns in one emitter:
@@ -65,7 +66,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 ### Validation
 
-- `R40` [**Argument-level @nodeId support**](argument-level-nodeid.md): `@nodeId` is declared on `ARGUMENT_DEFINITION` in [`directives.graphqls`](../graphitron/src/main/resources/no/sikt/graphitron/rewrite/schema/directives.graphqls) (line 264) but `FieldBuilder.classifyArgument` (line 754) never inspects it. The scalar-ID NodeId branch at line 815 is gated on `!list` and only fires for the synthesized case (parent table has KjerneJooqGenerator metadata); explicit `@nodeId(typeName: T)` on an argument is silently ignored, so a schema like `kompetanseregelverkGittIdV2(ider: [ID!]! @nodeId(typeName: "Kompetanseregelverk")): [Kompetanseregelverk!] @asConnection` falls through to scalar column binding at line 826 and surfaces as `column 'ider' could not be resolved in table 'kompetanseregelverk'; did you mean: ER_AKTIV, ...`.
 - `R39` [**Validate that list fields on tables without a PK require explicit ordering**](validate-list-fields-require-ordering.md): `FieldBuilder.resolveDefaultOrderSpec()` falls back to `OrderBySpec.Fixed([pk ASC])` when a list field has no `@defaultOrder` or `@orderBy` and the table has a PK. For tables without a PK, it returns `OrderBySpec.None` instead, which the generators faithfully emit as an empty `List.of()` — no `ORDER BY` clause. The result is a non-deterministic list every time the query runs.
 
 
@@ -81,7 +81,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### nodeid
 
-- `R40` [**Argument-level @nodeId support**](argument-level-nodeid.md) — Backlog, validation
+- `R40` [**Argument-level @nodeId support**](argument-level-nodeid.md) — Backlog, architecture
 - `R20` [**`IdReferenceField` code generation**](id-reference-input-field.md) — Spec
 - `R24` [**`NodeIdReferenceField` JOIN-projection form**](nodeidreferencefield-join-projection-form.md) — Backlog, cleanup
 
