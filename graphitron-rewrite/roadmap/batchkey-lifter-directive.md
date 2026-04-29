@@ -16,9 +16,9 @@ depends-on: []
 > the emitter feeds it into the existing column-keyed DataLoader path with a
 > single-hop `JoinStep.LiftedHop`. Co-closes the `RecordTableField` /
 > `RecordLookupTableField`
-> "missing FK join path and a typed backing class" rejection at
-> [`FieldBuilder.java:2035`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java)
-> and [`:2042`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java).
+> "missing FK join path and a typed backing class" rejections in
+> [`FieldBuilder.classifyChildFieldOnResultType`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java)
+> (grep for `"requires a FK join path"`).
 
 ---
 
@@ -38,13 +38,12 @@ type SettKvotesporsmalAlgoritmePayload @record(record: {className: "no.example.S
 `SettKvotesporsmalAlgoritmePayload` is a developer-authored POJO with no jOOQ
 catalog entry. The `kvotesporsmal` field's classifier path lands at
 `FieldBuilder.classifyChildFieldOnResultType` →
-`deriveBatchKeyForResultType(joinPath, parentResultType)`
-([`:2108-2117`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java)).
-That helper requires the join path's first hop to be a `JoinStep.FkJoin` so it can
-read `fkJoin.sourceColumns()` as the parent-side key columns. With no FK in the
-catalog, `parsePath` either fails outright or produces an empty / non-FK first
-hop, and the field downgrades to `UnclassifiedField` with the deferred reason
-quoted in the title.
+`deriveBatchKeyForResultType(joinPath, parentResultType)`. That helper
+requires the join path's first hop to be a `JoinStep.FkJoin` so it can read
+`fkJoin.sourceColumns()` as the parent-side key columns. With no FK in the
+catalog, `parsePath` either fails outright or produces an empty / non-FK
+first hop, and the field downgrades to `UnclassifiedField` with the deferred
+reason quoted in the title.
 
 The legacy generator handled this case via `BatchKey.ObjectBased`, a free-form
 arm that bypassed the column-keyed DataLoader path entirely. It was removed in
@@ -269,9 +268,9 @@ a per-field directive avoids inventing a second mapping language for the
    [`SplitRowsMethodEmitter.java:327-339`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/SplitRowsMethodEmitter.java);
    that stub stays in place and the lifter path inherits it.)
 
-8. **`@lookupKey` interaction.** The classifier branch at
-   [`FieldBuilder.java:2032-2038`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java)
-   produces `RecordLookupTableField` when any argument carries `@lookupKey`.
+8. **`@lookupKey` interaction.** The existing classifier branch in
+   `FieldBuilder.classifyChildFieldOnResultType` produces
+   `RecordLookupTableField` when any argument carries `@lookupKey`.
    The lifter directive is orthogonal: a lifted-key `RecordLookupTableField`
    classifies the same way; only the join-path identity (`LiftedHop` instead
    of `FkJoin`) and the key-extraction call site change. No new field
@@ -456,8 +455,10 @@ Three coordinated additions, all in `model/`:
    sibling of `MethodRef` rather than a `MethodRef` permit (rationale in
    §Model). Lives at `model/LifterRef.java`.
 2. `BatchKey.LifterRowKeyed(List<ColumnRef> keyColumns, LifterRef lifter)` —
-   fifth permit on the sealed `BatchKey` interface. Reuses
-   `BatchKey.containerType` (already exhaustive over the row/record axis).
+   fifth permit on the sealed `BatchKey` interface. Calls
+   `BatchKey.containerType("List", "Row", keyColumns)` from `javaTypeName()`,
+   identical to `RowKeyed`; the helper is a string builder, no per-variant
+   logic to extend.
 3. `JoinStep.LiftedHop(TableRef targetTable, List<ColumnRef> targetColumns,
    String alias)` — third permit on the sealed `JoinStep` interface.
 
@@ -501,17 +502,11 @@ verbatim per §Surface. Place it after `@reference` /
 Inside the existing object-return arm at
 [`FieldBuilder.java:2009-2055`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java),
 add a `hasBatchKeyLifter` branch ahead of the existing `parsePath` call. The
-classifier branch is annotated as the producer of two load-bearing
-guarantees that the rows-method emitter (§2d) consumes:
+classifier guarantee is produced by `resolveBatchKeyLifter` (§1e) and
+annotated there (annotations target methods, not locals); the branch in
+`classifyChildFieldOnResultType` consumes that helper's result:
 
 ```java
-@LoadBearingClassifierCheck(
-    key = "lifter-path-shape",
-    description = "A field carrying @batchKeyLifter classifies with "
-        + "joinPath = [JoinStep.LiftedHop] (single hop, sealed-identity "
-        + "LiftedHop) and batchKey = BatchKey.LifterRowKeyed. The rows-method "
-        + "prelude relies on this pairing to fork on JoinStep identity rather "
-        + "than re-deriving it from BatchKey.")
 boolean hasLifter = fieldDef.hasAppliedDirective(DIR_BATCH_KEY_LIFTER);
 if (hasLifter) {
     var lifterResult = resolveBatchKeyLifter(parentTypeName, fieldDef,
@@ -576,9 +571,20 @@ without a parent.
 
 #### 1e. `resolveBatchKeyLifter` helper
 
-A new private method on `FieldBuilder`:
+A new private method on `FieldBuilder`. It carries the
+`@LoadBearingClassifierCheck` annotation: this is the sole producer of
+`BatchKey.LifterRowKeyed` and `JoinStep.LiftedHop`, and the rows-method
+prelude (§2d) relies on the pairing.
 
 ```java
+@LoadBearingClassifierCheck(
+    key = "lifter-path-shape",
+    description = "Sole producer of (BatchKey.LifterRowKeyed, "
+        + "JoinStep.LiftedHop). A field carrying @batchKeyLifter classifies "
+        + "as RecordTableField/RecordLookupTableField with joinPath = "
+        + "[LiftedHop] (single hop) and batchKey = LifterRowKeyed. The "
+        + "rows-method prelude forks on JoinStep identity and assumes "
+        + "single-hop on the lifter path.")
 private BatchKeyLifterResult resolveBatchKeyLifter(
         String parentTypeName, GraphQLFieldDefinition fieldDef,
         ResultType parentResultType, String targetSqlTableName) {
@@ -806,28 +812,35 @@ The local `rowKeyed` is unused beyond this read; the line drops cleanly.
 cast plus the in-loop cast at `:194` with one sealed switch that accepts both
 `FkJoin` and `LiftedHop`. They share the three accessors the prelude reads
 (`targetTable`, `targetColumns`, `alias`); their identities are still
-distinct downstream where the JOIN-on predicate emits.
+distinct downstream where the JOIN-on predicate emits. The
+`@DependsOnClassifierCheck` annotation lands on the enclosing
+`emitParentInputAndFkChain` method (annotations target methods, not
+locals), pairing with the producer in §1e:
 
 ```java
 @DependsOnClassifierCheck(
     key = "lifter-path-shape",
-    reliesOn = "Classifier guarantees joinPath.get(0) is FkJoin or LiftedHop "
-        + "(never ConditionJoin for a record-parent lifter); LiftedHop "
-        + "appears only as a single-hop path.")
-JoinStep firstHop = joinPath.get(0);
+    reliesOn = "On a record-parent path, joinPath.get(0) is FkJoin or "
+        + "LiftedHop (never ConditionJoin); LiftedHop appears only as a "
+        + "single-hop path. The prelude forks on JoinStep identity and "
+        + "skips the multi-hop bridging branch on the lifter path.")
+private static PreludeBindings emitParentInputAndFkChain(...) {
+    // ...
+    JoinStep firstHop = joinPath.get(0);
 
-for (int i = 0; i < joinPath.size(); i++) {
-    JoinStep step = joinPath.get(i);
-    TableRef tgt = switch (step) {
-        case JoinStep.FkJoin fk -> fk.targetTable();
-        case JoinStep.LiftedHop lh -> lh.targetTable();
-        case JoinStep.ConditionJoin _ -> throw new IllegalStateException(
-            "ConditionJoin cannot appear on a record-parent path");
-    };
-    ClassName jooqTableClass = ClassName.get(jooqPackage + ".tables", tgt.javaClassName());
-    body.addStatement("$T $L = $T.$L.as($S)",
-        jooqTableClass, aliases.get(i), tablesClass, tgt.javaFieldName(),
-        fieldName + "_" + aliases.get(i));
+    for (int i = 0; i < joinPath.size(); i++) {
+        JoinStep step = joinPath.get(i);
+        TableRef tgt = switch (step) {
+            case JoinStep.FkJoin fk -> fk.targetTable();
+            case JoinStep.LiftedHop lh -> lh.targetTable();
+            case JoinStep.ConditionJoin _ -> throw new IllegalStateException(
+                "ConditionJoin cannot appear on a record-parent path");
+        };
+        ClassName jooqTableClass = ClassName.get(jooqPackage + ".tables", tgt.javaClassName());
+        body.addStatement("$T $L = $T.$L.as($S)",
+            jooqTableClass, aliases.get(i), tablesClass, tgt.javaFieldName(),
+            fieldName + "_" + aliases.get(i));
+    }
 }
 ```
 
@@ -938,15 +951,15 @@ sees a real reflective method, not a stubbed reference.
 ### Phase 3 — Documentation and rejection-message backreference
 
 **Goal:** the existing `RecordTableField` / `RecordLookupTableField`
-rejections at `FieldBuilder.java:2035` and `:2042` already reference this
-roadmap item by hint; tighten that into a directive recommendation now that
-the directive exists.
+rejections in `FieldBuilder.classifyChildFieldOnResultType` already
+reference this roadmap item by hint; tighten that into a directive
+recommendation now that the directive exists.
 
 #### 3a. Update rejection messages
 
-Change the strings at
-[`FieldBuilder.java:2034-2035`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java)
-and `:2041-2042` from:
+Change both rejection strings in `FieldBuilder.classifyChildFieldOnResultType`
+(grep for `"requires a FK join path"` — the `RecordLookupTableField` arm sits
+just ahead of the `RecordTableField` arm) from:
 
 > "RecordTableField requires a FK join path and a typed backing class for batch key extraction"
 
@@ -956,10 +969,10 @@ to:
 > batch key extraction; for free-form DTO parents, supply
 > @batchKeyLifter on the field"
 
-Identical edit on the `RecordLookupTableField` arm two lines above. The
-existing `dtoSourcesRejectionReason` in `ServiceCatalog.java:452-470`
-already points at this roadmap file by name; update it to point at the
-directive instead now that the directive ships.
+Identical edit on the `RecordLookupTableField` arm. The existing
+`dtoSourcesRejectionReason` in `ServiceCatalog` already points at this
+roadmap file by name (grep for `batchkey-lifter-directive`); update it to
+point at the directive instead now that the directive ships.
 
 #### 3b. `code-generation-triggers.md`
 
