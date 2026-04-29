@@ -31,18 +31,20 @@ class ServiceFieldValidationTest {
     // ===== ServiceRecordField — non-table return type =====
 
     private static final MethodRef RESOLVED_METHOD = new MethodRef.Basic("com.example.Service", "method", TypeName.VOID, List.of());
+    private static final BatchKey RESOLVED_BATCH_KEY = new BatchKey.RowKeyed(
+        List.of(new ColumnRef("FILM_ID", "filmId", "java.lang.Integer")));
 
     enum RecordCase implements ValidatorCase {
 
         NO_PATH("no @reference — no lift condition (stubbed — ServiceRecordField not yet implemented)",
-            new ServiceRecordField("Film", "externalChild", null, new ReturnTypeRef.ResultReturnType("Film", new FieldWrapper.Single(true), null), List.of(), RESOLVED_METHOD),
+            new ServiceRecordField("Film", "externalChild", null, new ReturnTypeRef.ResultReturnType("Film", new FieldWrapper.Single(true), null), List.of(), RESOLVED_METHOD, RESOLVED_BATCH_KEY),
             List.of(stubbedError("Film.externalChild", ServiceRecordField.class))),
 
         WITH_LIFT_CONDITION("lift condition with a resolved method (stubbed — ServiceRecordField not yet implemented)",
             new ServiceRecordField("Film", "externalChild", null, new ReturnTypeRef.ResultReturnType("Film", new FieldWrapper.Single(true), null), List.of(
                 new JoinStep.ConditionJoin(new MethodRef.Basic("com.example.Conditions", "liftCondition", ClassName.get("org.jooq", "Condition"),
                     List.of(new MethodRef.Param.Typed("ctx", "org.jooq.DSLContext", new ParamSource.DslContext()))), "")),
-                RESOLVED_METHOD),
+                RESOLVED_METHOD, RESOLVED_BATCH_KEY),
             List.of(stubbedError("Film.externalChild", ServiceRecordField.class)));
 
         private final String description;

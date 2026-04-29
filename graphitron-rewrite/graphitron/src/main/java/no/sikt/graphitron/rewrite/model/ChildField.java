@@ -256,14 +256,49 @@ public sealed interface ChildField extends GraphitronField
      * <p>Parameter binding (including context arguments) is fully encoded in
      * {@link MethodRef#params()} via {@link ParamSource}.
      */
+    /**
+     * @param batchKey the batch key derived from the service method's
+     *     {@link MethodRef.Param.Sourced} parameter at classification time, or {@code null} when
+     *     the method has no such parameter. A {@code null} batch key means the field will fail
+     *     validation — the validator reports the missing {@code Sources} parameter. Generation
+     *     never sees a {@code null} batch key because validation is a prerequisite.
+     */
     record ServiceRecordField(
         String parentTypeName,
         String name,
         SourceLocation location,
         ReturnTypeRef returnType,
         List<JoinStep> joinPath,
-        MethodRef method
-    ) implements ChildField, MethodBackedField {}
+        MethodRef method,
+        BatchKey batchKey
+    ) implements ChildField, MethodBackedField, BatchKeyField {
+
+        @Override
+        public String rowsMethodName() {
+            return "load" + Character.toUpperCase(name().charAt(0)) + name().substring(1);
+        }
+
+        /**
+         * Returns the Java element type this field's loader resolves to per key, derived from
+         * {@link #returnType()}. Mirrors {@code TypeFetcherGenerator#computeServiceRecordReturnType}
+         * for the root-level {@code QueryServiceRecordField} sibling. Used by the Builder for
+         * strict-return-type validation against the service method's reflected return, and by
+         * the Generator (Phase B) when constructing the {@code Map<KeyType, V>} call shape.
+         *
+         * <ul>
+         *   <li>{@link ReturnTypeRef.ResultReturnType} with non-null {@code fqClassName}: that
+         *       backing class.</li>
+         *   <li>All other cases: the reflected return type already on
+         *       {@link MethodRef#returnType()}.</li>
+         * </ul>
+         */
+        public no.sikt.graphitron.javapoet.TypeName elementType() {
+            if (returnType() instanceof ReturnTypeRef.ResultReturnType r && r.fqClassName() != null) {
+                return no.sikt.graphitron.javapoet.ClassName.bestGuess(r.fqClassName());
+            }
+            return method().returnType();
+        }
+    }
 
     record RecordTableField(
         String parentTypeName,
