@@ -99,7 +99,8 @@ Determines the type of the error handler to use.
 """
 enum ErrorHandlerType {
   GENERIC,
-  DATABASE
+  DATABASE,
+  VALIDATION
 }
 
 """
