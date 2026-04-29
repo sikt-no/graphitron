@@ -359,15 +359,15 @@ public class TypeFetcherGenerator {
                 case QueryField.QueryServiceRecordField f     -> builder.addMethod(buildQueryServiceRecordFetcher(f, outputPackage));
                 // Stub variants — see NOT_IMPLEMENTED_REASONS
                 case QueryField.QueryTableInterfaceField f    -> builder.addMethod(buildQueryTableInterfaceFieldFetcher(f, outputPackage, jooqPackage));
-                case QueryField.QueryInterfaceField f         -> builder.addMethod(stub(f, outputPackage));
-                case QueryField.QueryUnionField f             -> builder.addMethod(stub(f, outputPackage));
-                case MutationField.MutationInsertTableField f  -> builder.addMethod(stub(f, outputPackage));
-                case MutationField.MutationUpdateTableField f  -> builder.addMethod(stub(f, outputPackage));
+                case QueryField.QueryInterfaceField f         -> builder.addMethod(stub(f));
+                case QueryField.QueryUnionField f             -> builder.addMethod(stub(f));
+                case MutationField.MutationInsertTableField f  -> builder.addMethod(stub(f));
+                case MutationField.MutationUpdateTableField f  -> builder.addMethod(stub(f));
                 case MutationField.MutationDeleteTableField f  -> builder.addMethod(buildMutationDeleteFetcher(f, outputPackage, jooqPackage));
-                case MutationField.MutationUpsertTableField f  -> builder.addMethod(stub(f, outputPackage));
-                case MutationField.MutationServiceTableField f -> builder.addMethod(stub(f, outputPackage));
-                case MutationField.MutationServiceRecordField f -> builder.addMethod(stub(f, outputPackage));
-                case ChildField.ColumnReferenceField f          -> builder.addMethod(stub(f, outputPackage));
+                case MutationField.MutationUpsertTableField f  -> builder.addMethod(stub(f));
+                case MutationField.MutationServiceTableField f -> builder.addMethod(stub(f));
+                case MutationField.MutationServiceRecordField f -> builder.addMethod(stub(f));
+                case ChildField.ColumnReferenceField f          -> builder.addMethod(stub(f));
                 // ChildField.TableField / LookupTableField / NodeIdField / NodeIdReferenceField
                 // have no fetcher — inline projection via TypeClassGenerator.$fields plus a
                 // DataFetcher value emitted by FetcherEmitter for the encode lambda (NodeIdField,
@@ -393,9 +393,9 @@ public class TypeFetcherGenerator {
                         builder.addMethod(LookupValuesJoinEmitter.buildInputRowsMethod(rltf, lookupTableClass));
                     }
                 }
-                case ChildField.TableMethodField f              -> builder.addMethod(stub(f, outputPackage));
-                case ChildField.InterfaceField f                -> builder.addMethod(stub(f, outputPackage));
-                case ChildField.UnionField f                    -> builder.addMethod(stub(f, outputPackage));
+                case ChildField.TableMethodField f              -> builder.addMethod(stub(f));
+                case ChildField.InterfaceField f                -> builder.addMethod(stub(f));
+                case ChildField.UnionField f                    -> builder.addMethod(stub(f));
                 case ChildField.NestingField ignored            -> { /* wired via FetcherRegistrationsEmitter: env -> env.getSource() */ }
                 case ChildField.ConstructorField ignored        -> { /* wired via FetcherRegistrationsEmitter: env -> env.getSource() */ }
                 // ServiceRecordField is dispatched alongside ServiceTableField above (shared
@@ -404,8 +404,8 @@ public class TypeFetcherGenerator {
                 case ChildField.RecordField ignored             -> { /* wired via FetcherRegistrationsEmitter.propertyOrRecordValue */ }
                 case ChildField.ComputedField ignored           -> { /* wired via FetcherEmitter (ColumnFetcher); projected via TypeClassGenerator.$fields() */ }
                 case ChildField.PropertyField ignored           -> { /* wired via FetcherRegistrationsEmitter.propertyOrRecordValue */ }
-                case ChildField.MultitableReferenceField f      -> builder.addMethod(stub(f, outputPackage));
-                case ChildField.ErrorsField f                   -> builder.addMethod(stub(f, outputPackage));
+                case ChildField.MultitableReferenceField f      -> builder.addMethod(stub(f));
+                case ChildField.ErrorsField f                   -> builder.addMethod(stub(f));
                 // Cannot occur — filtered by generateForType before dispatch
                 case InputField ignored ->
                     throw new AssertionError("InputField in type dispatch: " + ignored.qualifiedName());
@@ -1572,26 +1572,22 @@ public class TypeFetcherGenerator {
             .build();
     }
 
-    private static MethodSpec stub(GraphitronField field, String outputPackage) {
+    private static MethodSpec stub(GraphitronField field) {
         var reason = Objects.requireNonNull(
             NOT_IMPLEMENTED_REASONS.get(field.getClass()),
             () -> "No stub reason registered for " + field.getClass().getSimpleName()
                   + " — either implement a real generator branch or add an entry to NOT_IMPLEMENTED_REASONS");
-        TypeName valueType = ClassName.OBJECT;
-        var builder = MethodSpec.methodBuilder(field.name())
+        // Stubs are unreachable in practice: the validator rejects unimplemented variants at
+        // build time. The throw is here only to make the gap loud if a stub ever does fire,
+        // which would mean a validator gap. Routing through ErrorRouter.redact would mask that
+        // bug as a UUID-keyed redaction; the privacy contract is for thrown exceptions inside
+        // real fetcher bodies, not for "we forgot to wire the variant".
+        return MethodSpec.methodBuilder(field.name())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(syncResultType(valueType))
-            .addParameter(ENV, "env");
-        // Stubs are unreachable in practice (validator rejects unimplemented variants at build
-        // time). The wrap is here for the same reason every other emitted fetcher has it: a
-        // uniform DataFetcherResult<P> return type and a redacted catch arm that mirrors the
-        // privacy contract. The thrown UnsupportedOperationException routes through redact.
-        builder.beginControlFlow("try");
-        builder.addStatement("throw new $T($S)", UnsupportedOperationException.class, reason);
-        builder.nextControlFlow("catch ($T e)", Exception.class);
-        builder.addCode(redactCatchArm(outputPackage));
-        builder.endControlFlow();
-        return builder.build();
+            .returns(Object.class)
+            .addParameter(ENV, "env")
+            .addStatement("throw new $T($S)", UnsupportedOperationException.class, reason)
+            .build();
     }
 
     // -----------------------------------------------------------------------

@@ -11,6 +11,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
+import java.util.Optional;
 
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -22,7 +23,8 @@ class QueryServiceRecordFieldValidationTest {
         VALID("service query field with non-table return — passes validation (Invariants §1/§2 enforced at classifier time)",
             new QueryServiceRecordField("Query", "externalData", null,
                 new ReturnTypeRef.ResultReturnType("Film", new FieldWrapper.Single(true), null),
-                new MethodRef.Basic("com.example.Service", "method", TypeName.VOID, List.of())),
+                new MethodRef.Basic("com.example.Service", "method", TypeName.VOID, List.of()),
+                Optional.empty()),
             List.of());
 
         private final String description;
