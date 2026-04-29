@@ -415,11 +415,17 @@ class ServiceCatalog {
      * <p>Mirrors {@link #reflectTableMethod} but with a stricter return-type rule (must be
      * {@code Field}, not the wider {@code Table<?>} that {@code @tableMethod} accepts) and a
      * fixed param shape (exactly one Table<?>, no GraphQL args, no context args).
+     *
+     * <p>{@code methodName} is required: callers default it to the GraphQL field name when the
+     * directive omits {@code method:} (see {@code FieldBuilder}'s {@code @externalField} arm).
+     * {@code className} is nullable here because the schema-level {@code className} field is
+     * optional and named-reference resolution may fail upstream; the empty-reference case
+     * surfaces as "missing className".
      */
     ServiceReflectionResult reflectExternalField(String className, String methodName,
             ClassName parentTableClass) {
-        if (className == null || methodName == null) {
-            return new ServiceReflectionResult(null, "external field reference is incomplete");
+        if (className == null) {
+            return new ServiceReflectionResult(null, "missing className");
         }
         try {
             Class<?> cls = Class.forName(className);
