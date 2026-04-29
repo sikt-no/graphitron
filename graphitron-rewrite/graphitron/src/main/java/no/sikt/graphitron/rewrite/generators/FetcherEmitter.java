@@ -91,6 +91,13 @@ public final class FetcherEmitter {
                 ColumnFetcherClassGenerator.CLASS_NAME);
             return CodeBlock.of("new $T<>($T.field($S))", columnFetcherClass, DSL, field.name());
         }
+        if (field instanceof ChildField.ComputedField) {
+            // Wired by name: TypeClassGenerator.$fields() inlines the developer's method call
+            // aliased to the field name; ColumnFetcher reads the result Record by that alias.
+            var columnFetcherClass = ClassName.get(outputPackage + ".util",
+                ColumnFetcherClassGenerator.CLASS_NAME);
+            return CodeBlock.of("new $T<>($T.field($S))", columnFetcherClass, DSL, field.name());
+        }
         if (field instanceof ChildField.NodeIdField nf && parentTable != null) {
             var encoderClass = ClassName.get(outputPackage + ".util",
                 NodeIdEncoderClassGenerator.CLASS_NAME);

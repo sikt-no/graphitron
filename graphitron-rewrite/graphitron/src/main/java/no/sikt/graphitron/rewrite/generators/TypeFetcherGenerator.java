@@ -146,6 +146,7 @@ public class TypeFetcherGenerator {
      */
     public static final Set<Class<? extends GraphitronField>> IMPLEMENTED_LEAVES = Set.of(
         ChildField.ColumnField.class,
+        ChildField.ComputedField.class,
         ChildField.NodeIdReferenceField.class,
         QueryField.QueryNodeField.class,
         QueryField.QueryNodesField.class,
@@ -252,8 +253,6 @@ public class TypeFetcherGenerator {
                 "UnionField not yet implemented — see graphitron-rewrite/roadmap/stub-interface-union-fetchers.md"),
             Map.entry(ChildField.ServiceRecordField.class,
                 "ServiceRecordField not yet implemented — see graphitron-rewrite/roadmap/service-record-field.md"),
-            Map.entry(ChildField.ComputedField.class,
-                "ComputedField not yet implemented — see graphitron-rewrite/roadmap/computed-field-with-reference.md"),
             Map.entry(ChildField.MultitableReferenceField.class,
                 "MultitableReferenceField not yet implemented — see graphitron-rewrite/roadmap/multitable-reference-on-scalar.md"),
             Map.entry(ChildField.ErrorsField.class,
@@ -398,7 +397,7 @@ public class TypeFetcherGenerator {
                 case ChildField.ConstructorField ignored        -> { /* wired via FetcherRegistrationsEmitter: env -> env.getSource() */ }
                 case ChildField.ServiceRecordField f            -> builder.addMethod(stub(f, outputPackage));
                 case ChildField.RecordField ignored             -> { /* wired via FetcherRegistrationsEmitter.propertyOrRecordValue */ }
-                case ChildField.ComputedField f                 -> builder.addMethod(stub(f, outputPackage));
+                case ChildField.ComputedField ignored           -> { /* wired via FetcherEmitter (ColumnFetcher); projected via TypeClassGenerator.$fields() */ }
                 case ChildField.PropertyField ignored           -> { /* wired via FetcherRegistrationsEmitter.propertyOrRecordValue */ }
                 case ChildField.MultitableReferenceField f      -> builder.addMethod(stub(f, outputPackage));
                 case ChildField.ErrorsField f                   -> builder.addMethod(stub(f, outputPackage));
