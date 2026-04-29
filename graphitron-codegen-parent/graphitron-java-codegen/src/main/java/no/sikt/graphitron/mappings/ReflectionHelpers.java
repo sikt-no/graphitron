@@ -85,4 +85,26 @@ public class ReflectionHelpers {
         String targetFieldName = field.getJavaRecordMethodMapping(true).getName();
         return getJooqRecordClassReturnedFromFieldGetter(javaRecordClass, targetFieldName);
     }
+
+    /**
+     * Checks whether the parameter at the given index of {@code method} is a jOOQ table record type —
+     * either an {@link UpdatableRecordImpl} subtype or a {@code List<X>} where {@code X} is one.
+     *
+     * @param method     The method to inspect.
+     * @param paramIndex Zero-based index of the parameter to check.
+     * @return {@code true} if the parameter is a jOOQ table record (singular or listed); {@code false}
+     *         for any other shape (raw types, arrays, {@code Collection}, generic wildcards, etc.).
+     */
+    public static boolean methodExpectsTableRecordParamAtIndex(Method method, int paramIndex) {
+        var raw = method.getParameterTypes()[paramIndex];
+        if (UpdatableRecordImpl.class.isAssignableFrom(raw)) {
+            return true;
+        } else if (!List.class.isAssignableFrom(raw)) {
+            return false;
+        }
+        var generic = method.getGenericParameterTypes()[paramIndex];
+        return generic instanceof ParameterizedType pt
+                && pt.getActualTypeArguments()[0] instanceof Class<?> elt
+                && UpdatableRecordImpl.class.isAssignableFrom(elt);
+    }
 }

@@ -1,0 +1,11 @@
+type Query {
+  query(filter: CustomerInput! @condition(condition: {name: "QUERY_FETCH_CONDITION", method: "queryCustomerNodeId"})): Customer
+}
+
+type Customer implements Node @node(typeId: "C") @table {
+  id: ID! @nodeId
+}
+
+input CustomerInput {
+  customerId: ID! @nodeId(typeName: "Customer")
+}
