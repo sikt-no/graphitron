@@ -1,5 +1,5 @@
 ---
-id: R42
+id: R50
 title: "Lift NodeId out of the model"
 status: Backlog
 bucket: architecture
@@ -22,7 +22,7 @@ depends-on: []
 
 Each is the same wire-shape leak in a different position.
 
-## What R42 must land
+## What R50 must land
 
 1. **Boundary extractions.** `CallSiteExtraction.NodeIdDecodeKeys(typeId)` for inputs (decodes `String` / `List<String>` to a key tuple / list of key tuples; validates `typeId` prefix; short-circuits empty / null / typeid-mismatched input). `NodeIdEncodeKeys(typeId)` (or equivalent projection-side hook) for outputs. Both are first-class members of `CallSiteExtraction`'s sealed hierarchy with full arms in `ArgCallEmitter.buildArgExtraction` and the projection-side counterpart, including the top-level-argument case (today `NestedInputField` is the only nested-Map traversal; the new variant is needed at top-level args too).
 
@@ -48,8 +48,8 @@ Each is the same wire-shape leak in a different position.
 
 ## Coupling
 
-- **R40 (argument-level `@nodeId` support)** depends on R42. R40 is shaped as a small classifier-only follow-on once R42's foundation is in place: extend `FieldBuilder.classifyArgument` to read `@nodeId(typeName: T)` on an argument, validate same-table, build a column-shaped argument with `NodeIdDecodeKeys`. R40 does not land any new model variants and adds nothing to the wire-shape debt.
-- **R20 (`IdReferenceField` code generation)** is in Spec on the legacy variant. The right shape under R42's framing emits standard FK-equality (single FK) or row-IN (composite FK) through a column-shaped variant, not a `has<Qualifier>` method call. R20's emission shape dissolves into R42; flip R20 back to Backlog when R42 moves to Spec, or fold its execution-tier coverage into R42's test surface.
+- **R40 (argument-level `@nodeId` support)** depends on R50. R40 is shaped as a small classifier-only follow-on once R50's foundation is in place: extend `FieldBuilder.classifyArgument` to read `@nodeId(typeName: T)` on an argument, validate same-table, build a column-shaped argument with `NodeIdDecodeKeys`. R40 does not land any new model variants and adds nothing to the wire-shape debt.
+- **R20 (`IdReferenceField` code generation)** is in Spec on the legacy variant. The right shape under R50's framing emits standard FK-equality (single FK) or row-IN (composite FK) through a column-shaped variant, not a `has<Qualifier>` method call. R20's emission shape dissolves into R50; flip R20 back to Backlog when R50 moves to Spec, or fold its execution-tier coverage into R50's test surface.
 - **R24 (`NodeIdReferenceField` JOIN-projection form)** also dissolves: the multi-hop / non-mirroring FK case becomes a column projection with `NodeIdEncodeKeys` once `NodeIdReferenceField` retires.
 
 ## Test surface (sketch; refine before Ready)
