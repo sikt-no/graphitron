@@ -64,6 +64,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 ### Validation
 
+- `R40` [**Argument-level @nodeId support**](argument-level-nodeid.md): `@nodeId` is declared on `ARGUMENT_DEFINITION` in [`directives.graphqls`](../graphitron/src/main/resources/no/sikt/graphitron/rewrite/schema/directives.graphqls) (line 264) but `FieldBuilder.classifyArgument` (line 754) never inspects it. The scalar-ID NodeId branch at line 815 is gated on `!list` and only fires for the synthesized case (parent table has KjerneJooqGenerator metadata); explicit `@nodeId(typeName: T)` on an argument is silently ignored, so a schema like `kompetanseregelverkGittIdV2(ider: [ID!]! @nodeId(typeName: "Kompetanseregelverk")): [Kompetanseregelverk!] @asConnection` falls through to scalar column binding at line 826 and surfaces as `column 'ider' could not be resolved in table 'kompetanseregelverk'; did you mean: ER_AKTIV, ...`.
 - `R39` [**Validate that list fields on tables without a PK require explicit ordering**](validate-list-fields-require-ordering.md): `FieldBuilder.resolveDefaultOrderSpec()` falls back to `OrderBySpec.Fixed([pk ASC])` when a list field has no `@defaultOrder` or `@orderBy` and the table has a PK. For tables without a PK, it returns `OrderBySpec.None` instead, which the generators faithfully emit as an empty `List.of()` — no `ORDER BY` clause. The result is a non-deterministic list every time the query runs.
 
 
@@ -79,6 +80,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### nodeid
 
+- `R40` [**Argument-level @nodeId support**](argument-level-nodeid.md) — Backlog, validation
 - `R20` [**`IdReferenceField` code generation**](id-reference-input-field.md) — Spec
 - `R24` [**`NodeIdReferenceField` JOIN-projection form**](nodeidreferencefield-join-projection-form.md) — Backlog, cleanup
 
