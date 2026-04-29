@@ -1,5 +1,5 @@
 ---
-title: "`FkJoin` model cleanup"
+title: "`FkJoin` model cleanup: `JoinConditionRef` wrapper"
 status: Backlog
 bucket: cleanup
 priority: 5
@@ -7,20 +7,18 @@ theme: model-cleanup
 depends-on: []
 ---
 
-# `FkJoin` model cleanup
+# `FkJoin` model cleanup: `JoinConditionRef` wrapper
 
-Three small follow-ups on `JoinStep.FkJoin` that share files and reviewer context. Do as one sweep.
+`FkJoin.whereFilter` and `ConditionJoin`'s condition method are typed `MethodRef` today, but they're not arbitrary method references: the generator calls them with a fixed `(srcAlias, tgtAlias)` two-argument convention via `JoinPathEmitter.emitTwoArgMethodCall`. The same `MethodRef` interface is also implemented by `ConditionFilter`, which carries the separate `WhereFilter` calling convention. The two shapes share a type today; conflating them has been a recurring source of confusion (the field name `whereFilter` on `FkJoin` is itself a misnomer, since it's a join-condition, not a filter).
 
-## Rename `sourceTable` → `originTable`
+Introduce a wrapper type, e.g. `JoinConditionRef`, that surfaces the join-condition calling convention at the type level. Replace `MethodRef whereFilter` on `FkJoin` and `ConditionJoin` with the new type, and rename the `whereFilter` field in the process.
 
-`JoinStep.FkJoin.sourceTable` is the traversal-origin table of the hop, not the FK-holder side. The docstring at `model/JoinStep.java:77-87` already documents this correctly, but the field name fights the docstring and tripped readers in the past (see `BuildContext.synthesizeFkJoin:487` and `parsePathElement:580`, plus the one current reader at `generators/TypeClassGenerator.fkMirrorSourceColumns:300`). Renaming the field to `originTable` retires the ambiguity without touching semantics.
+Open design questions:
 
-A construction-time invariant assertion was considered and dropped: by construction the source SQL name is always validated against the FK's two sides upstream, so a runtime check would be tautological.
+- Wrapper record around `MethodRef`, or a new sealed variant?
+- Naming: `JoinConditionRef`? `JoinPredicate`? `JoinCondition`? How does it relate to the existing `WhereFilter` sealed hierarchy (which already has a `ConditionFilter` arm)?
+- Whether to also tighten the call-site contract: `JoinPathEmitter.emitTwoArgMethodCall` could take the new type directly, removing the need for callers to extract a raw `MethodRef`.
 
-## `JoinConditionRef` wrapper
+Touchpoints: `JoinStep.FkJoin` and `JoinStep.ConditionJoin` records, `BuildContext.synthesizeFkJoin` and `parsePathElement`, `BuildContext.resolveConditionRef`, plus the readers in `InlineTableFieldEmitter`, `InlineLookupTableFieldEmitter`, `SplitRowsMethodEmitter`, and `JoinPathEmitter`.
 
-Distinguish the `MethodRef` that carries an FK-join `condition:` sub-argument (used by `ConditionJoin` / `FkJoin`) from the `MethodRef` that carries a `WhereFilter` predicate. They share the same record today, but the two calling conventions differ; a thin wrapper type surfaces the distinction at compile time.
-
-## Unify `FkJoin` construction in `parsePathElement`
-
-The `{key:}` branch at `BuildContext.java:556-587` hand-builds an `FkJoin`. Delegate the source-validated success path to `synthesizeFkJoin` (lines 487-499), keeping the null-source fallback and connectivity-error arms bespoke. Pure duplication-removal.
+The two trivial subscopes that originally rolled up here (`originTable` rename and `parsePathElement` `{key:}` delegation to `synthesizeFkJoin`) have shipped; this remaining piece needs a small design pass before code.

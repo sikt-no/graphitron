@@ -74,17 +74,15 @@ public sealed interface JoinStep permits JoinStep.FkJoin, JoinStep.ConditionJoin
      * equal arity by jOOQ invariant. When the jOOQ catalog is unavailable (unit tests) these
      * fall back to an empty list.
      *
-     * <p>{@code sourceTable} is the <em>traversal-origin</em> table of this hop — i.e. the side
+     * <p>{@code originTable} is the <em>traversal-origin</em> table of this hop — i.e. the side
      * the join enters <em>from</em>, which is the parent table for hop 0 and the previous hop's
      * target for subsequent hops. This differs from {@code sourceColumns}'s side (the
      * FK-holder): the two can sit on opposite sides of the FK when the join traverses
      * child-to-parent. The field is not a direction signal — readers that need to know which
      * side holds the FK must compare {@code sourceColumns}' owning table against
-     * {@code sourceTable}, or infer from the schema context (e.g. {@code @splitQuery}
-     * cardinality ⇒ FK direction; see {@code FieldBuilder.deriveSplitQueryBatchKey}). The
-     * roadmap entry "{@code FkJoin} model cleanup" tracks renaming this field to
-     * {@code originTable}. Falls back to an empty {@link TableRef} when the jOOQ catalog is
-     * unavailable.
+     * {@code originTable}, or infer from the schema context (e.g. {@code @splitQuery}
+     * cardinality ⇒ FK direction; see {@code FieldBuilder.deriveSplitQueryBatchKey}). Falls back
+     * to an empty {@link TableRef} when the jOOQ catalog is unavailable.
      *
      * <p>{@code alias} is the unique table alias for this step within the enclosing query, computed
      * at build time as {@code fieldName + "_" + stepIndex} (e.g. {@code "language_0"} for the
@@ -101,7 +99,7 @@ public sealed interface JoinStep permits JoinStep.FkJoin, JoinStep.ConditionJoin
     record FkJoin(
         String fkName,
         String fkJavaConstant,
-        TableRef sourceTable,
+        TableRef originTable,
         List<ColumnRef> sourceColumns,
         TableRef targetTable,
         List<ColumnRef> targetColumns,

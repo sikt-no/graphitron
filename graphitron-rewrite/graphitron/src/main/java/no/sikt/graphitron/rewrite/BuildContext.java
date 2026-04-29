@@ -480,9 +480,9 @@ class BuildContext {
      * record-equivalent {@code FkJoin} values for the same shape.
      *
      * <p>{@code sourceSqlName} must be non-null; callers gate inference on that precondition.
-     * {@code whereFilter} is {@code null} for pure inference; the {@code {table:}} branch in
-     * {@link #parsePathElement} may pass a resolved {@link MethodRef} when the element carries
-     * a {@code condition:} sub-argument.
+     * {@code whereFilter} is {@code null} for pure inference; the {@code {table:}} and
+     * {@code {key:}} branches in {@link #parsePathElement} may pass a resolved {@link MethodRef}
+     * when the element carries a {@code condition:} sub-argument.
      */
     private FkJoin synthesizeFkJoin(ForeignKey<?, ?> f, String sourceSqlName, String fieldName,
             int stepIndex, MethodRef whereFilter) {
@@ -491,11 +491,11 @@ class BuildContext {
         String targetSqlName = sourceSqlName.equalsIgnoreCase(fkSideTable) ? keySideTable : fkSideTable;
         String fkJavaConstant = catalog.fkJavaConstantName(f.getName()).orElse("");
         TableRef targetTable = resolveTable(targetSqlName);
-        TableRef sourceTable = resolveTable(sourceSqlName);
+        TableRef originTable = resolveTable(sourceSqlName);
         List<ColumnRef> sourceColumns = resolveFkColumnRefs(f.getTable(), f.getFields());
         List<ColumnRef> targetColumns = resolveFkColumnRefs(f.getKey().getTable(), f.getKey().getFields());
         String alias = fieldName + "_" + stepIndex;
-        return new FkJoin(f.getName(), fkJavaConstant, sourceTable, sourceColumns, targetTable, targetColumns, whereFilter, alias);
+        return new FkJoin(f.getName(), fkJavaConstant, originTable, sourceColumns, targetTable, targetColumns, whereFilter, alias);
     }
 
     /**
@@ -563,26 +563,16 @@ class BuildContext {
             var f = fk.get();
             String fkSideTable  = f.getTable().getName();
             String keySideTable = f.getKey().getTable().getName();
-            String targetSqlName;
-            if (currentSourceSqlName == null) {
-                targetSqlName = keySideTable;
-            } else if (currentSourceSqlName.equalsIgnoreCase(fkSideTable)) {
-                targetSqlName = keySideTable;
-            } else if (currentSourceSqlName.equalsIgnoreCase(keySideTable)) {
-                targetSqlName = fkSideTable;
-            } else {
+            if (currentSourceSqlName != null
+                && !currentSourceSqlName.equalsIgnoreCase(fkSideTable)
+                && !currentSourceSqlName.equalsIgnoreCase(keySideTable)) {
                 errors.add("key '" + f.getName() + "' does not connect to table '" + currentSourceSqlName + "'"
                     + candidateHint(currentSourceSqlName, List.of(fkSideTable, keySideTable)));
                 return;
             }
-            String fkJavaConstant = catalog.fkJavaConstantName(f.getName()).orElse("");
-            TableRef targetTable = resolveTable(targetSqlName);
-            TableRef sourceTable = resolveTable(currentSourceSqlName != null ? currentSourceSqlName
-                : (targetSqlName.equalsIgnoreCase(keySideTable) ? fkSideTable : keySideTable));
-            List<ColumnRef> sourceColumns = resolveFkColumnRefs(f.getTable(), f.getFields());
-            List<ColumnRef> targetColumns = resolveFkColumnRefs(f.getKey().getTable(), f.getKey().getFields());
+            String effectiveSourceSqlName = currentSourceSqlName != null ? currentSourceSqlName : fkSideTable;
             MethodRef whereFilter = hasCondition ? resolveConditionRef(asMap(conditionRaw)) : null;
-            out.add(new FkJoin(f.getName(), fkJavaConstant, sourceTable, sourceColumns, targetTable, targetColumns, whereFilter, alias));
+            out.add(synthesizeFkJoin(f, effectiveSourceSqlName, fieldName, stepIndex, whereFilter));
             return;
         }
         if (tableName.isPresent()) {
