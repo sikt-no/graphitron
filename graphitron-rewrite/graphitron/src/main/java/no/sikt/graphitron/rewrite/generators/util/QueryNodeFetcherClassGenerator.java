@@ -143,9 +143,11 @@ public class QueryNodeFetcherClassGenerator {
             .addJavadoc("Dispatches a Relay {@code Query.nodes(ids:)} call via per-tenant DataLoaders\n"
                 + "keyed by {@code getTenantId(idEnv) + path}, where {@code idEnv} is a per-id DFE.\n"
                 + "Ids resolving to the same tenant share a loader and batch into a single\n"
-                + "{@link #rowsNodes} call (one {@code hasIds} query per typeId); ids from\n"
-                + "different tenants get separate loaders. Returns {@code null} entries for\n"
-                + "null/garbage/unknown IDs (Relay spec).\n")
+                + "{@link #rowsNodes} call, which synthesises representations and dispatches\n"
+                + "through {@code EntityFetcherDispatch.resolveByReps} (one SELECT per\n"
+                + "{@code (type, alternative, tenantId)} group via the shared dispatcher).\n"
+                + "Ids from different tenants get separate loaders. Returns {@code null}\n"
+                + "entries for null/garbage/unknown IDs (Relay spec).\n")
             .addStatement("$T ids = env.getArgument($S)", listOfString, "ids")
             .addStatement("if (ids == null || ids.isEmpty()) return $T.completedFuture($T.of())", COMPLETABLE_FUTURE, LIST)
             .addStatement("$T path = $T.join($S, env.getExecutionStepInfo().getPath().getKeysOnly())",
@@ -170,8 +172,6 @@ public class QueryNodeFetcherClassGenerator {
             .addCode("    .thenApply(v -> futures.stream().map($T::join).toList());\n", COMPLETABLE_FUTURE)
             .build();
 
-        // rowsNodes: batch fetch for the DataLoader. Groups keys by typeId and executes one
-        // query per type via hasIds, then maps results back to original positions using encode.
         // rowsNodes: synthesise a representation per non-null id (peek typeId → recover
         // GraphQL typename via the dispatcher's emitted lookup → build a {__typename, id}
         // map), then dispatch through EntityFetcherDispatch.resolveByReps. The dispatcher's
