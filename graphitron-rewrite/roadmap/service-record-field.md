@@ -237,8 +237,10 @@ None remaining. The element-type derivation question (how to surface V without m
 
 ## Roadmap entry update
 
-After Phase A ships:
+Phase A shipped at `b9a6900` (4.A model) + `87a827d` (4.B builder + validator) + `f9bf585` (4.C generator) + `85974ac` (4.D generator-tier tests) + Phase A close-out (4.E fixture + drive-by emitter fixes + scalar elementType mapping + changelog).
 
-- This file: collapse the body into a one-line "Phase A shipped at `<sha>`" pointer and a brief note about what landed (DataLoader plumbing + stub body); the remaining work cross-references R32.
-- `changelog.md`: standard "Done" entry for Phase A.
-- Status moves to In Review pending Phase B; flips to Done only when R32 closes the rows-method body for both `ServiceTableField` and `ServiceRecordField`.
+Status holds at Spec until Phase B (R32) closes the rows-method body for both `ServiceTableField` and `ServiceRecordField`. R32 also picks up:
+
+- Strict-return-type validation against `field.elementType()` (the structural unwrapping logic R32's body emitter already needs).
+- The execution-tier test against the `Film.titleUppercase` fixture wired into `graphitron-test/schema.graphqls` in this Phase.
+- Reintroducing whatever rows-method signature R32's body actually needs (Phase A dropped the unused `sel` parameter alongside the broken `getSelectionSet().getField(name)` extraction).

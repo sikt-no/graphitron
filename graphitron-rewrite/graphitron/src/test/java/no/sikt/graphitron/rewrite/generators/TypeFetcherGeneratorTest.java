@@ -350,7 +350,7 @@ class TypeFetcherGeneratorTest {
     @Test
     void serviceField_list_rowsMethodSignature() {
         var m = method(specWithServiceField("Language", "films", true), "loadFilms");
-        assertThat(m.parameters()).extracting(p -> p.name()).containsExactly("keys", "env", "sel");
+        assertThat(m.parameters()).extracting(p -> p.name()).containsExactly("keys", "env");
     }
 
     @Test
@@ -421,8 +421,7 @@ class TypeFetcherGeneratorTest {
         assertThat(m.parameters()).extracting(p -> p.type().toString())
             .containsExactly(
                 "java.util.Set<org.jooq.Row1<java.lang.Integer>>",
-                "graphql.schema.DataFetchingEnvironment",
-                "graphql.schema.SelectedField");
+                "graphql.schema.DataFetchingEnvironment");
         assertThat(m.returnType().toString())
             .isEqualTo("java.util.Map<org.jooq.Row1<java.lang.Integer>, java.util.List<org.jooq.Record>>");
     }
