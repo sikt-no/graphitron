@@ -17,6 +17,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R1` | `BatchKey` lifter directive | Spec | [plan](batchkey-lifter-directive.md) |
 | `R37` | Stub #8: Non-table / scalar / reference child leaves | Spec | [plan](stub-non-table-scalar-child-leaves.md) |
 | `R20` | `IdReferenceField` code generation | Spec | [plan](id-reference-input-field.md) |
+| `R41` | @field(name:) on @service method args | Spec | [plan](service-arg-java-name-override.md) |
 | `R3` | Classification vocabulary follow-ups | Spec | [plan](classification-vocabulary-followups.md) |
 | `R31` | Context-value registry + native multi-tenant fan-out for `@service` <sub>blocked by: [mutations](mutations.md)</sub> | Spec | [plan](service-context-value-registry.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec | [plan](nestingfield-multiparent-tablefield.md) |
@@ -39,7 +40,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 - `R6` [**Decompose `FieldBuilder`**](decompose-fieldbuilder.md): Split the 2,217-line / 56-private-method builder along the field taxonomy. Argument-resolution unification has shipped (Phase 4 landed under Done), so this is no longer blocked. Proposed split: `QueryFieldBuilder`, `MutationFieldBuilder`, `ChildFieldBuilder` plus a shared argument-classification module.
 - `R5` [**Composite-key `@lookupKey` on list-of-input-object arguments**](composite-key-lookupkey.md): Add `ArgumentRef.CompositeLookupArg` carrying `(input-field-name, target-column)` pairs resolved from `@field(name:)` directives; `buildInputRowsMethod` already handles arbitrary-arity VALUES + JOIN.
-- `R41` [**@field(name:) on @service method args**](service-arg-java-name-override.md): `ServiceCatalog.reflectServiceMethod` matches Java parameters to GraphQL arguments by exact name. Today, when names diverge (a schema author preferring singular `input` and a service author preferring plural `inputs` for a `List<…>`, say), the only options are renaming one side or the other; the new error message landed in commit `7666282` ("parameter 'inputs' does not match any GraphQL argument or context key — available: [input]; …") names the cause directly but offers no escape hatch.
 - `R32` [**Implement `@service` rows-method body**](service-rows-method-body.md): `buildServiceRowsMethod` (`TypeFetcherGenerator.java:1501`) emits a stub that throws `UnsupportedOperationException`. Fill the body so `@service` batched fields actually invoke the user's service method and project results back into GraphQL. Three concerns in one emitter:
 - `R11` [**`DSLContext` on `@condition` / `@tableMethod` methods**](dslcontext-on-condition-tablemethod.md): Lift the `reflectTableMethod` gate. Requires `ArgCallEmitter` to walk `params()` instead of `callParams()` so the injected `DSLContext` lands at its declaration-index slot.
 - `R2` [**Checked exceptions on `@service` / `@tableMethod` for typed GraphQL errors**](checked-exceptions-typed-errors.md): Explore mapping developer-declared checked exceptions on service / table-method methods to typed GraphQL errors (`@error` types, mutation payload error unions). Today `ServiceCatalog.reflectServiceMethod` / `reflectTableMethod` ignore `getExceptionTypes()`; the emitted fetcher has no `throws` clause, so a developer method declaring `throws SQLException` (or any checked exception) breaks the rewrite-test compile gate. _(blocked by [error-handling-parity](error-handling-parity.md), [mutations](mutations.md))_
@@ -88,7 +88,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### service
 
 - `R1` [**`BatchKey` lifter directive**](batchkey-lifter-directive.md) — Spec, architecture
-- `R41` [**@field(name:) on @service method args**](service-arg-java-name-override.md) — Backlog, architecture
+- `R41` [**@field(name:) on @service method args**](service-arg-java-name-override.md) — Spec, architecture
 - `R31` [**Context-value registry + native multi-tenant fan-out for `@service`**](service-context-value-registry.md) — Spec, blocked by [mutations](mutations.md)
 - `R32` [**Implement `@service` rows-method body**](service-rows-method-body.md) — Backlog, architecture
 - `R11` [**`DSLContext` on `@condition` / `@tableMethod` methods**](dslcontext-on-condition-tablemethod.md) — Backlog, architecture
