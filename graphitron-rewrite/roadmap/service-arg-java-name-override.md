@@ -1,7 +1,7 @@
 ---
 id: R41
 title: "@field(name:) on @service method args"
-status: Backlog
+status: Spec
 bucket: architecture
 priority: 5
 theme: service
@@ -35,11 +35,9 @@ Three coupled edits to `@field`:
 
    Reads as: bind the GraphQL `input` arg to the Java `inputs` parameter. Absent the directive, the existing name-equality rule applies.
 
-2. **Remove: `@field(javaName:)`.** Drop `javaName` from the directive, the `ARG_JAVA_NAME` constant, the `javaNamePresent` boolean on `ColumnField` / `ColumnReferenceField`, the matching validator arms (`GraphitronSchemaValidator.java:327–342`), and the placeholder comment at line 237. graphql-java will then reject any leftover `@field(javaName: …)` at SDL parse time with its standard unknown-argument error; add a custom assertion in `GraphitronSchemaBuilder.assertDirective` (currently `assertDirective(ctx, DIR_FIELD, ARG_NAME, ARG_JAVA_NAME)` at line 592) so the error message points at this item ("@field(javaName:) was removed in R41 — use @field(name:) instead").
+2. **Remove: `@field(javaName:)`.** Drop `javaName` from the directive declaration, the `ARG_JAVA_NAME` constant, the corresponding arg in `assertDirective(ctx, DIR_FIELD, ARG_NAME, ARG_JAVA_NAME)` (`GraphitronSchemaBuilder.java:592`), the `javaNamePresent` boolean on `ColumnField` / `ColumnReferenceField`, the matching validator arms (`GraphitronSchemaValidator.java:327–342`), and the placeholder comment at line 237 (which already telegraphs this work). graphql-java rejects any leftover `@field(javaName: …)` use at SDL parse time with its standard "Directive @field has unknown argument 'javaName'" error — sufficient signal; this item explicitly does not bundle a custom migration message.
 
-3. **Rewrite: `@field` docstring** to describe the actual contract: `name:` names the underlying-binding target, with the target axis determined by the directive site:
-   - on a filter argument or output field of a `@table`-backed type → jOOQ column;
-   - on an argument of an `@service` / `@tableMethod` field → Java method parameter.
+3. **Update: `@field` docstring.** Drop the stale "jOOQ table record fields" / "exclusively for Java records" framing and the `javaName:` line. State the actual contract for `name:` in one paragraph: "names the underlying-binding target; the axis is determined by the directive site. On `ARGUMENT_DEFINITION` of an `@service` / `@tableMethod` field, the target is a Java method parameter (this item). On other sites the existing axes apply." Out of scope: rewriting the docstring to enumerate every existing axis (column on `@table`-backed output / filter args / input fields, db-string / Java-enum-constant on `ENUM_VALUE`); the existing axes work today and a full audit is its own piece of work.
 
 ## Plan sketch
 
@@ -51,11 +49,11 @@ Three coupled edits to `@field`:
 
 4. **Update `enrichArgExtractions` (FieldBuilder.java:1374) to key off `graphqlArgName`** instead of `p.name()`. Without this, text-mapped enum extraction would silently miss for any overridden arg.
 
-5. **Validation**, in `FieldBuilder.resolveServiceField` (before reflecting):
-   - reject when the same Java name is targeted by two args (collision);
-   - reject when `@field(name:)` on an arg references a Java parameter that doesn't exist on the service method (typo guard, requires the reflected parameter list, so the check piggybacks on a successful `reflectServiceMethod` and re-emits as an `UnclassifiedField`).
+5. **Validation**, in two halves around the reflection call:
+   - **Pre-reflection** (purely from the override map, in `FieldBuilder.resolveServiceField` before `reflectServiceMethod`): reject when two args target the same Java name (collision); detectable from value-duplicate in `javaNameToArgName`.
+   - **Post-reflection** (uses the reflected parameter list, inside `reflectServiceMethod`): reject when an entry in `javaNameToArgName` references a Java parameter that doesn't exist on the resolved method (typo guard). Surfaces as a `ServiceReflectionResult` failure that `FieldBuilder` then re-emits as an `UnclassifiedField`, matching the existing failure shape.
 
-6. **Retire `javaName:` per Proposal §2.** Mechanical edits across `directives.graphqls`, `BuildContext.ARG_JAVA_NAME`, `ColumnField` / `ColumnReferenceField` records, the two validator arms, and `GraphitronSchemaBuilder.assertDirective`. Add the friendly error message there so users still on `javaName:` get pointed at R41.
+6. **Retire `javaName:` per Proposal §2.** Mechanical edits across `directives.graphqls` (drop the arg + the stale docstring), `BuildContext.ARG_JAVA_NAME` (delete), `GraphitronSchemaBuilder.java:592` (drop the third arg from `assertDirective`), `ColumnField` / `ColumnReferenceField` (drop the `javaNamePresent` field), `GraphitronSchemaValidator.java:327–342` (delete both branches), and `GraphitronSchemaValidator.java:237` (drop the placeholder comment). No friendly migration message — graphql-java's parse-time error per Proposal §2 is the user-visible signal.
 
 7. **Context arguments out of scope.** `@service(contextArguments: [...])` keys by name into the runtime context; an override would have to propagate to the registry (`R31` `service-context-value-registry`'s territory). File a follow-up if a real case appears; do not extend this work.
 
@@ -67,11 +65,12 @@ Three coupled edits to `@field`:
 - `ServiceCatalogTest`: `@field(name:)` references unknown Java param → error names the directive site and the available parameter names.
 - `ServiceCatalogTest`: same suite of cases for `reflectTableMethod`, including: override on a non-`Table<?>` param works; override targeting the `Table<?>` slot rejects.
 - `GraphitronSchemaBuilderTest`: SDL-driven happy path verifying the directive is read off the argument and the resulting service field classifies cleanly.
-- `GraphitronSchemaBuilderTest`: SDL with `@field(javaName: …)` → clear error pointing at R41 (Proposal §2).
+- Schema-construction failure test: SDL with `@field(javaName: …)` fails graphql-java's directive validation with the standard "unknown argument 'javaName'" error (per Proposal §2 — no custom message). Place wherever the existing schema-parse-failure tests live.
 - Text-enum-mapping coverage: pipeline test with a `String`-typed Java param matched to a GraphQL enum arg via override; assert the generated text-map field is wired up (catches a regression in step 4).
 - Pipeline-tier fixture: one new schema fixture under existing `@service` mutation coverage that uses the override end-to-end.
 
 ## Notes
 
 - The argument-context resolution (column on `@table`-backed filter args, parameter on `@service` / `@tableMethod` args) holds because `FieldBuilder.classifyArgument` only routes to column binding for fields without `@service` / `@tableMethod` on the implicit-query path; the contexts don't share an argument site. Reference for reviewers: `FieldBuilder.classifyArgument` and the column-binding entry at line 827.
+- Behaviour change for any existing schema that already wrote `@field(name:)` on an `@service` / `@tableMethod` arg: the directive is silently ignored today (the column-binding path is unreachable for these args), and after this change it becomes a binding override. Any pre-existing site is either a no-op that becomes meaningful (intended) or one that now resolves to a parameter that doesn't exist (caught by the post-reflection typo guard from Plan §5). No silent semantic drift.
 - Co-considered with `R1` (`BatchKey` lifter directive): both extend the binding language for service method parameters but are orthogonal — R41 is about *naming*, R1 is about *DTO-to-key conversion*.
