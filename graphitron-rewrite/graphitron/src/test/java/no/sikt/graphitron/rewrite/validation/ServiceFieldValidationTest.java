@@ -40,12 +40,15 @@ class ServiceFieldValidationTest {
             new ServiceRecordField("Film", "externalChild", null, new ReturnTypeRef.ResultReturnType("Film", new FieldWrapper.Single(true), null), List.of(), RESOLVED_METHOD, RESOLVED_BATCH_KEY),
             List.of(stubbedError("Film.externalChild", ServiceRecordField.class))),
 
-        WITH_LIFT_CONDITION("lift condition with a resolved method (stubbed — ServiceRecordField not yet implemented)",
+        WITH_LIFT_CONDITION("lift condition with a resolved method (stubbed + DEFERRED — ServiceRecordField not yet implemented and lift form not supported)",
             new ServiceRecordField("Film", "externalChild", null, new ReturnTypeRef.ResultReturnType("Film", new FieldWrapper.Single(true), null), List.of(
                 new JoinStep.ConditionJoin(new MethodRef.Basic("com.example.Conditions", "liftCondition", ClassName.get("org.jooq", "Condition"),
                     List.of(new MethodRef.Param.Typed("ctx", "org.jooq.DSLContext", new ParamSource.DslContext()))), "")),
                 RESOLVED_METHOD, RESOLVED_BATCH_KEY),
-            List.of(stubbedError("Film.externalChild", ServiceRecordField.class)));
+            List.of(stubbedError("Film.externalChild", ServiceRecordField.class),
+                "Field 'Film.externalChild': @service with a @reference path "
+                + "(condition-join lift form) is not yet supported — see "
+                + "graphitron-rewrite/roadmap/service-record-field.md"));
 
         private final String description;
         private final GraphitronField field;
