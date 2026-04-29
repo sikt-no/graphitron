@@ -1646,8 +1646,7 @@ public class TypeFetcherGenerator {
             .add("($T keys, $T batchEnv) -> {\n", lambdaKeysType, BATCH_LOADER_ENV)
             .indent()
             .addStatement("$T dfe = ($T) batchEnv.getKeyContextsList().get(0)", ENV, ENV)
-            .addStatement("$T sel = dfe.getSelectionSet().getField($S)", SELECTED_FIELD, fieldName)
-            .addStatement("return $T.completedFuture($L(keys, dfe, sel))", COMPLETABLE_FUTURE, rowsMethodName)
+            .addStatement("return $T.completedFuture($L(keys, dfe))", COMPLETABLE_FUTURE, rowsMethodName)
             .unindent()
             .add("}")
             .build();
@@ -1712,7 +1711,6 @@ public class TypeFetcherGenerator {
             .returns(returnType)
             .addParameter(keysContainerType, "keys")
             .addParameter(ENV, "env")
-            .addParameter(SELECTED_FIELD, "sel")
             .addStatement("throw new $T()", UnsupportedOperationException.class)
             .build();
     }
