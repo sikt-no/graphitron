@@ -255,7 +255,9 @@ public class TypeFetcherGenerator {
             Map.entry(ChildField.ComputedField.class,
                 "ComputedField not yet implemented — see graphitron-rewrite/roadmap/stub-non-table-scalar-child-leaves.md"),
             Map.entry(ChildField.MultitableReferenceField.class,
-                "MultitableReferenceField not yet implemented — see graphitron-rewrite/roadmap/stub-non-table-scalar-child-leaves.md")
+                "MultitableReferenceField not yet implemented — see graphitron-rewrite/roadmap/stub-non-table-scalar-child-leaves.md"),
+            Map.entry(ChildField.ErrorsField.class,
+                "ErrorsField not yet implemented — see graphitron-rewrite/roadmap/error-handling-parity.md")
         );
 
     /**
@@ -396,6 +398,7 @@ public class TypeFetcherGenerator {
                 case ChildField.ComputedField f                 -> builder.addMethod(stub(f));
                 case ChildField.PropertyField ignored           -> { /* wired via FetcherRegistrationsEmitter.propertyOrRecordValue */ }
                 case ChildField.MultitableReferenceField f      -> builder.addMethod(stub(f));
+                case ChildField.ErrorsField f                   -> builder.addMethod(stub(f));
                 // Cannot occur — filtered by generateForType before dispatch
                 case InputField ignored ->
                     throw new AssertionError("InputField in type dispatch: " + ignored.qualifiedName());
