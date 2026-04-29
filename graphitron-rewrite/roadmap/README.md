@@ -26,7 +26,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
 | Docs as an index into classification tests | Ready (deferred) | [plan](docs-as-index-into-tests.md) |
 | Java LSP rewrite + introspect retirement + `dev` goal | Ready | [plan](graphitron-lsp.md) |
-| Apollo Federation via federation-jvm transform | In Progress | [plan](federation-via-federation-jvm.md) |
 | Stub #3: Interface / union fetchers | In Progress | [plan](stub-interface-union-fetchers.md) |
 | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` <sub>blocked by: [graphitron-lsp](graphitron-lsp.md)</sub> | In Progress | [plan](retire-maven-plugin.md) |
 | Load-bearing classifier guarantee audit annotations | In Review | [plan](load-bearing-guarantee-audit.md) |
@@ -76,7 +75,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### interface-union
 
-- [**Apollo Federation via federation-jvm transform**](federation-via-federation-jvm.md) — In Progress
 - [**Stub #3: Interface / union fetchers**](stub-interface-union-fetchers.md) — In Progress, stubs
 
 ### nodeid
