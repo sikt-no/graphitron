@@ -2087,9 +2087,9 @@ class FieldBuilder {
                         servicePath.elements(), List.of(), new OrderBySpec.None(), null,
                         svcResult.method(), extractBatchKey(svcResult.method()));
                 case ReturnTypeRef.ResultReturnType r ->
-                    new ServiceRecordField(parentTypeName, name, location, r, servicePath.elements(), svcResult.method());
+                    new ServiceRecordField(parentTypeName, name, location, r, servicePath.elements(), svcResult.method(), extractBatchKey(svcResult.method()));
                 case ReturnTypeRef.ScalarReturnType s ->
-                    new ServiceRecordField(parentTypeName, name, location, s, servicePath.elements(), svcResult.method());
+                    new ServiceRecordField(parentTypeName, name, location, s, servicePath.elements(), svcResult.method(), extractBatchKey(svcResult.method()));
                 case ReturnTypeRef.PolymorphicReturnType p ->
                     new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.DEFERRED, "@service returning a polymorphic type is not yet supported");
             };
@@ -2241,9 +2241,9 @@ class FieldBuilder {
                         servicePath.elements(), List.of(), new OrderBySpec.None(), null,
                         svcResult.method(), extractBatchKey(svcResult.method()));
                 case ReturnTypeRef.ResultReturnType r ->
-                    new ServiceRecordField(parentTypeName, name, location, r, servicePath.elements(), svcResult.method());
+                    new ServiceRecordField(parentTypeName, name, location, r, servicePath.elements(), svcResult.method(), extractBatchKey(svcResult.method()));
                 case ReturnTypeRef.ScalarReturnType s ->
-                    new ServiceRecordField(parentTypeName, name, location, s, servicePath.elements(), svcResult.method());
+                    new ServiceRecordField(parentTypeName, name, location, s, servicePath.elements(), svcResult.method(), extractBatchKey(svcResult.method()));
                 case ReturnTypeRef.PolymorphicReturnType p ->
                     new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.DEFERRED, "@service returning a polymorphic type is not yet supported");
             };
