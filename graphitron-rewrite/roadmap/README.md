@@ -15,10 +15,11 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Plan |
 |---|---|---|---|
 | `R1` | `BatchKey` lifter directive | Spec | [plan](batchkey-lifter-directive.md) |
-| `R37` | Stub #8: Non-table / scalar / reference child leaves | Spec | [plan](stub-non-table-scalar-child-leaves.md) |
+| `R48` | Stub: `@externalField` resolved-reference path (`ComputedField`) | Spec | [plan](computed-field-with-reference.md) |
+| `R49` | Stub: scalar/`@record`-returning `@service` child field (`ServiceRecordField`) <sub>blocked by: [service-rows-method-body](service-rows-method-body.md)</sub> | Spec | [plan](service-record-field.md) |
 | `R20` | `IdReferenceField` code generation | Spec | [plan](id-reference-input-field.md) |
 | `R3` | Classification vocabulary follow-ups | Spec | [plan](classification-vocabulary-followups.md) |
-| `R31` | Context-value registry + native multi-tenant fan-out for `@service` <sub>blocked by: [mutations](mutations.md)</sub> | Spec | [plan](service-context-value-registry.md) |
+| `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec | [plan](nestingfield-multiparent-tablefield.md) |
 | `R13` | Faceted search on `@asConnection` | Spec | [plan](faceted-search.md) |
 | `R22` | Mutation bodies | Spec | [plan](mutations.md) |
@@ -42,10 +43,17 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 - `R6` [**Decompose `FieldBuilder`**](decompose-fieldbuilder.md): Split the 2,217-line / 56-private-method builder along the field taxonomy. Argument-resolution unification has shipped (Phase 4 landed under Done), so this is no longer blocked. Proposed split: `QueryFieldBuilder`, `MutationFieldBuilder`, `ChildFieldBuilder` plus a shared argument-classification module.
 - `R5` [**Composite-key `@lookupKey` on list-of-input-object arguments**](composite-key-lookupkey.md): Add `ArgumentRef.CompositeLookupArg` carrying `(input-field-name, target-column)` pairs resolved from `@field(name:)` directives; `buildInputRowsMethod` already handles arbitrary-arity VALUES + JOIN.
 - `R32` [**Implement `@service` rows-method body**](service-rows-method-body.md): `buildServiceRowsMethod` (`TypeFetcherGenerator.java:1501`) emits a stub that throws `UnsupportedOperationException`. Fill the body so `@service` batched fields actually invoke the user's service method and project results back into GraphQL. Three concerns in one emitter:
+- `R46` [**Multi-tenant fan-out for `@service`**](service-multi-tenant-fanout.md): A custom resolver in a downstream Sikt project (`megVedLarested`) bypasses `@service` and writes the resolver by hand because the directive can't express what it needs: for each tenant the logged-in user belongs to, open a tenant-scoped `DSLContext`, fan out in parallel on the executor, drop nulls, return the union. The service method itself is GraphQL-free Java; what doesn't fit `@service` is the `ConnectionManager` lookup, the per-tenant `DSLContext` plumbing, and the `executor.allOf().join()` shape. _(blocked by [typed-context-value-registry](typed-context-value-registry.md), [mutations](mutations.md))_
 - `R11` [**`DSLContext` on `@condition` / `@tableMethod` methods**](dslcontext-on-condition-tablemethod.md): Lift the `reflectTableMethod` gate. Requires `ArgCallEmitter` to walk `params()` instead of `callParams()` so the injected `DSLContext` lands at its declaration-index slot.
 - `R2` [**Checked exceptions on `@service` / `@tableMethod` for typed GraphQL errors**](checked-exceptions-typed-errors.md): Explore mapping developer-declared checked exceptions on service / table-method methods to typed GraphQL errors (`@error` types, mutation payload error unions). Today `ServiceCatalog.reflectServiceMethod` / `reflectTableMethod` ignore `getExceptionTypes()`; the emitted fetcher has no `throws` clause, so a developer method declaring `throws SQLException` (or any checked exception) breaks the rewrite-test compile gate. _(blocked by [error-handling-parity](error-handling-parity.md), [mutations](mutations.md))_
 - `R25` [**Rebalance test pyramid**](rebalance-test-pyramid.md): Shift new test investment from per-variant structural tests toward SDL-to-classification-to-emission pipeline tests keyed off `graphitron-fixtures`. _(blocked by [rewrite-test-tier-guide](rewrite-test-tier-guide.md))_
 - `R7` [**Decompose `TypeFetcherGenerator`**](decompose-typefetchergenerator.md): `TypeFetcherGenerator.java` is 1 646 lines, one public entry point (`generate(GraphitronSchema)`), and ~30 private methods that implement per-field-variant emitters plus shared helpers. It is the counterpart to [`decompose-fieldbuilder.md`](decompose-fieldbuilder.md): a central generator that has accumulated coverage faster than its file shape can absorb. _(blocked by [stub-interface-union-fetchers](stub-interface-union-fetchers.md))_
+
+### Stubs
+
+- `R42` [**Stub: `@reference` on a scalar (FK column) field (`ColumnReferenceField`)**](column-reference-on-scalar-field.md): Lift `ChildField.ColumnReferenceField` out of `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS`. Today schemas using `@reference` on a scalar field (mapping the field to an FK column on the parent table) fail validation with `[deferred]`. Carved out of the original umbrella (R37) for independent prioritisation; not currently a blocker for any in-flight migration.
+- `R43` [**Stub: `@tableMethod` with scalar/enum return (`TableMethodField`)**](tablemethod-scalar-return.md): Lift `ChildField.TableMethodField` out of `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS`. Today schemas using `@tableMethod` to return a non-table type (scalar / enum) fail validation with `[deferred]`. Carved out of the original umbrella (R37) for independent prioritisation; not currently a blocker for any in-flight migration.
+- `R44` [**Stub: `@multitableReference` on a scalar field (`MultitableReferenceField`)**](multitable-reference-on-scalar.md): Lift `ChildField.MultitableReferenceField` out of `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS`. Today schemas using `@reference` on a scalar field whose target is a multi-table interface or union fail validation with `[deferred]`. Carved out of the original umbrella (R37) for independent prioritisation; not currently a blocker for any in-flight migration. _(blocked by [stub-interface-union-fetchers](stub-interface-union-fetchers.md))_
 
 ### Cleanup
 
@@ -59,6 +67,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 - `R17` [**Annotated walkthrough of a generated file**](generated-output-walkthrough.md): Today's docs cover the input side (schema → classification → variant) and the model side (sealed hierarchy, capability interfaces, design principles) but a contributor reading them never sees a complete generated file explained section by section. The mental model "this is what the output looks like" gets reconstructed from grepping `graphitron-test/target/`. _(blocked by [rewrite-docs-entrypoint](rewrite-docs-entrypoint.md), [docs-site-asciidoc](docs-site-asciidoc.md))_
 - `R29` [**Consolidated test-tier guide**](rewrite-test-tier-guide.md): The rewrite has four test tiers (unit, pipeline, compilation against real jOOQ, execution against real PostgreSQL). The conventions for each tier are known and respected on trunk, but the documentation is scattered across three sources, so a new contributor adding a test has to triangulate to figure out which tier their test goes in, where the file lives, what shape it takes, and what they can or cannot assert.
 - `R30` [**Selection parser audit**](selection-parser-audit.md): `selection/` hand-rolls ~500 LOC; audit whether re-parsing is needed given what graphql-java already provides.
+- `R47` [**Short class-name resolution for `@service` and `@externalField` (legacy parity)**](service-short-classname-resolution.md): `ServiceCatalog.reflectServiceMethod` currently calls `Class.forName(className)` directly, forcing an FQN. Existing schemas carry short class names like `className: "PersonService"` and rely on the legacy Mojo's `externalReferenceImports` list to find them. Without short-name resolution, every legacy schema has to be migrated to FQNs at the same time as it migrates to the rewrite, which is unnecessary friction.
 - `R35` [**Class-level Javadoc and `package-info.java` sweep**](source-orientation-javadocs.md): A reader landing on `FieldBuilder.java` (2 172 lines) or `TypeFetcherGenerator.java` (1 646 lines) gets minimal in-file orientation; they have to bounce to the docs to learn what the class is for. The rewrite tree also has zero `package-info.java` files, which is the IDE-native place for "what is in this package" blurbs.
 - `R10` [**Drop the assembled-schema rebuild in favour of per-variant graphql-java forms**](drop-assembled-schema-rebuild.md): Phase 5 of [firstclass-connection-types](firstclass-connection-types.md) rebuilds the assembled `GraphQLSchema` via `SchemaTransformer` so directive-driven `@asConnection` carriers carry their rewritten return type and pagination args. The rebuild only runs at generate time and is never seen by the runtime (which reconstructs its schema from emitted `<TypeName>Type.type()` calls in `GraphitronSchema.build()`).
 - `R24` [**`NodeIdReferenceField` JOIN-projection form**](nodeidreferencefield-join-projection-form.md): The `@nodeId` + `@node` plan shipped the FK-mirror collapse path (single-hop FK whose target columns positionally match the target NodeType's `keyColumns`; the parent's FK source columns encode directly with no JOIN). Composite-FK that doesn't mirror, multi-hop, and condition-join cases emit a runtime `UnsupportedOperationException` stub today (`FetcherEmitter#dataFetcherValue`'s `NodeIdReferenceField` arm).
@@ -78,6 +87,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### interface-union
 
 - `R36` [**Stub #3: Interface / union fetchers**](stub-interface-union-fetchers.md) — In Progress, stubs
+- `R44` [**Stub: `@multitableReference` on a scalar field (`MultitableReferenceField`)**](multitable-reference-on-scalar.md) — Backlog, stubs, blocked by [stub-interface-union-fetchers](stub-interface-union-fetchers.md)
 
 ### nodeid
 
@@ -88,9 +98,12 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### service
 
 - `R1` [**`BatchKey` lifter directive**](batchkey-lifter-directive.md) — Spec, architecture
+- `R48` [**Stub: `@externalField` resolved-reference path (`ComputedField`)**](computed-field-with-reference.md) — Spec, stubs
+- `R49` [**Stub: scalar/`@record`-returning `@service` child field (`ServiceRecordField`)**](service-record-field.md) — Spec, stubs, blocked by [service-rows-method-body](service-rows-method-body.md)
 - `R41` [**@field(name:) on @service method args**](service-arg-java-name-override.md) — Ready, architecture
-- `R31` [**Context-value registry + native multi-tenant fan-out for `@service`**](service-context-value-registry.md) — Spec, blocked by [mutations](mutations.md)
+- `R45` [**Typed context-value registry for `@service`**](typed-context-value-registry.md) — Spec, architecture
 - `R32` [**Implement `@service` rows-method body**](service-rows-method-body.md) — Backlog, architecture
+- `R46` [**Multi-tenant fan-out for `@service`**](service-multi-tenant-fanout.md) — Backlog, architecture, blocked by [typed-context-value-registry](typed-context-value-registry.md), [mutations](mutations.md)
 - `R11` [**`DSLContext` on `@condition` / `@tableMethod` methods**](dslcontext-on-condition-tablemethod.md) — Backlog, architecture
 
 ### mutations-errors
@@ -107,10 +120,11 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### model-cleanup
 
 - `R38` [**Unify `rowsMethodName()`**](unify-rowsmethodname.md) — Backlog, cleanup
-- `R37` [**Stub #8: Non-table / scalar / reference child leaves**](stub-non-table-scalar-child-leaves.md) — Spec, stubs
 - `R39` [**Validate that list fields on tables without a PK require explicit ordering**](validate-list-fields-require-ordering.md) — Backlog, validation
 - `R4` [**Collapse `BatchKeyField` validator/emitter redundancy**](collapse-tabletargetfield-redundancy.md) — Backlog, cleanup
 - `R5` [**Composite-key `@lookupKey` on list-of-input-object arguments**](composite-key-lookupkey.md) — Backlog, architecture
+- `R42` [**Stub: `@reference` on a scalar (FK column) field (`ColumnReferenceField`)**](column-reference-on-scalar-field.md) — Backlog, stubs
+- `R43` [**Stub: `@tableMethod` with scalar/enum return (`TableMethodField`)**](tablemethod-scalar-return.md) — Backlog, stubs
 - `R16` [**`FkJoin` model cleanup: `JoinConditionRef` wrapper**](fkjoin-model-cleanup.md) — Backlog, cleanup
 - `R23` [**Multi-parent `NestingField` sharing: `TableField` arm**](nestingfield-multiparent-tablefield.md) — Spec
 - `R30` [**Selection parser audit**](selection-parser-audit.md) — Backlog, cleanup
@@ -141,6 +155,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R19` [**Rebase and squash rewrite branch onto main**](history-squash.md) — Ready
 - `R27` [**Retire `@nodeId` and `IdReferenceField` synthesis shims**](retire-synthesis-shims.md) — Backlog, cleanup, blocked by [id-reference-input-field](id-reference-input-field.md), [sis-rewrite-migration](sis-rewrite-migration.md)
+- `R47` [**Short class-name resolution for `@service` and `@externalField` (legacy parity)**](service-short-classname-resolution.md) — Backlog, cleanup
 - `R26` [**Retire `graphitron-maven-plugin` + `graphitron-schema-transform`**](retire-maven-plugin.md) — In Progress, blocked by [graphitron-lsp](graphitron-lsp.md)
 - `R18` [**Java LSP rewrite + introspect retirement + `dev` goal**](graphitron-lsp.md) — Ready
 - `R34` [**sis-graphql-spec migration to graphitron-rewrite**](sis-rewrite-migration.md) — Backlog, cleanup
