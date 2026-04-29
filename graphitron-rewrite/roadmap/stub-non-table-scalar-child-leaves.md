@@ -1,4 +1,5 @@
 ---
+id: R37
 title: "Stub #8: Non-table / scalar / reference child leaves"
 status: Spec
 bucket: stubs

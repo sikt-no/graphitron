@@ -1,4 +1,5 @@
 ---
+id: R5
 title: "Composite-key `@lookupKey` on list-of-input-object arguments"
 status: Backlog
 bucket: architecture

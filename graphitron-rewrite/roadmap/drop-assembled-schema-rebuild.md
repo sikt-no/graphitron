@@ -1,4 +1,5 @@
 ---
+id: R10
 title: "Drop the assembled-schema rebuild in favour of per-variant graphql-java forms"
 status: Backlog
 bucket: cleanup

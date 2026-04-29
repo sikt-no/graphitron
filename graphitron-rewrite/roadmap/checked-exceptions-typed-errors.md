@@ -1,4 +1,5 @@
 ---
+id: R2
 title: "Checked exceptions on `@service` / `@tableMethod` for typed GraphQL errors"
 status: Backlog
 bucket: architecture

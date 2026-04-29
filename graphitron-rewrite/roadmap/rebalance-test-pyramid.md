@@ -1,4 +1,5 @@
 ---
+id: R25
 title: "Rebalance test pyramid"
 status: Backlog
 bucket: architecture

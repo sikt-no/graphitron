@@ -1,4 +1,5 @@
 ---
+id: R36
 title: "Stub #3: Interface / union fetchers"
 status: In Progress
 bucket: stubs
