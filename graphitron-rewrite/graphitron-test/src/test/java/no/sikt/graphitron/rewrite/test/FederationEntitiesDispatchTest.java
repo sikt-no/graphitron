@@ -376,6 +376,63 @@ class FederationEntitiesDispatchTest {
     }
 
     /**
+     * Most-specific tie-break: Film carries {@code @key(fields: "filmId")} and
+     * {@code @key(fields: "filmId title")}. A representation that supplies both fields must
+     * select the compound alternative (more required fields wins; ties broken by declaration
+     * order). Asserted via SQL inspection: the compound alternative's SELECT joins on
+     * {@code title}, while the simple alternative does not.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void entities_mostSpecificTieBreak_selectsCompoundOverSimple() {
+        SQL_LOG.clear();
+        Map<String, Object> data = execute(
+            "query Q($reps: [_Any!]!) { _entities(representations: $reps) {"
+            + " __typename ... on Film { title } } }",
+            Map.of("reps", List.of(Map.of(
+                "__typename", "Film",
+                "filmId", 1,
+                "title", "ACADEMY DINOSAUR"))));
+        List<Map<String, Object>> entities = (List<Map<String, Object>>) data.get("_entities");
+        assertThat(entities).hasSize(1);
+        assertThat(entities.get(0)).containsEntry("__typename", "Film");
+
+        var filmSelect = SQL_LOG.stream()
+            .filter(s -> s.contains("'film' as \"__typename\""))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("Film SELECT not found in SQL log: " + SQL_LOG));
+        assertThat(filmSelect)
+            .as("rep with both filmId and title must hit the compound alternative (joins on title)")
+            .contains("\"title\"");
+    }
+
+    /**
+     * {@code @key(fields: "languageId", resolvable: false)} on a non-{@code @node} type:
+     * Language declares the key for reference only. A rep that matches the alternative must
+     * yield {@code null} (federation surfaces "entity resolution failed") and must not fire a
+     * SELECT. Locks the dispatcher's {@code resolvable: false} skip path end-to-end.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void entities_nonResolvableKey_yieldsNullSlotWithoutSelect() {
+        SQL_LOG.clear();
+        Map<String, Object> data = execute(
+            "query Q($reps: [_Any!]!) { _entities(representations: $reps) { __typename } }",
+            Map.of("reps", List.of(Map.of("__typename", "Language", "languageId", 1))));
+        List<Map<String, Object>> entities = (List<Map<String, Object>>) data.get("_entities");
+        assertThat(entities).hasSize(1);
+        assertThat(entities.get(0))
+            .as("non-resolvable @key alternative must yield null for matching reps")
+            .isNull();
+        long languageSelects = SQL_LOG.stream()
+            .filter(s -> s.contains("'language' as \"__typename\"") || s.contains("from \"public\".\"language\""))
+            .count();
+        assertThat(languageSelects)
+            .as("non-resolvable alternative must not fire any SELECT against the language table")
+            .isZero();
+    }
+
+    /**
      * A federation customizer that calls {@code fb.fetchEntities(...)} replaces the default
      * dispatcher entirely: the subsequent {@code _entities} call hits the consumer's fetcher,
      * never the generated one, so no entity SELECT fires. Locks the documented customizer
