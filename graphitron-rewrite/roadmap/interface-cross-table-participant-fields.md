@@ -3,6 +3,8 @@ title: "Interface fetchers: cross-table participant fields via conditional LEFT 
 status: Backlog
 bucket: cleanup
 priority: 3
+theme: interface-union
+depends-on: [stub-interface-union-fetchers]
 ---
 
 # Interface fetchers: cross-table participant fields via conditional LEFT JOIN

@@ -3,6 +3,8 @@ title: "Stub #3: Interface / union fetchers"
 status: In Progress
 bucket: stubs
 priority: 1
+theme: interface-union
+depends-on: []
 ---
 
 # Stub #3: Interface / union fetchers

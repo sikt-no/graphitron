@@ -2,6 +2,8 @@
 title: Classification vocabulary follow-ups
 status: Spec
 priority: 5
+theme: docs
+depends-on: []
 ---
 
 # Plan: Classification Vocabulary Follow-ups

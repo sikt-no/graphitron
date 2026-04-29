@@ -2,6 +2,8 @@
 title: "Java LSP rewrite + introspect retirement + `dev` goal"
 status: Ready
 priority: 12
+theme: legacy-migration
+depends-on: []
 ---
 
 # Plan: Java LSP rewrite + introspect retirement + `dev` goal

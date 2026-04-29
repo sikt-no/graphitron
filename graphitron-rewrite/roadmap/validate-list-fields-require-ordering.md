@@ -3,6 +3,8 @@ title: "Validate that list fields on tables without a PK require explicit orderi
 status: Backlog
 bucket: validation
 priority: 2
+theme: model-cleanup
+depends-on: []
 ---
 
 # Validate that list fields on tables without a PK require explicit ordering

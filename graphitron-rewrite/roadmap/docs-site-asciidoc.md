@@ -3,6 +3,8 @@ title: "Fold graphitron.sikt.no into the Maven build (AsciiDoc + GitHub Pages)"
 status: Spec
 bucket: architecture
 priority: 20
+theme: docs
+depends-on: []
 ---
 
 # Plan: AsciiDoc docs site, built by Maven, published via GitHub Pages

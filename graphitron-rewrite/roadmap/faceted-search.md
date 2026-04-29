@@ -3,6 +3,8 @@ title: "Faceted search on `@asConnection`"
 status: Spec
 priority: 7
 notes: "[spike](faceted-search-sql.md)"
+theme: pagination
+depends-on: []
 ---
 
 # Faceted search on `@asConnection`: `@asFacet` directive

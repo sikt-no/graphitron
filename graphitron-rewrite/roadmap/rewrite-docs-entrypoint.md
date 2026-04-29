@@ -3,6 +3,8 @@ title: Make `graphitron-rewrite/docs/README.md` a real entry point
 status: Backlog
 bucket: cleanup
 priority: 3
+theme: docs
+depends-on: [docs-site-asciidoc]
 ---
 
 # Make `graphitron-rewrite/docs/README.md` a real entry point

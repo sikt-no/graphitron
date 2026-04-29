@@ -2,6 +2,8 @@
 title: "Retire `IdReferenceField` synthesis shim"
 status: Backlog
 priority: 5
+theme: legacy-migration
+depends-on: [id-reference-input-field, sis-rewrite-migration]
 ---
 
 # Retire `IdReferenceField` Synthesis Shim

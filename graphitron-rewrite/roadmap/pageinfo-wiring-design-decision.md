@@ -3,6 +3,8 @@ title: "`PageInfo` wiring design decision"
 status: Backlog
 bucket: cleanup
 priority: 9
+theme: pagination
+depends-on: []
 ---
 
 # `PageInfo` wiring design decision

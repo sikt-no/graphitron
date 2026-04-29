@@ -3,6 +3,8 @@ title: Docs as an index into classification tests
 status: Ready
 deferred: true
 priority: 10
+theme: docs
+depends-on: []
 ---
 
 # Plan: Docs as an Index into the Classification Tests

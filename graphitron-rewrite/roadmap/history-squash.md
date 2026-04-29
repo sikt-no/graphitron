@@ -2,6 +2,8 @@
 title: Rebase and squash rewrite branch onto main
 status: Ready
 priority: 2
+theme: legacy-migration
+depends-on: []
 ---
 
 # Plan: Rebase and squash rewrite branch onto main

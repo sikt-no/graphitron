@@ -3,6 +3,8 @@ title: Class-level Javadoc and `package-info.java` sweep
 status: Backlog
 bucket: cleanup
 priority: 8
+theme: docs
+depends-on: []
 ---
 
 # Class-level Javadoc and `package-info.java` sweep
