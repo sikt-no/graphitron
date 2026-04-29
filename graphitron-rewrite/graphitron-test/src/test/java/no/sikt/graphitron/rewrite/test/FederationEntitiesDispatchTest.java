@@ -376,6 +376,37 @@ class FederationEntitiesDispatchTest {
     }
 
     /**
+     * A federation customizer that calls {@code fb.fetchEntities(...)} replaces the default
+     * dispatcher entirely: the subsequent {@code _entities} call hits the consumer's fetcher,
+     * never the generated one, so no entity SELECT fires. Locks the documented customizer
+     * order ("federation customizer runs after Graphitron's defaults attach"), not just "the
+     * customizer was invoked". Lives here, not in the seam-0 smoke test, because we need a
+     * real {@link DSLContext} to detect that the dispatcher's SELECT path was bypassed.
+     */
+    @Test
+    void entities_customizerReplacesDefaultFetchEntities_noSelectFires() {
+        var customCalled = new java.util.concurrent.atomic.AtomicBoolean();
+        GraphQLSchema customised = Graphitron.buildSchema(b -> {}, fed -> fed.fetchEntities(env -> {
+            customCalled.set(true);
+            return java.util.concurrent.CompletableFuture.completedFuture(java.util.List.of());
+        }));
+        var customGraphql = GraphQL.newGraphQL(customised).build();
+        QUERY_COUNT.set(0);
+        var input = ExecutionInput.newExecutionInput()
+            .query("{ _entities(representations: [{__typename: \"Film\", filmId: 1}]) { __typename } }")
+            .graphQLContext(b -> b.put(GraphitronContext.class, context()))
+            .dataLoaderRegistry(new org.dataloader.DataLoaderRegistry())
+            .build();
+        customGraphql.execute(input);
+        assertThat(customCalled.get())
+            .as("custom fetchEntities must run when registered via the federation customizer")
+            .isTrue();
+        assertThat(QUERY_COUNT.get())
+            .as("custom fetchEntities replaces the default; no entity SELECT must fire")
+            .isZero();
+    }
+
+    /**
      * Compound key batching: multiple reps of the same {@code (typename, alternative,
      * tenantId)} batch into a single SELECT via the {@code VALUES (idx, ...)} derived
      * table. Verifies the row-array machinery emits one SELECT for two reps, not two.
