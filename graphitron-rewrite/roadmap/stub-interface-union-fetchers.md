@@ -9,9 +9,7 @@ depends-on: []
 
 # Stub #3: Interface / union fetchers
 
-Track A (`TableInterfaceType` variants) is **done**, pending the cleanup items listed below. Track B (multi-table polymorphic variants) remains and requires a design decision before any code can be written.
-
-The companion cleanup item (`typeresolver-wiring-interface-union.md`) is absorbed here. Track A closes it for `TableInterfaceType`; Track B closes it for `InterfaceType` / `UnionType`.
+Track A's same-table case is **done**. The remaining work now lives here in three folded sections: Track A Phase 2 (cross-table participant fields), Track B (multi-table polymorphic variants, which requires a design decision before any code can be written), and the supporting prerequisite *NodeId from JSON-encoded row identity*. `TypeResolver` wiring for non-`Node` interface and union types is also covered here as a companion concern: Track A's `TableInterfaceType` already wires it; Track B closes the gap for plain `InterfaceType` / `UnionType`.
 
 Priority number `#3` must stay stable: it is embedded in emitted reason strings consumed by existing schema authors.
 
@@ -102,6 +100,82 @@ Either option must also ensure the discriminator column is always included in th
 
 ---
 
+## Track A — Phase 2: cross-table participant fields
+
+Track A's same-table selection-set projection is shipped (discriminator-first
+plus per-participant `$fields` union into a `LinkedHashSet`, replacing
+`asterisk()`). Phase 2 covers the cross-table case: a `TableInterfaceType`
+participant declaring a field that lives on a different table than the
+interface's own table (e.g. `FilmContent.rating` resolving to `film.rating`
+while the interface is on `content`).
+
+### Design
+
+`TypeFetcherGenerator.buildInterfaceFieldsList` already iterates each
+`ParticipantRef.TableBound`. For participants with cross-table fields, emit a
+runtime guard around the JOIN and the cross-table column additions:
+
+```java
+if (env.getSelectionSet().contains("FilmContent/rating")) {
+    FilmTable filmTable = Tables.FILM.as(contentTable.getName() + "_film");
+    fields.add(filmTable.RATING);
+    // accumulate (filmTable, joinCondition) for emission between .from and .where
+}
+```
+
+`DataFetchingFieldSelectionSet.contains("TypeName/fieldName")` is the
+graphql-java type-scoped API for inline-fragment fields.
+
+**Critical invariant.** The LEFT JOIN ON clause must include the participant's
+discriminator value so non-matching rows carry NULL for the cross-table
+columns rather than a spurious match:
+
+```sql
+LEFT JOIN film
+  ON film.film_id = content.film_id
+  AND content.content_type = 'FILM'
+```
+
+The TypeResolver routes each row to the correct concrete type by reading the
+discriminator from the interface table; cross-table columns owned by other
+participants stay NULL and are never accessed.
+
+### Fixture additions
+
+Two additions are needed to make the test matrix meaningful: without a
+`ShortContent`-specific column there is no way to verify a `FilmContent`-only
+query does not pull `ShortContent` columns; without a cross-table field on
+`FilmContent` there is no way to verify the LEFT JOIN is omitted when not
+requested.
+
+1. `short_description` column on `content` (varchar, NULL on FILM rows,
+   populated on SHORT rows); add `description: String @field(name: "SHORT_DESCRIPTION")` to `ShortContent`.
+2. `rating: String @reference(path: [{key: "content_film_id_fkey"}]) @field(name: "RATING")` on `FilmContent`. The FK is already in the schema.
+
+### Tests
+
+Unit (`TypeFetcherGeneratorTest`):
+
+- `_crossTableField_emitsLeftJoin`: body contains a `LEFT JOIN` with the
+  discriminator value in the ON condition.
+- `_crossTableField_joinIncludesDiscriminatorCondition`: ON clause has both the
+  FK condition and the discriminator equality.
+
+Execution (`GraphQLQueryTest`):
+
+- `allContent_crossTableField_joinsFilmOnlyWhenRequested`: `... on FilmContent { rating }` returns the rating from the joined film row.
+- `allContent_crossTableField_absentWhenNotRequested`: query without `rating` emits SQL with no reference to `film` (verify via jOOQ `ExecuteListener` or rendered statement string).
+- `allContent_filmContentOnly_selectsLengthNotShortDescription`,
+  `allContent_shortContentOnly_selectsDescriptionNotLength`: per-participant
+  column isolation.
+- `allContent_bothParticipantSpecificFields`: `length`, `description`, and `rating` requested together; assert each appears for the right participant type.
+
+The implementation here is structured so Track B is an extension (same
+per-participant LEFT JOIN pattern, different table argument) rather than a
+rework.
+
+---
+
 ## Track B: Multi-table polymorphic
 
 **Variants:** `QueryField.QueryInterfaceField`, `QueryField.QueryUnionField`, `ChildField.InterfaceField`, `ChildField.UnionField`
@@ -120,15 +194,64 @@ Recommendation: **Option 1.** Consistent with how the classifier already rejects
 
 ### TypeResolver wiring for `InterfaceType` / `UnionType`
 
-Even under Option 1, `InterfaceType` and `UnionType` exist in the schema (e.g. the `Node` interface, or user types whose fields are all `@service`-backed). Their TypeResolvers still need wiring.
+Even under Option 1, `InterfaceType` and `UnionType` exist in the schema (e.g. the `Node` interface, or user types whose fields are all `@service`-backed). Their TypeResolvers still need wiring; today none are emitted, so a runtime resolution against any non-`Node` interface or union would fail with `Can't resolve type for object`. (Track A's `TableInterfaceType` already gets a `TypeResolver` via the `__typename` convention; the gap is for the multi-table cases.)
 
 Pattern: emit `codeRegistry.typeResolver("<Name>", env -> { ... })` for each non-`Node` `InterfaceType` and `UnionType` in `schema.types()`. Use the `__typename` convention: the resolver reads `record.get("__typename")` (same contract as `QueryNodeFetcher.registerTypeResolver`) and calls `env.getSchema().getObjectType(value)`. Document this as a required contract for `@service` methods returning multi-table interface / union types (see `graphitroncontext-extension-point-docs.md`).
+
+### Prerequisite: NodeId from JSON-encoded row identity
+
+A multi-table interface/union fetcher needs to produce a relay nodeId for each
+row, but the row's identity arrives as a JSON value rather than a fully
+materialised `TableRecord`. The shape mirrors what the legacy multi-table
+interface fetcher emits:
+`DSL.jsonbArray(DSL.inline("Customer"), CUSTOMER.CUSTOMER_ID)` produces a
+`JSONB` value whose first element is the GraphQL type name and whose
+remaining elements are the primary-key columns of the row's source table.
+
+Track B (and federation `_entities` over a `@node` type — see
+[`federation-via-federation-jvm.md`](federation-via-federation-jvm.md)) need to
+lift that JSON value into the corresponding `TableRecord<?>` (using the
+typeName to pick the record class, and the remaining JSON elements as
+positional column values), then run the lifted record through
+`NodeIdEncoder.encode(typeId, pkValues...)`. End result: a fully-formed relay
+nodeId that round-trips back through `Query.node` to the same row.
+
+The current rewrite nodeId path
+(`generators/util/NodeIdEncoderClassGenerator.java`,
+`generators/util/QueryNodeFetcherClassGenerator.java`) assumes the caller
+already has `(typeId, pkColumnValues...)` in hand; that works for
+fixed-table fetchers but not for polymorphic-at-SQL-time row identity.
+
+Sketch: a new helper on `NodeIdEncoder` (or a sibling `NodeIdJsonRowLifter`)
+accepts the JSONB value and returns the encoded ID:
+
+```java
+public static String encodeFromJsonRow(JSONB jsonRow) {
+    var arr = parseJsonArray(jsonRow);                  // ["Customer", "42"]
+    String typeName = arr.getFirst();
+    Class<? extends TableRecord<?>> recordClass = registry.recordClassFor(typeName);
+    TableRecord<?> rec = lift(recordClass, arr.tail()); // populate PK columns positionally
+    return encode(typeIdFor(typeName), pkValuesOf(rec));
+}
+```
+
+Open questions to resolve when this prerequisite is specced (separately from
+Track B's classifier decision):
+
+- **Where does the registry live?** Inline static fields on `NodeIdEncoder`, or a separate generated class so the encoder stays usable in contexts with no jOOQ-record dependency.
+- **Type-name vs. type-id in the JSON head.** Legacy uses the GraphQL type name (`"Customer"`); rewrite's `NodeIdEncoder.encode` takes the `typeId` (`__NODE_TYPE_ID`). Confirm direction with the federation plan before locking it in.
+- **Null-safety contract.** Match `NodeIdEncoder.encode`: a JSON null in any PK slot returns a null ID, no exception.
+- **Composite-key correctness.** Verify the lifter handles tables whose `nodeKeyColumns()` are not a single column; preserve column order in the JSON-array-tail mapping.
+
+Legacy reference shape:
+`FetchMultiTableDBMethodGenerator.getPrimaryKeyFieldsArray` —
+`graphitron-codegen-parent/.../db/FetchMultiTableDBMethodGenerator.java:411`.
 
 ---
 
 ## Order and gating
 
-Track A is done. Track B's design decision (Option 1 vs. Option 2 above) is a prerequisite for any Track B code.
+Track A's same-table emission is done. Track A Phase 2 (cross-table participant fields) can land independently. Track B's design decision (Option 1 vs. Option 2 above) is a prerequisite for any Track B code; the JSON-row-identity prerequisite ships alongside Track B (or earlier as an independent foundation if federation needs it first).
 
 ---
 
@@ -137,6 +260,7 @@ Track A is done. Track B's design decision (Option 1 vs. Option 2 above) is a pr
 - Per-participant sub-queries for multi-table interface fetchers without `@service` (requires a new directive or classification path).
 - `NodeIdReferenceField` JOIN-projection form (tracked separately under Cleanup).
 - TypeResolver for the built-in `Node` interface (already wired via `QueryNodeFetcher.registerTypeResolver`).
+- Track A's same-table selection-set projection — closed and shipped; this plan covers only the remaining cross-table follow-up.
 
 ---
 

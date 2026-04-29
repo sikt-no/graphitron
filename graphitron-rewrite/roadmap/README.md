@@ -20,7 +20,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | Context-value registry + native multi-tenant fan-out for `@service` <sub>blocked by: [mutations](mutations.md)</sub> | Spec | [plan](service-context-value-registry.md) |
 | Multi-parent `NestingField` sharing: `TableField` arm | Spec | [plan](nestingfield-multiparent-tablefield.md) |
 | Error-handling parity: emit per-fetcher error channels from `@error` <sub>blocked by: [mutations](mutations.md)</sub> | Spec | [plan](error-handling-parity.md) |
-| Faceted search on `@asConnection` <sub>[spike](faceted-search-sql.md)</sub> | Spec | [plan](faceted-search.md) |
+| Faceted search on `@asConnection` | Spec | [plan](faceted-search.md) |
 | Mutation bodies | Spec | [plan](mutations.md) |
 | Fold graphitron.sikt.no into the Maven build (AsciiDoc + GitHub Pages) | Spec | [plan](docs-site-asciidoc.md) |
 | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
@@ -39,7 +39,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 - [**`BatchKey` lifter directive**](batchkey-lifter-directive.md): Mechanism for schema authors to supply a DTO-to-key conversion, enabling DataLoader batching on DTO parents. `BatchKey.ObjectBased` has been removed; free-form DTO sources are now rejected at classification time with a build error pointing here. This feature re-enables DTO-parent DataLoader batching by feeding the existing column-keyed path via a developer-supplied lifting function. Co-closes the `RecordTableField` / `RecordLookupTableField` missing-FK-path rejection for DTO parents.
 - [**Decompose `FieldBuilder`**](decompose-fieldbuilder.md): Split the 2,217-line / 56-private-method builder along the field taxonomy. Argument-resolution unification has shipped (Phase 4 landed under Done), so this is no longer blocked. Proposed split: `QueryFieldBuilder`, `MutationFieldBuilder`, `ChildFieldBuilder` plus a shared argument-classification module.
-- [**Extract semantic-check helpers from `classifyQueryField`**](extract-semantic-check-helpers.md): The codebase rejects malformed fields at classifier time by returning `UnclassifiedField` (polymorphic `@service` at `FieldBuilder.java:1305-1306`; single-cardinality `@splitQuery @lookupKey` and multi-hop single-cardinality `@splitQuery` at `FieldBuilder.java:252-257` / `:266-271`; Connection / Sourced-param rejection on root `@service` and `@tableMethod` via `FieldBuilder.validateRootServiceInvariants`, plus the §3 strict-class and §5 strict-return checks inline in `classifyQueryField` and on `ServiceCatalog`).
 - [**Composite-key `@lookupKey` on list-of-input-object arguments**](composite-key-lookupkey.md): Add `ArgumentRef.CompositeLookupArg` carrying `(input-field-name, target-column)` pairs resolved from `@field(name:)` directives; `buildInputRowsMethod` already handles arbitrary-arity VALUES + JOIN.
 - [**Implement `@service` rows-method body**](service-rows-method-body.md): `buildServiceRowsMethod` (`TypeFetcherGenerator.java:1501`) emits a stub that throws `UnsupportedOperationException`. Fill the body so `@service` batched fields actually invoke the user's service method and project results back into GraphQL. Three concerns in one emitter:
 - [**`DSLContext` on `@condition` / `@tableMethod` methods**](dslcontext-on-condition-tablemethod.md): Lift the `reflectTableMethod` gate. Requires `ArgCallEmitter` to walk `params()` instead of `callParams()` so the injected `DSLContext` lands at its declaration-index slot.
@@ -48,37 +47,29 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 - [**Audit custom pagination-arg-name support**](audit-pagination-arg-name-support.md): Decide: remove `PaginationSpec` plumbing for non-default `first`/`after` names (likely dead code), or document and add an execution fixture.
 - [**Clarify `FkJoin` direction semantics**](clarify-fkjoin-direction-semantics.md): `JoinStep.FkJoin.sourceTable` is written to the traversal-origin table in `BuildContext.synthesizeFkJoin:473` and `parsePathElement:559-560`, contradicting the docstring at `JoinStep.java:70-72` (which claims it resolves to the FK-holder table). Currently dead data (zero readers today) but was a bug magnet for the first candidate reader (the cardinality-driven `deriveSplitQueryBatchKey` helper, shipped under *Single-cardinality `@splitQuery` support* in Done).
 - [**Decompose `TypeFetcherGenerator`**](decompose-typefetchergenerator.md): `TypeFetcherGenerator.java` is 1 646 lines, one public entry point (`generate(GraphitronSchema)`), and ~30 private methods that implement per-field-variant emitters plus shared helpers. It is the counterpart to [`decompose-fieldbuilder.md`](decompose-fieldbuilder.md): a central generator that has accumulated coverage faster than its file shape can absorb. _(blocked by [stub-interface-union-fetchers](stub-interface-union-fetchers.md))_
-- [**NodeId emission from JSON-encoded row identity**](nodeid-from-json-row.md): Produce a relay nodeId for a row whose identity arrives as a JSON representation (typeName + key columns) rather than as a fully materialised jOOQ `TableRecord`. The shape mirrors what the legacy multi-table interface fetcher emits: `DSL.jsonbArray(DSL.inline("Customer"), CUSTOMER.CUSTOMER_ID)` produces a `JSONB` value whose first element is the GraphQL type name and whose remaining elements are the primary-key columns of the row's source table. _(blocked by [stub-interface-union-fetchers](stub-interface-union-fetchers.md), [federation-via-federation-jvm](federation-via-federation-jvm.md))_
 
 ### Cleanup
 
 - [**Unify `rowsMethodName()`**](unify-rowsmethodname.md): Lift the `"rows" + capitalize(name())` copy-paste from four `BatchKeyField` leaves to a default method on the interface.
 - [**Unify `FkJoin` construction in `parsePathElement`**](unify-fkjoin-construction-parsepathelement.md): The `{key:}` branch at `BuildContext.java:557-564` hand-builds `FkJoin`. Delegate to `synthesizeFkJoin` for the source-validated success path, keeping the null-source fallback and connectivity-error arms bespoke.
 - [**Collapse `BatchKeyField` validator/emitter redundancy**](collapse-tabletargetfield-redundancy.md): Promote `unsupportedReason()` from four parallel static overloads on `SplitRowsMethodEmitter` to a default method on `BatchKeyField`, so the validator's four-arm chain at `GraphitronSchemaValidator.java:160-180` collapses to a single `instanceof BatchKeyField` check and the emitter/validator lock-step (currently convention-enforced) becomes compiler-enforced.
-- [**Interface fetchers: cross-table participant fields via conditional LEFT JOIN**](interface-cross-table-participant-fields.md): Follow-up to the closed `interface-selection-set-projection` item. Same-table selection-set projection is shipped (discriminator-first + per-participant `$fields` union into a `LinkedHashSet`, replacing `asterisk()`). What remains is the cross-table case: a `TableInterfaceType` participant declaring a field that lives on a different table than the interface's own table (e.g. `FilmContent.rating` resolving to `film.rating` while the interface is on `content`). _(blocked by [stub-interface-union-fetchers](stub-interface-union-fetchers.md))_
 - [**Make `graphitron-rewrite/docs/README.md` a real entry point**](rewrite-docs-entrypoint.md): The rewrite docs index is currently a fragment: it starts at numbered item **#4** with no preamble, because the numbering is intended to continue from `/docs/README.md` at the repo root. Readers landing here directly via a roadmap link, a code search hit, or a GitHub directory listing see items 4-7 with no anchor. _(blocked by [docs-site-asciidoc](docs-site-asciidoc.md))_
 - [**Sweep doc drift between rewrite docs and `model/` taxonomy**](fix-legacy-refs-in-rewrite-docs.md): The four reference docs under `graphitron-rewrite/docs/` (`code-generation-triggers.md`, `rewrite-model.md`, `rewrite-design-principles.md`, `argument-resolution.md`) have fallen behind several recent landings in `model/`. None of the drift breaks the build; all of it costs a first-time reader credibility. Audited 2026-04-28 against trunk; eight specific sites below. _(blocked by [docs-site-asciidoc](docs-site-asciidoc.md))_
 - [**Shared interface for `QueryField` / `ChildField` table-bound parallels**](shared-interface-queryfield-childfield.md): Root variants drop `joinPath` but share `filters · orderBy · pagination`.
+- [**Retire `@nodeId` and `IdReferenceField` synthesis shims**](retire-synthesis-shims.md): Two parallel shims survive in the classifier so legacy SDL keeps building. Both should retire on the same gate (sis migration to canonical SDL); their wire shape is independent but the user-visible migration is one piece of work, so the two retirements ship together. _(blocked by [id-reference-input-field](id-reference-input-field.md), [sis-rewrite-migration](sis-rewrite-migration.md))_
 - [**`JoinConditionRef` wrapper**](joinconditionref-wrapper.md): Distinguish `ConditionJoin` / `FkJoin` calling convention from `ConditionFilter` at the type level.
-- [**Paginated-fields transform coexistence**](paginated-fields-transform-coexistence.md): Document or wire `defaultPageSize` loss when `@asConnection` strip precedes the builder. _(blocked by [retire-maven-plugin](retire-maven-plugin.md))_
 - [**Annotated walkthrough of a generated file**](generated-output-walkthrough.md): Today's docs cover the input side (schema → classification → variant) and the model side (sealed hierarchy, capability interfaces, design principles) but a contributor reading them never sees a complete generated file explained section by section. The mental model "this is what the output looks like" gets reconstructed from grepping `graphitron-test/target/`. _(blocked by [rewrite-docs-entrypoint](rewrite-docs-entrypoint.md), [docs-site-asciidoc](docs-site-asciidoc.md))_
 - [**Consolidated test-tier guide**](rewrite-test-tier-guide.md): The rewrite has four test tiers (unit, pipeline, compilation against real jOOQ, execution against real PostgreSQL). The conventions for each tier are known and respected on trunk, but the documentation is scattered across three sources, so a new contributor adding a test has to triangulate to figure out which tier their test goes in, where the file lives, what shape it takes, and what they can or cannot assert.
 - [**Selection parser audit**](selection-parser-audit.md): `selection/` hand-rolls ~500 LOC; audit whether re-parsing is needed given what graphql-java already provides.
 - [**Class-level Javadoc and `package-info.java` sweep**](source-orientation-javadocs.md): A reader landing on `FieldBuilder.java` (2 172 lines) or `TypeFetcherGenerator.java` (1 646 lines) gets minimal in-file orientation; they have to bounce to the docs to learn what the class is for. The rewrite tree also has zero `package-info.java` files, which is the IDE-native place for "what is in this package" blurbs.
 - [**`PageInfo` wiring design decision**](pageinfo-wiring-design-decision.md): `WiringClassGenerator` currently emits no `PageInfoWiring` class; `PageInfo` fields (`hasNextPage`, `hasPreviousPage`, `startCursor`, `endCursor`) resolve via graphql-java's default property fetcher against whatever object `ConnectionHelper.pageInfo()` returns. This works by convention today.
 - [**Drop the assembled-schema rebuild in favour of per-variant graphql-java forms**](drop-assembled-schema-rebuild.md): Phase 5 of [firstclass-connection-types](firstclass-connection-types.md) rebuilds the assembled `GraphQLSchema` via `SchemaTransformer` so directive-driven `@asConnection` carriers carry their rewritten return type and pagination args. The rebuild only runs at generate time and is never seen by the runtime (which reconstructs its schema from emitted `<TypeName>Type.type()` calls in `GraphitronSchema.build()`).
-- [**`TypeResolver` wiring for interface/union types**](typeresolver-wiring-interface-union.md): `WiringClassGenerator` emits `DataFetcher` wiring only; GraphQL interface and union types also require a `TypeResolver` registered via `TypeRuntimeWiring.newTypeWiring("MyInterface").typeResolver(...)`. Currently no `TypeResolver` is wired for any interface or union type, so the runtime would get `Can't resolve type for object` errors. _(blocked by [stub-interface-union-fetchers](stub-interface-union-fetchers.md))_
-- [**Retire `@nodeId` synthesis shim**](retire-nodeid-synthesis-shim.md): Two field-level shim sites remain: _(blocked by [sis-rewrite-migration](sis-rewrite-migration.md))_
 - [**`NodeIdReferenceField` JOIN-projection form**](nodeidreferencefield-join-projection-form.md): The `@nodeId` + `@node` plan shipped the FK-mirror collapse path (single-hop FK whose target columns positionally match the target NodeType's `keyColumns`; the parent's FK source columns encode directly with no JOIN). Composite-FK that doesn't mirror, multi-hop, and condition-join cases emit a runtime `UnsupportedOperationException` stub today (`FetcherEmitter#dataFetcherValue`'s `NodeIdReferenceField` arm).
-- [**sis-graphql-spec migration to graphitron-rewrite**](sis-rewrite-migration.md): Track the consumer-side schema work needed to bring `sis-graphql-spec` cleanly onto graphitron-rewrite. This plan exists because sis is the canonical large-scale consumer; closing it out validates the rewrite's classification contracts end-to-end and lets us close courtesy windows on shims (notably [`retire-nodeid-synthesis-shim`](retire-nodeid-synthesis-shim.md), which gates on this work).
+- [**sis-graphql-spec migration to graphitron-rewrite**](sis-rewrite-migration.md): Track the consumer-side schema work needed to bring `sis-graphql-spec` cleanly onto graphitron-rewrite. This plan exists because sis is the canonical large-scale consumer; closing it out validates the rewrite's classification contracts end-to-end and lets us close courtesy windows on shims (notably [`retire-synthesis-shims`](retire-synthesis-shims.md), which gates on this work).
 
 ### Validation
 
 - [**Validate that list fields on tables without a PK require explicit ordering**](validate-list-fields-require-ordering.md): `FieldBuilder.resolveDefaultOrderSpec()` falls back to `OrderBySpec.Fixed([pk ASC])` when a list field has no `@defaultOrder` or `@orderBy` and the table has a PK. For tables without a PK, it returns `OrderBySpec.None` instead, which the generators faithfully emit as an empty `List.of()` — no `ORDER BY` clause. The result is a non-deterministic list every time the query runs.
-
-### Other
-
-- [**Retire `IdReferenceField` synthesis shim**](retire-id-reference-synthesis-shim.md): Promote the `IdReferenceField` synthesis shim WARN to a terminal classifier error once sis schemas have migrated to canonical `@nodeId(typeName:)` form. _(blocked by [id-reference-input-field](id-reference-input-field.md), [sis-rewrite-migration](sis-rewrite-migration.md))_
 
 
 ---
@@ -91,13 +82,10 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - [**Apollo Federation via federation-jvm transform**](federation-via-federation-jvm.md) — In Progress
 - [**Stub #3: Interface / union fetchers**](stub-interface-union-fetchers.md) — In Progress, stubs
-- [**Interface fetchers: cross-table participant fields via conditional LEFT JOIN**](interface-cross-table-participant-fields.md) — Backlog, cleanup, blocked by [stub-interface-union-fetchers](stub-interface-union-fetchers.md)
-- [**`TypeResolver` wiring for interface/union types**](typeresolver-wiring-interface-union.md) — Backlog, cleanup, blocked by [stub-interface-union-fetchers](stub-interface-union-fetchers.md)
 
 ### nodeid
 
 - [**`IdReferenceField` code generation**](id-reference-input-field.md) — Spec
-- [**NodeId emission from JSON-encoded row identity**](nodeid-from-json-row.md) — Backlog, architecture, blocked by [stub-interface-union-fetchers](stub-interface-union-fetchers.md), [federation-via-federation-jvm](federation-via-federation-jvm.md)
 - [**`NodeIdReferenceField` JOIN-projection form**](nodeidreferencefield-join-projection-form.md) — Backlog, cleanup
 
 ### service
@@ -136,7 +124,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### structural-refactor
 
 - [**Decompose `FieldBuilder`**](decompose-fieldbuilder.md) — Backlog, architecture
-- [**Extract semantic-check helpers from `classifyQueryField`**](extract-semantic-check-helpers.md) — Backlog, architecture
 - [**Shared interface for `QueryField` / `ChildField` table-bound parallels**](shared-interface-queryfield-childfield.md) — Backlog, cleanup
 - [**Decompose `TypeFetcherGenerator`**](decompose-typefetchergenerator.md) — Backlog, architecture, blocked by [stub-interface-union-fetchers](stub-interface-union-fetchers.md)
 - [**Load-bearing classifier guarantee audit annotations**](load-bearing-guarantee-audit.md) — In Review
@@ -159,11 +146,9 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### legacy-migration
 
 - [**Rebase and squash rewrite branch onto main**](history-squash.md) — Ready
-- [**Retire `IdReferenceField` synthesis shim**](retire-id-reference-synthesis-shim.md) — Backlog, blocked by [id-reference-input-field](id-reference-input-field.md), [sis-rewrite-migration](sis-rewrite-migration.md)
-- [**Paginated-fields transform coexistence**](paginated-fields-transform-coexistence.md) — Backlog, cleanup, blocked by [retire-maven-plugin](retire-maven-plugin.md)
+- [**Retire `@nodeId` and `IdReferenceField` synthesis shims**](retire-synthesis-shims.md) — Backlog, cleanup, blocked by [id-reference-input-field](id-reference-input-field.md), [sis-rewrite-migration](sis-rewrite-migration.md)
 - [**Retire `graphitron-maven-plugin` + `graphitron-schema-transform`**](retire-maven-plugin.md) — In Progress, blocked by [graphitron-lsp](graphitron-lsp.md)
 - [**Java LSP rewrite + introspect retirement + `dev` goal**](graphitron-lsp.md) — Ready
-- [**Retire `@nodeId` synthesis shim**](retire-nodeid-synthesis-shim.md) — Backlog, cleanup, blocked by [sis-rewrite-migration](sis-rewrite-migration.md)
 - [**sis-graphql-spec migration to graphitron-rewrite**](sis-rewrite-migration.md) — Backlog, cleanup
 
 
