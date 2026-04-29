@@ -1,7 +1,7 @@
 ---
 id: R41
 title: "@field(name:) on @service method args"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 5
 theme: service

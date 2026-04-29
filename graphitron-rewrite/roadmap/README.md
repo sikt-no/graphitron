@@ -17,7 +17,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R1` | `BatchKey` lifter directive | Spec | [plan](batchkey-lifter-directive.md) |
 | `R37` | Stub #8: Non-table / scalar / reference child leaves | Spec | [plan](stub-non-table-scalar-child-leaves.md) |
 | `R20` | `IdReferenceField` code generation | Spec | [plan](id-reference-input-field.md) |
-| `R41` | @field(name:) on @service method args | Spec | [plan](service-arg-java-name-override.md) |
 | `R3` | Classification vocabulary follow-ups | Spec | [plan](classification-vocabulary-followups.md) |
 | `R31` | Context-value registry + native multi-tenant fan-out for `@service` <sub>blocked by: [mutations](mutations.md)</sub> | Spec | [plan](service-context-value-registry.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec | [plan](nestingfield-multiparent-tablefield.md) |
@@ -25,6 +24,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R22` | Mutation bodies | Spec | [plan](mutations.md) |
 | `R9` | Fold graphitron.sikt.no into the Maven build (AsciiDoc + GitHub Pages) | Spec | [plan](docs-site-asciidoc.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
+| `R41` | @field(name:) on @service method args | Ready | [plan](service-arg-java-name-override.md) |
 | `R8` | Docs as an index into classification tests | Ready (deferred) | [plan](docs-as-index-into-tests.md) |
 | `R18` | Java LSP rewrite + introspect retirement + `dev` goal | Ready | [plan](graphitron-lsp.md) |
 | `R36` | Stub #3: Interface / union fetchers | In Progress | [plan](stub-interface-union-fetchers.md) |
@@ -88,7 +88,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### service
 
 - `R1` [**`BatchKey` lifter directive**](batchkey-lifter-directive.md) — Spec, architecture
-- `R41` [**@field(name:) on @service method args**](service-arg-java-name-override.md) — Spec, architecture
+- `R41` [**@field(name:) on @service method args**](service-arg-java-name-override.md) — Ready, architecture
 - `R31` [**Context-value registry + native multi-tenant fan-out for `@service`**](service-context-value-registry.md) — Spec, blocked by [mutations](mutations.md)
 - `R32` [**Implement `@service` rows-method body**](service-rows-method-body.md) — Backlog, architecture
 - `R11` [**`DSLContext` on `@condition` / `@tableMethod` methods**](dslcontext-on-condition-tablemethod.md) — Backlog, architecture
