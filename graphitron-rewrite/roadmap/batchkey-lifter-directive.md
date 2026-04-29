@@ -258,15 +258,14 @@ a per-field directive avoids inventing a second mapping language for the
 6. **`targetColumns` non-empty.** A zero-arity lifter is meaningless (no
    batching axis). AUTHOR_ERROR.
 
-7. **Cardinality coverage.** Both single (`T`) and list (`[T]`) returns are
-   admitted. The directive does not change the cardinality contract: the
-   field's wrapper drives whether the rows-method emits a list-collecting
-   query or a single-row terminal join, exactly as for catalog-FK
-   `RecordTableField` today. (`SplitRowsMethodEmitter.unsupportedReason` for
-   `RecordTableField` rejects single-cardinality with a "not yet supported"
-   stub at
-   [`SplitRowsMethodEmitter.java:327-339`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/SplitRowsMethodEmitter.java);
-   that stub stays in place and the lifter path inherits it.)
+7. **Cardinality coverage.** List (`[T]`) returns are admitted; single (`T`)
+   returns are rejected at validate time per Invariant #10 (the existing
+   `SplitRowsMethodEmitter.unsupportedReason` stub is promoted to a
+   build-time error in this landing). The directive does not change the
+   cardinality contract: the field's wrapper drives whether the rows-method
+   emits a list-collecting query or a single-row terminal join, exactly as
+   for catalog-FK `RecordTableField` today. When single-cardinality emission
+   is implemented, Invariant #10 is the single site to relax.
 
 8. **`@lookupKey` interaction.** The existing classifier branch in
    `FieldBuilder.classifyChildFieldOnResultType` produces
@@ -283,31 +282,108 @@ a per-field directive avoids inventing a second mapping language for the
    helpers that don't share the rows-method DataLoader path. AUTHOR_ERROR:
    `"@batchKeyLifter is not supported on @asConnection fields"`.
 
+10. **Single-cardinality on `RecordTableField` / `RecordLookupTableField`
+    rejected at validate time.** The existing
+    `SplitRowsMethodEmitter.unsupportedReason` stub at
+    [`SplitRowsMethodEmitter.java:327-339`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/SplitRowsMethodEmitter.java)
+    rejects single-cardinality emission for these two field variants with a
+    "not yet supported" runtime stub. *Validator mirrors classifier
+    invariants* (rewrite-design-principles.md) requires this gap to close at
+    build time: a classifier acceptance must never land on an emitter arm
+    that does not exist. This landing promotes the stub to a validator
+    rejection in `GraphitronSchemaValidator.validateRecordTableField` /
+    `validateRecordLookupTableField`, fed by the same set the dispatcher
+    reads. The lifter directive does not introduce the gap, but it expands
+    the surface that lands on the path; closing the principle violation in
+    the same landing keeps "problems caught at build time" honest. The stub
+    in `SplitRowsMethodEmitter` becomes an `IllegalStateException` (the
+    validator already rejected, so reaching emission is a classifier bug).
+    When list emission for these variants ships, the validator gate flips
+    off in the same landing as the emitter arm. Validator message:
+    `"<RecordTableField|RecordLookupTableField> '<parent>.<field>' returns
+    a single-cardinality '<T>'; only list returns ('[T]') are supported in
+    this release"`.
+
 ---
 
 ## Model
 
-### `BatchKey.LifterRowKeyed` and `LifterRef`
+### `BatchKey.LifterRowKeyed`, `RecordParentBatchKey`, and `LifterRef`
 
-Add a fifth permit on the sealed `BatchKey` interface
-([`BatchKey.java`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/model/BatchKey.java))
-plus a small typed reference next to it:
+The naive shape (a fifth flat permit on `BatchKey` whose `keyColumns()` accessor
+silently changes meaning by variant) widens an interface-level contract from
+"parent-side PK/FK columns" to "whatever the DataLoader key consists of",
+forcing every polymorphic consumer of `keyColumns()` to re-discover which side
+of the join it received columns for. That violates *Sealed hierarchies over
+enums for typed information* (variants with different data sharing one
+accessor) and *Narrow component types over broad interfaces* (the certainty
+"these are parent PKs" is lost across the type). Instead, the landing
+introduces a sub-hierarchy plus side-aware accessors, and treats the lifter
+path's single hop as a type-system fact rather than a classifier convention.
 
 ```java
-record LifterRef(
-    ClassName declaringClass,   // pre-resolved JavaPoet ClassName, never re-parsed
-    String methodName           // simple static-method name on declaringClass
-) {}
+public sealed interface BatchKey
+        permits BatchKey.RowKeyed, BatchKey.RecordKeyed,
+                BatchKey.MappedRowKeyed, BatchKey.MappedRecordKeyed,
+                BatchKey.LifterRowKeyed {
 
-record LifterRowKeyed(
-    List<ColumnRef> keyColumns, // DataLoader-key columns; on this variant the
-                                // parent has no jOOQ presence, so they are the
-                                // target-side columns the lifter feeds in.
-    LifterRef lifter
-) implements BatchKey {
-    @Override
-    public String javaTypeName() {
-        return containerType("List", "Row", keyColumns);
+    /** Common to every permit; drives the SOURCES parameter type. */
+    String javaTypeName();
+
+    /**
+     * Sub-hierarchy: keys whose columns name the parent-side PK/FK. The four
+     * existing catalog-resolvable permits live here. {@code parentKeyColumns}
+     * names the side explicitly so polymorphic consumers cannot confuse it
+     * with target-side columns supplied by a lifter.
+     */
+    sealed interface ParentKeyed extends BatchKey
+            permits RowKeyed, RecordKeyed, MappedRowKeyed, MappedRecordKeyed {
+        List<ColumnRef> parentKeyColumns();
+    }
+
+    /**
+     * Sub-hierarchy: keys produced for {@code @record} (non-table) parents.
+     * Permits {@link RowKeyed} (catalog FK on a record parent) and
+     * {@link LifterRowKeyed} (developer-supplied lifter). This is the input
+     * type for {@code GeneratorUtils.buildRecordParentKeyExtraction}; any
+     * future caller routing a {@link RecordKeyed} or mapped variant here is
+     * a compile error rather than a runtime {@code IllegalStateException}.
+     */
+    sealed interface RecordParentBatchKey extends BatchKey
+            permits RowKeyed, LifterRowKeyed {}
+
+    record RowKeyed(List<ColumnRef> parentKeyColumns)
+            implements ParentKeyed, RecordParentBatchKey {
+        @Override public String javaTypeName() {
+            return containerType("List", "Row", parentKeyColumns);
+        }
+    }
+    // RecordKeyed, MappedRowKeyed, MappedRecordKeyed: unchanged shape, but
+    // their column accessor is renamed parentKeyColumns() (§1a).
+
+    record LifterRef(
+        ClassName declaringClass,   // pre-resolved JavaPoet ClassName, never re-parsed
+        String methodName           // simple static-method name on declaringClass
+    ) {}
+
+    record LifterRowKeyed(
+        JoinStep.LiftedHop hop,     // single source of truth for the target-side
+                                    // column tuple AND the single-hop invariant;
+                                    // see "Single-hop guarantee" below
+        LifterRef lifter
+    ) implements RecordParentBatchKey {
+
+        /**
+         * Target-side columns the lifter materialises. Named distinctly from
+         * {@link ParentKeyed#parentKeyColumns()} because the SQL identity is
+         * different (target table, not parent). Both produce {@code RowN<...>}
+         * of the same Java types — that is the lifter contract.
+         */
+        public List<ColumnRef> targetKeyColumns() { return hop.targetColumns(); }
+
+        @Override public String javaTypeName() {
+            return containerType("List", "Row", hop.targetColumns());
+        }
     }
 }
 ```
@@ -315,18 +391,15 @@ record LifterRowKeyed(
 `javaTypeName` reuses the same `RowN` envelope as `RowKeyed`: the DataLoader
 key type is identical, only the extraction site differs.
 
-**`keyColumns` semantics across variants.** Adding `LifterRowKeyed` makes the
-`BatchKey.keyColumns()` accessor uniformly mean *"the column tuple that
-constitutes the DataLoader key"*. On `RowKeyed` / `RecordKeyed` /
-`MappedRowKeyed` / `MappedRecordKeyed` those columns happen to be parent-side
-FK or PK columns (the only thing the catalog could supply for a record
-parent); on `LifterRowKeyed` they are target-side columns the lifter materialises.
-Both interpretations produce the same `RowN<...>` shape with the same column
-types — that is the whole point of the lifter contract. The existing
-`BatchKey` interface-level javadoc currently says "PK columns from the parent
-table"; this landing widens it to the DataLoader-key reading and removes the
-parent-only wording in the same commit (Phase 1a), so consumers reading
-`batchKey.keyColumns()` polymorphically see one consistent meaning.
+**Why `LifterRowKeyed` carries its `LiftedHop` directly.** The naive shape
+duplicated the `List<ColumnRef>` on both `LifterRowKeyed.keyColumns` and
+`LiftedHop.targetColumns`, with the classifier responsible for keeping them
+identical. A future refactor that populates one and not the other emits silent
+JOIN garbage: DataLoader keys carry one tuple, the JOIN matches another, no
+test fails until first dispatch. Holding the `LiftedHop` once on the BatchKey
+collapses the two slots into a single source of truth and makes the single-hop
+invariant a type fact (one record, one hop) rather than a classifier
+convention (see "Single-hop guarantee" below).
 
 **Pre-resolved `ClassName` over flat strings.** Storing `lifter.declaringClass`
 as a JavaPoet `ClassName` rather than a `String` puts the resolution at the
@@ -337,6 +410,16 @@ the field's parent `ResultType` already carries `fqClassName`, and the key-extra
 emitter receives `ResultType` the same way `buildRecordKeyExtraction` does today
 (`GeneratorUtils.java:200-208`). Duplicating it on the BatchKey would create
 two sources of truth for the same parent.
+
+**`keyColumns()` is no longer an interface-level accessor.** The legacy
+`BatchKey.keyColumns()` accessor is removed in this landing; the four catalog
+permits expose `parentKeyColumns()` (under `ParentKeyed`) and `LifterRowKeyed`
+exposes `targetKeyColumns()`. Code that genuinely needs side-agnostic access
+to "the column tuple that drives the SOURCES type" gets it via
+`javaTypeName()` (which is already side-agnostic by construction); code that
+needs the columns themselves switches on identity, which is exactly when the
+parent-vs-target distinction matters. This restores the principle that a
+shared accessor's meaning does not depend on the runtime variant.
 
 **Why not reuse `MethodRef.Basic`?** `MethodRef.Basic` carries `params:
 List<Param>` and `returnType: TypeName` — both redundant for a lifter
@@ -357,26 +440,30 @@ exercise multi-parent batching without explicit cache-correctness assertions
 because that contract is treated as a jOOQ guarantee.)
 
 The four existing variants (`RowKeyed`, `RecordKeyed`, `MappedRowKeyed`,
-`MappedRecordKeyed`) are untouched. Adding `LifterRowKeyed` requires four
-emitter-side changes, each a sealed-switch arm rather than an `instanceof`:
+`MappedRecordKeyed`) keep their shape (the column accessor is renamed
+`parentKeyColumns()` under the new `ParentKeyed` sub-interface). Adding
+`LifterRowKeyed` requires four emitter-side changes, each driven by sealed
+identity or a narrowed parameter type rather than `instanceof`:
 
 - [`GeneratorUtils.keyElementType`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/GeneratorUtils.java)
-  — sealed-type switch, add `LifterRowKeyed` to the row-shape arm (§2a).
+  — sealed-type switch over `BatchKey`. The four `ParentKeyed` permits read
+  `parentKeyColumns()`; `LifterRowKeyed` reads `targetKeyColumns()` (§2a).
 - [`GeneratorUtils.buildRecordParentKeyExtraction`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/GeneratorUtils.java)
-  — the *record-parent* key-extraction helper (renamed from
-  `buildRecordKeyExtraction`) becomes a sealed switch on `BatchKey` with arms
-  for the existing record-parent shapes plus `LifterRowKeyed`. The fetcher
-  calls this once; no `instanceof` at the call site (§2b).
+  — parameter narrows from `BatchKey` to
+  `BatchKey.RecordParentBatchKey`. The switch has exactly two arms (`RowKeyed`,
+  `LifterRowKeyed`) — the @service-only permits cannot reach this method by
+  type, so no defensive throwing arms (§2b).
 - [`GeneratorUtils.buildKeyExtraction`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/GeneratorUtils.java)
-  — the `@table`-parent variant, separate switch; add an `IllegalStateException`
-  arm for `LifterRowKeyed` to keep the switch exhaustive and force any future
-  caller mis-routing a lifter key here to fail at build time (§2a).
+  — the `@table`-parent variant; parameter narrows to `BatchKey.ParentKeyed`.
+  `LifterRowKeyed` is excluded by the type system, so no `IllegalStateException`
+  arm is needed (§2a).
 - [`SplitRowsMethodEmitter.emitParentInputAndFkChain`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/SplitRowsMethodEmitter.java)
-  — the prelude's `(BatchKey.RowKeyed) batchKey` cast and the
-  `(JoinStep.FkJoin) joinPath.get(0)` cast both become sealed-switches over
-  `BatchKey` and `JoinStep` respectively (§2d).
+  — the prelude's `(BatchKey.RowKeyed) batchKey` cast collapses to the sealed
+  `RecordParentBatchKey` accessor pair; the `(JoinStep.FkJoin) joinPath.get(0)`
+  cast becomes a `JoinStep.WithTarget` capability read for the uniform
+  accessors and a sealed switch only at the JOIN-on predicate (§2d).
 
-### `JoinStep.LiftedHop` — a third permit
+### `JoinStep.LiftedHop` and the `WithTarget` capability
 
 `SplitRowsMethodEmitter.buildListMethod` reads `joinPath` and emits a JOIN
 against the target table on the FK columns. The lifter path has no catalog FK,
@@ -390,29 +477,53 @@ lifter path versus the catalog-FK path. That trades classifier complexity
 (synthesise a half-empty record) for emitter complexity (don't read these
 fields; trust this comment) — the wrong direction.
 
-Instead, add a third permit to the sealed `JoinStep` interface
-([`JoinStep.java:56`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/model/JoinStep.java)):
+Instead, add a third permit to the sealed `JoinStep` interface plus a small
+**`WithTarget` capability** that captures what `FkJoin` and `LiftedHop` share
+without forcing every reader to switch on identity to recover it:
 
 ```java
 public sealed interface JoinStep
         permits JoinStep.FkJoin, JoinStep.ConditionJoin, JoinStep.LiftedHop {
+
+    /**
+     * Capability mixed in by hops that pre-resolve a target table the prelude
+     * joins to. Lets the rows-method prelude's FK-chain loop read
+     * {@code step.targetTable()}, {@code step.targetColumns()}, and
+     * {@code step.alias()} polymorphically — i.e. exactly where the accessors
+     * mean the same thing on every implementor. The genuine identity fork
+     * (FK source-side columns vs. lifter target-side columns for the JOIN-on
+     * predicate) stays a sealed switch where it belongs.
+     */
+    interface WithTarget {
+        TableRef targetTable();
+        List<ColumnRef> targetColumns();
+        String alias();
+    }
+
+    record FkJoin(
+        // ... existing components unchanged ...
+    ) implements JoinStep, WithTarget {}
+
+    record ConditionJoin(MethodRef condition, String alias)
+        implements JoinStep {}
+
     /**
      * One hop pre-keyed by a {@link BatchKey.LifterRowKeyed} — no foreign key,
      * no traversal direction, no source-side columns. The DataLoader key tuple
-     * (carried by the BatchKey) is the target-column tuple, so the JOIN-on
+     * carried by the BatchKey *is* the target-column tuple, so the JOIN-on
      * predicate of the rows-method becomes
      * {@code target.<targetColumns[i]> = parentInput.field(i+1)} directly.
      *
-     * <p>Always appears as the sole step on a lifter-classified path
-     * ({@link FieldBuilder#classifyChildFieldOnResultType} when the field
-     * carries {@code @batchKeyLifter}); the classifier never composes a
-     * {@code LiftedHop} with other hops in v1.
+     * <p>{@code LifterRowKeyed} holds a single {@code LiftedHop} on its own
+     * record; the classifier publishes the same instance through
+     * {@code joinPath = [hop]} for back-compat with the existing rows-method
+     * loop, but the BatchKey is the source of truth.
      */
     record LiftedHop(
         TableRef targetTable,
         List<ColumnRef> targetColumns,
         String alias
-    ) implements JoinStep {}
+    ) implements JoinStep, WithTarget {}
 }
 ```
 
@@ -428,15 +539,20 @@ The classifier's path-walker (`BuildContext.parsePath`) is bypassed for
 lifter-directived fields: `parsePath` searches the catalog for FK matches and
 rejects unresolvable hops. With the lifter present we know the schema author
 has supplied the keying contract directly, so we skip the walker and produce
-`joinPath = [LiftedHop]` instead. `FieldBuilder.classifyChildFieldOnResultType`
-forks early on a `hasBatchKeyLifter` predicate and routes through
-`resolveBatchKeyLifter` (§1e); downstream code sees a sealed `JoinStep` whose
-identity tells it which JOIN flavour to emit.
+`joinPath = [hop]` from the same `LiftedHop` instance the BatchKey holds.
+`FieldBuilder.classifyChildFieldOnResultType` forks early on a
+`hasBatchKeyLifter` predicate and routes through `resolveBatchKeyLifter`
+(§1e); downstream code sees a sealed `JoinStep` whose identity tells it
+which JOIN flavour to emit.
 
-**Single-hop guarantee.** `LiftedHop` paths are always exactly one step in
-v1. The classifier upholds this invariant; the rows-method prelude relies on
-it to skip the multi-hop FK-chain bridging logic. Both sides wear the
-load-bearing-classifier-check annotation pair (§1d producer, §2d consumer).
+**Single-hop guarantee, type-system-enforced.** Because `LifterRowKeyed`
+holds a single `LiftedHop` (not a `List<LiftedHop>`), the single-hop
+invariant is a type fact rather than a classifier convention: there is
+nowhere for a second hop to live on the lifter path. The rows-method prelude
+relies on this to skip the multi-hop FK-chain bridging logic; the consumer
+side wears `@DependsOnClassifierCheck(key = "lifter-path-is-single-hop")`
+(§2d) for find-usages navigation, but the underlying guarantee is enforced
+by the model shape itself, not by an out-of-band annotation.
 
 ---
 
@@ -447,32 +563,60 @@ load-bearing-classifier-check annotation pair (§1d producer, §2d consumer).
 **Goal:** parse the directive, resolve the lifter, produce the new
 `BatchKey.LifterRowKeyed` and `JoinStep.LiftedHop`. No emission changes.
 
-#### 1a. Model permits and refs
+#### 1a. Model permits, sub-interfaces, refs, and accessor renames
 
-Three coordinated additions, all in `model/`:
+Six coordinated additions, all in `model/`:
 
 1. `LifterRef(ClassName declaringClass, String methodName)` — new record,
    sibling of `MethodRef` rather than a `MethodRef` permit (rationale in
    §Model). Lives at `model/LifterRef.java`.
-2. `BatchKey.LifterRowKeyed(List<ColumnRef> keyColumns, LifterRef lifter)` —
-   fifth permit on the sealed `BatchKey` interface. Calls
-   `BatchKey.containerType("List", "Row", keyColumns)` from `javaTypeName()`,
-   identical to `RowKeyed`; the helper is a string builder, no per-variant
-   logic to extend.
-3. `JoinStep.LiftedHop(TableRef targetTable, List<ColumnRef> targetColumns,
-   String alias)` — third permit on the sealed `JoinStep` interface.
+2. **`BatchKey.ParentKeyed`** — sealed sub-interface, permits the four
+   existing variants (`RowKeyed`, `RecordKeyed`, `MappedRowKeyed`,
+   `MappedRecordKeyed`). Declares `List<ColumnRef> parentKeyColumns()`. The
+   four records are renamed to expose `parentKeyColumns()` (was `keyColumns()`).
+3. **`BatchKey.RecordParentBatchKey`** — sealed sub-interface, permits
+   `RowKeyed` and `LifterRowKeyed`. No methods; it exists purely as the
+   parameter type for `GeneratorUtils.buildRecordParentKeyExtraction`,
+   making "the @service-only permits cannot reach this method" a
+   compile-time fact.
+4. **`BatchKey.LifterRowKeyed(JoinStep.LiftedHop hop, LifterRef lifter)`** —
+   fifth top-level permit. Implements `RecordParentBatchKey` (not `ParentKeyed`).
+   Exposes `targetKeyColumns()` (delegates to `hop.targetColumns()`); uses
+   `containerType("List", "Row", hop.targetColumns())` from `javaTypeName()`.
+   Holding the `LiftedHop` directly makes the column tuple a single source of
+   truth and the single-hop invariant a type-system fact.
+5. **`JoinStep.WithTarget`** — non-sealed capability interface (members:
+   `targetTable`, `targetColumns`, `alias`). Mixed in by `FkJoin` and
+   `LiftedHop`; used by the rows-method prelude wherever the same accessors
+   mean the same thing on every implementor (§2d).
+6. `JoinStep.LiftedHop(TableRef targetTable, List<ColumnRef> targetColumns,
+   String alias)` — third permit on the sealed `JoinStep` interface,
+   implementing `WithTarget`.
 
-**`BatchKey.keyColumns()` javadoc rewrite.** The interface-level javadoc on
-`BatchKey` currently asserts the columns "always come from the parent type's
-`TableRef.primaryKeyColumns()` — never from reflection". That wording becomes
-false the moment `LifterRowKeyed` lands. Replace it with the
-DataLoader-key reading (§Model "`keyColumns` semantics across variants"):
-the columns produce the `RowN`/`RecordN` type-args; the SQL identities are
-parent-side on every variant whose parent has a catalog table, target-side on
-`LifterRowKeyed`. Same edit removes the "Parent types without a `TableRef`
-cannot produce a `BatchKey` and fail classification upstream" sentence — the
-new permit is precisely the parent-without-`TableRef` case the schema author
-opts into via `@batchKeyLifter`.
+**`BatchKey.keyColumns()` removal.** The naive plan widened the interface-level
+`keyColumns()` accessor to "DataLoader-key columns regardless of side". This
+landing instead **removes** that accessor from `BatchKey` entirely:
+
+- Mechanical rename of the four catalog records' `keyColumns` component to
+  `parentKeyColumns`. (One-liner in each record header; all references inside
+  `BatchKey.java` and call sites are tracked by the compiler.)
+- Lift the rename through every reader: `GeneratorUtils.keyElementType`,
+  `GeneratorUtils.buildRowKeyType`, `MethodRef.Param.Sourced.typeName()` etc.
+  All four current readers are switching on identity already (so they can
+  call the renamed accessor) or projecting through `containerType`. The
+  renames are a single search-and-replace landing alongside the new permit.
+- Update the interface-level javadoc on `BatchKey` to drop "always come from
+  the parent type's `TableRef.primaryKeyColumns()`" and "Parent types without
+  a `TableRef` cannot produce a `BatchKey`" wording. The new wording reads:
+  "Side-aware accessors live on the sub-interfaces: `ParentKeyed` exposes
+  `parentKeyColumns()` for the four catalog variants; `LifterRowKeyed`
+  exposes `targetKeyColumns()`."
+
+This pattern is what *Sealed hierarchies over enums for typed information*
+calls for: variants whose data has different meaning carry different
+accessors, and code that claims uniformity is forced to express that claim
+either through identity or through a capability — never through a shared
+accessor whose meaning silently depends on the variant.
 
 #### 1b. Directive constants
 
@@ -516,7 +660,9 @@ if (hasLifter) {
                 RejectionKind.AUTHOR_ERROR, lifterResult.error());
     }
     var batchKey = lifterResult.batchKey();
-    var joinPath = List.<JoinStep>of(lifterResult.liftedHop());
+    // joinPath publishes the same hop instance held by the BatchKey; the
+    // List wrap is the rows-method emitter's existing API surface.
+    var joinPath = List.<JoinStep>of(batchKey.hop());
     var tfc = resolveTableFieldComponents(fieldDef, lifterResult.targetTable(), elementTypeName);
     if (tfc.error() != null) {
         return new UnclassifiedField(parentTypeName, name, location, fieldDef,
@@ -571,20 +717,25 @@ without a parent.
 
 #### 1e. `resolveBatchKeyLifter` helper
 
-A new private method on `FieldBuilder`. It carries the
-`@LoadBearingClassifierCheck` annotation: this is the sole producer of
-`BatchKey.LifterRowKeyed` and `JoinStep.LiftedHop`, and the rows-method
-prelude (§2d) relies on the pairing.
+A new private method on `FieldBuilder`. It is the sole producer of two
+distinct facts the emitter side later relies on. Each fact gets its own
+load-bearing key so a future relaxation invalidates only the consumers that
+actually relied on the relaxed half:
 
 ```java
 @LoadBearingClassifierCheck(
-    key = "lifter-path-shape",
-    description = "Sole producer of (BatchKey.LifterRowKeyed, "
-        + "JoinStep.LiftedHop). A field carrying @batchKeyLifter classifies "
-        + "as RecordTableField/RecordLookupTableField with joinPath = "
-        + "[LiftedHop] (single hop) and batchKey = LifterRowKeyed. The "
-        + "rows-method prelude forks on JoinStep identity and assumes "
-        + "single-hop on the lifter path.")
+    key = "lifter-classifies-as-record-table-field",
+    description = "A field carrying @batchKeyLifter classifies as "
+        + "RecordTableField or RecordLookupTableField (never any other "
+        + "variant). RecordParentBatchKey-typed call sites in GeneratorUtils "
+        + "depend on this routing.")
+@LoadBearingClassifierCheck(
+    key = "lifter-batchkey-is-lifterrowkeyed",
+    description = "On the lifter path, the field's BatchKey is "
+        + "LifterRowKeyed (and never any other RecordParentBatchKey permit). "
+        + "buildRecordParentKeyExtraction's two-arm switch and the "
+        + "rows-method prelude's RecordParentBatchKey accessor pair rely on "
+        + "this so the type system carries the discrimination.")
 private BatchKeyLifterResult resolveBatchKeyLifter(
         String parentTypeName, GraphQLFieldDefinition fieldDef,
         ResultType parentResultType, String targetSqlTableName) {
@@ -600,20 +751,40 @@ private BatchKeyLifterResult resolveBatchKeyLifter(
     //    parent fqClassName, verify return type is org.jooq.RowN
     //    (§Invariants 2-3). Capture the loaded Class<?> as a JavaPoet ClassName.
     // 4. Arity + column-class match (§Invariants 4).
-    // 5. Build BatchKey.LifterRowKeyed (with LifterRef) and JoinStep.LiftedHop
-    //    per §Model. The LiftedHop's targetColumns are the resolved
-    //    List<ColumnRef> from step 2 — same list referenced by the BatchKey.
-    // 6. Resolve ReturnTypeRef.TableBoundReturnType for the field's @table return.
+    // 5. Build the JoinStep.LiftedHop once from the resolved targetTable +
+    //    targetColumns + alias, then construct
+    //    BatchKey.LifterRowKeyed(hop, lifterRef). The hop is the *only* source
+    //    of truth for the target-side column tuple; the BatchKey reads through
+    //    it via targetKeyColumns(). No second copy of the column list exists.
+    // 6. Resolve ReturnTypeRef.TableBoundReturnType for the field's @table
+    //    return. Publish joinPath = [hop] using the same hop instance held
+    //    by the BatchKey.
 }
 
 private record BatchKeyLifterResult(
-    BatchKey.LifterRowKeyed batchKey,
-    JoinStep.LiftedHop liftedHop,
-    TableRef targetTable,
+    BatchKey.LifterRowKeyed batchKey,         // holds the LiftedHop directly
     ReturnTypeRef.TableBoundReturnType tbReturnType,
     String error
-) {}
+) {
+    // No separate liftedHop / targetTable / targetColumns slots: every reader
+    // reaches them through batchKey.hop(). One source of truth.
+    JoinStep.LiftedHop liftedHop() { return batchKey.hop(); }
+    TableRef targetTable()         { return batchKey.hop().targetTable(); }
+}
 ```
+
+The single-hop guarantee is *not* re-stated as a producer-side load-bearing
+key — it is enforced by the model shape (`LifterRowKeyed` holds one
+`LiftedHop`, not a `List<LiftedHop>`). The §2d consumer that skips multi-hop
+bridging on the lifter path still tags itself with
+`@DependsOnClassifierCheck(key = "lifter-path-is-single-hop")` for
+find-usages navigation, but that key has no corresponding
+`@LoadBearingClassifierCheck` producer because the type system *is* the
+producer; the consumer-side key documents the reliance without duplicating
+the guarantee. The audit's "every consumer key has a producer" rule is
+relaxed for keys whose guarantee is structural — declared via a comment on
+the audit test rather than by a dummy `@LoadBearingClassifierCheck` (an
+audit-test update lands alongside this directive).
 
 The class loader / method walker borrows the existing
 `ServiceCatalog.reflectServiceMethod` shape but is simpler: only one parameter
@@ -637,10 +808,10 @@ with each landing).
 
 | SDL shape | Expected outcome |
 |---|---|
-| Pojo parent + `@batchKeyLifter` valid Row1, list return | `RecordTableField` with `BatchKey.LifterRowKeyed`, `joinPath = [JoinStep.LiftedHop]`, `LifterRef.declaringClass` resolves to the supplied class |
-| Pojo parent + `@batchKeyLifter` valid Row2 (composite key), list return | same; `keyColumns` arity 2; `LiftedHop.targetColumns` arity 2 |
+| Pojo parent + `@batchKeyLifter` valid Row1, list return | `RecordTableField` with `BatchKey.LifterRowKeyed`; `field.batchKey().hop()` is the same instance as `field.joinPath().get(0)` (no duplicated column list); `LifterRef.declaringClass` resolves to the supplied class |
+| Pojo parent + `@batchKeyLifter` valid Row2 (composite key), list return | same; `batchKey.targetKeyColumns()` arity 2; `batchKey.hop().targetColumns()` is the same `List<ColumnRef>` instance |
 | Pojo parent + `@batchKeyLifter` + `@lookupKey` argument, list return | `RecordLookupTableField` with `BatchKey.LifterRowKeyed`, lookup mapping populated |
-| Pojo parent + `@batchKeyLifter`, single-cardinality return | `RecordTableField` (classifies); `SplitRowsMethodEmitter.unsupportedReason` stub fires at emission (existing behaviour, not in scope here) |
+| Pojo parent + `@batchKeyLifter`, single-cardinality return | `UnclassifiedField` AUTHOR_ERROR per Invariant #10 — the validator promotes the existing `SplitRowsMethodEmitter.unsupportedReason` stub for `RecordTableField` / `RecordLookupTableField` to a build-time rejection so a classifier acceptance never lands on an emitter that has no arm for it (§2e) |
 | Pojo parent (null `fqClassName`) + `@batchKeyLifter` | `UnclassifiedField` per Invariant #1 |
 | `@table` parent + `@batchKeyLifter` | `UnclassifiedField` AUTHOR_ERROR pointing at `@reference` |
 | `JooqTableRecordType` parent + `@batchKeyLifter` | `UnclassifiedField` AUTHOR_ERROR pointing at catalog FK |
@@ -670,75 +841,81 @@ classified field actually generates a working DataFetcher and rows-method.
 
 #### 2a. `GeneratorUtils.keyElementType` and `buildKeyExtraction`
 
-Two sealed-type switches must add an arm or compilation breaks.
+`keyElementType` extends to a five-arm switch; `buildKeyExtraction` narrows
+its parameter type so `LifterRowKeyed` is excluded by the type system rather
+than by a runtime throw.
 
 **`keyElementType`** at
 [`GeneratorUtils.java:150-155`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/GeneratorUtils.java)
-extends to a five-arm form. `LifterRowKeyed` reuses
-`buildRowKeyType(keyColumns())` (same `RowN` shape as `RowKeyed` /
-`MappedRowKeyed`). Switch becomes:
+becomes a five-arm sealed switch over `BatchKey`. Because `keyColumns()` is
+no longer on the interface, each arm reads through the side-aware accessor:
 
 ```java
 return switch (batchKey) {
-    case BatchKey.RowKeyed _, BatchKey.MappedRowKeyed _, BatchKey.LifterRowKeyed _
-        -> buildRowKeyType(batchKey.keyColumns());
-    case BatchKey.RecordKeyed _, BatchKey.MappedRecordKeyed _
-        -> buildRecordNKeyType(batchKey.keyColumns());
+    case BatchKey.RowKeyed rk          -> buildRowKeyType(rk.parentKeyColumns());
+    case BatchKey.MappedRowKeyed mrk   -> buildRowKeyType(mrk.parentKeyColumns());
+    case BatchKey.LifterRowKeyed lrk   -> buildRowKeyType(lrk.targetKeyColumns());
+    case BatchKey.RecordKeyed rk       -> buildRecordNKeyType(rk.parentKeyColumns());
+    case BatchKey.MappedRecordKeyed mrk-> buildRecordNKeyType(mrk.parentKeyColumns());
 };
 ```
+
+The accessor names make the side distinction visible at every read site —
+exactly the property that vanishes if a polymorphic `keyColumns()` survives
+on the interface.
 
 **`buildKeyExtraction`** at
 [`GeneratorUtils.java:261-289`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/GeneratorUtils.java)
 is the `@table`-parent `@splitQuery` accessor
-(`(($T) env.getSource()).get(...)`) — a different code path from the
-record-parent lifter. The lifter never lands here; the record-parent
-extractor (§2b) is the lifter's home. Add an exhaustive arm so the compiler
-forces the routing to stay correct:
+(`(($T) env.getSource()).get(...)`). The lifter never lands here; the
+record-parent extractor (§2b) is the lifter's home. Instead of adding a
+defensive `IllegalStateException` arm for `LifterRowKeyed`, **narrow the
+parameter type from `BatchKey` to `BatchKey.ParentKeyed`**:
 
 ```java
-case BatchKey.LifterRowKeyed _ ->
-    throw new IllegalStateException(
-        "buildKeyExtraction is the @table-parent path; LifterRowKeyed flows "
-        + "through buildRecordParentKeyExtraction");
+public static CodeBlock buildKeyExtraction(
+        BatchKey.ParentKeyed batchKey,   // was: BatchKey
+        ResultType parentResultType, ...) { ... }
 ```
 
-Any future caller that mis-routes a `LifterRowKeyed` to this helper fails at
-build time with a precise message rather than a `ClassCastException` on a
-real request.
+`ParentKeyed`'s permits are exactly `RowKeyed`, `RecordKeyed`,
+`MappedRowKeyed`, `MappedRecordKeyed` — the four catalog variants. Any
+future caller mis-routing a `LifterRowKeyed` here is a compile error, not a
+runtime throw. The `@table`-parent `@splitQuery` callers always have a
+`ParentKeyed` already (the catalog drives them), so the narrowing is a
+no-op at every existing call site.
 
-#### 2b. `buildRecordParentKeyExtraction` (rename + sealed switch)
+#### 2b. `buildRecordParentKeyExtraction` (rename + narrowed parameter)
 
 Rename the existing `buildRecordKeyExtraction`
 ([`GeneratorUtils.java:187-214`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/GeneratorUtils.java))
-to `buildRecordParentKeyExtraction` and lift its body to an exhaustive
-sealed switch over `BatchKey`. The new arm handles `LifterRowKeyed`; the
-existing inner `if/else` over `ResultType` is preserved verbatim for the
-catalog-FK arm. Routing flows through the model's sealed identity, not
-through an `instanceof` at the call site:
+to `buildRecordParentKeyExtraction` and **narrow its parameter type from
+`BatchKey` to `BatchKey.RecordParentBatchKey`**. The sealed switch then has
+exactly two arms — the only two permits — and no throwing arms for
+@service-only variants:
 
 ```java
 static CodeBlock buildRecordParentKeyExtraction(
-        BatchKey batchKey, GraphitronType.ResultType resultType, String jooqPackage) {
+        BatchKey.RecordParentBatchKey batchKey,   // was: BatchKey
+        GraphitronType.ResultType resultType, String jooqPackage) {
     TypeName keyType = keyElementType(batchKey);
     return switch (batchKey) {
-        case BatchKey.RowKeyed rk -> buildFkRowKey(rk, keyType, resultType, jooqPackage);
+        case BatchKey.RowKeyed rk        -> buildFkRowKey(rk, keyType, resultType, jooqPackage);
         case BatchKey.LifterRowKeyed lrk -> buildLifterRowKey(lrk, keyType, resultType);
-        // The other three permits cannot reach a record parent: RecordKeyed and
-        // its mapped sibling are @service SOURCES shapes; MappedRowKeyed is
-        // @splitQuery only. The arms throw with a precise routing message.
-        case BatchKey.RecordKeyed _, BatchKey.MappedRowKeyed _, BatchKey.MappedRecordKeyed _ ->
-            throw new IllegalStateException(
-                "buildRecordParentKeyExtraction does not handle "
-                + batchKey.getClass().getSimpleName()
-                + "; this is the record-parent path (RowKeyed / LifterRowKeyed only)");
     };
+    // No `default`, no throwing arm for RecordKeyed / MappedRowKeyed /
+    // MappedRecordKeyed — those permits do not extend RecordParentBatchKey,
+    // so the compiler refuses to let a caller route them here. Mis-routing
+    // is a compile error, not a runtime IllegalStateException.
 }
 
 @DependsOnClassifierCheck(
-    key = "lifter-path-shape",
-    reliesOn = "FieldBuilder.classifyChildFieldOnResultType produces "
-        + "BatchKey.LifterRowKeyed only when the parent is PojoResultType or "
-        + "JavaRecordType with non-null fqClassName, so the cast below is safe.")
+    key = "lifter-batchkey-is-lifterrowkeyed",
+    reliesOn = "On the lifter path, RecordParentBatchKey resolves to "
+        + "LifterRowKeyed (never RowKeyed) — the classifier produces a "
+        + "LifterRowKeyed only when the parent is PojoResultType or "
+        + "JavaRecordType with non-null fqClassName, so the backing-class "
+        + "cast below is safe.")
 private static CodeBlock buildLifterRowKey(
         BatchKey.LifterRowKeyed lrk, TypeName keyType,
         GraphitronType.ResultType resultType) {
@@ -796,113 +973,168 @@ The prelude has two casts that break for the lifter path. The
 cast at line `:131` and the
 [`JoinStep.FkJoin`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/SplitRowsMethodEmitter.java)
 cast at line `:155` both throw `ClassCastException` against
-`LifterRowKeyed` / `LiftedHop` respectively. Both are replaced with the
-sealed-interface accessor or a sealed switch on identity.
+`LifterRowKeyed` / `LiftedHop` respectively. The replacements lean on the
+new model shapes: a `RecordParentBatchKey`-narrowed local for the BatchKey
+side, and the `JoinStep.WithTarget` capability for the uniform accessors,
+keeping a sealed switch only at the JOIN-on predicate where identity
+genuinely matters.
 
-**Cast 1 — BatchKey access.** `LifterRowKeyed` is a sibling permit on the
-sealed `BatchKey`. The cast collapses to the interface accessor:
+**Cast 1 — BatchKey access.** The prelude's BatchKey local narrows from
+`BatchKey` to `BatchKey.RecordParentBatchKey` (the only two BatchKey permits
+that ever reach this prelude). The cast collapses to a side-aware sealed
+switch:
 
 ```java
-List<ColumnRef> pkCols = batchKey.keyColumns();
+List<ColumnRef> sourceTypeColumns = switch (batchKey) {
+    case BatchKey.RowKeyed rk        -> rk.parentKeyColumns();
+    case BatchKey.LifterRowKeyed lrk -> lrk.targetKeyColumns();
+};
 ```
 
-The local `rowKeyed` is unused beyond this read; the line drops cleanly.
+The accessor names make the side distinction explicit at the read site;
+there is no shared `keyColumns()` whose meaning the reader has to look up.
 
-**Cast 2 — first-hop access and FK-chain loop.** Replace the `(JoinStep.FkJoin)`
-cast plus the in-loop cast at `:194` with one sealed switch that accepts both
-`FkJoin` and `LiftedHop`. They share the three accessors the prelude reads
-(`targetTable`, `targetColumns`, `alias`); their identities are still
-distinct downstream where the JOIN-on predicate emits. The
-`@DependsOnClassifierCheck` annotation lands on the enclosing
-`emitParentInputAndFkChain` method (annotations target methods, not
-locals), pairing with the producer in §1e:
+**Cast 2 — first-hop access and FK-chain loop, via `WithTarget`.**
+`FkJoin` and `LiftedHop` share `targetTable`, `targetColumns`, and `alias`
+through the new `JoinStep.WithTarget` capability (§Model). The prelude's
+loop reads them uniformly through the capability — *not* through three
+separate sealed-switch sites — and reserves a sealed switch only for the
+JOIN-on predicate, which is the genuine identity fork. The single
+ConditionJoin-impossibility check lifts to one early guard:
 
 ```java
 @DependsOnClassifierCheck(
-    key = "lifter-path-shape",
-    reliesOn = "On a record-parent path, joinPath.get(0) is FkJoin or "
-        + "LiftedHop (never ConditionJoin); LiftedHop appears only as a "
-        + "single-hop path. The prelude forks on JoinStep identity and "
-        + "skips the multi-hop bridging branch on the lifter path.")
+    key = "lifter-classifies-as-record-table-field",
+    reliesOn = "On a record-parent path, joinPath steps are FkJoin or "
+        + "LiftedHop (never ConditionJoin) — both implement WithTarget, so "
+        + "the FK-chain loop reads target accessors uniformly through the "
+        + "capability without a sealed switch per accessor.")
+@DependsOnClassifierCheck(
+    key = "lifter-path-is-single-hop",
+    reliesOn = "LifterRowKeyed holds a single LiftedHop on its own record, "
+        + "so the lifter-path joinPath is always [hop]. The prelude skips "
+        + "the multi-hop bridging branch on the lifter path; the underlying "
+        + "guarantee is structural (the model has no slot for a second "
+        + "hop), so no producer-side @LoadBearingClassifierCheck pairs "
+        + "with this key — see the audit-test note in §1e.")
 private static PreludeBindings emitParentInputAndFkChain(...) {
-    // ...
-    JoinStep firstHop = joinPath.get(0);
-
-    for (int i = 0; i < joinPath.size(); i++) {
-        JoinStep step = joinPath.get(i);
-        TableRef tgt = switch (step) {
-            case JoinStep.FkJoin fk -> fk.targetTable();
-            case JoinStep.LiftedHop lh -> lh.targetTable();
-            case JoinStep.ConditionJoin _ -> throw new IllegalStateException(
+    // Single early identity guard: the @record-parent path admits no
+    // ConditionJoin steps (the @table-parent path takes ConditionJoin).
+    for (JoinStep step : joinPath) {
+        if (!(step instanceof JoinStep.WithTarget)) {
+            throw new IllegalStateException(
                 "ConditionJoin cannot appear on a record-parent path");
-        };
+        }
+    }
+
+    // Uniform target-accessor reads via the capability — no per-accessor
+    // sealed switch.
+    JoinStep.WithTarget firstHop = (JoinStep.WithTarget) joinPath.get(0);
+    for (int i = 0; i < joinPath.size(); i++) {
+        var step = (JoinStep.WithTarget) joinPath.get(i);
+        TableRef tgt = step.targetTable();
         ClassName jooqTableClass = ClassName.get(jooqPackage + ".tables", tgt.javaClassName());
         body.addStatement("$T $L = $T.$L.as($S)",
             jooqTableClass, aliases.get(i), tablesClass, tgt.javaFieldName(),
-            fieldName + "_" + aliases.get(i));
+            fieldName + "_" + step.alias());
     }
 }
 ```
 
-The downstream JOIN-on predicate (the `firstHop.sourceColumns()` read
-elsewhere in `buildListMethod`) is the one place identity actually matters:
-on the catalog-FK path it reads `FkJoin.sourceColumns` (the parent-side FK
-columns); on the lifter path it reads `LiftedHop.targetColumns` (because the
+The downstream JOIN-on predicate is the one place identity actually
+matters: on the catalog-FK path it reads `FkJoin.sourceColumns` (parent-side
+FK columns); on the lifter path it reads `LiftedHop.targetColumns` (the
 DataLoader key tuple *is* the target-column tuple by §Model construction).
-That site becomes a small sealed switch as well:
+That site stays a sealed switch — exactly the case the principle reserves
+sealed switches for:
 
 ```java
-List<ColumnRef> joinOnCols = switch (firstHop) {
-    case JoinStep.FkJoin fk -> fk.sourceColumns();
-    case JoinStep.LiftedHop lh -> lh.targetColumns();
-    case JoinStep.ConditionJoin _ -> throw new IllegalStateException(
+List<ColumnRef> joinOnCols = switch (joinPath.get(0)) {
+    case JoinStep.FkJoin fk          -> fk.sourceColumns();
+    case JoinStep.LiftedHop lh       -> lh.targetColumns();
+    case JoinStep.ConditionJoin _    -> throw new IllegalStateException(
         "ConditionJoin cannot appear on a record-parent path");
 };
 ```
 
-After this landing, the prelude has no `instanceof` and no defensive cast;
-the `JoinStep` sealed identity carries the FK-vs-lifter fork. Bridging hops
-(`i >= 1`) cannot appear on the lifter path because `LiftedHop` is always
-single-hop in v1 (§Model "Single-hop guarantee"); the consumer-side
-`@DependsOnClassifierCheck` makes that reliance explicit and the audit test
-ensures the annotation pair stays balanced.
+After this landing, the prelude has no `instanceof` chain and no defensive
+cast where the accessor is uniform; sealed-switch usage is reserved for the
+identity fork that genuinely varies. The two consumer-side
+`@DependsOnClassifierCheck` annotations cite distinct keys so a future
+relaxation of either guarantee fails the audit only at the consumers that
+actually relied on the relaxed half (finding 7).
 
-The `parentInput` VALUES table's column types come from
-`batchKey.keyColumns()` directly (now via the sealed accessor), and on the
-lifter path those are the target-side columns, which match the lifter's
-`RowN` type-args by Invariant #4.
+The `parentInput` VALUES table's column types come from the same side-aware
+accessor used at Cast 1, and on the lifter path those are the target-side
+columns, which match the lifter's `RowN` type-args by Invariant #4.
 
 #### 2e. Validator updates and load-bearing audit
 
-Audit complete. As of trunk,
+Two validator-side changes ship with this landing: a sealed-switch update
+on the existing `JoinStep`-keyed reader, and the new
+single-cardinality gate that closes Invariant #10.
+
+**Sealed-switch update.** As of trunk,
 [`GraphitronSchemaValidator`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/GraphitronSchemaValidator.java)
-does **not** branch on `BatchKey` variants in any arm: zero hits for
-`BatchKey`, `RowKeyed`, or `RecordKeyed` across the file. The two arms
-relevant to lifter-classified fields,
-`validateRecordTableField` (`:664-667`) and
+does not branch on `BatchKey` variants in any arm: zero hits for
+`BatchKey`, `RowKeyed`, or `RecordKeyed`. The arms relevant to
+lifter-classified fields, `validateRecordTableField` (`:664-667`) and
 `validateRecordLookupTableField` (`:668-678`), call only
-`validateReferencePath` (a no-op stub at `:731-733`) and `validateCardinality`
-(switch over `FieldWrapper`, no `BatchKey` involvement). `JoinStep`-keyed
-checks: `validateReferenceLeadsToType` (`:370-384`) reads
+`validateReferencePath` (a no-op stub at `:731-733`) and
+`validateCardinality` (switch over `FieldWrapper`, no `BatchKey`
+involvement). `validateReferenceLeadsToType` (`:370-384`) reads
 `path.getLast().targetTable`; with `JoinStep.LiftedHop` added, this read
-becomes a two-arm sealed switch (matching the prelude pattern in §2d) and
-returns `lh.targetTable()` for the lifter path — the field's `@table` by
-construction.
+becomes either a two-arm sealed switch or — preferably — a `WithTarget`
+capability cast, matching the prelude pattern in §2d, and returns the
+field's `@table` by construction.
 
-Phase 2 does not introduce new validator arms beyond that sealed-switch
-update. The classifier-side AUTHOR_ERROR rejections (Invariants #1-#9) are
-already promoted to build-time errors by the existing
-`UnclassifiedField` → validator pipeline; no new gate is needed.
+**Invariant #10 — single-cardinality gate.** Promote the existing
+`SplitRowsMethodEmitter.unsupportedReason` runtime stub to a build-time
+validator rejection. Add an arm to both `validateRecordTableField` and
+`validateRecordLookupTableField`:
 
-**Load-bearing annotation audit.** The producer/consumer pair introduced in
-§1d and §2d (`key = "lifter-path-shape"`) is enforced by
-[`LoadBearingGuaranteeAuditTest`](../graphitron/src/test/java/no/sikt/graphitron/rewrite/model/LoadBearingGuaranteeAuditTest.java):
-the test walks the rewrite module's compiled output and fails on any
-consumer whose key has no producer (or any duplicate producer). The audit
-runs as part of `mvn install -Plocal-db`; no separate test wiring is needed.
-Adding the annotations therefore costs one line each and gives find-usages
-navigation between the classifier guarantee and every emitter that depends
-on it.
+```java
+private Optional<String> validateRecordTableFieldCardinality(
+        RecordTableField field) {
+    return switch (field.cardinality()) {
+        case LIST -> Optional.empty();
+        case SINGLE -> Optional.of(
+            "RecordTableField '" + field.parentTypeName() + "."
+                + field.name() + "' returns a single-cardinality '"
+                + field.elementTypeName() + "'; only list returns ('[T]') "
+                + "are supported in this release");
+    };
+}
+```
+
+(Same shape on `RecordLookupTableField`.) The validator's "what's
+unimplemented?" set lives next to the dispatcher's
+`NOT_IMPLEMENTED_REASONS.keySet()` (or its successor when R5's
+status-map collapse lands), so the two stay in sync. The
+`SplitRowsMethodEmitter.unsupportedReason` stub is replaced by an
+`IllegalStateException` — reaching it post-validate means a classifier bug,
+not an "unsupported but tolerated" outcome. When list-emission for these
+two variants ships, the validator gate flips off in the same landing as
+the emitter arm.
+
+The classifier-side AUTHOR_ERROR rejections (Invariants #1-#9) remain
+promoted to build-time errors by the existing
+`UnclassifiedField` → validator pipeline; no further new gate is needed.
+
+**Load-bearing annotation audit.** The consumer-side annotations introduced
+in §2d cite three distinct keys: `lifter-classifies-as-record-table-field`
+and `lifter-batchkey-is-lifterrowkeyed` (each paired with a
+`@LoadBearingClassifierCheck` producer in §1e), and
+`lifter-path-is-single-hop` (a structural-guarantee key, no producer pair —
+the type system itself is the producer; see §1e for the audit-test relaxation).
+[`LoadBearingGuaranteeAuditTest`](../graphitron/src/test/java/no/sikt/graphitron/rewrite/model/LoadBearingGuaranteeAuditTest.java)
+walks the rewrite module's compiled output, groups by key, and fails on any
+consumer whose key has no producer (or any duplicate producer); this
+landing extends the audit with an allowlist for structural-guarantee keys.
+Splitting the formerly-monolithic `lifter-path-shape` key into three
+ensures a future relaxation of one fact (e.g. multi-hop becomes possible)
+fails the audit precisely at the consumers that actually relied on
+single-hop, not at unrelated lifter consumers.
 
 If future validation logic adds a `BatchKey`-keyed check (e.g. a hypothetical
 "every parent table has a PK" gate), `LifterRowKeyed` will participate in the
@@ -917,12 +1149,14 @@ source. Two structural tests in `RecordTableFieldPipelineTest` (or the file
 housing the existing `@record` parent + `@table` return cases):
 
 1. Lifted `RecordTableField` classifies with
-   `field.batchKey() instanceof BatchKey.LifterRowKeyed lrk` and
+   `field.batchKey() instanceof BatchKey.LifterRowKeyed lrk`,
    `lrk.lifter().declaringClass()` matching the `ClassName` from the
-   directive; `field.joinPath()` is a single-element list whose sole element
-   is `JoinStep.LiftedHop`. (Per *rewrite-design-principles* "Pipeline tests
-   are the primary behavioural tier": no code-string assertions on generated
-   method bodies — those are banned at every tier.)
+   directive, and `field.joinPath().get(0) == lrk.hop()` (object identity —
+   the single source of truth invariant). The list has size 1 by type
+   construction (`LifterRowKeyed` holds a single `LiftedHop`, never a list).
+   (Per *rewrite-design-principles* "Pipeline tests are the primary
+   behavioural tier": no code-string assertions on generated method
+   bodies — those are banned at every tier.)
 2. The compile-tier (`mvn compile -pl :graphitron-test -Plocal-db`) verifies
    that the emitted DataFetcher body is type-correct: the `key` local is
    typed `Row1<Long>`, the lifter call passes a `SettKvotesporsmalAlgoritmePayload`,
@@ -996,20 +1230,42 @@ from the existing "Column value binding" section.
 `batchkey-lifter-directive`, summarising:
 
 - New directive `@batchKeyLifter` on FIELD_DEFINITION
-- New `BatchKey.LifterRowKeyed` permit (sealed hierarchy now five variants)
-- New `JoinStep.LiftedHop` permit (sealed hierarchy now three variants) and
-  new `LifterRef(ClassName, String)` typed reference
+- New `BatchKey.LifterRowKeyed` permit (sealed hierarchy now five variants);
+  the variant holds its `JoinStep.LiftedHop` directly so the target-side
+  column tuple has a single source of truth and the single-hop invariant
+  is type-system-enforced
+- New `BatchKey.ParentKeyed` and `BatchKey.RecordParentBatchKey` sealed
+  sub-interfaces; the four catalog records now expose `parentKeyColumns()`
+  (renamed from `keyColumns()`) and `LifterRowKeyed` exposes
+  `targetKeyColumns()`. The interface-level `BatchKey.keyColumns()`
+  accessor is removed (a shared accessor with variant-dependent meaning
+  violated *Sealed hierarchies over enums*).
+- New `JoinStep.LiftedHop` permit (sealed hierarchy now three variants),
+  new `JoinStep.WithTarget` capability mixed in by `FkJoin` and `LiftedHop`,
+  and new `LifterRef(ClassName, String)` typed reference
 - `GeneratorUtils.buildRecordKeyExtraction` renamed to
-  `buildRecordParentKeyExtraction`, becomes a sealed switch over `BatchKey`;
-  `TypeFetcherGenerator.buildRecordBasedDataFetcher` no longer casts to
+  `buildRecordParentKeyExtraction`; parameter narrows from `BatchKey` to
+  `BatchKey.RecordParentBatchKey` so mis-routing the @service-only permits
+  here is a compile error rather than a runtime throw
+- `GeneratorUtils.buildKeyExtraction` parameter narrows from `BatchKey` to
+  `BatchKey.ParentKeyed` for the same reason
+- `TypeFetcherGenerator.buildRecordBasedDataFetcher` no longer casts to
   `BatchKey.RowKeyed`
-- `SplitRowsMethodEmitter.emitParentInputAndFkChain` switches on `JoinStep`
-  variants for the FK-chain loop and the JOIN-on predicate; the
-  `(JoinStep.FkJoin)` and `(BatchKey.RowKeyed)` casts are removed
-- `BatchKey.keyColumns()` javadoc rewritten from "PK columns from the parent
-  table" to the DataLoader-key reading
-- New `lifter-path-shape` `@LoadBearingClassifierCheck` /
-  `@DependsOnClassifierCheck` pair
+- `SplitRowsMethodEmitter.emitParentInputAndFkChain` reads target accessors
+  uniformly via the `JoinStep.WithTarget` capability; sealed-switch usage
+  is reserved for the JOIN-on predicate (the genuine identity fork). The
+  `(JoinStep.FkJoin)` and `(BatchKey.RowKeyed)` casts are removed.
+- New invariant + validator gate: `RecordTableField` and
+  `RecordLookupTableField` reject single-cardinality returns at validate
+  time (Invariant #10), promoting the previous
+  `SplitRowsMethodEmitter.unsupportedReason` runtime stub to a build-time
+  error. The stub is replaced by an `IllegalStateException` (post-validate
+  reachability is a classifier bug).
+- New per-fact `@LoadBearingClassifierCheck` /
+  `@DependsOnClassifierCheck` keys: `lifter-classifies-as-record-table-field`,
+  `lifter-batchkey-is-lifterrowkeyed` (both with producer pairs), and
+  `lifter-path-is-single-hop` (structural-guarantee key, no producer pair —
+  the type system is the producer; audit-test allowlist updated)
 - The two `RecordTableField` / `RecordLookupTableField` deferred rejections
   closed for DTO parents
 - Test count delta and full-build status per the existing changelog format
@@ -1031,12 +1287,12 @@ from the existing "Column value binding" section.
   lifter is a developer method whose return type is whatever they declare.
   We pin lifters to `RowN` for consistency with the existing column-keyed
   DataLoader path.
-- **Single-cardinality emission.** `SplitRowsMethodEmitter.unsupportedReason`
-  for `RecordTableField` and `RecordLookupTableField` already rejects
-  single-cardinality with a runtime stub. The lifter directive inherits this
-  stub. Lifting single-cardinality is a separate emitter expansion, tracked
-  by the existing stub message at
-  [`SplitRowsMethodEmitter.java:327-339`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/SplitRowsMethodEmitter.java).
+- **Single-cardinality emission.** `RecordTableField` and
+  `RecordLookupTableField` reject single-cardinality returns at validate
+  time per Invariant #10 (this landing promotes the existing emitter stub
+  to a validator gate). Lifting single-cardinality is a separate emitter
+  expansion; when it ships, Invariant #10's validator gate is the single
+  site to relax in the same landing as the emitter arm.
 - **Condition-join steps after the LiftedHop.** `LiftedHop` paths are
   single-hop in v1; multi-hop paths from a DTO parent into a target table
   via intermediate join steps are not in scope. A schema author who needs
