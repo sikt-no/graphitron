@@ -277,7 +277,7 @@ Reject (rules split between two classifier sites; the table notes each):
 | 1 | `GENERIC` without `className`                        | `TypeBuilder.parseErrorHandler` (type-level) | `UnclassifiedType` |
 | 2 | `GENERIC` with `sqlState` or `code`                  | `TypeBuilder.parseErrorHandler` (type-level) | `UnclassifiedType` |
 | 3 | `DATABASE` with both `sqlState` and `code`           | `TypeBuilder.parseErrorHandler` (type-level) | `UnclassifiedType` |
-| 4 | `DATABASE` with a non-default `className`            | `TypeBuilder.parseErrorHandler` (type-level) | `UnclassifiedType` |
+| 4 | `DATABASE` with any explicit `className`             | `TypeBuilder.parseErrorHandler` (type-level) | `UnclassifiedType` |
 | 5 | `VALIDATION` with any of `className`/`sqlState`/`code`/`matches` | `TypeBuilder.parseErrorHandler` (type-level) | `UnclassifiedType` |
 | 6 | `@error` type with fields beyond `path` and `message` | `TypeBuilder.parseErrorHandler` (type-level) | `UnclassifiedType` |
 | 7 | More than one `VALIDATION` handler in the same channel | `FieldBuilder` (channel-level, see §2c)    | `UnclassifiedField` on the carrier |
@@ -299,10 +299,14 @@ as `UnclassifiedField` on the carrier (the field with the channel), not on the o
    leaves `getSQLState()` mostly stubbed. A handler ANDing both is unreachable in practice
    (legacy `DataAccessMatcher.java:28-30` ANDs them silently). Reject and instruct the author
    to split into two entries: a `SqlStateHandler` and a `VendorCodeHandler`.
-4. **`DATABASE` with a non-default `className`**: the rewrite's runtime no longer matches on
-   class identity for the SQL variants (§3 behaviour change), so a non-default `className`
-   has no effect and is misleading. Reject with a hint pointing at `GENERIC` for
-   class-narrowed matching.
+4. **`DATABASE` with any explicit `className`**: the rewrite's runtime no longer matches on
+   class identity for the SQL variants (§3 behaviour change), so any `className` on a
+   `DATABASE` handler has no effect and is misleading, including the legacy default
+   `org.springframework.dao.DataAccessException`. Reject with a hint pointing at `GENERIC`
+   for class-narrowed matching. Schemas migrated from legacy that carry an explicit
+   `DataAccessException` className delete the field as part of adopting the rewrite; the
+   no-discriminator lift (`{handler: DATABASE}` → `ExceptionHandler(SQLException)`)
+   produces the same runtime semantic.
 5. **`VALIDATION` with any of `className`, `sqlState`, `code`, `matches`**: the implicit
    exception class is `ValidationViolationGraphQLException`; SQL discriminators are
    irrelevant; `matches` would short-circuit all violations rather than filter individual
@@ -432,11 +436,18 @@ record ErrorChannel(
     String errorsFieldName,                  // the "errors" field on the payload
     List<ErrorTypeRef> mappedErrorTypes,     // union members or list-element type
     ClassName payloadClass,                  // the developer-supplied payload class (e.g. FilmPayload)
-    List<PayloadConstructorParam> payloadCtorParams  // ordered all-fields constructor signature; see "Payload-factory contract" below
+    List<PayloadConstructorParam> payloadCtorParams,  // ordered all-fields constructor signature; see "Payload-factory contract" below
+    String mappingsConstantName              // emitted constant name on ErrorMappings; see §3 dedup rule
 ) {}
 
 record PayloadConstructorParam(String name, TypeName type, boolean isErrorsSlot) {}
 ```
+
+The flattened handler list, used by the §3 duplicate-criteria check and the
+`mappingsConstantName` dedup-suffix derivation, is a derived view: walk `mappedErrorTypes`
+in declaration order and concatenate each resolved `ErrorType`'s `List<Handler>` in source
+order. Both consumers compute it on demand from `mappedErrorTypes`; it is not a stored
+field on `ErrorChannel`.
 
 `ErrorChannel` is flat; `payloadClass` plus `payloadCtorParams` is what the emitter needs to
 synthesize the per-fetcher factory lambda (see "Payload-factory contract" below). A
