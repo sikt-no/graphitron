@@ -385,8 +385,9 @@ record ErrorsField(
 `ErrorsField` exists so that `classifyChildFieldOnResultType` (and its `@table`-parent and
 `@service`-backed siblings) have an explicit arm to take when they encounter a list-of-error
 shape, rather than falling through to `PolymorphicReturnType`'s rejection. The list is flat:
-`[SingleError!]!` carries one entry, `[SomeUnion!]!` or `[SomeInterface!]!` carries the
-resolved members. The polymorphism source is a classification-time concern that does not
+`[SingleError!]` carries one entry, `[SomeUnion!]` or `[SomeInterface!]` carries the
+resolved members. (Field-level non-null wrappers like `[X!]!` are rejected by §2b's
+nullability rule; the shapes here are the accepted ones.) The polymorphism source is a classification-time concern that does not
 survive into the model; downstream the carrier-side `ErrorChannel` consumes `errorTypes`
 uniformly. (Earlier drafts modelled three variants; collapsed once it became clear no
 consumer branched on the distinction. Same precedent as the `ErrorChannel` flatness in §2c.)
@@ -821,8 +822,9 @@ scope for this item; file as Backlog when demand arises.)
 
 The emitted call site passes the per-fetcher synthesized factory lambda (§2c's
 "Payload-factory contract"); this mirrors the legacy `PayloadCreator` shape
-(`SchemaBasedErrorStrategy.java:139-145`) but binds the errors list explicitly through the
-all-fields constructor rather than via a setter chain.
+(`ExceptionStrategyConfiguration.java:30-32`, invoked at `SchemaBasedErrorStrategy.java:118-122`)
+but binds the errors list explicitly through the all-fields constructor rather than via a
+setter chain.
 
 `path` resolves to `env.getExecutionStepInfo().getPath().toList()`; `message` resolves to the
 handler's `description` if present, otherwise the matched exception's `getMessage()` (preserves
@@ -845,7 +847,7 @@ This is a pure improvement over legacy's single-level unwrap and costs nothing.
 
 The async fetcher path matters here. Service-style fetchers in the rewrite return
 `CompletableFuture` from a DataLoader (`TypeFetcherGenerator.buildServiceDataFetcher`,
-`TypeFetcherGenerator.java:1456-1477`): the fetcher returns `loader.load(key, env)` and the
+`TypeFetcherGenerator.java:1463-1505`): the fetcher returns `loader.load(key, env)` and the
 batch lambda is registered with `DataLoaderFactory.newDataLoaderWithContext(...)`. The lambda
 body itself synchronously calls the rows method and wraps the result in
 `CompletableFuture.completedFuture(...)`; an exception thrown from the rows method therefore
