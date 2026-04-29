@@ -644,6 +644,15 @@ public class GraphitronSchemaValidator {
         }
     }
     private void validateServiceRecordField(no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
+        if (!field.joinPath().isEmpty()) {
+            errors.add(new ValidationError(RejectionKind.DEFERRED,
+                field.qualifiedName(),
+                "Field '" + field.qualifiedName() + "': @service with a @reference path "
+                    + "(condition-join lift form) is not yet supported — see "
+                    + "graphitron-rewrite/roadmap/service-record-field.md",
+                field.location()));
+            return;
+        }
         validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
     }
     private void validateRecordTableField(no.sikt.graphitron.rewrite.model.ChildField.RecordTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {

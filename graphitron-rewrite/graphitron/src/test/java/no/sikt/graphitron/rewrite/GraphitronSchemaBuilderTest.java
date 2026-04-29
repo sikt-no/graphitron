@@ -1433,14 +1433,20 @@ class GraphitronSchemaBuilderTest {
             }),
 
         SERVICE_FIELD_ON_RESULT_TYPE(
-            "@record parent + @service + scalar return → ServiceRecordField",
+            "@record parent + @service + scalar return → DEFERRED until batch-key lift through parent chain ships",
             """
             type FilmDetails @record { rating: String @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"}) }
             type Film @table(name: "film") { details: FilmDetails }
             type Query { film: Film }
             """,
-            schema -> assertThat(schema.field("FilmDetails", "rating")).isInstanceOf(ServiceRecordField.class)) {
-            @Override public Set<Class<?>> variants() { return Set.of(ServiceRecordField.class); }
+            schema -> {
+                var field = schema.field("FilmDetails", "rating");
+                assertThat(field).isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class);
+                var unc = (no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField) field;
+                assertThat(unc.kind()).isEqualTo(no.sikt.graphitron.rewrite.RejectionKind.DEFERRED);
+                assertThat(unc.reason()).contains("@record-typed parent", "lifted through the parent chain");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class); }
         },
 
         RECORD_TABLE_FIELD(
