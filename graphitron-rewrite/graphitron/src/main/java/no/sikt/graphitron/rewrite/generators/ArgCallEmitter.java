@@ -95,7 +95,7 @@ public final class ArgCallEmitter {
         var source = param.source();
         return switch (source) {
             case ParamSource.Arg arg -> buildArgExtraction(
-                new CallParam(param.name(), arg.extraction(), false, param.typeName()),
+                new CallParam(arg.graphqlArgName(), arg.extraction(), false, param.typeName()),
                 conditionsClassName,
                 null);
             case ParamSource.Context ignored ->

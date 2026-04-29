@@ -28,9 +28,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R8` | Docs as an index into classification tests | Ready (deferred) | [plan](docs-as-index-into-tests.md) |
 | `R18` | Java LSP rewrite + introspect retirement + `dev` goal | Ready | [plan](graphitron-lsp.md) |
 | `R36` | Stub #3: Interface / union fetchers | In Progress | [plan](stub-interface-union-fetchers.md) |
-| `R41` | @field(name:) on @service method args | In Progress | [plan](service-arg-java-name-override.md) |
 | `R12` | Error-handling parity: emit per-fetcher error channels from `@error` <sub>blocked by: [mutations](mutations.md)</sub> | In Progress | [plan](error-handling-parity.md) |
 | `R26` | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` <sub>blocked by: [graphitron-lsp](graphitron-lsp.md)</sub> | In Progress | [plan](retire-maven-plugin.md) |
+| `R41` | @field(name:) on @service method args | In Review | [plan](service-arg-java-name-override.md) |
 | `R21` | Load-bearing classifier guarantee audit annotations | In Review | [plan](load-bearing-guarantee-audit.md) |
 
 ---
@@ -102,7 +102,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R1` [**`BatchKey` lifter directive**](batchkey-lifter-directive.md) — Spec, architecture
 - `R48` [**Stub: `@externalField` resolved-reference path (`ComputedField`)**](computed-field-with-reference.md) — Spec, stubs
 - `R49` [**Stub: scalar/`@record`-returning `@service` child field (`ServiceRecordField`)**](service-record-field.md) — Spec, stubs, blocked by [service-rows-method-body](service-rows-method-body.md)
-- `R41` [**@field(name:) on @service method args**](service-arg-java-name-override.md) — In Progress, architecture
+- `R41` [**@field(name:) on @service method args**](service-arg-java-name-override.md) — In Review, architecture
 - `R45` [**Typed context-value registry for `@service`**](typed-context-value-registry.md) — Spec, architecture
 - `R32` [**Implement `@service` rows-method body**](service-rows-method-body.md) — Backlog, architecture
 - `R46` [**Multi-tenant fan-out for `@service`**](service-multi-tenant-fanout.md) — Backlog, architecture, blocked by [typed-context-value-registry](typed-context-value-registry.md), [mutations](mutations.md)

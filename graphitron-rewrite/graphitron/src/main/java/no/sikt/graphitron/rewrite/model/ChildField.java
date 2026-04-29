@@ -26,8 +26,7 @@ public sealed interface ChildField extends GraphitronField
         String name,
         SourceLocation location,
         String columnName,
-        ColumnRef column,
-        boolean javaNamePresent
+        ColumnRef column
     ) implements ChildField {}
 
     record ColumnReferenceField(
@@ -36,8 +35,7 @@ public sealed interface ChildField extends GraphitronField
         SourceLocation location,
         String columnName,
         ColumnRef column,
-        List<JoinStep> joinPath,
-        boolean javaNamePresent
+        List<JoinStep> joinPath
     ) implements ChildField {}
 
     record NodeIdField(

@@ -94,7 +94,6 @@ class GraphitronSchemaBuilderTest {
                 assertThat(col).isInstanceOf(ColumnField.class);
                 assertThat(col.columnName()).isEqualTo("title");
                 assertThat(col.column()).isInstanceOf(ColumnRef.class);
-                assertThat(col.javaNamePresent()).isFalse();
             }),
 
         EXPLICIT_FIELD_DIRECTIVE(
@@ -106,16 +105,7 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var col = (ColumnField) schema.field("Film", "movieTitle");
                 assertThat(col.columnName()).isEqualTo("title");
-                assertThat(col.javaNamePresent()).isFalse();
             }),
-
-        JAVA_NAME_PRESENT(
-            "@field(javaName:) marks javaNamePresent true",
-            """
-            type Film @table(name: "film") { title: String @field(name: "title", javaName: "getTitle") }
-            type Query { film: Film }
-            """,
-            schema -> assertThat(((ColumnField) schema.field("Film", "title")).javaNamePresent()).isTrue()),
 
         UNRESOLVED_COLUMN(
             "field not present in the DB table produces an UnclassifiedField",
@@ -3039,6 +3029,19 @@ class GraphitronSchemaBuilderTest {
             .hasMessageContaining("@");
     }
 
+    @Test
+    void build_rejectsRetiredFieldJavaNameArg_withGraphqlJavaParseError() {
+        // R41: @field(javaName:) was retired together with the @field(name:) override on @service
+        // method args. graphql-java's standard directive validation surfaces the rejection with
+        // an "unknown argument 'javaName'" message at schema-build time — sufficient migration
+        // signal; no custom message is bundled.
+        assertThatThrownBy(() -> TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") { title: String @field(name: "title", javaName: "getTitle") }
+            type Query { film: Film }
+            """))
+            .hasMessageContaining("javaName");
+    }
+
     // ===== Root field classification =====
 
     /**
@@ -3457,6 +3460,66 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> assertThat(schema.field("Mutation", "externalMutation")).isInstanceOf(MutationField.MutationServiceRecordField.class)) {
+            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationServiceRecordField.class); }
+        },
+
+        SERVICE_MUTATION_FIELD_NAME_OVERRIDE_TEXT_ENUM(
+            "R41: @field(name:) override + text-mapped enum arg → TextMapLookup keyed by the GraphQL arg name (regression guard for enrichArgExtractions)",
+            """
+            enum SortDir {
+                ASC @field(name: "asc")
+                DESC @field(name: "desc")
+            }
+            type FilmDetails @record { title: String }
+            type Query { x: String }
+            type Mutation {
+                runWithEnumOverride(direction: SortDir @field(name: "mode")): FilmDetails
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runWithEnumOverride"})
+            }
+            """,
+            schema -> {
+                var f = (MutationField.MutationServiceRecordField) schema.field("Mutation", "runWithEnumOverride");
+                var p = f.method().params().get(0);
+                assertThat(p.name()).isEqualTo("mode");
+                assertThat(((no.sikt.graphitron.rewrite.model.ParamSource.Arg) p.source()).graphqlArgName())
+                    .isEqualTo("direction");
+                var extraction = ((no.sikt.graphitron.rewrite.model.ParamSource.Arg) p.source()).extraction();
+                assertThat(extraction).isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.TextMapLookup.class);
+                var tl = (no.sikt.graphitron.rewrite.model.CallSiteExtraction.TextMapLookup) extraction;
+                // Map field name is derived from the GraphQL arg name (DIRECTION), not the
+                // Java parameter name (MODE). Catches a regression in enrichArgExtractions.
+                assertThat(tl.mapFieldName()).isEqualTo("RUNWITHENUMOVERRIDE_DIRECTION_MAP");
+                assertThat(tl.valueMapping()).containsEntry("ASC", "asc").containsEntry("DESC", "desc");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationServiceRecordField.class); }
+        },
+
+        SERVICE_MUTATION_FIELD_NAME_OVERRIDE_ON_ARG(
+            "R41: @field(name:) on a @service mutation argument binds it to a differently-named Java parameter",
+            """
+            input TestDtoStub { id: ID }
+            type FilmDetails @record { title: String }
+            type Query { x: String }
+            type Mutation {
+                runWithRenamedInputs(
+                    input: [TestDtoStub!]! @field(name: "inputs"),
+                    dryRun: Boolean
+                ): FilmDetails
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runWithRenamedInputs"})
+            }
+            """,
+            schema -> {
+                var f = (MutationField.MutationServiceRecordField) schema.field("Mutation", "runWithRenamedInputs");
+                var firstParam = f.method().params().get(0);
+                assertThat(firstParam.name()).isEqualTo("inputs");
+                assertThat(firstParam.source()).isInstanceOf(no.sikt.graphitron.rewrite.model.ParamSource.Arg.class);
+                assertThat(((no.sikt.graphitron.rewrite.model.ParamSource.Arg) firstParam.source()).graphqlArgName())
+                    .isEqualTo("input");
+                var secondParam = f.method().params().get(1);
+                assertThat(secondParam.name()).isEqualTo("dryRun");
+                assertThat(((no.sikt.graphitron.rewrite.model.ParamSource.Arg) secondParam.source()).graphqlArgName())
+                    .isEqualTo("dryRun");
+            }) {
             @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationServiceRecordField.class); }
         };
 
@@ -4040,6 +4103,49 @@ class GraphitronSchemaBuilderTest {
                 assertThat(f).isInstanceOf(UnclassifiedField.class);
                 assertThat(((UnclassifiedField) f).reason())
                     .contains("@notGenerated", "no longer supported");
+            }),
+
+        SERVICE_FIELD_NAME_OVERRIDE_COLLISION(
+            "R41: two @service args with the same Java target via @field(name:) → UnclassifiedField (pre-reflection collision)",
+            """
+            input TestDtoStub { id: ID }
+            type FilmDetails @record { title: String }
+            type Query { x: String }
+            type Mutation {
+                runWithRenamedInputs(
+                    input: [TestDtoStub!]! @field(name: "inputs"),
+                    extras: [TestDtoStub!]! @field(name: "inputs")
+                ): FilmDetails
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runWithRenamedInputs"})
+            }
+            """,
+            schema -> {
+                var f = schema.field("Mutation", "runWithRenamedInputs");
+                assertThat(f).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) f).reason())
+                    .contains("both target Java parameter 'inputs'");
+            }),
+
+        SERVICE_FIELD_NAME_OVERRIDE_TYPO_GUARD(
+            "R41: @field(name:) references a Java parameter that does not exist on the resolved method → UnclassifiedField (post-reflection typo guard)",
+            """
+            input TestDtoStub { id: ID }
+            type FilmDetails @record { title: String }
+            type Query { x: String }
+            type Mutation {
+                runWithRenamedInputs(
+                    input: [TestDtoStub!]! @field(name: "missing"),
+                    dryRun: Boolean
+                ): FilmDetails
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runWithRenamedInputs"})
+            }
+            """,
+            schema -> {
+                var f = schema.field("Mutation", "runWithRenamedInputs");
+                assertThat(f).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) f).reason())
+                    .contains("@field(name: \"missing\")")
+                    .contains("argument 'input'");
             });
 
         final String sdl;

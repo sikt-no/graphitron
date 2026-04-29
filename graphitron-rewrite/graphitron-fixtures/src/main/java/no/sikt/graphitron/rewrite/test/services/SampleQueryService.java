@@ -58,4 +58,16 @@ public final class SampleQueryService {
     public static Integer filmCount(DSLContext dsl) {
         return dsl.fetchCount(Tables.FILM);
     }
+
+    /**
+     * R41 fixture: same logic as {@link #filmsByService} but with the Java parameter named
+     * {@code filmIds}, demonstrating {@code @field(name: "filmIds")} on a GraphQL argument named
+     * {@code ids} that binds to a differently-named Java parameter.
+     */
+    public static Result<FilmRecord> filmsByServiceRenamed(DSLContext dsl, List<Integer> filmIds) {
+        return dsl.selectFrom(Tables.FILM)
+            .where(Tables.FILM.FILM_ID.in(filmIds))
+            .orderBy(Tables.FILM.FILM_ID)
+            .fetch();
+    }
 }

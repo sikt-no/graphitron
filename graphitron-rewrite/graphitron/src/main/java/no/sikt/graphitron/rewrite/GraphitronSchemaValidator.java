@@ -234,7 +234,6 @@ public class GraphitronSchemaValidator {
 
     private void validateInputType(no.sikt.graphitron.rewrite.model.GraphitronType.InputType type, Map<String, GraphitronType> types, List<ValidationError> errors) {
         // Type-existence of field types is already guaranteed by graphql-java schema validation.
-        // Graphitron-specific constraints (e.g. javaName deprecation) will be added here.
     }
 
     private void validateTableInputType(no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType type, List<ValidationError> errors) {
@@ -324,22 +323,8 @@ public class GraphitronSchemaValidator {
                 field.location()
             ));
         }
-        if (field.javaNamePresent()) {
-            errors.add(new ValidationError(RejectionKind.INVALID_SCHEMA,
-                field.qualifiedName(),
-                "Field '" + field.qualifiedName() + "': @field(javaName:) is not supported in record-based output",
-                field.location()
-            ));
-        }
     }
     private void validateColumnReferenceField(no.sikt.graphitron.rewrite.model.ChildField.ColumnReferenceField field, List<ValidationError> errors) {
-        if (field.javaNamePresent()) {
-            errors.add(new ValidationError(RejectionKind.INVALID_SCHEMA,
-                field.qualifiedName(),
-                "Field '" + field.qualifiedName() + "': @field(javaName:) is not supported in record-based output",
-                field.location()
-            ));
-        }
         if (field.joinPath().isEmpty()) {
             errors.add(new ValidationError(RejectionKind.AUTHOR_ERROR,
                 field.qualifiedName(),

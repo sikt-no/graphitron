@@ -20,16 +20,22 @@ package no.sikt.graphitron.rewrite.model;
  * </ul>
  *
  * <p>The parameter name and Java type are held on the enclosing {@link MethodRef.Param} record;
- * they are not repeated here. For {@link Arg} and {@link Context} the parameter name matches the
- * GraphQL argument or context key respectively.
+ * they are not repeated here. For {@link Context} the parameter name equals the context key.
+ * For {@link Arg} the parameter name is the Java identifier; the GraphQL argument key (which
+ * may diverge under {@code @field(name:)} on the argument site) lives on
+ * {@link Arg#graphqlArgName}.
  */
 public sealed interface ParamSource
     permits ParamSource.Arg, ParamSource.Context, ParamSource.Sources,
             ParamSource.DslContext, ParamSource.Table, ParamSource.SourceTable {
 
     /**
-     * A GraphQL field argument bound via {@code DataFetchingEnvironment.getArgument(name)}.
-     * The argument name equals the parameter name on the enclosing {@link MethodRef.Param}.
+     * A GraphQL field argument bound via {@code DataFetchingEnvironment.getArgument(graphqlArgName)}.
+     *
+     * <p>{@code graphqlArgName} is the GraphQL argument key — equal to the enclosing
+     * {@link MethodRef.Param#name()} (the Java identifier) when no override is in effect, or the
+     * value supplied by {@code @field(name:)} on an {@code @service} / {@code @tableMethod}
+     * argument when the schema author binds a Java parameter to a differently-named GraphQL arg.
      *
      * <p>{@code extraction} is the pre-resolved strategy for extracting this argument's value
      * from the GraphQL execution context. Set at classification time by
@@ -37,7 +43,7 @@ public sealed interface ParamSource
      * {@link no.sikt.graphitron.rewrite.FieldBuilder} (text-map detection). Defaults to
      * {@link CallSiteExtraction.Direct} for plain scalar arguments.
      */
-    record Arg(CallSiteExtraction extraction) implements ParamSource {}
+    record Arg(CallSiteExtraction extraction, String graphqlArgName) implements ParamSource {}
 
     /**
      * A context argument bound via {@code GraphitronContext.getContextArgument(dfe, name)}.
