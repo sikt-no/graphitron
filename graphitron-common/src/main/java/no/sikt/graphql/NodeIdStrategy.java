@@ -89,6 +89,23 @@ public class NodeIdStrategy {
                 .forEach(field -> record.changed(field, false));
     }
 
+    /**
+     * Decode a node ID into a new table record, populating the supplied fields with the decoded key values.
+     *
+     * @throws IllegalArgumentException if {@code fields} is empty, if {@code typeId} does not match
+     *                                  the type encoded in {@code id}, or if the number of decoded
+     *                                  values does not match the number of fields.
+     */
+    public <T extends UpdatableRecordImpl<T>> T nodeIdToTableRecord(String id, String typeId, List<TableField<T, ?>> fields) {
+        T record = fields.stream().findFirst()
+                .map(TableField::getTable)
+                .map(RecordQualifier::newRecord)
+                .orElseThrow(() -> new IllegalArgumentException("Cannot decode node ID for typeId '" + typeId + "' without target fields"));
+
+        setFields(record, id, typeId, fields.toArray(Field[]::new));
+        return record;
+    }
+
     public void setReferenceId(UpdatableRecordImpl<?> record, String id, String typeId, Field<?>... idFields) {
         setFields(record, id, typeId, idFields);
     }

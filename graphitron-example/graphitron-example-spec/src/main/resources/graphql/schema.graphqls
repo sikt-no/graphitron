@@ -11,8 +11,6 @@ type Query {
     helloWorld: String @notGenerated
 
     customers(first: Int = 100, after: String): CustomerConnection
-    activeCustomers: [Customer] @asConnection @condition(condition: {className: "no.sikt.graphitron.example.service.conditions.CustomerConditions", method: "activeCustomers"}, override: true)
-    inactiveCustomers(lastNameStartingWith: String): [Customer] @asConnection @condition(condition: {className: "no.sikt.graphitron.example.service.conditions.CustomerConditions"}, override: true)
     customersByAddress(addressId: ID! @nodeId(typeName: "Address")): [Customer] @asConnection
     customerWithJooqRecordInput(input: CustomerInput!): [Customer] @asConnection
     customerWithJavaRecordInput(input: CustomerJavaRecordInput!): [Customer] @asConnection
@@ -32,8 +30,6 @@ type Query {
 
     payments(dateTime: LocalDateTime @field(name: "PAYMENT_DATE"), amount: BigDecimal): [Payment] @asConnection
     paymentsFilteredByInventory(inventoryId: Int @field(name: "inventory_id") @reference(path: [{table: "RENTAL"}])): [Payment] @asConnection
-
-    staff(input: StaffInput!): [Staff] @asConnection
 
     node(id: ID!): Node
     cities: [City] @asConnection
@@ -214,13 +210,6 @@ type Payment @table {
 #    customer: CustomerRecord @splitQuery @service(service: {className: "no.sikt.graphitron.example.service.CustomerService"}) # kommentert ut pga bug i mapper
 }
 
-input StaffInput {
-    username: String
-    isManager: Boolean @condition(condition: {className: "no.sikt.graphitron.example.service.conditions.StaffConditions", method: "isManagerOfAStore"}, override: true)
-    addressId: Int @field(name: "ADDRESS_ID") @reference(path: [{table: "ADDRESS"}])
-    withAddressIdInCity300: Int @field(name: "ADDRESS_ID") @reference(path: [{key: "STAFF__STAFF_ADDRESS_ID_FKEY"}]) @condition(condition: {className: "no.sikt.graphitron.example.service.conditions.StaffConditions"})
-}
-
 type Staff implements Node @node @table(name: "STAFF") {
     id: ID! @nodeId
     email: String
@@ -249,7 +238,6 @@ type FilmCategory implements Node @node @table(name: "FILM_CATEGORY") {
 
 type Store implements Node @node @table {
     id: ID! @nodeId
-    inactiveCustomers: [Customer] @asConnection @condition(condition: {className: "no.sikt.graphitron.example.service.conditions.CustomerConditions"}, override: true)
 }
 
 type Rental @table {

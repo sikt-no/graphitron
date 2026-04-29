@@ -1,0 +1,10 @@
+{
+    "data": {
+        "customerWithNextCustomerId": {
+            "id": "Q3VzdG9tZXI6Mg"
+        },
+        "customerWithSumOfCustomerIds": {
+            "id": "Q3VzdG9tZXI6Mw"
+        }
+    }
+}
