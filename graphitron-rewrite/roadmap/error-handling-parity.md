@@ -92,8 +92,16 @@ Preserve: dual-layer routing (schema-mapped vs top-level fallback); the three ma
 Drop: the global per-operation runtime maps; the custom `ExecutionStrategy`; the manual
 consumer wiring; the javax module duplicate; the abstract `SchemaBasedErrorStrategy` subclass
 hooks (`handleValidationException`, `handleIllegalArgumentException`,
-`createDefaultDataAccessError`) — replaced by directive-side declarations per §5's migration
+`createDefaultDataAccessError`), replaced by directive-side declarations per §5's migration
 table.
+
+Audit note: those three are the only abstract methods on `SchemaBasedErrorStrategy`
+(verified by `grep -E 'abstract' SchemaBasedErrorStrategy.java`). The other extension points
+on the class (`handleDataAccessException`, `handleBusinessLogicException`, `createPayload`)
+are protected non-abstract methods with default bodies; consumers rarely override them, and
+the rewrite's `ErrorRouter.dispatch` covers their default behaviour. If a future audit finds
+a consumer subclassing those, the migration table extends; the spec is exhaustive against
+the abstract-method set as the surface contract.
 
 ---
 
@@ -194,6 +202,14 @@ explicitly), so dropping the field on these two variants sheds an unused string.
 needing exception-class-narrowed SQL-state matching combine an `ExceptionHandler` and a
 `SqlStateHandler` as two separate channel entries; the dispatch ordering rule in §3 makes the
 intersection deterministic.
+
+`matches` on `SqlStateHandler` and `VendorCodeHandler` is a substring filter against the
+`getMessage()` of the **matched `SQLException`**, i.e. the cause-chain entry that satisfied the
+`sqlState` / `vendorCode` predicate, not the outer wrapper (jOOQ `DataAccessException`,
+`CompletionException`, etc.). Walk direction is the same outermost-first scan §3 specifies for
+the chain; the first `SQLException` whose `getSQLState()` / `getErrorCode()` matches and whose
+message contains the substring wins. `matches` on `ExceptionHandler` follows the same rule
+against the matched class instance's `getMessage()`. A null `matches` skips the substring step.
 
 `ExceptionHandler.exceptionClass` is required and validated at classify time. If the class
 cannot be resolved on the classifier classpath, the parent `ErrorType` becomes
@@ -348,7 +364,7 @@ Legacy builds `Map<String, PayloadCreator>` at runtime construction because the 
 had no per-field resolution layer. The rewrite already classifies mutation and service fields.
 Two model additions, one per side of the carrier/payload split:
 
-#### 2a. `ErrorsField` — the payload-side variant the carrier walks
+#### 2a. `ErrorsField`: the payload-side variant the carrier walks
 
 A new sealed permit on `GraphitronField`:
 
@@ -407,7 +423,7 @@ fixtures all use list shapes, the runtime fan-out semantics assume a list, and a
 single-error shape would not survive the `VALIDATION`-fan-out arm in §5. The reject message
 points at the list shape.
 
-#### 2c. `ErrorChannel` — the carrier-side sub-taxonomy
+#### 2c. `ErrorChannel`: the carrier-side sub-taxonomy
 
 The carrier-side resolution:
 
@@ -415,13 +431,17 @@ The carrier-side resolution:
 record ErrorChannel(
     String errorsFieldName,                  // the "errors" field on the payload
     List<ErrorTypeRef> mappedErrorTypes,     // union members or list-element type
-    ClassName payloadClass                   // for the payload-factory reference, e.g. FilmPayload::new
+    ClassName payloadClass,                  // the developer-supplied payload class (e.g. FilmPayload)
+    List<PayloadConstructorParam> payloadCtorParams  // ordered all-fields constructor signature; see "Payload-factory contract" below
 ) {}
+
+record PayloadConstructorParam(String name, TypeName type, boolean isErrorsSlot) {}
 ```
 
-`ErrorChannel` is flat; `payloadClass` is the only carrier-resolved Java reference the emitter
-needs. A `PayloadShape` sub-taxonomy was considered but defers to a real second variant; until
-one exists, the seal-with-one-permit pattern is overhead. If a future channel shape (e.g. a
+`ErrorChannel` is flat; `payloadClass` plus `payloadCtorParams` is what the emitter needs to
+synthesize the per-fetcher factory lambda (see "Payload-factory contract" below). A
+`PayloadShape` sub-taxonomy was considered but defers to a real second variant; until one
+exists, the seal-with-one-permit pattern is overhead. If a future channel shape (e.g. a
 list-of-payloads aggregator, or a streaming target) needs to dispatch on shape, lift this
 field to a sealed interface at that point.
 
@@ -429,7 +449,7 @@ Carry `Optional<ErrorChannel>` on every field variant whose body is a candidate 
 try/catch / `.exceptionally` wrapper in §3. Concretely:
 
 - `MutationField.DmlTableField` (the sealed supertype introduced by
-  [`mutations.md`](mutations.md), covering insert/update/delete/upsert) — joins later when
+  [`mutations.md`](mutations.md), covering insert/update/delete/upsert); joins later when
   the new variants land; this plan adds the slot to whatever variants exist when it lands.
 - `MutationField.MutationServiceTableField`, `MutationServiceRecordField`.
 - `QueryField.QueryServiceTableField`, `QueryServiceRecordField`, `QueryRowsTableField` (and
@@ -480,6 +500,8 @@ The rewrite preserves this contract:
 - Required constructor: `(List<String> path, String message)`. Mandated at classify time; a
   missing or wrong-shape constructor produces an `UnclassifiedType` with a descriptive reason,
   same pattern as `@record` reflection failure (`TypeBuilder.java:457-459`).
+- Required interface: the class implements `GraphitronError` (see "Marker interface" below).
+  Mandated at classify time alongside the constructor check.
 - The class is reflected on the classifier classpath at build time, the same property that
   enables `@record` reflection, with an identical fail-mode if the classpath is missing the
   class.
@@ -491,6 +513,94 @@ consumers from carrying extra fields on the class (a `code` enum, a `severity`, 
 "No generation (error mapping config)". If a future consumer survey shows the boilerplate is
 meaningful, a directive extension (e.g. `@error(generate: true)`) can opt into generation
 without changing the default.
+
+#### Marker interface: `GraphitronError`
+
+Every `@error` Java class implements a generated marker:
+
+```java
+// GENERATED at <outputPackage>.schema.GraphitronError
+public interface GraphitronError {
+    List<String> path();
+    String message();
+}
+```
+
+Two reasons the marker pulls its weight:
+
+1. **Typed lists at the channel boundary.** The router builds a list of error instances and
+   hands it to the payload constructor. Without a marker, that list is `List<Object>` (a union
+   channel mixes concrete types). With it, `List<? extends GraphitronError>` is the precise
+   signature the developer's payload constructor declares, which is what every `@record` POJO
+   is going to spell anyway.
+2. **The `Mapping.build` return type collapses to `GraphitronError`** instead of `Object`. The
+   §3 router signature is fully typed end-to-end with no widening past the `errors` list's
+   element type, which is genuinely heterogeneous in a union channel.
+
+The marker is emitted once per output package (alongside `ErrorMappings` and `ErrorRouter`),
+so consumers don't import a runtime jar. Adding the implements clause is a one-line edit on
+each developer-supplied `@error` class; the migration table in §5 mentions the touch-up.
+
+A classifier check parallels the constructor check: an `@error` Java class that does not
+implement `GraphitronError` produces `UnclassifiedType` with a descriptive reason. Both checks
+are [load-bearing](../docs/rewrite-design-principles.md#classifier-guarantees-shape-emitter-assumptions)
+and wear the matching annotations.
+
+#### Payload-factory contract
+
+The carrier classifier resolves how the error list flows back into the developer's payload
+class. The contract is structural, not nominal: the payload's all-fields constructor (the one
+generated for a Java `record`, or the one a developer hand-rolls on a POJO) must include
+exactly one parameter assignable from `List<? extends GraphitronError>`; the others are bound
+to defaults at the catch site.
+
+```java
+// developer-supplied (e.g. as a Java record)
+public record FilmPayload(Film film, List<? extends GraphitronError> errors) { }
+```
+
+Resolution steps in the carrier classifier:
+
+1. Reflect `payloadClass` (the resolved `@record` class) and locate its all-fields constructor.
+   Single canonical constructor for a record; a hand-rolled `@record(record: {...})` is
+   expected to expose one matching the SDL field order. Multiple matching constructors → reject
+   `UnclassifiedField` with a descriptive reason.
+2. Walk the constructor parameters in order, recording `(name, type)` for each into
+   `payloadCtorParams`. Mark exactly one parameter as the `isErrorsSlot`: the parameter whose
+   type is assignable from `List<GraphitronError>` (i.e. `List<GraphitronError>`,
+   `List<? extends GraphitronError>`, or `Collection<? extends GraphitronError>` and friends).
+   Zero or more than one such parameter → reject `UnclassifiedField` with a descriptive reason
+   pointing at the all-fields constructor.
+3. Every other parameter is bound to its language default at the call site: `null` for
+   reference types, `0` / `0L` / `0.0` / `false` / `'\0'` for primitives. The synthesized
+   factory is:
+
+   ```java
+   // emitted
+   (List<? extends GraphitronError> errors) -> new FilmPayload(null, errors)
+   ```
+
+   Multiple non-error parameters → all defaulted, in declaration order. The emitter walks
+   `payloadCtorParams` and prints a literal per slot: the errors slot prints the lambda
+   parameter; every other slot prints its default literal. No reflection at runtime.
+
+Two consequences worth naming:
+
+- **Defaulting non-error fields is intentional.** A schema's `errors`-only response means
+  "no successful result"; legacy `SchemaBasedErrorStrategy.createPayload` defaulted the rest
+  via a setter chain. The rewrite collapses that into the constructor call. A schema author
+  who needs richer error-path payload state writes a `DataFetchingEnvironment`-aware
+  alternative themselves; that's outside the typed-error-channel contract.
+- **Constructor-parameter-name preservation matters.** The classifier records `name` for
+  audit / diagnostic purposes (the rejection message says "errors slot must be parameter
+  `errors`, not `someOtherList`"). The match itself is by **type assignability**, not name,
+  so a developer renaming the constructor parameter doesn't break the channel.
+
+The classifier check on the constructor shape is [load-bearing](../docs/rewrite-design-principles.md#classifier-guarantees-shape-emitter-assumptions):
+the producer (`FieldBuilder` channel-detection) wears
+`@LoadBearingClassifierCheck(key = "error-channel.payload-ctor-shape", ...)` and the consumer
+(the synthesized factory lambda printed by the fetcher emitter) wears
+`@DependsOnClassifierCheck` with the same key.
 
 ### 3. Drop the custom `ExecutionStrategy`. Wrap try/catch at the fetcher.
 
@@ -507,30 +617,53 @@ at the catch site (the thrown exception's own trace is captured before the wrapp
 The wrapper is uniform enough to template via `FetcherRegistrationsEmitter` rather than
 woven into each variant's body shape individually.
 
+Both arms of every wrapped fetcher return `DataFetcherResult<P>` (or
+`CompletableFuture<DataFetcherResult<P>>` for async). The success path wraps the produced
+payload; the catch path receives an already-typed `DataFetcherResult<P>` from the router. One
+allocation per fetch on the success path; in exchange, the entire emission boundary is
+statically typed and `Object` never appears in a generated signature. graphql-java already
+unwraps `DataFetcherResult` uniformly downstream, so the wrapper is invisible to consumers.
+
 For a fetcher with an `ErrorChannel`:
 
 ```java
-public static Object createFilm(DataFetchingEnvironment env) {
+public static DataFetcherResult<FilmPayload> createFilm(DataFetchingEnvironment env) {
     try {
-        return /* existing INSERT / UPDATE / service body */;
+        FilmPayload payload = /* existing INSERT / UPDATE / service body */;
+        return DataFetcherResult.<FilmPayload>newResult().data(payload).build();
     } catch (Exception e) {
-        return ErrorRouter.dispatch(e, ErrorMappings.FILM_PAYLOAD, env, FilmPayload::new);
+        return ErrorRouter.dispatch(
+            e,
+            ErrorMappings.FILM_PAYLOAD,
+            env,
+            errors -> new FilmPayload(null, errors));   // synthesized per §2c's payload-factory contract
     }
 }
 ```
+
+The lambda body is the synthesized factory from §2c: every constructor parameter except the
+errors slot prints its language default; the errors slot binds the lambda parameter. For a
+single-parameter payload (`record OnlyErrors(List<? extends GraphitronError> errors)`), the
+lambda collapses to a method reference (`OnlyErrors::new`); the multi-parameter case is the
+typical one and uses the explicit lambda.
 
 For a fetcher without an `ErrorChannel` (no `@error` types declared on the payload, or no
 payload, e.g. a query field returning a scalar):
 
 ```java
-public static Object getActorCount(DataFetchingEnvironment env) {
+public static DataFetcherResult<Long> getActorCount(DataFetchingEnvironment env) {
     try {
-        return /* existing body */;
+        Long value = /* existing body */;
+        return DataFetcherResult.<Long>newResult().data(value).build();
     } catch (Exception e) {
-        return ErrorRouter.redact(e, env);  // logs UUID, returns DataFetcherResult with redacted error
+        return ErrorRouter.redact(e, env);  // logs UUID, returns DataFetcherResult<Long> with data=null + redacted error
     }
 }
 ```
+
+`redact` is generic on the field's data type (`<P> DataFetcherResult<P>`); the call site's
+target type infers `P` so the catch arm fits the method's declared return type without an
+explicit type witness.
 
 The wrapper catches `Exception`, not `Throwable`: `Error` and its subclasses
 (`OutOfMemoryError`, `StackOverflowError`, `LinkageError`, `AssertionError`) propagate. The
@@ -555,7 +688,7 @@ different payloads (e.g., `createFilm` -> `ErrorMappings.FILM_PAYLOAD`, `deleteF
 `ErrorMappings.DELETE_FILM_PAYLOAD`), each catch arm naming its own constant. Example shape:
 
 ```java
-// GENERATED — ErrorMappings
+// GENERATED: ErrorMappings
 public final class ErrorMappings {
     public static final ErrorRouter.Mapping[] FILM_PAYLOAD = new ErrorRouter.Mapping[] { ... };
     public static final ErrorRouter.Mapping[] BEHANDLE_SAK_PAYLOAD = new ErrorRouter.Mapping[] { ... };
@@ -583,14 +716,17 @@ The constant name is derived from the *payload class* (e.g. `FILM_PAYLOAD` ←
 `FilmPayload`), and the dedup key is the flattened mapping-list contents (variant + criteria +
 description, in source order). Two fetchers returning the same payload class with identical
 channel declarations share one constant; two fetchers returning the same payload class with
-*different* channel declarations get distinct constants suffixed by a stable hash of the
-mapping list (`FILM_PAYLOAD`, `FILM_PAYLOAD_A1B2`). Two fetchers returning *different* payload
-classes never share a constant even if their mapping lists happen to be equal, since the
-emitted `payloadFactory` differs and a shared constant would be misleading.
+*different* channel declarations get distinct constants suffixed by an 8-hex-char (32-bit)
+prefix of the SHA-256 of the canonicalized mapping list (`FILM_PAYLOAD`,
+`FILM_PAYLOAD_A1B2C3D4`). Two fetchers returning *different* payload classes never share a
+constant even if their mapping lists happen to be equal, since the emitted `payloadFactory`
+differs and a shared constant would be misleading. A 32-bit suffix keeps collision probability
+negligible for any plausible schema size; on the rare collision the classifier rejects with a
+descriptive reason and the implementer widens the suffix as a one-line edit.
 
 The `Mapping[]` is emitted as a literal array; consumers should treat it as immutable. (The
 generator does not wrap with `List.copyOf` to avoid the wrapping overhead on the hot path; the
-guarantee is editorial — no Graphitron-emitted code mutates the array.)
+guarantee is editorial: no Graphitron-emitted code mutates the array.)
 
 `ErrorRouter` is also emitted at `<outputPackage>.schema.ErrorRouter` (one per output package,
 not one per `*Fetchers` class). It walks the cause chain with the legacy matcher logic and
@@ -612,23 +748,35 @@ future variant added to `Handler` must be added to `Mapping` in the same edit.
 
 ```java
 public final class ErrorRouter {
-    /** Channel-mapped dispatch: matched -> payload via factory; unmatched -> redacted DataFetcherResult. */
-    public static Object dispatch(
+    /**
+     * Channel-mapped dispatch:
+     *   matched   -> DataFetcherResult.newResult().data(payloadFactory.apply(errors)).build()
+     *   unmatched -> redacted DataFetcherResult (data=null + correlation-ID error).
+     */
+    public static <P> DataFetcherResult<P> dispatch(
             Throwable thrown,
-            Mapping[] mappings,                          // an entry on ErrorMappings, e.g. ErrorMappings.FILM_PAYLOAD
-            DataFetchingEnvironment env,                 // for path/source-location
-            Function<List<Object>, ?> payloadFactory     // (errors) -> payload
+            Mapping[] mappings,                                            // an entry on ErrorMappings, e.g. ErrorMappings.FILM_PAYLOAD
+            DataFetchingEnvironment env,                                   // for path/source-location
+            Function<List<? extends GraphitronError>, P> payloadFactory    // (errors) -> payload
     ) { ... }
 
-    /** No-channel disposition: log with correlation ID, return DataFetcherResult with a redacted error. */
-    public static Object redact(Throwable thrown, DataFetchingEnvironment env) { ... }
+    /** No-channel disposition: log with correlation ID, return DataFetcherResult with data=null and a redacted error. */
+    public static <P> DataFetcherResult<P> redact(Throwable thrown, DataFetchingEnvironment env) { ... }
 
     public sealed interface Mapping
             permits ExceptionMapping, SqlStateMapping, VendorCodeMapping, ValidationMapping {
-        Object build(List<String> path, String message);  // constructs the @error instance
+        GraphitronError build(List<String> path, String message);  // constructs the @error instance
     }
 }
 ```
+
+`dispatch` and `redact` are generic on `P`, the field's payload type. Both arms always return
+`DataFetcherResult<P>`; graphql-java unwraps that uniformly downstream regardless of whether
+the result was produced via a successful payload or a redacted error. No `Object` widening
+remains in the router signature, the synthesized factory, or the wrapped fetcher's static
+return type. `Mapping.build` returns `GraphitronError` (per §2c's marker), so the heterogeneous
+errors list a union channel produces is statically `List<? extends GraphitronError>` from the
+build site through the factory call.
 
 `ValidationMapping` is in the sealed `Mapping` set so the dispatch arm can locate the
 validation `@error` factory by exhaustive switch (see §5's fan-out: it calls `mapping.build(...)`
@@ -659,9 +807,10 @@ UUID, is a deliberate non-goal here. If a consumer wants it later, the fix is a 
 `CorrelationIdProvider` interface a consumer can install on `Graphitron`'s builder. Out of
 scope for this item; file as Backlog when demand arises.)
 
-The emitted call site supplies a payload factory rather than a no-arg constructor reference;
-this mirrors the legacy `PayloadCreator` shape (`SchemaBasedErrorStrategy.java:139-145`) but
-binds the errors list explicitly rather than via a setter.
+The emitted call site passes the per-fetcher synthesized factory lambda (§2c's
+"Payload-factory contract"); this mirrors the legacy `PayloadCreator` shape
+(`SchemaBasedErrorStrategy.java:139-145`) but binds the errors list explicitly through the
+all-fields constructor rather than via a setter chain.
 
 `path` resolves to `env.getExecutionStepInfo().getPath().toList()`; `message` resolves to the
 handler's `description` if present, otherwise the matched exception's `getMessage()` (preserves
@@ -702,18 +851,30 @@ escapes synchronously from the lambda, which DataLoader catches and surfaces as 
    (try/catch) and the fetcher-method return (`.exceptionally`).
 
 ```java
-public static CompletableFuture<Result<FilmRecord>> film(DataFetchingEnvironment env) {
+public static CompletableFuture<DataFetcherResult<FilmPayload>> createFilm(DataFetchingEnvironment env) {
     // ... DataLoader registration ...
-    return loader.load(key, env)
-        .exceptionally(t -> ErrorRouter.dispatch(t, ErrorMappings.FILM_PAYLOAD, env, FilmPayload::new));
+    return loader.load(key, env)                                              // CompletableFuture<FilmPayload>
+        .thenApply(payload -> DataFetcherResult.<FilmPayload>newResult().data(payload).build())
+        .exceptionally(t -> ErrorRouter.dispatch(
+            t,
+            ErrorMappings.FILM_PAYLOAD,
+            env,
+            errors -> new FilmPayload(null, errors)));
 }
 ```
 
-Whether a fetcher is sync (returns `Result<...>` directly) or async (returns
-`CompletableFuture<...>`) is a property of the existing classifier output (the field variant
-plus its `ReturnTypeRef.wrapper()`); §2's `ErrorChannel` does not need to encode it. The
-emitter forks on the field variant, as it already does for the rest of the body shape; both
-forks call into the same `ErrorRouter.dispatch`, so the runtime contract is uniform.
+The `.thenApply` wraps the success arm in `DataFetcherResult<P>` so the future's element type
+matches the `.exceptionally` lambda's return type; both arms produce `DataFetcherResult<P>`
+and the future's static type is `CompletableFuture<DataFetcherResult<P>>`. Whether a fetcher
+is sync (returns `DataFetcherResult<P>` directly) or async (returns
+`CompletableFuture<DataFetcherResult<P>>`) is a property of the existing classifier output (the
+field variant plus its `ReturnTypeRef.wrapper()`); §2's `ErrorChannel` does not need to encode
+it. The emitter forks on the field variant, as it already does for the rest of the body shape;
+both forks call into the same `ErrorRouter.dispatch`, so the runtime contract is uniform.
+
+For a no-channel async fetcher (e.g. a query field returning `[Film]`), the same
+`.thenApply` + `.exceptionally(t -> ErrorRouter.redact(t, env))` pair applies; `redact`'s `<P>`
+infers from the `.exceptionally` target type, no witness needed.
 
 Note on graphql-java's own wrapping: graphql-java internally wraps fetcher exceptions in
 `CompletionException` (and sometimes `ExecutionException`) inside `AsyncExecutionStrategy`
@@ -919,8 +1080,10 @@ chain, the dispatch differs from the regular one-exception-to-one-error path:
    via `mapping.build(err.getPath().stream().map(Object::toString).toList(), err.getMessage())`.
    This is the same factory call the regular dispatch uses; only the *number* of calls differs
    (one per violation instead of one per fetcher).
-3. Hand the resulting `List<Object>` to the payload factory. Same return path as a schema-
-   mapped match.
+3. Hand the resulting `List<? extends GraphitronError>` to the payload factory (the
+   per-fetcher synthesized lambda from §2c's "Payload-factory contract"); wrap the produced
+   payload in `DataFetcherResult.<P>newResult().data(payload).build()`. Same return path as a
+   schema-mapped match.
 
 If the channel has no `ValidationHandler`, the validation arm in §3 returns a
 `DataFetcherResult` with `data=null` and the carried `List<GraphQLError>` attached verbatim,
@@ -968,8 +1131,16 @@ type UgyldigInput @error(handlers: [
 ```
 
 The corresponding `CustomSchemaBasedErrorStrategy` subclass deletes; the consumer's only
-remaining Java is the `UgyldigInput(List<String> path, String message)` record itself
-(developer-supplied per §2).
+remaining Java is the `UgyldigInput` record itself (developer-supplied per §2), with the
+`(List<String> path, String message)` constructor and the `GraphitronError` marker:
+
+```java
+public record UgyldigInput(List<String> path, String message) implements GraphitronError {}
+```
+
+Adding `implements GraphitronError` to existing `@error` classes is the one schema-touching
+step beyond the directive change. The marker lives at `<outputPackage>.schema.GraphitronError`
+(generated, no runtime jar).
 
 ---
 
@@ -1145,7 +1316,7 @@ constraint's message. At most one `VALIDATION` entry per error channel; `classNa
 {handler: VALIDATION}
 ```
 
-A mutation with two violated constraints produces two entries in `errors` — one per violation:
+A mutation with two violated constraints produces two entries in `errors`, one per violation:
 
 ```json
 {
@@ -1158,9 +1329,12 @@ A mutation with two violated constraints produces two entries in `errors` — on
 
 ### Dispatch order
 
-Handlers are matched in source order; the first match wins. Each handler checks the entire
-cause chain (e.g., a service method that throws a domain exception wrapping a `SQLException`
-exposes both to every handler). Place more-specific handlers before broader ones:
+Two rules combine to decide which handler fires. They look similar at a glance, so it's worth
+seeing each one in isolation before the cases that mix them.
+
+**Rule 1: source order, first match wins.** Handlers are tried top-to-bottom in the array.
+The first one whose criteria are satisfied produces the typed `@error` instance; later
+handlers are not consulted. Place more-specific handlers before broader ones:
 
 ```graphql
 type MyError @error(handlers: [
@@ -1173,16 +1347,32 @@ type MyError @error(handlers: [
 }
 ```
 
-When an exception wraps a cause, source order decides which handler fires, not which
-exception in the chain is "outermost". A `[GENERIC SQLException, GENERIC MyDomainException]`
-declaration with a `MyDomainException` wrapping a `SQLException` fires the SQLException
-handler (it appears first; the chain scan finds an `SQLException` regardless of position).
-To match the outer exception specifically, declare its handler first.
+A `Throwable`-shaped FK violation hits the first handler (the sqlState `23503` matches), not
+the third, because rule 1 stops at the first match.
+
+**Rule 2: each handler walks the entire cause chain.** A single handler doesn't only look at
+the outermost exception; it scans the chain (outermost to innermost) for an exception that
+satisfies its criteria. So a `MyDomainException` wrapping a `SQLException` satisfies a
+`{handler: GENERIC, className: "java.sql.SQLException"}` declaration even though
+`MyDomainException` is the outer throw.
+
+Combining the two: when an exception wraps a cause, **source order decides which handler
+fires, not which exception in the chain is "outermost"**:
+
+```graphql
+{handler: GENERIC, className: "java.sql.SQLException"},     # rule 1: tried first
+{handler: GENERIC, className: "com.example.MyDomainException"}  # tried second
+```
+
+A `MyDomainException` wrapping a `SQLException` fires the **SQLException** handler. Both
+match (rule 2 finds the inner `SQLException` for the first handler, the outer
+`MyDomainException` for the second), so rule 1 picks the first declaration. To match the
+outer exception specifically, swap the order.
 
 ### Unmatched and infrastructure exceptions
 
-Exceptions that match no handler — including infrastructure exceptions like `IOException` and
-`InterruptedException` that a service method may declare — are caught at the fetcher boundary
+Exceptions that match no handler, including infrastructure exceptions like `IOException` and
+`InterruptedException` that a service method may declare, are caught at the fetcher boundary
 and redacted. The client receives:
 
 ```json
@@ -1238,8 +1428,8 @@ The generated fetchers install no engine-level handler.
 - **A consumer-facing `ExceptionHandlingBuilder` analogue.** Auto-wiring is the goal. The
   rewrite catches at every fetcher; there is no top-level handler to override. Consumers
   who want to intercept exceptions for non-Graphitron-emitted code (parsing, validation,
-  custom scalars) install a `DataFetcherExceptionHandler` on `GraphQL.Builder` themselves —
-  graphql-java's standard extension point, unrelated to Graphitron's emission.
+  custom scalars) install a `DataFetcherExceptionHandler` on `GraphQL.Builder` themselves;
+  that's graphql-java's standard extension point, unrelated to Graphitron's emission.
 - **Subscription error paths.** Legacy has no subscription-specific exception handling, and
   the rewrite does not generate subscription fetchers (`FieldBuilder.classifyRootField` rejects
   `Subscription` with a `DEFERRED` rejection at `FieldBuilder.java:1557`). Subscription error
