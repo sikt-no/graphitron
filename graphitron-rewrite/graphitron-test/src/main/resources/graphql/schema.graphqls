@@ -243,6 +243,16 @@ type Film implements Node @table(name: "film") @node {
         className: "no.sikt.graphitron.rewrite.test.extensions.FilmExtensions",
         method: "isEnglish"
     })
+    # R49 ServiceRecordField Phase A fixture: child @service with a scalar return.
+    # FilmService.titleUppercase has the mapped-batch shape
+    # Map<Row1<Integer>, String>(Set<Row1<Integer>>, DSLContext); the generator
+    # emits a DataLoader-backed fetcher and a stub rows-method (Phase B / R32 fills
+    # the body). Selecting this field at request time throws
+    # UnsupportedOperationException until R32 lands.
+    titleUppercase: String @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.FilmService",
+        method: "titleUppercase"
+    })
     # NestingField fixture: plain-object summary type nested inside Film. Fields resolve
     # against the outer Film table via $fields recursion (Film.summary.title → FILM.TITLE).
     summary:     FilmSummary
