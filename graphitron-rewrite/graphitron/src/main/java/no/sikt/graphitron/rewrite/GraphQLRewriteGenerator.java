@@ -19,6 +19,7 @@ import no.sikt.graphitron.rewrite.generators.schema.EnumTypeGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.FetcherRegistrationsEmitter;
 import no.sikt.graphitron.rewrite.generators.schema.GraphitronErrorInterfaceGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.GraphitronFacadeGenerator;
+import no.sikt.graphitron.rewrite.generators.schema.ValidationViolationGraphQLExceptionGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.GraphitronSchemaClassGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.InputTypeGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.ObjectTypeGenerator;
@@ -158,6 +159,7 @@ public class GraphQLRewriteGenerator {
         write(OrderByResultClassGenerator.generate(),                                             "util",       emittedThisRun);
         write(GraphitronContextInterfaceGenerator.generate(),                                     "schema",     emittedThisRun);
         write(GraphitronErrorInterfaceGenerator.generate(),                                       "schema",     emittedThisRun);
+        write(ValidationViolationGraphQLExceptionGenerator.generate(),                            "schema",     emittedThisRun);
         write(EnumTypeGenerator.generate(schema),                                                 "schema",     emittedThisRun);
         write(InputTypeGenerator.generate(schema),                                                "schema",     emittedThisRun);
         write(ObjectTypeGenerator.generate(schema, assembled, fetcherBodies),                     "schema",     emittedThisRun);
