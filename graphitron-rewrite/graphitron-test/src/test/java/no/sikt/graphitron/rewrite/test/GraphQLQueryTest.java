@@ -205,6 +205,26 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void films_titleUppercase_resolvesViaServiceRecordFieldDataLoader() {
+        // R49 Phase B (R32): @service child field with a scalar return. The generator-emitted
+        // rows-method body calls FilmService.titleUppercase via the parameterised
+        // ArgCallEmitter (Sources -> keys, DslContext -> dsl local). Each key is one parent
+        // FILM_ID; the developer's method returns Map<Row1<Integer>, String> with uppercased
+        // titles. End-to-end verification that the Phase A plumbing (BatchKey, IMPLEMENTED_LEAVES,
+        // shared emitters) works with Phase B's body emission against PostgreSQL.
+        Map<String, Object> data = execute("{ films { title titleUppercase } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("films");
+        assertThat(films).hasSize(5);
+        for (var f : films) {
+            String title = (String) f.get("title");
+            String titleUppercase = (String) f.get("titleUppercase");
+            assertThat(titleUppercase)
+                .as("titleUppercase must equal title.toUpperCase() for film '%s'", title)
+                .isEqualTo(title.toUpperCase());
+        }
+    }
+
+    @Test
     void films_isEnglish_resolvesViaExternalFieldExpression() {
         // R48 ComputedField execution-tier fixture: @externalField(reference: ...) inlines
         // FilmExtensions.isEnglish(table) (Field<Boolean>(LANGUAGE_ID = 1)) into Film.$fields().

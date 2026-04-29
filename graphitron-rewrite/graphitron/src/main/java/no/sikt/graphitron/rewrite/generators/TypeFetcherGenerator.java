@@ -327,11 +327,11 @@ public class TypeFetcherGenerator {
                 }
                 case ChildField.ServiceTableField stf -> {
                     builder.addMethod(buildServiceDataFetcher(stf.name(), stf, stf.method(), stf.returnType(), parentTable, RECORD, className, jooqPackage, outputPackage));
-                    builder.addMethod(buildServiceRowsMethod(stf, stf.returnType(), RECORD));
+                    builder.addMethod(buildServiceRowsMethod(stf, stf.method(), stf.returnType(), RECORD, stf.parentTypeName(), outputPackage));
                 }
                 case ChildField.ServiceRecordField srf -> {
                     builder.addMethod(buildServiceDataFetcher(srf.name(), srf, srf.method(), srf.returnType(), parentTable, srf.elementType(), className, jooqPackage, outputPackage));
-                    builder.addMethod(buildServiceRowsMethod(srf, srf.returnType(), srf.elementType()));
+                    builder.addMethod(buildServiceRowsMethod(srf, srf.method(), srf.returnType(), srf.elementType(), srf.parentTypeName(), outputPackage));
                 }
                 case ChildField.SplitTableField stf -> {
                     builder.addMethod(buildSplitQueryDataFetcher(stf, stf.returnType(), parentTable, outputPackage, jooqPackage));
@@ -1691,8 +1691,11 @@ public class TypeFetcherGenerator {
      */
     private static MethodSpec buildServiceRowsMethod(
             BatchKeyField bkf,
+            MethodRef method,
             ReturnTypeRef schemaReturnType,
-            TypeName perKeyType) {
+            TypeName perKeyType,
+            String parentTypeName,
+            String outputPackage) {
 
         boolean isList = schemaReturnType.wrapper().isList();
         boolean isMapped = bkf.batchKey() instanceof BatchKey.MappedRowKeyed
@@ -1706,13 +1709,34 @@ public class TypeFetcherGenerator {
             ? ParameterizedTypeName.get(MAP, keysElementType, valuePerKey)
             : (isList ? ParameterizedTypeName.get(LIST, ParameterizedTypeName.get(LIST, perKeyType)) : ParameterizedTypeName.get(LIST, perKeyType));
 
-        return MethodSpec.methodBuilder(bkf.rowsMethodName())
+        var dslContextClass = ClassName.get("org.jooq", "DSLContext");
+        var serviceClass = ClassName.bestGuess(method.className());
+        String conditionsClassName = outputPackage + ".conditions."
+            + parentTypeName + QueryConditionsGenerator.CLASS_NAME_SUFFIX;
+        boolean needsDsl = method.params().stream()
+            .anyMatch(p -> p.source() instanceof ParamSource.DslContext);
+
+        var builder = MethodSpec.methodBuilder(bkf.rowsMethodName())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(returnType)
             .addParameter(keysContainerType, "keys")
-            .addParameter(ENV, "env")
-            .addStatement("throw new $T()", UnsupportedOperationException.class)
-            .build();
+            .addParameter(ENV, "env");
+
+        if (needsDsl) {
+            builder.addStatement("$T dsl = graphitronContext(env).getDslContext(env)", dslContextClass);
+        }
+        // Sources param passes through `keys` directly. Element-shape conversion (RowN -> TableRecord
+        // when the developer's signature takes Set<TableRecord>/List<TableRecord>) is deferred —
+        // the classifier accepts both shapes today, but the conversion path is a separate emitter
+        // concern (R32 §2). Until that lands, signatures using TableRecord as the Sources element
+        // type compile against `keys` only when the lambda key type matches; mismatches surface
+        // as javac errors at the call site.
+        builder.addStatement("return $T.$L($L)",
+            serviceClass,
+            method.methodName(),
+            ArgCallEmitter.buildMethodBackedCallArgs(method, null, CodeBlock.of("keys"), conditionsClassName));
+
+        return builder.build();
     }
 
     // -----------------------------------------------------------------------

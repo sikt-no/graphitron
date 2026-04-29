@@ -81,17 +81,30 @@ public final class ArgCallEmitter {
      *                             when no {@code TextMapLookup} extractions exist on the method.
      */
     public static CodeBlock buildMethodBackedCallArgs(MethodRef method, CodeBlock tableExpression, String conditionsClassName) {
+        return buildMethodBackedCallArgs(method, tableExpression, null, conditionsClassName);
+    }
+
+    /**
+     * Variant that accepts a {@code sourcesExpression} — the {@link CodeBlock} to emit at the
+     * {@link ParamSource.Sources} slot. Use this when emitting a child {@code @service} rows-
+     * method body where the {@code keys} parameter (or a converted form of it; see R32 element-
+     * shape recovery) is the value supplied at the Sources slot. When {@code null}, Sources is
+     * rejected as in the legacy two-arg overload.
+     */
+    public static CodeBlock buildMethodBackedCallArgs(MethodRef method, CodeBlock tableExpression,
+            CodeBlock sourcesExpression, String conditionsClassName) {
         var args = CodeBlock.builder();
         boolean first = true;
         for (var param : method.params()) {
             if (!first) args.add(", ");
             first = false;
-            args.add(emitForParam(param, tableExpression, conditionsClassName));
+            args.add(emitForParam(param, tableExpression, sourcesExpression, conditionsClassName));
         }
         return args.build();
     }
 
-    private static CodeBlock emitForParam(MethodRef.Param param, CodeBlock tableExpression, String conditionsClassName) {
+    private static CodeBlock emitForParam(MethodRef.Param param, CodeBlock tableExpression,
+            CodeBlock sourcesExpression, String conditionsClassName) {
         var source = param.source();
         return switch (source) {
             case ParamSource.Arg arg -> buildArgExtraction(
@@ -110,10 +123,16 @@ public final class ArgCallEmitter {
                 }
                 yield tableExpression;
             }
-            case ParamSource.Sources ignored ->
-                throw new IllegalStateException(
-                    "ParamSource.Sources reached buildMethodBackedCallArgs at root — should have been rejected at classifier time (Invariants §2): param '"
-                    + param.name() + "'");
+            case ParamSource.Sources ignored -> {
+                if (sourcesExpression == null) {
+                    throw new IllegalStateException(
+                        "ParamSource.Sources reached buildMethodBackedCallArgs without a sourcesExpression — "
+                            + "root-level @service must reject this at classifier time (Invariants §2); "
+                            + "child-level rows-method emitters must pass a sourcesExpression: param '"
+                            + param.name() + "'");
+                }
+                yield sourcesExpression;
+            }
             case ParamSource.SourceTable ignored ->
                 throw new IllegalStateException(
                     "ParamSource.SourceTable reached buildMethodBackedCallArgs — SourceTable is a child-field concept, unreachable at root: param '"
