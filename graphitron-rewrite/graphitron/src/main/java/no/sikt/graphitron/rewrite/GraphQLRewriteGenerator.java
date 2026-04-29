@@ -108,20 +108,28 @@ public class GraphQLRewriteGenerator {
      * Package-private so tests can exercise the attribution + load + apply
      * pipeline without incurring the full emission stage. Production callers
      * always go through {@link #generate()}.
+     *
+     * <p>Returns the loaded {@link AttributedRegistry} carrying both the
+     * {@link graphql.schema.idl.TypeDefinitionRegistry} and the
+     * {@code federationLink} flag captured from
+     * {@link FederationLinkApplier#apply}'s return value, so downstream stages
+     * read the flag without re-walking the registry.
      */
-    graphql.schema.idl.TypeDefinitionRegistry loadAttributedRegistry() {
+    AttributedRegistry loadAttributedRegistry() {
         var bySource = SchemaInputAttribution.build(ctx.schemaInputs());
         var registry = RewriteSchemaLoader.load(bySource.keySet());
         TagLinkSynthesiser.apply(registry, bySource);
-        FederationLinkApplier.apply(registry);
-        KeyNodeSynthesiser.apply(registry);
+        boolean federationLink = FederationLinkApplier.apply(registry);
+        if (federationLink) {
+            KeyNodeSynthesiser.apply(registry);
+        }
         TagApplier.apply(registry, bySource);
         DescriptionNoteApplier.apply(registry, bySource);
-        return registry;
+        return new AttributedRegistry(registry, federationLink);
     }
 
-    private void runPipeline(graphql.schema.idl.TypeDefinitionRegistry registry) {
-        var bundle = GraphitronSchemaBuilder.buildBundle(registry, ctx);
+    private void runPipeline(AttributedRegistry attributed) {
+        var bundle = GraphitronSchemaBuilder.buildBundle(attributed, ctx);
         var schema = bundle.model();
         var assembled = bundle.assembled();
         boolean federationLink = bundle.federationLink();

@@ -24,19 +24,12 @@ public final class FederationLinkApplier {
     private FederationLinkApplier() {}
 
     /**
-     * Returns {@code true} if the registry contains a federation {@code @link} extension
-     * (regardless of whether {@link #apply} has been called). Safe to call after {@link #apply}
-     * has already processed the same registry; it does not re-add definitions.
-     */
-    public static boolean hasFederationLink(TypeDefinitionRegistry registry) {
-        return LinkDirectiveProcessor.loadFederationImportedDefinitions(registry) != null;
-    }
-
-    /**
      * Injects federation directive declarations derived from the schema's {@code @link} into
      * {@code registry}. Returns {@code true} when a federation {@code @link} was present and
      * definitions were injected; {@code false} when no federation {@code @link} was found and the
-     * registry is unchanged.
+     * registry is unchanged. The pipeline orchestrator captures this return value into
+     * {@link no.sikt.graphitron.rewrite.AttributedRegistry} so downstream stages do not re-walk
+     * the registry to discover the same fact.
      *
      * <p>Throws {@link com.apollographql.federation.graphqljava.exceptions.MultipleFederationLinksException}
      * if the schema contains more than one federation {@code @link}, and
