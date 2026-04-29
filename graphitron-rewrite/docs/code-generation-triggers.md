@@ -168,7 +168,7 @@ Fields are classified separately for root types (Query/Mutation) and nested type
 
 | Schema Pattern | `ChildField` Variant | `*Fetchers` Generates |
 |---|---|---|
-| `@externalField` | `ComputedField` | Column method in `wiring()` (developer supplies `Field<?>`) |
+| `@externalField(reference: {className, method})` | `ComputedField` | Inlined call in `$fields()` (`<Class>.<method>(table).as("<name>")`) + `ColumnFetcher` registered by alias in `wiring()`. Method must be `public static Field<X> name(<ParentTable> table)`. |
 | `@tableMethod` | `TableMethodField` | Field method stub |
 | `@service`, return `@table` | `ServiceTableField` | Async DataLoader fetcher + `rows*()` method |
 | `@service`, return non-table | `ServiceRecordField` | Field method stub |

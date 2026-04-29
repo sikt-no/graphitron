@@ -154,10 +154,21 @@ state under `state/`; lsp4j wiring under `server/`).
 `GraphitronTextDocumentService` switches on directive name and
 delegates to `TableCompletions` / `FieldCompletions` /
 `ReferenceCompletions` / `Hovers` / `Diagnostics` / `Definitions`.
-Phase 5 adds `@service` and `@condition` cases by writing the
-matching providers and registering them in the same switches; no
-new parsing primitives are needed beyond the existing
-`Directives`, `NestedArgs`, and `TypeContext` helpers.
+Phase 5 adds `@service`, `@condition`, and `@externalField` cases
+by writing the matching providers and registering them in the
+same switches; no new parsing primitives are needed beyond the
+existing `Directives`, `NestedArgs`, and `TypeContext` helpers.
+
+`@externalField` completion (deliverable, R48 follow-up): the LSP
+indexes every `public static Field<X> name(<Table> table)` method
+on the consumer's source roots and offers them as
+`reference: { className, method }` completions. `Parameter.source =
+ParamSource.Table` already models the parameter shape; the
+source-walk filter is the only new code. The classifier rejects
+unmatched references at codegen with `AUTHOR_ERROR`, so authoring
+without LSP support still works, but the completion path makes
+discovery a one-keystroke operation matching the `@service` and
+`@condition` flows.
 
 ### Catalog data shape
 
