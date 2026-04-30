@@ -126,9 +126,8 @@ class ServiceCatalog {
      * Loads the service class and method via reflection and classifies each parameter.
      *
      * <p>{@code argBindings} maps each Java parameter name that should bind to a GraphQL argument
-     * to that argument's name. Constructed (and collision-checked) by the caller via
-     * {@link ArgBindingMap#forField}; identity entries cover the no-override case, override
-     * entries carry the {@code @field(name:)} override.
+     * to that argument's name. Constructed by the caller via {@link ArgBindingMap#of}; identity
+     * entries cover the no-override case, override entries carry the {@code argMapping} override.
      *
      * <p>Parameters whose name appears as a key in the binding map get {@link ParamSource.Arg}
      * with {@link ParamSource.Arg#graphqlArgName()} set to the corresponding value; parameters
@@ -259,7 +258,7 @@ class ServiceCatalog {
     }
 
     /**
-     * Post-reflection typo guard for {@code @field(name:)} overrides on argument sites.
+     * Post-reflection typo guard for {@code argMapping} overrides on argument sites.
      *
      * <p>Iterates {@code argByJavaName} entries that constitute explicit overrides
      * ({@code javaTarget != graphqlArgName}) and verifies each {@code javaTarget} is among the
@@ -283,7 +282,7 @@ class ServiceCatalog {
             String argName = entry.getValue();
             if (javaTarget.equals(argName)) continue;
             if (!paramNames.contains(javaTarget)) {
-                return "@field(name: \"" + javaTarget + "\") on argument '" + argName
+                return "argMapping entry '" + javaTarget + ": " + argName
                     + "' references Java parameter '" + javaTarget
                     + "', but method '" + methodName + "' in class '" + className
                     + "' has parameters " + formatNameSet(paramNames);
@@ -503,7 +502,7 @@ class ServiceCatalog {
             String argName = entry.getValue();
             if (javaTarget.equals(argName)) continue;
             if (tableParamNames.contains(javaTarget)) {
-                return "@field(name: \"" + javaTarget + "\") on argument '" + argName
+                return "argMapping entry '" + javaTarget + ": " + argName
                     + "' targets the Table<?> parameter of @tableMethod '" + methodName
                     + "' in class '" + className + "' — the Table<?> slot is reserved and cannot be"
                     + " bound to a GraphQL argument";

@@ -1307,6 +1307,21 @@ class GraphitronSchemaBuilderTest {
                 var unc = (no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField) field;
                 assertThat(unc.kind()).isEqualTo(no.sikt.graphitron.rewrite.RejectionKind.AUTHOR_ERROR);
                 assertThat(unc.reason()).contains("missing className");
+            }),
+
+        ARG_MAPPING_INERT_ON_EXTERNAL_FIELD(
+            "R53: argMapping on @externalField → UnclassifiedField (structural-inertness rejection)",
+            """
+            type Film @table(name: "film") {
+                computedRating: String @externalField(reference: {className: "no.sikt.graphitron.rewrite.TestExternalFieldStub", method: "rating", argMapping: "x: y"})
+            }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var field = schema.field("Film", "computedRating");
+                assertThat(field).isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class);
+                assertThat(((no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField) field).reason())
+                    .contains("argMapping is not supported on @externalField");
             });
 
         final String sdl;
@@ -1681,6 +1696,19 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var t = (UnclassifiedType) schema.type("FilmDetails");
                 assertThat(t.reason()).contains("com.example.nonexistent.Missing").contains("could not be loaded");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(); }
+        },
+
+        ARG_MAPPING_INERT_ON_RECORD(
+            "R53: argMapping on @record → UnclassifiedType (structural-inertness rejection)",
+            """
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.TestRecordDto", argMapping: "x: y"}) { id: ID }
+            type Query { foo: String }
+            """,
+            schema -> {
+                var t = (UnclassifiedType) schema.type("FilmDetails");
+                assertThat(t.reason()).contains("argMapping is not supported on @record");
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(); }
         };
@@ -2740,6 +2768,19 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> assertThat(schema.type("Query")).isInstanceOf(RootType.class)) {
             @Override public Set<Class<?>> variants() { return Set.of(RootType.class); }
+        },
+
+        ARG_MAPPING_INERT_ON_ENUM(
+            "R53: argMapping on @enum → UnclassifiedType (structural-inertness rejection)",
+            """
+            enum Mood @enum(enumReference: {className: "no.sikt.graphitron.codereferences.dummyreferences.MoodEnum", argMapping: "x: y"}) { HAPPY SAD }
+            type Query { foo: String }
+            """,
+            schema -> {
+                var t = (UnclassifiedType) schema.type("Mood");
+                assertThat(t.reason()).contains("argMapping is not supported on @enum");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(); }
         };
 
         final String sdl;
@@ -3531,7 +3572,7 @@ class GraphitronSchemaBuilderTest {
         },
 
         SERVICE_MUTATION_FIELD_NAME_OVERRIDE_TEXT_ENUM(
-            "R41: @field(name:) override + text-mapped enum arg → TextMapLookup keyed by the GraphQL arg name (regression guard for enrichArgExtractions)",
+            "R53: argMapping override + text-mapped enum arg → TextMapLookup keyed by the GraphQL arg name (regression guard for enrichArgExtractions)",
             """
             enum SortDir {
                 ASC @field(name: "asc")
@@ -3540,8 +3581,8 @@ class GraphitronSchemaBuilderTest {
             type FilmDetails @record { title: String }
             type Query { x: String }
             type Mutation {
-                runWithEnumOverride(direction: SortDir @field(name: "mode")): FilmDetails
-                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runWithEnumOverride"})
+                runWithEnumOverride(direction: SortDir): FilmDetails
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runWithEnumOverride", argMapping: "mode: direction"})
             }
             """,
             schema -> {
@@ -3562,17 +3603,17 @@ class GraphitronSchemaBuilderTest {
         },
 
         SERVICE_MUTATION_FIELD_NAME_OVERRIDE_ON_ARG(
-            "R41: @field(name:) on a @service mutation argument binds it to a differently-named Java parameter",
+            "R53: argMapping on @service binds a GraphQL arg to a differently-named Java parameter",
             """
             input TestDtoStub { id: ID }
             type FilmDetails @record { title: String }
             type Query { x: String }
             type Mutation {
                 runWithRenamedInputs(
-                    input: [TestDtoStub!]! @field(name: "inputs"),
+                    input: [TestDtoStub!]!,
                     dryRun: Boolean
                 ): FilmDetails
-                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runWithRenamedInputs"})
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runWithRenamedInputs", argMapping: "inputs: input"})
             }
             """,
             schema -> {
@@ -4172,47 +4213,69 @@ class GraphitronSchemaBuilderTest {
                     .contains("@notGenerated", "no longer supported");
             }),
 
-        SERVICE_FIELD_NAME_OVERRIDE_COLLISION(
-            "R41: two @service args with the same Java target via @field(name:) → UnclassifiedField (pre-reflection collision)",
+        SERVICE_ARG_MAPPING_DUPLICATE_JAVA_TARGET(
+            "R53: argMapping with two entries for the same Java parameter → UnclassifiedField (parser-level rejection)",
             """
             input TestDtoStub { id: ID }
             type FilmDetails @record { title: String }
             type Query { x: String }
             type Mutation {
                 runWithRenamedInputs(
-                    input: [TestDtoStub!]! @field(name: "inputs"),
-                    extras: [TestDtoStub!]! @field(name: "inputs")
+                    input: [TestDtoStub!]!,
+                    extras: [TestDtoStub!]!
                 ): FilmDetails
-                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runWithRenamedInputs"})
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runWithRenamedInputs", argMapping: "inputs: input, inputs: extras"})
             }
             """,
             schema -> {
                 var f = schema.field("Mutation", "runWithRenamedInputs");
                 assertThat(f).isInstanceOf(UnclassifiedField.class);
                 assertThat(((UnclassifiedField) f).reason())
-                    .contains("both target Java parameter 'inputs'");
+                    .contains("argMapping has duplicate entries for Java parameter 'inputs'");
             }),
 
-        SERVICE_FIELD_NAME_OVERRIDE_TYPO_GUARD(
-            "R41: @field(name:) references a Java parameter that does not exist on the resolved method → UnclassifiedField (post-reflection typo guard)",
+        SERVICE_ARG_MAPPING_UNKNOWN_GRAPHQL_ARG(
+            "R53: argMapping references a GraphQL argument not on the field → UnclassifiedField (pre-reflection rejection)",
             """
             input TestDtoStub { id: ID }
             type FilmDetails @record { title: String }
             type Query { x: String }
             type Mutation {
                 runWithRenamedInputs(
-                    input: [TestDtoStub!]! @field(name: "missing"),
+                    input: [TestDtoStub!]!,
                     dryRun: Boolean
                 ): FilmDetails
-                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runWithRenamedInputs"})
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runWithRenamedInputs", argMapping: "inputs: notAnArg"})
             }
             """,
             schema -> {
                 var f = schema.field("Mutation", "runWithRenamedInputs");
                 assertThat(f).isInstanceOf(UnclassifiedField.class);
                 assertThat(((UnclassifiedField) f).reason())
-                    .contains("@field(name: \"missing\")")
-                    .contains("argument 'input'");
+                    .contains("argMapping entry 'inputs: notAnArg'")
+                    .contains("references GraphQL argument 'notAnArg'");
+            }),
+
+        SERVICE_ARG_MAPPING_TYPO_GUARD(
+            "R53: argMapping references a Java parameter that does not exist on the resolved method → UnclassifiedField (post-reflection typo guard)",
+            """
+            input TestDtoStub { id: ID }
+            type FilmDetails @record { title: String }
+            type Query { x: String }
+            type Mutation {
+                runWithRenamedInputs(
+                    input: [TestDtoStub!]!,
+                    dryRun: Boolean
+                ): FilmDetails
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runWithRenamedInputs", argMapping: "missing: input"})
+            }
+            """,
+            schema -> {
+                var f = schema.field("Mutation", "runWithRenamedInputs");
+                assertThat(f).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) f).reason())
+                    .contains("argMapping entry 'missing: input'")
+                    .contains("references Java parameter 'missing'");
             });
 
         final String sdl;

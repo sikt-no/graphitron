@@ -1974,10 +1974,10 @@ class GraphQLQueryTest {
     @Test
     @SuppressWarnings("unchecked")
     void queryServiceTable_filmsByServiceRenamed_overrideBindsArgToDifferentlyNamedJavaParam() {
-        // R41: GraphQL arg `ids` is bound to the Java parameter `filmIds` via @field(name: "filmIds").
-        // Generated fetcher must read env.getArgument("ids") (the GraphQL key) and pass it to the
-        // service method's `filmIds` parameter — proves the graphqlArgName / Java-identifier split
-        // wires through end-to-end.
+        // R53: GraphQL arg `ids` is bound to the Java parameter `filmIds` via argMapping
+        // ("filmIds: ids" on the @service directive). Generated fetcher must read
+        // env.getArgument("ids") (the GraphQL key) and pass it to the service method's `filmIds`
+        // parameter — proves the graphqlArgName / Java-identifier split wires through end-to-end.
         Map<String, Object> data = execute(
             "{ filmsByServiceRenamed(ids: [1, 2]) { filmId title } }");
         List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmsByServiceRenamed");

@@ -157,19 +157,19 @@ class TestServiceStub {
         throw new UnsupportedOperationException();
     }
 
-    // ===== @field(name:) override on argument site (R41) =====
+    // ===== argMapping override on @service / @tableMethod directive (R53) =====
 
     /**
-     * Takes parameters {@code inputs} (plural) and {@code dryRun}. Used by override tests
-     * where the GraphQL mutation declares {@code input: [...] @field(name: "inputs")} so the
-     * Java parameter name binds to a differently-named GraphQL argument.
+     * Takes parameters {@code inputs} (plural) and {@code dryRun}. Used by override tests where
+     * the GraphQL mutation declares {@code @service(service: {..., argMapping: "inputs: input"})}
+     * so the Java parameter name binds to a differently-named GraphQL argument.
      */
     public static String runWithRenamedInputs(java.util.List<TestDtoStub> inputs, Boolean dryRun) {
         throw new UnsupportedOperationException();
     }
 
     /**
-     * Takes a String parameter named {@code mode}. Used to verify the @field(name:) override
+     * Takes a String parameter named {@code mode}. Used to verify the argMapping override
      * on an enum-typed GraphQL argument: the GraphQL arg is named {@code direction} but binds
      * to the Java parameter {@code mode}, exercising both the override and the text-enum
      * mapping enrichment in {@code FieldBuilder.enrichArgExtractions}.

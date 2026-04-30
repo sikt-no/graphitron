@@ -245,6 +245,10 @@ class TypeBuilder {
             return null;
         }
         if (namedType instanceof graphql.schema.GraphQLEnumType enumType) {
+            String inertness = checkEnumArgMappingInert(enumType);
+            if (inertness != null) {
+                return new UnclassifiedType(enumType.getName(), locationOf(enumType), inertness);
+            }
             return new no.sikt.graphitron.rewrite.model.GraphitronType.EnumType(
                 enumType.getName(), locationOf(enumType), enumType);
         }
@@ -461,6 +465,10 @@ class TypeBuilder {
             return new GraphitronType.PojoResultType(name, location, null);
         }
         Map<String, Object> ref = asMap(recordArg.getValue());
+        String inertness = checkArgMappingInert(ref, "record");
+        if (inertness != null) {
+            return new UnclassifiedType(name, location, inertness);
+        }
         String className = Optional.ofNullable(ref.get(ARG_CLASS_NAME)).map(Object::toString).orElse(null);
         if (className == null) {
             return new GraphitronType.PojoResultType(name, location, null);
@@ -661,6 +669,10 @@ class TypeBuilder {
             return new GraphitronType.PojoInputType(name, location, null, inputType);
         }
         Map<String, Object> ref = asMap(recordArg.getValue());
+        String inertness = checkArgMappingInert(ref, "record");
+        if (inertness != null) {
+            return new UnclassifiedType(name, location, inertness);
+        }
         String className = Optional.ofNullable(ref.get(ARG_CLASS_NAME)).map(Object::toString).orElse(null);
         if (className == null) {
             return new GraphitronType.PojoInputType(name, location, null, inputType);
@@ -861,6 +873,35 @@ class TypeBuilder {
     }
 
     // ===== Structural helpers =====
+
+    /**
+     * Returns a rejection message when the {@code ExternalCodeReference} value at {@code ref}
+     * carries a non-blank {@code argMapping} on a structurally-inert directive site, or
+     * {@code null} otherwise. {@code directiveName} is included in the message bare ("record",
+     * "enum") and gets prefixed with {@code @} by the caller.
+     */
+    private static String checkArgMappingInert(Map<String, Object> ref, String directiveName) {
+        String rawArgMapping = Optional.ofNullable(ref.get(no.sikt.graphitron.rewrite.BuildContext.ARG_ARG_MAPPING))
+            .map(Object::toString).orElse(null);
+        if (rawArgMapping == null || rawArgMapping.isBlank()) return null;
+        return "argMapping is not supported on @" + directiveName
+            + " — this directive does not consume GraphQL-argument-bound parameters";
+    }
+
+    /**
+     * Walks {@code @enum} on the given enum type's directives and returns a rejection message
+     * when its {@code enumReference} carries a non-blank {@code argMapping}, or {@code null}
+     * otherwise. {@code @enum} is currently a placeholder directive in the rewrite pipeline; this
+     * sweep is the only place that catches structurally-inert {@code argMapping} on it.
+     */
+    private static String checkEnumArgMappingInert(graphql.schema.GraphQLEnumType enumType) {
+        var dir = enumType.getAppliedDirective("enum");
+        if (dir == null) return null;
+        var refArg = dir.getArgument("enumReference");
+        if (refArg == null || refArg.getValue() == null) return null;
+        Map<String, Object> ref = asMap(refArg.getValue());
+        return checkArgMappingInert(ref, "enum");
+    }
 
     // ===== Result container =====
 
