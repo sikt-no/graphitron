@@ -87,14 +87,13 @@ are settled):**
   plan step 5a; superseded by R53's parser-time duplicate-key check, which
   catches the same cases earlier.
 
-**Status mechanics.** R41's file moves to `status: Backlog` and gets a
-short tombstone body pointing at R53, with `depends-on:
-[external-code-reference-arg-mapping]` so the dependency chain shows up in
-the rendered roadmap (the workflow's state machine has no `Discarded`
-terminal; Backlog is the resting state for written-off items, matching the
-R20 → R50 pattern). The R41 file deletes when R53 reaches `Done`. R53
-inherits no Spec → Ready review credit from R41; the Spec → Ready
-transition for R53 is its own review.
+**Status mechanics.** R41 was `Discarded` per the workflow's terminal-state
+rule (`graphitron-rewrite/docs/workflow.adoc` *States and transitions*); the
+R41 file is deleted. R53 inherits no Spec → Ready review credit from R41;
+the Spec → Ready transition for R53 is its own review. Anyone tracing R41
+finds it via git history (`git log -- graphitron-rewrite/roadmap/service-arg-java-name-override.md`)
+and the *Inherit from R41's reviewed design* / *Drop from R41's reviewed
+plan* lists above.
 
 ## Proposal
 
@@ -301,12 +300,10 @@ retired in the same change.
    - Parser-error cases: malformed entry, duplicate Java target, override
      value naming a non-existent GraphQL arg.
 
-10. **R41 already tombstoned.** R41's file is now a Backlog tombstone with
-    `depends-on: [external-code-reference-arg-mapping]` and a body pointing
-    at R53; the file deletes when R53 reaches `Done` (R20 → R50 pattern).
-    The `@field` directive docstring update lands as part of step 1 above
-    (no separate revert step needed because the per-arg-override line never
-    reaches main).
+10. **R41 already discarded.** R41's file was deleted under the workflow's
+    `Discarded` terminal-state rule; no further action here. The `@field`
+    directive docstring update lands as part of step 1 above (no separate
+    revert step needed because the per-arg-override line never reaches main).
 
 ## What we're NOT doing
 
