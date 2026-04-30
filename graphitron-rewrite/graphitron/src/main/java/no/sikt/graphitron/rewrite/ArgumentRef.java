@@ -122,7 +122,7 @@ public sealed interface ArgumentRef {
             boolean nonNull,
             boolean list,
             TableRef inputTable,
-            List<InputColumnBinding> fieldBindings,
+            List<InputColumnBinding.MapBinding> fieldBindings,
             Optional<ArgConditionRef> argCondition,
             List<InputField> fields
         ) implements InputTypeArg {}
