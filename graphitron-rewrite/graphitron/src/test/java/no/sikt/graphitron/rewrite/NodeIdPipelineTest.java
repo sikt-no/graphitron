@@ -1,11 +1,13 @@
 package no.sikt.graphitron.rewrite;
 
+import no.sikt.graphitron.rewrite.model.CallSiteCompaction;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.InputField;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -37,6 +39,12 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
  *       supports NodeIdReferenceField tests.</li>
  *   <li>{@code baz} — single-key NodeType; reference target for {@code bar}.</li>
  *   <li>{@code qux} — plain table; no metadata. Negative-case fixture.</li>
+ *   <li>{@code parent_node} — single-key NodeType keyed on {@code PK_ID}, with a separate
+ *       {@code ALT_KEY} unique column targeted by {@code child_ref.parent_alt_key}'s FK.
+ *       The FK target ({@code alt_key}) does not positionally match the NodeType's keyColumn
+ *       ({@code pk_id}), forcing the rooted-at-parent JOIN-with-projection path.</li>
+ *   <li>{@code child_ref} — plain table; FK {@code parent_alt_key -> parent_node.alt_key} is
+ *       the rooted-at-parent fixture's drive surface.</li>
  * </ul>
  */
 @PipelineTier
@@ -806,5 +814,45 @@ class NodeIdPipelineTest {
     @EnumSource(LookupKeyCase.class)
     void lookupKeyClassification(LookupKeyCase tc) {
         tc.assertions.accept(TestSchemaHelper.buildSchema(tc.sdl, FIXTURE_CTX));
+    }
+
+    // ===== R50 phase (g-B): rooted-at-parent single-hop reference =====
+    //
+    // child_ref.parent_alt_key references parent_node.alt_key (the *non-PK* unique column);
+    // ParentNode's __NODE_KEY_COLUMNS pins the keyColumn to PK_ID. The FK target column does not
+    // positionally match the keyColumn, so fkMirrorSourceColumns returns null and the classifier
+    // routes through the rooted-at-parent JOIN-with-projection path: a ColumnReferenceField
+    // whose column is the parent's keyColumn (read from the joined parent_node) and whose
+    // joinPath carries the single FK hop. See lift-nodeid-out-of-model.md "Variant-by-variant
+    // collapse → Single-hop emission, two shapes".
+
+    @Test
+    void rootedAtParent_nonMirrorFk_resolvesToColumnReferenceField() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type ParentNode implements Node @table(name: "parent_node") @node {
+                id: ID! @nodeId
+                altKey: String! @field(name: "alt_key")
+                name: String
+            }
+            type ChildRef @table(name: "child_ref") {
+                childId: String! @field(name: "child_id")
+                parentNodeId: ID @nodeId(typeName: "ParentNode")
+                    @reference(path: [{key: "child_ref_parent_alt_key_fkey"}])
+            }
+            type Query { childRefs: [ChildRef!]! }
+            """, FIXTURE_CTX);
+
+        var f = (ChildField.ColumnReferenceField) schema.field("ChildRef", "parentNodeId");
+        // Projected column is ParentNode's keyColumn (pk_id), not the FK target (alt_key);
+        // emitter must read it through the joined parent_node alias.
+        assertThat(f.column().sqlName()).isEqualTo("pk_id");
+        // Single-hop FK chain — child_ref → parent_node — drives the JOIN-with-projection path.
+        assertThat(f.joinPath()).hasSize(1);
+        // NodeId encode call: per-type encoder helper resolved at classify time.
+        var enc = (CallSiteCompaction.NodeIdEncodeKeys) f.compaction();
+        assertThat(enc.encodeMethod().methodName()).isEqualTo("encodeParentNode");
+        assertThat(enc.encodeMethod().paramSignature())
+            .extracting(ColumnRef::sqlName)
+            .containsExactly("pk_id");
     }
 }
