@@ -166,7 +166,8 @@ public class TypeFetcherGenerator {
         ChildField.RecordLookupTableField.class,
         ChildField.ConstructorField.class,
         QueryField.QueryTableInterfaceField.class,
-        ChildField.TableInterfaceField.class);
+        ChildField.TableInterfaceField.class,
+        ChildField.ErrorsField.class);
 
     /**
      * Leaves that can never reach the fetcher switch at runtime: {@link InputField} leaves are
@@ -253,9 +254,7 @@ public class TypeFetcherGenerator {
             Map.entry(ChildField.UnionField.class,
                 "UnionField not yet implemented — see graphitron-rewrite/roadmap/stub-interface-union-fetchers.md"),
             Map.entry(ChildField.MultitableReferenceField.class,
-                "MultitableReferenceField not yet implemented — see graphitron-rewrite/roadmap/multitable-reference-on-scalar.md"),
-            Map.entry(ChildField.ErrorsField.class,
-                "ErrorsField not yet implemented — see graphitron-rewrite/roadmap/error-handling-parity.md")
+                "MultitableReferenceField not yet implemented — see graphitron-rewrite/roadmap/multitable-reference-on-scalar.md")
         );
 
     /**
@@ -409,7 +408,7 @@ public class TypeFetcherGenerator {
                 case ChildField.ComputedField ignored           -> { /* wired via FetcherEmitter (ColumnFetcher); projected via TypeClassGenerator.$fields() */ }
                 case ChildField.PropertyField ignored           -> { /* wired via FetcherRegistrationsEmitter.propertyOrRecordValue */ }
                 case ChildField.MultitableReferenceField f      -> builder.addMethod(stub(f));
-                case ChildField.ErrorsField f                   -> builder.addMethod(stub(f));
+                case ChildField.ErrorsField ignored             -> { /* wired via FetcherRegistrationsEmitter: PropertyDataFetcher.fetching(name) */ }
                 // Cannot occur — filtered by generateForType before dispatch
                 case InputField ignored ->
                     throw new AssertionError("InputField in type dispatch: " + ignored.qualifiedName());
