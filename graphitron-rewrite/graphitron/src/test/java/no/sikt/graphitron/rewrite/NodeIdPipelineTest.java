@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
+import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
@@ -532,13 +533,15 @@ class NodeIdPipelineTest {
      * Same-table {@code [ID!] @nodeId(typeName: T)} where T maps to the input's own table.
      * Semantics: filter rows whose composite primary key matches one of the decoded node IDs;
      * a primary-key IN predicate, not a FK join. The classifier short-circuits before
-     * {@code findUniqueFkToTable(t, t)} (which would always miss) and emits
-     * {@link InputField.NodeIdInFilterField}.
+     * {@code findUniqueFkToTable(t, t)} (which would always miss) and emits the post-R50
+     * column-shaped successor: {@link InputField.ColumnField} (arity-1) or
+     * {@link InputField.CompositeColumnField} (arity > 1) carrying
+     * {@link CallSiteExtraction.NodeIdDecodeKeys.SkipMismatchedElement}.
      */
     enum InputSameTableNodeIdCase {
         SAME_TABLE_COMPOSITE_PK(
-            "input `[ID!] @nodeId(typeName: \"Bar\")` on a `bar`-bound input → NodeIdInFilterField "
-                + "with composite PK columns",
+            "input `[ID!] @nodeId(typeName: \"Bar\")` on a `bar`-bound input → CompositeColumnField "
+                + "with NodeIdDecodeKeys over composite PK columns",
             """
             type Bar implements Node @table(name: "bar") @node { id: ID! }
             input BarFilterInput @table(name: "bar") {
@@ -548,15 +551,19 @@ class NodeIdPipelineTest {
             """,
             schema -> {
                 var tit = (GraphitronType.TableInputType) schema.type("BarFilterInput");
-                var f = (InputField.NodeIdInFilterField) tit.inputFields().stream()
-                    .filter(InputField.NodeIdInFilterField.class::isInstance).findFirst().orElseThrow();
-                assertThat(f.nodeTypeId()).isEqualTo("Bar");
-                assertThat(f.nodeKeyColumns()).extracting(ColumnRef::sqlName)
+                var f = (InputField.CompositeColumnField) tit.inputFields().stream()
+                    .filter(InputField.CompositeColumnField.class::isInstance).findFirst().orElseThrow();
+                assertThat(f.list()).isTrue();
+                assertThat(f.columns()).extracting(ColumnRef::sqlName)
                     .containsExactly("id_1", "id_2");
+                assertThat(f.extraction())
+                    .isInstanceOf(CallSiteExtraction.SkipMismatchedElement.class);
+                var skip = (CallSiteExtraction.SkipMismatchedElement) f.extraction();
+                assertThat(skip.decodeMethod().methodName()).isEqualTo("decodeBar");
             }),
 
         SAME_TABLE_SINGLE_PK(
-            "single-PK same-table case → NodeIdInFilterField with one key column",
+            "single-PK same-table case → ColumnField with NodeIdDecodeKeys over the one key column",
             """
             type Baz implements Node @table(name: "baz") @node { id: ID! }
             input BazFilterInput @table(name: "baz") {
@@ -566,11 +573,14 @@ class NodeIdPipelineTest {
             """,
             schema -> {
                 var tit = (GraphitronType.TableInputType) schema.type("BazFilterInput");
-                var f = (InputField.NodeIdInFilterField) tit.inputFields().stream()
-                    .filter(InputField.NodeIdInFilterField.class::isInstance).findFirst().orElseThrow();
-                assertThat(f.nodeTypeId()).isEqualTo("Baz");
-                assertThat(f.nodeKeyColumns()).extracting(ColumnRef::sqlName)
-                    .containsExactly("id");
+                var f = (InputField.ColumnField) tit.inputFields().stream()
+                    .filter(InputField.ColumnField.class::isInstance).findFirst().orElseThrow();
+                assertThat(f.list()).isTrue();
+                assertThat(f.column().sqlName()).isEqualTo("id");
+                assertThat(f.extraction())
+                    .isInstanceOf(CallSiteExtraction.SkipMismatchedElement.class);
+                var skip = (CallSiteExtraction.SkipMismatchedElement) f.extraction();
+                assertThat(skip.decodeMethod().methodName()).isEqualTo("decodeBaz");
             }),
 
         SAME_TABLE_TARGET_NOT_NODE(
@@ -588,7 +598,7 @@ class NodeIdPipelineTest {
 
         BARE_LIST_NODE_ID_INFERS_TYPE_NAME(
             "bare `[ID!] @nodeId` infers typeName from the unique @table-matching object type → "
-                + "NodeIdInFilterField (same as explicit typeName)",
+                + "CompositeColumnField (same as explicit typeName)",
             """
             type Bar implements Node @table(name: "bar") @node { id: ID! }
             input BarFilterInput @table(name: "bar") {
@@ -598,11 +608,13 @@ class NodeIdPipelineTest {
             """,
             schema -> {
                 var tit = (GraphitronType.TableInputType) schema.type("BarFilterInput");
-                var f = (InputField.NodeIdInFilterField) tit.inputFields().stream()
-                    .filter(InputField.NodeIdInFilterField.class::isInstance).findFirst().orElseThrow();
-                assertThat(f.nodeTypeId()).isEqualTo("Bar");
-                assertThat(f.nodeKeyColumns()).extracting(ColumnRef::sqlName)
+                var f = (InputField.CompositeColumnField) tit.inputFields().stream()
+                    .filter(InputField.CompositeColumnField.class::isInstance).findFirst().orElseThrow();
+                assertThat(f.list()).isTrue();
+                assertThat(f.columns()).extracting(ColumnRef::sqlName)
                     .containsExactly("id_1", "id_2");
+                assertThat(f.extraction())
+                    .isInstanceOf(CallSiteExtraction.SkipMismatchedElement.class);
             }),
 
         BARE_LIST_NODE_ID_NO_OBJECT_TYPE(

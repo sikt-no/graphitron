@@ -253,13 +253,17 @@ class GraphQLQueryTest {
     }
 
     @Test
-    void films_filteredBySameTableNodeId_emptyListReturnsAllRows() {
-        // Empty list → DSL.noCondition() (NodeIdEncoder.hasIds returns noCondition on empty).
-        // The filter must not silently collapse to zero rows.
+    void films_filteredBySameTableNodeId_emptyListReturnsNoRows() {
+        // R50 phase (e4b): the post-collapse successor of NodeIdInFilterField is a column-shaped
+        // ColumnField with NodeIdDecodeKeys.SkipMismatchedElement, which lands on the same
+        // column-equality body as a regular [String!] filter -- empty list emits an
+        // unsatisfiable IN predicate (jOOQ renders IN () as false). This aligns the empty-list
+        // behaviour with every other column-equality filter; the legacy hasIds short-circuit
+        // (empty → noCondition) is gone.
         Map<String, Object> data = execute(
             "{ filmsBySameTableNodeId(filter: {filmIds: []}) { filmId } }");
         List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmsBySameTableNodeId");
-        assertThat(films).hasSize(5);
+        assertThat(films).isEmpty();
     }
 
     @Test

@@ -40,10 +40,6 @@ class VariantCoverageTest {
             "Covered by NodeIdPipelineTest.InputReferenceCase (requires nodeid fixture with "
             + "FK-linked NodeType table not available in the standard sakila catalog); "
             + "add a GraphitronSchemaBuilderTest case when the nodeid fixture is made available there.",
-        InputField.NodeIdInFilterField.class,
-            "Covered by NodeIdPipelineTest.InputSameTableNodeIdCase (requires nodeid fixture with "
-            + "__NODE_TYPE_ID/__NODE_KEY_COLUMNS metadata not available in the standard sakila catalog); "
-            + "add a GraphitronSchemaBuilderTest case when the nodeid fixture is made available there.",
         GraphitronType.JooqRecordType.class,
             "No plain jOOQ Record<?> (non-TableRecord) fixture class in the test classpath; "
             + "add a case when a suitable fixture is introduced.",
@@ -67,11 +63,10 @@ class VariantCoverageTest {
             + "standard sakila catalog has no such shape; the rooted-at-parent fixture lands in "
             + "phase (g) of R50. Add a GraphitronSchemaBuilderTest case when that fixture exists.",
         InputField.CompositeColumnField.class,
-            "Composite-key input filter on the same table (post-R50 successor for arity > 1 "
-            + "InputField.NodeIdField / NodeIdInFilterField). Not yet produced by any classifier "
-            + "route -- phase (e2) of R50 wires NodeIdDecodeKeys.SkipMismatchedElement at "
-            + "BuildContext's input-field synthesis paths. Add a NodeIdPipelineTest case when "
-            + "that wiring lands.",
+            "Covered by NodeIdPipelineTest.InputCase (composite-PK same-table NodeId filter -- "
+            + "the post-R50 successor of the retired NodeIdInFilterField for arity > 1) and the "
+            + "synthesized-shim composite path. Lives in NodeIdPipelineTest because the standard "
+            + "sakila catalog has no composite-PK NodeType.",
         InputField.CompositeColumnReferenceField.class,
             "Composite-key input reference (post-R50 successor for arity > 1 "
             + "InputField.NodeIdReferenceField / IdReferenceField). Not yet produced by any "
