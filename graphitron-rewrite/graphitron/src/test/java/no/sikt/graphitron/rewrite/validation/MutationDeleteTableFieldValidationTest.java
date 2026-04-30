@@ -30,7 +30,7 @@ class MutationDeleteTableFieldValidationTest {
                 new ArgumentRef.InputTypeArg.TableInputArg(
                     "in", "FilmKey", true, false,
                     new TableRef("film", "FILM", "Film", List.of()),
-                    List.of(new InputColumnBinding(
+                    List.of(new InputColumnBinding.MapBinding(
                         "filmId",
                         new ColumnRef("film_id", "FILM_ID", "java.lang.Long"),
                         new CallSiteExtraction.Direct())),
