@@ -63,9 +63,9 @@ public class TypeClassGenerator {
             .map(f -> (ChildField.ColumnField) f)
             .sorted(Comparator.comparing(GraphitronField::name))
             .toList();
-        var nodeIdFields = schema.fieldsOf(typeName).stream()
-            .filter(f -> f instanceof ChildField.NodeIdField)
-            .map(f -> (ChildField.NodeIdField) f)
+        var compositeColumnFields = schema.fieldsOf(typeName).stream()
+            .filter(f -> f instanceof ChildField.CompositeColumnField)
+            .map(f -> (ChildField.CompositeColumnField) f)
             .sorted(Comparator.comparing(GraphitronField::name))
             .toList();
         var tableFields = schema.fieldsOf(typeName).stream()
@@ -95,7 +95,7 @@ public class TypeClassGenerator {
         var requiredProjectionColumns = collectBatchKeyColumns(schema.fieldsOf(typeName))
             .distinct()
             .toList();
-        return buildTypeSpec(typeName, type.table(), columnFields, nodeIdFields, tableFields, lookupTableFields, nestingFields, computedFields, requiredProjectionColumns, outputPackage, jooqPackage);
+        return buildTypeSpec(typeName, type.table(), columnFields, compositeColumnFields, tableFields, lookupTableFields, nestingFields, computedFields, requiredProjectionColumns, outputPackage, jooqPackage);
     }
 
     /**
@@ -111,7 +111,7 @@ public class TypeClassGenerator {
      */
     static TypeSpec buildTypeSpec(String typeName, TableRef tableRef,
             List<ChildField.ColumnField> columnFields,
-            List<ChildField.NodeIdField> nodeIdFields,
+            List<ChildField.CompositeColumnField> compositeColumnFields,
             List<ChildField.TableField> tableFields,
             List<ChildField.LookupTableField> lookupTableFields,
             List<ChildField.NestingField> nestingFields,
@@ -120,7 +120,7 @@ public class TypeClassGenerator {
             String outputPackage, String jooqPackage) {
         var builder = TypeSpec.classBuilder(typeName)
             .addModifiers(Modifier.PUBLIC)
-            .addMethod(build$FieldsMethod(tableRef, columnFields, nodeIdFields, tableFields, lookupTableFields, nestingFields, computedFields, requiredProjectionColumns, outputPackage, jooqPackage));
+            .addMethod(build$FieldsMethod(tableRef, columnFields, compositeColumnFields, tableFields, lookupTableFields, nestingFields, computedFields, requiredProjectionColumns, outputPackage, jooqPackage));
         // Helpers for inline LookupTableFields are hoisted onto this outer type class — including
         // ones nested inside NestingField sub-types, which don't get their own type class (plain
         // objects share the parent's table context). The generated switch arm calls the helper
@@ -173,7 +173,7 @@ public class TypeClassGenerator {
      */
     private static MethodSpec build$FieldsMethod(TableRef tableRef,
             List<ChildField.ColumnField> columnFields,
-            List<ChildField.NodeIdField> nodeIdFields,
+            List<ChildField.CompositeColumnField> compositeColumnFields,
             List<ChildField.TableField> tableFields,
             List<ChildField.LookupTableField> lookupTableFields,
             List<ChildField.NestingField> nestingFields,
@@ -198,7 +198,7 @@ public class TypeClassGenerator {
 
         var flat = new ArrayList<ChildField>();
         flat.addAll(columnFields);
-        flat.addAll(nodeIdFields);
+        flat.addAll(compositeColumnFields);
         flat.addAll(tableFields);
         flat.addAll(lookupTableFields);
         flat.addAll(nestingFields);
@@ -244,11 +244,14 @@ public class TypeClassGenerator {
         for (var f : fields) {
             switch (f) {
                 case ChildField.ColumnField cf ->
+                    // Compaction (Direct vs NodeIdEncodeKeys) does not affect projection — the
+                    // SELECT term is the same column in both cases. The wrapping happens at the
+                    // fetcher value, not in the SELECT clause; see FetcherEmitter.
                     builder.addCode("        case $S -> fields.add($L.$L);\n",
                         cf.name(), tableArg, cf.column().javaName());
-                case ChildField.NodeIdField nif -> {
-                    builder.addCode("        case $S -> {\n", nif.name());
-                    for (var col : nif.nodeKeyColumns()) {
+                case ChildField.CompositeColumnField ccf -> {
+                    builder.addCode("        case $S -> {\n", ccf.name());
+                    for (var col : ccf.columns()) {
                         builder.addCode("            fields.add($L.$L);\n", tableArg, col.javaName());
                     }
                     builder.addCode("        }\n");

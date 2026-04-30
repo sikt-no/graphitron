@@ -60,14 +60,16 @@ class TypeClassGeneratorTest {
             .containsExactly("$fields");
     }
 
-    // ===== NodeId fields =====
+    // ===== NodeId fields (composite arity > 1; arity-1 lands on ColumnField switch arm) =====
 
     @Test
-    void $fields_nodeIdField_producesSwitchArm() {
-        var spec = TypeClassGenerator.buildTypeSpec("Film",
+    void $fields_compositeNodeIdField_producesSwitchArm() {
+        var idCol1 = col("id_1", "ID_1", "java.lang.Integer");
+        var idCol2 = col("id_2", "ID_2", "java.lang.Integer");
+        var spec = TypeClassGenerator.buildTypeSpec("Bar",
             filmTable(),
             List.of(),
-            List.of(nodeIdField("Film", "id", "Film", List.of(filmIdCol()))),
+            List.of(compositeNodeIdField("Bar", "id", "Bar", List.of(idCol1, idCol2))),
             List.of(),
             List.of(),
             List.of(),

@@ -10,7 +10,8 @@ import java.util.List;
  */
 public sealed interface ChildField extends GraphitronField
     permits ChildField.ColumnField, ChildField.ColumnReferenceField,
-            ChildField.NodeIdField, ChildField.NodeIdReferenceField,
+            ChildField.CompositeColumnField,
+            ChildField.NodeIdReferenceField,
             ChildField.TableTargetField,
             ChildField.TableMethodField,
             ChildField.InterfaceField, ChildField.UnionField,
@@ -21,12 +22,20 @@ public sealed interface ChildField extends GraphitronField
             ChildField.MultitableReferenceField,
             ChildField.ErrorsField {
 
+    /**
+     * A single-column output carrier on a table-backed parent. The column's value reaches the
+     * field's value through {@link #compaction()}: {@link CallSiteCompaction.Direct} for plain
+     * SELECT-term projection, {@link CallSiteCompaction.NodeIdEncodeKeys} for arity-1
+     * {@code @nodeId} projections that wrap the column in the per-Node
+     * {@code encode<TypeName>} helper.
+     */
     record ColumnField(
         String parentTypeName,
         String name,
         SourceLocation location,
         String columnName,
-        ColumnRef column
+        ColumnRef column,
+        CallSiteCompaction compaction
     ) implements ChildField {}
 
     record ColumnReferenceField(
@@ -38,13 +47,30 @@ public sealed interface ChildField extends GraphitronField
         List<JoinStep> joinPath
     ) implements ChildField {}
 
-    record NodeIdField(
+    /**
+     * Composite-key output carrier on a table-backed parent. Carries {@code columns} of arity
+     * &ge; 2 (arity-1 routes to the single-column {@link ColumnField} sibling) and a
+     * {@link CallSiteCompaction.NodeIdEncodeKeys} compaction whose
+     * {@link HelperRef.Encode#paramSignature() encodeMethod.paramSignature} is positionally
+     * equal to the NodeType's {@code keyColumns}. The slot is narrowed to
+     * {@code NodeIdEncodeKeys} at the type level: no plain composite-column projection exists.
+     */
+    record CompositeColumnField(
         String parentTypeName,
         String name,
         SourceLocation location,
-        String nodeTypeId,
-        List<ColumnRef> nodeKeyColumns
-    ) implements ChildField {}
+        List<ColumnRef> columns,
+        CallSiteCompaction.NodeIdEncodeKeys compaction
+    ) implements ChildField {
+
+        public CompositeColumnField {
+            columns = List.copyOf(columns);
+            if (columns.size() < 2) {
+                throw new IllegalArgumentException(
+                    "CompositeColumnField requires arity >= 2 (got " + columns.size() + "); arity-1 routes to ColumnField");
+            }
+        }
+    }
 
     record NodeIdReferenceField(
         String parentTypeName,
