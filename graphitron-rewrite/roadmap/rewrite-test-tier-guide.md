@@ -1,11 +1,11 @@
 ---
 id: R29
 title: Consolidated test-tier guide
-status: Spec
+status: Ready
 bucket: cleanup
 priority: 7
 theme: testing
-depends-on: [docs-site-asciidoc]
+depends-on: []
 ---
 
 # Consolidated test-tier guide
@@ -210,11 +210,13 @@ next to the production class. Three sub-families share this tier:
 
 - *Generator unit tests* (`TypeFetcherGeneratorTest`,
   `TypeClassGeneratorTest`, `TypeConditionsGeneratorTest`,
-  `GeneratorCoverageTest`). Take pre-built model fixtures via
-  `TestFixtures`; assert `TypeSpec` shape (method names, return types,
-  parameter signatures). Banned: code-string body matching on the
-  generated `MethodSpec` body — that is what compilation and execution
-  cover.
+  `GeneratorCoverageTest`; and the `generators/schema/` subdirectory:
+  `EnumTypeGeneratorTest`, `GraphitronFacadeGeneratorTest`,
+  `InputTypeGeneratorTest`, `ObjectTypeGeneratorTest`, etc.). Take
+  pre-built model fixtures via `TestFixtures`; assert `TypeSpec` shape
+  (method names, return types, parameter signatures). Banned:
+  code-string body matching on the generated `MethodSpec` body — that
+  is what compilation and execution cover.
 - *Validator unit tests* (`*ValidationTest`, today described in
   `FieldValidationTestHelper` as "Level 1"). Build a `GraphitronSchema`
   with one parent type and one field at a known coordinate; assert
@@ -232,12 +234,15 @@ this tier:
   section with an enum where each constant is one
   `(description, SDL, assertion)` triple; one parameterised test
   iterates the table.
-- *Deeper SDL → TypeSpec / variant-shape tests* — `*PipelineTest` files
-  (`NodeIdPipelineTest`, `SplitTableFieldPipelineTest`,
-  `TableFieldPipelineTest`, `LookupTableFieldPipelineTest`, etc.). Build
-  a schema with `TestSchemaHelper.buildSchema(sdl)`, assert structural
-  shape on the resulting variant or generated `TypeSpec`. Banned:
-  code-string body matching.
+- *Deeper SDL → TypeSpec / variant-shape tests* — `*PipelineTest` files.
+  Representative set: `NodeIdPipelineTest`, `SplitTableFieldPipelineTest`,
+  `TableFieldPipelineTest`, `LookupTableFieldPipelineTest`,
+  `NestingFieldPipelineTest`, `ServiceRootFetcherPipelineTest`,
+  `TaggedInputsPipelineTest`, `StubbedVariantPipelineTest`;
+  and in `generators/`: `FetcherPipelineTest`, `TablePipelineTest`.
+  Build a schema with `TestSchemaHelper.buildSchema(sdl)`, assert
+  structural shape on the resulting variant or generated `TypeSpec`.
+  Banned: code-string body matching.
 
 **Compilation against real jOOQ.** Generated source must compile
 against the test catalog. Where: `graphitron-test`, run with
@@ -377,11 +382,15 @@ implementer's judgment. Either way, the steps are:
    policy claims in place (pipeline is primary, code-string body
    matching is banned).
 6. Add a one-line pointer in `.claude/web-environment.md`.
-7. Sweep the seven prior-body-affected javadocs (three with Level N,
-   four with mismatched tier prose; list under "Cross-link
-   adjustments" above): drop the tier prose, leave a one-line pointer
-   at `docs/testing.adoc` if the class warrants one. The annotation
-   is now the authoritative label.
+7. Sweep the prior-body-affected javadocs (three with Level N, four
+   with mismatched tier prose; list under "Cross-link adjustments"
+   above): drop the tier prose, leave a one-line pointer at
+   `docs/testing.adoc` if the class warrants one. The annotation is
+   now the authoritative label. Also update `IdempotentWriterTest`'s
+   cross-reference pointer to `GeneratorDeterminismTest`: it currently
+   reads "pipeline-tier determinism and mtime-preservation ratchets"
+   and must change to "cross-cutting" to stay consistent with the
+   annotation landing in the same sweep.
 8. Add the new file to `docs/README.adoc`'s "Detailed reference" list
    (between `rewrite-design-principles.adoc` and `argument-resolution.adoc`,
    since it is principles-adjacent).
@@ -423,7 +432,11 @@ implementer's judgment. Either way, the steps are:
 - [`R9 docs-site-asciidoc`](docs-site-asciidoc.md) (In Progress) — this
   plan adds an AsciiDoc file under `graphitron-rewrite/docs/`, so it
   picks up the docs-site rendering for free. No coordination needed
-  beyond authoring the file as `.adoc` from the start.
+  beyond authoring the file as `.adoc` from the start. Phases 1-4
+  (pipeline, content migration, old-site absorption, roadmap rendering)
+  are shipped; the AsciiDoc build infrastructure this item depended on
+  is in place. The remaining R9 work (Phase 5a/5b DNS cutover) has no
+  bearing on R29.
 - [`R28 rewrite-docs-entrypoint`](rewrite-docs-entrypoint.md) (Spec) —
   the new file gets added to the "Detailed reference" list R28
   established in `docs/README.adoc`. No conflict; the lists merge
