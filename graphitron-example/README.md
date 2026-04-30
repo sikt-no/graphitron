@@ -6,7 +6,7 @@ The `graphitron-example-server` is a Quarkus application that runs a GraphQL ser
 [Integration tests](#Integration-tests) are included to ensure that Graphitron generates resolvers that work as expected. 
 
 <!-- START doctoc generated TOC please keep comment here to allow auto update -->
-<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc (https://github.com/thlorenz/doctoc) TO UPDATE -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
 **Table of Contents**
 
 - [Requirements](#requirements)
@@ -18,6 +18,7 @@ The `graphitron-example-server` is a Quarkus application that runs a GraphQL ser
   - [graphitron-example-server](#graphitron-example-server)
   - [graphitron-example-service](#graphitron-example-service)
 - [Integration tests](#integration-tests)
+  - [Running approval tests against codegen variants](#running-approval-tests-against-codegen-variants)
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
@@ -91,3 +92,22 @@ There are two types of tests:
  - **Match** - these tests are more flexible and can be used to verify the results of a query against a custom matcher, e.g. hamcrest. 
 
 The tests use the Quarkus test framework which automatically starts the server before running the tests.
+
+### Running approval tests against codegen variants
+The default codegen configuration is defined as properties in [`graphitron-example/pom.xml`](pom.xml). Variant profiles in the same pom override individual flags. Variant runs rebuild the spec module with the override and execute `ApprovalQueryTest` against the variant. Defined variants:
+
+- `upsert-as-merge` — `generateUpsertAsStore=false` (emits `batchMerge` instead of `batchStore`).
+- `jdbc-batching` — `useJdbcBatchingForDeletes=true` and `useJdbcBatchingForInserts=true`. Emits `batchDelete` and `batchInsert` instead of direct insert and delete statements.
+
+Approved files for a variant live under `graphitron-example-server/src/test/resources/approval/approvals/variants/<variant>/`. The `ApprovalQueryTest` looks up an approved file there first and falls back to the default approvals directory, so the variant directory only needs to contain the queries whose output actually differs from the default.
+
+Mise tasks:
+```sh
+mise r test-variant upsert-as-merge   # run a single variant
+mise r test-variants                  # run all known variants
+```
+
+To add a new variant:
+1. Add a `<profile>` to `graphitron-example/pom.xml` that sets `approval.variant` and overrides the relevant `graphitron.*` properties.
+2. Add the profile id to the matrix in `.github/workflows/maven-build.yml` and to the `test-variants` task in [`.mise.toml`](../.mise.toml).
+3. Run `mise r test-variant <your-variant>` locally; promote any divergent `.received.json` files in the variant directory to `.approved.json`.

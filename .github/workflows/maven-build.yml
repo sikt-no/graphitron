@@ -13,10 +13,19 @@ on:
     branches: [ "main" ]
 
 jobs:
-  build:
-
+  tests:
     runs-on: ubuntu-latest
-
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: default
+            mvn-args: verify javadoc:javadoc
+          - name: variant-upsert-as-merge
+            mvn-args: -Pvariant-upsert-as-merge verify -pl :graphitron-example-server -am -Dtest=ApprovalQueryTest -Dsurefire.failIfNoSpecifiedTests=false
+          - name: variant-jdbc-batching
+            mvn-args: -Pvariant-jdbc-batching verify -pl :graphitron-example-server -am -Dtest=ApprovalQueryTest -Dsurefire.failIfNoSpecifiedTests=false
+    name: ${{ matrix.name }}
     steps:
     - uses: actions/checkout@v6
     - name: Set up JDK 21
@@ -26,4 +35,12 @@ jobs:
         distribution: 'temurin'
         cache: maven
     - name: Build with Maven
-      run: mvn --batch-mode verify javadoc:javadoc --file pom.xml
+      run: mvn --batch-mode ${{ matrix.mvn-args }} --file pom.xml
+
+  # Aggregator job so the required `build` status check (configured in branch
+  # protection) reports a single result after all matrix entries finish.
+  build:
+    needs: tests
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "All matrix entries succeeded"

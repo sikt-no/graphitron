@@ -23,7 +23,32 @@
     <properties>
         <generatedCodePackage>no.sikt.graphitron.example.generated</generatedCodePackage>
         <generatedJooqPackage>${generatedCodePackage}.jooq</generatedJooqPackage>
+
+        <!-- Codegen variant flags. Defaults reflect the canonical configuration; profiles below override them. -->
+        <graphitron.generateUpsertAsStore>true</graphitron.generateUpsertAsStore>
+        <graphitron.useJdbcBatchingForDeletes>false</graphitron.useJdbcBatchingForDeletes>
+        <graphitron.useJdbcBatchingForInserts>false</graphitron.useJdbcBatchingForInserts>
+        <graphitron.optionalSelect.onSubqueryReferences>true</graphitron.optionalSelect.onSubqueryReferences>
+        <graphitron.optionalSelect.onExternalFields>true</graphitron.optionalSelect.onExternalFields>
     </properties>
+
+    <profiles>
+        <profile>
+            <id>variant-upsert-as-merge</id>
+            <properties>
+                <approval.variant>upsert-as-merge</approval.variant>
+                <graphitron.generateUpsertAsStore>false</graphitron.generateUpsertAsStore>
+            </properties>
+        </profile>
+        <profile>
+            <id>variant-jdbc-batching</id>
+            <properties>
+                <approval.variant>jdbc-batching</approval.variant>
+                <graphitron.useJdbcBatchingForDeletes>true</graphitron.useJdbcBatchingForDeletes>
+                <graphitron.useJdbcBatchingForInserts>true</graphitron.useJdbcBatchingForInserts>
+            </properties>
+        </profile>
+    </profiles>
 
     <build>
         <plugins>
