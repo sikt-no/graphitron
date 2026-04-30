@@ -7,6 +7,7 @@ import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.model.ChildField;
+import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.LookupField;
 import no.sikt.graphitron.rewrite.model.LookupMapping;
 import no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping;
@@ -78,18 +79,47 @@ final class LookupValuesJoinEmitter {
      * Rejects arities &gt;22 — same mechanism as the parent-side cap in
      * {@link SplitRowsMethodEmitter}.
      */
-    private static TypeName[] rowTypeArgs(List<ColumnMapping.LookupColumn> columns) {
-        int arity = columns.size() + 1;
+    private static TypeName[] rowTypeArgs(List<Slot> slots) {
+        int arity = slots.size() + 1;
         if (arity > 22) {
             throw new IllegalStateException(
-                "@lookupKey arity " + columns.size() + " + idx exceeds jOOQ's typed Row/Record arity limit (22)");
+                "@lookupKey arity " + slots.size() + " + idx exceeds jOOQ's typed Row/Record arity limit (22)");
         }
         TypeName[] typeArgs = new TypeName[arity];
         typeArgs[0] = ClassName.get(Integer.class);
-        for (int i = 0; i < columns.size(); i++) {
-            typeArgs[i + 1] = ClassName.bestGuess(columns.get(i).targetColumn().columnClass());
+        for (int i = 0; i < slots.size(); i++) {
+            typeArgs[i + 1] = ClassName.bestGuess(slots.get(i).targetColumn().columnClass());
         }
         return typeArgs;
+    }
+
+    /**
+     * Flat per-slot view of a {@link ColumnMapping}'s args, internal to this emitter.
+     * One slot per {@link ColumnMapping.LookupArg.ScalarLookupArg}; one slot per binding
+     * for {@link ColumnMapping.LookupArg.MapInput}. {@link ColumnMapping.LookupArg.DecodedRecord}
+     * lands in phase (f-C); until then the fixture-zero shape is rejected here.
+     */
+    private record Slot(String argName, ColumnRef targetColumn, boolean list, String compositeFieldName) {
+        boolean isComposite() { return compositeFieldName != null; }
+    }
+
+    private static List<Slot> flattenSlots(ColumnMapping cm) {
+        var slots = new java.util.ArrayList<Slot>();
+        for (var arg : cm.args()) {
+            switch (arg) {
+                case ColumnMapping.LookupArg.ScalarLookupArg s ->
+                    slots.add(new Slot(s.argName(), s.targetColumn(), s.list(), null));
+                case ColumnMapping.LookupArg.MapInput m -> {
+                    for (var b : m.bindings()) {
+                        slots.add(new Slot(m.argName(), b.targetColumn(), m.list(), b.fieldName()));
+                    }
+                }
+                case ColumnMapping.LookupArg.DecodedRecord d ->
+                    throw new IllegalStateException(
+                        "DecodedRecord LookupArg emission is not implemented yet (R50 phase f-C)");
+            }
+        }
+        return slots;
     }
 
     /** Returns the GraphQL field name for a {@link LookupField}, used to derive helper names. */
@@ -132,9 +162,9 @@ final class LookupValuesJoinEmitter {
      * @param targetTableClass the JavaPoet reference to the concrete jOOQ table class (e.g. {@code Film})
      */
     static MethodSpec buildInputRowsMethod(LookupField field, ClassName targetTableClass) {
-        List<ColumnMapping.LookupColumn> columns = requireColumns(field);
-        TypeName[] typeArgs = rowTypeArgs(columns);
-        Map<String, RootSource> roots = rootSources(columns);
+        List<Slot> slots = requireSlots(field);
+        TypeName[] typeArgs = rowTypeArgs(slots);
+        Map<String, RootSource> roots = rootSources(slots);
 
         var builder = MethodSpec.methodBuilder(inputRowsMethodName(field))
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
@@ -154,7 +184,7 @@ final class LookupValuesJoinEmitter {
             }
         }
 
-        addRowBuildingCore(builder, columns, typeArgs, roots);
+        addRowBuildingCore(builder, slots, typeArgs, roots);
         return builder.build();
     }
 
@@ -172,9 +202,9 @@ final class LookupValuesJoinEmitter {
      * expects.
      */
     static MethodSpec buildChildInputRowsMethod(LookupField field, ClassName targetTableClass) {
-        List<ColumnMapping.LookupColumn> columns = requireColumns(field);
-        TypeName[] typeArgs = rowTypeArgs(columns);
-        Map<String, RootSource> roots = rootSources(columns);
+        List<Slot> slots = requireSlots(field);
+        TypeName[] typeArgs = rowTypeArgs(slots);
+        Map<String, RootSource> roots = rootSources(slots);
 
         var builder = MethodSpec.methodBuilder(inputRowsMethodName(field))
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
@@ -194,24 +224,24 @@ final class LookupValuesJoinEmitter {
             }
         }
 
-        addRowBuildingCore(builder, columns, typeArgs, roots);
+        addRowBuildingCore(builder, slots, typeArgs, roots);
         return builder.build();
     }
 
     /** Classifier-invariant check shared by the root and child input-rows builders. */
-    private static List<ColumnMapping.LookupColumn> requireColumns(LookupField field) {
+    private static List<Slot> requireSlots(LookupField field) {
         if (!(field.lookupMapping() instanceof ColumnMapping cm)) {
             throw new IllegalStateException(
                 "buildInputRowsMethod called on a NodeIdMapping field '"
                 + fieldName(field) + "'; caller must dispatch on mapping type first");
         }
-        if (cm.columns().isEmpty()) {
+        if (cm.args().isEmpty()) {
             // projectForFilter enforces non-empty LookupMapping before classification; reaching this
             // is a generator-side bug, not a schema error.
             throw new IllegalStateException(
-                "LookupField '" + fieldName(field) + "' has no lookup columns; classifier invariant violated");
+                "LookupField '" + fieldName(field) + "' has no lookup args; classifier invariant violated");
         }
-        return cm.columns();
+        return flattenSlots(cm);
     }
 
     /**
@@ -224,7 +254,7 @@ final class LookupValuesJoinEmitter {
      * {@link #rowTypeArgs}.
      */
     private static void addRowBuildingCore(MethodSpec.Builder builder,
-            List<ColumnMapping.LookupColumn> columns, TypeName[] typeArgs,
+            List<Slot> slots, TypeName[] typeArgs,
             Map<String, RootSource> roots) {
         int arity = typeArgs.length;
         TypeName rowType = ParameterizedTypeName.get(rowClass(arity), typeArgs);
@@ -251,14 +281,14 @@ final class LookupValuesJoinEmitter {
 
         var cells = CodeBlock.builder();
         cells.add("$T.inline(i)", DSL);
-        for (var col : columns) {
+        for (var slot : slots) {
             cells.add(", ");
-            CodeBlock valueExpr = columnValueExpr(col, roots.get(col.argName()));
+            CodeBlock valueExpr = slotValueExpr(slot, roots.get(slot.argName()));
             // DSL.val(value, dataType) — typed Field<T>; jOOQ's Convert + the column's registered
             // Converter coerce the raw env value (String / Integer / enum instance / …) to the
             // column's Java type at bind time. No SQL CAST rendered.
             cells.add("$T.val($L, table.$L.getDataType())",
-                DSL, valueExpr, col.targetColumn().javaName());
+                DSL, valueExpr, slot.targetColumn().javaName());
         }
         builder.addStatement("rows[i] = $T.row($L)", DSL, cells.build());
         builder.endControlFlow();
@@ -304,28 +334,28 @@ final class LookupValuesJoinEmitter {
                 "buildFetcherBody called on a NodeIdMapping field '"
                 + fieldName(field) + "'; caller must use buildNodeIdFetcherBody instead");
         }
-        List<ColumnMapping.LookupColumn> columns = cm.columns();
+        List<Slot> slots = flattenSlots(cm);
         String alias = inputTableAlias(field);
-        TypeName[] typeArgs = rowTypeArgs(columns);
+        TypeName[] typeArgs = rowTypeArgs(slots);
         int arity = typeArgs.length;
         TypeName rowArrayType = ArrayTypeName.of(ParameterizedTypeName.get(rowClass(arity), typeArgs));
         TypeName inputTableType = ParameterizedTypeName.get(TABLE,
             ParameterizedTypeName.get(recordClass(arity), typeArgs));
 
-        // VALUES column labels — "idx", then one per lookup column. Labels must match the target
+        // VALUES column labels — "idx", then one per lookup slot. Labels must match the target
         // column's SQL name (e.g. "film_id"), not the jOOQ Java field name (e.g. "FILM_ID"), because
         // Postgres treats quoted identifiers case-sensitively and USING compares the rendered names.
         var aliasArgs = CodeBlock.builder();
         aliasArgs.add("$S, $S", alias, "idx");
-        for (var col : columns) {
-            aliasArgs.add(", $S", col.targetColumn().sqlName());
+        for (var slot : slots) {
+            aliasArgs.add(", $S", slot.targetColumn().sqlName());
         }
 
         // USING column arguments — references to target-table field constants.
         var usingArgs = CodeBlock.builder();
-        for (int i = 0; i < columns.size(); i++) {
+        for (int i = 0; i < slots.size(); i++) {
             if (i > 0) usingArgs.add(", ");
-            usingArgs.add("$L.$L", srcAlias, columns.get(i).targetColumn().javaName());
+            usingArgs.add("$L.$L", srcAlias, slots.get(i).targetColumn().javaName());
         }
 
         return CodeBlock.builder()
@@ -367,10 +397,10 @@ final class LookupValuesJoinEmitter {
      * Groups lookup columns by their top-level argument, preserving declaration order.
      * A composite-key input argument contributes one entry with multiple columns underneath.
      */
-    private static Map<String, RootSource> rootSources(List<ColumnMapping.LookupColumn> columns) {
+    private static Map<String, RootSource> rootSources(List<Slot> slots) {
         var roots = new LinkedHashMap<String, RootSource>();
-        for (var col : columns) {
-            roots.computeIfAbsent(col.argName(), k -> RootSource.of(k, col.list()));
+        for (var slot : slots) {
+            roots.computeIfAbsent(slot.argName(), k -> RootSource.of(k, slot.list()));
         }
         return roots;
     }
@@ -388,13 +418,12 @@ final class LookupValuesJoinEmitter {
      * jOOQ's {@code DSL.val(value, table.COL.getDataType())} then wraps the value via the target
      * column's Converter.
      */
-    private static CodeBlock columnValueExpr(ColumnMapping.LookupColumn col, RootSource root) {
-        if (col.isComposite()) {
-            String inputField = col.sourcePath().segments().get(1);
+    private static CodeBlock slotValueExpr(Slot slot, RootSource root) {
+        if (slot.isComposite()) {
             CodeBlock elem = root.list()
                 ? CodeBlock.of("$L.get(i)", root.localName())
                 : CodeBlock.of("$L", root.localName());
-            return CodeBlock.of("(($T<?, ?>) $L).get($S)", Map.class, elem, inputField);
+            return CodeBlock.of("(($T<?, ?>) $L).get($S)", Map.class, elem, slot.compositeFieldName());
         }
         return root.list()
             ? CodeBlock.of("$L.get(i)", root.localName())

@@ -435,16 +435,16 @@ public final class SplitRowsMethodEmitter {
         // Phase 2a's convention: <fieldName>InputRows.
         String lookupInputAlias = fieldName + "Input";
         if (lookupMapping instanceof LookupMapping.ColumnMapping columnMapping) {
-            List<LookupMapping.ColumnMapping.LookupColumn> lookupCols = columnMapping.columns();
+            List<ColumnRef> lookupCols = columnMapping.slotColumns();
             // Typed Row<M+1> / Record<M+1> for lookupInput — idx + one cell per @lookupKey
-            // column. Arity known at codegen time; the cap is enforced inside LookupValuesJoinEmitter
+            // slot. Arity known at codegen time; the cap is enforced inside LookupValuesJoinEmitter
             // (which emits the helper this call consumes). DSL.values(Row<M+1>...) returns
             // Table<Record<M+1>> — typed through to field access by index or name.
             int lookupArity = lookupCols.size() + 1;
             TypeName[] lookupTypeArgs = new TypeName[lookupArity];
             lookupTypeArgs[0] = ClassName.get(Integer.class);
             for (int i = 0; i < lookupCols.size(); i++) {
-                lookupTypeArgs[i + 1] = ClassName.bestGuess(lookupCols.get(i).targetColumn().columnClass());
+                lookupTypeArgs[i + 1] = ClassName.bestGuess(lookupCols.get(i).columnClass());
             }
             TypeName lookupRowType = ParameterizedTypeName.get(rowClass(lookupArity), lookupTypeArgs);
             TypeName lookupRecordType = ParameterizedTypeName.get(recordClass(lookupArity), lookupTypeArgs);
@@ -459,7 +459,7 @@ public final class SplitRowsMethodEmitter {
             var lookupAliasArgs = CodeBlock.builder();
             lookupAliasArgs.add("$S, $S", lookupInputAlias, "idx");
             for (var col : lookupCols) {
-                lookupAliasArgs.add(", $S", col.targetColumn().sqlName());
+                lookupAliasArgs.add(", $S", col.sqlName());
             }
             body.addStatement("$T lookupInput = $T.values(lookupRows).as($L)",
                 lookupInputTableType, DSL, lookupAliasArgs.build());
@@ -505,13 +505,13 @@ public final class SplitRowsMethodEmitter {
         // parent-input JOIN.
         if (lookupMapping instanceof LookupMapping.ColumnMapping columnMapping2) {
             var lookupOnCond = CodeBlock.builder();
-            List<LookupMapping.ColumnMapping.LookupColumn> lookupCols = columnMapping2.columns();
+            List<ColumnRef> lookupCols = columnMapping2.slotColumns();
             for (int i = 0; i < lookupCols.size(); i++) {
                 if (i > 0) lookupOnCond.add(".and(");
                 var col = lookupCols.get(i);
-                ClassName colType = ClassName.bestGuess(col.targetColumn().columnClass());
+                ClassName colType = ClassName.bestGuess(col.columnClass());
                 lookupOnCond.add("$L.$L.eq(lookupInput.field($L, $T.class))",
-                    terminalAlias, col.targetColumn().javaName(),
+                    terminalAlias, col.javaName(),
                     i + 1, colType);
                 if (i > 0) lookupOnCond.add(")");
             }

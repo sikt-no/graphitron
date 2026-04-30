@@ -121,12 +121,12 @@ public final class InlineLookupTableFieldEmitter {
                 "InlineLookupTableField '" + lf.parentTypeName() + "." + lf.name()
                 + "' has NodeIdMapping — inline NodeId emission not yet implemented");
         }
-        List<ColumnMapping.LookupColumn> lookupCols = cm.columns();
+        List<no.sikt.graphitron.rewrite.model.ColumnRef> lookupCols = cm.slotColumns();
         int lookupArity = lookupCols.size() + 1;
         TypeName[] lookupTypeArgs = new TypeName[lookupArity];
         lookupTypeArgs[0] = ClassName.get(Integer.class);
         for (int i = 0; i < lookupCols.size(); i++) {
-            lookupTypeArgs[i + 1] = ClassName.bestGuess(lookupCols.get(i).targetColumn().columnClass());
+            lookupTypeArgs[i + 1] = ClassName.bestGuess(lookupCols.get(i).columnClass());
         }
         TypeName lookupRowType = ParameterizedTypeName.get(
             ClassName.get("org.jooq", "Row" + lookupArity), lookupTypeArgs);
@@ -150,7 +150,7 @@ public final class InlineLookupTableFieldEmitter {
         var aliasArgs = CodeBlock.builder();
         aliasArgs.add("$S, $S", lf.name() + "Input", "idx");
         for (var col : lookupCols) {
-            aliasArgs.add(", $S", col.targetColumn().sqlName());
+            aliasArgs.add(", $S", col.sqlName());
         }
         code.addStatement("$T input = $T.values(rows).as($L)", lookupInputTableType, DSL, aliasArgs.build());
 
@@ -164,8 +164,8 @@ public final class InlineLookupTableFieldEmitter {
             if (i > 0) onCondition.add(".and(");
             var col = lookupCols.get(i);
             onCondition.add("$L.$L.eq(input.field($L.$L))",
-                terminalAlias, col.targetColumn().javaName(),
-                terminalAlias, col.targetColumn().javaName());
+                terminalAlias, col.javaName(),
+                terminalAlias, col.javaName());
             if (i > 0) onCondition.add(")");
         }
 

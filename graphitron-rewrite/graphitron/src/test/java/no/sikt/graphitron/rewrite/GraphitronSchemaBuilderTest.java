@@ -1795,8 +1795,8 @@ class GraphitronSchemaBuilderTest {
                 var f = (no.sikt.graphitron.rewrite.model.ChildField.LookupTableField) schema.field("FilmActor", "actors");
                 // @lookupKey args are emitted via VALUES+JOIN from LookupMapping, not as filters.
                 assertThat(f.filters()).isEmpty();
-                assertThat(((no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) f.lookupMapping()).columns()).hasSize(1);
-                assertThat(((no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) f.lookupMapping()).columns().get(0).argName()).isEqualTo("actor_id");
+                assertThat(((no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) f.lookupMapping()).args()).hasSize(1);
+                assertThat(((no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) f.lookupMapping()).args().get(0).argName()).isEqualTo("actor_id");
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(LookupTableField.class); }
         },
@@ -1970,7 +1970,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         QUERY_LOOKUP_TABLE_FIELD_MAPPING(
-            "QueryLookupTableField populates LookupMapping with one LookupColumn per @lookupKey arg",
+            "QueryLookupTableField populates LookupMapping with one ScalarLookupArg per @lookupKey arg",
             """
             type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
             type Query {
@@ -1980,12 +1980,14 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var f = (QueryField.QueryLookupTableField) schema.field("Query", "filmById");
                 assertThat(f.lookupMapping().targetTable().tableName()).isEqualTo("film");
-                assertThat(((no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) f.lookupMapping()).columns())
+                var cm = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) f.lookupMapping();
+                assertThat(cm.args())
                     .hasSize(1)
-                    .extracting(no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping.LookupColumn::argName)
+                    .extracting(no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping.LookupArg::argName)
                     .containsExactly("film_id");
-                assertThat(((no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) f.lookupMapping()).columns().get(0).targetColumn().sqlName()).isEqualTo("film_id");
-                assertThat(((no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) f.lookupMapping()).columns().get(0).list()).isTrue();
+                var arg = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping.LookupArg.ScalarLookupArg) cm.args().get(0);
+                assertThat(arg.targetColumn().sqlName()).isEqualTo("film_id");
+                assertThat(arg.list()).isTrue();
             }),
 
         ARG_CONDITION_CONTEXT_ARGS(
@@ -3259,10 +3261,11 @@ class GraphitronSchemaBuilderTest {
                 assertThat(schema.field("Query", "filmById")).isInstanceOf(QueryField.QueryLookupTableField.class);
                 var f = (QueryField.QueryLookupTableField) schema.field("Query", "filmById");
                 // @lookupKey args no longer populate filters() — see docs/argument-resolution.md Phase 1.
-                // They are emitted via VALUES+JOIN from LookupMapping.columns() instead.
+                // They are emitted via VALUES+JOIN from LookupMapping.args() instead.
                 assertThat(f.filters()).isEmpty();
-                assertThat(((no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) f.lookupMapping()).columns()).hasSize(1);
-                assertThat(((no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) f.lookupMapping()).columns().get(0).argName()).isEqualTo("film_id");
+                var cm = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) f.lookupMapping();
+                assertThat(cm.args()).hasSize(1);
+                assertThat(cm.args().get(0).argName()).isEqualTo("film_id");
                 assertThat(f.returnType().wrapper()).isInstanceOf(FieldWrapper.List.class);
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(QueryField.QueryLookupTableField.class); }
@@ -3283,7 +3286,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         LOOKUP_FIELD_COLUMN_ARG(
-            "lookup field list arg whose column exists → resolved LookupColumn in LookupMapping",
+            "lookup field list arg whose column exists → resolved ScalarLookupArg in LookupMapping",
             """
             type Film @table(name: "film") { title: String }
             type Query { filmById(film_id: [ID] @lookupKey): [Film!]! }
@@ -3291,11 +3294,12 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var f = (QueryField.QueryLookupTableField) schema.field("Query", "filmById");
                 assertThat(f.filters()).isEmpty();
-                assertThat(((no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) f.lookupMapping()).columns()).hasSize(1);
-                var col = ((no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) f.lookupMapping()).columns().get(0);
-                assertThat(col.argName()).isEqualTo("film_id");
-                assertThat(col.targetColumn().javaName()).isEqualTo("FILM_ID");
-                assertThat(col.targetColumn().columnClass()).isNotEmpty();
+                var cm = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) f.lookupMapping();
+                assertThat(cm.args()).hasSize(1);
+                var arg = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping.LookupArg.ScalarLookupArg) cm.args().get(0);
+                assertThat(arg.argName()).isEqualTo("film_id");
+                assertThat(arg.targetColumn().javaName()).isEqualTo("FILM_ID");
+                assertThat(arg.targetColumn().columnClass()).isNotEmpty();
             }),
 
         LOOKUP_FIELD_PLAIN_SCALAR_ARG(
@@ -3344,7 +3348,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         LOOKUP_FIELD_COMPOSITE_KEY_INPUT_TYPE_ARG(
-            "lookup field whose @table input type carries @lookupKey on two scalar fields → QueryLookupTableField with two composite LookupColumns (2-segment SourcePath each)",
+            "lookup field whose @table input type carries @lookupKey on two scalar fields → QueryLookupTableField with one MapInput LookupArg carrying two MapBindings",
             """
             input FilmActorKey @table(name: "film_actor") {
                 filmId: Int @field(name: "film_id") @lookupKey
@@ -3356,17 +3360,15 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var f = (QueryField.QueryLookupTableField) schema.field("Query", "filmActorByKey");
                 assertThat(f.filters()).isEmpty();
-                assertThat(((no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) f.lookupMapping()).columns()).hasSize(2);
-                var cols = ((no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) f.lookupMapping()).columns();
-                assertThat(cols).allSatisfy(c -> {
-                    assertThat(c.isComposite()).isTrue();
-                    assertThat(c.sourcePath().segments()).hasSize(2);
-                    assertThat(c.sourcePath().segments().get(0)).isEqualTo("key");
-                    assertThat(c.list()).isTrue();
-                });
-                assertThat(cols).extracting(c -> c.sourcePath().segments().get(1))
+                var cm = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) f.lookupMapping();
+                assertThat(cm.args()).hasSize(1);
+                var arg = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping.LookupArg.MapInput) cm.args().get(0);
+                assertThat(arg.argName()).isEqualTo("key");
+                assertThat(arg.list()).isTrue();
+                assertThat(arg.bindings()).hasSize(2);
+                assertThat(arg.bindings()).extracting(no.sikt.graphitron.rewrite.model.InputColumnBinding.MapBinding::fieldName)
                     .containsExactly("filmId", "actorId");
-                assertThat(cols).extracting(c -> c.targetColumn().javaName())
+                assertThat(arg.bindings()).extracting(b -> b.targetColumn().javaName())
                     .containsExactly("FILM_ID", "ACTOR_ID");
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(QueryField.QueryLookupTableField.class); }
@@ -3390,8 +3392,9 @@ class GraphitronSchemaBuilderTest {
                 assertThat(orderBy.namedOrders()).hasSize(1);
                 assertThat(orderBy.namedOrders().get(0).name()).isEqualTo("TITLE");
                 assertThat(f.filters()).isEmpty();
-                assertThat(((no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) f.lookupMapping()).columns()).hasSize(1);
-                assertThat(((no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) f.lookupMapping()).columns().get(0).argName()).isEqualTo("film_id");
+                var cm2 = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) f.lookupMapping();
+                assertThat(cm2.args()).hasSize(1);
+                assertThat(cm2.args().get(0).argName()).isEqualTo("film_id");
             }),
 
         LOOKUP_FIELD_ORDERBY_ARG_BAD_STRUCTURE(
