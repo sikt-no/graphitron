@@ -1042,7 +1042,7 @@ public class TypeFetcherGenerator {
             whereExpr.add("$T.$L.eq($T.val(in.get($S), $T.$L.getDataType()))",
                 names.tablesClass(), tableRef.javaFieldName() + "." + binding.targetColumn().javaName(),
                 DSL,
-                binding.inputFieldName(),
+                binding.fieldName(),
                 names.tablesClass(), tableRef.javaFieldName() + "." + binding.targetColumn().javaName());
             if (i > 0) whereExpr.add(")");
         }

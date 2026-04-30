@@ -791,7 +791,7 @@ class FieldBuilder {
         // plain-input path so lookup-key search still runs and produces a focused error.
         var resolvedType = ctx.types.get(typeName);
         if (resolvedType instanceof GraphitronType.TableInputType tit) {
-            List<InputColumnBinding> bindings = buildLookupBindings(tit, arg, fieldDef, name, errors);
+            List<InputColumnBinding.MapBinding> bindings = buildLookupBindings(tit, arg, fieldDef, name, errors);
             return new ArgumentRef.InputTypeArg.TableInputArg(
                 name, typeName, nonNull, list, tit.table(), bindings, argCondition, tit.inputFields());
         }
@@ -921,7 +921,7 @@ class FieldBuilder {
      * {@code @lookupKey}" only when the field trips the lookup gate with no other source of
      * lookup columns.
      */
-    private List<InputColumnBinding> buildLookupBindings(GraphitronType.TableInputType tit,
+    private List<InputColumnBinding.MapBinding> buildLookupBindings(GraphitronType.TableInputType tit,
             GraphQLArgument arg, GraphQLFieldDefinition fieldDef, String argName, List<String> errors) {
         var sdlType = ctx.schema.getType(tit.name());
         if (!(sdlType instanceof GraphQLInputObjectType iot)) {
@@ -929,7 +929,7 @@ class FieldBuilder {
         }
         var byName = tit.inputFields().stream()
             .collect(Collectors.toMap(InputField::name, f -> f));
-        var bindings = new ArrayList<InputColumnBinding>();
+        var bindings = new ArrayList<InputColumnBinding.MapBinding>();
         for (var sdlField : iot.getFieldDefinitions()) {
             if (!sdlField.hasAppliedDirective(DIR_LOOKUP_KEY)) continue;
             var resolved = byName.get(sdlField.getName());
@@ -951,7 +951,7 @@ class FieldBuilder {
             String mapFieldName = fieldDef.getName().toUpperCase() + "_"
                 + argName.toUpperCase() + "_" + sdlField.getName().toUpperCase() + "_MAP";
             CallSiteExtraction extraction = deriveExtraction(cf.typeName(), cf.column(), enumClassName, mapFieldName);
-            bindings.add(new InputColumnBinding(sdlField.getName(), cf.column(), extraction));
+            bindings.add(new InputColumnBinding.MapBinding(sdlField.getName(), cf.column(), extraction));
         }
         return List.copyOf(bindings);
     }
@@ -1146,7 +1146,7 @@ class FieldBuilder {
                     // fields are guaranteed scalar by buildLookupBindings.
                     for (var binding : tia.fieldBindings()) {
                         columns.add(new ColumnMapping.LookupColumn(
-                            new ColumnMapping.SourcePath(List.of(tia.name(), binding.inputFieldName())),
+                            new ColumnMapping.SourcePath(List.of(tia.name(), binding.fieldName())),
                             binding.targetColumn(), binding.extraction(), tia.list()));
                     }
                 }
@@ -1206,7 +1206,7 @@ class FieldBuilder {
                     boolean enclosingOverride = fieldOverride
                         || tia.argCondition().map(ArgConditionRef::override).orElse(false);
                     var lookupBoundNames = tia.fieldBindings().stream()
-                        .map(InputColumnBinding::inputFieldName)
+                        .map(InputColumnBinding.MapBinding::fieldName)
                         .collect(Collectors.toUnmodifiableSet());
                     var implicitParams = new ArrayList<BodyParam>();
                     walkInputFieldConditions(tia.fields(), tia.name(), List.of(),
@@ -1900,7 +1900,7 @@ class FieldBuilder {
             }
 
             var bindingErrors = new ArrayList<String>();
-            List<InputColumnBinding> bindings = buildLookupBindings(tit, arg, fieldDef, argName, bindingErrors);
+            List<InputColumnBinding.MapBinding> bindings = buildLookupBindings(tit, arg, fieldDef, argName, bindingErrors);
             if (!bindingErrors.isEmpty()) {
                 return new MutationInputResult(null, String.join("; ", bindingErrors));
             }
@@ -1963,7 +1963,7 @@ class FieldBuilder {
 
         if ("UPDATE".equals(typeName)) {
             var lookupKeyNames = foundTia.fieldBindings().stream()
-                .map(InputColumnBinding::inputFieldName)
+                .map(InputColumnBinding.MapBinding::fieldName)
                 .collect(Collectors.toSet());
             boolean hasNonLookupColumn = foundTia.fields().stream()
                 .filter(f -> f instanceof InputField.ColumnField)
