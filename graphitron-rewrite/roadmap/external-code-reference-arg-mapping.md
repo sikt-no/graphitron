@@ -156,20 +156,22 @@ retired in the same change.
     rejected with the entry text in the message.
   - Duplicate Java target: rejected with the target name. The parser is the
     sole detector; by the time `of(...)` runs, no two map keys can collide.
-- **Pre-reflection on the field** (`ArgBindingMap.of`).
+- **Pre-reflection on the field** (`ArgBindingMap.of`). The factory has
+  exactly one failure shape:
   - Override value names a GraphQL arg that doesn't exist on the field:
-    rejected with the arg name and the available list. This is the only
-    failure shape `of(...)` detects; see Plan step 4.
-  - Single-slot `@condition` site cardinality: at argument-level or
-    input-field-level `@condition`, the GraphQL-slot set has exactly one
-    element. `argMapping` may have at most one entry, and that entry's value
-    must equal the slot's name (otherwise the override would be unreachable).
-    Catches authoring mistakes like `argMapping: "x: nonexistent"` on a
-    single-arg condition where only the surrounding arg is in scope.
-  - Path-step `@condition` (inside `@reference.path`): the GraphQL-slot set
-    is structurally empty (no enclosing arg). Any `argMapping` entry rejects
-    with a "no GraphQL arguments are in scope at a path-step `@condition`"
-    message.
+    rejected with the arg name and the available list (see Plan step 4 for
+    the message format). At single-slot `@condition` sites the GraphQL-slot
+    set has one element, so any override whose value isn't that element
+    fails through this rule. At path-step `@condition` sites the slot set
+    is empty, so any non-empty `argMapping` fails through this rule
+    (per-entry). The site-specific framings ("single-slot" / "path-step")
+    are not separate rules; they are how the one rule reads at sites where
+    the slot set is small. Two Java parameters that bind to the same
+    GraphQL slot is *legal* (e.g. `argMapping: "a: x, b: x"` against slot
+    set `{x}` produces `{a: x, b: x}`), since the override map is keyed on
+    Java target and a single GraphQL value flowing to two Java params is a
+    coherent shape; if a future rule wants to ban it, it lands as its own
+    bullet with a load-bearing reason.
 - **Post-reflection** (inherited from R41; see *Relationship to R41* for the
   salvage list).
   - Override key names a Java parameter that doesn't exist on the resolved
@@ -207,19 +209,30 @@ retired in the same change.
    malformed entries and duplicate Java targets at this layer; `of(...)` in
    step 4 trusts that its `overrides` argument has unique keys.
 
-3. **Carry the parsed mapping on `ExternalRef`.** Today
-   `FieldBuilder.ExternalRef` is `(className, methodName, lookupError)`
-   (`FieldBuilder.java:2487`). Retype as
-   `(className, methodName, argMapping, lookupError, argMappingError)` —
-   distinct slots for the two failure shapes (named-reference lookup miss
+3. **Carry the parsed mapping on `ExternalRef` and `ConditionDirective`.**
+   Today `FieldBuilder.ExternalRef` is `(className, methodName, lookupError)`
+   (`FieldBuilder.java:2487`); the parallel `BuildContext.ConditionDirective`
+   record at `BuildContext.java:642` is `(className, methodName, override,
+   contextArguments)`. Retype both:
+   - `ExternalRef(className, methodName, argMapping, lookupError, argMappingError)`
+   - `ConditionDirective(className, methodName, override, contextArguments,
+     argMapping, argMappingError)`
+
+   Distinct slots for the two failure shapes (named-reference lookup miss
    vs. mini-DSL parse failure) so downstream error messages stay precise
    per *Sub-taxonomies for resolution outcomes*. `FieldBuilder.parseExternalRef`
-   reads `argMapping` from the directive map, parses via
-   `ArgBindingMap.parseArgMapping`, and populates either `argMapping` or
-   `argMappingError`. `BuildContext.resolveConditionRef` and
-   `BuildContext.buildInputFieldCondition` do the same for their non-
-   `parseExternalRef` paths (the two methods that read `ExternalCodeReference`
-   maps directly today, at `BuildContext.java:612` and `:682`).
+   parses `argMapping` via `ArgBindingMap.parseArgMapping` and populates
+   `argMapping` or `argMappingError` accordingly; `BuildContext.readConditionDirective`
+   does the same on its side, so `buildInputFieldCondition`,
+   `buildArgCondition`, `buildFieldCondition`, and `resolveConditionRef`
+   all consume a `ConditionDirective` that already carries the parsed
+   mapping. No call site re-parses the directive map.
+
+   Failure precedence on `parseExternalRef` (and `readConditionDirective`):
+   when both `lookupError` and `argMappingError` would surface
+   simultaneously, `lookupError` wins — "I can't resolve the class" reads
+   ahead of "and your argMapping has a typo." `argMappingError` surfaces
+   only when `className` resolved cleanly.
 
 4. **Refactor `ArgBindingMap`.** Replace `forField(GraphQLFieldDefinition)`,
    `identityForField(...)`, `identityForSingleArg(...)`, and
@@ -241,10 +254,21 @@ retired in the same change.
    identity bindings cannot collide with each other (GraphQL arg names are
    unique on a field). The only failure `of(...)` detects is "an override's
    GraphQL-source name is not in `graphqlArgNames`" (the *Pre-reflection on
-   the field* item under Validation). `empty()` keeps its current shape
-   (path-step `@condition` resolution where the method takes no
-   GraphQL-bound parameters); `of(Set.of(), Map.of())` produces the same
-   value via the new factory.
+   the field* item under Validation).
+
+   `UnknownArgRef.message` is formatted to mirror the post-reflection
+   typo guard's wire shape: name the override's GraphQL-source value, name
+   the available `graphqlArgNames` list. The site context (which directive
+   the override sits on) is added by the caller when wrapping the result;
+   `of(...)` doesn't know whether it ran for `@service`, `@condition`, or
+   a path-step.
+
+   `empty()` keeps its current shape (path-step `@condition` resolution
+   where the method takes no GraphQL-bound parameters and the directive
+   carries no `argMapping`); `of(Set.of(), Map.of())` produces the same
+   value via the new factory. When a path-step *does* carry `argMapping`,
+   the call funnels through `of(Set.of(), parsedArgMapping)` and the
+   `UnknownArgRef` rule rejects every entry.
 
 5. **Wire through every reflect call site.** `FieldBuilder.resolveServiceField`,
    the two `@tableMethod` arms (root + child), `buildArgCondition`,
@@ -295,6 +319,11 @@ retired in the same change.
    - `@condition` input-field-level: `argMapping` on an input-field
      `@condition` binds the input-field's value to a differently-named Java
      parameter.
+   - `@reference.path[].condition`: `argMapping` on a path-step `@condition`
+     rejects with the `UnknownArgRef` message naming "no GraphQL arguments
+     are in scope at a path-step `@condition`" (or whatever wording the
+     site-context wrapper produces; assert the site-context fragment, not
+     the message verbatim).
    - Pipeline: one schema fixture exercising the dual-bound case end-to-end
      (table input field + `@condition` with `argMapping`).
    - Parser-error cases: malformed entry, duplicate Java target, override
@@ -346,7 +375,11 @@ Coverage by tier:
   param on the same dual-bound arg); validator rejects `argMapping` on
   `@externalField`, `@enum`, and `@record` (one case each).
 - **Pipeline**: one fixture with a dual-bound input field + `@condition`
-  using `argMapping`.
+  using `argMapping`. Asserts the classified `MethodRef` carries
+  `Param.Typed(javaName=X, source=Arg(graphqlArgName=Y, ...))` for the
+  override (X != Y), and the column-binding axis on the same arg (the
+  `ColumnRef` reached through `@field(name:)`) is unaffected by the
+  presence of `argMapping`.
 - **`graphitron-test` execute**: `filmsByServiceRenamed` round-trips a real
   query through PostgreSQL with the `argMapping`-form `@service` directive.
 
