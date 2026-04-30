@@ -1281,7 +1281,14 @@ class FieldBuilder {
                     cf.condition().ifPresent(c -> out.add(rewrapForNested(c.filter(), outerArgName, leafPath)));
                     if (implicitBodyParams != null && !enclosingOverride
                             && cf.condition().isEmpty()
-                            && !lookupBoundNames.contains(cf.name())) {
+                            && !lookupBoundNames.contains(cf.name())
+                            && !(cf.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys)) {
+                        // R50 phase e2: ColumnField with NodeIdDecodeKeys.SkipMismatchedElement is
+                        // the post-collapse successor of the legacy InputField.NodeIdField synthesis
+                        // shim (and, post-e3, the @nodeId-typed input-field paths). Today's behavior
+                        // for those was no implicit body emission, preserved here. Phase (e2-rest)
+                        // wires NodeIdDecodeKeys -> ColumnPredicate.Eq emission with decoded key
+                        // values flowing through the body parameter.
                         implicitBodyParams.add(implicitBodyParam(
                             cf.column(), cf.name(), cf.typeName(), cf.nonNull(), outerArgName, leafPath));
                     }
@@ -1863,7 +1870,14 @@ class FieldBuilder {
                 "@condition on a @mutation field argument is not supported");
         }
         for (var f : foundTia.fields()) {
-            if (f instanceof InputField.ColumnField) continue;
+            // ColumnField with Direct extraction is the canonical mutation-input shape.
+            // ColumnField with NodeIdDecodeKeys is the post-R50 successor of NodeIdField at
+            // the synthesis shim (and, post-e3, the @nodeId-typed paths) -- still not
+            // supported in @mutation inputs.
+            if (f instanceof InputField.ColumnField cf
+                    && !(cf.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys)) {
+                continue;
+            }
             String reason = switch (f) {
                 case InputField.NestingField nf -> "nested input types in @mutation fields are not yet supported";
                 case InputField.NodeIdField nid -> "NodeIdField in @mutation inputs is not yet supported";
@@ -1873,7 +1887,7 @@ class FieldBuilder {
                 case InputField.CompositeColumnReferenceField ccrf -> "CompositeColumnReferenceField in @mutation inputs is not yet supported";
                 case InputField.IdReferenceField idr -> "IdReferenceField in @mutation inputs is not yet supported";
                 case InputField.NodeIdInFilterField nif -> "NodeIdInFilterField in @mutation inputs is not yet supported";
-                case InputField.ColumnField cf -> throw new IllegalStateException("unreachable");
+                case InputField.ColumnField cf -> "NodeId-decoded ColumnField (post-R50 successor of NodeIdField) in @mutation inputs is not yet supported";
             };
             return new MutationInputResult(null,
                 "@mutation input '" + foundTia.typeName() + "' field '" + f.name() + "': " + reason);

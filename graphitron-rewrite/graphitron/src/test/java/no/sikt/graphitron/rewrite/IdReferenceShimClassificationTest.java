@@ -122,9 +122,11 @@ class IdReferenceShimClassificationTest {
         // Case 4d: bare id: ID on a table that has nodeId metadata but no outgoing FKs.
         // studieprogram has __NODE_TYPE_ID but no outgoing FK → empty qualifier map →
         // "id" doesn't match → column lookup misses (no column named "id") →
-        // falls to the existing NodeIdField shim → NodeIdField.
+        // falls to the synthesis shim. Post-R50, the shim routes onto ColumnField with
+        // NodeIdDecodeKeys.SkipMismatchedElement (arity-1 single-PK NodeType) instead of
+        // the legacy InputField.NodeIdField.
         DOES_NOT_SHIM_OWN_ID(
-            "bare id: ID on node-typed @table with no outgoing FKs → NodeIdField (existing scalar shim), not IdReferenceField",
+            "bare id: ID on node-typed @table with no outgoing FKs → ColumnField with NodeIdDecodeKeys (post-R50; legacy NodeIdField successor)",
             """
             type Studieprogram @table(name: "studieprogram") { studieprogramId: String }
             input StudieprogramFilterInput @table(name: "studieprogram") {
@@ -136,7 +138,10 @@ class IdReferenceShimClassificationTest {
                 var tit = (TableInputType) schema.type("StudieprogramFilterInput");
                 var f = tit.inputFields().stream()
                     .filter(g -> g.name().equals("id")).findFirst().orElseThrow();
-                assertThat(f).isInstanceOf(InputField.NodeIdField.class);
+                assertThat(f).isInstanceOf(InputField.ColumnField.class);
+                var cf = (InputField.ColumnField) f;
+                assertThat(cf.extraction())
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement.class);
             }),
 
         // Case 4e: role-prefixed qualifier (FK2). The raw map key

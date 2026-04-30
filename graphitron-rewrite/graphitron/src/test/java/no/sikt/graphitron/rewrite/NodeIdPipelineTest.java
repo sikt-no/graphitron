@@ -262,31 +262,34 @@ class NodeIdPipelineTest {
 
     enum InputCase {
         IMPLICIT_ID(
-            "input `id: ID!` on a node-type table → NodeIdField(nodeTypeId=Bar, keyColumns=[id_1,id_2]) — synthesized route",
+            "input `id: ID!` on a composite-PK node-type table → CompositeColumnField with NodeIdDecodeKeys.SkipMismatchedElement (post-R50; synthesized route)",
             """
             input Foo @table(name: "bar") { id: ID! }
             type Query { x: String }
             """,
             schema -> {
                 var t = (GraphitronType.TableInputType) schema.type("Foo");
-                var f = (InputField.NodeIdField) t.inputFields().get(0);
-                assertThat(f.nodeTypeId()).isEqualTo("Bar");
-                assertThat(f.nodeKeyColumns()).extracting(ColumnRef::sqlName)
+                var f = (InputField.CompositeColumnField) t.inputFields().get(0);
+                assertThat(f.columns()).extracting(ColumnRef::sqlName)
                     .containsExactly("id_1", "id_2");
+                assertThat(f.extraction())
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement.class);
+                assertThat(f.extraction().decodeMethod().methodName()).isEqualTo("decodeBar");
             }),
 
         EXPLICIT_PERSON_ID(
-            "input `personId: ID! @field(name: \"PERSON_ID\")` on a node-type table → NodeIdField (PERSON_ID has no column, nodeId metadata wins)",
+            "input `personId: ID! @field(name: \"PERSON_ID\")` on a composite-PK node-type table → CompositeColumnField with NodeIdDecodeKeys (PERSON_ID has no column, nodeId metadata wins)",
             """
             input Foo @table(name: "bar") { personId: ID! @field(name: "PERSON_ID") }
             type Query { x: String }
             """,
             schema -> {
                 var t = (GraphitronType.TableInputType) schema.type("Foo");
-                var f = (InputField.NodeIdField) t.inputFields().get(0);
-                assertThat(f.nodeTypeId()).isEqualTo("Bar");
-                assertThat(f.nodeKeyColumns()).extracting(ColumnRef::sqlName)
+                var f = (InputField.CompositeColumnField) t.inputFields().get(0);
+                assertThat(f.columns()).extracting(ColumnRef::sqlName)
                     .containsExactly("id_1", "id_2");
+                assertThat(f.extraction())
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement.class);
             }),
 
         EXPLICIT_NODE_ID_DIRECTIVE(
@@ -493,7 +496,7 @@ class NodeIdPipelineTest {
             }),
 
         SHIM_BARE_ID_FALLS_THROUGH(
-            "bare id: ID on a KjerneJooqGenerator table — qualifier map miss → falls through to NodeIdField",
+            "bare id: ID on a KjerneJooqGenerator composite-PK table — qualifier map miss → falls through to CompositeColumnField with NodeIdDecodeKeys (post-R50)",
             """
             input Foo @table(name: "bar") {
               id: ID
@@ -502,7 +505,7 @@ class NodeIdPipelineTest {
             """,
             schema -> {
                 var tit = (GraphitronType.TableInputType) schema.type("Foo");
-                assertThat(tit.inputFields().get(0)).isInstanceOf(InputField.NodeIdField.class);
+                assertThat(tit.inputFields().get(0)).isInstanceOf(InputField.CompositeColumnField.class);
             });
 
         final String sdl;
