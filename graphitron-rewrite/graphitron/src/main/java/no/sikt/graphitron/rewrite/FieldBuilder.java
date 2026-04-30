@@ -1336,7 +1336,6 @@ class FieldBuilder {
                 }
                 case InputField.NodeIdField ignored -> {}
                 case InputField.NodeIdReferenceField ignored -> {}
-                case InputField.IdReferenceField ignored -> {}
                 case InputField.CompositeColumnField ccf -> {
                     ccf.condition().ifPresent(c -> out.add(rewrapForNested(c.filter(), outerArgName, leafPath)));
                     if (implicitBodyParams != null && !enclosingOverride
@@ -1950,7 +1949,6 @@ class FieldBuilder {
                 case InputField.ColumnReferenceField crf -> "ColumnReferenceField in @mutation inputs is not yet supported";
                 case InputField.CompositeColumnField ccf -> "CompositeColumnField in @mutation inputs is not yet supported";
                 case InputField.CompositeColumnReferenceField ccrf -> "CompositeColumnReferenceField in @mutation inputs is not yet supported";
-                case InputField.IdReferenceField idr -> "IdReferenceField in @mutation inputs is not yet supported";
                 case InputField.ColumnField cf -> "NodeId-decoded ColumnField (post-R50 successor of NodeIdField) in @mutation inputs is not yet supported";
             };
             return new MutationInputResult(null,

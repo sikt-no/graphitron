@@ -107,7 +107,6 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.InputField.CompositeColumnReferenceField f -> {} // same as above
             case no.sikt.graphitron.rewrite.model.InputField.NodeIdField f            -> {} // no extra validation yet
             case no.sikt.graphitron.rewrite.model.InputField.NodeIdReferenceField f  -> {} // no extra validation yet
-            case no.sikt.graphitron.rewrite.model.InputField.IdReferenceField f      -> {} // no extra validation yet
             case no.sikt.graphitron.rewrite.model.InputField.NestingField f          -> validateInputNestingField(f, errors);
             case no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField f -> validateUnclassifiedField(f, errors);
         }
