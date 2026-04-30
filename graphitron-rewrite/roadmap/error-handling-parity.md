@@ -115,8 +115,10 @@ done; concrete deliverables across the diff:
   `GraphitronType.java:202-209`; `ErrorHandlerType` enum gains `VALIDATION`.
 - `ErrorsField` variant on `GraphitronField` (§2a); five `PolymorphicReturnType`-on-`@error`
   rejections in `FieldBuilder` lifted to produce it (the production blocker).
-- `ErrorChannel` record (§2c); `Optional<ErrorChannel>` slot on every fetcher-emitting field
-  variant; channel-detection in the carrier classifier.
+- `ErrorChannel` record (§2c) with typed `payloadClass: ClassName`,
+  `payloadCtorParams.type: TypeName`, and resolved `mappedErrorTypes:
+  List<GraphitronType.ErrorType>`; `WithErrorChannel` capability interface implemented by
+  every fetcher-emitting field variant; channel-detection in the carrier classifier.
 - `TypeBuilder.parseErrorHandler` lifts SDL `ErrorHandler` entries to the sealed variants per
   §1's table; the nine reject rules (intra-type and channel-level, including the
   validation-shadowing rule and the `path`/`message`-only structural rule) fire as
@@ -378,7 +380,7 @@ record ErrorsField(
     String parentTypeName,
     String name,
     SourceLocation location,
-    List<ErrorTypeRef> errorTypes      // flat across single / union / interface list shapes
+    List<GraphitronType.ErrorType> errorTypes   // resolved; flat across single / union / interface list shapes
 ) implements GraphitronField {}
 ```
 
@@ -435,15 +437,24 @@ The carrier-side resolution:
 
 ```java
 record ErrorChannel(
-    String errorsFieldName,                  // the "errors" field on the payload
-    List<ErrorTypeRef> mappedErrorTypes,     // union members or list-element type
-    ClassName payloadClass,                  // the developer-supplied payload class (e.g. FilmPayload)
+    List<GraphitronType.ErrorType> mappedErrorTypes,  // resolved; union members or list-element type, in source order
+    ClassName payloadClass,                           // the developer-supplied payload class (e.g. FilmPayload)
     List<PayloadConstructorParam> payloadCtorParams,  // ordered all-fields constructor signature; see "Payload-factory contract" below
-    String mappingsConstantName              // emitted constant name on ErrorMappings; see §3 dedup rule
+    String mappingsConstantName                       // emitted constant name on ErrorMappings; see §3 dedup rule
 ) {}
 
-record PayloadConstructorParam(String name, TypeName type, boolean isErrorsSlot) {}
+record PayloadConstructorParam(
+    String name,             // declared parameter name (diagnostics only; matching is by type assignability)
+    TypeName type,           // resolved JavaPoet type; emitter prints it directly
+    boolean isErrorsSlot,    // exactly one parameter has this set
+    String defaultLiteral    // pre-resolved literal for non-errors slots ("null" / "0" / "0L" / "false" / etc.); null on the errors slot
+) {}
 ```
+
+The errors-field name is intentionally absent: the carrier classifier identifies the
+payload's `ErrorsField` structurally (one per payload type, per the channel-detection
+rules below), and the emitter does not name the field in the generated catch-arm — the
+synthesized payload-factory binds the errors list positionally through `payloadCtorParams`.
 
 The flattened handler list, used by the §3 duplicate-criteria check and the
 `mappingsConstantName` dedup-suffix derivation, is a derived view: walk `mappedErrorTypes`
@@ -458,21 +469,24 @@ exists, the seal-with-one-permit pattern is overhead. If a future channel shape 
 list-of-payloads aggregator, or a streaming target) needs to dispatch on shape, lift this
 field to a sealed interface at that point.
 
-Carry `Optional<ErrorChannel>` on every field variant whose body is a candidate for the
-try/catch / `.exceptionally` wrapper in §3. Concretely:
+Every field variant whose body is a candidate for the try/catch / `.exceptionally`
+wrapper in §3 implements the `WithErrorChannel` capability interface
+(`Optional<ErrorChannel> errorChannel()`). Capability rather than a slot on every
+`GraphitronField` root: only some root variants are fetcher-emitting, and the others
+stay free of the slot. Generators consume the field via `instanceof WithErrorChannel`
+when they need to know whether to dispatch via the generated `ErrorRouter`. Concretely:
 
-- `MutationField.DmlTableField` (the sealed supertype introduced by
-  [`mutations.md`](mutations.md), covering insert/update/delete/upsert); joins later when
-  the new variants land; this plan adds the slot to whatever variants exist when it lands.
+- All `MutationField.DmlTableField` permits (insert/update/delete/upsert).
 - `MutationField.MutationServiceTableField`, `MutationServiceRecordField`.
-- `QueryField.QueryServiceTableField`, `QueryServiceRecordField`, `QueryRowsTableField` (and
-  any other Query-side variant that resolves to a fetcher body) when the field's payload type
-  matches the channel-detection rules below.
+- `QueryField.QueryServiceTableField`, `QueryServiceRecordField`, and any other
+  Query-side variant that resolves to a fetcher body once the channel-detection rules
+  below match the field's payload type.
 
-The `DmlTableField` reference is a *naming* convenience, not a structural dependency: this
-plan adds `Optional<ErrorChannel>` to each affected variant individually as it exists today.
-Same pattern as `nodeIdMeta` in [`mutations.md`](mutations.md): classifier resolves once,
-emitter dispatches over a settled shape.
+The capability is non-structural: each variant lists `WithErrorChannel` alongside
+`MethodBackedField` etc., and the carrier classifier produces `Optional.of(channel)` /
+`Optional.empty()` per call site. Same pattern as `nodeIdMeta` in
+[`mutations.md`](mutations.md): classifier resolves once, emitter dispatches over a
+settled shape.
 
 The carrier classifier walks the field's payload return type, identifies the `errors` field by
 its `ErrorsField` classification (committed in §2a), and resolves which `Handler`s apply. No
@@ -484,8 +498,8 @@ in the runtime contract that would justify deferring queries.
 **Channel-detection rules (carrier classifier):**
 
 1. The payload type must be a `@table` or `@record` object whose field set includes exactly
-   one `ErrorsField` (committed by §2a). That field's `name` becomes `errorsFieldName`; its
-   `mappedErrorTypes` populate the channel.
+   one `ErrorsField` (committed by §2a); its `errorTypes` populate the channel's
+   `mappedErrorTypes`.
 2. A payload with no `ErrorsField` has no `ErrorChannel`. Throwing inside that fetcher takes
    the top-level path (§3).
 3. The detection ignores the field's name; legacy convention is `errors:` but the rewrite keys
