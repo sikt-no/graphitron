@@ -1374,8 +1374,6 @@ class FieldBuilder {
                     walkInputFieldConditions(nf.fields(), outerArgName, leafPath,
                         nestOverride, lookupBoundNames, implicitBodyParams, out);
                 }
-                case InputField.NodeIdField ignored -> {}
-                case InputField.NodeIdReferenceField ignored -> {}
                 case InputField.CompositeColumnField ccf -> {
                     ccf.condition().ifPresent(c -> out.add(rewrapForNested(c.filter(), outerArgName, leafPath)));
                     if (implicitBodyParams != null && !enclosingOverride
@@ -1979,8 +1977,8 @@ class FieldBuilder {
         }
         for (var f : foundTia.fields()) {
             // ColumnField with Direct extraction is the canonical mutation-input shape.
-            // ColumnField with NodeIdDecodeKeys is the post-R50 successor of NodeIdField at
-            // the synthesis shim (and, post-e3, the @nodeId-typed paths) -- still not
+            // ColumnField with NodeIdDecodeKeys is the post-R50 successor of the retired NodeIdField
+            // at the synthesis shim (and, post-e3, the @nodeId-typed paths) -- still not
             // supported in @mutation inputs.
             if (f instanceof InputField.ColumnField cf
                     && !(cf.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys)) {
@@ -1988,12 +1986,10 @@ class FieldBuilder {
             }
             String reason = switch (f) {
                 case InputField.NestingField nf -> "nested input types in @mutation fields are not yet supported";
-                case InputField.NodeIdField nid -> "NodeIdField in @mutation inputs is not yet supported";
-                case InputField.NodeIdReferenceField nidr -> "NodeIdReferenceField in @mutation inputs is not yet supported";
                 case InputField.ColumnReferenceField crf -> "ColumnReferenceField in @mutation inputs is not yet supported";
                 case InputField.CompositeColumnField ccf -> "CompositeColumnField in @mutation inputs is not yet supported";
                 case InputField.CompositeColumnReferenceField ccrf -> "CompositeColumnReferenceField in @mutation inputs is not yet supported";
-                case InputField.ColumnField cf -> "NodeId-decoded ColumnField (post-R50 successor of NodeIdField) in @mutation inputs is not yet supported";
+                case InputField.ColumnField cf -> "NodeId-decoded ColumnField (post-R50 successor of the retired NodeIdField) in @mutation inputs is not yet supported";
             };
             return new MutationInputResult(null,
                 "@mutation input '" + foundTia.typeName() + "' field '" + f.name() + "': " + reason);

@@ -18,7 +18,6 @@ import java.util.Optional;
 public sealed interface InputField extends GraphitronField
         permits InputField.ColumnField, InputField.ColumnReferenceField,
                 InputField.CompositeColumnField, InputField.CompositeColumnReferenceField,
-                InputField.NodeIdField, InputField.NodeIdReferenceField,
                 InputField.NestingField {
 
     /**
@@ -94,12 +93,13 @@ public sealed interface InputField extends GraphitronField
      * a multi-column tuple (Direct, JooqConvert, EnumValueOf, TextMapLookup, ContextArg are
      * all single-scalar leaf shapes; NestedInputField is a Map-traversal arm that hosts an
      * inner extraction rather than producing a tuple). Lands as the post-R50 successor for the
-     * arity > 1 cases of {@link NodeIdField} and the retired {@code NodeIdInFilterField}.
+     * arity > 1 cases of the retired wire-shape variants {@code NodeIdField} and
+     * {@code NodeIdInFilterField}.
      *
      * <p>The body emitter pairs {@link CallSiteExtraction.NodeIdDecodeKeys.SkipMismatchedElement}
-     * with {@link BodyParam.RowEq RowEq} (for scalar same-table NodeId equality, the post-R50
-     * successor of {@link NodeIdField}) or {@link BodyParam.RowIn RowIn} (for list filter,
-     * post-R50 successor of the retired {@code NodeIdInFilterField}).
+     * with {@link BodyParam.RowEq RowEq} (for scalar same-table NodeId equality) or
+     * {@link BodyParam.RowIn RowIn} (for list filter, the post-R50 successor of the retired
+     * {@code NodeIdInFilterField}).
      */
     record CompositeColumnField(
         String parentTypeName,
@@ -130,8 +130,9 @@ public sealed interface InputField extends GraphitronField
      * {@link CallSiteExtraction.NodeIdDecodeKeys} at the type level, same rationale as
      * {@link CompositeColumnField}.
      *
-     * <p>Post-R50 successor for the arity > 1 case of {@link NodeIdReferenceField}; the
-     * arity-1 case lands on the single-column {@link ColumnReferenceField}.
+     * <p>Post-R50 successor for the arity > 1 case of the retired wire-shape
+     * {@code NodeIdReferenceField}; the arity-1 case lands on the single-column
+     * {@link ColumnReferenceField}.
      */
     record CompositeColumnReferenceField(
         String parentTypeName,
@@ -154,56 +155,6 @@ public sealed interface InputField extends GraphitronField
             }
         }
     }
-
-    /**
-     * A field in a {@code @table}-annotated input type whose GraphQL type is scalar {@code ID}
-     * and whose backing table is a {@link no.sikt.graphitron.rewrite.model.GraphitronType.NodeType}.
-     *
-     * <p>Classified on both the synthesized route (table has {@code __NODE_TYPE_ID} /
-     * {@code __NODE_KEY_COLUMNS} constants) and the declared route (field carries {@code @nodeId}).
-     * Both paths produce the same variant carrying {@code (nodeTypeId, nodeKeyColumns)}.
-     *
-     * <p>The generator decodes the base64 composite ID and binds each unpacked value to its
-     * own-table column via {@code NodeIdStrategy.unpackIdValues} / {@code hasIds} / {@code hasId}.
-     * No {@link ColumnRef} is carried — the columns are in {@code nodeKeyColumns}.
-     * A {@code list} field is intentionally omitted — the classifier guarantees scalar.
-     */
-    record NodeIdField(
-        String parentTypeName,
-        String name,
-        SourceLocation location,
-        String nodeTypeId,
-        List<ColumnRef> nodeKeyColumns
-    ) implements InputField {}
-
-    /**
-     * A field in a {@code @table}-annotated input type whose GraphQL type is scalar {@code ID}
-     * and which carries {@code @nodeId(typeName: "X")} pointing at a {@link
-     * no.sikt.graphitron.rewrite.model.GraphitronType.NodeType} reachable from the input type's
-     * own table via {@code joinPath}.
-     *
-     * <p>Classified when {@code typeName} resolves to a {@code NodeType} and a FK join path from
-     * the input type's own table to that type's table exists (either auto-inferred from a single
-     * FK or specified explicitly via {@code @reference}). The classifier guarantees scalar (list
-     * inputs collapse the containing {@code TableInputType} to {@code UnclassifiedType}).
-     *
-     * <p>The generator decodes the base64 composite ID and binds each unpacked value to its
-     * target column via {@code NodeIdStrategy.unpackIdValues} / {@code hasIds} / {@code hasId},
-     * JOINing through {@code joinPath} before applying the predicate (or collapsing to a direct
-     * same-table column assignment when the own-table mirrors the target's key columns).
-     */
-    record NodeIdReferenceField(
-        String parentTypeName,
-        String name,
-        SourceLocation location,
-        String typeName,
-        boolean nonNull,
-        TableRef parentTable,
-        String nodeTypeId,
-        List<ColumnRef> nodeKeyColumns,
-        List<JoinStep> joinPath,
-        Optional<ArgConditionRef> condition
-    ) implements InputField {}
 
     /**
      * A field in a {@code @table}-annotated input type whose GraphQL type is itself an input
