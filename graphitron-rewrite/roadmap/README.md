@@ -30,7 +30,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R12` | Error-handling parity: emit per-fetcher error channels from `@error` <sub>blocked by: [mutations](mutations.md)</sub> | In Progress | [plan](error-handling-parity.md) |
 | `R26` | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` <sub>blocked by: [graphitron-lsp](graphitron-lsp.md)</sub> | In Progress | [plan](retire-maven-plugin.md) |
 | `R9` | Fold graphitron.sikt.no into the Maven build (AsciiDoc + GitHub Pages) | In Progress | [plan](docs-site-asciidoc.md) |
-| `R29` | Consolidated test-tier guide | In Review | [plan](rewrite-test-tier-guide.md) |
 | `R21` | Load-bearing classifier guarantee audit annotations | In Review | [plan](load-bearing-guarantee-audit.md) |
 
 ---
@@ -48,7 +47,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 - `R46` [**Multi-tenant fan-out for `@service`**](service-multi-tenant-fanout.md): A custom resolver in a downstream Sikt project (`megVedLarested`) bypasses `@service` and writes the resolver by hand because the directive can't express what it needs: for each tenant the logged-in user belongs to, open a tenant-scoped `DSLContext`, fan out in parallel on the executor, drop nulls, return the union. The service method itself is GraphQL-free Java; what doesn't fit `@service` is the `ConnectionManager` lookup, the per-tenant `DSLContext` plumbing, and the `executor.allOf().join()` shape. _(blocked by [typed-context-value-registry](typed-context-value-registry.md), [mutations](mutations.md))_
 - `R11` [**`DSLContext` on `@condition` / `@tableMethod` methods**](dslcontext-on-condition-tablemethod.md): Lift the `reflectTableMethod` gate. Requires `ArgCallEmitter` to walk `params()` instead of `callParams()` so the injected `DSLContext` lands at its declaration-index slot.
 - `R2` [**Checked exceptions on `@service` / `@tableMethod` for typed GraphQL errors**](checked-exceptions-typed-errors.md): Explore mapping developer-declared checked exceptions on service / table-method methods to typed GraphQL errors (`@error` types, mutation payload error unions). Today `ServiceCatalog.reflectServiceMethod` / `reflectTableMethod` ignore `getExceptionTypes()`; the emitted fetcher has no `throws` clause, so a developer method declaring `throws SQLException` (or any checked exception) breaks the rewrite-test compile gate. _(blocked by [error-handling-parity](error-handling-parity.md), [mutations](mutations.md))_
-- `R25` [**Rebalance test pyramid**](rebalance-test-pyramid.md): Shift new test investment from per-variant structural tests toward SDL-to-classification-to-emission pipeline tests keyed off `graphitron-fixtures`. _(blocked by [rewrite-test-tier-guide](rewrite-test-tier-guide.md))_
+- `R25` [**Rebalance test pyramid**](rebalance-test-pyramid.md): Shift new test investment from per-variant structural tests toward SDL-to-classification-to-emission pipeline tests keyed off `graphitron-fixtures`.
 - `R7` [**Decompose `TypeFetcherGenerator`**](decompose-typefetchergenerator.md): `TypeFetcherGenerator.java` is 1 646 lines, one public entry point (`generate(GraphitronSchema)`), and ~30 private methods that implement per-field-variant emitters plus shared helpers. It is the counterpart to [`decompose-fieldbuilder.md`](decompose-fieldbuilder.md): a central generator that has accumulated coverage faster than its file shape can absorb. _(blocked by [stub-interface-union-fetchers](stub-interface-union-fetchers.md))_
 
 ### Stubs
@@ -150,8 +149,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### testing
 
-- `R29` [**Consolidated test-tier guide**](rewrite-test-tier-guide.md) — In Review, cleanup
-- `R25` [**Rebalance test pyramid**](rebalance-test-pyramid.md) — Backlog, architecture, blocked by [rewrite-test-tier-guide](rewrite-test-tier-guide.md)
+- `R25` [**Rebalance test pyramid**](rebalance-test-pyramid.md) — Backlog, architecture
 
 ### legacy-migration
 

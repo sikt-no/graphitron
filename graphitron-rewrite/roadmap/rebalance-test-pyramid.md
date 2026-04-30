@@ -5,7 +5,7 @@ status: Backlog
 bucket: architecture
 priority: 9
 theme: testing
-depends-on: [rewrite-test-tier-guide]
+depends-on: []
 ---
 
 # Rebalance test pyramid
