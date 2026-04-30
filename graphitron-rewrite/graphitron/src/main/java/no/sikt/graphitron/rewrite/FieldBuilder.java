@@ -29,7 +29,6 @@ import no.sikt.graphitron.rewrite.model.ChildField.ComputedField;
 import no.sikt.graphitron.rewrite.model.ChildField.InterfaceField;
 import no.sikt.graphitron.rewrite.model.ChildField.MultitableReferenceField;
 import no.sikt.graphitron.rewrite.model.ChildField.NestingField;
-import no.sikt.graphitron.rewrite.model.ChildField.NodeIdReferenceField;
 import no.sikt.graphitron.rewrite.model.ChildField.PropertyField;
 import no.sikt.graphitron.rewrite.model.ChildField.RecordField;
 import no.sikt.graphitron.rewrite.model.ChildField.RecordLookupTableField;
@@ -2341,8 +2340,7 @@ class FieldBuilder {
                 if (nodeRefPath.hasError()) {
                     return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, nodeRefPath.errorMessage());
                 }
-                return new NodeIdReferenceField(parentTypeName, name, location, typeName.get(), targetType, parentTable,
-                    targetNodeType.typeId(), targetNodeType.nodeKeyColumns(), nodeRefPath.elements());
+                return buildNodeIdReferenceCarrier(parentTypeName, name, location, parentTable, targetNodeType, nodeRefPath.elements());
             } else {
                 if (!(tableType instanceof NodeType nodeType)) {
                     return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
@@ -2373,7 +2371,8 @@ class FieldBuilder {
                 LOG.warn("@field(name: '{}') on field '{}.{}' resolved via SQL name; prefer Java field name '{}'",
                     columnName, parentTypeName, name, column.get().javaName());
             }
-            return new ColumnReferenceField(parentTypeName, name, location, columnName, column.get(), refPath.elements());
+            return new ColumnReferenceField(parentTypeName, name, location, columnName, column.get(), refPath.elements(),
+                new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct());
         }
 
         Optional<ColumnRef> column = svc.resolveColumn(columnName, tableType);
@@ -2426,6 +2425,72 @@ class FieldBuilder {
             return new ColumnField(parentTypeName, name, location, k.javaName(), k, compaction);
         }
         return new ChildField.CompositeColumnField(parentTypeName, name, location, keys, compaction);
+    }
+
+    /**
+     * Builds the post-R50 output carrier for an {@code @nodeId(typeName: T)} reference field.
+     * Two shapes per "Variant-by-variant collapse → Single-hop emission, two shapes":
+     * <ul>
+     *   <li><b>Rooted at child (FK-mirror).</b> The single FK hop's source columns on the parent
+     *       table positionally equal the target NodeType's {@code keyColumns}, so the parent
+     *       columns ARE the keys; emit them directly through {@link ColumnField} /
+     *       {@link ChildField.CompositeColumnField} (no joinPath).</li>
+     *   <li><b>Rooted at parent (non-mirror, including multi-hop / condition-join).</b> The FK
+     *       columns differ from the target's keyColumns, or the path has more than one step;
+     *       emit through {@link ColumnReferenceField} / {@link ChildField.CompositeColumnReferenceField}
+     *       carrying the target's keyColumns plus the resolved {@code joinPath}. Single-hop
+     *       rooted-at-parent emission is the JOIN-with-projection capability R50 absorbs from
+     *       R24; multi-hop and condition-join paths surface as runtime stubs at the emitter
+     *       until the broader emission lift lands.</li>
+     * </ul>
+     */
+    private ChildField buildNodeIdReferenceCarrier(
+            String parentTypeName, String name, graphql.language.SourceLocation location,
+            TableRef parentTable, NodeType targetNodeType, List<JoinStep> joinPath) {
+        var enc = targetNodeType.encodeMethod();
+        var compaction = new no.sikt.graphitron.rewrite.model.CallSiteCompaction.NodeIdEncodeKeys(enc);
+        var keys = targetNodeType.nodeKeyColumns();
+
+        // FK-mirror collapse: single FK hop entered from the parent, FK target columns positionally
+        // equal to the target's keyColumns. The parent's FK source columns ARE the keys; emit them
+        // directly off the parent without a JOIN. Mirrors the legacy fkMirrorSourceColumns helper.
+        List<ColumnRef> fkMirrorColumns = fkMirrorSourceColumns(parentTable, joinPath, keys);
+        if (fkMirrorColumns != null) {
+            if (fkMirrorColumns.size() == 1) {
+                ColumnRef c = fkMirrorColumns.get(0);
+                return new ColumnField(parentTypeName, name, location, c.javaName(), c, compaction);
+            }
+            return new ChildField.CompositeColumnField(parentTypeName, name, location, fkMirrorColumns, compaction);
+        }
+
+        // Non-FK-mirror (rooted-at-parent or multi-hop / condition-join). Carry the target's
+        // keyColumns plus the joinPath; emitter resolves the parent alias from joinPath when it
+        // implements the JOIN-with-projection form.
+        if (keys.size() == 1) {
+            ColumnRef k = keys.get(0);
+            return new ColumnReferenceField(parentTypeName, name, location, k.javaName(), k, joinPath, compaction);
+        }
+        return new ChildField.CompositeColumnReferenceField(parentTypeName, name, location, keys, joinPath, compaction);
+    }
+
+    /**
+     * Returns the FK source columns on the parent table when the join path collapses to a single
+     * FK hop entered from the parent (parent-holds-FK pattern) <em>and</em> the FK's target
+     * columns positionally match the target NodeType's {@code keyColumns}. {@code null} otherwise
+     * (composite-key with non-mirroring FK, multi-hop, condition-join).
+     */
+    private static List<ColumnRef> fkMirrorSourceColumns(TableRef parentTable, List<JoinStep> joinPath,
+                                                          List<ColumnRef> targetKeyColumns) {
+        if (joinPath.size() != 1) return null;
+        if (!(joinPath.get(0) instanceof JoinStep.FkJoin fk)) return null;
+        if (!fk.originTable().tableName().equalsIgnoreCase(parentTable.tableName())) return null;
+        if (fk.targetColumns().size() != targetKeyColumns.size()) return null;
+        for (int i = 0; i < fk.targetColumns().size(); i++) {
+            if (!fk.targetColumns().get(i).sqlName().equalsIgnoreCase(targetKeyColumns.get(i).sqlName())) {
+                return null;
+            }
+        }
+        return fk.sourceColumns();
     }
 
     private boolean isScalarOrEnum(GraphQLFieldDefinition fieldDef) {

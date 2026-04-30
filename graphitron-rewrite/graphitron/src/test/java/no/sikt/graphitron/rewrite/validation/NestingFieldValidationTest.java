@@ -69,7 +69,8 @@ class NestingFieldValidationTest {
                 List.of(new ColumnReferenceField("FilmDetails", "languageName", null, "languageName",
                     new ColumnRef("NAME", "", ""),
                     List.of(new JoinStep.FkJoin("film_language_id_fkey", "", null, List.of(),
-                        new TableRef("language", "", "", List.of()), List.of(), null, ""))))),
+                        new TableRef("language", "", "", List.of()), List.of(), null, "")),
+                    new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct()))),
             List.of(stubbedError("FilmDetails.languageName", ColumnReferenceField.class))),
 
         STUBBED_NESTED_LEAF_INSIDE_NESTED_NESTING("stubbed variant inside a NestingField inside a NestingField → recursive walk surfaces it",
@@ -84,7 +85,8 @@ class NestingFieldValidationTest {
                     List.of(new ColumnReferenceField("FilmMeta", "languageName", null, "languageName",
                         new ColumnRef("NAME", "", ""),
                         List.of(new JoinStep.FkJoin("film_language_id_fkey", "", null, List.of(),
-                            new TableRef("language", "", "", List.of()), List.of(), null, ""))))))),
+                            new TableRef("language", "", "", List.of()), List.of(), null, "")),
+                        new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct()))))),
             List.of(stubbedError("FilmMeta.languageName", ColumnReferenceField.class)));
 
         private final String description;
@@ -213,11 +215,13 @@ class NestingFieldValidationTest {
         var columnRefFirst = new ColumnReferenceField("FilmDetails", "langName", null, "langName",
             new ColumnRef("NAME", "", ""),
             List.of(new JoinStep.FkJoin("film_language_id_fkey", "", null, List.of(),
-                new TableRef("language", "", "", List.of()), List.of(), null, "")));
+                new TableRef("language", "", "", List.of()), List.of(), null, "")),
+            new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct());
         var columnRefSecond = new ColumnReferenceField("FilmDetails", "langName", null, "langName",
             new ColumnRef("NAME", "", ""),
             List.of(new JoinStep.FkJoin("advertisement_language_id_fkey", "", null, List.of(),
-                new TableRef("language", "", "", List.of()), List.of(), null, "")));
+                new TableRef("language", "", "", List.of()), List.of(), null, "")),
+            new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct());
         var schema = twoParentSchema(List.of(columnRefFirst), List.of(columnRefSecond));
         // Shape check reports "not yet supported" for the shared non-column leaf. The per-field
         // stubbed-variant walk fires twice — once per parent — surfacing the ColumnReferenceField

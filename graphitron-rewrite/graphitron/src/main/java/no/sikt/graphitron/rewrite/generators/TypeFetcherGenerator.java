@@ -15,6 +15,7 @@ import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.BatchKeyField;
 import no.sikt.graphitron.rewrite.model.CallParam;
+import no.sikt.graphitron.rewrite.model.CallSiteCompaction;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
@@ -147,7 +148,6 @@ public class TypeFetcherGenerator {
     public static final Set<Class<? extends GraphitronField>> IMPLEMENTED_LEAVES = Set.of(
         ChildField.ColumnField.class,
         ChildField.ComputedField.class,
-        ChildField.NodeIdReferenceField.class,
         QueryField.QueryNodeField.class,
         QueryField.QueryNodesField.class,
         QueryField.QueryLookupTableField.class,
@@ -246,6 +246,8 @@ public class TypeFetcherGenerator {
             // ChildField stubs — remaining direct permits
             Map.entry(ChildField.ColumnReferenceField.class,
                 "ColumnReferenceField not yet implemented — see graphitron-rewrite/roadmap/column-reference-on-scalar-field.md"),
+            Map.entry(ChildField.CompositeColumnReferenceField.class,
+                "CompositeColumnReferenceField (rooted-at-parent NodeId reference) not yet implemented — JOIN-with-projection emission lands in R50 phase b2b paired with the rooted-at-parent fixture in phase g; see graphitron-rewrite/roadmap/lift-nodeid-out-of-model.md"),
             Map.entry(ChildField.TableMethodField.class,
                 "TableMethodField not yet implemented — see graphitron-rewrite/roadmap/tablemethod-scalar-return.md"),
             Map.entry(ChildField.InterfaceField.class,
@@ -367,15 +369,22 @@ public class TypeFetcherGenerator {
                 case MutationField.MutationUpsertTableField f  -> builder.addMethod(stub(f));
                 case MutationField.MutationServiceTableField f -> builder.addMethod(stub(f));
                 case MutationField.MutationServiceRecordField f -> builder.addMethod(stub(f));
-                case ChildField.ColumnReferenceField f          -> builder.addMethod(stub(f));
-                // ChildField.TableField / LookupTableField / CompositeColumnField / NodeIdReferenceField
-                // have no fetcher — inline projection via TypeClassGenerator.$fields plus a
-                // DataFetcher value emitted by FetcherEmitter for the encode lambda (composite-key
-                // NodeId carriers, NodeIdReferenceField).
+                case ChildField.ColumnReferenceField f          -> {
+                    if (f.compaction() instanceof CallSiteCompaction.NodeIdEncodeKeys) {
+                        // Reference-side NodeId carrier: no fetcher method. The DataFetcher value
+                        // is the runtime stub emitted by FetcherEmitter (rooted-at-parent emission
+                        // ships in R50 phase b2b).
+                    } else {
+                        builder.addMethod(stub(f));
+                    }
+                }
+                case ChildField.CompositeColumnReferenceField f -> builder.addMethod(stub(f));
+                // ChildField.TableField / LookupTableField / CompositeColumnField have no fetcher
+                // — inline projection via TypeClassGenerator.$fields plus a DataFetcher value
+                // emitted by FetcherEmitter for the encode lambda (composite-key NodeId carriers).
                 case ChildField.TableField ignored              -> { }
                 case ChildField.LookupTableField ignored        -> { }
                 case ChildField.CompositeColumnField ignored    -> { }
-                case ChildField.NodeIdReferenceField ignored    -> { }
                 case ChildField.TableInterfaceField f           -> builder.addMethod(buildTableInterfaceFieldFetcher(f, outputPackage, jooqPackage));
                 case ChildField.RecordTableField rtf -> {
                     builder.addMethod(buildRecordBasedDataFetcher(rtf, resultType, jooqPackage, outputPackage));
