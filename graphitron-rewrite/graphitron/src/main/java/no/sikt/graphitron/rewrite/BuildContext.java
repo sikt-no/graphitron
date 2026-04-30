@@ -1025,9 +1025,31 @@ class BuildContext {
                     + " '@nodeId' — declare the directive explicitly; synthesis shim will be"
                     + " removed in a future release. See graphitron-rewrite/roadmap/retire-nodeid-synthesis-shim.md",
                     parentTypeName, name);
-                return new InputFieldResolution.Resolved(new InputField.NodeIdField(
-                    parentTypeName, name, locationOf(field),
-                    nodeIdMeta.get().typeId(), nodeIdMeta.get().keyColumns()));
+                // Post-R50: route the synthesis shim onto column-shaped successors. Arity-1 lands
+                // on InputField.ColumnField with extraction = NodeIdDecodeKeys.SkipMismatchedElement;
+                // arity > 1 lands on InputField.CompositeColumnField with the same extraction
+                // (narrowed at the type level). HelperRef.Decode is read off the matching NodeType
+                // when one is available, falling back to inline construction (the only drift point
+                // is the helper-method name "decode<TypeName>", which both BuildContext and
+                // TypeBuilder compute identically).
+                var keyColumns = nodeIdMeta.get().keyColumns();
+                var decodeMethod = resolveDecodeHelperForTable(tableName, nodeIdMeta.get().typeId(), keyColumns);
+                if (decodeMethod == null) {
+                    return new InputFieldResolution.Unresolved(name, null,
+                        "@nodeId synthesis shim on input field '" + name + "': unable to resolve"
+                        + " the NodeType backing table '" + tableName + "' (zero or multiple"
+                        + " GraphQL types map to it). Declare @nodeId(typeName: T) explicitly.");
+                }
+                Optional<ArgConditionRef> shimCond = buildInputFieldCondition(field, name, errors);
+                var extraction = new no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement(decodeMethod);
+                if (keyColumns.size() == 1) {
+                    return new InputFieldResolution.Resolved(new InputField.ColumnField(
+                        parentTypeName, name, locationOf(field), typeName, nonNull, list,
+                        keyColumns.get(0), shimCond, extraction));
+                }
+                return new InputFieldResolution.Resolved(new InputField.CompositeColumnField(
+                    parentTypeName, name, locationOf(field), typeName, nonNull, list,
+                    keyColumns, shimCond, extraction));
             }
         }
         return new InputFieldResolution.Unresolved(name, columnName,
@@ -1043,6 +1065,45 @@ class BuildContext {
     private Optional<String> findGraphQLTypeForTable(String sqlTableName) {
         var candidates = findGraphQLTypesForTable(sqlTableName);
         return candidates.size() == 1 ? Optional.of(candidates.get(0)) : Optional.empty();
+    }
+
+    /**
+     * Resolves the {@code decode<TypeName>} {@link no.sikt.graphitron.rewrite.model.HelperRef.Decode}
+     * for the NodeType backing the given SQL table, or {@code null} when no unique mapping exists.
+     * Used by the {@code @nodeId} synthesis shim and other input-side classifier paths that need
+     * the per-Node decode helper but only have the SQL table name in scope.
+     *
+     * <p>Prefers reading from {@link no.sikt.graphitron.rewrite.model.GraphitronType.NodeType#decodeMethod()}
+     * when the {@code types} map is populated (post-first-pass). Falls back to inline
+     * construction via the canonical {@code outputPackage + ".util" + "NodeIdEncoder"} +
+     * {@code "decode" + typeName} formula otherwise; both BuildContext and TypeBuilder compute
+     * the same name string from the GraphQL type name, so drift is bounded.
+     */
+    no.sikt.graphitron.rewrite.model.HelperRef.Decode resolveDecodeHelperForTable(
+            String sqlTableName,
+            String fallbackTypeNameOrTypeId,
+            java.util.List<no.sikt.graphitron.rewrite.model.ColumnRef> keyColumns) {
+        var encoderClass = no.sikt.graphitron.javapoet.ClassName.get(
+            ctx.outputPackage() + ".util",
+            no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator.CLASS_NAME);
+        var typeNameOpt = findGraphQLTypeForTable(sqlTableName);
+        if (typeNameOpt.isPresent()) {
+            String typeName = typeNameOpt.get();
+            if (types != null && types.get(typeName) instanceof no.sikt.graphitron.rewrite.model.GraphitronType.NodeType nt) {
+                return nt.decodeMethod();
+            }
+            return new no.sikt.graphitron.rewrite.model.HelperRef.Decode(encoderClass, "decode" + typeName, keyColumns);
+        }
+        // No unique @table-annotated GraphQL object type backs this table (e.g. orphan-input
+        // schemas where only an `input Foo @table(name: "bar")` exists). Fall back to the
+        // metadata's typeId (the wire-format identifier) as the helper-method suffix; this
+        // matches NodeType.encodeMethod / decodeMethod resolution in the default case where
+        // typeId equals the GraphQL type name. When typeId is customized via @node(typeId: ...)
+        // and no canonical NodeType backs the table, the synthesis shim is on borrowed time
+        // anyway -- R7 retires it.
+        if (fallbackTypeNameOrTypeId == null || fallbackTypeNameOrTypeId.isBlank()) return null;
+        return new no.sikt.graphitron.rewrite.model.HelperRef.Decode(
+            encoderClass, "decode" + fallbackTypeNameOrTypeId, keyColumns);
     }
 
     /**
