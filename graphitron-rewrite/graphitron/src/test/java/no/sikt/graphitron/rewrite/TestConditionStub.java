@@ -64,4 +64,29 @@ class TestConditionStub {
     public static Condition inputNestingCondition(org.jooq.Table<?> table, String details) {
         throw new UnsupportedOperationException();
     }
+
+    /**
+     * Arg-level {@code @condition} method whose Java parameter name diverges from the GraphQL
+     * argument name. Used with {@code argMapping: "city: cityNames"} so {@code city} binds to
+     * GraphQL arg {@code cityNames} (R53 cross-axis test).
+     */
+    public static Condition argConditionRenamed(org.jooq.Table<?> table, String city) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Field-level {@code @condition} method with renamed Java parameters. Used with
+     * {@code argMapping: "city: cityNames, country: countryId"} (R53 cross-axis test).
+     */
+    public static Condition fieldConditionRenamed(org.jooq.Table<?> table, String city, String country) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Input-field-level {@code @condition} method whose Java parameter name diverges from the
+     * input-field name. Used with {@code argMapping: "id: filmId"} (R53 cross-axis test).
+     */
+    public static Condition inputFieldConditionRenamed(org.jooq.Table<?> table, String id) {
+        throw new UnsupportedOperationException();
+    }
 }

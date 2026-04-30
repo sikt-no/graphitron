@@ -281,16 +281,25 @@ retired in the same change.
    itself never reads `@field(name:)` — that directive's column-axis stays in
    the column-binding code path.
 
-6. **Validator: structural-inertness rejections for `argMapping`.**
-   `argMapping` on `@externalField`, `@enum`, or `@record` is rejected (per
-   Validation §`Directive-site limits`). Place each rejection in
-   `GraphitronSchemaValidator` next to the existing per-directive shape
-   checks; the corresponding tests belong in `GraphitronSchemaBuilderTest`
-   alongside the other invalid-schema cases. The validator does not need a
-   site-conditional check on `@field(name:)` because R41's per-arg semantic
-   never lands user-facing (see *Relationship to R41*); the column-binding
-   axis on filter args remains the sole interpretation of `@field(name:)` on
+6. **Structural-inertness rejections for `argMapping`.** `argMapping` on
+   `@externalField`, `@enum`, or `@record` is rejected (per Validation
+   §`Directive-site limits`). The validator does not need a site-conditional
+   check on `@field(name:)` because R41's per-arg semantic never lands
+   user-facing (see *Relationship to R41*); the column-binding axis on filter
+   args remains the sole interpretation of `@field(name:)` on
    `ARGUMENT_DEFINITION`.
+
+   *Implementation note (deviation from earlier plan text).* The earlier
+   draft of this step placed each rejection in `GraphitronSchemaValidator`.
+   The shipped implementation routes the rejections through the classifier
+   instead: `FieldBuilder.parseExternalRef` rejects `@externalField`,
+   `TypeBuilder.buildResultType` and `buildNonTableInputType` reject
+   `@record`, and the enum-classify branch rejects `@enum`. Each produces an
+   `Unclassified*` carrying the same message the validator would have used.
+   The user-visible behaviour is identical; the divergence is which layer
+   the rejection lives in. Tests still land in `GraphitronSchemaBuilderTest`
+   as planned (`ARG_MAPPING_INERT_ON_EXTERNAL_FIELD`,
+   `ARG_MAPPING_INERT_ON_RECORD`, `ARG_MAPPING_INERT_ON_ENUM`).
 
 7. **Author override-using fixtures directly in `argMapping` form.** Because
    R41 is rolled back, no fixture migration is required — fixtures land in
