@@ -82,17 +82,19 @@ public final class Main {
             case "verify" -> runVerify(dir);
             case "next-id" -> runNextId(dir);
             case "create" -> runCreate(dir, sliceArgs(args, 2));
+            case "render-adoc" -> runRenderAdoc(dir, sliceArgs(args, 2));
             default -> usage();
         }
     }
 
     private static void usage() {
         System.err.println("usage:");
-        System.err.println("  generate <roadmap-dir>");
-        System.err.println("  verify   <roadmap-dir>");
-        System.err.println("  next-id  <roadmap-dir>");
-        System.err.println("  create   <roadmap-dir> <slug> --title \"<title>\""
+        System.err.println("  generate    <roadmap-dir>");
+        System.err.println("  verify      <roadmap-dir>");
+        System.err.println("  next-id     <roadmap-dir>");
+        System.err.println("  create      <roadmap-dir> <slug> --title \"<title>\""
             + " [--bucket <bucket>] [--priority <n>] [--theme <theme>]");
+        System.err.println("  render-adoc <roadmap-dir> <output-dir>");
         System.exit(64);
     }
 
@@ -192,6 +194,408 @@ public final class Main {
 
         // Refresh the rolled-up README so the new item shows up immediately.
         runGenerate(dir);
+    }
+
+    /**
+     * Emit the roadmap as a tree of {@code .adoc} files into {@code outDir} so the
+     * documentation site (R9) can pick it up. Outputs:
+     *
+     * <ul>
+     *   <li>{@code index.adoc}: status board (Active grouped by status, Backlog
+     *       grouped by bucket).</li>
+     *   <li>{@code by-theme.adoc}: cross-cutting "by theme" index.</li>
+     *   <li>{@code changelog.adoc}: converted from {@code changelog.md}.</li>
+     *   <li>{@code plans/<slug>.adoc}: one page per Active or Backlog item, with
+     *       a small attribute box and the markdown body lightly converted to
+     *       AsciiDoc (option 1, "pass-through with header" per R9 plan).</li>
+     * </ul>
+     *
+     * <p>The status board and per-plan pages do their own markdown→AsciiDoc
+     * link rewriting so cross-references to the rendered architecture pages
+     * (under {@code architecture/}) and to other rendered plans land at working
+     * {@code xref:} targets.
+     */
+    private static void runRenderAdoc(Path roadmapDir, List<String> rest) throws IOException {
+        if (rest.isEmpty()) {
+            System.err.println("render-adoc: <output-dir> is required");
+            System.exit(64);
+        }
+        Path outDir = Path.of(rest.get(0)).toAbsolutePath().normalize();
+        Files.createDirectories(outDir);
+        Path plansDir = outDir.resolve("plans");
+        Files.createDirectories(plansDir);
+
+        List<Item> items = readItems(roadmapDir);
+        validate(items);
+
+        Files.writeString(outDir.resolve("index.adoc"), renderAdocStatusBoard(items));
+        Files.writeString(outDir.resolve("by-theme.adoc"), renderAdocByTheme(items));
+
+        Path changelog = roadmapDir.resolve("changelog.md");
+        if (Files.exists(changelog)) {
+            Files.writeString(outDir.resolve("changelog.adoc"),
+                renderAdocChangelog(Files.readString(changelog)));
+        }
+
+        for (Item i : items) {
+            Files.writeString(plansDir.resolve(i.slug() + ".adoc"), renderAdocPlan(i));
+        }
+
+        System.out.println("rendered " + items.size() + " plans + roadmap/by-theme/changelog into " + outDir);
+    }
+
+    /** Status board: Active by status, Backlog by bucket. */
+    static String renderAdocStatusBoard(List<Item> items) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("= Rewrite Roadmap\n");
+        sb.append(":description: Active and Backlog work on the Graphitron rewrite generator.\n\n");
+        sb.append("This is the rendered roadmap. Plans are authored as markdown in ")
+          .append("`graphitron-rewrite/roadmap/`; this view derives from the per-item front-matter ")
+          .append("and the plan bodies. For the model taxonomy, see ")
+          .append("xref:../architecture/code-generation-triggers.adoc[Code Generation Triggers]. ")
+          .append("For design principles, see ")
+          .append("xref:../architecture/rewrite-design-principles.adoc[Rewrite Design Principles]. ")
+          .append("For workflow conventions, see xref:../architecture/workflow.adoc[Workflow]. ")
+          .append("Or jump to the xref:by-theme.adoc[by-theme view] or the xref:changelog.adoc[changelog]. ")
+          .append("Back to xref:../index.adoc[home].\n\n");
+
+        sb.append("== Active\n\n");
+        List<Item> active = items.stream()
+            .filter(i -> ACTIVE_STATES.contains(i.status()))
+            .sorted(Comparator
+                .comparingInt((Item i) -> ACTIVE_STATES.indexOf(i.status()))
+                .thenComparingInt(i -> i.priority() == null ? Integer.MAX_VALUE : i.priority())
+                .thenComparing(Item::title))
+            .toList();
+        if (active.isEmpty()) {
+            sb.append("_(none)_\n\n");
+        } else {
+            sb.append("[cols=\"1,4,1,1\", options=\"header\"]\n");
+            sb.append("|===\n");
+            sb.append("| ID | Item | Status | Plan\n");
+            for (Item i : active) {
+                String status = i.status() + (i.deferred() ? " (deferred)" : "");
+                sb.append("| `").append(i.id()).append("`\n");
+                sb.append("| ").append(escapeAdocCell(i.title()));
+                if (!i.dependsOn().isEmpty()) {
+                    sb.append(" +\n_blocked by: ").append(linkAdocSlugs(i.dependsOn())).append("_");
+                }
+                sb.append("\n| ").append(status).append("\n");
+                sb.append("| xref:plans/").append(i.slug()).append(".adoc[plan]\n");
+            }
+            sb.append("|===\n\n");
+        }
+
+        sb.append("== Backlog\n\n");
+        List<Item> backlog = items.stream()
+            .filter(i -> "Backlog".equals(i.status()))
+            .toList();
+        if (backlog.isEmpty()) {
+            sb.append("_(none)_\n\n");
+        } else {
+            for (String bucket : BACKLOG_BUCKETS) {
+                List<Item> b = backlog.stream()
+                    .filter(i -> bucket.equals(i.bucket()))
+                    .sorted(Comparator
+                        .comparingInt((Item i) -> i.priority() == null ? Integer.MAX_VALUE : i.priority())
+                        .thenComparing(Item::title))
+                    .toList();
+                if (b.isEmpty()) continue;
+                sb.append("=== ").append(capitalize(bucket)).append("\n\n");
+                for (Item i : b) appendBacklogAdocLine(sb, i);
+                sb.append("\n");
+            }
+            List<Item> orphans = backlog.stream()
+                .filter(i -> i.bucket() == null || !BACKLOG_BUCKETS.contains(i.bucket()))
+                .sorted(Comparator.comparing(Item::title))
+                .toList();
+            if (!orphans.isEmpty()) {
+                sb.append("=== Other\n\n");
+                for (Item i : orphans) appendBacklogAdocLine(sb, i);
+                sb.append("\n");
+            }
+        }
+
+        sb.append("== Done\n\n");
+        sb.append("See xref:changelog.adoc[Changelog] for the historical record of shipped rewrite work. ");
+        sb.append("Plan files are deleted on Done; git history preserves them.\n");
+        return sb.toString();
+    }
+
+    private static void appendBacklogAdocLine(StringBuilder sb, Item i) {
+        sb.append("* `").append(i.id()).append("` xref:plans/").append(i.slug()).append(".adoc[")
+          .append(escapeAdocCell(i.title())).append("]");
+        String description = firstNonHeadingParagraph(i.body());
+        if (!description.isEmpty()) {
+            sb.append(": ").append(escapeAdocInline(description));
+        }
+        if (!i.dependsOn().isEmpty()) {
+            sb.append(" _(blocked by ").append(linkAdocSlugs(i.dependsOn())).append(")_");
+        }
+        sb.append("\n");
+    }
+
+    /** Cross-cutting view by {@code theme:}. */
+    static String renderAdocByTheme(List<Item> items) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("= Rewrite Roadmap, by theme\n");
+        sb.append(":description: Cross-cutting view of every Active and Backlog item by `theme:`.\n\n");
+        sb.append("Themes are a closed set; bucket and theme are orthogonal. ");
+        sb.append("See xref:index.adoc[Roadmap] for the status board, ")
+          .append("or back to xref:../index.adoc[home].\n\n");
+
+        Map<String, List<Item>> byTheme = new TreeMap<>();
+        for (Item i : items) {
+            if (!"Backlog".equals(i.status()) && !ACTIVE_STATES.contains(i.status())) continue;
+            String t = i.theme() == null ? "(untagged)" : i.theme();
+            byTheme.computeIfAbsent(t, k -> new ArrayList<>()).add(i);
+        }
+        for (String theme : VALID_THEMES) {
+            List<Item> in = byTheme.getOrDefault(theme, List.of());
+            if (in.isEmpty()) continue;
+            sb.append("== ").append(theme).append("\n\n");
+            in.stream()
+                .sorted(Comparator
+                    .comparingInt((Item i) -> i.priority() == null ? Integer.MAX_VALUE : i.priority())
+                    .thenComparing(Item::title))
+                .forEach(i -> {
+                    sb.append("* `").append(i.id()).append("` xref:plans/")
+                      .append(i.slug()).append(".adoc[*").append(escapeAdocCell(i.title()))
+                      .append("*]: ").append(i.status());
+                    if (i.bucket() != null) sb.append(", ").append(i.bucket());
+                    if (!i.dependsOn().isEmpty()) {
+                        sb.append(", blocked by ").append(linkAdocSlugs(i.dependsOn()));
+                    }
+                    sb.append("\n");
+                });
+            sb.append("\n");
+        }
+        List<Item> untagged = byTheme.getOrDefault("(untagged)", List.of());
+        if (!untagged.isEmpty()) {
+            sb.append("== (untagged)\n\n");
+            untagged.stream()
+                .sorted(Comparator.comparing(Item::title))
+                .forEach(i -> sb.append("* `").append(i.id()).append("` xref:plans/")
+                    .append(i.slug()).append(".adoc[*").append(escapeAdocCell(i.title()))
+                    .append("*]\n"));
+            sb.append("\n");
+        }
+        return sb.toString();
+    }
+
+    /** changelog.md → changelog.adoc. */
+    static String renderAdocChangelog(String md) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("= Rewrite Changelog\n");
+        sb.append(":description: Recently shipped rewrite work, by landing date.\n");
+        sb.append(":doctype: book\n\n");
+        sb.append("Plan files are deleted on Done; this is the historical record. ");
+        sb.append("See xref:index.adoc[Roadmap] for in-flight work, ")
+          .append("or back to xref:../index.adoc[home].\n\n");
+        sb.append(mdBodyToAdoc(md, ChangelogContext.STANDALONE));
+        if (!sb.toString().endsWith("\n")) sb.append('\n');
+        return sb.toString();
+    }
+
+    /** One plan page: header + attribute box + body (md→adoc). */
+    static String renderAdocPlan(Item i) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("= ").append(i.title()).append("\n");
+        sb.append(":description: ").append(i.id()).append(" plan, ")
+          .append(i.status().toLowerCase()).append(".\n");
+        // book doctype: source plans freely skip heading levels (Markdown allows
+        // it, AsciiDoc warns under article doctype). Plans are document-shaped
+        // long-form anyway, so book is a fit and silences the warnings.
+        sb.append(":doctype: book\n\n");
+
+        sb.append("[cols=\"1h,3\", frame=ends, grid=rows]\n");
+        sb.append("|===\n");
+        sb.append("| ID | `").append(i.id()).append("`\n");
+        String status = i.status() + (i.deferred() ? " (deferred)" : "");
+        sb.append("| Status | ").append(status).append("\n");
+        if (i.bucket() != null) sb.append("| Bucket | ").append(i.bucket()).append("\n");
+        if (i.priority() != null) sb.append("| Priority | ").append(i.priority()).append("\n");
+        if (i.theme() != null) sb.append("| Theme | ").append(i.theme()).append("\n");
+        if (!i.dependsOn().isEmpty()) {
+            sb.append("| Blocked by | ").append(linkAdocSlugs(i.dependsOn())).append("\n");
+        }
+        sb.append("|===\n\n");
+
+        sb.append(mdBodyToAdoc(i.body(), ChangelogContext.PLAN));
+        if (!sb.toString().endsWith("\n")) sb.append('\n');
+        return sb.toString();
+    }
+
+    /** Where in the rendered output a markdown body is being converted; affects link rewrites. */
+    enum ChangelogContext {
+        /** Top-level under {@code _generated/} (changelog.adoc, index.adoc). */
+        STANDALONE,
+        /** Under {@code _generated/plans/}; sibling plans, parent is _generated/. */
+        PLAN,
+    }
+
+    private static String linkAdocSlugs(List<String> slugs) {
+        StringBuilder out = new StringBuilder();
+        for (int idx = 0; idx < slugs.size(); idx++) {
+            if (idx > 0) out.append(", ");
+            String s = slugs.get(idx);
+            out.append("xref:plans/").append(s).append(".adoc[").append(s).append("]");
+        }
+        return out.toString();
+    }
+
+    /** Best-effort mechanical markdown → AsciiDoc body conversion. */
+    static String mdBodyToAdoc(String md, ChangelogContext ctx) {
+        StringBuilder out = new StringBuilder();
+        boolean inFence = false;
+        // Stack of source heading levels for normalising AsciiDoc output. Source
+        // markdown allows skips (h1 → h3); AsciiDoc warns. Each new heading's
+        // emit-depth is the stack size after popping levels deeper than the
+        // current source level and pushing the current source level.
+        java.util.Deque<Integer> headingStack = new java.util.ArrayDeque<>();
+        String[] lines = md.split("\n", -1);
+        Pattern fence = Pattern.compile("^```(\\w*)\\s*$");
+        Pattern heading = Pattern.compile("^(#+)\\s+(.*)$");
+        for (String raw : lines) {
+            var fm = fence.matcher(raw);
+            if (fm.matches()) {
+                if (!inFence) {
+                    String lang = fm.group(1);
+                    if (!lang.isEmpty()) out.append("[source,").append(lang).append("]\n");
+                    out.append("----\n");
+                    inFence = true;
+                } else {
+                    out.append("----\n");
+                    inFence = false;
+                }
+                continue;
+            }
+            if (inFence) {
+                out.append(raw).append('\n');
+                continue;
+            }
+            var hm = heading.matcher(raw);
+            if (hm.matches()) {
+                int sourceLevel = hm.group(1).length();
+                while (!headingStack.isEmpty() && headingStack.peek() >= sourceLevel) {
+                    headingStack.pop();
+                }
+                headingStack.push(sourceLevel);
+                // Plus 1 because the page's own `= Title` is level 0; first body
+                // heading should be level 1 (`==`). Cap at AsciiDoc's max of 5.
+                int emitLevel = Math.min(headingStack.size() + 1, 5);
+                String title = hm.group(2);
+                title = transformAdocLinks(title, ctx);
+                title = title.replaceAll("\\*\\*([^*]+)\\*\\*", "*$1*");
+                out.append("=".repeat(emitLevel)).append(' ').append(title).append('\n');
+                continue;
+            }
+            String line = raw;
+            if (line.equals("---")) {
+                out.append("'''\n");
+                continue;
+            }
+            // Markdown ordered-list markers ("1. ", "2. ") -> AsciiDoc ". ":
+            // AsciiDoc's ordered-list parser is strict about sequential indices
+            // when explicit numbers are used; using "." defers numbering to the
+            // renderer and avoids "list item index: expected N, got M" warnings.
+            line = line.replaceAll("^(\\s*)\\d+\\.\\s", "$1. ");
+            line = line.replaceAll("\\*\\*([^*]+)\\*\\*", "*$1*");
+            line = transformAdocLinks(line, ctx);
+            // Em-dash sweep: codebase rule.
+            line = line.replace("—", ";");
+            out.append(line).append('\n');
+        }
+        return out.toString();
+    }
+
+    private static final Pattern MD_LINK = Pattern.compile("\\[([^\\]]+)\\]\\(([^)]+)\\)");
+    private static final String GH_BASE = "https://github.com/sikt-no/graphitron";
+    private static final String GH_REWRITE_BRANCH = "claude/graphitron-rewrite";
+
+    /**
+     * Rewrite markdown links to AsciiDoc equivalents based on staging-tree layout.
+     * For STANDALONE context (roadmap/changelog at _generated/), sibling plan
+     * links go to {@code plans/<slug>.adoc}. For PLAN context (under plans/),
+     * sibling plan links resolve directly.
+     */
+    private static String transformAdocLinks(String line, ChangelogContext ctx) {
+        return MD_LINK.matcher(line).replaceAll(m -> {
+            String text = m.group(1);
+            String target = m.group(2);
+            String anchor = "";
+            if (target.contains("#")) {
+                int hash = target.indexOf('#');
+                anchor = target.substring(hash);
+                target = target.substring(0, hash);
+            }
+            String mapped = mapAdocTarget(target, anchor, ctx);
+            return java.util.regex.Matcher.quoteReplacement(
+                mapped == null ? "[" + text + "](" + m.group(2) + ")" : mapped.replace("$$TEXT$$", text));
+        });
+    }
+
+    private static String mapAdocTarget(String target, String anchor, ChangelogContext ctx) {
+        // External http(s)
+        if (target.startsWith("http://") || target.startsWith("https://")) {
+            return target + anchor + "[$$TEXT$$]";
+        }
+        // Same-page anchor only
+        if (target.isEmpty() && !anchor.isEmpty()) {
+            return "<<" + anchor.substring(1) + ",$$TEXT$$>>";
+        }
+        // Sibling plan: <slug>.md
+        var simple = Pattern.compile("([\\w-]+)\\.md").matcher(target);
+        if (simple.matches()) {
+            String slug = simple.group(1);
+            if ("README".equals(slug)) {
+                String prefix = ctx == ChangelogContext.PLAN ? "../" : "";
+                return "xref:" + prefix + "index.adoc" + anchor + "[$$TEXT$$]";
+            }
+            if ("changelog".equals(slug)) {
+                String prefix = ctx == ChangelogContext.PLAN ? "../" : "";
+                return "xref:" + prefix + "changelog.adoc" + anchor + "[$$TEXT$$]";
+            }
+            String prefix = ctx == ChangelogContext.PLAN ? "" : "plans/";
+            return "xref:" + prefix + slug + ".adoc" + anchor + "[$$TEXT$$]";
+        }
+        // ../docs/<file>.{md,adoc} → architecture under staging/. Phase 2 already
+        // updated most roadmap-side references to .adoc, but the mapper accepts
+        // both extensions so any stragglers also resolve.
+        var docs = Pattern.compile("\\.\\./docs/([\\w-]+)\\.(?:md|adoc)").matcher(target);
+        if (docs.matches()) {
+            String prefix = ctx == ChangelogContext.PLAN ? "../../architecture/" : "../architecture/";
+            return "xref:" + prefix + docs.group(1) + ".adoc" + anchor + "[$$TEXT$$]";
+        }
+        // ../../docs/<file>.{md,adoc} → top-level
+        var topdocs = Pattern.compile("\\.\\./\\.\\./docs/([\\w-]+)\\.(?:md|adoc)").matcher(target);
+        if (topdocs.matches()) {
+            String prefix = ctx == ChangelogContext.PLAN ? "../../" : "../";
+            return "xref:" + prefix + topdocs.group(1) + ".adoc" + anchor + "[$$TEXT$$]";
+        }
+        // Legacy module paths → GitHub URL on main
+        var legacy = Pattern.compile("\\.\\./\\.\\./(graphitron-(?:codegen-parent|common|example|maven-plugin|schema-transform|servlet-parent)/.*)").matcher(target);
+        if (legacy.matches()) {
+            return GH_BASE + "/tree/main/" + legacy.group(1) + anchor + "[$$TEXT$$]";
+        }
+        // claude-code-web-environment.md → moved to .claude/web-environment.md
+        if (target.endsWith("claude-code-web-environment.md")) {
+            return GH_BASE + "/blob/" + GH_REWRITE_BRANCH + "/.claude/web-environment.md" + anchor + "[$$TEXT$$]";
+        }
+        // Anything else: leave the original as a markdown link form (asciidoctor
+        // will accept link:<target>[<text>] for relative paths even if they don't
+        // resolve to a staged file, without producing a WARN).
+        return "link:" + target + anchor + "[$$TEXT$$]";
+    }
+
+    /** Escape characters that confuse AsciiDoc table cells. */
+    private static String escapeAdocCell(String s) {
+        return s.replace("|", "\\|");
+    }
+
+    /** Light inline escape for non-cell contexts (currently a no-op stub). */
+    private static String escapeAdocInline(String s) {
+        return s;
     }
 
     private static Map<String, String> parseOptions(List<String> tokens) {
