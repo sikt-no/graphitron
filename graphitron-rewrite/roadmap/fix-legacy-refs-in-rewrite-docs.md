@@ -10,11 +10,10 @@ depends-on: [docs-site-asciidoc]
 
 # Sweep doc drift between rewrite docs and `model/` taxonomy
 
-The four reference docs under `graphitron-rewrite/docs/` (`code-generation-triggers.md`,
-`rewrite-model.md`, `rewrite-design-principles.md`, `argument-resolution.md`) have fallen
-behind several recent landings in `model/`. None of the drift breaks the build; all of it
-costs a first-time reader credibility. Audited 2026-04-28 against trunk; eight specific
-sites below.
+The three reference docs under `graphitron-rewrite/docs/` (`code-generation-triggers.md`,
+`rewrite-design-principles.md`, `argument-resolution.md`) have fallen behind several recent
+landings in `model/`. None of the drift breaks the build; all of it costs a first-time
+reader credibility. Audited 2026-04-28 against trunk; specific sites below.
 
 The original scope of this item was a pure legacy-ref grep ("`graphitron-common`" + module
 count). That scope is preserved at the bottom; the larger driver now is variant-taxonomy
@@ -31,18 +30,17 @@ One commit, one focused diff. Each row below is a single edit.
 - **`QueryNodesField` is missing from the docs.** Added in `71e439f` (Relay `nodes(ids)`
   auto-emit); a real permit at `model/QueryField.java:25,82`, dispatched at
   `generators/TypeFetcherGenerator.java:347,1416`. Add a row in
-  `code-generation-triggers.md`'s Query Fields table and a node in `rewrite-model.md`'s
-  Root Field Variants diagram.
-- **`InputField` shows 1 variant in the diagram, has 6 in code.** `rewrite-model.md:35`
-  stops at `ColumnField`; `model/InputField.java:18-22` permits `ColumnField`,
-  `ColumnReferenceField`, `NodeIdField`, `NodeIdReferenceField`, `IdReferenceField`,
-  `NestingField`. The Input Fields table at `code-generation-triggers.md:200-205` lists
-  three. Update both.
+  `code-generation-triggers.md`'s Query Fields table.
+- **`InputField` Input Fields table is short.** `code-generation-triggers.md:200-205` lists
+  three; `model/InputField.java:18-22` permits a longer set including `ColumnField`,
+  `ColumnReferenceField`, `CompositeColumnField`, `CompositeColumnReferenceField`,
+  `NestingField`, plus the NodeId arms still mid-retirement under R50. Reconcile against
+  the variants present on trunk at the time the sweep lands.
 - **`GraphitronType` has 5 variants the docs don't acknowledge.**
   `model/GraphitronType.java:317,328,364,383,401` permit `PlainObjectType`, `EnumType`,
   `ConnectionType`, `EdgeType`, `PageInfoType` — the connection trio is core to the
   `@asConnection` path. Absent from `code-generation-triggers.md`'s Type Classification
-  table and from `rewrite-model.md`'s Type Hierarchy diagram.
+  table.
 - **`CallSiteExtraction` shows 5 variants, has 6.** `rewrite-design-principles.md:29` and
   `code-generation-triggers.md:260` enumerate `Direct / EnumValueOf / TextMapLookup /
   ContextArg / JooqConvert`. The 6th is `NestedInputField`
