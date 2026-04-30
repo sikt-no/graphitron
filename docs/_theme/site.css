@@ -510,4 +510,17 @@ table.tableblock thead th {
     .hero-band .hero-tagline {
         font-size: 1.05rem;
     }
+
+    /* Wide tables (the roadmap status board with long titles plus inline
+     * code spans is the worst offender) would otherwise push the body past
+     * the viewport, and because .nav-header is sticky only on the y-axis,
+     * horizontal page scroll drags the nav off-screen. Make each table its
+     * own horizontal-scroll container instead. display: block sacrifices
+     * outer table layout but the tbody/tr/td defaults keep the inner table
+     * intact. */
+    table.tableblock {
+        display: block;
+        overflow-x: auto;
+        max-width: 100%;
+    }
 }
