@@ -11,7 +11,7 @@ depends-on: [mutations]
 # Error-handling parity: emit per-fetcher error channels from `@error`
 
 The classifier resolves `@error` types into `GraphitronType.ErrorType` with a
-`List<ErrorType.Handler>` (`TypeBuilder.buildErrorType` at `TypeBuilder.java:485`). Nothing
+`List<ErrorType.Handler>` (`TypeBuilder.buildErrorType`). Nothing
 consumes them. Two visible consequences on production schemas today:
 
 1. A payload's `errors: [SomeUnion!]!` field hits one of five sibling `PolymorphicReturnType`
@@ -40,21 +40,29 @@ or interface implementers are all `@error` types currently classifies as `Unclas
 Five sibling sites in `FieldBuilder.java` reject the same shape with `RejectionKind.DEFERRED`
 when the resolved return type is `ReturnTypeRef.PolymorphicReturnType`:
 
-| Line | Caller                                  | Context                                                |
-|------|-----------------------------------------|--------------------------------------------------------|
-| 1587 | `classifyQueryField`                    | Query root `@service` returning a polymorphic type     |
-| 1712 | `classifyMutationField`                 | Mutation root `@service` returning a polymorphic type  |
-| 1861 | `classifyChildFieldOnResultType`        | Child `@service` on a `@record` parent                 |
-| 1918 | `classifyChildFieldOnResultType`        | Child non-service field on a `@record` parent          |
-| 2015 | `classifyChildFieldOnTableType`         | Child `@service` on a `@table` parent                  |
+| Caller                                  | Context                                                |
+|-----------------------------------------|--------------------------------------------------------|
+| `classifyQueryField`                    | Query root `@service` returning a polymorphic type     |
+| `classifyMutationField`                 | Mutation root `@service` returning a polymorphic type  |
+| `classifyChildFieldOnResultType`        | Child `@service` on a `@record` parent                 |
+| `classifyChildFieldOnResultType`        | Child non-service field on a `@record` parent          |
+| `classifyChildFieldOnTableType`         | Child `@service` on a `@table` parent                  |
+
+Each rejection arm is a `case ReturnTypeRef.PolymorphicReturnType ... -> new
+UnclassifiedField(...)` switch arm with reason `"@service returning a polymorphic
+type is not yet supported"` (or `"@record type returning a polymorphic type is not
+yet supported"` on the non-service `@record`-parent arm); locate them via that
+predicate rather than by line, since the file churns.
 
 The canonical hit is the consumer's `BehandleSakPayload.errors: [BehandleSakError!]!` (a union of
 `@error` types) on a `@record`-typed payload returned by a `@service`-backed mutation. The
-mutation root field hits 1712; the payload's own `errors` field hits 1918 once the parent does
-classify. All five must be lifted in the same classifier pass: an `errors`-shaped field can
-land on any of them depending on whether the carrier is service-backed and whether the parent
-is `@record` or `@table`. Other polymorphic uses (non-`@error` interface/union returns) stay
-rejected as before; the lift is gated on "every member type is an `@error` type".
+mutation root field hits the `classifyMutationField` arm; the payload's own `errors` field
+hits the non-service `@record`-parent arm of `classifyChildFieldOnResultType` once the
+parent does classify. All five must be lifted in the same classifier pass: an
+`errors`-shaped field can land on any of them depending on whether the carrier is
+service-backed and whether the parent is `@record` or `@table`. Other polymorphic
+uses (non-`@error` interface/union returns) stay rejected as before; the lift is
+gated on "every member type is an `@error` type".
 
 **Schema migration note.** The production schema's `[BehandleSakError!]!` declaration has a
 non-null *field* (the trailing `!`); §2b's nullability rule rejects that. Consumers must
@@ -108,40 +116,69 @@ the abstract-method set as the surface contract.
 
 ## Implementation
 
-Ships as one coherent change, not phased. The Direction sections below describe *what* is
-done; concrete deliverables across the diff:
+The Direction sections below describe *what* this item lands; the deliverables list
+captures the diff and tracks what has already shipped versus what remains. Phasing is
+the implementer's call on seam value; there is no intermediate state worth shipping
+externally (an `errors` fetcher without the try/catch wrapper would leave the privacy
+leak from the introduction in place, defeating half the point), so internal phases are
+landing one after another but no consumer-visible surface ships until the wrapper +
+dispatch arm lands.
 
-- Sealed `Handler` taxonomy (§1) replaces the legacy `Handler` record at
-  `GraphitronType.java:202-209`; `ErrorHandlerType` enum gains `VALIDATION`.
-- `ErrorsField` variant on `GraphitronField` (§2a); five `PolymorphicReturnType`-on-`@error`
-  rejections in `FieldBuilder` lifted to produce it (the production blocker).
+**Landed (C2 review-followup, commit `4591233`):**
+
+- Sealed `Handler` taxonomy (§1) at `GraphitronType.ErrorType.Handler` with the four
+  permits `ExceptionHandler` / `SqlStateHandler` / `VendorCodeHandler` / `ValidationHandler`.
+  The `ErrorHandlerType` enum already carries `GENERIC | DATABASE | VALIDATION`. The
+  legacy enum-with-shared-fields shape and its `ErrorHandlerType.GENERIC | DATABASE`
+  predecessor were replaced in the same edit.
+- `ChildField.ErrorsField` (§2a). The variant is in place; the five
+  `PolymorphicReturnType`-on-`@error` rejections in `FieldBuilder` that should produce
+  it are still pending (the production blocker is unchanged at the code level).
 - `ErrorChannel` record (§2c) with typed `payloadClass: ClassName`,
   `payloadCtorParams.type: TypeName`, and resolved `mappedErrorTypes:
-  List<GraphitronType.ErrorType>`; `WithErrorChannel` capability interface implemented by
-  every fetcher-emitting field variant; channel-detection in the carrier classifier.
-- `TypeBuilder.parseErrorHandler` lifts SDL `ErrorHandler` entries to the sealed variants per
-  §1's table; the nine reject rules (intra-type and channel-level, including the
-  validation-shadowing rule and the `path`/`message`-only structural rule) fire as
-  `UnclassifiedType` / `UnclassifiedField`.
+  List<GraphitronType.ErrorType>`; `WithErrorChannel` capability interface implemented
+  by every fetcher-emitting field variant (`MutationField` permits + `QueryField`
+  service variants). Channel-detection in the carrier classifier is the next bullet
+  and is still pending.
+- `TypeBuilder.buildErrorType` wears `@LoadBearingClassifierCheck(key =
+  "error-type.path-message-fields")` (the producer side; the consumer annotation lands
+  with the dispatch arm).
+- `ErrorRouter.redact` emitted via `ErrorRouterClassGenerator` at
+  `<outputPackage>.schema.ErrorRouter`; logs the original throw under a fresh UUID
+  correlation ID and returns a `DataFetcherResult` carrying only the correlation ID.
+  `dispatch` lands with `ErrorMappings` and the sealed `Mapping` taxonomy in the
+  channel-detection phase.
+- `GraphitronError` marker interface emitted via `GraphitronErrorInterfaceGenerator`.
+- `ValidationViolationGraphQLException` emitted via
+  `ValidationViolationGraphQLExceptionGenerator`.
+
+**Remaining work:**
+
+- `FieldBuilder` lifts the five `PolymorphicReturnType`-on-`@error` rejection sites to
+  produce `ChildField.ErrorsField` (per "Current blocker" below). Five sibling sites,
+  same gating predicate.
+- Carrier classifier produces `ErrorChannel` per the channel-detection rules in §2c;
+  populates `payloadCtorParams` from the developer-supplied payload class's all-fields
+  constructor; resolves the per-channel `mappingsConstantName`.
+- `TypeBuilder.parseErrorHandler` lifts SDL `ErrorHandler` entries to the sealed
+  variants per §1's table; the nine reject rules (intra-type and channel-level,
+  including the validation-shadowing rule and the `path`/`message`-only structural
+  rule) fire as `UnclassifiedType` / `UnclassifiedField`.
 - §3's duplicate-criteria classifier check on flattened channel mappings.
 - `(List<String>, String)` constructor reflection check on each `@error` type's
-  developer-supplied class (parallels `@record` reflection at `TypeBuilder.java:457-459`).
-- Per-package `ErrorMappings` and `ErrorRouter` helpers emitted at
-  `<outputPackage>.schema.ErrorMappings` / `…ErrorRouter` (§3).
-- Try/catch wrapper on every fetcher body (channel → `ErrorRouter.dispatch`; no channel →
-  `ErrorRouter.redact`); `.exceptionally(...)` on async fetchers.
+  developer-supplied class (parallels `@record` reflection in
+  `TypeBuilder.buildResultType`).
+- Per-package `ErrorMappings` helper emitted at `<outputPackage>.schema.ErrorMappings`
+  (§3); `ErrorRouter.dispatch` arm + sealed `Mapping` taxonomy.
+- Try/catch wrapper on every fetcher body (channel → `ErrorRouter.dispatch`; no channel
+  → `ErrorRouter.redact`); `.exceptionally(...)` on async fetchers.
 - `ValidationHandler` fan-out arm in `ErrorRouter.dispatch` (§5); the
-  `CustomSchemaBasedErrorStrategy` consumer subclass and `ExceptionHandlingBuilder` wiring
-  go away in `graphitron-test`.
+  `CustomSchemaBasedErrorStrategy` consumer subclass and `ExceptionHandlingBuilder`
+  wiring go away in `graphitron-test`.
 - `@service` / `@tableMethod` declared checked exceptions checked against the field's
   `ErrorChannel` and routed through the same `ErrorRouter.dispatch` (§4).
-- [`checked-exceptions-typed-errors.md`](checked-exceptions-typed-errors.md) is deleted when
-  this lands.
-
-The whole change should land as one PR (or a tightly-clustered series; implementer's call on
-seam value). There is no intermediate state worth shipping: an `errors` fetcher without the
-try/catch wrapper would leave the privacy leak from the introduction in place, defeating
-half the point.
+- [`checked-exceptions-typed-errors.md`](checked-exceptions-typed-errors.md) is
+  deleted when this lands.
 
 ---
 
@@ -149,21 +186,18 @@ half the point.
 
 ### 1. Sealed `Handler` taxonomy
 
-Today `ErrorType.Handler` is the enum-with-shared-fields shape that
+**Status: landed** in the C2 review-followup. `ErrorType.Handler` is now the sealed
+interface below, on `GraphitronType.ErrorType`; the four variants carry exactly the
+fields each uses and the parse-time lift produces one variant per discriminator. The
+section retains the original framing for reference; before the lift, the record was
+the enum-with-shared-fields shape that
 [`rewrite-design-principles.md:17-21`](../docs/rewrite-design-principles.adoc#sealed-hierarchies-over-enums-for-typed-information)
-warns against: a single record with a kind field plus mostly-nullable strings.
+warns against (a single record with a kind field plus mostly-nullable strings, with
+`ErrorHandlerType` as the kind field carrying only `DATABASE | GENERIC`).
 
-```java
-record Handler(
-    ErrorHandlerType handlerType,  // DATABASE | GENERIC
-    String className, String code, String sqlState, String matches, String description
-) {}
-```
-
-Lift to a sealed interface so each variant carries exactly the fields it uses, and the emitter
-dispatches via exhaustive switch. The variants are split by the **discriminator** the matcher
-keys off (not by vendor: vendor-named variants like `PostgresHandler` / `OracleHandler` bake
-brittle product names that don't fit MySQL/CockroachDB/Yugabyte cleanly):
+The variants are split by the **discriminator** the matcher keys off (not by vendor:
+vendor-named variants like `PostgresHandler` / `OracleHandler` bake brittle product
+names that don't fit MySQL/CockroachDB/Yugabyte cleanly):
 
 ```java
 sealed interface Handler
@@ -228,13 +262,21 @@ per-violation messages come from each carried `GraphQLError`, and a top-level me
 filter would only short-circuit *all* violations (not "filter individual violations"), which is
 not a meaningful schema-author intent.
 
-`ErrorHandlerType` (the legacy `DATABASE | GENERIC` enum at
-`no.sikt.graphitron.rewrite.model.ErrorHandlerType`) and the legacy-shape `Handler` record at
-`GraphitronType.java:202-209` are deleted in the same edit that lands the sealed hierarchy.
-The replacement enum (`GENERIC | DATABASE | VALIDATION`, see the SDL change below) only exists
-at the SDL parse boundary; downstream code consumes the sealed `Handler` variants. Validators
-and any in-tree references update in lockstep; otherwise the build breaks before the new shape
-compiles.
+`ErrorHandlerType` is now `GENERIC | DATABASE | VALIDATION` and exists only at the SDL
+parse boundary; downstream code consumes the sealed `Handler` variants on
+`GraphitronType.ErrorType`. The legacy enum-with-shared-fields `Handler` record was
+deleted in the same edit that landed the sealed hierarchy; validators and in-tree
+references migrated in lockstep.
+
+The landed `ExceptionHandler` carries `String exceptionClassName` rather than
+the `ClassName exceptionClass` form this section's code block describes. The
+classify-time class-resolution check (the `Class.forName` against the classifier
+classpath, mirroring `@record` reflection) is part of `parseErrorHandler`'s remaining
+work; whether the resolved form is stored as a typed `ClassName` or a validated
+`String` is a tactical call for that follow-up. The plan's narrative below assumes
+the typed form because it lines up with C2's other typed retypes
+(`payloadClass: ClassName`, `payloadCtorParams.type: TypeName`); the implementer
+landing the parse-time lift can pick either.
 
 #### SDL grammar change: add `VALIDATION` to `ErrorHandlerType`
 
@@ -345,8 +387,8 @@ shift, not a silent one.
 
 #### Field structural requirements on `@error` types
 
-The current classifier (`FieldBuilder.classifyChildFieldOnErrorType`,
-`FieldBuilder.java:1538-1545`) restricts fields on `@error` types to scalar or enum. The SDL
+The current classifier (`FieldBuilder.classifyChildFieldOnErrorType`)
+restricts fields on `@error` types to scalar or enum. The SDL
 contract is schema-first: every `@error` type must declare `path: [String!]!` and
 `message: String!`. Missing or differently-shaped fields produce `UnclassifiedType`. Every
 legacy fixture under
@@ -369,11 +411,12 @@ reflection check is a secondary guarantee; both must pass for the type to classi
 
 Legacy builds `Map<String, PayloadCreator>` at runtime construction because the legacy generator
 had no per-field resolution layer. The rewrite already classifies mutation and service fields.
-Two model additions, one per side of the carrier/payload split:
+Two model additions, one per side of the carrier/payload split.
 
 #### 2a. `ErrorsField`: the payload-side variant the carrier walks
 
-A new sealed permit on `GraphitronField`:
+**Status: landed** as `ChildField.ErrorsField` (a permit on `ChildField`, the
+sealed sub-hierarchy of `GraphitronField` that holds non-root field variants):
 
 ```java
 record ErrorsField(
@@ -381,7 +424,7 @@ record ErrorsField(
     String name,
     SourceLocation location,
     List<GraphitronType.ErrorType> errorTypes   // resolved; flat across single / union / interface list shapes
-) implements GraphitronField {}
+) implements ChildField {}
 ```
 
 `ErrorsField` exists so that `classifyChildFieldOnResultType` (and its `@table`-parent and
@@ -433,7 +476,8 @@ points at the list shape.
 
 #### 2c. `ErrorChannel`: the carrier-side sub-taxonomy
 
-The carrier-side resolution:
+**Status: landed** as `no.sikt.graphitron.rewrite.model.ErrorChannel` plus the
+`WithErrorChannel` capability interface. The carrier-side resolution:
 
 ```java
 record ErrorChannel(
@@ -526,7 +570,8 @@ The rewrite preserves this contract:
   `@record` flow uses).
 - Required constructor: `(List<String> path, String message)`. Mandated at classify time; a
   missing or wrong-shape constructor produces an `UnclassifiedType` with a descriptive reason,
-  same pattern as `@record` reflection failure (`TypeBuilder.java:457-459`).
+  same pattern as `@record` reflection failure (the `Class.forName` block in
+  `TypeBuilder.buildResultType`).
 - Required interface: the class implements `GraphitronError` (see "Marker interface" below).
   Mandated at classify time alongside the constructor check.
 - The class is reflected on the classifier classpath at build time, the same property that
@@ -1460,7 +1505,7 @@ The generated fetchers install no engine-level handler.
   that's graphql-java's standard extension point, unrelated to Graphitron's emission.
 - **Subscription error paths.** Legacy has no subscription-specific exception handling, and
   the rewrite does not generate subscription fetchers (`FieldBuilder.classifyRootField` rejects
-  `Subscription` with a `DEFERRED` rejection at `FieldBuilder.java:1557`). Subscription error
+  `Subscription` with a `DEFERRED` rejection). Subscription error
   handling is deferred until subscriptions land as a feature; that future plan owns
   subscription-specific routing.
 - **Batch-loader error handling.** Legacy's `DataLoaderMapper` propagates exceptions opaquely;
