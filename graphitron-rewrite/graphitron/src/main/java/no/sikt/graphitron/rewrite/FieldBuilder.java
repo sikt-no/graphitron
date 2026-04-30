@@ -55,6 +55,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.RootType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableBackedType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableInterfaceType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.UnionType;
+import no.sikt.graphitron.rewrite.model.HelperRef;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.LookupMapping;
 import no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping;
@@ -1871,23 +1872,27 @@ class FieldBuilder {
                         RejectionKind.AUTHOR_ERROR, returnTypeError);
                 }
 
-                Optional<JooqCatalog.NodeIdMetadata> nodeIdMeta = Optional.empty();
+                Optional<HelperRef.Encode> encodeReturn = Optional.empty();
                 if (returnType instanceof ReturnTypeRef.ScalarReturnType s && "ID".equals(s.returnTypeName())) {
                     String tableSqlName = tia.inputTable().tableName();
-                    nodeIdMeta = ctx.catalog.nodeIdMetadata(tableSqlName);
-                    if (nodeIdMeta.isEmpty()) {
+                    encodeReturn = ctx.types.values().stream()
+                        .filter(t -> t instanceof NodeType nt && nt.table().tableName().equals(tableSqlName))
+                        .map(t -> ((NodeType) t).encodeMethod())
+                        .findFirst();
+                    if (encodeReturn.isEmpty()) {
                         return new UnclassifiedField(parentTypeName, name, location, fieldDef,
                             RejectionKind.AUTHOR_ERROR,
-                            "@mutation field '" + name + "' returns ID but table '" + tableSqlName
-                                + "' is not a @node type; annotate the type with @node or use a @table return type");
+                            "@mutation field '" + name + "' returns ID but no @node type is declared for table '"
+                                + tableSqlName + "'; annotate the type with @node or use a @table return type");
                     }
                 }
 
+                Optional<HelperRef.Encode> enc = encodeReturn;
                 return switch (typeName) {
-                    case "INSERT" -> new MutationField.MutationInsertTableField(parentTypeName, name, location, returnType, tia, nodeIdMeta, Optional.empty());
-                    case "UPDATE" -> new MutationField.MutationUpdateTableField(parentTypeName, name, location, returnType, tia, nodeIdMeta, Optional.empty());
-                    case "DELETE" -> new MutationField.MutationDeleteTableField(parentTypeName, name, location, returnType, tia, nodeIdMeta, Optional.empty());
-                    case "UPSERT" -> new MutationField.MutationUpsertTableField(parentTypeName, name, location, returnType, tia, nodeIdMeta, Optional.empty());
+                    case "INSERT" -> new MutationField.MutationInsertTableField(parentTypeName, name, location, returnType, tia, enc, Optional.empty());
+                    case "UPDATE" -> new MutationField.MutationUpdateTableField(parentTypeName, name, location, returnType, tia, enc, Optional.empty());
+                    case "DELETE" -> new MutationField.MutationDeleteTableField(parentTypeName, name, location, returnType, tia, enc, Optional.empty());
+                    case "UPSERT" -> new MutationField.MutationUpsertTableField(parentTypeName, name, location, returnType, tia, enc, Optional.empty());
                     default       -> throw new IllegalStateException("unreachable: typeName=" + typeName);
                 };
             }

@@ -3775,7 +3775,7 @@ class GraphitronSchemaBuilderTest {
                 var f = (MutationField.MutationInsertTableField) schema.field("Mutation", "createFilm");
                 assertThat(f.tableInputArg().inputTable().tableName()).isEqualTo("film");
                 assertThat(f.tableInputArg().fieldBindings()).isEmpty();
-                assertThat(f.nodeIdMeta()).isEmpty();
+                assertThat(f.encodeReturn()).isEmpty();
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationInsertTableField.class); }
         },
@@ -3980,7 +3980,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         DML_ID_RETURN_NON_NODE_TABLE_REJECTED(
-            "DML mutation returning ID on a non-@node table → UnclassifiedField (NodeId metadata absent)",
+            "DML mutation returning ID without a matching @node SDL type → UnclassifiedField",
             """
             input FilmInput @table(name: "film") { title: String }
             type Query { x: String }
@@ -3989,11 +3989,11 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var f = (UnclassifiedField) schema.field("Mutation", "createFilm");
                 assertThat(f.reason())
-                    .contains("returns ID but table 'film' is not a @node type");
+                    .contains("no @node type is declared for table 'film'");
             }),
 
         DML_TABLE_RETURN_NON_NODE_HAPPY(
-            "DML mutation returning a @table type on a non-@node table → classified successfully (nodeIdMeta empty)",
+            "DML mutation returning a @table type on a non-@node table → classified successfully (encodeReturn empty)",
             """
             type Film @table(name: "film") { title: String }
             input FilmInput @table(name: "film") { title: String }
@@ -4002,7 +4002,7 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (MutationField.MutationInsertTableField) schema.field("Mutation", "createFilm");
-                assertThat(f.nodeIdMeta()).isEmpty();
+                assertThat(f.encodeReturn()).isEmpty();
             }),
 
         DML_LIST_LOOKUP_KEY_FIELD_REJECTED(
