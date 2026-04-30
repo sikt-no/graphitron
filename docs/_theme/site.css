@@ -18,7 +18,10 @@
 
 :root {
     --site-content-max: 1180px;
-    --site-content-pad: 24px;
+    /* Responsive horizontal page padding: 24px on mobile, 32px on tablet,
+     * 48px on desktop. Inherits the design system's 45rem / 64rem breakpoints
+     * from sds-core.css, so this var changes value without a media query. */
+    --site-content-pad: var(--sds-space-padding-large);
 }
 
 html, body {
@@ -49,7 +52,7 @@ a:active {
 .nav-header {
     background: var(--sds-color-layout-background-primary, #ffffff);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
-    padding: 14px var(--site-content-pad);
+    padding: var(--sds-space-padding-small) var(--site-content-pad);
     position: sticky;
     top: 0;
     z-index: 50;
@@ -59,12 +62,12 @@ a:active {
     margin: 0 auto;
     display: flex;
     align-items: center;
-    gap: 24px;
+    gap: var(--sds-space-gap-medium);
 }
 .nav-brand {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: var(--sds-space-gap-small);
     text-decoration: none;
     font-weight: 700;
     color: var(--sds-color-text-primary, #1a1a1a);
@@ -79,8 +82,8 @@ a:active {
 }
 .nav-links {
     display: flex;
-    gap: 18px;
-    margin-left: 8px;
+    gap: var(--sds-space-gap-medium);
+    margin-left: var(--sds-space-gap-tiny);
     flex-wrap: wrap;
 }
 .nav-links a {
@@ -141,7 +144,7 @@ a:active {
      * against #header / .nav-header above. Content pages get their top
      * spacing from #header h1's padding. */
     padding-top: 0;
-    padding-bottom: 64px;
+    padding-bottom: var(--sds-space-padding-huge);
 }
 
 /* AsciiDoctor body class scope; `body.book` etc. shouldn't change layout. */
@@ -172,7 +175,7 @@ h1 .link:hover, h2 .link:hover, h3 .link:hover, h4 .link:hover, h5 .link:hover, 
 }
 h2 {
     font-size: 1.7rem;
-    border-bottom: 1px solid var(--sds-color-layout-divider-subtle, #e2e4e8);
+    border-bottom: var(--sds-space-border-weight-thin) solid var(--sds-color-layout-divider-subtle, #e2e4e8);
     padding-bottom: 6px;
 }
 h3 { font-size: 1.3rem; }
@@ -193,8 +196,8 @@ code, pre, kbd, tt {
 
 code {
     background: var(--sds-color-layout-background-neutral, #f4f5f7);
-    border: 1px solid var(--sds-color-layout-divider-subtle, #e2e4e8);
-    border-radius: 4px;
+    border: var(--sds-space-border-weight-thin) solid var(--sds-color-layout-divider-subtle, #e2e4e8);
+    border-radius: var(--sds-space-border-radius-minimal);
     padding: 0.05em 0.35em;
     font-size: 0.9em;
 }
@@ -207,8 +210,8 @@ pre code {
 
 .listingblock pre, .literalblock pre {
     background: var(--sds-color-layout-background-neutral, #fafbfc);
-    border: 1px solid var(--sds-color-layout-divider-subtle, #e2e4e8);
-    border-radius: 6px;
+    border: var(--sds-space-border-weight-thin) solid var(--sds-color-layout-divider-subtle, #e2e4e8);
+    border-radius: var(--sds-space-border-radius-small);
     padding: 14px 16px;
     overflow-x: auto;
     font-size: 0.9rem;
@@ -218,35 +221,35 @@ pre code {
 
 .hero-band {
     background: var(--sds-color-brand-primary-subtle, #ece4ff);
-    margin: 0 calc(-1 * var(--site-content-pad)) 32px;
-    padding: 56px var(--site-content-pad);
+    margin: 0 calc(-1 * var(--site-content-pad)) var(--sds-space-gap-medium);
+    padding: var(--sds-space-padding-huge) var(--site-content-pad);
     text-align: center;
 }
 .hero-band .hero-title {
     font-size: 3.2rem;
     font-weight: 700;
-    margin: 0 0 12px;
+    margin: 0 0 var(--sds-space-gap-small);
     letter-spacing: -0.015em;
     color: var(--sds-color-text-primary, #1a1a1a);
 }
 .hero-band .hero-tagline {
     font-size: 1.25rem;
-    margin: 0 0 24px;
+    margin: 0 0 var(--sds-space-gap-medium);
     color: var(--sds-color-text-primary, #1a1a1a);
     opacity: 0.85;
 }
 .hero-band .cta-row {
     display: flex;
     justify-content: center;
-    gap: 12px;
+    gap: var(--sds-space-gap-small);
     flex-wrap: wrap;
 }
 .cta-button {
     display: inline-block;
     background: var(--sds-color-interaction-primary-transparent-default, transparent);
     color: var(--sds-color-text-primary, #1a1a1a);
-    border: 1px solid var(--sds-color-brand-primary-strong, #5b3d99);
-    border-radius: 999px;
+    border: var(--sds-space-border-weight-thin) solid var(--sds-color-brand-primary-strong, #5b3d99);
+    border-radius: var(--sds-space-border-radius-full);
     padding: 10px 22px;
     text-decoration: none;
     font-weight: 600;
@@ -272,17 +275,16 @@ table.featurerow > * > tr > td {
 }
 table.featurerow {
     width: 100%;
-    margin: 32px 0 48px;
+    margin: var(--sds-space-gap-medium) 0 var(--sds-space-gap-large);
     border-collapse: separate;
-    /* 56px between cells: with three columns at full content width, anything
-     * tighter has the prose silhouettes crowding. The vertical 0 is
-     * intentional — there's only one row. */
-    border-spacing: 56px 0;
+    /* gap-large (48px) between cells. The vertical 0 is intentional: there's
+     * only one row. */
+    border-spacing: var(--sds-space-gap-large) 0;
     table-layout: fixed;
 }
 table.featurerow > * > tr > td {
     vertical-align: top;
-    padding: 0 8px;
+    padding: 0 var(--sds-space-padding-tiny);
 }
 /* Feature cards: image and heading centered (the "poster" feel), prose
  * left-aligned (centered paragraphs of varied line length read as ragged
@@ -291,7 +293,7 @@ table.featurerow > * > tr > td {
     max-width: 220px;
     width: 100%;
     height: auto;
-    margin: 0 auto 16px;
+    margin: 0 auto var(--sds-space-padding-medium);
     display: block;
 }
 .feature h2,
@@ -304,7 +306,7 @@ table.featurerow > * > tr > td {
     font-weight: 600;
 }
 .feature p {
-    margin: 12px 0;
+    margin: var(--sds-space-gap-small) 0;
     text-align: left;
     color: var(--sds-color-text-primary, #1a1a1a);
     line-height: 1.55;
@@ -314,7 +316,7 @@ table.featurerow > * > tr > td {
 
 #toc.toc2 {
     background: var(--sds-color-layout-background-neutral, #fafbfc);
-    border-right: 1px solid var(--sds-color-layout-divider-subtle, #e2e4e8);
+    border-right: var(--sds-space-border-weight-thin) solid var(--sds-color-layout-divider-subtle, #e2e4e8);
     font-size: 0.92rem;
 }
 #toc.toc2 a {
@@ -336,11 +338,11 @@ table.featurerow > * > tr > td {
     margin: 1.4em 0;
 }
 .admonitionblock > table {
-    border: 1px solid var(--sds-color-brand-primary-subtle, #ece4ff);
-    border-left: 4px solid var(--sds-color-brand-primary-strong, #5b3d99);
+    border: var(--sds-space-border-weight-thin) solid var(--sds-color-brand-primary-subtle, #ece4ff);
+    border-left: var(--sds-space-border-weight-bold) solid var(--sds-color-brand-primary-strong, #5b3d99);
     background: var(--sds-color-brand-accent-subtle, #f5f0ff);
-    border-radius: 6px;
-    padding: 12px 14px;
+    border-radius: var(--sds-space-border-radius-small);
+    padding: var(--sds-space-padding-small) 14px;
     width: 100%;
 }
 .admonitionblock td.icon {
@@ -355,12 +357,12 @@ table.featurerow > * > tr > td {
     letter-spacing: 0.05em;
 }
 .admonitionblock td.content {
-    padding-left: 12px;
+    padding-left: var(--sds-space-padding-small);
 }
 .advantage-box {
     background: var(--sds-color-brand-primary-subtle, #ece4ff);
-    border-left: 4px solid var(--sds-color-brand-primary-strong, #5b3d99);
-    border-radius: 12px;
+    border-left: var(--sds-space-border-weight-bold) solid var(--sds-color-brand-primary-strong, #5b3d99);
+    border-radius: var(--sds-space-border-radius-medium);
     padding: 16px 20px;
     margin: 1.4em 0;
 }
@@ -373,7 +375,7 @@ table.tableblock {
     width: 100%;
 }
 table.tableblock th, table.tableblock td {
-    border: 1px solid var(--sds-color-layout-divider-subtle, #e2e4e8);
+    border: var(--sds-space-border-weight-thin) solid var(--sds-color-layout-divider-subtle, #e2e4e8);
     padding: 10px 14px;
     text-align: left;
     vertical-align: top;
@@ -395,7 +397,7 @@ table.tableblock thead th {
     background: var(--sds-color-brand-accent-strong, #1d1840);
     color: var(--sds-color-text-on, #ffffff);
     padding: 36px var(--site-content-pad) 28px;
-    margin-top: 64px;
+    margin-top: var(--sds-space-padding-huge);
     font-size: 0.92rem;
 }
 .site-footer-inner {
@@ -403,10 +405,10 @@ table.tableblock thead th {
     margin: 0 auto;
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 32px;
+    gap: var(--sds-space-gap-medium);
 }
 .site-footer h4 {
-    margin: 0 0 12px;
+    margin: 0 0 var(--sds-space-gap-small);
     color: var(--sds-color-text-on, #ffffff);
     font-size: 0.95rem;
     font-weight: 700;
@@ -432,26 +434,29 @@ table.tableblock thead th {
 }
 .site-footer-meta {
     grid-column: 1 / -1;
-    margin-top: 16px;
-    padding-top: 16px;
-    border-top: 1px solid rgba(255, 255, 255, 0.15);
+    margin-top: var(--sds-space-padding-medium);
+    padding-top: var(--sds-space-padding-medium);
+    border-top: var(--sds-space-border-weight-thin) solid rgba(255, 255, 255, 0.15);
     color: rgba(255, 255, 255, 0.7);
     font-size: 0.85rem;
 }
 
-/* ---------- mobile (≤ 720px) --------------------------------------------- */
+/* ---------- mobile (< 45rem, the design system's small breakpoint) ------- */
 
-/* The desktop layout has three places that don't survive a phone viewport:
- * the featurerow's 3 columns shrink to ~70px and break "Authorization"
- * mid-word; the nav-header packs brand + 4 links + GitHub into one flex row
- * which then wraps awkwardly; and the 3.2rem hero title eats most of the
- * vertical fold. Each gets a targeted override here rather than a full
- * mobile-first refactor. */
-@media (max-width: 720px) {
+/* Layout shapes that need overrides at narrow widths. The horizontal padding,
+ * hero band padding, and feature-image margin are already responsive via
+ * --sds-space-padding-* tokens, so they don't appear here. What remains:
+ *   - the featurerow's 3 columns collapse to single-column block flow,
+ *   - the nav-header reflows so brand + GitHub share row 1 and links wrap
+ *     to row 2,
+ *   - the 3.2rem hero title scales down (typography tokens not used here
+ *     because the design system's editorial-headline-* sizes are far larger
+ *     than what fits on a phone). */
+@media (max-width: 45rem) {
     table.featurerow {
         display: block;
         border-spacing: 0;
-        margin: 24px 0 32px;
+        margin: var(--sds-space-gap-medium) 0 var(--sds-space-gap-medium);
     }
     /* Hide the colgroup that pins each cell to 33% width. */
     table.featurerow > colgroup {
@@ -465,22 +470,18 @@ table.tableblock thead th {
         display: block;
         width: 100%;
         padding: 0;
-        margin: 0 0 36px;
+        margin: 0 0 var(--sds-space-gap-medium);
     }
     table.featurerow > tbody > tr > td:last-child {
         margin-bottom: 0;
     }
     .feature img {
         max-width: 160px;
-        margin-bottom: 12px;
     }
 
-    .nav-header {
-        padding: 10px var(--site-content-pad);
-    }
     .nav-header-inner {
         flex-wrap: wrap;
-        gap: 8px 16px;
+        gap: var(--sds-space-gap-tiny) var(--sds-space-gap-medium);
     }
     /* Brand + GitHub on row one; nav-links on row two. The desktop spacer
      * (flex: 1) would fight that, so collapse it. */
@@ -494,15 +495,12 @@ table.tableblock thead th {
         order: 3;
         flex-basis: 100%;
         margin-left: 0;
-        gap: 8px 16px;
+        gap: var(--sds-space-gap-tiny) var(--sds-space-gap-medium);
     }
     .nav-links a {
         padding: 4px 0;
     }
 
-    .hero-band {
-        padding: 36px var(--site-content-pad);
-    }
     .hero-band .hero-title {
         font-size: 2.2rem;
     }
