@@ -6,7 +6,7 @@
 This guide answers "which tier does my test belong to, where does the file go, and what should it assert?"
 Four tiers cover every test in the rewrite.
 For design principles (why pipeline is the primary behavioural tier, why code-string body matching is banned), see xref:rewrite-design-principles.adoc[Rewrite Design Principles].
-For build commands and database setup, see xref:../../../.claude/web-environment.md[web-environment.md].
+For build commands and database setup, see `.claude/web-environment.md`.
 
 == Choosing a tier
 
@@ -60,7 +60,7 @@ Three sub-families:
 
 *Generator unit tests* (`TypeFetcherGeneratorTest`, `TypeClassGeneratorTest`, `TypeConditionsGeneratorTest`, `GeneratorCoverageTest`; and the `generators/schema/` subdirectory: `EnumTypeGeneratorTest`, `GraphitronFacadeGeneratorTest`, `InputTypeGeneratorTest`, `ObjectTypeGeneratorTest`, etc.).
 Take pre-built model fixtures via `TestFixtures`; assert `TypeSpec` shape (method names, return types, parameter signatures).
-Banned: code-string body matching on the generated `MethodSpec` body -- that is what compilation and execution cover.
+Banned: code-string body matching on the generated `MethodSpec` body; that is what compilation and execution cover.
 
 *Validator unit tests* (`*ValidationTest` family, e.g. `ColumnFieldValidationTest`, `QueryTableFieldValidationTest`).
 Build a `GraphitronSchema` with one parent type and one field at a known coordinate; assert `validate()` outcomes by `RejectionKind` and message substring.
@@ -76,10 +76,10 @@ SDL → classified model → generated `TypeSpec`.
 
 Two shapes:
 
-*Classification truth tables* -- `GraphitronSchemaBuilderTest`.
+*Classification truth tables:* `GraphitronSchemaBuilderTest`.
 Each variant family is a `// ===== VariantName =====` section with an enum where each constant is one `(description, SDL, assertion)` triple; one parameterised test iterates the table.
 
-*Deeper SDL → TypeSpec / variant-shape tests* -- `*PipelineTest` files: `NodeIdPipelineTest`, `SplitTableFieldPipelineTest`, `TableFieldPipelineTest`, `LookupTableFieldPipelineTest`, `NestingFieldPipelineTest`, `ServiceRootFetcherPipelineTest`, `TaggedInputsPipelineTest`, `StubbedVariantPipelineTest`; and in `generators/`: `FetcherPipelineTest`, `TablePipelineTest`.
+*Deeper SDL → TypeSpec / variant-shape tests:* `*PipelineTest` files: `NodeIdPipelineTest`, `SplitTableFieldPipelineTest`, `TableFieldPipelineTest`, `LookupTableFieldPipelineTest`, `NestingFieldPipelineTest`, `ServiceRootFetcherPipelineTest`, `TaggedInputsPipelineTest`, `StubbedVariantPipelineTest`; and in `generators/`: `FetcherPipelineTest`, `TablePipelineTest`.
 Build a schema with `TestSchemaHelper.buildSchema(sdl)`, assert structural shape on the resulting variant or generated `TypeSpec`.
 Banned: code-string body matching.
 
@@ -92,9 +92,9 @@ The compiler is the assertion; no hand-written assertions are needed for type co
 
 Two test classes layer structural checks on top:
 
-`GeneratedSourcesSmokeTest` -- every expected class is present in the emitter's output package (catches a generator that silently drops a class).
+`GeneratedSourcesSmokeTest`: every expected class is present in the emitter's output package (catches a generator that silently drops a class).
 
-`GeneratedSourcesLintTest` -- generator-hygiene rules over emitted source text (e.g. no `var` in emitted code).
+`GeneratedSourcesLintTest`: generator-hygiene rules over emitted source text (e.g. no `var` in emitted code).
 
 == Execution tier
 
@@ -115,11 +115,11 @@ Patterns:
 Several tests live in `graphitron-test` for module-dependency reasons but classify by assertion, not module.
 Only `GeneratorDeterminismTest` is `@Tag("cross-cutting")`; the rest carry one of the four tier annotations:
 
-* `GeneratedSourcesSmokeTest`, `GeneratedSourcesLintTest` -- `@CompilationTier` (consume the compile output).
-* `FederationBuildSmokeTest`, `NoFederationRegressionTest` -- `@PipelineTier` (schema-construction assertions on the fixture-derived generated facade; no SQL).
-* `ScatterSingleByIdxTest` -- `@UnitTier` (direct unit coverage, fully in-memory; lives in `graphitron-test` because it reflects against a generated `*Fetchers` class).
-* `GraphQLQueryTest`, `FederationEntitiesDispatchTest` -- `@ExecutionTier`.
-* `GeneratorDeterminismTest` -- `@Tag("cross-cutting")`: system-level ratchet for the three-clause writer contract (determinism + minimal-change writes + clean orphan removal). Does not fit pipeline (no classifier-to-TypeSpec assertion), compilation (no compile happens), or execution (no SQL).
+* `GeneratedSourcesSmokeTest`, `GeneratedSourcesLintTest`: `@CompilationTier` (consume the compile output).
+* `FederationBuildSmokeTest`, `NoFederationRegressionTest`: `@PipelineTier` (schema-construction assertions on the fixture-derived generated facade; no SQL).
+* `ScatterSingleByIdxTest`: `@UnitTier` (direct unit coverage, fully in-memory; lives in `graphitron-test` because it reflects against a generated `*Fetchers` class).
+* `GraphQLQueryTest`, `FederationEntitiesDispatchTest`: `@ExecutionTier`.
+* `GeneratorDeterminismTest`: `@Tag("cross-cutting")`, system-level ratchet for the three-clause writer contract (determinism + minimal-change writes + clean orphan removal). Does not fit pipeline (no classifier-to-TypeSpec assertion), compilation (no compile happens), or execution (no SQL).
 
 == Build commands
 
@@ -138,4 +138,4 @@ mvn test -f graphitron-rewrite/pom.xml -Plocal-db
 mvn test -f graphitron-rewrite/pom.xml -pl :graphitron -Plocal-db -DexcludedGroups=execution
 ----
 
-See xref:../../../.claude/web-environment.md[web-environment.md] for database setup prerequisites and the fixtures-jar footgun recovery.
+See `.claude/web-environment.md` for database setup prerequisites and the fixtures-jar footgun recovery.
