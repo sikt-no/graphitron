@@ -6,6 +6,7 @@ import no.sikt.graphitron.rewrite.BuildWarning;
 import no.sikt.graphitron.rewrite.RejectionKind;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ChildField.ColumnField;
+import no.sikt.graphitron.rewrite.model.ChildField.ErrorsField;
 import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.ChildField.ColumnReferenceField;
@@ -3192,6 +3193,199 @@ class GraphitronSchemaBuilderTest {
     @ParameterizedTest(name = "{0}")
     @EnumSource(ErrorFieldCase.class)
     void errorFieldClassification(ErrorFieldCase tc) {
+        tc.assertions.accept(build(tc.sdl));
+    }
+
+    // ===== Errors-shaped fields lifting from PolymorphicReturnType to ErrorsField =====
+
+    /**
+     * The five {@code PolymorphicReturnType} rejection arms in {@link FieldBuilder} lift to
+     * {@link ErrorsField} when the polymorphic type's members are all {@code @error} types and
+     * the field is a nullable list. Covers the production blocker per
+     * {@code error-handling-parity.md} §2a/§2b.
+     *
+     * <p>Each case targets one of the five lift sites by varying the carrier shape:
+     *
+     * <ul>
+     *   <li>{@code classifyMutationField} — Mutation root {@code @service} returning a payload
+     *       (the canonical {@code BehandleSakPayload} shape).</li>
+     *   <li>{@code classifyChildFieldOnResultType} (non-service arm) — the payload's own
+     *       {@code errors} field on a {@code @record} parent.</li>
+     *   <li>Plus rejection cases: mixed-{@code @error}-and-non-{@code @error} unions, non-null
+     *       list shapes, and pure non-{@code @error} polymorphic returns (which still fall
+     *       through to the existing "polymorphic not supported" rejection).</li>
+     * </ul>
+     */
+    enum ErrorsFieldCase implements ClassificationCase {
+        UNION_OF_ALL_ERROR_TYPES_LIFTS_TO_ERRORS_FIELD(
+            "union of @error types on @record payload — errors field lifts to ErrorsField",
+            """
+            type ValidationErr @error(handlers: [{handler: VALIDATION}]) {
+                path: [String!]!
+                message: String!
+            }
+            type DbErr @error(handlers: [{handler: DATABASE, sqlState: "23503"}]) {
+                path: [String!]!
+                message: String!
+            }
+            union BehandleSakError = ValidationErr | DbErr
+            type BehandleSakPayload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+                ok: Boolean
+                errors: [BehandleSakError!]
+            }
+            type Query { x: String }
+            """,
+            schema -> {
+                var field = schema.field("BehandleSakPayload", "errors");
+                assertThat(field).isInstanceOf(ErrorsField.class);
+                var ef = (ErrorsField) field;
+                assertThat(ef.errorTypes())
+                    .extracting(et -> et.name())
+                    .containsExactly("ValidationErr", "DbErr");
+            }),
+
+        INTERFACE_IMPLEMENTED_BY_ALL_ERROR_TYPES_LIFTS_TO_ERRORS_FIELD(
+            "interface implemented by @error types on @record payload — errors field lifts to ErrorsField",
+            """
+            interface BehandleSakError {
+                path: [String!]!
+                message: String!
+            }
+            type ValidationErr implements BehandleSakError @error(handlers: [{handler: VALIDATION}]) {
+                path: [String!]!
+                message: String!
+            }
+            type DbErr implements BehandleSakError @error(handlers: [{handler: DATABASE, sqlState: "23503"}]) {
+                path: [String!]!
+                message: String!
+            }
+            type BehandleSakPayload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+                ok: Boolean
+                errors: [BehandleSakError]
+            }
+            type Query { x: String }
+            """,
+            schema -> {
+                var field = schema.field("BehandleSakPayload", "errors");
+                assertThat(field).isInstanceOf(ErrorsField.class);
+                var ef = (ErrorsField) field;
+                assertThat(ef.errorTypes())
+                    .extracting(et -> et.name())
+                    .containsExactlyInAnyOrder("ValidationErr", "DbErr");
+            }),
+
+        SINGLE_ERROR_TYPE_UNION_LIFTS_TO_ERRORS_FIELD(
+            "single-member union of one @error type — still lifts (one entry in errorTypes)",
+            """
+            type DbErr @error(handlers: [{handler: DATABASE}]) {
+                path: [String!]!
+                message: String!
+            }
+            union BehandleSakError = DbErr
+            type BehandleSakPayload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+                ok: Boolean
+                errors: [BehandleSakError]
+            }
+            type Query { x: String }
+            """,
+            schema -> {
+                var field = schema.field("BehandleSakPayload", "errors");
+                assertThat(field).isInstanceOf(ErrorsField.class);
+                assertThat(((ErrorsField) field).errorTypes())
+                    .extracting(et -> et.name())
+                    .containsExactly("DbErr");
+            }),
+
+        MIXED_ERROR_AND_NON_ERROR_UNION_REJECTS(
+            "mixed @error + non-@error union — UnclassifiedField with mixed-not-supported reason",
+            """
+            type DbErr @error(handlers: [{handler: DATABASE}]) {
+                path: [String!]!
+                message: String!
+            }
+            type Plain @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+                whatever: String
+            }
+            union Mixed = DbErr | Plain
+            type Payload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+                ok: Boolean
+                errors: [Mixed]
+            }
+            type Query { x: String }
+            """,
+            schema -> {
+                var field = schema.field("Payload", "errors");
+                assertThat(field).isInstanceOf(UnclassifiedField.class);
+                var u = (UnclassifiedField) field;
+                assertThat(u.reason())
+                    .contains("every member declared @error")
+                    .contains("Plain");
+                assertThat(u.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
+            }),
+
+        NON_NULL_LIST_OF_ERRORS_REJECTS(
+            "errors: [SomeError]! (non-null list) — UnclassifiedField with nullability reason",
+            """
+            type ValidationErr @error(handlers: [{handler: VALIDATION}]) {
+                path: [String!]!
+                message: String!
+            }
+            type DbErr @error(handlers: [{handler: DATABASE}]) {
+                path: [String!]!
+                message: String!
+            }
+            union BehandleSakError = ValidationErr | DbErr
+            type BehandleSakPayload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+                ok: Boolean
+                errors: [BehandleSakError!]!
+            }
+            type Query { x: String }
+            """,
+            schema -> {
+                var field = schema.field("BehandleSakPayload", "errors");
+                assertThat(field).isInstanceOf(UnclassifiedField.class);
+                var u = (UnclassifiedField) field;
+                assertThat(u.reason())
+                    .contains("must be nullable");
+                assertThat(u.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
+            }),
+
+        NON_ERROR_POLYMORPHIC_FALLS_THROUGH_TO_EXISTING_REJECTION(
+            "polymorphic with no @error members — falls through to original 'polymorphic not supported' rejection",
+            """
+            type Cat @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+                whiskers: Int
+            }
+            type Dog @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+                tail: String
+            }
+            union Pet = Cat | Dog
+            type Payload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+                pet: Pet
+            }
+            type Query { x: String }
+            """,
+            schema -> {
+                var field = schema.field("Payload", "pet");
+                assertThat(field).isInstanceOf(UnclassifiedField.class);
+                var u = (UnclassifiedField) field;
+                assertThat(u.reason()).contains("polymorphic");
+                assertThat(u.kind()).isEqualTo(RejectionKind.DEFERRED);
+            });
+
+        final String sdl;
+        final Consumer<GraphitronSchema> assertions;
+        ErrorsFieldCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
+            this.sdl = sdl;
+            this.assertions = assertions;
+        }
+        @Override public Set<Class<?>> variants() { return Set.of(ErrorsField.class); }
+        @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(ErrorsFieldCase.class)
+    void errorsFieldClassification(ErrorsFieldCase tc) {
         tc.assertions.accept(build(tc.sdl));
     }
 

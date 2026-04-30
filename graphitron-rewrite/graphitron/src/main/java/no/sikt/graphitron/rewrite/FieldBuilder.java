@@ -10,6 +10,7 @@ import graphql.schema.GraphQLEnumType;
 import graphql.schema.GraphQLEnumValueDefinition;
 import graphql.schema.GraphQLFieldDefinition;
 import graphql.schema.GraphQLInputObjectType;
+import graphql.schema.GraphQLInterfaceType;
 import graphql.schema.GraphQLList;
 import graphql.schema.GraphQLNamedType;
 import graphql.schema.GraphQLNonNull;
@@ -17,6 +18,7 @@ import graphql.schema.GraphQLObjectType;
 import graphql.schema.GraphQLScalarType;
 import graphql.schema.GraphQLType;
 import graphql.schema.GraphQLTypeUtil;
+import graphql.schema.GraphQLUnionType;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
@@ -26,6 +28,7 @@ import no.sikt.graphitron.rewrite.model.ChildField.ColumnField;
 import no.sikt.graphitron.rewrite.model.ChildField.ConstructorField;
 import no.sikt.graphitron.rewrite.model.ChildField.ColumnReferenceField;
 import no.sikt.graphitron.rewrite.model.ChildField.ComputedField;
+import no.sikt.graphitron.rewrite.model.ChildField.ErrorsField;
 import no.sikt.graphitron.rewrite.model.ChildField.InterfaceField;
 import no.sikt.graphitron.rewrite.model.ChildField.MultitableReferenceField;
 import no.sikt.graphitron.rewrite.model.ChildField.NestingField;
@@ -1662,6 +1665,83 @@ class FieldBuilder {
             "fields on @error types must be scalar or enum");
     }
 
+    /**
+     * Lift attempt for an {@code errors}-shaped field whose resolved return type is
+     * {@link ReturnTypeRef.PolymorphicReturnType} (a union of, or interface implemented by,
+     * {@code @error} types). Returns:
+     *
+     * <ul>
+     *   <li>{@link ErrorsField} when every member of the polymorphic type is an
+     *       {@code @error} type and the field-level nullability rule is satisfied.</li>
+     *   <li>{@link UnclassifiedField} with a precise reason when the shape signals an
+     *       errors channel (at least one member is {@code @error}) but a structural rule
+     *       fails: mixed {@code @error} / non-{@code @error} members, or a non-null list field.</li>
+     *   <li>{@code null} when no member is {@code @error} : the carrier is not an errors
+     *       channel; the caller's existing polymorphic-not-supported rejection fires.</li>
+     * </ul>
+     *
+     * <p>The detection is structural, not name-based: any field whose return type is a
+     * polymorphic-of-{@code @error} shape lifts here, regardless of whether the schema
+     * author named it {@code errors} or something else. See {@code error-handling-parity.md}
+     * §2a / §2b for the lift rules and the gating-on-all-{@code @error} predicate.
+     */
+    private GraphitronField liftToErrorsField(GraphQLFieldDefinition fieldDef, String parentTypeName,
+                                              ReturnTypeRef.PolymorphicReturnType returnType) {
+        String name = fieldDef.getName();
+        SourceLocation location = locationOf(fieldDef);
+
+        var schemaType = ctx.schema.getType(returnType.returnTypeName());
+        java.util.List<String> memberNames = switch (schemaType) {
+            case GraphQLUnionType union -> union.getTypes().stream().map(GraphQLNamedType::getName).toList();
+            case GraphQLInterfaceType iface ->
+                ctx.schema.getImplementations(iface).stream().map(GraphQLObjectType::getName).toList();
+            case null, default -> java.util.List.of();
+        };
+
+        java.util.List<ErrorType> errorTypes = new java.util.ArrayList<>();
+        java.util.List<String> nonErrorMembers = new java.util.ArrayList<>();
+        for (String memberName : memberNames) {
+            if (ctx.types.get(memberName) instanceof ErrorType et) {
+                errorTypes.add(et);
+            } else {
+                nonErrorMembers.add(memberName);
+            }
+        }
+
+        // No @error members: not an errors channel; let the caller's existing reject fire.
+        if (errorTypes.isEmpty()) {
+            return null;
+        }
+
+        // Mixed members: structural rejection. Schema author signalled an errors channel
+        // (at least one @error member) but added non-@error members; not supported and not
+        // planned (§2b "all-@error predicate").
+        if (!nonErrorMembers.isEmpty()) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                RejectionKind.AUTHOR_ERROR,
+                "errors-shaped field on polymorphic '" + returnType.returnTypeName()
+                    + "' must have every member declared @error; non-@error member(s): "
+                    + String.join(", ", nonErrorMembers));
+        }
+
+        // Field-level nullability (§2b): the errors field must be a nullable list. A non-list
+        // shape (single) or a non-null list (`[X]!` / `[X!]!`) is rejected.
+        if (!(returnType.wrapper() instanceof FieldWrapper.List list)) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                RejectionKind.AUTHOR_ERROR,
+                "errors-shaped field of @error type(s) must be a list; declared as a single value. "
+                    + "Use [" + returnType.returnTypeName() + "] or [" + returnType.returnTypeName() + "!]");
+        }
+        if (!list.listNullable()) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                RejectionKind.AUTHOR_ERROR,
+                "errors-shaped list field must be nullable; declared as non-null. "
+                    + "Use [" + returnType.returnTypeName() + "] or [" + returnType.returnTypeName() + "!]");
+        }
+
+        return new ErrorsField(parentTypeName, name, location, errorTypes);
+    }
+
     // ===== Root field classification (P5) =====
 
     private GraphitronField classifyRootField(GraphQLFieldDefinition fieldDef, String parentTypeName) {
@@ -1700,8 +1780,12 @@ class FieldBuilder {
                     new QueryField.QueryServiceRecordField(parentTypeName, name, location, r, svcResult.method(), Optional.empty());
                 case ReturnTypeRef.ScalarReturnType s ->
                     new QueryField.QueryServiceRecordField(parentTypeName, name, location, s, svcResult.method(), Optional.empty());
-                case ReturnTypeRef.PolymorphicReturnType p ->
-                    new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.DEFERRED, "@service returning a polymorphic type is not yet supported");
+                case ReturnTypeRef.PolymorphicReturnType p -> {
+                    var lift = liftToErrorsField(fieldDef, parentTypeName, p);
+                    yield lift != null ? lift
+                        : new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.DEFERRED,
+                            "@service returning a polymorphic type is not yet supported");
+                }
             };
         }
 
@@ -1840,8 +1924,12 @@ class FieldBuilder {
                     new MutationField.MutationServiceRecordField(parentTypeName, name, location, r, svcResult.method(), Optional.empty());
                 case ReturnTypeRef.ScalarReturnType s ->
                     new MutationField.MutationServiceRecordField(parentTypeName, name, location, s, svcResult.method(), Optional.empty());
-                case ReturnTypeRef.PolymorphicReturnType p ->
-                    new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.DEFERRED, "@service returning a polymorphic type is not yet supported");
+                case ReturnTypeRef.PolymorphicReturnType p -> {
+                    var lift = liftToErrorsField(fieldDef, parentTypeName, p);
+                    yield lift != null ? lift
+                        : new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.DEFERRED,
+                            "@service returning a polymorphic type is not yet supported");
+                }
             };
         }
 
@@ -2200,8 +2288,12 @@ class FieldBuilder {
                         "@service on a @record-typed parent is not yet supported; the batch key "
                             + "must be lifted through the parent chain to the rooted @table — see "
                             + "graphitron-rewrite/roadmap/service-record-field.md");
-                case ReturnTypeRef.PolymorphicReturnType p ->
-                    new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.DEFERRED, "@service returning a polymorphic type is not yet supported");
+                case ReturnTypeRef.PolymorphicReturnType p -> {
+                    var lift = liftToErrorsField(fieldDef, parentTypeName, p);
+                    yield lift != null ? lift
+                        : new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.DEFERRED,
+                            "@service returning a polymorphic type is not yet supported");
+                }
             };
         }
 
@@ -2257,8 +2349,12 @@ class FieldBuilder {
             case ReturnTypeRef.ScalarReturnType s ->
                 new RecordField(parentTypeName, name, location, s, columnName,
                     resolveColumnOnJooqTableRecord(columnName, parentResultType));
-            case ReturnTypeRef.PolymorphicReturnType p ->
-                new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.DEFERRED, "@record type returning a polymorphic type is not yet supported");
+            case ReturnTypeRef.PolymorphicReturnType p -> {
+                var lift = liftToErrorsField(fieldDef, parentTypeName, p);
+                yield lift != null ? lift
+                    : new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.DEFERRED,
+                        "@record type returning a polymorphic type is not yet supported");
+            }
         };
     }
 
@@ -2354,8 +2450,12 @@ class FieldBuilder {
                     new ServiceRecordField(parentTypeName, name, location, r, servicePath.elements(), svcResult.method(), extractBatchKey(svcResult.method()));
                 case ReturnTypeRef.ScalarReturnType s ->
                     new ServiceRecordField(parentTypeName, name, location, s, servicePath.elements(), svcResult.method(), extractBatchKey(svcResult.method()));
-                case ReturnTypeRef.PolymorphicReturnType p ->
-                    new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.DEFERRED, "@service returning a polymorphic type is not yet supported");
+                case ReturnTypeRef.PolymorphicReturnType p -> {
+                    var lift = liftToErrorsField(fieldDef, parentTypeName, p);
+                    yield lift != null ? lift
+                        : new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.DEFERRED,
+                            "@service returning a polymorphic type is not yet supported");
+                }
             };
         }
 
