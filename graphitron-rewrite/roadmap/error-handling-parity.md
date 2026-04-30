@@ -543,7 +543,7 @@ when they need to know whether to dispatch via the generated `ErrorRouter`. Conc
 The capability is non-structural: each variant lists `WithErrorChannel` alongside
 `MethodBackedField` etc., and the carrier classifier produces `Optional.of(channel)` /
 `Optional.empty()` per call site. Same pattern as `encodeReturn: Optional<HelperRef.Encode>`
-on `DmlTableField` (introduced by R50, [`lift-nodeid-out-of-model.md`](lift-nodeid-out-of-model.md)):
+on `DmlTableField` (introduced by R50, `lift-nodeid-out-of-model` — shipped):
 classifier resolves once into a typed slot, emitter dispatches over a settled shape.
 
 The carrier classifier walks the field's payload return type, identifies the `errors` field by
