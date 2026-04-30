@@ -1,6 +1,6 @@
 # Graphitron Project - Claude Code Reference
 
-Rules and constraints for working in this repo. **Scope: [`graphitron-rewrite/`](graphitron-rewrite/) and [`docs/`](docs/).** The legacy modules at the repo root (`graphitron-codegen-parent`, `graphitron-common`, `graphitron-example`, `graphitron-maven-plugin`, `graphitron-schema-transform`, `graphitron-servlet-parent`) are out of scope for AI work; do not modify them. `/docs/` is the source for the public documentation site at `graphitron.sikt.no` (during migration: also `sikt-no.github.io/graphitron`); see [Documentation site](#documentation-site) below. Background and architecture for the rewrite live in [`graphitron-rewrite/docs/README.md`](graphitron-rewrite/docs/README.md).
+Rules and constraints for working in this repo. **Scope: [`graphitron-rewrite/`](graphitron-rewrite/) and [`docs/`](docs/).** The legacy modules at the repo root (`graphitron-codegen-parent`, `graphitron-common`, `graphitron-example`, `graphitron-maven-plugin`, `graphitron-schema-transform`, `graphitron-servlet-parent`) are out of scope for AI work; do not modify them. `/docs/` is the source for the public documentation site at `graphitron.sikt.no` (during migration: also `sikt-no.github.io/graphitron`); see [Documentation site](#documentation-site) below. Background and architecture for the rewrite live in [`graphitron-rewrite/docs/README.adoc`](graphitron-rewrite/docs/README.adoc).
 
 ## What graphitron-rewrite is
 
@@ -15,7 +15,7 @@ The next-generation Graphitron generator: a Maven-based code generator that turn
 
 Maven 3.9.11 at `/opt/maven`; Java 25 default. Pre-configured, no installation needed. (On older sandbox images that still default to Java 21, install JDK 25 with `sudo apt-get install -y openjdk-25-jdk-headless` and either `sudo update-alternatives --set java /usr/lib/jvm/java-25-openjdk-amd64/bin/java` or export `JAVA_HOME=/usr/lib/jvm/java-25-openjdk-amd64`.)
 
-**Claude Code Web:** see [`graphitron-rewrite/docs/claude-code-web-environment.md`](graphitron-rewrite/docs/claude-code-web-environment.md) for the web-sandbox setup (no Docker, native PostgreSQL via `-Plocal-db`).
+**Claude Code Web:** see [`.claude/web-environment.md`](.claude/web-environment.md) for the web-sandbox setup (no Docker, native PostgreSQL via `-Plocal-db`).
 
 ## Common commands
 
@@ -31,9 +31,9 @@ The full install is fast; prefer it over targeted `-pl` builds. If you do need `
 
 ## Building and testing
 
-Full pipeline (build-fixtures → test → compile-spec → execute-spec): [`graphitron-rewrite/docs/claude-code-web-environment.md`](graphitron-rewrite/docs/claude-code-web-environment.md). Test-tier conventions (no code-string assertions on generated bodies; unit vs pipeline vs compilation vs execution): [`graphitron-rewrite/docs/rewrite-design-principles.md`](graphitron-rewrite/docs/rewrite-design-principles.md). Architectural orientation (sealed variant hierarchy, classification taxonomy, runtime extension points): [`graphitron-rewrite/docs/README.md`](graphitron-rewrite/docs/README.md).
+Full pipeline (build-fixtures → test → compile-spec → execute-spec): [`.claude/web-environment.md`](.claude/web-environment.md). Test-tier conventions (no code-string assertions on generated bodies; unit vs pipeline vs compilation vs execution): [`graphitron-rewrite/docs/rewrite-design-principles.adoc`](graphitron-rewrite/docs/rewrite-design-principles.adoc). Architectural orientation (sealed variant hierarchy, classification taxonomy, runtime extension points): [`graphitron-rewrite/docs/README.adoc`](graphitron-rewrite/docs/README.adoc).
 
-**Footgun: fixtures-jar clobber.** Any `mvn install` that builds `graphitron-fixtures` without `-Plocal-db` silently re-emits the jar with an empty jOOQ catalog, cascading into `UnclassifiedType`, `NoSuchElement`, or "table … could not be resolved" failures across pipeline tests. Always include `-Plocal-db`. Recovery: rerun the full install command above. Full symptom list and rationale: [`claude-code-web-environment.md`](graphitron-rewrite/docs/claude-code-web-environment.md).
+**Footgun: fixtures-jar clobber.** Any `mvn install` that builds `graphitron-fixtures` without `-Plocal-db` silently re-emits the jar with an empty jOOQ catalog, cascading into `UnclassifiedType`, `NoSuchElement`, or "table … could not be resolved" failures across pipeline tests. Always include `-Plocal-db`. Recovery: rerun the full install command above. Full symptom list and rationale: [`.claude/web-environment.md`](.claude/web-environment.md).
 
 ## Writing style
 
@@ -59,7 +59,7 @@ The migration plan is roadmap item `R9` ([`graphitron-rewrite/roadmap/docs-site-
 
 Every change moves Backlog → Spec → Ready → In Progress → In Review → Done. Each item has its own file in [`graphitron-rewrite/roadmap/`](graphitron-rewrite/roadmap/) carrying YAML front-matter (`status:`, `bucket:`, etc.); [`graphitron-rewrite/roadmap/README.md`](graphitron-rewrite/roadmap/README.md) is the rendered roll-up, regenerated by `mvn -f graphitron-rewrite/pom.xml -pl roadmap-tool exec:java -q`. Reviewer must be a different party than the author (for Spec → Ready) and the implementer (for In Review → Done). Any session can add Backlog items.
 
-Full spec, state table, file conventions, canonical path: [`graphitron-rewrite/docs/workflow.md`](graphitron-rewrite/docs/workflow.md). Read it once; it's short.
+Full spec, state table, file conventions, canonical path: [`graphitron-rewrite/docs/workflow.adoc`](graphitron-rewrite/docs/workflow.adoc). Read it once; it's short.
 
 ## Git Workflow
 

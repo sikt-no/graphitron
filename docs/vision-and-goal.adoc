@@ -1,0 +1,17 @@
+= Vision and Goal
+
+Your database schema and your GraphQL schema describe the same thing from different angles. The database says "there's a FILM table with a TITLE column". The API says "there's a Film type with a title field". Wiring those together, writing the DataFetcher that selects FILM.TITLE when `film { title }` is queried, is mechanical work that doesn't require human judgment.
+
+Graphitron generates that wiring from a declarative mapping between the two schemas. You annotate your GraphQL schema to say which type maps to which table, which field maps to which column, and how relationships map to foreign keys. Graphitron handles the rest.
+
+== What this means in practice
+
+You write a GraphQL schema with annotations. Graphitron generates the Java code that fetches data from the database when queries arrive. The generated code is type-safe, handles pagination and batching, and is as efficient as what you'd write by hand. When the database schema changes, you update the mapping and regenerate.
+
+The generated code has no runtime dependency on Graphitron. It's just code: readable, debuggable, and not tied to any framework.
+
+== What Graphitron doesn't do
+
+It doesn't generate your API schema from your database schema (or vice versa). You design both; Graphitron implements the bridge between them. It doesn't hide your database behind an abstraction; the generated code works directly with jOOQ and your specific schema. It doesn't handle business logic; when you need custom rules, you drop into hand-written code through explicit extension points.
+
+The mechanical translation is Graphitron's job. Schema design and business logic are yours.

@@ -10,7 +10,7 @@ package no.sikt.graphitron.rewrite.model;
  * <p>Canonical shape shared across plans: argument-resolution uses it on
  * {@code ArgumentRef.TableInputArg.fieldBindings}, and the {@code @nodeId} + {@code @node}
  * directive-support plan uses it to map composite-platform-key inputs to record-level accessor
- * columns. See {@code graphitron-rewrite/docs/argument-resolution.md#cross-plan-ownership} and
+ * columns. See {@code graphitron-rewrite/docs/argument-resolution.adoc#cross-plan-ownership} and
  * {@code graphitron-rewrite/roadmap/README.md}.
  *
  * <p>{@code inputFieldName} is the GraphQL field name (e.g. {@code "filmId"}).

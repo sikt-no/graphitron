@@ -344,14 +344,14 @@ public final class Main {
         sb.append("never edit this file by hand._\n\n");
 
         sb.append("Tracks remaining generator work. ");
-        sb.append("For the model taxonomy, see [Code Generation Triggers](../docs/code-generation-triggers.md). ");
-        sb.append("For design principles, see [Rewrite Design Principles](../docs/rewrite-design-principles.md). ");
-        sb.append("For workflow conventions, see [Workflow](../docs/workflow.md).\n\n");
+        sb.append("For the model taxonomy, see [Code Generation Triggers](../docs/code-generation-triggers.adoc). ");
+        sb.append("For design principles, see [Rewrite Design Principles](../docs/rewrite-design-principles.adoc). ");
+        sb.append("For workflow conventions, see [Workflow](../docs/workflow.adoc).\n\n");
 
         sb.append("**First time contributing?** Read in this order: ");
-        sb.append("[Workflow](../docs/workflow.md), ");
-        sb.append("[Rewrite Design Principles](../docs/rewrite-design-principles.md), ");
-        sb.append("[Code Generation Triggers](../docs/code-generation-triggers.md). ");
+        sb.append("[Workflow](../docs/workflow.adoc), ");
+        sb.append("[Rewrite Design Principles](../docs/rewrite-design-principles.adoc), ");
+        sb.append("[Code Generation Triggers](../docs/code-generation-triggers.adoc). ");
         sb.append("Then read an Active plan to see the shape, and pick a Backlog item or take a Ready item from Active.\n\n");
 
         sb.append("**Front-matter dimensions.** Each item carries `id:` (monotonic `R<n>`, never "

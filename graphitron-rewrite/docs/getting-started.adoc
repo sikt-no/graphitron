@@ -1,8 +1,8 @@
-# Getting started with the Graphitron rewrite runtime
+= Getting started with the Graphitron rewrite runtime
 
 You have generated sources on your classpath. This doc covers what to write in
 your app to stand up a working GraphQL endpoint against them. Build-time Maven
-plugin *configuration* is out of scope here; see the legacy-plugin docs for
+plugin _configuration_ is out of scope here; see the legacy-plugin docs for
 that until the rewrite owns its own Mojo. The dev-loop behaviour the generator
 guarantees is documented below in `## Dev loop`, because it is part of what a
 consumer agrees to when they adopt the rewrite generator.
@@ -11,11 +11,12 @@ Every example assumes the emitted output package is `com.example.app`. Your
 generator config determines the real package; substitute it when importing the
 generated `Graphitron`, `GraphitronContext`, and related classes.
 
-## Hello world
+== Hello world
 
 Implement the generated `GraphitronContext`:
 
-```java
+[source,java]
+----
 import com.example.app.schema.GraphitronContext;
 import graphql.schema.DataFetchingEnvironment;
 import org.jooq.DSLContext;
@@ -31,11 +32,12 @@ public class AppContext implements GraphitronContext {
         return null;
     }
 }
-```
+----
 
 Build the schema and engine once per app, handle each request:
 
-```java
+[source,java]
+----
 import com.example.app.Graphitron;
 import com.example.app.schema.GraphitronContext;
 import graphql.ExecutionInput;
@@ -53,22 +55,23 @@ ExecutionInput input = ExecutionInput.newExecutionInput()
     .build();
 
 var result = engine.execute(input);
-```
+----
 
 The context key is the generated `GraphitronContext.class`; every emitted
 fetcher looks it up with that typed key.
 
-## Custom scalar
+== Custom scalar
 
 Register scalars through the customizer:
 
-```java
+[source,java]
+----
 import graphql.scalars.ExtendedScalars;
 
 GraphQLSchema schema = Graphitron.buildSchema(b -> b
     .additionalType(ExtendedScalars.UUID)
     .additionalType(ExtendedScalars.Date));
-```
+----
 
 Every scalar reference in the generated schema uses
 `GraphQLTypeReference.typeRef(name)`; graphql-java resolves the reference
@@ -76,17 +79,18 @@ against your registered `GraphQLScalarType` at build time. An unregistered
 scalar fails at schema-build with graphql-java's native "unresolved type"
 error naming the scalar and the referencing types.
 
-## Federation
+== Federation
 
 When your SDL declares an `@link` to a federation spec,
 `Graphitron.buildSchema(...)` returns the federation-wrapped schema directly:
 
-```java
+[source,java]
+----
 GraphQLSchema schema = Graphitron.buildSchema(b -> {});
 // Federation directives, `_Service.sdl`, and `_entities` are wired automatically.
-```
+----
 
-Do *not* wrap the result in `Federation.transform(...)` yourself; Graphitron has
+Do _not_ wrap the result in `Federation.transform(...)` yourself; Graphitron has
 already done it, and a second wrap would double-add `_Service` / `_Entity` and
 break composition. Schemas without a `@link` skip the wrap entirely and behave
 exactly as before.
@@ -101,67 +105,72 @@ If you have entity types Graphitron does not classify (hand-rolled objects, or
 types pulled in from a non-Graphitron source), supply your own `fetchEntities`
 via the two-arg form:
 
-```java
+[source,java]
+----
 GraphQLSchema schema = Graphitron.buildSchema(
     b -> {},
     fed -> fed.fetchEntities(myCustomFetcher));
-```
+----
 
 The federation builder arrives pre-configured with Graphitron's defaults; the
 customizer replaces on top. Custom fetchers must return entities the default
 `resolveEntityType` can recognise (jOOQ `Record`s with a `__typename` column);
 richer type-resolution shapes are not currently supported.
 
-### Build-time federation directives {#build-time-federation-directives}
+[#build-time-federation-directives]
+=== Build-time federation directives
 
 Two ways to declare federation directives in your SDL:
 
-**Option 1, recommended.** Open one of your `.graphqls` files with Apollo
+*Option 1, recommended.* Open one of your `.graphqls` files with Apollo
 Federation 2's `@link`:
 
-```graphql
+[source,graphql]
+----
 extend schema
   @link(
     url: "https://specs.apollo.dev/federation/v2.10",
     import: ["@key", "@shareable", "@inaccessible", "@override", "@tag"]
   )
-```
+----
 
 Pick whichever `v2.x` URL covers the directives you import; the generator
 delegates to `federation-graphql-java-support`, which tracks the Apollo spec
 and gates directives on their minimum version.
 
-**Option 2, manual.** If you do not want `@link`, declare each directive you use:
+*Option 2, manual.* If you do not want `@link`, declare each directive you use:
 
-```graphql
+[source,graphql]
+----
 directive @key(fields: String!, resolvable: Boolean = true) repeatable
     on OBJECT | INTERFACE
 directive @shareable on OBJECT | FIELD_DEFINITION
-```
+----
 
 Mixing the two on the same directive (importing via `@link` and redeclaring it)
 fails validation; pick one per directive.
 
-**`<schemaInput tag>` is federation-specific.** If you set
+*`<schemaInput tag>` is federation-specific.* If you set
 `<schemaInput><tag>...</tag></schemaInput>` in the plugin config, the resulting
 `@tag(name: "...")` directives are only meaningful to a federation gateway. The
 plugin treats this as an implicit opt-in to Federation 2:
 
-- If you have not declared `@link`, the plugin synthesises one with
+* If you have not declared `@link`, the plugin synthesises one with
   `import: ["@tag"]` for you. Nothing else changes; you can still author
   `@key` / `@shareable` / etc. with manual declarations if you want.
-- If you *have* declared `@link` but `"@tag"` is missing from your `import`
+* If you _have_ declared `@link` but `"@tag"` is missing from your `import`
   list, the build fails with a fatal error pointing at your `@link`. Add
   `"@tag"` to clear it.
-- If `<schemaInput tag>` is unset, the plugin makes no federation choice on
+* If `<schemaInput tag>` is unset, the plugin makes no federation choice on
   your behalf.
 
-## Tenant-scoped DSLContext
+== Tenant-scoped DSLContext
 
 `getDslContext(env)` is called per resolver invocation, so it can inspect
 the `DataFetchingEnvironment` and return a tenant-specific `DSLContext`:
 
-```java
+[source,java]
+----
 public class TenantContext implements GraphitronContext {
     private final DSLContext shared;
     private final Map<String, DSLContext> perTenant;
@@ -173,19 +182,20 @@ public class TenantContext implements GraphitronContext {
     }
     // ...
 }
-```
+----
 
 Request entry puts the tenant id into `graphQLContext`; resolvers read
 their `DSLContext` per call. No request-time pre-computation in the
 caller; the logic lives in one place.
 
-## Context arguments from a JWT claim
+== Context arguments from a JWT claim
 
 Directives like `@condition(contextArguments: ["userId"])` emit a
 `getContextArgument(env, "userId")` call. Your implementation pulls the
 claim off the request-scoped context:
 
-```java
+[source,java]
+----
 public class JwtContext implements GraphitronContext {
     @Override @SuppressWarnings("unchecked")
     public <T> T getContextArgument(DataFetchingEnvironment env, String name) {
@@ -194,76 +204,77 @@ public class JwtContext implements GraphitronContext {
     }
     // ...
 }
-```
+----
 
 Per-request wiring stashes the JWT claims under a stable key:
 
-```java
+[source,java]
+----
 ExecutionInput input = ExecutionInput.newExecutionInput()
     .query(query)
     .graphQLContext(b -> b
         .put(GraphitronContext.class, ctx)
         .put("jwtClaims", verifiedClaims))
     .build();
-```
+----
 
 Every `@condition contextArguments: ["userId"]` declaration in the SDL
 reaches this method with `name = "userId"`; the generator already emitted
 the call site.
 
-## Customizer safe surface
+== Customizer safe surface
 
 `Graphitron.buildSchema(Consumer<GraphQLSchema.Builder>)` hands you the
 underlying builder. Use additive methods only:
 
-- `.additionalType(...)` for custom scalars, additional object types, extra
+* `.additionalType(...)` for custom scalars, additional object types, extra
   input types.
-- `.additionalDirective(...)` for directives beyond the schema's declared
+* `.additionalDirective(...)` for directives beyond the schema's declared
   survivors.
-- `.codeRegistry(UnaryOperator<GraphQLCodeRegistry.Builder>)` for registering
+* `.codeRegistry(UnaryOperator<GraphQLCodeRegistry.Builder>)` for registering
   type resolvers on user-defined interfaces / unions.
 
 Avoid:
 
-- `.query(...)`, `.mutation(...)`, `.subscription(...)` — Graphitron has
+* `.query(...)`, `.mutation(...)`, `.subscription(...)`: Graphitron has
   already set them.
-- `.clearDirectives()` — drops the survivor definitions Graphitron emitted.
-- The replace overload `.codeRegistry(GraphQLCodeRegistry)` — use the
+* `.clearDirectives()`: drops the survivor definitions Graphitron emitted.
+* The replace overload `.codeRegistry(GraphQLCodeRegistry)`: use the
   `UnaryOperator` overload to add resolvers to the in-flight registry.
 
-## Dev loop
+== Dev loop
 
-### What you do
+=== What you do
 
 Edit your `.graphqls` source files, then run `mvn generate-sources` (or let
 your build tool re-trigger it). For a hands-off loop with editor integration,
-run `mvn graphitron:dev` in a side terminal: see [Dev loop](#dev-loop-detail)
+run `mvn graphitron:dev` in a side terminal: see <<dev-loop-detail,Dev loop>>
 below.
 
-### What the generator does
+=== What the generator does
 
 Every run walks the full schema, renders each output file, and then:
 
-1. Writes only the files whose rendered content differs from what is already
-   on disk (SHA-256 comparison inside javapoet).
-2. Deletes any `*.java` file in the six rewrite-owned sub-packages
-   (`<outputPackage>`, `.util`, `.schema`, `.types`, `.conditions`,
-   `.fetchers`) that this run did not emit.
+. Writes only the files whose rendered content differs from what is already
+  on disk (SHA-256 comparison inside javapoet).
+. Deletes any `*.java` file in the six rewrite-owned sub-packages
+  (`<outputPackage>`, `.util`, `.schema`, `.types`, `.conditions`,
+  `.fetchers`) that this run did not emit.
 
 Both steps happen unconditionally on every run; no flag is required.
 
-### What you observe
+=== What you observe
 
-- **`git diff` is proportional.** A schema edit that touches one type
+* *`git diff` is proportional.* A schema edit that touches one type
   rewrites that type's files; every other generated file is byte-identical
   to the previous run and unchanged on disk, so `git diff` shows only the
   types the edit actually touched.
-- **IDE recompile time is proportional.** IntelliJ's incremental compiler
+* *IDE recompile time is proportional.* IntelliJ's incremental compiler
   and Quarkus `quarkus:dev` and Spring Boot DevTools all watch
   `target/generated-sources/` for mtime changes. Because unchanged files
   keep their mtimes, only the files that actually changed trigger a
   recompile.
-- **Removing a type removes its file.** Deleting a type or field from the
+* *Removing a type removes its file.* Deleting a type or field from the
   schema causes the corresponding generated file to disappear on the next
   generator run. No orphan code, no stale compile errors, no manual
   `target/` cleanup.
@@ -272,19 +283,20 @@ These three properties are guaranteed by the generator and pinned by
 `IdempotentWriterTest` and `GeneratorDeterminismTest`; a future refactor
 that breaks any of them fails the test suite.
 
-### Tool interop
+=== Tool interop
 
 No Graphitron-specific IDE plugin or tool integration is required. The
 behaviour composes with standard incremental-compile paths:
 
-- **IntelliJ IDEA** — incremental compiler re-examines files whose mtime
+* *IntelliJ IDEA*: incremental compiler re-examines files whose mtime
   changed; unchanged generated files are invisible to it.
-- **Quarkus `quarkus:dev`** — detects source-root changes by mtime; only
+* *Quarkus `quarkus:dev`*: detects source-root changes by mtime; only
   the changed files trigger a reload.
-- **Spring Boot DevTools** — same mtime-based detection; unchanged files
+* *Spring Boot DevTools*: same mtime-based detection; unchanged files
   are ignored.
 
-### Dev loop <a id="dev-loop-detail"></a>
+[#dev-loop-detail]
+=== Dev loop
 
 Run `mvn graphitron:dev` in a side terminal. One JVM, one terminal,
 one socket: the goal binds an LSP server on `localhost:8487` and watches
@@ -305,13 +317,13 @@ different port the editor would not know about.
 
 What the loop does on each schema save:
 
-1. Re-runs the generator. Idempotent writes mean only the files whose
-   rendered content actually changed are written; the IDE recompiles only
-   those classes (same three-clause contract pinned by
-   `IdempotentWriterTest` and `GeneratorDeterminismTest`).
-2. Validation failures are logged to the console with grouped per-file
-   trees; the loop keeps running so a typo does not kill the session.
-3. Open editor buffers see refreshed diagnostics on the next request.
+. Re-runs the generator. Idempotent writes mean only the files whose
+  rendered content actually changed are written; the IDE recompiles only
+  those classes (same three-clause contract pinned by
+  `IdempotentWriterTest` and `GeneratorDeterminismTest`).
+. Validation failures are logged to the console with grouped per-file
+  trees; the loop keeps running so a typo does not kill the session.
+. Open editor buffers see refreshed diagnostics on the next request.
 
 The dev goal also watches the consumer's compiled jOOQ output
 (`target/classes/<jooqPackage>/`) for `.class` changes. Running
@@ -321,11 +333,11 @@ new tables and columns automatically; no `dev`-session restart needed.
 Stop the loop with Ctrl+C (a JVM shutdown hook closes the LSP socket,
 the watch service, and the debounce executor cleanly).
 
-## Notes
+== Notes
 
-- The app no longer loads an SDL resource at runtime; everything the engine
+* The app no longer loads an SDL resource at runtime; everything the engine
   needs is in the programmatic schema. If you need an SDL string (e.g., for
   logging or debugging), call `new SchemaPrinter().print(schema)`.
-- `DataLoaderRegistry` is per-request. graphql-java requires one on
+* `DataLoaderRegistry` is per-request. graphql-java requires one on
   `ExecutionInput` even when no DataLoader is used; emit
   `.dataLoaderRegistry(new DataLoaderRegistry())` alongside the context put.

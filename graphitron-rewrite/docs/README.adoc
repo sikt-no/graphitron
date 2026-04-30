@@ -1,0 +1,10 @@
+= Rewrite Development
+
+You're implementing generators, adding field variants, or fixing bugs in the rewrite pipeline.
+
+[start=4]
+. *xref:code-generation-triggers.adoc[Code Generation Triggers]*: the full classification taxonomy: schema patterns, sealed variants, generated output. This is the reference for what the code does.
+. *xref:rewrite-model.adoc[Rewrite Model]*: visual Mermaid diagrams of the sealed type hierarchy: field variants, type variants, and support/composition types.
+. *xref:rewrite-design-principles.adoc[Rewrite Design Principles]*: architectural and technical principles governing the rewrite pipeline (generation-thinking, sealed hierarchies, classification boundaries, test tiers, etc.).
+. *xref:argument-resolution.adoc[Argument Resolution]*: unified argument classification, `@condition` support, lookup VALUES generation.
+. *link:https://github.com/sikt-no/graphitron/tree/claude/graphitron-rewrite/graphitron-rewrite/roadmap[Rewrite Roadmap]*: remaining generator work. Per-item plan files (one `*.md` each) live in `graphitron-rewrite/roadmap/`; the README there is generated.

@@ -9,9 +9,9 @@ package no.sikt.graphitron.rewrite.model;
  * DataLoader-backed).
  *
  * <p>Per the "Capability interfaces and sealed switches serve different roles" principle in
- * {@code graphitron-rewrite/docs/rewrite-design-principles.md}, the generator routes on this
+ * {@code graphitron-rewrite/docs/rewrite-design-principles.adoc}, the generator routes on this
  * capability rather than on a per-variant {@code instanceof} chain. See
- * {@code graphitron-rewrite/docs/argument-resolution.md} for the design.
+ * {@code graphitron-rewrite/docs/argument-resolution.adoc} for the design.
  *
  * <p>{@link #lookupMapping()} is always non-null for these variants — lookups are defined by the
  * presence of {@code @lookupKey} args, which always resolve to a {@link LookupMapping.ColumnMapping}
