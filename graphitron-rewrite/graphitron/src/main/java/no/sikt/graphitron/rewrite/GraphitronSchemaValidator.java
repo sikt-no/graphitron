@@ -103,6 +103,8 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.ChildField.ErrorsField f             -> {} // structural; @error type checks already ran at classify time
             case no.sikt.graphitron.rewrite.model.InputField.ColumnField f            -> validateInputColumnField(f, errors);
             case no.sikt.graphitron.rewrite.model.InputField.ColumnReferenceField f  -> validateInputColumnReferenceField(f, errors);
+            case no.sikt.graphitron.rewrite.model.InputField.CompositeColumnField f  -> {} // type-narrowed extraction; arity invariant enforced by record ctor
+            case no.sikt.graphitron.rewrite.model.InputField.CompositeColumnReferenceField f -> {} // same as above
             case no.sikt.graphitron.rewrite.model.InputField.NodeIdField f            -> {} // no extra validation yet
             case no.sikt.graphitron.rewrite.model.InputField.NodeIdReferenceField f  -> {} // no extra validation yet
             case no.sikt.graphitron.rewrite.model.InputField.IdReferenceField f      -> {} // no extra validation yet

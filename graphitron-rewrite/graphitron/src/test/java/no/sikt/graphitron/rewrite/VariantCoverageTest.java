@@ -65,7 +65,18 @@ class VariantCoverageTest {
             + "shape that produces it is a child table whose FK references a parent NodeType "
             + "with multiple key columns AND the FK's target columns differ from those keys. The "
             + "standard sakila catalog has no such shape; the rooted-at-parent fixture lands in "
-            + "phase (g) of R50. Add a GraphitronSchemaBuilderTest case when that fixture exists."
+            + "phase (g) of R50. Add a GraphitronSchemaBuilderTest case when that fixture exists.",
+        InputField.CompositeColumnField.class,
+            "Composite-key input filter on the same table (post-R50 successor for arity > 1 "
+            + "InputField.NodeIdField / NodeIdInFilterField). Not yet produced by any classifier "
+            + "route -- phase (e2) of R50 wires NodeIdDecodeKeys.SkipMismatchedElement at "
+            + "BuildContext's input-field synthesis paths. Add a NodeIdPipelineTest case when "
+            + "that wiring lands.",
+        InputField.CompositeColumnReferenceField.class,
+            "Composite-key input reference (post-R50 successor for arity > 1 "
+            + "InputField.NodeIdReferenceField / IdReferenceField). Not yet produced by any "
+            + "classifier route -- phase (e2/e3) of R50 wires the @nodeId(typeName: T) input "
+            + "branch through it. Add a NodeIdPipelineTest case when that wiring lands."
     );
 
     private static final List<Class<?>> ROOTS = List.of(
