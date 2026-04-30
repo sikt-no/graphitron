@@ -90,6 +90,23 @@
                             </resources>
                         </configuration>
                     </execution>
+                    <execution>
+                        <id>stage-architecture</id>
+                        <phase>process-resources</phase>
+                        <goals><goal>copy-resources</goal></goals>
+                        <configuration>
+                            <outputDirectory>${project.build.directory}/staging/architecture</outputDirectory>
+                            <resources>
+                                <resource>
+                                    <directory>${project.basedir}/../graphitron-rewrite/docs</directory>
+                                    <includes>
+                                        <include>*.adoc</include>
+                                        <include>images/**</include>
+                                    </includes>
+                                </resource>
+                            </resources>
+                        </configuration>
+                    </execution>
                 </executions>
             </plugin>
 
@@ -111,6 +128,9 @@
                                 <copy file="${project.build.directory}/sds-button/package/dist/index.css"
                                       tofile="${project.build.directory}/staging/css/sds-button.css"
                                       overwrite="true"/>
+                                <copy todir="${project.build.directory}/staging/architecture/css" overwrite="true">
+                                    <fileset dir="${project.build.directory}/staging/css"/>
+                                </copy>
                             </target>
                         </configuration>
                     </execution>
@@ -157,9 +177,10 @@
                                         <sectlinks>true</sectlinks>
                                         <experimental>true</experimental>
                                         <linkcss>true</linkcss>
-                                        <stylesheet>site.css</stylesheet>
-                                        <stylesdir>css</stylesdir>
+                                        <stylesheet>css/site.css</stylesheet>
                                         <imagesdir>images</imagesdir>
+                                        <idprefix/>
+                                        <idseparator>-</idseparator>
                                         <graphitron-version>${project.version}</graphitron-version>
                                     </attributes>
                                     <resources>

@@ -8,10 +8,10 @@ Graphitron is used as a Maven plugin, offering two main functionalities:
 
 ## Documentation
 
-**New to Graphitron?** Start with the [documentation guide](./docs/README.md) for conceptual understanding:
--   [Vision and Goal](./docs/vision-and-goal.md) - What problem Graphitron solves and why
--   [Graphitron Principles](./docs/graphitron-principles.md) - Design philosophy for building systems that last decades
--   [Code Generation Triggers](./graphitron-rewrite/docs/code-generation-triggers.md) - Schema patterns → what gets generated
+**New to Graphitron?** Start with the [documentation guide](./docs/README.adoc) for conceptual understanding:
+-   [Vision and Goal](./docs/vision-and-goal.adoc) - What problem Graphitron solves and why
+-   [Graphitron Principles](./docs/graphitron-principles.adoc) - Design philosophy for building systems that last decades
+-   [Code Generation Triggers](./graphitron-rewrite/docs/code-generation-triggers.adoc) - Schema patterns → what gets generated
 
 **Ready to use Graphitron?** See the technical reference documentation:
 -   [Online documentation](https://graphitron.sikt.no/)
@@ -33,4 +33,4 @@ any legacy module in the dependency graph:
 mvn install -f graphitron-rewrite/pom.xml -Plocal-db
 ```
 
-See [graphitron-rewrite/docs/claude-code-web-environment.md](./graphitron-rewrite/docs/claude-code-web-environment.md) for the full rewrite build flow.
+See [Getting Started](./graphitron-rewrite/docs/getting-started.adoc) for the rewrite build flow.

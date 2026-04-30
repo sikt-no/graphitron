@@ -98,7 +98,7 @@ which is the position Phases 0-4 already put us in.
 ## User documentation
 
 The "Dev loop" section in
-[`graphitron-rewrite/docs/getting-started.md`](../docs/getting-started.md)
+[`graphitron-rewrite/docs/getting-started.md`](../docs/getting-started.adoc)
 is the user-facing surface. It documents the three-step recipe
 (run, connect, edit), the `graphitron.dev.port` override, and the
 catalog-refresh-via-`mvn compile` flow. Phases 5-7 layer on the same

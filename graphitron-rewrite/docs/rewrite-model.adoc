@@ -1,21 +1,25 @@
-# Rewrite Model — Visual Reference
+= Rewrite Model: Visual Reference
 
 Colour legend:
 
-| Symbol | Meaning |
-|---|---|
-| 🔴 Red / bold | Core sealed interfaces — structural backbone |
-| 🟢 Teal | `TableTargetField` group — primary SQL-generation abstraction |
-| 🔵 Blue | `QueryField` / `MutationField` — entry-point fields on root types |
-| 🟩 Green | `GraphitronType` variants |
-| 🟣 Purple | Support / composition types |
-| ⚫ Dark grey | Value / leaf types — stable, rarely changed |
+[cols="1,1"]
+|===
+| Symbol | Meaning
 
----
+| Red / bold | Core sealed interfaces: structural backbone
+| Teal | `TableTargetField` group: primary SQL-generation abstraction
+| Blue | `QueryField` / `MutationField`: entry-point fields on root types
+| Green | `GraphitronType` variants
+| Purple | Support / composition types
+| Dark grey | Value / leaf types: stable, rarely changed
+|===
 
-## 1. Field Hierarchy
+'''
 
-```mermaid
+== 1. Field Hierarchy
+
+[source,mermaid]
+----
 graph LR
     classDef core  fill:#922B21,stroke:#7B241C,color:#fff,font-weight:bold
     classDef ttf   fill:#0E6655,stroke:#0A5344,color:#fff,font-weight:bold
@@ -49,13 +53,14 @@ graph LR
     CF --> CmpF["ComputedField"]:::core
     CF --> PropF["PropertyField"]:::core
     CF --> MtRF["MultitableReferenceField"]:::core
-```
+----
 
----
+'''
 
-## 2. Root Field Variants
+== 2. Root Field Variants
 
-```mermaid
+[source,mermaid]
+----
 graph LR
     classDef rootf fill:#1A5276,stroke:#154360,color:#fff
     classDef ttf   fill:#0E6655,stroke:#0A5344,color:#fff,font-weight:bold
@@ -89,16 +94,17 @@ graph LR
     TTF --> SVCTF["ServiceTableField\n+ method · batchKey"]:::ttf
     TTF --> RTF["RecordTableField"]:::ttf
     TTF --> RLF["RecordLookupTableField"]:::ttf
-```
+----
 
 All `TableTargetField` variants carry `returnType · joinPath · filters · orderBy · pagination`.
-`QueryTableField`, `QueryLookupTableField`, and `QueryTableInterfaceField` carry `returnType · filters · orderBy · pagination` (no `joinPath` — no parent table to navigate from).
+`QueryTableField`, `QueryLookupTableField`, and `QueryTableInterfaceField` carry `returnType · filters · orderBy · pagination` (no `joinPath`; no parent table to navigate from).
 
----
+'''
 
-## 3. Type Hierarchy
+== 3. Type Hierarchy
 
-```mermaid
+[source,mermaid]
+----
 graph LR
     classDef core  fill:#922B21,stroke:#7B241C,color:#fff,font-weight:bold
     classDef typeh fill:#145A32,stroke:#196F3D,color:#fff
@@ -129,13 +135,14 @@ graph LR
     GT --> ErrT["ErrorType"]:::typeh
     GT --> TInpT["TableInputType"]:::typeh
     GT --> UncT["UnclassifiedType"]:::typeh
-```
+----
 
----
+'''
 
-## 4. Support / Composition Types
+== 4. Support / Composition Types
 
-```mermaid
+[source,mermaid]
+----
 graph LR
     classDef sup fill:#6C3483,stroke:#5B2C6F,color:#fff
     classDef val fill:#4A5568,stroke:#2C3E50,color:#fff
@@ -174,34 +181,37 @@ graph LR
     PR["ParticipantRef\n«sealed»"]:::sup
     PR --> PRB["TableBound\ntypeName · table · discriminatorValue"]:::val
     PR --> PRU["Unbound\ntypeName"]:::val
-```
+----
 
 `WhereFilter` has two variants: `ConditionFilter` (a developer-supplied `@condition` method on a `FIELD_DEFINITION`, implements both `WhereFilter` and `MethodRef`) and `GeneratedConditionFilter` (a Graphitron-generated filter built from filterable arguments).
 
 `ParticipantRef` is a sealed interface with two variants: `TableBound(typeName, table, discriminatorValue)` and `Unbound(typeName)`. Non-table-backed members (e.g. `ErrorType`, structural interfaces) are recorded as `Unbound`. Generator switches must handle both variants and skip SQL-emitting paths for `Unbound`.
 
----
+'''
 
-## 5. Key Compositions (HAS-A)
+== 5. Key Compositions (HAS-A)
 
-| Holder | Field | Type |
-|---|---|---|
-| `TableTargetField` | `returnType` | `TableBoundReturnType` |
-| `TableTargetField` | `joinPath` | `List<JoinStep>` |
-| `TableTargetField` | `filters` | `List<WhereFilter>` |
-| `TableTargetField` | `orderBy` | `OrderBySpec` |
-| `TableTargetField` | `pagination` | `PaginationSpec?` |
-| `QueryTableField` / `QueryLookupTableField` / `QueryTableInterfaceField` | `filters` | `List<WhereFilter>` |
-| `QueryTableField` / `QueryLookupTableField` / `QueryTableInterfaceField` | `orderBy` | `OrderBySpec` |
-| `QueryTableField` / `QueryLookupTableField` / `QueryTableInterfaceField` | `pagination` | `PaginationSpec?` |
-| `TableBoundReturnType` | `table` | `TableRef` |
-| `TableBackedType` | `table` | `TableRef` |
-| `TableRef` | `primaryKey?` | `List<ColumnRef>?` |
-| `ConditionFilter` | `className · methodName · params` | implements `WhereFilter` and `MethodRef` — signature: `(Table tgt, Arg...)` |
-| `FkJoin` | `whereFilter?` | `MethodRef?` — signature: `(SourceTable src, Table tgt)` |
-| `ConditionJoin` | `condition` | `MethodRef` — signature: `(SourceTable src, Table tgt)` |
-| `QueryServiceTableField` | `method` | `MethodRef` |
-| `MutationServiceTableField` | `method` | `MethodRef` |
-| `ServiceTableField` (child) | `method` | `MethodRef` |
+[cols="1,1,1"]
+|===
+| Holder | Field | Type
 
-Potential cleanups (structural redundancy in `TableTargetField`, `QueryField`/`ChildField` parallels, `JoinConditionRef` wrapper) are tracked under Cleanup in [`roadmap/README.md`](../roadmap/README.md).
+| `TableTargetField` | `returnType` | `TableBoundReturnType`
+| `TableTargetField` | `joinPath` | `List<JoinStep>`
+| `TableTargetField` | `filters` | `List<WhereFilter>`
+| `TableTargetField` | `orderBy` | `OrderBySpec`
+| `TableTargetField` | `pagination` | `PaginationSpec?`
+| `QueryTableField` / `QueryLookupTableField` / `QueryTableInterfaceField` | `filters` | `List<WhereFilter>`
+| `QueryTableField` / `QueryLookupTableField` / `QueryTableInterfaceField` | `orderBy` | `OrderBySpec`
+| `QueryTableField` / `QueryLookupTableField` / `QueryTableInterfaceField` | `pagination` | `PaginationSpec?`
+| `TableBoundReturnType` | `table` | `TableRef`
+| `TableBackedType` | `table` | `TableRef`
+| `TableRef` | `primaryKey?` | `List<ColumnRef>?`
+| `ConditionFilter` | `className · methodName · params` | implements `WhereFilter` and `MethodRef`; signature: `(Table tgt, Arg...)`
+| `FkJoin` | `whereFilter?` | `MethodRef?`; signature: `(SourceTable src, Table tgt)`
+| `ConditionJoin` | `condition` | `MethodRef`; signature: `(SourceTable src, Table tgt)`
+| `QueryServiceTableField` | `method` | `MethodRef`
+| `MutationServiceTableField` | `method` | `MethodRef`
+| `ServiceTableField` (child) | `method` | `MethodRef`
+|===
+
+Potential cleanups (structural redundancy in `TableTargetField`, `QueryField`/`ChildField` parallels, `JoinConditionRef` wrapper) are tracked under Cleanup in link:https://github.com/sikt-no/graphitron/tree/claude/graphitron-rewrite/graphitron-rewrite/roadmap[`roadmap/README.md`].
