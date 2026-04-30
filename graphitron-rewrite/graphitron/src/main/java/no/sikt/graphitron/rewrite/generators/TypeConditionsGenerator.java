@@ -131,27 +131,29 @@ public class TypeConditionsGenerator {
                     }
                 }
                 case BodyParam.RowEq req -> {
-                    // DSL.row(table.c1, ..., table.cN).eq(DSL.row(v1, ..., vN))
-                    var cols = CodeBlock.builder();
-                    for (int i = 0; i < req.columns().size(); i++) {
-                        if (i > 0) cols.add(", ");
-                        cols.add("table.$L", req.columns().get(i).javaName());
+                    // DSL.row(new Field<?>[]{table.c1, ..., table.cN}).eq(arg)
+                    // The Field<?>[] form picks the RowN overload (untyped), which lets the
+                    // method receive a RowN parameter without per-arity Row<N> typing.
+                    var cols = buildColsArray(req.columns());
+                    if (req.nonNull()) {
+                        builder.addStatement("condition = condition.and($T.row($L).eq($L))",
+                            DSL, cols, req.name());
+                    } else {
+                        builder.addStatement("if ($L != null) condition = condition.and($T.row($L).eq($L))",
+                            req.name(), DSL, cols, req.name());
                     }
-                    // Composite scalar values are not yet produced by any classifier route in the
-                    // shipped phases — phase (e) wires the input-side classification that emits
-                    // RowEq. Until then this arm is unreachable; emit a runtime stub that fails
-                    // loudly if a generator regression produces it.
-                    builder.addStatement("throw new $T($S)",
-                        UnsupportedOperationException.class,
-                        "BodyParam.RowEq emission is not yet wired (R50 phase e). Param '" + req.name() + "'.");
                 }
                 case BodyParam.RowIn rin -> {
-                    // DSL.row(table.c1, ..., table.cN).in(rows)
-                    // Same situation as RowEq — phase (e) wires the input-side route. Until then,
-                    // unreachable; emit a loud runtime stub.
-                    builder.addStatement("throw new $T($S)",
-                        UnsupportedOperationException.class,
-                        "BodyParam.RowIn emission is not yet wired (R50 phase e). Param '" + rin.name() + "'.");
+                    // DSL.row(new Field<?>[]{table.c1, ..., table.cN}).in(rows)
+                    // Same RowN form as RowEq; jOOQ matches Row.in(Collection<? extends Row>).
+                    var cols = buildColsArray(rin.columns());
+                    if (rin.nonNull()) {
+                        builder.addStatement("condition = condition.and($T.row($L).in($L))",
+                            DSL, cols, rin.name());
+                    } else {
+                        builder.addStatement("if ($L != null) condition = condition.and($T.row($L).in($L))",
+                            rin.name(), DSL, cols, rin.name());
+                    }
                 }
                 case BodyParam.NodeIdIn ni -> {
                     var keyColArgs = CodeBlock.builder();
@@ -168,6 +170,22 @@ public class TypeConditionsGenerator {
         }
         builder.addStatement("return condition");
         return builder.build();
+    }
+
+    /**
+     * Emits {@code new Field<?>[]{table.c1, ..., table.cN}} so that
+     * {@code DSL.row(Field<?>[])} picks the untyped {@code RowN} overload rather than the
+     * arity-specific {@code Row<N>}. This lets the condition method's parameter be {@code RowN}
+     * (or {@code List<RowN>}) without dragging the column type parameters into the signature.
+     */
+    private static CodeBlock buildColsArray(List<no.sikt.graphitron.rewrite.model.ColumnRef> columns) {
+        var cells = CodeBlock.builder();
+        for (int i = 0; i < columns.size(); i++) {
+            if (i > 0) cells.add(", ");
+            cells.add("table.$L", columns.get(i).javaName());
+        }
+        return CodeBlock.of("new $T<?>[]{$L}",
+            ClassName.get("org.jooq", "Field"), cells.build());
     }
 
     static FieldSpec buildTextEnumMapField(CallSiteExtraction.TextMapLookup tl) {

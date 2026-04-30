@@ -86,24 +86,45 @@ public sealed interface CallSiteExtraction
      * Non-empty; the last element is the SDL input-field name whose condition is being evaluated
      * (matches {@link CallParam#name()}).
      *
+     * <p>{@code leaf} is the per-leaf transform applied to the wire-format value returned by the
+     * Map traversal. {@link Direct} (the default for column-equality paths) leaves the value as
+     * is. {@link NodeIdDecodeKeys} arms are used for {@code [ID!] @nodeId(typeName: T)} input
+     * fields whose wire-format {@code List<String>} of base64 ids is decoded element-by-element
+     * via the {@code decode<TypeName>} helper into typed key values before the predicate body
+     * fires. Other leaves are reserved for future arms; the validator should enforce that a leaf
+     * is not itself a {@code NestedInputField} (no recursion).
+     *
      * <p>Traversal is null-safe: if any intermediate step is not a {@code Map} or is
      * {@code null}, the result is {@code null}. The condition method is still invoked; if it
      * receives {@code null}, it is responsible for returning a no-op filter.
      *
      * <p>Examples:
      * <ul>
-     *   <li>{@code outerArgName="filter"}, {@code path=["filmId"]} for a direct
-     *       {@code ColumnField.filmId} condition on a top-level input arg.</li>
-     *   <li>{@code outerArgName="filter"}, {@code path=["where", "filmId"]} for a
-     *       {@code ColumnField.filmId} inside a {@code NestingField.where}.</li>
+     *   <li>{@code outerArgName="filter"}, {@code path=["filmId"]}, {@code leaf=Direct} for a
+     *       direct {@code ColumnField.filmId} condition on a top-level input arg.</li>
+     *   <li>{@code outerArgName="filter"}, {@code path=["where", "filmId"]}, {@code leaf=Direct}
+     *       for a {@code ColumnField.filmId} inside a {@code NestingField.where}.</li>
+     *   <li>{@code outerArgName="filter"}, {@code path=["filmIds"]},
+     *       {@code leaf=NodeIdDecodeKeys.SkipMismatchedElement} for a
+     *       {@code [ID!] @nodeId(typeName: "Film")} input filter (post-R50 successor of
+     *       {@code NodeIdInFilterField}).</li>
      * </ul>
      */
-    record NestedInputField(String outerArgName, List<String> path) implements CallSiteExtraction {
+    record NestedInputField(String outerArgName, List<String> path, CallSiteExtraction leaf)
+            implements CallSiteExtraction {
         public NestedInputField {
             if (path == null || path.isEmpty()) {
                 throw new IllegalArgumentException("NestedInputField path must be non-empty");
             }
             path = List.copyOf(path);
+            if (leaf instanceof NestedInputField) {
+                throw new IllegalArgumentException("NestedInputField leaf must not be another NestedInputField");
+            }
+        }
+
+        /** Convenience constructor that defaults {@code leaf} to {@link Direct}. */
+        public NestedInputField(String outerArgName, List<String> path) {
+            this(outerArgName, path, new Direct());
         }
     }
 
