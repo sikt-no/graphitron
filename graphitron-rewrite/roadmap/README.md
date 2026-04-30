@@ -20,10 +20,10 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R3` | Classification vocabulary follow-ups | Spec | [plan](classification-vocabulary-followups.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec | [plan](nestingfield-multiparent-tablefield.md) |
-| `R29` | Consolidated test-tier guide <sub>blocked by: [docs-site-asciidoc](docs-site-asciidoc.md)</sub> | Spec | [plan](rewrite-test-tier-guide.md) |
 | `R13` | Faceted search on `@asConnection` | Spec | [plan](faceted-search.md) |
 | `R22` | Mutation bodies <sub>blocked by: [lift-nodeid-out-of-model](lift-nodeid-out-of-model.md)</sub> | Spec | [plan](mutations.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
+| `R29` | Consolidated test-tier guide | Ready | [plan](rewrite-test-tier-guide.md) |
 | `R8` | Docs as an index into classification tests | Ready (deferred) | [plan](docs-as-index-into-tests.md) |
 | `R18` | Java LSP rewrite + introspect retirement + `dev` goal | Ready | [plan](graphitron-lsp.md) |
 | `R50` | Lift NodeId out of the model | In Progress | [plan](lift-nodeid-out-of-model.md) |
@@ -150,7 +150,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### testing
 
-- `R29` [**Consolidated test-tier guide**](rewrite-test-tier-guide.md) — Spec, cleanup, blocked by [docs-site-asciidoc](docs-site-asciidoc.md)
+- `R29` [**Consolidated test-tier guide**](rewrite-test-tier-guide.md) — Ready, cleanup
 - `R25` [**Rebalance test pyramid**](rebalance-test-pyramid.md) — Backlog, architecture, blocked by [rewrite-test-tier-guide](rewrite-test-tier-guide.md)
 
 ### legacy-migration
