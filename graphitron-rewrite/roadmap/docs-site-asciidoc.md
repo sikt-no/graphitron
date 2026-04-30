@@ -363,7 +363,7 @@ Two deviations worth flagging for later phases:
 
 One follow-up worth flagging: the bulk-converted plan files (rewrite-design-principles, code-generation-triggers, argument-resolution) used a script-driven em-dash → `;` replacement; some occurrences read more naturally as a comma. Trivial to fix per-file when next touched.
 
-### Phase 3: Old-site absorption — shipped at `<this-commit>`
+### Phase 3: Old-site absorption — shipped at `562e732`
 
 Audit verdicts (full inventory in the absorbing commit's message):
 

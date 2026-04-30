@@ -1,14 +1,14 @@
 /*
  * Graphitron documentation site theme.
  *
- * Built on top of the Sikt Design System tokens, which are fetched into
- * css/sds-core.css and css/sds-button.css at build time by download-maven-plugin.
- * Those files expose CSS custom properties (--sds-color-*, --sds-typography-*,
- * --sds-space-*) that this stylesheet consumes.
+ * Built on the Sikt Design System tokens fetched into css/sds-core.css and
+ * css/sds-button.css at build time by download-maven-plugin. Those files
+ * expose the --sds-color-brand-*, --sds-color-text-*, --sds-color-layout-*,
+ * --sds-typography-*, and --sds-space-* custom properties consumed below.
  *
- * Adapted from siktifisert.css in alf/graphitron-landingsside; selectors
- * remapped from Docusaurus class names (.navbar, .hero, .theme-doc-markdown)
- * to Asciidoctor's defaults (#header, #content, .sect1, .admonitionblock).
+ * Selector targets: AsciiDoctor's defaults (#header, #content, .sect1,
+ * .admonitionblock, etc.), plus role-driven hooks (.hero, .feature,
+ * .nav-header, .site-footer) that the docinfo and index pages use.
  */
 
 @import url("sds-core.css");
@@ -19,39 +19,91 @@
 :root {
     --site-content-max: 1180px;
     --site-content-pad: 24px;
-    --site-rule: var(--sds-color-grey-300, #d9dbde);
-    --site-link: var(--sds-color-blue-500, #1a4eb8);
-    --site-link-hover: var(--sds-color-blue-700, #0e3a8e);
-    --site-bg: var(--sds-color-white, #ffffff);
-    --site-fg: var(--sds-color-black, #1a1a1a);
-    --site-muted: var(--sds-color-grey-600, #6b7280);
-    --site-callout-bg: var(--sds-color-blue-50, #f0f4fb);
-    --site-callout-border: var(--sds-color-blue-200, #b8caec);
-    --site-footer-bg: var(--sds-color-black, #1a1a1a);
-    --site-footer-fg: var(--sds-color-white, #ffffff);
 }
 
 html, body {
     margin: 0;
     padding: 0;
-    background: var(--site-bg);
-    color: var(--site-fg);
+    background: var(--sds-color-layout-page-default, #ffffff);
+    color: var(--sds-color-text-primary, #1a1a1a);
     font-family: var(--sds-typography-font-family-default, "Haffer", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif);
     font-size: 16px;
-    line-height: 1.6;
-}
-
-body.book, body.article {
-    background: var(--site-bg);
+    line-height: var(--sds-typography-body-lineheight-regular, 1.6);
 }
 
 a {
-    color: var(--site-link);
+    color: var(--sds-color-text-primary, #1a1a1a);
+    text-decoration: underline;
+    text-underline-position: under;
+}
+a:hover, a:focus-visible {
+    background-color: var(--sds-color-interaction-primary-transparent-highlight, transparent);
+    color: var(--sds-color-text-primary, #1a1a1a);
+}
+a:active {
+    background-color: var(--sds-color-interaction-primary-transparent-pressed, transparent);
+}
+
+/* ---------- top nav header (docinfo) -------------------------------------- */
+
+.nav-header {
+    background: var(--sds-color-layout-background-primary, #ffffff);
+    border-bottom: 1px solid var(--sds-color-layout-divider-subtle, #e2e4e8);
+    padding: 14px var(--site-content-pad);
+    position: sticky;
+    top: 0;
+    z-index: 50;
+}
+.nav-header-inner {
+    max-width: var(--site-content-max);
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 24px;
+}
+.nav-brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    text-decoration: none;
+    font-weight: 700;
+    color: var(--sds-color-text-primary, #1a1a1a);
+}
+.nav-brand:hover {
+    background: transparent;
     text-decoration: none;
 }
-a:hover, a:focus {
-    color: var(--site-link-hover);
+.nav-brand img {
+    height: 28px;
+    width: auto;
+}
+.nav-links {
+    display: flex;
+    gap: 18px;
+    margin-left: 8px;
+    flex-wrap: wrap;
+}
+.nav-links a {
+    text-decoration: none;
+    color: var(--sds-color-text-primary, #1a1a1a);
+    font-weight: 500;
+    padding: 6px 4px;
+}
+.nav-links a:hover {
+    color: var(--sds-color-brand-primary-strong, #5b3d99);
     text-decoration: underline;
+    background: transparent;
+}
+.nav-spacer {
+    flex: 1;
+}
+.nav-github {
+    text-decoration: none;
+    font-weight: 500;
+}
+.nav-github:hover {
+    background: transparent;
+    color: var(--sds-color-brand-primary-strong, #5b3d99);
 }
 
 /* ---------- layout -------------------------------------------------------- */
@@ -63,21 +115,19 @@ a:hover, a:focus {
 }
 
 #header {
-    border-bottom: 1px solid var(--site-rule);
-    padding-top: 24px;
-    padding-bottom: 16px;
-    margin-bottom: 32px;
+    /* AsciiDoctor's per-page header (page title + optional TOC). The custom
+     * top-nav lives in .nav-header above; #header sits below it. */
+    padding-top: 28px;
+    padding-bottom: 12px;
 }
-
 #header h1 {
-    margin: 0 0 4px 0;
+    margin: 0 0 6px 0;
     font-weight: 700;
-    font-size: 2.4rem;
+    font-size: 2.3rem;
     letter-spacing: -0.01em;
 }
-
 #header .details {
-    color: var(--site-muted);
+    color: var(--sds-color-text-secondary, #6b7280);
     font-size: 0.9rem;
 }
 
@@ -86,20 +136,35 @@ a:hover, a:focus {
     padding-bottom: 64px;
 }
 
+/* AsciiDoctor body class scope; `body.book` etc. shouldn't change layout. */
+body.article, body.book {
+    background: var(--sds-color-layout-page-default, #ffffff);
+}
+
 /* ---------- typography ---------------------------------------------------- */
 
 h1, h2, h3, h4, h5, h6 {
+    color: var(--sds-color-text-primary, #1a1a1a);
     font-weight: 700;
     line-height: 1.25;
     margin: 1.6em 0 0.6em;
     letter-spacing: -0.005em;
 }
-h2 { font-size: 1.7rem; border-bottom: 1px solid var(--site-rule); padding-bottom: 6px; }
+h2 {
+    font-size: 1.7rem;
+    border-bottom: 1px solid var(--sds-color-layout-divider-subtle, #e2e4e8);
+    padding-bottom: 6px;
+}
 h3 { font-size: 1.3rem; }
 h4 { font-size: 1.1rem; }
 
+/* AsciiDoctor section anchor on h2/h3 hover */
+h2:hover .anchor::before, h3:hover .anchor::before {
+    visibility: visible;
+}
+
 p, li {
-    color: var(--site-fg);
+    color: var(--sds-color-text-primary, #1a1a1a);
 }
 
 code, pre, kbd, tt {
@@ -107,8 +172,8 @@ code, pre, kbd, tt {
 }
 
 code {
-    background: var(--sds-color-grey-100, #f4f5f7);
-    border: 1px solid var(--site-rule);
+    background: var(--sds-color-layout-background-neutral, #f4f5f7);
+    border: 1px solid var(--sds-color-layout-divider-subtle, #e2e4e8);
     border-radius: 4px;
     padding: 0.05em 0.35em;
     font-size: 0.9em;
@@ -121,30 +186,124 @@ pre code {
 }
 
 .listingblock pre, .literalblock pre {
-    background: var(--sds-color-grey-50, #fafbfc);
-    border: 1px solid var(--site-rule);
+    background: var(--sds-color-layout-background-neutral, #fafbfc);
+    border: 1px solid var(--sds-color-layout-divider-subtle, #e2e4e8);
     border-radius: 6px;
     padding: 14px 16px;
     overflow-x: auto;
     font-size: 0.9rem;
 }
 
+/* ---------- hero (index page only) --------------------------------------- */
+
+.hero-band {
+    background: var(--sds-color-brand-primary-subtle, #ece4ff);
+    margin: 0 calc(-1 * var(--site-content-pad)) 32px;
+    padding: 48px var(--site-content-pad) 56px;
+    text-align: center;
+}
+.hero-band .hero-title {
+    font-size: 3.2rem;
+    font-weight: 700;
+    margin: 0 0 12px;
+    letter-spacing: -0.015em;
+    color: var(--sds-color-text-primary, #1a1a1a);
+}
+.hero-band .hero-tagline {
+    font-size: 1.25rem;
+    margin: 0 0 24px;
+    color: var(--sds-color-text-primary, #1a1a1a);
+    opacity: 0.85;
+}
+.hero-band .cta-row {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+.cta-button {
+    display: inline-block;
+    background: var(--sds-color-interaction-primary-transparent-default, transparent);
+    color: var(--sds-color-text-primary, #1a1a1a);
+    border: 1px solid var(--sds-color-brand-primary-strong, #5b3d99);
+    border-radius: 999px;
+    padding: 10px 22px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 1rem;
+    transition: background 120ms ease;
+}
+.cta-button:hover {
+    background: var(--sds-color-interaction-primary-transparent-highlight, rgba(91, 61, 153, 0.08));
+    color: var(--sds-color-text-primary, #1a1a1a);
+    text-decoration: none;
+}
+
+/* ---------- feature row (index page) ------------------------------------- */
+
+/* The 3-feature row uses an AsciiDoc table with `[cols="1a,1a,1a"]` so each
+ * cell is parsed as AsciiDoc and the [.feature] role + headings render. */
+table.featurerow,
+table.featurerow > colgroup,
+table.featurerow > * > tr > th,
+table.featurerow > * > tr > td {
+    border: none;
+    background: transparent;
+}
+table.featurerow {
+    width: 100%;
+    margin: 32px 0 48px;
+    border-collapse: separate;
+    border-spacing: 24px 0;
+    table-layout: fixed;
+}
+table.featurerow > * > tr > td {
+    vertical-align: top;
+    padding: 0;
+}
+.feature {
+    text-align: center;
+}
+.feature img {
+    max-width: 220px;
+    width: 100%;
+    height: auto;
+    margin: 0 auto 16px;
+    display: block;
+}
+.feature h2,
+.feature h3 {
+    font-size: 1.2rem;
+    border-bottom: none;
+    padding-bottom: 0;
+    margin-top: 0;
+    text-align: center;
+    font-weight: 600;
+}
+.feature p {
+    margin: 8px 0;
+    text-align: center;
+    color: var(--sds-color-text-primary, #1a1a1a);
+}
+
 /* ---------- TOC ----------------------------------------------------------- */
 
 #toc.toc2 {
-    background: var(--sds-color-grey-50, #fafbfc);
-    border-right: 1px solid var(--site-rule);
+    background: var(--sds-color-layout-background-neutral, #fafbfc);
+    border-right: 1px solid var(--sds-color-layout-divider-subtle, #e2e4e8);
     font-size: 0.92rem;
 }
 #toc.toc2 a {
-    color: var(--site-fg);
+    color: var(--sds-color-text-primary, #1a1a1a);
+    text-decoration: none;
 }
 #toc.toc2 a:hover {
-    color: var(--site-link);
+    color: var(--sds-color-brand-primary-strong, #5b3d99);
+    background: transparent;
 }
 #toc #toctitle {
     font-weight: 700;
-    color: var(--site-fg);
+    color: var(--sds-color-text-primary, #1a1a1a);
 }
 
 /* ---------- admonitions / advantage-box ----------------------------------- */
@@ -153,9 +312,9 @@ pre code {
     margin: 1.4em 0;
 }
 .admonitionblock > table {
-    border: 1px solid var(--site-callout-border);
-    border-left: 4px solid var(--site-link);
-    background: var(--site-callout-bg);
+    border: 1px solid var(--sds-color-brand-primary-subtle, #ece4ff);
+    border-left: 4px solid var(--sds-color-brand-primary-strong, #5b3d99);
+    background: var(--sds-color-brand-accent-subtle, #f5f0ff);
     border-radius: 6px;
     padding: 12px 14px;
     width: 100%;
@@ -166,7 +325,7 @@ pre code {
 }
 .admonitionblock td.icon .title {
     font-weight: 700;
-    color: var(--site-link);
+    color: var(--sds-color-brand-primary-strong, #5b3d99);
     text-transform: uppercase;
     font-size: 0.8rem;
     letter-spacing: 0.05em;
@@ -174,30 +333,12 @@ pre code {
 .admonitionblock td.content {
     padding-left: 12px;
 }
-
-/* The plan calls for the legacy ".advantage-box" pattern. AsciiDoc emits the
- * role as a CSS class on the wrapping element, so .advantage-box matches when
- * authors write [.advantage-box] before a block. */
 .advantage-box {
-    background: var(--site-callout-bg);
-    border-left: 4px solid var(--site-link);
-    border-radius: 6px;
+    background: var(--sds-color-brand-primary-subtle, #ece4ff);
+    border-left: 4px solid var(--sds-color-brand-primary-strong, #5b3d99);
+    border-radius: 12px;
     padding: 16px 20px;
     margin: 1.4em 0;
-}
-
-/* ---------- hero (used on index.adoc) ------------------------------------- */
-
-.hero, .sect1.hero, [data-role="hero"] {
-    background: linear-gradient(180deg, var(--sds-color-blue-50, #f0f4fb) 0%, var(--site-bg) 100%);
-    border-radius: 12px;
-    padding: 36px 28px;
-    margin-bottom: 32px;
-}
-.hero h2 {
-    border-bottom: none;
-    font-size: 2rem;
-    margin-top: 0;
 }
 
 /* ---------- tables -------------------------------------------------------- */
@@ -208,28 +349,68 @@ table.tableblock {
     width: 100%;
 }
 table.tableblock th, table.tableblock td {
-    border: 1px solid var(--site-rule);
-    padding: 8px 12px;
+    border: 1px solid var(--sds-color-layout-divider-subtle, #e2e4e8);
+    padding: 10px 14px;
     text-align: left;
     vertical-align: top;
 }
 table.tableblock thead th {
-    background: var(--sds-color-grey-50, #fafbfc);
+    background: var(--sds-color-layout-background-neutral, #fafbfc);
     font-weight: 700;
 }
 
-/* ---------- footer -------------------------------------------------------- */
+/* ---------- footer (docinfo, dark band) ----------------------------------- */
 
 #footer {
-    background: var(--site-footer-bg);
-    color: var(--site-footer-fg);
-    max-width: 100%;
-    padding: 24px var(--site-content-pad);
-    margin-top: 48px;
-    text-align: center;
-    font-size: 0.85rem;
+    /* AsciiDoctor's default per-page footer (timestamps). Hide it; the dark
+     * .site-footer below replaces it. */
+    display: none;
 }
-#footer a {
-    color: var(--site-footer-fg);
+
+.site-footer {
+    background: var(--sds-color-brand-accent-strong, #1d1840);
+    color: var(--sds-color-text-on, #ffffff);
+    padding: 36px var(--site-content-pad) 28px;
+    margin-top: 64px;
+    font-size: 0.92rem;
+}
+.site-footer-inner {
+    max-width: var(--site-content-max);
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 32px;
+}
+.site-footer h4 {
+    margin: 0 0 12px;
+    color: var(--sds-color-text-on, #ffffff);
+    font-size: 0.95rem;
+    font-weight: 700;
+    text-transform: none;
+    letter-spacing: 0.02em;
+}
+.site-footer ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+.site-footer li {
+    margin: 6px 0;
+}
+.site-footer a {
+    color: var(--sds-color-text-on, #ffffff);
+    text-decoration: none;
+}
+.site-footer a:hover {
     text-decoration: underline;
+    background: transparent;
+    color: var(--sds-color-text-on, #ffffff);
+}
+.site-footer-meta {
+    grid-column: 1 / -1;
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid rgba(255, 255, 255, 0.15);
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.85rem;
 }
