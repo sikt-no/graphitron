@@ -274,12 +274,15 @@ table.featurerow {
     width: 100%;
     margin: 32px 0 48px;
     border-collapse: separate;
-    border-spacing: 24px 0;
+    /* 56px between cells: with three columns at full content width, anything
+     * tighter has the prose silhouettes crowding. The vertical 0 is
+     * intentional — there's only one row. */
+    border-spacing: 56px 0;
     table-layout: fixed;
 }
 table.featurerow > * > tr > td {
     vertical-align: top;
-    padding: 0;
+    padding: 0 8px;
 }
 /* Feature cards: image and heading centered (the "poster" feel), prose
  * left-aligned (centered paragraphs of varied line length read as ragged
@@ -301,9 +304,10 @@ table.featurerow > * > tr > td {
     font-weight: 600;
 }
 .feature p {
-    margin: 8px 0;
+    margin: 12px 0;
     text-align: left;
     color: var(--sds-color-text-primary, #1a1a1a);
+    line-height: 1.55;
 }
 
 /* ---------- TOC ----------------------------------------------------------- */
