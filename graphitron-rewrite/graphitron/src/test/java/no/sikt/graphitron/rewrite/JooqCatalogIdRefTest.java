@@ -10,8 +10,10 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Unit tests for {@link JooqCatalog} FK-qualifier helpers introduced for
- * {@link no.sikt.graphitron.rewrite.model.InputField.IdReferenceField} classification.
+ * Unit tests for {@link JooqCatalog} FK-qualifier helpers used by the {@code @nodeId}
+ * input-field classification (the post-R50 column-shaped successors of the retired
+ * {@code IdReferenceField}: {@link no.sikt.graphitron.rewrite.model.InputField.ColumnReferenceField}
+ * and {@link no.sikt.graphitron.rewrite.model.InputField.CompositeColumnReferenceField}).
  *
  * <p>Sakila-catalog cases ({@code DEFAULT_JOOQ_PACKAGE}) exercise {@link JooqCatalog#findUniqueFkToTable},
  * {@link JooqCatalog#buildQualifierMap}, and {@link JooqCatalog#qualifierForFk} against real FK

@@ -69,9 +69,11 @@ class VariantCoverageTest {
             + "sakila catalog has no composite-PK NodeType.",
         InputField.CompositeColumnReferenceField.class,
             "Composite-key input reference (post-R50 successor for arity > 1 "
-            + "InputField.NodeIdReferenceField / IdReferenceField). Not yet produced by any "
-            + "classifier route -- phase (e2/e3) of R50 wires the @nodeId(typeName: T) input "
-            + "branch through it. Add a NodeIdPipelineTest case when that wiring lands."
+            + "InputField.NodeIdReferenceField). The canonical and synthesis-shim cases land "
+            + "via the same buildInputNodeIdReference helper for the [ID!] @nodeId(typeName: T) "
+            + "branch, but no test fixture exercises an arity > 1 FK target yet (the fixtures "
+            + "use `bar` (composite PK) only for same-table NodeId paths). Add a "
+            + "NodeIdPipelineTest case when a composite-PK FK target is added in phase (g)."
     );
 
     private static final List<Class<?>> ROOTS = List.of(

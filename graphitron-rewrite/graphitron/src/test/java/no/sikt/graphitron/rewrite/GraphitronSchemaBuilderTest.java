@@ -2705,12 +2705,12 @@ class GraphitronSchemaBuilderTest {
                     .contains("@notGenerated", "no longer supported");
             }),
 
-        // ===== IdReferenceField =====
+        // ===== Canonical [ID!] @nodeId(typeName: T) (post-R50 successor of IdReferenceField) =====
 
         ID_REFERENCE_NODEID_INFERRED(
-            "[ID!] @nodeId(typeName:) with unique FK → IdReferenceField (FK inferred, synthesized=false)",
+            "[ID!] @nodeId(typeName:) with unique FK → ColumnReferenceField with NodeIdDecodeKeys (FK inferred)",
             """
-            type Film @table(name: "film") { title: String }
+            type Film implements Node @table(name: "film") @node { id: ID! @nodeId title: String }
             type Inventory @table(name: "inventory") { lastUpdate: String }
             input InventoryFilterInput @table(name: "inventory") {
               filmIds: [ID!] @nodeId(typeName: "Film")
@@ -2719,21 +2719,21 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var tit = (TableInputType) schema.type("InventoryFilterInput");
-                var f = (InputField.IdReferenceField) tit.inputFields().stream()
-                    .filter(InputField.IdReferenceField.class::isInstance).findFirst().orElseThrow();
+                var f = (InputField.ColumnReferenceField) tit.inputFields().stream()
+                    .filter(InputField.ColumnReferenceField.class::isInstance).findFirst().orElseThrow();
                 assertThat(f.list()).isTrue();
-                assertThat(f.targetTypeName()).isEqualTo("Film");
-                assertThat(f.fkName()).isEqualTo("inventory_film_id_fkey");
-                assertThat(f.qualifier()).isEqualTo("FilmId");
-                assertThat(f.synthesized()).isFalse();
+                assertThat(f.column().sqlName()).isEqualTo("film_id");
+                assertThat(f.extraction())
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement.class);
+                assertThat(f.joinPath()).hasSize(1);
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(InputField.IdReferenceField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(InputField.ColumnReferenceField.class); }
         },
 
         ID_REFERENCE_NODEID_EXPLICIT(
-            "[ID!] @nodeId + @reference(path: [{key:}]) → IdReferenceField (FK explicit, synthesized=false)",
+            "[ID!] @nodeId + @reference(path: [{key:}]) → ColumnReferenceField with NodeIdDecodeKeys (FK explicit)",
             """
-            type Language @table(name: "language") { name: String }
+            type Language implements Node @table(name: "language") @node { id: ID! @nodeId name: String }
             type Film @table(name: "film") { title: String }
             input FilmFilterInput @table(name: "film") {
               languageIds: [ID!] @nodeId(typeName: "Language")
@@ -2743,11 +2743,12 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var tit = (TableInputType) schema.type("FilmFilterInput");
-                var f = (InputField.IdReferenceField) tit.inputFields().stream()
-                    .filter(InputField.IdReferenceField.class::isInstance).findFirst().orElseThrow();
-                assertThat(f.fkName()).isEqualTo("film_language_id_fkey");
-                assertThat(f.qualifier()).isEqualTo("LanguageId");
-                assertThat(f.synthesized()).isFalse();
+                var f = (InputField.ColumnReferenceField) tit.inputFields().stream()
+                    .filter(InputField.ColumnReferenceField.class::isInstance).findFirst().orElseThrow();
+                assertThat(f.column().sqlName()).isEqualTo("language_id");
+                assertThat(f.extraction())
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement.class);
+                assertThat(f.joinPath()).hasSize(1);
             }),
 
         ID_REFERENCE_AMBIGUOUS_FK(
@@ -2790,7 +2791,7 @@ class GraphitronSchemaBuilderTest {
         ID_REFERENCE_MIXED_DIRECTIVES_CANONICAL_WINS(
             "[ID!] @nodeId + @field(name:) → canonical branch wins, @field(name:) value ignored",
             """
-            type Film @table(name: "film") { title: String }
+            type Film implements Node @table(name: "film") @node { id: ID! @nodeId title: String }
             type Inventory @table(name: "inventory") { lastUpdate: String }
             input InventoryFilterInput @table(name: "inventory") {
               filmIds: [ID!] @nodeId(typeName: "Film") @field(name: "BOGUS_NAME")
@@ -2799,11 +2800,11 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var tit = (TableInputType) schema.type("InventoryFilterInput");
-                var f = (InputField.IdReferenceField) tit.inputFields().stream()
-                    .filter(InputField.IdReferenceField.class::isInstance).findFirst().orElseThrow();
-                assertThat(f.synthesized()).isFalse();
-                assertThat(f.targetTypeName()).isEqualTo("Film");
-                assertThat(f.qualifier()).isEqualTo("FilmId");
+                var f = (InputField.ColumnReferenceField) tit.inputFields().stream()
+                    .filter(InputField.ColumnReferenceField.class::isInstance).findFirst().orElseThrow();
+                assertThat(f.column().sqlName()).isEqualTo("film_id");
+                assertThat(f.extraction())
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement.class);
             });
 
         final String sdl;

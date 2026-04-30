@@ -13,9 +13,12 @@ import java.util.function.Consumer;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Classification tests for the {@link InputField.IdReferenceField} synthesis shim.
- * Uses the {@code idreffixture} jOOQ catalog (studieprogram + studierett) because
- * the shim gate requires {@code nodeIdMetadata(targetTable)} to be present — the
+ * Classification tests for the FK-qualifier synthesis shim. Post-R50 the shim emits
+ * the column-shaped successor of the retired {@code IdReferenceField}: arity-1 PK targets
+ * land on {@link InputField.ColumnReferenceField} carrying
+ * {@link no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement} plus the
+ * resolved FK joinPath. Uses the {@code idreffixture} jOOQ catalog (studieprogram + studierett)
+ * because the shim gate requires {@code nodeIdMetadata(targetTable)} to be present — the
  * standard Sakila catalog tables have no {@code __NODE_TYPE_ID} metadata.
  *
  * <p>The idreffixture schema provides:
@@ -63,7 +66,7 @@ class IdReferenceShimClassificationTest {
         // studieprogram_id column and classify as ColumnField; the shim wins because it runs
         // first for ID-typed fields.
         SHIM_EXPLICIT_FIELD(
-            "[ID!] @field(name: \"STUDIEPROGRAM_ID\") → shim fires before column lookup → IdReferenceField (synthesized)",
+            "[ID!] @field(name: \"STUDIEPROGRAM_ID\") → shim fires before column lookup → ColumnReferenceField with NodeIdDecodeKeys",
             SHARED_SDL_PREFIX + """
             input StudierettFilterInput @table(name: "studierett") {
               studieprogramIds: [ID!] @field(name: "STUDIEPROGRAM_ID")
@@ -72,19 +75,19 @@ class IdReferenceShimClassificationTest {
             """,
             schema -> {
                 var tit = (TableInputType) schema.type("StudierettFilterInput");
-                var f = (InputField.IdReferenceField) tit.inputFields().stream()
-                    .filter(InputField.IdReferenceField.class::isInstance).findFirst().orElseThrow();
-                assertThat(f.synthesized()).isTrue();
-                assertThat(f.targetTypeName()).isEqualTo("Studieprogram");
-                assertThat(f.qualifier()).isEqualTo("StudieprogramId");
-                assertThat(f.fkName()).isEqualTo("studierett_studieprogram_id_fkey");
+                var f = (InputField.ColumnReferenceField) tit.inputFields().stream()
+                    .filter(InputField.ColumnReferenceField.class::isInstance).findFirst().orElseThrow();
                 assertThat(f.list()).isTrue();
+                assertThat(f.column().sqlName()).isEqualTo("studieprogram_id");
+                assertThat(f.extraction())
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement.class);
+                assertThat(f.joinPath()).hasSize(1);
             }),
 
         // Case 4b: bare plural field name — default columnName = "studieprogramIds" →
         // lowercase "studieprogramids" hits the plural camel map key.
         SHIM_BARE_LIST(
-            "[ID!] with bare plural field name studieprogramIds → plural map key hit → IdReferenceField (synthesized)",
+            "[ID!] with bare plural field name studieprogramIds → plural map key hit → ColumnReferenceField with NodeIdDecodeKeys",
             SHARED_SDL_PREFIX + """
             input StudierettFilterInput @table(name: "studierett") {
               studieprogramIds: [ID!]
@@ -93,17 +96,17 @@ class IdReferenceShimClassificationTest {
             """,
             schema -> {
                 var tit = (TableInputType) schema.type("StudierettFilterInput");
-                var f = (InputField.IdReferenceField) tit.inputFields().stream()
-                    .filter(InputField.IdReferenceField.class::isInstance).findFirst().orElseThrow();
-                assertThat(f.synthesized()).isTrue();
-                assertThat(f.qualifier()).isEqualTo("StudieprogramId");
+                var f = (InputField.ColumnReferenceField) tit.inputFields().stream()
+                    .filter(InputField.ColumnReferenceField.class::isInstance).findFirst().orElseThrow();
                 assertThat(f.list()).isTrue();
+                assertThat(f.extraction())
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement.class);
             }),
 
         // Case 4c: bare scalar field name — default columnName = "studieprogramId" →
         // lowercase "studieprogramid" hits the camelCase map key.
         SHIM_BARE_SCALAR(
-            "ID (scalar) bare field name studieprogramId → camelCase map key hit → IdReferenceField (synthesized)",
+            "ID (scalar) bare field name studieprogramId → camelCase map key hit → ColumnReferenceField with NodeIdDecodeKeys",
             SHARED_SDL_PREFIX + """
             input StudierettFilterInput @table(name: "studierett") {
               studieprogramId: ID
@@ -112,11 +115,11 @@ class IdReferenceShimClassificationTest {
             """,
             schema -> {
                 var tit = (TableInputType) schema.type("StudierettFilterInput");
-                var f = (InputField.IdReferenceField) tit.inputFields().stream()
-                    .filter(InputField.IdReferenceField.class::isInstance).findFirst().orElseThrow();
-                assertThat(f.synthesized()).isTrue();
-                assertThat(f.qualifier()).isEqualTo("StudieprogramId");
+                var f = (InputField.ColumnReferenceField) tit.inputFields().stream()
+                    .filter(InputField.ColumnReferenceField.class::isInstance).findFirst().orElseThrow();
                 assertThat(f.list()).isFalse();
+                assertThat(f.extraction())
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement.class);
             }),
 
         // Case 4d: bare id: ID on a table that has nodeId metadata but no outgoing FKs.
@@ -149,7 +152,7 @@ class IdReferenceShimClassificationTest {
         // (columns: studierett_id, studieprogram_id, registrar_studieprogram). Without the
         // pre-column shim, this field would be Unresolved and propagate as UnclassifiedType.
         SHIM_ROLE_PREFIXED(
-            "[ID!] @field where key ≠ any column (role-prefixed qualifier) → IdReferenceField (synthesized)",
+            "[ID!] @field where key ≠ any column (role-prefixed qualifier) → ColumnReferenceField with NodeIdDecodeKeys",
             SHARED_SDL_PREFIX + """
             input StudierettFilterInput @table(name: "studierett") {
               registrarStudieprogramIds: [ID!] @field(name: "REGISTRAR_STUDIEPROGRAM_STUDIEPROGRAM_ID")
@@ -158,12 +161,13 @@ class IdReferenceShimClassificationTest {
             """,
             schema -> {
                 var tit = (TableInputType) schema.type("StudierettFilterInput");
-                var f = (InputField.IdReferenceField) tit.inputFields().stream()
-                    .filter(InputField.IdReferenceField.class::isInstance).findFirst().orElseThrow();
-                assertThat(f.synthesized()).isTrue();
-                assertThat(f.targetTypeName()).isEqualTo("Studieprogram");
-                assertThat(f.qualifier()).isEqualTo("RegistrarStudieprogramStudieprogramId");
-                assertThat(f.fkName()).isEqualTo("studierett_registrar_studieprogram_fkey");
+                var f = (InputField.ColumnReferenceField) tit.inputFields().stream()
+                    .filter(InputField.ColumnReferenceField.class::isInstance).findFirst().orElseThrow();
+                assertThat(f.list()).isTrue();
+                assertThat(f.column().sqlName()).isEqualTo("studieprogram_id");
+                assertThat(f.extraction())
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement.class);
+                assertThat(f.joinPath()).hasSize(1);
             });
 
         final String sdl;
