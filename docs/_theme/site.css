@@ -117,16 +117,6 @@ a:active {
     padding: 0 var(--site-content-pad);
 }
 
-#header {
-    /* Asciidoctor's per-page header band wrapping the page title and meta.
-     * Padding goes on the h1 below rather than this container so pages that
-     * hide the title (`:!showtitle:`, e.g. the homepage that supplies its
-     * own .hero-band) collapse to zero height instead of leaving a grey
-     * strip. `:empty` doesn't help here because the rendered #header
-     * contains a whitespace text node, which counts as content. */
-    padding: 0;
-    margin: 0;
-}
 #header h1 {
     margin: 0 0 6px 0;
     padding: 28px 0 12px;
