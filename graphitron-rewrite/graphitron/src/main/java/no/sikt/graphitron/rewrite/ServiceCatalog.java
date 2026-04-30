@@ -125,21 +125,20 @@ class ServiceCatalog {
     /**
      * Loads the service class and method via reflection and classifies each parameter.
      *
-     * <p>{@code argByJavaName} maps each Java parameter name that should bind to a GraphQL argument
-     * to that argument's name. For a field without {@code @field(name:)} overrides on its arguments
-     * the map is identity ({@code argName -> argName}); for fields with overrides the key is the
-     * override target (the desired Java parameter name) and the value is the GraphQL argument name.
-     * The caller (FieldBuilder) is responsible for collision detection when building the map.
+     * <p>{@code argBindings} maps each Java parameter name that should bind to a GraphQL argument
+     * to that argument's name. Constructed (and collision-checked) by the caller via
+     * {@link ArgBindingMap#forField}; identity entries cover the no-override case, override
+     * entries carry the {@code @field(name:)} override.
      *
-     * <p>Parameters whose name appears as a key in {@code argByJavaName} get {@link ParamSource.Arg}
+     * <p>Parameters whose name appears as a key in the binding map get {@link ParamSource.Arg}
      * with {@link ParamSource.Arg#graphqlArgName()} set to the corresponding value; parameters
      * whose name matches a context key get {@link ParamSource.Context}; all others are classified
      * by {@link #classifySourcesType}.
      *
-     * <p>If a key in {@code argByJavaName} that constitutes an explicit override
-     * ({@code key != value}) does not appear among the resolved method's parameter names, the
-     * method fails with a typo-guard message naming the directive site, the override target, and
-     * the available parameter names.
+     * <p>If a key in the binding map that constitutes an explicit override ({@code key != value})
+     * does not appear among the resolved method's parameter names, the method fails with a
+     * typo-guard message naming the directive site, the override target, and the available
+     * parameter names.
      *
      * <p>{@code parentPkColumns} is the primary-key column list of the parent type's table.
      * Pass {@link List#of()} when the parent is a root operation type or has no backing table.
@@ -166,8 +165,9 @@ class ServiceCatalog {
             + "@table-bound return type. Lets the emitter declare a typed Result<XRecord> "
             + "(or XRecord) return rather than Object.")
     ServiceReflectionResult reflectServiceMethod(String className, String methodName,
-            Map<String, String> argByJavaName, Set<String> ctxKeys, List<ColumnRef> parentPkColumns,
+            ArgBindingMap argBindings, Set<String> ctxKeys, List<ColumnRef> parentPkColumns,
             TypeName expectedReturnType) {
+        var argByJavaName = argBindings.byJavaName();
         if (className == null || methodName == null) {
             return new ServiceReflectionResult(null, "service reference is incomplete");
         }
@@ -296,16 +296,15 @@ class ServiceCatalog {
      * Loads the table-method class and method via reflection and classifies each parameter.
      *
      * <p>Parameters whose type is assignable to {@link org.jooq.Table} get {@link ParamSource.Table};
-     * parameters whose name appears as a key in {@code argByJavaName} get {@link ParamSource.Arg}
+     * parameters whose name appears as a key in {@code argBindings} get {@link ParamSource.Arg}
      * with {@link ParamSource.Arg#graphqlArgName()} set to the corresponding value;
      * parameters whose name matches a context key get {@link ParamSource.Context}.
      * Any other parameter is an error.
      *
-     * <p>{@code argByJavaName} carries the Java-target → GraphQL-arg-name mapping per
-     * {@link #reflectServiceMethod} (identity entries for unset overrides, override entries for
-     * arguments carrying {@code @field(name:)}). Override entries that target the {@code Table<?>}
-     * parameter, or that point at non-existent Java parameters, are rejected with a typo-guard
-     * message naming the directive site and the available parameter names.
+     * <p>{@code argBindings} carries the Java-target → GraphQL-arg-name mapping per
+     * {@link #reflectServiceMethod}. Override entries that target the {@code Table<?>} parameter,
+     * or that point at non-existent Java parameters, are rejected with a typo-guard message
+     * naming the directive site and the available parameter names.
      *
      * <p>If the compiler was not invoked with {@code -parameters}, any parameter may lack a name.
      * A warning is logged proactively as soon as any nameless parameter is detected — even if
@@ -326,7 +325,8 @@ class ServiceCatalog {
             + "@table-bound return type. Lets the emitter declare <SpecificTable> table = "
             + "Method.x(...) without a downcast.")
     ServiceReflectionResult reflectTableMethod(String className, String methodName,
-            Map<String, String> argByJavaName, Set<String> ctxKeys, ClassName expectedReturnClass) {
+            ArgBindingMap argBindings, Set<String> ctxKeys, ClassName expectedReturnClass) {
+        var argByJavaName = argBindings.byJavaName();
         if (className == null || methodName == null) {
             return new ServiceReflectionResult(null, "table method reference is incomplete");
         }
