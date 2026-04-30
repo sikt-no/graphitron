@@ -34,14 +34,6 @@ class VariantCoverageTest {
      * leaf should have a case showing the classifier lands there.
      */
     private static final Map<Class<?>, String> NO_CASE_REQUIRED = Map.of(
-        InputField.NodeIdField.class,
-            "Covered by NodeIdPipelineTest.InputCase (requires nodeid fixture with "
-            + "__NODE_TYPE_ID/__NODE_KEY_COLUMNS metadata not available in the standard sakila catalog); "
-            + "add a GraphitronSchemaBuilderTest case when the nodeid fixture is made available there.",
-        InputField.NodeIdReferenceField.class,
-            "Covered by NodeIdPipelineTest.InputReferenceCase (requires nodeid fixture with "
-            + "FK-linked NodeType table not available in the standard sakila catalog); "
-            + "add a GraphitronSchemaBuilderTest case when the nodeid fixture is made available there.",
         GraphitronType.JooqRecordType.class,
             "No plain jOOQ Record<?> (non-TableRecord) fixture class in the test classpath; "
             + "add a case when a suitable fixture is introduced.",
@@ -70,8 +62,8 @@ class VariantCoverageTest {
             + "synthesized-shim composite path. Lives in NodeIdPipelineTest because the standard "
             + "sakila catalog has no composite-PK NodeType.",
         InputField.CompositeColumnReferenceField.class,
-            "Composite-key input reference (post-R50 successor for arity > 1 "
-            + "InputField.NodeIdReferenceField). The canonical and synthesis-shim cases land "
+            "Composite-key input reference (post-R50 successor for arity > 1 of the retired "
+            + "wire-shape NodeIdReferenceField). The canonical and synthesis-shim cases land "
             + "via the same buildInputNodeIdReference helper for the [ID!] @nodeId(typeName: T) "
             + "branch, but no test fixture exercises an arity > 1 FK target yet (the fixtures "
             + "use `bar` (composite PK) only for same-table NodeId paths). Add a "

@@ -129,9 +129,9 @@ class IdReferenceShimClassificationTest {
         // "id" doesn't match → column lookup misses (no column named "id") →
         // falls to the synthesis shim. Post-R50, the shim routes onto ColumnField with
         // NodeIdDecodeKeys.SkipMismatchedElement (arity-1 single-PK NodeType) instead of
-        // the legacy InputField.NodeIdField.
+        // the retired wire-shape NodeIdField.
         DOES_NOT_SHIM_OWN_ID(
-            "bare id: ID on node-typed @table with no outgoing FKs → ColumnField with NodeIdDecodeKeys (post-R50; legacy NodeIdField successor)",
+            "bare id: ID on node-typed @table with no outgoing FKs → ColumnField with NodeIdDecodeKeys (post-R50; retired wire-shape NodeIdField successor)",
             """
             type Studieprogram @table(name: "studieprogram") { studieprogramId: String }
             input StudieprogramFilterInput @table(name: "studieprogram") {

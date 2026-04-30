@@ -181,8 +181,6 @@ public class TypeFetcherGenerator {
         InputField.ColumnReferenceField.class,
         InputField.CompositeColumnField.class,
         InputField.CompositeColumnReferenceField.class,
-        InputField.NodeIdField.class,
-        InputField.NodeIdReferenceField.class,
         InputField.NestingField.class);
 
     /**
