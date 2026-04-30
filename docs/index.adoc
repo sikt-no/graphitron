@@ -7,7 +7,7 @@
 ++++
 <section class="hero-band">
   <h1 class="hero-title">Graphitron</h1>
-  <p class="hero-tagline">GraphQL in. Code out. No magic, just Graphitron.</p>
+  <p class="hero-tagline">A code generator for GraphQL APIs backed by jOOQ.</p>
   <div class="cta-row">
     <a class="cta-button" href="quick-start.html">Quick start</a>
     <a class="cta-button" href="https://github.com/sikt-no/graphitron" rel="noopener">GitHub</a>
@@ -20,32 +20,32 @@ Graphitron generates the wiring between a GraphQL schema and a jOOQ-modelled dat
 [.featurerow,cols="1a,1a,1a",frame=none,grid=none]
 |===
 |
-image:Person2.svg[Database-first illustration]
+image:Person2.svg[alt="",role=decorative]
 
 [.feature]
 == Database-first
 
-A well-designed database outlives every application built on top of it. Graphitron works _with_ the database, not around it. Generated code respects constraints; security lives in the database where it belongs.
+A well-designed database outlives every application built on top of it. Graphitron consumes jOOQ-generated types and treats the database schema as the source of truth, rather than abstracting it away.
 
 xref:graphitron-principles.adoc[Read the principles]
 
 |
-image:Person3.svg[Type-safe by construction illustration]
+image:Person3.svg[alt="",role=decorative]
 
 [.feature]
-== Type-safe by construction
+== Built on jOOQ and graphql-java
 
-Generator code is Java 25; generated output is Java 17. jOOQ-typed table classes mean the SQL you generate has the same compile-time guarantees as the rest of your code.
+jOOQ provides the typed table classes that Graphitron uses to build SQL the compiler can check. graphql-java provides the schema-execution layer the generated resolvers plug into. Both are foundational, not incidental.
 
-xref:dependencies.adoc[How jOOQ and GraphQL-Java fit]
+xref:dependencies.adoc[Why these dependencies]
 
 |
-image:Personer.svg[Naive about the right things illustration]
+image:Personer.svg[alt="",role=decorative]
 
 [.feature]
-== Naive about the right things
+== Authorization stays in the database
 
-Generated code has no runtime dependency on Graphitron, no business logic, no authorization. When you need custom rules, you drop into hand-written code through explicit extension points.
+Generated resolvers contain no authorization logic. PostgreSQL row-level security and per-request session variables enforce access rules where the rules already live, and where every other application that touches the data sees them too.
 
 xref:security.adoc[Security model]
 |===
@@ -61,7 +61,7 @@ xref:security.adoc[Security model]
 | Prerequisites, jOOQ generation, GraphQL schema with directives, build wiring. Start here if you want to use Graphitron in a project.
 
 | xref:faq.adoc[FAQ]
-| What Graphitron is, what it isn't, and where to go for support.
+| Purpose, how it works, licensing, production use, and where to ask for help.
 
 | xref:vision-and-goal.adoc[Vision and Goal]
 | What problem Graphitron solves and how it approaches the solution.
