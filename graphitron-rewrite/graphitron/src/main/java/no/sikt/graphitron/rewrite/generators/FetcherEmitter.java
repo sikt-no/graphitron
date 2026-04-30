@@ -150,14 +150,14 @@ public final class FetcherEmitter {
                 && crf.compaction() instanceof CallSiteCompaction.NodeIdEncodeKeys
                 && parentTable != null) {
             // Single-column rooted-at-parent NodeId reference (single-hop or correlated-subquery
-            // cases via R24's path machinery) — runtime stub until the JOIN-with-projection emission
-            // lifts ($fields-side JOIN extension). FK-mirror cases collapse to ColumnField at the
-            // classifier so they never reach this arm.
+            // cases via R24's path machinery) — runtime stub until R24 lands the
+            // JOIN-with-projection emission ($fields-side JOIN extension). FK-mirror cases collapse
+            // to ColumnField at the classifier so they never reach this arm.
             return CodeBlock.of(
                 "($T env) -> { throw new $T($S); }",
                 DATA_FETCHING_ENV, UnsupportedOperationException.class,
                 "Rooted-at-parent NodeId reference '" + crf.parentTypeName() + "." + crf.name()
-                    + "' requires the JOIN-with-projection emission (R50 phase b2b) — not yet implemented.");
+                    + "' requires the JOIN-with-projection emission tracked in R24 — not yet implemented.");
         }
         if (field instanceof ChildField.CompositeColumnReferenceField ccrf && parentTable != null) {
             // Composite-key rooted-at-parent NodeId reference — same runtime stub as the
@@ -167,7 +167,7 @@ public final class FetcherEmitter {
                 "($T env) -> { throw new $T($S); }",
                 DATA_FETCHING_ENV, UnsupportedOperationException.class,
                 "Rooted-at-parent composite NodeId reference '" + ccrf.parentTypeName() + "." + ccrf.name()
-                    + "' requires the JOIN-with-projection emission (R50 phase b2b) — not yet implemented.");
+                    + "' requires the JOIN-with-projection emission tracked in R24 — not yet implemented.");
         }
         return CodeBlock.of("$T::$L", fetchersClass, field.name());
     }

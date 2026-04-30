@@ -105,11 +105,14 @@ into a single `ConnectionResult` carrier.
   via `codeRegistry.dataFetcher(FieldCoordinates.coordinates(...), ...)`.
 - Filter-input types classify through `TypeBuilder.buildInputField`
   into `InputField` sealed subclasses (`ColumnField`,
-  `ColumnReferenceField`, `PlatformIdField`, `NestingField`). None of
-  them carries a facet flag. `InputField.IdReferenceField` is a
-  pending sibling from [plan-id-reference-input-field.md]; if it
-  lands first, Phase 3's `@asFacet` rejection list must rule on it (see
-  Non-goals).
+  `ColumnReferenceField`, `PlatformIdField`, `NestingField`,
+  `CompositeColumnField`, `CompositeColumnReferenceField`). None of
+  them carries a facet flag. The `[ID!] @nodeId(typeName: T)` reference
+  shape (post-R50 successor of the retired `InputField.IdReferenceField`)
+  surfaces as `InputField.ColumnReferenceField` /
+  `InputField.CompositeColumnReferenceField` carrying
+  `extraction = NodeIdDecodeKeys.SkipMismatchedElement`; Phase 3's
+  `@asFacet` rejection list must rule on those carriers (see Non-goals).
 - `BuildContext` lists every directive the rewrite reads in its
   `DIR_*` constant block; there is no `DIR_FACET`.
 - No execution-test fixture combines `@asConnection` with a filter input
@@ -178,13 +181,14 @@ into a single `ConnectionResult` carrier.
 - **Facets on non-`@asConnection` list fields.** Connection-only; the whole
   filter-↔-facets contract assumes a projectable aggregate shape.
 - **Facets on `@asFacet` fields bound to `@reference` paths, `@condition` joins,
-  or composite/`[ID!]` reference fields.** Classifier rejects these at
-  validate time; loosening is a follow-up. If `InputField.IdReferenceField`
-  (pending in [plan-id-reference-input-field.md]) lands before this plan,
-  Phase 3's rejection list must add it too — the v1 SQL emitter only
-  understands direct-column facet values, and a join-mediated ID-reference
-  field needs a different aggregation shape. Out of scope for v1; tracked
-  as a follow-up alongside the other reference-path cases.
+  or composite/`[ID!]` reference fields (including the post-R50
+  `[ID!] @nodeId(typeName: T)` shape carried by
+  `InputField.ColumnReferenceField` / `CompositeColumnReferenceField`
+  with `extraction = NodeIdDecodeKeys`).** Classifier rejects these at
+  validate time; loosening is a follow-up. The v1 SQL emitter only
+  understands direct-column facet values; a join-mediated reference
+  field needs a different aggregation shape, tracked as a follow-up
+  alongside the other reference-path cases.
 - **Cross-facet independence semantics.** v1 applies "all filters except this
   facet's own predicate" per facet (conventional UX expectation). Alternative
   semantics (AND-all, OR-all) are follow-ups if a real use case surfaces.

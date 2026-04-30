@@ -4,7 +4,7 @@ title: "Mutation bodies"
 status: Spec
 priority: 9
 theme: mutations-errors
-depends-on: [lift-nodeid-out-of-model]
+depends-on: []
 ---
 
 # Mutation bodies
@@ -17,28 +17,17 @@ depends-on: [lift-nodeid-out-of-model]
 
 ---
 
-## Coupling
+## R50 prerequisites — shipped
 
-R22 has a hard dependency on **R50 (Lift NodeId out of the model)**. Phase 1 (model + classifier across all four DML variants) and the DELETE emitter have already landed on `claude/graphitron-rewrite`, but the remaining DML emitters (INSERT, UPDATE, UPSERT) cannot land cleanly against the current model. The reasons:
+R22's dependency on R50 (Lift NodeId out of the model) has cleared; the model retypes R22 needed are now in the codebase:
 
-- **Wire-shape input handling.** Phase 2's value-binding shape (`DSL.val(in.get("<sdlFieldName>"), Tables.T.<col>.getDataType())`) reads the raw wire value and binds it to a single column. Mutation inputs that carry `id: ID! @nodeId` are encoded base64 strings, not column values; without R50's `CallSiteExtraction.NodeIdDecodeKeys` extraction at the DataFetcher boundary, the column converter receives an undecoded string and the bind fails. A pre-R50 INSERT emitter would either reintroduce wire-shape leaks (decode inline in the emitted body) or lock out `@nodeId` input fields entirely.
-- **Composite-key carriers.** R50 generalises `InputField.ColumnField.column: ColumnRef` to `columns: List<ColumnRef>`. Phase 2's emitter reads `column().javaName()` directly. Implementing Phase 2 today bakes in the single-`ColumnRef` shape and then has to migrate alongside R50's sweep; implementing Phase 2 after R50 lets the emitter walk `columns()` once.
-- **Deferred-variant rejections.** Invariants #8, #9, #10 (`NodeIdField`, `ColumnReferenceField` for the wire-shape forms, `NodeIdReferenceField`, `IdReferenceField`, `NodeIdInFilterField`) reject every wire-shape variant R50 retires. Post-R50 these become `ColumnField` with `NodeIdDecodeKeys` extraction and are natively supported; the rejection arms become dead code.
+- **`DmlTableField.nodeIdMeta` retyped to `encodeReturn: Optional<HelperRef.Encode>`.** The classifier still reads `JooqCatalog.nodeIdMetadata(tableName)` (the catalog-internal lookup stays unchanged), but converts the result to a `HelperRef.Encode` before constructing the variant. The DELETE emitter rewrites: `f.nodeIdMeta().get().keyColumns()` → `f.encodeReturn().get().paramSignature()` for the `returningResult(...)` projection; the `.fetchOne(r -> NodeIdEncoder.encode(typeId, r.get(...), ...))` lambda becomes `.fetchOne(r -> NodeIdEncoder.encode<TypeName>(r.get(...), ...))` resolved through `f.encodeReturn().get()`. `NodeIdMetadata` stays in `JooqCatalog` as the classifier-time intermediate; it stops being a model-carried record.
+- **`TableInputArg.fieldBindings` retyped to `List<InputColumnBinding.MapBinding>`.** R50's `InputColumnBinding` seal split flat `InputColumnBinding` into `MapBinding` / `RecordBinding`; `TableInputArg.fieldBindings` is narrowed to the only arm any of its call sites produce. The DELETE emitter's `binding.inputFieldName()` migrates to `binding.fieldName()`.
+- **Wire-shape variants retired.** Invariants #8, #9, #10 (`NodeIdField`, `ColumnReferenceField` wire-shape forms, `NodeIdReferenceField`, `IdReferenceField`, `NodeIdInFilterField`) had pending DML rejection arms; those wire-shape variants are gone. Post-R50 the input-side equivalents are `ColumnField` / `CompositeColumnField` carrying `extraction = NodeIdDecodeKeys.*` and are natively supported by the column-binding extraction path.
 
-**Status: paused pending R50.** Phase 1 shipped (commit `9e517b1`). No further mutation work should land against trunk until R50 reaches Done. The Phase 2 INSERT emission stays on the roadmap and is the next item to revisit once R50 lands.
+The remaining DML emitters (INSERT, UPDATE, UPSERT) can now land cleanly. Phase 1 (model + classifier across all four DML variants) shipped at commit `9e517b1`; the DELETE emitter shipped at `31c64a2`. The Phase 2 INSERT emission is the next item to revisit.
 
-What R50 lands on the mutation side:
-
-- **`DmlTableField.nodeIdMeta` retypes to `encodeReturn: Optional<HelperRef>`.** Per R50's "What stays" section. The classifier still reads `JooqCatalog.nodeIdMetadata(tableName)` (the catalog-internal `NodeIdMetadata(typeId, keyColumns)` lookup stays unchanged), but converts the result to a `HelperRef` before constructing the variant. The DELETE emitter rewrites: `f.nodeIdMeta().get().keyColumns()` → `f.encodeReturn().get().params()` for the `returningResult(...)` projection; the `.fetchOne(r -> NodeIdEncoder.encode(typeId, r.get(...), ...))` lambda becomes `.fetchOne(r -> NodeIdEncoder.encode<TypeName>(r.get(...), ...))` resolved through `f.encodeReturn().get()`. `NodeIdMetadata` stays in `JooqCatalog` as the lookup-time intermediate; it stops being a model-carried record.
-- **`TableInputArg.fieldBindings` retypes from `List<InputColumnBinding>` to `List<InputColumnBinding.MapBinding>`.** Per R50's `InputColumnBinding` seal (see *Lookup arg restructure* and *What stays* in `lift-nodeid-out-of-model.md`). Existing call sites (`FieldBuilder.buildLookupBindings`, the DELETE WHERE-clause emitter, and the validator's `MutationDeleteTableFieldValidationTest`) all already produce and consume Map-keyed bindings exclusively; the narrower type matches reality. The DELETE emitter's `binding.inputFieldName()` migrates to `binding.fieldName()`.
-
-What R50 leaves alone on the mutation side:
-
-- `MutationField.DmlTableField` sealed supertype itself — the four DML records and the shared accessor `(returnType, tableInputArg, encodeReturn, location)`. `tableInputArg` is `ArgumentRef.InputTypeArg.TableInputArg`, retyped only at the `fieldBindings` slot per the bullet above; the rest of its shape is untouched.
-- The classifier's per-verb helpers (`classifyMutationDeleteField` etc.), modulo Invariants #8–#10 dead-code cleanup and the `NodeIdMetadata` → `HelperRef` conversion at the `nodeIdMeta` resolution point.
-- The DELETE emitter's overall shape (`deleteFrom().where(...).returningResult(...).fetchOne(...)`); only the two slot accesses and the encode-call lambda change.
-
-> **Reader note.** The phase-specific specs below (Phase 2 INSERT, Phase 4 UPDATE, Phase 5 UPSERT, Phase 6 service variants), the *Consolidation* `DmlTableField` supertype shape, and the *Non-goals* `NodeIdField`-in-input deferral all spell out shapes that **predate the R50 retype**. Treat the two bullets above as authoritative for the post-R50 slot shapes; the forward-looking spec blocks below get refreshed wholesale when R22 unpauses.
+> **Reader note.** The phase-specific specs below (Phase 2 INSERT, Phase 4 UPDATE, Phase 5 UPSERT, Phase 6 service variants), the *Consolidation* `DmlTableField` supertype shape, and the *Non-goals* `NodeIdField`-in-input deferral spell out shapes that **predate the R50 retype**. Treat the bullets above as authoritative for the post-R50 slot shapes; the forward-looking spec blocks below get refreshed wholesale when R22 unpauses.
 
 ---
 

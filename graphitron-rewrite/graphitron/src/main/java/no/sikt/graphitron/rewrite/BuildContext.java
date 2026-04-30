@@ -1204,8 +1204,11 @@ class BuildContext {
     /**
      * Returns the GraphQL type name for the given SQL table name, or empty when zero or multiple
      * {@code @table}-annotated object types claim that table name (case-insensitive). Used by the
-     * IdReferenceField shim arm to map the FK's target table back to a GraphQL type name for
-     * {@link InputField.IdReferenceField#targetTypeName}.
+     * id-reference synthesis shim to map the FK's target table back to a GraphQL type name; the
+     * shim then constructs the post-R50 column-shaped successor (single-column
+     * {@link InputField.ColumnReferenceField} or composite
+     * {@link InputField.CompositeColumnReferenceField}) carrying the resolved type's
+     * {@link no.sikt.graphitron.rewrite.GraphitronType.NodeType} key columns.
      */
     private Optional<String> findGraphQLTypeForTable(String sqlTableName) {
         var candidates = findGraphQLTypesForTable(sqlTableName);
