@@ -819,16 +819,32 @@ class FieldBuilder {
                 name, typeName, nonNull, list, argCondition, plainFields);
         }
 
-        // NodeId scalar: scalar ID arg on a node-type table — skip column binding and produce
-        // NodeIdArg so projections emit hasIds/hasId instead of a column predicate.
+        // R50 phase (f-D1): scalar ID arg on a node-type table folds onto ColumnArg with
+        // NodeIdDecodeKeys.ThrowOnMismatch. The single key column becomes the binding column;
+        // the ThrowOnMismatch arm carries the per-NodeType decode<TypeName> helper. Composite-PK
+        // NodeType targets land in phase (g) alongside the composite-PK NodeId fixture; for now
+        // we surface them as UnclassifiedArg so the missing wiring is visible at validate time
+        // rather than silently producing a degenerate path.
         if ("ID".equals(typeName) && !list) {
             Optional<JooqCatalog.NodeIdMetadata> nodeIdMeta = ctx.catalog.nodeIdMetadata(rt.tableName());
             if (nodeIdMeta.isPresent()) {
                 boolean isLookupKey = arg.hasAppliedDirective(DIR_LOOKUP_KEY);
-                return new ArgumentRef.ScalarArg.NodeIdArg(
-                    name, typeName, nonNull, list,
-                    nodeIdMeta.get().typeId(), nodeIdMeta.get().keyColumns(),
-                    new CallSiteExtraction.Direct(), argCondition, isLookupKey);
+                var keyColumns = nodeIdMeta.get().keyColumns();
+                if (keyColumns.size() != 1) {
+                    return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
+                        "scalar @nodeId arg targeting a composite-PK NodeType is pending R50 phase (g) "
+                        + "(arity > 1 needs ScalarArg.CompositeColumnArg infrastructure)");
+                }
+                var decodeMethod = ctx.resolveDecodeHelperForTable(
+                    rt.tableName(), nodeIdMeta.get().typeId(), keyColumns);
+                if (decodeMethod == null) {
+                    return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
+                        "@nodeId arg: unable to resolve decode helper for table '" + rt.tableName() + "'");
+                }
+                var extraction = new CallSiteExtraction.ThrowOnMismatch(decodeMethod);
+                return new ArgumentRef.ScalarArg.ColumnArg(
+                    name, typeName, nonNull, list, keyColumns.get(0), extraction,
+                    argCondition, fieldOverride, isLookupKey);
             }
         }
 
@@ -1090,18 +1106,12 @@ class FieldBuilder {
             return TableFieldComponents.error(msg);
         }
         var lookupMapping = projectForLookup(refs, rt);
-        // LookupField invariant: if the field will classify as a lookup variant (signalled by
-        // @lookupKey appearing anywhere on its arguments), the mapping must have at least one
-        // column. Both scalar @lookupKey args (ColumnArg) and @lookupKey on composite-key input
-        // fields (TableInputArg.fieldBindings, argres Phase 3) contribute; the gate fires only
-        // when every lookup-key source failed to produce a column (e.g. all fieldBindings were
-        // rejected for being @reference-navigating or list-typed).
         // LookupField invariant: if any @lookupKey is present, the mapping must be non-empty.
-        // NodeIdMapping is always non-empty (carries typeId + keyColumns from the NodeType).
-        // ColumnMapping must have at least one column.
+        // ColumnMapping must have at least one arg. (Pre-R50 phase (f-D), a NodeIdMapping arm
+        // covered scalar NodeId @lookupKey args; that's now folded onto ColumnMapping carrying
+        // ScalarLookupArg with NodeIdDecodeKeys.ThrowOnMismatch.)
         boolean emptyMapping = switch (lookupMapping) {
             case ColumnMapping cm -> cm.args().isEmpty();
-            case LookupMapping.NodeIdMapping ignored -> false;
         };
         if (hasLookupKeyAnywhere(fieldDef) && emptyMapping) {
             // Prefer the specific binding-failure reason (e.g. @lookupKey on a @reference field)
@@ -1132,26 +1142,6 @@ class FieldBuilder {
                 case ArgumentRef.ScalarArg.ColumnArg ca when ca.isLookupKey() ->
                     args.add(new ColumnMapping.LookupArg.ScalarLookupArg(
                         ca.name(), ca.column(), ca.extraction(), ca.list()));
-                case ArgumentRef.ScalarArg.NodeIdArg na when na.isLookupKey() -> {
-                    // R50 phase (f-C) fold: lookup-key NodeId arg routes onto ScalarLookupArg
-                    // (single-key NodeType) with NodeIdDecodeKeys.ThrowOnMismatch — a null
-                    // decode return on a lookup key is an authored-input contract violation
-                    // and surfaces as a GraphqlErrorException at the row-building site.
-                    // Composite-PK NodeType targets land in DecodedRecord, wired in phase (g)
-                    // alongside the composite-PK NodeId fixture.
-                    var decodeMethod = ctx.resolveDecodeHelperForTable(
-                        targetTable.tableName(), na.nodeTypeId(), na.nodeKeyColumns());
-                    if (decodeMethod == null || na.nodeKeyColumns().size() != 1) {
-                        // Composite-PK NodeId or unresolved decoder — defer to phase (g).
-                        // For now retain the legacy NodeIdMapping path so behaviour is preserved
-                        // until the DecodedRecord fixture lands.
-                        return new LookupMapping.NodeIdMapping(
-                            na.name(), na.nodeTypeId(), na.nodeKeyColumns(), na.list(), targetTable);
-                    }
-                    var extraction = new no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch(decodeMethod);
-                    args.add(new ColumnMapping.LookupArg.ScalarLookupArg(
-                        na.name(), na.nodeKeyColumns().get(0), extraction, na.list()));
-                }
                 case ArgumentRef.InputTypeArg.TableInputArg tia -> {
                     // Composite-key Map input: each MapBinding contributes one slot. List
                     // cardinality lives on the outer arg — individual input fields are guaranteed
@@ -1252,11 +1242,6 @@ class FieldBuilder {
                             : new BodyParam.Eq(ca.name(), ca.column(), javaType, ca.nonNull(), ca.extraction()));
                     }
                     ca.argCondition().ifPresent(ac -> argConditions.add(ac.filter()));
-                }
-                case ArgumentRef.ScalarArg.NodeIdArg na -> {
-                    // Lookup-key NodeIdArg is consumed by projectForLookup → NodeIdMapping;
-                    // non-lookup NodeIdArg filter emission is not yet implemented (Step 4 follow-up).
-                    na.argCondition().ifPresent(ac -> argConditions.add(ac.filter()));
                 }
             }
         }
