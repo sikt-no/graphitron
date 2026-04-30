@@ -131,9 +131,17 @@ dispatch arm lands.
   The `ErrorHandlerType` enum already carries `GENERIC | DATABASE | VALIDATION`. The
   legacy enum-with-shared-fields shape and its `ErrorHandlerType.GENERIC | DATABASE`
   predecessor were replaced in the same edit.
-- `ChildField.ErrorsField` (§2a). The variant is in place; the five
-  `PolymorphicReturnType`-on-`@error` rejections in `FieldBuilder` that should produce
-  it are still pending (the production blocker is unchanged at the code level).
+- `ChildField.ErrorsField` (§2a) and the five `PolymorphicReturnType`-on-`@error`
+  rejection lifts in `FieldBuilder.liftToErrorsField` (the production blocker). A
+  field whose return type is a union of, or interface implemented by, `@error` types
+  now produces `ErrorsField` instead of falling through to `UnclassifiedField`.
+  Mixed-`@error`/non-`@error` unions and non-null `errors` lists are rejected with
+  precise `AUTHOR_ERROR` reasons; pure non-`@error` polymorphic returns still fall
+  through to the existing "polymorphic not supported" `DEFERRED` rejection. The
+  variant remains in `NOT_IMPLEMENTED_REASONS` until the dispatch wiring (next
+  bullet) lands; consumer schemas using `errors`-shaped fields therefore classify
+  but fail validation with a clear "ErrorsField not yet implemented" reason instead
+  of the prior production-blocking polymorphic rejection.
 - `ErrorChannel` record (§2c) with typed `payloadClass: ClassName`,
   `payloadCtorParams.type: TypeName`, and resolved `mappedErrorTypes:
   List<GraphitronType.ErrorType>`; `WithErrorChannel` capability interface implemented
@@ -154,9 +162,10 @@ dispatch arm lands.
 
 **Remaining work:**
 
-- `FieldBuilder` lifts the five `PolymorphicReturnType`-on-`@error` rejection sites to
-  produce `ChildField.ErrorsField` (per "Current blocker" below). Five sibling sites,
-  same gating predicate.
+- `ErrorsField` dispatch wiring: lift the variant out of `NOT_IMPLEMENTED_REASONS`
+  into `IMPLEMENTED_LEAVES`; emit a passthrough fetcher off the parent payload's
+  errors getter (graphql-java's `PropertyDataFetcher` semantics, parallel to
+  `PropertyField` / `RecordField`).
 - Carrier classifier produces `ErrorChannel` per the channel-detection rules in §2c;
   populates `payloadCtorParams` from the developer-supplied payload class's all-fields
   constructor; resolves the per-channel `mappingsConstantName`.
