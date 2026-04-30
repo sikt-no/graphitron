@@ -16,6 +16,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|
 | `R1` | `BatchKey` lifter directive | Spec | [plan](batchkey-lifter-directive.md) |
 | `R36` | Stub #3: Interface / union fetchers | In Progress | [plan](stub-interface-union-fetchers.md) |
+| `R40` | Argument-level `@nodeId` support | Spec | [plan](argument-level-nodeid.md) |
 | `R48` | Stub: `@externalField` resolved-reference path (`ComputedField`) | Spec | [plan](computed-field-with-reference.md) |
 | `R49` | Stub: scalar/`@record`-returning `@service` child field (`ServiceRecordField`) <sub>blocked by: [service-rows-method-body](service-rows-method-body.md)</sub> | Spec | [plan](service-record-field.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
@@ -38,7 +39,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 ### Architecture
 
-- `R40` [**Argument-level `@nodeId` support**](argument-level-nodeid.md): `@nodeId` is declared on `ARGUMENT_DEFINITION` in [`directives.graphqls`](../graphitron/src/main/resources/no/sikt/graphitron/rewrite/schema/directives.graphqls) but `FieldBuilder.classifyArgument` (line 754) never inspects it. An explicit `@nodeId(typeName: T)` on a `[ID!]` arg falls through to the column-binding fallthrough at line 826 and surfaces as `column 'X' could not be resolved in table 'Y'`. Reproducer from opptak: `kompetanseregelverkGittIdV2(ider: [ID!]! @nodeId(typeName: "Kompetanseregelverk")): [Kompetanseregelverk!] @asConnection`.
 - `R6` [**Decompose `FieldBuilder`**](decompose-fieldbuilder.md): `FieldBuilder.java` is 2,825 lines with ~67 member declarations, and growing fast (the file added ~600 lines between the 2026-04-28 audit and the 2026-04-30 refresh). Argument-resolution unification has shipped (Phase 4 landed under Done), so this is no longer blocked.
 - `R5` [**Composite-key `@lookupKey` on list-of-input-object arguments**](composite-key-lookupkey.md): Add `ArgumentRef.CompositeLookupArg` carrying `(input-field-name, target-column)` pairs resolved from `@field(name:)` directives; `buildInputRowsMethod` already handles arbitrary-arity VALUES + JOIN.
 - `R52` [**Lift lookup-vs-query operation taxonomy into the model**](lift-operation-taxonomy.md): R50 named the lookup-vs-query split as a documentation-level distinction without lifting it into the model. The distinction is real and structurally consequential: lookups carry a derived VALUES table with an `idx` column to preserve per-input-row identity, queries fold predicates into a WHERE with no input-row identity to track. Today the split is encoded only by variant identity (`LookupMapping` vs everything else) and routing decisions taken in individual generators.
@@ -91,7 +91,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### nodeid
 
-- `R40` [**Argument-level `@nodeId` support**](argument-level-nodeid.md) — Backlog, architecture
+- `R40` [**Argument-level `@nodeId` support**](argument-level-nodeid.md) — Spec, architecture
 - `R55` [**Collapse EntityFetcherDispatch per-typeId VALUES emission onto the shared row-builder**](entityfetcherdispatch-lookup-pipeline-collapse.md) — Spec, architecture
 - `R24` [**`NodeIdReferenceField` JOIN-projection form**](nodeidreferencefield-join-projection-form.md) — Backlog, cleanup
 
