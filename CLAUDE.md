@@ -1,6 +1,6 @@
 # Graphitron Project - Claude Code Reference
 
-Rules and constraints for working in this repo. **Scope: only [`graphitron-rewrite/`](graphitron-rewrite/).** The legacy modules at the repo root (`graphitron-codegen-parent`, `graphitron-common`, `graphitron-example`, `graphitron-maven-plugin`, `graphitron-schema-transform`, `graphitron-servlet-parent`) are out of scope for AI work; do not modify them. Background and architecture for the rewrite live in [`graphitron-rewrite/docs/README.md`](graphitron-rewrite/docs/README.md).
+Rules and constraints for working in this repo. **Scope: [`graphitron-rewrite/`](graphitron-rewrite/) and [`docs/`](docs/).** The legacy modules at the repo root (`graphitron-codegen-parent`, `graphitron-common`, `graphitron-example`, `graphitron-maven-plugin`, `graphitron-schema-transform`, `graphitron-servlet-parent`) are out of scope for AI work; do not modify them. `/docs/` is the source for the public documentation site at `graphitron.sikt.no` (during migration: also `sikt-no.github.io/graphitron`); see [Documentation site](#documentation-site) below. Background and architecture for the rewrite live in [`graphitron-rewrite/docs/README.md`](graphitron-rewrite/docs/README.md).
 
 ## What graphitron-rewrite is
 
@@ -42,6 +42,18 @@ Do not use em dashes (—) in documentation. Use a comma, semicolon, colon, or r
 ## Editing large files
 
 Prefer many small `Edit` calls over one large `Write` when trimming or rewriting a long file. Full-file writes on plans/docs of ~300+ lines tend to time out mid-response and leave the file half-written. Sequence of targeted `Edit` calls (remove section A, remove section B, replace section C) is both safer and faster.
+
+## Documentation site
+
+`/docs/` is a Maven module (`graphitron-docs`, packaging `pom`) that renders an AsciiDoc site to `docs/target/generated-docs/` and gets deployed to GitHub Pages by `.github/workflows/deploy-docs.yml`. The rewrite-internal docs under `/graphitron-rewrite/docs/` and the roadmap under `/graphitron-rewrite/roadmap/` also render into the site (Phases 2 and 4 of plan R9). Doc changes ship through the same trunk-based flow as code; PR breakage on `.adoc` files fails CI.
+
+To skip the AsciiDoctor render in a local build (saves ~10s of JRuby startup):
+
+```bash
+mvn -f graphitron-rewrite/pom.xml install -P!docs -Plocal-db
+```
+
+The migration plan is roadmap item `R9` ([`graphitron-rewrite/roadmap/docs-site-asciidoc.md`](graphitron-rewrite/roadmap/docs-site-asciidoc.md)).
 
 ## Development Workflow
 

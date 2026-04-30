@@ -1,0 +1,235 @@
+/*
+ * Graphitron documentation site theme.
+ *
+ * Built on top of the Sikt Design System tokens, which are fetched into
+ * css/sds-core.css and css/sds-button.css at build time by download-maven-plugin.
+ * Those files expose CSS custom properties (--sds-color-*, --sds-typography-*,
+ * --sds-space-*) that this stylesheet consumes.
+ *
+ * Adapted from siktifisert.css in alf/graphitron-landingsside; selectors
+ * remapped from Docusaurus class names (.navbar, .hero, .theme-doc-markdown)
+ * to Asciidoctor's defaults (#header, #content, .sect1, .admonitionblock).
+ */
+
+@import url("sds-core.css");
+@import url("sds-button.css");
+
+/* ---------- base ---------------------------------------------------------- */
+
+:root {
+    --site-content-max: 1180px;
+    --site-content-pad: 24px;
+    --site-rule: var(--sds-color-grey-300, #d9dbde);
+    --site-link: var(--sds-color-blue-500, #1a4eb8);
+    --site-link-hover: var(--sds-color-blue-700, #0e3a8e);
+    --site-bg: var(--sds-color-white, #ffffff);
+    --site-fg: var(--sds-color-black, #1a1a1a);
+    --site-muted: var(--sds-color-grey-600, #6b7280);
+    --site-callout-bg: var(--sds-color-blue-50, #f0f4fb);
+    --site-callout-border: var(--sds-color-blue-200, #b8caec);
+    --site-footer-bg: var(--sds-color-black, #1a1a1a);
+    --site-footer-fg: var(--sds-color-white, #ffffff);
+}
+
+html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--site-bg);
+    color: var(--site-fg);
+    font-family: var(--sds-typography-font-family-default, "Haffer", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif);
+    font-size: 16px;
+    line-height: 1.6;
+}
+
+body.book, body.article {
+    background: var(--site-bg);
+}
+
+a {
+    color: var(--site-link);
+    text-decoration: none;
+}
+a:hover, a:focus {
+    color: var(--site-link-hover);
+    text-decoration: underline;
+}
+
+/* ---------- layout -------------------------------------------------------- */
+
+#header, #content, #footer {
+    max-width: var(--site-content-max);
+    margin: 0 auto;
+    padding: 0 var(--site-content-pad);
+}
+
+#header {
+    border-bottom: 1px solid var(--site-rule);
+    padding-top: 24px;
+    padding-bottom: 16px;
+    margin-bottom: 32px;
+}
+
+#header h1 {
+    margin: 0 0 4px 0;
+    font-weight: 700;
+    font-size: 2.4rem;
+    letter-spacing: -0.01em;
+}
+
+#header .details {
+    color: var(--site-muted);
+    font-size: 0.9rem;
+}
+
+#content {
+    padding-top: 8px;
+    padding-bottom: 64px;
+}
+
+/* ---------- typography ---------------------------------------------------- */
+
+h1, h2, h3, h4, h5, h6 {
+    font-weight: 700;
+    line-height: 1.25;
+    margin: 1.6em 0 0.6em;
+    letter-spacing: -0.005em;
+}
+h2 { font-size: 1.7rem; border-bottom: 1px solid var(--site-rule); padding-bottom: 6px; }
+h3 { font-size: 1.3rem; }
+h4 { font-size: 1.1rem; }
+
+p, li {
+    color: var(--site-fg);
+}
+
+code, pre, kbd, tt {
+    font-family: var(--sds-typography-font-family-mono, "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace);
+}
+
+code {
+    background: var(--sds-color-grey-100, #f4f5f7);
+    border: 1px solid var(--site-rule);
+    border-radius: 4px;
+    padding: 0.05em 0.35em;
+    font-size: 0.9em;
+}
+
+pre code {
+    background: transparent;
+    border: none;
+    padding: 0;
+}
+
+.listingblock pre, .literalblock pre {
+    background: var(--sds-color-grey-50, #fafbfc);
+    border: 1px solid var(--site-rule);
+    border-radius: 6px;
+    padding: 14px 16px;
+    overflow-x: auto;
+    font-size: 0.9rem;
+}
+
+/* ---------- TOC ----------------------------------------------------------- */
+
+#toc.toc2 {
+    background: var(--sds-color-grey-50, #fafbfc);
+    border-right: 1px solid var(--site-rule);
+    font-size: 0.92rem;
+}
+#toc.toc2 a {
+    color: var(--site-fg);
+}
+#toc.toc2 a:hover {
+    color: var(--site-link);
+}
+#toc #toctitle {
+    font-weight: 700;
+    color: var(--site-fg);
+}
+
+/* ---------- admonitions / advantage-box ----------------------------------- */
+
+.admonitionblock {
+    margin: 1.4em 0;
+}
+.admonitionblock > table {
+    border: 1px solid var(--site-callout-border);
+    border-left: 4px solid var(--site-link);
+    background: var(--site-callout-bg);
+    border-radius: 6px;
+    padding: 12px 14px;
+    width: 100%;
+}
+.admonitionblock td.icon {
+    width: 36px;
+    vertical-align: top;
+}
+.admonitionblock td.icon .title {
+    font-weight: 700;
+    color: var(--site-link);
+    text-transform: uppercase;
+    font-size: 0.8rem;
+    letter-spacing: 0.05em;
+}
+.admonitionblock td.content {
+    padding-left: 12px;
+}
+
+/* The plan calls for the legacy ".advantage-box" pattern. AsciiDoc emits the
+ * role as a CSS class on the wrapping element, so .advantage-box matches when
+ * authors write [.advantage-box] before a block. */
+.advantage-box {
+    background: var(--site-callout-bg);
+    border-left: 4px solid var(--site-link);
+    border-radius: 6px;
+    padding: 16px 20px;
+    margin: 1.4em 0;
+}
+
+/* ---------- hero (used on index.adoc) ------------------------------------- */
+
+.hero, .sect1.hero, [data-role="hero"] {
+    background: linear-gradient(180deg, var(--sds-color-blue-50, #f0f4fb) 0%, var(--site-bg) 100%);
+    border-radius: 12px;
+    padding: 36px 28px;
+    margin-bottom: 32px;
+}
+.hero h2 {
+    border-bottom: none;
+    font-size: 2rem;
+    margin-top: 0;
+}
+
+/* ---------- tables -------------------------------------------------------- */
+
+table.tableblock {
+    border-collapse: collapse;
+    margin: 1.2em 0;
+    width: 100%;
+}
+table.tableblock th, table.tableblock td {
+    border: 1px solid var(--site-rule);
+    padding: 8px 12px;
+    text-align: left;
+    vertical-align: top;
+}
+table.tableblock thead th {
+    background: var(--sds-color-grey-50, #fafbfc);
+    font-weight: 700;
+}
+
+/* ---------- footer -------------------------------------------------------- */
+
+#footer {
+    background: var(--site-footer-bg);
+    color: var(--site-footer-fg);
+    max-width: 100%;
+    padding: 24px var(--site-content-pad);
+    margin-top: 48px;
+    text-align: center;
+    font-size: 0.85rem;
+}
+#footer a {
+    color: var(--site-footer-fg);
+    text-decoration: underline;
+}
