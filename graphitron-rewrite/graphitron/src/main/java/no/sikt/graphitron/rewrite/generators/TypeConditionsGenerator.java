@@ -8,7 +8,6 @@ import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
-import no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator;
 import no.sikt.graphitron.rewrite.model.BodyParam;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
@@ -94,7 +93,6 @@ public class TypeConditionsGenerator {
     static MethodSpec buildConditionMethod(GeneratedConditionFilter gcf, String outputPackage, String jooqPackage) {
         var tableRef = gcf.tableRef();
         var jooqTableClass = GeneratorUtils.ResolvedTableNames.ofTable(tableRef, jooqPackage).jooqTableClass();
-        var nodeIdEncoder = ClassName.get(outputPackage + ".util", NodeIdEncoderClassGenerator.CLASS_NAME);
 
         var builder = MethodSpec.methodBuilder(gcf.methodName())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -154,17 +152,6 @@ public class TypeConditionsGenerator {
                         builder.addStatement("if ($L != null) condition = condition.and($T.row($L).in($L))",
                             rin.name(), DSL, cols, rin.name());
                     }
-                }
-                case BodyParam.NodeIdIn ni -> {
-                    var keyColArgs = CodeBlock.builder();
-                    for (int i = 0; i < ni.nodeKeyColumns().size(); i++) {
-                        if (i > 0) keyColArgs.add(", ");
-                        keyColArgs.add("table.$L", ni.nodeKeyColumns().get(i).javaName());
-                    }
-                    builder.addStatement(
-                        "condition = condition.and($L == null || $L.isEmpty() ? $T.noCondition() : $T.hasIds($S, $L, $L))",
-                        ni.name(), ni.name(), DSL,
-                        nodeIdEncoder, ni.nodeTypeId(), ni.name(), keyColArgs.build());
                 }
             }
         }

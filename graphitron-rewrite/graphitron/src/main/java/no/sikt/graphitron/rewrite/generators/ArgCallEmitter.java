@@ -208,13 +208,17 @@ public final class ArgCallEmitter {
         ClassName collectors = ClassName.get(java.util.stream.Collectors.class);
 
         if (list) {
-            // Pattern: wire instanceof List<?> _l ? _l.stream().map(decode).filter(nonNull)
-            //          [.map(value1) | .map(Record::valuesRow)].collect(toList()) : null
-            // The instanceof guard makes this null-safe regardless of whether wireExpr is a
-            // top-level env.getArgument() or a nested Map traversal that may return null.
+            // Pattern: (wire) instanceof List _nl ? ((List<?>)_nl).stream()
+            //          .map(decode).filter(nonNull)[.map(value1) | .map(Record::valuesRow)]
+            //          .collect(toList()) : null
+            // wireExpr is wrapped in outer parens so the instanceof binds at the right
+            // precedence (ternary `?:` is right-associative; instanceof binds tighter).
+            // Pattern variable uses raw List to keep -source 17 compatibility — the cast
+            // to List<?> happens explicitly before .stream() so the type is Object-safe.
             var stream = CodeBlock.builder()
-                .add("$L instanceof $T<?> _l ? _l.stream().map(s -> $T.$L((String) s))",
-                    wireExpr, ClassName.get(List.class), encoderClass, methodName);
+                .add("($L) instanceof $T _nl ? (($T<?>) _nl).stream().map(s -> $T.$L((String) s))",
+                    wireExpr, ClassName.get(List.class), ClassName.get(List.class),
+                    encoderClass, methodName);
             if (throwOnMismatch) {
                 stream.add(".map(r -> { if (r == null) throw new $T($S); return r; })",
                     ClassName.get("graphql", "GraphqlErrorException"),
@@ -233,7 +237,7 @@ public final class ArgCallEmitter {
             return stream.build();
         }
 
-        // scalar
+        // scalar -- wrap wireExpr in parens for ternary precedence.
         // Skip arm: scalar case treats null decode as "no match" (caller's nullable arg).
         // Throw arm: a null decode raises a GraphqlErrorException via a helper lambda; the
         // body shape uses a (((Supplier<X>) () -> { throw ...; }).get()) trick to keep the
@@ -242,21 +246,21 @@ public final class ArgCallEmitter {
         if (arity == 1) {
             if (throwOnMismatch) {
                 return CodeBlock.of(
-                    "$L instanceof String _s ? ($T.$L(_s) instanceof $T _r ? _r.value1() : "
+                    "($L) instanceof String _s ? ($T.$L(_s) instanceof $T _r ? _r.value1() : "
                     + "(($T<?>) () -> { throw new $T($S); }).get()) : null",
                     wireExpr, encoderClass, methodName, decode.returnType(),
                     ClassName.get("java.util.function", "Supplier"),
                     ClassName.get("graphql", "GraphqlErrorException"),
                     "Decoded NodeId did not match the expected type for this argument");
             }
-            return CodeBlock.of("$L instanceof String _s && $T.$L(_s) instanceof $T _r ? _r.value1() : null",
+            return CodeBlock.of("($L) instanceof String _s && $T.$L(_s) instanceof $T _r ? _r.value1() : null",
                 wireExpr, encoderClass, methodName, decode.returnType());
         }
         // arity > 1: project decoded Record into RowN via valuesRow().
         ClassName recordCls = ClassName.get("org.jooq", "Record");
         if (throwOnMismatch) {
             return CodeBlock.of(
-                "$L instanceof String _s ? ($T.$L(_s) instanceof $T _r ? (($T) _r).valuesRow() : "
+                "($L) instanceof String _s ? ($T.$L(_s) instanceof $T _r ? (($T) _r).valuesRow() : "
                 + "(($T<?>) () -> { throw new $T($S); }).get()) : null",
                 wireExpr, encoderClass, methodName, decode.returnType(), recordCls,
                 ClassName.get("java.util.function", "Supplier"),
@@ -264,7 +268,7 @@ public final class ArgCallEmitter {
                 "Decoded NodeId did not match the expected type for this argument");
         }
         return CodeBlock.of(
-            "$L instanceof String _s && $T.$L(_s) instanceof $T _r ? (($T) _r).valuesRow() : null",
+            "($L) instanceof String _s && $T.$L(_s) instanceof $T _r ? (($T) _r).valuesRow() : null",
             wireExpr, encoderClass, methodName, decode.returnType(), recordCls);
     }
 
@@ -294,28 +298,21 @@ public final class ArgCallEmitter {
     private static CodeBlock buildNestedInputFieldExtraction(String outerArgName, List<String> path,
             CallSiteExtraction leaf, String leafTypeName, boolean list) {
         // For a Direct leaf the Map.get value is cast directly to the parameter type. For a
-        // NodeIdDecodeKeys leaf the cast target is the wire format (List<String> for list,
-        // String for scalar), and the decode chain is layered on top.
+        // NodeIdDecodeKeys leaf the leaf cast is omitted -- the decode chain takes Object and
+        // its own instanceof guard validates the runtime shape -- so the inner pattern stays
+        // "conditional" under -source 17 (no `(List<String>) ... instanceof List` chain).
         boolean nodeIdLeaf = leaf instanceof CallSiteExtraction.NodeIdDecodeKeys;
-        TypeName castTarget;
-        if (nodeIdLeaf) {
-            ClassName stringClass = ClassName.get(String.class);
-            castTarget = list
-                ? ParameterizedTypeName.get(ClassName.get(List.class), stringClass)
-                : stringClass;
-        } else {
-            ClassName rawLeaf = ClassName.bestGuess(rawComponent(leafTypeName));
-            castTarget = list
-                ? ParameterizedTypeName.get(ClassName.get(List.class), rawLeaf)
-                : rawLeaf;
-        }
         CodeBlock root = CodeBlock.of("env.getArgument($S)", outerArgName);
-        CodeBlock mapChain = buildMapChain(root, path, 0, castTarget);
-        if (!nodeIdLeaf) return mapChain;
 
-        // Wrap the Map traversal result in the NodeId decode chain. The traversal returns the
-        // wire-format value (List<String> or String), or null if any intermediate step is missing.
-        return buildNodeIdDecodeExtraction(mapChain, (CallSiteExtraction.NodeIdDecodeKeys) leaf, leafTypeName, list);
+        if (nodeIdLeaf) {
+            CodeBlock mapChain = buildMapChain(root, path, 0, /* leafType= */ null);
+            return buildNodeIdDecodeExtraction(mapChain, (CallSiteExtraction.NodeIdDecodeKeys) leaf, leafTypeName, list);
+        }
+        ClassName rawLeaf = ClassName.bestGuess(rawComponent(leafTypeName));
+        TypeName castTarget = list
+            ? ParameterizedTypeName.get(ClassName.get(List.class), rawLeaf)
+            : rawLeaf;
+        return buildMapChain(root, path, 0, castTarget);
     }
 
     private static CodeBlock buildMapChain(CodeBlock currentExpr, List<String> path, int depth, TypeName leafType) {
@@ -323,6 +320,12 @@ public final class ArgCallEmitter {
         String key = path.get(depth);
         boolean isLeaf = depth == path.size() - 1;
         if (isLeaf) {
+            // leafType == null means "do not cast the Map.get result" -- the consumer applies its
+            // own runtime guard (used by the NodeIdDecodeKeys leaf path).
+            if (leafType == null) {
+                return CodeBlock.of("$L instanceof $T<?, ?> $L ? $L.get($S) : null",
+                    currentExpr, Map.class, binding, binding, key);
+            }
             return CodeBlock.of("$L instanceof $T<?, ?> $L ? ($T) $L.get($S) : null",
                 currentExpr, Map.class, binding, leafType, binding, key);
         }

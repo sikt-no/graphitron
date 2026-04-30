@@ -20,7 +20,6 @@ public sealed interface InputField extends GraphitronField
                 InputField.CompositeColumnField, InputField.CompositeColumnReferenceField,
                 InputField.NodeIdField, InputField.NodeIdReferenceField,
                 InputField.IdReferenceField,
-                InputField.NodeIdInFilterField,
                 InputField.NestingField {
 
     /**
@@ -96,12 +95,12 @@ public sealed interface InputField extends GraphitronField
      * a multi-column tuple (Direct, JooqConvert, EnumValueOf, TextMapLookup, ContextArg are
      * all single-scalar leaf shapes; NestedInputField is a Map-traversal arm that hosts an
      * inner extraction rather than producing a tuple). Lands as the post-R50 successor for the
-     * arity > 1 cases of {@link NodeIdField} and {@link NodeIdInFilterField}.
+     * arity > 1 cases of {@link NodeIdField} and the retired {@code NodeIdInFilterField}.
      *
      * <p>The body emitter pairs {@link CallSiteExtraction.NodeIdDecodeKeys.SkipMismatchedElement}
      * with {@link BodyParam.RowEq RowEq} (for scalar same-table NodeId equality, the post-R50
      * successor of {@link NodeIdField}) or {@link BodyParam.RowIn RowIn} (for list filter,
-     * post-R50 successor of {@link NodeIdInFilterField}).
+     * post-R50 successor of the retired {@code NodeIdInFilterField}).
      */
     record CompositeColumnField(
         String parentTypeName,
@@ -237,27 +236,6 @@ public sealed interface InputField extends GraphitronField
         String fkName,
         String qualifier,
         boolean synthesized
-    ) implements InputField {}
-
-    /**
-     * A {@code [ID!]} field on a {@code @table} input type whose {@code @nodeId(typeName:)}
-     * references the <em>same</em> table as the input itself. Semantics: "filter results to rows
-     * whose composite primary key matches one of these decoded node IDs"; a primary-key IN
-     * predicate, not a FK join.
-     *
-     * <p>The generator decodes each base64 node ID into its component PK column values, then emits
-     * {@code WHERE (pk1, pk2, ...) IN ((v1a, v1b), (v2a, v2b), ...)}. No join path is involved.
-     *
-     * <p>{@code nodeTypeId} and {@code nodeKeyColumns} come from
-     * {@link no.sikt.graphitron.rewrite.JooqCatalog#nodeIdMetadata(String)} on the target table,
-     * which is the same table the enclosing input type already binds to.
-     */
-    record NodeIdInFilterField(
-        String parentTypeName,
-        String name,
-        SourceLocation location,
-        String nodeTypeId,
-        List<ColumnRef> nodeKeyColumns
     ) implements InputField {}
 
     /**
