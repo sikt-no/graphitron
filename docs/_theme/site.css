@@ -48,7 +48,7 @@ a:active {
 
 .nav-header {
     background: var(--sds-color-layout-background-primary, #ffffff);
-    border-bottom: 1px solid var(--sds-color-layout-divider-subtle, #e2e4e8);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
     padding: 14px var(--site-content-pad);
     position: sticky;
     top: 0;
