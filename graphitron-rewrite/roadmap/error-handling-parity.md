@@ -137,11 +137,16 @@ dispatch arm lands.
   now produces `ErrorsField` instead of falling through to `UnclassifiedField`.
   Mixed-`@error`/non-`@error` unions and non-null `errors` lists are rejected with
   precise `AUTHOR_ERROR` reasons; pure non-`@error` polymorphic returns still fall
-  through to the existing "polymorphic not supported" `DEFERRED` rejection. The
-  variant remains in `NOT_IMPLEMENTED_REASONS` until the dispatch wiring (next
-  bullet) lands; consumer schemas using `errors`-shaped fields therefore classify
-  but fail validation with a clear "ErrorsField not yet implemented" reason instead
-  of the prior production-blocking polymorphic rejection.
+  through to the existing "polymorphic not supported" `DEFERRED` rejection.
+- `ErrorsField` dispatch wiring (§2a continued): the variant moved from
+  `NOT_IMPLEMENTED_REASONS` into `IMPLEMENTED_LEAVES`; `FetcherEmitter.dataFetcherValue`
+  emits `PropertyDataFetcher.fetching(name)` for it (graphql-java's reflective accessor
+  reaches the parent payload's `errors` accessor regardless of whether the backing
+  class is a Java record, a JavaBean, or untyped). The `*Fetchers` class emits no
+  per-field method; the wiring entry is the entire footprint, parallel to `PropertyField` /
+  `RecordField`. Consumer schemas with `errors`-shaped fields now build and classify
+  cleanly. The runtime carrier (per-error dispatch + try/catch wrapping) lands later
+  in this plan via the channel-detection phase.
 - `ErrorChannel` record (§2c) with typed `payloadClass: ClassName`,
   `payloadCtorParams.type: TypeName`, and resolved `mappedErrorTypes:
   List<GraphitronType.ErrorType>`; `WithErrorChannel` capability interface implemented
@@ -162,10 +167,6 @@ dispatch arm lands.
 
 **Remaining work:**
 
-- `ErrorsField` dispatch wiring: lift the variant out of `NOT_IMPLEMENTED_REASONS`
-  into `IMPLEMENTED_LEAVES`; emit a passthrough fetcher off the parent payload's
-  errors getter (graphql-java's `PropertyDataFetcher` semantics, parallel to
-  `PropertyField` / `RecordField`).
 - Carrier classifier produces `ErrorChannel` per the channel-detection rules in §2c;
   populates `payloadCtorParams` from the developer-supplied payload class's all-fields
   constructor; resolves the per-channel `mappingsConstantName`.
@@ -449,6 +450,10 @@ consumer branched on the distinction. Same precedent as the `ErrorChannel` flatn
 The emission for an `ErrorsField` is a passthrough fetcher: at request time the parent's
 payload object already carries the `errors` list (the carrier's `ErrorRouter.dispatch`
 produced it, or the service-method body did), so the fetcher reads it directly.
+**Status: landed** in `FetcherEmitter.dataFetcherValue` as `PropertyDataFetcher.fetching(name)`;
+graphql-java's reflective accessor handles record-style accessor → JavaBean getter → field for
+every payload backing class shape. The `*Fetchers` class emits no per-field method (no-op
+dispatch arm in `TypeFetcherGenerator`).
 
 #### 2b. Per-child classifier coordination
 

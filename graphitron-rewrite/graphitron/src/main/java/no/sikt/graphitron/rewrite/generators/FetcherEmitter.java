@@ -59,6 +59,15 @@ public final class FetcherEmitter {
         if (field instanceof ChildField.NestingField) {
             return CodeBlock.of("($T env) -> env.getSource()", DATA_FETCHING_ENV);
         }
+        if (field instanceof ChildField.ErrorsField) {
+            // Passthrough off the parent payload's errors accessor. PropertyDataFetcher reflects
+            // through record-style accessor → JavaBean getter → field, which covers every payload
+            // backing class shape (JavaRecordType / PojoResultType / untyped). The runtime carrier
+            // lives on the payload as the SDL field name; per-error dispatch and try/catch
+            // wrapping ship later in error-handling-parity.md (carrier classifier + dispatch arm).
+            var propertyDataFetcher = ClassName.get("graphql.schema", "PropertyDataFetcher");
+            return CodeBlock.of("$T.fetching($S)", propertyDataFetcher, field.name());
+        }
         if (field instanceof ChildField.PropertyField pf && resultType != null) {
             return propertyOrRecordValue(pf.columnName(), pf.column(), resultType, outputPackage, jooqPackage);
         }
