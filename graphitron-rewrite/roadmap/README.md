@@ -17,6 +17,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R1` | `BatchKey` lifter directive | Spec | [plan](batchkey-lifter-directive.md) |
 | `R48` | Stub: `@externalField` resolved-reference path (`ComputedField`) | Spec | [plan](computed-field-with-reference.md) |
 | `R49` | Stub: scalar/`@record`-returning `@service` child field (`ServiceRecordField`) <sub>blocked by: [service-rows-method-body](service-rows-method-body.md)</sub> | Spec | [plan](service-record-field.md) |
+| `R28` | Make `graphitron-rewrite/docs/README.adoc` a real entry point <sub>blocked by: [docs-site-asciidoc](docs-site-asciidoc.md)</sub> | Spec | [plan](rewrite-docs-entrypoint.md) |
 | `R3` | Classification vocabulary follow-ups | Spec | [plan](classification-vocabulary-followups.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec | [plan](nestingfield-multiparent-tablefield.md) |
@@ -61,7 +62,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 - `R38` [**Unify `rowsMethodName()`**](unify-rowsmethodname.md): Lift the `"rows" + capitalize(name())` copy-paste from four `BatchKeyField` leaves to a default method on the interface.
 - `R4` [**Collapse `BatchKeyField` validator/emitter redundancy**](collapse-tabletargetfield-redundancy.md): Promote `unsupportedReason()` from four parallel static overloads on `SplitRowsMethodEmitter` to a default method on `BatchKeyField`, so the validator's four-arm chain at `GraphitronSchemaValidator.java:160-180` collapses to a single `instanceof BatchKeyField` check and the emitter/validator lock-step (currently convention-enforced) becomes compiler-enforced.
-- `R28` [**Make `graphitron-rewrite/docs/README.md` a real entry point**](rewrite-docs-entrypoint.md): The rewrite docs index is currently a fragment: it starts at numbered item **#4** with no preamble, because the numbering is intended to continue from `/docs/README.md` at the repo root. Readers landing here directly via a roadmap link, a code search hit, or a GitHub directory listing see items 4-7 with no anchor. _(blocked by [docs-site-asciidoc](docs-site-asciidoc.md))_
 - `R15` [**Sweep doc drift between rewrite docs and `model/` taxonomy**](fix-legacy-refs-in-rewrite-docs.md): The four reference docs under `graphitron-rewrite/docs/` (`code-generation-triggers.md`, `rewrite-model.md`, `rewrite-design-principles.md`, `argument-resolution.md`) have fallen behind several recent landings in `model/`. None of the drift breaks the build; all of it costs a first-time reader credibility. Audited 2026-04-28 against trunk; eight specific sites below. _(blocked by [docs-site-asciidoc](docs-site-asciidoc.md))_
 - `R33` [**Shared interface for `QueryField` / `ChildField` table-bound parallels**](shared-interface-queryfield-childfield.md): Root variants drop `joinPath` but share `filters · orderBy · pagination`.
 - `R27` [**Retire `@nodeId` and `IdReferenceField` synthesis shims**](retire-synthesis-shims.md): Two parallel shims survive in the classifier so legacy SDL keeps building. Both should retire on the same gate (sis migration to canonical SDL); their wire shape is independent but the user-visible migration is one piece of work, so the two retirements ship together. _(blocked by [id-reference-input-field](id-reference-input-field.md), [sis-rewrite-migration](sis-rewrite-migration.md))_
@@ -142,7 +142,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### docs
 
-- `R28` [**Make `graphitron-rewrite/docs/README.md` a real entry point**](rewrite-docs-entrypoint.md) — Backlog, cleanup, blocked by [docs-site-asciidoc](docs-site-asciidoc.md)
+- `R28` [**Make `graphitron-rewrite/docs/README.adoc` a real entry point**](rewrite-docs-entrypoint.md) — Spec, cleanup, blocked by [docs-site-asciidoc](docs-site-asciidoc.md)
 - `R15` [**Sweep doc drift between rewrite docs and `model/` taxonomy**](fix-legacy-refs-in-rewrite-docs.md) — Backlog, cleanup, blocked by [docs-site-asciidoc](docs-site-asciidoc.md)
 - `R3` [**Classification vocabulary follow-ups**](classification-vocabulary-followups.md) — Spec
 - `R17` [**Annotated walkthrough of a generated file**](generated-output-walkthrough.md) — Backlog, cleanup, blocked by [rewrite-docs-entrypoint](rewrite-docs-entrypoint.md), [docs-site-asciidoc](docs-site-asciidoc.md)
