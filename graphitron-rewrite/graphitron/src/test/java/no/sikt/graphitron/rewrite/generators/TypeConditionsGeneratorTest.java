@@ -1,10 +1,12 @@
 package no.sikt.graphitron.rewrite.generators;
 
+import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.model.BodyParam;
 import no.sikt.graphitron.rewrite.model.CallParam;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
+import no.sikt.graphitron.rewrite.model.HelperRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import org.junit.jupiter.api.Test;
 
@@ -33,9 +35,22 @@ class TypeConditionsGeneratorTest {
             callParams, bodyParams);
     }
 
-    private static BodyParam.NodeIdIn nodeIdIn(String name, String typeId, List<ColumnRef> keyCols) {
-        return new BodyParam.NodeIdIn(name, typeId, keyCols,
-            new CallSiteExtraction.NestedInputField("filter", List.of("filter", name)));
+    private static HelperRef.Decode decodeHelper(String typeName, List<ColumnRef> outputCols) {
+        return new HelperRef.Decode(
+            ClassName.get(DEFAULT_OUTPUT_PACKAGE + ".util", "NodeIdEncoder"),
+            "decode" + typeName, outputCols);
+    }
+
+    private static BodyParam.In nodeIdInList(String name, ColumnRef col, String typeName) {
+        var leaf = new CallSiteExtraction.SkipMismatchedElement(decodeHelper(typeName, List.of(col)));
+        var ext = new CallSiteExtraction.NestedInputField("filter", List.of("filter", name), leaf);
+        return new BodyParam.In(name, col, col.columnClass(), false, ext);
+    }
+
+    private static BodyParam.RowIn nodeIdRowIn(String name, List<ColumnRef> cols, String typeName) {
+        var leaf = new CallSiteExtraction.SkipMismatchedElement(decodeHelper(typeName, cols));
+        var ext = new CallSiteExtraction.NestedInputField("filter", List.of("filter", name), leaf);
+        return new BodyParam.RowIn(name, cols, "org.jooq.RowN", false, ext);
     }
 
     private static BodyParam columnEq(String name, ColumnRef col, boolean list) {
@@ -46,52 +61,52 @@ class TypeConditionsGeneratorTest {
     }
 
     @Test
-    void nodeIdInFilter_singleColumn_emitsHasIdsWithOneCol() {
-        var gcf = filter(List.of(nodeIdIn("ids", "Film", List.of(FILM_ID))));
+    void nodeIdInFilter_singleColumn_emitsColumnInWithDecodedList() {
+        var gcf = filter(List.of(nodeIdInList("ids", FILM_ID, "Film")));
         var method = TypeConditionsGenerator.buildConditionMethod(
             gcf, DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
         var body = method.code().toString();
-        assertThat(body).contains("NodeIdEncoder.hasIds(\"Film\", ids, table.FILM_ID)");
-        assertThat(body).contains("ids == null || ids.isEmpty()");
+        assertThat(body).contains("table.FILM_ID.in(ids)");
     }
 
     @Test
-    void nodeIdInFilter_compositeColumns_emitsHasIdsWithAllColsInOrder() {
+    void nodeIdInFilter_compositeColumns_emitsRowInWithUntypedRowN() {
         var col1 = new ColumnRef("id_1", "ID_1", "java.lang.Integer");
         var col2 = new ColumnRef("id_2", "ID_2", "java.lang.Integer");
-        var gcf = filter(List.of(nodeIdIn("ids", "Bar", List.of(col1, col2))));
+        var gcf = filter(List.of(nodeIdRowIn("ids", List.of(col1, col2), "Bar")));
         var method = TypeConditionsGenerator.buildConditionMethod(
             gcf, DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
         var body = method.code().toString();
-        assertThat(body).contains("NodeIdEncoder.hasIds(\"Bar\", ids, table.ID_1, table.ID_2)");
+        // The Field<?>[] form picks the untyped RowN overload of DSL.row(...)
+        assertThat(body).contains("DSL.row(new org.jooq.Field<?>[]{table.ID_1, table.ID_2}).in(ids)");
     }
 
     @Test
-    void nodeIdInFilter_methodParamIsListOfString() {
-        var gcf = filter(List.of(nodeIdIn("ids", "Film", List.of(FILM_ID))));
+    void nodeIdInFilter_singleColumn_methodParamIsListOfTypedColumnClass() {
+        var gcf = filter(List.of(nodeIdInList("ids", FILM_ID, "Film")));
         var method = TypeConditionsGenerator.buildConditionMethod(
             gcf, DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
         var idsParam = method.parameters().stream()
             .filter(p -> p.name().equals("ids")).findFirst().orElseThrow();
-        // The parameter type is the column-type-agnostic List<String>, regardless of the
-        // PK column's Java class.
-        assertThat(idsParam.type().toString()).isEqualTo("java.util.List<java.lang.String>");
+        // Post-R50 the call-site decodes wire-format String -> column-typed scalar; the
+        // condition method receives the typed list directly.
+        assertThat(idsParam.type().toString()).isEqualTo("java.util.List<java.lang.Integer>");
     }
 
     @Test
     void mixedFilter_columnEqAndNodeIdIn_bothEmitted() {
         var gcf = filter(List.of(
             columnEq("title", FILM_TITLE, false),
-            nodeIdIn("ids", "Film", List.of(FILM_ID))));
+            nodeIdInList("ids", FILM_ID, "Film")));
         var method = TypeConditionsGenerator.buildConditionMethod(
             gcf, DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
         var body = method.code().toString();
         // ColumnEq still emits its scalar-eq form
         assertThat(body).contains("table.TITLE.eq");
-        // NodeIdIn emits its hasIds form
-        assertThat(body).contains("NodeIdEncoder.hasIds(\"Film\", ids, table.FILM_ID)");
+        // NodeId list filter emits column.in form over the decoded typed list
+        assertThat(body).contains("table.FILM_ID.in(ids)");
         // Declaration order is preserved
         assertThat(body.indexOf("table.TITLE.eq"))
-            .isLessThan(body.indexOf("NodeIdEncoder.hasIds"));
+            .isLessThan(body.indexOf("table.FILM_ID.in"));
     }
 }

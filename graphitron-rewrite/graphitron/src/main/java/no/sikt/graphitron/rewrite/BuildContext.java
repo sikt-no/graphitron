@@ -873,10 +873,12 @@ class BuildContext {
             String targetTable = argString(targetObj, DIR_TABLE, ARG_NAME)
                 .orElse(refTypeName.toLowerCase());
             // Same-table case: the referenced type maps to this filter's own table. Semantics
-            // are "filter by own primary key", not a FK join — route to NodeIdInFilterField
-            // instead of attempting findUniqueFkToTable(t, t). Resolve typeId/keyColumns the
-            // same way as NodeIdReferenceField above: catalog metadata first, then post-first-pass
-            // ctx.types, then SDL-only @node.
+            // are "filter by own primary key", not a FK join — produce a column-shaped successor
+            // (ColumnField for arity-1 PKs, CompositeColumnField for arity > 1) carrying
+            // NodeIdDecodeKeys.SkipMismatchedElement so the body emitter does the per-element
+            // decode + IN/RowIn predicate without walking through findUniqueFkToTable(t, t).
+            // Resolve typeId/keyColumns the same way as the bare-@nodeId reference branch:
+            // catalog metadata first, then post-first-pass ctx.types, then SDL-only @node.
             if (targetTable.equalsIgnoreCase(resolvedTable.tableName())) {
                 String sameTableTypeId;
                 List<ColumnRef> sameTableKeyColumns;
@@ -907,9 +909,25 @@ class BuildContext {
                         "@nodeId(typeName: '" + refTypeName + "') targets table '" + targetTable
                         + "' which has no @node key metadata; cannot generate primary-key IN filter");
                 }
-                return new InputFieldResolution.Resolved(new InputField.NodeIdInFilterField(
-                    parentTypeName, name, locationOf(field),
-                    sameTableTypeId, sameTableKeyColumns));
+                var decodeMethod = resolveDecodeHelperForTable(
+                    targetTable, sameTableTypeId, sameTableKeyColumns);
+                if (decodeMethod == null) {
+                    return new InputFieldResolution.Unresolved(name, null,
+                        "[ID!] @nodeId(typeName: '" + refTypeName + "') on input field '" + name
+                        + "': unable to resolve the NodeType backing table '" + targetTable
+                        + "' (zero or multiple GraphQL types map to it).");
+                }
+                Optional<ArgConditionRef> sameTableCond = buildInputFieldCondition(field, name, errors);
+                var sameTableExtraction =
+                    new no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement(decodeMethod);
+                if (sameTableKeyColumns.size() == 1) {
+                    return new InputFieldResolution.Resolved(new InputField.ColumnField(
+                        parentTypeName, name, locationOf(field), typeName, nonNull, /* list= */ true,
+                        sameTableKeyColumns.get(0), sameTableCond, sameTableExtraction));
+                }
+                return new InputFieldResolution.Resolved(new InputField.CompositeColumnField(
+                    parentTypeName, name, locationOf(field), typeName, nonNull, /* list= */ true,
+                    sameTableKeyColumns, sameTableCond, sameTableExtraction));
             }
             String fkName;
             if (field.hasAppliedDirective(DIR_REFERENCE)) {

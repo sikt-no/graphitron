@@ -30,7 +30,7 @@ import java.util.List;
  * <p>The parallel call-site view of this parameter is {@link CallParam}. A {@link BodyParam}
  * and its corresponding {@link CallParam} share the same {@code name} and {@code extraction}.
  */
-public sealed interface BodyParam permits BodyParam.ColumnPredicate, BodyParam.NodeIdIn {
+public sealed interface BodyParam permits BodyParam.ColumnPredicate {
 
     /** Parameter name (matches the GraphQL input field name). */
     String name();
@@ -61,9 +61,9 @@ public sealed interface BodyParam permits BodyParam.ColumnPredicate, BodyParam.N
      *       {@code DSL.row(c1, ..., cN).eq(DSL.row(v1, ..., vN))}. New shape for composite-PK
      *       NodeId equality, see R50.</li>
      *   <li>{@link RowIn} — composite-key row-IN. Body emits
-     *       {@code DSL.row(c1, ..., cN).in(rows)}. New shape; absorbs {@link NodeIdIn}'s row-IN
-     *       body once per-Node {@code decode<TypeName>} helpers feed typed key tuples instead
-     *       of base64 strings.</li>
+     *       {@code DSL.row(c1, ..., cN).in(rows)}. New shape; absorbs the retired
+     *       {@code NodeIdIn}'s row-IN body now that per-Node {@code decode<TypeName>} helpers
+     *       feed typed key tuples instead of base64 strings.</li>
      * </ul>
      *
      * <p>The body emitter switches exhaustively on these four arms: no
@@ -143,29 +143,4 @@ public sealed interface BodyParam permits BodyParam.ColumnPredicate, BodyParam.N
         @Override public boolean list() { return true; }
     }
 
-    /**
-     * A {@code [ID!]} list of base64 node IDs that translates to a composite-PK IN predicate.
-     * Body emits
-     * {@code NodeIdEncoder.hasIds("typeId", arg, table.col1, ..., table.colN)}.
-     * {@code javaType} is always {@code "java.lang.String"} and {@code list} is always
-     * {@code true}. The body's {@code arg == null || arg.isEmpty()} short-circuit makes
-     * outer-list nullability irrelevant for this variant, so no {@code nonNull} field is
-     * carried.
-     *
-     * <p>Retires in R50 phase (e) once {@link no.sikt.graphitron.rewrite.model.InputField.NodeIdInFilterField}
-     * is collapsed: the arity-1 path lands on {@link In} with extraction =
-     * {@link CallSiteExtraction.NodeIdDecodeKeys.SkipMismatchedElement}; the arity > 1 path
-     * lands on {@link RowIn} with the same extraction. The {@code DSL.row(...)} machinery
-     * inside {@code NodeIdEncoder.hasIds} disappears with this variant.
-     */
-    record NodeIdIn(
-        String name,
-        String nodeTypeId,
-        List<ColumnRef> nodeKeyColumns,
-        CallSiteExtraction extraction
-    ) implements BodyParam {
-        @Override public String javaType() { return String.class.getName(); }
-        @Override public boolean list() { return true; }
-        @Override public boolean nonNull() { return false; }
-    }
 }
