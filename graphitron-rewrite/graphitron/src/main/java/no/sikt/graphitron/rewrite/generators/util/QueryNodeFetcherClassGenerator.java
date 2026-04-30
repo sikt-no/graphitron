@@ -26,10 +26,11 @@ import java.util.List;
  *       leak decoding errors back to the client.</li>
  *   <li>Extracts the {@code typeId} prefix via {@code NodeIdEncoder.peekTypeId(id)} (the
  *       generated decode helper next to {@link NodeIdEncoderClassGenerator}).</li>
- *   <li>Branches on the prefix. Each arm SELECTs the requested fields (via the type's
- *       generated {@code TypeClass.$fields(...)}) plus a synthetic {@code __typename} column
- *       — which the {@code Node} {@code TypeResolver} reads to route the result to the
- *       concrete GraphQL type. Filters via {@code NodeIdEncoder.hasId}.</li>
+ *   <li>Branches on the prefix. Each arm dispatches through {@code EntityFetcherDispatch}'s
+ *       per-typeId {@code select<TypeName>Alt<N>} method, which SELECTs the requested fields
+ *       (via the type's generated {@code TypeClass.$fields(...)}) plus a synthetic
+ *       {@code __typename} column — read by the {@code Node} {@code TypeResolver} at scatter
+ *       time — and joins on the decoded key columns.</li>
  *   <li>Unknown {@code typeId} returns {@code null}.</li>
  * </ol>
  *
