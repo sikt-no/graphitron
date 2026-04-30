@@ -120,6 +120,14 @@ a:active {
     padding-top: 28px;
     padding-bottom: 12px;
 }
+/* On pages that hide the title (`:!showtitle:`, e.g. the homepage that uses
+ * its own .hero-band instead), #header renders empty. Collapse it so the
+ * page-default body color doesn't show as a grey strip between the nav and
+ * the hero. */
+#header:empty {
+    padding: 0;
+    margin: 0;
+}
 #header h1 {
     margin: 0 0 6px 0;
     font-weight: 700;
@@ -210,8 +218,11 @@ pre code {
 
 .hero-band {
     background: var(--sds-color-brand-primary-subtle, #ece4ff);
-    margin: 0 calc(-1 * var(--site-content-pad)) 32px;
-    padding: 48px var(--site-content-pad) 56px;
+    /* Negative top margin (and matching horizontal margins) so the band
+     * butts directly against the nav header without a grey body-default
+     * strip showing through #content's top padding. */
+    margin: -8px calc(-1 * var(--site-content-pad)) 32px;
+    padding: 56px var(--site-content-pad);
     text-align: center;
 }
 .hero-band .hero-title {
