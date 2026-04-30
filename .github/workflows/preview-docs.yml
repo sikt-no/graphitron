@@ -1,0 +1,33 @@
+name: Preview docs (PR artifact)
+
+on:
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'graphitron-rewrite/docs/**'
+      - 'graphitron-rewrite/roadmap/**'
+      - 'graphitron-rewrite/pom.xml'
+      - '.github/workflows/preview-docs.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          java-version: '25'
+          distribution: 'temurin'
+          cache: maven
+      - name: Build docs site
+        run: mvn -f graphitron-rewrite/pom.xml -pl :graphitron-docs -am package -DskipTests
+      - name: Upload preview artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: graphitron-docs-preview-${{ github.event.pull_request.number }}
+          path: docs/target/generated-docs
+          retention-days: 14

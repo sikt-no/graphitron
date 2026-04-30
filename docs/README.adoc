@@ -1,0 +1,70 @@
+= Graphitron Documentation
+:toc: macro
+
+This folder is the source for the Graphitron documentation site at https://graphitron.sikt.no/ (during migration: also https://sikt-no.github.io/graphitron/).
+
+The site is built by Maven via the `graphitron-docs` module (this directory) and deployed to GitHub Pages by `.github/workflows/deploy-docs.yml`.
+
+toc::[]
+
+== What's in this directory
+
+[cols="1,3"]
+|===
+| `index.adoc`
+| Site landing page.
+
+| `*.adoc`
+| Top-level product pages (vision, principles, security, dependencies, FAQ, ...).
+
+| `_theme/site.css`
+| Site-specific styles. Built on top of the Sikt Design System tokens fetched from `@sikt/sds-core` and `@sikt/sds-button` at build time.
+
+| `images/`
+| Logos, illustrations, favicon.
+
+| `pom.xml`
+| Maven module wiring. Plugins: `download-maven-plugin` (fetches SDS CSS), `maven-resources-plugin` (stages source + theme), `asciidoctor-maven-plugin` (renders HTML).
+
+| `target/`
+| Build output. Gitignored.
+|===
+
+The rewrite-specific architecture docs live under `/graphitron-rewrite/docs/` and the roadmap under `/graphitron-rewrite/roadmap/`. Both render into this site (Phases 2 and 4 of plan R9), but their authoring conventions stay in their own folders.
+
+== Building locally
+
+[source,bash]
+----
+mvn -f graphitron-rewrite/pom.xml -pl :graphitron-docs -am package
+----
+
+Output lands in `docs/target/generated-docs/`. Open `index.html` in a browser to spot-check.
+
+To skip the AsciiDoctor render in a local Maven run (the JRuby startup adds ~10s):
+
+[source,bash]
+----
+mvn -f graphitron-rewrite/pom.xml install -P!docs -Plocal-db
+----
+
+The resources copy and any roadmap-tool emit still run, so the staging tree is verified even when the HTML render is skipped.
+
+== Authoring conventions
+
+* File extension is `.adoc` (not `.asciidoc`, not `.asc`).
+* One H1 per file, set as the page title via `= Title`.
+* Cross-page links use `xref:` rather than raw URLs.
+* Code blocks use `[source,java]` (or `xml`, `yaml`, ...) with optional callouts.
+* Images live in `images/`; never hot-link to the deployed site.
+* `include::` does not resolve in GitHub's web preview; prefer self-contained pages and reserve `include::` for genuine reuse.
+
+GitHub renders `.adoc` natively in the web UI, so in-repo browsing works for plain prose. Treat in-repo rendering as a fallback; the deployed site is canonical.
+
+== Errors-vs-warnings
+
+The AsciiDoctor build is configured `failIf severity=WARN`: missing xrefs, missing includes, and unresolved attributes fail the build. We don't tolerate "warnings" in docs the way we sometimes do in compiler output; a missing xref is doc rot.
+
+== Plan
+
+The migration is tracked as roadmap item `R9` (`/graphitron-rewrite/roadmap/docs-site-asciidoc.md`).
