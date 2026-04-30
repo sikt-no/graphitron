@@ -2,7 +2,6 @@ package no.sikt.graphitron.rewrite.model;
 
 import graphql.language.SourceLocation;
 import no.sikt.graphitron.rewrite.ArgumentRef;
-import no.sikt.graphitron.rewrite.JooqCatalog;
 
 import java.util.Optional;
 
@@ -22,20 +21,22 @@ public sealed interface MutationField extends RootField, WithErrorChannel
     /**
      * Sealed common supertype of the four DML mutation variants. Carries the per-field data the
      * INSERT / UPDATE / DELETE / UPSERT emitters share: the {@code @table} input argument that
-     * drives the DML statement, and the optional NodeId metadata used when the return type is
+     * drives the DML statement, and the optional encode helper used when the return type is
      * {@code ScalarReturnType("ID")}. Introduced so {@code buildMutationReturnExpression} can
      * dispatch over a single supertype.
      *
-     * <p>{@code nodeIdMeta} is {@link Optional#of(Object)} for {@code ScalarReturnType("ID")}
+     * <p>{@code encodeReturn} is {@link Optional#of(Object)} for {@code ScalarReturnType("ID")}
      * returns and {@link Optional#empty()} otherwise; the classifier guarantees this invariant
-     * before constructing the variant.
+     * before constructing the variant. The {@link HelperRef.Encode} resolves to the per-type
+     * {@code encode<TypeName>} helper on the generated {@code NodeIdEncoder}, so the emitter
+     * never reaches back into {@code JooqCatalog} for typeId or key columns.
      */
     sealed interface DmlTableField extends MutationField
             permits MutationInsertTableField, MutationUpdateTableField,
                     MutationDeleteTableField, MutationUpsertTableField {
         ReturnTypeRef returnType();
         ArgumentRef.InputTypeArg.TableInputArg tableInputArg();
-        Optional<JooqCatalog.NodeIdMetadata> nodeIdMeta();
+        Optional<HelperRef.Encode> encodeReturn();
         SourceLocation location();
     }
 
@@ -45,7 +46,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         SourceLocation location,
         ReturnTypeRef returnType,
         ArgumentRef.InputTypeArg.TableInputArg tableInputArg,
-        Optional<JooqCatalog.NodeIdMetadata> nodeIdMeta,
+        Optional<HelperRef.Encode> encodeReturn,
         Optional<ErrorChannel> errorChannel
     ) implements DmlTableField {}
 
@@ -55,7 +56,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         SourceLocation location,
         ReturnTypeRef returnType,
         ArgumentRef.InputTypeArg.TableInputArg tableInputArg,
-        Optional<JooqCatalog.NodeIdMetadata> nodeIdMeta,
+        Optional<HelperRef.Encode> encodeReturn,
         Optional<ErrorChannel> errorChannel
     ) implements DmlTableField {}
 
@@ -65,7 +66,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         SourceLocation location,
         ReturnTypeRef returnType,
         ArgumentRef.InputTypeArg.TableInputArg tableInputArg,
-        Optional<JooqCatalog.NodeIdMetadata> nodeIdMeta,
+        Optional<HelperRef.Encode> encodeReturn,
         Optional<ErrorChannel> errorChannel
     ) implements DmlTableField {}
 
@@ -75,7 +76,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         SourceLocation location,
         ReturnTypeRef returnType,
         ArgumentRef.InputTypeArg.TableInputArg tableInputArg,
-        Optional<JooqCatalog.NodeIdMetadata> nodeIdMeta,
+        Optional<HelperRef.Encode> encodeReturn,
         Optional<ErrorChannel> errorChannel
     ) implements DmlTableField {}
 

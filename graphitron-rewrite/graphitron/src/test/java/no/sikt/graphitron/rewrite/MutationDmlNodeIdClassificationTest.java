@@ -32,7 +32,29 @@ class MutationDmlNodeIdClassificationTest {
     );
 
     @Test
-    void idReturnOnNodeTable_populatesNodeIdMeta() {
+    void idReturnOnNodeTable_populatesEncodeReturn() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Bar implements Node @table(name: "bar") @node { id: ID! @nodeId name: String }
+            input BarInput @table(name: "bar") { name: String }
+            type Query { x: String }
+            type Mutation { createBar(in: BarInput!): ID @mutation(typeName: INSERT) }
+            """, NODEID_CTX);
+
+        var f = (MutationField.MutationInsertTableField) schema.field("Mutation", "createBar");
+        assertThat(f.encodeReturn()).isPresent();
+        var enc = f.encodeReturn().get();
+        assertThat(enc.methodName()).isEqualTo("encodeBar");
+        assertThat(enc.paramSignature())
+            .extracting(ColumnRef::sqlName)
+            .containsExactly("id_1", "id_2");
+    }
+
+    @Test
+    void idReturnWithoutNodeDeclaration_rejected() {
+        // Bar's table has __NODE_TYPE_ID metadata but the SDL omits @node, so no NodeType is
+        // registered for it. The mutation classifier requires a NodeType match by table SQL
+        // name to wire encodeReturn; without one, returning ID has no per-type encoder to
+        // delegate to and the field is rejected at validate time.
         var schema = TestSchemaHelper.buildSchema("""
             type Bar @table(name: "bar") { name: String }
             input BarInput @table(name: "bar") { name: String }
@@ -40,11 +62,8 @@ class MutationDmlNodeIdClassificationTest {
             type Mutation { createBar(in: BarInput!): ID @mutation(typeName: INSERT) }
             """, NODEID_CTX);
 
-        var f = (MutationField.MutationInsertTableField) schema.field("Mutation", "createBar");
-        assertThat(f.nodeIdMeta()).isPresent();
-        assertThat(f.nodeIdMeta().get().keyColumns())
-            .extracting(ColumnRef::sqlName)
-            .containsExactly("id_1", "id_2");
+        var f = (UnclassifiedField) schema.field("Mutation", "createBar");
+        assertThat(f.reason()).contains("no @node type is declared for table 'bar'");
     }
 
     @Test
@@ -58,7 +77,7 @@ class MutationDmlNodeIdClassificationTest {
 
         var f = (UnclassifiedField) schema.field("Mutation", "createQux");
         assertThat(f.reason())
-            .contains("returns ID but table 'qux' is not a @node type");
+            .contains("no @node type is declared for table 'qux'");
     }
 
     @Test
@@ -85,7 +104,7 @@ class MutationDmlNodeIdClassificationTest {
     }
 
     @Test
-    void tableReturnOnNonNodeTable_classifiedWithEmptyMeta() {
+    void tableReturnOnNonNodeTable_classifiedWithoutEncodeReturn() {
         var schema = TestSchemaHelper.buildSchema("""
             type Qux @table(name: "qux") { name: String }
             input QuxInput @table(name: "qux") { name: String }
@@ -94,6 +113,6 @@ class MutationDmlNodeIdClassificationTest {
             """, NODEID_CTX);
 
         var f = (MutationField.MutationInsertTableField) schema.field("Mutation", "createQux");
-        assertThat(f.nodeIdMeta()).isEmpty();
+        assertThat(f.encodeReturn()).isEmpty();
     }
 }
