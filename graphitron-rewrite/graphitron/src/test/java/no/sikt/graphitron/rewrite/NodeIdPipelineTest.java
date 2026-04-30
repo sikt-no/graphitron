@@ -293,7 +293,7 @@ class NodeIdPipelineTest {
             }),
 
         EXPLICIT_NODE_ID_DIRECTIVE(
-            "input `id: ID! @nodeId` on a @table input whose table is also backed by a single object type → bare @nodeId infers typeName, classifies as NodeIdReferenceField with empty joinPath (same-table)",
+            "input `id: ID! @nodeId` on a @table input whose table is also backed by a composite-PK NodeType → CompositeColumnReferenceField with NodeIdDecodeKeys.SkipMismatchedElement (post-R50; arity > 1)",
             """
             type Bar @table(name: "bar") @node { id: ID! @nodeId }
             input Foo @table(name: "bar") { id: ID! @nodeId }
@@ -301,12 +301,13 @@ class NodeIdPipelineTest {
             """,
             schema -> {
                 var t = (GraphitronType.TableInputType) schema.type("Foo");
-                var f = (InputField.NodeIdReferenceField) t.inputFields().get(0);
-                assertThat(f.typeName()).isEqualTo("Bar");
-                assertThat(f.nodeTypeId()).isEqualTo("Bar");
-                assertThat(f.nodeKeyColumns()).extracting(ColumnRef::sqlName)
+                var f = (InputField.CompositeColumnReferenceField) t.inputFields().get(0);
+                assertThat(f.columns()).extracting(ColumnRef::sqlName)
                     .containsExactly("id_1", "id_2");
                 assertThat(f.joinPath()).isEmpty();
+                assertThat(f.extraction())
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement.class);
+                assertThat(f.extraction().decodeMethod().methodName()).isEqualTo("decodeBar");
             }),
 
         BARE_NODE_ID_NO_OBJECT_TYPE(
@@ -376,7 +377,7 @@ class NodeIdPipelineTest {
 
     enum InputReferenceCase {
         REFERENCE_TO_NODE_TYPE(
-            "input `relatedId: ID! @nodeId(typeName: 'Baz')` on bar table → NodeIdReferenceField via auto-inferred bar→baz FK",
+            "input `relatedId: ID! @nodeId(typeName: 'Baz')` on bar table → ColumnReferenceField with NodeIdDecodeKeys.SkipMismatchedElement (post-R50; arity-1 single-PK target)",
             """
             type Baz @table(name: "baz") { id: ID! }
             input Foo @table(name: "bar") { relatedId: ID! @nodeId(typeName: "Baz") }
@@ -384,12 +385,14 @@ class NodeIdPipelineTest {
             """,
             schema -> {
                 var t = (GraphitronType.TableInputType) schema.type("Foo");
-                var f = (InputField.NodeIdReferenceField) t.inputFields().get(0);
-                assertThat(f.typeName()).isEqualTo("Baz");
-                assertThat(f.nodeTypeId()).isEqualTo("Baz");
-                assertThat(f.nodeKeyColumns()).extracting(ColumnRef::sqlName)
-                    .containsExactly("id");
+                var f = (InputField.ColumnReferenceField) t.inputFields().get(0);
+                assertThat(f.typeName()).isEqualTo("ID");
+                assertThat(f.column().sqlName()).isEqualTo("id");
                 assertThat(f.joinPath()).hasSize(1);
+                assertThat(f.extraction())
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement.class);
+                assertThat(((no.sikt.graphitron.rewrite.model.CallSiteExtraction.NodeIdDecodeKeys) f.extraction())
+                    .decodeMethod().methodName()).isEqualTo("decodeBaz");
             }),
 
         TARGET_NOT_A_NODE_TYPE(

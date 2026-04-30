@@ -68,6 +68,13 @@ public sealed interface InputField extends GraphitronField
      * <p>When generating WHERE predicates (e.g. inside {@link WhereFilter.InputFilter}), the
      * generator must JOIN through {@code joinPath} before applying the column predicate.
      */
+    /**
+     * @param extraction how to translate the wire-format value to the column's typed Java
+     *     value at the call-site root. Today's classifier produces
+     *     {@link CallSiteExtraction.Direct} for the {@code @reference}-resolved column-equality
+     *     path. Post-R50, the slot also hosts {@link CallSiteExtraction.NodeIdDecodeKeys} for
+     *     arity-1 {@code @nodeId(typeName: T)} input-side reference fields (see R50 phase e3).
+     */
     record ColumnReferenceField(
         String parentTypeName,
         String name,
@@ -77,7 +84,8 @@ public sealed interface InputField extends GraphitronField
         boolean list,
         ColumnRef column,
         List<JoinStep> joinPath,
-        Optional<ArgConditionRef> condition
+        Optional<ArgConditionRef> condition,
+        CallSiteExtraction extraction
     ) implements InputField {}
 
     /**
