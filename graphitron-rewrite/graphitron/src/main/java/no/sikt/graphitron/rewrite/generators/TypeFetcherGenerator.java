@@ -179,6 +179,8 @@ public class TypeFetcherGenerator {
         GraphitronField.UnclassifiedField.class,
         InputField.ColumnField.class,
         InputField.ColumnReferenceField.class,
+        InputField.CompositeColumnField.class,
+        InputField.CompositeColumnReferenceField.class,
         InputField.NodeIdField.class,
         InputField.NodeIdReferenceField.class,
         InputField.IdReferenceField.class,

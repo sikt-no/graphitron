@@ -1305,6 +1305,8 @@ class FieldBuilder {
                 case InputField.NodeIdField ignored -> {}
                 case InputField.NodeIdReferenceField ignored -> {}
                 case InputField.IdReferenceField ignored -> {}
+                case InputField.CompositeColumnField ignored -> {} // post-R50 successor; no implicit body emission until phase (e2-rest) wires NodeIdDecodeKeys -> RowEq/RowIn
+                case InputField.CompositeColumnReferenceField ignored -> {} // same; phase (e2-rest)
                 case InputField.NodeIdInFilterField nf -> {
                     // The body always guards `arg == null || arg.isEmpty()`, so the outer-list
                     // nullability ([ID!] vs [ID!]!) does not matter for the emitted predicate.
@@ -1867,6 +1869,8 @@ class FieldBuilder {
                 case InputField.NodeIdField nid -> "NodeIdField in @mutation inputs is not yet supported";
                 case InputField.NodeIdReferenceField nidr -> "NodeIdReferenceField in @mutation inputs is not yet supported";
                 case InputField.ColumnReferenceField crf -> "ColumnReferenceField in @mutation inputs is not yet supported";
+                case InputField.CompositeColumnField ccf -> "CompositeColumnField in @mutation inputs is not yet supported";
+                case InputField.CompositeColumnReferenceField ccrf -> "CompositeColumnReferenceField in @mutation inputs is not yet supported";
                 case InputField.IdReferenceField idr -> "IdReferenceField in @mutation inputs is not yet supported";
                 case InputField.NodeIdInFilterField nif -> "NodeIdInFilterField in @mutation inputs is not yet supported";
                 case InputField.ColumnField cf -> throw new IllegalStateException("unreachable");

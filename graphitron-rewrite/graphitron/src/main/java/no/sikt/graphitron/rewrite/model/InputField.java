@@ -17,6 +17,7 @@ import java.util.Optional;
  */
 public sealed interface InputField extends GraphitronField
         permits InputField.ColumnField, InputField.ColumnReferenceField,
+                InputField.CompositeColumnField, InputField.CompositeColumnReferenceField,
                 InputField.NodeIdField, InputField.NodeIdReferenceField,
                 InputField.IdReferenceField,
                 InputField.NodeIdInFilterField,
@@ -78,6 +79,75 @@ public sealed interface InputField extends GraphitronField
         List<JoinStep> joinPath,
         Optional<ArgConditionRef> condition
     ) implements InputField {}
+
+    /**
+     * Composite-key input carrier on a {@code @table}-annotated input type. Carries
+     * {@code columns} of arity &ge; 2 (arity-1 routes to {@link ColumnField} instead) plus
+     * {@code extraction} narrowed at the type level to
+     * {@link CallSiteExtraction.NodeIdDecodeKeys} -- the only extraction shape that produces
+     * a multi-column tuple (Direct, JooqConvert, EnumValueOf, TextMapLookup, ContextArg are
+     * all single-scalar leaf shapes; NestedInputField is a Map-traversal arm that hosts an
+     * inner extraction rather than producing a tuple). Lands as the post-R50 successor for the
+     * arity > 1 cases of {@link NodeIdField} and {@link NodeIdInFilterField}.
+     *
+     * <p>The body emitter pairs {@link CallSiteExtraction.NodeIdDecodeKeys.SkipMismatchedElement}
+     * with {@link BodyParam.RowEq RowEq} (for scalar same-table NodeId equality, the post-R50
+     * successor of {@link NodeIdField}) or {@link BodyParam.RowIn RowIn} (for list filter,
+     * post-R50 successor of {@link NodeIdInFilterField}).
+     */
+    record CompositeColumnField(
+        String parentTypeName,
+        String name,
+        SourceLocation location,
+        String typeName,
+        boolean nonNull,
+        boolean list,
+        List<ColumnRef> columns,
+        Optional<ArgConditionRef> condition,
+        CallSiteExtraction.NodeIdDecodeKeys extraction
+    ) implements InputField {
+
+        public CompositeColumnField {
+            columns = List.copyOf(columns);
+            if (columns.size() < 2) {
+                throw new IllegalArgumentException(
+                    "InputField.CompositeColumnField requires arity >= 2 (got " + columns.size() + "); arity-1 routes to ColumnField");
+            }
+        }
+    }
+
+    /**
+     * Composite-key input reference carrier on a {@code @table}-annotated input type whose
+     * {@code @nodeId(typeName: T)} target NodeType has multiple key columns. Carries
+     * {@code columns} = the target NodeType's keyColumns plus the resolved {@code joinPath}
+     * from the input's own table to the target table. {@code extraction} is narrowed to
+     * {@link CallSiteExtraction.NodeIdDecodeKeys} at the type level, same rationale as
+     * {@link CompositeColumnField}.
+     *
+     * <p>Post-R50 successor for the arity > 1 case of {@link NodeIdReferenceField}; the
+     * arity-1 case lands on the single-column {@link ColumnReferenceField}.
+     */
+    record CompositeColumnReferenceField(
+        String parentTypeName,
+        String name,
+        SourceLocation location,
+        String typeName,
+        boolean nonNull,
+        boolean list,
+        List<ColumnRef> columns,
+        List<JoinStep> joinPath,
+        Optional<ArgConditionRef> condition,
+        CallSiteExtraction.NodeIdDecodeKeys extraction
+    ) implements InputField {
+
+        public CompositeColumnReferenceField {
+            columns = List.copyOf(columns);
+            if (columns.size() < 2) {
+                throw new IllegalArgumentException(
+                    "InputField.CompositeColumnReferenceField requires arity >= 2 (got " + columns.size() + "); arity-1 routes to ColumnReferenceField");
+            }
+        }
+    }
 
     /**
      * A field in a {@code @table}-annotated input type whose GraphQL type is scalar {@code ID}
