@@ -22,8 +22,10 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 
 /**
  * SDL → classified-variant pipeline tests for the node-id path. Exercises the input-side
- * ({@link InputField.NodeIdField}, {@link InputField.NodeIdReferenceField}), output-side
- * ({@link ChildField.NodeIdField}), and type-level {@link GraphitronType.NodeType} synthesis for
+ * (single-column carriers with {@link no.sikt.graphitron.rewrite.model.CallSiteExtraction.NodeIdDecodeKeys}
+ * and the {@code Composite*} variants), output-side ({@link ChildField.ColumnField} /
+ * {@link ChildField.CompositeColumnField} with {@link no.sikt.graphitron.rewrite.model.CallSiteCompaction.NodeIdEncodeKeys}),
+ * and type-level {@link GraphitronType.NodeType} synthesis for
  * tables whose jOOQ class exposes {@code __NODE_TYPE_ID} + {@code __NODE_KEY_COLUMNS} constants
  * (synthesized route) as well as the SDL-declared {@code @node} / {@code @nodeId} directive paths.
  *
