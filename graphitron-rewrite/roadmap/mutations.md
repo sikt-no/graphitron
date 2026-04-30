@@ -19,15 +19,16 @@ depends-on: []
 
 ## R50 prerequisites — shipped
 
-R22's dependency on R50 (Lift NodeId out of the model) has cleared; the model retypes R22 needed are now in the codebase:
+R22's dependency on R50 (Lift NodeId out of the model) has cleared, and R50's cleanup pass overshot the original R22 plan: the four DML records, the shared classifier helper, and the `DmlTableField` sealed supertype all landed as part of R50. Phase 1 of R22 (model + classifier across all four DML variants) is therefore complete. Concretely:
 
-- **`DmlTableField.nodeIdMeta` retyped to `encodeReturn: Optional<HelperRef.Encode>`.** The classifier still reads `JooqCatalog.nodeIdMetadata(tableName)` (the catalog-internal lookup stays unchanged), but converts the result to a `HelperRef.Encode` before constructing the variant. The DELETE emitter rewrites: `f.nodeIdMeta().get().keyColumns()` → `f.encodeReturn().get().paramSignature()` for the `returningResult(...)` projection; the `.fetchOne(r -> NodeIdEncoder.encode(typeId, r.get(...), ...))` lambda becomes `.fetchOne(r -> NodeIdEncoder.encode<TypeName>(r.get(...), ...))` resolved through `f.encodeReturn().get()`. `NodeIdMetadata` stays in `JooqCatalog` as the classifier-time intermediate; it stops being a model-carried record.
-- **`TableInputArg.fieldBindings` retyped to `List<InputColumnBinding.MapBinding>`.** R50's `InputColumnBinding` seal split flat `InputColumnBinding` into `MapBinding` / `RecordBinding`; `TableInputArg.fieldBindings` is narrowed to the only arm any of its call sites produce. The DELETE emitter's `binding.inputFieldName()` migrates to `binding.fieldName()`.
-- **Wire-shape variants retired.** Invariants #8, #9, #10 (`NodeIdField`, `ColumnReferenceField` wire-shape forms, `NodeIdReferenceField`, `IdReferenceField`, `NodeIdInFilterField`) had pending DML rejection arms; those wire-shape variants are gone. Post-R50 the input-side equivalents are `ColumnField` / `CompositeColumnField` carrying `extraction = NodeIdDecodeKeys.*` and are natively supported by the column-binding extraction path.
+- **`DmlTableField` sealed supertype.** `MutationField.DmlTableField` permits `MutationInsertTableField`, `MutationUpdateTableField`, `MutationDeleteTableField`, `MutationUpsertTableField`. All four records share an identical shape: `(parentTypeName, name, location, returnType, tableInputArg, encodeReturn, errorChannel)`. There are no per-variant fields; everything the emitters need lives on `tableInputArg`.
+- **`encodeReturn: Optional<HelperRef.Encode>`.** Replaces the earlier `nodeIdMeta` slot. `Optional.of(...)` for `ScalarReturnType("ID")` returns, `Optional.empty()` otherwise. `HelperRef.Encode` carries `(encoderClass, methodName, paramSignature: List<ColumnRef>)`; the typeId is baked into the per-`@node`-type `encode<TypeName>` method name, so the emitter never reaches back into `JooqCatalog`. The DELETE emitter resolves the projection via `f.encodeReturn().orElseThrow().paramSignature()` and the lambda via `encode.encoderClass()` + `encode.methodName()`.
+- **`TableInputArg.fieldBindings: List<InputColumnBinding.MapBinding>`.** Narrowed to the `MapBinding` arm of R50's `InputColumnBinding` seal (the only arm any DML call site produces). `MapBinding.fieldName()` is the input field name; `MapBinding.targetColumn()` is the `ColumnRef`. `TableInputArg` also carries `fields: List<InputField>` (every input field, in declaration order) and `argCondition: Optional<ArgConditionRef>`, which is what the classifier inspects for Invariant #12.
+- **Shared `classifyMutationInput(fieldDef, typeName)` helper.** A single helper in `FieldBuilder` enforces Invariants #1–#14 across all four DML verbs in one pass. There are no per-verb `classifyMutationDeleteField` / `classifyMutationInsertField` helpers; the per-verb branching lives inside the shared helper (UPDATE/DELETE/UPSERT require non-empty `fieldBindings`; UPDATE requires non-empty non-`@lookupKey` fields; UPDATE/DELETE require full PK coverage). The mutation-arm switch in `classifyMutationField` builds the appropriate variant record from the resolved `tia` and `encodeReturn`.
+- **Wire-shape variants retired.** R50 deleted `InputField.NodeIdField`, `InputField.NodeIdReferenceField`, `InputField.IdReferenceField`, and `InputField.NodeIdInFilterField`. The post-R50 input-side replacements are `ColumnField` (with `Direct` extraction or `NodeIdDecodeKeys` extraction) and `CompositeColumnField` / `CompositeColumnReferenceField`. The deferred-input arms in the shared classifier helper now gate `NestingField`, `ColumnReferenceField`, `CompositeColumnField`, `CompositeColumnReferenceField`, and `NodeIdDecodeKeys`-extracted `ColumnField`; only `Direct`-extracted `ColumnField` is admitted.
+- **Pipeline tests.** `GraphitronSchemaBuilderTest.rootFieldClassification` covers happy-path classifier scenarios for `INSERT_MUTATION_FIELD`, `UPDATE_MUTATION_FIELD`, `DELETE_MUTATION_FIELD`, `UPSERT_MUTATION_FIELD`, `SERVICE_MUTATION_FIELD`, and `MUTATION_SERVICE_RECORD_FIELD`, plus DELETE negatives `DELETE_MUTATION_NO_INPUT_ARG` and `DELETE_MUTATION_MISSING_LOOKUP_KEY`. Each variant resolves to its variant record in the post-R50 shape.
 
-The remaining DML emitters (INSERT, UPDATE, UPSERT) can now land cleanly. Phase 1 (model + classifier across all four DML variants) shipped at commit `9e517b1`; the DELETE emitter shipped at `31c64a2`. The Phase 2 INSERT emission is the next item to revisit.
-
-> **Reader note.** The phase-specific specs below (Phase 2 INSERT, Phase 4 UPDATE, Phase 5 UPSERT, Phase 6 service variants), the *Consolidation* `DmlTableField` supertype shape, and the *Non-goals* `NodeIdField`-in-input deferral spell out shapes that **predate the R50 retype**. Treat the bullets above as authoritative for the post-R50 slot shapes; the forward-looking spec blocks below get refreshed wholesale when R22 unpauses.
+What remains for R22: the five emitters (INSERT, UPDATE, UPSERT, MutationServiceTableField, MutationServiceRecordField) and the optional `buildMutationReturnExpression` consolidation. Records, classifier, and pipeline-test scaffolding for Phase 1 are done.
 
 ---
 
@@ -35,101 +36,56 @@ The remaining DML emitters (INSERT, UPDATE, UPSERT) can now land cleanly. Phase 
 
 | Variant | Status | Notes |
 |---|---|---|
-| Phase 1 (model + classifier) | **Landed** | Commit `9e517b1`. `DmlTableField` sealed supertype across the four DML variants carrying `(tableInputArg, nodeIdMeta, errorChannel)`; shared `classifyMutationInput` enforces Invariants #1–#14. |
-| `MutationDeleteTableField` | **Landed (emitter)** | Commit `31c64a2` introduced `buildMutationDeleteFetcher`; commit `9e517b1` rebased the variant onto the unified `tableInputArg` shape. |
-| `MutationInsertTableField` | Paused (R50) | Phase 2 emission. Blocked on R50; see Coupling section. |
-| `MutationUpdateTableField` | Paused (R50) | Phase 4. Blocked on R50. |
-| `MutationUpsertTableField` | Paused (R50) | Phase 5. Blocked on R50. |
-| `MutationServiceTableField` | Paused (R50) | Phase 6. Service variants don't directly touch wire-shape variants, but consolidating them with the rest of R22 keeps the landing cohesive. |
-| `MutationServiceRecordField` | Paused (R50) | See above. |
+| Phase 1 (model + classifier) | **Landed** | All four DML records carry the shared `(tableInputArg, encodeReturn, errorChannel)` shape via `DmlTableField`; shared `classifyMutationInput` enforces Invariants #1–#14. Both service variants populated by `classifyMutationField` via `resolveServiceField`. |
+| `MutationDeleteTableField` | **Landed (emitter)** | Commit `31c64a2` introduced `buildMutationDeleteFetcher`; rebased onto the post-R50 `tableInputArg` / `encodeReturn` shape during the R50 cleanup pass. |
+| `MutationInsertTableField` | **Ready (Phase 2)** | Record + classifier done. Only `buildMutationInsertFetcher` and the `IMPLEMENTED_LEAVES` flip remain. |
+| `MutationUpdateTableField` | **Ready (Phase 4)** | Record + classifier done. Only `buildMutationUpdateFetcher` and the `IMPLEMENTED_LEAVES` flip remain. |
+| `MutationUpsertTableField` | **Ready (Phase 5)** | Record + classifier done. Only `buildMutationUpsertFetcher` and the `IMPLEMENTED_LEAVES` flip remain. |
+| `MutationServiceTableField` | **Ready (Phase 6)** | Record + classifier done; `validateRootServiceInvariants` and `resolveServiceField` already wire it. Only `buildMutationServiceTableFetcher` (delegates to the shared service-fetcher helper) and the `IMPLEMENTED_LEAVES` flip remain. |
+| `MutationServiceRecordField` | **Ready (Phase 6)** | Same as above for the non-table service variant. |
 
-**Landing rule (post-Phase-1).** All four DML records share `(tableInputArg, nodeIdMeta, errorChannel)` via `DmlTableField`. The DELETE emitter reads from `f.tableInputArg().{name(), inputTable(), fieldBindings()}` accessors. Subsequent emitters reuse this shape; the shared `buildMutationReturnExpression` planned for Phase 2 dispatches over `DmlTableField`.
+**Landing rule (post-Phase-1).** All four DML records share `(tableInputArg, encodeReturn, errorChannel)` via `DmlTableField`. Emitters read from `f.tableInputArg().{name(), inputTable(), fieldBindings(), fields()}` and `f.encodeReturn()`. The optional `buildMutationReturnExpression` helper would dispatch over `DmlTableField` once two or more DML emitters share the four-arm return-type switch.
 
 ---
 
 ## Current state
 
-> Section reflects the codebase as of post-DELETE landing. See [Status](#status) for the
-> per-variant implementation summary.
+> Section reflects the codebase post-R50. See [Status](#status) for the per-variant
+> implementation summary.
 
 ### Model
 
-`MutationField.java` (`model/MutationField.java`) declares six permits.
-`MutationDeleteTableField` carries the full per-variant data set
-(`inputArgName`, `inputTable`, `fieldBindings`, `nodeIdMeta`, `errorChannel`) —
-see §1a for the record shape.
-The other three DML variants
-(`MutationInsertTableField`, `MutationUpdateTableField`, `MutationUpsertTableField`)
-still carry only `(parentTypeName, name, location, returnType, errorChannel)`; they are
-extended per-variant when their emission lands.
-The two service variants additionally carry `MethodRef method`
-(populated by `classifyMutationField`).
-Every variant carries `Optional<ErrorChannel> errorChannel` (R12 contract) with a no-channel
-convenience constructor.
+`MutationField.java` (`model/MutationField.java`) declares the sealed hierarchy: six permits with the four DML records (`MutationInsertTableField`, `MutationUpdateTableField`, `MutationDeleteTableField`, `MutationUpsertTableField`) sharing the inner `DmlTableField` sealed supertype, plus the two service variants (`MutationServiceTableField`, `MutationServiceRecordField`).
+
+Every DML record has the same component list:
+
+```
+(String parentTypeName, String name, SourceLocation location, ReturnTypeRef returnType,
+ ArgumentRef.InputTypeArg.TableInputArg tableInputArg,
+ Optional<HelperRef.Encode> encodeReturn,
+ Optional<ErrorChannel> errorChannel)
+```
+
+Service variants additionally carry `MethodRef method` (populated by `resolveServiceField`). Every variant carries `Optional<ErrorChannel> errorChannel` (R12 contract); the classifier passes `Optional.empty()` and the C3 carrier pass populates it.
 
 ### Classifier
 
-`FieldBuilder.classifyMutationField` (`FieldBuilder.java`) routes mutation fields:
-`@service` → service variants; `@mutation(typeName: ...)` → INSERT / UPDATE / DELETE / UPSERT
-switch. The `DELETE` arm delegates to `classifyMutationDeleteField`, which extracts the
-single `@table` input arg, validates against Invariants #1-#14, and constructs the variant
-record. INSERT / UPDATE / UPSERT arms still construct the bare 4-field record; the input
-arg's classified data is discarded at classify time pending each variant's landing.
+`FieldBuilder.classifyMutationField` routes mutation fields: `@service` → service variants via `resolveServiceField` + `validateRootServiceInvariants` + the strict service-return check; `@mutation(typeName: ...)` → a single shared `classifyMutationInput(fieldDef, typeName)` helper that walks the arguments, resolves the single `TableInputArg`, enforces Invariants #1–#14, looks up the per-`@node`-type `HelperRef.Encode` for `ScalarReturnType("ID")` returns, and returns either the resolved `TableInputArg` + `encodeReturn` or an `UnclassifiedField` reason. The mutation-arm switch then constructs the appropriate DML variant record from the same `(tia, encodeReturn)` tuple. There are no per-verb classifier helpers.
 
 ### Generator stubs
 
-`TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS` has entries for all six variants
-(`:224-235`); `generateTypeSpec` routes each to `stub(f)` (`:354-359`).
+`TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS` has entries for the five not-yet-emitted variants (INSERT, UPDATE, UPSERT, MutationServiceTableField, MutationServiceRecordField); `generateTypeSpec` routes each to `stub(f)`. DELETE is in `IMPLEMENTED_LEAVES` and routed to `buildMutationDeleteFetcher`.
 
 ### Neighbouring references
 
-- `ArgumentRef.InputTypeArg.TableInputArg` — carries `inputTable` (`TableRef`), `fieldBindings`
-  (`List<InputColumnBinding>`, `@lookupKey`-bound columns), `fields` (`List<InputField>`, all
-  input fields).  Already populated by `FieldBuilder.classifyArgument` (`FieldBuilder.java:779-783`)
-  for `@table` input types.  `buildLookupBindings` (`FieldBuilder.java:906`) takes a mutable
-  `List<String> errors` and pushes per-field `@lookupKey` validation errors onto it (e.g. lookupKey
-  on a list-typed input field, lookupKey on a non-`ColumnField`).  Phase 1b's `classifyMutationInput`
-  must thread these errors back into the `UnclassifiedField` reason — losing them would silently
-  swallow schema-author mistakes.
-- `InputField.ColumnField` — carries `name` (GraphQL field name), `column` (`ColumnRef` with
-  `sqlName`, `javaName`, `columnClass`), and `nonNull`.  The `javaName` field is the jOOQ column
-  constant (e.g. `CUSTOMER_ID`).
-- `InputColumnBinding` — maps a `@lookupKey` input field name to a `ColumnRef` and a
-  `CallSiteExtraction`.  This is the same binding the argres pipeline uses for query lookups;
-  for mutations it identifies the WHERE-clause columns.
-- `GeneratorUtils.ResolvedTableNames` — resolves `tablesClass`, `jooqTableClass`, `typeClass` from
-  a `TableRef`.  Used by every SQL-generating emitter.
-- `ArgCallEmitter.buildMethodBackedCallArgs(MethodRef, CodeBlock, String)` — declaration-order
-  param-list emitter introduced by the service-root-fetchers work (now Done; see roadmap
-  Done section). Service-mutation variants (Phases 2 and 5–6) reuse it directly.
-- `FieldBuilder.validateRootServiceInvariants(ServiceResolution)` — shared classifier-time
-  helper enforcing §1 (Connection rejection) and §2 (no `Sources` parameter at root) on
-  both `@service` query and `@service` mutation arms. Already wired into `classifyMutationField`
-  by service-root-fetchers (Done); the mutation-bodies plan inherits these checks for free.
-- `MethodRef.Basic.returnType()` — structured javapoet `TypeName` captured at reflection time
-  (was a string FQCN before service-root-fetchers landed). Mutation-`@service` strict-return
-  validation already routes through `FieldBuilder.computeExpectedServiceReturnType` for the
-  `parentPkColumns.isEmpty()` path; only the emitter side remains for Phase 6.
-
-### Cross-cutting decisions discovered during the Phase 1 landing
-
-- **`ArgumentRef` is now public.** The pre-Phase-1 DELETE landing worked around its
-  package-private visibility by storing the data the emitter needed as separate fields on the
-  variant; Phase 1 promoted `ArgumentRef` to `public` so `MutationField.DmlTableField` can
-  carry `tableInputArg: ArgumentRef.InputTypeArg.TableInputArg` directly. The destructured
-  fields (`inputArgName`, `inputTable`, `fieldBindings`) are gone; emitters read them via
-  `f.tableInputArg().{name(), inputTable(), fieldBindings()}`.
-- **`Optional<ErrorChannel> errorChannel` is part of every `MutationField` record**
-  (added by R12). Each variant carries it as its last component and exposes a no-channel
-  convenience constructor. New variants must do the same; the classifier always passes
-  `Optional.empty()` here, leaving population to R12's C3 carrier pass.
-- **`TableRef.tableName()`, `ColumnRef.sqlName()`, `InputColumnBinding.targetColumn()`.** The
-  earlier draft was inconsistent about which type carried the SQL name accessor; the actual
-  accessors are `TableRef.tableName()` for table SQL names and `ColumnRef.sqlName()` for column
-  SQL names. The binding's column accessor is `targetColumn()`, not `column()`. R50 generalises
-  the latter to a `targetColumns: List<ColumnRef>` shape; emitters that read it today do so in
-  exactly one place per variant (the WHERE-predicate emitter), keeping the post-R50 migration
-  surface narrow.
+- `ArgumentRef.InputTypeArg.TableInputArg` — carries `inputTable: TableRef`, `fieldBindings: List<InputColumnBinding.MapBinding>` (`@lookupKey`-bound columns), `fields: List<InputField>` (every input field, in declaration order), and `argCondition: Optional<ArgConditionRef>`. Populated by `classifyMutationInput` for mutations and by `classifyArgument` for query-side use. `buildLookupBindings` takes a mutable `List<String> errors` and pushes per-field `@lookupKey` validation errors onto it (e.g. `@lookupKey` on a list-typed input field, on a non-`ColumnField`); `classifyMutationInput` threads these errors back into the `UnclassifiedField` reason.
+- `InputField.ColumnField` — carries `name` (GraphQL field name), `column: ColumnRef` (with `sqlName`, `javaName`, `columnClass`), `extraction: CallSiteExtraction`, and `nonNull`. `extraction` is `Direct` for the canonical mutation-input shape and `NodeIdDecodeKeys` for the post-R50 `@nodeId`-typed inputs (gated as deferred).
+- `InputColumnBinding.MapBinding` — `(fieldName: String, targetColumn: ColumnRef, extraction: CallSiteExtraction)`. The `MapBinding` arm of R50's `InputColumnBinding` seal; the `RecordBinding` arm carries a positional index into a decoded `Record<N>` and is not used by mutation `fieldBindings`.
+- `HelperRef.Encode` — `(encoderClass: ClassName, methodName: String, paramSignature: List<ColumnRef>)`. Resolves to the per-`@node`-type `encode<TypeName>` helper on the generated `NodeIdEncoder`. The typeId is baked into `methodName`; the emitter never reaches back into `JooqCatalog`.
+- `GeneratorUtils.ResolvedTableNames` — resolves `tablesClass`, `jooqTableClass`, `typeClass` from a `TableRef`. Used by every SQL-generating emitter.
+- `ArgCallEmitter.buildMethodBackedCallArgs(MethodRef, CodeBlock, String)` — declaration-order param-list emitter. Service-mutation variants (Phase 6) reuse it directly.
+- `FieldBuilder.validateRootServiceInvariants(ServiceResolution)` — shared classifier-time helper enforcing §1 (Connection rejection) and §2 (no `Sources` parameter at root) on both `@service` query and `@service` mutation arms. Already wired into `classifyMutationField`.
+- `MethodRef.Basic.returnType()` — structured javapoet `TypeName` captured at reflection time. Mutation-`@service` strict-return validation already routes through `FieldBuilder.computeExpectedServiceReturnType`; only the emitter side remains for Phase 6.
 
 ---
 
@@ -177,28 +133,11 @@ arg's classified data is discarded at classify time pending each variant's landi
    (`"nested input types in @mutation fields are not yet supported"`).  This keeps the initial
    scope flat; nesting can land in a follow-up.
 
-8. **`InputField.NodeIdField` in a mutation input is deferred.**  Same gate:
-   `"NodeIdField in @mutation inputs is not yet supported"`. **R50 retires this variant entirely:**
-   `id: ID! @nodeId` becomes a composite-column `ColumnField` with a `NodeIdDecodeKeys` extraction
-   at the DataFetcher boundary, and this rejection arm becomes unreachable. Remove during the R50
-   migration sweep.
+8. **`@nodeId`-typed input fields are deferred.** R50 retired `InputField.NodeIdField` and replaced it with a `ColumnField` carrying `extraction = NodeIdDecodeKeys.*`. The classifier currently rejects the `NodeIdDecodeKeys`-extracted `ColumnField` arm with the message `"NodeId-decoded ColumnField (post-R50 successor of the retired NodeIdField) in @mutation inputs is not yet supported"`. Lifting this gate requires emitting the per-row decode lambda before the WHERE/SET binding, which is the open follow-up the R50 plan tracks.
 
-9. **`InputField.ColumnReferenceField` (cross-table reference) in a mutation input is deferred.**
-   Gate: `"ColumnReferenceField in @mutation inputs is not yet supported"`. R50 keeps this
-   variant but generalises its column carrier to `List<ColumnRef>`; the rejection stays after
-   R50 and is the actual remaining "cross-table reference" gate.
+9. **`InputField.ColumnReferenceField` and `InputField.CompositeColumnReferenceField` (cross-table references) in a mutation input are deferred.** Gate: `"ColumnReferenceField in @mutation inputs is not yet supported"` / `"CompositeColumnReferenceField in @mutation inputs is not yet supported"`. Cross-table refs would need a join-and-resolve step on the write side. R50 retired the standalone `NodeIdReferenceField` and `IdReferenceField` variants; their cross-table cases now appear as `ColumnReferenceField` with appropriate extraction, and the same gate covers them.
 
-10. **`InputField.NodeIdReferenceField` (cross-table NodeID reference) in a mutation input is
-    deferred.**  Same rationale as #9 — cross-table refs would need a join-and-resolve step on the
-    write side.  Gate: `"NodeIdReferenceField in @mutation inputs is not yet supported"`.
-    **R50 retires this variant:** it collapses into `ColumnReferenceField` with `NodeIdEncodeKeys`
-    on the projection side and `NodeIdDecodeKeys` on the input side. Once R50 lands, the
-    `ColumnReferenceField` gate (#9) covers the cross-table cases this rejection used to handle;
-    this arm becomes unreachable. Phase 1 also gates `IdReferenceField` and `NodeIdInFilterField`
-    under the same rationale; R50 retires both. Full set of currently-allowed `InputField`
-    variants in a mutation `@table` input is therefore `ColumnField` only; everything else
-    (`NestingField`, `NodeIdField`, `NodeIdReferenceField`, `ColumnReferenceField`,
-    `IdReferenceField`, `NodeIdInFilterField`) is gated.
+10. **`InputField.CompositeColumnField` in a mutation input is deferred.** Gate: `"CompositeColumnField in @mutation inputs is not yet supported"`. The currently-admitted set of input-field variants in a mutation `@table` input is therefore: `ColumnField` with `Direct` extraction only. `NestingField`, `NodeIdDecodeKeys`-extracted `ColumnField`, `ColumnReferenceField`, `CompositeColumnField`, and `CompositeColumnReferenceField` are all gated. (R50 retired the legacy `NodeIdField`, `NodeIdReferenceField`, `IdReferenceField`, and `NodeIdInFilterField` variants entirely; they no longer exist in the model.)
 
 11. **Listed inputs (`in: [CustomerInputTable]`) are deferred for Phase 1.**  The initial
     implementation handles only single-record inputs.  Listed-input support is a follow-up
@@ -212,7 +151,7 @@ arg's classified data is discarded at classify time pending each variant's landi
     concept of a condition method to invoke.  Gate: `classifyMutationInput` Pass 2.
 
 13. **Non-`TableInputArg` arguments on DML `@mutation` fields are rejected.**  `classifyMutationInput`
-    (see Phase 1b) returns `UnclassifiedField` if any argument is anything other than a
+    (see §1b) returns `UnclassifiedField` if any argument is anything other than a
     `TableInputArg`, including `PlainInputArg`, scalar args, pagination args, orderBy args.
     Mutations have no parent table context, so those argument shapes are nonsensical here and
     would mis-classify against a sentinel `TableRef` if fed through the generic classifier.
@@ -251,127 +190,90 @@ arg's classified data is discarded at classify time pending each variant's landi
 
 ## Plan
 
-### Phase 1 — Model extension + classifier
+### Phase 1 — Model + classifier ✅ Landed
 
-**Goal:** populate the DML variants with the data the emitter needs.  No emission changes.
+**Status: complete across all four DML variants and both service variants.** The shape, the shared classifier helper, and the cross-variant classifier-test scaffolding all shipped as part of R50's cleanup pass. This section documents what's in the codebase; for the historical narrative of how the shape evolved (per-variant draft → DELETE-first reality → R50 unification), see the deleted commits referenced in [Phase 3](#phase-3--delete-emission--landed).
 
-#### 1a. Extend each DML `MutationField` variant as it lands
+#### 1a. DML record shape
 
-> **Revised (post-DELETE).** The earlier draft introduced a `DmlTableField` sealed
-> supertype and extended all four DML records up front. We did not do that for DELETE,
-> and the friction of doing it now (with one variant real and three still empty) outweighs
-> the benefit. Each variant now grows its own per-variant fields when its emission lands;
-> the sealed supertype is a [Consolidation](#consolidation) follow-up.
-
-For a new DML variant landing, add the data the emitter needs directly to the record. DELETE's
-shape is the precedent:
+All four DML variants are identical. From `MutationField.java`:
 
 ```java
+sealed interface DmlTableField extends MutationField
+    permits MutationInsertTableField, MutationUpdateTableField,
+            MutationDeleteTableField, MutationUpsertTableField {
+    ReturnTypeRef returnType();
+    ArgumentRef.InputTypeArg.TableInputArg tableInputArg();
+    Optional<HelperRef.Encode> encodeReturn();
+    SourceLocation location();
+}
+
 record MutationDeleteTableField(
     String parentTypeName,
     String name,
     SourceLocation location,
     ReturnTypeRef returnType,
-    String inputArgName,
-    TableRef inputTable,
-    List<InputColumnBinding> fieldBindings,
-    Optional<JooqCatalog.NodeIdMetadata> nodeIdMeta,
+    ArgumentRef.InputTypeArg.TableInputArg tableInputArg,
+    Optional<HelperRef.Encode> encodeReturn,
     Optional<ErrorChannel> errorChannel
-) implements MutationField {
-    public MutationDeleteTableField(/* …8-arg form, errorChannel = Optional.empty() */) { … }
-}
+) implements DmlTableField {}
 ```
 
-INSERT and UPSERT will need the full input-fields list as well (every `ColumnField` contributes
-to the INSERT column/value list, not just the `@lookupKey`-bound ones); UPDATE needs the
-input-fields list to compute the SET-clause columns. Add `List<InputField> fields` alongside
-`fieldBindings` on those variants. Don't add it to DELETE retroactively (DELETE doesn't read
-non-bound fields and the field would be unused).
+There are no per-variant fields. Everything an emitter needs is on `tableInputArg`:
+- `tableInputArg.name()` → the SDL argument name (used as the `env.getArgument(...)` key).
+- `tableInputArg.inputTable()` → `TableRef` for the target table.
+- `tableInputArg.fieldBindings()` → `List<MapBinding>`, the `@lookupKey`-bound subset (WHERE-clause source for UPDATE/DELETE/UPSERT).
+- `tableInputArg.fields()` → `List<InputField>`, every input field in declaration order (column-list source for INSERT, SET-clause source for UPDATE/UPSERT).
+- `f.encodeReturn()` → `Optional<HelperRef.Encode>`, populated for `ScalarReturnType("ID")` returns.
 
-`Optional<ErrorChannel> errorChannel` is mandatory on every variant (R12 contract). Keep the
-no-channel convenience constructor so the classifier doesn't have to know about error channels.
+#### 1b. Shared classifier helper
 
-#### 1b. Add a per-variant classifier helper
-
-> **Revised (post-DELETE).** The earlier draft introduced a single `classifyMutationInput`
-> helper called from the `switch (typeName)` arm. We did not write that helper; DELETE has
-> its own `classifyMutationDeleteField`, and INSERT/UPDATE/UPSERT will start the same way.
-> Folding them into a single helper is a [Consolidation](#consolidation) follow-up.
-
-For a new DML variant landing, hook into `classifyMutationField` (`FieldBuilder.java`,
-inside the existing `if (typeName != null)` gate, in the `switch (typeName)` arm) by
-delegating to a per-variant helper:
+`FieldBuilder.classifyMutationInput(GraphQLFieldDefinition fieldDef, String typeName)` enforces all DML invariants in one helper, returning either a `MutationInputResult` carrying the resolved `TableInputArg` or a non-null `error` string. The mutation-arm switch in `classifyMutationField` then constructs the appropriate variant record:
 
 ```java
-case "DELETE" -> classifyMutationDeleteField(fieldDef, parentTypeName, name, location, returnType);
-case "INSERT" -> classifyMutationInsertField(fieldDef, parentTypeName, name, location, returnType);
-// …
+case "INSERT" -> buildWithChannel(returnType, parentTypeName, name, location, fieldDef, ch ->
+    new MutationField.MutationInsertTableField(parentTypeName, name, location, returnType, tia, enc, ch));
+case "UPDATE" -> buildWithChannel(returnType, parentTypeName, name, location, fieldDef, ch ->
+    new MutationField.MutationUpdateTableField(parentTypeName, name, location, returnType, tia, enc, ch));
+case "DELETE" -> buildWithChannel(returnType, parentTypeName, name, location, fieldDef, ch ->
+    new MutationField.MutationDeleteTableField(parentTypeName, name, location, returnType, tia, enc, ch));
+case "UPSERT" -> buildWithChannel(returnType, parentTypeName, name, location, fieldDef, ch ->
+    new MutationField.MutationUpsertTableField(parentTypeName, name, location, returnType, tia, enc, ch));
 ```
 
-The helper walks `fieldDef.getArguments()` directly. **Do not call `classifyArgument`** —
-it takes a `TableRef rt` and binds un-directived scalar args against the parent table's
-columns; a mutation field has no parent `@table`, so threading a sentinel would mis-bind.
+The helper does not call `classifyArgument` — that path takes a parent `TableRef` and binds un-directived scalar args against the parent's columns, but a mutation field has no parent table. Instead, it walks `fieldDef.getArguments()` directly:
 
-The shape of `classifyMutationDeleteField` (in `FieldBuilder.java`) is the precedent. It
-runs two passes:
-
-**Pass 1 — shape gate (Invariants #1, #13).** For each argument, unwrap its GraphQL type
-to a named type and look up `ctx.types.get(typeName)`. If the resolved type is a
-`GraphitronType.TableInputType`, build a `TableInputArg` via the same path `classifyArgument`
-uses (`buildLookupBindings` + `tit.inputFields()`). Also populate `argCondition` from the
-argument's SDL directives using `buildArgCondition`; without this, Pass 2's
-`tia.argCondition().isPresent()` check for Invariant #12 will never fire. Allocate a fresh
-`List<String> bindingErrors` per call and pass it into `buildLookupBindings`; if non-empty,
-join them with `"; "` as the rejection reason and return `UnclassifiedField` (don't drop
-them silently). At the end of Pass 1:
+**Pass 1 — shape gate (Invariants #1, #13).** For each argument, unwrap to a named type and look up `ctx.types.get(typeName)`. If the resolved type is a `GraphitronType.TableInputType`, build a `TableInputArg` via `buildLookupBindings` + `tit.inputFields()` and populate `argCondition` via `buildArgCondition`. Allocate a fresh `List<String> bindingErrors` per call and pass it into `buildLookupBindings`; if non-empty, join them with `"; "` and return `UnclassifiedField`. At the end of Pass 1:
 - Zero `TableInputArg` found → error "no `@table` input argument found on `@mutation` field".
 - Two or more found → error per Invariant #1.
 - Any non-`TableInputArg` argument → error per Invariant #13.
 
-**Pass 2 — invariant checks on the single `tia`.** Only reached when Pass 1 produced
-exactly one `TableInputArg`. The relevant checks vary per verb:
+**Pass 2 — invariant checks on the single `tia`.** Only reached when Pass 1 produced exactly one `TableInputArg`. The relevant checks vary per verb:
 
 | Check | INSERT | UPDATE | DELETE | UPSERT |
 |---|---|---|---|---|
 | `tia.list()` (Invariant #11) | reject | reject | reject | reject |
 | `tia.argCondition().isPresent()` (#12) | reject | reject | reject | reject |
-| Any non-`ColumnField` input field (#7–#10) | reject | reject | reject | reject |
+| Any non-`Direct`-extracted-`ColumnField` input field (#7–#10) | reject | reject | reject | reject |
 | `fieldBindings()` empty (#2–#3) | allowed | reject | reject | reject |
 | Every field is `@lookupKey`-bound (#4) | n/a | reject | n/a | allowed |
 | PK-coverage on non-empty `findPkColumns(tableName())` (#2) | n/a | required | required | n/a |
 
-After Pass 2, validate `returnType` against Invariant #14 (input-shape errors surface
-first; return-type errors second). For `ScalarReturnType("ID")` returns, look up
-`ctx.catalog.nodeIdMetadata(tia.inputTable().tableName())`; reject as
-`"@mutation field '<name>' returns ID but table '<tableName>' is not a @node type"` if
-absent. For other return types, `nodeIdMeta = Optional.empty()`.
+After Pass 2, validate `returnType` against Invariant #14 (input-shape errors surface first; return-type errors second). For `ScalarReturnType("ID")` returns, scan `ctx.types.values()` for the `NodeType` whose `table().tableName()` equals `tia.inputTable().tableName()` and pull its `encodeMethod()`; reject as `"@mutation field '<name>' returns ID but no @node type is declared for table '<tableName>'"` if absent. For other return types, `encodeReturn = Optional.empty()`.
 
-Then construct the variant record with the per-variant fields described in §1a.
-
-**`UnclassifiedField` rejection kind.** Use `AUTHOR_ERROR` for schema-author mistakes
-(missing/duplicate `@table`, deferred input variants, return-type violations).
-`INVALID_SCHEMA` is reserved for hard schema-validity violations like the existing
-`@service` + `@mutation` mutual-exclusion check.
+`UnclassifiedField` rejection kind is `AUTHOR_ERROR` for schema-author mistakes; `INVALID_SCHEMA` is reserved for hard validity violations like the `@service` + `@mutation` mutual-exclusion check.
 
 #### 1c. Validator additions
 
-`validateMutationInsertTableField`, `validateMutationUpdateTableField`,
-`validateMutationDeleteTableField`, `validateMutationUpsertTableField` are all currently empty
-stubs.  They stay empty after Phase 1 — the classifier rejects bad shapes via `UnclassifiedField`
-before validation is invoked.
+`validateMutationInsertTableField`, `validateMutationUpdateTableField`, `validateMutationDeleteTableField`, `validateMutationUpsertTableField` are empty stubs by design — the classifier rejects bad shapes via `UnclassifiedField` before validation is invoked. As each emitter lands, the corresponding `*ValidationTest` flips its `STUBBED` scenario to `VALID` (DELETE precedent in `MutationDeleteTableFieldValidationTest`).
 
 #### 1d. Pipeline tests
 
-> **Coverage status (post-DELETE).** DELETE shipped with three classifier scenarios in
-> `GraphitronSchemaBuilderTest.rootFieldClassification` (`DELETE_MUTATION_FIELD`,
-> `DELETE_MUTATION_NO_INPUT_ARG`, `DELETE_MUTATION_MISSING_LOOKUP_KEY`) plus the `VALID`
-> case in `MutationDeleteTableFieldValidationTest`. The full table below is the target
-> coverage across all four DML variants; landing each variant should add at minimum the
-> rows that exercise verb-specific invariants, and we should backfill the cross-cutting
-> rows (deferred input variants, listed inputs, return-type rejections) opportunistically
-> as variants land. Aim for cross-cutting parity by the time UPSERT lands.
+**Shipped:** `GraphitronSchemaBuilderTest.rootFieldClassification` covers the happy path for each mutation variant — `INSERT_MUTATION_FIELD`, `UPDATE_MUTATION_FIELD`, `DELETE_MUTATION_FIELD`, `UPSERT_MUTATION_FIELD`, `SERVICE_MUTATION_FIELD`, `MUTATION_SERVICE_RECORD_FIELD` — plus DELETE negatives `DELETE_MUTATION_NO_INPUT_ARG` and `DELETE_MUTATION_MISSING_LOOKUP_KEY`. Each variant resolves to its expected variant record class.
 
-`GraphitronSchemaBuilderTest` additions (no emission yet, just classifier assertions):
+**Coverage gap:** the cross-cutting negative-case rows below are still target coverage rather than shipped tests. Each emitter's landing should add at minimum the rows that exercise verb-specific invariants, and we should backfill the cross-cutting rows (deferred input variants, listed inputs, return-type rejections, composite-PK coverage failures) opportunistically. Aim for parity by the time UPSERT lands.
+
+Target coverage table (`GraphitronSchemaBuilderTest.rootFieldClassification` — classifier assertions only, no emission):
 
 | SDL shape | Expected outcome |
 |---|---|
@@ -386,65 +288,26 @@ before validation is invoked.
 | `upsertFilm(in: FilmInput): ID @mutation(typeName: UPSERT)` with `@lookupKey` on only one column of a composite PK | `MutationUpsertTableField` (UPSERT is exempt from the full-PK coverage check) |
 | `upsertFilm(in: FilmInput): ID @mutation(typeName: UPSERT)` with `@lookupKey` covering the full PK | `MutationUpsertTableField` |
 | Any DML variant with `NestingField` in input | `UnclassifiedField` with Invariant #7 message |
-| Any DML variant with `NodeIdField` in input | `UnclassifiedField` with Invariant #8 message |
-| Any DML variant with `NodeIdReferenceField` in input | `UnclassifiedField` with Invariant #10 message |
-| Any DML variant with `ColumnReferenceField` in input | `UnclassifiedField` with Invariant #9 message |
+| Any DML variant with a `NodeIdDecodeKeys`-extracted `ColumnField` in input (post-R50 successor of the retired `NodeIdField`) | `UnclassifiedField` with Invariant #8 message |
+| Any DML variant with `ColumnReferenceField` or `CompositeColumnReferenceField` in input | `UnclassifiedField` with Invariant #9 message |
+| Any DML variant with `CompositeColumnField` in input | `UnclassifiedField` with the deferred-composite-input message (post-R50) |
 | DML variant with two `@table` input arguments | `UnclassifiedField` with Invariant #1 message |
 | DML variant with a plain (non-`@table`) input arg | `UnclassifiedField` with Invariant #13 message |
 | DML variant with listed input (`in: [FilmInput]`) | `UnclassifiedField` with Invariant #11 message |
 | DML variant whose `@table` input arg carries `@condition` | `UnclassifiedField` with Invariant #12 message |
 | DML variant with `@lookupKey` on a list-typed input field (e.g. `ids: [ID!]! @lookupKey`) | `UnclassifiedField` whose reason includes the `buildLookupBindings` per-field error |
 | DML variant with non-`ID`/non-`T` return (e.g. `: Int`, `: Boolean`, `Connection<T>`) | `UnclassifiedField` with Invariant #14 message |
-| DML variant targeting a `@node` table with composite key and `ScalarReturnType(ID)` return | classified successfully; `nodeIdMeta.keyColumns()` carries both key columns |
-| DML variant targeting a non-`@node` table with `ScalarReturnType(ID)` return | `UnclassifiedField` with "not a @node type" message |
-| DML variant targeting a non-`@node` (or composite-key) table with `TableBoundReturnType` return | classified successfully (`nodeIdMeta` is `Optional.empty()`; no node restriction applies) |
-| `@service` + `@mutation` together | `UnclassifiedField` (existing check at `FieldBuilder.java:1665-1668`) |
-| `@mutation` with no `typeName` argument | `UnclassifiedField` with existing "both absent" message — Phase 1b's `classifyMutationInput` must not fire before this fallthrough |
+| DML variant targeting a `@node` table with composite key and `ScalarReturnType(ID)` return | classified successfully; `encodeReturn.paramSignature()` carries both key columns |
+| DML variant targeting a non-`@node` table with `ScalarReturnType(ID)` return | `UnclassifiedField` with "no @node type is declared for table" message |
+| DML variant targeting a non-`@node` (or composite-key) table with `TableBoundReturnType` return | classified successfully (`encodeReturn` is `Optional.empty()`; no node restriction applies) |
+| `@service` + `@mutation` together | `UnclassifiedField` (existing mutual-exclusion check) |
+| `@mutation` with no `typeName` argument | `UnclassifiedField` with existing "both absent" message — `classifyMutationInput` does not fire before this fallthrough |
 
 ---
 
 ### Phase 2 — INSERT emission ▶ Next up
 
-**Goal:** lift `MutationInsertTableField` from `NOT_IMPLEMENTED_REASONS`. Mirror DELETE's
-landing shape: per-variant record fields, per-variant classifier helper
-(`classifyMutationInsertField`), per-variant emitter (`buildMutationInsertFetcher`).
-No shared `DmlTableField` / `classifyMutationInput` / `buildMutationReturnExpression`
-helpers yet — those are a [Consolidation](#consolidation) follow-up that fires once INSERT
-joins DELETE in the implemented set.
-
-#### Per-variant record extension
-
-Following §1a, extend `MutationInsertTableField` directly:
-
-```java
-record MutationInsertTableField(
-    String parentTypeName,
-    String name,
-    SourceLocation location,
-    ReturnTypeRef returnType,
-    String inputArgName,
-    TableRef inputTable,
-    List<InputField> fields,                          // every ColumnField, in declaration order
-    Optional<JooqCatalog.NodeIdMetadata> nodeIdMeta,  // populated only for ScalarReturnType("ID")
-    Optional<ErrorChannel> errorChannel
-) implements MutationField {
-    public MutationInsertTableField(/* …8-arg form, errorChannel = Optional.empty() */) { … }
-}
-```
-
-INSERT does not need `fieldBindings` — `@lookupKey` is not required (Invariant #5) and is not
-treated specially (Invariant: every `ColumnField` contributes to the column/value list, including
-those that happen to be `@lookupKey`-bound). Carry `List<InputField> fields` so the emitter can
-walk them in declaration order.
-
-#### Per-variant classifier (`classifyMutationInsertField`)
-
-Following §1b, write the helper inline in `FieldBuilder`. Copy `classifyMutationDeleteField`
-as a starting point and adjust per the table in §1b:
-- Pass 1 is identical (single `@table` input arg, reject other shapes).
-- Pass 2 drops the empty-`fieldBindings` check (Invariants #2–#3 don't apply) and the
-  PK-coverage check.
-- Return-type validation and NodeId metadata resolution are identical.
+**Goal:** lift `MutationInsertTableField` out of `NOT_IMPLEMENTED_REASONS`. The record and classifier are already in place from Phase 1; this phase is purely the emitter and the partition flip.
 
 #### Emitter (`buildMutationInsertFetcher`)
 
@@ -465,116 +328,44 @@ public static Object createFilm(DataFetchingEnvironment env) {
 }
 ```
 
-- **Java return type:** `Object`. Same rationale as DELETE — graphql-java coerces; declaring
-  `Object` sidesteps the ID-vs-Long mismatch and lets `Record` / `Result<Record>` flow through
-  without signature churn.
-- **Column list:** every `InputField.ColumnField` in `f.fields()`, in declaration order.
-  `@lookupKey` fields are included.
-- **Values list:** parallel to the column list. Each value is
-  `DSL.val(in.get("<sdlFieldName>"), Tables.T.<col.javaName()>.getDataType())`. The two-argument
-  form delegates coercion to the column's registered `Converter` at bind time; no Java-side cast,
-  no explicit type check. See the "Column value binding" convention in `rewrite-design-principles.md`.
-- **Return expression dispatch:** inline a switch on `f.returnType()`, mirroring DELETE's
-  emitter (`buildMutationDeleteFetcher` in `TypeFetcherGenerator.java`):
-  - `ScalarReturnType("ID")` (Single) → `.returningResult(<key cols>).fetchOne(r -> NodeIdEncoder.encode(typeId, r.get(...), ...))`
-  - `ScalarReturnType("ID")` (List) → `.returningResult(<key cols>).fetch(r -> NodeIdEncoder.encode(...))`
-  - `TableBoundReturnType` (Single) → `.returningResult(Type.$fields(env.getSelectionSet(), table, env)).fetchOne(r -> r)`
-  - `TableBoundReturnType` (List) → `.returningResult(...).fetch(r -> r)`
-  - All other shapes are rejected at classifier time per Invariant #14.
+- **Java return type:** `Object`. Same rationale as DELETE — graphql-java coerces; declaring `Object` sidesteps the ID-vs-Long mismatch and lets `Record` / `Result<Record>` flow through without signature churn.
+- **Column list:** every `InputField.ColumnField` in `f.tableInputArg().fields()`, in declaration order. `@lookupKey` fields are included (`@lookupKey` is not treated specially on INSERT).
+- **Values list:** parallel to the column list. Each value is `DSL.val(in.get("<sdlFieldName>"), Tables.T.<col.javaName()>.getDataType())`. The two-argument form delegates coercion to the column's registered `Converter` at bind time. See the "Column value binding" convention in `rewrite-design-principles.adoc`.
+- **Return expression dispatch:** inline a switch on `f.returnType()`, mirroring `buildMutationDeleteFetcher`:
+  - `ScalarReturnType("ID")` (Single) → `.returningResult(<key cols>).fetchOne(r -> NodeIdEncoder.encode<TypeName>(r.get(...), ...))` resolved through `f.encodeReturn().orElseThrow()`.
+  - `ScalarReturnType("ID")` (List) → same projection, `.fetch(...)` terminator.
+  - `TableBoundReturnType` (Single) → `.returningResult(Type.$fields(env.getSelectionSet(), table, env)).fetchOne(r -> r)`.
+  - `TableBoundReturnType` (List) → same projection, `.fetch(r -> r)` terminator.
+  - All other return shapes are rejected at classifier time per Invariant #14.
 
-The duplication between this dispatch and DELETE's is deliberate — same precedent, two emitters.
-Lift to `buildMutationReturnExpression(f, names)` only after both are real and the diff is
-limited to "INSERT runs `insertInto(...).values(...)` before returningResult; DELETE runs
-`deleteFrom(...).where(...)`". See [Consolidation](#consolidation).
+The duplication between this dispatch and DELETE's is deliberate — same precedent, two emitters. Lift to `buildMutationReturnExpression(f, names)` once both are real and the diff is limited to "INSERT runs `insertInto(...).values(...)` before `.returningResult`; DELETE runs `deleteFrom(...).where(...)`". See [Consolidation](#consolidation).
 
-`NodeIdEncoder.encode` is varargs over the key columns; simple-key and composite-key tables emit
-identical code patterns. The `nodeIdMeta` is populated from
-`JooqCatalog.nodeIdMetadata(tableName)` at classify time and reached via `f.nodeIdMeta().orElseThrow()`
-in the `ScalarReturnType("ID")` arm (safe: the classifier rejects when absent).
+`f.encodeReturn().get()` resolves the per-`@node`-type encoder helper; both simple-key and composite-key tables emit identical code patterns since the typeId is baked into the method name. The classifier guarantees `encodeReturn` is present whenever the return type is `ScalarReturnType("ID")`.
 
 #### `RETURNING` with nested selections (`TableBoundReturnType`)
 
-`Type.$fields` emits `DSL.multiset(...)` for child `TableField`/`NestingField` selections,
-which run as correlated subqueries. PostgreSQL supports subqueries inside `RETURNING`, so this
-shape works in principle, but no existing Graphitron fixture exercises
-`INSERT ... RETURNING (multiset)` yet. **DELETE landed without an execution test,
-so this is unverified for either verb.** The fall-back, if PostgreSQL rejects the shape,
-is "RETURNING PK only, then a follow-up SELECT from the same `dsl`" — same `dsl` keeps the
-read inside any caller-managed transaction. Document the choice in the landing commit.
+`Type.$fields` emits `DSL.multiset(...)` for child `TableField`/`NestingField` selections, which run as correlated subqueries. PostgreSQL supports subqueries inside `RETURNING`, so this shape works in principle, but no existing Graphitron fixture exercises `INSERT ... RETURNING (multiset)` yet. **DELETE landed without an execution test, so this is unverified for either verb.** The fall-back, if PostgreSQL rejects the shape, is "RETURNING PK only, then a follow-up SELECT from the same `dsl`" — same `dsl` keeps the read inside any caller-managed transaction. Document the choice in the landing commit.
 
-If INSERT's pipeline test stays compile-only (no execution path against PostgreSQL), explicitly
-note the verification gap in the commit message; otherwise we ship two unverified `RETURNING`
-emitters in a row.
+If INSERT's pipeline test stays compile-only (no execution path against PostgreSQL), explicitly note the verification gap in the commit message; otherwise we ship two unverified `RETURNING` emitters in a row.
 
 #### Implementation sites
 
-- Add `String inputArgName, TableRef inputTable, List<InputField> fields,
-  Optional<JooqCatalog.NodeIdMetadata> nodeIdMeta` to `MutationInsertTableField`. Keep the
-  no-channel convenience constructor.
-- Add `classifyMutationInsertField(...)` in `FieldBuilder.java`; route the
-  `case "INSERT" ->` arm of `classifyMutationField` to it.
-- Add `buildMutationInsertFetcher(MutationInsertTableField, String outputPackage, String jooqPackage)`
-  in `TypeFetcherGenerator.java`. Update the switch arm from `stub(f)` to the new call.
-- Move `MutationInsertTableField.class` from `NOT_IMPLEMENTED_REASONS` to `IMPLEMENTED_LEAVES`
-  in the same commit (`GeneratorCoverageTest` enforces the partition).
-- Update `MutationInsertTableFieldValidationTest`'s `STUBBED` case to a `VALID` case (mirror
-  `MutationDeleteTableFieldValidationTest`).
-- Update `INSERT_MUTATION_FIELD` in `GraphitronSchemaBuilderTest.rootFieldClassification`
-  to use a real `@table` input arg (mirror the post-DELETE `DELETE_MUTATION_FIELD` shape).
+- Add `buildMutationInsertFetcher(MutationField.MutationInsertTableField, String outputPackage, String jooqPackage)` in `TypeFetcherGenerator.java`. Update the `case MutationField.MutationInsertTableField f -> builder.addMethod(stub(f));` arm to call the new emitter.
+- Move `MutationInsertTableField.class` from `NOT_IMPLEMENTED_REASONS` to `IMPLEMENTED_LEAVES` in the same commit (`GeneratorCoverageTest` enforces the partition).
+- Flip `MutationInsertTableFieldValidationTest`'s `STUBBED` case to `VALID` (mirror `MutationDeleteTableFieldValidationTest`).
+- Optionally tighten the `INSERT_MUTATION_FIELD` SDL in `GraphitronSchemaBuilderTest.rootFieldClassification` to assert post-emission shape (the existing case already classifies; the assertion can grow to inspect `tableInputArg.inputTable()` etc.).
 
 #### Tests
 
-**Pipeline (required):**
-- `INSERT_MUTATION_FIELD` happy path classifies as `MutationInsertTableField`.
-- Add at least the negative cases that DELETE shipped:
-  `INSERT_MUTATION_NO_INPUT_ARG`, `INSERT_MUTATION_LISTED_INPUT`, and one
-  return-type rejection (e.g. `Int` return).
-- Composite-PK case is worth adding for INSERT too — exercises the multi-column key-projection
-  path in the emitter.
+**Pipeline (required):** Add the negative cases the schema-builder coverage table calls for — at minimum `INSERT_MUTATION_NO_INPUT_ARG`, `INSERT_MUTATION_LISTED_INPUT`, and one return-type rejection (e.g. `Int` return). Composite-PK happy path exercises the multi-column key-projection path in the emitter.
 
-**Execution (recommended, deferred allowed):** mutations.md originally required this. Given
-DELETE shipped without one, INSERT's commit message should call out whether an execution test
-landed. If deferred, file a follow-up in the roadmap. Fixture work needed:
-`graphitron-test/src/main/resources/graphql/schema.graphqls` has no `Mutation` type yet — the
-first variant adds one with `type Mutation { … }`; subsequent variants extend it with
-`extend type Mutation { … }`. Sakila's `film` table has several NOT-NULL columns without
-defaults (`language_id`, `rental_duration`, `rental_rate`, `replacement_cost`); the fixture
-input type must cover them or the INSERT fails at execute time per Invariant #6.
+**Execution (recommended, deferred allowed):** the original `mutations.md` required this. Given DELETE shipped without one, INSERT's commit message should call out whether an execution test landed. If deferred, file a follow-up in the roadmap. Fixture work needed: `graphitron-test/src/main/resources/graphql/schema.graphqls` has no `Mutation` type yet — the first variant adds one with `type Mutation { … }`; subsequent variants extend it with `extend type Mutation { … }`. Sakila's `film` table has several NOT-NULL columns without defaults (`language_id`, `rental_duration`, `rental_rate`, `replacement_cost`); the fixture input type must cover them or the INSERT fails at execute time per Invariant #6.
 
 ---
 
 ### Phase 3 — DELETE emission ✅ Landed
 
-> **Landed** in commit `31c64a2` on `claude/graphitron-rewrite`. Notes below describe the
-> shipped form; original spec text retained as the precedent for INSERT/UPDATE/UPSERT.
->
-> **Shipped:** `MutationDeleteTableField` extended with `(String inputArgName, TableRef inputTable,
-> List<InputColumnBinding> fieldBindings, Optional<JooqCatalog.NodeIdMetadata> nodeIdMeta,
-> Optional<ErrorChannel> errorChannel)`. `classifyMutationDeleteField` enforces Invariants
-> #1, #2 (incl. PK coverage), #7-#11, #12, #13, #14 inline. `buildMutationDeleteFetcher`
-> emits `dsl.deleteFrom(table).where(<chained .eq().and()>).returningResult(<keys or $fields>).fetchOne(r -> …)`.
-> 911 → 924 unit tests pass; full pipeline (`mvn install -Plocal-db`) builds clean.
->
-> **Deferred / not done:**
-> - **No execution test against PostgreSQL.** `RETURNING (multiset)` for `TableBoundReturnType`
->   returns is unverified; same for the scalar-`ID` `NodeIdEncoder.encode` lambda. INSERT's
->   landing should not extend this gap.
-> - **No production-schema gates.** The original Phase 1 plan called for grepping production
->   schemas before merge to (a) confirm the `PlainInputArg` carve-out for Invariant #13 is
->   not load-bearing and (b) sample return-type breakdowns to confirm the Invariant #14
->   strict gate doesn't swap rejection classes. Neither was done. INSERT is the highest-volume
->   mutation rejection — these checks matter more for it than they did for DELETE.
-> - **`DmlTableField` supertype, `classifyMutationInput` helper, `buildMutationReturnExpression`
->   helper.** Punted to [Consolidation](#consolidation).
-> - **Pipeline-test coverage is partial.** Three classifier scenarios shipped
->   (`DELETE_MUTATION_FIELD`, `DELETE_MUTATION_NO_INPUT_ARG`,
->   `DELETE_MUTATION_MISSING_LOOKUP_KEY`). Composite-PK happy path, missing-PK-column
->   error, listed-input gate, `@condition` gate, deferred-input variants, non-`@node`-table-
->   with-`ID`-return error, and most return-type rejections are not covered yet.
-
-DELETE was implemented before UPDATE because DELETE's emitter is a strict subset of UPDATE's
-shape (WHERE clause only, no SET clause); getting the simpler WHERE-only path working first
-reduces the surface area for Phase 4.
+Initial emitter shipped in commit `31c64a2`; rebased onto the post-R50 `(tableInputArg, encodeReturn)` shape during the R50 cleanup pass. `buildMutationDeleteFetcher` emits `dsl.deleteFrom(table).where(<chained .eq().and()>).returningResult(<keys or $fields>).fetchOne(r -> …)`, reading from `f.tableInputArg().fieldBindings()` and `f.encodeReturn().orElseThrow().paramSignature()`.
 
 #### Shape of emitted method
 
@@ -586,83 +377,28 @@ public static Object deleteFilm(DataFetchingEnvironment env) {
         .deleteFrom(Tables.FILM)
         .where(Tables.FILM.FILM_ID.eq(DSL.val(in.get("filmId"), Tables.FILM.FILM_ID.getDataType())))
         .returningResult(Tables.FILM.FILM_ID)
-        .fetchOne(r -> r.get(Tables.FILM.FILM_ID));
+        .fetchOne(r -> NodeIdEncoder.encodeFilm(r.get(Tables.FILM.FILM_ID)));
 }
 ```
 
-- **WHERE clause**: each `InputColumnBinding` in `tia.fieldBindings()` contributes one
-  `.eq(value)` predicate, combined with `DSL.and(...)`.
-- **Return expression**: same rules as INSERT above.
-
-When `tia.fieldBindings()` has a single binding, emit `.where(col.eq(val))`.
-When multiple, emit `.where(col1.eq(v1).and(col2.eq(v2)))`.
-In both cases `val` is `DSL.val(in.get(binding.inputFieldName()), Tables.T.COL.getDataType())`
-— the two-argument form that delegates coercion to the column's `Converter` (see "Values list"
-description in Phase 2 and the "Column value binding" convention in `rewrite-design-principles.md`).
-
-The same `buildMutationReturnExpression` helper (introduced in Phase 2) is reused.
-
-#### Implementation sites
-
-- New `buildMutationDeleteFetcher(MutationDeleteTableField, String outputPackage, String jooqPackage)`
-  in `TypeFetcherGenerator`.
-- Switch arm changes from `stub(f)` to the new emitter call.
-- Remove `MutationDeleteTableField` from `NOT_IMPLEMENTED_REASONS` (line 212) and add it to
-  `IMPLEMENTED_LEAVES` (line 142) in the same commit.
+- **WHERE clause:** each `MapBinding` in `tia.fieldBindings()` contributes one `.eq(value)` predicate, combined with `.and(...)`. Single binding → `.where(col.eq(val))`; multiple → `.where(col1.eq(v1).and(col2.eq(v2)))`. `val` is `DSL.val(in.get(binding.fieldName()), Tables.T.COL.getDataType())` — the two-argument form that delegates coercion to the column's `Converter`.
+- **Return expression:** dispatch on `f.returnType()` exactly as Phase 2 spells out.
 
 #### Empty-match semantics
 
-When the WHERE clause matches no row, `.fetchOne(...)` returns `null`.  The emitted method's
-`Object` return flows that `null` through graphql-java unchanged.  For a nullable `ID` return
-type, this surfaces as GraphQL null; for `ID!`, graphql-java raises a non-null violation at the
-protocol layer.  This is the declared contract — schema authors using `ID!` on UPDATE/DELETE
-are asserting that the WHERE clause always matches, and the protocol-layer error is the right
-signal when it doesn't.  Same applies to Phase 4.
+When the WHERE clause matches no row, `.fetchOne(...)` returns `null`. The emitted method's `Object` return flows that `null` through graphql-java unchanged. For a nullable `ID` return type, this surfaces as GraphQL null; for `ID!`, graphql-java raises a non-null violation at the protocol layer. This is the declared contract — schema authors using `ID!` on UPDATE/DELETE are asserting that the WHERE clause always matches, and the protocol-layer error is the right signal when it doesn't. Same applies to Phase 4.
 
-#### Tests
+#### Deferred / open
 
-Pipeline and execution tests following the same pattern as Phase 2.
-Execution test: `deleteFilm(in: {filmId: 1})` — asserts the film is gone from the DB afterward
-and the returned ID matches.
-Negative execution test: `deleteFilm(in: {filmId: 99999})` on a nullable `ID` return — asserts
-`null` response.
+- **No execution test against PostgreSQL.** `RETURNING (multiset)` for `TableBoundReturnType` returns is unverified; same for the scalar-`ID` `encode<TypeName>` lambda. INSERT's landing should resolve this gap.
+- **No production-schema gates.** The original Phase 1 plan called for grepping production schemas before merge to (a) confirm the `PlainInputArg` carve-out for Invariant #13 is not load-bearing and (b) sample return-type breakdowns to confirm the Invariant #14 strict gate doesn't swap rejection classes. Neither was done. INSERT is the highest-volume mutation rejection — these checks matter more for it than they did for DELETE.
+- **Pipeline-test coverage is partial.** Three classifier scenarios shipped (`DELETE_MUTATION_FIELD`, `DELETE_MUTATION_NO_INPUT_ARG`, `DELETE_MUTATION_MISSING_LOOKUP_KEY`). Composite-PK happy path, missing-PK-column error, listed-input gate, `@condition` gate, deferred-input variants, non-`@node`-table-with-`ID`-return error, and most return-type rejections are not covered yet.
 
 ---
 
 ### Phase 4 — UPDATE emission
 
-Same per-variant shape as INSERT (§Phase 2) and DELETE (§Phase 3). UPDATE combines INSERT's
-value-binding pattern (the SET clause) with DELETE's WHERE-clause pattern. By the time UPDATE
-lands, the duplication between the three emitters' return-expression dispatch should be the
-trigger for [Consolidation](#consolidation) — extract `buildMutationReturnExpression` and
-fold the three switches into it.
-
-#### Per-variant record extension
-
-```java
-record MutationUpdateTableField(
-    String parentTypeName,
-    String name,
-    SourceLocation location,
-    ReturnTypeRef returnType,
-    String inputArgName,
-    TableRef inputTable,
-    List<InputField> fields,                          // for the SET clause
-    List<InputColumnBinding> fieldBindings,           // for the WHERE clause
-    Optional<JooqCatalog.NodeIdMetadata> nodeIdMeta,
-    Optional<ErrorChannel> errorChannel
-) implements MutationField { /* no-channel convenience constructor */ }
-```
-
-UPDATE needs **both** `fields` (SET clause) and `fieldBindings` (WHERE clause). Invariant #4
-guarantees there's at least one non-`@lookupKey` field for the SET clause.
-
-#### Per-variant classifier (`classifyMutationUpdateField`)
-
-Copy `classifyMutationDeleteField` and add Invariant #4 (UPDATE has no non-`@lookupKey` fields →
-empty SET clause → reject). Everything else (single `@table` arg, listed-input gate, deferred
-input-field variants, `@condition` rejection, PK coverage, return-type validation) is identical
-to DELETE.
+Record + classifier already done by Phase 1 (R50 cleanup); only the emitter and the partition flip remain. UPDATE combines INSERT's value-binding pattern (the SET clause) with DELETE's WHERE-clause pattern.
 
 #### Emitter (`buildMutationUpdateFetcher`)
 
@@ -679,47 +415,27 @@ public static Object updateFilm(DataFetchingEnvironment env) {
 }
 ```
 
-- **SET clause:** every `InputField.ColumnField` in `f.fields()` whose `name()` is **not** the
-  `inputFieldName()` of any `f.fieldBindings()` entry contributes one `.set(col, val)`.
-- **WHERE clause:** `f.fieldBindings()` entries, chained with `.and(...)` exactly as DELETE does.
-- **Return expression dispatch:** identical to INSERT and DELETE — same four cases, same code
-  shape. If `buildMutationReturnExpression` has been extracted by the time UPDATE lands, call
-  it; otherwise inline the switch.
-- **Empty-match semantics:** `.fetchOne(...)` returns `null` when the WHERE clause matches no
-  row, same as DELETE. For nullable returns this surfaces as GraphQL null; for `ID!`/`Type!`
-  graphql-java raises a non-null violation. Schema authors using `!` are asserting the row
-  exists.
+- **SET clause:** every `InputField.ColumnField` in `f.tableInputArg().fields()` whose `name()` is **not** the `fieldName()` of any `f.tableInputArg().fieldBindings()` entry contributes one `.set(col, val)`. Invariant #4 guarantees this set is non-empty.
+- **WHERE clause:** `f.tableInputArg().fieldBindings()` entries, chained with `.and(...)` exactly as DELETE does.
+- **Return expression dispatch:** identical to INSERT and DELETE — same four cases, same code shape. If `buildMutationReturnExpression` has been extracted by the time UPDATE lands, call it; otherwise inline the switch.
+- **Empty-match semantics:** `.fetchOne(...)` returns `null` when the WHERE clause matches no row, same as DELETE.
 
 #### Implementation sites
 
-- Add the per-variant fields to `MutationUpdateTableField`.
-- Add `classifyMutationUpdateField(...)` in `FieldBuilder.java`; route `case "UPDATE" ->` to it.
-- Add `buildMutationUpdateFetcher(...)` in `TypeFetcherGenerator.java`. Update switch arm.
+- Add `buildMutationUpdateFetcher(MutationField.MutationUpdateTableField, String outputPackage, String jooqPackage)` in `TypeFetcherGenerator.java`. Update the switch arm from `stub(f)` to the new call.
 - Move `MutationUpdateTableField.class` from `NOT_IMPLEMENTED_REASONS` to `IMPLEMENTED_LEAVES`.
-- Update `MutationUpdateTableFieldValidationTest` and `UPDATE_MUTATION_FIELD` schema test.
+- Flip `MutationUpdateTableFieldValidationTest` from `STUBBED` to `VALID`.
+- Optionally tighten `UPDATE_MUTATION_FIELD` in `GraphitronSchemaBuilderTest.rootFieldClassification`.
 
 #### Tests
 
-Execution test: `updateFilm(in: {filmId: 1, title: "Updated"})` — asserts the title changed and
-the returned ID is 1.
+Pipeline: at minimum a UPDATE-with-no-non-`@lookupKey`-field rejection (Invariant #4) and a composite-PK happy path. Execution: `updateFilm(in: {filmId: 1, title: "Updated"})` asserts the title changed and the returned ID is 1.
 
 ---
 
 ### Phase 5 — UPSERT emission
 
-UPSERT lands after UPDATE. Same per-variant pattern. The record needs both `fields` (INSERT
-column list and ON CONFLICT DO UPDATE SET clause) and `fieldBindings` (ON CONFLICT key).
-
-#### Per-variant record extension
-
-Mirror UPDATE's record shape (same set of fields).
-
-#### Per-variant classifier (`classifyMutationUpsertField`)
-
-Same as UPDATE, **minus** Invariant #4 (UPSERT allows all-`@lookupKey` inputs as
-`INSERT ... ON CONFLICT DO NOTHING`) and **minus** the PK-coverage check
-(UPSERT's ON CONFLICT key is a unique-constraint choice, not required to match the full PK —
-Invariant #2's UPSERT exemption).
+Record + classifier already done by Phase 1; only the emitter and the partition flip remain.
 
 #### Emitter (`buildMutationUpsertFetcher`)
 
@@ -728,60 +444,41 @@ jOOQ supports `INSERT ... ON CONFLICT ... DO UPDATE SET ...` via:
 ```java
 dsl.insertInto(Tables.FILM, cols...)
    .values(DSL.val(in.get("filmId"), Tables.FILM.FILM_ID.getDataType()), /* … */)
-   .onConflict(Tables.FILM.FILM_ID)   // @lookupKey columns from f.fieldBindings()
+   .onConflict(Tables.FILM.FILM_ID)   // @lookupKey columns from f.tableInputArg().fieldBindings()
    .doUpdate()
    .set(Tables.FILM.TITLE, DSL.val(in.get("title"), Tables.FILM.TITLE.getDataType()))
    .returningResult(/* … */)
    .fetchOne(/* … */);
 ```
 
-- **`onConflict` columns:** `f.fieldBindings()` entries.
-- **Conflict action:** if `f.fields()` has at least one `ColumnField` whose `name()` is not in
-  any `fieldBindings()` entry, emit `.doUpdate().set(...)` over those non-`@lookupKey` fields.
-  If every field is `@lookupKey` (no SET-clause fields), emit `.doNothing()` instead — jOOQ
-  rejects a `doUpdate()` with zero `.set(...)` calls; `doNothing()` is the required API path
-  for `INSERT ... ON CONFLICT DO NOTHING`.
-- **INSERT column list:** every `InputField.ColumnField` in `f.fields()` in declaration order,
-  identical to INSERT's. Includes `@lookupKey` fields (they supply the user-provided PK on the
-  insert branch). Auto-generated PKs that schema authors don't expose never produce a
-  `ColumnField` and are therefore absent — the correct shape for `ON CONFLICT`.
+- **`onConflict` columns:** `f.tableInputArg().fieldBindings()` entries.
+- **Conflict action:** if `f.tableInputArg().fields()` has at least one `ColumnField` whose `name()` is not in any `fieldBindings()` entry, emit `.doUpdate().set(...)` over those non-`@lookupKey` fields. If every field is `@lookupKey` (no SET-clause fields), emit `.doNothing()` instead — jOOQ rejects a `doUpdate()` with zero `.set(...)` calls; `doNothing()` is the required API path for `INSERT ... ON CONFLICT DO NOTHING`.
+- **INSERT column list:** every `InputField.ColumnField` in `f.tableInputArg().fields()` in declaration order, identical to INSERT's. Includes `@lookupKey` fields (they supply the user-provided PK on the insert branch). Auto-generated PKs that schema authors don't expose never produce a `ColumnField` and are therefore absent — the correct shape for `ON CONFLICT`.
 - **Return expression dispatch:** same as INSERT/UPDATE/DELETE.
 
 PostgreSQL-only — `ON CONFLICT` is a Postgres extension; the rewrite targets PostgreSQL.
 
 #### Implementation sites
 
-- Add per-variant fields to `MutationUpsertTableField` (mirror UPDATE).
-- Add `classifyMutationUpsertField(...)` and `buildMutationUpsertFetcher(...)`.
+- Add `buildMutationUpsertFetcher(MutationField.MutationUpsertTableField, String outputPackage, String jooqPackage)` in `TypeFetcherGenerator.java`. Update the switch arm.
 - Move `MutationUpsertTableField.class` to `IMPLEMENTED_LEAVES`.
-- Update validation and schema-builder tests.
+- Flip `MutationUpsertTableFieldValidationTest` from `STUBBED` to `VALID`.
 
 #### Tests
 
-Execution test: `upsertFilm(in: {filmId: 1, title: "Upserted"})` — asserts correct insert-or-update
-semantics.
+Pipeline: at minimum the all-`@lookupKey` case (`doNothing()` path) and a partial-PK-coverage case (UPSERT exemption from Invariant #2). Execution: `upsertFilm(in: {filmId: 1, title: "Upserted"})` asserts correct insert-or-update semantics.
 
 ---
 
 ### Phase 6 — Service mutations
 
-**Prerequisite (satisfied).** Service-root-fetchers (Done) introduced
-`ArgCallEmitter.buildMethodBackedCallArgs`, the declaration-order param-list helper this phase
-reuses verbatim. It also wired `validateRootServiceInvariants` (§1 / §2) and the strict
-`@service` return-type check into the mutation arm of `classifyMutationField`, so this phase
-inherits classifier-time rejection for connection returns, batch-keyed parameters, and
-mismatched return types without further work.
+Records + classifier already done. `classifyMutationField`'s `@service` arm runs `resolveServiceField`, `validateRootServiceInvariants` (§1 Connection rejection, §2 no `Sources` parameter at root), and the strict-return check, then emits the appropriate variant carrying the resolved `MethodRef`. Only the two emitters and the partition flip remain.
 
-**Synchronous, no DataLoader.**  Both service-mutation variants emit synchronous methods — same
-as root service queries.  Root mutation fields have no parent-batching context; per-request
-concurrency is irrelevant, and the developer-supplied method owns any transaction scope.
+**Synchronous, no DataLoader.** Both service-mutation variants emit synchronous methods — same as root service queries. Root mutation fields have no parent-batching context; per-request concurrency is irrelevant, and the developer-supplied method owns any transaction scope.
 
 #### `MutationServiceTableField`
 
-Same shape as `QueryServiceTableField` from the service-root-fetchers plan.  The developer method
-returns a `Result<Record>` (list) or `Record` (single).  The generator emits a synchronous
-method identical to `buildQueryServiceTableFetcher` — there is no special write semantics because
-the service owns all SQL, including any transactions:
+Same shape as `QueryServiceTableField`. The developer method returns a `Result<Record>` (list) or `Record` (single). The generator emits a synchronous method identical to `buildQueryServiceTableFetcher` — there is no special write semantics because the service owns all SQL, including any transactions:
 
 ```java
 public static Result<Record> activeRentals(DataFetchingEnvironment env) {
@@ -793,81 +490,34 @@ public static Result<Record> activeRentals(DataFetchingEnvironment env) {
 }
 ```
 
-Implementation: add `buildMutationServiceTableFetcher(MutationServiceTableField, ...)` in
-`TypeFetcherGenerator`.  Call `buildServiceFetcherCommon` directly (the same shared helper that
-`buildQueryServiceTableFetcher` delegates to) rather than going through the query-flavoured
-wrapper; the two variants have identical record shapes and the common helper already handles both.
+Implementation: add `buildMutationServiceTableFetcher(MutationField.MutationServiceTableField, ...)` in `TypeFetcherGenerator`. Call `buildServiceFetcherCommon` directly (the same shared helper that `buildQueryServiceTableFetcher` delegates to) rather than going through the query-flavoured wrapper; the two variants have identical record shapes and the common helper already handles both.
 
 #### `MutationServiceRecordField`
 
-The classifier at `FieldBuilder.java:1682-1685` maps this variant to two distinct
-`ReturnTypeRef` shapes, both of which this emitter must handle:
+The classifier maps this variant to two distinct `ReturnTypeRef` shapes (see `classifyMutationField`'s `case ResultReturnType` and `case ScalarReturnType` arms), both of which this emitter must handle:
 
-- **`ReturnTypeRef.ScalarReturnType`** — scalar (e.g. `Int`, `String`, `Boolean`), plain DTO,
-  or any non-table non-record Java type.  Emitted body: `return SomeService.method(...);` with
-  return type `Object`.  graphql-java coerces to the declared SDL type.
-- **`ReturnTypeRef.ResultReturnType`** — a `@record`-annotated GraphQL type backed by a jOOQ
-  `Record` subclass.  The service returns the record directly; graphql-java's registered
-  property/record fetchers walk its fields.  No projection.
+- **`ReturnTypeRef.ScalarReturnType`** — scalar (e.g. `Int`, `String`, `Boolean`), plain DTO, or any non-table non-record Java type. Emitted body: `return SomeService.method(...);` with return type `Object`. graphql-java coerces to the declared SDL type.
+- **`ReturnTypeRef.ResultReturnType`** — a `@record`-annotated GraphQL type backed by a jOOQ `Record` subclass. The service returns the record directly; graphql-java's registered property/record fetchers walk its fields. No projection.
 
-Both shapes share the same argument-list emission (`buildMethodBackedCallArgs` over
-`method().params()`, with `DslContext` / `Arg` / `Context` expressions) and both compile against
-`Object` as the method signature.  Add `buildMutationServiceRecordFetcher(MutationServiceRecordField, ...)`
-with an internal switch on the `ReturnTypeRef` variant only if emission actually diverges (it
-currently doesn't — the only observable difference is in graphql-java's coercion path, not the
-generator output).
+Both shapes share the same argument-list emission (`ArgCallEmitter.buildMethodBackedCallArgs` over `method().params()`, with `DslContext` / `Arg` / `Context` expressions) and both compile against `Object` as the method signature. Add `buildMutationServiceRecordFetcher(MutationField.MutationServiceRecordField, ...)` with an internal switch on the `ReturnTypeRef` variant only if emission actually diverges (it currently doesn't — the only observable difference is in graphql-java's coercion path, not the generator output).
 
-Both service variants: remove from `NOT_IMPLEMENTED_REASONS` (line 212) and add to
-`IMPLEMENTED_LEAVES` (line 142) in the same commit (`GeneratorCoverageTest` enforces the
-disjoint partition).  Both use the shared `buildMethodBackedCallArgs` helper.  Pass `null` for
-`tableExpression` — root mutation
-fields have no parent table context, so no `ParamSource.Table` slot will be present in the
-method's param list.  The emitter already handles `null` there for root service queries.
+Both service variants: remove from `NOT_IMPLEMENTED_REASONS` and add to `IMPLEMENTED_LEAVES` in the same commit (`GeneratorCoverageTest` enforces the disjoint partition). Both use the shared `buildMethodBackedCallArgs` helper. Pass `null` for `tableExpression` — root mutation fields have no parent table context, so no `ParamSource.Table` slot will be present in the method's param list. The emitter already handles `null` there for root service queries.
 
 #### Tests
 
-Pipeline tests: one case per variant asserting the emitted method calls the service method and
-does not emit `$fields`.
-Execution tests: a fixture service method on the mutation type; assert the returned value flows
-through graphql-java's registered fetchers.
+Pipeline: one case per variant asserting the emitted method calls the service method and does not emit `$fields`. Flip the corresponding `MutationServiceTableFieldValidationTest` / `MutationServiceRecordFieldValidationTest` from `STUBBED` to `VALID`. Execution: a fixture service method on the mutation type; assert the returned value flows through graphql-java's registered fetchers.
 
 ---
 
 ## Consolidation
 
-Triggered when **two or more DML variants are real** (i.e. live in `IMPLEMENTED_LEAVES`).
-Goal: collapse the per-variant duplication into shared structure without abstracting on
-guesses.
+Two of the three pieces this section originally listed shipped early via R50's cleanup pass; only the emitter-side helper is still pending.
 
-The pieces, in order of expected payoff:
+1. **`buildMutationReturnExpression(field, names)` on `TypeFetcherGenerator` — pending.** The return-type dispatch is identical across INSERT/UPDATE/DELETE/UPSERT (four cases: `ScalarReturnType("ID")` single/list, `TableBoundReturnType` single/list). DELETE inlines the switch today; each landing emitter (Phase 2/4/5) duplicates it. The shared helper takes the `DmlTableField` and resolved table names and emits two `CodeBlock`s — `returningResult(...)` and the terminal `.fetchOne(r -> ...)` / `.fetch(r -> ...)`. The caller splices them in. **Lift trigger:** any of (a) two or more DML emitters in `IMPLEMENTED_LEAVES`, (b) a bug fix that has to be applied identically to two emitters, (c) a new return-type arm lands on multiple variants in one PR.
 
-1. **`buildMutationReturnExpression(field, names)` on `TypeFetcherGenerator`.** The return-type
-   dispatch is identical across INSERT/UPDATE/DELETE/UPSERT (four cases: `ScalarReturnType("ID")`
-   single/list, `TableBoundReturnType` single/list). Each emitter currently inlines that switch.
-   The shared helper takes the per-variant data the dispatch needs (return type, `nodeIdMeta`,
-   resolved table names) and emits two `CodeBlock`s — `returningResult(...)` and the terminal
-   `.fetchOne(r -> ...)` / `.fetch(r -> ...)`. The caller splices them in. Highest payoff per
-   line of churn; lift first.
+2. **`classifyMutationInput(fieldDef, verb)` helper in `FieldBuilder` — ✅ shipped (R50 cleanup).** Single helper handles all four DML verbs; per-verb branching lives inside via the typeName parameter.
 
-2. **`classifyMutationInput(fieldDef, verb)` helper in `FieldBuilder`.** The Pass 1 / Pass 2
-   structure is identical across the four DML variants; only the per-verb invariant table varies
-   (see §1b). Lift after the second variant lands. The helper returns a small result type
-   (resolved `TableInputArg` + per-verb errors); the caller still owns the variant construction
-   so it can pass the per-verb extra data to the right record components.
-
-3. **`MutationField.DmlTableField` sealed supertype.** Permits the four DML records, declares
-   the common accessors `(returnType, inputArgName, inputTable, fields, fieldBindings,
-   nodeIdMeta, location, errorChannel)`. Lift only after #1 and #2 land — the sealed level pays
-   off when an external callsite (e.g. validation) wants to dispatch over "any DML mutation".
-   Without that callsite, the supertype is purely additive ceremony.
-
-Each step is independently shippable. Resist landing all three in one commit; they have
-different review costs and the supertype is the easiest to get wrong.
-
-**Lift triggers (any one):**
-- Three of the four DML variants are real.
-- A bug fix needs to be applied identically to two emitters.
-- A new invariant lands on multiple variants in one PR.
+3. **`MutationField.DmlTableField` sealed supertype — ✅ shipped (R50 cleanup).** Permits the four DML records and declares the common accessors `returnType`, `tableInputArg`, `encodeReturn`, `location`. The remaining DML emitters can dispatch over `DmlTableField` directly when consolidating step #1 above.
 
 ---
 
@@ -878,9 +528,9 @@ different review costs and the supertype is the easiest to get wrong.
   constructing a batch INSERT / batch UPDATE / DELETE / UPSERT.  The legacy code uses jOOQ
   `batchInsert` / `batchUpdate` / `batchDelete` / `batchStore` for this.  Tracked as a follow-up.
 - **Nested input types** (`NestingField`): deferred per Invariant #7.
-- **`InputField.NodeIdField` in mutation inputs**: deferred to argres Phase 3's
-  `NodeIdBinding` variant of `InputColumnBinding` (Invariant #8).
-- **`ColumnReferenceField` in mutation inputs**: deferred (Invariant #9).
+- **`@nodeId`-typed input fields** (`NodeIdDecodeKeys`-extracted `ColumnField` post-R50): deferred (Invariant #8). Lifting the gate requires emitting the per-row decode lambda before the WHERE/SET binding.
+- **`ColumnReferenceField` / `CompositeColumnReferenceField` in mutation inputs**: deferred (Invariant #9).
+- **`CompositeColumnField` in mutation inputs**: deferred (Invariant #10).
 - **Non-`TableInputArg` arguments on DML fields**: deferred (Invariant #13).  A future plan could
   admit scalar context arguments alongside the `@table` input (e.g. a `reason: String` audit field
   routed to a column not in the input type); today we reject them rather than invent a precedence
@@ -905,8 +555,7 @@ different review costs and the supertype is the easiest to get wrong.
   developer-supplied method.
 - **Non-PostgreSQL dialects**: `RETURNING` and `ON CONFLICT DO UPDATE` are PostgreSQL-specific.
   The rewrite targets PostgreSQL; no cross-dialect abstraction is added.
-- **`@mutation` + `@service` combination**: already rejected at classifier time
-  (`FieldBuilder.java:1665-1668`).
+- **`@mutation` + `@service` combination**: already rejected at classifier time by `classifyMutationField`'s mutual-exclusion guard.
 
 ---
 
@@ -946,8 +595,4 @@ different review costs and the supertype is the easiest to get wrong.
   `@lookupKey` fields"); (b) admit them as additional WHERE predicates; (c) keep the silent
   ignore. Pick before UPDATE lands so the consolidation phase has a consistent contract to
   generalise over; (a) reads cleanly to schema authors and is the recommended default.
-- **Promoting `ArgumentRef` (or `TableInputArg`) to `model/`** — *deferred*. Today the model
-  variants carry the data the emitter needs as separate fields (DELETE precedent). Promoting
-  the ArgumentRef hierarchy to `model/` is a possible consolidation step but needs a real driver:
-  pick it up if INSERT/UPDATE/UPSERT show field-set drift between variants that becomes painful
-  to maintain by hand.
+- **Promoting `ArgumentRef` to `model/`** — *deferred*. `ArgumentRef.InputTypeArg.TableInputArg` is now public and crosses the model/generator boundary as a component of `MutationField.DmlTableField`; documented as the only argument-classification type that does so. Promoting the wider `ArgumentRef` hierarchy into `model/` is a possible follow-up but needs a real driver — keep it deferred until a second non-mutation call site needs it.
