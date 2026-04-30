@@ -885,7 +885,7 @@ class BuildContext {
             }
             Optional<ArgConditionRef> cond = buildInputFieldCondition(field, name, errors);
             return new InputFieldResolution.Resolved(buildInputNodeIdReference(
-                parentTypeName, name, locationOf(field), typeName, nonNull,
+                parentTypeName, name, locationOf(field), typeName, nonNull, /* list= */ false,
                 resolvedTable, refTypeName, targetTable.tableName(), targetTypeId,
                 targetKeyColumns, nodeRefPath.elements(), cond));
         }
@@ -963,6 +963,12 @@ class BuildContext {
                     parentTypeName, name, locationOf(field), typeName, nonNull, /* list= */ true,
                     sameTableKeyColumns, sameTableCond, sameTableExtraction));
             }
+            // Cross-table FK case: filter `local.fk = decoded(target.pk)`. Per the R50 spec, the
+            // post-collapse successor for IdReferenceField is ColumnReferenceField (arity-1 PK)
+            // or CompositeColumnReferenceField (arity > 1) carrying NodeIdDecodeKeys plus the
+            // resolved FK joinPath. The joinPath is single-hop (FK constraint name) and the
+            // target column / column-set is the target NodeType's keyColumns; the body emitter
+            // pairs it with ColumnPredicate.In / RowIn (list filter) through the wired e4a path.
             String fkName;
             if (field.hasAppliedDirective(DIR_REFERENCE)) {
                 var path = parsePath(field, name, resolvedTable.tableName(), targetTable);
@@ -988,13 +994,54 @@ class BuildContext {
                 }
                 fkName = inferred.get();
             }
-            String qualifier = catalog.qualifierForFk(resolvedTable.tableName(), fkName)
-                .orElseThrow(() -> new IllegalStateException(
-                    "qualifierForFk returned empty for FK '" + fkName + "' on table '"
-                    + resolvedTable.tableName() + "' — should be unreachable"));
-            return new InputFieldResolution.Resolved(new InputField.IdReferenceField(
+            // Resolve the target's NodeType metadata. Only proceed onto the column-shaped
+            // successor when the target has real NodeType backing -- catalog metadata, a
+            // post-first-pass NodeType in `types`, or @node on the SDL. Otherwise the decode
+            // helper wouldn't exist and the generated code wouldn't compile, so we fall back
+            // to the legacy NodeIdReferenceField shape (no body emission today).
+            String fkTargetTypeId = null;
+            List<ColumnRef> fkTargetKeyColumns = null;
+            var fkTargetMeta = catalog.nodeIdMetadata(targetTable);
+            if (fkTargetMeta.isPresent()) {
+                fkTargetTypeId = fkTargetMeta.get().typeId();
+                fkTargetKeyColumns = fkTargetMeta.get().keyColumns();
+            } else if (types != null && types.get(refTypeName) instanceof NodeType nt) {
+                fkTargetTypeId = nt.typeId();
+                fkTargetKeyColumns = nt.nodeKeyColumns();
+            } else if (targetObj.hasAppliedDirective(DIR_NODE)) {
+                fkTargetTypeId = argString(targetObj, DIR_NODE, ARG_TYPE_ID).orElse(refTypeName);
+                fkTargetKeyColumns = catalog.findPkColumns(targetTable).stream()
+                    .map(e -> new ColumnRef(e.sqlName(), e.javaName(), e.columnClass()))
+                    .toList();
+                if (fkTargetKeyColumns.isEmpty()) {
+                    return new InputFieldResolution.Unresolved(name, null,
+                        "@nodeId(typeName: '" + refTypeName + "') targets table '" + targetTable
+                        + "' which has @node but no resolvable key columns (no catalog metadata, "
+                        + "no @node(keyColumns:), no primary key)");
+                }
+            }
+            Optional<ArgConditionRef> fkCond = buildInputFieldCondition(field, name, errors);
+            var fkOpt = catalog.findForeignKey(fkName);
+            if (fkOpt.isEmpty()) {
+                return new InputFieldResolution.Unresolved(name, null,
+                    "FK '" + fkName + "' on table '" + resolvedTable.tableName() + "' not found in catalog");
+            }
+            var fkStep = synthesizeFkJoin(fkOpt.get(), resolvedTable.tableName(), name, 0, null);
+            List<JoinStep> fkJoinPath = List.of(fkStep);
+            TableRef fkTargetTable = resolveTable(targetTable);
+            if (fkTargetKeyColumns == null) {
+                // Plain @table target with no NodeType -- preserve legacy IdReferenceField's
+                // "classified but inert" behaviour by emitting NodeIdReferenceField (also in
+                // NOT_DISPATCHED_LEAVES). Authors needing real emission must declare @node on
+                // the target type or surface the metadata via KjerneJooqGenerator.
+                return new InputFieldResolution.Resolved(new InputField.NodeIdReferenceField(
+                    parentTypeName, name, locationOf(field), typeName, nonNull,
+                    fkTargetTable, refTypeName, List.of(), fkJoinPath, fkCond));
+            }
+            return new InputFieldResolution.Resolved(buildInputNodeIdReference(
                 parentTypeName, name, locationOf(field), typeName, nonNull, list,
-                refTypeName, fkName, qualifier, /* synthesized */ false));
+                fkTargetTable, refTypeName, targetTable, fkTargetTypeId,
+                fkTargetKeyColumns, fkJoinPath, fkCond));
         }
         if (field.hasAppliedDirective(DIR_REFERENCE)) {
             var path = parsePath(field, name, resolvedTable.tableName(), null);
@@ -1052,7 +1099,9 @@ class BuildContext {
         // (from @field(name:) or the GraphQL field name) hits the qualifier map for the resolved
         // table AND the target table has KjerneJooqGenerator node metadata. Runs before column
         // lookup so @field(name: "X_ID") fields are intercepted before the case-insensitive
-        // column match would shadow the qualifier reverse-map. Retirement: retire-id-reference-synthesis-shim.md.
+        // column match would shadow the qualifier reverse-map. Retirement:
+        // retire-id-reference-synthesis-shim.md. Post-R50 the shim routes to the same
+        // column-shaped successors as the canonical [ID!] @nodeId(typeName: T) branch above.
         if ("ID".equals(typeName)
                 && !field.hasAppliedDirective(DIR_NODE_ID)
                 && !field.hasAppliedDirective(DIR_REFERENCE)) {
@@ -1068,8 +1117,8 @@ class BuildContext {
                 // Gate: target table carries __NODE_TYPE_ID. Same KjerneJooqGenerator-project
                 // sentinel the scalar NodeIdField shim uses; if the target isn't a node type the
                 // canonical replacement we'd emit (@nodeId(typeName:)) wouldn't typecheck either.
-                if (catalog.nodeIdMetadata(targetTableOpt.orElse("")).isPresent()
-                        && targetTypeOpt.isPresent()) {
+                var shimTargetMeta = catalog.nodeIdMetadata(targetTableOpt.orElse(""));
+                if (shimTargetMeta.isPresent() && targetTypeOpt.isPresent()) {
                     boolean fkAmbiguous = catalog
                         .findUniqueFkToTable(tableName, targetTableOpt.get())
                         .isEmpty();
@@ -1078,14 +1127,25 @@ class BuildContext {
                           + " @reference(path: [{key: \"" + shimFkName + "\"}])"
                         : "@nodeId(typeName: \"" + targetTypeOpt.get() + "\")";
                     ID_REF_SHIM_LOGGER.warn(
-                        "input field '{}.{}' synthesizes IdReferenceField from qualifier '{}'"
+                        "input field '{}.{}' synthesizes a NodeId reference from qualifier '{}'"
                         + " (FK '{}'); replace the legacy form with {} to drop the synthesis shim."
                         + " The shim will be removed in a future release;"
                         + " see graphitron-rewrite/roadmap/retire-id-reference-synthesis-shim.md",
                         parentTypeName, name, qualifier, shimFkName, canonical);
-                    return new InputFieldResolution.Resolved(new InputField.IdReferenceField(
+                    Optional<ArgConditionRef> shimRefCond = buildInputFieldCondition(field, name, errors);
+                    var shimFkOpt = catalog.findForeignKey(shimFkName);
+                    if (shimFkOpt.isEmpty()) {
+                        return new InputFieldResolution.Unresolved(name, null,
+                            "synthesis shim FK '" + shimFkName + "' not found in catalog");
+                    }
+                    var shimFkStep = synthesizeFkJoin(shimFkOpt.get(), tableName, name, 0, null);
+                    List<JoinStep> shimJoinPath = List.of(shimFkStep);
+                    TableRef shimTargetTable = resolveTable(targetTableOpt.get());
+                    return new InputFieldResolution.Resolved(buildInputNodeIdReference(
                         parentTypeName, name, locationOf(field), typeName, nonNull, list,
-                        targetTypeOpt.get(), shimFkName, qualifier, /* synthesized */ true));
+                        shimTargetTable, targetTypeOpt.get(), targetTableOpt.get(),
+                        shimTargetMeta.get().typeId(), shimTargetMeta.get().keyColumns(),
+                        shimJoinPath, shimRefCond));
                 }
             }
         }
@@ -1154,11 +1214,17 @@ class BuildContext {
     }
 
     /**
-     * Builds the post-R50 column-shaped successor for {@code id: ID! @nodeId(typeName: T)} on a
-     * {@code @table} input. Routes by {@code targetKeyColumns.size()}: arity-1 to a single-column
+     * Builds the post-R50 column-shaped successor for {@code @nodeId(typeName: T)} input fields
+     * referencing another table. Used by both the scalar bare-{@code @nodeId} branch (originally
+     * {@code id: ID! @nodeId(typeName: T)}) and the {@code [ID!] @nodeId(typeName: T)} list filter
+     * branch (the post-R50 successor of the retired {@code IdReferenceField}).
+     *
+     * <p>Routes by {@code targetKeyColumns.size()}: arity-1 to a single-column
      * {@link InputField.ColumnReferenceField} with extraction =
      * {@link no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement}; arity > 1
      * to {@link InputField.CompositeColumnReferenceField} narrowed to the same extraction arm.
+     * The {@code list} flag flows through to the carrier, which steers the body emitter onto
+     * {@code ColumnPredicate.Eq} / {@code RowEq} (scalar) or {@code In} / {@code RowIn} (list).
      *
      * <p>Failure mode is Skip (not Throw) because {@code @nodeId} in input-object filter context
      * surfaces a malformed id as "no row matches"; never throws. Per spec's "Failure-mode
@@ -1166,7 +1232,7 @@ class BuildContext {
      */
     private InputField buildInputNodeIdReference(
             String parentTypeName, String name, graphql.language.SourceLocation location,
-            String typeName, boolean nonNull, TableRef parentTable,
+            String typeName, boolean nonNull, boolean list, TableRef parentTable,
             String refTypeName, String targetTableName, String targetTypeId,
             List<ColumnRef> targetKeyColumns, List<JoinStep> joinPath,
             Optional<ArgConditionRef> cond) {
@@ -1174,18 +1240,21 @@ class BuildContext {
         if (decodeMethod == null) {
             // No GraphQL type backs the target table and no fallback typeId either.
             // Fall back to the legacy NodeIdReferenceField shape so behavior is preserved
-            // for the (rare) edge case where the target table is fully orphan.
+            // for the (rare) edge case where the target table is fully orphan. The legacy
+            // arm has no body emission today (it sits in NOT_DISPATCHED_LEAVES) so callers
+            // see the same "no filter applied" outcome either way; this only preserves
+            // structural shape until the orphan-target path is removed entirely.
             return new InputField.NodeIdReferenceField(parentTypeName, name, location,
                 refTypeName, nonNull, parentTable, targetTypeId, targetKeyColumns, joinPath, cond);
         }
         var extraction = new no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement(decodeMethod);
         if (targetKeyColumns.size() == 1) {
             return new InputField.ColumnReferenceField(parentTypeName, name, location,
-                typeName, nonNull, /* list= */ false, targetKeyColumns.get(0), joinPath, cond,
+                typeName, nonNull, list, targetKeyColumns.get(0), joinPath, cond,
                 extraction);
         }
         return new InputField.CompositeColumnReferenceField(parentTypeName, name, location,
-            typeName, nonNull, /* list= */ false, targetKeyColumns, joinPath, cond, extraction);
+            typeName, nonNull, list, targetKeyColumns, joinPath, cond, extraction);
     }
 
     /**

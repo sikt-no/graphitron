@@ -438,19 +438,24 @@ class NodeIdPipelineTest {
         tc.assertions.accept(TestSchemaHelper.buildSchema(tc.sdl, FIXTURE_CTX));
     }
 
-    // ===== IdReferenceField shim =====
+    // ===== FK-qualifier synthesis shim (post-R50 successor of IdReferenceField) =====
 
     /**
-     * Synthesis-shim cases for {@link InputField.IdReferenceField}. All use the nodeidfixture
-     * catalog so that {@code catalog.nodeIdMetadata("baz")} returns present (the shim's gate
-     * condition). {@code bar} carries FK {@code bar_id_1_fkey} to {@code baz}; the qualifier map
-     * keys for that FK are {@code "1_baz_id"} (raw), {@code "1bazid"} (camelCase), and
-     * {@code "1bazids"} (plural camelCase), all used via explicit {@code @field(name:)} since the
-     * qualifier starts with a digit and therefore cannot appear as a bare GraphQL field name.
+     * Synthesis-shim cases that, post-R50, route the FK-qualifier hit onto
+     * {@link InputField.ColumnReferenceField} (or
+     * {@link InputField.CompositeColumnReferenceField} for composite-PK FK targets) carrying
+     * {@link CallSiteExtraction.NodeIdDecodeKeys.SkipMismatchedElement} plus the resolved FK
+     * joinPath. All use the nodeidfixture catalog so that
+     * {@code catalog.nodeIdMetadata("baz")} returns present (the shim's gate condition).
+     * {@code bar} carries FK {@code bar_id_1_fkey} to {@code baz}; the qualifier map keys for
+     * that FK are {@code "1_baz_id"} (raw), {@code "1bazid"} (camelCase), and
+     * {@code "1bazids"} (plural camelCase), all used via explicit {@code @field(name:)} since
+     * the qualifier starts with a digit and therefore cannot appear as a bare GraphQL field
+     * name.
      */
     enum InputIdReferenceCase {
         SHIM_RAW_QUALIFIER_KEY(
-            "@field(name: \"1_baz_id\") hits raw-qualifier map key → IdReferenceField(synthesized=true)",
+            "@field(name: \"1_baz_id\") hits raw-qualifier map key → ColumnReferenceField with NodeIdDecodeKeys",
             """
             type Baz @table(name: "baz") { id: ID! }
             input Foo @table(name: "bar") {
@@ -460,15 +465,15 @@ class NodeIdPipelineTest {
             """,
             schema -> {
                 var tit = (GraphitronType.TableInputType) schema.type("Foo");
-                var f = (InputField.IdReferenceField) tit.inputFields().get(0);
-                assertThat(f.synthesized()).isTrue();
-                assertThat(f.qualifier()).isEqualTo("1BazId");
-                assertThat(f.targetTypeName()).isEqualTo("Baz");
+                var f = (InputField.ColumnReferenceField) tit.inputFields().get(0);
                 assertThat(f.list()).isTrue();
+                assertThat(f.column().sqlName()).isEqualTo("id");
+                assertThat(f.extraction()).isInstanceOf(CallSiteExtraction.SkipMismatchedElement.class);
+                assertThat(f.joinPath()).hasSize(1);
             }),
 
         SHIM_PLURAL_CAMEL_KEY(
-            "@field(name: \"1bazids\") hits plural camelCase map key → IdReferenceField(synthesized=true)",
+            "@field(name: \"1bazids\") hits plural camelCase map key → ColumnReferenceField with NodeIdDecodeKeys",
             """
             type Baz @table(name: "baz") { id: ID! }
             input Foo @table(name: "bar") {
@@ -478,13 +483,13 @@ class NodeIdPipelineTest {
             """,
             schema -> {
                 var tit = (GraphitronType.TableInputType) schema.type("Foo");
-                var f = (InputField.IdReferenceField) tit.inputFields().get(0);
-                assertThat(f.synthesized()).isTrue();
-                assertThat(f.qualifier()).isEqualTo("1BazId");
+                var f = (InputField.ColumnReferenceField) tit.inputFields().get(0);
+                assertThat(f.list()).isTrue();
+                assertThat(f.extraction()).isInstanceOf(CallSiteExtraction.SkipMismatchedElement.class);
             }),
 
         SHIM_SINGULAR_CAMEL_KEY(
-            "scalar ID @field(name: \"1bazid\") hits singular camelCase map key → IdReferenceField(synthesized=true, list=false)",
+            "scalar ID @field(name: \"1bazid\") hits singular camelCase map key → ColumnReferenceField with NodeIdDecodeKeys (list=false)",
             """
             type Baz @table(name: "baz") { id: ID! }
             input Foo @table(name: "bar") {
@@ -494,9 +499,9 @@ class NodeIdPipelineTest {
             """,
             schema -> {
                 var tit = (GraphitronType.TableInputType) schema.type("Foo");
-                var f = (InputField.IdReferenceField) tit.inputFields().get(0);
-                assertThat(f.synthesized()).isTrue();
+                var f = (InputField.ColumnReferenceField) tit.inputFields().get(0);
                 assertThat(f.list()).isFalse();
+                assertThat(f.extraction()).isInstanceOf(CallSiteExtraction.SkipMismatchedElement.class);
             }),
 
         SHIM_BARE_ID_FALLS_THROUGH(

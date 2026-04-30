@@ -17,7 +17,7 @@ import static no.sikt.graphitron.rewrite.TestSchemaHelper.buildSchema;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Verifies that the IdReferenceField synthesis shim emits a WARN whose message contains
+ * Verifies that the FK-qualifier synthesis shim emits a WARN whose message contains
  * the field's {@code parentTypeName.fieldName} and the full canonical replacement directive,
  * in the format that future migration tooling is expected to parse.
  *
