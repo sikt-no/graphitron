@@ -148,27 +148,25 @@ class TypeFetcherGeneratorTest {
         // Post-argres Phase 1: @lookupKey args live on LookupMapping, not on filters. Build the
         // mapping from the fixture's "body params" (retaining the parameter name as a fixture
         // convenience — callers still talk in terms of logical arg rows).
-        var columns = bodyParams.stream()
+        var args = bodyParams.stream()
             .map(bp -> {
-                // Test fixture: synthesise a LookupColumn from a single-column body param. The
+                // Test fixture: synthesise a ScalarLookupArg from a single-column body param. The
                 // post-(d) shapes are Eq (scalar) and In (list); both expose `column()` via the
                 // sealed ColumnPredicate root.
                 if (bp instanceof BodyParam.Eq eq) {
-                    return new LookupMapping.ColumnMapping.LookupColumn(
-                        new LookupMapping.ColumnMapping.SourcePath(List.of(eq.name())),
-                        eq.column(), eq.extraction(), false);
+                    return (LookupMapping.ColumnMapping.LookupArg) new LookupMapping.ColumnMapping.LookupArg.ScalarLookupArg(
+                        eq.name(), eq.column(), eq.extraction(), false);
                 }
                 if (bp instanceof BodyParam.In in) {
-                    return new LookupMapping.ColumnMapping.LookupColumn(
-                        new LookupMapping.ColumnMapping.SourcePath(List.of(in.name())),
-                        in.column(), in.extraction(), true);
+                    return (LookupMapping.ColumnMapping.LookupArg) new LookupMapping.ColumnMapping.LookupArg.ScalarLookupArg(
+                        in.name(), in.column(), in.extraction(), true);
                 }
                 throw new IllegalStateException("Unsupported BodyParam shape in test fixture: " + bp.getClass());
             })
             .toList();
         return new QueryField.QueryLookupTableField("Query", name, null, returnType,
             List.of(), new OrderBySpec.None(), null,
-            new LookupMapping.ColumnMapping(columns, FILM_TABLE));
+            new LookupMapping.ColumnMapping(args, FILM_TABLE));
     }
 
     private static BodyParam listKeyParam(String name, String javaName, String javaType) {

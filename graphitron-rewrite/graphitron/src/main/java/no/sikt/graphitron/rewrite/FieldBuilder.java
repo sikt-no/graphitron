@@ -1100,7 +1100,7 @@ class FieldBuilder {
         // NodeIdMapping is always non-empty (carries typeId + keyColumns from the NodeType).
         // ColumnMapping must have at least one column.
         boolean emptyMapping = switch (lookupMapping) {
-            case ColumnMapping cm -> cm.columns().isEmpty();
+            case ColumnMapping cm -> cm.args().isEmpty();
             case LookupMapping.NodeIdMapping ignored -> false;
         };
         if (hasLookupKeyAnywhere(fieldDef) && emptyMapping) {
@@ -1133,27 +1133,25 @@ class FieldBuilder {
                     na.name(), na.nodeTypeId(), na.nodeKeyColumns(), na.list(), targetTable);
             }
         }
-        var columns = new ArrayList<ColumnMapping.LookupColumn>();
+        var args = new ArrayList<ColumnMapping.LookupArg>();
         for (var ref : refs) {
             switch (ref) {
                 case ArgumentRef.ScalarArg.ColumnArg ca when ca.isLookupKey() ->
-                    columns.add(new ColumnMapping.LookupColumn(
-                        new ColumnMapping.SourcePath(List.of(ca.name())),
-                        ca.column(), ca.extraction(), ca.list()));
+                    args.add(new ColumnMapping.LookupArg.ScalarLookupArg(
+                        ca.name(), ca.column(), ca.extraction(), ca.list()));
                 case ArgumentRef.InputTypeArg.TableInputArg tia -> {
-                    // Each binding on a @table input type's @lookupKey field becomes one column.
-                    // List cardinality is inherited from the outer argument — individual input
-                    // fields are guaranteed scalar by buildLookupBindings.
-                    for (var binding : tia.fieldBindings()) {
-                        columns.add(new ColumnMapping.LookupColumn(
-                            new ColumnMapping.SourcePath(List.of(tia.name(), binding.fieldName())),
-                            binding.targetColumn(), binding.extraction(), tia.list()));
+                    // Composite-key Map input: each MapBinding contributes one slot. List
+                    // cardinality lives on the outer arg — individual input fields are guaranteed
+                    // scalar by buildLookupBindings.
+                    if (!tia.fieldBindings().isEmpty()) {
+                        args.add(new ColumnMapping.LookupArg.MapInput(
+                            tia.name(), tia.list(), tia.fieldBindings()));
                     }
                 }
                 default -> {}
             }
         }
-        return new ColumnMapping(List.copyOf(columns), targetTable);
+        return new ColumnMapping(args, targetTable);
     }
 
     /**
