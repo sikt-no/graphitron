@@ -304,9 +304,17 @@ table.featurerow > * > tr > td {
 
 /* ---------- TOC ----------------------------------------------------------- */
 
+/* AsciiDoctor's `:toc: left@` mode renders the TOC into #header with the
+ * `toc2` class. Its default stylesheet (which we don't load) would float
+ * this as a fixed left sidebar with a hard right border. We render it
+ * inline as a contained card instead: full border, rounded corners,
+ * internal padding so the title and the list don't hug the edges. */
 #toc.toc2 {
     background: var(--sds-color-layout-background-neutral, #fafbfc);
-    border-right: var(--sds-space-border-weight-thin) solid var(--sds-color-layout-divider-subtle, #e2e4e8);
+    border: var(--sds-space-border-weight-thin) solid var(--sds-color-layout-divider-subtle, #e2e4e8);
+    border-radius: var(--sds-space-border-radius-small);
+    padding: var(--sds-space-padding-medium);
+    margin: 0 0 var(--sds-space-gap-medium);
     font-size: 0.92rem;
 }
 #toc.toc2 a {
@@ -320,6 +328,11 @@ table.featurerow > * > tr > td {
 #toc #toctitle {
     font-weight: 700;
     color: var(--sds-color-text-primary, #1a1a1a);
+    margin: 0 0 var(--sds-space-gap-small);
+}
+#toc.toc2 ul {
+    margin: 0;
+    padding-left: var(--sds-space-padding-large);
 }
 
 /* ---------- admonitions / advantage-box ----------------------------------- */
