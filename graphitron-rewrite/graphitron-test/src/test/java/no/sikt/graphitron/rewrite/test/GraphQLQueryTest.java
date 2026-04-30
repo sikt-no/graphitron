@@ -18,6 +18,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 
 /**
  * End-to-end tests that execute GraphQL queries against a real PostgreSQL database
@@ -25,6 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>This verifies that the generated code actually works — not just that it compiles.
  */
+@ExecutionTier
 class GraphQLQueryTest {
 
     static PostgreSQLContainer<?> postgres;

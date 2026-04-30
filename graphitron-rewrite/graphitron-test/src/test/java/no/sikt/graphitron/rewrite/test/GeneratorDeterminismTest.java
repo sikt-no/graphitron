@@ -17,9 +17,10 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import org.junit.jupiter.api.Tag;
 
 /**
- * Pipeline-tier ratchet for the three-clause generator contract
+ * Cross-cutting ratchet for the three-clause generator contract
  * (determinism + minimal-change writes + clean removal) against the
  * full rewrite-test fixture schema, which exercises every emitter
  * (interfaces, unions, directives, @splitQuery, @asConnection,
@@ -27,6 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * in rewrite-core's IdempotentWriterTest cover the writer mechanics;
  * this test is the real determinism guardrail.
  */
+@Tag("cross-cutting")
 class GeneratorDeterminismTest {
 
     private static final Path FIXTURE_SCHEMA =

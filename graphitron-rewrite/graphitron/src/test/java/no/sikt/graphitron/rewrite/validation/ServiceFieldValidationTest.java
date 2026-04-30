@@ -25,7 +25,9 @@ import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.sc
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.stubbedError;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 
+@UnitTier
 class ServiceFieldValidationTest {
 
     // ===== ServiceRecordField — non-table return type =====

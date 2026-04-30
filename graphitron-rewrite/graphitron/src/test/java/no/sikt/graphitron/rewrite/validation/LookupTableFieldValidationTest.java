@@ -16,7 +16,9 @@ import java.util.Optional;
 
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 
+@UnitTier
 class LookupTableFieldValidationTest {
 
     private static final TableRef FILM_TABLE = new TableRef("film", "FILM", "Film", List.of());

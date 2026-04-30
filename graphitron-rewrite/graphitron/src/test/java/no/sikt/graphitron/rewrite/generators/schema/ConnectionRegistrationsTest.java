@@ -10,12 +10,14 @@ import java.util.Map;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 
 /**
  * Pipeline tests for the connection arm of {@link FetcherRegistrationsEmitter}: verifies that
  * synthesised and structural connection types emit the right set of {@code dataFetcher(…)}
  * registrations, including the {@code totalCount} arm gated on the SDL field's presence.
  */
+@UnitTier
 class ConnectionRegistrationsTest {
 
     @Test

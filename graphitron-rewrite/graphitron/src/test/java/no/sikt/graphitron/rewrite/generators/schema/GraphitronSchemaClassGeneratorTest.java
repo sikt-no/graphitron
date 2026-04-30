@@ -9,7 +9,9 @@ import java.util.List;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 
+@UnitTier
 class GraphitronSchemaClassGeneratorTest {
 
     private static final String OUTPUT_PKG = "com.example";

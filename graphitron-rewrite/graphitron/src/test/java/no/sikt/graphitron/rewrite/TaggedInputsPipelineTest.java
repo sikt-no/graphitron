@@ -16,6 +16,7 @@ import java.util.Optional;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 
 /**
  * End-to-end coverage of the tagged-inputs pipeline driven through the new
@@ -30,6 +31,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * tax. {@code run()} itself is a one-liner over this method, so the wiring is
  * fully covered.
  */
+@PipelineTier
 class TaggedInputsPipelineTest {
 
     @Test

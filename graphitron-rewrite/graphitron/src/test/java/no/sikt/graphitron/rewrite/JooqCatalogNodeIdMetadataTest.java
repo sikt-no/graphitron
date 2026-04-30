@@ -12,6 +12,7 @@ import java.util.Optional;
 import java.util.function.Function;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 
 /**
  * Coverage for {@link JooqCatalog#nodeIdMetadata(String)} — the synthesized-NodeId metadata probe.
@@ -23,6 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * helper directly with synthetic raw values and a stub column lookup. That keeps each branch
  * testable without having to swap {@code static final} fields on the fixture class.
  */
+@UnitTier
 class JooqCatalogNodeIdMetadataTest {
 
     private static final String FIXTURE_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.nodeidfixture";

@@ -3,7 +3,9 @@ package no.sikt.graphitron.rewrite.generators.util;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 
+@UnitTier
 class SchemaDirectiveRegistryTest {
 
     @Test

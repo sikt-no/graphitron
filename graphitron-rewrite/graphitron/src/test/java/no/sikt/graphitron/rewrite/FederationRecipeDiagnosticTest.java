@@ -6,11 +6,13 @@ import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 
 /**
  * Tests for the recipe diagnostic that fires when a consumer uses a federation directive
  * without {@code @link} and without a manual declaration.
  */
+@UnitTier
 class FederationRecipeDiagnosticTest {
 
     private static graphql.schema.idl.TypeDefinitionRegistry registryWithDirectives(String sdl) {

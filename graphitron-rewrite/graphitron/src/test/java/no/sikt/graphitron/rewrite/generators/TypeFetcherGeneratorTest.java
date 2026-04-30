@@ -35,6 +35,7 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_
 import static no.sikt.graphitron.rewrite.TestFixtures.*;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 
 /**
  * Unit tests for {@link TypeFetcherGenerator}. Tests verify structural properties of the
@@ -42,6 +43,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * body. Code correctness is verified by compiling and executing the generated output in the
  * {@code graphitron-test} module.
  */
+@UnitTier
 class TypeFetcherGeneratorTest {
 
     private static final TableRef FILM_TABLE = filmTable();

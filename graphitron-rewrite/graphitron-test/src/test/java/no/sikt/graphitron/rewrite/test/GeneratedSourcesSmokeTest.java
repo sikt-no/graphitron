@@ -4,14 +4,16 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import static org.assertj.core.api.Assertions.assertThatCode;
+import no.sikt.graphitron.rewrite.test.tier.CompilationTier;
 
 /**
  * Verifies that the code generator produced all expected classes.
  *
- * <p>The compilation test (Level 5) catches type errors in generated code, but it cannot detect
+ * <p>The compilation tier catches type errors in generated code, but it cannot detect
  * a generator bug that silently drops a class — an empty output still compiles.
  * This test enumerates the classes the schema should produce and fails if any are missing.
  */
+@CompilationTier
 class GeneratedSourcesSmokeTest {
 
     private static final String PKG = "no.sikt.graphitron.generated";

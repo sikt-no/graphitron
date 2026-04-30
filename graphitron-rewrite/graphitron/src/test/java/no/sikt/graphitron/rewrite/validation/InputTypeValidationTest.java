@@ -14,7 +14,9 @@ import java.util.Map;
 
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 
+@UnitTier
 class InputTypeValidationTest {
 
     /** Validates an {@link InputType} with an optional extra type in the schema. */

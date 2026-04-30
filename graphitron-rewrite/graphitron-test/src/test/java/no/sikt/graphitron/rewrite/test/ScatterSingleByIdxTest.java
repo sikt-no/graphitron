@@ -16,6 +16,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 
 /**
  * Direct unit coverage for the generator-emitted {@code scatterSingleByIdx} helper. One fetcher
@@ -34,6 +35,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *   <li>duplicate-idx input → defensive {@link IllegalStateException}</li>
  * </ul>
  */
+@UnitTier
 class ScatterSingleByIdxTest {
 
     private static Method SCATTER_SINGLE;

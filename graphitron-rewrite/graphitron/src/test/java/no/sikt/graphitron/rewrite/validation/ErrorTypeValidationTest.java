@@ -9,6 +9,7 @@ import java.util.List;
 
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 
 /**
  * Validates the intentional no-op in {@link no.sikt.graphitron.rewrite.GraphitronSchemaValidator}
@@ -17,6 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * schema-load time by verifying the referenced exception classes exist. The validator therefore
  * produces zero errors for any {@code ErrorType}, regardless of its handler list.
  */
+@UnitTier
 class ErrorTypeValidationTest {
 
     @Test

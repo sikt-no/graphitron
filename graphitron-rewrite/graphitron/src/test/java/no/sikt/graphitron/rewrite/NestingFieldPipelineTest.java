@@ -13,6 +13,7 @@ import java.util.Map;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 
 /**
  * SDL → fetcher-registration pipeline tests for {@link NestingField}. Covers the three
@@ -26,6 +27,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       the {@link FetcherRegistrationsEmitter} output, keyed by the nested type's name.</li>
  * </ul>
  */
+@PipelineTier
 class NestingFieldPipelineTest {
 
     private static final String SCALAR_NESTING_SDL = """

@@ -8,6 +8,7 @@ import java.util.List;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 
 /**
  * Unit tests for {@link JooqCatalog} FK-qualifier helpers used by the {@code @nodeId}
@@ -20,6 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * metadata. Static-helper cases ({@link JooqCatalog#generateRoleName}) use plain {@code List<String>}
  * inputs and need no catalog instance.
  */
+@UnitTier
 class JooqCatalogIdRefTest {
 
     private static final String NODEID_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.nodeidfixture";

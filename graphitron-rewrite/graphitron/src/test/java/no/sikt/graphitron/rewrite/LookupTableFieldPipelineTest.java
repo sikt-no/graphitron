@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 
 /**
  * SDL → classified schema → generated {@code TypeSpec} pipeline tests for inline
@@ -19,6 +20,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * no fetcher method lands in {@code *Fetchers}; and classifier rejection for {@code @asConnection}
  * or single cardinality on an inline {@code @lookupKey} field produces {@code UnclassifiedField}.
  */
+@PipelineTier
 class LookupTableFieldPipelineTest {
 
     @Test

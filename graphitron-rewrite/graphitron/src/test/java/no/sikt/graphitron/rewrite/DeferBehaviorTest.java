@@ -28,6 +28,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static graphql.schema.idl.TypeRuntimeWiring.newTypeWiring;
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 
 /**
  * Exploratory tests pinning down what graphql-java's {@code @defer} implementation exposes
@@ -43,6 +44,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       receive the parent record as its {@code source}?</li>
  * </ol>
  */
+@UnitTier
 public class DeferBehaviorTest {
 
     private static final String SCHEMA_SDL = """
