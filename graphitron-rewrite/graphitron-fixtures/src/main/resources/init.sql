@@ -305,6 +305,24 @@ CREATE TABLE nodeidfixture.qux (
     name varchar(50) PRIMARY KEY
 );
 
+-- R50 phase (g-B) rooted-at-parent fixture. Single-key NodeType `parent_node` whose
+-- __NODE_KEY_COLUMNS pin the encode/decode key as `pk_id`, plus a child table whose FK
+-- targets parent's *alternate* unique column `alt_key`. The FK column does not positionally
+-- match the parent NodeType's keyColumn — encoding `child_ref.parent`'s NodeId from the
+-- child row alone is impossible, so the rooted-at-parent JOIN-with-projection path must
+-- read `parent_node.pk_id` through a join. See lift-nodeid-out-of-model.md "Fixture growth".
+CREATE TABLE nodeidfixture.parent_node (
+    pk_id   varchar(50) PRIMARY KEY,
+    alt_key varchar(50) NOT NULL UNIQUE,
+    name    varchar(50)
+);
+
+CREATE TABLE nodeidfixture.child_ref (
+    child_id        varchar(50) PRIMARY KEY,
+    parent_alt_key  varchar(50) NOT NULL REFERENCES nodeidfixture.parent_node(alt_key),
+    note            varchar(50)
+);
+
 -- ===========================
 -- idreffixture schema
 -- ===========================

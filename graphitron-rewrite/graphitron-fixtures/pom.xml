@@ -15,7 +15,7 @@
 
     <properties>
         <!-- Increment when init.sql changes to force jOOQ regeneration on incremental builds -->
-        <jooq.codegen.schema.version>1.2</jooq.codegen.schema.version>
+        <jooq.codegen.schema.version>1.3</jooq.codegen.schema.version>
         <db.url>jdbc:tc:postgresql:18:///rewrite_test?TC_TMPFS=/testtmpfs:rw&amp;TC_INITSCRIPT=file:${project.basedir}/src/main/resources/init.sql</db.url>
         <db.username>postgres</db.username>
         <db.password>postgres</db.password>
