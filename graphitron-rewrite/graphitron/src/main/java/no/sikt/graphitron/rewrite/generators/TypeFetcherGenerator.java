@@ -167,6 +167,7 @@ public class TypeFetcherGenerator {
         ChildField.ConstructorField.class,
         QueryField.QueryTableInterfaceField.class,
         ChildField.TableInterfaceField.class,
+        ChildField.ParticipantColumnReferenceField.class,
         ChildField.ErrorsField.class);
 
     /**
@@ -380,6 +381,10 @@ public class TypeFetcherGenerator {
                 case ChildField.LookupTableField ignored        -> { }
                 case ChildField.CompositeColumnField ignored    -> { }
                 case ChildField.TableInterfaceField f           -> builder.addMethod(buildTableInterfaceFieldFetcher(f, outputPackage, jooqPackage));
+                // No per-field fetcher method — the value is materialised in the parent record by
+                // the enclosing TableInterfaceField fetcher's conditional LEFT JOIN, and the field
+                // resolver reads it back via FetcherEmitter's ParticipantColumnReferenceField arm.
+                case ChildField.ParticipantColumnReferenceField ignored -> { }
                 case ChildField.RecordTableField rtf -> {
                     builder.addMethod(buildRecordBasedDataFetcher(rtf, resultType, jooqPackage, outputPackage));
                     builder.addMethod(SplitRowsMethodEmitter.buildRowsMethod(rtf, outputPackage, jooqPackage));
@@ -613,33 +618,22 @@ public class TypeFetcherGenerator {
         builder.addCode(buildConditionCall(qtif.parentTypeName(), qtif.name(), tableLocal, outputPackage));
         builder.addCode(buildDiscriminatorFilter(qtif.discriminatorColumn(), qtif.knownDiscriminatorValues()));
         builder.addCode(buildInterfaceFieldsList(qtif.participants(), qtif.discriminatorColumn(), tableLocal, outputPackage));
+        builder.addCode(buildCrossTableAliasDeclarations(qtif.participants(), tableLocal, jooqPackage));
 
         var dslContextClass = ClassName.get("org.jooq", "DSLContext");
+        var selectJoinStepClass = ClassName.get("org.jooq", "SelectJoinStep");
+        var selectJoinStepOfRecord = ParameterizedTypeName.get(selectJoinStepClass, RECORD);
+
+        builder.addStatement("$T dsl = graphitronContext(env).getDslContext(env)", dslContextClass);
+        builder.addStatement("$T step = dsl.select(new $T<>(fields)).from($L)",
+            selectJoinStepOfRecord, ArrayList.class, tableLocal);
+        builder.addCode(buildCrossTableJoinChain(qtif.participants(), qtif.discriminatorColumn(), tableLocal));
 
         if (isList) {
             builder.addCode(buildOrderByCode(qtif.orderBy(), qtif.name(), tableLocal));
-            builder.addStatement("$T dsl = graphitronContext(env).getDslContext(env)", dslContextClass);
-            builder.addCode(CodeBlock.builder()
-                .add("$T payload = dsl\n", valueType)
-                .indent()
-                .add(".select(new $T<>(fields))\n", ArrayList.class)
-                .add(".from($L)\n", tableLocal)
-                .add(".where(condition)\n")
-                .add(".orderBy(orderBy)\n")
-                .add(".fetch();\n")
-                .unindent()
-                .build());
+            builder.addStatement("$T payload = step.where(condition).orderBy(orderBy).fetch()", valueType);
         } else {
-            builder.addStatement("$T dsl = graphitronContext(env).getDslContext(env)", dslContextClass);
-            builder.addCode(CodeBlock.builder()
-                .add("$T payload = dsl\n", valueType)
-                .indent()
-                .add(".select(new $T<>(fields))\n", ArrayList.class)
-                .add(".from($L)\n", tableLocal)
-                .add(".where(condition)\n")
-                .add(".fetchOne();\n")
-                .unindent()
-                .build());
+            builder.addStatement("$T payload = step.where(condition).fetchOne()", valueType);
         }
         builder.addCode(returnSyncSuccess(valueType, "payload"));
         builder.nextControlFlow("catch ($T e)", Exception.class);
@@ -698,29 +692,19 @@ public class TypeFetcherGenerator {
         builder.addCode(buildJoinPathCondition(tif.joinPath(), tableRef.tableName()));
         builder.addCode(buildDiscriminatorFilter(tif.discriminatorColumn(), tif.knownDiscriminatorValues()));
         builder.addCode(buildInterfaceFieldsList(tif.participants(), tif.discriminatorColumn(), tableLocal, outputPackage));
+        builder.addCode(buildCrossTableAliasDeclarations(tif.participants(), tableLocal, jooqPackage));
+
+        var selectJoinStepClass = ClassName.get("org.jooq", "SelectJoinStep");
+        var selectJoinStepOfRecord = ParameterizedTypeName.get(selectJoinStepClass, RECORD);
+        builder.addStatement("$T step = dsl.select(new $T<>(fields)).from($L)",
+            selectJoinStepOfRecord, ArrayList.class, tableLocal);
+        builder.addCode(buildCrossTableJoinChain(tif.participants(), tif.discriminatorColumn(), tableLocal));
 
         if (isList) {
             builder.addCode(buildOrderByCode(tif.orderBy(), tif.name(), tableLocal));
-            builder.addCode(CodeBlock.builder()
-                .add("$T payload = dsl\n", valueType)
-                .indent()
-                .add(".select(new $T<>(fields))\n", ArrayList.class)
-                .add(".from($L)\n", tableLocal)
-                .add(".where(condition)\n")
-                .add(".orderBy(orderBy)\n")
-                .add(".fetch();\n")
-                .unindent()
-                .build());
+            builder.addStatement("$T payload = step.where(condition).orderBy(orderBy).fetch()", valueType);
         } else {
-            builder.addCode(CodeBlock.builder()
-                .add("$T payload = dsl\n", valueType)
-                .indent()
-                .add(".select(new $T<>(fields))\n", ArrayList.class)
-                .add(".from($L)\n", tableLocal)
-                .add(".where(condition)\n")
-                .add(".fetchOne();\n")
-                .unindent()
-                .build());
+            builder.addStatement("$T payload = step.where(condition).fetchOne()", valueType);
         }
         builder.addCode(returnSyncSuccess(valueType, "payload"));
         builder.nextControlFlow("catch ($T e)", Exception.class);
@@ -789,6 +773,94 @@ public class TypeFetcherGenerator {
             var typeClass = ClassName.get(outputPackage + ".types", tb.typeName());
             b.addStatement("fields.addAll($T.$$fields(env.getSelectionSet(), $L, env))",
                 typeClass, tableLocal);
+        }
+        return b.build();
+    }
+
+    /**
+     * Emits per-participant cross-table alias variable declarations together with the
+     * selection-set-gated {@code fields.add(...)} call for each cross-table field. Each cross-table
+     * field expands to:
+     * <pre>{@code
+     * Film FilmContent_rating_alias = null;
+     * if (env.getSelectionSet().contains("FilmContent.rating")) {
+     *     FilmContent_rating_alias = Tables.FILM.as("FilmContent_rating");
+     *     fields.add(FilmContent_rating_alias.RATING.as("FilmContent_rating"));
+     * }
+     * }</pre>
+     *
+     * <p>The variable's null-default outside the {@code if} lets {@link #buildCrossTableJoinChain}
+     * test for the field's presence later in the same method body to gate the LEFT JOIN.
+     *
+     * <p>The selection-set pattern uses {@code <Type>.<field>} (dot, not slash): graphql-java's
+     * {@code DataFetchingFieldSelectionSet} flattens type-conditioned fields under inline fragments
+     * as {@code "<Type>.<fieldName>"}, sitting in the same flattened set as the bare {@code <fieldName>}.
+     * The slash separator is reserved for parent/child path nesting in the glob pattern.
+     *
+     * <p>Participants without a discriminator value (which would leave the JOIN unconstrained
+     * across all rows) are skipped — a TableInterfaceType participant without {@code @discriminator}
+     * is rejected upstream, but defensive filtering here keeps the emitter robust if that
+     * invariant ever changes.
+     */
+    private static CodeBlock buildCrossTableAliasDeclarations(
+            List<ParticipantRef> participants, String tableLocal, String jooqPackage) {
+        var b = CodeBlock.builder();
+        for (var participant : participants) {
+            if (!(participant instanceof ParticipantRef.TableBound tb)) continue;
+            if (tb.discriminatorValue() == null) continue;
+            for (var ctf : tb.crossTableFields()) {
+                var names = GeneratorUtils.ResolvedTableNames.ofTable(ctf.targetTable(), jooqPackage);
+                String aliasVar = ctf.aliasVarName();
+                b.addStatement("$T $L = null", names.jooqTableClass(), aliasVar);
+                b.beginControlFlow("if (env.getSelectionSet().contains($S))",
+                    tb.typeName() + "." + ctf.fieldName());
+                b.addStatement("$L = $T.$L.as($S)", aliasVar, names.tablesClass(),
+                    ctf.targetTable().javaFieldName(), ctf.aliasName());
+                b.addStatement("fields.add($L.$L.as($S))", aliasVar,
+                    ctf.column().javaName(), ctf.aliasName());
+                b.endControlFlow();
+            }
+        }
+        return b.build();
+    }
+
+    /**
+     * Emits the conditional {@code step = step.leftJoin(...).on(...)} blocks for each participant
+     * cross-table field, matched to the alias variables declared by
+     * {@link #buildCrossTableAliasDeclarations}. The ON clause includes the FK equality plus
+     * a discriminator equality so non-matching rows carry NULL through the join, which the
+     * TypeResolver then routes back to the correct concrete type by reading the discriminator
+     * off the interface table.
+     *
+     * <p>Caller declares {@code step} as {@code SelectJoinStep<Record>} initialised to
+     * {@code dsl.select(...).from(<tableLocal>)}; this method appends LEFT JOINs and reassigns
+     * {@code step} to the same variable so the trailing {@code .where().orderBy().fetch()} chain
+     * continues to typecheck.
+     *
+     * <p>Multi-column FK paths are supported via per-column equalities chained with {@code .and(...)}
+     * (positional pairing of {@code sourceColumns} / {@code targetColumns} per
+     * {@link no.sikt.graphitron.rewrite.model.JoinStep.FkJoin}'s arity invariant).
+     */
+    private static CodeBlock buildCrossTableJoinChain(
+            List<ParticipantRef> participants, String discriminatorColumn, String tableLocal) {
+        var b = CodeBlock.builder();
+        for (var participant : participants) {
+            if (!(participant instanceof ParticipantRef.TableBound tb)) continue;
+            if (tb.discriminatorValue() == null) continue;
+            for (var ctf : tb.crossTableFields()) {
+                String aliasVar = ctf.aliasVarName();
+                // FK direction: the @reference is parsed starting from the interface table, so
+                // sourceColumns sit on the parent (interface table = tableLocal) and targetColumns
+                // sit on the joined alias — i.e. the parent holds the FK.
+                var fkOn = JoinPathEmitter.emitCorrelationWhere(ctf.fkJoin(), aliasVar, tableLocal, true);
+                var onCondition = CodeBlock.builder()
+                    .add("$L.and($T.field($T.name($S)).eq($S))",
+                        fkOn, DSL, DSL, discriminatorColumn, tb.discriminatorValue())
+                    .build();
+                b.beginControlFlow("if ($L != null)", aliasVar);
+                b.addStatement("step = step.leftJoin($L).on($L)", aliasVar, onCondition);
+                b.endControlFlow();
+            }
         }
         return b.build();
     }

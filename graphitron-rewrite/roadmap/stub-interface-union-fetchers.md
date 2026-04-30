@@ -10,7 +10,7 @@ depends-on: []
 
 # Stub #3: Interface / union fetchers
 
-Track A's same-table case is **done**. The remaining work now lives here in three folded sections: Track A Phase 2 (cross-table participant fields), Track B (multi-table polymorphic variants, which requires a design decision before any code can be written), and the supporting prerequisite *NodeId from JSON-encoded row identity*. `TypeResolver` wiring for non-`Node` interface and union types is also covered here as a companion concern: Track A's `TableInterfaceType` already wires it; Track B closes the gap for plain `InterfaceType` / `UnionType`.
+Track A is **fully done** (same-table Phase 1 closed 2026-04-27, cross-table Phase 2 closed 2026-04-30). The remaining work is Track B (multi-table polymorphic variants, which requires a design decision before any code can be written), and the supporting prerequisite *NodeId from JSON-encoded row identity*. `TypeResolver` wiring for non-`Node` interface and union types is also covered here as a companion concern: Track A's `TableInterfaceType` already wires it; Track B closes the gap for plain `InterfaceType` / `UnionType`.
 
 Priority number `#3` must stay stable: it is embedded in emitted reason strings consumed by existing schema authors.
 
@@ -103,75 +103,100 @@ Either option must also ensure the discriminator column is always included in th
 
 ## Track A — Phase 2: cross-table participant fields
 
-Track A's same-table selection-set projection is shipped (discriminator-first
-plus per-participant `$fields` union into a `LinkedHashSet`, replacing
-`asterisk()`). Phase 2 covers the cross-table case: a `TableInterfaceType`
-participant declaring a field that lives on a different table than the
-interface's own table (e.g. `FilmContent.rating` resolving to `film.rating`
-while the interface is on `content`).
+**Shipped 2026-04-30.** Cross-table participant fields land via a new
+`ChildField.ParticipantColumnReferenceField` leaf plus a
+`ParticipantRef.TableBound.CrossTableField` carrier; the interface fetcher
+emits a discriminator-gated LEFT JOIN per occurrence, and the per-field
+DataFetcher reads the projected value back from the result `Record` by alias.
+See the changelog at the bottom for the file-level breakdown.
 
-### Design
+### Design (as shipped)
 
-`TypeFetcherGenerator.buildInterfaceFieldsList` already iterates each
-`ParticipantRef.TableBound`. For participants with cross-table fields, emit a
-runtime guard around the JOIN and the cross-table column additions:
+`TypeBuilder.buildParticipantList` walks each participant's GraphQL field
+definitions, identifies single-hop `@reference` fields whose terminal table
+differs from the interface's own, and stores them on
+`ParticipantRef.TableBound.crossTableFields`. `FieldBuilder` then classifies
+those fields as `ChildField.ParticipantColumnReferenceField` (carrying the
+target column, target table, FK join, and a unique alias name); the field is
+listed in `IMPLEMENTED_LEAVES` with no per-field method. Its DataFetcher value
+is `new ColumnFetcher<>(DSL.field(DSL.name(aliasName), <columnClass>.class))`,
+read off the parent record by alias.
+
+`TypeFetcherGenerator` adds two emission helpers
+(`buildCrossTableAliasDeclarations`, `buildCrossTableJoinChain`) reused by
+both `buildQueryTableInterfaceFieldFetcher` and `buildTableInterfaceFieldFetcher`.
+The chain emission was lifted from a single fluent `dsl.select(...).from(...).where(...).fetch()`
+to an intermediate `SelectJoinStep<Record> step` so conditional LEFT JOINs can
+be applied between `.from` and `.where`.
 
 ```java
-if (env.getSelectionSet().contains("FilmContent/rating")) {
-    FilmTable filmTable = Tables.FILM.as(contentTable.getName() + "_film");
-    fields.add(filmTable.RATING);
-    // accumulate (filmTable, joinCondition) for emission between .from and .where
+Film FilmContent_rating_alias = null;
+if (env.getSelectionSet().contains("FilmContent.rating")) {
+    FilmContent_rating_alias = Tables.FILM.as("FilmContent_rating");
+    fields.add(FilmContent_rating_alias.RATING.as("FilmContent_rating"));
 }
+SelectJoinStep<Record> step = dsl.select(new ArrayList<>(fields)).from(contentTable);
+if (FilmContent_rating_alias != null) {
+    step = step.leftJoin(FilmContent_rating_alias).on(
+        FilmContent_rating_alias.FILM_ID.eq(contentTable.FILM_ID).and(
+            DSL.field(DSL.name("content_type")).eq("FILM")));
+}
+Result<Record> payload = step.where(condition).orderBy(orderBy).fetch();
 ```
 
-`DataFetchingFieldSelectionSet.contains("TypeName/fieldName")` is the
-graphql-java type-scoped API for inline-fragment fields.
+The selection-set check uses a dot (`Type.field`), not a slash:
+graphql-java 25's `DataFetchingFieldSelectionSet` flattens type-conditioned
+inline-fragment fields under that key (the slash separator is reserved for
+parent/child path nesting). The LEFT JOIN ON clause includes both the FK
+column equality and the participant's discriminator value, so non-matching
+rows project NULL for the cross-table column and the TypeResolver routes them
+back to the right concrete type unaffected.
 
-**Critical invariant.** The LEFT JOIN ON clause must include the participant's
-discriminator value so non-matching rows carry NULL for the cross-table
-columns rather than a spurious match:
+### Fixture additions (shipped)
 
-```sql
-LEFT JOIN film
-  ON film.film_id = content.film_id
-  AND content.content_type = 'FILM'
-```
+1. `short_description varchar(255)` column on `content` (NULL on FILM rows,
+   populated on SHORT rows); `ShortContent.description: String
+   @field(name: "SHORT_DESCRIPTION")` added to schema.
+2. `FilmContent.rating: MpaaRating @reference(path: [{key: "content_film_id_fkey"}])
+   @field(name: "RATING")` — the cross-table participant field. (Typed as
+   `MpaaRating` rather than the spec's `String`: matches `Film.rating`'s SDL
+   shape and exercises the converter path through `ColumnFetcher`'s
+   `Field<T>` typing.)
 
-The TypeResolver routes each row to the correct concrete type by reading the
-discriminator from the interface table; cross-table columns owned by other
-participants stay NULL and are never accessed.
-
-### Fixture additions
-
-Two additions are needed to make the test matrix meaningful: without a
-`ShortContent`-specific column there is no way to verify a `FilmContent`-only
-query does not pull `ShortContent` columns; without a cross-table field on
-`FilmContent` there is no way to verify the LEFT JOIN is omitted when not
-requested.
-
-1. `short_description` column on `content` (varchar, NULL on FILM rows,
-   populated on SHORT rows); add `description: String @field(name: "SHORT_DESCRIPTION")` to `ShortContent`.
-2. `rating: String @reference(path: [{key: "content_film_id_fkey"}]) @field(name: "RATING")` on `FilmContent`. The FK is already in the schema.
-
-### Tests
+### Tests (shipped)
 
 Unit (`TypeFetcherGeneratorTest`):
 
-- `_crossTableField_emitsLeftJoin`: body contains a `LEFT JOIN` with the
-  discriminator value in the ON condition.
-- `_crossTableField_joinIncludesDiscriminatorCondition`: ON clause has both the
-  FK condition and the discriminator equality.
+- `queryTableInterfaceField_crossTableField_emitsTypeScopedSelectionGuard`:
+  body contains the dot-form `env.getSelectionSet().contains("FilmContent.rating")`.
+- `queryTableInterfaceField_crossTableField_emitsLeftJoinWithDiscriminatorGate`:
+  ON clause has both the FK equality and the discriminator equality.
+- `queryTableInterfaceField_crossTableField_aliasedColumnAddedToSelect`:
+  `fields.add(...)` projects with the unique alias.
+- `queryTableInterfaceField_noCrossTableFields_noLeftJoinEmitted`: regression
+  guard for the no-cross-table case.
+- `tableInterfaceField_crossTableField_emitsLeftJoinAtChildSite`: same wiring
+  applies under `ChildField.TableInterfaceField`.
+
+Classification (`GraphitronSchemaBuilderTest`): new
+`ParticipantColumnReferenceFieldCase` enum with two cases — the participant
+cross-table field lift, and the same-table fallthrough negative.
 
 Execution (`GraphQLQueryTest`):
 
-- `allContent_crossTableField_joinsFilmOnlyWhenRequested`: `... on FilmContent { rating }` returns the rating from the joined film row.
-- `allContent_crossTableField_absentWhenNotRequested`: query without `rating` emits SQL with no reference to `film` (verify via jOOQ `ExecuteListener` or rendered statement string).
-- `allContent_filmContentOnly_selectsLengthNotShortDescription`,
-  `allContent_shortContentOnly_selectsDescriptionNotLength`: per-participant
-  column isolation.
-- `allContent_bothParticipantSpecificFields`: `length`, `description`, and `rating` requested together; assert each appears for the right participant type.
+- `allContent_crossTableField_joinsFilmAndReturnsRatingForFilmContent`:
+  inline-fragment `... on FilmContent { rating }` returns a non-null value for
+  every FilmContent row.
+- `allContent_crossTableField_leftJoinOmittedWhenNotRequested`,
+  `allContent_crossTableField_leftJoinPresentWhenRequested`: SQL_LOG capture
+  asserts the LEFT JOIN is gated by the selection set.
+- `allContent_filmContentOnly_isolatesLengthFromShortDescription`:
+  per-participant column isolation.
+- `allContent_allParticipantFieldsTogether_routePerType`: triple-axis projection
+  (same-table FilmContent.length, same-table ShortContent.description,
+  cross-table FilmContent.rating) all populated correctly.
 
-The implementation here is structured so Track B is an extension (same
+The implementation is structured so Track B is an extension (same
 per-participant LEFT JOIN pattern, different table argument) rather than a
 rework.
 
@@ -252,7 +277,7 @@ Legacy reference shape:
 
 ## Order and gating
 
-Track A's same-table emission is done. Track A Phase 2 (cross-table participant fields) can land independently. Track B's design decision (Option 1 vs. Option 2 above) is a prerequisite for any Track B code; the JSON-row-identity prerequisite ships alongside Track B (or earlier as an independent foundation if federation needs it first).
+Track A is fully shipped (same-table Phase 1 plus cross-table Phase 2). What remains: Track B's design decision (Option 1 vs. Option 2 above) is a prerequisite for any Track B code; the JSON-row-identity prerequisite ships alongside Track B (or earlier as an independent foundation if federation needs it first).
 
 ---
 
@@ -268,4 +293,5 @@ Track A's same-table emission is done. Track A Phase 2 (cross-table participant 
 ## Changelog
 
 - **2026-04-27** — Track A complete. `QueryTableInterfaceField` and `ChildField.TableInterfaceField` lifted from `NOT_IMPLEMENTED_REASONS` to `IMPLEMENTED_LEAVES`. `discriminatorColumn` added to both records; classifier, `QueryConditionsGenerator`, `TypeFetcherGenerator` (new `buildQueryTableInterfaceFieldFetcher`, `buildTableInterfaceFieldFetcher`, `buildJoinPathCondition`), and `GraphitronSchemaClassGenerator` (TypeResolver wiring) updated. Fixtures: `content` table, `allContent` root query, `Film.filmContent` child field, `Content` / `FilmContent` / `ShortContent` SDL. Review identified six cleanup items (see Track A cleanup section above).
-- **2026-04-27** — Track A cleanup complete. All six review items resolved. Added discriminator-value WHERE filter (`buildDiscriminatorFilter`), `knownDiscriminatorValues` on both model records, SQL column name resolution via `JooqCatalog.findColumn` in `TypeBuilder`, FK column SQL-name fix in `buildJoinPathCondition`. Added 18 new unit tests (TypeFetcherGeneratorTest, GraphitronSchemaClassGeneratorTest) and 5 execution tests (GraphQLQueryTest). Track A is fully closed.
+- **2026-04-27** — Track A cleanup complete. All six review items resolved. Added discriminator-value WHERE filter (`buildDiscriminatorFilter`), `knownDiscriminatorValues` on both model records, SQL column name resolution via `JooqCatalog.findColumn` in `TypeBuilder`, FK column SQL-name fix in `buildJoinPathCondition`. Added 18 new unit tests (TypeFetcherGeneratorTest, GraphitronSchemaClassGeneratorTest) and 5 execution tests (GraphQLQueryTest). Same-table Track A is fully closed.
+- **2026-04-30** — Track A Phase 2 (cross-table participant fields) shipped. New `ChildField.ParticipantColumnReferenceField` leaf classified by `FieldBuilder` for single-hop `@reference` fields on `TableInterfaceType` participants whose target differs from the participant's own table. `ParticipantRef.TableBound` extended with `crossTableFields: List<CrossTableField>` populated by `TypeBuilder.extractCrossTableFields`. `TypeFetcherGenerator` emits per-occurrence discriminator-gated LEFT JOINs via two new helpers (`buildCrossTableAliasDeclarations`, `buildCrossTableJoinChain`) and lifts the SQL chain into a `SelectJoinStep<Record> step` variable so JOINs apply between `.from` and `.where`. Per-field DataFetcher value: `ColumnFetcher<>(DSL.field(DSL.name(alias), <columnClass>.class))` reading by alias from the parent record. Selection-set gating uses graphql-java 25's `Type.field` (dot, not slash) form. Fixtures: `short_description` column on `content`, `ShortContent.description`, `FilmContent.rating` via `content_film_id_fkey`. Tests: 5 new unit tests in `TypeFetcherGeneratorTest`, 1 new classification enum (2 cases) in `GraphitronSchemaBuilderTest`, 5 new execution tests in `GraphQLQueryTest`.

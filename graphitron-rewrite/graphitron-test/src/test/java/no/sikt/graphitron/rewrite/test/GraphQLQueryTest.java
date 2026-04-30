@@ -2156,4 +2156,136 @@ class GraphQLQueryTest {
         var content = films.get(0).get("filmContent");
         assertThat(content).isNull();
     }
+
+    // ===== TableInterfaceType cross-table participant fields =====
+    //
+    // FilmContent.rating lives on the joined film table (FK content.film_id → film.film_id).
+    // ShortContent.description lives on the content table itself but is populated only on
+    // SHORT rows. The interface fetcher emits a discriminator-gated LEFT JOIN per cross-table
+    // participant field; the per-field DataFetcher reads the projected value back from the
+    // result Record by alias.
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void allContent_crossTableField_joinsFilmAndReturnsRatingForFilmContent() {
+        // FilmContent.rating reaches into the joined film row via content_film_id_fkey. The
+        // film rows seeded in init.sql carry ratings, so requesting the inline-fragment field
+        // must return a non-null value for every FilmContent and a null for every ShortContent
+        // (whose discriminator-gated JOIN never matches).
+        Map<String, Object> data = execute("""
+            { allContent {
+                __typename
+                ... on FilmContent { rating }
+            } }
+            """);
+        List<Map<String, Object>> items = (List<Map<String, Object>>) data.get("allContent");
+        var filmItems = items.stream()
+            .filter(i -> "FilmContent".equals(i.get("__typename")))
+            .toList();
+        assertThat(filmItems).hasSize(2);
+        assertThat(filmItems).allSatisfy(i ->
+            assertThat(i.get("rating")).as("FilmContent.rating sourced from joined film row").isNotNull());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void allContent_crossTableField_leftJoinOmittedWhenNotRequested() {
+        // When the cross-table field is not selected, the conditional LEFT JOIN must be skipped
+        // so no over-fetching occurs. The SQL_LOG capture lets us assert no `left join film`
+        // appears when only same-table columns are projected.
+        SQL_LOG.clear();
+        execute("{ allContent { __typename contentId title } }");
+        var contentSql = SQL_LOG.stream()
+            .filter(s -> s.contains("from \"content\"") || s.contains("from content"))
+            .toList();
+        assertThat(contentSql)
+            .as("content fetcher SQL must not LEFT JOIN film when no cross-table field is selected")
+            .allSatisfy(sql -> assertThat(sql).doesNotContain("left join \"film\"")
+                                              .doesNotContain("left join film"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void allContent_crossTableField_leftJoinPresentWhenRequested() {
+        // Inverse of the previous test: requesting the cross-table field must drive the LEFT JOIN.
+        // Relaxed to match either {LEFT JOIN, LEFT OUTER JOIN} (jOOQ for Postgres typically
+        // renders the latter) and either quoted or unquoted table names.
+        SQL_LOG.clear();
+        execute("""
+            { allContent {
+                __typename
+                ... on FilmContent { rating }
+            } }
+            """);
+        var joinedFilm = SQL_LOG.stream()
+            .anyMatch(s -> s.contains("join") && s.contains("film") && s.contains("content"));
+        assertThat(joinedFilm)
+            .as("content fetcher SQL must JOIN film when FilmContent.rating is selected; captured: " + SQL_LOG)
+            .isTrue();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void allContent_filmContentOnly_isolatesLengthFromShortDescription() {
+        // FilmContent.length lives on the content table; ShortContent.description also lives on
+        // the content table but in a different column. Per-participant projection (FilmContent.$fields
+        // vs ShortContent.$fields) plus the type-routing TypeResolver guarantee FILM rows expose
+        // length only and SHORT rows expose description only — even though both sit on the same row.
+        Map<String, Object> data = execute("""
+            { allContent {
+                __typename
+                ... on FilmContent { length }
+                ... on ShortContent { description }
+            } }
+            """);
+        List<Map<String, Object>> items = (List<Map<String, Object>>) data.get("allContent");
+        var filmItems = items.stream()
+            .filter(i -> "FilmContent".equals(i.get("__typename")))
+            .toList();
+        var shortItems = items.stream()
+            .filter(i -> "ShortContent".equals(i.get("__typename")))
+            .toList();
+        assertThat(filmItems).hasSize(2);
+        assertThat(shortItems).hasSize(2);
+        assertThat(filmItems).allSatisfy(i ->
+            assertThat(i.get("length")).as("FilmContent.length populated").isNotNull());
+        assertThat(filmItems).allSatisfy(i ->
+            assertThat(i.containsKey("description"))
+                .as("FilmContent rows do not surface ShortContent.description").isFalse());
+        assertThat(shortItems).allSatisfy(i ->
+            assertThat(i.get("description")).as("ShortContent.description populated").isNotNull());
+        assertThat(shortItems).allSatisfy(i ->
+            assertThat(i.containsKey("length"))
+                .as("ShortContent rows do not surface FilmContent.length").isFalse());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void allContent_allParticipantFieldsTogether_routePerType() {
+        // Triple-axis projection: FilmContent.length (same-table), ShortContent.description
+        // (same-table, different column), and FilmContent.rating (cross-table via LEFT JOIN to
+        // film). Each row carries the field appropriate to its type and not the others.
+        Map<String, Object> data = execute("""
+            { allContent {
+                __typename
+                ... on FilmContent { length rating }
+                ... on ShortContent { description }
+            } }
+            """);
+        List<Map<String, Object>> items = (List<Map<String, Object>>) data.get("allContent");
+        var filmItems = items.stream()
+            .filter(i -> "FilmContent".equals(i.get("__typename")))
+            .toList();
+        var shortItems = items.stream()
+            .filter(i -> "ShortContent".equals(i.get("__typename")))
+            .toList();
+        assertThat(filmItems).hasSize(2);
+        assertThat(shortItems).hasSize(2);
+        assertThat(filmItems).allSatisfy(i -> {
+            assertThat(i.get("length")).isNotNull();
+            assertThat(i.get("rating")).isNotNull();
+        });
+        assertThat(shortItems).allSatisfy(i ->
+            assertThat(i.get("description")).isNotNull());
+    }
 }

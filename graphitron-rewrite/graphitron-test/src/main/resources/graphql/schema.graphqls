@@ -549,15 +549,22 @@ interface Content @table(name: "content") @discriminate(on: "CONTENT_TYPE") {
     title:     String! @field(name: "TITLE")
 }
 
-# Implements Content; discriminator value 'FILM'. Adds a length field.
+# Implements Content; discriminator value 'FILM'. Adds a length field plus a cross-table
+# participant field exercising stub-interface-union-fetchers.md Track A Phase 2: rating lives
+# on the joined Film row (FK content.film_id → film.film_id), so the interface fetcher emits a
+# conditional LEFT JOIN gated by the FILM discriminator value when the field is selected.
 type FilmContent implements Content @table(name: "content") @discriminator(value: "FILM") {
-    contentId: Int!    @field(name: "CONTENT_ID")
-    title:     String! @field(name: "TITLE")
-    length:    Int     @field(name: "LENGTH")
+    contentId: Int!       @field(name: "CONTENT_ID")
+    title:     String!    @field(name: "TITLE")
+    length:    Int        @field(name: "LENGTH")
+    rating:    MpaaRating @reference(path: [{key: "content_film_id_fkey"}]) @field(name: "RATING")
 }
 
-# Implements Content; discriminator value 'SHORT'.
+# Implements Content; discriminator value 'SHORT'. The description column lives on the content
+# table itself but is populated only on SHORT rows; isolation tests assert FILM rows leave it
+# NULL even when both participants project against the same row.
 type ShortContent implements Content @table(name: "content") @discriminator(value: "SHORT") {
-    contentId: Int!    @field(name: "CONTENT_ID")
-    title:     String! @field(name: "TITLE")
+    contentId:   Int!    @field(name: "CONTENT_ID")
+    title:       String! @field(name: "TITLE")
+    description: String  @field(name: "SHORT_DESCRIPTION")
 }
