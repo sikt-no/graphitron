@@ -19,15 +19,15 @@ Two operations underlie every emitted SQL statement, with structurally different
 - **Lookup** (set ⋈ set). Input is a set of typed values; output is one row per input value, in input order. SQL signature: a derived VALUES table carrying the input values plus an `idx` column, JOINed against the data table, ordered by `idx`. The derived table is the *signature of a lookup*: it exists precisely because per-input-row identity has to survive the round-trip.
 - **Query** (predicate(set)). Input is a set of predicates over field values; output is whichever rows satisfy them. SQL signature: a WHERE clause over the data table, with optional JOIN or correlated subquery to bring foreign keys into scope. No derived input table, because predicates fold into WHERE; there is no per-input-row identity to preserve.
 
-The "rooted at X" shapes in "Variant-by-variant collapse → Single-hop emission" apply cleanly to *queries* — the predicate or projected column has to be rooted at some table, and that's where the rooted-at-child / rooted-at-parent split lives. *Lookups* don't have that split because both tables are pinned by the operation's SQL signature: encode/filter reads from the data table, `idx` rides on the derived values table.
+The "rooted at X" shapes in "Variant-by-variant collapse → Single-hop emission, two shapes" apply cleanly to *queries* — the predicate or projected column has to be rooted at some table, and that's where the rooted-at-child / rooted-at-parent split lives. *Lookups* don't have that split because both tables are pinned by the operation's SQL signature: encode/filter reads from the data table, `idx` rides on the derived values table.
 
 Variant routing across the two operations:
 
 | R50 variant | Operation |
 |---|---|
-| `[ID!] @nodeId` filter (`NodeIdInFilterField`) | Query — WHERE row-IN over decoded tuples |
-| `@nodeId` reference (`NodeIdReferenceField`, both rooted-at shapes) | Query — WHERE on child columns or parent alias |
-| Output `@nodeId` projection (`ChildField.NodeIdField` / `NodeIdReferenceField`) | Query-context projection — encode column inside an existing query's SELECT |
+| `[ID!] @nodeId` filter (`InputField.NodeIdInFilterField`) | Query — WHERE row-IN over decoded tuples |
+| Input-side `@nodeId` references (`InputField.NodeIdReferenceField`, `InputField.IdReferenceField`; both rooted-at shapes) | Query — WHERE on child columns or parent alias |
+| Output-side `@nodeId` projections (`ChildField.NodeIdField`, `ChildField.NodeIdReferenceField`) | Query — encode column in the SELECT clause (rooted at child or parent) |
 | `@lookupKey` lookup field | Lookup — VALUES + JOIN, idx-ordered |
 | `@nodeId` lookup arg (today's `LookupMapping.NodeIdMapping`) | Lookup — same after R50 collapse onto `LookupArg` |
 | `Query.nodes(ids:)` per-typeId batch | Lookup — see *Query.nodes folds onto the lookup pipeline* below |
@@ -55,7 +55,7 @@ Failure-mode contract: see "Failure-mode contract" below.
 
 ## Composite-key column carriers
 
-The column-shaped variants today are single-column: `InputField.ColumnField`, `ArgumentRef.ScalarArg.ColumnArg`, and `BodyParam.ColumnEq` each carry one `ColumnRef`; `LookupMapping.ColumnMapping` already carries a `List<LookupColumn>` and `LookupMapping.NodeIdMapping` already carries a `List<ColumnRef> nodeKeyColumns`, so composite is established on the mapping side. The replacements for the wire-shape variants need to carry a composite key with row-IN body emission (`DSL.row(c1, ..., cN).in(rows)`), degenerating to single-column `c.in(...)` / `c.eq(...)` for arity-1.
+The column-shaped variants today are single-column on the field/arg side: `InputField.ColumnField`, `ArgumentRef.ScalarArg.ColumnArg`, and `BodyParam.ColumnEq` each carry one `ColumnRef`. Composite is already established on the mapping side: `LookupMapping.ColumnMapping` carries a `List<LookupColumn>` and `LookupMapping.NodeIdMapping` carries a `List<ColumnRef> nodeKeyColumns`. For R50's collapse, composite has to be expressible on the field/arg side too — composite-PK NodeIds want a `DSL.row(c1, ..., cN).in(rows)` body for `[ID!] @nodeId` filters, an N-column encode call on output, and so on. Arity-1 cases stay on the existing single-column shape (`c.in(...)` / `c.eq(...)`).
 
 **Decision: split carriers from predicates, and split single-column carriers from composite-key carriers.** Column-shaped *carriers* keep their narrow types: single-column carriers (every `*.ColumnField` / `*.ColumnReferenceField` / `*.ColumnArg`) stay typed at one `ColumnRef`; new sibling `Composite*` variants carry `List<ColumnRef>` for the genuine multi-column cases. Per *Narrow component types over broad interfaces*, a field whose classifier guarantees a single column should not be retyped as a list "in case." Column-shaped *predicates* (`BodyParam.ColumnEq` and its successors) get a sealed sub-taxonomy because the predicate operator (eq vs in, single-column vs row) *is* a model axis: folding four operators into one record + two flags pushes a 4-way switch into every emitter that builds a `Condition`.
 
