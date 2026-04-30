@@ -5,16 +5,16 @@ status: Backlog
 bucket: architecture
 priority: 2
 theme: nodeid
-depends-on: [lift-nodeid-out-of-model]
+depends-on: []
 ---
 
 # Argument-level `@nodeId` support
 
 `@nodeId` is declared on `ARGUMENT_DEFINITION` in [`directives.graphqls`](../graphitron/src/main/resources/no/sikt/graphitron/rewrite/schema/directives.graphqls) but `FieldBuilder.classifyArgument` (line 754) never inspects it. An explicit `@nodeId(typeName: T)` on a `[ID!]` arg falls through to the column-binding fallthrough at line 826 and surfaces as `column 'X' could not be resolved in table 'Y'`. Reproducer from opptak: `kompetanseregelverkGittIdV2(ider: [ID!]! @nodeId(typeName: "Kompetanseregelverk")): [Kompetanseregelverk!] @asConnection`.
 
-## Assumes R50 has landed
+## Foundation in place
 
-R50 (`lift-nodeid-out-of-model`) introduces `CallSiteExtraction.NodeIdDecodeKeys(typeId)`, the column-shaped composite-key carriers, and the row-IN body emission. R40 builds on that foundation; do not start R40 until R50 is Done. Without R50, R40 either has to ship a wire-shape variant (which R50 then deletes) or duplicate R50's foundation work, both of which the R50 framing already rejected.
+R50 shipped `CallSiteExtraction.NodeIdDecodeKeys` (sealed into `SkipMismatchedElement` / `ThrowOnMismatch`), the column-shaped composite-key carriers, and the row-IN body emission. R40 builds on that foundation: classifier-only follow-on with no new model variants, no new emitter arms, no new validator arms. R50's "Coupling → R40" entry framed R40 as a small classifier extension once the foundation was in place; this item is that extension.
 
 ## Scope
 

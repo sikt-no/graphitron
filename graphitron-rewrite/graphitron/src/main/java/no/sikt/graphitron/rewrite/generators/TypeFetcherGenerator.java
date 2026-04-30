@@ -246,7 +246,7 @@ public class TypeFetcherGenerator {
             Map.entry(ChildField.ColumnReferenceField.class,
                 "ColumnReferenceField not yet implemented — see graphitron-rewrite/roadmap/column-reference-on-scalar-field.md"),
             Map.entry(ChildField.CompositeColumnReferenceField.class,
-                "CompositeColumnReferenceField (rooted-at-parent NodeId reference) not yet implemented — JOIN-with-projection emission lands in R50 phase b2b paired with the rooted-at-parent fixture in phase g; see graphitron-rewrite/roadmap/lift-nodeid-out-of-model.md"),
+                "CompositeColumnReferenceField (rooted-at-parent NodeId reference) not yet implemented — JOIN-with-projection emission tracked in R24; rooted-at-parent fixture (parent_node + child_ref) is in nodeidfixture and ready to drive coverage. See graphitron-rewrite/roadmap/nodeidreferencefield-join-projection-form.md"),
             Map.entry(ChildField.TableMethodField.class,
                 "TableMethodField not yet implemented — see graphitron-rewrite/roadmap/tablemethod-scalar-return.md"),
             Map.entry(ChildField.InterfaceField.class,
@@ -367,7 +367,7 @@ public class TypeFetcherGenerator {
                     if (f.compaction() instanceof CallSiteCompaction.NodeIdEncodeKeys) {
                         // Reference-side NodeId carrier: no fetcher method. The DataFetcher value
                         // is the runtime stub emitted by FetcherEmitter (rooted-at-parent emission
-                        // ships in R50 phase b2b).
+                        // tracked in R24).
                     } else {
                         builder.addMethod(stub(f));
                     }

@@ -5,7 +5,7 @@ status: Backlog
 bucket: cleanup
 priority: 5
 theme: legacy-migration
-depends-on: [id-reference-input-field, sis-rewrite-migration]
+depends-on: [sis-rewrite-migration]
 ---
 
 # Retire synthesis shims (`@nodeId` field, `IdReferenceField`)
@@ -33,4 +33,4 @@ Migration recipe: replace `fieldName: [ID!] @field(name: "X_ID")` with `fieldNam
 
 Both shims promote in lockstep on the same trigger: sis-graphql-spec has migrated to declared `@nodeId` / `@node` SDL (tracked at [sis-rewrite-migration](sis-rewrite-migration.md)) and one external-consumer release window has elapsed. At that point: delete the synthesis branches, flip WARNs to errors, and migrate any remaining test fixtures to canonical SDL.
 
-The `IdReferenceField` retirement also requires the `id-reference-input-field` plan (currently in Spec) to ship — the canonical form needs working code generation before it's reasonable to make it mandatory.
+The canonical form is in place: R50 retired `IdReferenceField` and routed `[ID!] @nodeId(typeName: T)` (and the legacy synthesis-shim cases) to column-shaped successors (`InputField.ColumnReferenceField` / `InputField.CompositeColumnReferenceField` carrying `extraction = NodeIdDecodeKeys.SkipMismatchedElement`). What remains for this item is the consumer-schema migration — flipping the WARN to an error once sis-graphql-spec has migrated to declared `@nodeId(typeName: T)` SDL.
