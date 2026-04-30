@@ -19,9 +19,19 @@ stateDiagram-v2
     InReview --> Ready      : rework [reviewer ≠ implementer]
     InReview --> Done       : approve [reviewer ≠ implementer] / delete file
     Done --> [*]
+    Backlog --> Discarded   : abandon; delete file
+    Spec --> Discarded      : abandon; delete file
+    Ready --> Discarded     : abandon; delete file
+    InProgress --> Discarded: abandon; delete file
+    InReview --> Discarded  : abandon; delete file
+    Discarded --> [*]
 ----
 
 *Reviewer rule:* the guards on `Spec → Ready` and `In Review → Done` require a different party from the one who last changed the artifact. In Claude Code sessions, the human user is the usual reviewer; an independent agent session (no prior context on the work) can also serve. A reviewer who lands substantive edits disqualifies themselves from approving that revision; another party must sign off.
+
+*Discarded:* terminal state for plans that won't ship; the action is to delete the file in the same commit that records the decision. Use when a plan is superseded wholesale (the successor captures everything worth keeping; e.g. R41 superseded by R53 before shipping), found infeasible, or abandoned for any other reason. Like `Done`, `Discarded` does not appear as a persistent `status:` value in front-matter; it names the transition, and the file removal is the observable. Reach for `Discarded` rather than leaving a stale plan in `Backlog` with prose explaining why nobody will pick it up.
+
+A small adjacent pattern, *Backlog tombstone*, applies when a plan's execution merges into another in-flight item (e.g. R20's coverage folded into R50's test surface). The plan stays as a `Backlog` item with a body explaining the deferral; the file deletes when the absorbing item reaches `Done`. Use this only when the file genuinely serves as a redirect during the absorbing item's lifecycle. If the supersession is total and the successor's spec already captures the predecessor by reference, prefer `Discarded`.
 
 == Item file conventions
 
