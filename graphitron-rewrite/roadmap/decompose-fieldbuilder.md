@@ -10,22 +10,37 @@ depends-on: []
 
 # Decompose `FieldBuilder`
 
-`FieldBuilder.java` is 2,825 lines with ~67 member declarations, and growing fast (the file added ~600 lines in the two days between the 2026-04-28 audit and the 2026-04-30 refresh). Argument-resolution unification has shipped (Phase 4 landed under Done), so this is no longer blocked.
+`FieldBuilder.java` is 2,825 lines with ~67 member declarations, and growing fast (the file added ~600 lines between the 2026-04-28 audit and the 2026-04-30 refresh). Argument-resolution unification has shipped (Phase 4 landed under Done), so this is no longer blocked.
 
-The dispatch is already taxonomy-shaped: `classifyField` routes through `classifyRootField` to `classifyQueryField`, `classifyMutationField`, and the `classifyChildField*` arms, along the same lines as the proposed `QueryFieldBuilder` / `MutationFieldBuilder` / `ChildFieldBuilder` split. Most of the bulk lives in two places: long classify-arm bodies (e.g. `classifyChildFieldOnTableType` ~300 lines, `resolveOrderByArgSpec` ~250 lines, `classifyQueryField` ~140 lines, `classifyMutationField` ~90 lines), and shared infrastructure (orderBy specs, pagination, condition filters, input classification, enum mappings) that all three taxonomy branches consume. A taxonomy-based file split would relocate the classify methods and force a shared-helpers module without changing the structural picture; the win is navigational, not architectural.
+## The wrong axis
 
-Phase 1 (the within-arm refactor) is the value-bearing piece and should land regardless. Phase 2+ (the file split) is deferred: revisit once Phase 1 lands and we can see whether the remaining file size still justifies the relocation cost.
+The file is factored along the wrong axis. Today the dispatch is parent-context-first (`classifyQueryField`, `classifyMutationField`, `classifyChildField*`), with directive resolution and validation duplicated inside each arm:
+
+- `@service` resolution + validation + construction at four sites: `:1767` (Query), `:1911` (Mutation), `:2263` (Result), `:2434` (TableType). The "polymorphic @service is not yet supported" rejection is byte-identical at `:1787`, `:1931`, `:2295`, `:2356`, `:2457`.
+- `@tableMethod` at `:1820` (Query) and `:2510` (TableType); each calls `parseExternalRef` + `svc.reflectTableMethod` with the same shape and similar follow-on validation.
+- `@externalField` at `:2462`; `@lookupKey` at `:1807` and `:2332`.
+
+The arms genuinely differ on parent-PK columns, root invariants, the service-reconnect path, and which target variant gets built, but those are context-specific *projections* over a shared *resolution*. The current factoring buries the resolution inside each context, which is the pattern principle 7 ("Builder-internal sealed hierarchies for multi-target classification") rejects.
+
+`ArgumentRef` is the canonical example of the right shape: each argument is classified once into a sealed variant, then projected exhaustively into `GeneratedConditionFilter`, `LookupMapping`, `OrderBySpec`, `PaginationSpec`. `FieldBuilder` is in the pre-`ArgumentRef` shape: multiple independent passes that implicitly coordinate by skipping each other's inputs.
+
+## The pivot
+
+Factor along the directive axis. Each domain directive gets one resolver returning a sealed `Resolved<X>` that captures success, failure, and not-yet-supported uniformly. Likely set:
+
+- `ServiceDirectiveResolver` (resolves `@service`: method lookup, return-type classification, polymorphic-not-supported rejection).
+- `TableMethodDirectiveResolver` (resolves `@tableMethod`: argMapping, `svc.reflectTableMethod`, expected-return-class strict check).
+- `ExternalFieldDirectiveResolver` (resolves `@externalField`: methodName defaulting, parent-table-class check).
+- `LookupKeyDirectiveResolver` (resolves `@lookupKey`: target-table check, mapping projection).
+
+Each parent-context arm shrinks to projection: given a `ResolvedService` and a parent context, build the variant the arm is responsible for. The duplicated rejections collapse structurally to one site each. New directives become single-site additions instead of N parallel edits.
+
+Suggested order: start with `@service`. It has the most duplication (4 resolution sites and 5 byte-identical rejection sites), so the proof-of-pattern diff is the largest and easiest to argue. The other resolvers follow once the shape is established.
+
+## Out of scope
+
+The earlier `QueryFieldBuilder` / `MutationFieldBuilder` / `ChildFieldBuilder` file-split idea is dropped. Once directive resolvers are extracted, the remaining classify arms are short and genuinely context-specific; the file-split question goes away on its own. If size is still painful afterwards, file a fresh Backlog item with fresh evidence.
+
+## Notes
 
 Size figures audited 2026-04-30 against trunk (`FieldBuilder.java`); refresh on each plan revision rather than letting the prose drift.
-
-## Phase 1: Extract semantic-check helpers from `classifyQueryField`
-
-The codebase rejects malformed fields at classifier time by returning `UnclassifiedField`: polymorphic `@service` at `FieldBuilder.java:1787` (with sibling sites at `:1931`, `:2295`, `:2356`, `:2457` covering mutation and child-field arms); single-cardinality `@splitQuery @lookupKey` at `FieldBuilder.java:350` and multi-hop single-cardinality `@splitQuery` at `:376`; Connection / Sourced-param rejection on root `@service` and `@tableMethod` via `FieldBuilder.validateRootServiceInvariants` (defined at `:275`, called from `:1772` and `:1916`); the §3 strict-class and §5 strict-return checks inline in `classifyQueryField` and on `ServiceCatalog`.
-
-The pattern is consistent and better than validator-time rejection for the "emitter sees only well-formed leaves" property, but it means `classifyQueryField` and the other classify arms accumulate semantic checks alongside shape dispatch. Phase 1 extracts per-directive helpers like `rejectInvalidService(fieldDef, svcResult) → Optional<UnclassifiedField>` and `rejectInvalidTableMethod(fieldDef, tb) → Optional<UnclassifiedField>`, so each classifier arm reads as "run semantic gates, then dispatch to the leaf". `validateRootServiceInvariants` is a partial example of this pattern; the broader extraction across all directive arms is the rest of Phase 1.
-
-This phase stands on its own. It is independent of the file split, and worth doing whether or not Phase 2+ ever happens.
-
-## Phase 2+ (deferred): Split the file along the field taxonomy
-
-Proposed split: `QueryFieldBuilder`, `MutationFieldBuilder`, `ChildFieldBuilder`, plus a shared module for the cross-cutting helpers (orderBy, pagination, conditions, input classification, enum mappings). Revisit once Phase 1 lands. If the post-Phase-1 classify arms read cleanly and the file size feels manageable, Phase 2+ may not be worth doing at all; if pain remains, the post-Phase-1 shape (tight `gates → dispatch` per arm) makes the relocation mechanical.
