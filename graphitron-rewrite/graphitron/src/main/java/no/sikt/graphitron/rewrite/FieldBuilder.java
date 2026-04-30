@@ -27,6 +27,7 @@ import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ChildField.ColumnField;
 import no.sikt.graphitron.rewrite.model.ChildField.ConstructorField;
 import no.sikt.graphitron.rewrite.model.ChildField.ColumnReferenceField;
+import no.sikt.graphitron.rewrite.model.ChildField.ParticipantColumnReferenceField;
 import no.sikt.graphitron.rewrite.model.ChildField.ComputedField;
 import no.sikt.graphitron.rewrite.model.ChildField.ErrorsField;
 import no.sikt.graphitron.rewrite.model.ChildField.InterfaceField;
@@ -3028,6 +3029,17 @@ class FieldBuilder {
             : name;
 
         if (fieldDef.hasAppliedDirective(DIR_REFERENCE)) {
+            // Cross-table participant field on a TableInterfaceType participant: the interface
+            // fetcher (TypeFetcherGenerator) emits a conditional LEFT JOIN per occurrence and
+            // projects the column under a unique alias; the per-field DataFetcher reads it back
+            // by alias. Lookup uses the prepopulated entry on the participant's
+            // ParticipantRef.TableBound — single source of truth lives in TypeBuilder.
+            var crossTable = lookupParticipantCrossTableField(parentTypeName, name);
+            if (crossTable != null) {
+                return new ParticipantColumnReferenceField(
+                    parentTypeName, name, location,
+                    crossTable.column(), crossTable.fkJoin(), crossTable.aliasName());
+            }
             var refPath = ctx.parsePath(fieldDef, name, tableType.table().tableName(), null);
             if (refPath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, refPath.errorMessage());
@@ -3234,6 +3246,29 @@ class FieldBuilder {
             .filter(p -> p instanceof ParticipantRef.TableBound tb && tb.discriminatorValue() != null)
             .map(p -> ((ParticipantRef.TableBound) p).discriminatorValue())
             .toList();
+    }
+
+    /**
+     * Returns the {@link ParticipantRef.TableBound.CrossTableField} entry for {@code (parentTypeName,
+     * fieldName)} when {@code parentTypeName} is a participant of some {@link GraphitronType.TableInterfaceType}
+     * and the field appears in that participant's {@code crossTableFields} list. Returns {@code null}
+     * otherwise. Cross-table participant lists are populated in {@code TypeBuilder} from the schema's
+     * {@code @reference} directives; this method is the single read path that drives
+     * {@link ParticipantColumnReferenceField} classification.
+     */
+    private ParticipantRef.TableBound.CrossTableField lookupParticipantCrossTableField(
+            String parentTypeName, String fieldName) {
+        for (var t : ctx.types.values()) {
+            if (!(t instanceof GraphitronType.TableInterfaceType tit)) continue;
+            for (var p : tit.participants()) {
+                if (!(p instanceof ParticipantRef.TableBound tb)) continue;
+                if (!tb.typeName().equals(parentTypeName)) continue;
+                for (var ctf : tb.crossTableFields()) {
+                    if (ctf.fieldName().equals(fieldName)) return ctf;
+                }
+            }
+        }
+        return null;
     }
 
     /**

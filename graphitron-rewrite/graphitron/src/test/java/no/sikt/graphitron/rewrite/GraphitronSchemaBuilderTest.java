@@ -328,6 +328,78 @@ class GraphitronSchemaBuilderTest {
         tc.assertions.accept(build(tc.sdl));
     }
 
+    // ===== ParticipantColumnReferenceField =====
+    // Cross-table fields on TableInterfaceType participants get their own classified leaf so the
+    // interface fetcher's conditional LEFT JOIN wires the projection and the per-field
+    // DataFetcher reads it back by alias.
+
+    enum ParticipantColumnReferenceFieldCase implements ClassificationCase {
+        SCALAR_REFERENCE_TO_OTHER_TABLE(
+            "scalar @reference on a TableInterfaceType participant whose target is a different "
+            + "table is classified as ParticipantColumnReferenceField with the cross-table FkJoin "
+            + "and a unique alias name",
+            """
+            interface Content @table(name: "content") @discriminate(on: "CONTENT_TYPE") {
+              contentId: Int! @field(name: "CONTENT_ID")
+            }
+            type FilmContent implements Content @table(name: "content") @discriminator(value: "FILM") {
+              contentId: Int! @field(name: "CONTENT_ID")
+              rating: String @reference(path: [{key: "content_film_id_fkey"}]) @field(name: "RATING")
+            }
+            type ShortContent implements Content @table(name: "content") @discriminator(value: "SHORT") {
+              contentId: Int! @field(name: "CONTENT_ID")
+            }
+            type Query { content: Content }
+            """,
+            schema -> {
+                var f = schema.field("FilmContent", "rating");
+                assertThat(f).isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.ParticipantColumnReferenceField.class);
+                var pcrf = (no.sikt.graphitron.rewrite.model.ChildField.ParticipantColumnReferenceField) f;
+                assertThat(pcrf.targetTable().tableName()).isEqualToIgnoringCase("film");
+                assertThat(pcrf.fkJoin().fkName()).isEqualToIgnoringCase("content_film_id_fkey");
+                assertThat(pcrf.aliasName()).isEqualTo("FilmContent_rating");
+                assertThat(pcrf.column().sqlName()).isEqualToIgnoringCase("rating");
+            }),
+
+        REFERENCE_TO_SAME_TABLE_FALLS_THROUGH(
+            "scalar @reference whose target resolves to the participant's own table is NOT a "
+            + "ParticipantColumnReferenceField; the classifier reverts to the standard "
+            + "ColumnReferenceField path",
+            """
+            interface Content @table(name: "content") @discriminate(on: "CONTENT_TYPE") {
+              contentId: Int! @field(name: "CONTENT_ID")
+            }
+            type FilmContent implements Content @table(name: "content") @discriminator(value: "FILM") {
+              contentId: Int! @field(name: "CONTENT_ID")
+              # Hypothetical self-FK — left as a no-FK fallback to ensure the path doesn't lift to
+              # ParticipantColumnReferenceField when no cross-table FkJoin exists. The field falls
+              # through to ColumnReferenceField/UnclassifiedField via the existing classifier path.
+              titleAlias: String @field(name: "TITLE")
+            }
+            type ShortContent implements Content @table(name: "content") @discriminator(value: "SHORT") {
+              contentId: Int! @field(name: "CONTENT_ID")
+            }
+            type Query { content: Content }
+            """,
+            schema -> assertThat(schema.field("FilmContent", "titleAlias"))
+                .isNotInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.ParticipantColumnReferenceField.class));
+
+        final String sdl;
+        final Consumer<GraphitronSchema> assertions;
+        ParticipantColumnReferenceFieldCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
+            this.sdl = sdl;
+            this.assertions = assertions;
+        }
+        @Override public Set<Class<?>> variants() { return Set.of(no.sikt.graphitron.rewrite.model.ChildField.ParticipantColumnReferenceField.class); }
+        @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(ParticipantColumnReferenceFieldCase.class)
+    void participantColumnReferenceFieldClassification(ParticipantColumnReferenceFieldCase tc) {
+        tc.assertions.accept(build(tc.sdl));
+    }
+
     // ===== MultitableReferenceField =====
 
     enum MultitableReferenceFieldCase implements ClassificationCase {

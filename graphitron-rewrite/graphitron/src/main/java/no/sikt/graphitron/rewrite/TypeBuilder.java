@@ -38,6 +38,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.TableType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.UnionType;
 import no.sikt.graphitron.rewrite.model.InputField;
+import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import org.slf4j.Logger;
@@ -73,6 +74,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.DIR_FIELD;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_MUTATION;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_NODE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_RECORD;
+import static no.sikt.graphitron.rewrite.BuildContext.DIR_REFERENCE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_SERVICE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_TABLE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_TABLE_METHOD;
@@ -172,7 +174,7 @@ class TypeBuilder {
     }
 
     private GraphitronType enrichTableInterfaceType(TableInterfaceType type) {
-        var participants = buildParticipantList(implementorNames(type.name()), false);
+        var participants = buildParticipantList(implementorNames(type.name()), false, type.table());
         if (participants.error() != null) {
             return new UnclassifiedType(type.name(), type.location(), participants.error());
         }
@@ -180,7 +182,7 @@ class TypeBuilder {
     }
 
     private GraphitronType enrichInterfaceType(InterfaceType type) {
-        var participants = buildParticipantList(implementorNames(type.name()), true);
+        var participants = buildParticipantList(implementorNames(type.name()), true, null);
         if (participants.error() != null) {
             return new UnclassifiedType(type.name(), type.location(), participants.error());
         }
@@ -190,7 +192,7 @@ class TypeBuilder {
     private GraphitronType enrichUnionType(UnionType type) {
         var unionType = (GraphQLUnionType) ctx.schema.getType(type.name());
         var names = unionType.getTypes().stream().map(t -> t.getName()).toList();
-        var participants = buildParticipantList(names, false);
+        var participants = buildParticipantList(names, false, null);
         if (participants.error() != null) {
             return new UnclassifiedType(type.name(), type.location(), participants.error());
         }
@@ -208,15 +210,26 @@ class TypeBuilder {
      *     whose fields expand against the parent table. When {@code false} (union and
      *     {@code TableInterfaceType} participants), every member must be table-bound or
      *     carry a domain directive; plain object types are an error.
+     * @param interfaceTable the {@code TableInterfaceType}'s own table when building participants
+     *     for a single-table interface. Used to detect each participant's cross-table fields
+     *     (those whose {@code @reference} terminates on a different table than the interface
+     *     table); the resulting {@link ParticipantRef.TableBound.CrossTableField} list drives
+     *     the conditional LEFT JOIN emission in {@code TypeFetcherGenerator}. {@code null} for
+     *     plain {@link InterfaceType} and {@link UnionType} contexts, which do not project
+     *     cross-table fields through this path.
      */
-    private ParticipantListResult buildParticipantList(List<String> typeNames, boolean allowNestingAsUnbound) {
+    private ParticipantListResult buildParticipantList(List<String> typeNames, boolean allowNestingAsUnbound,
+                                                       TableRef interfaceTable) {
         var result = new ArrayList<ParticipantRef>();
         var errors = new ArrayList<String>();
         for (var typeName : typeNames) {
             var gt = ctx.types.get(typeName);
             if (gt instanceof TableBackedType tbt && !(gt instanceof TableInterfaceType)) {
                 String discriminatorValue = argString(ctx.schema.getObjectType(typeName), DIR_DISCRIMINATOR, ARG_VALUE).orElse(null);
-                result.add(new ParticipantRef.TableBound(typeName, tbt.table(), discriminatorValue));
+                List<ParticipantRef.TableBound.CrossTableField> crossTableFields = interfaceTable != null
+                    ? extractCrossTableFields(typeName, interfaceTable)
+                    : List.of();
+                result.add(new ParticipantRef.TableBound(typeName, tbt.table(), discriminatorValue, crossTableFields));
             } else if (gt instanceof PlainObjectType && allowNestingAsUnbound) {
                 // Plain SDL object types join as nesting participants only in contexts that
                 // allow nesting (plain InterfaceType). Unions and TableInterfaceType require
@@ -232,6 +245,44 @@ class TypeBuilder {
             return new ParticipantListResult(null, String.join("; ", errors));
         }
         return new ParticipantListResult(List.copyOf(result), null);
+    }
+
+    /**
+     * Walks the participant type's GraphQL field definitions and collects each scalar field
+     * whose {@code @reference} traverses a single-hop FK to a table other than {@code interfaceTable}.
+     * The interface fetcher emits a conditional LEFT JOIN (gated by the participant's discriminator
+     * value) per field returned here; the per-field DataFetcher reads the projected value back
+     * from the result {@code Record} by the {@code aliasName} we choose now.
+     *
+     * <p>Fields that don't fit the pattern (no {@code @reference}, multi-hop path, condition-only
+     * step, or path resolving to the interface's own table) are silently ignored — they reach the
+     * field-level classifier through the normal {@code FieldBuilder} path.
+     */
+    private List<ParticipantRef.TableBound.CrossTableField> extractCrossTableFields(
+            String participantTypeName, TableRef interfaceTable) {
+        var participantObj = ctx.schema.getObjectType(participantTypeName);
+        if (participantObj == null) return List.of();
+        var out = new ArrayList<ParticipantRef.TableBound.CrossTableField>();
+        for (var fieldDef : participantObj.getFieldDefinitions()) {
+            if (!fieldDef.hasAppliedDirective(DIR_REFERENCE)) continue;
+            String fieldName = fieldDef.getName();
+            var parsed = ctx.parsePath(fieldDef, fieldName, interfaceTable.tableName(), null);
+            if (parsed.hasError()) continue;
+            if (parsed.elements().size() != 1) continue;
+            if (!(parsed.elements().get(0) instanceof JoinStep.FkJoin fk)) continue;
+            if (fk.targetTable().tableName().equalsIgnoreCase(interfaceTable.tableName())) continue;
+
+            // Resolve the column on the target table that the field maps to. @field(name:) is the
+            // primary signal; fall back to the GraphQL field name when the directive is absent.
+            String columnSqlName = argString(fieldDef, DIR_FIELD, ARG_NAME).orElse(fieldName);
+            var columnEntry = ctx.catalog.findColumn(fk.targetTable().tableName(), columnSqlName).orElse(null);
+            if (columnEntry == null) continue;
+            var column = new ColumnRef(columnEntry.sqlName(), columnEntry.javaName(), columnEntry.columnClass());
+
+            String aliasName = participantTypeName + "_" + fieldName;
+            out.add(new ParticipantRef.TableBound.CrossTableField(fieldName, column, fk, aliasName));
+        }
+        return List.copyOf(out);
     }
 
     // ===== Type classification =====

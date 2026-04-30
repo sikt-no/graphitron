@@ -10,6 +10,7 @@ import java.util.List;
  */
 public sealed interface ChildField extends GraphitronField
     permits ChildField.ColumnField, ChildField.ColumnReferenceField,
+            ChildField.ParticipantColumnReferenceField,
             ChildField.CompositeColumnField, ChildField.CompositeColumnReferenceField,
             ChildField.TableTargetField,
             ChildField.TableMethodField,
@@ -54,6 +55,31 @@ public sealed interface ChildField extends GraphitronField
         List<JoinStep> joinPath,
         CallSiteCompaction compaction
     ) implements ChildField {}
+
+    /**
+     * A scalar field on a {@link GraphitronType.TableInterfaceType} participant that
+     * resolves to a column on a different table than the participant's own (i.e. via a
+     * single-hop {@code @reference}). The interface fetcher emits a conditional LEFT JOIN
+     * gated by the participant's discriminator value and projects the column aliased as
+     * {@link #aliasName}; the per-field DataFetcher reads it back from the result
+     * {@code Record} by that alias.
+     *
+     * <p>Distinct from {@link ColumnReferenceField} (which targets the broader, still-stubbed
+     * scalar-{@code @reference} story tracked under R42): this variant exists specifically
+     * for the {@code TableInterfaceType} cross-table participant-field case where the
+     * interface fetcher (not a per-field method) materialises the value.
+     */
+    record ParticipantColumnReferenceField(
+        String parentTypeName,
+        String name,
+        SourceLocation location,
+        ColumnRef column,
+        JoinStep.FkJoin fkJoin,
+        String aliasName
+    ) implements ChildField {
+        /** The cross table joined to project this field — equivalent to {@code fkJoin().targetTable()}. */
+        public TableRef targetTable() { return fkJoin.targetTable(); }
+    }
 
     /**
      * Composite-key output carrier on a table-backed parent reached through a {@code @reference}
