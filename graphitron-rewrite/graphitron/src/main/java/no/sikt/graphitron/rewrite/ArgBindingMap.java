@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
@@ -80,7 +81,7 @@ record ArgBindingMap(Map<String, String> byJavaName) {
             }
         }
         byJavaName.putAll(overrides);
-        return new Result.Ok(new ArgBindingMap(Map.copyOf(byJavaName)));
+        return new Result.Ok(new ArgBindingMap(Collections.unmodifiableMap(byJavaName)));
     }
 
     /**
@@ -126,7 +127,7 @@ record ArgBindingMap(Map<String, String> byJavaName) {
                     + "' — each Java parameter may appear at most once");
             }
         }
-        return new ParsedArgMapping.Ok(Map.copyOf(overrides));
+        return new ParsedArgMapping.Ok(Collections.unmodifiableMap(overrides));
     }
 
     private static String formatNameSet(Set<String> names) {

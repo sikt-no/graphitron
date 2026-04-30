@@ -290,7 +290,24 @@ class GraphitronSchemaBuilderTest {
             }
             type Query { film: Film }
             """,
-            schema -> assertThat(schema.field("Film", "actor")).isInstanceOf(UnclassifiedField.class));
+            schema -> assertThat(schema.field("Film", "actor")).isInstanceOf(UnclassifiedField.class)),
+
+        CONDITION_PATH_ARGMAPPING_REJECTED(
+            "R53: @reference path-step @condition with argMapping → UnclassifiedField; reason names path-step site",
+            """
+            type Actor @table(name: "actor") { firstName: String }
+            type Film @table(name: "film") {
+              actor: Actor @reference(path: [{condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "join", argMapping: "x: y"}}])
+            }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var f = schema.field("Film", "actor");
+                assertThat(f).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) f).reason())
+                    .contains("path-step @condition")
+                    .contains("no GraphQL arguments are in scope");
+            });
 
         final String sdl;
         final Consumer<GraphitronSchema> assertions;
@@ -1991,6 +2008,64 @@ class GraphitronSchemaBuilderTest {
                     .containsExactly("tenantId");
             }),
 
+        ARG_CONDITION_ARGMAPPING_DUAL_BOUND(
+            "R53: arg-level @condition with argMapping — Java-name override coexists with @field(name:) column binding on the same arg",
+            """
+            type Language @table(name: "language") { name: String }
+            type Query {
+                languages(cityNames: String @field(name: "name")
+                    @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "argConditionRenamed", argMapping: "city: cityNames"})):
+                    [Language!]!
+            }
+            """,
+            schema -> {
+                var f = (QueryField.QueryTableField) schema.field("Query", "languages");
+                // Implicit GeneratedConditionFilter: @field(name: "name") drives the column-binding axis.
+                var gcf = (GeneratedConditionFilter) f.filters().get(0);
+                assertThat(gcf.bodyParams()).hasSize(1);
+                var bp = (no.sikt.graphitron.rewrite.model.BodyParam.Eq) gcf.bodyParams().get(0);
+                assertThat(bp.name()).isEqualTo("cityNames");
+                assertThat(bp.column().sqlName()).isEqualTo("name");
+                // Explicit ConditionFilter: argMapping drives the Java-binding axis (city ← cityNames).
+                var cond = (ConditionFilter) f.filters().get(1);
+                assertThat(cond.methodName()).isEqualTo("argConditionRenamed");
+                var renamedParam = cond.params().stream()
+                    .filter(p -> p instanceof no.sikt.graphitron.rewrite.model.MethodRef.Param.Typed t
+                        && t.source() instanceof no.sikt.graphitron.rewrite.model.ParamSource.Arg)
+                    .map(p -> (no.sikt.graphitron.rewrite.model.MethodRef.Param.Typed) p)
+                    .findFirst().orElseThrow();
+                assertThat(renamedParam.name()).isEqualTo("city");
+                assertThat(((no.sikt.graphitron.rewrite.model.ParamSource.Arg) renamedParam.source()).graphqlArgName())
+                    .isEqualTo("cityNames");
+            }),
+
+        FIELD_CONDITION_ARGMAPPING(
+            "R53: field-level @condition with argMapping — both Java parameters bind to differently-named GraphQL args",
+            """
+            type Language @table(name: "language") { name: String }
+            type Query {
+                languages(cityNames: String @field(name: "name"), countryId: String @field(name: "name")):
+                    [Language!]! @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "fieldConditionRenamed", argMapping: "city: cityNames, country: countryId"})
+            }
+            """,
+            schema -> {
+                var f = (QueryField.QueryTableField) schema.field("Query", "languages");
+                var cond = (ConditionFilter) f.filters().get(1);
+                assertThat(cond.methodName()).isEqualTo("fieldConditionRenamed");
+                var argParams = cond.params().stream()
+                    .filter(p -> p instanceof no.sikt.graphitron.rewrite.model.MethodRef.Param.Typed t
+                        && t.source() instanceof no.sikt.graphitron.rewrite.model.ParamSource.Arg)
+                    .map(p -> (no.sikt.graphitron.rewrite.model.MethodRef.Param.Typed) p)
+                    .toList();
+                assertThat(argParams).hasSize(2);
+                assertThat(argParams.get(0).name()).isEqualTo("city");
+                assertThat(((no.sikt.graphitron.rewrite.model.ParamSource.Arg) argParams.get(0).source()).graphqlArgName())
+                    .isEqualTo("cityNames");
+                assertThat(argParams.get(1).name()).isEqualTo("country");
+                assertThat(((no.sikt.graphitron.rewrite.model.ParamSource.Arg) argParams.get(1).source()).graphqlArgName())
+                    .isEqualTo("countryId");
+            }),
+
         // ===== UnboundArg / UnclassifiedArg error surfacing (argres step 10) =====
         // classifyArguments emits UnboundArg when a scalar arg can't resolve to a column and
         // UnclassifiedArg for other structural failures. projectFilters promotes both into
@@ -2052,6 +2127,31 @@ class GraphitronSchemaBuilderTest {
                 assertThat(f.filters()).hasSize(1);
                 assertThat(f.filters().get(0)).isInstanceOf(ConditionFilter.class);
                 assertThat(((ConditionFilter) f.filters().get(0)).methodName()).isEqualTo("inputColumnCondition");
+            }),
+
+        TABLE_INPUT_FIELD_CONDITION_ARGMAPPING(
+            "R53: @condition on an input field with argMapping — Java parameter name diverges from the input-field name",
+            """
+            input FilmInput @table(name: "film") {
+              filmId: Int! @field(name: "film_id")
+                @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "inputFieldConditionRenamed", argMapping: "id: filmId"})
+            }
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Query { films(filter: FilmInput): [Film!]! }
+            """,
+            schema -> {
+                var f = (QueryField.QueryTableField) schema.field("Query", "films");
+                assertThat(f.filters()).hasSize(1);
+                var cond = (ConditionFilter) f.filters().get(0);
+                assertThat(cond.methodName()).isEqualTo("inputFieldConditionRenamed");
+                var renamedParam = cond.params().stream()
+                    .filter(p -> p instanceof no.sikt.graphitron.rewrite.model.MethodRef.Param.Typed t
+                        && t.source() instanceof no.sikt.graphitron.rewrite.model.ParamSource.Arg)
+                    .map(p -> (no.sikt.graphitron.rewrite.model.MethodRef.Param.Typed) p)
+                    .findFirst().orElseThrow();
+                assertThat(renamedParam.name()).isEqualTo("id");
+                assertThat(((no.sikt.graphitron.rewrite.model.ParamSource.Arg) renamedParam.source()).graphqlArgName())
+                    .isEqualTo("filmId");
             }),
 
         PLAIN_INPUT_ARG_FIELD_CONDITION_EMITTED(

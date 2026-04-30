@@ -958,12 +958,12 @@ class FieldBuilder {
 
     /**
      * Builds an {@link ArgConditionRef} from a {@code @condition} directive on one GraphQL argument.
-     * Reflects the condition method via {@link ServiceCatalog#reflectTableMethod} with identity
-     * binding for that argument; any declared {@code contextArguments} go in {@code ctxKeys}.
-     * {@code @field(name:)} on the argument carries column-binding semantics for the auto-equality
-     * path, not Java-parameter override, so this site uses
-     * {@link ArgBindingMap#identityForSingleArg}. Appends an error and returns
-     * {@link Optional#empty()} on reflection failure.
+     * Reflects the condition method via {@link ServiceCatalog#reflectTableMethod}, binding the
+     * argument to its same-named Java parameter by default and applying any {@code argMapping}
+     * overrides on the {@code @condition} directive's {@code ExternalCodeReference} (R53).
+     * Declared {@code contextArguments} go in {@code ctxKeys}. {@code @field(name:)} on the
+     * argument is the column-binding axis for the auto-equality path; the two axes coexist on the
+     * same slot. Appends an error and returns {@link Optional#empty()} on reflection failure.
      */
     private Optional<ArgConditionRef> buildArgCondition(GraphQLArgument arg, List<String> errors) {
         var cond = ctx.readConditionDirective(arg);
@@ -993,11 +993,12 @@ class FieldBuilder {
 
     /**
      * Builds a field-level {@link ConditionFilter} from a {@code @condition} directive on the
-     * field definition. Reflects via {@link ServiceCatalog#reflectTableMethod} with identity
-     * binding for every field argument; any declared {@code contextArguments} go in
-     * {@code ctxKeys}. {@code @field(name:)} on filter arguments carries column-binding
-     * semantics, not Java-parameter override, so this site uses
-     * {@link ArgBindingMap#identityForField}. Returns {@code null} when the directive is absent
+     * field definition. Reflects via {@link ServiceCatalog#reflectTableMethod}, binding every
+     * field argument to its same-named Java parameter by default and applying any
+     * {@code argMapping} overrides on the {@code @condition} directive's
+     * {@code ExternalCodeReference} (R53). Declared {@code contextArguments} go in
+     * {@code ctxKeys}. {@code @field(name:)} on filter arguments is the column-binding axis;
+     * the two axes coexist on the same slot. Returns {@code null} when the directive is absent
      * or reflection fails (error appended).
      */
     private ConditionFilter buildFieldCondition(GraphQLFieldDefinition fieldDef, List<String> errors) {
