@@ -207,6 +207,42 @@ class FetcherPipelineTest {
         assertThat(fetchers.methodSpecs()).extracting(MethodSpec::name).contains("actorsByLookupInputRows");
     }
 
+    // ===== ErrorsField — wired via PropertyDataFetcher passthrough =====
+
+    private static final String ERRORS_FIELD_SDL = """
+            type ValidationErr @error(handlers: [{handler: VALIDATION}]) {
+                path: [String!]!
+                message: String!
+            }
+            type DbErr @error(handlers: [{handler: DATABASE, sqlState: "23503"}]) {
+                path: [String!]!
+                message: String!
+            }
+            union BehandleSakError = ValidationErr | DbErr
+            type BehandleSakPayload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+                ok: Boolean
+                errors: [BehandleSakError!]
+            }
+            type Query { x: String }
+            """;
+
+    @Test
+    void errorsField_onRecordPayload_wiringUsesPropertyFetcher() {
+        // ErrorsField is a passthrough off the parent payload's errors accessor; the runtime
+        // carrier (per-error dispatch + try/catch wrapping) ships later in error-handling-parity.md.
+        var bodies = fetcherBodies(ERRORS_FIELD_SDL);
+        assertThat(TypeSpecAssertions.wiringFor(bodies, "BehandleSakPayload", "errors"))
+            .contains(DataFetcherKind.PROPERTY_FETCHER);
+    }
+
+    @Test
+    void errorsField_onRecordPayload_fetchersClassEmitsNoMethodForIt() {
+        // ErrorsField is in IMPLEMENTED_LEAVES with a no-op dispatch arm — no per-field method
+        // is emitted; the wiring entry is the entire footprint.
+        var fetchers = findSpec("BehandleSakPayloadFetchers", ERRORS_FIELD_SDL);
+        assertThat(fetchers.methodSpecs()).extracting(MethodSpec::name).doesNotContain("errors");
+    }
+
     // ===== Column fields → wired via ColumnFetcher =====
 
     @Test
