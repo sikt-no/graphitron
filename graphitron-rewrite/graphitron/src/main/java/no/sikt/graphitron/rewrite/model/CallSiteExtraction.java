@@ -26,7 +26,8 @@ import java.util.Map;
 public sealed interface CallSiteExtraction
         permits CallSiteExtraction.Direct, CallSiteExtraction.EnumValueOf,
                 CallSiteExtraction.TextMapLookup, CallSiteExtraction.ContextArg,
-                CallSiteExtraction.JooqConvert, CallSiteExtraction.NestedInputField {
+                CallSiteExtraction.JooqConvert, CallSiteExtraction.NestedInputField,
+                CallSiteExtraction.NodeIdDecodeKeys {
 
     /** Pass the argument directly: {@code env.getArgument("name")}. */
     record Direct() implements CallSiteExtraction {}
@@ -105,4 +106,49 @@ public sealed interface CallSiteExtraction
             path = List.copyOf(path);
         }
     }
+
+    /**
+     * Decode a base64 NodeId at the call-site root into typed key values. Sealed sub-taxonomy with
+     * two arms differing only in how a {@code null} return from
+     * {@link HelperRef.Decode decode<TypeName>} (malformed input or typeId mismatch) surfaces:
+     *
+     * <ul>
+     *   <li>{@link SkipMismatchedElement} — input-side filters
+     *       ({@code [ID!] @nodeId(typeName: T)} on an input-object field, or the same shape as a
+     *       top-level field-argument). A {@code null} return short-circuits the bad element to
+     *       "no row matches"; never throws. Empty list and null arg follow existing
+     *       column-equality behavior (predicate omitted when arg is absent, {@code falseCondition()}
+     *       when present-but-empty).</li>
+     *   <li>{@link ThrowOnMismatch} — {@code @nodeId} on a top-level scalar / list argument used
+     *       as a lookup or mutation key. A {@code null} return is an authored-input error and
+     *       surfaces as a {@code GraphqlErrorException}-shaped error, not silent null; a
+     *       wrong-type id at a lookup key is a contract violation rather than "no match."</li>
+     * </ul>
+     *
+     * <p>The third failure mode (NullOnMismatch) is dispatcher-driven (Query.node, Query.nodes,
+     * federated _entities) and does not appear here as a carrier arm — see the R50 spec's
+     * "Failure-mode contract" section.
+     *
+     * <p>Each arm carries the pre-resolved {@link HelperRef.Decode} for the target NodeType, so
+     * the call-site emitter reaches the per-Node {@code decode<TypeName>} helper through a typed
+     * structural reference rather than reconstructing names from a typeId string.
+     */
+    sealed interface NodeIdDecodeKeys extends CallSiteExtraction permits SkipMismatchedElement, ThrowOnMismatch {
+
+        /** The pre-resolved {@code decode<TypeName>} helper reference. */
+        HelperRef.Decode decodeMethod();
+    }
+
+    /**
+     * Skip the bad element on a {@code null} decode return. Used by
+     * {@code [ID!] @nodeId(typeName: T)} input-object-field filters and the equivalent top-level
+     * field-argument filter shape.
+     */
+    record SkipMismatchedElement(HelperRef.Decode decodeMethod) implements NodeIdDecodeKeys {}
+
+    /**
+     * Throw a {@code GraphqlErrorException} on a {@code null} decode return. Used by
+     * {@code @nodeId} on a top-level scalar / list argument bound to a lookup or mutation key.
+     */
+    record ThrowOnMismatch(HelperRef.Decode decodeMethod) implements NodeIdDecodeKeys {}
 }
