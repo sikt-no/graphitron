@@ -169,6 +169,16 @@ dispatch arm lands.
   element type's simple name is `GraphitronError`; the full marker-interface
   enforcement (every `@error` class implements `GraphitronError`) lands later
   alongside the SDL→class lookup for `@error` types.
+- §1 channel-level reject rules 7 and 9 in the carrier classifier:
+  `FieldBuilder.checkChannelLevelHandlerRules` runs after `mappedErrorTypes` resolves
+  and before payload-class reflection. Rule 7 fires when the channel's flattened
+  handler list carries more than one `ValidationHandler` (validation is a single
+  fan-out target per payload); rule 9 fires when a `ValidationHandler` coexists with an
+  `ExceptionHandler` whose `exceptionClassName` shadows
+  `ValidationViolationGraphQLException` at dispatch (the JDK throwable supertypes,
+  `graphql.execution.AbortExecutionException`, or any class with the simple name
+  `ValidationViolationGraphQLException`). Both surface as `UnclassifiedField` on the
+  carrier with reasons that name the offending `@error` types.
 - `TypeBuilder.buildErrorType` wears `@LoadBearingClassifierCheck(key =
   "error-type.path-message-fields")` (the producer side; the consumer annotation lands
   with the dispatch arm).
