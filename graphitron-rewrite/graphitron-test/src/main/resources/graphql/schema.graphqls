@@ -24,6 +24,11 @@ type Query {
     # two @lookupKey scalar fields (film_id, actor_id); the generator materialises a VALUES
     # derived table with columns (idx, film_id, actor_id) and joins on both keys.
     filmActorsByKey(key: [FilmActorKey!]! @lookupKey): [FilmActor!]!
+    # R50 phase (g-C): composite-PK NodeId @lookupKey. Each opaque ID decodes once per row to
+    # a Record2(actor_id, film_id) at the arg layer; the generator emits VALUES(idx, actor_id,
+    # film_id) and joins on both PK columns. Decode-on-mismatch surfaces as
+    # GraphqlErrorException via the ThrowOnMismatch contract. See lift-nodeid-out-of-model.md.
+    filmActorByNodeId(id: [ID!]! @lookupKey): [FilmActor!]!
     # ConnectionSynthesis: directive-driven @asConnection on a bare list. The generator
     # synthesises QueryStoresConnectionType, QueryStoresEdgeType and wires them into
     # GraphitronSchema.build() via .additionalType(...). Hand-written Connection types
@@ -371,7 +376,8 @@ input FilmActorKey @table(name: "film_actor") {
     actorId: Int! @field(name: "actor_id") @lookupKey
 }
 
-type FilmActor @table(name: "film_actor") {
+type FilmActor implements Node @table(name: "film_actor") @node {
+    id:      ID!  @nodeId
     filmId:  Int! @field(name: "film_id")
     actorId: Int! @field(name: "actor_id")
 }
