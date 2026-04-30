@@ -10,8 +10,9 @@ import java.util.Locale;
 
 /**
  * Custom jOOQ code generator for graphitron-rewrite test fixtures. Appends NodeId-metadata
- * constants ({@code __NODE_TYPE_ID} and {@code __NODE_KEY_COLUMNS}) to specific fixture tables,
- * mimicking what Sikt's {@code KjerneJooqGenerator} emits for NodeId-bearing tables in production.
+ * constants ({@code __NODE_TYPE_ID} and {@code __NODE_KEY_COLUMNS}) to specific fixture tables
+ * across the public, nodeidfixture, and idreffixture schemas, mimicking what Sikt's
+ * {@code KjerneJooqGenerator} emits for NodeId-bearing tables in production.
  *
  * <p>The mapping is hard-coded in {@link #METADATA}. Tables outside the map generate as stock jOOQ
  * output. The point is that the rewrite's classifier is exercised against real generator output
@@ -35,7 +36,11 @@ public class NodeIdFixtureGenerator extends JavaGenerator {
     private static final Map<String, Metadata> METADATA = Map.of(
         "bar", new Metadata("Bar", List.of("ID_1", "ID_2")),
         "baz", new Metadata("Baz", List.of("ID")),
-        "studieprogram", new Metadata("Studieprogram", List.of("STUDIEPROGRAM_ID"))
+        "studieprogram", new Metadata("Studieprogram", List.of("STUDIEPROGRAM_ID")),
+        // Composite-PK NodeType in the public (sakila-derived) schema, used by
+        // GraphQLQueryTest's filmActorByNodeId round-trip for the LookupArg.DecodedRecord
+        // arm. PK column order matches `init.sql`'s declaration: actor_id first, film_id second.
+        "film_actor", new Metadata("FilmActor", List.of("ACTOR_ID", "FILM_ID"))
     );
 
     @Override

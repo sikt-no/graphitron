@@ -321,7 +321,7 @@ final class LookupValuesJoinEmitter {
             builder.addStatement("$T $L = ($L instanceof $T _s) ? $T.$L(_s) : null",
                 recordType, recLocal, rawElem, String.class, encoderClass, methodName);
             builder.beginControlFlow("if ($L == null)", recLocal);
-            builder.addStatement("throw new $T($S)", graphqlErr,
+            builder.addStatement("throw $T.newErrorException().message($S).build()", graphqlErr,
                 "Decoded NodeId did not match the expected type for argument '" + argName + "'");
             builder.endControlFlow();
         }
@@ -493,7 +493,7 @@ final class LookupValuesJoinEmitter {
             String methodName = ton.decodeMethod().methodName();
             return CodeBlock.of(
                 "($L) instanceof String _s ? ($T.$L(_s) instanceof $T _r ? _r.value1() : "
-                + "(($T<?>) () -> { throw new $T($S); }).get()) : null",
+                + "(($T<?>) () -> { throw $T.newErrorException().message($S).build(); }).get()) : null",
                 raw, encoderClass, methodName, ton.decodeMethod().returnType(),
                 ClassName.get("java.util.function", "Supplier"),
                 ClassName.get("graphql", "GraphqlErrorException"),
