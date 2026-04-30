@@ -807,6 +807,11 @@ class TypeBuilder {
                         + " (those apply to DATABASE only)");
                     return null;
                 }
+                String resolveError = validateExceptionClass(className, "GENERIC");
+                if (resolveError != null) {
+                    rejectReasons.add(resolveError);
+                    return null;
+                }
                 return new ErrorType.ExceptionHandler(className, matchesOpt, descriptionOpt);
             }
             case DATABASE -> {
@@ -830,6 +835,8 @@ class TypeBuilder {
                 }
                 // No-discriminator DATABASE lifts to ExceptionHandler(SQLException). The legacy
                 // "DataAccessException-only" nominal match becomes a documented behaviour shift.
+                // SQLException always resolves on the classifier classpath, so no Class.forName
+                // check is needed here.
                 return new ErrorType.ExceptionHandler("java.sql.SQLException", matchesOpt, descriptionOpt);
             }
             case VALIDATION -> {
@@ -855,6 +862,33 @@ class TypeBuilder {
         if (value == null) return null;
         String s = value.toString().strip();
         return s.isEmpty() ? null : s;
+    }
+
+    /**
+     * Resolves an {@code ExceptionHandler.exceptionClassName} on the classifier classpath and
+     * verifies it's a {@link Throwable} subtype. Returns a non-null reject reason when the
+     * class cannot be loaded or doesn't extend {@code Throwable}; returns {@code null} on a
+     * clean resolution. Mirrors the {@code Class.forName} check already used by
+     * {@code @record(record: {className: ...})} in {@link #buildResultType}.
+     *
+     * <p>The runtime matcher walks the cause chain testing each link with
+     * {@code Class.isInstance}; a non-{@code Throwable} class would never match anything and
+     * is almost certainly a typo.
+     */
+    private static String validateExceptionClass(String className, String handlerKind) {
+        try {
+            Class<?> cls = Class.forName(className);
+            if (!Throwable.class.isAssignableFrom(cls)) {
+                return "@error handler {handler: " + handlerKind + ", className: \"" + className
+                    + "\"} resolves to a class that does not extend java.lang.Throwable; "
+                    + "the matcher walks the cause chain testing each link with isInstance, "
+                    + "so a non-Throwable class would never match";
+            }
+            return null;
+        } catch (ClassNotFoundException e) {
+            return "@error handler {handler: " + handlerKind + ", className: \"" + className
+                + "\"} could not be loaded on the classifier classpath";
+        }
     }
 
     // ===== Conflict detection =====

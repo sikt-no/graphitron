@@ -2911,7 +2911,7 @@ class GraphitronSchemaBuilderTest {
         GENERIC_LIFTS_TO_EXCEPTION_HANDLER(
             "GENERIC with className lifts to ExceptionHandler",
             """
-            type MyError @error(handlers: [{handler: GENERIC, className: "com.example.MyException"}]) {
+            type MyError @error(handlers: [{handler: GENERIC, className: "java.lang.IllegalArgumentException"}]) {
                 path: [String!]!
                 message: String!
             }
@@ -2923,7 +2923,7 @@ class GraphitronSchemaBuilderTest {
                 var h = errorType.handlers().get(0);
                 assertThat(h).isInstanceOf(ErrorType.ExceptionHandler.class);
                 var eh = (ErrorType.ExceptionHandler) h;
-                assertThat(eh.exceptionClassName()).isEqualTo("com.example.MyException");
+                assertThat(eh.exceptionClassName()).isEqualTo("java.lang.IllegalArgumentException");
                 assertThat(eh.matches()).isEmpty();
                 assertThat(eh.description()).isEmpty();
             }),
@@ -2995,7 +2995,7 @@ class GraphitronSchemaBuilderTest {
         CAPTURES_MATCHES_FIELD(
             "matches field is captured on ExceptionHandler",
             """
-            type MatchError @error(handlers: [{handler: GENERIC, className: "com.example.Ex", matches: "duplicate"}]) {
+            type MatchError @error(handlers: [{handler: GENERIC, className: "java.lang.IllegalArgumentException", matches: "duplicate"}]) {
                 path: [String!]!
                 message: String!
             }
@@ -3008,7 +3008,7 @@ class GraphitronSchemaBuilderTest {
             "multiple handler objects in the array are captured in source order",
             """
             type MultiError @error(handlers: [
-                {handler: GENERIC, className: "com.example.Ex1"},
+                {handler: GENERIC, className: "java.lang.IllegalArgumentException"},
                 {handler: DATABASE, sqlState: "23505"}
             ]) {
                 path: [String!]!
@@ -3139,7 +3139,39 @@ class GraphitronSchemaBuilderTest {
             type Query { x: String }
             """,
             schema -> assertThat(((UnclassifiedType) schema.type("BadError")).reason())
-                .contains("path").contains("[String!]!"));
+                .contains("path").contains("[String!]!")),
+
+        REJECT_GENERIC_WITH_UNRESOLVABLE_CLASS_NAME(
+            "GENERIC with className that cannot be loaded on the classifier classpath → UnclassifiedType",
+            """
+            type BadError @error(handlers: [{handler: GENERIC, className: "no.does.not.exist.Missing"}]) {
+                path: [String!]!
+                message: String!
+            }
+            type Query { x: String }
+            """,
+            schema -> {
+                var t = (UnclassifiedType) schema.type("BadError");
+                assertThat(t.reason())
+                    .contains("no.does.not.exist.Missing")
+                    .contains("could not be loaded");
+            }),
+
+        REJECT_GENERIC_WITH_NON_THROWABLE_CLASS(
+            "GENERIC with className that resolves but doesn't extend Throwable → UnclassifiedType",
+            """
+            type BadError @error(handlers: [{handler: GENERIC, className: "java.lang.String"}]) {
+                path: [String!]!
+                message: String!
+            }
+            type Query { x: String }
+            """,
+            schema -> {
+                var t = (UnclassifiedType) schema.type("BadError");
+                assertThat(t.reason())
+                    .contains("java.lang.String")
+                    .contains("Throwable");
+            });
 
         final String sdl;
         final Consumer<GraphitronSchema> assertions;
@@ -3169,7 +3201,7 @@ class GraphitronSchemaBuilderTest {
         PATH_AND_MESSAGE_CLASSIFY_AS_PROPERTY_FIELDS(
             "@error parent — path and message both classify as PropertyField",
             """
-            type MyError @error(handlers: [{handler: GENERIC, className: "com.example.Ex"}]) {
+            type MyError @error(handlers: [{handler: GENERIC, className: "java.lang.IllegalArgumentException"}]) {
                 path: [String!]!
                 message: String!
             }

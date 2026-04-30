@@ -230,7 +230,7 @@ class ErrorChannelClassificationTest {
                 path: [String!]!
                 message: String!
             }
-            type DirectShadow @error(handlers: [{handler: GENERIC, className: "no.sikt.example.schema.ValidationViolationGraphQLException"}]) {
+            type DirectShadow @error(handlers: [{handler: GENERIC, className: "no.sikt.graphitron.codereferences.dummyreferences.ValidationViolationGraphQLException"}]) {
                 path: [String!]!
                 message: String!
             }
