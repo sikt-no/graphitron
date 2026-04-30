@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 
 /**
  * Audits the {@link LoadBearingClassifierCheck} / {@link DependsOnClassifierCheck}
@@ -37,6 +38,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@link OrphanedConsumer}, so future walker refactors can't silently
  * regress the audit's failure-detection.
  */
+@UnitTier
 class LoadBearingGuaranteeAuditTest {
 
     private static final String ROOT_PACKAGE = "no.sikt.graphitron.rewrite";

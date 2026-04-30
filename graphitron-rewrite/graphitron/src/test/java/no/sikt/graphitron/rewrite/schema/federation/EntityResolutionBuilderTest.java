@@ -6,6 +6,7 @@ import no.sikt.graphitron.rewrite.model.KeyAlternative.KeyShape;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 
 /**
  * Classify-time behavior of {@link EntityResolutionBuilder}: how {@code @key} directives
@@ -21,6 +22,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * NodeType regardless of {@code @link} presence, so {@code @node} types in test SDLs
  * still get an entity entry.
  */
+@UnitTier
 class EntityResolutionBuilderTest {
 
     private static final String FEDERATION_DIRECTIVES = """

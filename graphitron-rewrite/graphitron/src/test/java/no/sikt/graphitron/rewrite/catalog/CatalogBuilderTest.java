@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 
 /**
  * Verifies that {@link CatalogBuilder#build} surfaces the right shape for
@@ -14,6 +15,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * tables (with their columns), scalar types (built-in and custom), and
  * the FK reference list per table.
  */
+@UnitTier
 class CatalogBuilderTest {
 
     @Test

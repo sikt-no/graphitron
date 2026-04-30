@@ -8,8 +8,10 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 
 @DisplayName("GraphQLSelectionParser")
+@UnitTier
 class GraphQLSelectionParserTest {
 
     // -------------------------------------------------------------------------

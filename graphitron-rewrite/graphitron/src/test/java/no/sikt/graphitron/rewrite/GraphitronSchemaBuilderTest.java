@@ -71,11 +71,13 @@ import no.sikt.graphitron.common.configuration.TestConfiguration;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 
 /**
- * Level 2 classification tests. Each section has an enum where every constant is one (sdl, assertion)
+ * Pipeline-tier classification tests. Each section has an enum where every constant is one (sdl, assertion)
  * case; the parameterised test method iterates the whole truth table automatically.
  */
+@PipelineTier
 class GraphitronSchemaBuilderTest {
 
     // ===== ColumnField =====

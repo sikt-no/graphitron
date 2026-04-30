@@ -17,7 +17,9 @@ import java.util.Optional;
 
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 
+@UnitTier
 class QueryTableFieldValidationTest {
 
     private static final ColumnRef TITLE_COL = new ColumnRef("title", "TITLE", "java.lang.String");

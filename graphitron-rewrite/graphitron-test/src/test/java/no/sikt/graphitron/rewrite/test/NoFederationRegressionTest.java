@@ -5,6 +5,7 @@ import no.sikt.graphitron.generated.Graphitron;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 
 /**
  * Regression guard: the shared {@code schema.graphqls} fixture (no federation {@code @link})
@@ -17,6 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code KeyNodeSynthesiser}). Companion to {@link FederationBuildSmokeTest}, which
  * runs against the federated fixture; this one runs against the shared one.
  */
+@PipelineTier
 class NoFederationRegressionTest {
 
     @Test

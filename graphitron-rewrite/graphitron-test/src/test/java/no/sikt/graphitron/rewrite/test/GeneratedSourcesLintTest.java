@@ -13,6 +13,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.rewrite.test.tier.CompilationTier;
 
 /**
  * Lints emitted source files for generator-hygiene rules that would silently
@@ -25,6 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * ({@code for (var x : xs)}); the regex is intentionally loose enough to match
  * both.
  */
+@CompilationTier
 class GeneratedSourcesLintTest {
 
     /** Emitted by {@code graphitron-maven-plugin} into this package path. The plugin

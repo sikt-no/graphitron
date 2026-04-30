@@ -12,12 +12,14 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 
 /**
  * Unit coverage for {@link RewriteSchemaLoader}. Exercises the build-time schema parse
  * path: auto-injection of {@code directives.graphqls}, multi-source aggregation from
  * filesystem paths, missing-source error surface, and that the reader cascade closes.
  */
+@UnitTier
 class RewriteSchemaLoaderTest {
 
     @Test

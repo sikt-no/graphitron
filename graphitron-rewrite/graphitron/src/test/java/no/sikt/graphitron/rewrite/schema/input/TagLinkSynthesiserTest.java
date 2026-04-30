@@ -10,7 +10,9 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 
+@UnitTier
 class TagLinkSynthesiserTest {
 
     private static Map<String, SchemaInput> inputs(String source, boolean withTag) {

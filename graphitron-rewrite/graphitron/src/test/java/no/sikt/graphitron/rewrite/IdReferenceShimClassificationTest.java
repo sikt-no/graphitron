@@ -11,6 +11,7 @@ import java.util.Map;
 import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 
 /**
  * Classification tests for the FK-qualifier synthesis shim. Post-R50 the shim emits
@@ -39,6 +40,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   </li>
  * </ul>
  */
+@PipelineTier
 class IdReferenceShimClassificationTest {
 
     private static final RewriteContext IDREF_CTX = new RewriteContext(
