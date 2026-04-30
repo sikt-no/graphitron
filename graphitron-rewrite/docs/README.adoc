@@ -72,7 +72,6 @@ The classification-only diagram in xref:code-generation-triggers.adoc[Code Gener
 == Detailed reference
 
 . *xref:code-generation-triggers.adoc[Code Generation Triggers]*: the full classification taxonomy: schema patterns, sealed variants, generated output. This is the reference for what the code does.
-. *xref:rewrite-model.adoc[Rewrite Model]*: visual Mermaid diagrams of the sealed type hierarchy: field variants, type variants, and support/composition types.
 . *xref:rewrite-design-principles.adoc[Rewrite Design Principles]*: architectural and technical principles governing the rewrite pipeline (generation-thinking, sealed hierarchies, classification boundaries, test tiers, etc.).
 . *xref:testing.adoc[Test-tier guide]*: canonical tier names (unit / pipeline / compilation / execution), decision rubric, file locations, tier meta-annotations, and build commands.
 . *xref:argument-resolution.adoc[Argument Resolution]*: unified argument classification, `@condition` support, lookup VALUES generation.
