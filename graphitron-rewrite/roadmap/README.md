@@ -19,6 +19,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R48` | Stub: `@externalField` resolved-reference path (`ComputedField`) | Spec | [plan](computed-field-with-reference.md) |
 | `R49` | Stub: scalar/`@record`-returning `@service` child field (`ServiceRecordField`) <sub>blocked by: [service-rows-method-body](service-rows-method-body.md)</sub> | Spec | [plan](service-record-field.md) |
 | `R3` | Classification vocabulary follow-ups | Spec | [plan](classification-vocabulary-followups.md) |
+| `R52` | ExternalCodeReference.argMapping for Java-param binding | Spec | [plan](external-code-reference-arg-mapping.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec | [plan](nestingfield-multiparent-tablefield.md) |
 | `R13` | Faceted search on `@asConnection` | Spec | [plan](faceted-search.md) |
@@ -105,6 +106,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R48` [**Stub: `@externalField` resolved-reference path (`ComputedField`)**](computed-field-with-reference.md) — Spec, stubs
 - `R49` [**Stub: scalar/`@record`-returning `@service` child field (`ServiceRecordField`)**](service-record-field.md) — Spec, stubs, blocked by [service-rows-method-body](service-rows-method-body.md)
 - `R41` [**@field(name:) on @service method args**](service-arg-java-name-override.md) — In Review, architecture
+- `R52` [**ExternalCodeReference.argMapping for Java-param binding**](external-code-reference-arg-mapping.md) — Spec, architecture
 - `R45` [**Typed context-value registry for `@service`**](typed-context-value-registry.md) — Spec, architecture
 - `R32` [**Implement `@service` rows-method body**](service-rows-method-body.md) — Backlog, architecture
 - `R46` [**Multi-tenant fan-out for `@service`**](service-multi-tenant-fanout.md) — Backlog, architecture, blocked by [typed-context-value-registry](typed-context-value-registry.md), [mutations](mutations.md)
