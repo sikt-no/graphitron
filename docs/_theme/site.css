@@ -115,21 +115,18 @@ a:active {
 }
 
 #header {
-    /* AsciiDoctor's per-page header (page title + optional TOC). The custom
-     * top-nav lives in .nav-header above; #header sits below it. */
-    padding-top: 28px;
-    padding-bottom: 12px;
-}
-/* On pages that hide the title (`:!showtitle:`, e.g. the homepage that uses
- * its own .hero-band instead), #header renders empty. Collapse it so the
- * page-default body color doesn't show as a grey strip between the nav and
- * the hero. */
-#header:empty {
+    /* Asciidoctor's per-page header band wrapping the page title and meta.
+     * Padding goes on the h1 below rather than this container so pages that
+     * hide the title (`:!showtitle:`, e.g. the homepage that supplies its
+     * own .hero-band) collapse to zero height instead of leaving a grey
+     * strip. `:empty` doesn't help here because the rendered #header
+     * contains a whitespace text node, which counts as content. */
     padding: 0;
     margin: 0;
 }
 #header h1 {
     margin: 0 0 6px 0;
+    padding: 28px 0 12px;
     font-weight: 700;
     font-size: 2.3rem;
     letter-spacing: -0.01em;
@@ -140,7 +137,10 @@ a:active {
 }
 
 #content {
-    padding-top: 8px;
+    /* No top padding so a full-bleed .hero-band (homepage) butts directly
+     * against #header / .nav-header above. Content pages get their top
+     * spacing from #header h1's padding. */
+    padding-top: 0;
     padding-bottom: 64px;
 }
 
@@ -218,10 +218,7 @@ pre code {
 
 .hero-band {
     background: var(--sds-color-brand-primary-subtle, #ece4ff);
-    /* Negative top margin (and matching horizontal margins) so the band
-     * butts directly against the nav header without a grey body-default
-     * strip showing through #content's top padding. */
-    margin: -8px calc(-1 * var(--site-content-pad)) 32px;
+    margin: 0 calc(-1 * var(--site-content-pad)) 32px;
     padding: 56px var(--site-content-pad);
     text-align: center;
 }
