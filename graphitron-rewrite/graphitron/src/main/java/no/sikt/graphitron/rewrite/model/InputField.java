@@ -34,6 +34,16 @@ public sealed interface InputField extends GraphitronField
      * {@link GraphitronType.TableInputType} is replaced by a
      * {@link GraphitronType.UnclassifiedType}.
      */
+    /**
+     * @param extraction how to translate the wire-format value to the column's typed Java
+     *     value at the call-site root. Today's classifier produces {@link CallSiteExtraction.Direct}
+     *     for the column-equality path. Post-R50, the slot also hosts
+     *     {@link CallSiteExtraction.NodeIdDecodeKeys} for arity-1 NodeId-encoded filter fields
+     *     (see R50 phase e); the body emitter pairs {@code Direct} with
+     *     {@link BodyParam.ColumnPredicate.Eq Eq} / {@link BodyParam.ColumnPredicate.In In} and
+     *     {@code NodeIdDecodeKeys.SkipMismatchedElement} with the same arms over decoded key
+     *     values.
+     */
     record ColumnField(
         String parentTypeName,
         String name,
@@ -42,7 +52,8 @@ public sealed interface InputField extends GraphitronField
         boolean nonNull,
         boolean list,
         ColumnRef column,
-        Optional<ArgConditionRef> condition
+        Optional<ArgConditionRef> condition,
+        CallSiteExtraction extraction
     ) implements InputField {}
 
     /**
