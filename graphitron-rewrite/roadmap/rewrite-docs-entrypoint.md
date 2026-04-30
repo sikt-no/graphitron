@@ -1,38 +1,39 @@
 ---
 id: R28
-title: Make `graphitron-rewrite/docs/README.md` a real entry point
-status: Backlog
+title: Make `graphitron-rewrite/docs/README.adoc` a real entry point
+status: Spec
 bucket: cleanup
 priority: 3
 theme: docs
 depends-on: [docs-site-asciidoc]
 ---
 
-# Make `graphitron-rewrite/docs/README.md` a real entry point
+# Make `graphitron-rewrite/docs/README.adoc` a real entry point
 
-The rewrite docs index is currently a fragment: it starts at numbered item
-**#4** with no preamble, because the numbering is intended to continue from
-`/docs/README.md` at the repo root. Readers landing here directly via a
-roadmap link, a code search hit, or a GitHub directory listing see items 4-7
+The rewrite docs index used to be a fragment: it started at numbered item
+**#4** with no preamble, because the numbering was intended to continue from
+`/docs/README.md` at the repo root. Readers landing there directly via a
+roadmap link, a code search hit, or a GitHub directory listing saw items 4-7
 with no anchor.
 
-This plan reshapes that file into an entry point that stands alone, and adds
-the two pieces of orientation that contributors most often need on day one
-but have to reconstruct from scratch today: a pipeline tour and a module
-map.
+R9 (`docs-site-asciidoc`) renumbered the file from `1` and migrated it to
+AsciiDoc as `README.adoc`. What is still missing on day one is the
+orientation a contributor reaches for first and has to reconstruct from
+scratch today: where in the module tree does the code I'm changing live,
+and what stages does it sit between? This plan adds both, in the same file
+that CLAUDE.md and the `reviewer-prompt` skill point at as the canonical
+architectural orientation.
 
 ## Scope
 
-### 1. Drop the inherited numbering
+### 1. Drop the inherited numbering — *done in R9*
 
-Renumber items 1-N within the file, or drop the numbering entirely and
-restructure as a "by purpose" list. Add a one-paragraph preamble naming the
-audience (contributors implementing generators) and a link back to
-`/docs/README.md` for the broader project context.
+R9's AsciiDoc migration renumbered the file from `1` and gave it a real
+top-of-file preamble. Carried here for traceability only; no further work.
 
 ### 2. Add a 30-second pipeline tour
 
-A labelled diagram and one or two sentences per stage:
+A labelled diagram and one or two sentences per stage. The shape:
 
 ```
 .graphqls files
@@ -47,25 +48,25 @@ A labelled diagram and one or two sentences per stage:
                                 Postgres execution verifies behaviour)
 ```
 
-`code-generation-triggers.md` has a similar four-line diagram inside the
+`code-generation-triggers.adoc` has a similar four-line diagram inside the
 "How Classification Works" section, but it stops at the
 `GraphitronSchema → Generators` boundary and does not name the loader, the
 validator, or the writer-and-sweep contract. The new diagram lives in the
 docs index so it is the first thing a contributor sees; the existing
-classification-focused diagram can stay as is, or shrink to a "see the
-end-to-end tour above" pointer.
+classification-focused diagram stays as a zoomed-in view, with a one-line
+pointer up to the end-to-end tour.
 
 ### 3. Add a module map
 
 Eight modules under `graphitron-rewrite/`. Today only `graphitron-javapoet`
-has a README. Add a short table somewhere near the top of the docs index:
+has a README. Add a short table near the top of the docs index:
 
 ```
 graphitron-javapoet         — internal Square JavaPoet fork
 graphitron                  — generator core
 graphitron-fixtures-codegen — produces test-database jOOQ classes
 graphitron-fixtures         — packages those classes for downstream tests
-graphitron-maven            — Maven Mojos (generate, validate, watch, dev)
+graphitron-maven            — Maven Mojos (generate, validate, dev)
 graphitron-test             — compiles + executes generated code (real jOOQ + Postgres)
 graphitron-lsp              — editor LSP server
 roadmap-tool                — regenerates roadmap/README.md
@@ -75,23 +76,44 @@ Per-module `README.md` files are out of scope for this plan; the inline
 table covers the orientation question without inviting per-module README
 drift.
 
-### 4. Add a one-line pointer to a clean Backlog → Done exemplar
+### 4. Add a one-line pointer to a clean Backlog → Done exemplar — *deferred*
 
-`workflow.md` describes the canonical state machine. A new contributor
-calibrating "what does a clean cycle look like in practice?" has to read
-git history. Add one sentence pointing at a recent small example (e.g. the
-`@asConnection` totalCount thread, captured as the top entry in
-[`changelog.md`](../roadmap/changelog.md)) so the workflow doc has a
-concrete anchor.
+`workflow.adoc` describes the canonical state machine. A new contributor
+calibrating "what does a clean cycle look like in practice?" still has to
+read git history. The intent is one sentence pointing at a recent small
+example so the workflow doc has a concrete anchor. Held back from the
+initial Spec so the reviewer can pick the exemplar (the `@asConnection`
+totalCount thread, the `@externalField` ComputedField pass, or whichever
+recent close-out reads cleanest from `changelog.md` at landing time);
+deciding which entry to point at is exactly the decision the workflow doc
+needs help making, so it should not be made by the same party doing the
+docs polish.
+
+## Implementation status
+
+- **Scope #2 (pipeline tour) and #3 (module map) landed** in
+  `graphitron-rewrite/docs/README.adoc` together with the surrounding prose
+  that turns the file into a standalone Architecture page (preamble, the
+  module map "near the top", the pipeline tour, and the existing detailed
+  reference list as a closing index). The pipeline tour text calls out the
+  two non-obvious ordering invariants — `directives.graphqls` injection
+  *before* classification, orphan sweep *after* every emit — that a
+  contributor would otherwise have to reconstruct from `RewriteSchemaLoader`
+  and `GraphQLRewriteGenerator.sweepOrphans` to understand why the stages
+  can't be swapped.
+- **Scope #4 remains open** as the deferred follow-up above; landing it is
+  a separate Spec → Ready cycle (or it ships as a small drive-by during the
+  `In Review → Done` close-out, at the reviewer's discretion).
 
 ## Out of scope
 
 - Per-module READMEs. The inline table is the cheaper answer.
-- Rewriting `code-generation-triggers.md`. Active item
+- Rewriting `code-generation-triggers.adoc`. Active item
   [`docs-as-index-into-tests.md`](docs-as-index-into-tests.md) covers that
   file. This plan should land before that one, so the two passes do not
   edit overlapping paragraphs.
-- `runtime-extension-points.md`. Tracked separately in
-  [`runtime-extension-points-rewrite.md`](runtime-extension-points-rewrite.md).
+- `runtime-extension-points.adoc`. The file already exists; reshaping its
+  body, or deciding whether it joins the detailed-reference list at the
+  bottom of `README.adoc`, is its own concern.
 - Stale legacy references in other rewrite docs. Tracked separately in
   [`fix-legacy-refs-in-rewrite-docs.md`](fix-legacy-refs-in-rewrite-docs.md).
