@@ -17,7 +17,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R1` | `BatchKey` lifter directive | Spec | [plan](batchkey-lifter-directive.md) |
 | `R48` | Stub: `@externalField` resolved-reference path (`ComputedField`) | Spec | [plan](computed-field-with-reference.md) |
 | `R49` | Stub: scalar/`@record`-returning `@service` child field (`ServiceRecordField`) <sub>blocked by: [service-rows-method-body](service-rows-method-body.md)</sub> | Spec | [plan](service-record-field.md) |
-| `R28` | Make `graphitron-rewrite/docs/README.adoc` a real entry point <sub>blocked by: [docs-site-asciidoc](docs-site-asciidoc.md)</sub> | Spec | [plan](rewrite-docs-entrypoint.md) |
 | `R3` | Classification vocabulary follow-ups | Spec | [plan](classification-vocabulary-followups.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec | [plan](nestingfield-multiparent-tablefield.md) |
@@ -32,6 +31,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R12` | Error-handling parity: emit per-fetcher error channels from `@error` <sub>blocked by: [mutations](mutations.md)</sub> | In Progress | [plan](error-handling-parity.md) |
 | `R26` | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` <sub>blocked by: [graphitron-lsp](graphitron-lsp.md)</sub> | In Progress | [plan](retire-maven-plugin.md) |
 | `R9` | Fold graphitron.sikt.no into the Maven build (AsciiDoc + GitHub Pages) | In Progress | [plan](docs-site-asciidoc.md) |
+| `R28` | Make `graphitron-rewrite/docs/README.adoc` a real entry point <sub>blocked by: [docs-site-asciidoc](docs-site-asciidoc.md)</sub> | In Review | [plan](rewrite-docs-entrypoint.md) |
 | `R21` | Load-bearing classifier guarantee audit annotations | In Review | [plan](load-bearing-guarantee-audit.md) |
 
 ---
@@ -140,7 +140,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### docs
 
-- `R28` [**Make `graphitron-rewrite/docs/README.adoc` a real entry point**](rewrite-docs-entrypoint.md) — Spec, cleanup, blocked by [docs-site-asciidoc](docs-site-asciidoc.md)
+- `R28` [**Make `graphitron-rewrite/docs/README.adoc` a real entry point**](rewrite-docs-entrypoint.md) — In Review, cleanup, blocked by [docs-site-asciidoc](docs-site-asciidoc.md)
 - `R15` [**Sweep doc drift between rewrite docs and `model/` taxonomy**](fix-legacy-refs-in-rewrite-docs.md) — Backlog, cleanup, blocked by [docs-site-asciidoc](docs-site-asciidoc.md)
 - `R3` [**Classification vocabulary follow-ups**](classification-vocabulary-followups.md) — Spec
 - `R17` [**Annotated walkthrough of a generated file**](generated-output-walkthrough.md) — Backlog, cleanup, blocked by [rewrite-docs-entrypoint](rewrite-docs-entrypoint.md), [docs-site-asciidoc](docs-site-asciidoc.md)

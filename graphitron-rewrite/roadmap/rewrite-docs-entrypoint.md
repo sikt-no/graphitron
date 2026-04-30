@@ -1,7 +1,7 @@
 ---
 id: R28
 title: Make `graphitron-rewrite/docs/README.adoc` a real entry point
-status: Spec
+status: In Review
 bucket: cleanup
 priority: 3
 theme: docs
@@ -76,18 +76,17 @@ Per-module `README.md` files are out of scope for this plan; the inline
 table covers the orientation question without inviting per-module README
 drift.
 
-### 4. Add a one-line pointer to a clean Backlog → Done exemplar — *deferred*
+### 4. Add a one-line pointer to a clean Backlog → Done exemplar — *shipped*
 
-`workflow.adoc` describes the canonical state machine. A new contributor
-calibrating "what does a clean cycle look like in practice?" still has to
-read git history. The intent is one sentence pointing at a recent small
-example so the workflow doc has a concrete anchor. Held back from the
-initial Spec so the reviewer can pick the exemplar (the `@asConnection`
-totalCount thread, the `@externalField` ComputedField pass, or whichever
-recent close-out reads cleanest from `changelog.md` at landing time);
-deciding which entry to point at is exactly the decision the workflow doc
-needs help making, so it should not be made by the same party doing the
-docs polish.
+`workflow.adoc`'s "Canonical path" section gains one sentence pointing at
+the `computed-field-with-reference` close-out in `changelog.md` as a recent
+worked example. The exemplar was picked by the `In Review` reviewer (an
+independent agent session, not the docs author) per the rule encoded in the
+original Spec: a single-feature `@externalField` → `ComputedField` lift
+spanning classification, validation, generator emit, and execution-tier
+coverage reads cleaner as "what does a clean cycle look like in practice?"
+than the busier R53 / federation / R50 close-outs that surround it in the
+changelog.
 
 ## Implementation status
 
@@ -96,14 +95,16 @@ docs polish.
   that turns the file into a standalone Architecture page (preamble, the
   module map "near the top", the pipeline tour, and the existing detailed
   reference list as a closing index). The pipeline tour text calls out the
-  two non-obvious ordering invariants — `directives.graphqls` injection
-  *before* classification, orphan sweep *after* every emit — that a
+  two non-obvious ordering invariants, `directives.graphqls` injection
+  *before* classification and orphan sweep *after* every emit, that a
   contributor would otherwise have to reconstruct from `RewriteSchemaLoader`
   and `GraphQLRewriteGenerator.sweepOrphans` to understand why the stages
   can't be swapped.
-- **Scope #4 remains open** as the deferred follow-up above; landing it is
-  a separate Spec → Ready cycle (or it ships as a small drive-by during the
-  `In Review → Done` close-out, at the reviewer's discretion).
+- **Scope #4 landed** as a one-sentence pointer at the end of
+  `workflow.adoc`'s "Canonical path" section; exemplar:
+  `computed-field-with-reference`. All scopes are shipped; the plan is
+  ready for `In Review → Done` close-out by a reviewer ≠ the implementers
+  of #2/#3 (1b59f2e author) and ≠ #4 (this In Review flip).
 
 ## Out of scope
 
