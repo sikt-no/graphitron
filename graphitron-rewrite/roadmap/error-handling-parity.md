@@ -151,8 +151,24 @@ dispatch arm lands.
   `payloadCtorParams.type: TypeName`, and resolved `mappedErrorTypes:
   List<GraphitronType.ErrorType>`; `WithErrorChannel` capability interface implemented
   by every fetcher-emitting field variant (`MutationField` permits + `QueryField`
-  service variants). Channel-detection in the carrier classifier is the next bullet
-  and is still pending.
+  service variants).
+- Carrier classifier (§2c continued): `FieldBuilder.resolveErrorChannel` walks the
+  payload's GraphQL field set looking for an `errors`-shaped field, reflects on the
+  developer-supplied payload class's canonical (all-fields) constructor, identifies the
+  unique errors-slot parameter, captures each non-error slot's language default literal,
+  and resolves the `mappingsConstantName` (SCREAMING_SNAKE on the payload class simple
+  name; the §3 dedup hash-suffix lands with `ErrorMappings` emission). Wired into the
+  five `WithErrorChannel` construction sites (`MutationServiceTableField`,
+  `MutationServiceRecordField`, `MutationInsertTableField`,
+  `MutationUpdateTableField`, `MutationDeleteTableField`,
+  `MutationUpsertTableField`, `QueryServiceTableField`,
+  `QueryServiceRecordField`) so the slot is populated whenever the payload qualifies.
+  Currently gated on `ResultReturnType` payloads (`@record`); `@table`-returning
+  fetchers carry an empty channel pending a payload-factory shape for jOOQ Record
+  returns. The errors-slot match identifies the unique constructor parameter whose
+  element type's simple name is `GraphitronError`; the full marker-interface
+  enforcement (every `@error` class implements `GraphitronError`) lands later
+  alongside the SDL→class lookup for `@error` types.
 - `TypeBuilder.buildErrorType` wears `@LoadBearingClassifierCheck(key =
   "error-type.path-message-fields")` (the producer side; the consumer annotation lands
   with the dispatch arm).
@@ -167,9 +183,6 @@ dispatch arm lands.
 
 **Remaining work:**
 
-- Carrier classifier produces `ErrorChannel` per the channel-detection rules in §2c;
-  populates `payloadCtorParams` from the developer-supplied payload class's all-fields
-  constructor; resolves the per-channel `mappingsConstantName`.
 - `TypeBuilder.parseErrorHandler` lifts SDL `ErrorHandler` entries to the sealed
   variants per §1's table; the nine reject rules (intra-type and channel-level,
   including the validation-shadowing rule and the `path`/`message`-only structural
