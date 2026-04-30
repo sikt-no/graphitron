@@ -74,7 +74,11 @@ runtime artefact carries a Level number, so the rename is doc-only.
 
 ### File contents (one section per tier + a dispatcher)
 
-The file's job is dispatch, not duplication of policy. Five sections:
+The file's job is dispatch, not duplication of policy. The sections
+are: a decision rubric, one section per tier (unit, pipeline,
+compilation, execution), a "Cross-cutting tests in `graphitron-test`"
+note that classifies the tests living there for module-dependency
+reasons, and a build-commands recap.
 
 **Choosing a tier (decision rubric).** A short flowchart for "I have a
 new behaviour I want covered, which tier owns it?". The rubric reads
@@ -98,12 +102,27 @@ top-down and stops at the first match:
   `*Test` next to the production class, or a new case in a
   `*ValidationTest` for validator rules.
 
-When two tiers could apply, prefer the higher one — pipeline over unit,
-execution over compilation. The principles doc already states this for
-the unit/pipeline boundary ("Per-variant structural tests ... are
+When two tiers could apply, prefer the one that captures the behaviour
+most directly. Pipeline beats unit (per-variant structural tests are
 bookkeeping; the primary signal that a feature works is that a
 realistic SDL produces a realistic `TypeSpec` end-to-end through the
-classifier"); the rubric extends it down the stack.
+classifier — this is the principles doc's standing rule). Pipeline
+also beats compilation and execution where the behaviour can be
+asserted on the classified model or `TypeSpec` shape, since pipeline
+runs without jOOQ codegen or Postgres. Execution beats compilation
+only when SQL behaviour or row content is the contract; pure
+type-correctness goes to compilation, which is cheaper.
+
+*Tier is determined by what's asserted, not by what module the file
+lives in.* `graphitron-test` hosts tests at every tier — its module
+dependency on the post-generator artifacts (compiled output,
+generated source files, the fixture jOOQ catalog) is the reason
+those tests live there, not a tier signal. A test that imports a
+generated class and asserts on it in-memory is unit-tier even if it
+lives in `graphitron-test` (`ScatterSingleByIdxTest`); a test that
+asserts schema-construction shape is pipeline-tier even if it uses a
+fixture-derived generated facade (`FederationBuildSmokeTest`,
+`NoFederationRegressionTest`).
 
 **Unit.** Structural invariants on individual classifiers, builders,
 emitters, and runtime helpers. Where: `graphitron/src/test/java/...`
@@ -156,7 +175,10 @@ checks on top of the same compile output:
 
 **Execution against PostgreSQL.** Full request → SQL → row round-trip.
 Where: `graphitron-test`, run with `mvn test -f
-graphitron-rewrite/pom.xml -pl :graphitron-test -Plocal-db`. Patterns:
+graphitron-rewrite/pom.xml -pl :graphitron-test -Plocal-db`. Canonical
+classes: `GraphQLQueryTest` (and its split companions on the shared
+fixture); `FederationEntitiesDispatchTest` on the federated fixture.
+Patterns:
 
 - JDBC round-trip count via the `QUERY_COUNT` listener
   (`AtomicInteger` reset per test to assert DataLoader batching or
@@ -167,15 +189,31 @@ graphitron-rewrite/pom.xml -pl :graphitron-test -Plocal-db`. Patterns:
   `SQL_LOG` (e.g. that no `select count` ran when `totalCount` was not
   selected).
 
-The execution tier also hosts cross-cutting ratchets that do not fit
-into a per-fetcher class: `GeneratorDeterminismTest` (deterministic +
-minimal-change writes + clean orphan removal across the full fixture
-schema, today's javadoc names this "Pipeline-tier ratchet" — rename to
-"Execution-tier ratchet" since the test exercises a real generator run
-end-to-end against the fixture, not a pipeline-tier
-classifier-to-TypeSpec assertion), `FederationBuildSmokeTest`,
-`FederationEntitiesDispatchTest`, `NoFederationRegressionTest`,
-`ScatterSingleByIdxTest`.
+**Cross-cutting tests in `graphitron-test`.** Several tests live in
+`graphitron-test` for module-dependency reasons but classify by
+assertion, not by module:
+
+- `GeneratedSourcesSmokeTest`, `GeneratedSourcesLintTest` — compilation
+  tier (consume the compile output; see the compilation section above).
+- `FederationBuildSmokeTest`, `NoFederationRegressionTest` —
+  pipeline-tier shape (schema-construction assertions on the
+  fixture-derived generated facade; no SQL). They live in
+  `graphitron-test` because they import the generated `Graphitron`
+  facade.
+- `ScatterSingleByIdxTest` — unit-tier (its own javadoc: "Direct unit
+  coverage ... fully in-memory"; lives in `graphitron-test` because it
+  reflects against a generated `*Fetchers` class).
+- `GeneratorDeterminismTest` — system-level ratchet for the
+  three-clause writer contract (determinism + minimal-change writes +
+  clean orphan removal). Runs the generator against the fixture schema
+  and asserts on the written file tree. It is the full-system
+  counterpart to the unit-level `IdempotentWriterTest`; it does not
+  fit "pipeline" (no classifier-to-TypeSpec assertion), "compilation"
+  (no compile happens), or "execution" (no SQL). Today's javadoc
+  labels it "Pipeline-tier ratchet"; replace with "Generator
+  end-to-end ratchet (companion to `IdempotentWriterTest`)" — that
+  description is accurate and avoids forcing it into the four tier
+  names.
 
 **Build commands.** A four-line summary lifted from
 `.claude/web-environment.md` for tier-by-tier convenience, each
@@ -199,15 +237,23 @@ their tier-naming responsibility:
   the fixtures-jar clobber recovery as is. Adds a one-line "for what
   each tier asserts and where its files live, see
   `docs/testing.adoc`".
-- Per-test javadocs — drop "Level N" wording in the seven affected
-  classes (`GraphitronSchemaBuilderTest`, `FieldValidationTestHelper`,
-  `GeneratedSourcesSmokeTest`, plus four to scan for the rename:
-  `IdempotentWriterTest`, `GeneratorDeterminismTest`,
-  `TypeFetcherGeneratorTest`, `TestExternalFieldStub`'s
-  "classifier-tier" wording). The replacement reads "Pipeline-tier"
-  / "Unit-tier" / "Compilation-tier" / "Execution-tier" with no
-  number, and points at `docs/testing.adoc` once at the file head
-  rather than re-explaining the tier in each class.
+- Per-test javadocs — seven javadocs to update, in two groups:
+  - *Three with explicit "Level N" numbering to drop:*
+    `FieldValidationTestHelper` ("Level 1"),
+    `GraphitronSchemaBuilderTest` ("Level 2"),
+    `GeneratedSourcesSmokeTest` ("Level 5").
+  - *Four with mismatched tier prose to align:* `IdempotentWriterTest`
+    ("pipeline-tier" cross-reference), `TypeFetcherGeneratorTest`
+    ("Unit tests for X"; also "execution-tier" cross-reference, fine
+    as is), `TestExternalFieldStub` ("classifier-tier"),
+    `GeneratorDeterminismTest` ("Pipeline-tier ratchet" → "Generator
+    end-to-end ratchet"; see Cross-cutting tests above for rationale).
+
+  The replacement reads "Pipeline-tier" / "Unit-tier" /
+  "Compilation-tier" / "Execution-tier" (or the one cross-cutting
+  label for `GeneratorDeterminismTest`) with no Level number, and
+  points at `docs/testing.adoc` once at the file head rather than
+  re-explaining the tier in each class.
 
 ### Implementation
 
@@ -223,8 +269,12 @@ inside the commit:
    policy claims in place (pipeline is primary, code-string body
    matching is banned).
 3. Add a one-line pointer in `.claude/web-environment.md`.
-4. Sweep the seven affected javadocs to drop "Level N" / rename
-   "Pipeline-tier" → "Execution-tier" on `GeneratorDeterminismTest`.
+4. Sweep the seven affected javadocs (three with Level N, four with
+   mismatched tier prose; specific list under "Cross-link
+   adjustments" above). Reword `GeneratorDeterminismTest` from
+   "Pipeline-tier ratchet" to "Generator end-to-end ratchet"; this
+   test is cross-cutting and does not classify into the four tier
+   names.
 5. Add the new file to `docs/README.adoc`'s "Detailed reference" list
    (between `rewrite-design-principles.adoc` and `argument-resolution.adoc`,
    since it is principles-adjacent).
