@@ -1,7 +1,7 @@
 ---
 id: R53
 title: "ExternalCodeReference.argMapping for Java-param binding"
-status: Ready
+status: In Review
 bucket: architecture
 priority: 5
 theme: service
@@ -66,16 +66,17 @@ are settled):**
   surface as a `ServiceReflectionResult` failure with directive site, target,
   and available parameter list. R41 plan step 5b. R53 wires the same guard
   to the new `argMapping` source.
-- `@field(javaName:)` deletion: directive arg, `ARG_JAVA_NAME` constant,
-  `assertDirective` call (`GraphitronSchemaBuilder.java:592`), the
-  `javaNamePresent` boolean on `ColumnField` / `ColumnReferenceField`, the two
-  validator branches at `GraphitronSchemaValidator.java:327-342`, and the
-  placeholder comment at line 237. R41 Proposal §2; orthogonal cleanup that
-  R53 lands in the same change.
-- `@field` directive docstring rewrite at `directives.graphqls:15-22`,
-  dropping the stale "jOOQ table record fields" / "Java records" framing.
-  R53 lands the rewritten docstring with the Java-method-parameter line
-  pointing at `argMapping` rather than at `@field(name:)` per-arg.
+- `@field` directive docstring rewrite at `directives.graphqls:15-22`:
+  the line "On ARGUMENT_DEFINITION of an @service / @tableMethod argument,
+  the Java method parameter to bind to" is R41's per-arg semantic. R53
+  retires that interpretation, so the docstring drops the bullet entirely
+  (the column-binding axis on filter args is the sole remaining
+  ARGUMENT_DEFINITION meaning of `@field(name:)`).
+
+(R41's `@field(javaName:)` form was discussed in earlier drafts but never
+landed in the tree, so there is no `ARG_JAVA_NAME` constant or
+`javaNamePresent` boolean to delete; the rollback is observable as the
+absence of those names.)
 
 **Drop from R41's reviewed plan (R53 deliberately does not do these):**
 

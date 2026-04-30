@@ -17,8 +17,10 @@ Names the underlying-binding target for the annotated GraphQL slot. The axis is 
 directive site:
 - On FIELD_DEFINITION / INPUT_FIELD_DEFINITION of a @table-backed type, the column to bind to.
 - On ARGUMENT_DEFINITION of an @table-backed filter argument, the column to bind to.
-- On ARGUMENT_DEFINITION of an @service / @tableMethod argument, the Java method parameter to bind to.
 - On ENUM_VALUE, the database string (or, where applicable, the Java enum constant) the value maps to.
+
+For Java-method-parameter binding on @service / @tableMethod / @condition arguments, use
+`ExternalCodeReference.argMapping` on the directive itself.
 """
 directive @field(name: String!) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE
 
@@ -219,6 +221,25 @@ input ExternalCodeReference {
     className: String
     """Navnet på metoden man ønsker å referere til."""
     method: String
+    """
+    Maps Java method parameters to GraphQL argument names. Each entry is
+    `javaParam: graphqlArg`; multiple entries are comma-separated. Unmentioned
+    parameters bind to a GraphQL argument of the same name (identity).
+
+    Use on `@service`, `@tableMethod`, and every `@condition` site (field-level,
+    argument-level, input-field-level, path-step). On `@condition` filter sites
+    the same argument's `@field(name:)` continues to drive column binding for
+    auto-equality; the two axes coexist on the same slot. Structurally inert
+    on `@externalField`, `@enum`, and `@record` (rejected at parse time).
+
+    Whitespace around `:` and `,` is permitted; multi-line text-block input is
+    accepted. Empty string is identity for every parameter.
+
+    Examples:
+    - `argMapping: "inputs: input"` — Java parameter `inputs` receives GraphQL arg `input`.
+    - `argMapping: "city: cityNames, country: countryId"` — two overrides.
+    """
+    argMapping: String
 }
 
 input ReferenceElement {

@@ -117,12 +117,13 @@ type Query {
             className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
             method: "filmsByService"
         })
-    # R41 (service-arg-java-name-override.md): GraphQL arg `ids` binds to the Java parameter
-    # `filmIds` via @field(name:); SampleQueryService.filmsByServiceRenamed(DSLContext, List<Integer> filmIds).
-    filmsByServiceRenamed(ids: [Int!]! @field(name: "filmIds")): [Film!]!
+    # R53 (external-code-reference-arg-mapping.md): GraphQL arg `ids` binds to the Java parameter
+    # `filmIds` via argMapping; SampleQueryService.filmsByServiceRenamed(DSLContext, List<Integer> filmIds).
+    filmsByServiceRenamed(ids: [Int!]!): [Film!]!
         @service(service: {
             className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
-            method: "filmsByServiceRenamed"
+            method: "filmsByServiceRenamed",
+            argMapping: "filmIds: ids"
         })
     # plan-service-root-fetchers.md: @service root fetcher with scalar return.
     filmCount: Int!

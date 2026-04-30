@@ -370,7 +370,7 @@ class ServiceCatalogTest {
             .contains("Film");
     }
 
-    // ===== R41: @field(name:) override on argument site =====
+    // ===== R53: argMapping override on directive site =====
 
     @Test
     void reflectServiceMethod_argByJavaName_override_bindsJavaNameToArgName() {
@@ -420,8 +420,8 @@ class ServiceCatalogTest {
 
         assertThat(result.failed()).isTrue();
         assertThat(result.failureReason())
-            .contains("@field(name: \"missing\")")
-            .contains("argument 'input'")
+            .contains("argMapping entry 'missing: input'")
+            .contains("references Java parameter 'missing'")
             .contains("inputs")
             .contains("dryRun");
     }
@@ -454,8 +454,7 @@ class ServiceCatalogTest {
 
         assertThat(result.failed()).isTrue();
         assertThat(result.failureReason())
-            .contains("@field(name: \"table\")")
-            .contains("argument 'input'")
+            .contains("argMapping entry 'table: input'")
             .contains("Table<?>");
     }
 
