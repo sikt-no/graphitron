@@ -1865,6 +1865,33 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void nodes_perTypeIdBatch_emitsValuesJoinOrderByIdxShape() {
+        // R50 phase (f-E): the per-typeId batch emission is asserted to be the lookup shape
+        // (VALUES + JOIN + ORDER BY idx) rather than the legacy `WHERE row-IN`. Catches
+        // regressions where EntityFetcherDispatch falls back to the old form. See
+        // lift-nodeid-out-of-model.md "Query.nodes folds onto the lookup pipeline".
+        String c1 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 1);
+        String c2 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 2);
+        String c3 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 3);
+        SQL_LOG.clear();
+        execute("{ nodes(ids: [\"" + c1 + "\", \"" + c2 + "\", \"" + c3 + "\"]) {"
+            + " __typename ... on Customer { firstName } } }");
+        // SQL_LOG entries are already lowercased by the ExecuteListener at line ~67. jOOQ
+        // renders "public"."customer" with quoted identifiers; match on `customer` to span
+        // both quoted and unquoted forms.
+        assertThat(SQL_LOG)
+            .as("per-typeId Query.nodes batch must use the lookup-shape (VALUES + JOIN + ORDER BY idx)")
+            .anyMatch(s -> s.contains("\"customer\"")
+                && s.contains("values (")
+                && s.contains("join ")
+                && s.contains("order by"));
+        // Negative pin: no statement falls back to the legacy WHERE row-IN keyset filter.
+        assertThat(SQL_LOG)
+            .as("no Query.nodes statement should regress to the legacy WHERE row-IN form")
+            .noneMatch(s -> s.contains("\"customer\"") && s.contains("\"customer_id\" in ("));
+    }
+
+    @Test
     void nodes_paddedBase64Id_canonicalizesAndResolves() {
         // Regression test for the canonicalisation fix: encoder emits no-padding URL base64,
         // but the decoder accepts padded input where the total length is 4-byte-aligned.
