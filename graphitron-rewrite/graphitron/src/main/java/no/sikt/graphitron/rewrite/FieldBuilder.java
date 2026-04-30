@@ -187,10 +187,11 @@ class FieldBuilder {
             return new ServiceResolution(null, null, "service method could not be resolved — " + serviceRef.lookupError());
         }
         List<String> contextArgs = parseContextArguments(fieldDef, DIR_SERVICE);
-        var argMapResult = buildArgByJavaName(fieldDef);
-        if (argMapResult.errorMessage() != null) {
-            return new ServiceResolution(null, null, "service method could not be resolved — " + argMapResult.errorMessage());
+        var argBindingsResult = ArgBindingMap.forField(fieldDef);
+        if (argBindingsResult instanceof ArgBindingMap.Result.Collision c) {
+            return new ServiceResolution(null, null, "service method could not be resolved — " + c.message());
         }
+        var argBindings = ((ArgBindingMap.Result.Ok) argBindingsResult).map();
         // Strict return-type validation applies to root @service fields only (parentPkColumns empty).
         // Child @service uses DataLoader-batched semantics where the method takes Sources keys and
         // returns a flat or keyed shape that doesn't directly match the field's return type — that
@@ -200,42 +201,11 @@ class FieldBuilder {
             ? computeExpectedServiceReturnType(returnType)
             : null;
         var result = svc.reflectServiceMethod(serviceRef.className(), serviceRef.methodName(),
-            argMapResult.map(), new java.util.HashSet<>(contextArgs), parentPkColumns, expectedReturnType);
+            argBindings, new java.util.HashSet<>(contextArgs), parentPkColumns, expectedReturnType);
         if (result.failed()) {
             return new ServiceResolution(null, null, "service method could not be resolved — " + result.failureReason());
         }
         return new ServiceResolution(enrichArgExtractions(result.ref(), fieldDef), returnType, null);
-    }
-
-    /**
-     * Result of {@link #buildArgByJavaName}: either a populated map (Java-target → GraphQL-arg)
-     * or a non-null {@code errorMessage} when {@code @field(name:)} overrides on the field's
-     * arguments produce a collision (two arguments target the same Java parameter name).
-     */
-    record ArgByJavaNameResult(Map<String, String> map, String errorMessage) {}
-
-    /**
-     * Builds the {@code argByJavaName} map for a field definition: each argument contributes one
-     * entry whose key is the Java-target parameter name (the {@code @field(name:)} override when
-     * present, otherwise the argument's own name) and whose value is the GraphQL argument name.
-     *
-     * <p>Pre-reflection collision detection: two arguments mapping to the same Java target produce
-     * an immediate error naming both arguments and the contested target.
-     */
-    private ArgByJavaNameResult buildArgByJavaName(GraphQLFieldDefinition fieldDef) {
-        var map = new java.util.LinkedHashMap<String, String>();
-        for (var arg : fieldDef.getArguments()) {
-            String argName = arg.getName();
-            String javaTarget = argString(arg, DIR_FIELD, ARG_NAME).orElse(argName);
-            String existingArg = map.put(javaTarget, argName);
-            if (existingArg != null) {
-                return new ArgByJavaNameResult(null,
-                    "arguments '" + existingArg + "' and '" + argName
-                    + "' both target Java parameter '" + javaTarget
-                    + "' — adjust @field(name:) so each Java parameter is targeted by at most one argument");
-            }
-        }
-        return new ArgByJavaNameResult(map, null);
     }
 
     /**
@@ -984,16 +954,19 @@ class FieldBuilder {
 
     /**
      * Builds an {@link ArgConditionRef} from a {@code @condition} directive on one GraphQL argument.
-     * Reflects the condition method via {@link ServiceCatalog#reflectTableMethod} with the arg's
-     * name in {@code argNames} and any declared {@code contextArguments} in {@code ctxKeys}.
-     * Appends an error and returns {@link Optional#empty()} on reflection failure.
+     * Reflects the condition method via {@link ServiceCatalog#reflectTableMethod} with identity
+     * binding for that argument; any declared {@code contextArguments} go in {@code ctxKeys}.
+     * {@code @field(name:)} on the argument carries column-binding semantics for the auto-equality
+     * path, not Java-parameter override, so this site uses
+     * {@link ArgBindingMap#identityForSingleArg}. Appends an error and returns
+     * {@link Optional#empty()} on reflection failure.
      */
     private Optional<ArgConditionRef> buildArgCondition(GraphQLArgument arg, List<String> errors) {
         var cond = ctx.readConditionDirective(arg);
         if (cond == null) return Optional.empty();
         var argName = arg.getName();
         var result = svc.reflectTableMethod(cond.className(), cond.methodName(),
-            Map.of(argName, argName), Set.copyOf(cond.contextArguments()), null);
+            ArgBindingMap.identityForSingleArg(arg), Set.copyOf(cond.contextArguments()), null);
         if (result.failed()) {
             errors.add("argument '" + argName + "' @condition: " + result.failureReason());
             return Optional.empty();
@@ -1006,18 +979,18 @@ class FieldBuilder {
 
     /**
      * Builds a field-level {@link ConditionFilter} from a {@code @condition} directive on the
-     * field definition. Reflects via {@link ServiceCatalog#reflectTableMethod} with every field
-     * argument name in {@code argNames} and any declared {@code contextArguments}. Returns
-     * {@code null} when the directive is absent or reflection fails (error appended).
+     * field definition. Reflects via {@link ServiceCatalog#reflectTableMethod} with identity
+     * binding for every field argument; any declared {@code contextArguments} go in
+     * {@code ctxKeys}. {@code @field(name:)} on filter arguments carries column-binding
+     * semantics, not Java-parameter override, so this site uses
+     * {@link ArgBindingMap#identityForField}. Returns {@code null} when the directive is absent
+     * or reflection fails (error appended).
      */
     private ConditionFilter buildFieldCondition(GraphQLFieldDefinition fieldDef, List<String> errors) {
         var cond = ctx.readConditionDirective(fieldDef);
         if (cond == null) return null;
-        var argByJavaName = fieldDef.getArguments().stream()
-            .map(GraphQLArgument::getName)
-            .collect(Collectors.toMap(n -> n, n -> n, (a, b) -> a, java.util.LinkedHashMap::new));
         var result = svc.reflectTableMethod(cond.className(), cond.methodName(),
-            argByJavaName, Set.copyOf(cond.contextArguments()), null);
+            ArgBindingMap.identityForField(fieldDef), Set.copyOf(cond.contextArguments()), null);
         if (result.failed()) {
             errors.add("field '" + fieldDef.getName() + "' @condition: " + result.failureReason());
             return null;
@@ -1671,11 +1644,12 @@ class FieldBuilder {
                 return new GraphitronField.UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
                     "table method could not be resolved — " + qtmRef.lookupError());
             }
-            var qtmArgMap = buildArgByJavaName(fieldDef);
-            if (qtmArgMap.errorMessage() != null) {
+            var qtmArgBindingsResult = ArgBindingMap.forField(fieldDef);
+            if (qtmArgBindingsResult instanceof ArgBindingMap.Result.Collision qtmCollision) {
                 return new GraphitronField.UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
-                    "table method could not be resolved — " + qtmArgMap.errorMessage());
+                    "table method could not be resolved — " + qtmCollision.message());
             }
+            var qtmArgBindings = ((ArgBindingMap.Result.Ok) qtmArgBindingsResult).map();
             List<String> qtmCtxArgs = parseContextArguments(fieldDef, DIR_TABLE_METHOD);
             // Invariants §3 (return-type strictness): the developer's @tableMethod must return
             // the generated jOOQ table class exactly, not a wider Table<R>. Computed from the
@@ -1685,7 +1659,7 @@ class FieldBuilder {
             var qtmResult = svc.reflectTableMethod(
                 qtmRef != null ? qtmRef.className() : null,
                 qtmRef != null ? qtmRef.methodName() : null,
-                qtmArgMap.map(), new java.util.HashSet<>(qtmCtxArgs),
+                qtmArgBindings, new java.util.HashSet<>(qtmCtxArgs),
                 expectedReturnClass);
             if (qtmResult.failed()) {
                 return new GraphitronField.UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
@@ -2322,11 +2296,12 @@ class FieldBuilder {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
                     "table method could not be resolved — " + tmRef.lookupError());
             }
-            var tmArgMap = buildArgByJavaName(fieldDef);
-            if (tmArgMap.errorMessage() != null) {
+            var tmArgBindingsResult = ArgBindingMap.forField(fieldDef);
+            if (tmArgBindingsResult instanceof ArgBindingMap.Result.Collision tmCollision) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
-                    "table method could not be resolved — " + tmArgMap.errorMessage());
+                    "table method could not be resolved — " + tmCollision.message());
             }
+            var tmArgBindings = ((ArgBindingMap.Result.Ok) tmArgBindingsResult).map();
             List<String> tmCtxArgs = parseContextArguments(fieldDef, DIR_TABLE_METHOD);
             // Invariants §3 (return-type strictness) — applies to child @tableMethod too.
             ClassName tmExpectedReturnClass = returnType instanceof ReturnTypeRef.TableBoundReturnType tbr
@@ -2335,7 +2310,7 @@ class FieldBuilder {
             var tmResult = svc.reflectTableMethod(
                 tmRef != null ? tmRef.className() : null,
                 tmRef != null ? tmRef.methodName() : null,
-                tmArgMap.map(), new java.util.HashSet<>(tmCtxArgs),
+                tmArgBindings, new java.util.HashSet<>(tmCtxArgs),
                 tmExpectedReturnClass);
             if (tmResult.failed()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,

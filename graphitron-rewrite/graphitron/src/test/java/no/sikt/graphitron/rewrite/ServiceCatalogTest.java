@@ -42,10 +42,15 @@ class ServiceCatalogTest {
         return new ServiceCatalog(new BuildContext(null, null, null));
     }
 
+    /** Test-side shorthand: wrap a raw Java-target → GraphQL-arg map as an {@link ArgBindingMap}. */
+    private static ArgBindingMap bindings(Map<String, String> map) {
+        return new ArgBindingMap(map);
+    }
+
     @Test
     void reflectServiceMethod_dslContextParam_classifiedAsDslContextSource() {
         var result = newCatalog().reflectServiceMethod(
-            STUB_CLASS, "getByIdWithDsl", Map.of("id", "id"), Set.of(), List.of(), null);
+            STUB_CLASS, "getByIdWithDsl", bindings(Map.of("id", "id")), Set.of(), List.of(), null);
 
         assertThat(result.failed()).isFalse();
         var params = result.ref().params();
@@ -60,7 +65,7 @@ class ServiceCatalogTest {
     @Test
     void reflectServiceMethod_dslContextOnly_noArgs() {
         var result = newCatalog().reflectServiceMethod(
-            STUB_CLASS, "getWithDsl", Map.of(), Set.of(), List.of(), null);
+            STUB_CLASS, "getWithDsl", bindings(Map.of()), Set.of(), List.of(), null);
 
         assertThat(result.failed()).isFalse();
         var params = result.ref().params();
@@ -72,7 +77,7 @@ class ServiceCatalogTest {
     @Test
     void reflectServiceMethod_dslContextParamNameCollidesWithArg_typeWins() {
         var result = newCatalog().reflectServiceMethod(
-            STUB_CLASS, "getFilteredWithDsl", Map.of("filter", "filter"), Set.of(), List.of(), null);
+            STUB_CLASS, "getFilteredWithDsl", bindings(Map.of("filter", "filter")), Set.of(), List.of(), null);
 
         assertThat(result.failed()).isFalse();
         var params = result.ref().params();
@@ -86,7 +91,7 @@ class ServiceCatalogTest {
         // here, so an unrecognized-shape parameter still falls through to the SOURCES error.
         var filmPk = List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"));
         var result = newCatalog().reflectServiceMethod(
-            STUB_CLASS, "getWithUnknown", Map.of(), Set.of(), filmPk, null);
+            STUB_CLASS, "getWithUnknown", bindings(Map.of()), Set.of(), filmPk, null);
 
         assertThat(result.failed()).isTrue();
         assertThat(result.failureReason()).contains("unrecognized sources type");
@@ -98,7 +103,7 @@ class ServiceCatalogTest {
         // cannot apply, so the rejection points at the actual problem (parameter name doesn't
         // match any GraphQL argument or context key) rather than mentioning sources at all.
         var result = newCatalog().reflectServiceMethod(
-            STUB_CLASS, "getWithUnknown", Map.of(), Set.of(), List.of(), null);
+            STUB_CLASS, "getWithUnknown", bindings(Map.of()), Set.of(), List.of(), null);
 
         assertThat(result.failed()).isTrue();
         assertThat(result.failureReason())
@@ -112,7 +117,7 @@ class ServiceCatalogTest {
     void reflectServiceMethod_tableRecordSources_classifiedAsRowKeyed() {
         var filmPk = List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"));
         var result = newCatalog().reflectServiceMethod(
-            STUB_CLASS, "getFilmsWithTableRecordSources", Map.of(), Set.of(), filmPk, null);
+            STUB_CLASS, "getFilmsWithTableRecordSources", bindings(Map.of()), Set.of(), filmPk, null);
 
         assertThat(result.failed()).isFalse();
         var sourced = result.ref().params().stream()
@@ -130,7 +135,7 @@ class ServiceCatalogTest {
         // and the missing piece is a DTO-to-key conversion, the feature roadmap/R1 will add.
         var filmPk = List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"));
         var result = newCatalog().reflectServiceMethod(
-            STUB_CLASS, "getFilmsWithDtoSources", Map.of(), Set.of(), filmPk, null);
+            STUB_CLASS, "getFilmsWithDtoSources", bindings(Map.of()), Set.of(), filmPk, null);
 
         assertThat(result.failed()).isTrue();
         assertThat(result.failureReason())
@@ -145,7 +150,7 @@ class ServiceCatalogTest {
         // who really just have a Java-param-name vs. GraphQL-argument-name mismatch (the most
         // common cause). Surface the name mismatch directly.
         var result = newCatalog().reflectServiceMethod(
-            STUB_CLASS, "getFilmsWithDtoSources", Map.of("inputs", "inputs"), Set.of(), List.of(), null);
+            STUB_CLASS, "getFilmsWithDtoSources", bindings(Map.of("inputs", "inputs")), Set.of(), List.of(), null);
 
         assertThat(result.failed()).isTrue();
         assertThat(result.failureReason())
@@ -162,7 +167,7 @@ class ServiceCatalogTest {
         // List<InputDto> argument whose Java parameter name matches the GraphQL argument
         // name. This is what users hit on root operation fields once the name lines up.
         var result = newCatalog().reflectServiceMethod(
-            STUB_CLASS, "getFilmsWithDtoSources", Map.of("keys", "keys"), Set.of(), List.of(), null);
+            STUB_CLASS, "getFilmsWithDtoSources", bindings(Map.of("keys", "keys")), Set.of(), List.of(), null);
 
         assertThat(result.failed()).isFalse();
         var params = result.ref().params();
@@ -177,7 +182,7 @@ class ServiceCatalogTest {
         // sorted, so users can spot typos. Multiple names exercise the join formatter.
         var result = newCatalog().reflectServiceMethod(
             STUB_CLASS, "getWithUnknown",
-            java.util.Map.of("inputs", "inputs", "filter", "filter"), Set.of("tenantId", "locale"), List.of(), null);
+            bindings(Map.of("inputs", "inputs", "filter", "filter")), Set.of("tenantId", "locale"), List.of(), null);
 
         assertThat(result.failed()).isTrue();
         assertThat(result.failureReason())
@@ -189,7 +194,7 @@ class ServiceCatalogTest {
     void reflectServiceMethod_listOfRecord1Sources_classifiedAsRecordKeyed() {
         var filmPk = List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"));
         var result = newCatalog().reflectServiceMethod(
-            STUB_CLASS, "getFilmsWithListOfRecord1Sources", Map.of(), Set.of(), filmPk, null);
+            STUB_CLASS, "getFilmsWithListOfRecord1Sources", bindings(Map.of()), Set.of(), filmPk, null);
 
         assertThat(result.failed()).isFalse();
         var sourced = result.ref().params().stream()
@@ -204,7 +209,7 @@ class ServiceCatalogTest {
     void reflectServiceMethod_setOfTableRecordSources_classifiedAsMappedRowKeyed() {
         var filmPk = List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"));
         var result = newCatalog().reflectServiceMethod(
-            STUB_CLASS, "getFilmsWithSetOfTableRecordSources", Map.of(), Set.of(), filmPk, null);
+            STUB_CLASS, "getFilmsWithSetOfTableRecordSources", bindings(Map.of()), Set.of(), filmPk, null);
 
         assertThat(result.failed()).isFalse();
         var sourced = result.ref().params().stream()
@@ -219,7 +224,7 @@ class ServiceCatalogTest {
     void reflectServiceMethod_setOfRow1Sources_classifiedAsMappedRowKeyed() {
         var filmPk = List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"));
         var result = newCatalog().reflectServiceMethod(
-            STUB_CLASS, "getFilmsWithSetOfRow1Sources", Map.of(), Set.of(), filmPk, null);
+            STUB_CLASS, "getFilmsWithSetOfRow1Sources", bindings(Map.of()), Set.of(), filmPk, null);
 
         assertThat(result.failed()).isFalse();
         var sourced = result.ref().params().stream()
@@ -234,7 +239,7 @@ class ServiceCatalogTest {
     void reflectServiceMethod_setOfRecord1Sources_classifiedAsMappedRecordKeyed() {
         var filmPk = List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"));
         var result = newCatalog().reflectServiceMethod(
-            STUB_CLASS, "getFilmsWithSetOfRecord1Sources", Map.of(), Set.of(), filmPk, null);
+            STUB_CLASS, "getFilmsWithSetOfRecord1Sources", bindings(Map.of()), Set.of(), filmPk, null);
 
         assertThat(result.failed()).isFalse();
         var sourced = result.ref().params().stream()
@@ -252,7 +257,7 @@ class ServiceCatalogTest {
         // fallback.
         var filmPk = List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"));
         var result = newCatalog().reflectServiceMethod(
-            STUB_CLASS, "getFilmsWithSetOfDtoSources", Map.of(), Set.of(), filmPk, null);
+            STUB_CLASS, "getFilmsWithSetOfDtoSources", bindings(Map.of()), Set.of(), filmPk, null);
 
         assertThat(result.failed()).isTrue();
         assertThat(result.failureReason())
@@ -267,7 +272,7 @@ class ServiceCatalogTest {
         // expectedReturnType=null path: no validation; the captured TypeName on MethodRef.Basic
         // is whatever reflection saw, regardless of shape.
         var result = newCatalog().reflectServiceMethod(
-            STUB_CLASS, "getFilms", Map.of(), Set.of(), List.of(), null);
+            STUB_CLASS, "getFilms", bindings(Map.of()), Set.of(), List.of(), null);
 
         assertThat(result.failed()).isFalse();
         assertThat(result.ref().returnType())
@@ -278,7 +283,7 @@ class ServiceCatalogTest {
     void reflectServiceMethod_matchingParameterizedExpected_succeeds() {
         var expected = ParameterizedTypeName.get(JOOQ_RESULT, FILM_RECORD);
         var result = newCatalog().reflectServiceMethod(
-            STUB_CLASS, "getFilms", Map.of(), Set.of(), List.of(), expected);
+            STUB_CLASS, "getFilms", bindings(Map.of()), Set.of(), List.of(), expected);
 
         assertThat(result.failed()).isFalse();
         assertThat(result.ref().returnType()).isEqualTo(expected);
@@ -289,7 +294,7 @@ class ServiceCatalogTest {
         // Single-cardinality field expects FilmRecord; method returns String — mismatch on the
         // raw outer class.
         var result = newCatalog().reflectServiceMethod(
-            STUB_CLASS, "get", Map.of(), Set.of(), List.of(), FILM_RECORD);
+            STUB_CLASS, "get", bindings(Map.of()), Set.of(), List.of(), FILM_RECORD);
 
         assertThat(result.failed()).isTrue();
         assertThat(result.failureReason())
@@ -305,7 +310,7 @@ class ServiceCatalogTest {
         // catch this — a raw-class-only check would let it slip through.
         var expected = ParameterizedTypeName.get(JOOQ_RESULT, FILM_RECORD);
         var result = newCatalog().reflectServiceMethod(
-            STUB_CLASS, "getLanguages", Map.of(), Set.of(), List.of(), expected);
+            STUB_CLASS, "getLanguages", bindings(Map.of()), Set.of(), List.of(), expected);
 
         assertThat(result.failed()).isTrue();
         assertThat(result.failureReason())
@@ -318,7 +323,7 @@ class ServiceCatalogTest {
         // Field expects FilmRecord (Single); method returns Result<FilmRecord> (List).
         // Same inner class, different outer wrapper.
         var result = newCatalog().reflectServiceMethod(
-            STUB_CLASS, "getFilms", Map.of(), Set.of(), List.of(), FILM_RECORD);
+            STUB_CLASS, "getFilms", bindings(Map.of()), Set.of(), List.of(), FILM_RECORD);
 
         assertThat(result.failed()).isTrue();
         assertThat(result.failureReason())
@@ -330,7 +335,7 @@ class ServiceCatalogTest {
     @Test
     void reflectTableMethod_matchingExpected_succeedsAndCapturesClassName() {
         var result = newCatalog().reflectTableMethod(
-            TABLE_METHOD_STUB_CLASS, "getFilm", Map.of(), Set.of(), FILM_TABLE_CLASS);
+            TABLE_METHOD_STUB_CLASS, "getFilm", bindings(Map.of()), Set.of(), FILM_TABLE_CLASS);
 
         assertThat(result.failed()).isFalse();
         assertThat(result.ref().returnType()).isEqualTo(FILM_TABLE_CLASS);
@@ -342,7 +347,7 @@ class ServiceCatalogTest {
         // Table<?>-returning `get` covers the wider-return-type case; this case pins that the
         // strict check rejects mismatched specific-class returns symmetrically.
         var result = newCatalog().reflectTableMethod(
-            TABLE_METHOD_STUB_CLASS, "getFilm", Map.of(), Set.of(), LANGUAGE_TABLE_CLASS);
+            TABLE_METHOD_STUB_CLASS, "getFilm", bindings(Map.of()), Set.of(), LANGUAGE_TABLE_CLASS);
 
         assertThat(result.failed()).isTrue();
         assertThat(result.failureReason())
@@ -357,7 +362,7 @@ class ServiceCatalogTest {
         // expects a specific table class. Pins the rejection path the user is most likely to
         // trip into.
         var result = newCatalog().reflectTableMethod(
-            TABLE_METHOD_STUB_CLASS, "get", Map.of(), Set.of(), FILM_TABLE_CLASS);
+            TABLE_METHOD_STUB_CLASS, "get", bindings(Map.of()), Set.of(), FILM_TABLE_CLASS);
 
         assertThat(result.failed()).isTrue();
         assertThat(result.failureReason())
@@ -376,7 +381,7 @@ class ServiceCatalogTest {
         argByJavaName.put("inputs", "input");
         argByJavaName.put("dryRun", "dryRun");
         var result = newCatalog().reflectServiceMethod(
-            STUB_CLASS, "runWithRenamedInputs", argByJavaName, Set.of(), List.of(), null);
+            STUB_CLASS, "runWithRenamedInputs", bindings(argByJavaName), Set.of(), List.of(), null);
 
         assertThat(result.failed()).isFalse();
         var params = result.ref().params();
@@ -393,7 +398,7 @@ class ServiceCatalogTest {
     void reflectServiceMethod_argByJavaName_identity_setsGraphqlArgNameToParamName() {
         // No override on either argument. The identity entries put graphqlArgName equal to
         // the Java parameter name on every Arg source — regression guard for the default path.
-        var argByJavaName = Map.of("inputs", "inputs", "dryRun", "dryRun");
+        var argByJavaName = bindings(Map.of("inputs", "inputs", "dryRun", "dryRun"));
         var result = newCatalog().reflectServiceMethod(
             STUB_CLASS, "runWithRenamedInputs", argByJavaName, Set.of(), List.of(), null);
 
@@ -409,7 +414,7 @@ class ServiceCatalogTest {
         // Java method's parameters are (inputs, dryRun) — "missing" is absent. Plan §54: typo
         // guard rejects with a message naming the directive site, the override target, and the
         // available parameter names.
-        var argByJavaName = Map.of("missing", "input", "dryRun", "dryRun");
+        var argByJavaName = bindings(Map.of("missing", "input", "dryRun", "dryRun"));
         var result = newCatalog().reflectServiceMethod(
             STUB_CLASS, "runWithRenamedInputs", argByJavaName, Set.of(), List.of(), null);
 
@@ -426,7 +431,7 @@ class ServiceCatalogTest {
         // @tableMethod variant: override targets a non-Table<?> Java parameter. Plan §66: the
         // override map must skip the Table<?> slot, so an override targeting a non-Table<?>
         // Java parameter works the same way as for @service.
-        var argByJavaName = Map.of("tenantId", "tenant");
+        var argByJavaName = bindings(Map.of("tenantId", "tenant"));
         var result = newCatalog().reflectTableMethod(
             TABLE_METHOD_STUB_CLASS, "getFilmWithContext", argByJavaName, Set.of(), FILM_TABLE_CLASS);
 
@@ -443,7 +448,7 @@ class ServiceCatalogTest {
     void reflectTableMethod_overrideTargetingTableSlot_rejected() {
         // Plan §66: an override that points the Java target at the Table<?> parameter is
         // rejected; the Table<?> slot is reserved for the field's target table.
-        var argByJavaName = Map.of("table", "input");
+        var argByJavaName = bindings(Map.of("table", "input"));
         var result = newCatalog().reflectTableMethod(
             TABLE_METHOD_STUB_CLASS, "getFilmWithContext", argByJavaName, Set.of(), FILM_TABLE_CLASS);
 
@@ -460,7 +465,7 @@ class ServiceCatalogTest {
         // since their return shape is Condition, not a table. Pin that null disables strict
         // validation regardless of the actual return type.
         var result = newCatalog().reflectTableMethod(
-            TABLE_METHOD_STUB_CLASS, "get", Map.of(), Set.of(), null);
+            TABLE_METHOD_STUB_CLASS, "get", bindings(Map.of()), Set.of(), null);
 
         assertThat(result.failed()).isFalse();
         // Captured return is the wider Table<?> raw class; the model still records it faithfully.

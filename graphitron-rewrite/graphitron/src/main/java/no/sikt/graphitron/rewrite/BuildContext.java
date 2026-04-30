@@ -619,7 +619,7 @@ class BuildContext {
             }
         }
         if (className == null || methodName == null || svc == null) return null;
-        var result = svc.reflectTableMethod(className, methodName, Map.of(), Set.of(), null);
+        var result = svc.reflectTableMethod(className, methodName, ArgBindingMap.empty(), Set.of(), null);
         return result.failed() ? null : result.ref();
     }
 
@@ -684,7 +684,7 @@ class BuildContext {
         var cond = readConditionDirective(field);
         if (cond == null) return Optional.empty();
         var result = svc.reflectTableMethod(cond.className(), cond.methodName(),
-            Map.of(inputFieldName, inputFieldName), Set.copyOf(cond.contextArguments()), null);
+            ArgBindingMap.identityForSingleInputField(field), Set.copyOf(cond.contextArguments()), null);
         if (result.failed()) {
             errors.add("input field '" + inputFieldName + "' @condition: " + result.failureReason());
             return Optional.empty();
