@@ -817,10 +817,10 @@ class BuildContext {
                 return new InputFieldResolution.Unresolved(name, null, nodeRefPath.errorMessage());
             }
             Optional<ArgConditionRef> cond = buildInputFieldCondition(field, name, errors);
-            return new InputFieldResolution.Resolved(new InputField.NodeIdReferenceField(
-                parentTypeName, name, locationOf(field), refTypeName, nonNull,
-                resolvedTable, targetTypeId, targetKeyColumns,
-                nodeRefPath.elements(), cond));
+            return new InputFieldResolution.Resolved(buildInputNodeIdReference(
+                parentTypeName, name, locationOf(field), typeName, nonNull,
+                resolvedTable, refTypeName, targetTable.tableName(), targetTypeId,
+                targetKeyColumns, nodeRefPath.elements(), cond));
         }
         // IdReferenceField (canonical): [ID!] with @nodeId(typeName: T), optionally pinned by
         // @reference(path: [{key: K}]). FK is inferred when unique; @reference disambiguates when
@@ -919,7 +919,8 @@ class BuildContext {
                     Optional<ArgConditionRef> cond = buildInputFieldCondition(field, name, errors);
                     return new InputFieldResolution.Resolved(new InputField.ColumnReferenceField(
                         parentTypeName, name, locationOf(field), typeName, nonNull, list,
-                        col, path.elements(), cond));
+                        col, path.elements(), cond,
+                        new no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct()));
                 })
                 .orElseGet(() -> new InputFieldResolution.Unresolved(name, columnName,
                     "no column '" + columnName + "' reachable via @reference path"));
@@ -1065,6 +1066,41 @@ class BuildContext {
     private Optional<String> findGraphQLTypeForTable(String sqlTableName) {
         var candidates = findGraphQLTypesForTable(sqlTableName);
         return candidates.size() == 1 ? Optional.of(candidates.get(0)) : Optional.empty();
+    }
+
+    /**
+     * Builds the post-R50 column-shaped successor for {@code id: ID! @nodeId(typeName: T)} on a
+     * {@code @table} input. Routes by {@code targetKeyColumns.size()}: arity-1 to a single-column
+     * {@link InputField.ColumnReferenceField} with extraction =
+     * {@link no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement}; arity > 1
+     * to {@link InputField.CompositeColumnReferenceField} narrowed to the same extraction arm.
+     *
+     * <p>Failure mode is Skip (not Throw) because {@code @nodeId} in input-object filter context
+     * surfaces a malformed id as "no row matches"; never throws. Per spec's "Failure-mode
+     * contract": "input filters are not contract-violation surfaces."
+     */
+    private InputField buildInputNodeIdReference(
+            String parentTypeName, String name, graphql.language.SourceLocation location,
+            String typeName, boolean nonNull, TableRef parentTable,
+            String refTypeName, String targetTableName, String targetTypeId,
+            List<ColumnRef> targetKeyColumns, List<JoinStep> joinPath,
+            Optional<ArgConditionRef> cond) {
+        var decodeMethod = resolveDecodeHelperForTable(targetTableName, targetTypeId, targetKeyColumns);
+        if (decodeMethod == null) {
+            // No GraphQL type backs the target table and no fallback typeId either.
+            // Fall back to the legacy NodeIdReferenceField shape so behavior is preserved
+            // for the (rare) edge case where the target table is fully orphan.
+            return new InputField.NodeIdReferenceField(parentTypeName, name, location,
+                refTypeName, nonNull, parentTable, targetTypeId, targetKeyColumns, joinPath, cond);
+        }
+        var extraction = new no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement(decodeMethod);
+        if (targetKeyColumns.size() == 1) {
+            return new InputField.ColumnReferenceField(parentTypeName, name, location,
+                typeName, nonNull, /* list= */ false, targetKeyColumns.get(0), joinPath, cond,
+                extraction);
+        }
+        return new InputField.CompositeColumnReferenceField(parentTypeName, name, location,
+            typeName, nonNull, /* list= */ false, targetKeyColumns, joinPath, cond, extraction);
     }
 
     /**
