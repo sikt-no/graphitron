@@ -58,6 +58,14 @@ public sealed interface GraphitronType
      * An empty list means the argument was omitted, in which case the primary key is used
      * at code-generation time.
      *
+     * <p>{@code encodeMethod} / {@code decodeMethod} are pre-resolved structural references to the
+     * per-type {@code encode<TypeName>} / {@code decode<TypeName>} helpers emitted by
+     * {@link no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator}. They are the
+     * single source of truth for the helper references — emitters consume them through
+     * {@link HelperRef} rather than reconstructing class + method strings from the typeId. Per the
+     * R50 lift: every call site that wraps wire-format encode/decode reads from these slots so the
+     * encoder generator and the call-site emitters cannot drift on naming.
+     *
      * <p>A {@code @node} type with an unresolvable key column is classified as
      * {@link UnclassifiedType} instead.
      */
@@ -66,7 +74,9 @@ public sealed interface GraphitronType
         SourceLocation location,
         TableRef table,
         String typeId,
-        List<ColumnRef> nodeKeyColumns
+        List<ColumnRef> nodeKeyColumns,
+        HelperRef.Encode encodeMethod,
+        HelperRef.Decode decodeMethod
     ) implements TableBackedType {}
 
     /**

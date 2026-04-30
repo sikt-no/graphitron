@@ -23,10 +23,10 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec | [plan](nestingfield-multiparent-tablefield.md) |
 | `R13` | Faceted search on `@asConnection` | Spec | [plan](faceted-search.md) |
 | `R22` | Mutation bodies <sub>blocked by: [lift-nodeid-out-of-model](lift-nodeid-out-of-model.md)</sub> | Spec | [plan](mutations.md) |
-| `R50` | Lift NodeId out of the model | Ready | [plan](lift-nodeid-out-of-model.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
 | `R8` | Docs as an index into classification tests | Ready (deferred) | [plan](docs-as-index-into-tests.md) |
 | `R18` | Java LSP rewrite + introspect retirement + `dev` goal | Ready | [plan](graphitron-lsp.md) |
+| `R50` | Lift NodeId out of the model | In Progress | [plan](lift-nodeid-out-of-model.md) |
 | `R36` | Stub #3: Interface / union fetchers | In Progress | [plan](stub-interface-union-fetchers.md) |
 | `R12` | Error-handling parity: emit per-fetcher error channels from `@error` <sub>blocked by: [mutations](mutations.md)</sub> | In Progress | [plan](error-handling-parity.md) |
 | `R26` | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` <sub>blocked by: [graphitron-lsp](graphitron-lsp.md)</sub> | In Progress | [plan](retire-maven-plugin.md) |
@@ -95,7 +95,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### nodeid
 
-- `R50` [**Lift NodeId out of the model**](lift-nodeid-out-of-model.md) — Ready, architecture
+- `R50` [**Lift NodeId out of the model**](lift-nodeid-out-of-model.md) — In Progress, architecture
 - `R40` [**Argument-level `@nodeId` support**](argument-level-nodeid.md) — Backlog, architecture, blocked by [lift-nodeid-out-of-model](lift-nodeid-out-of-model.md)
 - `R20` [**`IdReferenceField` code generation**](id-reference-input-field.md) — Backlog, architecture, blocked by [lift-nodeid-out-of-model](lift-nodeid-out-of-model.md)
 - `R24` [**`NodeIdReferenceField` JOIN-projection form**](nodeidreferencefield-join-projection-form.md) — Backlog, cleanup, blocked by [lift-nodeid-out-of-model](lift-nodeid-out-of-model.md)
