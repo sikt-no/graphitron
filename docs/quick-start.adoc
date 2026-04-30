@@ -1,0 +1,72 @@
+= Quick Start
+:description: Set up Graphitron in your project: prerequisites, jOOQ generation, GraphQL schema with directives, build wiring.
+
+This page is a high-level orientation. For the rewrite-side workflow with worked examples (custom scalars, Apollo Federation, the dev loop), see xref:architecture/getting-started.adoc[Getting Started].
+
+== Requirements
+
+* *Java 17* or higher (consumers of Graphitron's generated output run on Java 17; the generator itself runs on Java 25).
+* *jOOQ*. The open-source edition covers PostgreSQL, MySQL, MariaDB, SQLite, and others. Commercial databases require a commercial jOOQ licence. See https://www.jooq.org/download/#databases[the jOOQ database matrix].
+* *Maven*. Graphitron runs as a Maven plugin.
+
+== Outline
+
+. *Generate jOOQ classes from your database schema.* Use the https://www.jooq.org/doc/latest/manual/code-generation/codegen-configuration/[jOOQ code generator] to produce typed table/record classes. Graphitron consumes them.
+. *Write your GraphQL schema with Graphitron directives.* Annotate types and fields to declare how they map to tables and columns. The directive reference is in the https://github.com/sikt-no/graphitron[source repository] (see `graphitron-codegen-parent/graphitron-java-codegen/README.md`).
+. *Configure the Graphitron Maven plugin.* Wire it into your `pom.xml` so it runs after jOOQ codegen and before your application code compiles.
+. *Build.* The generated resolvers land alongside your code, ready to be wired into your GraphQL server.
+
+== Sample directive-annotated schema
+
+The https://github.com/sikt-no/graphitron/tree/main/graphitron-example[example project] uses the https://www.jooq.org/sakila[Sakila] database. A trimmed view:
+
+[source,graphql]
+----
+type Query {
+    customers: [Customer]
+}
+
+type Customer @table {
+    id: ID
+    firstName: String! @field(name: "FIRST_NAME")
+    lastName: String! @field(name: "LAST_NAME")
+    email: String
+    address: Address!
+}
+
+type Address @table {
+    id: ID
+    addressLine1: String! @field(name: "ADDRESS_")
+    addressLine2: String @field(name: "ADDRESS2")
+    zip: String @field(name: "POSTAL_CODE")
+    phone: String!
+}
+----
+
+== Maven build shape
+
+Graphitron requires jOOQ classes to exist before it runs, so the generator and its consumers split cleanly into separate Maven modules:
+
+* One module runs the jOOQ code generator.
+* A dependent module runs Graphitron, with the jOOQ module as a `<dependency>`.
+
+A single-module setup is possible with multi-phase configuration but ends up fiddlier. Multi-module is the recommended path.
+
+== Running the generated code
+
+After the build, you have generated DataFetchers, TypeResolvers, and supporting classes ready to plug into a GraphQL server. Two options:
+
+* Use the Quarkus integration shipped with Graphitron (see the example project).
+* Wire the generated resolvers into an existing https://www.graphql-java.com/[graphql-java] application.
+
+== Working example
+
+https://github.com/sikt-no/graphitron/tree/main/graphitron-example[graphitron-example] is a complete working project: Sakila schema, GraphQL schema with directives, generated resolvers, and a Quarkus server that runs them.
+
+== Where to next
+
+* xref:architecture/getting-started.adoc[Getting Started]: hello world, custom scalars, federation, dev loop.
+* xref:vision-and-goal.adoc[Vision and Goal]: what problem Graphitron solves.
+* xref:graphitron-principles.adoc[Graphitron Principles]: design philosophy.
+* xref:dependencies.adoc[Dependencies]: why jOOQ and graphql-java.
+* xref:security.adoc[Security]: database-level security model.

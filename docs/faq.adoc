@@ -1,0 +1,58 @@
+= Frequently Asked Questions
+:description: Common questions about Graphitron, what it does, and how to get started.
+
+== What is the main purpose of Graphitron?
+
+The main goal of Graphitron is to automate repetitive patterns in API development, particularly creating resolvers for GraphQL APIs. It generates code based on GraphQL schemas tied to database models using GraphQL directives.
+
+== How does Graphitron work?
+
+Graphitron operates through a code generation process:
+
+. *Input*:
+ ** GraphQL schema(s) with special directives that map to your database structure.
+ ** jOOQ-generated classes representing your database schema.
+. *Processing*: analyses the schema and the database class representation to understand the relationships between GraphQL types and database tables.
+. *Output*: generates Java code that implements GraphQL resolvers handling queries and mutations, with efficient database access via jOOQ.
+
+Under the hood, Graphitron uses:
+
+* https://www.graphql-java.com/documentation/getting-started[graphql-java] for the GraphQL implementation.
+* https://www.jooq.org/[jOOQ] for type-safe SQL generation and database interaction.
+
+This eliminates the need to write repetitive resolver code while maintaining type safety and query efficiency. For more on those choices, see xref:dependencies.adoc[Dependencies].
+
+== Is Graphitron free to use?
+
+Yes. The tool is open source. jOOQ uses dual licensing; commercial databases require a commercial jOOQ license. See xref:dependencies.adoc[Dependencies] for details.
+
+== What are the key advantages of using Graphitron?
+
+Graphitron enhances code quality and maintainability by:
+
+* Automating repetitive patterns.
+* Reducing code duplication.
+* Minimising hand-written errors.
+* Optimising for managing a large graph.
+
+For the design philosophy behind these choices, see xref:graphitron-principles.adoc[Graphitron Principles].
+
+== Has Graphitron been used in production?
+
+Yes. Graphitron was initially built for the https://studieadministrasjon.sikt.no/apier/graphql/[FS GraphQL API], a core component in the Norwegian Student Information System (SIS). You can explore that API in https://api-test.fellesstudentsystem.no/docs/graphql/voyager/?flags=beta,experimental[Voyager].
+
+== Where can I find documentation?
+
+Beyond this site:
+
+* https://github.com/sikt-no/graphitron[Source repository] on GitHub.
+* xref:architecture/getting-started.adoc[Getting Started] for the rewrite-side build flow (hello world, custom scalars, federation).
+* xref:architecture/README.adoc[Architecture] for contributors working on the generator itself.
+
+== How can I contribute?
+
+Contributions are welcome. Open an issue or PR at https://github.com/sikt-no/graphitron[github.com/sikt-no/graphitron]. The xref:roadmap/index.adoc[Roadmap] shows what's in flight and where new work fits.
+
+== Where can I get support?
+
+Open an issue at https://github.com/sikt-no/graphitron[github.com/sikt-no/graphitron].
