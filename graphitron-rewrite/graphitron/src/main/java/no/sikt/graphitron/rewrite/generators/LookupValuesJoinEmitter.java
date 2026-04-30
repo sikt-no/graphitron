@@ -99,24 +99,31 @@ final class LookupValuesJoinEmitter {
      * for {@link ColumnMapping.LookupArg.MapInput}. {@link ColumnMapping.LookupArg.DecodedRecord}
      * lands in phase (f-C); until then the fixture-zero shape is rejected here.
      */
-    private record Slot(String argName, ColumnRef targetColumn, boolean list, String compositeFieldName) {
+    private record Slot(
+            String argName,
+            ColumnRef targetColumn,
+            boolean list,
+            String compositeFieldName,
+            no.sikt.graphitron.rewrite.model.CallSiteExtraction extraction) {
+
         boolean isComposite() { return compositeFieldName != null; }
     }
 
     private static List<Slot> flattenSlots(ColumnMapping cm) {
+        var direct = new no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct();
         var slots = new java.util.ArrayList<Slot>();
         for (var arg : cm.args()) {
             switch (arg) {
                 case ColumnMapping.LookupArg.ScalarLookupArg s ->
-                    slots.add(new Slot(s.argName(), s.targetColumn(), s.list(), null));
+                    slots.add(new Slot(s.argName(), s.targetColumn(), s.list(), null, s.extraction()));
                 case ColumnMapping.LookupArg.MapInput m -> {
                     for (var b : m.bindings()) {
-                        slots.add(new Slot(m.argName(), b.targetColumn(), m.list(), b.fieldName()));
+                        slots.add(new Slot(m.argName(), b.targetColumn(), m.list(), b.fieldName(), b.extraction()));
                     }
                 }
                 case ColumnMapping.LookupArg.DecodedRecord d ->
                     throw new IllegalStateException(
-                        "DecodedRecord LookupArg emission is not implemented yet (R50 phase f-C)");
+                        "DecodedRecord LookupArg emission is not implemented yet (R50 phase g)");
             }
         }
         return slots;
@@ -419,15 +426,33 @@ final class LookupValuesJoinEmitter {
      * column's Converter.
      */
     private static CodeBlock slotValueExpr(Slot slot, RootSource root) {
+        CodeBlock raw;
         if (slot.isComposite()) {
             CodeBlock elem = root.list()
                 ? CodeBlock.of("$L.get(i)", root.localName())
                 : CodeBlock.of("$L", root.localName());
-            return CodeBlock.of("(($T<?, ?>) $L).get($S)", Map.class, elem, slot.compositeFieldName());
+            raw = CodeBlock.of("(($T<?, ?>) $L).get($S)", Map.class, elem, slot.compositeFieldName());
+        } else {
+            raw = root.list()
+                ? CodeBlock.of("$L.get(i)", root.localName())
+                : CodeBlock.of("$L", root.localName());
         }
-        return root.list()
-            ? CodeBlock.of("$L.get(i)", root.localName())
-            : CodeBlock.of("$L", root.localName());
+        // R50 phase (f-C): NodeId-as-lookup-key arity-1 fold. The raw String reaches the per-row
+        // decode<TypeName> helper inline; a null return is an authored-input contract violation
+        // and surfaces as a GraphqlErrorException via the same Supplier throw-in-expression
+        // pattern ArgCallEmitter uses for the canonical [ID!] @nodeId fold.
+        if (slot.extraction() instanceof no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch ton) {
+            ClassName encoderClass = ton.decodeMethod().encoderClass();
+            String methodName = ton.decodeMethod().methodName();
+            return CodeBlock.of(
+                "($L) instanceof String _s ? ($T.$L(_s) instanceof $T _r ? _r.value1() : "
+                + "(($T<?>) () -> { throw new $T($S); }).get()) : null",
+                raw, encoderClass, methodName, ton.decodeMethod().returnType(),
+                ClassName.get("java.util.function", "Supplier"),
+                ClassName.get("graphql", "GraphqlErrorException"),
+                "Decoded NodeId did not match the expected type for argument '" + slot.argName() + "'");
+        }
+        return raw;
     }
 
     /**
