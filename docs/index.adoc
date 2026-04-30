@@ -75,7 +75,7 @@ xref:security.adoc[Security model]
 | xref:security.adoc[Security]
 | Why we enforce security at the database layer.
 
-| xref:architecture/README.adoc[Architecture]
+| xref:architecture/index.adoc[Architecture]
 | Rewrite-internal documentation: code generation triggers, sealed model hierarchy, runtime extension points, design principles, contributor workflow.
 
 | xref:roadmap/index.adoc[Roadmap]

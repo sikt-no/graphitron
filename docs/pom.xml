@@ -117,6 +117,12 @@
                                         <include>*.adoc</include>
                                         <include>images/**</include>
                                     </includes>
+                                    <excludes>
+                                        <!-- Staged as index.adoc (see stage-architecture-index in
+                                             antrun below) so /architecture/ resolves on GitHub Pages
+                                             without a README.html suffix. -->
+                                        <exclude>README.adoc</exclude>
+                                    </excludes>
                                 </resource>
                             </resources>
                         </configuration>
@@ -141,6 +147,9 @@
                                       overwrite="true"/>
                                 <copy file="${project.build.directory}/sds-button/package/dist/index.css"
                                       tofile="${project.build.directory}/staging/css/sds-button.css"
+                                      overwrite="true"/>
+                                <copy file="${project.basedir}/../graphitron-rewrite/docs/README.adoc"
+                                      tofile="${project.build.directory}/staging/architecture/index.adoc"
                                       overwrite="true"/>
                                 <copy todir="${project.build.directory}/staging/architecture/css" overwrite="true">
                                     <fileset dir="${project.build.directory}/staging/css"/>
