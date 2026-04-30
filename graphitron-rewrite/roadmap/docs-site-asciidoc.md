@@ -14,7 +14,7 @@ Goal: consolidate every public-facing documentation artifact in this repo into a
 
 Four sources of content fold into the site:
 - **`/docs/`** (repo root): the canonical home for product-level docs (vision, principles, security, dependencies, FAQ, quick-start, etc.). Existing `.md` files convert to `.adoc` as part of this plan; future authoring is `.adoc`.
-- **`/graphitron-rewrite/docs/`**: the canonical home for rewrite-specific architecture, design principles, and contributor docs (workflow, design principles, model, code-generation triggers, runtime extension points). Same treatment: existing `.md` files convert to `.adoc`.
+- **`/graphitron-rewrite/docs/`**: the canonical home for rewrite-specific architecture, design principles, and contributor docs (workflow, design principles, code-generation triggers, runtime extension points). Same treatment: existing `.md` files convert to `.adoc`.
 - **`/graphitron-rewrite/roadmap/`**: per-item plan files plus `changelog.md`. Stays `.md` (authoring convention pinned by `workflow.md`); `roadmap-tool` extension converts at build time and emits the rendered pages into the site.
 - **`alf/graphitron-landingsside`** (old Docusaurus site): treated as a fallback. Most of its content is likely already covered by the in-repo docs above; the absorption phase audits gap-by-gap and ports only what's genuinely missing (FAQ probably; some "why" framing maybe).
 
@@ -81,7 +81,6 @@ graphitron-rewrite/docs/                 # AUTHORED, rewrite-specific architectu
 ├── README.adoc
 ├── workflow.adoc
 ├── rewrite-design-principles.adoc
-├── rewrite-model.adoc
 ├── argument-resolution.adoc
 ├── code-generation-triggers.adoc
 ├── runtime-extension-points.adoc
@@ -239,11 +238,10 @@ Two distinct migration efforts: converting in-repo `.md` to `.adoc` (mostly mech
 - `/docs/security.md` → `/docs/security.adoc`.
 - `/docs/dependencies.md` → `/docs/dependencies.adoc`.
 
-**`/graphitron-rewrite/docs/`** (8 files convert + 1 moves):
+**`/graphitron-rewrite/docs/`** (7 files convert + 1 moves):
 - `README.md` → `README.adoc`. Architecture overview.
 - `workflow.md` → `workflow.adoc`. Backlog → Spec → Ready → ... pipeline.
 - `rewrite-design-principles.md` → `rewrite-design-principles.adoc`.
-- `rewrite-model.md` → `rewrite-model.adoc`.
 - `argument-resolution.md` → `argument-resolution.adoc`.
 - `code-generation-triggers.md` → `code-generation-triggers.adoc`.
 - `runtime-extension-points.md` → `runtime-extension-points.adoc`.
