@@ -88,3 +88,5 @@ Taking a feature from idea to Done. Minimum four commits by at least two parties
 . *Reviewer (≠ author)* reads the plan, revises if needed (stays `Spec`), then signs off by flipping `status:` to `Ready`.
 . *Implementer* writes code, updates the plan (remove shipped, keep pending), flips `status:` to `In Review`.
 . *Reviewer (≠ implementer)* approves (delete the item file; entry in link:https://github.com/sikt-no/graphitron/blob/claude/graphitron-rewrite/graphitron-rewrite/roadmap/changelog.md[`changelog.md`] if worth keeping) or requests more work (flip back to `Ready`, new cycle).
+
+For a recent worked example, see the `computed-field-with-reference` entry in link:https://github.com/sikt-no/graphitron/blob/claude/graphitron-rewrite/graphitron-rewrite/roadmap/changelog.md[`changelog.md`]: an end-to-end `@externalField` → `ComputedField` lift covering classification, validation, generator emit, and execution-tier coverage in one cycle.
