@@ -276,6 +276,20 @@
                                             <directory>${project.build.directory}/staging/_includes</directory>
                                             <targetPath>_includes</targetPath>
                                         </resource>
+                                        <!-- Asciidoctor copies the configured stylesheet (css/site.css)
+                                             alongside each rendered page, but not the SDS CSS files
+                                             that site.css @imports. Carry those into every subdir's
+                                             css/ folder explicitly so the design tokens resolve. -->
+                                        <resource>
+                                            <directory>${project.build.directory}/staging</directory>
+                                            <includes>
+                                                <include>**/css/sds-*.css</include>
+                                                <include>**/css/LICENSE-*.md</include>
+                                            </includes>
+                                            <excludes>
+                                                <exclude>css/**</exclude>
+                                            </excludes>
+                                        </resource>
                                     </resources>
                                     <logHandler>
                                         <failIf>
