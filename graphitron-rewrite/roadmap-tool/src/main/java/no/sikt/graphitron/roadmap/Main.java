@@ -316,8 +316,8 @@ public final class Main {
         List<Item> active = items.stream()
             .filter(i -> ACTIVE_STATES.contains(i.status()))
             .sorted(Comparator
-                .comparingInt((Item i) -> ACTIVE_STATES.indexOf(i.status()))
-                .thenComparingInt(i -> i.priority() == null ? Integer.MAX_VALUE : i.priority())
+                .comparingInt((Item i) -> i.priority() == null ? Integer.MAX_VALUE : i.priority())
+                .thenComparingInt(i -> ACTIVE_STATES.indexOf(i.status()))
                 .thenComparing(Item::title))
             .toList();
         if (active.isEmpty()) {
@@ -837,8 +837,8 @@ public final class Main {
         List<Item> active = items.stream()
             .filter(i -> ACTIVE_STATES.contains(i.status()))
             .sorted(Comparator
-                .comparingInt((Item i) -> ACTIVE_STATES.indexOf(i.status()))
-                .thenComparingInt(i -> i.priority() == null ? Integer.MAX_VALUE : i.priority())
+                .comparingInt((Item i) -> i.priority() == null ? Integer.MAX_VALUE : i.priority())
+                .thenComparingInt(i -> ACTIVE_STATES.indexOf(i.status()))
                 .thenComparing(Item::title))
             .toList();
         sb.append("## Active\n\n");
