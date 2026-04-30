@@ -15,7 +15,9 @@ package no.sikt.graphitron.rewrite.model;
  *
  * <p>{@link #lookupMapping()} is always non-null for these variants — lookups are defined by the
  * presence of {@code @lookupKey} args, which always resolve to a {@link LookupMapping.ColumnMapping}
- * with at least one column, or to a {@link LookupMapping.NodeIdMapping} for node-ID args.
+ * with at least one arg (post-R50 phase (f-D); the legacy {@code NodeIdMapping} arm retired
+ * with the lift, lookup-key NodeId folds onto {@code ColumnMapping} with
+ * {@code NodeIdDecodeKeys.ThrowOnMismatch}).
  * Implementations declare the component directly (narrow-component-types principle) rather
  * than wrapping in {@code Optional}.
  */

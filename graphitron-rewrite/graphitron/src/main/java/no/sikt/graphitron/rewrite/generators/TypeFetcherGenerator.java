@@ -315,10 +315,7 @@ public class TypeFetcherGenerator {
                         .of(lookupTableRef, qlf.returnType().returnTypeName(), outputPackage, jooqPackage).jooqTableClass();
                     builder.addMethod(buildQueryLookupFetcher(qlf, outputPackage));
                     builder.addMethod(buildQueryLookupRowsMethod(qlf, outputPackage, jooqPackage));
-                    // NodeIdMapping uses hasIds/hasId inline — no VALUES+JOIN input-rows helper needed.
-                    if (qlf.lookupMapping() instanceof no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) {
-                        builder.addMethod(LookupValuesJoinEmitter.buildInputRowsMethod(qlf, lookupTableClass));
-                    }
+                    builder.addMethod(LookupValuesJoinEmitter.buildInputRowsMethod(qlf, lookupTableClass));
                 }
                 case QueryField.QueryTableField qtf -> {
                     if (qtf.returnType().wrapper() instanceof FieldWrapper.Connection) {
@@ -1532,11 +1529,7 @@ public class TypeFetcherGenerator {
 
         var typeFieldsCall = CodeBlock.of("$T.$$fields(env.getSelectionSet(), $L, env)",
             names.typeClass(), tableLocal);
-        if (field.lookupMapping() instanceof no.sikt.graphitron.rewrite.model.LookupMapping.NodeIdMapping) {
-            builder.addCode(LookupValuesJoinEmitter.buildNodeIdFetcherBody(field, typeFieldsCall, tableLocal, outputPackage));
-        } else {
-            builder.addCode(LookupValuesJoinEmitter.buildFetcherBody(field, typeFieldsCall, tableLocal));
-        }
+        builder.addCode(LookupValuesJoinEmitter.buildFetcherBody(field, typeFieldsCall, tableLocal));
         return builder.build();
     }
 
