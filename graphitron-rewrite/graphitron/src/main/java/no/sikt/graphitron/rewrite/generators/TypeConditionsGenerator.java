@@ -111,24 +111,47 @@ public class TypeConditionsGenerator {
         builder.addStatement("$T condition = $T.noCondition()", CONDITION, DSL);
         for (var bp : gcf.bodyParams()) {
             switch (bp) {
-                case BodyParam.ColumnEq ce -> {
-                    String col = ce.column().javaName();
-                    if (ce.list()) {
-                        if (ce.nonNull()) {
-                            builder.addStatement("condition = condition.and(table.$L.in($L))", col, ce.name());
-                        } else {
-                            builder.addStatement("if ($L != null) condition = condition.and(table.$L.in($L))",
-                                ce.name(), col, ce.name());
-                        }
+                case BodyParam.Eq eq -> {
+                    String col = eq.column().javaName();
+                    if (eq.nonNull()) {
+                        builder.addStatement("condition = condition.and(table.$L.eq($T.val($L, table.$L)))",
+                            col, DSL, eq.name(), col);
                     } else {
-                        if (ce.nonNull()) {
-                            builder.addStatement("condition = condition.and(table.$L.eq($T.val($L, table.$L)))",
-                                col, DSL, ce.name(), col);
-                        } else {
-                            builder.addStatement("if ($L != null) condition = condition.and(table.$L.eq($T.val($L, table.$L)))",
-                                ce.name(), col, DSL, ce.name(), col);
-                        }
+                        builder.addStatement("if ($L != null) condition = condition.and(table.$L.eq($T.val($L, table.$L)))",
+                            eq.name(), col, DSL, eq.name(), col);
                     }
+                }
+                case BodyParam.In in -> {
+                    String col = in.column().javaName();
+                    if (in.nonNull()) {
+                        builder.addStatement("condition = condition.and(table.$L.in($L))", col, in.name());
+                    } else {
+                        builder.addStatement("if ($L != null) condition = condition.and(table.$L.in($L))",
+                            in.name(), col, in.name());
+                    }
+                }
+                case BodyParam.RowEq req -> {
+                    // DSL.row(table.c1, ..., table.cN).eq(DSL.row(v1, ..., vN))
+                    var cols = CodeBlock.builder();
+                    for (int i = 0; i < req.columns().size(); i++) {
+                        if (i > 0) cols.add(", ");
+                        cols.add("table.$L", req.columns().get(i).javaName());
+                    }
+                    // Composite scalar values are not yet produced by any classifier route in the
+                    // shipped phases — phase (e) wires the input-side classification that emits
+                    // RowEq. Until then this arm is unreachable; emit a runtime stub that fails
+                    // loudly if a generator regression produces it.
+                    builder.addStatement("throw new $T($S)",
+                        UnsupportedOperationException.class,
+                        "BodyParam.RowEq emission is not yet wired (R50 phase e). Param '" + req.name() + "'.");
+                }
+                case BodyParam.RowIn rin -> {
+                    // DSL.row(table.c1, ..., table.cN).in(rows)
+                    // Same situation as RowEq — phase (e) wires the input-side route. Until then,
+                    // unreachable; emit a loud runtime stub.
+                    builder.addStatement("throw new $T($S)",
+                        UnsupportedOperationException.class,
+                        "BodyParam.RowIn emission is not yet wired (R50 phase e). Param '" + rin.name() + "'.");
                 }
                 case BodyParam.NodeIdIn ni -> {
                     var keyColArgs = CodeBlock.builder();

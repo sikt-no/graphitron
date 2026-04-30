@@ -149,10 +149,22 @@ class TypeFetcherGeneratorTest {
         // mapping from the fixture's "body params" (retaining the parameter name as a fixture
         // convenience — callers still talk in terms of logical arg rows).
         var columns = bodyParams.stream()
-            .map(bp -> (BodyParam.ColumnEq) bp)
-            .map(bp -> new LookupMapping.ColumnMapping.LookupColumn(
-                new LookupMapping.ColumnMapping.SourcePath(List.of(bp.name())),
-                bp.column(), bp.extraction(), bp.list()))
+            .map(bp -> {
+                // Test fixture: synthesise a LookupColumn from a single-column body param. The
+                // post-(d) shapes are Eq (scalar) and In (list); both expose `column()` via the
+                // sealed ColumnPredicate root.
+                if (bp instanceof BodyParam.Eq eq) {
+                    return new LookupMapping.ColumnMapping.LookupColumn(
+                        new LookupMapping.ColumnMapping.SourcePath(List.of(eq.name())),
+                        eq.column(), eq.extraction(), false);
+                }
+                if (bp instanceof BodyParam.In in) {
+                    return new LookupMapping.ColumnMapping.LookupColumn(
+                        new LookupMapping.ColumnMapping.SourcePath(List.of(in.name())),
+                        in.column(), in.extraction(), true);
+                }
+                throw new IllegalStateException("Unsupported BodyParam shape in test fixture: " + bp.getClass());
+            })
             .toList();
         return new QueryField.QueryLookupTableField("Query", name, null, returnType,
             List.of(), new OrderBySpec.None(), null,
@@ -160,17 +172,17 @@ class TypeFetcherGeneratorTest {
     }
 
     private static BodyParam listKeyParam(String name, String javaName, String javaType) {
-        return new BodyParam.ColumnEq(name, col(name, javaName, javaType), javaType, false, true,
+        return new BodyParam.In(name, col(name, javaName, javaType), javaType, false,
             new CallSiteExtraction.Direct());
     }
 
     private static BodyParam scalarKeyParam(String name, String javaName, String javaType) {
-        return new BodyParam.ColumnEq(name, col(name, javaName, javaType), javaType, false, false,
+        return new BodyParam.Eq(name, col(name, javaName, javaType), javaType, false,
             new CallSiteExtraction.Direct());
     }
 
     private static BodyParam listIdKeyParam(String name, String javaName, String javaType) {
-        return new BodyParam.ColumnEq(name, col(name, javaName, javaType), javaType, false, true,
+        return new BodyParam.In(name, col(name, javaName, javaType), javaType, false,
             new CallSiteExtraction.JooqConvert(javaName));
     }
 

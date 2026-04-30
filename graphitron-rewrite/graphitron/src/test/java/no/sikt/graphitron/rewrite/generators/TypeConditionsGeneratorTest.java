@@ -38,9 +38,11 @@ class TypeConditionsGeneratorTest {
             new CallSiteExtraction.NestedInputField("filter", List.of("filter", name)));
     }
 
-    private static BodyParam.ColumnEq columnEq(String name, ColumnRef col, boolean list) {
-        return new BodyParam.ColumnEq(name, col, col.columnClass(), false, list,
-            new CallSiteExtraction.NestedInputField("filter", List.of("filter", name)));
+    private static BodyParam columnEq(String name, ColumnRef col, boolean list) {
+        var ext = new CallSiteExtraction.NestedInputField("filter", List.of("filter", name));
+        return list
+            ? new BodyParam.In(name, col, col.columnClass(), false, ext)
+            : new BodyParam.Eq(name, col, col.columnClass(), false, ext);
     }
 
     @Test
