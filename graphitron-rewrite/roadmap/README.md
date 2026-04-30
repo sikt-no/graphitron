@@ -18,12 +18,12 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R48` | Stub: `@externalField` resolved-reference path (`ComputedField`) | Spec | [plan](computed-field-with-reference.md) |
 | `R49` | Stub: scalar/`@record`-returning `@service` child field (`ServiceRecordField`) <sub>blocked by: [service-rows-method-body](service-rows-method-body.md)</sub> | Spec | [plan](service-record-field.md) |
 | `R3` | Classification vocabulary follow-ups | Spec | [plan](classification-vocabulary-followups.md) |
-| `R53` | ExternalCodeReference.argMapping for Java-param binding | Spec | [plan](external-code-reference-arg-mapping.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec | [plan](nestingfield-multiparent-tablefield.md) |
 | `R13` | Faceted search on `@asConnection` | Spec | [plan](faceted-search.md) |
 | `R22` | Mutation bodies <sub>blocked by: [lift-nodeid-out-of-model](lift-nodeid-out-of-model.md)</sub> | Spec | [plan](mutations.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
+| `R53` | ExternalCodeReference.argMapping for Java-param binding | Ready | [plan](external-code-reference-arg-mapping.md) |
 | `R8` | Docs as an index into classification tests | Ready (deferred) | [plan](docs-as-index-into-tests.md) |
 | `R18` | Java LSP rewrite + introspect retirement + `dev` goal | Ready | [plan](graphitron-lsp.md) |
 | `R50` | Lift NodeId out of the model | In Progress | [plan](lift-nodeid-out-of-model.md) |
@@ -104,7 +104,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R1` [**`BatchKey` lifter directive**](batchkey-lifter-directive.md) — Spec, architecture
 - `R48` [**Stub: `@externalField` resolved-reference path (`ComputedField`)**](computed-field-with-reference.md) — Spec, stubs
 - `R49` [**Stub: scalar/`@record`-returning `@service` child field (`ServiceRecordField`)**](service-record-field.md) — Spec, stubs, blocked by [service-rows-method-body](service-rows-method-body.md)
-- `R53` [**ExternalCodeReference.argMapping for Java-param binding**](external-code-reference-arg-mapping.md) — Spec, architecture
+- `R53` [**ExternalCodeReference.argMapping for Java-param binding**](external-code-reference-arg-mapping.md) — Ready, architecture
 - `R45` [**Typed context-value registry for `@service`**](typed-context-value-registry.md) — Spec, architecture
 - `R32` [**Implement `@service` rows-method body**](service-rows-method-body.md) — Backlog, architecture
 - `R46` [**Multi-tenant fan-out for `@service`**](service-multi-tenant-fanout.md) — Backlog, architecture, blocked by [typed-context-value-registry](typed-context-value-registry.md), [mutations](mutations.md)
