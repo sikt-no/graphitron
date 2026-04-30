@@ -1209,7 +1209,9 @@ class FieldBuilder {
                     // as GeneratedConditionFilter bodyParams (per docs/argument-resolution.md Phase 1).
                     if (!autoSuppressed && !ca.isLookupKey()) {
                         String javaType = javaTypeFor(ca.extraction(), ca.column());
-                        bodyParams.add(new BodyParam.ColumnEq(ca.name(), ca.column(), javaType, ca.nonNull(), ca.list(), ca.extraction()));
+                        bodyParams.add(ca.list()
+                            ? new BodyParam.In(ca.name(), ca.column(), javaType, ca.nonNull(), ca.extraction())
+                            : new BodyParam.Eq(ca.name(), ca.column(), javaType, ca.nonNull(), ca.extraction()));
                     }
                     ca.argCondition().ifPresent(ac -> argConditions.add(ac.filter()));
                 }
@@ -1330,7 +1332,7 @@ class FieldBuilder {
                                                String graphqlTypeName, boolean nonNull,
                                                String outerArgName, List<String> leafPath) {
         String javaType = "ID".equals(graphqlTypeName) ? String.class.getName() : column.columnClass();
-        return new BodyParam.ColumnEq(fieldName, column, javaType, nonNull, false,
+        return new BodyParam.Eq(fieldName, column, javaType, nonNull,
             new CallSiteExtraction.NestedInputField(outerArgName, leafPath));
     }
 
