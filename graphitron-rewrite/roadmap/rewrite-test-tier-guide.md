@@ -46,11 +46,15 @@ silent:
 
 Same shape applies to inbound references from roadmap and design docs —
 they freely mix "unit", "pipeline-tier", "behavioural tier",
-"classification tier", and "Level N", with no canonical mapping.
+"classification tier", and "Level N", with no canonical mapping. And
+because tier identity lives only in prose, the labels drift silently:
+a contributor renaming a test or copy-pasting a javadoc preamble can
+introduce a new spelling without anything noticing.
 
 The guide closes both gaps: one canonical naming, one place that says
-where each tier lives and what it asserts, with the existing javadocs
-updated to match.
+where each tier lives and what it asserts, and a JUnit 5 meta-annotation
+per tier so the label is on the class itself, machine-checkable, and
+visible to JUnit's reporting and filtering machinery for free.
 
 ## Scope
 
@@ -59,7 +63,10 @@ site landing under R9; the file renders into `graphitron.sikt.no` along
 with the other rewrite-internal pages). Cross-link from
 `docs/README.adoc` ("Detailed reference" list) and from
 `rewrite-design-principles.adoc` (the two existing tier sections become
-one-liner pointers).
+one-liner pointers). Carry the canonical tier names into code as
+JUnit 5 meta-annotations on each test class so the taxonomy is
+machine-checkable and JUnit's existing reporting / filtering machinery
+("groups") becomes available without further wiring.
 
 ### Canonical names
 
@@ -70,7 +77,56 @@ assertion), and the pre-existing numbering already has gaps and
 disagreements with the prose tier names. `unit` and `pipeline` are
 already in use in javadoc and on trunk; `compilation` and `execution`
 match the names already used in `rewrite-design-principles.adoc`. No
-runtime artefact carries a Level number, so the rename is doc-only.
+runtime artefact carries a Level number today, so the prose rename is
+doc-only; the new annotations introduced below are the first runtime
+artefacts to carry tier identity.
+
+### Tier annotations
+
+Each tier becomes a JUnit 5 meta-annotation that resolves to a `@Tag`:
+
+```java
+@Target(TYPE) @Retention(RUNTIME) @Tag("unit")        public @interface UnitTier {}
+@Target(TYPE) @Retention(RUNTIME) @Tag("pipeline")    public @interface PipelineTier {}
+@Target(TYPE) @Retention(RUNTIME) @Tag("compilation") public @interface CompilationTier {}
+@Target(TYPE) @Retention(RUNTIME) @Tag("execution")   public @interface ExecutionTier {}
+```
+
+Where the annotations live: a shared test-support location visible
+from every test module (likely `graphitron-fixtures` main scope, since
+that module is already the test-support dep — implementer's call). The
+annotations target classes; method-level tagging is out of scope (no
+test class today straddles tiers, and class-level matches the natural
+unit of "one test class is one tier").
+
+Cross-cutting tests that don't classify into the four tiers
+(`GeneratorDeterminismTest` is the only current example) carry
+`@Tag("cross-cutting")` directly rather than a fifth meta-annotation;
+adding a fifth named "tier" for one class is over-engineering, and the
+`@Tag` form keeps the residual visible to the enforcement test below.
+
+**Reporting / filtering payoff.** With class-level tags in place:
+
+- `mvn test -Dgroups=pipeline` runs only pipeline-tier classes;
+  `-DexcludedGroups=execution` skips Postgres for fast inner loops.
+  Surefire and Failsafe both honour these flags without further config.
+- JUnit XML and HTML reports already include the tag set per test;
+  any standard CI dashboard breaks down test-count, time, and failure
+  rate per tier without custom tooling.
+- A future CI matrix can shard tiers across jobs by `-Dgroups`.
+
+Wiring up specific CI matrices, dashboards, or tier-aware build
+profiles is out of scope here (this plan ships the labels; consumption
+is downstream).
+
+**Enforcement test.** A unit-tier test under `graphitron` walks the
+test classpaths, finds every `@Test`-bearing class, and asserts each
+class carries exactly one of the four tier annotations or
+`@Tag("cross-cutting")`. A class with no tier annotation, or two of
+them, fails the build. This ratchets the taxonomy: a future
+contributor adding a test class without a tier annotation gets a build
+break with a one-line "add `@PipelineTier` (or one of the four)"
+message, and the taxonomy stops being a doc-maintenance burden.
 
 ### File contents (one section per tier + a dispatcher)
 
@@ -209,11 +265,8 @@ assertion, not by module:
   and asserts on the written file tree. It is the full-system
   counterpart to the unit-level `IdempotentWriterTest`; it does not
   fit "pipeline" (no classifier-to-TypeSpec assertion), "compilation"
-  (no compile happens), or "execution" (no SQL). Today's javadoc
-  labels it "Pipeline-tier ratchet"; replace with "Generator
-  end-to-end ratchet (companion to `IdempotentWriterTest`)" — that
-  description is accurate and avoids forcing it into the four tier
-  names.
+  (no compile happens), or "execution" (no SQL). Carries
+  `@Tag("cross-cutting")`, the only test in that bucket today.
 
 **Build commands.** A four-line summary lifted from
 `.claude/web-environment.md` for tier-by-tier convenience, each
@@ -237,48 +290,61 @@ their tier-naming responsibility:
   the fixtures-jar clobber recovery as is. Adds a one-line "for what
   each tier asserts and where its files live, see
   `docs/testing.adoc`".
-- Per-test javadocs — seven javadocs to update, in two groups:
-  - *Three with explicit "Level N" numbering to drop:*
-    `FieldValidationTestHelper` ("Level 1"),
-    `GraphitronSchemaBuilderTest` ("Level 2"),
-    `GeneratedSourcesSmokeTest` ("Level 5").
-  - *Four with mismatched tier prose to align:* `IdempotentWriterTest`
-    ("pipeline-tier" cross-reference), `TypeFetcherGeneratorTest`
-    ("Unit tests for X"; also "execution-tier" cross-reference, fine
-    as is), `TestExternalFieldStub` ("classifier-tier"),
-    `GeneratorDeterminismTest` ("Pipeline-tier ratchet" → "Generator
-    end-to-end ratchet"; see Cross-cutting tests above for rationale).
+- Per-test javadocs — every test class gets the appropriate tier
+  annotation (`@UnitTier`, `@PipelineTier`, `@CompilationTier`,
+  `@ExecutionTier`, or `@Tag("cross-cutting")`); the existing tier
+  prose drops in favour of the annotation. The seven javadocs the
+  prior body called out are no longer special:
+  - *Three with "Level N" numbering* (`FieldValidationTestHelper`,
+    `GraphitronSchemaBuilderTest`, `GeneratedSourcesSmokeTest`) — the
+    Level-N sentence deletes; the annotation labels the tier.
+  - *Four with mismatched tier prose* (`IdempotentWriterTest`,
+    `TypeFetcherGeneratorTest`, `TestExternalFieldStub`,
+    `GeneratorDeterminismTest`) — the prose deletes; the annotation
+    labels the tier (`@Tag("cross-cutting")` for
+    `GeneratorDeterminismTest`).
 
-  The replacement reads "Pipeline-tier" / "Unit-tier" /
-  "Compilation-tier" / "Execution-tier" (or the one cross-cutting
-  label for `GeneratorDeterminismTest`) with no Level number, and
-  points at `docs/testing.adoc` once at the file head rather than
-  re-explaining the tier in each class.
+  Class-head javadoc keeps a one-line pointer at `docs/testing.adoc`
+  for the contributor who lands on the file directly, but the
+  authoritative tier label is the annotation, not the prose.
 
 ### Implementation
 
-One commit lands the new file plus the cross-link adjustments. Order
-inside the commit:
+The annotation work and the doc work can land in one commit or split
+into "annotations + enforcement" then "doc + javadoc cleanup"; the
+implementer's judgment. Either way, the steps are:
 
-1. Add `graphitron-rewrite/docs/testing.adoc` with the five sections
-   above. Each tier section names canonical example classes (link, not
-   inline body) so a contributor can read one example to learn the
-   shape.
-2. Trim the two tier-naming sections in
+1. Add the four tier annotations + a place for them (likely under
+   `graphitron-fixtures` main scope, since every test module already
+   depends on it). Empty body, `@Tag(...)` meta-annotation as shown
+   above.
+2. Apply a tier annotation to every test class. Most are obvious from
+   the existing rubric; the ambiguous ones are the cross-cutting
+   tests in `graphitron-test` (see that section above for the
+   classification). `GeneratorDeterminismTest` carries
+   `@Tag("cross-cutting")` rather than a fifth meta-annotation.
+3. Add the enforcement test under `graphitron`'s unit tier: walk test
+   classes, assert each carries exactly one tier annotation or the
+   cross-cutting tag. Failure message names the offender and lists
+   the valid annotations.
+4. Add `graphitron-rewrite/docs/testing.adoc` with the sections
+   listed above. Each tier section names canonical example classes
+   (link, not inline body) so a contributor can read one example to
+   learn the shape.
+5. Trim the two tier-naming sections in
    `rewrite-design-principles.adoc` to one-liner pointers; keep the
    policy claims in place (pipeline is primary, code-string body
    matching is banned).
-3. Add a one-line pointer in `.claude/web-environment.md`.
-4. Sweep the seven affected javadocs (three with Level N, four with
-   mismatched tier prose; specific list under "Cross-link
-   adjustments" above). Reword `GeneratorDeterminismTest` from
-   "Pipeline-tier ratchet" to "Generator end-to-end ratchet"; this
-   test is cross-cutting and does not classify into the four tier
-   names.
-5. Add the new file to `docs/README.adoc`'s "Detailed reference" list
+6. Add a one-line pointer in `.claude/web-environment.md`.
+7. Sweep the seven prior-body-affected javadocs (three with Level N,
+   four with mismatched tier prose; list under "Cross-link
+   adjustments" above): drop the tier prose, leave a one-line pointer
+   at `docs/testing.adoc` if the class warrants one. The annotation
+   is now the authoritative label.
+8. Add the new file to `docs/README.adoc`'s "Detailed reference" list
    (between `rewrite-design-principles.adoc` and `argument-resolution.adoc`,
    since it is principles-adjacent).
-6. Regenerate the roadmap README to clear this item via the standard
+9. Regenerate the roadmap README to clear this item via the standard
    `mvn -f graphitron-rewrite/pom.xml -pl roadmap-tool exec:java -q`
    when status flips to In Review.
 
@@ -287,14 +353,22 @@ inside the commit:
 - *Auto-generating the build commands from the poms.* The four-command
   summary is stable enough that a hand-written copy is cheaper than a
   template.
-- *Renaming any test classes or packages.* Names are doc-only changes
-  in the javadoc preambles; class and method names stay.
+- *Renaming any test classes or packages.* The annotation labels the
+  tier; class and method names stay.
 - *New test infrastructure or `TestSchemaHelper` changes.* The plan
   documents the existing infrastructure; if the rubric exposes a real
   gap (e.g. no shared helper for `QUERY_COUNT` reset patterns at the
   execution tier), file a follow-up rather than expanding this plan.
+- *CI matrix tier splits, dashboards, or tier-aware build profiles.*
+  The annotations make this trivial to wire up later (`-Dgroups=...`),
+  but the wiring is downstream of the labels and follow-up.
+- *Method-level tier annotations.* Class-level matches today's
+  one-class-one-tier convention; multi-tier classes can be split if
+  they appear, rather than tagging methods individually.
 - *Test-investment policy.* That is `R25 (rebalance-test-pyramid)`'s
   scope. The test-tier guide is *what is*; R25 is *what should grow*.
+  R25 will benefit from the annotations directly: tier counts and
+  per-tier time become reportable without further tooling.
 
 ## Coordinates with
 
