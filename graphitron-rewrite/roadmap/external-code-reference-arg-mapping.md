@@ -1,7 +1,7 @@
 ---
 id: R53
 title: "ExternalCodeReference.argMapping for Java-param binding"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 5
 theme: service
