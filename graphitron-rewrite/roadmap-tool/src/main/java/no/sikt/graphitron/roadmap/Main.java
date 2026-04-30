@@ -130,25 +130,75 @@ public final class Main {
         List<Item> items = readItems(dir);
         // No validate() here so a malformed sibling doesn't block ID allocation
         // for the file the caller is about to write.
-        System.out.println(nextId(items));
+        System.out.println(nextId(items, readChangelogNextId(dir)));
     }
 
     /**
-     * Returns the next available ID as {@code R<max+1>}, or {@code R1} if no
-     * item carries an ID yet. Numbers are never reused: gaps left by deleted
-     * items stay as gaps so historical references in {@code changelog.md} or
-     * commit messages don't collide with future allocations.
+     * Returns the next available ID as {@code R<n>}. The authoritative counter
+     * lives in {@code changelog.md}'s front-matter as {@code next-id: R<n>};
+     * this method takes its current value and reconciles it with the highest
+     * ID observed on live item files. The returned ID is the larger of the
+     * two, so a counter that has fallen behind (e.g. an item file authored
+     * with an explicit higher ID before the counter was advanced) self-heals
+     * on the next allocation. Returns {@code R1} when neither source carries
+     * a value. Numbers are never reused: gaps left by deleted items stay as
+     * gaps so historical references in {@code changelog.md} or commit
+     * messages don't collide with future allocations.
      */
-    static String nextId(List<Item> items) {
-        int max = 0;
+    static String nextId(List<Item> items, int changelogCounter) {
+        int observed = 0;
         for (Item i : items) {
             if (i.id() == null) continue;
             var m = ID_PATTERN.matcher(i.id());
             if (m.matches()) {
-                max = Math.max(max, Integer.parseInt(m.group(1)));
+                observed = Math.max(observed, Integer.parseInt(m.group(1)));
             }
         }
-        return "R" + (max + 1);
+        return "R" + Math.max(changelogCounter, observed + 1);
+    }
+
+    /**
+     * Reads the {@code next-id:} field from {@code changelog.md}'s front-matter,
+     * or {@code 0} if the file or field is absent. Throws if the field exists
+     * but is malformed.
+     */
+    static int readChangelogNextId(Path roadmapDir) throws IOException {
+        Path changelog = roadmapDir.resolve("changelog.md");
+        if (!Files.exists(changelog)) return 0;
+        ParsedFile parsed = parseFrontMatter(Files.readString(changelog));
+        Object raw = parsed.frontMatter().get("next-id");
+        if (raw == null) return 0;
+        var m = ID_PATTERN.matcher(raw.toString());
+        if (!m.matches()) {
+            throw new IllegalArgumentException("changelog.md next-id: '" + raw
+                + "' is malformed. Expected R<positive integer>.");
+        }
+        return Integer.parseInt(m.group(1));
+    }
+
+    /**
+     * Updates {@code changelog.md}'s front-matter so {@code next-id:} reflects
+     * {@code "R" + nextId}, preserving any other front-matter keys and the
+     * body verbatim. Creates the front-matter block if absent.
+     */
+    static void writeChangelogNextId(Path roadmapDir, int nextId) throws IOException {
+        Path changelog = roadmapDir.resolve("changelog.md");
+        String existing = Files.exists(changelog) ? Files.readString(changelog) : "";
+        ParsedFile parsed = parseFrontMatter(existing);
+        Map<String, Object> fm = new LinkedHashMap<>(parsed.frontMatter());
+        fm.put("next-id", "R" + nextId);
+
+        StringBuilder out = new StringBuilder("---\n");
+        for (Map.Entry<String, Object> e : fm.entrySet()) {
+            out.append(e.getKey()).append(": ").append(e.getValue()).append('\n');
+        }
+        out.append("---\n");
+        String body = parsed.body();
+        if (!body.isEmpty()) {
+            if (!body.startsWith("\n")) out.append('\n');
+            out.append(body);
+        }
+        Files.writeString(changelog, out.toString());
     }
 
     private static void runCreate(Path dir, List<String> rest) throws IOException {
@@ -173,7 +223,9 @@ public final class Main {
         }
         List<Item> items = readItems(dir);
         validate(items);
-        String id = nextId(items);
+        int counter = readChangelogNextId(dir);
+        String id = nextId(items, counter);
+        int allocated = Integer.parseInt(id.substring(1));
 
         StringBuilder fm = new StringBuilder();
         fm.append("---\n");
@@ -190,6 +242,7 @@ public final class Main {
             + " Replace this and add a plan body when the item moves to Spec.>\n");
 
         Files.writeString(target, fm.toString());
+        writeChangelogNextId(dir, allocated + 1);
         System.out.println("created " + target + " (" + id + ")");
 
         // Refresh the rolled-up README so the new item shows up immediately.
@@ -385,6 +438,8 @@ public final class Main {
 
     /** changelog.md → changelog.adoc. */
     static String renderAdocChangelog(String md) {
+        // Strip the next-id-counter front-matter; it's tool state, not prose.
+        String body = parseFrontMatter(md).body();
         StringBuilder sb = new StringBuilder();
         sb.append("= Rewrite Changelog\n");
         sb.append(":description: Recently shipped rewrite work, by landing date.\n");
@@ -392,7 +447,7 @@ public final class Main {
         sb.append("Plan files are deleted on Done; this is the historical record. ");
         sb.append("See xref:index.adoc[Roadmap] for in-flight work, ")
           .append("or back to xref:../index.adoc[home].\n\n");
-        sb.append(mdBodyToAdoc(md, ChangelogContext.STANDALONE));
+        sb.append(mdBodyToAdoc(body, ChangelogContext.STANDALONE));
         if (!sb.toString().endsWith("\n")) sb.append('\n');
         return sb.toString();
     }

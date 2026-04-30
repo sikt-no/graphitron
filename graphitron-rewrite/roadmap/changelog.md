@@ -1,6 +1,12 @@
+---
+next-id: R55
+---
+
 # Rewrite Changelog
 
 Historical record of completed rewrite work. Entries are roughly reverse-chronological; commit shas and plan slugs are preserved for archaeology. The forward-looking ledger lives in [`README.md`](README.md), generated from per-item front-matter in this directory.
+
+The `next-id:` front-matter field is the canonical counter for `R<n>` allocation, maintained by `roadmap-tool create`. Numbers are never reused (see [`workflow.adoc`](../docs/workflow.adoc)); the counter advances past every `Done` so the gaps left by deleted item files don't collide with future allocations.
 
 ---
 

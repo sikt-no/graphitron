@@ -79,12 +79,3 @@ window.
   multi-axis overload is a recurring concern but predates this plan), file
   separately.
 
-## Workflow note
-
-Bug observation alongside this filing: the `roadmap-tool create`
-subcommand allocated `R53` for this Backlog item, but R53 was just used
-by `external-code-reference-arg-mapping` (shipped Done in `26c52b8`,
-recorded in `changelog.md`). The tool must consult historical IDs in
-`changelog.md` to honour the workflow's "IDs are *never reused*" rule
-(see `workflow.adoc` line 39). Fixed manually to `R54` here; tool fix
-worth filing as a separate Backlog item.
