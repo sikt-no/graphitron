@@ -59,7 +59,13 @@ class VariantCoverageTest {
             "Covered by NodeIdPipelineTest.OutputCase (the composite-PK NodeId path requires the "
             + "nodeid fixture's `bar` table with two key columns, not available in the standard "
             + "sakila catalog); add a GraphitronSchemaBuilderTest case when a composite-PK "
-            + "fixture is made available there."
+            + "fixture is made available there.",
+        ChildField.CompositeColumnReferenceField.class,
+            "Composite-key NodeId reference (rooted-at-parent or non-FK-mirror): the only schema "
+            + "shape that produces it is a child table whose FK references a parent NodeType "
+            + "with multiple key columns AND the FK's target columns differ from those keys. The "
+            + "standard sakila catalog has no such shape; the rooted-at-parent fixture lands in "
+            + "phase (g) of R50. Add a GraphitronSchemaBuilderTest case when that fixture exists."
     );
 
     private static final List<Class<?>> ROOTS = List.of(

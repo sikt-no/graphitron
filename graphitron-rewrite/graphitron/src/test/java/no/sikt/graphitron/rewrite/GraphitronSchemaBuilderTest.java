@@ -13,7 +13,6 @@ import no.sikt.graphitron.rewrite.model.ChildField.ComputedField;
 import no.sikt.graphitron.rewrite.model.ChildField.InterfaceField;
 import no.sikt.graphitron.rewrite.model.ChildField.MultitableReferenceField;
 import no.sikt.graphitron.rewrite.model.ChildField.NestingField;
-import no.sikt.graphitron.rewrite.model.ChildField.NodeIdReferenceField;
 import no.sikt.graphitron.rewrite.model.ChildField.PropertyField;
 import no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField;
 import no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField;
@@ -384,7 +383,7 @@ class GraphitronSchemaBuilderTest {
 
     enum NodeIdReferenceFieldCase implements ClassificationCase {
         RESOLVED(
-            "typeName pointing to a @node type with a single FK between tables → NodeIdReferenceField with a one-hop inferred joinPath",
+            "typeName pointing to a @node type with a single FK between tables → ColumnField with NodeIdEncodeKeys (FK-mirror collapse: FK source columns ARE the keys)",
             """
             type Country implements Node @table(name: "country") @node(keyColumns: ["country_id"]) {
               id: ID! @nodeId
@@ -395,11 +394,12 @@ class GraphitronSchemaBuilderTest {
             type Query { city: City }
             """,
             schema -> {
-                var ref = (NodeIdReferenceField) schema.field("City", "countryId");
-                assertThat(ref.typeName()).isEqualTo("Country");
-                assertThat(ref.nodeKeyColumns()).isNotEmpty();
-                assertThat(ref.joinPath()).hasSize(1);
-                assertThat(ref.joinPath().get(0)).isInstanceOf(JoinStep.FkJoin.class);
+                var ref = (ChildField.ColumnField) schema.field("City", "countryId");
+                assertThat(ref.column()).isNotNull();
+                assertThat(ref.compaction())
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteCompaction.NodeIdEncodeKeys.class);
+                assertThat(((no.sikt.graphitron.rewrite.model.CallSiteCompaction.NodeIdEncodeKeys) ref.compaction())
+                    .encodeMethod().methodName()).isEqualTo("encodeCountry");
             }),
 
         UNRESOLVED_TYPE_HAS_NO_NODE(
@@ -424,7 +424,7 @@ class GraphitronSchemaBuilderTest {
             schema -> assertThat(schema.field("Film", "languageId")).isInstanceOf(UnclassifiedField.class)),
 
         WITH_REFERENCE_PATH(
-            "@reference(path:) on a @nodeId field populates the joinPath",
+            "@reference(path:) on a @nodeId field with FK-mirror collapse → ColumnField with NodeIdEncodeKeys",
             """
             type Language implements Node @table(name: "language") @node(keyColumns: ["language_id"]) {
               id: ID! @nodeId
@@ -436,9 +436,9 @@ class GraphitronSchemaBuilderTest {
             type Query { film: Film }
             """,
             schema -> {
-                var ref = (NodeIdReferenceField) schema.field("Film", "languageId");
-                assertThat(ref.joinPath()).hasSize(1);
-                assertThat(ref.joinPath().get(0)).isInstanceOf(JoinStep.FkJoin.class);
+                var ref = (ChildField.ColumnField) schema.field("Film", "languageId");
+                assertThat(ref.compaction())
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteCompaction.NodeIdEncodeKeys.class);
             }),
 
         IMPLICIT_REFERENCE_ZERO_FK(
@@ -479,7 +479,7 @@ class GraphitronSchemaBuilderTest {
             this.sdl = sdl;
             this.assertions = assertions;
         }
-        @Override public Set<Class<?>> variants() { return Set.of(NodeIdReferenceField.class); }
+        @Override public Set<Class<?>> variants() { return Set.of(ChildField.ColumnField.class, UnclassifiedField.class); }
         @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
     }
 

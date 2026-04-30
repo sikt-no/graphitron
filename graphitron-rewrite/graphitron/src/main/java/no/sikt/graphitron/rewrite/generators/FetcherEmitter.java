@@ -137,35 +137,28 @@ public final class FetcherEmitter {
                 ColumnFetcherClassGenerator.CLASS_NAME);
             return CodeBlock.of("new $T<>($T.field($S))", columnFetcherClass, DSL, field.name());
         }
-        if (field instanceof ChildField.NodeIdReferenceField nrf && parentTable != null) {
-            // FK-mirror collapse — encode the parent's FK source columns directly. See
-            // TypeClassGenerator#fkMirrorSourceColumns; matching code paths must agree on which
-            // columns get projected.
-            var fkMirror = no.sikt.graphitron.rewrite.generators.TypeClassGenerator.fkMirrorSourceColumns(nrf);
-            if (fkMirror != null) {
-                var encoderClass = ClassName.get(outputPackage + ".util",
-                    NodeIdEncoderClassGenerator.CLASS_NAME);
-                var recordClass = ClassName.get("org.jooq", "Record");
-                var tablesClass = ClassName.get(jooqPackage, "Tables");
-                var body = CodeBlock.builder()
-                    .add("($T env) -> {\n", DATA_FETCHING_ENV)
-                    .add("    $T r = ($T) env.getSource();\n", recordClass, recordClass)
-                    .add("    return $T.encode($S", encoderClass, nrf.nodeTypeId());
-                for (var col : fkMirror) {
-                    body.add(",\n        r.get($T.$L.$L)", tablesClass, parentTable.javaFieldName(), col.javaName());
-                }
-                body.add(");\n").add("}");
-                return body.build();
-            }
-            // Non-FK-mirror cases (composite-FK that doesn't mirror, multi-hop, condition-join)
-            // fall through to a runtime-throwing stub by default. Lifted to the JOIN-projection
-            // form in a follow-up.
+        if (field instanceof ChildField.ColumnReferenceField crf
+                && crf.compaction() instanceof CallSiteCompaction.NodeIdEncodeKeys
+                && parentTable != null) {
+            // Single-column rooted-at-parent NodeId reference (single-hop or correlated-subquery
+            // cases via R24's path machinery) — runtime stub until the JOIN-with-projection emission
+            // lifts ($fields-side JOIN extension). FK-mirror cases collapse to ColumnField at the
+            // classifier so they never reach this arm.
             return CodeBlock.of(
                 "($T env) -> { throw new $T($S); }",
                 DATA_FETCHING_ENV, UnsupportedOperationException.class,
-                "NodeIdReferenceField '" + nrf.parentTypeName() + "." + nrf.name()
-                    + "' requires the JOIN-projection form (composite FK or multi-hop) which "
-                    + "is not yet implemented; the FK-mirror case is supported. See graphitron-rewrite/roadmap/nodeidreferencefield-join-projection-form.md.");
+                "Rooted-at-parent NodeId reference '" + crf.parentTypeName() + "." + crf.name()
+                    + "' requires the JOIN-with-projection emission (R50 phase b2b) — not yet implemented.");
+        }
+        if (field instanceof ChildField.CompositeColumnReferenceField ccrf && parentTable != null) {
+            // Composite-key rooted-at-parent NodeId reference — same runtime stub as the
+            // single-column reference above. Composite reference projection is always a NodeId
+            // encode call (compaction is type-narrowed to NodeIdEncodeKeys).
+            return CodeBlock.of(
+                "($T env) -> { throw new $T($S); }",
+                DATA_FETCHING_ENV, UnsupportedOperationException.class,
+                "Rooted-at-parent composite NodeId reference '" + ccrf.parentTypeName() + "." + ccrf.name()
+                    + "' requires the JOIN-with-projection emission (R50 phase b2b) — not yet implemented.");
         }
         return CodeBlock.of("$T::$L", fetchersClass, field.name());
     }
