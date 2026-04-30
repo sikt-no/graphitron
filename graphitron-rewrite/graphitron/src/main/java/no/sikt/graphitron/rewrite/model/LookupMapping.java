@@ -4,25 +4,19 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Generation-ready mapping for a lookup field. After R50 phase (f), the standard
- * VALUES + JOIN derived-table path is the only shape that survives; the legacy
- * {@code NodeIdMapping} arm carries the still-active single-key NodeId-as-lookup-key path
- * until phase (f-C) folds it onto a {@code ColumnMapping} carrying a
- * {@link ColumnMapping.LookupArg.ScalarLookupArg} (single-key) or
- * {@link ColumnMapping.LookupArg.DecodedRecord} (composite-key) with
- * {@link CallSiteExtraction.NodeIdDecodeKeys.ThrowOnMismatch}.
+ * Generation-ready mapping for a lookup field. After R50 phase (f-D), the only shape is
+ * {@link ColumnMapping} — the standard VALUES + JOIN derived-table path. Legacy
+ * {@code NodeIdMapping} retired alongside the {@code NodeIdEncoder.hasIds} /
+ * {@code hasId} predicate; lookup-key NodeId args fold onto
+ * {@link ColumnMapping.LookupArg.ScalarLookupArg} (single-key NodeType) or
+ * {@link ColumnMapping.LookupArg.DecodedRecord} (composite-key NodeType, lands in phase g)
+ * with {@link CallSiteExtraction.NodeIdDecodeKeys.ThrowOnMismatch}.
  *
- * <p>Two implementations:
- * <ul>
- *   <li>{@link ColumnMapping} — the standard VALUES + JOIN derived-table path. Preserves input
- *       ordering via the {@code idx} column. Args are sealed on the source-shape axis;
- *       arity is the sum of slots across args.</li>
- *   <li>{@link NodeIdMapping} — single composite node-ID argument; skips VALUES + JOIN and
- *       emits a {@code NodeIdEncoder.hasIds} / {@code hasId} WHERE predicate instead.
- *       Retires in R50 phase (f-C).</li>
- * </ul>
+ * <p>The sealed interface is retained for shape-locality (every {@link LookupField} carries
+ * a {@code LookupMapping}); a future "rooted at parent via correlated subquery" variant from
+ * R24 would land as a sibling permit.
  */
-public sealed interface LookupMapping permits LookupMapping.ColumnMapping, LookupMapping.NodeIdMapping {
+public sealed interface LookupMapping permits LookupMapping.ColumnMapping {
 
     /** The jOOQ table that the lookup binds against. */
     TableRef targetTable();
@@ -151,21 +145,4 @@ public sealed interface LookupMapping permits LookupMapping.ColumnMapping, Looku
         }
     }
 
-    /**
-     * Node-ID-based lookup mapping. The lookup key is a single base64-encoded composite node ID
-     * argument (or a list of them); the generator emits a {@code NodeIdStrategy.hasIds} /
-     * {@code hasId} WHERE predicate instead of a VALUES + JOIN derived table.
-     *
-     * <p>Retires in R50 phase (f-C); single-key NodeId folds onto
-     * {@link ColumnMapping.LookupArg.ScalarLookupArg} with
-     * {@link CallSiteExtraction.NodeIdDecodeKeys.ThrowOnMismatch}, composite-PK NodeId folds onto
-     * {@link ColumnMapping.LookupArg.DecodedRecord}.
-     */
-    record NodeIdMapping(
-        String argName,
-        String nodeTypeId,
-        List<ColumnRef> nodeKeyColumns,
-        boolean list,
-        TableRef targetTable
-    ) implements LookupMapping {}
 }

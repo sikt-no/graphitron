@@ -116,11 +116,7 @@ public final class InlineLookupTableFieldEmitter {
         // Typed Row<M+1> / Record<M+1> for idx + @lookupKey columns — matches the helper's
         // return type retyped in C1. DSL.values(Row<M+1>...) yields Table<Record<M+1>>, so
         // input.field(Field<T>) and input.field(int, Class<T>) both remain typed Field<T>.
-        if (!(lf.lookupMapping() instanceof ColumnMapping cm)) {
-            throw new IllegalStateException(
-                "InlineLookupTableField '" + lf.parentTypeName() + "." + lf.name()
-                + "' has NodeIdMapping — inline NodeId emission not yet implemented");
-        }
+        ColumnMapping cm = (ColumnMapping) lf.lookupMapping();
         List<no.sikt.graphitron.rewrite.model.ColumnRef> lookupCols = cm.slotColumns();
         int lookupArity = lookupCols.size() + 1;
         TypeName[] lookupTypeArgs = new TypeName[lookupArity];

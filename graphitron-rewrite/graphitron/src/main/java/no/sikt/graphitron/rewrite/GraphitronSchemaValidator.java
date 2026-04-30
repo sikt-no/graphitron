@@ -260,8 +260,6 @@ public class GraphitronSchemaValidator {
             boolean anyKeyIsList = switch (field.lookupMapping()) {
                     case no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping cm ->
                         cm.hasListArg();
-                    case no.sikt.graphitron.rewrite.model.LookupMapping.NodeIdMapping nim ->
-                        nim.list();
                 }
                 || field.filters().stream().anyMatch(f -> switch (f) {
                     case no.sikt.graphitron.rewrite.model.GeneratedConditionFilter gcf ->

@@ -237,11 +237,7 @@ final class LookupValuesJoinEmitter {
 
     /** Classifier-invariant check shared by the root and child input-rows builders. */
     private static List<Slot> requireSlots(LookupField field) {
-        if (!(field.lookupMapping() instanceof ColumnMapping cm)) {
-            throw new IllegalStateException(
-                "buildInputRowsMethod called on a NodeIdMapping field '"
-                + fieldName(field) + "'; caller must dispatch on mapping type first");
-        }
+        ColumnMapping cm = (ColumnMapping) field.lookupMapping();
         if (cm.args().isEmpty()) {
             // projectForFilter enforces non-empty LookupMapping before classification; reaching this
             // is a generator-side bug, not a schema error.
@@ -336,11 +332,7 @@ final class LookupValuesJoinEmitter {
      * @param typeFieldsCallStatic the JavaPoet expression for {@code <TypeName>.$fields(env.getSelectionSet(), table, env)}.
      */
     static CodeBlock buildFetcherBody(LookupField field, CodeBlock typeFieldsCall, String srcAlias) {
-        if (!(field.lookupMapping() instanceof ColumnMapping cm)) {
-            throw new IllegalStateException(
-                "buildFetcherBody called on a NodeIdMapping field '"
-                + fieldName(field) + "'; caller must use buildNodeIdFetcherBody instead");
-        }
+        ColumnMapping cm = (ColumnMapping) field.lookupMapping();
         List<Slot> slots = flattenSlots(cm);
         String alias = inputTableAlias(field);
         TypeName[] typeArgs = rowTypeArgs(slots);
@@ -453,79 +445,6 @@ final class LookupValuesJoinEmitter {
                 "Decoded NodeId did not match the expected type for argument '" + slot.argName() + "'");
         }
         return raw;
-    }
-
-    /**
-     * Generates the fetcher body for a {@link LookupMapping.NodeIdMapping} lookup field.
-     * Skips VALUES + JOIN entirely; instead extracts the base64 node ID from the env and
-     * emits a {@code NodeIdEncoder.hasId} / {@code hasIds} WHERE predicate.
-     *
-     * <p>Generated code (scalar key):
-     * <pre>{@code
-     * String id = env.getArgument("id");
-     * var dsl = graphitronContext(env).getDslContext(env);
-     * return dsl
-     *     .select(Foo.$fields(env.getSelectionSet(), table, env))
-     *     .from(table)
-     *     .where(condition.and(id == null ? DSL.noCondition()
-     *         : NodeIdEncoder.hasId("Bar", id, table.ID_1, table.ID_2)))
-     *     .fetch();
-     * }</pre>
-     *
-     * <p>List variant replaces the scalar extraction with {@code List<String> ids = env.getArgument("ids");}
-     * and the predicate with {@code NodeIdEncoder.hasIds("Bar", ids, table.ID_1, ...)}.
-     */
-    static CodeBlock buildNodeIdFetcherBody(LookupField field, CodeBlock typeFieldsCall, String srcAlias, String outputPackage) {
-        var mapping = (LookupMapping.NodeIdMapping) field.lookupMapping();
-        var nodeIdEncoder = ClassName.get(outputPackage + ".util",
-            no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator.CLASS_NAME);
-        var dslContextClass = ClassName.get("org.jooq", "DSLContext");
-
-        var code = CodeBlock.builder();
-
-        if (mapping.list()) {
-            code.addStatement("$T<$T> $L = env.getArgument($S)",
-                LIST, String.class, toCamelCase(mapping.argName()) + "Keys", mapping.argName());
-        } else {
-            code.addStatement("$T $L = env.getArgument($S)",
-                String.class, toCamelCase(mapping.argName()), mapping.argName());
-        }
-        code.addStatement("$T dsl = graphitronContext(env).getDslContext(env)", dslContextClass);
-
-        // Build the key-columns argument list: table.COL1, table.COL2, …
-        var keyColArgs = CodeBlock.builder();
-        for (int i = 0; i < mapping.nodeKeyColumns().size(); i++) {
-            if (i > 0) keyColArgs.add(", ");
-            keyColArgs.add("$L.$L", srcAlias, mapping.nodeKeyColumns().get(i).javaName());
-        }
-
-        // Build the NodeIdEncoder predicate
-        CodeBlock nodeIdPredicate;
-        String localName = toCamelCase(mapping.argName());
-        if (mapping.list()) {
-            String keysLocal = localName + "Keys";
-            nodeIdPredicate = CodeBlock.of(
-                "$L == null || $L.isEmpty() ? $T.noCondition() : $T.hasIds($S, $L, $L)",
-                keysLocal, keysLocal, DSL,
-                nodeIdEncoder, mapping.nodeTypeId(), keysLocal,
-                keyColArgs.build());
-        } else {
-            nodeIdPredicate = CodeBlock.of(
-                "$L == null ? $T.noCondition() : $T.hasId($S, $L, $L)",
-                localName, DSL,
-                nodeIdEncoder, mapping.nodeTypeId(), localName,
-                keyColArgs.build());
-        }
-
-        code.add("return dsl\n")
-            .indent()
-            .add(".select($L)\n", typeFieldsCall)
-            .add(".from($L)\n", srcAlias)
-            .add(".where(condition.and($L))\n", nodeIdPredicate)
-            .add(mapping.list() ? ".fetch();\n" : ".fetchOne();\n")
-            .unindent();
-
-        return code.build();
     }
 
 }
