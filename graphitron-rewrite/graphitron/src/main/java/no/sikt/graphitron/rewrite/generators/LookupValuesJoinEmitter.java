@@ -8,6 +8,7 @@ import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.rewrite.model.HelperRef;
 import no.sikt.graphitron.rewrite.model.LookupField;
 import no.sikt.graphitron.rewrite.model.LookupMapping;
 import no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping;
@@ -96,34 +97,46 @@ final class LookupValuesJoinEmitter {
     /**
      * Flat per-slot view of a {@link ColumnMapping}'s args, internal to this emitter.
      * One slot per {@link ColumnMapping.LookupArg.ScalarLookupArg}; one slot per binding
-     * for {@link ColumnMapping.LookupArg.MapInput}. {@link ColumnMapping.LookupArg.DecodedRecord}
-     * lands in phase (f-C); until then the fixture-zero shape is rejected here.
+     * for {@link ColumnMapping.LookupArg.MapInput} and {@link ColumnMapping.LookupArg.DecodedRecord}.
+     *
+     * <p>{@code decodeBinding} is non-null only for {@link ColumnMapping.LookupArg.DecodedRecord}
+     * slots; it carries the per-NodeType {@code decode<TypeName>} helper and the binding's
+     * positional index into the returned {@code Record<N>}. Per the R50 spec ("runs once per
+     * input row at the arg layer"), {@link #addRowBuildingCore} hoists the decode call to a
+     * per-row local shared across all bindings of the same arg.
      */
     private record Slot(
             String argName,
             ColumnRef targetColumn,
             boolean list,
             String compositeFieldName,
-            no.sikt.graphitron.rewrite.model.CallSiteExtraction extraction) {
+            no.sikt.graphitron.rewrite.model.CallSiteExtraction extraction,
+            DecodeBinding decodeBinding) {
 
         boolean isComposite() { return compositeFieldName != null; }
     }
 
+    /** Per-binding slot for a {@link ColumnMapping.LookupArg.DecodedRecord}: which decode helper to call and which positional Record value to read. */
+    private record DecodeBinding(HelperRef.Decode decodeMethod, int index) {}
+
     private static List<Slot> flattenSlots(ColumnMapping cm) {
-        var direct = new no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct();
         var slots = new java.util.ArrayList<Slot>();
         for (var arg : cm.args()) {
             switch (arg) {
                 case ColumnMapping.LookupArg.ScalarLookupArg s ->
-                    slots.add(new Slot(s.argName(), s.targetColumn(), s.list(), null, s.extraction()));
+                    slots.add(new Slot(s.argName(), s.targetColumn(), s.list(), null, s.extraction(), null));
                 case ColumnMapping.LookupArg.MapInput m -> {
                     for (var b : m.bindings()) {
-                        slots.add(new Slot(m.argName(), b.targetColumn(), m.list(), b.fieldName(), b.extraction()));
+                        slots.add(new Slot(m.argName(), b.targetColumn(), m.list(), b.fieldName(), b.extraction(), null));
                     }
                 }
-                case ColumnMapping.LookupArg.DecodedRecord d ->
-                    throw new IllegalStateException(
-                        "DecodedRecord LookupArg emission is not implemented yet (R50 phase g)");
+                case ColumnMapping.LookupArg.DecodedRecord d -> {
+                    for (var b : d.bindings()) {
+                        slots.add(new Slot(d.argName(), b.targetColumn(), d.list(), null,
+                            new no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct(),
+                            new DecodeBinding(d.decodeMethod(), b.index())));
+                    }
+                }
             }
         }
         return slots;
@@ -282,6 +295,37 @@ final class LookupValuesJoinEmitter {
         builder.addStatement("$T[] rows = ($T[]) new $T[n]", rowType, rowType, rawRowClass);
         builder.beginControlFlow("for (int i = 0; i < n; i++)");
 
+        // Per-row decode locals for DecodedRecord args: one decode<TypeName> call per arg per row,
+        // shared across all positional bindings. Null returns surface as GraphqlErrorException
+        // (ThrowOnMismatch contract — composite-PK NodeId @lookupKey is an authored-input
+        // contract surface). Emitted before cells so each binding's slotValueExpr can read
+        // <argLocal>Rec.value<N>().
+        Map<String, DecodeBinding> decodeArgs = new LinkedHashMap<>();
+        for (var slot : slots) {
+            if (slot.decodeBinding() != null) {
+                decodeArgs.putIfAbsent(slot.argName(), slot.decodeBinding());
+            }
+        }
+        ClassName graphqlErr = ClassName.get("graphql", "GraphqlErrorException");
+        for (var entry : decodeArgs.entrySet()) {
+            String argName = entry.getKey();
+            DecodeBinding db = entry.getValue();
+            RootSource root = roots.get(argName);
+            CodeBlock rawElem = root.list()
+                ? CodeBlock.of("$L.get(i)", root.localName())
+                : CodeBlock.of("$L", root.localName());
+            String recLocal = decodeRecordLocal(root.localName());
+            ClassName encoderClass = db.decodeMethod().encoderClass();
+            String methodName = db.decodeMethod().methodName();
+            TypeName recordType = db.decodeMethod().returnType();
+            builder.addStatement("$T $L = ($L instanceof $T _s) ? $T.$L(_s) : null",
+                recordType, recLocal, rawElem, String.class, encoderClass, methodName);
+            builder.beginControlFlow("if ($L == null)", recLocal);
+            builder.addStatement("throw new $T($S)", graphqlErr,
+                "Decoded NodeId did not match the expected type for argument '" + argName + "'");
+            builder.endControlFlow();
+        }
+
         var cells = CodeBlock.builder();
         cells.add("$T.inline(i)", DSL);
         for (var slot : slots) {
@@ -296,6 +340,10 @@ final class LookupValuesJoinEmitter {
         builder.addStatement("rows[i] = $T.row($L)", DSL, cells.build());
         builder.endControlFlow();
         builder.addStatement("return rows");
+    }
+
+    private static String decodeRecordLocal(String rootLocalName) {
+        return rootLocalName + "Rec";
     }
 
     /**
@@ -418,6 +466,13 @@ final class LookupValuesJoinEmitter {
      * column's Converter.
      */
     private static CodeBlock slotValueExpr(Slot slot, RootSource root) {
+        // DecodedRecord binding: read positional Record<N> value from the per-row decode local
+        // declared by addRowBuildingCore. The shared local means decode<TypeName> runs once per
+        // row across all bindings of the same arg (per spec: "runs once per input row").
+        if (slot.decodeBinding() != null) {
+            String recLocal = decodeRecordLocal(root.localName());
+            return CodeBlock.of("$L.value$L()", recLocal, slot.decodeBinding().index() + 1);
+        }
         CodeBlock raw;
         if (slot.isComposite()) {
             CodeBlock elem = root.list()

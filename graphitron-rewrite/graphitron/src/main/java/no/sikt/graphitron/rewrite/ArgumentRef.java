@@ -6,6 +6,8 @@ import no.sikt.graphitron.rewrite.model.InputColumnBinding;
 import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.TableRef;
 
+import static java.util.Objects.requireNonNull;
+
 import java.util.List;
 import java.util.Optional;
 
@@ -27,6 +29,8 @@ import java.util.Optional;
  * <h2>Variants</h2>
  * <ul>
  *   <li>{@link ScalarArg.ColumnArg} — scalar arg bound to a jOOQ column.</li>
+ *   <li>{@link ScalarArg.CompositeColumnArg} — scalar arg bound to multiple jOOQ columns
+ *       through a single per-row decode (composite-PK NodeId carrier; arity ≥ 2).</li>
  *   <li>{@link ScalarArg.UnboundArg} — scalar arg whose column could not be resolved;
  *       surfaced as a validation error.</li>
  *   <li>{@link InputTypeArg.TableInputArg} — {@code @table}-backed input type; carries per-field
@@ -68,6 +72,42 @@ public sealed interface ArgumentRef {
             boolean suppressedByFieldOverride,
             boolean isLookupKey
         ) implements ScalarArg {}
+
+        /**
+         * Composite-PK NodeId scalar arg: one wire-format base64 id (or list of them) decodes
+         * once per row at the arg layer into a {@code Record<N>}; bindings against
+         * {@code columns} index the Record positionally. Carrier-side analogue of
+         * {@code LookupArg.DecodedRecord} — {@code projectForLookup} lifts it into that
+         * shape when {@code isLookupKey} is set.
+         *
+         * <p>{@code extraction} narrows to {@link CallSiteExtraction.NodeIdDecodeKeys}: the only
+         * arms producing a multi-column tuple. Today's classifier only emits
+         * {@link CallSiteExtraction.ThrowOnMismatch} (lookup-key path). Mutation-key and
+         * top-level filter paths are not yet wired.
+         *
+         * <p>{@code columns.size()} must be ≥ 2; arity-1 NodeId scalar args route to
+         * {@link ColumnArg}.
+         */
+        record CompositeColumnArg(
+            String name,
+            String typeName,
+            boolean nonNull,
+            boolean list,
+            List<ColumnRef> columns,
+            CallSiteExtraction.NodeIdDecodeKeys extraction,
+            Optional<ArgConditionRef> argCondition,
+            boolean suppressedByFieldOverride,
+            boolean isLookupKey
+        ) implements ScalarArg {
+            public CompositeColumnArg {
+                requireNonNull(columns, "columns");
+                if (columns.size() < 2) {
+                    throw new IllegalArgumentException(
+                        "CompositeColumnArg requires arity >= 2; arity-1 routes to ScalarArg.ColumnArg");
+                }
+                columns = List.copyOf(columns);
+            }
+        }
 
         /**
          * Scalar arg whose column could not be resolved on the target table.

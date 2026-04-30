@@ -819,32 +819,51 @@ class FieldBuilder {
                 name, typeName, nonNull, list, argCondition, plainFields);
         }
 
-        // R50 phase (f-D1): scalar ID arg on a node-type table folds onto ColumnArg with
-        // NodeIdDecodeKeys.ThrowOnMismatch. The single key column becomes the binding column;
-        // the ThrowOnMismatch arm carries the per-NodeType decode<TypeName> helper. Composite-PK
-        // NodeType targets land in phase (g) alongside the composite-PK NodeId fixture; for now
-        // we surface them as UnclassifiedArg so the missing wiring is visible at validate time
-        // rather than silently producing a degenerate path.
-        if ("ID".equals(typeName) && !list) {
+        // R50 phase (f-D1)/(g-A): scalar ID arg on a node-type table folds onto a column-shaped
+        // carrier with NodeIdDecodeKeys.ThrowOnMismatch. Arity-1 → ColumnArg (single key column);
+        // arity ≥ 2 → CompositeColumnArg (per-row decode produces a Record<N>; bindings index
+        // positionally). Both arms carry the per-NodeType decode<TypeName> helper.
+        //
+        // Today's classifier only emits the lookup-key path for both arms (consumed by
+        // projectForLookup → ScalarLookupArg / DecodedRecord). Non-lookup-key composite-PK
+        // NodeId args (mutation key, top-level filter) need projectFilters wiring that has
+        // not yet shipped; surface them as UnclassifiedArg so the gap is visible at validate
+        // time rather than silently producing a degenerate path.
+        if ("ID".equals(typeName)) {
             Optional<JooqCatalog.NodeIdMetadata> nodeIdMeta = ctx.catalog.nodeIdMetadata(rt.tableName());
             if (nodeIdMeta.isPresent()) {
                 boolean isLookupKey = arg.hasAppliedDirective(DIR_LOOKUP_KEY);
                 var keyColumns = nodeIdMeta.get().keyColumns();
-                if (keyColumns.size() != 1) {
+                // Composite-PK + non-list non-@lookupKey: today's classifier only wires the
+                // composite-PK path with @lookupKey (mutation-key and top-level filter paths land
+                // in a later R50 slice). Non-list arity-1 falls through to ColumnArg below.
+                if (keyColumns.size() > 1 && !isLookupKey) {
                     return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
-                        "scalar @nodeId arg targeting a composite-PK NodeType is pending R50 phase (g) "
-                        + "(arity > 1 needs ScalarArg.CompositeColumnArg infrastructure)");
+                        "scalar @nodeId arg targeting a composite-PK NodeType is only wired for "
+                        + "@lookupKey today; mutation-key and top-level filter paths land in a "
+                        + "later R50 slice");
                 }
-                var decodeMethod = ctx.resolveDecodeHelperForTable(
-                    rt.tableName(), nodeIdMeta.get().typeId(), keyColumns);
-                if (decodeMethod == null) {
-                    return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
-                        "@nodeId arg: unable to resolve decode helper for table '" + rt.tableName() + "'");
+                // List + arity-1 without @lookupKey is not yet wired (would be a top-level
+                // filter use case); falls through to column-name resolution which fails cleanly.
+                if (list && keyColumns.size() == 1 && !isLookupKey) {
+                    // Fall through to column-name resolution.
+                } else {
+                    var decodeMethod = ctx.resolveDecodeHelperForTable(
+                        rt.tableName(), nodeIdMeta.get().typeId(), keyColumns);
+                    if (decodeMethod == null) {
+                        return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
+                            "@nodeId arg: unable to resolve decode helper for table '" + rt.tableName() + "'");
+                    }
+                    var extraction = new CallSiteExtraction.ThrowOnMismatch(decodeMethod);
+                    if (keyColumns.size() == 1) {
+                        return new ArgumentRef.ScalarArg.ColumnArg(
+                            name, typeName, nonNull, list, keyColumns.get(0), extraction,
+                            argCondition, fieldOverride, isLookupKey);
+                    }
+                    return new ArgumentRef.ScalarArg.CompositeColumnArg(
+                        name, typeName, nonNull, list, keyColumns, extraction,
+                        argCondition, fieldOverride, isLookupKey);
                 }
-                var extraction = new CallSiteExtraction.ThrowOnMismatch(decodeMethod);
-                return new ArgumentRef.ScalarArg.ColumnArg(
-                    name, typeName, nonNull, list, keyColumns.get(0), extraction,
-                    argCondition, fieldOverride, isLookupKey);
             }
         }
 
@@ -1142,6 +1161,22 @@ class FieldBuilder {
                 case ArgumentRef.ScalarArg.ColumnArg ca when ca.isLookupKey() ->
                     args.add(new ColumnMapping.LookupArg.ScalarLookupArg(
                         ca.name(), ca.column(), ca.extraction(), ca.list()));
+                case ArgumentRef.ScalarArg.CompositeColumnArg cca when cca.isLookupKey() -> {
+                    // R50 phase (g-A): composite-PK NodeId scalar @lookupKey arg. Decode runs
+                    // once per row at the arg layer; positional RecordBindings index the Record<N>.
+                    // Failure mode is ThrowOnMismatch — null returns surface as
+                    // GraphqlErrorException via LookupValuesJoinEmitter's per-row throw.
+                    var bindings = new ArrayList<InputColumnBinding.RecordBinding>();
+                    for (int i = 0; i < cca.columns().size(); i++) {
+                        bindings.add(new InputColumnBinding.RecordBinding(i, cca.columns().get(i)));
+                    }
+                    var decodeMethod = switch (cca.extraction()) {
+                        case CallSiteExtraction.ThrowOnMismatch t -> t.decodeMethod();
+                        case CallSiteExtraction.SkipMismatchedElement s -> s.decodeMethod();
+                    };
+                    args.add(new ColumnMapping.LookupArg.DecodedRecord(
+                        cca.name(), cca.list(), decodeMethod, bindings));
+                }
                 case ArgumentRef.InputTypeArg.TableInputArg tia -> {
                     // Composite-key Map input: each MapBinding contributes one slot. List
                     // cardinality lives on the outer arg — individual input fields are guaranteed
@@ -1242,6 +1277,14 @@ class FieldBuilder {
                             : new BodyParam.Eq(ca.name(), ca.column(), javaType, ca.nonNull(), ca.extraction()));
                     }
                     ca.argCondition().ifPresent(ac -> argConditions.add(ac.filter()));
+                }
+                case ArgumentRef.ScalarArg.CompositeColumnArg cca -> {
+                    // R50 phase (g-A): composite-PK NodeId scalar args only ship with @lookupKey
+                    // today (consumed by projectForLookup → DecodedRecord). The classifier rejects
+                    // non-lookup-key composite-PK args as UnclassifiedArg, so they never reach
+                    // this branch with isLookupKey == false. Lookup-key args are routed away
+                    // from bodyParams the same way ColumnArg's @lookupKey path is.
+                    cca.argCondition().ifPresent(ac -> argConditions.add(ac.filter()));
                 }
             }
         }
