@@ -1,7 +1,7 @@
 = Graphitron
 :description: Graphitron is a Java code generator that turns GraphQL schemas + jOOQ database models into resolvers.
 :keywords: graphitron, sikt, graphql, jooq, java, code generation
-:toc!:
+:!toc:
 :!showtitle:
 
 ++++
