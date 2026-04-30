@@ -1,8 +1,7 @@
-= Rewrite Development
+= Architecture
 
-You're implementing generators, adding field variants, or fixing bugs in the rewrite pipeline.
+Contributor-facing documentation for the Graphitron generator: how the pipeline classifies a GraphQL schema, what code it emits, and the design principles that govern both. Start here if you're implementing generators, adding field variants, or fixing bugs in the rewrite pipeline. For end-user documentation (writing schemas, wiring up Maven, running the generator), see xref:../index.adoc[the project home page].
 
-[start=4]
 . *xref:code-generation-triggers.adoc[Code Generation Triggers]*: the full classification taxonomy: schema patterns, sealed variants, generated output. This is the reference for what the code does.
 . *xref:rewrite-model.adoc[Rewrite Model]*: visual Mermaid diagrams of the sealed type hierarchy: field variants, type variants, and support/composition types.
 . *xref:rewrite-design-principles.adoc[Rewrite Design Principles]*: architectural and technical principles governing the rewrite pipeline (generation-thinking, sealed hierarchies, classification boundaries, test tiers, etc.).
