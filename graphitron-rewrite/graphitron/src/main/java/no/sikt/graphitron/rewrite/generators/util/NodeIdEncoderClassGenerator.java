@@ -1,10 +1,16 @@
 package no.sikt.graphitron.rewrite.generators.util;
 
+import no.sikt.graphitron.javapoet.ArrayTypeName;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
+import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
+import no.sikt.graphitron.rewrite.GraphitronSchema;
+import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.rewrite.model.GraphitronType.NodeType;
+import no.sikt.graphitron.rewrite.model.HelperRef;
 
 import javax.lang.model.element.Modifier;
 import java.nio.charset.StandardCharsets;
@@ -14,6 +20,7 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Collection;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * Generates the {@code NodeIdEncoder} utility class — encode + decode + WHERE-builder helpers
@@ -24,19 +31,28 @@ import java.util.List;
  * <pre>{@code
  * "typeId:v1,v2,..."  ->  base64-url (no padding, UTF-8)
  * }</pre>
- * Commas inside values are escaped as {@code %2C}. {@link #encode} returns {@code null} when
- * any value is {@code null} so the GraphQL field resolves to {@code null} rather than emitting
- * a malformed ID.
+ * Commas inside values are escaped as {@code %2C}. The generic {@code encode} returns
+ * {@code null} when any value is {@code null} so the GraphQL field resolves to {@code null}
+ * rather than emitting a malformed ID.
  *
- * <p>{@link #peekTypeId} and {@link #hasIds} swallow malformed input as {@code null} / empty
- * conditions: the Relay {@code Query.node(id:)} contract says "if no such object exists, the
- * field returns null", and decoding errors are not exposed to clients.
+ * <p>Per-Node helpers. For each {@code @node} type the generator emits two static helpers
+ * named after the GraphQL type:
+ * <ul>
+ *   <li>{@code String encode<TypeName>(T1 v1, ..., TN vN)} — bakes the typeId into the helper
+ *       name so call sites pass typed key values directly instead of the wire string.</li>
+ *   <li>{@code RecordN<T1, ..., TN> decode<TypeName>(String base64Id)} — returns {@code null}
+ *       uniformly on malformed input or typeId mismatch; carrier consumers wrap that null
+ *       through the {@code CallSiteExtraction.NodeIdDecodeKeys.*} arms.</li>
+ * </ul>
+ *
+ * <p>Call sites resolve these helpers through structurally typed {@link HelperRef} references
+ * pre-computed on {@link NodeType#encodeMethod()} / {@link NodeType#decodeMethod()}, so the
+ * encoder generator and the call-site emitters cannot drift on naming.
  *
  * <p>Generated as a source file rather than shipped as a library dependency. The class is
  * {@code final} with a private constructor and only static methods — consumers cannot extend
  * it to override the encoding. This is deliberate: a single canonical wire format across every
- * generated dispatcher is what makes nodeIds durable across schema evolution (see plan-nodeid-
- * directives.md "Durability and opacity").
+ * generated dispatcher is what makes nodeIds durable across schema evolution.
  */
 public class NodeIdEncoderClassGenerator {
 
@@ -48,14 +64,33 @@ public class NodeIdEncoderClassGenerator {
     private static final ClassName FIELD     = ClassName.get("org.jooq", "Field");
     private static final ClassName ROW_N     = ClassName.get("org.jooq", "RowN");
     private static final ClassName DSL       = ClassName.get("org.jooq.impl", "DSL");
+    private static final ClassName SQL_DIALECT = ClassName.get("org.jooq", "SQLDialect");
 
+    /**
+     * Backwards-compatible no-arg generator: emits the encoder class with no per-Node helpers.
+     * Retained only for callers that have not yet been threaded with the schema; production
+     * generation goes through {@link #generate(GraphitronSchema, String)}.
+     */
     public static List<TypeSpec> generate() {
+        return generate(List.of(), null);
+    }
+
+    /** Emits the encoder class with per-Node {@code encode<TypeName>} / {@code decode<TypeName>} helpers. */
+    public static List<TypeSpec> generate(GraphitronSchema schema, String jooqPackage) {
+        var nodeTypes = schema.types().values().stream()
+            .filter(t -> t instanceof NodeType)
+            .map(t -> (NodeType) t)
+            .collect(Collectors.toUnmodifiableList());
+        return generate(nodeTypes, jooqPackage);
+    }
+
+    private static List<TypeSpec> generate(List<NodeType> nodeTypes, String jooqPackage) {
         var privateCtor = MethodSpec.constructorBuilder()
             .addModifiers(Modifier.PRIVATE)
             .build();
 
         var fieldWildcard = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
-        var fieldArray = no.sikt.graphitron.javapoet.ArrayTypeName.of(fieldWildcard);
+        var fieldArray = ArrayTypeName.of(fieldWildcard);
         var collectionOfString = ParameterizedTypeName.get(ClassName.get(Collection.class), ClassName.get(String.class));
 
         var encode = MethodSpec.methodBuilder("encode")
@@ -75,8 +110,6 @@ public class NodeIdEncoderClassGenerator {
                 BASE64, CHARSETS)
             .build();
 
-        // Returns the typeId prefix from a base64-encoded id, or null if the input is malformed.
-        // Used by Query.node dispatch to route to the correct table without a full unpack.
         var peekTypeId = MethodSpec.methodBuilder("peekTypeId")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(String.class)
@@ -92,9 +125,6 @@ public class NodeIdEncoderClassGenerator {
             .endControlFlow()
             .build();
 
-        // Decodes a base64 id into its CSV value parts, or null when the input is malformed or
-        // the embedded typeId does not match the expected one. Package-private and static —
-        // callers within the generated package use this to build hasIds rows.
         var decodeValues = MethodSpec.methodBuilder("decodeValues")
             .addModifiers(Modifier.STATIC)
             .returns(String[].class)
@@ -117,9 +147,6 @@ public class NodeIdEncoderClassGenerator {
             .addStatement("return parts")
             .build();
 
-        // Coerces a CSV value to the jOOQ field's declared Java type. Mirrors the legacy
-        // NodeIdStrategy.getFieldValue special cases for OffsetDateTime / LocalDate, falling
-        // through to the field's data-type converter for everything else.
         var coerceValue = MethodSpec.methodBuilder("coerceValue")
             .addModifiers(Modifier.STATIC)
             .returns(Object.class)
@@ -133,11 +160,6 @@ public class NodeIdEncoderClassGenerator {
             .addStatement("return field.getDataType().convert(value)")
             .build();
 
-        // Re-encodes a base64 id into its canonical no-padding form, or null when the input is
-        // malformed or the embedded typeId does not match. Used by Query.nodes(ids:) batch
-        // dispatch to fan rows back to all input positions: the URL base64 decoder accepts
-        // padded inputs, but encode() always emits the no-padding form, so a non-canonical
-        // input (e.g. a trailing '=') would never match the encoded result row otherwise.
         var canonicalize = MethodSpec.methodBuilder("canonicalize")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(String.class)
@@ -149,8 +171,6 @@ public class NodeIdEncoderClassGenerator {
             .addStatement("return encode(typeId, ($T[]) values)", Object.class)
             .build();
 
-        // Single-id WHERE condition. Delegates to hasIds. Garbage / typeId-mismatch input
-        // collapses to noCondition() (the row never matches, the resolver returns null).
         var hasId = MethodSpec.methodBuilder("hasId")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(CONDITION)
@@ -162,10 +182,6 @@ public class NodeIdEncoderClassGenerator {
                 ClassName.get("java.util", "Collections"))
             .build();
 
-        // Multi-id WHERE condition. Decodes each id, coerces each CSV value to its column's
-        // type, builds an IN clause over the resulting rows. Ids that fail to decode or whose
-        // typeId does not match are silently skipped — callers should never see a query error
-        // for a malformed user-supplied id.
         var arrayListOfRowN = ParameterizedTypeName.get(ClassName.get(ArrayList.class), ROW_N);
         var hasIds = MethodSpec.methodBuilder("hasIds")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -188,7 +204,7 @@ public class NodeIdEncoderClassGenerator {
             .addStatement("return $T.row(keyColumns).in(rows)", DSL)
             .build();
 
-        var spec = TypeSpec.classBuilder(CLASS_NAME)
+        var classBuilder = TypeSpec.classBuilder(CLASS_NAME)
             .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
             .addJavadoc("Relay nodeId encode/decode/WHERE-builder helpers. Static, non-extendable\n"
                 + "by design — see {@link NodeIdEncoderClassGenerator}.\n")
@@ -199,10 +215,95 @@ public class NodeIdEncoderClassGenerator {
             .addMethod(hasId)
             .addMethod(hasIds)
             .addMethod(decodeValues)
-            .addMethod(coerceValue)
-            .build();
+            .addMethod(coerceValue);
 
-        return List.of(spec);
+        ClassName tablesClass = jooqPackage == null
+            ? null
+            : ClassName.get(jooqPackage, "Tables");
+        for (NodeType nt : nodeTypes) {
+            classBuilder.addMethod(buildPerTypeEncode(nt));
+            if (tablesClass != null) {
+                classBuilder.addMethod(buildPerTypeDecode(nt, tablesClass));
+            }
+        }
+
+        return List.of(classBuilder.build());
+    }
+
+    /** Emits {@code static String encode<TypeName>(T1 v0, ..., TN vN-1)}. */
+    private static MethodSpec buildPerTypeEncode(NodeType nt) {
+        HelperRef.Encode ref = nt.encodeMethod();
+        var b = MethodSpec.methodBuilder(ref.methodName())
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(String.class);
+        StringBuilder argList = new StringBuilder();
+        for (int i = 0; i < ref.paramSignature().size(); i++) {
+            ColumnRef col = ref.paramSignature().get(i);
+            String paramName = "v" + i;
+            b.addParameter(ClassName.bestGuess(col.columnClass()), paramName);
+            argList.append(", ").append(paramName);
+        }
+        b.addStatement("return encode($S" + argList + ")", nt.typeId());
+        return b.build();
+    }
+
+    /**
+     * Emits {@code static RecordN<T1..TN> decode<TypeName>(String base64Id)}, returning
+     * {@code null} on malformed input or typeId mismatch and otherwise materialising a typed
+     * {@link org.jooq.Record} populated from the table's {@link org.jooq.Field} references.
+     */
+    private static MethodSpec buildPerTypeDecode(NodeType nt, ClassName tablesClass) {
+        HelperRef.Decode ref = nt.decodeMethod();
+        TypeName recordType = ref.returnType();
+        int n = ref.outputColumnShape().size();
+        String tableField = nt.table().javaFieldName();
+
+        var b = MethodSpec.methodBuilder(ref.methodName())
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(recordType)
+            .addParameter(String.class, "base64Id")
+            .addStatement("$T values = decodeValues($S, base64Id)", String[].class, nt.typeId())
+            .addStatement("if (values == null || values.length != $L) return null", n);
+
+        // Build an unattached typed record over the keyColumns and populate each slot through
+        // the column's data-type converter (matching the legacy coerceValue path's fall-through).
+        // Construction shape:
+        //   var rec = DSL.using(SQLDialect.DEFAULT).newRecord(Tables.<table>.<col1>, ...);
+        //   rec.set(Tables.<table>.<col1>, Tables.<table>.<col1>.getDataType().convert(values[0]));
+        StringBuilder fieldsList = new StringBuilder();
+        for (int i = 0; i < n; i++) {
+            if (i > 0) fieldsList.append(", ");
+            ColumnRef col = ref.outputColumnShape().get(i);
+            fieldsList.append("$T.").append(tableField).append(".").append(col.javaName());
+        }
+        Object[] tablesRefs = new Object[n];
+        for (int i = 0; i < n; i++) tablesRefs[i] = tablesClass;
+
+        // Build the typed record target. We declare it as the wildcard return type and rely on
+        // the explicit cast at the bottom rather than `var` (generated sources avoid `var` per
+        // the GeneratedSourcesLintTest contract).
+        b.addStatement("$T rec = $T.using($T.DEFAULT).newRecord(" + fieldsList + ")",
+            prepend(tablesRefs, recordType, DSL, SQL_DIALECT));
+
+        for (int i = 0; i < n; i++) {
+            ColumnRef col = ref.outputColumnShape().get(i);
+            b.addStatement("rec.set($T.$L.$L, $T.$L.$L.getDataType().convert(values[$L]))",
+                tablesClass, tableField, col.javaName(),
+                tablesClass, tableField, col.javaName(),
+                i);
+        }
+
+        b.addStatement("return rec");
+        return b.build();
+    }
+
+    /** Returns {@code [a, b, c, ...rest]} as a fresh {@code Object[]}. */
+    private static Object[] prepend(Object[] rest, Object a, Object b, Object c) {
+        Object[] out = new Object[rest.length + 3];
+        out[0] = a;
+        out[1] = b;
+        out[2] = c;
+        System.arraycopy(rest, 0, out, 3, rest.length);
+        return out;
     }
 }
-

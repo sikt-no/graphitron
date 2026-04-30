@@ -14,10 +14,13 @@ import graphql.schema.GraphQLScalarType;
 import graphql.schema.GraphQLType;
 import graphql.schema.GraphQLTypeUtil;
 import graphql.schema.GraphQLUnionType;
+import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.JooqCatalog;
+import no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator;
 import no.sikt.graphitron.rewrite.model.ErrorHandlerType;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
+import no.sikt.graphitron.rewrite.model.HelperRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ConnectionType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.EdgeType;
@@ -367,7 +370,7 @@ class TypeBuilder {
                 }
                 resolvedKeyColumns = pk;
             }
-            return new NodeType(name, location, tableRef, resolvedTypeId, resolvedKeyColumns);
+            return buildNodeType(name, location, tableRef, resolvedTypeId, resolvedKeyColumns);
         }
 
         // Both @node and metadata present. SDL wins — it is the author's published wire-format
@@ -397,7 +400,24 @@ class TypeBuilder {
             }
             resolvedKeyColumns = List.copyOf(sdlKeyColumns);
         }
-        return new NodeType(name, location, tableRef, resolvedTypeId, resolvedKeyColumns);
+        return buildNodeType(name, location, tableRef, resolvedTypeId, resolvedKeyColumns);
+    }
+
+    /**
+     * Constructs a {@link NodeType} with pre-resolved {@link HelperRef} references for the
+     * per-type {@code encode<TypeName>} / {@code decode<TypeName>} helpers. The encoder class is
+     * the same {@link NodeIdEncoderClassGenerator#CLASS_NAME} emitted under
+     * {@code outputPackage + ".util"}; the helper method name is derived from the GraphQL type
+     * name (not the {@code typeId}, which is the wire string and may differ).
+     */
+    private NodeType buildNodeType(String name, SourceLocation location, TableRef tableRef,
+                                   String typeId, List<ColumnRef> keyColumns) {
+        ClassName encoderClass = ClassName.get(
+            ctx.ctx.outputPackage() + ".util",
+            NodeIdEncoderClassGenerator.CLASS_NAME);
+        var encodeMethod = new HelperRef.Encode(encoderClass, "encode" + name, keyColumns);
+        var decodeMethod = new HelperRef.Decode(encoderClass, "decode" + name, keyColumns);
+        return new NodeType(name, location, tableRef, typeId, keyColumns, encodeMethod, decodeMethod);
     }
 
     private static boolean implementsNode(GraphQLObjectType objType) {

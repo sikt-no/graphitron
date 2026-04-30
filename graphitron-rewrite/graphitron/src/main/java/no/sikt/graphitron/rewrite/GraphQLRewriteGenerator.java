@@ -153,7 +153,7 @@ public class GraphQLRewriteGenerator {
         Set<Path> emittedThisRun = new LinkedHashSet<>();
         write(GraphitronValuesClassGenerator.generate(),                                          "util",       emittedThisRun);
         write(ColumnFetcherClassGenerator.generate(),                                             "util",       emittedThisRun);
-        write(NodeIdEncoderClassGenerator.generate(),                                             "util",       emittedThisRun);
+        write(NodeIdEncoderClassGenerator.generate(schema, jooqPackage),                          "util",       emittedThisRun);
         write(EntityFetcherDispatchClassGenerator.generate(schema, outputPackage, jooqPackage),   "util",       emittedThisRun);
         write(ConnectionResultClassGenerator.generate(outputPackage),                             "util",       emittedThisRun);
         write(ConnectionHelperClassGenerator.generate(outputPackage),                             "util",       emittedThisRun);
