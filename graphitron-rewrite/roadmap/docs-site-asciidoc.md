@@ -1,7 +1,7 @@
 ---
 id: R9
 title: "Fold graphitron.sikt.no into the Maven build (AsciiDoc + GitHub Pages)"
-status: Spec
+status: In Progress
 bucket: architecture
 priority: 20
 theme: docs
@@ -348,32 +348,14 @@ This plan touches the conventions documented in [`workflow.md`](../docs/workflow
 
 Six phases (Phase 5 split into 5a cutover and 5b decommission), each with an observable end state on a real URL or in deployed infrastructure. Each phase is independently shippable and trunk-bound; nothing in a later phase reaches back into an earlier one.
 
-### Phase 1: Pipeline (skeleton site, deployed to default Pages URL)
+### Phase 1: Pipeline (skeleton site, deployed to default Pages URL) — shipped at `a4675bf`
 
-End state: `https://sikt-no.github.io/graphitron/` serves a one-page AsciiDoc site built by `mvn install`, styled with SDS tokens, deployed by the new GitHub Action. The live `graphitron.sikt.no` continues to serve the old Docusaurus build, untouched. The page is a placeholder ("Documentation is being migrated") but the build, SDS bundling, deploy, and the visual identity all work end-to-end on the deployed Pages URL.
+`https://sikt-no.github.io/graphitron/` serves the placeholder AsciiDoc site, built by the rewrite reactor (`mvn -pl :graphitron-docs -am package`) and deployed by `.github/workflows/deploy-docs.yml`. SDS branding renders end-to-end. `rewrite-build.yml` and `preview-docs.yml` shipped with the same commit. `CLAUDE.md` scope extended to `/docs/`.
 
-Pre-Phase-1 verification (no code changes; do once before opening the Phase 1 PR):
+Two deviations worth flagging for later phases:
 
-- Identify the maintainer who can flip Pages Source = GitHub Actions on `sikt-no/graphitron`, and who can add `claude/graphitron-rewrite` to the auto-created `github-pages` environment's branch allowlist (defaults to default branch only).
-
-Deliverables:
-
-- `/docs/pom.xml` (asciidoctor-maven-plugin + maven-resources-plugin staging copy from `/docs/` only; no `architecture/` or `_generated/` yet; `skip-docs` profile wrapping the asciidoctor execution; `<failIf><severity>WARN</severity></failIf>` configured).
-- `graphitron-rewrite/pom.xml` updated `<modules>` list (adds `<module>../docs</module>`).
-- `/docs/index.adoc` (placeholder content).
-- `/docs/README.adoc` (replaces existing `/docs/README.md`; GitHub-rendered landing for the directory).
-- `/docs/pom.xml` `download-maven-plugin` executions fetching `@sikt/sds-core` and `@sikt/sds-button` CSS from JSDelivr at build time into `target/staging/css/` (versions pinned via `<sds.core.version>` / `<sds.button.version>` properties). One additional fetch for `sds-core`'s `LICENSE.md` (filename `LICENSE-sds-core.md` in staging); `sds-button` has no LICENSE file to copy.
-- `/docs/_theme/site.css` (initial port of `siktifisert.css` patterns onto AsciiDoctor classes; staging step copies it into `target/staging/css/` alongside the fetched SDS files).
-- Logo and favicon copied into `/docs/images/`.
-- `.github/workflows/rewrite-build.yml` (new; verifies the rewrite reactor including the docs module on push and PR to `main` and `claude/graphitron-rewrite`; uses JDK 25; `mvn -f graphitron-rewrite/pom.xml verify -Plocal-db`). This closes the existing CI gap noted in [CI integration](#ci-integration).
-- `.github/workflows/deploy-docs.yml` (new; deploys on push to `claude/graphitron-rewrite`; concurrency `pages`).
-- `.github/workflows/preview-docs.yml` (new; or a job in `rewrite-build.yml`; uploads `target/generated-docs/` as a workflow artifact on PRs touching docs paths).
-- `CLAUDE.md` scope-rule update: extend AI scope to include `/docs/` with a one-line note.
-- One-time GitHub Pages settings change: enable Pages, source = GitHub Actions (manual, by a maintainer; no custom domain yet).
-
-No `CNAME` file in this phase. No DNS changes. No touching the old Docusaurus deployment.
-
-Verification: push to `main`, observe deploy succeed, hit `https://sikt-no.github.io/graphitron/`, confirm SDS branding renders correctly (Sikt colors, typography, header/footer match), HTTPS valid.
+- **NPM tarballs instead of JSDelivr.** The plan called for `https://cdn.jsdelivr.net/npm/@sikt/sds-*@<v>/dist/index.css`; JSDelivr is firewalled in the Claude Code Web sandbox (returns 403 with `host_not_allowed`), so the build fetches `https://registry.npmjs.org/@sikt/sds-*/-/sds-*-<v>.tgz` with `<unpack>true</unpack>` and `maven-antrun-plugin` flattens `package/dist/index.css` to `target/staging/css/sds-{core,button}.css`. Same effective semantics: pinned version, no Node, no runtime third-party. If JSDelivr later becomes preferred (single direct file vs. tarball unpack), the switch is a one-line change in `/docs/pom.xml`.
+- **Logo and favicon not yet in `/docs/images/`.** The plan listed them as a Phase 1 deliverable (sourced from `alf/graphitron-landingsside`). The implementing session didn't have access to that repo, so the placeholder runs without them. Phase 3 (absorption) is the natural place to bring them in; alternatively, drop them in any time before that and the build picks them up.
 
 ### Phase 2: In-repo content migration
 
