@@ -27,11 +27,16 @@ R22 has a hard dependency on **R50 (Lift NodeId out of the model)**. Phase 1 (mo
 
 **Status: paused pending R50.** Phase 1 shipped (commit `9e517b1`). No further mutation work should land against trunk until R50 reaches Done. The Phase 2 INSERT emission stays on the roadmap and is the next item to revisit once R50 lands.
 
-What is preserved across R50:
+What R50 lands on the mutation side:
 
-- `MutationField.DmlTableField` sealed supertype with `(returnType, tableInputArg, nodeIdMeta, errorChannel)` — none of these fields are wire-shape leaks. `tableInputArg` is `ArgumentRef.InputTypeArg.TableInputArg`, untouched by R50. `nodeIdMeta` carries `(typeId, keyColumns)`, which is the same data R50's boundary `NodeIdEncodeKeys` extraction needs for output-side ID returns; `NodeType` (the source) explicitly stays per R50.
-- The classifier's `classifyMutationInput` helper, modulo Invariants #8–#10 dead-code cleanup.
-- The DELETE emitter's overall shape (`deleteFrom().where(...).returningResult(...).fetchOne(...)`); the `where` predicate's column-extraction arm migrates from `binding.targetColumn()` to whatever shape the post-R50 `InputColumnBinding` carries.
+- **`DmlTableField.nodeIdMeta` retypes to `encodeReturn: Optional<HelperRef>`.** Per R50's "What stays" section. The classifier still reads `JooqCatalog.nodeIdMetadata(tableName)` (the catalog-internal `NodeIdMetadata(typeId, keyColumns)` lookup stays unchanged), but converts the result to a `HelperRef` before constructing the variant. The DELETE emitter rewrites: `f.nodeIdMeta().get().keyColumns()` → `f.encodeReturn().get().params()` for the `returningResult(...)` projection; the `.fetchOne(r -> NodeIdEncoder.encode(typeId, r.get(...), ...))` lambda becomes `.fetchOne(r -> NodeIdEncoder.encode<TypeName>(r.get(...), ...))` resolved through `f.encodeReturn().get()`. `NodeIdMetadata` stays in `JooqCatalog` as the lookup-time intermediate; it stops being a model-carried record.
+- **`TableInputArg.fieldBindings` retypes from `List<InputColumnBinding>` to `List<InputColumnBinding.MapBinding>`.** Per R50's `InputColumnBinding` seal (see *Lookup arg restructure* and *What stays* in `lift-nodeid-out-of-model.md`). Existing call sites (`FieldBuilder.buildLookupBindings`, the DELETE WHERE-clause emitter, and the validator's `MutationDeleteTableFieldValidationTest`) all already produce and consume Map-keyed bindings exclusively; the narrower type matches reality. The DELETE emitter's `binding.inputFieldName()` migrates to `binding.fieldName()`.
+
+What R50 leaves alone on the mutation side:
+
+- `MutationField.DmlTableField` sealed supertype itself — the four DML records and the shared accessor `(returnType, tableInputArg, encodeReturn, location)`. `tableInputArg` is `ArgumentRef.InputTypeArg.TableInputArg`, retyped only at the `fieldBindings` slot per the bullet above; the rest of its shape is untouched.
+- The classifier's per-verb helpers (`classifyMutationDeleteField` etc.), modulo Invariants #8–#10 dead-code cleanup and the `NodeIdMetadata` → `HelperRef` conversion at the `nodeIdMeta` resolution point.
+- The DELETE emitter's overall shape (`deleteFrom().where(...).returningResult(...).fetchOne(...)`); only the two slot accesses and the encode-call lambda change.
 
 ---
 
