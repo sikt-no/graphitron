@@ -1817,6 +1817,14 @@ class FieldBuilder {
             return NO_CHANNEL;
         }
 
+        // §1 channel-level reject rules (rules 7 and 9). Run before payload-class reflection so
+        // a misconfigured channel is reported on its own terms rather than masked by a
+        // constructor-shape rejection downstream.
+        String channelReject = checkChannelLevelHandlerRules(mappedErrorTypes);
+        if (channelReject != null) {
+            return new ErrorChannelResult.Reject(channelReject);
+        }
+
         Class<?> payloadCls;
         try {
             payloadCls = Class.forName(result.fqClassName());
@@ -1913,6 +1921,92 @@ class FieldBuilder {
             return null;
         }
         return errorTypes;
+    }
+
+    /**
+     * Channel-level reject rules from §1's parse-time table that span multiple {@code @error}
+     * types in the same channel. Runs after the carrier classifier has resolved
+     * {@code mappedErrorTypes}; returns a non-null reason string when a rule fires, or
+     * {@code null} when the channel is well-formed.
+     *
+     * <ul>
+     *   <li>Rule 7: more than one {@code VALIDATION} handler across the channel's flattened
+     *       handler list. VALIDATION is a single fan-out target per payload, and two
+     *       {@code VALIDATION}-marked {@code @error} types would compete for the same slot.</li>
+     *   <li>Rule 9: a {@code ValidationHandler} coexists with an {@code ExceptionHandler} whose
+     *       exception class is {@code ValidationViolationGraphQLException} or any of its
+     *       supertypes ({@code AbortExecutionException}, {@code RuntimeException},
+     *       {@code Exception}, {@code Throwable}). The runtime runs validation fan-out ahead
+     *       of {@code MAPPINGS} iteration (§5), so the broader handler would shadow the
+     *       fan-out for {@code ValidationViolationGraphQLException} cases.</li>
+     * </ul>
+     *
+     * <p>Rule 8 (duplicate match-criteria) is its own classifier check (§3) and lives in a
+     * separate helper.
+     */
+    private static String checkChannelLevelHandlerRules(List<ErrorType> mappedErrorTypes) {
+        // Rule 7: multiple VALIDATION handlers in the same channel.
+        var validationCarriers = new java.util.ArrayList<String>();
+        for (var et : mappedErrorTypes) {
+            for (var h : et.handlers()) {
+                if (h instanceof ErrorType.ValidationHandler) {
+                    validationCarriers.add(et.name());
+                    break;
+                }
+            }
+        }
+        if (validationCarriers.size() > 1) {
+            return "@error channel has more than one {handler: VALIDATION} entry across "
+                + "@error types " + String.join(", ", validationCarriers)
+                + "; VALIDATION is a single fan-out target per payload — split into separate "
+                + "fields with distinct payloads, or collapse to one VALIDATION-carrying type";
+        }
+
+        // Rule 9: VALIDATION coexists with an ExceptionHandler whose class shadows
+        // ValidationViolationGraphQLException.
+        if (validationCarriers.isEmpty()) return null;
+        var shadowers = new java.util.ArrayList<String>();
+        for (var et : mappedErrorTypes) {
+            for (var h : et.handlers()) {
+                if (h instanceof ErrorType.ExceptionHandler eh
+                        && shadowsValidationViolation(eh.exceptionClassName())) {
+                    shadowers.add(et.name() + " ({handler: GENERIC, className: \""
+                        + eh.exceptionClassName() + "\"})");
+                }
+            }
+        }
+        if (!shadowers.isEmpty()) {
+            return "@error channel mixes {handler: VALIDATION} (on "
+                + String.join(", ", validationCarriers)
+                + ") with an ExceptionHandler whose class would shadow "
+                + "ValidationViolationGraphQLException at dispatch: " + String.join(", ", shadowers)
+                + "; VALIDATION runs ahead of MAPPINGS iteration so the broader handler is "
+                + "unreachable for validation-violation causes — split into two separate fields "
+                + "with distinct payloads";
+        }
+        return null;
+    }
+
+    /**
+     * Set of binary class names that, used as an {@code ExceptionHandler.exceptionClassName},
+     * would shadow {@code ValidationViolationGraphQLException} at dispatch time. The check
+     * also matches by simple name {@code "ValidationViolationGraphQLException"} so a
+     * developer-visible reference to the generated marker is recognised regardless of the
+     * output package's qualifier.
+     */
+    private static final java.util.Set<String> KNOWN_VALIDATION_SHADOWERS = java.util.Set.of(
+        "java.lang.Throwable",
+        "java.lang.Exception",
+        "java.lang.RuntimeException",
+        "graphql.execution.AbortExecutionException"
+    );
+
+    private static boolean shadowsValidationViolation(String exceptionClassName) {
+        if (exceptionClassName == null) return false;
+        if (KNOWN_VALIDATION_SHADOWERS.contains(exceptionClassName)) return true;
+        int lastDot = exceptionClassName.lastIndexOf('.');
+        String simple = lastDot < 0 ? exceptionClassName : exceptionClassName.substring(lastDot + 1);
+        return "ValidationViolationGraphQLException".equals(simple);
     }
 
     /**
