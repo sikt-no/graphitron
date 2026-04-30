@@ -1142,6 +1142,7 @@ class FieldBuilder {
             case CallSiteExtraction.Direct ignored -> column.columnClass();
             case CallSiteExtraction.ContextArg ignored -> column.columnClass();
             case CallSiteExtraction.NestedInputField ignored -> column.columnClass();
+            case CallSiteExtraction.NodeIdDecodeKeys ignored -> column.columnClass();
         };
     }
 

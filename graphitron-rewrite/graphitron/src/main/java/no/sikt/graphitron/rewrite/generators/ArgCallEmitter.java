@@ -164,6 +164,14 @@ public final class ArgCallEmitter {
                     srcAlias, jc.columnJavaName(), param.name());
             case CallSiteExtraction.NestedInputField nif ->
                 buildNestedInputFieldExtraction(nif.outerArgName(), nif.path(), param.typeName(), param.list());
+            case CallSiteExtraction.NodeIdDecodeKeys ignored ->
+                // R50 phase c+ wires the carrier-driven NodeId-decode arms (SkipMismatchedElement,
+                // ThrowOnMismatch) into ArgCallEmitter. Until those phases land, this arm is
+                // unreachable from production paths because no classifier route produces a
+                // NodeIdDecodeKeys extraction yet.
+                throw new IllegalStateException(
+                    "CallSiteExtraction.NodeIdDecodeKeys is not yet wired through ArgCallEmitter "
+                    + "(R50 phase c+); param '" + param.name() + "'");
         };
     }
 
