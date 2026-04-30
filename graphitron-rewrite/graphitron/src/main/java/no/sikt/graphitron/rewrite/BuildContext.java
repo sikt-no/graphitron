@@ -1009,7 +1009,8 @@ class BuildContext {
             Optional<ArgConditionRef> cond = buildInputFieldCondition(field, name, errors);
             return new InputFieldResolution.Resolved(new InputField.ColumnField(
                 parentTypeName, name, locationOf(field), typeName, nonNull, list,
-                new ColumnRef(e.sqlName(), e.javaName(), e.columnClass()), cond));
+                new ColumnRef(e.sqlName(), e.javaName(), e.columnClass()), cond,
+                new no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct()));
         }
         // NodeId migration shim: scalar ID field with no @nodeId directive whose backing table
         // carries node-identity metadata (__NODE_TYPE_ID / __NODE_KEY_COLUMNS constants emitted
