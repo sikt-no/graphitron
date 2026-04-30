@@ -1,12 +1,9 @@
 package no.sikt.graphitron.rewrite.generators.util;
 
-import no.sikt.graphitron.javapoet.ArrayTypeName;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.MethodSpec;
-import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
-import no.sikt.graphitron.javapoet.WildcardTypeName;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType.NodeType;
@@ -14,17 +11,13 @@ import no.sikt.graphitron.rewrite.model.HelperRef;
 
 import javax.lang.model.element.Modifier;
 import java.nio.charset.StandardCharsets;
-import java.time.LocalDate;
-import java.time.OffsetDateTime;
-import java.util.ArrayList;
 import java.util.Base64;
-import java.util.Collection;
 import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * Generates the {@code NodeIdEncoder} utility class — encode + decode + WHERE-builder helpers
- * for Relay node IDs, emitted once per code-generation run alongside other rewrite output.
+ * Generates the {@code NodeIdEncoder} utility class — encode + decode helpers for Relay node IDs,
+ * emitted once per code-generation run alongside other rewrite output.
  *
  * <p>Wire format (matches the legacy {@code no.sikt.graphql.NodeIdStrategy} encoding so IDs
  * round-trip across the cut-over):
@@ -58,12 +51,9 @@ public class NodeIdEncoderClassGenerator {
 
     public static final String CLASS_NAME = "NodeIdEncoder";
 
-    private static final ClassName BASE64    = ClassName.get(Base64.class);
-    private static final ClassName CHARSETS  = ClassName.get(StandardCharsets.class);
-    private static final ClassName CONDITION = ClassName.get("org.jooq", "Condition");
-    private static final ClassName FIELD     = ClassName.get("org.jooq", "Field");
-    private static final ClassName ROW_N     = ClassName.get("org.jooq", "RowN");
-    private static final ClassName DSL       = ClassName.get("org.jooq.impl", "DSL");
+    private static final ClassName BASE64      = ClassName.get(Base64.class);
+    private static final ClassName CHARSETS    = ClassName.get(StandardCharsets.class);
+    private static final ClassName DSL         = ClassName.get("org.jooq.impl", "DSL");
     private static final ClassName SQL_DIALECT = ClassName.get("org.jooq", "SQLDialect");
 
     /**
@@ -88,10 +78,6 @@ public class NodeIdEncoderClassGenerator {
         var privateCtor = MethodSpec.constructorBuilder()
             .addModifiers(Modifier.PRIVATE)
             .build();
-
-        var fieldWildcard = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
-        var fieldArray = ArrayTypeName.of(fieldWildcard);
-        var collectionOfString = ParameterizedTypeName.get(ClassName.get(Collection.class), ClassName.get(String.class));
 
         var encode = MethodSpec.methodBuilder("encode")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -147,75 +133,14 @@ public class NodeIdEncoderClassGenerator {
             .addStatement("return parts")
             .build();
 
-        var coerceValue = MethodSpec.methodBuilder("coerceValue")
-            .addModifiers(Modifier.STATIC)
-            .returns(Object.class)
-            .addParameter(fieldWildcard, "field")
-            .addParameter(String.class, "value")
-            .addStatement("$T<?> type = field.getDataType().getType()", Class.class)
-            .addStatement("if (type.isAssignableFrom($T.class)) return $T.parse(value)",
-                ClassName.get(OffsetDateTime.class), ClassName.get(OffsetDateTime.class))
-            .addStatement("if (type.isAssignableFrom($T.class)) return $T.parse(value)",
-                ClassName.get(LocalDate.class), ClassName.get(LocalDate.class))
-            .addStatement("return field.getDataType().convert(value)")
-            .build();
-
-        var canonicalize = MethodSpec.methodBuilder("canonicalize")
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(String.class)
-            .addParameter(String.class, "typeId")
-            .addParameter(String.class, "base64Id")
-            .addStatement("if (typeId == null) return null")
-            .addStatement("$T values = decodeValues(typeId, base64Id)", String[].class)
-            .addStatement("if (values == null) return null")
-            .addStatement("return encode(typeId, ($T[]) values)", Object.class)
-            .build();
-
-        var hasId = MethodSpec.methodBuilder("hasId")
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(CONDITION)
-            .addParameter(String.class, "typeId")
-            .addParameter(String.class, "base64Id")
-            .addParameter(fieldArray, "keyColumns")
-            .varargs(true)
-            .addStatement("return hasIds(typeId, $T.singletonList(base64Id), keyColumns)",
-                ClassName.get("java.util", "Collections"))
-            .build();
-
-        var arrayListOfRowN = ParameterizedTypeName.get(ClassName.get(ArrayList.class), ROW_N);
-        var hasIds = MethodSpec.methodBuilder("hasIds")
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(CONDITION)
-            .addParameter(String.class, "typeId")
-            .addParameter(collectionOfString, "base64Ids")
-            .addParameter(fieldArray, "keyColumns")
-            .varargs(true)
-            .addStatement("$T rows = new $T()", arrayListOfRowN, arrayListOfRowN)
-            .beginControlFlow("for (String id : base64Ids)")
-                .addStatement("String[] values = decodeValues(typeId, id)")
-                .addStatement("if (values == null || values.length != keyColumns.length) continue")
-                .addStatement("Object[] coerced = new Object[values.length]")
-                .beginControlFlow("for (int i = 0; i < values.length; i++)")
-                    .addStatement("coerced[i] = coerceValue(keyColumns[i], values[i])")
-                .endControlFlow()
-                .addStatement("rows.add($T.row(coerced))", DSL)
-            .endControlFlow()
-            .addStatement("if (rows.isEmpty()) return $T.noCondition()", DSL)
-            .addStatement("return $T.row(keyColumns).in(rows)", DSL)
-            .build();
-
         var classBuilder = TypeSpec.classBuilder(CLASS_NAME)
             .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
-            .addJavadoc("Relay nodeId encode/decode/WHERE-builder helpers. Static, non-extendable\n"
+            .addJavadoc("Relay nodeId encode/decode helpers. Static, non-extendable\n"
                 + "by design — see {@link NodeIdEncoderClassGenerator}.\n")
             .addMethod(privateCtor)
             .addMethod(encode)
             .addMethod(peekTypeId)
-            .addMethod(canonicalize)
-            .addMethod(hasId)
-            .addMethod(hasIds)
-            .addMethod(decodeValues)
-            .addMethod(coerceValue);
+            .addMethod(decodeValues);
 
         ClassName tablesClass = jooqPackage == null
             ? null

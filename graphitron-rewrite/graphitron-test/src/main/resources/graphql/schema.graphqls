@@ -13,8 +13,8 @@ type Query {
     # See plan-nodeid-directives.md "Query.node(id:) dispatch is core".
     node(id: ID!): Node
     # Relay batch dispatch — fans ids out into per-tenant DataLoaders, batches one
-    # `hasIds` query per typeId per tenant, scatters rows back to the request's
-    # original positions via NodeIdEncoder.canonicalize. See QueryNodeFetcherClassGenerator.
+    # SELECT per typeId per tenant via EntityFetcherDispatch, scatters rows back to the
+    # request's original positions. See QueryNodeFetcherClassGenerator.
     nodes(ids: [ID!]!): [Node]
     languageByKey(language_id: [Int] @lookupKey @field(name: "language_id")): [Language!]!
     customerById(customer_id: [ID] @lookupKey, store_id: ID @lookupKey): [Customer!]!
@@ -88,8 +88,8 @@ type Query {
     # is emitted by walkInputFieldConditions and folded into the GeneratedConditionFilter's
     # bodyParams. Null filmId produces noCondition() via the standard DSL.val null-guard.
     # self-table-nodeid-filter.md: @table input with [ID!] @nodeId pointing at the input's
-    # own table → primary-key IN predicate via NodeIdInFilterField. Decoded base64 IDs feed
-    # NodeIdEncoder.hasIds(), which emits (film_id) IN (...) in jOOQ.
+    # own table → primary-key IN predicate via NodeIdInFilterField. Each opaque ID decodes
+    # once at the carrier and feeds a (film_id) IN (...) jOOQ predicate.
     filmsBySameTableNodeId(filter: FilmSameTableNodeIdInput): [Film!]!
     filmsWithImplicitInput(filter: FilmImplicitInput): [Film!]!
     # implicit-input-conditions plan: outer @condition(override: true) on a field whose
@@ -517,8 +517,8 @@ input FilmImplicitInput @table(name: "film") {
 }
 
 # self-table-nodeid-filter.md: same-table @nodeId filter input. Each base64 ID decodes
-# to the Film's PK; the generated condition method emits a primary-key IN predicate via
-# NodeIdEncoder.hasIds, not a FK join.
+# to the Film's PK; the generated condition method emits a primary-key IN predicate
+# directly (`(film_id) IN (...)`), not a FK join.
 input FilmSameTableNodeIdInput @table(name: "film") {
     filmIds: [ID!] @nodeId(typeName: "Film")
 }
