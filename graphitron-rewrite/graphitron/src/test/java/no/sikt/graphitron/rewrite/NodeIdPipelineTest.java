@@ -652,17 +652,17 @@ class NodeIdPipelineTest {
     enum OutputCase {
         IMPLICIT_ID(
             "output `id: ID!` on a `implements Node @node` parent backed by a metadata-carrying "
-                + "table → synthesized NodeIdField using the metadata values",
+                + "table → CompositeColumnField with NodeIdEncodeKeys (composite-PK Bar uses 2 columns)",
             """
             type Foo implements Node @table(name: "bar") @node { id: ID! }
             type Query { foo: Foo }
             """,
             schema -> {
                 assertThat(schema.type("Foo")).isInstanceOf(GraphitronType.NodeType.class);
-                var f = (ChildField.NodeIdField) schema.field("Foo", "id");
-                assertThat(f.nodeTypeId()).isEqualTo("Bar");
-                assertThat(f.nodeKeyColumns()).extracting(ColumnRef::sqlName)
+                var f = (ChildField.CompositeColumnField) schema.field("Foo", "id");
+                assertThat(f.columns()).extracting(ColumnRef::sqlName)
                     .containsExactly("id_1", "id_2");
+                assertThat(f.compaction().encodeMethod().methodName()).isEqualTo("encodeFoo");
             }),
 
         ACCESSOR_MISSING(
@@ -678,7 +678,7 @@ class NodeIdPipelineTest {
             }),
 
         NODE_ID_DIRECTIVE_ON_NODE_TYPE(
-            "`id: ID! @nodeId` on a `implements Node @node` parent → NodeIdField via the "
+            "`id: ID! @nodeId` on a `implements Node @node` parent → CompositeColumnField via the "
                 + "@nodeId guard (canonical opt-in form; no synthesis from `@table` alone)",
             """
             type Foo implements Node @table(name: "bar") @node { id: ID! @nodeId }
@@ -686,10 +686,10 @@ class NodeIdPipelineTest {
             """,
             schema -> {
                 assertThat(schema.type("Foo")).isInstanceOf(GraphitronType.NodeType.class);
-                var f = (ChildField.NodeIdField) schema.field("Foo", "id");
-                assertThat(f.nodeTypeId()).isEqualTo("Bar");
-                assertThat(f.nodeKeyColumns()).extracting(ColumnRef::sqlName)
+                var f = (ChildField.CompositeColumnField) schema.field("Foo", "id");
+                assertThat(f.columns()).extracting(ColumnRef::sqlName)
                     .containsExactly("id_1", "id_2");
+                assertThat(f.compaction().encodeMethod().methodName()).isEqualTo("encodeFoo");
             });
 
         final String sdl;

@@ -29,7 +29,6 @@ import no.sikt.graphitron.rewrite.model.ChildField.ComputedField;
 import no.sikt.graphitron.rewrite.model.ChildField.InterfaceField;
 import no.sikt.graphitron.rewrite.model.ChildField.MultitableReferenceField;
 import no.sikt.graphitron.rewrite.model.ChildField.NestingField;
-import no.sikt.graphitron.rewrite.model.ChildField.NodeIdField;
 import no.sikt.graphitron.rewrite.model.ChildField.NodeIdReferenceField;
 import no.sikt.graphitron.rewrite.model.ChildField.PropertyField;
 import no.sikt.graphitron.rewrite.model.ChildField.RecordField;
@@ -2349,7 +2348,7 @@ class FieldBuilder {
                     return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
                         "@nodeId requires the containing type to be a node type (via @node or KjerneJooqGenerator metadata)");
                 }
-                return new NodeIdField(parentTypeName, name, location, nodeType.typeId(), nodeType.nodeKeyColumns());
+                return buildNodeIdOutputCarrier(parentTypeName, name, location, nodeType);
             }
         }
 
@@ -2395,8 +2394,7 @@ class FieldBuilder {
                     + " directive explicitly; synthesis shim will be removed in a future release."
                     + " See graphitron-rewrite/roadmap/retire-nodeid-synthesis-shim.md",
                     parentTypeName, name);
-                return new NodeIdField(parentTypeName, name, location,
-                    nodeType.typeId(), nodeType.nodeKeyColumns());
+                return buildNodeIdOutputCarrier(parentTypeName, name, location, nodeType);
             }
             return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
                 "column '" + columnName + "' could not be resolved in the jOOQ table"
@@ -2406,7 +2404,28 @@ class FieldBuilder {
             LOG.warn("@field(name: '{}') on field '{}.{}' resolved via SQL name; prefer Java field name '{}'",
                 columnName, parentTypeName, name, column.get().javaName());
         }
-        return new ColumnField(parentTypeName, name, location, columnName, column.get());
+        return new ColumnField(parentTypeName, name, location, columnName, column.get(),
+            new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct());
+    }
+
+    /**
+     * Builds the post-R50 output carrier for an {@code @nodeId} (no {@code typeName:}) field.
+     * Routes by {@code nodeType.nodeKeyColumns().size()}: arity-1 to a single-column
+     * {@link ColumnField} carrying {@link no.sikt.graphitron.rewrite.model.CallSiteCompaction.NodeIdEncodeKeys},
+     * arity > 1 to a {@link ChildField.CompositeColumnField} narrowed to the same compaction arm.
+     * The {@link no.sikt.graphitron.rewrite.model.HelperRef.Encode} reference is read from
+     * {@code nodeType.encodeMethod()} so encoder-class and helper-method names cannot drift.
+     */
+    private ChildField buildNodeIdOutputCarrier(
+            String parentTypeName, String name, graphql.language.SourceLocation location, NodeType nodeType) {
+        var enc = nodeType.encodeMethod();
+        var compaction = new no.sikt.graphitron.rewrite.model.CallSiteCompaction.NodeIdEncodeKeys(enc);
+        var keys = nodeType.nodeKeyColumns();
+        if (keys.size() == 1) {
+            ColumnRef k = keys.get(0);
+            return new ColumnField(parentTypeName, name, location, k.javaName(), k, compaction);
+        }
+        return new ChildField.CompositeColumnField(parentTypeName, name, location, keys, compaction);
     }
 
     private boolean isScalarOrEnum(GraphQLFieldDefinition fieldDef) {

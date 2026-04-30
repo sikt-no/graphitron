@@ -39,7 +39,8 @@ class NestingFieldValidationTest {
 
     private static ColumnField titleOn(String parent, String column, String javaType) {
         return new ColumnField(parent, "title", null, "title",
-            new ColumnRef(column, "TITLE", javaType));
+            new ColumnRef(column, "TITLE", javaType),
+            new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct());
     }
 
     enum Case implements ValidatorCase {
@@ -154,7 +155,8 @@ class NestingFieldValidationTest {
             List.of(
                 titleOn("FilmDetails", "title", "java.lang.String"),
                 new ColumnField("FilmDetails", "extra", null, "extra",
-                    new ColumnRef("extra", "EXTRA", "java.lang.String"))));
+                    new ColumnRef("extra", "EXTRA", "java.lang.String"),
+                    new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct())));
         assertThat(validate(schema))
             .extracting(ValidationError::message)
             .containsExactly(
@@ -192,11 +194,13 @@ class NestingFieldValidationTest {
         var filmMeta = new NestingField("FilmDetails", "meta", null,
             new ReturnTypeRef.TableBoundReturnType("FilmMeta", FILM_TABLE, new FieldWrapper.Single(true)),
             List.of(new ColumnField("FilmMeta", "label", null, "label",
-                new ColumnRef("title", "TITLE", "java.lang.String"))));
+                new ColumnRef("title", "TITLE", "java.lang.String"),
+                new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct())));
         var adMeta = new NestingField("FilmDetails", "meta", null,
             new ReturnTypeRef.TableBoundReturnType("FilmMeta", ADVERTISEMENT_TABLE, new FieldWrapper.Single(true)),
             List.of(new ColumnField("FilmMeta", "label", null, "label",
-                new ColumnRef("headline", "HEADLINE", "java.lang.String"))));
+                new ColumnRef("headline", "HEADLINE", "java.lang.String"),
+                new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct())));
         var schema = twoParentSchema(List.of(filmMeta), List.of(adMeta));
         assertThat(validate(schema))
             .extracting(ValidationError::message)
