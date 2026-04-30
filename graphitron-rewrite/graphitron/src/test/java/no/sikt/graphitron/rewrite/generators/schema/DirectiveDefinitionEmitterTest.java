@@ -5,7 +5,9 @@ import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 
+@UnitTier
 class DirectiveDefinitionEmitterTest {
 
     @Test

@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 
 /**
  * SDL → classified schema → generated {@code TypeSpec} pipeline tests for
@@ -17,6 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * for list cardinality). The shared {@code scatterByIdx} helper is emitted exactly once per
  * fetcher class containing any Split* field.
  */
+@PipelineTier
 class SplitTableFieldPipelineTest {
 
     @Test

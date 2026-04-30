@@ -23,7 +23,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R13` | Faceted search on `@asConnection` | Spec | [plan](faceted-search.md) |
 | `R22` | Mutation bodies <sub>blocked by: [lift-nodeid-out-of-model](lift-nodeid-out-of-model.md)</sub> | Spec | [plan](mutations.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
-| `R29` | Consolidated test-tier guide | Ready | [plan](rewrite-test-tier-guide.md) |
 | `R8` | Docs as an index into classification tests | Ready (deferred) | [plan](docs-as-index-into-tests.md) |
 | `R18` | Java LSP rewrite + introspect retirement + `dev` goal | Ready | [plan](graphitron-lsp.md) |
 | `R50` | Lift NodeId out of the model | In Progress | [plan](lift-nodeid-out-of-model.md) |
@@ -31,6 +30,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R12` | Error-handling parity: emit per-fetcher error channels from `@error` <sub>blocked by: [mutations](mutations.md)</sub> | In Progress | [plan](error-handling-parity.md) |
 | `R26` | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` <sub>blocked by: [graphitron-lsp](graphitron-lsp.md)</sub> | In Progress | [plan](retire-maven-plugin.md) |
 | `R9` | Fold graphitron.sikt.no into the Maven build (AsciiDoc + GitHub Pages) | In Progress | [plan](docs-site-asciidoc.md) |
+| `R29` | Consolidated test-tier guide | In Review | [plan](rewrite-test-tier-guide.md) |
 | `R21` | Load-bearing classifier guarantee audit annotations | In Review | [plan](load-bearing-guarantee-audit.md) |
 
 ---
@@ -150,7 +150,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### testing
 
-- `R29` [**Consolidated test-tier guide**](rewrite-test-tier-guide.md) — Ready, cleanup
+- `R29` [**Consolidated test-tier guide**](rewrite-test-tier-guide.md) — In Review, cleanup
 - `R25` [**Rebalance test pyramid**](rebalance-test-pyramid.md) — Backlog, architecture, blocked by [rewrite-test-tier-guide](rewrite-test-tier-guide.md)
 
 ### legacy-migration

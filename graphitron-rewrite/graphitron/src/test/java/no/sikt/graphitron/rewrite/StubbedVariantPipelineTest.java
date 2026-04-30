@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 
 /**
  * End-to-end check that the stubbed-variant validator fires through the full SDL → classifier →
@@ -15,6 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code GraphitronSchemaValidator.validateVariantIsImplemented} and the
  * {@link TypeFetcherGenerator#NOT_IMPLEMENTED_REASONS} map.
  */
+@PipelineTier
 class StubbedVariantPipelineTest {
 
     @Test

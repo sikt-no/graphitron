@@ -15,16 +15,18 @@ import java.util.Optional;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 
 /**
  * Writer-level unit tests: tamper-detection (content-idempotent write),
  * orphan sweep inside owned sub-packages, and scope preservation for
  * files outside owned sub-packages. Runs against a trivial two-type SDL
  * because the writer mechanics don't depend on emitter breadth. The
- * pipeline-tier determinism and mtime-preservation ratchets live in
+ * cross-cutting determinism and mtime-preservation ratchets live in
  * {@code graphitron-test/GeneratorDeterminismTest} against the
  * full fixture schema.
  */
+@UnitTier
 class IdempotentWriterTest {
 
     private static final String SCHEMA_SDL = """

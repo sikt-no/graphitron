@@ -6,6 +6,7 @@ import java.util.Map;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 
 /**
  * Unit coverage for {@link ArgBindingMap#parseArgMapping} (the mini-DSL parser) and
@@ -13,6 +14,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Table&lt;?&gt;-slot rejection live in {@link ServiceCatalogTest}; the SDL-driven cases are in
  * {@link GraphitronSchemaBuilderTest}.
  */
+@UnitTier
 class ArgBindingMapTest {
 
     // ===== parseArgMapping =====

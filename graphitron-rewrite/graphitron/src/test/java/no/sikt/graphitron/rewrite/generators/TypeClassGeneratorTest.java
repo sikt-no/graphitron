@@ -13,6 +13,7 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static no.sikt.graphitron.rewrite.TestFixtures.*;
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 
 /**
  * Unit tests for {@link TypeClassGenerator}. Tests verify structural properties of the generated
@@ -20,6 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Code correctness is verified by compiling the generated output against real jOOQ classes in
  * the {@code graphitron-test} module.
  */
+@UnitTier
 class TypeClassGeneratorTest {
 
     private static final List<ChildField.ColumnField> FILM_COLUMNS = List.of(

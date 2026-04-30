@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 
 /**
  * SDL → classified schema → generated {@code TypeSpec} pipeline tests for inline
@@ -19,6 +20,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * and the ConditionJoin branch emits a runtime-throwing stub pending classification-vocabulary
  * item 5.
  */
+@PipelineTier
 class TableFieldPipelineTest {
 
     @Test

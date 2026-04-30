@@ -11,6 +11,7 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 
 /**
  * Locks the existing federation scaffold: {@code Graphitron.buildSchema(b -> {}, fed -> {})}
@@ -20,6 +21,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  * {@code Federation.transform} accepts the generated base schema before the
  * entity-dispatch implementation moves things underneath it.
  */
+@PipelineTier
 class FederationBuildSmokeTest {
 
     @Test

@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 
 /**
  * Coverage for {@link JooqCatalog#findColumn} dual-name resolution: GraphQL schema directives
@@ -11,6 +12,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * (e.g. {@code "film_id"}); both must resolve to the correct entry with the SQL name available
  * for code generation.
  */
+@UnitTier
 class JooqCatalogFindColumnTest {
 
     private static JooqCatalog catalog() {

@@ -8,7 +8,9 @@ import javax.lang.model.element.Modifier;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 
+@UnitTier
 class InputTypeGeneratorTest {
 
     private static final String INPUT_SCHEMA = """

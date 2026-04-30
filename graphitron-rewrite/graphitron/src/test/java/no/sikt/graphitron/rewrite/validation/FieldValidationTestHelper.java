@@ -15,7 +15,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Static factory helpers shared by all Level 1 validation test classes.
+ * Static factory helpers shared by all unit-tier validation test classes.
+ * See <a href="../docs/testing.adoc">Test-tier guide</a> for tier definitions.
  *
  * <p>Usage — static import in each test class:
  * <pre>

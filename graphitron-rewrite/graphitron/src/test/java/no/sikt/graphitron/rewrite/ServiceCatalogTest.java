@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 
 /**
  * Unit coverage for {@link ServiceCatalog#reflectServiceMethod} parameter classification
@@ -23,6 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * read {@code BuildContext.schema} or {@code BuildContext.catalog}, so both may be
  * {@code null} here.
  */
+@UnitTier
 class ServiceCatalogTest {
 
     private static final String STUB_CLASS = "no.sikt.graphitron.rewrite.TestServiceStub";

@@ -62,6 +62,8 @@ mvn compile -f graphitron-rewrite/pom.xml -pl :graphitron-test -Plocal-db
 mvn test -f graphitron-rewrite/pom.xml -pl :graphitron-test -Plocal-db
 ```
 
+For what each tier asserts, where its files live, and the `@UnitTier` / `@PipelineTier` / `@CompilationTier` / `@ExecutionTier` meta-annotations, see [`graphitron-rewrite/docs/testing.adoc`](../graphitron-rewrite/docs/testing.adoc).
+
 To verify the aggregator stays standalone (no legacy artifact leaks into the
 build):
 

@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 
 /**
  * End-to-end check that classifier rejections from the root {@code @service} / {@code @tableMethod}
@@ -18,6 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@link ValidationError}, matching the pattern in {@link StubbedVariantPipelineTest} for
  * stubbed-variant rejections.
  */
+@PipelineTier
 class ServiceRootFetcherPipelineTest {
 
     @Test

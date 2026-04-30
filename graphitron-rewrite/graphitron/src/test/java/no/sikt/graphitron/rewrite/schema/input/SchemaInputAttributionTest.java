@@ -7,7 +7,9 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
+import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 
+@UnitTier
 class SchemaInputAttributionTest {
 
     @Test

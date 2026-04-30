@@ -14,6 +14,7 @@ import java.util.Set;
 
 import static java.util.stream.Collectors.toSet;
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 
 /**
  * Meta-test: every sealed leaf of {@link GraphitronField} and {@link GraphitronType}
@@ -24,6 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@link GeneratorCoverageTest#everyGraphitronFieldLeafHasAKnownDispatchStatus} (generator
  * dispatch coverage) by asserting that classification itself is demonstrated for every leaf.
  */
+@UnitTier
 class VariantCoverageTest {
 
     /**

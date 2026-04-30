@@ -15,6 +15,7 @@ import java.util.List;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 
 /**
  * Integration tests for the full fetcher class pipeline: SDL schema → {@link GraphitronSchema} →
@@ -25,6 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@link no.sikt.graphitron.rewrite.model.GraphitronType.NodeType}, or
  * {@link no.sikt.graphitron.rewrite.model.GraphitronType.RootType}.
  */
+@PipelineTier
 class FetcherPipelineTest {
 
     @Test

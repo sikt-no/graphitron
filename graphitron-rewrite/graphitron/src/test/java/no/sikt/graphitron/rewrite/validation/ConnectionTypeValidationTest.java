@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 
 /**
  * Validates the {@code totalCount} field-shape check in
@@ -17,6 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@link RejectionKind#INVALID_SCHEMA} error. Synthesised connections always carry
  * {@code totalCount: Int}, so they never trip the check.
  */
+@UnitTier
 class ConnectionTypeValidationTest {
 
     @Test

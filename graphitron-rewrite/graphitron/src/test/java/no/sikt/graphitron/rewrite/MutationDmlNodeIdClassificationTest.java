@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 
 /**
  * Phase 1 mutation classifier coverage that depends on KjerneJooqGenerator-synthesised NodeId
@@ -18,6 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * use the {@code nodeidfixture} catalog where {@code Bar} is hand-instrumented with both a
  * single-key path and a composite-key path (id_1, id_2) for the same fixture table.
  */
+@PipelineTier
 class MutationDmlNodeIdClassificationTest {
 
     private static final RewriteContext NODEID_CTX = new RewriteContext(

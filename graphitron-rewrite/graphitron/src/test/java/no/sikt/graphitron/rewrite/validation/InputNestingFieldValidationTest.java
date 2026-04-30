@@ -13,7 +13,9 @@ import java.util.Optional;
 
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 
+@UnitTier
 class InputNestingFieldValidationTest {
 
     enum Case implements ValidatorCase {

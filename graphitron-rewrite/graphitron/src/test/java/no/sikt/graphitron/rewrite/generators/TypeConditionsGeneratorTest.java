@@ -15,12 +15,14 @@ import java.util.List;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 
 /**
  * Structural tests for {@link TypeConditionsGenerator#buildConditionMethod}. The pipeline-level
  * pairing of input fields to body params is exercised by {@code FetcherPipelineTest}; these tests
  * instead cover the body emitter's variant dispatch in isolation.
  */
+@UnitTier
 class TypeConditionsGeneratorTest {
 
     private static final TableRef FILM_TABLE = new TableRef("film", "FILM", "Film", List.of());

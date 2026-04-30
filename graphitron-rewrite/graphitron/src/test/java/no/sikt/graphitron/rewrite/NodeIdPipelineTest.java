@@ -16,6 +16,7 @@ import java.util.function.Consumer;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 
 /**
  * SDL → classified-variant pipeline tests for the node-id path. Exercises the input-side
@@ -38,6 +39,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li>{@code qux} — plain table; no metadata. Negative-case fixture.</li>
  * </ul>
  */
+@PipelineTier
 class NodeIdPipelineTest {
 
     private static final String FIXTURE_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.nodeidfixture";

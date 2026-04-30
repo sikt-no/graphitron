@@ -21,7 +21,9 @@ import java.util.List;
 
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 
+@UnitTier
 class QueryLookupTableFieldValidationTest {
 
     private static final ColumnRef FILM_ID_COL = new ColumnRef("film_id", "FILM_ID", "java.lang.Integer");

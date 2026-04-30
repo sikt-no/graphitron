@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 
 /**
  * End-to-end tests that exercise the federation entity dispatcher (the generated
@@ -25,6 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * runtime path: representation → most-specific resolvable alternative → per-tenant SELECT
  * via {@code VALUES (idx, ...)} derived table → scatter back to original positions.
  */
+@ExecutionTier
 class FederationEntitiesDispatchTest {
 
     static PostgreSQLContainer<?> postgres;

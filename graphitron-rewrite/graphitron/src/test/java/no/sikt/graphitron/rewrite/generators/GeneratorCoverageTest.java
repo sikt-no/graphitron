@@ -15,7 +15,9 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 
+@UnitTier
 public class GeneratorCoverageTest {
 
     /**

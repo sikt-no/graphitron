@@ -1,7 +1,7 @@
 ---
 id: R29
 title: Consolidated test-tier guide
-status: Ready
+status: In Review
 bucket: cleanup
 priority: 7
 theme: testing

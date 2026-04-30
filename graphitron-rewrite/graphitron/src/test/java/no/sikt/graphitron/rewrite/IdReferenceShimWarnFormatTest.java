@@ -15,6 +15,7 @@ import java.util.Map;
 
 import static no.sikt.graphitron.rewrite.TestSchemaHelper.buildSchema;
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 
 /**
  * Verifies that the FK-qualifier synthesis shim emits a WARN whose message contains
@@ -32,6 +33,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       {@code fkAmbiguous=false} → WARN includes {@code @nodeId} only.</li>
  * </ul>
  */
+@UnitTier
 class IdReferenceShimWarnFormatTest {
 
     private static final String LOGGER_NAME = BuildContext.class.getName() + ".idRefShim";
