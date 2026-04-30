@@ -163,16 +163,109 @@ public final class ArgCallEmitter {
                 : CodeBlock.of("$L.$L.getDataType().convert((String) env.getArgument($S))",
                     srcAlias, jc.columnJavaName(), param.name());
             case CallSiteExtraction.NestedInputField nif ->
-                buildNestedInputFieldExtraction(nif.outerArgName(), nif.path(), param.typeName(), param.list());
-            case CallSiteExtraction.NodeIdDecodeKeys ignored ->
-                // R50 phase c+ wires the carrier-driven NodeId-decode arms (SkipMismatchedElement,
-                // ThrowOnMismatch) into ArgCallEmitter. Until those phases land, this arm is
-                // unreachable from production paths because no classifier route produces a
-                // NodeIdDecodeKeys extraction yet.
-                throw new IllegalStateException(
-                    "CallSiteExtraction.NodeIdDecodeKeys is not yet wired through ArgCallEmitter "
-                    + "(R50 phase c+); param '" + param.name() + "'");
+                buildNestedInputFieldExtraction(nif.outerArgName(), nif.path(), nif.leaf(), param.typeName(), param.list());
+            case CallSiteExtraction.NodeIdDecodeKeys nidk ->
+                buildNodeIdDecodeExtraction(
+                    CodeBlock.of("env.getArgument($S)", param.name()),
+                    nidk, param.typeName(), param.list());
         };
+    }
+
+    /**
+     * Emits a NodeId-decode chain for either a top-level argument or a Map-traversal leaf.
+     * {@code wireExpr} is the expression that yields the wire-format value (a {@code String}
+     * for scalar, a {@code List<String>} for list). The decode helper resolves to
+     * {@code NodeIdEncoder.decode<TypeName>(...)}; on a {@code null} return the
+     * {@link CallSiteExtraction.NodeIdDecodeKeys.SkipMismatchedElement} arm filters the bad
+     * element out (list) or returns {@code null} (scalar), while
+     * {@link CallSiteExtraction.NodeIdDecodeKeys.ThrowOnMismatch} raises a
+     * {@code GraphqlErrorException}.
+     *
+     * <p>Body shapes:
+     * <ul>
+     *   <li>Arity-1 list: {@code wire.stream().map(decode).filter(Objects::nonNull).map(r -> r.value1()).collect(toList())}</li>
+     *   <li>Arity-1 scalar: {@code wire == null ? null : decode(wire) == null ? null : decode(wire).value1()}
+     *       — the double-call is acceptable; jOOQ records are cheap to construct.</li>
+     *   <li>Arity-N list: {@code wire.stream().map(decode).filter(Objects::nonNull).collect(toList())}
+     *       — typed {@link org.jooq.Record} list; the body-emitter casts to {@link org.jooq.Row}
+     *       at the predicate site.</li>
+     *   <li>Arity-N scalar: {@code wire == null ? null : decode(wire)} — the body-emitter
+     *       casts to {@link org.jooq.Row} at the predicate site.</li>
+     * </ul>
+     *
+     * <p>The {@code Throw} arm replaces {@code Objects::nonNull} guarding with an explicit
+     * {@code GraphqlErrorException} wrapper; the wrapper appears once per element.
+     */
+    private static CodeBlock buildNodeIdDecodeExtraction(CodeBlock wireExpr,
+            CallSiteExtraction.NodeIdDecodeKeys nidk, String leafTypeName, boolean list) {
+        var decode = nidk.decodeMethod();
+        var encoderClass = decode.encoderClass();
+        String methodName = decode.methodName();
+        int arity = decode.outputColumnShape().size();
+        boolean throwOnMismatch = nidk instanceof CallSiteExtraction.ThrowOnMismatch;
+
+        ClassName objects = ClassName.get(java.util.Objects.class);
+        ClassName collectors = ClassName.get(java.util.stream.Collectors.class);
+
+        if (list) {
+            // Pattern: wire instanceof List<?> _l ? _l.stream().map(decode).filter(nonNull)
+            //          [.map(value1) | .map(Record::valuesRow)].collect(toList()) : null
+            // The instanceof guard makes this null-safe regardless of whether wireExpr is a
+            // top-level env.getArgument() or a nested Map traversal that may return null.
+            var stream = CodeBlock.builder()
+                .add("$L instanceof $T<?> _l ? _l.stream().map(s -> $T.$L((String) s))",
+                    wireExpr, ClassName.get(List.class), encoderClass, methodName);
+            if (throwOnMismatch) {
+                stream.add(".map(r -> { if (r == null) throw new $T($S); return r; })",
+                    ClassName.get("graphql", "GraphqlErrorException"),
+                    "Decoded NodeId did not match the expected type for this argument");
+            } else {
+                stream.add(".filter($T::nonNull)", objects);
+            }
+            if (arity == 1) {
+                // Arity-1: project to the typed scalar, body emits column.in(List<T>).
+                stream.add(".map(r -> r.value1())");
+            } else {
+                // Arity-N: project Record -> RowN so body can do DSL.row(cols).in(List<RowN>).
+                stream.add(".map($T::valuesRow)", ClassName.get("org.jooq", "Record"));
+            }
+            stream.add(".collect($T.toList()) : null", collectors);
+            return stream.build();
+        }
+
+        // scalar
+        // Skip arm: scalar case treats null decode as "no match" (caller's nullable arg).
+        // Throw arm: a null decode raises a GraphqlErrorException via a helper lambda; the
+        // body shape uses a (((Supplier<X>) () -> { throw ...; }).get()) trick to keep the
+        // expression form, but inverting through a helper static is cleaner. Generated code
+        // calls NodeIdEncoder.decode<TypeName>(_s) and wraps via a guard.
+        if (arity == 1) {
+            if (throwOnMismatch) {
+                return CodeBlock.of(
+                    "$L instanceof String _s ? ($T.$L(_s) instanceof $T _r ? _r.value1() : "
+                    + "(($T<?>) () -> { throw new $T($S); }).get()) : null",
+                    wireExpr, encoderClass, methodName, decode.returnType(),
+                    ClassName.get("java.util.function", "Supplier"),
+                    ClassName.get("graphql", "GraphqlErrorException"),
+                    "Decoded NodeId did not match the expected type for this argument");
+            }
+            return CodeBlock.of("$L instanceof String _s && $T.$L(_s) instanceof $T _r ? _r.value1() : null",
+                wireExpr, encoderClass, methodName, decode.returnType());
+        }
+        // arity > 1: project decoded Record into RowN via valuesRow().
+        ClassName recordCls = ClassName.get("org.jooq", "Record");
+        if (throwOnMismatch) {
+            return CodeBlock.of(
+                "$L instanceof String _s ? ($T.$L(_s) instanceof $T _r ? (($T) _r).valuesRow() : "
+                + "(($T<?>) () -> { throw new $T($S); }).get()) : null",
+                wireExpr, encoderClass, methodName, decode.returnType(), recordCls,
+                ClassName.get("java.util.function", "Supplier"),
+                ClassName.get("graphql", "GraphqlErrorException"),
+                "Decoded NodeId did not match the expected type for this argument");
+        }
+        return CodeBlock.of(
+            "$L instanceof String _s && $T.$L(_s) instanceof $T _r ? (($T) _r).valuesRow() : null",
+            wireExpr, encoderClass, methodName, decode.returnType(), recordCls);
     }
 
     /**
@@ -198,13 +291,31 @@ public final class ArgCallEmitter {
      * the declared type, an unchecked raw-type cast is acceptable; if a parameterized leaf type
      * ever requires it, callers can suppress warnings at the enclosing method.
      */
-    private static CodeBlock buildNestedInputFieldExtraction(String outerArgName, List<String> path, String leafTypeName, boolean list) {
-        ClassName rawLeaf = ClassName.bestGuess(rawComponent(leafTypeName));
-        TypeName leafType = list
-            ? ParameterizedTypeName.get(ClassName.get(List.class), rawLeaf)
-            : rawLeaf;
+    private static CodeBlock buildNestedInputFieldExtraction(String outerArgName, List<String> path,
+            CallSiteExtraction leaf, String leafTypeName, boolean list) {
+        // For a Direct leaf the Map.get value is cast directly to the parameter type. For a
+        // NodeIdDecodeKeys leaf the cast target is the wire format (List<String> for list,
+        // String for scalar), and the decode chain is layered on top.
+        boolean nodeIdLeaf = leaf instanceof CallSiteExtraction.NodeIdDecodeKeys;
+        TypeName castTarget;
+        if (nodeIdLeaf) {
+            ClassName stringClass = ClassName.get(String.class);
+            castTarget = list
+                ? ParameterizedTypeName.get(ClassName.get(List.class), stringClass)
+                : stringClass;
+        } else {
+            ClassName rawLeaf = ClassName.bestGuess(rawComponent(leafTypeName));
+            castTarget = list
+                ? ParameterizedTypeName.get(ClassName.get(List.class), rawLeaf)
+                : rawLeaf;
+        }
         CodeBlock root = CodeBlock.of("env.getArgument($S)", outerArgName);
-        return buildMapChain(root, path, 0, leafType);
+        CodeBlock mapChain = buildMapChain(root, path, 0, castTarget);
+        if (!nodeIdLeaf) return mapChain;
+
+        // Wrap the Map traversal result in the NodeId decode chain. The traversal returns the
+        // wire-format value (List<String> or String), or null if any intermediate step is missing.
+        return buildNodeIdDecodeExtraction(mapChain, (CallSiteExtraction.NodeIdDecodeKeys) leaf, leafTypeName, list);
     }
 
     private static CodeBlock buildMapChain(CodeBlock currentExpr, List<String> path, int depth, TypeName leafType) {
