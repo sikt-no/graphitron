@@ -729,4 +729,80 @@ class NodeIdPipelineTest {
     void outputNodeIdClassification(OutputCase tc) {
         tc.assertions.accept(TestSchemaHelper.buildSchema(tc.sdl, FIXTURE_CTX));
     }
+
+    // ===== Lookup arg side (composite-PK NodeId @lookupKey) =====
+
+    enum LookupKeyCase {
+        SCALAR_NODEID_LOOKUP_COMPOSITE_PK(
+            "scalar `id: ID @lookupKey` arg on a composite-PK NodeType-backed lookup → "
+                + "CompositeColumnArg(ThrowOnMismatch) → projectForLookup lifts to DecodedRecord "
+                + "with positional RecordBindings over the composite key columns (R50 phase g)",
+            """
+            type Bar implements Node @table(name: "bar") @node { id: ID! @nodeId name: String }
+            type Query { barById(id: ID @lookupKey): Bar }
+            """,
+            schema -> {
+                var f = (no.sikt.graphitron.rewrite.model.QueryField.QueryLookupTableField)
+                    schema.field("Query", "barById");
+                var cm = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) f.lookupMapping();
+                assertThat(cm.args()).hasSize(1);
+                var arg = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping.LookupArg.DecodedRecord)
+                    cm.args().get(0);
+                assertThat(arg.argName()).isEqualTo("id");
+                assertThat(arg.list()).isFalse();
+                assertThat(arg.decodeMethod().methodName()).isEqualTo("decodeBar");
+                assertThat(arg.bindings()).hasSize(2);
+                assertThat(arg.bindings()).extracting(b -> b.targetColumn().sqlName())
+                    .containsExactly("id_1", "id_2");
+                assertThat(arg.bindings()).extracting(no.sikt.graphitron.rewrite.model.InputColumnBinding.RecordBinding::index)
+                    .containsExactly(0, 1);
+            }),
+
+        LIST_NODEID_LOOKUP_COMPOSITE_PK(
+            "list `ids: [ID!] @lookupKey` arg on a composite-PK NodeType-backed lookup → "
+                + "DecodedRecord with list=true; each input id decodes once per row to drive "
+                + "the VALUES + JOIN row-IN shape",
+            """
+            type Bar implements Node @table(name: "bar") @node { id: ID! @nodeId name: String }
+            type Query { barsByIds(ids: [ID!] @lookupKey): [Bar!]! }
+            """,
+            schema -> {
+                var f = (no.sikt.graphitron.rewrite.model.QueryField.QueryLookupTableField)
+                    schema.field("Query", "barsByIds");
+                var cm = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) f.lookupMapping();
+                var arg = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping.LookupArg.DecodedRecord)
+                    cm.args().get(0);
+                assertThat(arg.list()).isTrue();
+                assertThat(arg.bindings()).hasSize(2);
+            }),
+
+        SCALAR_NODEID_NON_LOOKUP_COMPOSITE_PK_DEFERRED(
+            "scalar `id: ID @nodeId` arg without `@lookupKey` on a composite-PK NodeType is not "
+                + "yet wired (mutation-key + top-level filter paths land in a later R50 slice); "
+                + "surfaces as UnclassifiedField at the surrounding query field",
+            """
+            type Bar @table(name: "bar") { id: ID! @field(name: "ID_1") }
+            type Query { bar(id: ID): Bar }
+            """,
+            schema -> {
+                var f = schema.field("Query", "bar");
+                assertThat(f).isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class);
+                var uf = (no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField) f;
+                assertThat(uf.reason()).contains("composite-PK NodeType");
+            });
+
+        final String sdl;
+        final Consumer<GraphitronSchema> assertions;
+        LookupKeyCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
+            this.sdl = sdl;
+            this.assertions = assertions;
+        }
+        @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(LookupKeyCase.class)
+    void lookupKeyClassification(LookupKeyCase tc) {
+        tc.assertions.accept(TestSchemaHelper.buildSchema(tc.sdl, FIXTURE_CTX));
+    }
 }
