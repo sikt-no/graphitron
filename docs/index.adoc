@@ -60,6 +60,9 @@ xref:security.adoc[Security model]
 
 | xref:architecture/README.adoc[Architecture]
 | Rewrite-internal documentation: code generation triggers, sealed model hierarchy, runtime extension points, design principles, contributor workflow.
+
+| xref:roadmap/index.adoc[Roadmap]
+| Active and Backlog work, plus a xref:roadmap/by-theme.adoc[by-theme view] and the xref:roadmap/changelog.adoc[changelog]. Plans are authored as markdown next to the code; the rendered view here updates on every push.
 |===
 
 == Source

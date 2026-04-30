@@ -357,22 +357,11 @@ Two deviations worth flagging for later phases:
 - **NPM tarballs instead of JSDelivr.** The plan called for `https://cdn.jsdelivr.net/npm/@sikt/sds-*@<v>/dist/index.css`; JSDelivr is firewalled in the Claude Code Web sandbox (returns 403 with `host_not_allowed`), so the build fetches `https://registry.npmjs.org/@sikt/sds-*/-/sds-*-<v>.tgz` with `<unpack>true</unpack>` and `maven-antrun-plugin` flattens `package/dist/index.css` to `target/staging/css/sds-{core,button}.css`. Same effective semantics: pinned version, no Node, no runtime third-party. If JSDelivr later becomes preferred (single direct file vs. tarball unpack), the switch is a one-line change in `/docs/pom.xml`.
 - **Logo and favicon not yet in `/docs/images/`.** The plan listed them as a Phase 1 deliverable (sourced from `alf/graphitron-landingsside`). The implementing session didn't have access to that repo, so the placeholder runs without them. Phase 3 (absorption) is the natural place to bring them in; alternatively, drop them in any time before that and the build picks them up.
 
-### Phase 2: In-repo content migration
+### Phase 2: In-repo content migration — shipped at `c38ea0f`
 
-End state: the deployed Pages URL serves all of the existing in-repo doc content. Both `/docs/*.md` and `/graphitron-rewrite/docs/*.md` have been converted to `.adoc`, the originals deleted, and `CLAUDE.md` (plus any inbound links) updated. The site has a primary nav for product docs and a secondary "Architecture" section for the rewrite-internal docs. The live `graphitron.sikt.no` still serves the old Docusaurus build.
+12 markdown → AsciiDoc conversions (4 in `/docs/`, 8 in `/graphitron-rewrite/docs/`). `claude-code-web-environment.md` moved to `.claude/web-environment.md` (stays markdown; AI-tooling content). `/docs/pom.xml` adds a `stage-architecture` step copying `/graphitron-rewrite/docs/*.adoc` into `target/staging/architecture/`; antrun also duplicates `css/` under `architecture/css/` so per-page stylesheet resolution works without per-file `:stylesdir:` overrides; `:stylesheet:` switched to `css/site.css` to satisfy AsciiDoctor's compile-time validator across both staging trees; `:idprefix:`/`:idseparator:` set so GFM-style anchors carry over. `/docs/index.adoc` rebuilt with hero + 3-feature row and a Documentation table linking every page including Architecture. Inbound link sweep across `CLAUDE.md`, root `README.md`, scripts, skills, three Java sources, the roadmap-tool template, and per-item roadmap files.
 
-Deliverables:
-
-- 5 converted pages from `/docs/`: `vision-and-goal`, `graphitron-principles`, `security`, `dependencies`, plus updated `README.adoc`. Original `.md` files deleted.
-- 8 converted pages from `/graphitron-rewrite/docs/`: `README`, `workflow`, `rewrite-design-principles`, `rewrite-model`, `argument-resolution`, `code-generation-triggers`, `runtime-extension-points`, `getting-started`. Original `.md` files deleted.
-- `/graphitron-rewrite/docs/claude-code-web-environment.md` moved to `.claude/web-environment.md` (stays markdown, not on the public site; see [Content migration](#in-repo-md-adoc-phase-2)).
-- `/docs/pom.xml` updated: staging step now also copies `/graphitron-rewrite/docs/` to `target/staging/architecture/`.
-- `CLAUDE.md` and any other inbound links updated to point at the new `.adoc` paths.
-- Authoring conventions added to `/docs/README.adoc`.
-- Site nav: primary row (Vision, Quick start, FAQ, Documentation), secondary row or footer link to *Architecture*.
-- Homepage hero + 3-feature layout reimplemented in static AsciiDoc, using SDS-styled blocks.
-
-Verification: every link in `CLAUDE.md` and inter-doc references resolve; the deployed Pages URL renders both sections cleanly.
+One follow-up worth flagging: the bulk-converted plan files (rewrite-design-principles, code-generation-triggers, argument-resolution) used a script-driven em-dash → `;` replacement; some occurrences read more naturally as a comma. Trivial to fix per-file when next touched.
 
 ### Phase 3: Old-site absorption
 
