@@ -4,28 +4,62 @@
 :!toc:
 
 [.hero]
-== A code generator from GraphQL to jOOQ
+--
+[.hero-title]
+*A code generator from GraphQL to jOOQ.*
 
-Graphitron generates the wiring between a GraphQL schema and a jOOQ-modelled database, so that the resolvers, fetchers, and SQL come out of the schema rather than being maintained by hand.
+[.hero-lead]
+Graphitron generates the wiring between a GraphQL schema and a jOOQ-modelled database, so resolvers, fetchers, and SQL come out of the schema rather than being maintained by hand.
+--
 
-[.advantage-box]
-NOTE: This site is being rebuilt. Authoritative documentation is moving here from the in-repo `docs/` folders and from the previous Docusaurus site at https://graphitron.sikt.no/[graphitron.sikt.no]. Expect rapid iteration during the migration.
+[.feature-row, cols="1,1,1", frame=none, grid=none]
+|===
+|
+[.feature]
+== Database-first
 
-== Where things are
+A well-designed database outlives every application built on top of it. Graphitron works _with_ the database, not around it. Generated code respects constraints; security lives in the database where it belongs.
+
+xref:graphitron-principles.adoc[Read the principles]
+
+|
+[.feature]
+== Type-safe by construction
+
+Generator code is Java 25; generated output is Java 17. jOOQ-typed table classes mean the SQL you generate has the same compile-time guarantees as the rest of your code.
+
+xref:dependencies.adoc[How jOOQ and GraphQL-Java fit]
+
+|
+[.feature]
+== Naive about the things that should be
+
+Generated code has no runtime dependency on Graphitron, no business logic, no authorization. When you need custom rules, you drop into hand-written code through explicit extension points.
+
+xref:security.adoc[Security model]
+|===
+
+== Documentation
 
 [cols="1,3", options="header"]
 |===
 | Section
 | Contents
 
-| Vision and principles
-| The problem Graphitron solves and the design philosophy behind it. (Coming soon: rendered from `/docs/`.)
+| xref:vision-and-goal.adoc[Vision and Goal]
+| What problem Graphitron solves and how it approaches the solution.
 
-| Architecture
-| Rewrite-internal documentation: model, classification taxonomy, runtime extension points. (Coming soon: rendered from `/graphitron-rewrite/docs/`.)
+| xref:graphitron-principles.adoc[Graphitron Principles]
+| The design philosophy behind Graphitron, the long-term thinking behind the architectural decisions.
 
-| Roadmap
-| Per-status board of in-flight and shipped work. (Coming soon: rendered from `/graphitron-rewrite/roadmap/`.)
+| xref:dependencies.adoc[Dependencies]
+| Why jOOQ and GraphQL-Java are foundational, and what that means for you.
+
+| xref:security.adoc[Security]
+| Why we enforce security at the database layer.
+
+| xref:architecture/README.adoc[Architecture]
+| Rewrite-internal documentation: code generation triggers, sealed model hierarchy, runtime extension points, design principles, contributor workflow.
 |===
 
 == Source

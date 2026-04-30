@@ -19,10 +19,10 @@ shape it takes, and what they can or cannot assert.
 
 The three sources today:
 
-- [`rewrite-design-principles.md`](../docs/rewrite-design-principles.md)
+- [`rewrite-design-principles.md`](../docs/rewrite-design-principles.adoc)
   states the policy ("Pipeline tests are the primary behavioural tier") and
   bans body-string assertions on generated method bodies.
-- [`claude-code-web-environment.md`](../docs/claude-code-web-environment.md)
+- [`.claude/web-environment.md`](../../.claude/web-environment.md)
   documents the build commands and the local DB setup.
 - Per-test conventions live in javadoc on individual test classes
   (`GraphitronSchemaBuilderTest`, `GraphQLQueryTest`, etc.).

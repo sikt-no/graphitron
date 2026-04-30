@@ -12,7 +12,7 @@ depends-on: []
 ## Overview
 
 [`rewrite-design-principles.md` § "Classifier guarantees shape emitter
-assumptions"](../docs/rewrite-design-principles.md) names a pattern that
+assumptions"](../docs/rewrite-design-principles.adoc) names a pattern that
 already exists in three places on trunk: a classifier check rejects a shape
 the emitter would otherwise have to handle defensively, and the emitter
 relies on the rejection to skip casts, null checks, or `instanceof` guards.

@@ -148,7 +148,7 @@ half the point.
 ### 1. Sealed `Handler` taxonomy
 
 Today `ErrorType.Handler` is the enum-with-shared-fields shape that
-[`rewrite-design-principles.md:17-21`](../docs/rewrite-design-principles.md#sealed-hierarchies-over-enums-for-typed-information)
+[`rewrite-design-principles.md:17-21`](../docs/rewrite-design-principles.adoc#sealed-hierarchies-over-enums-for-typed-information)
 warns against: a single record with a kind field plus mostly-nullable strings.
 
 ```java
@@ -356,7 +356,7 @@ constructor, validated at classify time via reflection (the same mechanism `@rec
 class without the matching constructor produces `UnclassifiedType` with a descriptive reason,
 even if the SDL fields are correctly declared.
 
-The schema-level check is the [load-bearing classifier check](../docs/rewrite-design-principles.md#classifier-guarantees-shape-emitter-assumptions):
+The schema-level check is the [load-bearing classifier check](../docs/rewrite-design-principles.adoc#classifier-guarantees-shape-emitter-assumptions):
 the producer (`TypeBuilder.buildErrorType`) wears
 `@LoadBearingClassifierCheck(key = "error-type.path-message-fields", ...)` and the consumer
 (§3's `ErrorRouter.dispatch` payload-factory call site, which constructs
@@ -556,7 +556,7 @@ each developer-supplied `@error` class; the migration table in §5 mentions the 
 
 A classifier check parallels the constructor check: an `@error` Java class that does not
 implement `GraphitronError` produces `UnclassifiedType` with a descriptive reason. Both checks
-are [load-bearing](../docs/rewrite-design-principles.md#classifier-guarantees-shape-emitter-assumptions)
+are [load-bearing](../docs/rewrite-design-principles.adoc#classifier-guarantees-shape-emitter-assumptions)
 and wear the matching annotations.
 
 #### Payload-factory contract
@@ -609,7 +609,7 @@ Two consequences worth naming:
   `errors`, not `someOtherList`"). The match itself is by **type assignability**, not name,
   so a developer renaming the constructor parameter doesn't break the channel.
 
-The classifier check on the constructor shape is [load-bearing](../docs/rewrite-design-principles.md#classifier-guarantees-shape-emitter-assumptions):
+The classifier check on the constructor shape is [load-bearing](../docs/rewrite-design-principles.adoc#classifier-guarantees-shape-emitter-assumptions):
 the producer (`FieldBuilder` channel-detection) wears
 `@LoadBearingClassifierCheck(key = "error-channel.payload-ctor-shape", ...)` and the consumer
 (the synthesized factory lambda printed by the fetcher emitter) wears
@@ -720,7 +720,7 @@ Three reasons the constants live on `ErrorMappings` rather than inlined per fetc
    own variant and just confirm the static reference.
 3. **Naming as classifier output.** The constant name is produced by the classifier
    (`ErrorChannel.mappingsConstantName`), not invented at print time. This makes the cross-class
-   reference eligible for the [load-bearing classifier check](../docs/rewrite-design-principles.md#classifier-guarantees-shape-emitter-assumptions)
+   reference eligible for the [load-bearing classifier check](../docs/rewrite-design-principles.adoc#classifier-guarantees-shape-emitter-assumptions)
    pattern: producer wears `@LoadBearingClassifierCheck(key = "error-channel.mappings-constant", ...)`,
    consumer wears `@DependsOnClassifierCheck`. Closes the same loop §1 already opened for the
    `(List<String>, String)` constructor.
@@ -750,7 +750,7 @@ returns either the populated payload (schema-mapped) or a redacted `DataFetcherR
 handler" below).
 
 Both `ErrorRouter` and `ErrorMappings` are emitted, not shipped as a runtime jar; this preserves
-the [rewrite-builds-independently invariant](../docs/rewrite-design-principles.md#rewrite-builds-independently-of-legacy-graphitron-modules).
+the [rewrite-builds-independently invariant](../docs/rewrite-design-principles.adoc#rewrite-builds-independently-of-legacy-graphitron-modules).
 
 `ErrorRouter.Mapping` mirrors §1's classifier-side `Handler` taxonomy with the same permit
 list. The duplication is forced by the no-runtime-jar invariant: emitted runtime code cannot
@@ -955,7 +955,7 @@ unreachable and almost certainly an author mistake; a duplicate within a single 
 `handlers` array is similarly rejected. This closes the legacy gap where duplicates were
 silently allowed (`ExceptionStrategyConfigurationGenerator.java:107-117`).
 
-This is a [load-bearing classifier check](../docs/rewrite-design-principles.md#classifier-guarantees-shape-emitter-assumptions):
+This is a [load-bearing classifier check](../docs/rewrite-design-principles.adoc#classifier-guarantees-shape-emitter-assumptions):
 the producer (this duplicate-criteria check) wears
 `@LoadBearingClassifierCheck(key = "error-channel.unique-match-criteria", ...)` and the
 consumer (the `ErrorRouter.dispatch` arm that does `findFirst()` on `MAPPINGS` and treats the
@@ -1021,9 +1021,9 @@ catch). The runtime path is the same `ErrorRouter.dispatch` call. No second runt
 
 A declared exception with no matching `@error` becomes a build-time error, surfaced through
 `validateUnclassifiedField` per
-[`rewrite-design-principles.md:65-69`](../docs/rewrite-design-principles.md#validator-mirrors-classifier-invariants).
+[`rewrite-design-principles.md:65-69`](../docs/rewrite-design-principles.adoc#validator-mirrors-classifier-invariants).
 That replaces the legacy "silently swallowed at runtime" behaviour with a
-[load-bearing classifier check](../docs/rewrite-design-principles.md#classifier-guarantees-shape-emitter-assumptions),
+[load-bearing classifier check](../docs/rewrite-design-principles.adoc#classifier-guarantees-shape-emitter-assumptions),
 annotated with `@LoadBearingClassifierCheck` / `@DependsOnClassifierCheck` so the audit test
 catches any future emitter that grows to consume `ErrorChannel` without the corresponding
 classifier rejection.

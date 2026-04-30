@@ -336,7 +336,7 @@ A short `/docs/README.adoc` (rendered by GitHub) for contributors:
 
 ## Workflow integration
 
-This plan touches the conventions documented in [`workflow.md`](../docs/workflow.md) and [`CLAUDE.md`](../../CLAUDE.md):
+This plan touches the conventions documented in [`workflow.md`](../docs/workflow.adoc) and [`CLAUDE.md`](../../CLAUDE.md):
 
 - **Scope carve-out for `/docs/`.** `CLAUDE.md`'s scope rule currently restricts AI work to `graphitron-rewrite/`. This plan moves AI-managed content into `/docs/` as well. The Phase 1 commit updates the scope rule to read "Scope: `graphitron-rewrite/` and `/docs/`" with a one-line note that `/docs/` is the source for the documentation site.
 - **`.md` → `.adoc` ripple in `CLAUDE.md`.** Phase 2 deletes the `/graphitron-rewrite/docs/*.md` files. `CLAUDE.md` currently links to several of those (`workflow.md`, `claude-code-web-environment.md`, etc.). The Phase 2 commit `git grep`s for every reference and rewrites them to the new `.adoc` paths. Same applies to inter-doc references inside the docs themselves.

@@ -44,7 +44,7 @@ mvn -f graphitron-rewrite/pom.xml -pl roadmap-tool exec:java -q \
 
 ### status `<R<n>-or-slug>` `<new-state>`
 
-Resolve to a file (grep `^id: R<n>$` if the user gave an ID), flip `status:` in the front-matter, then run the guards and regenerate. Valid transitions (see `graphitron-rewrite/docs/workflow.md`):
+Resolve to a file (grep `^id: R<n>$` if the user gave an ID), flip `status:` in the front-matter, then run the guards and regenerate. Valid transitions (see `graphitron-rewrite/docs/workflow.adoc`):
 
 | From          | To           | Guard                                                       |
 |---------------|--------------|-------------------------------------------------------------|

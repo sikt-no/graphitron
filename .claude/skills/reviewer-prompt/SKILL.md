@@ -44,10 +44,10 @@ Files changed:
 
 # Read first (these define what "good" looks like here)
 
-- graphitron-rewrite/docs/rewrite-design-principles.md  (technical principles)
-- docs/graphitron-principles.md                         (strategic principles)
-- graphitron-rewrite/docs/README.md                     (architectural orientation)
-- graphitron-rewrite/docs/rewrite-model.md              (sealed-type hierarchy map)
+- graphitron-rewrite/docs/rewrite-design-principles.adoc  (technical principles)
+- docs/graphitron-principles.adoc                         (strategic principles)
+- graphitron-rewrite/docs/README.adoc                     (architectural orientation)
+- graphitron-rewrite/docs/rewrite-model.adoc              (sealed-type hierarchy map)
 
 Skim the diff once, then read the principles, then revisit the diff with the
 principles in mind. The order matters: the principles reframe what you're looking at.
