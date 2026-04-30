@@ -20,6 +20,7 @@
         <module>graphitron-test</module>
         <module>graphitron-lsp</module>
         <module>roadmap-tool</module>
+        <module>../docs</module>
     </modules>
 
     <properties>
