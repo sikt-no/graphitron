@@ -363,31 +363,22 @@ Two deviations worth flagging for later phases:
 
 One follow-up worth flagging: the bulk-converted plan files (rewrite-design-principles, code-generation-triggers, argument-resolution) used a script-driven em-dash → `;` replacement; some occurrences read more naturally as a comma. Trivial to fix per-file when next touched.
 
-### Phase 3: Old-site absorption
+### Phase 3: Old-site absorption — shipped at `<this-commit>`
 
-End state: any content from `alf/graphitron-landingsside` worth keeping has been ported into `/docs/`; everything else is acknowledged and dropped. A short audit document accompanies the PR.
+Audit verdicts (full inventory in the absorbing commit's message):
 
-Deliverables:
+- `why.md`: dropped. Marketing-style bullet list of "advantages"; substance covered by `vision-and-goal.adoc` and `graphitron-principles.adoc` more thoughtfully.
+- `faq.md`: ported to `/docs/faq.adoc`. Genuinely net-new; previous in-repo docs had no FAQ.
+- `quick_start_guide.md`: ported to `/docs/quick-start.adoc` (slim version). The old quick start was tightly coupled to the legacy `graphitron-maven-plugin` (which R26 retires); the new version is generic and points at the example project plus the rewrite-side `architecture/getting-started.adoc`.
+- `documentation.md`: dropped. Pure legacy-plugin tour (graphitron-maven-plugin, graphitron-schema-transformer); R26 retires those plugins.
 
-- One-shot audit file (committed in this PR, deleted in the same PR after the listed changes land): for each old-site page, one of *already-covered-by `<page>`*, *gap, ported to `<page>`*, *dropped (reason)*.
-- New pages where gaps exist; current expectation: `/docs/faq.adoc` is genuinely net-new; `/docs/quick-start.adoc` may or may not be net-new depending on whether the existing `getting-started.adoc` covers the same ground.
-- Old-site visual assets (SVGs, logo, favicon) confirmed migrated. (May have already happened in Phase 1; absorption verifies completeness.)
+Visual assets brought over to `/docs/images/`: `logo.svg`, `Favicon-Dark.svg`, `Personer.svg`, `Person2.svg`, `Person3.svg`, `Creature1-3.svg`, `favicon.ico`. Closes the Phase 1 deviation flagged earlier ("Logo and favicon not yet in /docs/images/").
 
-Verification: side-by-side comparison of `https://sikt-no.github.io/graphitron/` vs `https://graphitron.sikt.no/`; confirm the new site has feature parity (minus integrasjonstester and blog) and the audit's *dropped* verdicts are defensible.
+Out-of-scope per the original plan: `integrasjonstester` (Norwegian-only, not linked, sparse data), the default Docusaurus blog, undraw_*.svg/docusaurus.png boilerplate, `custom.old.css`, force-light-theme `Root.js`, `Dockerfile`/`deployment.yaml`/`.gitlab-ci.yml`.
 
-### Phase 4: Roadmap, plans, and changelog rendering
+### Phase 4: Roadmap, plans, and changelog rendering — shipped at `aa3511e`
 
-End state: the deployed Pages URL has a Roadmap section linked from the secondary nav, with the per-status status board, a "By theme" cross-cutting index, a "Recently shipped" changelog, and per-plan pages reachable only from the roadmap index. Roadmap content auto-updates on every push: edit a `.md` in `graphitron-rewrite/roadmap/`, push, the next deploy reflects the change.
-
-Deliverables:
-
-- `roadmap-tool` extension: new subcommand emitting AsciiDoc into a configurable output directory, sharing the existing parsing / validation path with `generate` and `verify` so the renderers can't drift on `id:`, `theme:`, or `depends-on:` semantics. Existing GitHub-README emission keeps working unchanged.
-- `/docs/pom.xml` updated: staging step now also runs `roadmap-tool` to populate `target/staging/_generated/`. Invocation uses the `-Dexec.args=...` / `commandlineArgs` convention introduced for `next-id` and `create`. Reactor order ensures `roadmap-tool` builds before `docs`.
-- Roadmap index page and "By theme" page wired into secondary nav; plan pages reachable from those entry points only.
-- Recommended option 1 ("pass-through with header") used initially for markdown→AsciiDoc; revisit if rendering quality is poor.
-- Documentation: short note in `/docs/README.adoc` and `workflow.adoc` that the roadmap renders publicly.
-
-Verification: the deployed Roadmap page reflects current `graphitron-rewrite/roadmap/*.md` contents; flipping an item's `status:` and pushing causes the next deploy to show the new status.
+`roadmap-tool` got a new `render-adoc <roadmap-dir> <output-dir>` subcommand emitting `index.adoc` (status board), `by-theme.adoc`, `changelog.adoc`, and `plans/<slug>.adoc` (one per Active or Backlog item, attribute box plus mechanically-converted markdown body). Per-plan pages use `:doctype: book` to absorb source markdown's looser heading-level discipline; the body converter normalises ordered-list markers and rewrites cross-tree links so plans link cleanly to architecture pages and sibling plans. `/docs/pom.xml` adds a reactor-only `provided` dep on `graphitron-roadmap-tool` plus an `exec-maven-plugin` execution. Nav: `/docs/index.adoc` adds a Roadmap row, and `architecture/README.adoc`'s rewrite-roadmap pointer rewrites from a GitHub URL to `xref:../roadmap/index.adoc`.
 
 ### Phase 5a: Cutover (custom domain flip, old infra still warm)
 

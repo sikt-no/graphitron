@@ -46,6 +46,12 @@ xref:security.adoc[Security model]
 | Section
 | Contents
 
+| xref:quick-start.adoc[Quick Start]
+| Prerequisites, jOOQ generation, GraphQL schema with directives, build wiring. Start here if you want to use Graphitron in a project.
+
+| xref:faq.adoc[FAQ]
+| What Graphitron is, what it isn't, and where to go for support.
+
 | xref:vision-and-goal.adoc[Vision and Goal]
 | What problem Graphitron solves and how it approaches the solution.
 
