@@ -24,6 +24,7 @@ dist/
 CLAUDE.local.md
 thoughts/
 .claude/worktrees/
+.claude/settings.local.json
 scratch/
 
 /graphitron-example/graphitron-example-server/.approval_tests**
