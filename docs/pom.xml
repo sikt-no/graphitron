@@ -97,6 +97,9 @@
                             <resources>
                                 <resource>
                                     <directory>${project.basedir}/_theme</directory>
+                                    <includes>
+                                        <include>*.css</include>
+                                    </includes>
                                 </resource>
                             </resources>
                         </configuration>
@@ -147,6 +150,33 @@
                                 </copy>
                                 <copy todir="${project.build.directory}/staging/roadmap/plans/css" overwrite="true" failonerror="false">
                                     <fileset dir="${project.build.directory}/staging/css"/>
+                                </copy>
+                                <!-- Docinfo files (top nav header + dark footer) staged into every
+                                     source directory so :docinfo: shared picks them up regardless
+                                     of which page asciidoctor is rendering. -->
+                                <copy todir="${project.build.directory}/staging" overwrite="true">
+                                    <fileset dir="${project.basedir}/_theme">
+                                        <include name="docinfo-header.html"/>
+                                        <include name="docinfo-footer.html"/>
+                                    </fileset>
+                                </copy>
+                                <copy todir="${project.build.directory}/staging/architecture" overwrite="true">
+                                    <fileset dir="${project.basedir}/_theme">
+                                        <include name="docinfo-header.html"/>
+                                        <include name="docinfo-footer.html"/>
+                                    </fileset>
+                                </copy>
+                                <copy todir="${project.build.directory}/staging/roadmap" overwrite="true" failonerror="false">
+                                    <fileset dir="${project.basedir}/_theme">
+                                        <include name="docinfo-header.html"/>
+                                        <include name="docinfo-footer.html"/>
+                                    </fileset>
+                                </copy>
+                                <copy todir="${project.build.directory}/staging/roadmap/plans" overwrite="true" failonerror="false">
+                                    <fileset dir="${project.basedir}/_theme">
+                                        <include name="docinfo-header.html"/>
+                                        <include name="docinfo-footer.html"/>
+                                    </fileset>
                                 </copy>
                             </target>
                         </configuration>
@@ -218,6 +248,7 @@
                                         <experimental>true</experimental>
                                         <linkcss>true</linkcss>
                                         <stylesheet>css/site.css</stylesheet>
+                                        <docinfo>shared</docinfo>
                                         <imagesdir>images</imagesdir>
                                         <idprefix/>
                                         <idseparator>-</idseparator>
