@@ -179,6 +179,15 @@ dispatch arm lands.
   `graphql.execution.AbortExecutionException`, or any class with the simple name
   `ValidationViolationGraphQLException`). Both surface as `UnclassifiedField` on the
   carrier with reasons that name the offending `@error` types.
+- `ExceptionHandler.exceptionClassName` resolution check at parse time:
+  `TypeBuilder.validateExceptionClass` reflects the className with `Class.forName`
+  on the classifier classpath and verifies the resolved class extends
+  `java.lang.Throwable`. A non-resolvable or non-Throwable className surfaces the
+  parent `ErrorType` as `UnclassifiedType` with a descriptive reason, mirroring the
+  `@record(record: {className: ...})` reflection check in
+  `TypeBuilder.buildResultType`. Applies to the GENERIC arm; the no-discriminator
+  DATABASE lift to `ExceptionHandler(SQLException)` is unconditionally resolvable so
+  the check is skipped there.
 - `TypeBuilder.buildErrorType` wears `@LoadBearingClassifierCheck(key =
   "error-type.path-message-fields")` (the producer side; the consumer annotation lands
   with the dispatch arm).
