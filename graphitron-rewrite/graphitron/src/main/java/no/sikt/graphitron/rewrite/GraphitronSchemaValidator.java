@@ -259,7 +259,7 @@ public class GraphitronSchemaValidator {
             // also considered (validator is input-shape-agnostic and covers both paths).
             boolean anyKeyIsList = switch (field.lookupMapping()) {
                     case no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping cm ->
-                        cm.columns().stream().anyMatch(no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping.LookupColumn::list);
+                        cm.hasListArg();
                     case no.sikt.graphitron.rewrite.model.LookupMapping.NodeIdMapping nim ->
                         nim.list();
                 }
