@@ -8,7 +8,9 @@ package no.sikt.graphitron.rewrite.model;
  *
  * <ul>
  *   <li>{@link Arg} — the parameter is a GraphQL field argument; bound via
- *       {@code DataFetchingEnvironment.getArgument(name)}.</li>
+ *       {@code DataFetchingEnvironment.getArgument(graphqlArgName)} where
+ *       {@code graphqlArgName} may diverge from the enclosing {@link MethodRef.Param#name()}
+ *       (the Java identifier) under {@code @field(name:)} on the argument site.</li>
  *   <li>{@link Context} — the parameter is a context argument; bound via
  *       {@code GraphitronContext.getContextArgument(dfe, name)}.</li>
  *   <li>{@link Sources} — the DataLoader batch-key list; element type and construction strategy

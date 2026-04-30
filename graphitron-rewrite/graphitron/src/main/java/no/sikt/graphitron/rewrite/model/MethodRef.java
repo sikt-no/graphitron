@@ -71,20 +71,36 @@ public interface MethodRef {
      * The runtime lookup key for {@link CallParam}: the GraphQL argument key for
      * {@link ParamSource.Arg} (which may diverge from the Java identifier under
      * {@code @field(name:)}), and the context key (= parameter name) for
-     * {@link ParamSource.Context}.
+     * {@link ParamSource.Context}. Other {@link ParamSource} variants are filtered out by
+     * {@link #callParams} before reaching this helper; an unexpected variant is a programming
+     * error rather than a recoverable runtime case.
      */
     private static String callParamName(Param p) {
         return switch (p.source()) {
-            case ParamSource.Arg arg -> arg.graphqlArgName();
-            default                  -> p.name();
+            case ParamSource.Arg arg         -> arg.graphqlArgName();
+            case ParamSource.Context ignored -> p.name();
+            case ParamSource.Sources ignored     -> throw nonExtractedSource(p);
+            case ParamSource.DslContext ignored  -> throw nonExtractedSource(p);
+            case ParamSource.Table ignored       -> throw nonExtractedSource(p);
+            case ParamSource.SourceTable ignored -> throw nonExtractedSource(p);
         };
+    }
+
+    private static IllegalStateException nonExtractedSource(Param p) {
+        return new IllegalStateException(
+            "callParamName called on non-Arg/Context source "
+            + p.source().getClass().getSimpleName()
+            + " — callParams() filter should have excluded this");
     }
 
     private static CallSiteExtraction toCallSiteExtraction(Param p) {
         return switch (p.source()) {
-            case ParamSource.Context ignored -> new CallSiteExtraction.ContextArg();
-            case ParamSource.Arg arg        -> arg.extraction();
-            default                         -> new CallSiteExtraction.Direct();
+            case ParamSource.Arg arg             -> arg.extraction();
+            case ParamSource.Context ignored     -> new CallSiteExtraction.ContextArg();
+            case ParamSource.Sources ignored     -> throw nonExtractedSource(p);
+            case ParamSource.DslContext ignored  -> throw nonExtractedSource(p);
+            case ParamSource.Table ignored       -> throw nonExtractedSource(p);
+            case ParamSource.SourceTable ignored -> throw nonExtractedSource(p);
         };
     }
 
