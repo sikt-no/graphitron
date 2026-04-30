@@ -73,6 +73,7 @@
                                 <password>${db.password}</password>
                             </jdbc>
                             <generator>
+                                <name>no.sikt.graphitron.rewrite.fixtures.codegen.NodeIdFixtureGenerator</name>
                                 <database>
                                     <inputSchema>public</inputSchema>
                                     <includes>public.*</includes>

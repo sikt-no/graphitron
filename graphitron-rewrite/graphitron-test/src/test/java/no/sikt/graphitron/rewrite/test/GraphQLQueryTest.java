@@ -1044,6 +1044,67 @@ class GraphQLQueryTest {
         assertThat(rows).isEmpty();
     }
 
+    // ===== R50 phase (g-C) — composite-PK NodeId @lookupKey via DecodedRecord =====
+    //
+    // FilmActor is a composite-PK NodeType (PK columns ACTOR_ID, FILM_ID per init.sql). Each
+    // opaque ID decodes once per row at the arg layer to a Record2<Integer,Integer> and the
+    // generator emits a VALUES(idx, actor_id, film_id) derived table joined on the full
+    // composite key. Carrier-driven ThrowOnMismatch surfaces typeId mismatches as
+    // GraphqlErrorException; missing rows are simply absent (positional output is dense, not
+    // sparse, since orderBy(idx) is on the input, not the join target).
+
+    @Test
+    void compositeNodeIdLookup_listIds_returnsRowsInInputOrder() {
+        // Encode three real film_actor pairs out of seed order to prove (idx) preservation:
+        // (actor=2, film=1), (actor=3, film=2), (actor=2, film=4). The dispatcher decodes each
+        // base64 ID to Record2(actor_id, film_id), then orderBy(idx) preserves input position.
+        String id1 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("FilmActor", 2, 1);
+        String id2 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("FilmActor", 3, 2);
+        String id3 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("FilmActor", 2, 4);
+        Map<String, Object> data = execute(
+            "{ filmActorByNodeId(id: [\"" + id1 + "\", \"" + id2 + "\", \"" + id3 + "\"])"
+            + " { filmId actorId } }");
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("filmActorByNodeId");
+        assertThat(rows).extracting(r -> r.get("actorId") + ":" + r.get("filmId"))
+            .containsExactly("2:1", "3:2", "2:4");
+    }
+
+    @Test
+    void compositeNodeIdLookup_emptyInput_returnsEmpty() {
+        Map<String, Object> data = execute("{ filmActorByNodeId(id: []) { filmId } }");
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("filmActorByNodeId");
+        assertThat(rows).isEmpty();
+    }
+
+    @Test
+    void compositeNodeIdLookup_unknownKey_excludedFromResult() {
+        // (actor=99, film=99) decodes successfully but no such film_actor row exists. The JOIN
+        // filters it out — the result includes the matching row only. Length-mismatch between
+        // inputs and outputs is allowed by design (cf. compositeKeyLookup_mismatchedPairExcluded).
+        String real    = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("FilmActor", 1, 1);
+        String missing = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("FilmActor", 99, 99);
+        Map<String, Object> data = execute(
+            "{ filmActorByNodeId(id: [\"" + missing + "\", \"" + real + "\"]) { filmId actorId } }");
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("filmActorByNodeId");
+        assertThat(rows).hasSize(1);
+        assertThat(rows.get(0).get("actorId")).isEqualTo(1);
+        assertThat(rows.get(0).get("filmId")).isEqualTo(1);
+    }
+
+    @Test
+    void compositeNodeIdLookup_typeMismatch_raisesError() {
+        // ThrowOnMismatch contract: a NodeId encoded for the wrong typeId must surface as an
+        // error rather than silently producing degenerate VALUES rows. A Customer-prefixed id
+        // reaches decodeFilmActor, which returns null on prefix-mismatch; the generated
+        // row-builder then throws GraphqlErrorException. The fetcher's try/catch routes the
+        // throw through ErrorRouter.redact (privacy: the raw message is logged with a
+        // correlation id, never surfaced), producing a single redacted error and null data.
+        String wrongType = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 1);
+        graphql.ExecutionResult result = executeRaw(
+            "{ filmActorByNodeId(id: [\"" + wrongType + "\"]) { filmId actorId } }");
+        assertThat(result.getErrors()).isNotEmpty();
+    }
+
     // ===== C4: RecordTableField — @record parent + DataLoader language batch =====
 
     @Test
