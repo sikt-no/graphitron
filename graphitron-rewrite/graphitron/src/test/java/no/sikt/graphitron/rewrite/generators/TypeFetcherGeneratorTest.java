@@ -972,6 +972,122 @@ class TypeFetcherGeneratorTest {
         assertThat(code).contains("ShortContent.$fields(");
     }
 
+    // ===== Cross-table participant fields =====
+    //
+    // The interface fetcher emits a conditional LEFT JOIN per cross-table participant field. The
+    // gating uses the graphql-java type-scoped selection-set API (Type.field); the JOIN's ON
+    // clause includes the participant's discriminator equality so non-matching rows project NULL
+    // for the cross-table column rather than spuriously matching every row.
+
+    private static ParticipantRef.TableBound.CrossTableField filmContentRatingCrossTable() {
+        var ratingCol = new ColumnRef("rating", "RATING", "java.lang.String");
+        var contentToFilmFk = new JoinStep.FkJoin(
+            "content_film_id_fkey", "", joinTarget("content"),
+            List.of(filmIdCol()),       // FK on content (sourceColumns)
+            filmTableWithPk(),          // film (targetTable)
+            List.of(filmIdCol()),       // film.film_id (targetColumns)
+            null, "rating_0");
+        return new ParticipantRef.TableBound.CrossTableField(
+            "rating", ratingCol, contentToFilmFk, "FilmContent_rating");
+    }
+
+    @Test
+    void queryTableInterfaceField_crossTableField_emitsTypeScopedSelectionGuard() {
+        var returnType = tableBoundFilm(nonNullList());
+        var participants = List.<ParticipantRef>of(
+            new ParticipantRef.TableBound("FilmContent", filmTable(), "FILM",
+                List.of(filmContentRatingCrossTable())),
+            new ParticipantRef.TableBound("ShortContent", filmTable(), "SHORT"));
+        var field = new QueryField.QueryTableInterfaceField("Query", "allContent", null, returnType,
+            "content_type", List.of("FILM", "SHORT"), participants,
+            List.of(), new OrderBySpec.None(), null);
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
+            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+        var code = method(spec, "allContent").code().toString();
+        assertThat(code)
+            .as("type-scoped selection-set check gates per-participant cross-table column fetch")
+            .contains("env.getSelectionSet().contains(\"FilmContent.rating\")");
+    }
+
+    @Test
+    void queryTableInterfaceField_crossTableField_emitsLeftJoinWithDiscriminatorGate() {
+        var returnType = tableBoundFilm(nonNullList());
+        var participants = List.<ParticipantRef>of(
+            new ParticipantRef.TableBound("FilmContent", filmTable(), "FILM",
+                List.of(filmContentRatingCrossTable())));
+        var field = new QueryField.QueryTableInterfaceField("Query", "allContent", null, returnType,
+            "content_type", List.of("FILM"), participants,
+            List.of(), new OrderBySpec.None(), null);
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
+            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+        var code = method(spec, "allContent").code().toString();
+        assertThat(code)
+            .as("LEFT JOIN to the cross table is gated by the alias-presence check")
+            .contains("step = step.leftJoin(FilmContent_rating_alias).on(");
+        assertThat(code)
+            .as("ON clause includes the FK equality (target.eq(source))")
+            .contains("FilmContent_rating_alias.FILM_ID.eq(filmTable.FILM_ID)");
+        assertThat(code)
+            .as("ON clause includes the participant's discriminator value so non-matching rows NULL")
+            .contains("eq(\"FILM\")");
+    }
+
+    @Test
+    void queryTableInterfaceField_crossTableField_aliasedColumnAddedToSelect() {
+        var returnType = tableBoundFilm(nonNullList());
+        var participants = List.<ParticipantRef>of(
+            new ParticipantRef.TableBound("FilmContent", filmTable(), "FILM",
+                List.of(filmContentRatingCrossTable())));
+        var field = new QueryField.QueryTableInterfaceField("Query", "allContent", null, returnType,
+            "content_type", List.of("FILM"), participants,
+            List.of(), new OrderBySpec.None(), null);
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
+            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+        var code = method(spec, "allContent").code().toString();
+        assertThat(code)
+            .as("cross-table column is projected with the alias so the per-field DataFetcher reads it back by name")
+            .contains("fields.add(FilmContent_rating_alias.RATING.as(\"FilmContent_rating\"))");
+    }
+
+    @Test
+    void queryTableInterfaceField_noCrossTableFields_noLeftJoinEmitted() {
+        var returnType = tableBoundFilm(nonNullList());
+        var participants = List.<ParticipantRef>of(
+            new ParticipantRef.TableBound("FilmContent", filmTable(), "FILM"),
+            new ParticipantRef.TableBound("ShortContent", filmTable(), "SHORT"));
+        var field = new QueryField.QueryTableInterfaceField("Query", "allContent", null, returnType,
+            "content_type", List.of("FILM", "SHORT"), participants,
+            List.of(), new OrderBySpec.None(), null);
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
+            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+        var code = method(spec, "allContent").code().toString();
+        assertThat(code)
+            .as("no LEFT JOIN when no participant declares cross-table fields")
+            .doesNotContain(".leftJoin(");
+    }
+
+    @Test
+    void tableInterfaceField_crossTableField_emitsLeftJoinAtChildSite() {
+        // Both interface fetcher entry points (Query- and ChildField-rooted) share
+        // buildCrossTableAliasDeclarations + buildCrossTableJoinChain; this asserts the
+        // emission applies at the child site too.
+        var returnType = tableBoundFilm(nonNullList());
+        List<JoinStep> joinPath = List.of(new JoinStep.FkJoin(
+            "film_language_id_fkey", "", LANGUAGE_TABLE,
+            List.of(languageIdCol()), FILM_TABLE, List.of(languageIdCol()), null, "content_0"));
+        var participants = List.<ParticipantRef>of(
+            new ParticipantRef.TableBound("FilmContent", filmTable(), "FILM",
+                List.of(filmContentRatingCrossTable())));
+        var field = new ChildField.TableInterfaceField("Language", "content", null, returnType,
+            "content_type", List.of("FILM"), participants,
+            joinPath, List.of(), new OrderBySpec.None(), null);
+        var spec = TypeFetcherGenerator.generateTypeSpec("Language", LANGUAGE_TABLE, null,
+            List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+        var code = method(spec, "content").code().toString();
+        assertThat(code).contains("env.getSelectionSet().contains(\"FilmContent.rating\")");
+        assertThat(code).contains("step = step.leftJoin(FilmContent_rating_alias).on(");
+    }
+
     @Test
     void graphitronContextHelper_targetsLocallyEmittedInterfaceByClassKey() {
         // Pins the commit that retargeted GraphitronContext from no.sikt.graphql to the

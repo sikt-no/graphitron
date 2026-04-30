@@ -146,6 +146,20 @@ public final class FetcherEmitter {
                 ColumnFetcherClassGenerator.CLASS_NAME);
             return CodeBlock.of("new $T<>($T.field($S))", columnFetcherClass, DSL, field.name());
         }
+        if (field instanceof ChildField.ParticipantColumnReferenceField pcrf) {
+            // Cross-table participant field on a TableInterfaceType participant. The interface
+            // fetcher (TypeFetcherGenerator) emits a conditional LEFT JOIN per field gated by the
+            // participant's discriminator value, and projects the column aliased as
+            // pcrf.aliasName(). Read it back from the parent record by alias. The Class<?>
+            // parameter on DSL.field carries the column's concrete type so jOOQ's converter
+            // returns the right Java value (e.g. enum) when the column is a typed projection
+            // rather than a raw SQL identifier.
+            var columnFetcherClass = ClassName.get(outputPackage + ".util",
+                ColumnFetcherClassGenerator.CLASS_NAME);
+            return CodeBlock.of("new $T<>($T.field($T.name($S), $T.class))",
+                columnFetcherClass, DSL, DSL, pcrf.aliasName(),
+                ClassName.bestGuess(pcrf.column().columnClass()));
+        }
         if (field instanceof ChildField.ColumnReferenceField crf
                 && crf.compaction() instanceof CallSiteCompaction.NodeIdEncodeKeys
                 && parentTable != null) {

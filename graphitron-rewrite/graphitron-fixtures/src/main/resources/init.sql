@@ -179,12 +179,13 @@ CREATE TABLE film_list (
 -- -------------------------
 
 CREATE TABLE content (
-    content_id    serial       PRIMARY KEY,
-    content_type  varchar(10)  NOT NULL,
-    title         varchar(255) NOT NULL,
-    length        smallint,
-    film_id       int          REFERENCES film(film_id),
-    last_update   timestamp    NOT NULL DEFAULT now()
+    content_id        serial       PRIMARY KEY,
+    content_type      varchar(10)  NOT NULL,
+    title             varchar(255) NOT NULL,
+    length            smallint,
+    short_description varchar(255),
+    film_id           int          REFERENCES film(film_id),
+    last_update       timestamp    NOT NULL DEFAULT now()
 );
 
 -- ===========================
@@ -268,11 +269,13 @@ INSERT INTO film_actor (actor_id, film_id) VALUES
     (3, 5);
 
 -- content seed data: two FilmContent rows linked to films 1 and 2, two ShortContent rows.
-INSERT INTO content (content_type, title, length, film_id) VALUES
-    ('FILM',  'ACADEMY DINOSAUR (extended)',  120, 1),
-    ('FILM',  'ACE GOLDFINGER (extended)',     90, 2),
-    ('SHORT', 'Sunrise',                       12, NULL),
-    ('SHORT', 'Interlude',                      8, NULL);
+-- short_description is populated only on SHORT rows so per-participant column isolation tests
+-- can verify NULL on FILM rows.
+INSERT INTO content (content_type, title, length, short_description, film_id) VALUES
+    ('FILM',  'ACADEMY DINOSAUR (extended)',  120, NULL,                  1),
+    ('FILM',  'ACE GOLDFINGER (extended)',     90, NULL,                  2),
+    ('SHORT', 'Sunrise',                       12, 'Dawn over a city',    NULL),
+    ('SHORT', 'Interlude',                      8, 'Quiet jazz piece',    NULL);
 
 -- ===========================
 -- nodeidfixture schema
