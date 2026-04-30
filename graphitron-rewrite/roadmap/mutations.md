@@ -38,6 +38,8 @@ What R50 leaves alone on the mutation side:
 - The classifier's per-verb helpers (`classifyMutationDeleteField` etc.), modulo Invariants #8–#10 dead-code cleanup and the `NodeIdMetadata` → `HelperRef` conversion at the `nodeIdMeta` resolution point.
 - The DELETE emitter's overall shape (`deleteFrom().where(...).returningResult(...).fetchOne(...)`); only the two slot accesses and the encode-call lambda change.
 
+> **Reader note.** The phase-specific specs below (Phase 2 INSERT, Phase 4 UPDATE, Phase 5 UPSERT, Phase 6 service variants), the *Consolidation* `DmlTableField` supertype shape, and the *Non-goals* `NodeIdField`-in-input deferral all spell out shapes that **predate the R50 retype**. Treat the two bullets above as authoritative for the post-R50 slot shapes; the forward-looking spec blocks below get refreshed wholesale when R22 unpauses.
+
 ---
 
 ## Status
