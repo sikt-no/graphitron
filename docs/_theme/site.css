@@ -32,6 +32,15 @@ html, body {
     font-family: var(--sds-typography-font-family-default, "Haffer", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif);
     font-size: 16px;
     line-height: var(--sds-typography-body-lineheight-regular, 1.6);
+    /* Belt-and-suspenders: guarantee the page itself never exceeds the
+     * viewport width regardless of what wide content (tables, pre blocks,
+     * images, embedded SVGs) lands inside #content. Without this, a single
+     * unconstrained child can widen the body and drag the sticky
+     * .nav-header off-screen on horizontal scroll, since sticky only
+     * pins on the y-axis. `clip` rather than `hidden` because clip does
+     * not establish a scroll container, so position: sticky on .nav-header
+     * keeps tracking the viewport. */
+    overflow-x: clip;
 }
 
 a {
