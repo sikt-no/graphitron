@@ -196,7 +196,7 @@ public class TypeFetcherGenerator {
     public static final Set<Class<? extends GraphitronField>> PROJECTED_LEAVES = Set.of(
         ChildField.TableField.class,
         ChildField.LookupTableField.class,
-        ChildField.NodeIdField.class,
+        ChildField.CompositeColumnField.class,
         ChildField.NestingField.class);
 
     /**
@@ -368,13 +368,13 @@ public class TypeFetcherGenerator {
                 case MutationField.MutationServiceTableField f -> builder.addMethod(stub(f));
                 case MutationField.MutationServiceRecordField f -> builder.addMethod(stub(f));
                 case ChildField.ColumnReferenceField f          -> builder.addMethod(stub(f));
-                // ChildField.TableField / LookupTableField / NodeIdField / NodeIdReferenceField
+                // ChildField.TableField / LookupTableField / CompositeColumnField / NodeIdReferenceField
                 // have no fetcher — inline projection via TypeClassGenerator.$fields plus a
-                // DataFetcher value emitted by FetcherEmitter for the encode lambda (NodeIdField,
-                // NodeIdReferenceField).
+                // DataFetcher value emitted by FetcherEmitter for the encode lambda (composite-key
+                // NodeId carriers, NodeIdReferenceField).
                 case ChildField.TableField ignored              -> { }
                 case ChildField.LookupTableField ignored        -> { }
-                case ChildField.NodeIdField ignored             -> { }
+                case ChildField.CompositeColumnField ignored    -> { }
                 case ChildField.NodeIdReferenceField ignored    -> { }
                 case ChildField.TableInterfaceField f           -> builder.addMethod(buildTableInterfaceFieldFetcher(f, outputPackage, jooqPackage));
                 case ChildField.RecordTableField rtf -> {

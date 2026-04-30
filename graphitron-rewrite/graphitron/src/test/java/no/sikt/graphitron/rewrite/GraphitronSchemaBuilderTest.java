@@ -13,7 +13,6 @@ import no.sikt.graphitron.rewrite.model.ChildField.ComputedField;
 import no.sikt.graphitron.rewrite.model.ChildField.InterfaceField;
 import no.sikt.graphitron.rewrite.model.ChildField.MultitableReferenceField;
 import no.sikt.graphitron.rewrite.model.ChildField.NestingField;
-import no.sikt.graphitron.rewrite.model.ChildField.NodeIdField;
 import no.sikt.graphitron.rewrite.model.ChildField.NodeIdReferenceField;
 import no.sikt.graphitron.rewrite.model.ChildField.PropertyField;
 import no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField;
@@ -339,11 +338,11 @@ class GraphitronSchemaBuilderTest {
         tc.assertions.accept(build(tc.sdl));
     }
 
-    // ===== NodeIdField =====
+    // ===== Output-side NodeId carrier (post-R50: ChildField.ColumnField with NodeIdEncodeKeys compaction) =====
 
     enum NodeIdFieldCase implements ClassificationCase {
         WITH_NODE_DIRECTIVE(
-            "@nodeId on a type that also has @node — classified as NodeIdField with resolved key columns",
+            "@nodeId on a type that also has @node — classified as ColumnField with NodeIdEncodeKeys compaction",
             """
             type Film implements Node @table(name: "film") @node(keyColumns: ["film_id"]) {
               id: ID! @nodeId
@@ -351,8 +350,10 @@ class GraphitronSchemaBuilderTest {
             type Query { film: Film }
             """,
             schema -> {
-                var field = (NodeIdField) schema.field("Film", "id");
-                assertThat(field.nodeKeyColumns()).isNotEmpty();
+                var field = (ChildField.ColumnField) schema.field("Film", "id");
+                assertThat(field.column()).isNotNull();
+                assertThat(field.compaction())
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteCompaction.NodeIdEncodeKeys.class);
             }),
 
         WITHOUT_NODE_DIRECTIVE(
@@ -369,7 +370,7 @@ class GraphitronSchemaBuilderTest {
             this.sdl = sdl;
             this.assertions = assertions;
         }
-        @Override public Set<Class<?>> variants() { return Set.of(NodeIdField.class); }
+        @Override public Set<Class<?>> variants() { return Set.of(ChildField.ColumnField.class); }
         @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
     }
 

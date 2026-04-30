@@ -6,6 +6,7 @@ import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
 import no.sikt.graphitron.rewrite.generators.util.ColumnFetcherClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator;
+import no.sikt.graphitron.rewrite.model.CallSiteCompaction;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
@@ -65,12 +66,50 @@ public final class FetcherEmitter {
             return propertyOrRecordValue(rf.columnName(), rf.column(), resultType, outputPackage, jooqPackage);
         }
         if (field instanceof ChildField.ColumnField cf && parentTable != null) {
+            if (cf.compaction() instanceof CallSiteCompaction.NodeIdEncodeKeys enc) {
+                // Arity-1 NodeId-encoded projection: read the keyColumn off the source record
+                // and pass it through encode<TypeName>. The HelperRef.Encode reference carries
+                // both the encoder class and the helper method name so we never reconstruct
+                // either from a raw typeId string at emission time.
+                var encoderClass = enc.encodeMethod().encoderClass();
+                var recordClass = ClassName.get("org.jooq", "Record");
+                var tablesClass = ClassName.get(jooqPackage, "Tables");
+                return CodeBlock.builder()
+                    .add("($T env) -> {\n", DATA_FETCHING_ENV)
+                    .add("    $T r = ($T) env.getSource();\n", recordClass, recordClass)
+                    .add("    return $T.$L(r.get($T.$L.$L));\n",
+                        encoderClass, enc.encodeMethod().methodName(),
+                        tablesClass, parentTable.javaFieldName(), cf.column().javaName())
+                    .add("}")
+                    .build();
+            }
             var columnFetcherClass = ClassName.get(outputPackage + ".util",
                 ColumnFetcherClassGenerator.CLASS_NAME);
             var tablesClass = ClassName.get(jooqPackage, "Tables");
             return CodeBlock.of("new $T<>($T.$L.$L)",
                 columnFetcherClass, tablesClass,
                 parentTable.javaFieldName(), cf.column().javaName());
+        }
+        if (field instanceof ChildField.CompositeColumnField ccf && parentTable != null) {
+            // Composite-key NodeId projection: read each keyColumn off the source record and
+            // pass them positionally through encode<TypeName>(c1, ..., cN). Compaction is
+            // narrowed to NodeIdEncodeKeys at the type level — no plain composite projection
+            // exists.
+            var enc = ccf.compaction();
+            var encoderClass = enc.encodeMethod().encoderClass();
+            var recordClass = ClassName.get("org.jooq", "Record");
+            var tablesClass = ClassName.get(jooqPackage, "Tables");
+            var body = CodeBlock.builder()
+                .add("($T env) -> {\n", DATA_FETCHING_ENV)
+                .add("    $T r = ($T) env.getSource();\n", recordClass, recordClass)
+                .add("    return $T.$L(", encoderClass, enc.encodeMethod().methodName());
+            for (int i = 0; i < ccf.columns().size(); i++) {
+                if (i > 0) body.add(", ");
+                body.add("r.get($T.$L.$L)",
+                    tablesClass, parentTable.javaFieldName(), ccf.columns().get(i).javaName());
+            }
+            body.add(");\n").add("}");
+            return body.build();
         }
         if (field instanceof ChildField.TableField tf) {
             boolean single = tf.returnType().wrapper() instanceof FieldWrapper.Single;
@@ -97,21 +136,6 @@ public final class FetcherEmitter {
             var columnFetcherClass = ClassName.get(outputPackage + ".util",
                 ColumnFetcherClassGenerator.CLASS_NAME);
             return CodeBlock.of("new $T<>($T.field($S))", columnFetcherClass, DSL, field.name());
-        }
-        if (field instanceof ChildField.NodeIdField nf && parentTable != null) {
-            var encoderClass = ClassName.get(outputPackage + ".util",
-                NodeIdEncoderClassGenerator.CLASS_NAME);
-            var recordClass = ClassName.get("org.jooq", "Record");
-            var tablesClass = ClassName.get(jooqPackage, "Tables");
-            var body = CodeBlock.builder()
-                .add("($T env) -> {\n", DATA_FETCHING_ENV)
-                .add("    $T r = ($T) env.getSource();\n", recordClass, recordClass)
-                .add("    return $T.encode($S", encoderClass, nf.nodeTypeId());
-            for (var col : nf.nodeKeyColumns()) {
-                body.add(",\n        r.get($T.$L.$L)", tablesClass, parentTable.javaFieldName(), col.javaName());
-            }
-            body.add(");\n").add("}");
-            return body.build();
         }
         if (field instanceof ChildField.NodeIdReferenceField nrf && parentTable != null) {
             // FK-mirror collapse — encode the parent's FK source columns directly. See

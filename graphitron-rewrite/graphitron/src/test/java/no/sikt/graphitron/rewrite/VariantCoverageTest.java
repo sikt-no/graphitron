@@ -54,7 +54,12 @@ class VariantCoverageTest {
             "Permit added in R12 (error-handling-parity) C2 alongside the ErrorChannel slot; "
             + "the classifier doesn't produce it until C3 lifts the five PolymorphicReturnType "
             + "rejection sites in FieldBuilder. Add a GraphitronSchemaBuilderTest case when "
-            + "that lift lands."
+            + "that lift lands.",
+        ChildField.CompositeColumnField.class,
+            "Covered by NodeIdPipelineTest.OutputCase (the composite-PK NodeId path requires the "
+            + "nodeid fixture's `bar` table with two key columns, not available in the standard "
+            + "sakila catalog); add a GraphitronSchemaBuilderTest case when a composite-PK "
+            + "fixture is made available there."
     );
 
     private static final List<Class<?>> ROOTS = List.of(

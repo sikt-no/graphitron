@@ -80,7 +80,7 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.MutationField.MutationServiceRecordField f   -> validateMutationServiceRecordField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.ColumnField f             -> validateColumnField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.ColumnReferenceField f    -> validateColumnReferenceField(f, errors);
-            case no.sikt.graphitron.rewrite.model.ChildField.NodeIdField f             -> validateNodeIdField(f, errors);
+            case no.sikt.graphitron.rewrite.model.ChildField.CompositeColumnField f    -> validateCompositeColumnField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.NodeIdReferenceField f    -> validateNodeIdReferenceField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.TableField f              -> validateTableField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.SplitTableField f        -> validateSplitTableField(f, types, errors);
@@ -335,9 +335,18 @@ public class GraphitronSchemaValidator {
             validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
         }
     }
-    private void validateNodeIdField(no.sikt.graphitron.rewrite.model.ChildField.NodeIdField field, List<ValidationError> errors) {
-        // NodeIdField is only classified when the parent type is a NodeType.
-        // The absence-of-@node case is classified as UnclassifiedField in the builder.
+    private void validateCompositeColumnField(no.sikt.graphitron.rewrite.model.ChildField.CompositeColumnField field, List<ValidationError> errors) {
+        // Arity invariant — composite carriers carry size >= 2; arity-1 routes to ColumnField.
+        // The record's compact constructor enforces the lower bound; the upper bound matches the
+        // RecordN / RowN ceiling (jOOQ's 22-slot cap). Any breach indicates a classifier bug.
+        if (field.columns().size() > 22) {
+            errors.add(new ValidationError(RejectionKind.AUTHOR_ERROR,
+                field.qualifiedName(),
+                "Field '" + field.qualifiedName() + "': composite NodeId carrier has "
+                    + field.columns().size() + " columns, exceeding the 22-slot RecordN cap",
+                field.location()
+            ));
+        }
     }
     private void validateNodeIdReferenceField(no.sikt.graphitron.rewrite.model.ChildField.NodeIdReferenceField field, List<ValidationError> errors) {
         // @node is always resolved — builder returns UnclassifiedField if the type is missing or lacks @node.
@@ -465,7 +474,7 @@ public class GraphitronSchemaValidator {
      */
     private static final java.util.Set<Class<? extends GraphitronField>> NESTED_WIREABLE_LEAVES = java.util.Set.of(
         ChildField.ColumnField.class,
-        ChildField.NodeIdField.class,
+        ChildField.CompositeColumnField.class,
         ChildField.TableField.class,
         ChildField.LookupTableField.class,
         ChildField.ConstructorField.class,
