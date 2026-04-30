@@ -44,6 +44,7 @@ import no.sikt.graphitron.rewrite.model.ChildField.TableMethodField;
 import no.sikt.graphitron.rewrite.model.ChildField.UnionField;
 import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.rewrite.model.ErrorChannel;
 import no.sikt.graphitron.rewrite.model.InputColumnBinding;
 import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
@@ -1742,6 +1743,271 @@ class FieldBuilder {
         return new ErrorsField(parentTypeName, name, location, errorTypes);
     }
 
+    // ===== Carrier classifier: ErrorChannel resolution (R12 §2c) =====
+
+    /**
+     * Outcome of the carrier-side {@code ErrorChannel} resolution. Three terminal states:
+     *
+     * <ul>
+     *   <li>{@link NoChannel} — the payload has no {@code errors}-shaped field; the carrier
+     *       proceeds with {@code Optional.empty()} and the emitter wraps the body in
+     *       {@code ErrorRouter.redact}.</li>
+     *   <li>{@link Channel} — the payload has an {@code errors}-shaped field and the
+     *       developer-supplied payload class's all-fields constructor matches the contract.</li>
+     *   <li>{@link Reject} — the payload has an {@code errors}-shaped field but the
+     *       constructor shape rejects (missing class, multiple matching constructors, no
+     *       errors slot, multiple errors slots). The caller turns this into an
+     *       {@code UnclassifiedField} with the carried reason.</li>
+     * </ul>
+     */
+    private sealed interface ErrorChannelResult {
+        record NoChannel() implements ErrorChannelResult {}
+        record Channel(ErrorChannel channel) implements ErrorChannelResult {}
+        record Reject(String reason) implements ErrorChannelResult {}
+    }
+
+    private static final ErrorChannelResult NO_CHANNEL = new ErrorChannelResult.NoChannel();
+
+    /**
+     * Resolves the carrier-side {@link ErrorChannel} for a
+     * fetcher-emitting field per R12 §2c. Walks the payload type's GraphQL field defs to find an
+     * {@code errors}-shaped field (structural match by polymorphic-of-all-{@code @error} list
+     * shape), then reflects on the developer-supplied payload class to identify the
+     * canonical-constructor errors slot and capture each parameter's default literal.
+     *
+     * <p>Channel detection is structural (not name-based) and reuses the {@link #liftToErrorsField}
+     * predicate so the carrier classifier and the child classifier agree on what counts as an
+     * {@code ErrorsField}. The first matching field on the payload populates {@code mappedErrorTypes};
+     * a second matching field is rejected at child classification time, not here.
+     *
+     * <p>The errors slot is identified as the unique constructor parameter whose element type's
+     * simple name is {@code "GraphitronError"}: the parameter type must be {@link java.util.List}
+     * / {@link java.util.Collection} / {@link Iterable} (or assignable from one of these), and
+     * its actual type argument resolves to an {@link Class} whose simple name matches. The
+     * full marker-interface enforcement (every {@code @error} class implements
+     * {@code GraphitronError}) lands later in error-handling-parity.md alongside the SDL→class
+     * lookup for {@code @error} types.
+     */
+    private ErrorChannelResult resolveErrorChannel(ReturnTypeRef returnType) {
+        // Channel detection runs against @record payloads; @table payloads can in principle
+        // carry an errors field too, but synthesizing a payload-factory there requires shape
+        // machinery (jOOQ Record → application record) that's outside §2c. Surfaces as
+        // NoChannel until that lift is designed; the §3 redact arm is the fallback.
+        if (!(returnType instanceof ReturnTypeRef.ResultReturnType result)) {
+            return NO_CHANNEL;
+        }
+        if (result.fqClassName() == null) {
+            return NO_CHANNEL;
+        }
+
+        var payloadGqlType = ctx.schema.getType(result.returnTypeName());
+        if (!(payloadGqlType instanceof GraphQLObjectType payloadObj)) {
+            return NO_CHANNEL;
+        }
+
+        List<ErrorType> mappedErrorTypes = null;
+        for (var childFieldDef : payloadObj.getFieldDefinitions()) {
+            var detected = detectErrorsFieldShape(childFieldDef, result.returnTypeName());
+            if (detected != null) {
+                mappedErrorTypes = detected;
+                break;
+            }
+        }
+        if (mappedErrorTypes == null) {
+            return NO_CHANNEL;
+        }
+
+        Class<?> payloadCls;
+        try {
+            payloadCls = Class.forName(result.fqClassName());
+        } catch (ClassNotFoundException e) {
+            return new ErrorChannelResult.Reject(
+                "payload class '" + result.fqClassName() + "' could not be loaded");
+        }
+
+        var ctors = payloadCls.getDeclaredConstructors();
+        if (ctors.length == 0) {
+            return new ErrorChannelResult.Reject(
+                "payload class '" + result.fqClassName() + "' has no declared constructors");
+        }
+        // Records always declare a single canonical constructor; hand-rolled @record POJOs are
+        // expected to expose one matching the SDL field order. Multiple constructors → reject;
+        // the implementer collapses to one or annotates the canonical one in a future extension.
+        if (ctors.length > 1) {
+            return new ErrorChannelResult.Reject(
+                "payload class '" + result.fqClassName() + "' has " + ctors.length
+                    + " declared constructors; the carrier requires a single canonical "
+                    + "(all-fields) constructor");
+        }
+        var ctor = ctors[0];
+        var parameters = ctor.getParameters();
+        var genericParameterTypes = ctor.getGenericParameterTypes();
+
+        var paramShapes = new java.util.ArrayList<ErrorChannel.PayloadConstructorParam>(parameters.length);
+        int errorsSlotIndex = -1;
+        for (int i = 0; i < parameters.length; i++) {
+            var p = parameters[i];
+            boolean isErrorsSlot = isGraphitronErrorListSlot(p.getType(), genericParameterTypes[i]);
+            if (isErrorsSlot) {
+                if (errorsSlotIndex >= 0) {
+                    return new ErrorChannelResult.Reject(
+                        "payload class '" + result.fqClassName()
+                            + "' has multiple errors-slot parameters on its constructor; "
+                            + "exactly one parameter assignable from List<? extends GraphitronError> is required");
+                }
+                errorsSlotIndex = i;
+            }
+            String paramName = p.isNamePresent() ? p.getName() : ("arg" + i);
+            no.sikt.graphitron.javapoet.TypeName paramTypeName =
+                no.sikt.graphitron.javapoet.TypeName.get(genericParameterTypes[i]);
+            String defaultLiteral = isErrorsSlot ? null : defaultLiteralFor(p.getType());
+            paramShapes.add(new ErrorChannel.PayloadConstructorParam(
+                paramName, paramTypeName, isErrorsSlot, defaultLiteral));
+        }
+        if (errorsSlotIndex < 0) {
+            return new ErrorChannelResult.Reject(
+                "payload class '" + result.fqClassName()
+                    + "' has no errors-slot parameter on its constructor; one parameter "
+                    + "assignable from List<? extends GraphitronError> is required");
+        }
+
+        var payloadClassName = ClassName.bestGuess(result.fqClassName());
+        String mappingsConstantName = toScreamingSnake(payloadCls.getSimpleName());
+        return new ErrorChannelResult.Channel(new ErrorChannel(
+            mappedErrorTypes, payloadClassName, paramShapes, mappingsConstantName));
+    }
+
+    /**
+     * Lightweight predicate for "this GraphQL field is an {@code errors}-shaped field" used by
+     * the carrier classifier to walk a payload's fields without materialising a full
+     * {@link ErrorsField} or {@link UnclassifiedField}. Returns the resolved
+     * {@code List<ErrorType>} when the field's return type is a polymorphic-of-all-{@code @error}
+     * list with the nullability shape §2b allows; returns {@code null} otherwise.
+     *
+     * <p>Mirrors the lift rules in {@link #liftToErrorsField}: every member of the polymorphic
+     * type must be {@code @error}, and the field itself must be a nullable list. A future
+     * widening to single-{@code @error} list shapes ({@code [SomeError]}) is part of §2b's
+     * remaining work; this helper picks up the same shapes the lift currently accepts.
+     */
+    private List<ErrorType> detectErrorsFieldShape(GraphQLFieldDefinition fieldDef, String parentTypeName) {
+        var returnType = ctx.resolveReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef));
+        if (!(returnType instanceof ReturnTypeRef.PolymorphicReturnType poly)) {
+            return null;
+        }
+        var schemaType = ctx.schema.getType(poly.returnTypeName());
+        java.util.List<String> memberNames = switch (schemaType) {
+            case GraphQLUnionType union -> union.getTypes().stream().map(GraphQLNamedType::getName).toList();
+            case GraphQLInterfaceType iface ->
+                ctx.schema.getImplementations(iface).stream().map(GraphQLObjectType::getName).toList();
+            case null, default -> java.util.List.of();
+        };
+        if (memberNames.isEmpty()) return null;
+        var errorTypes = new java.util.ArrayList<ErrorType>();
+        for (String memberName : memberNames) {
+            if (!(ctx.types.get(memberName) instanceof ErrorType et)) {
+                return null;
+            }
+            errorTypes.add(et);
+        }
+        if (!(poly.wrapper() instanceof FieldWrapper.List list) || !list.listNullable()) {
+            return null;
+        }
+        return errorTypes;
+    }
+
+    /**
+     * Detects whether a constructor parameter is the errors slot per the §2c contract:
+     * parameter type is {@link java.util.List}, {@link java.util.Collection}, or
+     * {@link Iterable} (or any of their subtypes) and the actual type argument resolves to
+     * a class whose simple name is {@code "GraphitronError"}.
+     *
+     * <p>Element types parameterised as wildcards ({@code List<? extends GraphitronError>})
+     * are unwrapped to their upper bound. Raw collection types and non-{@code GraphitronError}
+     * element types return {@code false}.
+     */
+    private static boolean isGraphitronErrorListSlot(Class<?> rawType, java.lang.reflect.Type genericType) {
+        if (!Iterable.class.isAssignableFrom(rawType)) return false;
+        if (!(genericType instanceof java.lang.reflect.ParameterizedType pt)) return false;
+        var args = pt.getActualTypeArguments();
+        if (args.length != 1) return false;
+        var elementType = args[0];
+        Class<?> elementClass = resolveElementClass(elementType);
+        if (elementClass == null) return false;
+        return "GraphitronError".equals(elementClass.getSimpleName());
+    }
+
+    /**
+     * Walks a generic type to its concrete {@link Class} bound: a {@link Class} returns itself,
+     * a {@link java.lang.reflect.WildcardType} returns its upper bound's class, a
+     * {@link java.lang.reflect.ParameterizedType} returns its raw type. Returns {@code null}
+     * for type-variable bounds and other shapes that don't reduce to a class.
+     */
+    private static Class<?> resolveElementClass(java.lang.reflect.Type t) {
+        if (t instanceof Class<?> cls) return cls;
+        if (t instanceof java.lang.reflect.WildcardType wt) {
+            var upper = wt.getUpperBounds();
+            return upper.length == 1 ? resolveElementClass(upper[0]) : null;
+        }
+        if (t instanceof java.lang.reflect.ParameterizedType pt) {
+            return pt.getRawType() instanceof Class<?> raw ? raw : null;
+        }
+        return null;
+    }
+
+    /** Language-default literal for a non-errors constructor parameter slot. */
+    private static String defaultLiteralFor(Class<?> rawType) {
+        if (!rawType.isPrimitive()) return "null";
+        if (rawType == boolean.class) return "false";
+        if (rawType == char.class) return "'\\0'";
+        if (rawType == long.class) return "0L";
+        if (rawType == float.class) return "0.0f";
+        if (rawType == double.class) return "0.0";
+        return "0";  // byte / short / int
+    }
+
+    /**
+     * Converts a Java identifier (e.g. a class's simple name) to {@code SCREAMING_SNAKE_CASE}.
+     * {@code FilmPayload} → {@code FILM_PAYLOAD}, {@code BehandleSakPayload} →
+     * {@code BEHANDLE_SAK_PAYLOAD}.
+     *
+     * <p>The §3 dedup logic (hash-suffixing colliding shapes with different mappings) lands
+     * with {@code ErrorMappings} emission; this helper produces the unsuffixed base name.
+     */
+    private static String toScreamingSnake(String s) {
+        if (s == null || s.isEmpty()) return s;
+        var sb = new StringBuilder(s.length() + 4);
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (i > 0 && Character.isUpperCase(c) && !Character.isUpperCase(s.charAt(i - 1))) {
+                sb.append('_');
+            }
+            sb.append(Character.toUpperCase(c));
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Carrier-classifier helper: resolves the {@link ErrorChannel}
+     * for {@code returnType}, then dispatches to {@code builder} with the resolved channel
+     * (wrapped in {@link Optional}). When the resolution rejects, returns an
+     * {@link UnclassifiedField} with the carried reason; the caller never sees the rejection
+     * shape.
+     *
+     * <p>Used at the construction site of each {@code WithErrorChannel} variant to keep the
+     * channel-resolution logic out of the variant-specific arms.
+     */
+    private GraphitronField buildWithChannel(
+            ReturnTypeRef returnType, String parentTypeName, String fieldName,
+            SourceLocation location, GraphQLFieldDefinition fieldDef,
+            java.util.function.Function<Optional<ErrorChannel>, GraphitronField> builder) {
+        return switch (resolveErrorChannel(returnType)) {
+            case ErrorChannelResult.NoChannel ignored -> builder.apply(Optional.empty());
+            case ErrorChannelResult.Channel c -> builder.apply(Optional.of(c.channel()));
+            case ErrorChannelResult.Reject r -> new UnclassifiedField(parentTypeName, fieldName, location, fieldDef,
+                RejectionKind.AUTHOR_ERROR, r.reason());
+        };
+    }
+
     // ===== Root field classification (P5) =====
 
     private GraphitronField classifyRootField(GraphQLFieldDefinition fieldDef, String parentTypeName) {
@@ -1775,11 +2041,14 @@ class FieldBuilder {
             }
             return switch (svcResult.returnType()) {
                 case ReturnTypeRef.TableBoundReturnType tb ->
-                    new QueryField.QueryServiceTableField(parentTypeName, name, location, tb, svcResult.method(), Optional.empty());
+                    buildWithChannel(tb, parentTypeName, name, location, fieldDef, ch ->
+                        new QueryField.QueryServiceTableField(parentTypeName, name, location, tb, svcResult.method(), ch));
                 case ReturnTypeRef.ResultReturnType r ->
-                    new QueryField.QueryServiceRecordField(parentTypeName, name, location, r, svcResult.method(), Optional.empty());
+                    buildWithChannel(r, parentTypeName, name, location, fieldDef, ch ->
+                        new QueryField.QueryServiceRecordField(parentTypeName, name, location, r, svcResult.method(), ch));
                 case ReturnTypeRef.ScalarReturnType s ->
-                    new QueryField.QueryServiceRecordField(parentTypeName, name, location, s, svcResult.method(), Optional.empty());
+                    buildWithChannel(s, parentTypeName, name, location, fieldDef, ch ->
+                        new QueryField.QueryServiceRecordField(parentTypeName, name, location, s, svcResult.method(), ch));
                 case ReturnTypeRef.PolymorphicReturnType p -> {
                     var lift = liftToErrorsField(fieldDef, parentTypeName, p);
                     yield lift != null ? lift
@@ -1919,11 +2188,14 @@ class FieldBuilder {
             }
             return switch (svcResult.returnType()) {
                 case ReturnTypeRef.TableBoundReturnType tb ->
-                    new MutationField.MutationServiceTableField(parentTypeName, name, location, tb, svcResult.method(), Optional.empty());
+                    buildWithChannel(tb, parentTypeName, name, location, fieldDef, ch ->
+                        new MutationField.MutationServiceTableField(parentTypeName, name, location, tb, svcResult.method(), ch));
                 case ReturnTypeRef.ResultReturnType r ->
-                    new MutationField.MutationServiceRecordField(parentTypeName, name, location, r, svcResult.method(), Optional.empty());
+                    buildWithChannel(r, parentTypeName, name, location, fieldDef, ch ->
+                        new MutationField.MutationServiceRecordField(parentTypeName, name, location, r, svcResult.method(), ch));
                 case ReturnTypeRef.ScalarReturnType s ->
-                    new MutationField.MutationServiceRecordField(parentTypeName, name, location, s, svcResult.method(), Optional.empty());
+                    buildWithChannel(s, parentTypeName, name, location, fieldDef, ch ->
+                        new MutationField.MutationServiceRecordField(parentTypeName, name, location, s, svcResult.method(), ch));
                 case ReturnTypeRef.PolymorphicReturnType p -> {
                     var lift = liftToErrorsField(fieldDef, parentTypeName, p);
                     yield lift != null ? lift
@@ -1975,10 +2247,14 @@ class FieldBuilder {
 
                 Optional<HelperRef.Encode> enc = encodeReturn;
                 return switch (typeName) {
-                    case "INSERT" -> new MutationField.MutationInsertTableField(parentTypeName, name, location, returnType, tia, enc, Optional.empty());
-                    case "UPDATE" -> new MutationField.MutationUpdateTableField(parentTypeName, name, location, returnType, tia, enc, Optional.empty());
-                    case "DELETE" -> new MutationField.MutationDeleteTableField(parentTypeName, name, location, returnType, tia, enc, Optional.empty());
-                    case "UPSERT" -> new MutationField.MutationUpsertTableField(parentTypeName, name, location, returnType, tia, enc, Optional.empty());
+                    case "INSERT" -> buildWithChannel(returnType, parentTypeName, name, location, fieldDef, ch ->
+                        new MutationField.MutationInsertTableField(parentTypeName, name, location, returnType, tia, enc, ch));
+                    case "UPDATE" -> buildWithChannel(returnType, parentTypeName, name, location, fieldDef, ch ->
+                        new MutationField.MutationUpdateTableField(parentTypeName, name, location, returnType, tia, enc, ch));
+                    case "DELETE" -> buildWithChannel(returnType, parentTypeName, name, location, fieldDef, ch ->
+                        new MutationField.MutationDeleteTableField(parentTypeName, name, location, returnType, tia, enc, ch));
+                    case "UPSERT" -> buildWithChannel(returnType, parentTypeName, name, location, fieldDef, ch ->
+                        new MutationField.MutationUpsertTableField(parentTypeName, name, location, returnType, tia, enc, ch));
                     default       -> throw new IllegalStateException("unreachable: typeName=" + typeName);
                 };
             }
