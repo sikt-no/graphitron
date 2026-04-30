@@ -95,6 +95,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.ARG_DIRECTION;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_FIELDS;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_INDEX;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_KEY;
+import static no.sikt.graphitron.rewrite.BuildContext.ARG_ARG_MAPPING;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_METHOD;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_OVERRIDE;
@@ -184,10 +185,15 @@ class FieldBuilder {
         if (serviceRef != null && serviceRef.lookupError() != null) {
             return new ServiceResolution(null, null, "service method could not be resolved — " + serviceRef.lookupError());
         }
+        if (serviceRef != null && serviceRef.argMappingError() != null) {
+            return new ServiceResolution(null, null, "service method could not be resolved — @service " + serviceRef.argMappingError());
+        }
         List<String> contextArgs = parseContextArguments(fieldDef, DIR_SERVICE);
-        var argBindingsResult = ArgBindingMap.forField(fieldDef);
-        if (argBindingsResult instanceof ArgBindingMap.Result.Collision c) {
-            return new ServiceResolution(null, null, "service method could not be resolved — " + c.message());
+        var graphqlArgNames = fieldArgumentNames(fieldDef);
+        var argMapping = serviceRef != null ? serviceRef.argMapping() : Map.<String, String>of();
+        var argBindingsResult = ArgBindingMap.of(graphqlArgNames, argMapping);
+        if (argBindingsResult instanceof ArgBindingMap.Result.UnknownArgRef u) {
+            return new ServiceResolution(null, null, "service method could not be resolved — @service " + u.message());
         }
         var argBindings = ((ArgBindingMap.Result.Ok) argBindingsResult).map();
         // Strict return-type validation applies to root @service fields only (parentPkColumns empty).
@@ -963,8 +969,18 @@ class FieldBuilder {
         var cond = ctx.readConditionDirective(arg);
         if (cond == null) return Optional.empty();
         var argName = arg.getName();
+        if (cond.argMappingError() != null) {
+            errors.add("argument '" + argName + "' @condition: " + cond.argMappingError());
+            return Optional.empty();
+        }
+        var bindingResult = ArgBindingMap.of(Set.of(argName), cond.argMapping());
+        if (bindingResult instanceof ArgBindingMap.Result.UnknownArgRef u) {
+            errors.add("argument '" + argName + "' @condition: " + u.message());
+            return Optional.empty();
+        }
+        var argBindings = ((ArgBindingMap.Result.Ok) bindingResult).map();
         var result = svc.reflectTableMethod(cond.className(), cond.methodName(),
-            ArgBindingMap.identityForSingleArg(arg), Set.copyOf(cond.contextArguments()), null);
+            argBindings, Set.copyOf(cond.contextArguments()), null);
         if (result.failed()) {
             errors.add("argument '" + argName + "' @condition: " + result.failureReason());
             return Optional.empty();
@@ -987,8 +1003,18 @@ class FieldBuilder {
     private ConditionFilter buildFieldCondition(GraphQLFieldDefinition fieldDef, List<String> errors) {
         var cond = ctx.readConditionDirective(fieldDef);
         if (cond == null) return null;
+        if (cond.argMappingError() != null) {
+            errors.add("field '" + fieldDef.getName() + "' @condition: " + cond.argMappingError());
+            return null;
+        }
+        var bindingResult = ArgBindingMap.of(fieldArgumentNames(fieldDef), cond.argMapping());
+        if (bindingResult instanceof ArgBindingMap.Result.UnknownArgRef u) {
+            errors.add("field '" + fieldDef.getName() + "' @condition: " + u.message());
+            return null;
+        }
+        var argBindings = ((ArgBindingMap.Result.Ok) bindingResult).map();
         var result = svc.reflectTableMethod(cond.className(), cond.methodName(),
-            ArgBindingMap.identityForField(fieldDef), Set.copyOf(cond.contextArguments()), null);
+            argBindings, Set.copyOf(cond.contextArguments()), null);
         if (result.failed()) {
             errors.add("field '" + fieldDef.getName() + "' @condition: " + result.failureReason());
             return null;
@@ -1654,10 +1680,15 @@ class FieldBuilder {
                 return new GraphitronField.UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
                     "table method could not be resolved — " + qtmRef.lookupError());
             }
-            var qtmArgBindingsResult = ArgBindingMap.forField(fieldDef);
-            if (qtmArgBindingsResult instanceof ArgBindingMap.Result.Collision qtmCollision) {
+            if (qtmRef != null && qtmRef.argMappingError() != null) {
                 return new GraphitronField.UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
-                    "table method could not be resolved — " + qtmCollision.message());
+                    "table method could not be resolved — @tableMethod " + qtmRef.argMappingError());
+            }
+            var qtmArgMapping = qtmRef != null ? qtmRef.argMapping() : Map.<String, String>of();
+            var qtmArgBindingsResult = ArgBindingMap.of(fieldArgumentNames(fieldDef), qtmArgMapping);
+            if (qtmArgBindingsResult instanceof ArgBindingMap.Result.UnknownArgRef qtmUnknown) {
+                return new GraphitronField.UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
+                    "table method could not be resolved — @tableMethod " + qtmUnknown.message());
             }
             var qtmArgBindings = ((ArgBindingMap.Result.Ok) qtmArgBindingsResult).map();
             List<String> qtmCtxArgs = parseContextArguments(fieldDef, DIR_TABLE_METHOD);
@@ -2277,6 +2308,9 @@ class FieldBuilder {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
                     "external field reference could not be resolved — " + extRef.lookupError());
             }
+            if (extRef != null && extRef.argMappingError() != null) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, extRef.argMappingError());
+            }
             ClassName parentTableClass = ClassName.get(
                 ctx.ctx().jooqPackage() + ".tables", tableType.table().javaClassName());
             // `className` is the only required schema-level input; surface a targeted error here
@@ -2315,10 +2349,15 @@ class FieldBuilder {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
                     "table method could not be resolved — " + tmRef.lookupError());
             }
-            var tmArgBindingsResult = ArgBindingMap.forField(fieldDef);
-            if (tmArgBindingsResult instanceof ArgBindingMap.Result.Collision tmCollision) {
+            if (tmRef != null && tmRef.argMappingError() != null) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
-                    "table method could not be resolved — " + tmCollision.message());
+                    "table method could not be resolved — @tableMethod " + tmRef.argMappingError());
+            }
+            var tmArgMapping = tmRef != null ? tmRef.argMapping() : Map.<String, String>of();
+            var tmArgBindingsResult = ArgBindingMap.of(fieldArgumentNames(fieldDef), tmArgMapping);
+            if (tmArgBindingsResult instanceof ArgBindingMap.Result.UnknownArgRef tmUnknown) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
+                    "table method could not be resolved — @tableMethod " + tmUnknown.message());
             }
             var tmArgBindings = ((ArgBindingMap.Result.Ok) tmArgBindingsResult).map();
             List<String> tmCtxArgs = parseContextArguments(fieldDef, DIR_TABLE_METHOD);
@@ -2546,11 +2585,26 @@ class FieldBuilder {
                 if (resolved != null) {
                     className = resolved;
                 } else {
-                    return new ExternalRef(null, methodName, "named reference '" + name + "' not found in namedReferences config");
+                    return new ExternalRef(null, methodName, Map.of(),
+                        "named reference '" + name + "' not found in namedReferences config", null);
                 }
             }
         }
-        return new ExternalRef(className, methodName, null);
+        String rawArgMapping = Optional.ofNullable(ref.get(ARG_ARG_MAPPING)).map(Object::toString).orElse(null);
+        // Structural-inertness check: @externalField reaches a method whose Java parameter set is
+        // fixed (the parent table). argMapping has no slot to bind to and is rejected at parse
+        // time. (@enum / @record have their own parse sites in TypeBuilder.)
+        if (rawArgMapping != null && !rawArgMapping.isBlank() && DIR_EXTERNAL_FIELD.equals(directiveName)) {
+            return new ExternalRef(className, methodName, Map.of(), null,
+                "argMapping is not supported on @" + directiveName
+                + " — this directive does not consume GraphQL-argument-bound parameters");
+        }
+        var parsed = ArgBindingMap.parseArgMapping(rawArgMapping);
+        if (parsed instanceof ArgBindingMap.ParsedArgMapping.ParseError pe) {
+            return new ExternalRef(className, methodName, Map.of(), null, pe.message());
+        }
+        Map<String, String> argMapping = ((ArgBindingMap.ParsedArgMapping.Ok) parsed).overrides();
+        return new ExternalRef(className, methodName, argMapping, null, null);
     }
 
     /**
@@ -2589,5 +2643,12 @@ class FieldBuilder {
 
     // ===== Inner records =====
 
-    record ExternalRef(String className, String methodName, String lookupError) {}
+    record ExternalRef(String className, String methodName, Map<String, String> argMapping,
+                       String lookupError, String argMappingError) {}
+
+    private static Set<String> fieldArgumentNames(GraphQLFieldDefinition fieldDef) {
+        return fieldDef.getArguments().stream()
+            .map(GraphQLArgument::getName)
+            .collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new));
+    }
 }

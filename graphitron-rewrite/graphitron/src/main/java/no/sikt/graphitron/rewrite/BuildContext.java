@@ -93,6 +93,7 @@ class BuildContext {
     static final String ARG_TABLE_METHOD_REF   = "tableMethodReference";
     static final String ARG_EXTERNAL_FIELD_REF = "reference";
     static final String ARG_METHOD             = "method";
+    static final String ARG_ARG_MAPPING        = "argMapping";
     static final String ARG_VALUE              = "value";
     static final String ARG_NAME               = "name";
     static final String ARG_ON                 = "on";
@@ -619,7 +620,21 @@ class BuildContext {
             }
         }
         if (className == null || methodName == null || svc == null) return null;
-        var result = svc.reflectTableMethod(className, methodName, ArgBindingMap.empty(), Set.of(), null);
+        // Path-step @condition: no GraphQL arguments are in scope. argMapping is rejected per
+        // R53: any override (whose source name is not in the empty slot set) fails through
+        // UnknownArgRef. Parse-time errors from argMapping itself also surface here.
+        String rawArgMapping = Optional.ofNullable(conditionMap.get(ARG_ARG_MAPPING)).map(Object::toString).orElse(null);
+        var parsed = ArgBindingMap.parseArgMapping(rawArgMapping);
+        if (parsed instanceof ArgBindingMap.ParsedArgMapping.ParseError) {
+            return null;
+        }
+        Map<String, String> argMapping = ((ArgBindingMap.ParsedArgMapping.Ok) parsed).overrides();
+        var bindingResult = ArgBindingMap.of(Set.of(), argMapping);
+        if (bindingResult instanceof ArgBindingMap.Result.UnknownArgRef) {
+            return null;
+        }
+        var argBindings = ((ArgBindingMap.Result.Ok) bindingResult).map();
+        var result = svc.reflectTableMethod(className, methodName, argBindings, Set.of(), null);
         return result.failed() ? null : result.ref();
     }
 
@@ -643,7 +658,9 @@ class BuildContext {
         String className,
         String methodName,
         boolean override,
-        List<String> contextArguments
+        List<String> contextArguments,
+        Map<String, String> argMapping,
+        String argMappingError
     ) {}
 
     /**
@@ -669,7 +686,13 @@ class BuildContext {
         if (className == null || methodName == null) return null;
         boolean override = argBoolean(container, DIR_CONDITION, ARG_OVERRIDE, false);
         List<String> ctxArgs = argStringList(container, DIR_CONDITION, ARG_CONTEXT_ARGUMENTS);
-        return new ConditionDirective(className, methodName, override, ctxArgs);
+        String rawArgMapping = Optional.ofNullable(ref.get(ARG_ARG_MAPPING)).map(Object::toString).orElse(null);
+        var parsed = ArgBindingMap.parseArgMapping(rawArgMapping);
+        if (parsed instanceof ArgBindingMap.ParsedArgMapping.ParseError pe) {
+            return new ConditionDirective(className, methodName, override, ctxArgs, Map.of(), pe.message());
+        }
+        Map<String, String> argMapping = ((ArgBindingMap.ParsedArgMapping.Ok) parsed).overrides();
+        return new ConditionDirective(className, methodName, override, ctxArgs, argMapping, null);
     }
 
     /**
@@ -683,8 +706,18 @@ class BuildContext {
             GraphQLInputObjectField field, String inputFieldName, List<String> errors) {
         var cond = readConditionDirective(field);
         if (cond == null) return Optional.empty();
+        if (cond.argMappingError() != null) {
+            errors.add("input field '" + inputFieldName + "' @condition: " + cond.argMappingError());
+            return Optional.empty();
+        }
+        var bindingResult = ArgBindingMap.of(Set.of(field.getName()), cond.argMapping());
+        if (bindingResult instanceof ArgBindingMap.Result.UnknownArgRef u) {
+            errors.add("input field '" + inputFieldName + "' @condition: " + u.message());
+            return Optional.empty();
+        }
+        var argBindings = ((ArgBindingMap.Result.Ok) bindingResult).map();
         var result = svc.reflectTableMethod(cond.className(), cond.methodName(),
-            ArgBindingMap.identityForSingleInputField(field), Set.copyOf(cond.contextArguments()), null);
+            argBindings, Set.copyOf(cond.contextArguments()), null);
         if (result.failed()) {
             errors.add("input field '" + inputFieldName + "' @condition: " + result.failureReason());
             return Optional.empty();
