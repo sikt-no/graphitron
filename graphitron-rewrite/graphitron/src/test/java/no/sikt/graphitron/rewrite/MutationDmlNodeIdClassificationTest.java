@@ -75,7 +75,10 @@ class MutationDmlNodeIdClassificationTest {
             """, NODEID_CTX);
 
         var f = (UnclassifiedField) schema.field("Mutation", "updateBar");
-        assertThat(f.reason()).contains("NodeIdField in @mutation inputs is not yet supported");
+        // Bare @nodeId on an input infers typeName from the unique @table-matching object type
+        // (Bar), routing through the typeName branch and producing NodeIdReferenceField rather
+        // than NodeIdField. Both variants are equally rejected by the mutation classifier.
+        assertThat(f.reason()).contains("NodeIdReferenceField in @mutation inputs is not yet supported");
     }
 
     @Test

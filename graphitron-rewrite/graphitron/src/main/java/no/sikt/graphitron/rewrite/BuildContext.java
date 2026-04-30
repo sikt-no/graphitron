@@ -41,7 +41,6 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -141,13 +140,13 @@ class BuildContext {
      * the plugin's validate / generate mojos; never fail the build. See {@link BuildWarning}.
      */
     private final List<BuildWarning> warnings = new ArrayList<>();
-    private final Map<String, String> typeNameByTableKey;
+    private final Map<String, List<String>> typeNamesByTableKey;
 
     BuildContext(GraphQLSchema schema, JooqCatalog catalog, RewriteContext ctx) {
         this.schema = schema;
         this.catalog = catalog;
         this.ctx = ctx;
-        this.typeNameByTableKey = buildTypeNameByTableKey(schema);
+        this.typeNamesByTableKey = buildTypeNamesByTableKey(schema);
     }
 
     RewriteContext ctx() {
@@ -696,6 +695,40 @@ class BuildContext {
             cond.override()));
     }
 
+    /**
+     * Result of inferring or extracting the {@code typeName:} argument for a bare {@code @nodeId}
+     * directive. Exactly one of {@link #typeName} and {@link #error} is non-null.
+     */
+    private record NodeIdTypeNameInference(String typeName, InputFieldResolution.Unresolved error) {}
+
+    /**
+     * Resolves the {@code typeName:} for a {@code @nodeId} directive on an input field, either
+     * by reading the explicit argument or, when absent, by looking up the {@code @table}-annotated
+     * object type that backs {@code resolvedTable}. The disambiguation rules apply only to the
+     * inference path: zero or multiple matching object types both yield a friendly diagnostic.
+     */
+    private NodeIdTypeNameInference inferNodeIdTypeName(
+            GraphQLInputObjectField field, TableRef resolvedTable, String fieldName) {
+        Optional<String> explicit = argString(field, DIR_NODE_ID, ARG_TYPE_NAME);
+        if (explicit.isPresent()) {
+            return new NodeIdTypeNameInference(explicit.get(), null);
+        }
+        var candidates = findGraphQLTypesForTable(resolvedTable.tableName());
+        if (candidates.isEmpty()) {
+            return new NodeIdTypeNameInference(null, new InputFieldResolution.Unresolved(fieldName, null,
+                "@nodeId without typeName: cannot infer node type — no @table-annotated object type"
+                + " maps to table '" + resolvedTable.tableName() + "'."
+                + " Add typeName: explicitly."));
+        }
+        if (candidates.size() > 1) {
+            return new NodeIdTypeNameInference(null, new InputFieldResolution.Unresolved(fieldName, null,
+                "@nodeId without typeName: is ambiguous — multiple object types map to table '"
+                + resolvedTable.tableName() + "': " + String.join(", ", candidates)
+                + ". Specify typeName: explicitly."));
+        }
+        return new NodeIdTypeNameInference(candidates.get(0), null);
+    }
+
     // ===== Input-field classifier (shared between TypeBuilder and FieldBuilder) =====
 
     /**
@@ -731,69 +764,73 @@ class BuildContext {
             ? argString(field, DIR_FIELD, ARG_NAME).orElse(name)
             : name;
         if ("ID".equals(typeName) && !list && field.hasAppliedDirective(DIR_NODE_ID)) {
-            Optional<String> refTypeName = argString(field, DIR_NODE_ID, ARG_TYPE_NAME);
-            if (refTypeName.isPresent()) {
-                // ctx.types may be null during the first type-builder pass; resolve via
-                // schema + catalog directly so this classifier works in both passes.
-                var rawGqlType = schema.getType(refTypeName.get());
-                if (rawGqlType == null) {
-                    return new InputFieldResolution.Unresolved(name, null,
-                        "@nodeId(typeName:) type '" + refTypeName.get() + "' does not exist in the schema"
-                        + candidateHint(refTypeName.get(), schema.getAllTypesAsList().stream()
-                            .map(t -> t.getName()).filter(n -> !n.startsWith("__")).toList()));
-                }
-                // Must be a table-backed object type to be a NodeType
-                if (!(rawGqlType instanceof GraphQLObjectType gqlObjType)
-                        || !gqlObjType.hasAppliedDirective(DIR_TABLE)) {
-                    return new InputFieldResolution.Unresolved(name, null,
-                        "@nodeId(typeName:) type '" + refTypeName.get()
-                        + "' is not a node type (not a @table-annotated object type)");
-                }
-                String targetTableName = argString(gqlObjType, DIR_TABLE, ARG_NAME)
-                    .orElse(refTypeName.get().toLowerCase());
-                // Prefer catalog metadata; fall back to ctx.types (when available post-first-pass)
-                // for SDL-only @node types.
-                String targetTypeId;
-                List<ColumnRef> targetKeyColumns;
-                var metaOpt = catalog.nodeIdMetadata(targetTableName);
-                if (metaOpt.isPresent()) {
-                    targetTypeId = metaOpt.get().typeId();
-                    targetKeyColumns = metaOpt.get().keyColumns();
-                } else if (types != null && types.get(refTypeName.get()) instanceof NodeType nt) {
-                    targetTypeId = nt.typeId();
-                    targetKeyColumns = nt.nodeKeyColumns();
-                } else if (gqlObjType.hasAppliedDirective(DIR_NODE)) {
-                    // @node declared without catalog metadata — no error, but empty keyColumns
-                    // (caller must ensure table has real metadata or be aware of the empty list).
-                    targetTypeId = argString(gqlObjType, DIR_NODE, ARG_TYPE_ID)
-                        .orElse(refTypeName.get());
-                    targetKeyColumns = List.of();
-                } else {
-                    return new InputFieldResolution.Unresolved(name, null,
-                        "@nodeId(typeName:) type '" + refTypeName.get()
-                        + "' is not a node type (missing @node or KjerneJooqGenerator metadata)");
-                }
-                TableRef targetTable = resolveTable(targetTableName);
-                var nodeRefPath = parsePath(field, name, resolvedTable.tableName(), targetTable.tableName());
-                if (nodeRefPath.hasError()) {
-                    return new InputFieldResolution.Unresolved(name, null, nodeRefPath.errorMessage());
-                }
-                Optional<ArgConditionRef> cond = buildInputFieldCondition(field, name, errors);
-                return new InputFieldResolution.Resolved(new InputField.NodeIdReferenceField(
-                    parentTypeName, name, locationOf(field), refTypeName.get(), nonNull,
-                    resolvedTable, targetTypeId, targetKeyColumns,
-                    nodeRefPath.elements(), cond));
+            // Bare @nodeId (no typeName:) means "use the typeName of the @table-annotated object
+            // type that maps to this input's resolved table". The inference disambiguates against
+            // the GraphQL schema, not the SQL catalog, because the same SQL table may legitimately
+            // back several object types; we need a unique GraphQL identity to use as typeName.
+            var inferredTypeName = inferNodeIdTypeName(field, resolvedTable, name);
+            if (inferredTypeName.error() != null) return inferredTypeName.error();
+            String refTypeName = inferredTypeName.typeName();
+            // ctx.types may be null during the first type-builder pass; resolve via
+            // schema + catalog directly so this classifier works in both passes.
+            var rawGqlType = schema.getType(refTypeName);
+            if (rawGqlType == null) {
+                return new InputFieldResolution.Unresolved(name, null,
+                    "@nodeId(typeName:) type '" + refTypeName + "' does not exist in the schema"
+                    + candidateHint(refTypeName, schema.getAllTypesAsList().stream()
+                        .map(t -> t.getName()).filter(n -> !n.startsWith("__")).toList()));
             }
+            // Must be a table-backed object type to be a NodeType
+            if (!(rawGqlType instanceof GraphQLObjectType gqlObjType)
+                    || !gqlObjType.hasAppliedDirective(DIR_TABLE)) {
+                return new InputFieldResolution.Unresolved(name, null,
+                    "@nodeId(typeName:) type '" + refTypeName
+                    + "' is not a node type (not a @table-annotated object type)");
+            }
+            String targetTableName = argString(gqlObjType, DIR_TABLE, ARG_NAME)
+                .orElse(refTypeName.toLowerCase());
+            // Prefer catalog metadata; fall back to ctx.types (when available post-first-pass)
+            // for SDL-only @node types.
+            String targetTypeId;
+            List<ColumnRef> targetKeyColumns;
+            var metaOpt = catalog.nodeIdMetadata(targetTableName);
+            if (metaOpt.isPresent()) {
+                targetTypeId = metaOpt.get().typeId();
+                targetKeyColumns = metaOpt.get().keyColumns();
+            } else if (types != null && types.get(refTypeName) instanceof NodeType nt) {
+                targetTypeId = nt.typeId();
+                targetKeyColumns = nt.nodeKeyColumns();
+            } else if (gqlObjType.hasAppliedDirective(DIR_NODE)) {
+                // @node declared without catalog metadata — no error, but empty keyColumns
+                // (caller must ensure table has real metadata or be aware of the empty list).
+                targetTypeId = argString(gqlObjType, DIR_NODE, ARG_TYPE_ID)
+                    .orElse(refTypeName);
+                targetKeyColumns = List.of();
+            } else {
+                return new InputFieldResolution.Unresolved(name, null,
+                    "@nodeId(typeName:) type '" + refTypeName
+                    + "' is not a node type (missing @node or KjerneJooqGenerator metadata)");
+            }
+            TableRef targetTable = resolveTable(targetTableName);
+            var nodeRefPath = parsePath(field, name, resolvedTable.tableName(), targetTable.tableName());
+            if (nodeRefPath.hasError()) {
+                return new InputFieldResolution.Unresolved(name, null, nodeRefPath.errorMessage());
+            }
+            Optional<ArgConditionRef> cond = buildInputFieldCondition(field, name, errors);
+            return new InputFieldResolution.Resolved(new InputField.NodeIdReferenceField(
+                parentTypeName, name, locationOf(field), refTypeName, nonNull,
+                resolvedTable, targetTypeId, targetKeyColumns,
+                nodeRefPath.elements(), cond));
         }
         // IdReferenceField (canonical): [ID!] with @nodeId(typeName: T), optionally pinned by
         // @reference(path: [{key: K}]). FK is inferred when unique; @reference disambiguates when
         // not. Single-hop only; synthesized=false.
         if ("ID".equals(typeName) && list && field.hasAppliedDirective(DIR_NODE_ID)) {
-            String refTypeName = argString(field, DIR_NODE_ID, ARG_TYPE_NAME).orElse(null);
-            if (refTypeName == null) {
-                return new InputFieldResolution.Unresolved(name, null,
-                    "@nodeId on [ID!] requires typeName:");
-            }
+            // Same inference rule as the scalar branch: bare @nodeId on [ID!] takes its typeName
+            // from the unique @table-annotated object type backing this input's resolved table.
+            var inferredTypeName = inferNodeIdTypeName(field, resolvedTable, name);
+            if (inferredTypeName.error() != null) return inferredTypeName.error();
+            String refTypeName = inferredTypeName.typeName();
             var rawGqlType = schema.getType(refTypeName);
             if (!(rawGqlType instanceof GraphQLObjectType targetObj)
                     || !targetObj.hasAppliedDirective(DIR_TABLE)) {
@@ -974,21 +1011,19 @@ class BuildContext {
                 parentTypeName, name, locationOf(field), typeName, nonNull, list,
                 new ColumnRef(e.sqlName(), e.javaName(), e.columnClass()), cond));
         }
-        // NodeId: scalar ID field whose backing table carries node-identity metadata
-        // (__NODE_TYPE_ID / __NODE_KEY_COLUMNS constants emitted by KjerneJooqGenerator). Two
-        // routes produce InputField.NodeIdField here: the declared form (field carries @nodeId)
-        // and the migration-shim form (bare scalar ID on a node-type table). The shim fires a
-        // per-site deprecation diagnostic — the canonical form is to declare @nodeId explicitly.
-        // Shim is retired at R7. See graphitron-rewrite/roadmap/retire-nodeid-synthesis-shim.md.
-        if ("ID".equals(typeName) && !list) {
+        // NodeId migration shim: scalar ID field with no @nodeId directive whose backing table
+        // carries node-identity metadata (__NODE_TYPE_ID / __NODE_KEY_COLUMNS constants emitted
+        // by KjerneJooqGenerator). Fires a per-site deprecation diagnostic; the canonical form is
+        // to declare @nodeId explicitly, which routes through the bare-@nodeId branch above and
+        // produces NodeIdReferenceField. Shim is retired at R7. See
+        // graphitron-rewrite/roadmap/retire-nodeid-synthesis-shim.md.
+        if ("ID".equals(typeName) && !list && !field.hasAppliedDirective(DIR_NODE_ID)) {
             Optional<JooqCatalog.NodeIdMetadata> nodeIdMeta = catalog.nodeIdMetadata(tableName);
             if (nodeIdMeta.isPresent()) {
-                if (!field.hasAppliedDirective(DIR_NODE_ID)) {
-                    NODE_ID_SHIM_LOGGER.warn("input field '{}.{}' synthesizes NodeIdField without"
-                        + " '@nodeId' — declare the directive explicitly; synthesis shim will be"
-                        + " removed in a future release. See graphitron-rewrite/roadmap/retire-nodeid-synthesis-shim.md",
-                        parentTypeName, name);
-                }
+                NODE_ID_SHIM_LOGGER.warn("input field '{}.{}' synthesizes NodeIdField without"
+                    + " '@nodeId' — declare the directive explicitly; synthesis shim will be"
+                    + " removed in a future release. See graphitron-rewrite/roadmap/retire-nodeid-synthesis-shim.md",
+                    parentTypeName, name);
                 return new InputFieldResolution.Resolved(new InputField.NodeIdField(
                     parentTypeName, name, locationOf(field),
                     nodeIdMeta.get().typeId(), nodeIdMeta.get().keyColumns()));
@@ -1005,20 +1040,29 @@ class BuildContext {
      * {@link InputField.IdReferenceField#targetTypeName}.
      */
     private Optional<String> findGraphQLTypeForTable(String sqlTableName) {
-        return Optional.ofNullable(typeNameByTableKey.get(sqlTableName.toLowerCase()));
+        var candidates = findGraphQLTypesForTable(sqlTableName);
+        return candidates.size() == 1 ? Optional.of(candidates.get(0)) : Optional.empty();
     }
 
-    private static Map<String, String> buildTypeNameByTableKey(GraphQLSchema schema) {
+    /**
+     * Returns every {@code @table}-annotated object type whose table name matches
+     * {@code sqlTableName} (case-insensitive), in schema declaration order. Multiple object
+     * types may legitimately share a table; callers that need a unique mapping handle the
+     * ambiguous-and-empty cases themselves (see bare-{@code @nodeId} typeName inference).
+     */
+    List<String> findGraphQLTypesForTable(String sqlTableName) {
+        return typeNamesByTableKey.getOrDefault(sqlTableName.toLowerCase(), List.of());
+    }
+
+    private static Map<String, List<String>> buildTypeNamesByTableKey(GraphQLSchema schema) {
         if (schema == null) return Map.of();
-        var building = new HashMap<String, String>();
-        var ambiguous = new HashSet<String>();
+        var building = new HashMap<String, List<String>>();
         for (var t : schema.getAllTypesAsList()) {
             if (!(t instanceof GraphQLObjectType o) || !o.hasAppliedDirective(DIR_TABLE)) continue;
             var key = argString(o, DIR_TABLE, ARG_NAME).orElse(o.getName()).toLowerCase();
-            if (ambiguous.contains(key)) continue;
-            if (building.containsKey(key)) { building.remove(key); ambiguous.add(key); }
-            else building.put(key, o.getName());
+            building.computeIfAbsent(key, k -> new ArrayList<>()).add(o.getName());
         }
-        return Map.copyOf(building);
+        return building.entrySet().stream()
+            .collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, e -> List.copyOf(e.getValue())));
     }
 }

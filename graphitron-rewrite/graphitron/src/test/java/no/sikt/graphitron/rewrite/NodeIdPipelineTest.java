@@ -290,17 +290,52 @@ class NodeIdPipelineTest {
             }),
 
         EXPLICIT_NODE_ID_DIRECTIVE(
-            "input `id: ID! @nodeId` on a node-type table → NodeIdField via declared @nodeId (same classifier path as synthesized)",
+            "input `id: ID! @nodeId` on a @table input whose table is also backed by a single object type → bare @nodeId infers typeName, classifies as NodeIdReferenceField with empty joinPath (same-table)",
             """
+            type Bar @table(name: "bar") @node { id: ID! @nodeId }
             input Foo @table(name: "bar") { id: ID! @nodeId }
             type Query { x: String }
             """,
             schema -> {
                 var t = (GraphitronType.TableInputType) schema.type("Foo");
-                var f = (InputField.NodeIdField) t.inputFields().get(0);
+                var f = (InputField.NodeIdReferenceField) t.inputFields().get(0);
+                assertThat(f.typeName()).isEqualTo("Bar");
                 assertThat(f.nodeTypeId()).isEqualTo("Bar");
                 assertThat(f.nodeKeyColumns()).extracting(ColumnRef::sqlName)
                     .containsExactly("id_1", "id_2");
+                assertThat(f.joinPath()).isEmpty();
+            }),
+
+        BARE_NODE_ID_NO_OBJECT_TYPE(
+            "input `id: ID! @nodeId` on a @table whose table has no matching object type → friendly error",
+            """
+            input Foo @table(name: "bar") { id: ID! @nodeId }
+            type Query { x: String }
+            """,
+            schema -> {
+                var t = (GraphitronType.UnclassifiedType) schema.type("Foo");
+                assertThat(t.reason())
+                    .contains("@nodeId without typeName: cannot infer node type")
+                    .contains("no @table-annotated object type maps to table 'bar'")
+                    .contains("Add typeName: explicitly");
+            }),
+
+        BARE_NODE_ID_AMBIGUOUS_OBJECT_TYPES(
+            "input `id: ID! @nodeId` on a @table shared by two object types → friendly ambiguity error",
+            """
+            type BarA @table(name: "bar") @node { id: ID! @nodeId }
+            type BarB @table(name: "bar") @node { id: ID! @nodeId }
+            input Foo @table(name: "bar") { id: ID! @nodeId }
+            type Query { a: BarA b: BarB }
+            """,
+            schema -> {
+                var t = (GraphitronType.UnclassifiedType) schema.type("Foo");
+                assertThat(t.reason())
+                    .contains("@nodeId without typeName: is ambiguous")
+                    .contains("multiple object types map to table 'bar'")
+                    .contains("BarA")
+                    .contains("BarB")
+                    .contains("Specify typeName: explicitly");
             }),
 
         ACCESSOR_MISSING(
@@ -543,7 +578,59 @@ class NodeIdPipelineTest {
             type Query { x: String }
             """,
             schema -> assertThat(schema.type("QuxFilterInput"))
-                .isInstanceOf(GraphitronType.UnclassifiedType.class));
+                .isInstanceOf(GraphitronType.UnclassifiedType.class)),
+
+        BARE_LIST_NODE_ID_INFERS_TYPE_NAME(
+            "bare `[ID!] @nodeId` infers typeName from the unique @table-matching object type → "
+                + "NodeIdInFilterField (same as explicit typeName)",
+            """
+            type Bar implements Node @table(name: "bar") @node { id: ID! }
+            input BarFilterInput @table(name: "bar") {
+              ids: [ID!] @nodeId
+            }
+            type Query { x: String }
+            """,
+            schema -> {
+                var tit = (GraphitronType.TableInputType) schema.type("BarFilterInput");
+                var f = (InputField.NodeIdInFilterField) tit.inputFields().stream()
+                    .filter(InputField.NodeIdInFilterField.class::isInstance).findFirst().orElseThrow();
+                assertThat(f.nodeTypeId()).isEqualTo("Bar");
+                assertThat(f.nodeKeyColumns()).extracting(ColumnRef::sqlName)
+                    .containsExactly("id_1", "id_2");
+            }),
+
+        BARE_LIST_NODE_ID_NO_OBJECT_TYPE(
+            "bare `[ID!] @nodeId` with no @table-matching object type → friendly inference error",
+            """
+            input BarFilterInput @table(name: "bar") {
+              ids: [ID!] @nodeId
+            }
+            type Query { x: String }
+            """,
+            schema -> {
+                var t = (GraphitronType.UnclassifiedType) schema.type("BarFilterInput");
+                assertThat(t.reason())
+                    .contains("@nodeId without typeName: cannot infer node type")
+                    .contains("no @table-annotated object type maps to table 'bar'");
+            }),
+
+        BARE_LIST_NODE_ID_AMBIGUOUS(
+            "bare `[ID!] @nodeId` with two @table-matching object types → friendly ambiguity error",
+            """
+            type BarA @table(name: "bar") @node { id: ID! }
+            type BarB @table(name: "bar") @node { id: ID! }
+            input BarFilterInput @table(name: "bar") {
+              ids: [ID!] @nodeId
+            }
+            type Query { a: BarA b: BarB }
+            """,
+            schema -> {
+                var t = (GraphitronType.UnclassifiedType) schema.type("BarFilterInput");
+                assertThat(t.reason())
+                    .contains("@nodeId without typeName: is ambiguous")
+                    .contains("BarA")
+                    .contains("BarB");
+            });
 
         final String sdl;
         final Consumer<GraphitronSchema> assertions;
