@@ -1051,11 +1051,11 @@ public class TypeFetcherGenerator {
 
         boolean isList = f.returnType().wrapper().isList();
         if (f.returnType() instanceof ReturnTypeRef.ScalarReturnType) {
-            // ID return: project all node-id key columns and encode in the lambda.
-            var meta = f.nodeIdMeta().orElseThrow();
-            var keyCols = meta.keyColumns();
-            var encoderClass = ClassName.get(outputPackage + ".util",
-                no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator.CLASS_NAME);
+            // ID return: project the NodeType's key columns and call the per-type encoder helper
+            // resolved by the classifier (encode<TypeName>(v0, v1, ...)). The typeId is baked into
+            // the method name; no generic encode(typeId, ...) call is emitted from the rewrite.
+            var encode = f.encodeReturn().orElseThrow();
+            var keyCols = encode.paramSignature();
 
             body.add(".returningResult(");
             for (int i = 0; i < keyCols.size(); i++) {
@@ -1064,9 +1064,11 @@ public class TypeFetcherGenerator {
             }
             body.add(")\n");
 
-            var lambda = CodeBlock.builder().add("r -> $T.encode($S", encoderClass, meta.typeId());
-            for (var col : keyCols) {
-                lambda.add(", r.get($T.$L.$L)", names.tablesClass(), tableRef.javaFieldName(), col.javaName());
+            var lambda = CodeBlock.builder().add("r -> $T.$L(", encode.encoderClass(), encode.methodName());
+            for (int i = 0; i < keyCols.size(); i++) {
+                if (i > 0) lambda.add(", ");
+                var col = keyCols.get(i);
+                lambda.add("r.get($T.$L.$L)", names.tablesClass(), tableRef.javaFieldName(), col.javaName());
             }
             lambda.add(")");
             body.add(isList ? ".fetch(" : ".fetchOne(").add(lambda.build()).add(");\n");
