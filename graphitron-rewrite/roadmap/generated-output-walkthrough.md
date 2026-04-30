@@ -5,7 +5,7 @@ status: Backlog
 bucket: cleanup
 priority: 7
 theme: docs
-depends-on: [rewrite-docs-entrypoint, docs-site-asciidoc]
+depends-on: [docs-site-asciidoc]
 ---
 
 # Annotated walkthrough of a generated file
