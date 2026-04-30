@@ -242,7 +242,7 @@
                                     <attributes>
                                         <source-highlighter>rouge</source-highlighter>
                                         <icons>font</icons>
-                                        <toc>left</toc>
+                                        <toc>left@</toc>
                                         <sectanchors>true</sectanchors>
                                         <sectlinks>true</sectlinks>
                                         <experimental>true</experimental>
