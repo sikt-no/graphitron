@@ -93,11 +93,31 @@ Each tier becomes a JUnit 5 meta-annotation that resolves to a `@Tag`:
 ```
 
 Where the annotations live: a shared test-support location visible
-from every test module (likely `graphitron-fixtures` main scope, since
-that module is already the test-support dep — implementer's call). The
-annotations target classes; method-level tagging is out of scope (no
-test class today straddles tiers, and class-level matches the natural
-unit of "one test class is one tier").
+from every test module that needs them (likely `graphitron-fixtures`
+main scope, since that module is already the test-support dep for the
+in-scope modules — implementer's call). The annotations target classes;
+method-level tagging is out of scope (no test class today straddles
+tiers, and class-level matches the natural unit of "one test class is
+one tier").
+
+**Modules in scope.** The annotation work covers `graphitron` and
+`graphitron-test`, the two modules whose test trees span multiple
+tiers and where the taxonomy actually pays off. Both already have
+`graphitron-fixtures` on the test classpath, so `graphitron-fixtures`
+main scope is reachable from every test class that needs an
+annotation. Out of scope:
+
+- `graphitron-javapoet` — vendored upstream JavaPoet test suite,
+  JUnit 4 (Vintage) with `<skipTests>true</skipTests>`. Tests don't
+  run as part of the build and `@Tag` is JUnit 5; not the rewrite's
+  taxonomy to police.
+- `graphitron-maven`, `graphitron-lsp`, `roadmap-tool` — single-tier
+  test trees (all unit). The taxonomy adds no signal; implicit tier
+  is enough. The enforcement test below explicitly does not scan
+  these modules.
+
+If any of those modules later grow a second tier, lift it into scope
+in the same commit that adds the second-tier test.
 
 Cross-cutting tests that don't classify into the four tiers
 (`GeneratorDeterminismTest` is the only current example) carry
@@ -119,22 +139,26 @@ Wiring up specific CI matrices, dashboards, or tier-aware build
 profiles is out of scope here (this plan ships the labels; consumption
 is downstream).
 
-**Enforcement test.** A unit-tier test under `graphitron` walks the
-test classpaths, finds every `@Test`-bearing class, and asserts each
-class carries exactly one of the four tier annotations or
-`@Tag("cross-cutting")`. A class with no tier annotation, or two of
-them, fails the build. This ratchets the taxonomy: a future
-contributor adding a test class without a tier annotation gets a build
-break with a one-line "add `@PipelineTier` (or one of the four)"
-message, and the taxonomy stops being a doc-maintenance burden.
+**Enforcement test.** A unit-tier test under `graphitron` walks its
+own module's test classpath; a sibling test under `graphitron-test`
+does the same for that module. Each finds every `@Test`-bearing class
+and asserts the class carries exactly one of the four tier
+annotations or `@Tag("cross-cutting")`. A class with no tier
+annotation, or two of them, fails the build. Per-module enforcement
+keeps the scan surface obvious from where the test lives, avoids
+classpath gymnastics, and gives module-local feedback on a missing
+annotation. This ratchets the taxonomy: a future contributor adding a
+test class without a tier annotation gets a build break with a
+one-line "add `@PipelineTier` (or one of the four)" message, and the
+taxonomy stops being a doc-maintenance burden.
 
 ### File contents (one section per tier + a dispatcher)
 
 The file's job is dispatch, not duplication of policy. The sections
 are: a decision rubric, one section per tier (unit, pipeline,
-compilation, execution), a "Cross-cutting tests in `graphitron-test`"
-note that classifies the tests living there for module-dependency
-reasons, and a build-commands recap.
+compilation, execution), a "Module location vs. tier" note that
+classifies the `graphitron-test`-resident tests by what they assert
+rather than by where they live, and a build-commands recap.
 
 **Choosing a tier (decision rubric).** A short flowchart for "I have a
 new behaviour I want covered, which tier owns it?". The rubric reads
@@ -245,9 +269,13 @@ Patterns:
   `SQL_LOG` (e.g. that no `select count` ran when `totalCount` was not
   selected).
 
-**Cross-cutting tests in `graphitron-test`.** Several tests live in
-`graphitron-test` for module-dependency reasons but classify by
-assertion, not by module:
+**Module location vs. tier (`graphitron-test`).** Several tests live
+in `graphitron-test` for module-dependency reasons but classify by
+assertion, not by module. Only one of them (`GeneratorDeterminismTest`)
+is `@Tag("cross-cutting")`; the rest carry one of the four tier
+annotations and the section just lists them so a reader scanning the
+module's source tree can see why a unit-tier test sits next to an
+execution-tier one:
 
 - `GeneratedSourcesSmokeTest`, `GeneratedSourcesLintTest` — compilation
   tier (consume the compile output; see the compilation section above).
@@ -290,23 +318,32 @@ their tier-naming responsibility:
   the fixtures-jar clobber recovery as is. Adds a one-line "for what
   each tier asserts and where its files live, see
   `docs/testing.adoc`".
-- Per-test javadocs — every test class gets the appropriate tier
-  annotation (`@UnitTier`, `@PipelineTier`, `@CompilationTier`,
+- Per-test javadocs — every `@Test`-bearing class gets the appropriate
+  tier annotation (`@UnitTier`, `@PipelineTier`, `@CompilationTier`,
   `@ExecutionTier`, or `@Tag("cross-cutting")`); the existing tier
-  prose drops in favour of the annotation. The seven javadocs the
-  prior body called out are no longer special:
-  - *Three with "Level N" numbering* (`FieldValidationTestHelper`,
+  prose drops in favour of the annotation. Two cleanup batches the
+  prior body called out:
+  - *Test classes with "Level N" numbering* (`FieldValidationTestHelper`,
     `GraphitronSchemaBuilderTest`, `GeneratedSourcesSmokeTest`) — the
     Level-N sentence deletes; the annotation labels the tier.
-  - *Four with mismatched tier prose* (`IdempotentWriterTest`,
-    `TypeFetcherGeneratorTest`, `TestExternalFieldStub`,
-    `GeneratorDeterminismTest`) — the prose deletes; the annotation
-    labels the tier (`@Tag("cross-cutting")` for
-    `GeneratorDeterminismTest`).
+    `FieldValidationTestHelper` is `@Test`-free but its public API is a
+    helper for unit-tier `*ValidationTest` classes; the helper itself
+    carries no annotation, but its javadoc updates in the same sweep so
+    the "Level 1" wording goes away.
+  - *Test classes with mismatched tier prose* (`IdempotentWriterTest`,
+    `TypeFetcherGeneratorTest`, `GeneratorDeterminismTest`) — the prose
+    deletes; the annotation labels the tier (`@Tag("cross-cutting")`
+    for `GeneratorDeterminismTest`).
 
-  Class-head javadoc keeps a one-line pointer at `docs/testing.adoc`
-  for the contributor who lands on the file directly, but the
-  authoritative tier label is the annotation, not the prose.
+  `TestExternalFieldStub` is a `@Test`-free fixture stub for
+  `GraphitronSchemaBuilderTest`, not a tier-classified test. Its
+  javadoc loses any inherited tier prose but it carries no annotation;
+  treat it as a doc-only update in the same sweep.
+
+  Class-head javadoc on `@Test`-bearing classes keeps a one-line
+  pointer at `docs/testing.adoc` for the contributor who lands on the
+  file directly, but the authoritative tier label is the annotation,
+  not the prose.
 
 ### Implementation
 
@@ -315,18 +352,22 @@ into "annotations + enforcement" then "doc + javadoc cleanup"; the
 implementer's judgment. Either way, the steps are:
 
 1. Add the four tier annotations + a place for them (likely under
-   `graphitron-fixtures` main scope, since every test module already
-   depends on it). Empty body, `@Tag(...)` meta-annotation as shown
-   above.
-2. Apply a tier annotation to every test class. Most are obvious from
-   the existing rubric; the ambiguous ones are the cross-cutting
-   tests in `graphitron-test` (see that section above for the
-   classification). `GeneratorDeterminismTest` carries
-   `@Tag("cross-cutting")` rather than a fifth meta-annotation.
-3. Add the enforcement test under `graphitron`'s unit tier: walk test
-   classes, assert each carries exactly one tier annotation or the
-   cross-cutting tag. Failure message names the offender and lists
-   the valid annotations.
+   `graphitron-fixtures` main scope, since both in-scope modules
+   already depend on it). Empty body, `@Tag(...)` meta-annotation as
+   shown above.
+2. Apply a tier annotation to every `@Test`-bearing class in the
+   in-scope modules (`graphitron`, `graphitron-test`). Most are
+   obvious from the existing rubric; the ambiguous ones are the
+   `graphitron-test`-resident tests classified by assertion (see
+   "Module location vs. tier" above for the classification).
+   `GeneratorDeterminismTest` carries `@Tag("cross-cutting")` rather
+   than a fifth meta-annotation.
+3. Add the enforcement test in each in-scope module's unit tier: one
+   under `graphitron`, one under `graphitron-test`. Each walks its
+   own module's test classpath, asserts every `@Test`-bearing class
+   carries exactly one tier annotation or the cross-cutting tag.
+   Failure message names the offender and lists the valid
+   annotations.
 4. Add `graphitron-rewrite/docs/testing.adoc` with the sections
    listed above. Each tier section names canonical example classes
    (link, not inline body) so a contributor can read one example to
