@@ -81,7 +81,7 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.ChildField.ColumnField f             -> validateColumnField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.ColumnReferenceField f    -> validateColumnReferenceField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.CompositeColumnField f    -> validateCompositeColumnField(f, errors);
-            case no.sikt.graphitron.rewrite.model.ChildField.NodeIdReferenceField f    -> validateNodeIdReferenceField(f, errors);
+            case no.sikt.graphitron.rewrite.model.ChildField.CompositeColumnReferenceField f -> validateCompositeColumnReferenceField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.TableField f              -> validateTableField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.SplitTableField f        -> validateSplitTableField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.LookupTableField f       -> validateLookupTableField(f, types, errors);
@@ -348,17 +348,21 @@ public class GraphitronSchemaValidator {
             ));
         }
     }
-    private void validateNodeIdReferenceField(no.sikt.graphitron.rewrite.model.ChildField.NodeIdReferenceField field, List<ValidationError> errors) {
-        // @node is always resolved — builder returns UnclassifiedField if the type is missing or lacks @node.
-        // FK-count validation (implicit inference failure) is handled at classification time in
-        // BuildContext.parsePath; the path is either non-empty here or classification already emitted
-        // an UnclassifiedField. Validate the path's steps and that it leads to the target type's table.
-        if (!(field.targetType() instanceof ReturnTypeRef.TableBoundReturnType tb)) {
-            validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
-            return;
+    private void validateCompositeColumnReferenceField(no.sikt.graphitron.rewrite.model.ChildField.CompositeColumnReferenceField field, List<ValidationError> errors) {
+        // Arity invariant matches CompositeColumnField — record's compact constructor handles
+        // the lower bound; we cap at the RecordN 22-slot ceiling.
+        if (field.columns().size() > 22) {
+            errors.add(new ValidationError(RejectionKind.AUTHOR_ERROR,
+                field.qualifiedName(),
+                "Field '" + field.qualifiedName() + "': composite NodeId reference carrier has "
+                    + field.columns().size() + " columns, exceeding the 22-slot RecordN cap",
+                field.location()
+            ));
         }
+        // joinPath shape is validated downstream by validateReferencePath; the FK-mirror collapse
+        // happens at classification time so a CompositeColumnReferenceField that survives here is
+        // a non-mirror reference (rooted-at-parent, multi-hop, or condition-join).
         validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
-        validateReferenceLeadsToType(field.qualifiedName(), field.location(), field.joinPath(), field.typeName(), tb.table(), errors);
     }
 
     private void validateReferenceLeadsToType(String fieldName, SourceLocation location, List<JoinStep> path, String typeName, no.sikt.graphitron.rewrite.model.TableRef targetTable, List<ValidationError> errors) {

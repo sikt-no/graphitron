@@ -10,8 +10,7 @@ import java.util.List;
  */
 public sealed interface ChildField extends GraphitronField
     permits ChildField.ColumnField, ChildField.ColumnReferenceField,
-            ChildField.CompositeColumnField,
-            ChildField.NodeIdReferenceField,
+            ChildField.CompositeColumnField, ChildField.CompositeColumnReferenceField,
             ChildField.TableTargetField,
             ChildField.TableMethodField,
             ChildField.InterfaceField, ChildField.UnionField,
@@ -38,14 +37,48 @@ public sealed interface ChildField extends GraphitronField
         CallSiteCompaction compaction
     ) implements ChildField {}
 
+    /**
+     * A single-column output carrier on a table-backed parent reached through a {@code @reference}
+     * path. The terminal column lives on the joined target table; {@link #compaction()} controls
+     * how the value reaches the field — {@link CallSiteCompaction.Direct} for plain projection,
+     * {@link CallSiteCompaction.NodeIdEncodeKeys} for arity-1 {@code @nodeId} references where
+     * the parent table's keyColumns sit on the joined parent (rooted-at-parent single-hop) or
+     * the FK source columns on the child positionally mirror the keyColumns (rooted-at-child).
+     */
     record ColumnReferenceField(
         String parentTypeName,
         String name,
         SourceLocation location,
         String columnName,
         ColumnRef column,
-        List<JoinStep> joinPath
+        List<JoinStep> joinPath,
+        CallSiteCompaction compaction
     ) implements ChildField {}
+
+    /**
+     * Composite-key output carrier on a table-backed parent reached through a {@code @reference}
+     * path. Carries {@code columns} of arity &ge; 2 plus a single-hop or correlated-subquery
+     * {@code joinPath}. {@code compaction} is narrowed to {@link CallSiteCompaction.NodeIdEncodeKeys}
+     * at the type level: a composite-column reference projection is always a NodeId encode call;
+     * no plain composite-column reference projection exists.
+     */
+    record CompositeColumnReferenceField(
+        String parentTypeName,
+        String name,
+        SourceLocation location,
+        List<ColumnRef> columns,
+        List<JoinStep> joinPath,
+        CallSiteCompaction.NodeIdEncodeKeys compaction
+    ) implements ChildField {
+
+        public CompositeColumnReferenceField {
+            columns = List.copyOf(columns);
+            if (columns.size() < 2) {
+                throw new IllegalArgumentException(
+                    "CompositeColumnReferenceField requires arity >= 2 (got " + columns.size() + "); arity-1 routes to ColumnReferenceField");
+            }
+        }
+    }
 
     /**
      * Composite-key output carrier on a table-backed parent. Carries {@code columns} of arity
@@ -71,18 +104,6 @@ public sealed interface ChildField extends GraphitronField
             }
         }
     }
-
-    record NodeIdReferenceField(
-        String parentTypeName,
-        String name,
-        SourceLocation location,
-        String typeName,
-        ReturnTypeRef targetType,
-        TableRef parentTable,
-        String nodeTypeId,
-        List<ColumnRef> nodeKeyColumns,
-        List<JoinStep> joinPath
-    ) implements ChildField {}
 
     /**
      * A child field that navigates to (or stays at) a table scope and generates SQL.
