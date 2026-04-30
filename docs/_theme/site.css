@@ -281,9 +281,9 @@ table.featurerow > * > tr > td {
     vertical-align: top;
     padding: 0;
 }
-.feature {
-    text-align: center;
-}
+/* Feature cards: image and heading centered (the "poster" feel), prose
+ * left-aligned (centered paragraphs of varied line length read as ragged
+ * across three columns; left-aligned reads as a clean card). */
 .feature img {
     max-width: 220px;
     width: 100%;
@@ -302,7 +302,7 @@ table.featurerow > * > tr > td {
 }
 .feature p {
     margin: 8px 0;
-    text-align: center;
+    text-align: left;
     color: var(--sds-color-text-primary, #1a1a1a);
 }
 
