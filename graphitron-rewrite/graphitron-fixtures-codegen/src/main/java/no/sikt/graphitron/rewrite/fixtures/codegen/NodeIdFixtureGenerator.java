@@ -40,7 +40,12 @@ public class NodeIdFixtureGenerator extends JavaGenerator {
         // Composite-PK NodeType in the public (sakila-derived) schema, used by
         // GraphQLQueryTest's filmActorByNodeId round-trip for the LookupArg.DecodedRecord
         // arm. PK column order matches `init.sql`'s declaration: actor_id first, film_id second.
-        "film_actor", new Metadata("FilmActor", List.of("ACTOR_ID", "FILM_ID"))
+        "film_actor", new Metadata("FilmActor", List.of("ACTOR_ID", "FILM_ID")),
+        // R50 phase (g-B) rooted-at-parent fixture. NodeId keys on PK_ID only; the table also
+        // exposes a unique ALT_KEY column targeted by `child_ref.parent_alt_key`'s FK. The
+        // FK does not positionally match __NODE_KEY_COLUMNS — that mismatch is the test
+        // surface for the rooted-at-parent JOIN-with-projection emission path.
+        "parent_node", new Metadata("ParentNode", List.of("PK_ID"))
     );
 
     @Override
