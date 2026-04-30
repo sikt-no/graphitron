@@ -1307,16 +1307,13 @@ class FieldBuilder {
                     cf.condition().ifPresent(c -> out.add(rewrapForNested(c.filter(), outerArgName, leafPath)));
                     if (implicitBodyParams != null && !enclosingOverride
                             && cf.condition().isEmpty()
-                            && !lookupBoundNames.contains(cf.name())
-                            && !(cf.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys)) {
-                        // R50 phase e2: ColumnField with NodeIdDecodeKeys.SkipMismatchedElement is
-                        // the post-collapse successor of the legacy InputField.NodeIdField synthesis
-                        // shim (and, post-e3, the @nodeId-typed input-field paths). Today's behavior
-                        // for those was no implicit body emission, preserved here. Phase (e2-rest)
-                        // wires NodeIdDecodeKeys -> ColumnPredicate.Eq emission with decoded key
-                        // values flowing through the body parameter.
+                            && !lookupBoundNames.contains(cf.name())) {
+                        // The leaf extraction (Direct or NodeIdDecodeKeys.*) flows through to the
+                        // BodyParam via NestedInputField(outer, path, leaf), so the call-site
+                        // emitter applies the per-element decode chain on the Map traversal result.
                         implicitBodyParams.add(implicitBodyParam(
-                            cf.column(), cf.name(), cf.typeName(), cf.nonNull(), outerArgName, leafPath));
+                            cf.column(), cf.name(), cf.typeName(), cf.nonNull(), cf.list(),
+                            cf.extraction(), outerArgName, leafPath));
                     }
                 }
                 case InputField.ColumnReferenceField rf -> {
@@ -1325,7 +1322,8 @@ class FieldBuilder {
                             && rf.condition().isEmpty()
                             && !lookupBoundNames.contains(rf.name())) {
                         implicitBodyParams.add(implicitBodyParam(
-                            rf.column(), rf.name(), rf.typeName(), rf.nonNull(), outerArgName, leafPath));
+                            rf.column(), rf.name(), rf.typeName(), rf.nonNull(), rf.list(),
+                            rf.extraction(), outerArgName, leafPath));
                     }
                 }
                 case InputField.NestingField nf -> {
@@ -1338,8 +1336,26 @@ class FieldBuilder {
                 case InputField.NodeIdField ignored -> {}
                 case InputField.NodeIdReferenceField ignored -> {}
                 case InputField.IdReferenceField ignored -> {}
-                case InputField.CompositeColumnField ignored -> {} // post-R50 successor; no implicit body emission until phase (e2-rest) wires NodeIdDecodeKeys -> RowEq/RowIn
-                case InputField.CompositeColumnReferenceField ignored -> {} // same; phase (e2-rest)
+                case InputField.CompositeColumnField ccf -> {
+                    ccf.condition().ifPresent(c -> out.add(rewrapForNested(c.filter(), outerArgName, leafPath)));
+                    if (implicitBodyParams != null && !enclosingOverride
+                            && ccf.condition().isEmpty()
+                            && !lookupBoundNames.contains(ccf.name())) {
+                        implicitBodyParams.add(compositeImplicitBodyParam(
+                            ccf.columns(), ccf.name(), ccf.nonNull(), ccf.list(),
+                            ccf.extraction(), outerArgName, leafPath));
+                    }
+                }
+                case InputField.CompositeColumnReferenceField ccrf -> {
+                    ccrf.condition().ifPresent(c -> out.add(rewrapForNested(c.filter(), outerArgName, leafPath)));
+                    if (implicitBodyParams != null && !enclosingOverride
+                            && ccrf.condition().isEmpty()
+                            && !lookupBoundNames.contains(ccrf.name())) {
+                        implicitBodyParams.add(compositeImplicitBodyParam(
+                            ccrf.columns(), ccrf.name(), ccrf.nonNull(), ccrf.list(),
+                            ccrf.extraction(), outerArgName, leafPath));
+                    }
+                }
                 case InputField.NodeIdInFilterField nf -> {
                     // The body always guards `arg == null || arg.isEmpty()`, so the outer-list
                     // nullability ([ID!] vs [ID!]!) does not matter for the emitted predicate.
@@ -1364,11 +1380,40 @@ class FieldBuilder {
      * Java class.
      */
     private static BodyParam implicitBodyParam(ColumnRef column, String fieldName,
-                                               String graphqlTypeName, boolean nonNull,
+                                               String graphqlTypeName, boolean nonNull, boolean list,
+                                               CallSiteExtraction leaf,
                                                String outerArgName, List<String> leafPath) {
-        String javaType = "ID".equals(graphqlTypeName) ? String.class.getName() : column.columnClass();
-        return new BodyParam.Eq(fieldName, column, javaType, nonNull,
-            new CallSiteExtraction.NestedInputField(outerArgName, leafPath));
+        // For NodeId-decoded leaves the post-decode value is the column's typed Java class
+        // (single scalar or List of it). For Direct, ID scalars stay String; everything else
+        // takes the column's Java type.
+        boolean nodeIdLeaf = leaf instanceof CallSiteExtraction.NodeIdDecodeKeys;
+        String javaType = nodeIdLeaf
+            ? column.columnClass()
+            : ("ID".equals(graphqlTypeName) ? String.class.getName() : column.columnClass());
+        var nested = new CallSiteExtraction.NestedInputField(outerArgName, leafPath, leaf);
+        return list
+            ? new BodyParam.In(fieldName, column, javaType, nonNull, nested)
+            : new BodyParam.Eq(fieldName, column, javaType, nonNull, nested);
+    }
+
+    /**
+     * Implicit body param for composite-key inputs ({@link InputField.CompositeColumnField}
+     * or {@link InputField.CompositeColumnReferenceField}). Always pairs with a
+     * {@link CallSiteExtraction.NodeIdDecodeKeys} leaf — the only multi-column extraction
+     * arm. Body emission lands on {@link BodyParam.RowEq} (scalar) or
+     * {@link BodyParam.RowIn} (list) with {@code javaType = org.jooq.RowN}; the call-site
+     * extraction projects each decoded record to its {@code valuesRow()} so the params arrive
+     * shaped as untyped {@link org.jooq.RowN} (or {@code List<RowN>}).
+     */
+    private static BodyParam compositeImplicitBodyParam(List<ColumnRef> columns, String fieldName,
+                                                        boolean nonNull, boolean list,
+                                                        CallSiteExtraction.NodeIdDecodeKeys leaf,
+                                                        String outerArgName, List<String> leafPath) {
+        String javaType = "org.jooq.RowN";
+        var nested = new CallSiteExtraction.NestedInputField(outerArgName, leafPath, leaf);
+        return list
+            ? new BodyParam.RowIn(fieldName, columns, javaType, nonNull, nested)
+            : new BodyParam.RowEq(fieldName, columns, javaType, nonNull, nested);
     }
 
     /**
