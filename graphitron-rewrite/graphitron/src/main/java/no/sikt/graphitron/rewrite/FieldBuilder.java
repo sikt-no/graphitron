@@ -1126,19 +1126,32 @@ class FieldBuilder {
      * constructed as a {@code LookupField} variant.
      */
     private LookupMapping projectForLookup(List<ArgumentRef> refs, TableRef targetTable) {
-        // NodeIdArg with @lookupKey produces NodeIdMapping instead of the VALUES+JOIN path.
-        for (var ref : refs) {
-            if (ref instanceof ArgumentRef.ScalarArg.NodeIdArg na && na.isLookupKey()) {
-                return new LookupMapping.NodeIdMapping(
-                    na.name(), na.nodeTypeId(), na.nodeKeyColumns(), na.list(), targetTable);
-            }
-        }
         var args = new ArrayList<ColumnMapping.LookupArg>();
         for (var ref : refs) {
             switch (ref) {
                 case ArgumentRef.ScalarArg.ColumnArg ca when ca.isLookupKey() ->
                     args.add(new ColumnMapping.LookupArg.ScalarLookupArg(
                         ca.name(), ca.column(), ca.extraction(), ca.list()));
+                case ArgumentRef.ScalarArg.NodeIdArg na when na.isLookupKey() -> {
+                    // R50 phase (f-C) fold: lookup-key NodeId arg routes onto ScalarLookupArg
+                    // (single-key NodeType) with NodeIdDecodeKeys.ThrowOnMismatch — a null
+                    // decode return on a lookup key is an authored-input contract violation
+                    // and surfaces as a GraphqlErrorException at the row-building site.
+                    // Composite-PK NodeType targets land in DecodedRecord, wired in phase (g)
+                    // alongside the composite-PK NodeId fixture.
+                    var decodeMethod = ctx.resolveDecodeHelperForTable(
+                        targetTable.tableName(), na.nodeTypeId(), na.nodeKeyColumns());
+                    if (decodeMethod == null || na.nodeKeyColumns().size() != 1) {
+                        // Composite-PK NodeId or unresolved decoder — defer to phase (g).
+                        // For now retain the legacy NodeIdMapping path so behaviour is preserved
+                        // until the DecodedRecord fixture lands.
+                        return new LookupMapping.NodeIdMapping(
+                            na.name(), na.nodeTypeId(), na.nodeKeyColumns(), na.list(), targetTable);
+                    }
+                    var extraction = new no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch(decodeMethod);
+                    args.add(new ColumnMapping.LookupArg.ScalarLookupArg(
+                        na.name(), na.nodeKeyColumns().get(0), extraction, na.list()));
+                }
                 case ArgumentRef.InputTypeArg.TableInputArg tia -> {
                     // Composite-key Map input: each MapBinding contributes one slot. List
                     // cardinality lives on the outer arg — individual input fields are guaranteed
