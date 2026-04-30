@@ -571,7 +571,15 @@ class BuildContext {
                 return;
             }
             String effectiveSourceSqlName = currentSourceSqlName != null ? currentSourceSqlName : fkSideTable;
-            MethodRef whereFilter = hasCondition ? resolveConditionRef(asMap(conditionRaw)) : null;
+            MethodRef whereFilter = null;
+            if (hasCondition) {
+                var res = resolveConditionRef(asMap(conditionRaw));
+                if (res.error() != null) {
+                    errors.add(res.error());
+                    return;
+                }
+                whereFilter = res.ref();
+            }
             out.add(synthesizeFkJoin(f, effectiveSourceSqlName, fieldName, stepIndex, whereFilter));
             return;
         }
@@ -585,15 +593,25 @@ class BuildContext {
                 errors.add(fkCountMessage(currentSourceSqlName, tableName.get(), fks, /*directiveAbsent=*/false));
                 return;
             }
-            MethodRef whereFilter = hasCondition ? resolveConditionRef(asMap(conditionRaw)) : null;
+            MethodRef whereFilter = null;
+            if (hasCondition) {
+                var res = resolveConditionRef(asMap(conditionRaw));
+                if (res.error() != null) {
+                    errors.add(res.error());
+                    return;
+                }
+                whereFilter = res.ref();
+            }
             out.add(synthesizeFkJoin(fks.get(0), currentSourceSqlName, fieldName, stepIndex, whereFilter));
             return;
         }
         if (hasCondition) {
             Map<String, Object> condMap = asMap(conditionRaw);
-            MethodRef resolved = resolveConditionRef(condMap);
-            if (resolved != null) {
-                out.add(new ConditionJoin(resolved, alias));
+            var res = resolveConditionRef(condMap);
+            if (res.error() != null) {
+                errors.add(res.error());
+            } else if (res.ref() != null) {
+                out.add(new ConditionJoin(res.ref(), alias));
             } else {
                 errors.add("condition method '" + extractConditionQualifiedName(condMap) + "' could not be resolved");
             }
@@ -603,14 +621,28 @@ class BuildContext {
     }
 
     /**
+     * Result of {@link #resolveConditionRef}: exactly one of {@code ref} and {@code error} is
+     * non-null. {@code error} carries an actionable message (parser failure, unknown argMapping
+     * source, reflection failure); the path-step caller surfaces it directly. The "no class /
+     * no method" case maps to a generic resolution error so existing callers keep the same
+     * message shape they used before R53 wired in argMapping.
+     */
+    private record ConditionResolution(MethodRef ref, String error) {}
+
+    /**
      * Resolves an {@code ExternalCodeReference} condition map to a {@link MethodRef} via
-     * {@link ServiceCatalog#reflectTableMethod}. Returns {@code null} when the class/method cannot
-     * be determined or reflection fails — the caller adds a diagnostic error in that case.
+     * {@link ServiceCatalog#reflectTableMethod}. Returns a {@link ConditionResolution} with
+     * either {@code ref} or {@code error} populated.
      *
      * <p>The deprecated {@code name:} form is resolved via {@link RewriteContext#namedReferences()},
      * exactly as in {@link FieldBuilder#parseExternalRef}.
+     *
+     * <p>Path-step {@code @condition} (R53): no GraphQL arguments are in scope, so the slot set
+     * is empty and any non-empty {@code argMapping} fails through {@link
+     * ArgBindingMap.Result.UnknownArgRef}. Parse-time errors from {@code argMapping} itself also
+     * surface, with the path-step site context wrapped around the message.
      */
-    private MethodRef resolveConditionRef(Map<String, Object> conditionMap) {
+    private ConditionResolution resolveConditionRef(Map<String, Object> conditionMap) {
         String className = Optional.ofNullable(conditionMap.get(ARG_CLASS_NAME)).map(Object::toString).orElse(null);
         String methodName = Optional.ofNullable(conditionMap.get(ARG_METHOD)).map(Object::toString).orElse(null);
         if (className == null) {
@@ -619,23 +651,25 @@ class BuildContext {
                 className = ctx.namedReferences().get(name);
             }
         }
-        if (className == null || methodName == null || svc == null) return null;
-        // Path-step @condition: no GraphQL arguments are in scope. argMapping is rejected per
-        // R53: any override (whose source name is not in the empty slot set) fails through
-        // UnknownArgRef. Parse-time errors from argMapping itself also surface here.
+        if (className == null || methodName == null || svc == null) {
+            return new ConditionResolution(null, null);
+        }
         String rawArgMapping = Optional.ofNullable(conditionMap.get(ARG_ARG_MAPPING)).map(Object::toString).orElse(null);
         var parsed = ArgBindingMap.parseArgMapping(rawArgMapping);
-        if (parsed instanceof ArgBindingMap.ParsedArgMapping.ParseError) {
-            return null;
+        if (parsed instanceof ArgBindingMap.ParsedArgMapping.ParseError pe) {
+            return new ConditionResolution(null,
+                "path-step @condition: " + pe.message());
         }
         Map<String, String> argMapping = ((ArgBindingMap.ParsedArgMapping.Ok) parsed).overrides();
         var bindingResult = ArgBindingMap.of(Set.of(), argMapping);
-        if (bindingResult instanceof ArgBindingMap.Result.UnknownArgRef) {
-            return null;
+        if (bindingResult instanceof ArgBindingMap.Result.UnknownArgRef u) {
+            return new ConditionResolution(null,
+                "path-step @condition: no GraphQL arguments are in scope at a path-step @condition; "
+                + u.message());
         }
         var argBindings = ((ArgBindingMap.Result.Ok) bindingResult).map();
         var result = svc.reflectTableMethod(className, methodName, argBindings, Set.of(), null);
-        return result.failed() ? null : result.ref();
+        return result.failed() ? new ConditionResolution(null, null) : new ConditionResolution(result.ref(), null);
     }
 
     private String extractConditionQualifiedName(Map<String, Object> conditionMap) {
