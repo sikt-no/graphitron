@@ -438,3 +438,75 @@ table.tableblock thead th {
     color: rgba(255, 255, 255, 0.7);
     font-size: 0.85rem;
 }
+
+/* ---------- mobile (≤ 720px) --------------------------------------------- */
+
+/* The desktop layout has three places that don't survive a phone viewport:
+ * the featurerow's 3 columns shrink to ~70px and break "Authorization"
+ * mid-word; the nav-header packs brand + 4 links + GitHub into one flex row
+ * which then wraps awkwardly; and the 3.2rem hero title eats most of the
+ * vertical fold. Each gets a targeted override here rather than a full
+ * mobile-first refactor. */
+@media (max-width: 720px) {
+    table.featurerow {
+        display: block;
+        border-spacing: 0;
+        margin: 24px 0 32px;
+    }
+    /* Hide the colgroup that pins each cell to 33% width. */
+    table.featurerow > colgroup {
+        display: none;
+    }
+    table.featurerow > tbody,
+    table.featurerow > tbody > tr {
+        display: block;
+    }
+    table.featurerow > tbody > tr > td {
+        display: block;
+        width: 100%;
+        padding: 0;
+        margin: 0 0 36px;
+    }
+    table.featurerow > tbody > tr > td:last-child {
+        margin-bottom: 0;
+    }
+    .feature img {
+        max-width: 160px;
+        margin-bottom: 12px;
+    }
+
+    .nav-header {
+        padding: 10px var(--site-content-pad);
+    }
+    .nav-header-inner {
+        flex-wrap: wrap;
+        gap: 8px 16px;
+    }
+    /* Brand + GitHub on row one; nav-links on row two. The desktop spacer
+     * (flex: 1) would fight that, so collapse it. */
+    .nav-spacer {
+        display: none;
+    }
+    .nav-brand {
+        flex: 1 1 auto;
+    }
+    .nav-links {
+        order: 3;
+        flex-basis: 100%;
+        margin-left: 0;
+        gap: 8px 16px;
+    }
+    .nav-links a {
+        padding: 4px 0;
+    }
+
+    .hero-band {
+        padding: 36px var(--site-content-pad);
+    }
+    .hero-band .hero-title {
+        font-size: 2.2rem;
+    }
+    .hero-band .hero-tagline {
+        font-size: 1.05rem;
+    }
+}
