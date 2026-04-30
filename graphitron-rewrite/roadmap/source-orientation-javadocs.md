@@ -32,7 +32,7 @@ indicates room to grow):
 - `FieldBuilder` (~20 words today) — classifies fields per parent type;
   pointer to `code-generation-triggers.md`.
 - `TypeBuilder` (~20 words) — classifies named types; two-pass shape;
-  pointer to `code-generation-triggers.md` and `rewrite-model.md`.
+  pointer to `code-generation-triggers.md`.
 - `BuildContext` (~20 words) — shared state for builders; directive helpers;
   warnings channel.
 - `JooqCatalog` — raw-jOOQ boundary; lazy resolution.

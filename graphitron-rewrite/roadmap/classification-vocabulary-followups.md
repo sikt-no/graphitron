@@ -9,7 +9,7 @@ depends-on: []
 
 # Plan: Classification Vocabulary Follow-ups
 
-> Seven independent doc/generator-behaviour cleanups surfaced during the `code-generation-triggers.md` rewrite plus G5's Pending Review sweep; none picked up yet. Any of them can land independently; none is a release blocker.
+> Six independent doc/generator-behaviour cleanups surfaced during the `code-generation-triggers.md` rewrite plus G5's Pending Review sweep. Any of them can land independently; none is a release blocker.
 
 Each item below corrects a place where the doc or the code still treats `@lookupKey` as scope-defining, mis-states the `@condition` rule, or is missing the new **source context vs. target type** split. Items are prioritised rough-to-low effort.
 
@@ -67,9 +67,6 @@ errors in some configurations.
 Systematic audit — one pass per file:
 
 - **`code-generation-triggers.md`** — item 1 above covers it (G6 table now lives here).
-- **`../rewrite-model.md`** — the phrase `"does not navigate to a new table scope"` (in the
-  `TableTargetField interface vs. NestingField` subsection) is correct. No other
-  lookup-in-scope claims present. No change.
 - **`../argument-resolution.md`** — discusses lookup mapping and `@condition` separately.
   Spot-check that wording never implies `@condition` is blocked on lookup fields.
 - **`graphitron-codegen-parent/graphitron-java-codegen/README.md`** — primary directive
@@ -82,27 +79,7 @@ Prefer cross-links — one authoritative source is easier to keep correct.
 
 ---
 
-## 4. Consider surfacing the "target type" split in `rewrite-model.md`
-
-`rewrite-model.md` colour-codes `TableTargetField` (teal) and renders two Mermaid diagrams of the
-sealed hierarchy, but neither diagram exposes the **source context × target type** grid that
-`code-generation-triggers.md` now organises classification around. Consider adding a small
-table (or third diagram) that lines up:
-
-```
-source context  \  target type →   Table       Record      Scalar
-Unmapped (root)                    QueryTableField etc.
-Table-mapped                       TableField/SplitTableField/LookupTableField/SplitLookupTableField    (column fields)
-Result-mapped                      RecordTableField/RecordLookupTableField  RecordField  PropertyField
-```
-
-**Low priority.** The variant tables in `code-generation-triggers.md` already cover the same
-ground, and a second representation risks drift. Skip this if the main diagrams are working
-well enough in practice.
-
----
-
-## 5. Document the lookup-condition method signature (prerequisite for G5/G6 execution tests)
+## 4. Document the lookup-condition method signature (prerequisite for G5/G6 execution tests)
 
 The rewritten doc says the lookup condition receives the (source × target) pair and must be a
 predicate over the pair. That contract is not yet spelled out as a method-signature rule
@@ -123,8 +100,8 @@ document it in
 alongside `@condition`, and add an execution test in `graphitron-test` that
 verifies the N × M contract holds end-to-end.
 
-This item is the real blocker — it gates G5 and G6 execution tests. Items 1–4 are doc
-cleanups; item 5 changes what "done" means for those generator stubs.
+This item is the real blocker — it gates G5 and G6 execution tests. Items 1–3 are doc
+cleanups; item 4 changes what "done" means for those generator stubs.
 
 ### Findings from G5 C4 (2026-04-18)
 
@@ -160,7 +137,7 @@ for the N × M contract.
 
 ---
 
-## 6. `FkJoin.alias` is dead storage
+## 5. `FkJoin.alias` is dead storage
 
 `BuildContext` populates `FkJoin.alias` as `fieldName + "_" + stepIndex` (e.g. `"language_0"`)
 while resolving a `@reference` path. No code reads it: the G5 emitter derives its own
@@ -184,7 +161,7 @@ through the model.
 
 ---
 
-## 7. `InlineTableFieldEmitter.buildInnerSelect` passes wrong alias to `@condition(filter:)` methods
+## 6. `InlineTableFieldEmitter.buildInnerSelect` passes wrong alias to `@condition(filter:)` methods
 
 **Scope of this item.** The `ArgCallEmitter.buildCallArgs` signature change (adding an
 explicit source-alias parameter) shipped under the "Generated-fetcher quality pass" entry
@@ -212,7 +189,7 @@ instead of the hardcoded `"table"`. Add an `InlineTableFieldEmitter` pipeline te
 a filter method to lock the wiring down.
 
 **Related.** Whether the "source" for an inline-subquery filter is the terminal alias or
-the step-0 source alias is a design call — item 5's condition-method signature work
+the step-0 source alias is a design call — item 4's condition-method signature work
 decides this for condition joins; the same answer likely applies here.
 
 ---
