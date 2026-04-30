@@ -15,8 +15,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Plan |
 |---|---|---|---|
 | `R1` | `BatchKey` lifter directive | Spec | [plan](batchkey-lifter-directive.md) |
-| `R50` | Lift NodeId out of the model | In Progress | [plan](lift-nodeid-out-of-model.md) |
 | `R36` | Stub #3: Interface / union fetchers | In Progress | [plan](stub-interface-union-fetchers.md) |
+| `R50` | Lift NodeId out of the model | In Review | [plan](lift-nodeid-out-of-model.md) |
 | `R48` | Stub: `@externalField` resolved-reference path (`ComputedField`) | Spec | [plan](computed-field-with-reference.md) |
 | `R49` | Stub: scalar/`@record`-returning `@service` child field (`ServiceRecordField`) <sub>blocked by: [service-rows-method-body](service-rows-method-body.md)</sub> | Spec | [plan](service-record-field.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
@@ -92,7 +92,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### nodeid
 
-- `R50` [**Lift NodeId out of the model**](lift-nodeid-out-of-model.md) — In Progress, architecture
+- `R50` [**Lift NodeId out of the model**](lift-nodeid-out-of-model.md) — In Review, architecture
 - `R40` [**Argument-level `@nodeId` support**](argument-level-nodeid.md) — Backlog, architecture, blocked by [lift-nodeid-out-of-model](lift-nodeid-out-of-model.md)
 - `R20` [**`IdReferenceField` code generation**](id-reference-input-field.md) — Backlog, architecture, blocked by [lift-nodeid-out-of-model](lift-nodeid-out-of-model.md)
 - `R24` [**`NodeIdReferenceField` JOIN-projection form**](nodeidreferencefield-join-projection-form.md) — Backlog, cleanup, blocked by [lift-nodeid-out-of-model](lift-nodeid-out-of-model.md)
