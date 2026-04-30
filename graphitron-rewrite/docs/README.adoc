@@ -2,6 +2,75 @@
 
 Contributor-facing documentation for the Graphitron generator: how the pipeline classifies a GraphQL schema, what code it emits, and the design principles that govern both. Start here if you're implementing generators, adding field variants, or fixing bugs in the rewrite pipeline. For end-user documentation (writing schemas, wiring up Maven, running the generator), see xref:../index.adoc[the project home page].
 
+== Modules
+
+`graphitron-rewrite/` is a nested monorepo with its own parent pom (`graphitron-rewrite-parent`, `10-SNAPSHOT`). Eight modules cover the generator, its inputs, its consumers, and the tooling that wraps both ends:
+
+[cols="1,3"]
+|===
+| Module | Purpose
+
+| `graphitron-javapoet`
+| Internal fork of Square JavaPoet; the emit-time API every generator builds through.
+
+| `graphitron`
+| The generator core: schema loader, classifier, validator, and every generator.
+
+| `graphitron-fixtures-codegen`
+| Builds the test database and runs jOOQ codegen against it.
+
+| `graphitron-fixtures`
+| Packages those generated jOOQ classes as a jar that downstream tests depend on.
+
+| `graphitron-maven`
+| Maven plugin: `generate`, `validate`, and `dev` Mojos (the dev mojo provides the watch loop).
+
+| `graphitron-test`
+| End-to-end consumer: compiles emitted Java against a real jOOQ catalog and executes it against Postgres.
+
+| `graphitron-lsp`
+| Editor LSP server for `.graphqls` authoring.
+
+| `roadmap-tool`
+| Regenerates `graphitron-rewrite/roadmap/README.md` from per-item front-matter.
+|===
+
+Per-module READMEs are deliberately not maintained; this table is the orientation surface, and lives next to the architecture pages so it stays in sync with the pipeline they describe.
+
+== The pipeline at 30 seconds
+
+A `mvn graphitron:generate` run threads each `.graphqls` source through six stages. Generators only ever see classified data; everything that interprets schema text happens at the parse boundary, before classification closes:
+
+[source]
+----
+.graphqls files
+   ↓
+RewriteSchemaLoader        ← parse + auto-inject directives.graphqls
+   ↓
+GraphitronSchemaBuilder    ← classify into GraphitronSchema
+                             (the only place that reads directives)
+   ↓
+GraphitronSchemaValidator  ← reject UnclassifiedField / UnclassifiedType,
+                             surface AUTHOR_ERROR diagnostics
+   ↓
+Generators                 ← TypeFetcherGenerator, TypeClassGenerator,
+                             TypeConditionsGenerator, QueryConditionsGenerator,
+                             plus the schema/* and util/* families
+   ↓
+JavaFile.writeToPath       ← idempotent file writes; orphans in owned
+                             sub-packages are swept on every run
+   ↓
+consumer compile           ← graphitron-test compiles the emitted output
+                             (verifies Java type correctness) and runs it
+                             against Postgres (verifies behaviour)
+----
+
+Two things that look like they could be reordered, can't. The loader auto-injects `directives.graphqls` from the `graphitron` jar before parse, so consumer schemas never re-declare the canonical directives; this is what lets the classifier treat directive presence as ground truth one stage later. And the writer's orphan sweep runs after every emit, not just on full builds, which is what keeps a delete-a-type cycle in `dev` mojo from leaving stale files on disk.
+
+The classification-only diagram in xref:code-generation-triggers.adoc[Code Generation Triggers] is a zoomed-in view of the middle three stages (schema → classified model → generators). This end-to-end form names the loader, the validator, the writer's idempotency contract, and the consumer compile that closes the loop.
+
+== Detailed reference
+
 . *xref:code-generation-triggers.adoc[Code Generation Triggers]*: the full classification taxonomy: schema patterns, sealed variants, generated output. This is the reference for what the code does.
 . *xref:rewrite-model.adoc[Rewrite Model]*: visual Mermaid diagrams of the sealed type hierarchy: field variants, type variants, and support/composition types.
 . *xref:rewrite-design-principles.adoc[Rewrite Design Principles]*: architectural and technical principles governing the rewrite pipeline (generation-thinking, sealed hierarchies, classification boundaries, test tiers, etc.).
