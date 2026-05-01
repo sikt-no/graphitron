@@ -86,7 +86,7 @@ The dispatcher *keeps owning the decode*. The R50 changelog explicitly classifie
 |---|---|---|---|
 | Source of values | `env.getArgument` / `sf.getArguments()` | `bindings.get(i)` → `(idx, cols, repEnv)` | Caller-supplied `valueExpr` callback. |
 | `__typename` literal | not projected | `DSL.inline("<TypeName>").as("__typename")` | Caller appends to the `fields` list before calling the join helper. Helper stays type-agnostic. |
-| Join syntax | `.using(table.C1, …)` | `.on(t.C1.eq(input.field("C1", T.class)).and(…))` | **Switch dispatcher to `.using(...)`**. Dispatcher's FROM side is the entity's own jOOQ table only — no FK chain, so no quoted-name collision risk. Implementer: verify by running the `_entities` and `Query.nodes` execution tests after the flip; the f-E SQL-shape pin will also catch a regression. |
+| Join syntax | `.using(table.C1, …)` | `.on(t.C1.eq(input.field("C1", T.class)).and(…))` | **Switch dispatcher to `.using(...)`**. Dispatcher's FROM side is the entity's own jOOQ table only — no FK chain, so no quoted-name collision risk. Implementer: verify by running the `_entities` and `Query.nodes` execution tests after the flip; the f-E SQL-shape pin will also catch a regression. *(Decision pivoted in the reviewer pass: dispatcher kept on `.on(...)` to avoid USING collapsing joined columns under the `$fields`-emitted projection. See "Reviewer pass deltas" above.)* |
 | `where(condition)` | declared by caller, default `DSL.noCondition()` | absent today | Dispatcher's `select<TypeName>Alt<N>` declares `Condition condition = DSL.noCondition();` before the join body. jOOQ folds this away at render time. |
 
 The `idx` cell, the typed-row arity, and the order-by-idx scatter are already identical and move into the helper unchanged.
@@ -106,7 +106,7 @@ File-by-file:
 - `SelectMethodBody.java` — drop `emitRowArray`, `emitJoinSelect`, and `columnNamesList`. Call into `ValuesJoinRowBuilder` for row-array, alias args, and using args. Append `DSL.inline("<TypeName>").as("__typename")` and `idxCol` locally to the field list. Declare `Condition condition = DSL.noCondition();` before the join.
 - `EntityFetcherDispatchClassGenerator.java` — unchanged class-level structure; only `SelectMethodEmitter` updates if its constructor signature changes (it shouldn't).
 
-The dispatcher's switch from `.on(...)` to `.using(...)` is part of this refactor, justified once in the helper's class Javadoc with the "no FK chain on the FROM side" rationale (mirroring `LookupValuesJoinEmitter`'s root-path Javadoc).
+The dispatcher's switch from `.on(...)` to `.using(...)` is part of this refactor, justified once in the helper's class Javadoc with the "no FK chain on the FROM side" rationale (mirroring `LookupValuesJoinEmitter`'s root-path Javadoc). *(Reverted in reviewer pass; see "Reviewer pass deltas" above.)*
 
 ## Tests
 
