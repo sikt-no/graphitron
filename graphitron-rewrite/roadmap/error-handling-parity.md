@@ -198,6 +198,12 @@ the `@record` co-location FQN-carrier in favour of an explicit `@error(className
   `graphql.execution.AbortExecutionException`, or any class with the simple name
   `ValidationViolationGraphQLException`). Both surface as `UnclassifiedField` on the
   carrier with reasons that name the offending `@error` types.
+  **[Reverting]** Rule 9's third arm matches by *simple name*, which
+  misclassifies any consumer class that happens to share the simple name with
+  the generated `<outputPackage>.schema.ValidationViolationGraphQLException`.
+  The marker-pivot unwind binds the check to that FQN directly (the JDK
+  supertypes and `AbortExecutionException` arms already match by FQN); same
+  diagnostic surface, no false-positives.
 - `(List<String>, String)` constructor reflection check on each `@error` type's
   developer-supplied backing class. **[Transitional FQN carrier]** The `@error` type
   currently reads a co-located `@record(record: {className: ...})` directive on the
@@ -327,6 +333,14 @@ the `@record` co-location FQN-carrier in favour of an explicit `@error(className
   route the catch arm through `catchArm(outputPackage, errorChannel)` so dispatch
   fires when the channel is populated. Insert/update/upsert remain stubs; they
   inherit the slot and the emit machinery once they un-stub.
+  **[Reverting]** `PayloadAssembly` is the parallel reflective product to
+  `ErrorChannel.payloadCtorParams`: the same constructor walk, with overlapping
+  `payloadClass` carriage and a separate `rowSlotIndex` integer instead of a
+  typed slot. The marker-pivot unwind merges both into the unified
+  `PayloadShape` described in §2c and represents the row slot as a `RowSlot`
+  permit on the sealed `PayloadConstructorParam`; the DML field then carries
+  `Optional<PayloadShape> payloadShape()` and the delete emitter switches on
+  the typed permits instead of indexing into `params` by an integer.
 - **[Reverting]** Marker-interface enforcement on `@error` backing classes:
   `TypeBuilder.validateImplementsGraphitronError` reflects the developer-supplied class
   resolved from the `@record` co-location and walks its supertype graph for an
@@ -341,7 +355,9 @@ the `@record` co-location FQN-carrier in favour of an explicit `@error(className
 **Remaining work:**
 
 - **Marker pivot (one chunk).** Unwind every marker artefact and replace it with
-  structural reflection:
+  structural reflection. Five separate model decisions land together because the
+  same reflective walk produces all of them; sequencing them apart would mean
+  rewriting the same constructor-walk three times.
   - Delete `GraphitronErrorInterfaceGenerator` and the generated
     `<outputPackage>.schema.GraphitronError` artefact.
   - Delete `TypeBuilder.validateImplementsGraphitronError`, the
@@ -356,12 +372,45 @@ the `@record` co-location FQN-carrier in favour of an explicit `@error(className
     "ambiguous errors slot; multiple constructor parameters could receive these
     errors". Mirrors `resolveDmlPayloadAssembly`'s row-slot match against the table
     record class (same producer/consumer pattern).
+  - **Seal `PayloadConstructorParam` and unify with `PayloadAssembly`.** The
+    landed shape uses a flat record with `boolean isErrorsSlot` plus a
+    `defaultLiteral` field that is `null` on the errors slot, exactly the
+    enum-with-shared-fields shape
+    [`rewrite-design-principles.adoc`](../docs/rewrite-design-principles.adoc#sealed-hierarchies-over-enums-for-typed-information)
+    warns against. Replace it with a sealed interface
+    `permits ErrorsSlot, RowSlot, DefaultedSlot`: each variant carries exactly the
+    fields it needs (`(name, type)` for `ErrorsSlot`; `(name, type)` for
+    `RowSlot`; `(name, type, defaultLiteral)` for `DefaultedSlot`). Introduce a
+    `PayloadShape` record `(payloadClass: ClassName, params:
+    List<PayloadConstructorParam>)` and have `ErrorChannel` reference it as
+    `shape: PayloadShape` instead of carrying `payloadClass` plus
+    `payloadCtorParams` directly. Collapse `PayloadAssembly` into
+    `PayloadShape`: the DML field's row-slot carrier is now the `RowSlot`
+    permit inside `shape.params()`, so the field variant carries one
+    `Optional<PayloadShape>` instead of two parallel optionals. The two
+    classifier sites (`resolveErrorChannel`, `resolveDmlPayloadAssembly`)
+    merge into one constructor walk that classifies each parameter as
+    `ErrorsSlot` / `RowSlot` / `DefaultedSlot` based on the field's channel
+    inputs and DML-table inputs, eliminating the redundant reflection pass and
+    the duplicate `payloadClass` carriage. Both emitter walks (the catch-arm
+    factory in `buildServiceFetcherCommon`, the success-path assembly in
+    `buildMutationDeleteFetcher`) collapse onto a single typed switch over
+    the sealed permits.
   - Add `TypeBuilder.validatePathMessageAccessors`: paired classify-time check
     alongside `validatePathMessageConstructor` that verifies the developer-supplied
     `@error` class exposes `path()` returning `List<String>` (raw or parameterised)
     and `message()` returning `String`. Surfaces as `UnclassifiedType` with a
     descriptive reason. Surfaces the previously-implicit graphql-java
     `PropertyDataFetcher` runtime contract at classify time.
+  - **FQN-bind §1 rule 9's shadowing check.** The landed
+    `checkChannelLevelHandlerRules` rejects an `ExceptionHandler` whose
+    `exceptionClassName` matches the *simple name* `ValidationViolationGraphQLException`,
+    which misclassifies any consumer class that happens to share the simple
+    name. `ValidationViolationGraphQLExceptionGenerator` emits the class at a
+    known FQN (`<outputPackage>.schema.ValidationViolationGraphQLException`);
+    bind the rule to that FQN (and to the JDK `Throwable` supertypes /
+    `AbortExecutionException`, which already match by FQN). Same diagnostic
+    surface; just removes the simple-name false-positive.
   - `ErrorRouter.Mapping.build` return type widens from `GraphitronError` to
     `Object`; `ErrorRouter.dispatch`'s `payloadFactory` parameter widens from
     `Function<List<? extends GraphitronError>, P>` to `Function<List<?>, P>`. Trade
@@ -369,6 +418,22 @@ the `@record` co-location FQN-carrier in favour of an explicit `@error(className
     the catch-arm emission casts at the slot type the developer's payload
     constructor declares (which can still be a consumer-defined common supertype if
     the consumer wants the typed `List`).
+  - **Resolve `mappingsConstantName` with collision suffix at classify time.**
+    The landed classifier writes the SCREAMING_SNAKE base name and leaves the
+    `_<hash>` disambiguation as a follow-up at emit time. That violates
+    [`rewrite-design-principles.adoc`](../docs/rewrite-design-principles.adoc#generation-thinking)'s
+    "model carries what the generator needs, pre-resolved" rule: the emitter
+    is left to detect collision against a name that was supposed to be
+    generation-ready. Move the dedup into the classifier: `ErrorMappings`
+    emission groups channels by `(payloadClass, flattenedHandlerList)`,
+    collisions on the base name suffix the loser with the 8-hex-char SHA-256
+    prefix described in §3, and the resolved name lands on
+    `ErrorChannel.mappingsConstantName` before the emitter runs. The "no
+    production fixture exercises this today" line in the original §3 dedup
+    bullet stays valid for the suffix-rendering test fixture; this bullet
+    just lifts the *resolution* into the classifier so the emitter switches
+    on a settled string. Subsumes the "§3 hash-suffix dedup" remaining-work
+    bullet below.
 - **Explicit FQN argument on `@error` directive.** Replace the temporary `@record`
   co-location FQN carrier with a top-level `className: String` argument on `@error`:
   ```graphql
@@ -394,10 +459,6 @@ the `@record` co-location FQN-carrier in favour of an explicit `@error(className
   the pivot research: no such subclass or wiring lives in `graphitron-test` today;
   the cleanup is no-op against this codebase, kept here as documentation of the
   consumer migration story.)
-- §3 hash-suffix dedup for distinct channels that collide on the same payload-class
-  base name: produce `FILM_PAYLOAD_A1B2C3D4` instead of throwing the
-  collision-detected exception. No production fixture exercises this today; ship when
-  needed.
 - [`checked-exceptions-typed-errors.md`](checked-exceptions-typed-errors.md) is
   deleted when this lands.
 
@@ -702,28 +763,46 @@ points at the list shape.
 #### 2c. `ErrorChannel`: the carrier-side sub-taxonomy
 
 **Status: landed** as `no.sikt.graphitron.rewrite.model.ErrorChannel` plus the
-`WithErrorChannel` capability interface. The carrier-side resolution:
+`WithErrorChannel` capability interface. The shape below is the post-pivot
+target; the landed code still carries the flat `PayloadConstructorParam`
+record with `boolean isErrorsSlot` and the duplicate `payloadClass` carriage
+between `ErrorChannel` and `PayloadAssembly`. Both collapse in the
+marker-pivot unwind chunk (see "Remaining work" above).
 
 ```java
 record ErrorChannel(
     List<GraphitronType.ErrorType> mappedErrorTypes,  // resolved; union members or list-element type, in source order
-    ClassName payloadClass,                           // the developer-supplied payload class (e.g. FilmPayload)
-    List<PayloadConstructorParam> payloadCtorParams,  // ordered all-fields constructor signature; see "Payload-factory contract" below
-    String mappingsConstantName                       // emitted constant name on ErrorMappings; see §3 dedup rule
+    PayloadShape shape,                               // unified with DML's row-slot carrier; see PayloadAssembly note in §"DML payload assembly"
+    String mappingsConstantName                       // resolved at classify time, including any collision suffix; see §3 dedup rule
 ) {}
 
-record PayloadConstructorParam(
-    String name,             // declared parameter name (diagnostics only; matching is by type assignability)
-    TypeName type,           // resolved JavaPoet type; emitter prints it directly
-    boolean isErrorsSlot,    // exactly one parameter has this set
-    String defaultLiteral    // pre-resolved literal for non-errors slots ("null" / "0" / "0L" / "false" / etc.); null on the errors slot
+record PayloadShape(
+    ClassName payloadClass,                           // the developer-supplied payload class (e.g. FilmPayload)
+    List<PayloadConstructorParam> params              // ordered all-fields constructor signature; sealed-slot taxonomy below
 ) {}
+
+sealed interface PayloadConstructorParam
+        permits ErrorsSlot, RowSlot, DefaultedSlot {
+    String name();           // declared parameter name (diagnostics only; matching is by type assignability)
+    TypeName type();         // resolved JavaPoet type; emitter prints it directly
+}
+
+record ErrorsSlot(String name, TypeName type) implements PayloadConstructorParam {}
+
+record RowSlot(String name, TypeName type) implements PayloadConstructorParam {}
+
+record DefaultedSlot(
+    String name,
+    TypeName type,
+    String defaultLiteral    // pre-resolved literal: "null" / "0" / "0L" / "false" / etc.
+) implements PayloadConstructorParam {}
 ```
 
 The errors-field name is intentionally absent: the carrier classifier identifies the
 payload's `ErrorsField` structurally (one per payload type, per the channel-detection
 rules below), and the emitter does not name the field in the generated catch-arm — the
-synthesized payload-factory binds the errors list positionally through `payloadCtorParams`.
+synthesized payload-factory finds the `ErrorsSlot` permit by typed switch on
+`shape.params()`. DML's success-path assembly finds the `RowSlot` the same way.
 
 The flattened handler list, used by the §3 duplicate-criteria check and the
 `mappingsConstantName` dedup-suffix derivation, is a derived view: walk `mappedErrorTypes`
@@ -731,12 +810,18 @@ in declaration order and concatenate each resolved `ErrorType`'s `List<Handler>`
 order. Both consumers compute it on demand from `mappedErrorTypes`; it is not a stored
 field on `ErrorChannel`.
 
-`ErrorChannel` is flat; `payloadClass` plus `payloadCtorParams` is what the emitter needs to
-synthesize the per-fetcher factory lambda (see "Payload-factory contract" below). A
-`PayloadShape` sub-taxonomy was considered but defers to a real second variant; until one
-exists, the seal-with-one-permit pattern is overhead. If a future channel shape (e.g. a
-list-of-payloads aggregator, or a streaming target) needs to dispatch on shape, lift this
-field to a sealed interface at that point.
+`PayloadShape` is the single canonical product of the constructor-walk classifier,
+shared between error-channel resolution and DML row-slot resolution. Pre-unwind
+the two lived as separate records (`ErrorChannel.payloadCtorParams` plus a parallel
+`PayloadAssembly.params`), each reflecting on the same constructor with overlapping
+`payloadClass` carriage; the unwind merges them so a DML field with both an errors
+field and a row slot reflects once and the resulting `params` list carries both
+`ErrorsSlot` and `RowSlot` permits side-by-side. A field with only one of those
+roles populated has only that permit in `params`; the rest of the constructor is
+`DefaultedSlot`. If a future shape variant needs to dispatch on the *shape* itself
+(e.g. a list-of-payloads aggregator, a streaming target), lift `PayloadShape` to a
+sealed interface at that point; today every payload is shaped uniformly as
+"all-fields constructor with N classified parameters".
 
 Every field variant whose body is a candidate for the try/catch / `.exceptionally`
 wrapper in §3 implements the `WithErrorChannel` capability interface
@@ -870,7 +955,8 @@ site.
 public record FilmPayload(Film film, List<?> errors) { }
 ```
 
-Resolution steps in the carrier classifier:
+Resolution steps in the carrier classifier (one constructor walk, classifying
+each parameter into the right `PayloadConstructorParam` permit):
 
 1. Reflect `payloadClass` (the resolved class from `@error.className` for `@error`
    types, from `@record(record: {className: ...})` for `@record` payloads) and
@@ -878,33 +964,38 @@ Resolution steps in the carrier classifier:
    hand-rolled POJO is expected to expose one matching the SDL field order.
    Multiple matching constructors → reject `UnclassifiedField` with a descriptive
    reason.
-2. Walk the constructor parameters in order, recording `(name, type)` for each into
-   `payloadCtorParams`. Mark exactly one parameter as the `isErrorsSlot`: the
-   parameter whose type is `List<X>` (or `Iterable<X>`, `Collection<X>`, and
-   subtypes) where every `mappedErrorTypes` class on the channel is assignable to
-   `X`. The match is *channel-typed*: it depends on which `@error` classes the
-   channel resolved, not on a marker simple name. Zero matches → reject with a
-   reason naming the channel's `@error` classes and the constructor's parameter
-   shapes; multiple matches → reject with a reason naming each ambiguous slot.
-   This mirrors `resolveDmlPayloadAssembly`'s row-slot match against the
-   `JooqCatalog.findRecordClass(tableSqlName)` result (same producer/consumer
-   pattern; the row slot picks the parameter typed exactly as the table record
-   class, the errors slot picks the parameter typed as a list whose element type
-   accepts every `@error` class).
-3. Every other parameter is bound to its language default at the call site: `null`
-   for reference types, `0` / `0L` / `0.0` / `false` / `'\0'` for primitives. The
-   synthesized factory is:
+2. Walk the constructor parameters in order, classifying each into one of the
+   sealed permits:
+   - `ErrorsSlot` — the parameter whose type is `List<X>` (or `Iterable<X>`,
+     `Collection<X>`, and subtypes) where every `mappedErrorTypes` class on the
+     channel is assignable to `X`. Channel-typed match, not a marker simple name.
+     Exactly one permitted; zero matches → reject with a reason naming the
+     channel's `@error` classes and the constructor's parameter shapes; multiple
+     matches → reject naming each ambiguous slot.
+   - `RowSlot` — DML fields only: the parameter typed exactly as the
+     `JooqCatalog.findRecordClass(tableSqlName)` result. Exactly one permitted on
+     a DML field; zero or two matches reject with the same diagnostic shape.
+     Non-DML fields don't admit a `RowSlot`.
+   - `DefaultedSlot` — every remaining parameter, paired with its language
+     default literal: `"null"` for reference types, `"0"` / `"0L"` / `"0.0"` /
+     `"false"` / `"'\\0'"` for primitives.
+
+   Both the errors-slot and row-slot matches are channel-typed structural
+   identifications, not name-based; renaming a constructor parameter doesn't
+   break the resolution.
+3. The emitter walks `shape.params()` and dispatches on the typed permit. The
+   synthesized catch-arm factory:
 
    ```java
    // emitted
    (List<?> errors) -> new FilmPayload(null, errors)
    ```
 
-   Multiple non-error parameters → all defaulted, in declaration order. The emitter
-   walks `payloadCtorParams` and prints a literal per slot: the errors slot prints
-   the lambda parameter (cast to the constructor's declared element type if it is
-   narrower than `Object`); every other slot prints its default literal. No
-   reflection at runtime.
+   `ErrorsSlot` prints the lambda parameter (cast to the constructor's declared
+   element type if it is narrower than `Object`); `RowSlot` prints the row local
+   on the DML success path and the slot's default literal (`"null"`) on the catch
+   arm; `DefaultedSlot` prints its `defaultLiteral`. No reflection at runtime; no
+   `boolean` flags or `null` sentinels — the typed switch covers every parameter.
 
 Two consequences worth naming:
 
@@ -947,9 +1038,13 @@ woven into each variant's body shape individually.
 Both arms of every wrapped fetcher return `DataFetcherResult<P>` (or
 `CompletableFuture<DataFetcherResult<P>>` for async). The success path wraps the produced
 payload; the catch path receives an already-typed `DataFetcherResult<P>` from the router. One
-allocation per fetch on the success path; in exchange, the entire emission boundary is
-statically typed and `Object` never appears in a generated signature. graphql-java already
-unwraps `DataFetcherResult` uniformly downstream, so the wrapper is invisible to consumers.
+allocation per fetch on the success path; in exchange, every fetcher method's
+*own* signature stays parameterised on the concrete payload type. The
+`Function<List<?>, P>` payload-factory and `Mapping.build`'s `Object` return widen
+the *router-facing* contract (the marker-pivot trade described in §2c's "Payload-factory
+contract"); the consumer-visible fetcher signatures don't carry either. graphql-java
+already unwraps `DataFetcherResult` uniformly downstream, so the wrapper is invisible to
+consumers.
 
 For a fetcher with an `ErrorChannel`:
 
