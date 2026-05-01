@@ -183,6 +183,10 @@ public final class MultiTablePolymorphicEmitter {
      * Each branch projects {@code DSL.inline("<TypeName>").as("__typename")} plus the participant's
      * PK columns aliased to {@code __pk0__..__pkN__}, plus a {@code __sort__} key. The composite-PK
      * sort key uses {@code DSL.jsonbArray(...)}; single-column PKs project the column directly.
+     *
+     * <p>The result is declared as {@code Result<? extends Record>} so jOOQ's typed
+     * {@code Result<RecordN<...>>} inference (one type-arg per projected column) widens to a
+     * uniform Record-iterable shape that the dispatch loop can consume without raw types.
      */
     private static CodeBlock buildStage1Block(List<ParticipantRef.TableBound> participants, String jooqPackage) {
         var b = CodeBlock.builder();
@@ -196,8 +200,9 @@ public final class MultiTablePolymorphicEmitter {
             b.addStatement("$T $L = $T.$L", jooqTableClass, alias, tablesClass, participant.table().javaFieldName());
         }
 
-        var resultOfRecord = ParameterizedTypeName.get(RESULT, RECORD);
-        b.add("$T stage1 = ", resultOfRecord);
+        var resultBound = ParameterizedTypeName.get(RESULT,
+            WildcardTypeName.subtypeOf(RECORD));
+        b.add("$T stage1 = ", resultBound);
         for (int p = 0; p < participants.size(); p++) {
             var participant = participants.get(p);
             String alias = "stage1_" + participant.typeName();

@@ -2288,4 +2288,119 @@ class GraphQLQueryTest {
         assertThat(shortItems).allSatisfy(i ->
             assertThat(i.get("description")).isNotNull());
     }
+
+    // ===== Multi-table polymorphic InterfaceType / UnionType (Track B2) =====
+    //
+    // Searchable is implemented by Film (table: film) and Actor (table: actor) on
+    // heterogeneous tables. The generated fetcher is two-stage: stage 1 is a narrow
+    // UNION ALL projecting (typename, pk0, sort) per branch; stage 2 dispatches per
+    // typename via ValuesJoinRowBuilder. Records carry a synthetic __typename column
+    // so the schema-class TypeResolver routes each row back to its concrete type.
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void search_returnsAllParticipantTypes() {
+        // init.sql seeds 5 films + 3 actors. The search fetcher returns 5 Film rows and 3
+        // Actor rows under the Searchable interface contract; __typename resolves per row.
+        Map<String, Object> data = execute("{ search { __typename name } }");
+        List<Map<String, Object>> items = (List<Map<String, Object>>) data.get("search");
+        assertThat(items).hasSize(8);
+        long films = items.stream().filter(i -> "Film".equals(i.get("__typename"))).count();
+        long actors = items.stream().filter(i -> "Actor".equals(i.get("__typename"))).count();
+        assertThat(films).isEqualTo(5);
+        assertThat(actors).isEqualTo(3);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void search_inlineFragmentsResolvePerType() {
+        // Inline fragments must dispatch per concrete type: Film rows have filmId+title,
+        // Actor rows have actorId+firstName. The schema-class TypeResolver reads __typename
+        // off each Record and returns the matching ObjectType so graphql-java picks the
+        // correct field arm per row.
+        Map<String, Object> data = execute("""
+            { search {
+                __typename
+                ... on Film { filmId title }
+                ... on Actor { actorId firstName }
+            } }
+            """);
+        List<Map<String, Object>> items = (List<Map<String, Object>>) data.get("search");
+        var filmRows = items.stream()
+            .filter(i -> "Film".equals(i.get("__typename")))
+            .toList();
+        var actorRows = items.stream()
+            .filter(i -> "Actor".equals(i.get("__typename")))
+            .toList();
+        assertThat(filmRows).hasSize(5);
+        assertThat(actorRows).hasSize(3);
+        assertThat(filmRows).allSatisfy(i -> {
+            assertThat(i.get("filmId")).as("Film.filmId").isNotNull();
+            assertThat(i.get("title")).as("Film.title").isNotNull();
+        });
+        assertThat(actorRows).allSatisfy(i -> {
+            assertThat(i.get("actorId")).as("Actor.actorId").isNotNull();
+            assertThat(i.get("firstName")).as("Actor.firstName").isNotNull();
+        });
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void search_interfaceFieldName_resolvesPerParticipantColumn() {
+        // Searchable.name remaps to FILM.TITLE on Film and ACTOR.FIRST_NAME on Actor.
+        // Stage 2's per-typename SELECT projects each participant's $fields(env, t, env)
+        // contribution, so the typed Record carries the right column under the interface
+        // alias on each row.
+        Map<String, Object> data = execute("{ search { __typename name } }");
+        List<Map<String, Object>> items = (List<Map<String, Object>>) data.get("search");
+        // ACADEMY DINOSAUR is the first film seeded in init.sql; PENELOPE is the first actor.
+        // The interface field 'name' must surface those values, sourced from each
+        // participant's distinct concrete column.
+        assertThat(items).filteredOn(i -> "Film".equals(i.get("__typename")))
+            .extracting(i -> i.get("name"))
+            .contains("ACADEMY DINOSAUR");
+        assertThat(items).filteredOn(i -> "Actor".equals(i.get("__typename")))
+            .extracting(i -> i.get("name"))
+            .contains("PENELOPE");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void documents_unionVariant_returnsSameShape() {
+        // Document = Film | Actor exercises the union variant's wiring (QueryUnionField).
+        // MultiTablePolymorphicEmitter produces the same two-stage shape for both
+        // QueryInterfaceField and QueryUnionField; this asserts the union form returns the
+        // same row count and __typename routing as the interface form.
+        Map<String, Object> data = execute("""
+            { documents {
+                __typename
+                ... on Film { filmId }
+                ... on Actor { actorId }
+            } }
+            """);
+        List<Map<String, Object>> items = (List<Map<String, Object>>) data.get("documents");
+        assertThat(items).hasSize(8);
+        assertThat(items).extracting(i -> (String) i.get("__typename"))
+            .allSatisfy(tn -> assertThat(tn).isIn("Film", "Actor"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void search_orderedBySortKey_acrossParticipants() {
+        // Stage 1's ORDER BY runs database-side on the synthetic __sort__ column. Single-PK
+        // participants project their PK directly, so the result interleaves Film and Actor
+        // rows by their PK values. With Film PKs 1..5 and Actor PKs 1..3, the leading rows
+        // (sort key 1..3) carry both types; trailing rows (sort key 4..5) are Films only.
+        Map<String, Object> data = execute("""
+            { search {
+                __typename
+                ... on Film { filmId }
+                ... on Actor { actorId }
+            } }
+            """);
+        List<Map<String, Object>> items = (List<Map<String, Object>>) data.get("search");
+        assertThat(items.subList(items.size() - 2, items.size()))
+            .as("trailing rows carry the highest sort keys (Film 4 and 5; Actor PKs cap at 3)")
+            .allSatisfy(i -> assertThat(i.get("__typename")).isEqualTo("Film"));
+    }
 }
