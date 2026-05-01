@@ -84,6 +84,7 @@ class BuildContext {
     static final String DIR_MUTATION            = "mutation";
     static final String DIR_DISCRIMINATOR       = "discriminator";
     static final String DIR_AS_CONNECTION       = "asConnection";
+    static final String DIR_BATCH_KEY_LIFTER    = "batchKeyLifter";
 
     // ===== Argument names =====
 
@@ -119,6 +120,8 @@ class BuildContext {
     static final String ARG_DEFAULT_FIRST_VALUE = "defaultFirstValue";
     static final String ARG_CONNECTION_NAME     = "connectionName";
     static final String ARG_OVERRIDE            = "override";
+    static final String ARG_LIFTER              = "lifter";
+    static final String ARG_TARGET_COLUMNS      = "targetColumns";
 
     // ===== Shared state =====
 
