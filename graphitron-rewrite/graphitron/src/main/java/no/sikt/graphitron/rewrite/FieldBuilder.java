@@ -1,13 +1,9 @@
 package no.sikt.graphitron.rewrite;
 
-import graphql.language.BooleanValue;
 import graphql.language.EnumValue;
 import graphql.language.SourceLocation;
-import graphql.language.StringValue;
-import graphql.schema.GraphQLAppliedDirective;
 import graphql.schema.GraphQLArgument;
 import graphql.schema.GraphQLEnumType;
-import graphql.schema.GraphQLEnumValueDefinition;
 import graphql.schema.GraphQLFieldDefinition;
 import graphql.schema.GraphQLInputObjectType;
 import graphql.schema.GraphQLInterfaceType;
@@ -90,14 +86,10 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import static no.sikt.graphitron.rewrite.BuildContext.ARG_COLLATE;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_CLASS_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_CONNECTION_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_DEFAULT_FIRST_VALUE;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_CONTEXT_ARGUMENTS;
-import static no.sikt.graphitron.rewrite.BuildContext.ARG_DIRECTION;
-import static no.sikt.graphitron.rewrite.BuildContext.ARG_FIELDS;
-import static no.sikt.graphitron.rewrite.BuildContext.ARG_INDEX;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_KEY;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_ARG_MAPPING;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_METHOD;
@@ -105,7 +97,6 @@ import static no.sikt.graphitron.rewrite.BuildContext.ARG_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_OVERRIDE;
 import static no.sikt.graphitron.rewrite.BuildContext.argBoolean;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_PATH;
-import static no.sikt.graphitron.rewrite.BuildContext.ARG_PRIMARY_KEY;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_SERVICE_REF;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_TABLE_METHOD_REF;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_TYPE_NAME;
@@ -151,6 +142,7 @@ class FieldBuilder {
     private final TableMethodDirectiveResolver tableMethodResolver;
     private final ExternalFieldDirectiveResolver externalFieldResolver;
     private final LookupKeyDirectiveResolver lookupKeyResolver;
+    private final OrderByResolver orderByResolver;
     FieldBuilder(BuildContext ctx, ServiceCatalog svc) {
         this.ctx = ctx;
         this.svc = svc;
@@ -158,6 +150,7 @@ class FieldBuilder {
         this.tableMethodResolver = new TableMethodDirectiveResolver(ctx, svc, this);
         this.externalFieldResolver = new ExternalFieldDirectiveResolver(ctx, svc, this);
         this.lookupKeyResolver = new LookupKeyDirectiveResolver(ctx, svc, this);
+        this.orderByResolver = new OrderByResolver(ctx);
     }
 
     // ===== Shared resolution helpers =====
@@ -388,236 +381,6 @@ class FieldBuilder {
         return new FieldWrapper.Single(outerNullable);
     }
 
-    /**
-     * Projects the classified arguments into an {@link OrderBySpec}.
-     *
-     * <p>Returns {@link OrderBySpec.None} when ordering is not applicable: for single-value
-     * returns, or when {@code tableSqlName} is {@code null} (non-table-bound field).
-     * Returns {@link OrderBySpec.None} (not an error) when the table has no primary key and no
-     * {@code @defaultOrder} is present.
-     * Returns {@code null} — signalling a build failure — when a {@code @defaultOrder}
-     * directive is present but its column/index resolution fails, or when an {@code @orderBy}
-     * argument failed to classify.
-     */
-    private OrderBySpec projectOrderBySpec(List<ArgumentRef> refs, GraphQLFieldDefinition fieldDef,
-                                           String tableSqlName, List<String> errors) {
-        GraphQLType unwrapped = GraphQLTypeUtil.unwrapNonNull(fieldDef.getType());
-        boolean isList = (unwrapped instanceof GraphQLList)
-            || ctx.isConnectionType(baseTypeName(fieldDef))
-            || fieldDef.hasAppliedDirective(DIR_AS_CONNECTION);
-        if (!isList || tableSqlName == null) return new OrderBySpec.None();
-
-        for (var ref : refs) {
-            if (ref instanceof ArgumentRef.OrderByArg ob) {
-                var arg = fieldDef.getArgument(ob.name());
-                return resolveOrderByArgSpec(arg, fieldDef, tableSqlName, errors);
-            }
-        }
-        return resolveDefaultOrderSpec(fieldDef, tableSqlName);
-    }
-
-    /**
-     * Resolves the effective default order for a table-backed list/connection field.
-     *
-     * <p>Returns {@link OrderBySpec.Fixed} when {@code @defaultOrder} resolves successfully or the
-     * table has a primary key. Returns {@link OrderBySpec.None} when the table has no primary key
-     * and no {@code @defaultOrder} is present. Returns {@code null} when {@code @defaultOrder} is
-     * present but column/index resolution fails.
-     */
-    private OrderBySpec resolveDefaultOrderSpec(GraphQLFieldDefinition fieldDef, String tableSqlName) {
-        if (fieldDef.hasAppliedDirective(DIR_DEFAULT_ORDER)) {
-            return resolveColumnOrderSpec(fieldDef, tableSqlName);
-        }
-        var pkCols = ctx.catalog.findPkColumns(tableSqlName);
-        if (pkCols.isEmpty()) return new OrderBySpec.None();
-        return new OrderBySpec.Fixed(
-            pkCols.stream()
-                .map(ce -> new OrderBySpec.ColumnOrderEntry(new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass()), null))
-                .toList(),
-            "ASC");
-    }
-
-    /**
-     * Resolves the {@code @defaultOrder} directive on a field into a fully-normalised
-     * {@link OrderBySpec.Fixed} against {@code tableSqlName}.
-     *
-     * <p>Only called when the directive is confirmed present. Returns {@code null} when any
-     * catalog lookup fails; the caller generates a diagnostic message in that case.
-     */
-    private OrderBySpec.Fixed resolveColumnOrderSpec(GraphQLFieldDefinition fieldDef, String tableSqlName) {
-        var dir = fieldDef.getAppliedDirective(DIR_DEFAULT_ORDER);
-
-        // direction has a default of ASC in the directive; absent arg means ASC.
-        String direction = "ASC";
-        var dirArg = dir.getArgument(ARG_DIRECTION);
-        if (dirArg != null) {
-            Object dirVal = dirArg.getValue();
-            if (dirVal instanceof EnumValue ev) direction = ev.getName();
-            else if (dirVal instanceof String s) direction = s;
-        }
-
-        var entries = resolveOrderEntries(dir, tableSqlName);
-        if (entries == null) return null;
-        return new OrderBySpec.Fixed(entries, direction);
-    }
-
-    /**
-     * Resolves an {@code @order} directive on an enum value into a {@link OrderBySpec.Fixed}.
-     *
-     * <p>The direction is not stored here — it comes from the runtime input object's direction
-     * field and is applied at code-generation time in the {@code *OrderBy} helper method.
-     * Returns {@code null} and appends an error when catalog lookup fails.
-     */
-    private OrderBySpec.Fixed resolveEnumValueOrderSpec(
-            GraphQLEnumValueDefinition ev,
-            String tableSqlName,
-            List<String> errors) {
-        var dir = ev.getAppliedDirective("order");
-        List<OrderBySpec.ColumnOrderEntry> entries;
-        if (dir != null) {
-            entries = resolveOrderEntries(dir, tableSqlName);
-        } else {
-            // @index is a deprecated alias: @index(name: "idx") ≡ @order(index: "idx")
-            var indexDir = ev.getAppliedDirective("index");
-            var nameArg = indexDir != null ? indexDir.getArgument(ARG_NAME) : null;
-            Object nameVal = nameArg != null ? nameArg.getValue() : null;
-            String indexName = nameVal instanceof StringValue sv ? sv.getValue().strip()
-                : nameVal instanceof String s ? s.strip() : null;
-            entries = resolveIndexColumns(tableSqlName, indexName);
-        }
-        if (entries == null) {
-            errors.add("enum value '" + ev.getName() + "': could not resolve @order columns in table '" + tableSqlName + "'");
-            return null;
-        }
-        return new OrderBySpec.Fixed(entries, "ASC");
-    }
-
-    /** Looks up named index columns from the catalog; returns {@code null} when not found. */
-    private List<OrderBySpec.ColumnOrderEntry> resolveIndexColumns(String tableSqlName, String indexName) {
-        if (indexName == null) return null;
-        var colsOpt = ctx.catalog.findIndexColumns(tableSqlName, indexName);
-        if (colsOpt.isEmpty() || colsOpt.get().isEmpty()) return null;
-        return colsOpt.get().stream()
-            .map(ce -> new OrderBySpec.ColumnOrderEntry(new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass()), null))
-            .toList();
-    }
-
-    /**
-     * Resolves the column entries from an {@code @order} or {@code @defaultOrder} directive.
-     *
-     * <p>All three source variants are resolved at build time:
-     * <ul>
-     *   <li>{@code index:} — columns come from the named index via the jOOQ catalog.</li>
-     *   <li>{@code primaryKey:} — columns come from the table's primary key.</li>
-     *   <li>{@code fields:} — each column name is looked up in the table via the jOOQ catalog.</li>
-     * </ul>
-     * Returns {@code null} when any lookup fails (index not found, PK absent, or a column name is
-     * unresolvable). The caller is responsible for generating a diagnostic message.
-     */
-    private List<OrderBySpec.ColumnOrderEntry> resolveOrderEntries(GraphQLAppliedDirective dir, String tableSqlName) {
-        var indexArg = dir.getArgument(ARG_INDEX);
-        if (indexArg != null) {
-            Object indexVal = indexArg.getValue();
-            String indexName = indexVal instanceof StringValue sv ? sv.getValue().strip()
-                : indexVal instanceof String s ? s.strip() : null;
-            if (indexName != null) return resolveIndexColumns(tableSqlName, indexName);
-        }
-
-        var pkArg = dir.getArgument(ARG_PRIMARY_KEY);
-        boolean primaryKey = pkArg != null && (
-            pkArg.getValue() instanceof BooleanValue bv ? bv.isValue()
-            : Boolean.TRUE.equals(pkArg.getValue()));
-        if (primaryKey) {
-            var pkCols = ctx.catalog.findPkColumns(tableSqlName);
-            if (pkCols.isEmpty()) return null;
-            return pkCols.stream()
-                .map(ce -> new OrderBySpec.ColumnOrderEntry(new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass()), null))
-                .toList();
-        }
-
-        var fieldsArg = dir.getArgument(ARG_FIELDS);
-        if (fieldsArg != null) {
-            Object value = fieldsArg.getValue();
-            List<?> items = value instanceof List<?> l ? l : List.of(value);
-            var entries = new ArrayList<OrderBySpec.ColumnOrderEntry>();
-            for (var item : items) {
-                if (!(item instanceof Map)) continue;
-                var map = asMap(item);
-                Object nameRaw = map.get(ARG_NAME);
-                if (nameRaw == null) return null;
-                String colName = nameRaw.toString().strip();
-                String collation = Optional.ofNullable(map.get(ARG_COLLATE)).map(Object::toString).map(String::strip).orElse(null);
-                var ceOpt = ctx.catalog.findColumn(tableSqlName, colName);
-                if (ceOpt.isEmpty()) return null;
-                var ce = ceOpt.get();
-                entries.add(new OrderBySpec.ColumnOrderEntry(new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass()), collation));
-            }
-            return entries;
-        }
-
-        return null;
-    }
-
-    /**
-     * Resolves an {@code @orderBy} argument into an {@link OrderBySpec.Argument}.
-     * Appends to {@code errors} and returns {@code null} when the input type structure is invalid.
-     */
-    private OrderBySpec resolveOrderByArgSpec(GraphQLArgument arg, GraphQLFieldDefinition fieldDef, String tableSqlName, List<String> errors) {
-        String name = arg.getName();
-        GraphQLType type = arg.getType();
-        boolean nonNull = type instanceof GraphQLNonNull;
-        boolean list = GraphQLTypeUtil.unwrapNonNull(type) instanceof GraphQLList;
-        String typeName = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(type)).getName();
-
-        var rawType = ctx.schema.getType(typeName);
-        if (!(rawType instanceof GraphQLInputObjectType inputType)) {
-            errors.add("argument '" + name + "': @orderBy argument type '" + typeName + "' is not an input type");
-            return null;
-        }
-        String sortFieldName = null;
-        String directionFieldName = null;
-        for (var field : inputType.getFieldDefinitions()) {
-            var fieldType = GraphQLTypeUtil.unwrapNonNull(field.getType());
-            if (!(fieldType instanceof GraphQLEnumType enumType)) continue;
-            boolean isSortEnum = enumType.getValues().stream()
-                .anyMatch(v -> v.hasAppliedDirective("order") || v.hasAppliedDirective("index"));
-            if (isSortEnum) {
-                if (sortFieldName != null) {
-                    errors.add("argument '" + name + "': @orderBy input type '" + typeName + "' must have exactly one sort enum field, but found multiple");
-                    return null;
-                }
-                sortFieldName = field.getName();
-            } else {
-                if (directionFieldName != null) {
-                    errors.add("argument '" + name + "': @orderBy input type '" + typeName + "' must have exactly one direction field, but found multiple");
-                    return null;
-                }
-                directionFieldName = field.getName();
-            }
-        }
-        if (sortFieldName == null) {
-            errors.add("argument '" + name + "': @orderBy input type '" + typeName + "' has no sort enum field (no enum values with @order)");
-            return null;
-        }
-        if (directionFieldName == null) {
-            errors.add("argument '" + name + "': @orderBy input type '" + typeName + "' has no direction field");
-            return null;
-        }
-        GraphQLEnumType sortEnum = (GraphQLEnumType) GraphQLTypeUtil.unwrapNonNull(
-            inputType.getFieldDefinition(sortFieldName).getType());
-        var namedOrders = new ArrayList<OrderBySpec.NamedOrder>();
-        for (var value : sortEnum.getValues()) {
-            if (!value.hasAppliedDirective("order") && !value.hasAppliedDirective("index")) continue;
-            OrderBySpec.Fixed order = resolveEnumValueOrderSpec(value, tableSqlName, errors);
-            if (order == null) return null; // error already appended
-            namedOrders.add(new OrderBySpec.NamedOrder(value.getName(), order));
-        }
-        OrderBySpec baseSpec = resolveDefaultOrderSpec(fieldDef, tableSqlName);
-        if (baseSpec == null) return null; // resolveColumnOrderSpec failed; error already appended
-        return new OrderBySpec.Argument(name, typeName, nonNull, list, sortFieldName, directionFieldName,
-            List.copyOf(namedOrders),
-            baseSpec);
-    }
 
     /**
      * Classifies every GraphQL argument on the field into an {@link ArgumentRef} variant in one
@@ -1005,12 +768,12 @@ class FieldBuilder {
             withField.add(fieldCondition);
             filters = List.copyOf(withField);
         }
-        var orderBy = projectOrderBySpec(refs, fieldDef, rt.tableName(), errors);
-        if (orderBy == null) {
-            String msg = !errors.isEmpty() ? String.join("; ", errors)
-                : "could not resolve @defaultOrder columns in table '" + rt.tableName() + "'";
-            return TableFieldComponents.error(msg);
+        var orderByResolved = orderByResolver.resolve(refs, fieldDef, rt.tableName());
+        if (orderByResolved instanceof OrderByResolver.Resolved.Rejected r) {
+            errors.add(r.message());
+            return TableFieldComponents.error(String.join("; ", errors));
         }
+        OrderBySpec orderBy = ((OrderByResolver.Resolved.Ok) orderByResolved).spec();
         var lookupMapping = projectForLookup(refs, rt);
         // LookupField invariant: if any @lookupKey is present, the mapping must be non-empty.
         // ColumnMapping must have at least one arg. (Pre-R50 phase (f-D), a NodeIdMapping arm
@@ -1100,7 +863,7 @@ class FieldBuilder {
      * Projects the classified arguments into a {@link WhereFilter} list for a table-bound field.
      *
      * <p>{@link ArgumentRef.OrderByArg} and {@link ArgumentRef.PaginationArgRef} are skipped
-     * (handled by {@link #projectOrderBySpec} / {@link #projectPaginationSpec}).
+     * (handled by {@link OrderByResolver} / {@link #projectPaginationSpec}).
      * {@link ArgumentRef.UnclassifiedArg} and {@link ArgumentRef.ScalarArg.UnboundArg} add to
      * {@code errors}. For {@link ArgumentRef.InputTypeArg} variants the arg-level, input-field-level
      * {@code @condition} predicates and (for {@code @table} inputs) implicit column-equality
@@ -1120,7 +883,7 @@ class FieldBuilder {
         boolean fieldOverride = fieldCond != null && fieldCond.override();
         for (var ref : refs) {
             switch (ref) {
-                case ArgumentRef.OrderByArg ignored -> {}                     // handled by projectOrderBySpec
+                case ArgumentRef.OrderByArg ignored -> {}                     // handled by OrderByResolver
                 case ArgumentRef.PaginationArgRef ignored -> {}               // handled by projectPaginationSpec
                 case ArgumentRef.InputTypeArg.TableInputArg tia -> {
                     // Arg-level @condition and field-level @condition predicates.
