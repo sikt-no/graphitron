@@ -40,9 +40,11 @@ import java.util.function.Function;
  *   <li>The nested {@code Mapping} taxonomy ({@code ExceptionMapping},
  *       {@code SqlStateMapping}, {@code VendorCodeMapping}, {@code ValidationMapping})
  *       carries the criteria the dispatch arm matches against plus the
- *       {@code (List<String>, String) -> GraphitronError} factory the matching arm
- *       invokes. Each per-channel {@code Mapping[]} constant lives on the per-package
- *       {@code ErrorMappings} helper.</li>
+ *       {@code (List<String>, String) -> Object} factory the matching arm invokes (the
+ *       factory is typed as {@code Object} because the rewrite no longer requires a marker
+ *       supertype on {@code @error} classes; the catch-arm emission narrows to the
+ *       payload's slot type when needed). Each per-channel {@code Mapping[]} constant lives
+ *       on the per-package {@code ErrorMappings} helper.</li>
  * </ul>
  *
  * <p>Spec: {@code error-handling-parity.md} §3, "Drop the custom ExecutionStrategy.
@@ -74,7 +76,13 @@ public final class ErrorRouterClassGenerator {
 
     public static List<TypeSpec> generate(String outputPackage) {
         var schemaPackage = outputPackage.isEmpty() ? "" : outputPackage + ".schema";
-        var graphitronError = ClassName.get(schemaPackage, "GraphitronError");
+        // Mapping.build and the per-mapping factory both return Object: the rewrite no longer
+        // requires a marker supertype on @error classes (the channel-typed slot match in
+        // FieldBuilder.resolveErrorChannel adapts to whichever common element type the
+        // developer's payload constructor declares). The catch-arm emission applies a
+        // narrowing cast at the slot type when the developer typed the slot narrower than
+        // List<?>. See error-handling-parity.md §2c "@error type's Java class contract".
+        var errorReturnType = ClassName.get(Object.class);
         var validationViolation = ClassName.get(schemaPackage, "ValidationViolationGraphQLException");
 
         var typeP = TypeVariableName.get("P");
@@ -82,13 +90,13 @@ public final class ErrorRouterClassGenerator {
         var listOfString = ParameterizedTypeName.get(LIST_CN, STRING_CN);
 
         // Mapping interface: build(path, message), match(throwable), description().
-        var mappingInterface = buildMappingInterface(graphitronError, listOfString);
+        var mappingInterface = buildMappingInterface(errorReturnType, listOfString);
 
         // Concrete Mapping classes.
-        var exceptionMapping = buildExceptionMapping(graphitronError, listOfString);
-        var sqlStateMapping = buildSqlStateMapping(graphitronError, listOfString);
-        var vendorCodeMapping = buildVendorCodeMapping(graphitronError, listOfString);
-        var validationMapping = buildValidationMapping(graphitronError, listOfString);
+        var exceptionMapping = buildExceptionMapping(errorReturnType, listOfString);
+        var sqlStateMapping = buildSqlStateMapping(errorReturnType, listOfString);
+        var vendorCodeMapping = buildVendorCodeMapping(errorReturnType, listOfString);
+        var validationMapping = buildValidationMapping(errorReturnType, listOfString);
 
         // private static final Logger LOGGER = LoggerFactory.getLogger(ErrorRouter.class);
         var loggerField = FieldSpec.builder(LOGGER_CN, "LOGGER",
@@ -115,7 +123,7 @@ public final class ErrorRouterClassGenerator {
             .addCode(redactBody())
             .build();
 
-        var dispatch = buildDispatchMethod(typeP, resultOfP, graphitronError, validationViolation, listOfString);
+        var dispatch = buildDispatchMethod(typeP, resultOfP, errorReturnType, validationViolation, listOfString);
 
         var spec = TypeSpec.classBuilder(CLASS_NAME)
             .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
@@ -127,9 +135,8 @@ public final class ErrorRouterClassGenerator {
                 + "or, in the no-channel case, to a redacted {@code DataFetcherResult} carrying\n"
                 + "only a correlation ID ({@code redact}).\n"
                 + "\n"
-                + "<p>Generated alongside {@code GraphitronError},\n"
-                + "{@code ValidationViolationGraphQLException}, and {@code ErrorMappings};\n"
-                + "preserves the rewrite's no-runtime-jar invariant.\n")
+                + "<p>Generated alongside {@code ValidationViolationGraphQLException} and\n"
+                + "{@code ErrorMappings}; preserves the rewrite's no-runtime-jar invariant.\n")
             .addField(loggerField)
             .addMethod(MethodSpec.constructorBuilder().addModifiers(Modifier.PRIVATE).build())
             .addType(mappingInterface)
@@ -149,10 +156,10 @@ public final class ErrorRouterClassGenerator {
         return generate("");
     }
 
-    private static TypeSpec buildMappingInterface(ClassName graphitronError, ParameterizedTypeName listOfString) {
+    private static TypeSpec buildMappingInterface(ClassName errorReturnType, ParameterizedTypeName listOfString) {
         var build = MethodSpec.methodBuilder("build")
             .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
-            .returns(graphitronError)
+            .returns(errorReturnType)
             .addParameter(listOfString, "path")
             .addParameter(STRING_CN, "message")
             .addJavadoc("Constructs a typed {@code @error} instance from the resolved path/message\n"
@@ -188,18 +195,18 @@ public final class ErrorRouterClassGenerator {
                 + "{@link VendorCodeMapping}) implement {@link #match(Throwable)} against the\n"
                 + "thrown cause; {@link ValidationMapping} is special-cased ahead of source-order\n"
                 + "iteration. All variants delegate {@link #build} to a stored\n"
-                + "{@code (List<String>, String) -> GraphitronError} factory.\n")
+                + "{@code (List<String>, String) -> Object} factory.\n")
             .addMethod(build)
             .addMethod(match)
             .addMethod(description)
             .build();
     }
 
-    private static TypeSpec buildExceptionMapping(ClassName graphitronError, ParameterizedTypeName listOfString) {
+    private static TypeSpec buildExceptionMapping(ClassName errorReturnType, ParameterizedTypeName listOfString) {
         var classOfThrowable = ParameterizedTypeName.get(
             ClassName.get(Class.class), WildcardTypeName.subtypeOf(THROWABLE));
         var factoryType = ParameterizedTypeName.get(ClassName.get(BiFunction.class),
-            listOfString, STRING_CN, graphitronError);
+            listOfString, STRING_CN, errorReturnType);
 
         return TypeSpec.classBuilder(EXCEPTION_MAPPING)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
@@ -239,7 +246,7 @@ public final class ErrorRouterClassGenerator {
             .addMethod(MethodSpec.methodBuilder("build")
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
-                .returns(graphitronError)
+                .returns(errorReturnType)
                 .addParameter(listOfString, "path")
                 .addParameter(STRING_CN, "message")
                 .addStatement("return factory.apply(path, message)")
@@ -253,9 +260,9 @@ public final class ErrorRouterClassGenerator {
             .build();
     }
 
-    private static TypeSpec buildSqlStateMapping(ClassName graphitronError, ParameterizedTypeName listOfString) {
+    private static TypeSpec buildSqlStateMapping(ClassName errorReturnType, ParameterizedTypeName listOfString) {
         var factoryType = ParameterizedTypeName.get(ClassName.get(BiFunction.class),
-            listOfString, STRING_CN, graphitronError);
+            listOfString, STRING_CN, errorReturnType);
 
         return TypeSpec.classBuilder(SQL_STATE_MAPPING)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
@@ -296,7 +303,7 @@ public final class ErrorRouterClassGenerator {
             .addMethod(MethodSpec.methodBuilder("build")
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
-                .returns(graphitronError)
+                .returns(errorReturnType)
                 .addParameter(listOfString, "path")
                 .addParameter(STRING_CN, "message")
                 .addStatement("return factory.apply(path, message)")
@@ -310,9 +317,9 @@ public final class ErrorRouterClassGenerator {
             .build();
     }
 
-    private static TypeSpec buildVendorCodeMapping(ClassName graphitronError, ParameterizedTypeName listOfString) {
+    private static TypeSpec buildVendorCodeMapping(ClassName errorReturnType, ParameterizedTypeName listOfString) {
         var factoryType = ParameterizedTypeName.get(ClassName.get(BiFunction.class),
-            listOfString, STRING_CN, graphitronError);
+            listOfString, STRING_CN, errorReturnType);
 
         return TypeSpec.classBuilder(VENDOR_CODE_MAPPING)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
@@ -353,7 +360,7 @@ public final class ErrorRouterClassGenerator {
             .addMethod(MethodSpec.methodBuilder("build")
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
-                .returns(graphitronError)
+                .returns(errorReturnType)
                 .addParameter(listOfString, "path")
                 .addParameter(STRING_CN, "message")
                 .addStatement("return factory.apply(path, message)")
@@ -367,9 +374,9 @@ public final class ErrorRouterClassGenerator {
             .build();
     }
 
-    private static TypeSpec buildValidationMapping(ClassName graphitronError, ParameterizedTypeName listOfString) {
+    private static TypeSpec buildValidationMapping(ClassName errorReturnType, ParameterizedTypeName listOfString) {
         var factoryType = ParameterizedTypeName.get(ClassName.get(BiFunction.class),
-            listOfString, STRING_CN, graphitronError);
+            listOfString, STRING_CN, errorReturnType);
 
         return TypeSpec.classBuilder(VALIDATION_MAPPING)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
@@ -400,7 +407,7 @@ public final class ErrorRouterClassGenerator {
             .addMethod(MethodSpec.methodBuilder("build")
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
-                .returns(graphitronError)
+                .returns(errorReturnType)
                 .addParameter(listOfString, "path")
                 .addParameter(STRING_CN, "message")
                 .addStatement("return factory.apply(path, message)")
@@ -417,19 +424,19 @@ public final class ErrorRouterClassGenerator {
     private static MethodSpec buildDispatchMethod(
             TypeVariableName typeP,
             ParameterizedTypeName resultOfP,
-            ClassName graphitronError,
+            ClassName errorReturnType,
             ClassName validationViolation,
             ParameterizedTypeName listOfString) {
         var mapping = ClassName.get("", MAPPING_INTERFACE);
         var validationMapping = ClassName.get("", VALIDATION_MAPPING);
         var mappingArray = ArrayTypeName.of(mapping);
-        var listOfErrors = ParameterizedTypeName.get(LIST_CN, WildcardTypeName.subtypeOf(graphitronError));
+        var listOfErrors = ParameterizedTypeName.get(LIST_CN, WildcardTypeName.subtypeOf(errorReturnType));
         var payloadFactoryType = ParameterizedTypeName.get(ClassName.get(Function.class),
             listOfErrors, typeP);
         var arrayListErrors = ParameterizedTypeName.get(ARRAY_LIST,
-            (TypeName) graphitronError);
+            (TypeName) errorReturnType);
         var listErrors = ParameterizedTypeName.get(LIST_CN,
-            (TypeName) graphitronError);
+            (TypeName) errorReturnType);
 
         return MethodSpec.methodBuilder("dispatch")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -496,7 +503,7 @@ public final class ErrorRouterClassGenerator {
                 STRING_CN)
             .addStatement("$T desc = mapping.description()", STRING_CN)
             .addStatement("$T message = desc != null ? desc : t.getMessage()", STRING_CN)
-            .addStatement("$T error = mapping.build(path, message)", graphitronError)
+            .addStatement("$T error = mapping.build(path, message)", errorReturnType)
             .addStatement("return $T.<P>newResult().data(payloadFactory.apply($T.of(error))).build()",
                 DATA_FETCHER_RESULT, LIST_CN)
             .endControlFlow()
