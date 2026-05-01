@@ -125,7 +125,7 @@ class ValuesJoinRowBuilderTest {
             col("title", "TITLE", "java.lang.String"));
         var idxExpr = CodeBlock.of("org.jooq.impl.DSL.inline(i)");
         var s = ValuesJoinRowBuilder.cellsCode(slots, ID, idxExpr, "table",
-            (slot, i) -> CodeBlock.of("v" + i)).toString();
+            (_, i) -> CodeBlock.of("v" + i)).toString();
         assertThat(s)
             .startsWith("org.jooq.impl.DSL.inline(i)")
             .contains("org.jooq.impl.DSL.val(v0, table.FILM_ID.getDataType())")
@@ -139,7 +139,7 @@ class ValuesJoinRowBuilderTest {
         var slots = List.of(col("c1", "C1", "java.lang.Integer"));
         var idxExpr = CodeBlock.of("org.jooq.impl.DSL.val(idx, java.lang.Integer.class)");
         var s = ValuesJoinRowBuilder.cellsCode(slots, ID, idxExpr, "t",
-            (slot, i) -> CodeBlock.of("cols[$L]", i)).toString();
+            (_, i) -> CodeBlock.of("cols[$L]", i)).toString();
         assertThat(s).startsWith("org.jooq.impl.DSL.val(idx, java.lang.Integer.class)");
         assertThat(s).contains("cols[0]");
         assertThat(s).contains("t.C1.getDataType()");
