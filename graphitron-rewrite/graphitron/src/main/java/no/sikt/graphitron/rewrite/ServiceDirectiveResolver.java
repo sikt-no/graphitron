@@ -83,11 +83,13 @@ final class ServiceDirectiveResolver {
     private final BuildContext ctx;
     private final ServiceCatalog svc;
     private final FieldBuilder fb;
+    private final EnumMappingResolver enumMapping;
 
-    ServiceDirectiveResolver(BuildContext ctx, ServiceCatalog svc, FieldBuilder fb) {
+    ServiceDirectiveResolver(BuildContext ctx, ServiceCatalog svc, FieldBuilder fb, EnumMappingResolver enumMapping) {
         this.ctx = ctx;
         this.svc = svc;
         this.fb = fb;
+        this.enumMapping = enumMapping;
     }
 
     /**
@@ -142,7 +144,7 @@ final class ServiceDirectiveResolver {
             return new Resolved.Rejected(RejectionKind.AUTHOR_ERROR,
                 "service method could not be resolved — " + result.failureReason());
         }
-        MethodRef method = fb.enrichArgExtractions(result.ref(), fieldDef);
+        MethodRef method = enumMapping.enrichArgExtractions(result.ref(), fieldDef);
 
         if (isRoot) {
             String invariant = validateRootInvariants(returnType, method);
