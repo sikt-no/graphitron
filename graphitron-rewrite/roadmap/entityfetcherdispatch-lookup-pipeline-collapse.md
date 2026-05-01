@@ -1,7 +1,7 @@
 ---
 id: R55
 title: "Collapse EntityFetcherDispatch per-typeId VALUES emission onto the shared row-builder"
-status: Spec
+status: In Review
 bucket: architecture
 priority: 5
 theme: nodeid
@@ -9,6 +9,20 @@ depends-on: []
 ---
 
 # Collapse EntityFetcherDispatch per-typeId VALUES emission onto the shared row-builder
+
+## Shipped (pending review)
+
+Implementation landed 2026-05-01. Sub-sections below preserved as the design record; the shipped diff matches the design with one minor adjustment noted in *Implementation deviations*.
+
+- New `ValuesJoinRowBuilder` helper at `graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/util/ValuesJoinRowBuilder.java` carries the typed `Row<N+1>` array declaration, per-cell typed value construction, alias-args list, and USING-args list. 14 unit tests at `graphitron/src/test/java/no/sikt/graphitron/rewrite/generators/util/ValuesJoinRowBuilderTest.java` pin arity behaviour, the arity-22 cap, alias args, USING args, and accept both lookup-shape (`DSL.inline(i)`) and dispatcher-shape (`DSL.val(idx, Integer.class)`) idx cells.
+- `LookupValuesJoinEmitter` retains its lookup-specific `Slot` / `RootSource` / `DecodeBinding` records and `slotValueExpr` / decode-args block. Row-array declaration, cells construction, alias args, USING args, and the array/table types all delegate to the helper.
+- `SelectMethodBody` (federated `_entities` + `Query.nodes`) collapsed onto the helper for the same five pieces. Switched `.join(input).on(t.COL.eq(input.field("COL", T.class))…)` to `.join(input).using(<usingArgs>)`. Added `Condition condition = DSL.noCondition()` declared before the join body so the SELECT chain is symmetric with the lookup site (`.where(condition)` is now present in dispatcher SQL; jOOQ folds `noCondition()` away at render time).
+- f-E SQL-shape regression test (`GraphQLQueryTest.nodes_perTypeIdBatch_emitsValuesJoinOrderByIdxShape`) continues to pass; matches `join ` plus `values (` plus `order by` substrings, both `.on(...)` and `.using(...)` render to `join ... using (…)` shape that satisfies the pin.
+
+### Implementation deviations
+
+- **`cellsCode` accepts an `idxCellExpr` parameter**: the spec's helper API listed `cellsCode(slots, valueExpr, tableLocal)` but the two call sites need different idx cells (`DSL.inline(i)` vs `DSL.val(idx, Integer.class)`). Both render to typed `Field<Integer>`; the helper takes the idx-cell expression as an extra `CodeBlock` parameter.
+- **`emitRowArrayDecl` takes `sizeExpr` as a string**: the spec hinted at `int arity` plus `String sizeExpr`. Arity is computed from `slots.size()` inside the helper; only `sizeExpr` ("n", "bindings.size()") needs to vary per caller.
 
 ## Motivation
 
