@@ -144,6 +144,7 @@ class FieldBuilder {
     private final OrderByResolver orderByResolver;
     private final LookupMappingResolver lookupMappingResolver;
     private final PaginationResolver paginationResolver;
+    private final ConditionResolver conditionResolver;
     FieldBuilder(BuildContext ctx, ServiceCatalog svc) {
         this.ctx = ctx;
         this.svc = svc;
@@ -154,6 +155,7 @@ class FieldBuilder {
         this.orderByResolver = new OrderByResolver(ctx);
         this.lookupMappingResolver = new LookupMappingResolver();
         this.paginationResolver = new PaginationResolver();
+        this.conditionResolver = new ConditionResolver(ctx, svc);
     }
 
     // ===== Shared resolution helpers =====
@@ -435,7 +437,14 @@ class FieldBuilder {
             return new ArgumentRef.PaginationArgRef(name, typeName, nonNull, list, role);
         }
 
-        Optional<ArgConditionRef> argCondition = buildArgCondition(arg, errors);
+        Optional<ArgConditionRef> argCondition = switch (conditionResolver.resolveArg(arg)) {
+            case ConditionResolver.ArgConditionResult.None n -> Optional.empty();
+            case ConditionResolver.ArgConditionResult.Ok ok -> Optional.of(ok.ref());
+            case ConditionResolver.ArgConditionResult.Rejected r -> {
+                errors.add(r.message());
+                yield Optional.empty();
+            }
+        };
 
         // Route the arg to an input-shaped classification when the classifier recognises its type
         // as something input-like. TableInputType keeps its dedicated binding resolution.
@@ -644,74 +653,6 @@ class FieldBuilder {
         return List.copyOf(bindings);
     }
 
-    /**
-     * Builds an {@link ArgConditionRef} from a {@code @condition} directive on one GraphQL argument.
-     * Reflects the condition method via {@link ServiceCatalog#reflectTableMethod}, binding the
-     * argument to its same-named Java parameter by default and applying any {@code argMapping}
-     * overrides on the {@code @condition} directive's {@code ExternalCodeReference} (R53).
-     * Declared {@code contextArguments} go in {@code ctxKeys}. {@code @field(name:)} on the
-     * argument is the column-binding axis for the auto-equality path; the two axes coexist on the
-     * same slot. Appends an error and returns {@link Optional#empty()} on reflection failure.
-     */
-    private Optional<ArgConditionRef> buildArgCondition(GraphQLArgument arg, List<String> errors) {
-        var cond = ctx.readConditionDirective(arg);
-        if (cond == null) return Optional.empty();
-        var argName = arg.getName();
-        if (cond.argMappingError() != null) {
-            errors.add("argument '" + argName + "' @condition: " + cond.argMappingError());
-            return Optional.empty();
-        }
-        var bindingResult = ArgBindingMap.of(Set.of(argName), cond.argMapping());
-        if (bindingResult instanceof ArgBindingMap.Result.UnknownArgRef u) {
-            errors.add("argument '" + argName + "' @condition: " + u.message());
-            return Optional.empty();
-        }
-        var argBindings = ((ArgBindingMap.Result.Ok) bindingResult).map();
-        var result = svc.reflectTableMethod(cond.className(), cond.methodName(),
-            argBindings, Set.copyOf(cond.contextArguments()), null);
-        if (result.failed()) {
-            errors.add("argument '" + argName + "' @condition: " + result.failureReason());
-            return Optional.empty();
-        }
-        var methodRef = result.ref();
-        return Optional.of(new ArgConditionRef(
-            new ConditionFilter(methodRef.className(), methodRef.methodName(), methodRef.params()),
-            cond.override()));
-    }
-
-    /**
-     * Builds a field-level {@link ConditionFilter} from a {@code @condition} directive on the
-     * field definition. Reflects via {@link ServiceCatalog#reflectTableMethod}, binding every
-     * field argument to its same-named Java parameter by default and applying any
-     * {@code argMapping} overrides on the {@code @condition} directive's
-     * {@code ExternalCodeReference} (R53). Declared {@code contextArguments} go in
-     * {@code ctxKeys}. {@code @field(name:)} on filter arguments is the column-binding axis;
-     * the two axes coexist on the same slot. Returns {@code null} when the directive is absent
-     * or reflection fails (error appended).
-     */
-    private ConditionFilter buildFieldCondition(GraphQLFieldDefinition fieldDef, List<String> errors) {
-        var cond = ctx.readConditionDirective(fieldDef);
-        if (cond == null) return null;
-        if (cond.argMappingError() != null) {
-            errors.add("field '" + fieldDef.getName() + "' @condition: " + cond.argMappingError());
-            return null;
-        }
-        var bindingResult = ArgBindingMap.of(fieldArgumentNames(fieldDef), cond.argMapping());
-        if (bindingResult instanceof ArgBindingMap.Result.UnknownArgRef u) {
-            errors.add("field '" + fieldDef.getName() + "' @condition: " + u.message());
-            return null;
-        }
-        var argBindings = ((ArgBindingMap.Result.Ok) bindingResult).map();
-        var result = svc.reflectTableMethod(cond.className(), cond.methodName(),
-            argBindings, Set.copyOf(cond.contextArguments()), null);
-        if (result.failed()) {
-            errors.add("field '" + fieldDef.getName() + "' @condition: " + result.failureReason());
-            return null;
-        }
-        var methodRef = result.ref();
-        return new ConditionFilter(methodRef.className(), methodRef.methodName(), methodRef.params());
-    }
-
     private ArgumentRef classifyOrderByArg(GraphQLArgument arg, String name, String typeName,
                                            boolean nonNull, boolean list, List<String> errors) {
         var rawType = ctx.schema.getType(typeName);
@@ -762,9 +703,14 @@ class FieldBuilder {
                                                   TableRef rt, String returnTypeName, List<String> errors) {
         var filters = projectFilters(refs, fieldDef, rt, returnTypeName, errors);
         if (filters == null) return TableFieldComponents.error(String.join("; ", errors));
-        var fieldCondition = buildFieldCondition(fieldDef, errors);
-        if (!errors.isEmpty() && fieldCondition == null && fieldDef.hasAppliedDirective(DIR_CONDITION)) {
-            return TableFieldComponents.error(String.join("; ", errors));
+        ConditionFilter fieldCondition;
+        switch (conditionResolver.resolveField(fieldDef)) {
+            case ConditionResolver.FieldConditionResult.None n -> fieldCondition = null;
+            case ConditionResolver.FieldConditionResult.Ok ok -> fieldCondition = ok.filter();
+            case ConditionResolver.FieldConditionResult.Rejected r -> {
+                errors.add(r.message());
+                return TableFieldComponents.error(String.join("; ", errors));
+            }
         }
         if (fieldCondition != null) {
             var withField = new ArrayList<>(filters);
@@ -948,7 +894,7 @@ class FieldBuilder {
             leafPath.add(f.name());
             switch (f) {
                 case InputField.ColumnField cf -> {
-                    cf.condition().ifPresent(c -> out.add(rewrapForNested(c.filter(), outerArgName, leafPath)));
+                    cf.condition().ifPresent(c -> out.add(conditionResolver.rewrapForNested(c.filter(), outerArgName, leafPath)));
                     if (implicitBodyParams != null && !enclosingOverride
                             && cf.condition().isEmpty()
                             && !lookupBoundNames.contains(cf.name())) {
@@ -961,7 +907,7 @@ class FieldBuilder {
                     }
                 }
                 case InputField.ColumnReferenceField rf -> {
-                    rf.condition().ifPresent(c -> out.add(rewrapForNested(c.filter(), outerArgName, leafPath)));
+                    rf.condition().ifPresent(c -> out.add(conditionResolver.rewrapForNested(c.filter(), outerArgName, leafPath)));
                     if (implicitBodyParams != null && !enclosingOverride
                             && rf.condition().isEmpty()
                             && !lookupBoundNames.contains(rf.name())) {
@@ -971,14 +917,14 @@ class FieldBuilder {
                     }
                 }
                 case InputField.NestingField nf -> {
-                    nf.condition().ifPresent(c -> out.add(rewrapForNested(c.filter(), outerArgName, leafPath)));
+                    nf.condition().ifPresent(c -> out.add(conditionResolver.rewrapForNested(c.filter(), outerArgName, leafPath)));
                     boolean nestOverride = enclosingOverride
                         || nf.condition().map(ArgConditionRef::override).orElse(false);
                     walkInputFieldConditions(nf.fields(), outerArgName, leafPath,
                         nestOverride, lookupBoundNames, implicitBodyParams, out);
                 }
                 case InputField.CompositeColumnField ccf -> {
-                    ccf.condition().ifPresent(c -> out.add(rewrapForNested(c.filter(), outerArgName, leafPath)));
+                    ccf.condition().ifPresent(c -> out.add(conditionResolver.rewrapForNested(c.filter(), outerArgName, leafPath)));
                     if (implicitBodyParams != null && !enclosingOverride
                             && ccf.condition().isEmpty()
                             && !lookupBoundNames.contains(ccf.name())) {
@@ -988,7 +934,7 @@ class FieldBuilder {
                     }
                 }
                 case InputField.CompositeColumnReferenceField ccrf -> {
-                    ccrf.condition().ifPresent(c -> out.add(rewrapForNested(c.filter(), outerArgName, leafPath)));
+                    ccrf.condition().ifPresent(c -> out.add(conditionResolver.rewrapForNested(c.filter(), outerArgName, leafPath)));
                     if (implicitBodyParams != null && !enclosingOverride
                             && ccrf.condition().isEmpty()
                             && !lookupBoundNames.contains(ccrf.name())) {
@@ -1043,28 +989,6 @@ class FieldBuilder {
         return list
             ? new BodyParam.RowIn(fieldName, columns, javaType, nonNull, nested)
             : new BodyParam.RowEq(fieldName, columns, javaType, nonNull, nested);
-    }
-
-    /**
-     * Rebuilds a {@link ConditionFilter} whose {@link ParamSource.Arg} params need to be extracted
-     * from a nested position inside the enclosing input argument Map rather than from a top-level
-     * argument. Each {@code Arg} param's {@link CallSiteExtraction} is replaced with a
-     * {@link CallSiteExtraction.NestedInputField} carrying the path down from {@code outerArgName}
-     * to the leaf value. {@link ParamSource.Context} params and implicit
-     * {@link ParamSource.Table} params are left untouched.
-     */
-    private ConditionFilter rewrapForNested(ConditionFilter src, String outerArgName, List<String> leafPath) {
-        var rewritten = new ArrayList<MethodRef.Param>();
-        for (var p : src.params()) {
-            if (p.source() instanceof ParamSource.Arg arg) {
-                rewritten.add(new MethodRef.Param.Typed(p.name(), p.typeName(),
-                    new ParamSource.Arg(new CallSiteExtraction.NestedInputField(outerArgName, leafPath),
-                        arg.graphqlArgName())));
-            } else {
-                rewritten.add(p);
-            }
-        }
-        return new ConditionFilter(src.className(), src.methodName(), List.copyOf(rewritten));
     }
 
     /**
@@ -1985,9 +1909,12 @@ class FieldBuilder {
             if (!bindingErrors.isEmpty()) {
                 return new MutationInputResult(null, String.join("; ", bindingErrors));
             }
-            Optional<ArgConditionRef> argCondition = buildArgCondition(arg, bindingErrors);
-            if (!bindingErrors.isEmpty()) {
-                return new MutationInputResult(null, String.join("; ", bindingErrors));
+            Optional<ArgConditionRef> argCondition;
+            switch (conditionResolver.resolveArg(arg)) {
+                case ConditionResolver.ArgConditionResult.None n -> argCondition = Optional.empty();
+                case ConditionResolver.ArgConditionResult.Ok ok -> argCondition = Optional.of(ok.ref());
+                case ConditionResolver.ArgConditionResult.Rejected r ->
+                    { return new MutationInputResult(null, r.message()); }
             }
             var tia = new ArgumentRef.InputTypeArg.TableInputArg(
                 argName, argTypeName, nonNull, list, tit.table(), bindings, argCondition, tit.inputFields());
