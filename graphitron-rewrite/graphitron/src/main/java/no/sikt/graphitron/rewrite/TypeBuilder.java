@@ -329,11 +329,13 @@ class TypeBuilder {
             if (objType.hasAppliedDirective(DIR_TABLE)) {
                 return buildTableType(objType);
             }
-            if (objType.hasAppliedDirective(DIR_RECORD)) {
-                return buildResultType(objType, name, location);
-            }
+            // @error wins over @record when both are co-located: the @record(record: {className: ...})
+            // names the @error type's developer-supplied backing class, which buildErrorType reads.
             if (objType.hasAppliedDirective(DIR_ERROR)) {
                 return buildErrorType(objType);
+            }
+            if (objType.hasAppliedDirective(DIR_RECORD)) {
+                return buildResultType(objType, name, location);
             }
             // Plain SDL object type — no domain directive. Record it in the model so
             // emitters can iterate schema.types() without an assembled-schema fallback.
@@ -618,11 +620,93 @@ class TypeBuilder {
             if (h != null) handlers.add(h);
         }
 
+        // Co-located @record(record: {className: ...}) names the developer-supplied Java class
+        // that backs this @error type. Resolution mirrors @record on result types
+        // (see buildResultType): className is reflected on the classifier classpath, the class
+        // must declare a (List<String> path, String message) constructor, and a missing or
+        // wrong-shape class is reported as UnclassifiedType. The slot is Optional.empty() when
+        // no @record is co-located, leaving downstream consumers (the marker-interface check,
+        // the payload-factory call site) to handle the absent case.
+        Optional<String> classFqn = Optional.empty();
+        var recordDir = objType.getAppliedDirective(DIR_RECORD);
+        if (recordDir != null) {
+            var recordArg = recordDir.getArgument(ARG_RECORD);
+            if (recordArg != null && recordArg.getValue() != null) {
+                Map<String, Object> ref = asMap(recordArg.getValue());
+                String className = Optional.ofNullable(ref.get(ARG_CLASS_NAME))
+                    .map(Object::toString)
+                    .orElse(null);
+                if (className != null) {
+                    String ctorReason = validatePathMessageConstructor(className);
+                    if (ctorReason != null) {
+                        rejectReasons.add(ctorReason);
+                    } else {
+                        classFqn = Optional.of(className);
+                    }
+                }
+            }
+        }
+
         if (!rejectReasons.isEmpty()) {
             return new UnclassifiedType(name, location,
                 "@error type rejected: " + String.join("; ", rejectReasons));
         }
-        return new ErrorType(name, location, List.copyOf(handlers));
+        return new ErrorType(name, location, List.copyOf(handlers), classFqn);
+    }
+
+    /**
+     * Reflects the developer-supplied {@code @error} backing class and verifies it exposes the
+     * canonical {@code (List<String> path, String message)} constructor that the
+     * {@code ErrorRouter.Mapping.build} call site (and the validation fan-out) invokes at
+     * runtime. Returns a non-null reason string when the class cannot be loaded or no matching
+     * constructor exists; returns {@code null} on success.
+     *
+     * <p>Mirrors the {@link Class#forName} reflection block in {@link #buildResultType} for
+     * {@code @record} on result types. The check is a producer-side guarantee for the
+     * load-bearing classifier check {@code error-type.path-message-fields}: schemas that ship
+     * past classification have a working constructor on every {@code @error} class, so the
+     * generated {@code new SomeError(path, msg)} call site is sound by construction.
+     */
+    private static String validatePathMessageConstructor(String className) {
+        Class<?> cls;
+        try {
+            cls = Class.forName(className);
+        } catch (ClassNotFoundException e) {
+            return "@error backing class '" + className + "' could not be loaded";
+        }
+        for (var ctor : cls.getDeclaredConstructors()) {
+            var paramTypes = ctor.getParameterTypes();
+            if (paramTypes.length != 2) continue;
+            if (paramTypes[0] != List.class) continue;
+            if (paramTypes[1] != String.class) continue;
+            var generic = ctor.getGenericParameterTypes();
+            if (generic[0] instanceof java.lang.reflect.ParameterizedType pt) {
+                var args = pt.getActualTypeArguments();
+                if (args.length != 1) continue;
+                Class<?> elemClass = elementClass(args[0]);
+                if (elemClass != String.class) continue;
+            } else {
+                // Raw List parameter — accept it; the runtime call site passes a
+                // List<String> and the type system erases to the same.
+            }
+            return null;
+        }
+        return "@error backing class '" + className
+            + "' must declare a (List<String> path, String message) constructor; "
+            + "the runtime payload-factory call site calls "
+            + "new " + cls.getSimpleName() + "(path, message) at dispatch time";
+    }
+
+    private static Class<?> elementClass(java.lang.reflect.Type t) {
+        if (t instanceof Class<?> c) return c;
+        if (t instanceof java.lang.reflect.WildcardType wt) {
+            var upper = wt.getUpperBounds();
+            return upper.length > 0 ? elementClass(upper[0]) : null;
+        }
+        if (t instanceof java.lang.reflect.ParameterizedType pt) {
+            return elementClass(pt.getRawType());
+        }
+        return null;
     }
 
     private static boolean isStringNonNull(GraphQLType type) {
@@ -945,16 +1029,29 @@ class TypeBuilder {
     // ===== Conflict detection =====
 
     /**
-     * Returns a reason string when {@code @table}, {@code @record}, and/or {@code @error} appear
-     * together on one type, or {@code null} when at most one is present.
+     * Returns a reason string when mutually exclusive type-classification directives appear
+     * together on one OBJECT, or {@code null} when the combination is allowed.
+     *
+     * <p>The pairs {@code @table + @record} and {@code @table + @error} remain mutually
+     * exclusive: a {@code @table}-bound object resolves columns from jOOQ metadata, which
+     * cannot coexist with the developer-supplied class binding the other two directives
+     * imply. {@code @record + @error} is intentionally permitted: an {@code @error} type's
+     * backing class is named through a co-located {@code @record(record: {className: ...})},
+     * so {@link #buildErrorType} can read the class FQN through the same parse path
+     * {@link #buildResultType} uses for result types.
      */
     private static String detectTypeDirectiveConflict(GraphQLObjectType objType) {
-        var present = List.of(DIR_TABLE, DIR_RECORD, DIR_ERROR).stream()
-            .filter(objType::hasAppliedDirective)
-            .toList();
-        if (present.size() <= 1) return null;
-        return present.stream().map(d -> "@" + d).collect(java.util.stream.Collectors.joining(", "))
-            + " are mutually exclusive";
+        boolean hasTable = objType.hasAppliedDirective(DIR_TABLE);
+        boolean hasRecord = objType.hasAppliedDirective(DIR_RECORD);
+        boolean hasError = objType.hasAppliedDirective(DIR_ERROR);
+        if (hasTable && (hasRecord || hasError)) {
+            var present = new java.util.ArrayList<String>();
+            present.add("@" + DIR_TABLE);
+            if (hasRecord) present.add("@" + DIR_RECORD);
+            if (hasError) present.add("@" + DIR_ERROR);
+            return String.join(", ", present) + " are mutually exclusive";
+        }
+        return null;
     }
 
     // ===== Structural helpers =====

@@ -195,11 +195,21 @@ public sealed interface GraphitronType
      * <p>{@code handlers} holds one {@link Handler} per entry in the {@code handlers}
      * argument of the {@code @error} directive, lifted into the variant whose discriminator
      * the matcher keys off (exception class identity, SQL state, vendor code, validation kind).
+     *
+     * <p>{@code classFqn} carries the developer-supplied Java class backing this error type.
+     * The class is named through a co-located {@code @record(record: {className: ...})}
+     * directive on the same OBJECT and resolved at classify time. The class must expose a
+     * canonical {@code (List<String> path, String message)} constructor; the reflection check
+     * lives in {@link no.sikt.graphitron.rewrite.TypeBuilder#buildErrorType} and rejects
+     * mismatches as {@link UnclassifiedType}. {@link Optional#empty()} when no
+     * {@code @record} is co-located, leaving the marker-interface check and the
+     * payload-factory call site to read the slot when a class has been declared.
      */
     record ErrorType(
         String name,
         SourceLocation location,
-        List<Handler> handlers
+        List<Handler> handlers,
+        Optional<String> classFqn
     ) implements GraphitronType {
 
         /**
