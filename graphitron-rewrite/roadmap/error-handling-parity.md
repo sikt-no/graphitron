@@ -223,8 +223,31 @@ dispatch arm lands.
 - `ErrorRouter.redact` emitted via `ErrorRouterClassGenerator` at
   `<outputPackage>.schema.ErrorRouter`; logs the original throw under a fresh UUID
   correlation ID and returns a `DataFetcherResult` carrying only the correlation ID.
-  `dispatch` lands with `ErrorMappings` and the sealed `Mapping` taxonomy in the
-  channel-detection phase.
+- `ErrorRouter.dispatch` arm + nested `Mapping` taxonomy (§3): `Mapping` interface
+  with `build(path, message)`, `match(throwable)`, `description()`; four concrete
+  implementations (`ExceptionMapping`, `SqlStateMapping`, `VendorCodeMapping`,
+  `ValidationMapping`) carrying the per-variant criteria and a
+  `BiFunction<List<String>, String, GraphitronError>` factory. The dispatch method
+  walks the cause chain twice: a validation arm scans for
+  `ValidationViolationGraphQLException` and either fans out through a
+  `ValidationMapping` (typed instance per underlying error) or attaches the carried
+  `GraphQLError`s verbatim, ahead of source-order iteration; the regular arm walks
+  each mapping outermost-first per the `findFirst` contract and falls through to
+  `redact` on no match. Path coercion uses
+  `getExecutionStepInfo().getPath().toList().stream().map(String::valueOf).toList()`
+  so list-index segments stringify correctly.
+- `ErrorMappings` helper emitted via `ErrorMappingsClassGenerator` at
+  `<outputPackage>.schema.ErrorMappings`: walks every classified `WithErrorChannel`
+  field, groups by `ErrorChannel.mappingsConstantName`, and emits one
+  `public static final ErrorRouter.Mapping[]` constant per distinct channel.
+  Identical channels (same payload class + same flattened handler list) share a
+  constant; same-name channels with different handler lists throw an
+  `IllegalStateException` pointing at the §3 hash-suffix follow-up. `@error` types
+  whose `classFqn` is empty are silently skipped (no factory available); the
+  remaining handlers continue to emit. `FieldBuilder.resolveErrorChannel` wears
+  `@LoadBearingClassifierCheck(key = "error-channel.mappings-constant")`;
+  `ErrorMappingsClassGenerator.generate` carries the matching
+  `@DependsOnClassifierCheck`.
 - `GraphitronError` marker interface emitted via `GraphitronErrorInterfaceGenerator`.
 - `ValidationViolationGraphQLException` emitted via
   `ValidationViolationGraphQLExceptionGenerator`.
@@ -235,15 +258,23 @@ dispatch arm lands.
   variants per §1's table; the nine reject rules (intra-type and channel-level,
   including the validation-shadowing rule and the `path`/`message`-only structural
   rule) fire as `UnclassifiedType` / `UnclassifiedField`.
-- Per-package `ErrorMappings` helper emitted at `<outputPackage>.schema.ErrorMappings`
-  (§3); `ErrorRouter.dispatch` arm + sealed `Mapping` taxonomy.
 - Try/catch wrapper on every fetcher body (channel → `ErrorRouter.dispatch`; no channel
-  → `ErrorRouter.redact`); `.exceptionally(...)` on async fetchers.
-- `ValidationHandler` fan-out arm in `ErrorRouter.dispatch` (§5); the
-  `CustomSchemaBasedErrorStrategy` consumer subclass and `ExceptionHandlingBuilder`
-  wiring go away in `graphitron-test`.
+  → `ErrorRouter.redact`); `.exceptionally(...)` on async fetchers. `ErrorMappings`
+  and the dispatch infrastructure are in place (`Mapping[]` constants, validation
+  fan-out arm, source-order match loop), pending the catch-arm emission.
 - `@service` / `@tableMethod` declared checked exceptions checked against the field's
   `ErrorChannel` and routed through the same `ErrorRouter.dispatch` (§4).
+- Marker-interface enforcement: every `@error` class implements `GraphitronError`.
+- `CustomSchemaBasedErrorStrategy` consumer subclass and `ExceptionHandlingBuilder`
+  wiring go away in `graphitron-test` once the catch-arm emission lands.
+- `@error` SDL → backing class lookup beyond the temporary `@record` co-location
+  path: a dedicated lookup so consumers don't need to spell out the `@record` directive
+  on every `@error` type (and so the dispatch arm has factories for every `@error`
+  type, not only the co-located ones).
+- §3 hash-suffix dedup for distinct channels that collide on the same payload-class
+  base name: produce `FILM_PAYLOAD_A1B2C3D4` instead of throwing the
+  collision-detected exception. No production fixture exercises this today; ship when
+  needed.
 - [`checked-exceptions-typed-errors.md`](checked-exceptions-typed-errors.md) is
   deleted when this lands.
 

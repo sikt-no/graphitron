@@ -1789,6 +1789,14 @@ class FieldBuilder {
      * {@code GraphitronError}) lands later in error-handling-parity.md alongside the SDL→class
      * lookup for {@code @error} types.
      */
+    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
+        key = "error-channel.mappings-constant",
+        description = "Every classified ErrorChannel carries a non-null mappingsConstantName "
+            + "derived from the payload class's simple name (toScreamingSnake). The "
+            + "ErrorMappingsClassGenerator groups channels by this name so identical channels "
+            + "share one Mapping[] constant; collisions on the same constant with different "
+            + "handler shapes are rejected at emission time. The §3 hash-suffix dedup is a "
+            + "follow-up addition.")
     private ErrorChannelResult resolveErrorChannel(ReturnTypeRef returnType) {
         // Channel detection runs against @record payloads; @table payloads can in principle
         // carry an errors field too, but synthesizing a payload-factory there requires shape
