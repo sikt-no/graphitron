@@ -20,8 +20,6 @@ import graphql.schema.GraphQLType;
 import graphql.schema.GraphQLTypeUtil;
 import graphql.schema.GraphQLUnionType;
 import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.javapoet.ParameterizedTypeName;
-import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ChildField.ColumnField;
@@ -150,14 +148,14 @@ class FieldBuilder {
 
     private final BuildContext ctx;
     private final ServiceCatalog svc;
+    private final ServiceDirectiveResolver serviceResolver;
     FieldBuilder(BuildContext ctx, ServiceCatalog svc) {
         this.ctx = ctx;
         this.svc = svc;
+        this.serviceResolver = new ServiceDirectiveResolver(ctx, svc, this);
     }
 
     // ===== Shared resolution helpers =====
-
-    private record ServiceResolution(MethodRef method, ReturnTypeRef returnType, String error) {}
 
     /**
      * Extracts the {@link BatchKey} from the first {@link MethodRef.Param.Sourced} parameter of the
@@ -172,116 +170,6 @@ class FieldBuilder {
             .map(p -> ((MethodRef.Param.Sourced) p).batchKey())
             .findFirst()
             .orElse(null);
-    }
-
-    /**
-     * Resolves the {@code @service} directive on a field: unwraps connection types, parses the
-     * external reference, reflects the service method, and returns the resolved method + return type.
-     * Returns a non-null {@code error} when resolution fails.
-     *
-     * <p>{@code parentPkColumns} is forwarded to {@link ServiceCatalog#reflectServiceMethod} for
-     * batch-key classification. Pass {@link List#of()} for root fields and result-type children
-     * (no parent table); pass the parent table's primary-key columns for table-type children.
-     */
-    private ServiceResolution resolveServiceField(String parentTypeName, GraphQLFieldDefinition fieldDef, List<ColumnRef> parentPkColumns) {
-        String rawTypeName = baseTypeName(fieldDef);
-        String elementTypeName = ctx.isConnectionType(rawTypeName) ? ctx.connectionElementTypeName(rawTypeName) : rawTypeName;
-        ReturnTypeRef returnType = ctx.resolveReturnType(elementTypeName, buildWrapper(fieldDef));
-        ExternalRef serviceRef = parseExternalRef(parentTypeName, fieldDef, DIR_SERVICE, ARG_SERVICE_REF);
-        if (serviceRef != null && serviceRef.lookupError() != null) {
-            return new ServiceResolution(null, null, "service method could not be resolved — " + serviceRef.lookupError());
-        }
-        if (serviceRef != null && serviceRef.argMappingError() != null) {
-            return new ServiceResolution(null, null, "service method could not be resolved — @service " + serviceRef.argMappingError());
-        }
-        List<String> contextArgs = parseContextArguments(fieldDef, DIR_SERVICE);
-        var graphqlArgNames = fieldArgumentNames(fieldDef);
-        var argMapping = serviceRef != null ? serviceRef.argMapping() : Map.<String, String>of();
-        var argBindingsResult = ArgBindingMap.of(graphqlArgNames, argMapping);
-        if (argBindingsResult instanceof ArgBindingMap.Result.UnknownArgRef u) {
-            return new ServiceResolution(null, null, "service method could not be resolved — @service " + u.message());
-        }
-        var argBindings = ((ArgBindingMap.Result.Ok) argBindingsResult).map();
-        // Strict return-type validation applies to root @service fields only (parentPkColumns empty).
-        // Child @service uses DataLoader-batched semantics where the method takes Sources keys and
-        // returns a flat or keyed shape that doesn't directly match the field's return type — that
-        // shape is the child-service plan's concern. Root fields hand the value straight to graphql-
-        // java, so the framework needs to know its specific shape.
-        TypeName expectedReturnType = parentPkColumns.isEmpty()
-            ? computeExpectedServiceReturnType(returnType)
-            : null;
-        var result = svc.reflectServiceMethod(serviceRef.className(), serviceRef.methodName(),
-            argBindings, new java.util.HashSet<>(contextArgs), parentPkColumns, expectedReturnType);
-        if (result.failed()) {
-            return new ServiceResolution(null, null, "service method could not be resolved — " + result.failureReason());
-        }
-        return new ServiceResolution(enrichArgExtractions(result.ref(), fieldDef), returnType, null);
-    }
-
-    /**
-     * Computes the expected return type that a {@code @service} method must declare, as a
-     * structured javapoet {@link TypeName}. Returns {@code null} when no strict validation
-     * is applicable (the caller treats the actual reflection-captured return type as truth).
-     *
-     * <ul>
-     *   <li>{@code TableBoundReturnType} + Single → {@code <jooqPackage>.tables.records.<TableName>Record}</li>
-     *   <li>{@code TableBoundReturnType} + List → {@code org.jooq.Result<<RecordFqcn>>}</li>
-     *   <li>{@code ResultReturnType} (with non-null fqClassName) + Single → {@code <fqClassName>}</li>
-     *   <li>{@code ResultReturnType} (with non-null fqClassName) + List → {@code java.util.List<<fqClassName>>}</li>
-     *   <li>{@code ResultReturnType} (null fqClassName) → null</li>
-     *   <li>{@code ScalarReturnType} → null (graphql-java's scalar coercion handles type matching)</li>
-     *   <li>{@code PolymorphicReturnType} → null (rejected separately)</li>
-     * </ul>
-     *
-     * <p>Connection-cardinality cases are unreachable here because {@code @service} +
-     * {@code Connection} is rejected at Invariants §1 before this helper runs.
-     */
-    private TypeName computeExpectedServiceReturnType(ReturnTypeRef returnType) {
-        // Connection-cardinality is rejected by Invariants §1 downstream of this helper; skip the
-        // return-type check here so the §1 message fires (rather than masking it with a
-        // less-specific return-type mismatch).
-        if (returnType.wrapper() instanceof FieldWrapper.Connection) return null;
-        boolean isList = returnType.wrapper().isList();
-        return switch (returnType) {
-            case ReturnTypeRef.TableBoundReturnType tb -> {
-                ClassName recordCls = ClassName.get(
-                    ctx.ctx().jooqPackage() + ".tables.records",
-                    tb.table().javaClassName() + "Record");
-                yield isList
-                    ? ParameterizedTypeName.get(ClassName.get("org.jooq", "Result"), recordCls)
-                    : recordCls;
-            }
-            case ReturnTypeRef.ResultReturnType r -> {
-                if (r.fqClassName() == null) yield null;
-                ClassName resultCls = ClassName.bestGuess(r.fqClassName());
-                yield isList
-                    ? ParameterizedTypeName.get(ClassName.get("java.util", "List"), resultCls)
-                    : resultCls;
-            }
-            case ReturnTypeRef.ScalarReturnType ignored -> null;
-            case ReturnTypeRef.PolymorphicReturnType ignored -> null;
-        };
-    }
-
-    /**
-     * Shared invariant check for root {@code @service} fields (both Query and Mutation arms).
-     * Returns a non-null reason string when the resolved {@link ServiceResolution} violates an
-     * invariant, {@code null} otherwise.
-     *
-     * <ul>
-     *   <li>§1: {@link FieldWrapper.Connection} return type — root has no pagination context.</li>
-     *   <li>§2: {@link ParamSource.Sources} parameter — root has no parent context to batch
-     *       against.</li>
-     * </ul>
-     */
-    private static String validateRootServiceInvariants(ServiceResolution svcResult) {
-        if (svcResult.returnType().wrapper() instanceof FieldWrapper.Connection) {
-            return "@service at the root does not support Connection return types — use [T] or T instead";
-        }
-        if (svcResult.method().params().stream().anyMatch(p -> p.source() instanceof ParamSource.Sources)) {
-            return "@service at the root does not support List<Row>/List<Record>/List<Object> batch parameters — the root has no parent context to batch against";
-        }
-        return null;
     }
 
     private record TableFieldComponents(List<WhereFilter> filters, OrderBySpec orderBy, PaginationSpec pagination,
@@ -480,7 +368,7 @@ class FieldBuilder {
      *       connection from the schema transform or hand-written).</li>
      * </ol>
      */
-    private FieldWrapper buildWrapper(GraphQLFieldDefinition fieldDef) {
+    FieldWrapper buildWrapper(GraphQLFieldDefinition fieldDef) {
         GraphQLType fieldType = fieldDef.getType();
         boolean outerNullable = !(fieldType instanceof GraphQLNonNull);
         GraphQLType unwrappedOnce = GraphQLTypeUtil.unwrapNonNull(fieldType);
@@ -1687,7 +1575,7 @@ class FieldBuilder {
      * author named it {@code errors} or something else. See {@code error-handling-parity.md}
      * §2a / §2b for the lift rules and the gating-on-all-{@code @error} predicate.
      */
-    private GraphitronField liftToErrorsField(GraphQLFieldDefinition fieldDef, String parentTypeName,
+    GraphitronField liftToErrorsField(GraphQLFieldDefinition fieldDef, String parentTypeName,
                                               ReturnTypeRef.PolymorphicReturnType returnType) {
         String name = fieldDef.getName();
         SourceLocation location = locationOf(fieldDef);
@@ -2205,30 +2093,19 @@ class FieldBuilder {
         }
 
         if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
-            var svcResult = resolveServiceField(parentTypeName, fieldDef, List.of());
-            if (svcResult.error() != null) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, svcResult.error());
-            }
-            String invariant = validateRootServiceInvariants(svcResult);
-            if (invariant != null) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.INVALID_SCHEMA, invariant);
-            }
-            return switch (svcResult.returnType()) {
-                case ReturnTypeRef.TableBoundReturnType tb ->
-                    buildWithChannel(tb, parentTypeName, name, location, fieldDef, ch ->
-                        new QueryField.QueryServiceTableField(parentTypeName, name, location, tb, svcResult.method(), ch));
-                case ReturnTypeRef.ResultReturnType r ->
-                    buildWithChannel(r, parentTypeName, name, location, fieldDef, ch ->
-                        new QueryField.QueryServiceRecordField(parentTypeName, name, location, r, svcResult.method(), ch));
-                case ReturnTypeRef.ScalarReturnType s ->
-                    buildWithChannel(s, parentTypeName, name, location, fieldDef, ch ->
-                        new QueryField.QueryServiceRecordField(parentTypeName, name, location, s, svcResult.method(), ch));
-                case ReturnTypeRef.PolymorphicReturnType p -> {
-                    var lift = liftToErrorsField(fieldDef, parentTypeName, p);
-                    yield lift != null ? lift
-                        : new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.DEFERRED,
-                            "@service returning a polymorphic type is not yet supported");
-                }
+            return switch (serviceResolver.resolve(parentTypeName, fieldDef, List.of())) {
+                case ServiceDirectiveResolver.Resolved.Rejected r ->
+                    new UnclassifiedField(parentTypeName, name, location, fieldDef, r.kind(), r.message());
+                case ServiceDirectiveResolver.Resolved.ErrorsLifted e -> e.field();
+                case ServiceDirectiveResolver.Resolved.TableBound tb ->
+                    buildWithChannel(tb.returnType(), parentTypeName, name, location, fieldDef, ch ->
+                        new QueryField.QueryServiceTableField(parentTypeName, name, location, tb.returnType(), tb.method(), ch));
+                case ServiceDirectiveResolver.Resolved.Result r ->
+                    buildWithChannel(r.returnType(), parentTypeName, name, location, fieldDef, ch ->
+                        new QueryField.QueryServiceRecordField(parentTypeName, name, location, r.returnType(), r.method(), ch));
+                case ServiceDirectiveResolver.Resolved.Scalar s ->
+                    buildWithChannel(s.returnType(), parentTypeName, name, location, fieldDef, ch ->
+                        new QueryField.QueryServiceRecordField(parentTypeName, name, location, s.returnType(), s.method(), ch));
             };
         }
 
@@ -2352,30 +2229,19 @@ class FieldBuilder {
         }
 
         if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
-            var svcResult = resolveServiceField(parentTypeName, fieldDef, List.of());
-            if (svcResult.error() != null) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, svcResult.error());
-            }
-            String invariant = validateRootServiceInvariants(svcResult);
-            if (invariant != null) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.INVALID_SCHEMA, invariant);
-            }
-            return switch (svcResult.returnType()) {
-                case ReturnTypeRef.TableBoundReturnType tb ->
-                    buildWithChannel(tb, parentTypeName, name, location, fieldDef, ch ->
-                        new MutationField.MutationServiceTableField(parentTypeName, name, location, tb, svcResult.method(), ch));
-                case ReturnTypeRef.ResultReturnType r ->
-                    buildWithChannel(r, parentTypeName, name, location, fieldDef, ch ->
-                        new MutationField.MutationServiceRecordField(parentTypeName, name, location, r, svcResult.method(), ch));
-                case ReturnTypeRef.ScalarReturnType s ->
-                    buildWithChannel(s, parentTypeName, name, location, fieldDef, ch ->
-                        new MutationField.MutationServiceRecordField(parentTypeName, name, location, s, svcResult.method(), ch));
-                case ReturnTypeRef.PolymorphicReturnType p -> {
-                    var lift = liftToErrorsField(fieldDef, parentTypeName, p);
-                    yield lift != null ? lift
-                        : new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.DEFERRED,
-                            "@service returning a polymorphic type is not yet supported");
-                }
+            return switch (serviceResolver.resolve(parentTypeName, fieldDef, List.of())) {
+                case ServiceDirectiveResolver.Resolved.Rejected r ->
+                    new UnclassifiedField(parentTypeName, name, location, fieldDef, r.kind(), r.message());
+                case ServiceDirectiveResolver.Resolved.ErrorsLifted e -> e.field();
+                case ServiceDirectiveResolver.Resolved.TableBound tb ->
+                    buildWithChannel(tb.returnType(), parentTypeName, name, location, fieldDef, ch ->
+                        new MutationField.MutationServiceTableField(parentTypeName, name, location, tb.returnType(), tb.method(), ch));
+                case ServiceDirectiveResolver.Resolved.Result r ->
+                    buildWithChannel(r.returnType(), parentTypeName, name, location, fieldDef, ch ->
+                        new MutationField.MutationServiceRecordField(parentTypeName, name, location, r.returnType(), r.method(), ch));
+                case ServiceDirectiveResolver.Resolved.Scalar s ->
+                    buildWithChannel(s.returnType(), parentTypeName, name, location, fieldDef, ch ->
+                        new MutationField.MutationServiceRecordField(parentTypeName, name, location, s.returnType(), s.method(), ch));
             };
         }
 
@@ -2711,39 +2577,36 @@ class FieldBuilder {
         SourceLocation location = locationOf(fieldDef);
 
         if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
-            var svcResult = resolveServiceField(parentTypeName, fieldDef, List.of());
-            if (svcResult.error() != null) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, svcResult.error());
+            var resolved = serviceResolver.resolve(parentTypeName, fieldDef, List.of());
+            if (resolved instanceof ServiceDirectiveResolver.Resolved.Rejected r) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, r.kind(), r.message());
+            }
+            if (resolved instanceof ServiceDirectiveResolver.Resolved.ErrorsLifted e) {
+                return e.field();
             }
             var servicePath = ctx.parsePath(fieldDef, name, null, null);
             if (servicePath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, servicePath.errorMessage());
             }
-            return switch (svcResult.returnType()) {
-                case ReturnTypeRef.TableBoundReturnType tb ->
-                    new ServiceTableField(parentTypeName, name, location, tb,
+            return switch ((ServiceDirectiveResolver.Resolved.Success) resolved) {
+                case ServiceDirectiveResolver.Resolved.TableBound tb ->
+                    new ServiceTableField(parentTypeName, name, location, tb.returnType(),
                         servicePath.elements(), List.of(), new OrderBySpec.None(), null,
-                        svcResult.method(), extractBatchKey(svcResult.method()));
+                        tb.method(), extractBatchKey(tb.method()));
                 // @service on a @record-typed parent returning scalar/record is DEFERRED:
                 // deriving the batch key would require lifting through the parent chain to the
                 // rooted @table whose PK provides the key columns, which is its own design
                 // problem (parallel to interface-union dispatch).
-                case ReturnTypeRef.ResultReturnType r ->
+                case ServiceDirectiveResolver.Resolved.Result r ->
                     new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.DEFERRED,
                         "@service on a @record-typed parent is not yet supported; the batch key "
                             + "must be lifted through the parent chain to the rooted @table — see "
                             + "graphitron-rewrite/roadmap/service-record-field.md");
-                case ReturnTypeRef.ScalarReturnType s ->
+                case ServiceDirectiveResolver.Resolved.Scalar s ->
                     new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.DEFERRED,
                         "@service on a @record-typed parent is not yet supported; the batch key "
                             + "must be lifted through the parent chain to the rooted @table — see "
                             + "graphitron-rewrite/roadmap/service-record-field.md");
-                case ReturnTypeRef.PolymorphicReturnType p -> {
-                    var lift = liftToErrorsField(fieldDef, parentTypeName, p);
-                    yield lift != null ? lift
-                        : new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.DEFERRED,
-                            "@service returning a polymorphic type is not yet supported");
-                }
             };
         }
 
@@ -2882,30 +2745,27 @@ class FieldBuilder {
         SourceLocation location = locationOf(fieldDef);
 
         if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
-            var svcResult = resolveServiceField(parentTypeName, fieldDef, tableType.table().primaryKeyColumns());
-            if (svcResult.error() != null) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, svcResult.error());
+            var resolved = serviceResolver.resolve(parentTypeName, fieldDef, tableType.table().primaryKeyColumns());
+            if (resolved instanceof ServiceDirectiveResolver.Resolved.Rejected r) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, r.kind(), r.message());
+            }
+            if (resolved instanceof ServiceDirectiveResolver.Resolved.ErrorsLifted e) {
+                return e.field();
             }
             // Service reconnect path: starts from the service return type's table (not the parent).
             var servicePath = ctx.parsePath(fieldDef, name, null, null);
             if (servicePath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, servicePath.errorMessage());
             }
-            return switch (svcResult.returnType()) {
-                case ReturnTypeRef.TableBoundReturnType tb ->
-                    new ServiceTableField(parentTypeName, name, location, tb,
+            return switch ((ServiceDirectiveResolver.Resolved.Success) resolved) {
+                case ServiceDirectiveResolver.Resolved.TableBound tb ->
+                    new ServiceTableField(parentTypeName, name, location, tb.returnType(),
                         servicePath.elements(), List.of(), new OrderBySpec.None(), null,
-                        svcResult.method(), extractBatchKey(svcResult.method()));
-                case ReturnTypeRef.ResultReturnType r ->
-                    new ServiceRecordField(parentTypeName, name, location, r, servicePath.elements(), svcResult.method(), extractBatchKey(svcResult.method()));
-                case ReturnTypeRef.ScalarReturnType s ->
-                    new ServiceRecordField(parentTypeName, name, location, s, servicePath.elements(), svcResult.method(), extractBatchKey(svcResult.method()));
-                case ReturnTypeRef.PolymorphicReturnType p -> {
-                    var lift = liftToErrorsField(fieldDef, parentTypeName, p);
-                    yield lift != null ? lift
-                        : new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.DEFERRED,
-                            "@service returning a polymorphic type is not yet supported");
-                }
+                        tb.method(), extractBatchKey(tb.method()));
+                case ServiceDirectiveResolver.Resolved.Result r ->
+                    new ServiceRecordField(parentTypeName, name, location, r.returnType(), servicePath.elements(), r.method(), extractBatchKey(r.method()));
+                case ServiceDirectiveResolver.Resolved.Scalar s ->
+                    new ServiceRecordField(parentTypeName, name, location, s.returnType(), servicePath.elements(), s.method(), extractBatchKey(s.method()));
             };
         }
 
@@ -3201,7 +3061,7 @@ class FieldBuilder {
      * logged per field. If the name is not in the map, the returned {@code ExternalRef} carries a
      * non-null {@link ExternalRef#lookupError()} and the {@code className} is {@code null}.
      */
-    private ExternalRef parseExternalRef(String parentTypeName, GraphQLFieldDefinition fieldDef, String directiveName, String argName) {
+    ExternalRef parseExternalRef(String parentTypeName, GraphQLFieldDefinition fieldDef, String directiveName, String argName) {
         var dir = fieldDef.getAppliedDirective(directiveName);
         if (dir == null) return null;
         var arg = dir.getArgument(argName);
@@ -3244,7 +3104,7 @@ class FieldBuilder {
      * directive on {@code fieldDef}, or an empty list when the directive is absent or the argument
      * is not set.
      */
-    private List<String> parseContextArguments(GraphQLFieldDefinition fieldDef, String directiveName) {
+    List<String> parseContextArguments(GraphQLFieldDefinition fieldDef, String directiveName) {
         return argStringList(fieldDef, directiveName, ARG_CONTEXT_ARGUMENTS);
     }
 
@@ -3301,7 +3161,7 @@ class FieldBuilder {
     record ExternalRef(String className, String methodName, Map<String, String> argMapping,
                        String lookupError, String argMappingError) {}
 
-    private static Set<String> fieldArgumentNames(GraphQLFieldDefinition fieldDef) {
+    static Set<String> fieldArgumentNames(GraphQLFieldDefinition fieldDef) {
         return fieldDef.getArguments().stream()
             .map(GraphQLArgument::getName)
             .collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new));
