@@ -3123,6 +3123,20 @@ class GraphitronSchemaBuilderTest {
                 assertThat(t.reason()).contains("GENERIC").contains("sqlState");
             }),
 
+        REJECT_GENERIC_WITH_CODE(
+            "GENERIC with code → UnclassifiedType",
+            """
+            type BadError @error(handlers: [{handler: GENERIC, className: "com.example.Ex", code: "1"}]) {
+                path: [String!]!
+                message: String!
+            }
+            type Query { x: String }
+            """,
+            schema -> {
+                var t = (UnclassifiedType) schema.type("BadError");
+                assertThat(t.reason()).contains("GENERIC").contains("code");
+            }),
+
         REJECT_DATABASE_WITH_BOTH_DISCRIMINATORS(
             "DATABASE with both sqlState and code → UnclassifiedType",
             """
@@ -3151,7 +3165,7 @@ class GraphitronSchemaBuilderTest {
                 assertThat(t.reason()).contains("DATABASE").contains("className");
             }),
 
-        REJECT_VALIDATION_WITH_DISALLOWED_FIELDS(
+        REJECT_VALIDATION_WITH_CLASS_NAME(
             "VALIDATION with className → UnclassifiedType",
             """
             type BadError @error(handlers: [{handler: VALIDATION, className: "com.example.Ex"}]) {
@@ -3163,6 +3177,48 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var t = (UnclassifiedType) schema.type("BadError");
                 assertThat(t.reason()).contains("VALIDATION").contains("className");
+            }),
+
+        REJECT_VALIDATION_WITH_SQL_STATE(
+            "VALIDATION with sqlState → UnclassifiedType",
+            """
+            type BadError @error(handlers: [{handler: VALIDATION, sqlState: "23503"}]) {
+                path: [String!]!
+                message: String!
+            }
+            type Query { x: String }
+            """,
+            schema -> {
+                var t = (UnclassifiedType) schema.type("BadError");
+                assertThat(t.reason()).contains("VALIDATION").contains("sqlState");
+            }),
+
+        REJECT_VALIDATION_WITH_CODE(
+            "VALIDATION with code → UnclassifiedType",
+            """
+            type BadError @error(handlers: [{handler: VALIDATION, code: "1"}]) {
+                path: [String!]!
+                message: String!
+            }
+            type Query { x: String }
+            """,
+            schema -> {
+                var t = (UnclassifiedType) schema.type("BadError");
+                assertThat(t.reason()).contains("VALIDATION").contains("code");
+            }),
+
+        REJECT_VALIDATION_WITH_MATCHES(
+            "VALIDATION with matches → UnclassifiedType",
+            """
+            type BadError @error(handlers: [{handler: VALIDATION, matches: "foo"}]) {
+                path: [String!]!
+                message: String!
+            }
+            type Query { x: String }
+            """,
+            schema -> {
+                var t = (UnclassifiedType) schema.type("BadError");
+                assertThat(t.reason()).contains("VALIDATION").contains("matches");
             }),
 
         REJECT_MISSING_PATH_FIELD(
@@ -3212,6 +3268,18 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> assertThat(((UnclassifiedType) schema.type("BadError")).reason())
                 .contains("path").contains("[String!]!")),
+
+        REJECT_WRONG_MESSAGE_SHAPE(
+            "@error type with message: String (nullable, not String!) → UnclassifiedType",
+            """
+            type BadError @error(handlers: [{handler: GENERIC, className: "com.example.Ex"}]) {
+                path: [String!]!
+                message: String
+            }
+            type Query { x: String }
+            """,
+            schema -> assertThat(((UnclassifiedType) schema.type("BadError")).reason())
+                .contains("message").contains("String!")),
 
         REJECT_GENERIC_WITH_UNRESOLVABLE_CLASS_NAME(
             "GENERIC with className that cannot be loaded on the classifier classpath → UnclassifiedType",
