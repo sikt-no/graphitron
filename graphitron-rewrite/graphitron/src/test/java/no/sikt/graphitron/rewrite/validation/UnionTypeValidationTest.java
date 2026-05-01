@@ -24,7 +24,8 @@ class UnionTypeValidationTest {
             new UnionType("SearchResult", null, List.of()),
             List.of()),
 
-        ALL_BOUND("all member types are table-bound — valid",
+        ALL_BOUND("all member types are table-bound — type-level validator stays no-op; "
+            + "R36 Track B's PK constraints run at field level (see QueryUnionFieldValidationTest)",
             new UnionType("SearchResult", null, List.of(
                 new ParticipantRef.TableBound("Film", new TableRef("film", "FILM", "Film", List.of()), null),
                 new ParticipantRef.TableBound("Category", new TableRef("category", "CATEGORY", "Category", List.of()), null)
