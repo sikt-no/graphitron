@@ -52,13 +52,11 @@ import static no.sikt.graphitron.rewrite.BuildContext.DIR_MUTATION;
  * would mis-bind here. The walk stays self-contained and rejects anything that isn't a
  * {@code @table} input.
  *
- * <p>The resolver carries references to {@link FieldBuilder} (for the
- * {@code buildLookupBindings} callback that walks {@code @lookupKey}-bearing input fields) and
- * to {@link ConditionResolver} (for argument-level {@code @condition} resolution). The
- * {@code FieldBuilder} reference follows the established directive-resolver pattern: the helper
- * stays on {@code FieldBuilder} until the enum-mapping axis lift in mop-up untangles
- * {@code validateEnumFilter} / {@code deriveExtraction} that {@code buildLookupBindings}
- * depends on.
+ * <p>The resolver carries references to {@link ConditionResolver} (for argument-level
+ * {@code @condition} resolution) and {@link EnumMappingResolver} (for the lookup-binding walk
+ * over {@code @lookupKey}-bearing input fields). No reference to {@link FieldBuilder} is
+ * needed since the enum-mapping axis lift in Phase 7 moved {@code buildLookupBindings} into
+ * its own resolver.
  */
 final class MutationInputResolver {
 
@@ -75,13 +73,13 @@ final class MutationInputResolver {
     }
 
     private final BuildContext ctx;
-    private final FieldBuilder fb;
     private final ConditionResolver conditionResolver;
+    private final EnumMappingResolver enumMapping;
 
-    MutationInputResolver(BuildContext ctx, FieldBuilder fb, ConditionResolver conditionResolver) {
+    MutationInputResolver(BuildContext ctx, ConditionResolver conditionResolver, EnumMappingResolver enumMapping) {
         this.ctx = ctx;
-        this.fb = fb;
         this.conditionResolver = conditionResolver;
+        this.enumMapping = enumMapping;
     }
 
     /**
@@ -176,7 +174,7 @@ final class MutationInputResolver {
 
             var bindingErrors = new java.util.ArrayList<String>();
             List<InputColumnBinding.MapBinding> bindings =
-                fb.buildLookupBindings(tit, arg, fieldDef, argName, bindingErrors);
+                enumMapping.buildLookupBindings(tit, arg, fieldDef, argName, bindingErrors);
             if (!bindingErrors.isEmpty()) {
                 return new Resolved.Rejected(String.join("; ", bindingErrors));
             }

@@ -147,11 +147,13 @@ class FieldBuilder {
     private final ConditionResolver conditionResolver;
     private final InputFieldResolver inputFieldResolver;
     private final MutationInputResolver mutationInputResolver;
+    private final EnumMappingResolver enumMappingResolver;
     FieldBuilder(BuildContext ctx, ServiceCatalog svc) {
         this.ctx = ctx;
         this.svc = svc;
-        this.serviceResolver = new ServiceDirectiveResolver(ctx, svc, this);
-        this.tableMethodResolver = new TableMethodDirectiveResolver(ctx, svc, this);
+        this.enumMappingResolver = new EnumMappingResolver(ctx);
+        this.serviceResolver = new ServiceDirectiveResolver(ctx, svc, this, enumMappingResolver);
+        this.tableMethodResolver = new TableMethodDirectiveResolver(ctx, svc, this, enumMappingResolver);
         this.externalFieldResolver = new ExternalFieldDirectiveResolver(ctx, svc, this);
         this.lookupKeyResolver = new LookupKeyDirectiveResolver(ctx, svc, this);
         this.orderByResolver = new OrderByResolver(ctx);
@@ -159,7 +161,7 @@ class FieldBuilder {
         this.paginationResolver = new PaginationResolver();
         this.conditionResolver = new ConditionResolver(ctx, svc);
         this.inputFieldResolver = new InputFieldResolver(ctx);
-        this.mutationInputResolver = new MutationInputResolver(ctx, this, conditionResolver);
+        this.mutationInputResolver = new MutationInputResolver(ctx, conditionResolver, enumMappingResolver);
     }
 
     // ===== Shared resolution helpers =====
@@ -457,7 +459,7 @@ class FieldBuilder {
         // plain-input path so lookup-key search still runs and produces a focused error.
         var resolvedType = ctx.types.get(typeName);
         if (resolvedType instanceof GraphitronType.TableInputType tit) {
-            List<InputColumnBinding.MapBinding> bindings = buildLookupBindings(tit, arg, fieldDef, name, errors);
+            List<InputColumnBinding.MapBinding> bindings = enumMappingResolver.buildLookupBindings(tit, arg, fieldDef, name, errors);
             return new ArgumentRef.InputTypeArg.TableInputArg(
                 name, typeName, nonNull, list, tit.table(), bindings, argCondition, tit.inputFields());
         }
@@ -547,7 +549,7 @@ class FieldBuilder {
                 columnName, name, col.get().javaName());
         }
         var columnRef = new ColumnRef(col.get().sqlName(), col.get().javaName(), col.get().columnClass());
-        String enumClassName = validateEnumFilter(typeName, columnRef, errors);
+        String enumClassName = enumMappingResolver.validateEnumFilter(typeName, columnRef, errors);
         if (enumClassName != null && enumClassName.isEmpty()) {
             // Enum validation failed; error already appended. Emit UnclassifiedArg so
             // projectFilters surfaces the structural failure (even though the enum-value-mismatch
@@ -556,81 +558,11 @@ class FieldBuilder {
             return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
                 "enum filter validation failed for column '" + columnRef.sqlName() + "'");
         }
-        CallSiteExtraction extraction = deriveExtraction(typeName, columnRef, enumClassName,
+        CallSiteExtraction extraction = enumMappingResolver.deriveExtraction(typeName, columnRef, enumClassName,
             fieldDef.getName().toUpperCase() + "_" + name.toUpperCase() + "_MAP");
         boolean isLookupKey = arg.hasAppliedDirective(DIR_LOOKUP_KEY);
         return new ArgumentRef.ScalarArg.ColumnArg(
             name, typeName, nonNull, list, columnRef, extraction, argCondition, fieldOverride, isLookupKey);
-    }
-
-    /**
-     * Derives the {@link CallSiteExtraction} strategy for a scalar column-bound value given its
-     * GraphQL type and target column. {@code enumClassName} is the result of
-     * {@link #validateEnumFilter} (non-null only for jOOQ-enum columns). {@code mapFieldName} is
-     * the generated static-map field name used when the GraphQL type is a text-mapped enum.
-     */
-    private CallSiteExtraction deriveExtraction(String typeName, ColumnRef columnRef,
-                                                String enumClassName, String mapFieldName) {
-        if (enumClassName != null) {
-            return new CallSiteExtraction.EnumValueOf(enumClassName);
-        }
-        if ("ID".equals(typeName)) {
-            return new CallSiteExtraction.JooqConvert(columnRef.javaName());
-        }
-        var textEnumMapping = buildTextEnumMapping(typeName);
-        if (textEnumMapping != null) {
-            return new CallSiteExtraction.TextMapLookup(mapFieldName, textEnumMapping);
-        }
-        return new CallSiteExtraction.Direct();
-    }
-
-    /**
-     * Walks a {@link GraphitronType.TableInputType} argument's fields and builds one
-     * {@link InputColumnBinding} per {@code @lookupKey}-bearing input field (argres Phase 3).
-     *
-     * <p>Only {@link InputField.ColumnField} entries contribute bindings — a {@code @lookupKey}
-     * on a {@code @reference}-navigating, nesting, or NodeId input field is rejected here.
-     * List-typed input fields are also rejected: list cardinality must live on the outer
-     * argument, not on an individual input-type field.
-     *
-     * <p>Returns {@link List#of()} when no input field carries {@code @lookupKey} — the caller
-     * (validity gate in {@link #projectForFilter}) reports "empty lookup mapping despite
-     * {@code @lookupKey}" only when the field trips the lookup gate with no other source of
-     * lookup columns.
-     */
-    List<InputColumnBinding.MapBinding> buildLookupBindings(GraphitronType.TableInputType tit,
-            GraphQLArgument arg, GraphQLFieldDefinition fieldDef, String argName, List<String> errors) {
-        var sdlType = ctx.schema.getType(tit.name());
-        if (!(sdlType instanceof GraphQLInputObjectType iot)) {
-            return List.of();
-        }
-        var byName = tit.inputFields().stream()
-            .collect(Collectors.toMap(InputField::name, f -> f));
-        var bindings = new ArrayList<InputColumnBinding.MapBinding>();
-        for (var sdlField : iot.getFieldDefinitions()) {
-            if (!sdlField.hasAppliedDirective(DIR_LOOKUP_KEY)) continue;
-            var resolved = byName.get(sdlField.getName());
-            if (!(resolved instanceof InputField.ColumnField cf)) {
-                errors.add("input type '" + tit.name() + "' field '" + sdlField.getName()
-                    + "': @lookupKey is only supported on scalar column fields");
-                continue;
-            }
-            if (cf.list()) {
-                errors.add("input type '" + tit.name() + "' field '" + sdlField.getName()
-                    + "': @lookupKey on a list-typed input field is not supported; "
-                    + "move list cardinality to the outer argument");
-                continue;
-            }
-            String enumClassName = validateEnumFilter(cf.typeName(), cf.column(), errors);
-            if (enumClassName != null && enumClassName.isEmpty()) {
-                continue; // enum validation failed; error already appended
-            }
-            String mapFieldName = fieldDef.getName().toUpperCase() + "_"
-                + argName.toUpperCase() + "_" + sdlField.getName().toUpperCase() + "_MAP";
-            CallSiteExtraction extraction = deriveExtraction(cf.typeName(), cf.column(), enumClassName, mapFieldName);
-            bindings.add(new InputColumnBinding.MapBinding(sdlField.getName(), cf.column(), extraction));
-        }
-        return List.copyOf(bindings);
     }
 
     private ArgumentRef classifyOrderByArg(GraphQLArgument arg, String name, String typeName,
@@ -969,104 +901,6 @@ class FieldBuilder {
         return list
             ? new BodyParam.RowIn(fieldName, columns, javaType, nonNull, nested)
             : new BodyParam.RowEq(fieldName, columns, javaType, nonNull, nested);
-    }
-
-    /**
-     * Post-processes {@link ParamSource.Arg} parameters on a method reference to detect
-     * text-mapped enum arguments. {@link no.sikt.graphitron.rewrite.ServiceCatalog} handles jOOQ
-     * enum detection (requires reflection); this method handles text-mapped enums (requires the
-     * GraphQL schema, which only {@link FieldBuilder} holds).
-     *
-     * <p>A parameter is text-mapped when its Java type is {@code String} (already defaulted to
-     * {@link CallSiteExtraction.Direct} by {@code ServiceCatalog}) and the corresponding GraphQL
-     * argument type is an enum with value mappings. The enriched extraction emits a static-map
-     * lookup that delivers the DB string to the service method — service code does not know about
-     * GraphQL enum value names.
-     *
-     * <p>The generated static map field lives in the {@code *Fetchers} class for this type.
-     */
-    MethodRef enrichArgExtractions(MethodRef method, GraphQLFieldDefinition fieldDef) {
-        var argTypes = fieldDef.getArguments().stream()
-            .collect(java.util.stream.Collectors.toMap(
-                GraphQLArgument::getName,
-                a -> ((graphql.schema.GraphQLNamedType) graphql.schema.GraphQLTypeUtil.unwrapAll(a.getType())).getName()));
-        var newParams = method.params().stream().map(p -> {
-            if (!(p.source() instanceof ParamSource.Arg arg)) return p;
-            if (!(arg.extraction() instanceof CallSiteExtraction.Direct)) return p;
-            if (!String.class.getName().equals(p.typeName())) return p;
-            String graphqlTypeName = argTypes.get(arg.graphqlArgName());
-            if (graphqlTypeName == null) return p;
-            var textMapping = buildTextEnumMapping(graphqlTypeName);
-            if (textMapping == null) return p;
-            String mapFieldName = fieldDef.getName().toUpperCase() + "_"
-                + arg.graphqlArgName().toUpperCase() + "_MAP";
-            return (MethodRef.Param) new MethodRef.Param.Typed(p.name(), p.typeName(),
-                new ParamSource.Arg(new CallSiteExtraction.TextMapLookup(mapFieldName, textMapping),
-                    arg.graphqlArgName()));
-        }).toList();
-        return new MethodRef.Basic(method.className(), method.methodName(),
-            method.returnType(), newParams);
-    }
-
-    /**
-     * If the GraphQL type is an enum, builds a mapping from GraphQL enum value names to database
-     * string values (from {@code @field(name:)} or the value name itself). Returns {@code null}
-     * when the GraphQL type is not an enum.
-     */
-    private java.util.Map<String, String> buildTextEnumMapping(String graphqlTypeName) {
-        var schemaType = ctx.schema.getType(graphqlTypeName);
-        if (!(schemaType instanceof graphql.schema.GraphQLEnumType graphqlEnum)) {
-            return null;
-        }
-        var mapping = new java.util.LinkedHashMap<String, String>();
-        for (var value : graphqlEnum.getValues()) {
-            String dbValue = argString(value, DIR_FIELD, ARG_NAME).orElse(value.getName());
-            mapping.put(value.getName(), dbValue);
-        }
-        return mapping;
-    }
-
-    /**
-     * Validates that a GraphQL enum type's values match the Java enum constants of the column type.
-     *
-     * <p>Returns the fully qualified Java enum class name when the column is an enum and all values
-     * validate. Returns {@code null} when the column is not an enum. Returns an empty string when
-     * the column is an enum but validation fails (errors are appended to {@code errors}).
-     */
-    private String validateEnumFilter(String graphqlTypeName, ColumnRef column, java.util.List<String> errors) {
-        Class<?> colClass;
-        try {
-            colClass = Class.forName(column.columnClass());
-        } catch (ClassNotFoundException e) {
-            return null; // Can't load — not an enum we can validate
-        }
-        if (!colClass.isEnum()) {
-            return null;
-        }
-        // Column is a Java enum — validate GraphQL enum values
-        var schemaType = ctx.schema.getType(graphqlTypeName);
-        if (!(schemaType instanceof graphql.schema.GraphQLEnumType graphqlEnum)) {
-            errors.add("column '" + column.sqlName() + "' is a jOOQ enum (" + colClass.getSimpleName()
-                + ") but GraphQL type '" + graphqlTypeName + "' is not an enum");
-            return "";
-        }
-        var javaConstants = java.util.Arrays.stream(colClass.getEnumConstants())
-            .map(c -> ((Enum<?>) c).name())
-            .collect(java.util.stream.Collectors.toSet());
-        var mismatches = new java.util.ArrayList<String>();
-        for (var value : graphqlEnum.getValues()) {
-            String target = argString(value, DIR_FIELD, ARG_NAME).orElse(value.getName());
-            if (!javaConstants.contains(target)) {
-                mismatches.add("'" + value.getName() + "'" + (target.equals(value.getName()) ? "" : " (mapped to '" + target + "')")
-                    + candidateHint(target, new java.util.ArrayList<>(javaConstants)));
-            }
-        }
-        if (!mismatches.isEmpty()) {
-            errors.add("GraphQL enum '" + graphqlTypeName + "' has values that don't match jOOQ enum "
-                + colClass.getSimpleName() + ": " + String.join("; ", mismatches));
-            return "";
-        }
-        return colClass.getName();
     }
 
     // ===== Field classification =====

@@ -71,11 +71,13 @@ final class TableMethodDirectiveResolver {
     private final BuildContext ctx;
     private final ServiceCatalog svc;
     private final FieldBuilder fb;
+    private final EnumMappingResolver enumMapping;
 
-    TableMethodDirectiveResolver(BuildContext ctx, ServiceCatalog svc, FieldBuilder fb) {
+    TableMethodDirectiveResolver(BuildContext ctx, ServiceCatalog svc, FieldBuilder fb, EnumMappingResolver enumMapping) {
         this.ctx = ctx;
         this.svc = svc;
         this.fb = fb;
+        this.enumMapping = enumMapping;
     }
 
     /**
@@ -138,7 +140,7 @@ final class TableMethodDirectiveResolver {
             return new Resolved.Rejected(RejectionKind.AUTHOR_ERROR,
                 "table method could not be resolved — " + result.failureReason());
         }
-        MethodRef method = fb.enrichArgExtractions(result.ref(), fieldDef);
+        MethodRef method = enumMapping.enrichArgExtractions(result.ref(), fieldDef);
         return returnType instanceof ReturnTypeRef.TableBoundReturnType tb
             ? new Resolved.TableBound(tb, method)
             : new Resolved.NonTableBound(returnType, method);
