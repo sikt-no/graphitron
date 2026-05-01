@@ -14,8 +14,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Plan |
 |---|---|---|---|
-| `R1` | `BatchKey` lifter directive | Ready | [plan](batchkey-lifter-directive.md) |
 | `R36` | Stub #3: Interface / union fetchers | In Progress | [plan](stub-interface-union-fetchers.md) |
+| `R1` | `BatchKey` lifter directive | In Progress | [plan](batchkey-lifter-directive.md) |
 | `R40` | Argument-level `@nodeId` support | Spec | [plan](argument-level-nodeid.md) |
 | `R49` | Stub: scalar/`@record`-returning `@service` child field (`ServiceRecordField`) <sub>blocked by: [service-rows-method-body](service-rows-method-body.md)</sub> | Spec | [plan](service-record-field.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
@@ -93,7 +93,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### service
 
-- `R1` [**`BatchKey` lifter directive**](batchkey-lifter-directive.md) — Ready, architecture
+- `R1` [**`BatchKey` lifter directive**](batchkey-lifter-directive.md) — In Progress, architecture
 - `R49` [**Stub: scalar/`@record`-returning `@service` child field (`ServiceRecordField`)**](service-record-field.md) — Spec, stubs, blocked by [service-rows-method-body](service-rows-method-body.md)
 - `R54` [**Rename @externalField (parallel-support, deprecation, migration)**](rename-externalfield-directive.md) — Backlog, cleanup
 - `R45` [**Typed context-value registry for `@service`**](typed-context-value-registry.md) — Spec, architecture
