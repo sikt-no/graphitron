@@ -285,13 +285,33 @@ class FieldBuilder {
         }
 
         if (elementType instanceof InterfaceType interfaceType) {
+            // R36 Track B3: per-participant FK auto-discovery from parent table to each
+            // participant's table. parsePath looks for a unique FK between the two and falls
+            // back to a directive-stated path when the @reference path: array is non-empty.
+            // For B3 v1 we expect the auto-discovery branch; an explicit shared @reference path
+            // would apply ambiguously across heterogeneous participants, so callers should not
+            // declare one on multi-table interface child fields.
+            var resolved = resolveChildPolymorphicJoinPaths(fieldDef, name, parentTypeName,
+                location, parentTableType.table(), interfaceType.participants());
+            if (resolved.error() != null) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                    RejectionKind.AUTHOR_ERROR, resolved.error());
+            }
             return new InterfaceField(parentTypeName, name, location,
-                new ReturnTypeRef.PolymorphicReturnType(elementTypeName, buildWrapper(fieldDef)));
+                new ReturnTypeRef.PolymorphicReturnType(elementTypeName, buildWrapper(fieldDef)),
+                interfaceType.participants(), resolved.paths());
         }
 
         if (elementType instanceof UnionType unionType) {
+            var resolved = resolveChildPolymorphicJoinPaths(fieldDef, name, parentTypeName,
+                location, parentTableType.table(), unionType.participants());
+            if (resolved.error() != null) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                    RejectionKind.AUTHOR_ERROR, resolved.error());
+            }
             return new UnionField(parentTypeName, name, location,
-                new ReturnTypeRef.PolymorphicReturnType(elementTypeName, buildWrapper(fieldDef)));
+                new ReturnTypeRef.PolymorphicReturnType(elementTypeName, buildWrapper(fieldDef)),
+                unionType.participants(), resolved.paths());
         }
 
         // NestingField: a plain object type in the schema with no Graphitron domain classification.
@@ -2471,6 +2491,47 @@ class FieldBuilder {
      */
     List<String> parseContextArguments(GraphQLFieldDefinition fieldDef, String directiveName) {
         return argStringList(fieldDef, directiveName, ARG_CONTEXT_ARGUMENTS);
+    }
+
+    /**
+     * Carries the result of {@link #resolveChildPolymorphicJoinPaths}: a per-participant
+     * {@code Map<String, List<JoinStep>>} keyed by typename, or a non-null error message when
+     * any participant's FK cannot be uniquely auto-discovered.
+     */
+    private record ChildPolymorphicJoinPaths(java.util.Map<String, List<JoinStep>> paths, String error) {
+        static ChildPolymorphicJoinPaths ok(java.util.Map<String, List<JoinStep>> paths) {
+            return new ChildPolymorphicJoinPaths(paths, null);
+        }
+        static ChildPolymorphicJoinPaths fail(String error) {
+            return new ChildPolymorphicJoinPaths(java.util.Map.of(), error);
+        }
+    }
+
+    /**
+     * R36 Track B3: resolves the per-participant FK chain from {@code parentTable} to each
+     * {@link ParticipantRef.TableBound} participant's table. Each call to
+     * {@link BuildContext#parsePath} for a different target table picks up a different
+     * auto-discovered FK, so heterogeneous participants (each on its own table with its own
+     * FK back to the parent) yield a distinct path per branch.
+     *
+     * <p>Returns an error result when any participant fails (zero or multiple FKs between the
+     * pair); the field is then classified as {@link UnclassifiedField}. {@link ParticipantRef.Unbound}
+     * participants are skipped and produce no map entry.
+     */
+    private ChildPolymorphicJoinPaths resolveChildPolymorphicJoinPaths(
+            GraphQLFieldDefinition fieldDef, String fieldName, String parentTypeName,
+            SourceLocation location, TableRef parentTable, List<ParticipantRef> participants) {
+        var paths = new java.util.LinkedHashMap<String, List<JoinStep>>();
+        for (var p : participants) {
+            if (!(p instanceof ParticipantRef.TableBound tb)) continue;
+            var parsed = ctx.parsePath(fieldDef, fieldName, parentTable.tableName(), tb.table().tableName());
+            if (parsed.hasError()) {
+                return ChildPolymorphicJoinPaths.fail(
+                    "participant '" + tb.typeName() + "': " + parsed.errorMessage());
+            }
+            paths.put(tb.typeName(), parsed.elements());
+        }
+        return ChildPolymorphicJoinPaths.ok(paths);
     }
 
     /** Collects the non-null discriminator values from all {@link ParticipantRef.TableBound} participants. */

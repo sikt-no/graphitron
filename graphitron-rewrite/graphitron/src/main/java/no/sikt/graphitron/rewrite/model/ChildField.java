@@ -257,19 +257,49 @@ public sealed interface ChildField extends GraphitronField
         PaginationSpec pagination
     ) implements TableTargetField {}
 
+    /**
+     * A child field on a {@link GraphitronType.TableBackedType} parent returning a multi-table
+     * {@link GraphitronType.InterfaceType}. Carries the resolved participants list plus the
+     * per-participant {@code joinPath} (one auto-discovered FK chain from the parent table to
+     * each participant's table) so R36 Track B3's emitter can emit a per-branch WHERE in the
+     * stage-1 narrow UNION ALL.
+     *
+     * <p>{@code participantJoinPaths} is keyed by participant typename — exactly one entry per
+     * {@link ParticipantRef.TableBound} participant. {@link ParticipantRef.Unbound} participants
+     * are absent from the map; they contribute no SQL branch.
+     */
     record InterfaceField(
         String parentTypeName,
         String name,
         SourceLocation location,
-        ReturnTypeRef.PolymorphicReturnType returnType
-    ) implements ChildField {}
+        ReturnTypeRef.PolymorphicReturnType returnType,
+        List<ParticipantRef> participants,
+        java.util.Map<String, List<JoinStep>> participantJoinPaths
+    ) implements ChildField {
+        public InterfaceField {
+            participants = List.copyOf(participants);
+            participantJoinPaths = java.util.Map.copyOf(participantJoinPaths);
+        }
+    }
 
+    /**
+     * A child field on a {@link GraphitronType.TableBackedType} parent returning a multi-table
+     * {@link GraphitronType.UnionType}. Same shape as {@link InterfaceField}; differs only in
+     * the source of the participant set (union member types vs. interface implementers).
+     */
     record UnionField(
         String parentTypeName,
         String name,
         SourceLocation location,
-        ReturnTypeRef.PolymorphicReturnType returnType
-    ) implements ChildField {}
+        ReturnTypeRef.PolymorphicReturnType returnType,
+        List<ParticipantRef> participants,
+        java.util.Map<String, List<JoinStep>> participantJoinPaths
+    ) implements ChildField {
+        public UnionField {
+            participants = List.copyOf(participants);
+            participantJoinPaths = java.util.Map.copyOf(participantJoinPaths);
+        }
+    }
 
     record NestingField(
         String parentTypeName,
