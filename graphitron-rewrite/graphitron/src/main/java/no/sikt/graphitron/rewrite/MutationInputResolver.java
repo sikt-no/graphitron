@@ -124,9 +124,20 @@ final class MutationInputResolver {
                 }
                 yield null;
             }
-            case ReturnTypeRef.ResultReturnType r ->
-                "@mutation(typeName: " + typeName + ") return type '"
-                    + r.returnTypeName() + "' (@record) is not yet supported; use ID or a @table type";
+            case ReturnTypeRef.ResultReturnType r -> {
+                // R12: DML accepts a @record payload return when the payload class exposes a
+                // canonical constructor with one row-slot parameter (typed as the DML's table
+                // record) plus optional defaulted slots and an optional errors slot. The
+                // shape check runs in FieldBuilder.resolveDmlPayloadAssembly during
+                // construction; this validator only screens for the wrapper shape (single,
+                // not list/connection).
+                if (r.wrapper().isList()) {
+                    yield "@mutation(typeName: " + typeName + ") return type '"
+                        + r.returnTypeName() + "' (list of @record) is not yet supported; "
+                        + "use a single @record payload, an ID, or a @table type";
+                }
+                yield null;
+            }
             case ReturnTypeRef.PolymorphicReturnType p ->
                 "@mutation(typeName: " + typeName + ") return type '"
                     + p.returnTypeName() + "' (interface/union) is not yet supported; use ID or a @table type";

@@ -37,6 +37,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         ReturnTypeRef returnType();
         ArgumentRef.InputTypeArg.TableInputArg tableInputArg();
         Optional<HelperRef.Encode> encodeReturn();
+        Optional<PayloadAssembly> payloadAssembly();
         SourceLocation location();
     }
 
@@ -47,6 +48,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         ReturnTypeRef returnType,
         ArgumentRef.InputTypeArg.TableInputArg tableInputArg,
         Optional<HelperRef.Encode> encodeReturn,
+        Optional<PayloadAssembly> payloadAssembly,
         Optional<ErrorChannel> errorChannel
     ) implements DmlTableField {}
 
@@ -57,6 +59,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         ReturnTypeRef returnType,
         ArgumentRef.InputTypeArg.TableInputArg tableInputArg,
         Optional<HelperRef.Encode> encodeReturn,
+        Optional<PayloadAssembly> payloadAssembly,
         Optional<ErrorChannel> errorChannel
     ) implements DmlTableField {}
 
@@ -67,6 +70,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         ReturnTypeRef returnType,
         ArgumentRef.InputTypeArg.TableInputArg tableInputArg,
         Optional<HelperRef.Encode> encodeReturn,
+        Optional<PayloadAssembly> payloadAssembly,
         Optional<ErrorChannel> errorChannel
     ) implements DmlTableField {}
 
@@ -77,6 +81,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         ReturnTypeRef returnType,
         ArgumentRef.InputTypeArg.TableInputArg tableInputArg,
         Optional<HelperRef.Encode> encodeReturn,
+        Optional<PayloadAssembly> payloadAssembly,
         Optional<ErrorChannel> errorChannel
     ) implements DmlTableField {}
 
