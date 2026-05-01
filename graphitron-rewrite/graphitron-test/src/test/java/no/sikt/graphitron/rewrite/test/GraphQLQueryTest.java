@@ -2403,4 +2403,104 @@ class GraphQLQueryTest {
             .as("trailing rows carry the highest sort keys (Film 4 and 5; Actor PKs cap at 3)")
             .allSatisfy(i -> assertThat(i.get("__typename")).isEqualTo("Film"));
     }
+
+    // ===== ChildField.UnionField (Track B3) =====
+    //
+    // Address.occupants returns a union of Customer + Staff rows whose address_id matches
+    // the parent Address record. Stage-1 narrow UNION ALL adds a per-branch
+    // .where(<participant>.address_id = parentRecord.address_id) predicate; stage-2
+    // dispatches per typename, the same shape B2 uses for the root case.
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void addressOccupants_returnsCustomersAndStaffForAddress() {
+        // init.sql seeds:
+        //   address_id=1: Customers Mary + Barbara (2), no staff
+        //   address_id=3: Customer Linda (1), Staff Mike (1) — mixed types
+        // Linda is Customer 3 with store_id=2; navigate Customer.address to reach Address(3).
+        Map<String, Object> data = execute("""
+            { customerById(customer_id: ["3"], store_id: "2") {
+                firstName
+                address {
+                    addressId
+                    occupants {
+                        __typename
+                        ... on Customer { firstName }
+                        ... on Staff { firstName }
+                    }
+                }
+            } }
+            """);
+        List<Map<String, Object>> customers = (List<Map<String, Object>>) data.get("customerById");
+        assertThat(customers).hasSize(1);
+        var address = (Map<String, Object>) customers.get(0).get("address");
+        assertThat(address.get("addressId")).isEqualTo(3);
+        var occupants = (List<Map<String, Object>>) address.get("occupants");
+        assertThat(occupants).hasSize(2);
+        var byType = occupants.stream()
+            .collect(java.util.stream.Collectors.groupingBy(o -> (String) o.get("__typename")));
+        assertThat(byType.get("Customer")).hasSize(1);
+        assertThat(byType.get("Staff")).hasSize(1);
+        assertThat((String) byType.get("Customer").get(0).get("firstName")).isEqualTo("Linda");
+        assertThat((String) byType.get("Staff").get(0).get("firstName")).isEqualTo("Mike");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void addressOccupants_homogeneousAddress_returnsOnlyOneType() {
+        // Address(1) has only Customers (Mary, Barbara) — the Staff branch's stage-1 SELECT
+        // returns no rows, and the per-typename dispatch skips selectStaffForOccupants
+        // because byType.containsKey("Staff") is false. Mary is Customer 1 in store 1.
+        Map<String, Object> data = execute("""
+            { customerById(customer_id: ["1"], store_id: "1") {
+                address {
+                    addressId
+                    occupants { __typename }
+                }
+            } }
+            """);
+        List<Map<String, Object>> customers = (List<Map<String, Object>>) data.get("customerById");
+        var address = (Map<String, Object>) customers.get(0).get("address");
+        assertThat(address.get("addressId")).isEqualTo(1);
+        var occupants = (List<Map<String, Object>>) address.get("occupants");
+        assertThat(occupants).hasSize(2);
+        assertThat(occupants).extracting(o -> o.get("__typename"))
+            .containsOnly("Customer");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void addressOccupants_perBranchWhereScopesToAddress() {
+        // Two independent address parents must each scope their UNION ALL branches to their
+        // own address_id. Mary (address 1, all-customer occupants) and Linda (address 3,
+        // mixed occupants) have disjoint occupant sets; the per-branch parentRecord-FK
+        // predicate is what keeps those scopes independent.
+        Map<String, Object> data = execute("""
+            { customers(active: true) {
+                customerId
+                firstName
+                address {
+                    addressId
+                    occupants { __typename ... on Customer { firstName } ... on Staff { firstName } }
+                }
+            } }
+            """);
+        List<Map<String, Object>> customers = (List<Map<String, Object>>) data.get("customers");
+        var byCustomerId = customers.stream()
+            .collect(java.util.stream.Collectors.toMap(
+                c -> (Integer) c.get("customerId"),
+                c -> (Map<String, Object>) c.get("address")));
+        var addressOfMary = byCustomerId.get(1);
+        var addressOfLinda = byCustomerId.get(3);
+        assertThat(addressOfMary.get("addressId")).isEqualTo(1);
+        assertThat(addressOfLinda.get("addressId")).isEqualTo(3);
+        var maryOccupants = (List<Map<String, Object>>) addressOfMary.get("occupants");
+        var lindaOccupants = (List<Map<String, Object>>) addressOfLinda.get("occupants");
+        assertThat(maryOccupants).extracting(o -> o.get("firstName"))
+            .as("address 1 occupants are only Customers (Mary, Barbara) — no Staff there")
+            .containsExactlyInAnyOrder("Mary", "Barbara");
+        assertThat(lindaOccupants).extracting(o -> o.get("firstName"))
+            .as("address 3 occupants are mixed (Customer Linda + Staff Mike)")
+            .containsExactlyInAnyOrder("Linda", "Mike");
+    }
 }

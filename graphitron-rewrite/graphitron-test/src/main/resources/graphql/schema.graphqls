@@ -185,7 +185,19 @@ type Address implements Node @table(name: "address") @node {
     addressId:  Int!     @field(name: "ADDRESS_ID")
     address:    String!  @field(name: "ADDRESS")
     district:   String!  @field(name: "DISTRICT")
+    # stub-interface-union-fetchers.md Track B3 fixture: ChildField.UnionField on a parent
+    # type. AddressOccupant = Customer | Staff; both participant tables have a single FK
+    # back to address (customer_address_id_fkey, staff_address_id_fkey), so the per-branch
+    # parent-FK condition auto-discovers cleanly. Each row in the result is the linked
+    # customer or staff row whose address_id matches the parent Address record.
+    occupants:  [AddressOccupant!]!
 }
+
+# Track B3 union fixture: heterogeneous-table polymorphic child field. Each member's table
+# holds a separate FK back to address; the multi-table polymorphic emitter projects per-branch
+# WHERE clauses (customer.address_id = parent.address_id and staff.address_id = parent.address_id)
+# in stage 1's narrow UNION ALL.
+union AddressOccupant = Customer | Staff
 
 type Store @table(name: "store") {
     storeId:    Int!     @field(name: "STORE_ID")

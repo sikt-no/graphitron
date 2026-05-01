@@ -1,49 +1,55 @@
 package no.sikt.graphitron.rewrite.validation;
 
-import no.sikt.graphitron.rewrite.ValidationError;
-import no.sikt.graphitron.rewrite.model.FieldWrapper;
-import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.RejectionKind;
 import no.sikt.graphitron.rewrite.model.ChildField.UnionField;
+import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.rewrite.model.FieldWrapper;
+import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.EnumSource;
+import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.rewrite.test.tier.UnitTier;
+import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 
-import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.stubbedError;
+import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.assertHasKind;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
-import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 
+/**
+ * Validates {@link UnionField} (R36 Track B3's child case for unions). Mirrors
+ * {@link InterfaceFieldValidationTest}; same PK-presence and PK-arity rules apply.
+ */
 @UnitTier
 class UnionFieldValidationTest {
 
-    enum Case implements ValidatorCase {
+    private static final TableRef CUSTOMER = new TableRef("customer", "CUSTOMER", "Customer",
+        List.of(new ColumnRef("customer_id", "CUSTOMER_ID", "java.lang.Integer")));
+    private static final TableRef STAFF = new TableRef("staff", "STAFF", "Staff",
+        List.of(new ColumnRef("staff_id", "STAFF_ID", "java.lang.Integer")));
+    private static final TableRef NO_PK = new TableRef("kpis", "KPIS", "Kpis", List.of());
 
-        STUBBED("single cardinality — not yet implemented, produces stubbed-variant error",
-            new UnionField("Film", "result", null, new ReturnTypeRef.PolymorphicReturnType("Film", new FieldWrapper.Single(true))),
-            List.of(stubbedError("Film.result", UnionField.class)));
-
-        private final String description;
-        private final GraphitronField field;
-        private final List<String> errors;
-
-        Case(String description, GraphitronField field, List<String> errors) {
-            this.description = description;
-            this.field = field;
-            this.errors = errors;
-        }
-
-        @Override public GraphitronField field() { return field; }
-        @Override public List<String> errors() { return errors; }
-        @Override public String toString() { return description; }
+    @Test
+    void wellFormed_twoSameArityParticipants_noErrors() {
+        var participants = List.<ParticipantRef>of(
+            new ParticipantRef.TableBound("Customer", CUSTOMER, null),
+            new ParticipantRef.TableBound("Staff", STAFF, null));
+        var field = new UnionField("Address", "activities", null,
+            new ReturnTypeRef.PolymorphicReturnType("AddressActivity", new FieldWrapper.List(false, false)),
+            participants, Map.of("Customer", List.of(), "Staff", List.of()));
+        assertThat(validate(field)).isEmpty();
     }
 
-    @ParameterizedTest(name = "{0}")
-    @EnumSource(Case.class)
-    void unionFieldValidation(Case tc) {
-        assertThat(validate(tc.field()))
-            .extracting(ValidationError::message)
-            .containsExactlyInAnyOrderElementsOf(tc.errors());
+    @Test
+    void rejects_unionMemberWithoutPrimaryKey() {
+        var participants = List.<ParticipantRef>of(
+            new ParticipantRef.TableBound("Customer", CUSTOMER, null),
+            new ParticipantRef.TableBound("Kpis", NO_PK, null));
+        var field = new UnionField("Address", "activities", null,
+            new ReturnTypeRef.PolymorphicReturnType("AddressActivity", new FieldWrapper.List(false, false)),
+            participants, Map.of("Customer", List.of(), "Kpis", List.of()));
+        assertHasKind(validate(field), RejectionKind.AUTHOR_ERROR,
+            "Field 'Address.activities': participant 'Kpis' has no primary key");
     }
 }

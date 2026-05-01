@@ -9,12 +9,14 @@ import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
 import no.sikt.graphitron.rewrite.generators.util.ValuesJoinRowBuilder;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.QueryField;
 
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Function;
 
 import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.*;
@@ -66,13 +68,33 @@ public final class MultiTablePolymorphicEmitter {
     private MultiTablePolymorphicEmitter() {}
 
     /**
-     * Emits the methods for one polymorphic root fetcher (interface or union):
-     * the public main fetcher, and one private {@code select<Participant>For<Field>} helper
-     * per table-bound participant.
+     * Root-fetcher overload: emits the public main fetcher plus one private
+     * {@code select<Participant>For<Field>} helper per table-bound participant. Stage 1's
+     * UNION ALL has no per-branch WHERE; the SELECT spans the full participant tables.
      */
     public static List<MethodSpec> emitMethods(
             String fieldName,
             List<ParticipantRef> participants,
+            boolean isList,
+            String outputPackage, String jooqPackage) {
+        return emitMethods(fieldName, participants, Map.of(), isList, outputPackage, jooqPackage);
+    }
+
+    /**
+     * Child-fetcher overload (R36 Track B3): same shape as the root form but each stage-1
+     * branch carries a {@code WHERE <participant>.<fk> = parentRecord.<parent pk>} predicate
+     * derived from the participant's auto-discovered FK back to the parent table. The main
+     * fetcher reads {@code parentRecord} from {@code env.getSource()} when
+     * {@code participantJoinPaths} is non-empty.
+     *
+     * @param participantJoinPaths typename-keyed FK chain from the parent table to each
+     *                              {@link ParticipantRef.TableBound} participant. Empty for
+     *                              root-fetcher emission. v1 supports only single-hop FK chains.
+     */
+    public static List<MethodSpec> emitMethods(
+            String fieldName,
+            List<ParticipantRef> participants,
+            Map<String, List<JoinStep>> participantJoinPaths,
             boolean isList,
             String outputPackage, String jooqPackage) {
         var tableBoundParticipants = participants.stream()
@@ -80,7 +102,8 @@ public final class MultiTablePolymorphicEmitter {
             .map(p -> (ParticipantRef.TableBound) p)
             .toList();
         var methods = new ArrayList<MethodSpec>();
-        methods.add(buildMainFetcher(fieldName, tableBoundParticipants, isList, outputPackage, jooqPackage));
+        methods.add(buildMainFetcher(fieldName, tableBoundParticipants,
+            participantJoinPaths, isList, outputPackage, jooqPackage));
         for (var participant : tableBoundParticipants) {
             methods.add(buildPerTypenameSelect(fieldName, participant, outputPackage, jooqPackage));
         }
@@ -93,9 +116,15 @@ public final class MultiTablePolymorphicEmitter {
      * {@code __typename} into binding tuples, dispatches per typename to the per-branch
      * stage-2 helper, and merges the typed Records back in stage-1 order via the
      * {@code Object[] result} scatter pattern shared with the federation dispatcher.
+     *
+     * <p>When {@code participantJoinPaths} is non-empty (B3 child case), each stage-1 branch
+     * carries a parent-FK {@code WHERE} predicate. The fetcher then opens with
+     * {@code Record parentRecord = (Record) env.getSource();} so the WHERE predicates can
+     * read parent-side PK values directly off the carrier record.
      */
     private static MethodSpec buildMainFetcher(
             String fieldName, List<ParticipantRef.TableBound> participants,
+            Map<String, List<JoinStep>> participantJoinPaths,
             boolean isList, String outputPackage, String jooqPackage) {
 
         // Return shape: List<Record> for both list and single cardinality. Per-branch
@@ -104,12 +133,17 @@ public final class MultiTablePolymorphicEmitter {
         var listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
         TypeName valueType = isList ? listOfRecord : RECORD;
 
+        boolean isChildFetcher = !participantJoinPaths.isEmpty();
+
         var builder = MethodSpec.methodBuilder(fieldName)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(syncResultType(valueType))
             .addParameter(ENV, "env");
 
         builder.beginControlFlow("try");
+        if (isChildFetcher) {
+            builder.addStatement("$T parentRecord = ($T) env.getSource()", RECORD, RECORD);
+        }
         builder.addStatement("$T dsl = graphitronContext(env).getDslContext(env)", DSL_CONTEXT);
 
         if (participants.isEmpty()) {
@@ -128,8 +162,9 @@ public final class MultiTablePolymorphicEmitter {
             return builder.build();
         }
 
-        // Stage 1: narrow UNION ALL of (typename, pk0..pkN, sort) per branch.
-        builder.addCode(buildStage1Block(participants, jooqPackage));
+        // Stage 1: narrow UNION ALL of (typename, pk0..pkN, sort) per branch. For the child
+        // fetcher form, each branch carries a parent-FK WHERE predicate.
+        builder.addCode(buildStage1Block(participants, participantJoinPaths, jooqPackage));
 
         // Stage 1.5: group stage-1 rows by __typename into (idx, pks) bindings.
         int pkArity = participants.get(0).table().primaryKeyColumns().size();
@@ -184,11 +219,18 @@ public final class MultiTablePolymorphicEmitter {
      * PK columns aliased to {@code __pk0__..__pkN__}, plus a {@code __sort__} key. The composite-PK
      * sort key uses {@code DSL.jsonbArray(...)}; single-column PKs project the column directly.
      *
+     * <p>For the child-fetcher form (R36 Track B3), each branch additionally carries a
+     * {@code .where(<parent-FK predicate>)} restricting that participant to rows whose FK
+     * matches the carrier {@code parentRecord}'s PK. The predicate is derived from the
+     * single-hop FK in {@code participantJoinPaths}; multi-hop chains and condition-joins are
+     * not supported in v1 (the classifier's auto-discovery only produces single-hop FK paths).
+     *
      * <p>The result is declared as {@code Result<? extends Record>} so jOOQ's typed
      * {@code Result<RecordN<...>>} inference (one type-arg per projected column) widens to a
      * uniform Record-iterable shape that the dispatch loop can consume without raw types.
      */
-    private static CodeBlock buildStage1Block(List<ParticipantRef.TableBound> participants, String jooqPackage) {
+    private static CodeBlock buildStage1Block(List<ParticipantRef.TableBound> participants,
+            Map<String, List<JoinStep>> participantJoinPaths, String jooqPackage) {
         var b = CodeBlock.builder();
         var tablesClass = ClassName.get(jooqPackage, "Tables");
 
@@ -206,17 +248,60 @@ public final class MultiTablePolymorphicEmitter {
         for (int p = 0; p < participants.size(); p++) {
             var participant = participants.get(p);
             String alias = "stage1_" + participant.typeName();
+            CodeBlock branchWhere = branchParentFkWhere(participant, participantJoinPaths);
             if (p == 0) {
                 b.add("dsl.select($L)\n", branchProjection(participant, alias));
                 b.add("    .from($L)\n", alias);
+                if (branchWhere != null) {
+                    b.add("    .where($L)\n", branchWhere);
+                }
             } else {
                 b.add("    .unionAll(dsl.select($L)\n", branchProjection(participant, alias));
-                b.add("        .from($L))\n", alias);
+                if (branchWhere != null) {
+                    b.add("        .from($L)\n", alias);
+                    b.add("        .where($L))\n", branchWhere);
+                } else {
+                    b.add("        .from($L))\n", alias);
+                }
             }
         }
         b.add("    .orderBy($T.field($T.name($S)))\n", DSL, DSL, SORT_COLUMN);
         b.add("    .fetch();\n");
         return b.build();
+    }
+
+    /**
+     * Builds the parent-FK WHERE predicate for one stage-1 branch in the child-fetcher form, or
+     * returns {@code null} when no joinPath applies (root-fetcher form, or the participant is
+     * absent from {@code participantJoinPaths}).
+     *
+     * <p>Single-hop FK only: the predicate is
+     * {@code <participantTable>.<fkCol>.eq(parentRecord.get(DSL.name("<parentPkCol>"), <Type>.class))}.
+     * FK direction is inferred from the FK's {@code targetTable} — when it matches the
+     * participant's own table, the parent holds the FK (rare for child fields). Otherwise the
+     * participant holds the FK pointing back to the parent's PK (the standard B3 shape).
+     *
+     * <p>The two-arg {@code parentRecord.get(Name, Class)} form returns the typed value
+     * (rather than {@code Object}) so the typed {@code Field<T>.eq(T)} overload selects
+     * cleanly without an unchecked cast.
+     */
+    private static CodeBlock branchParentFkWhere(ParticipantRef.TableBound participant,
+            Map<String, List<JoinStep>> participantJoinPaths) {
+        var path = participantJoinPaths.get(participant.typeName());
+        if (path == null || path.isEmpty()) return null;
+        if (!(path.get(0) instanceof JoinStep.FkJoin fkJoin)) return null;
+
+        boolean parentHoldsFk = fkJoin.targetTable().tableName().equalsIgnoreCase(participant.table().tableName());
+        ColumnRef participantSide = parentHoldsFk
+            ? fkJoin.targetColumns().get(0)   // child's PK = participant table side
+            : fkJoin.sourceColumns().get(0);  // child holds FK to parent's PK
+        ColumnRef parentSide = parentHoldsFk
+            ? fkJoin.sourceColumns().get(0)
+            : fkJoin.targetColumns().get(0);
+        String tableAlias = "stage1_" + participant.typeName();
+        ClassName parentColClass = ClassName.bestGuess(parentSide.columnClass());
+        return CodeBlock.of("$L.$L.eq(parentRecord.get($T.name($S), $T.class))",
+            tableAlias, participantSide.javaName(), DSL, parentSide.sqlName(), parentColClass);
     }
 
     /**
