@@ -3386,12 +3386,12 @@ class GraphitronSchemaBuilderTest {
                     .contains("(List<String> path, String message) constructor");
             }),
 
-        REJECT_ERROR_WITH_RECORD_MISSING_MARKER(
-            "@error with @record className that has the canonical constructor but does not implement GraphitronError → UnclassifiedType",
+        REJECT_ERROR_WITH_RECORD_MISSING_ACCESSORS(
+            "@error with @record className that has the canonical constructor but no path()/message() accessors → UnclassifiedType",
             """
             type BadError
                 @error(handlers: [{handler: VALIDATION}])
-                @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.MissingMarkerErrorBackingFixture"}) {
+                @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.MissingAccessorErrorBackingFixture"}) {
                 path: [String!]!
                 message: String!
             }
@@ -3401,9 +3401,8 @@ class GraphitronSchemaBuilderTest {
                 var t = (UnclassifiedType) schema.type("BadError");
                 assertThat(t.reason())
                     .contains("@error backing class")
-                    .contains("MissingMarkerErrorBackingFixture")
-                    .contains("GraphitronError")
-                    .contains("marker interface");
+                    .contains("MissingAccessorErrorBackingFixture")
+                    .contains("path() accessor");
             });
 
         final String sdl;

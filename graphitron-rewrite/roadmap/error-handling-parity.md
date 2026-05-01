@@ -124,22 +124,23 @@ leak from the introduction in place, defeating half the point), so internal phas
 landing one after another but no consumer-visible surface ships until the wrapper +
 dispatch arm lands.
 
-**Pivot (in progress):** the original design required every `@error` Java class to
-implement a generated `GraphitronError` marker interface. Two reasons drove the
-marker (slot detection in payload constructors, typed `Mapping.build` return type)
-and both turned out to be self-imposed costs: the rewrite already discovers
-service-record shapes by reflection without a marker (`buildResultType` walks four
-`@record` shape variants), and the same discover-and-adapt pattern fits errors. The
-marker also imposed a build-order coupling legacy never had — consumer code
-compile-time-depended on a generated artifact, so a clean checkout wouldn't compile
-until generation ran. The pivot drops the marker entirely, replaces marker-based
-slot detection with a channel-typed structural match (analogue of
-`resolveDmlPayloadAssembly`'s row-slot match against the table record class), adds
-a classify-time accessor reflection check (`path()` returning `List<String>`,
-`message()` returning `String`) to surface the runtime contract loudly, and retires
-the `@record` co-location FQN-carrier in favour of an explicit `@error(className:
-...)` argument. The Landed bullets below mark the marker-related work as
-`[Reverting]`; the Remaining work list leads with the revert chunk.
+**Pivot (landed):** an earlier draft required every `@error` Java class to implement
+a generated `GraphitronError` marker interface. Two reasons drove the marker (slot
+detection in payload constructors, typed `Mapping.build` return type) and both
+turned out to be self-imposed costs of one specific slot-detection design rather
+than load-bearing on the problem: the rewrite already discovers service-record
+shapes by reflection without a marker (`buildResultType` walks four `@record` shape
+variants), and the same discover-and-adapt pattern fits errors. The marker also
+imposed a build-order coupling legacy never had: consumer code
+compile-time-depended on a generated artefact, so a clean checkout wouldn't compile
+until generation ran. The pivot dropped the marker entirely, replaced
+marker-based slot detection with a channel-typed structural match (analogue of
+`resolveDmlPayloadAssembly`'s row-slot match against the table record class), and
+added a classify-time accessor reflection check (`path()` returning `List<String>`,
+`message()` returning `String`) to surface the runtime contract loudly. The
+explicit `@error(className: ...)` argument that replaces the temporary `@record`
+co-location FQN carrier is the natural follow-up; it is the only remaining piece
+gated on this pivot.
 
 **Landed (C2 review-followup, commit `4591233`):**
 
@@ -182,12 +183,14 @@ the `@record` co-location FQN-carrier in favour of an explicit `@error(className
   `QueryServiceRecordField`) so the slot is populated whenever the payload qualifies.
   Currently gated on `ResultReturnType` payloads (`@record`); `@table`-returning
   fetchers carry an empty channel pending a payload-factory shape for jOOQ Record
-  returns. **[Reverting]** The errors-slot match currently identifies the constructor
-  parameter whose element type's simple name is `GraphitronError`; the pivot
-  replaces that simple-name match with a channel-typed structural match against the
-  channel's `mappedErrorTypes` (a `List<X>` parameter is the errors slot iff every
-  resolved `@error` class is assignable to `X`). The marker requirement on `@error`
-  classes (and the pre-pivot enforcement check) goes away in the same revert.
+  returns. The errors-slot match is a channel-typed structural match against the
+  channel's `mappedErrorTypes`: the unique constructor parameter typed
+  `List<X>`/`Iterable<X>`/`Collection<X>` (or subtype) where every resolved
+  `@error` class is assignable to `X` is the slot. `@error` types whose
+  {@code classFqn} is empty contribute no constraint to the match (the dispatch
+  arm separately skips factory-less mappings); element types parameterised as
+  wildcards unwrap to their upper bound. Mirrors `resolveDmlPayloadAssembly`'s
+  row-slot match against the jOOQ table record class.
 - §1 channel-level reject rules 7 and 9 in the carrier classifier:
   `FieldBuilder.checkChannelLevelHandlerRules` runs after `mappedErrorTypes` resolves
   and before payload-class reflection. Rule 7 fires when the channel's flattened
@@ -205,8 +208,8 @@ the `@record` co-location FQN-carrier in favour of an explicit `@error(className
   supertypes and `AbortExecutionException` arms already match by FQN); same
   diagnostic surface, no false-positives.
 - `(List<String>, String)` constructor reflection check on each `@error` type's
-  developer-supplied backing class. **[Transitional FQN carrier]** The `@error` type
-  currently reads a co-located `@record(record: {className: ...})` directive on the
+  developer-supplied backing class. The `@error` type currently reads a co-located
+  `@record(record: {className: ...})` directive on the
   same OBJECT and stores the resolved class FQN on `ErrorType.classFqn`
   (`Optional<String>`). When the SDL provides a className,
   `TypeBuilder.validatePathMessageConstructor` walks the declared constructors and
@@ -268,11 +271,10 @@ the `@record` co-location FQN-carrier in favour of an explicit `@error(className
   with `build(path, message)`, `match(throwable)`, `description()`; four concrete
   implementations (`ExceptionMapping`, `SqlStateMapping`, `VendorCodeMapping`,
   `ValidationMapping`) carrying the per-variant criteria and a
-  `BiFunction<List<String>, String, GraphitronError>` factory. **[Pivoting]** The
-  factory return type and `Mapping.build` return type widen from `GraphitronError`
-  to `Object` as part of the marker pivot (see "Pivot" note above and the
-  remaining-work bullet); the dispatch arm itself is unchanged structurally. The
-  dispatch method
+  `BiFunction<List<String>, String, Object>` factory (the factory was originally
+  typed as `GraphitronError`; the pivot widened it to `Object` so consumer code no
+  longer compile-time-depends on a generated marker). `payloadFactory` on
+  `dispatch` is correspondingly typed as `Function<List<?>, P>`. The dispatch method
   walks the cause chain twice: a validation arm scans for
   `ValidationViolationGraphQLException` and either fans out through a
   `ValidationMapping` (typed instance per underlying error) or attaches the carried
@@ -293,10 +295,6 @@ the `@record` co-location FQN-carrier in favour of an explicit `@error(className
   `@LoadBearingClassifierCheck(key = "error-channel.mappings-constant")`;
   `ErrorMappingsClassGenerator.generate` carries the matching
   `@DependsOnClassifierCheck`.
-- **[Reverting]** `GraphitronError` marker interface emitted via
-  `GraphitronErrorInterfaceGenerator`. Goes away with the pivot: no marker emission,
-  no consumer-side `implements` requirement, no compile-time coupling between
-  hand-written `@error` classes and generated output.
 - `ValidationViolationGraphQLException` emitted via
   `ValidationViolationGraphQLExceptionGenerator`.
 - Per-fetcher try/catch wrapper now wires the catch arm through the channel: a
@@ -333,107 +331,97 @@ the `@record` co-location FQN-carrier in favour of an explicit `@error(className
   route the catch arm through `catchArm(outputPackage, errorChannel)` so dispatch
   fires when the channel is populated. Insert/update/upsert remain stubs; they
   inherit the slot and the emit machinery once they un-stub.
-  **[Reverting]** `PayloadAssembly` is the parallel reflective product to
-  `ErrorChannel.payloadCtorParams`: the same constructor walk, with overlapping
-  `payloadClass` carriage and a separate `rowSlotIndex` integer instead of a
-  typed slot. The marker-pivot unwind merges both into the unified
-  `PayloadShape` described in §2c and represents the row slot as a `RowSlot`
-  permit on the sealed `PayloadConstructorParam`; the DML field then carries
-  `Optional<PayloadShape> payloadShape()` and the delete emitter switches on
-  the typed permits instead of indexing into `params` by an integer.
-- **[Reverting]** Marker-interface enforcement on `@error` backing classes:
-  `TypeBuilder.validateImplementsGraphitronError` reflects the developer-supplied class
-  resolved from the `@record` co-location and walks its supertype graph for an
-  interface whose simple name is `"GraphitronError"`. The pivot retires the marker
-  altogether; this check, the `MissingMarkerErrorBackingFixture` test fixture, the
-  `REJECT_ERROR_WITH_RECORD_MISSING_MARKER` parameterised case, and the
-  `implements GraphitronError` clause on `ValidErrorBackingFixture` all go away in the
-  revert. The accessor reflection check (`path()` returning `List<String>`,
-  `message()` returning `String`) is the structural successor — same producer
-  pattern, no compile-time coupling on a generated artifact.
+- Accessor reflection check on `@error` backing classes:
+  `TypeBuilder.validatePathMessageAccessors` runs after
+  `validatePathMessageConstructor` succeeds and verifies the developer-supplied
+  class exposes a no-arg `path()` returning `List` (raw or parameterised; runtime
+  treats it as `List<String>`) and a no-arg `message()` returning `String`.
+  graphql-java's `PropertyDataFetcher` reads these at runtime to serialise the
+  error into the response; the classify-time check surfaces the contract loudly
+  rather than letting it fail at the first request. Replaces (and is the structural
+  successor to) the dropped marker-interface enforcement: instead of mandating an
+  `implements GraphitronError` clause that pulled accessor presence in
+  transitively, the rewrite now discovers the accessors directly on the developer's
+  class. Mirrors the producer/consumer pattern of the existing
+  `validatePathMessageConstructor` check and lives under the same
+  `error-type.path-message-fields` `@LoadBearingClassifierCheck` annotation.
+- Marker pivot (the unwind itself, this chunk). Removed
+  `GraphitronErrorInterfaceGenerator` and the generated
+  `<outputPackage>.schema.GraphitronError` artefact (consumer code no longer
+  compile-time-depends on a generated marker). Removed
+  `TypeBuilder.validateImplementsGraphitronError` /
+  `TypeBuilder.implementsGraphitronError`, the `MissingMarkerErrorBackingFixture`
+  test fixture, the `REJECT_ERROR_WITH_RECORD_MISSING_MARKER` parameterised case,
+  the dummyreferences `GraphitronError` interface, and the `implements
+  GraphitronError` clause on `ValidErrorBackingFixture`. Replaced
+  `FieldBuilder.isGraphitronErrorListSlot` with `FieldBuilder.isErrorsListSlot`:
+  channel-typed structural match against the channel's `mappedErrorTypes`. The DML
+  resolver (`resolveDmlPayloadAssembly`) takes `mappedErrorTypes` as a new
+  parameter and uses the same helper for errors-slot identification, so DML
+  payloads share the same match logic as service payloads. `ErrorRouter.Mapping.build`
+  return type widened from `GraphitronError` to `Object`; `ErrorRouter.dispatch`'s
+  `payloadFactory` parameter widened from
+  `Function<List<? extends GraphitronError>, P>` to `Function<List<?>, P>`; the
+  test fixtures (`SakPayload`, `DeleteFilmPayload`) updated to use `List<?>` for
+  the errors slot. Three architectural refinements that the marker-pivot review
+  flagged are tracked separately in Remaining work below (sealed
+  `PayloadConstructorParam` unification with `PayloadAssembly`, FQN-binding for
+  the §1 rule-9 shadowing check, and lifting the `mappingsConstantName` collision
+  suffix into the classifier); they did not land here so the unwind chunk stayed
+  scoped.
 
 **Remaining work:**
 
-- **Marker pivot (one chunk).** Unwind every marker artefact and replace it with
-  structural reflection. Five separate model decisions land together because the
-  same reflective walk produces all of them; sequencing them apart would mean
-  rewriting the same constructor-walk three times.
-  - Delete `GraphitronErrorInterfaceGenerator` and the generated
-    `<outputPackage>.schema.GraphitronError` artefact.
-  - Delete `TypeBuilder.validateImplementsGraphitronError`, the
-    `MissingMarkerErrorBackingFixture` test fixture, the
-    `REJECT_ERROR_WITH_RECORD_MISSING_MARKER` parameterised case, and the
-    `implements GraphitronError` clause on `ValidErrorBackingFixture`.
-  - Replace `FieldBuilder.isGraphitronErrorListSlot` with a channel-typed structural
-    match: walk the payload constructor's parameters; the errors slot is the unique
-    `List<X>` (or `Iterable<X>`) parameter where every channel `mappedErrorTypes`
-    class is assignable to `X`. Diagnostic surface unchanged: zero matches → "no
-    parameter typed to receive the channel's `@error` types"; multiple matches →
-    "ambiguous errors slot; multiple constructor parameters could receive these
-    errors". Mirrors `resolveDmlPayloadAssembly`'s row-slot match against the table
-    record class (same producer/consumer pattern).
-  - **Seal `PayloadConstructorParam` and unify with `PayloadAssembly`.** The
-    landed shape uses a flat record with `boolean isErrorsSlot` plus a
-    `defaultLiteral` field that is `null` on the errors slot, exactly the
-    enum-with-shared-fields shape
-    [`rewrite-design-principles.adoc`](../docs/rewrite-design-principles.adoc#sealed-hierarchies-over-enums-for-typed-information)
-    warns against. Replace it with a sealed interface
-    `permits ErrorsSlot, RowSlot, DefaultedSlot`: each variant carries exactly the
-    fields it needs (`(name, type)` for `ErrorsSlot`; `(name, type)` for
-    `RowSlot`; `(name, type, defaultLiteral)` for `DefaultedSlot`). Introduce a
-    `PayloadShape` record `(payloadClass: ClassName, params:
-    List<PayloadConstructorParam>)` and have `ErrorChannel` reference it as
-    `shape: PayloadShape` instead of carrying `payloadClass` plus
-    `payloadCtorParams` directly. Collapse `PayloadAssembly` into
-    `PayloadShape`: the DML field's row-slot carrier is now the `RowSlot`
-    permit inside `shape.params()`, so the field variant carries one
-    `Optional<PayloadShape>` instead of two parallel optionals. The two
-    classifier sites (`resolveErrorChannel`, `resolveDmlPayloadAssembly`)
-    merge into one constructor walk that classifies each parameter as
-    `ErrorsSlot` / `RowSlot` / `DefaultedSlot` based on the field's channel
-    inputs and DML-table inputs, eliminating the redundant reflection pass and
-    the duplicate `payloadClass` carriage. Both emitter walks (the catch-arm
-    factory in `buildServiceFetcherCommon`, the success-path assembly in
-    `buildMutationDeleteFetcher`) collapse onto a single typed switch over
-    the sealed permits.
-  - Add `TypeBuilder.validatePathMessageAccessors`: paired classify-time check
-    alongside `validatePathMessageConstructor` that verifies the developer-supplied
-    `@error` class exposes `path()` returning `List<String>` (raw or parameterised)
-    and `message()` returning `String`. Surfaces as `UnclassifiedType` with a
-    descriptive reason. Surfaces the previously-implicit graphql-java
-    `PropertyDataFetcher` runtime contract at classify time.
-  - **FQN-bind §1 rule 9's shadowing check.** The landed
-    `checkChannelLevelHandlerRules` rejects an `ExceptionHandler` whose
-    `exceptionClassName` matches the *simple name* `ValidationViolationGraphQLException`,
-    which misclassifies any consumer class that happens to share the simple
-    name. `ValidationViolationGraphQLExceptionGenerator` emits the class at a
-    known FQN (`<outputPackage>.schema.ValidationViolationGraphQLException`);
-    bind the rule to that FQN (and to the JDK `Throwable` supertypes /
-    `AbortExecutionException`, which already match by FQN). Same diagnostic
-    surface; just removes the simple-name false-positive.
-  - `ErrorRouter.Mapping.build` return type widens from `GraphitronError` to
-    `Object`; `ErrorRouter.dispatch`'s `payloadFactory` parameter widens from
-    `Function<List<? extends GraphitronError>, P>` to `Function<List<?>, P>`. Trade
-    a typed end-to-end signature inside generated code for the no-marker invariant;
-    the catch-arm emission casts at the slot type the developer's payload
-    constructor declares (which can still be a consumer-defined common supertype if
-    the consumer wants the typed `List`).
-  - **Resolve `mappingsConstantName` with collision suffix at classify time.**
-    The landed classifier writes the SCREAMING_SNAKE base name and leaves the
-    `_<hash>` disambiguation as a follow-up at emit time. That violates
-    [`rewrite-design-principles.adoc`](../docs/rewrite-design-principles.adoc#generation-thinking)'s
-    "model carries what the generator needs, pre-resolved" rule: the emitter
-    is left to detect collision against a name that was supposed to be
-    generation-ready. Move the dedup into the classifier: `ErrorMappings`
-    emission groups channels by `(payloadClass, flattenedHandlerList)`,
-    collisions on the base name suffix the loser with the 8-hex-char SHA-256
-    prefix described in §3, and the resolved name lands on
-    `ErrorChannel.mappingsConstantName` before the emitter runs. The "no
-    production fixture exercises this today" line in the original §3 dedup
-    bullet stays valid for the suffix-rendering test fixture; this bullet
-    just lifts the *resolution* into the classifier so the emitter switches
-    on a settled string. Subsumes the "§3 hash-suffix dedup" remaining-work
-    bullet below.
+- **Seal `PayloadConstructorParam` and unify with `PayloadAssembly` into
+  `PayloadShape`.** The post-unwind shape still uses a flat record with `boolean
+  isErrorsSlot` plus a `defaultLiteral` field that is `null` on the errors slot,
+  the enum-with-shared-fields shape
+  [`rewrite-design-principles.adoc`](../docs/rewrite-design-principles.adoc#sealed-hierarchies-over-enums-for-typed-information)
+  warns against. Replace it with a sealed interface `permits ErrorsSlot, RowSlot,
+  DefaultedSlot`: each variant carries exactly the fields it needs (`(name,
+  type)` for `ErrorsSlot`; `(name, type)` for `RowSlot`; `(name, type,
+  defaultLiteral)` for `DefaultedSlot`). Introduce a `PayloadShape` record
+  `(payloadClass: ClassName, params: List<PayloadConstructorParam>)` and have
+  `ErrorChannel` reference it as `shape: PayloadShape` instead of carrying
+  `payloadClass` plus `payloadCtorParams` directly. Collapse `PayloadAssembly`
+  into `PayloadShape`: the DML field's row-slot carrier becomes the `RowSlot`
+  permit inside `shape.params()`, so the field variant carries one
+  `Optional<PayloadShape>` instead of two parallel optionals. The two
+  classifier sites (`resolveErrorChannel`, `resolveDmlPayloadAssembly`) merge
+  into one constructor walk that classifies each parameter as `ErrorsSlot` /
+  `RowSlot` / `DefaultedSlot` based on the field's channel inputs and
+  DML-table inputs, eliminating the redundant reflection pass and the
+  duplicate `payloadClass` carriage. Both emitter walks (the catch-arm factory
+  in `buildServiceFetcherCommon`, the success-path assembly in
+  `buildMutationDeleteFetcher`) collapse onto a single typed switch over the
+  sealed permits.
+- **FQN-bind §1 rule 9's shadowing check.** The landed
+  `checkChannelLevelHandlerRules` rejects an `ExceptionHandler` whose
+  `exceptionClassName` matches the *simple name*
+  `ValidationViolationGraphQLException`, which misclassifies any consumer class
+  that happens to share the simple name.
+  `ValidationViolationGraphQLExceptionGenerator` emits the class at a known FQN
+  (`<outputPackage>.schema.ValidationViolationGraphQLException`); bind the rule
+  to that FQN (and to the JDK `Throwable` supertypes /
+  `AbortExecutionException`, which already match by FQN). Same diagnostic
+  surface; just removes the simple-name false-positive.
+- **Resolve `mappingsConstantName` with collision suffix at classify time.**
+  The landed classifier writes the SCREAMING_SNAKE base name and leaves the
+  `_<hash>` disambiguation as a follow-up at emit time. That violates
+  [`rewrite-design-principles.adoc`](../docs/rewrite-design-principles.adoc#generation-thinking)'s
+  "model carries what the generator needs, pre-resolved" rule: the emitter is
+  left to detect collision against a name that was supposed to be
+  generation-ready. Move the dedup into the classifier: `ErrorMappings`
+  emission groups channels by `(payloadClass, flattenedHandlerList)`,
+  collisions on the base name suffix the loser with the 8-hex-char SHA-256
+  prefix described in §3, and the resolved name lands on
+  `ErrorChannel.mappingsConstantName` before the emitter runs. The "no
+  production fixture exercises this today" line in the original §3 dedup
+  bullet stays valid for the suffix-rendering test fixture; this bullet just
+  lifts the *resolution* into the classifier so the emitter switches on a
+  settled string. Subsumes the "§3 hash-suffix dedup" remaining-work bullet
+  below.
+
 - **Explicit FQN argument on `@error` directive.** Replace the temporary `@record`
   co-location FQN carrier with a top-level `className: String` argument on `@error`:
   ```graphql
