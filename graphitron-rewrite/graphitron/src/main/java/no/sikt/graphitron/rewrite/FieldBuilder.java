@@ -60,7 +60,6 @@ import no.sikt.graphitron.rewrite.model.LookupMapping;
 import no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.MutationField;
-import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.PaginationSpec;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
@@ -87,22 +86,12 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_CLASS_NAME;
-import static no.sikt.graphitron.rewrite.BuildContext.ARG_CONNECTION_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_CONTEXT_ARGUMENTS;
-import static no.sikt.graphitron.rewrite.BuildContext.ARG_KEY;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_ARG_MAPPING;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_METHOD;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_NAME;
-import static no.sikt.graphitron.rewrite.BuildContext.ARG_OVERRIDE;
-import static no.sikt.graphitron.rewrite.BuildContext.argBoolean;
-import static no.sikt.graphitron.rewrite.BuildContext.ARG_PATH;
-import static no.sikt.graphitron.rewrite.BuildContext.ARG_SERVICE_REF;
-import static no.sikt.graphitron.rewrite.BuildContext.ARG_TABLE_METHOD_REF;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_TYPE_NAME;
-import static no.sikt.graphitron.rewrite.BuildContext.ARG_TYPE_ID;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_AS_CONNECTION;
-import static no.sikt.graphitron.rewrite.BuildContext.DIR_CONDITION;
-import static no.sikt.graphitron.rewrite.BuildContext.DIR_DEFAULT_ORDER;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_EXTERNAL_FIELD;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_FIELD;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_LOOKUP_KEY;
@@ -2456,6 +2445,6 @@ class FieldBuilder {
     static Set<String> fieldArgumentNames(GraphQLFieldDefinition fieldDef) {
         return fieldDef.getArguments().stream()
             .map(GraphQLArgument::getName)
-            .collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new));
+            .collect(Collectors.toCollection(LinkedHashSet::new));
     }
 }
