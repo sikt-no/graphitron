@@ -1824,6 +1824,11 @@ class FieldBuilder {
         if (channelReject != null) {
             return new ErrorChannelResult.Reject(channelReject);
         }
+        // §3 rule 8: duplicate match-criteria across the flattened handler list.
+        String dupReject = checkDuplicateMatchCriteria(mappedErrorTypes);
+        if (dupReject != null) {
+            return new ErrorChannelResult.Reject(dupReject);
+        }
 
         Class<?> payloadCls;
         try {
@@ -1939,10 +1944,14 @@ class FieldBuilder {
      *       {@code Exception}, {@code Throwable}). The runtime runs validation fan-out ahead
      *       of {@code MAPPINGS} iteration (§5), so the broader handler would shadow the
      *       fan-out for {@code ValidationViolationGraphQLException} cases.</li>
+     *   <li>Rule 8 (§3): two handlers of the same variant in the channel's flattened handler
+     *       list with identical match-criteria. The runtime's source-order {@code findFirst}
+     *       on {@code MAPPINGS} would make the second mapping unreachable, so the duplicate
+     *       is an author mistake. Intra-variant only: an {@code ExceptionHandler(SQLException)}
+     *       and a {@code SqlStateHandler("23503")} discriminate on different fields and are
+     *       intentionally allowed to overlap (§3 source-order resolves which {@code @error}
+     *       type wins).</li>
      * </ul>
-     *
-     * <p>Rule 8 (duplicate match-criteria) is its own classifier check (§3) and lives in a
-     * separate helper.
      */
     private static String checkChannelLevelHandlerRules(List<ErrorType> mappedErrorTypes) {
         // Rule 7: multiple VALIDATION handlers in the same channel.
@@ -1985,6 +1994,68 @@ class FieldBuilder {
                 + "with distinct payloads";
         }
         return null;
+    }
+
+    /**
+     * Rule 8 (§3): rejects a channel whose flattened handler list contains two intra-variant
+     * handlers with identical match-criteria. The criteria tuples per variant:
+     *
+     * <ul>
+     *   <li>{@link ErrorType.ExceptionHandler}: {@code (exceptionClassName, matches)}</li>
+     *   <li>{@link ErrorType.SqlStateHandler}: {@code (sqlState, matches)}</li>
+     *   <li>{@link ErrorType.VendorCodeHandler}: {@code (vendorCode, matches)}</li>
+     * </ul>
+     *
+     * <p>Tuple equality treats absent {@code matches} as a distinct value from any present
+     * {@code matches}. {@link ErrorType.ValidationHandler} is excluded; rule 7 already caps it
+     * at one per channel and it has no discriminator. Cross-variant overlap is intentionally
+     * allowed: a channel with {@code ExceptionHandler(SQLException)} and
+     * {@code SqlStateHandler("23503")} is the canonical "specific arm before fallback" pattern,
+     * and §3's source-order rule resolves which {@code @error} type the runtime emits.
+     *
+     * <p>Returns the first reason encountered, or {@code null} when no duplicates exist. The
+     * reason names both colliding {@code @error} types (the same type appears twice when the
+     * duplicate is within one type's {@code handlers} array). Closes the legacy gap where
+     * {@code ExceptionStrategyConfigurationGenerator} silently allowed duplicates.
+     */
+    private static String checkDuplicateMatchCriteria(List<ErrorType> mappedErrorTypes) {
+        record CriteriaKey(String variant, String discriminator, java.util.Optional<String> matches) {}
+        var seen = new java.util.LinkedHashMap<CriteriaKey, String>();
+        for (var et : mappedErrorTypes) {
+            for (var h : et.handlers()) {
+                CriteriaKey key;
+                String fingerprint;
+                if (h instanceof ErrorType.ExceptionHandler eh) {
+                    key = new CriteriaKey("ExceptionHandler", eh.exceptionClassName(), eh.matches());
+                    fingerprint = "ExceptionHandler(className=\"" + eh.exceptionClassName() + "\""
+                        + matchesSuffix(eh.matches()) + ")";
+                } else if (h instanceof ErrorType.SqlStateHandler sh) {
+                    key = new CriteriaKey("SqlStateHandler", sh.sqlState(), sh.matches());
+                    fingerprint = "SqlStateHandler(sqlState=\"" + sh.sqlState() + "\""
+                        + matchesSuffix(sh.matches()) + ")";
+                } else if (h instanceof ErrorType.VendorCodeHandler vh) {
+                    key = new CriteriaKey("VendorCodeHandler", vh.vendorCode(), vh.matches());
+                    fingerprint = "VendorCodeHandler(vendorCode=\"" + vh.vendorCode() + "\""
+                        + matchesSuffix(vh.matches()) + ")";
+                } else {
+                    continue;
+                }
+                String trace = et.name() + " " + fingerprint;
+                String prior = seen.putIfAbsent(key, trace);
+                if (prior != null) {
+                    return "@error channel has two handlers with identical match-criteria: "
+                        + prior + " and " + trace
+                        + "; the runtime's source-order findFirst on MAPPINGS would make the "
+                        + "second mapping unreachable — collapse the duplicate or differentiate "
+                        + "the criteria";
+                }
+            }
+        }
+        return null;
+    }
+
+    private static String matchesSuffix(java.util.Optional<String> matches) {
+        return matches.isPresent() ? ", matches=\"" + matches.get() + "\"" : "";
     }
 
     /**
