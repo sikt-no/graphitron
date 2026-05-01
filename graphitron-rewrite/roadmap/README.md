@@ -15,7 +15,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Plan |
 |---|---|---|---|
 | `R1` | `BatchKey` lifter directive | Spec | [plan](batchkey-lifter-directive.md) |
-| `R36` | Stub #3: Interface / union fetchers <sub>blocked by: [entityfetcherdispatch-lookup-pipeline-collapse](entityfetcherdispatch-lookup-pipeline-collapse.md)</sub> | In Progress | [plan](stub-interface-union-fetchers.md) |
+| `R36` | Stub #3: Interface / union fetchers | In Progress | [plan](stub-interface-union-fetchers.md) |
 | `R40` | Argument-level `@nodeId` support | Spec | [plan](argument-level-nodeid.md) |
 | `R49` | Stub: scalar/`@record`-returning `@service` child field (`ServiceRecordField`) <sub>blocked by: [service-rows-method-body](service-rows-method-body.md)</sub> | Spec | [plan](service-record-field.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
@@ -86,7 +86,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### interface-union
 
-- `R36` [**Stub #3: Interface / union fetchers**](stub-interface-union-fetchers.md) — In Progress, stubs, blocked by [entityfetcherdispatch-lookup-pipeline-collapse](entityfetcherdispatch-lookup-pipeline-collapse.md)
+- `R36` [**Stub #3: Interface / union fetchers**](stub-interface-union-fetchers.md) — In Progress, stubs
 - `R44` [**Stub: `@multitableReference` on a scalar field (`MultitableReferenceField`)**](multitable-reference-on-scalar.md) — Backlog, stubs, blocked by [stub-interface-union-fetchers](stub-interface-union-fetchers.md)
 
 ### nodeid
