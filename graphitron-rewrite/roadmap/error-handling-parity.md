@@ -179,6 +179,21 @@ dispatch arm lands.
   `graphql.execution.AbortExecutionException`, or any class with the simple name
   `ValidationViolationGraphQLException`). Both surface as `UnclassifiedField` on the
   carrier with reasons that name the offending `@error` types.
+- `(List<String>, String)` constructor reflection check on each `@error` type's
+  developer-supplied backing class. The `@error` type now reads a co-located
+  `@record(record: {className: ...})` directive on the same OBJECT and stores the resolved
+  class FQN on `ErrorType.classFqn` (`Optional<String>`). When the SDL provides a className,
+  `TypeBuilder.validatePathMessageConstructor` walks the declared constructors and verifies
+  one accepts `(List<String>, String)` (parameterised or raw `List`); a missing class or a
+  class without the matching constructor surfaces the parent `ErrorType` as
+  `UnclassifiedType` with a descriptive reason, mirroring the `@record` reflection block in
+  `TypeBuilder.buildResultType`. When the SDL omits `@record`, `classFqn` stays
+  `Optional.empty()` so the marker-interface check and the payload-factory call site (both
+  remaining work) can read the slot when a class has been declared. The
+  `detectTypeDirectiveConflict` mutual-exclusion rule was relaxed to permit `@record + @error`
+  while keeping `@table + (@record | @error)` mutually exclusive; the type-dispatch order in
+  `buildTypes` was flipped so a co-located `@record + @error` routes to `buildErrorType`
+  instead of `buildResultType`.
 - §3 rule 8 (duplicate-criteria classifier check) in the carrier classifier:
   `FieldBuilder.checkDuplicateMatchCriteria` walks the channel's flattened handler list
   and rejects two intra-variant handlers with identical match-criteria tuples
@@ -220,9 +235,6 @@ dispatch arm lands.
   variants per §1's table; the nine reject rules (intra-type and channel-level,
   including the validation-shadowing rule and the `path`/`message`-only structural
   rule) fire as `UnclassifiedType` / `UnclassifiedField`.
-- `(List<String>, String)` constructor reflection check on each `@error` type's
-  developer-supplied class (parallels `@record` reflection in
-  `TypeBuilder.buildResultType`).
 - Per-package `ErrorMappings` helper emitted at `<outputPackage>.schema.ErrorMappings`
   (§3); `ErrorRouter.dispatch` arm + sealed `Mapping` taxonomy.
 - Try/catch wrapper on every fetcher body (channel → `ErrorRouter.dispatch`; no channel

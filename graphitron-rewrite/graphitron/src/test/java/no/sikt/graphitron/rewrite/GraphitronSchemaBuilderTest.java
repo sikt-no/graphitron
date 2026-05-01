@@ -3243,6 +3243,79 @@ class GraphitronSchemaBuilderTest {
                 assertThat(t.reason())
                     .contains("java.lang.String")
                     .contains("Throwable");
+            }),
+
+        // The @record-on-@error cases below cover the developer-supplied backing-class
+        // resolution: the class names a Java type with a (List<String> path, String message)
+        // canonical constructor that the runtime payload-factory call site invokes.
+
+        ERROR_WITHOUT_RECORD_LEAVES_CLASS_FQN_EMPTY(
+            "@error without co-located @record → ErrorType.classFqn is Optional.empty()",
+            """
+            type ValidationError @error(handlers: [{handler: VALIDATION}]) {
+                path: [String!]!
+                message: String!
+            }
+            type Query { x: String }
+            """,
+            schema -> {
+                var et = (ErrorType) schema.type("ValidationError");
+                assertThat(et.classFqn()).isEmpty();
+            }),
+
+        ERROR_WITH_RECORD_RESOLVES_BACKING_CLASS(
+            "@error with @record(record: {className: <valid>}) populates ErrorType.classFqn",
+            """
+            type ValidationError
+                @error(handlers: [{handler: VALIDATION}])
+                @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.ValidErrorBackingFixture"}) {
+                path: [String!]!
+                message: String!
+            }
+            type Query { x: String }
+            """,
+            schema -> {
+                var et = (ErrorType) schema.type("ValidationError");
+                assertThat(et.classFqn())
+                    .contains("no.sikt.graphitron.codereferences.dummyreferences.ValidErrorBackingFixture");
+            }),
+
+        REJECT_ERROR_WITH_RECORD_BUT_MISSING_CLASS(
+            "@error with @record className that cannot be loaded → UnclassifiedType",
+            """
+            type BadError
+                @error(handlers: [{handler: VALIDATION}])
+                @record(record: {className: "no.does.not.exist.MissingErrorClass"}) {
+                path: [String!]!
+                message: String!
+            }
+            type Query { x: String }
+            """,
+            schema -> {
+                var t = (UnclassifiedType) schema.type("BadError");
+                assertThat(t.reason())
+                    .contains("@error backing class")
+                    .contains("no.does.not.exist.MissingErrorClass")
+                    .contains("could not be loaded");
+            }),
+
+        REJECT_ERROR_WITH_RECORD_BUT_WRONG_CONSTRUCTOR(
+            "@error with @record className that has no (List<String>, String) constructor → UnclassifiedType",
+            """
+            type BadError
+                @error(handlers: [{handler: VALIDATION}])
+                @record(record: {className: "java.lang.RuntimeException"}) {
+                path: [String!]!
+                message: String!
+            }
+            type Query { x: String }
+            """,
+            schema -> {
+                var t = (UnclassifiedType) schema.type("BadError");
+                assertThat(t.reason())
+                    .contains("@error backing class")
+                    .contains("java.lang.RuntimeException")
+                    .contains("(List<String> path, String message) constructor");
             });
 
         final String sdl;
@@ -4730,15 +4803,11 @@ class GraphitronSchemaBuilderTest {
             type Film @table(name: "film") @error(handlers: [{handler: GENERIC, className: "com.example.Ex"}]) { title: String }
             type Query { film: Film }
             """,
-            "Film", "@table", "@error"),
+            "Film", "@table", "@error");
 
-        RECORD_AND_ERROR_CONFLICT(
-            "@record and @error on the same type → UnclassifiedType with reason mentioning both",
-            """
-            type Hybrid @record @error(handlers: [{handler: GENERIC, className: "com.example.Ex"}]) { value: String }
-            type Query { x: String }
-            """,
-            "Hybrid", "@record", "@error");
+        // @record + @error is intentionally NOT a conflict: the @record(record: {className: ...})
+        // names the @error type's developer-supplied backing class. See
+        // ErrorTypeCase.ERROR_WITH_RECORD_RESOLVES_BACKING_CLASS for the success case.
 
         final String typeName;
         final String sdl;
