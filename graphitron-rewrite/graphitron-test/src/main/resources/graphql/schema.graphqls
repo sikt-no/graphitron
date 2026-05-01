@@ -141,6 +141,18 @@ type Query {
     # fetcher that selects from the shared 'content' table and projects the discriminator
     # column so the TypeResolver can route to FilmContent or ShortContent at runtime.
     allContent: [Content!]!
+
+    # stub-interface-union-fetchers.md Track B (B2): QueryInterfaceField fixture.
+    # Searchable is a multi-table interface implemented by Film and Actor — heterogeneous
+    # tables, no shared discriminator column. The generator emits a two-stage fetcher:
+    # stage 1 narrow UNION ALL projecting (__typename, __pk0__, __sort__) per branch;
+    # stage 2 per-typename batched lookup using the dispatcher-shape ValuesJoinRowBuilder.
+    # Records carry __typename so the TypeResolver routes per row.
+    search: [Searchable!]!
+
+    # B2 union-variant fixture: same two-stage emission as Searchable, member-types form.
+    # Document = Film | Actor exercises QueryUnionField on the same fetcher path.
+    documents: [Document!]!
 }
 
 type Customer implements Node @table(name: "customer") @node {
@@ -231,10 +243,14 @@ type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jo
     ])
 }
 
-type Film implements Node @table(name: "film") @node {
+type Film implements Node & Searchable @table(name: "film") @node {
     id:          ID!          @nodeId
     filmId:      Int!         @field(name: "FILM_ID")
     title:       String!      @field(name: "TITLE")
+    # B2 fixture: Searchable.name maps to Film's title column. Both Film and Actor
+    # remap their own meaningful column to this synthetic interface field so the
+    # multi-table fetcher can return either through the shared interface contract.
+    name:        String!      @field(name: "TITLE")
     description: String       @field(name: "DESCRIPTION")
     rentalRate:  Float!       @field(name: "RENTAL_RATE")
     rating:      MpaaRating   @field(name: "RATING")
@@ -313,10 +329,14 @@ type Film implements Node @table(name: "film") @node {
     filmContent: Content @reference(path: [{key: "content_film_id_fkey"}])
 }
 
-type Actor @table(name: "actor") {
+type Actor implements Searchable @table(name: "actor") {
     actorId:   Int!    @field(name: "ACTOR_ID")
     firstName: String! @field(name: "FIRST_NAME")
     lastName:  String! @field(name: "LAST_NAME")
+    # B2 fixture: Searchable.name maps to first_name on Actor. Combined with Film.name
+    # (mapped to title), one Searchable result list mixes typed Records of both shapes
+    # under a uniform interface contract.
+    name:      String! @field(name: "FIRST_NAME")
 }
 
 # Plain-object nesting type. No @table, no @record. Nested under Film.summary; the
@@ -548,6 +568,21 @@ interface Content @table(name: "content") @discriminate(on: "CONTENT_TYPE") {
     contentId: Int!    @field(name: "CONTENT_ID")
     title:     String! @field(name: "TITLE")
 }
+
+# stub-interface-union-fetchers.md Track B (B2): plain (multi-table) InterfaceType fixture.
+# Searchable is implemented by Film and Actor on heterogeneous tables. There is no
+# shared discriminator column; instead the multi-table polymorphic fetcher emits a
+# two-stage SELECT — stage 1 narrows to (typename, pk, sort), stage 2 dispatches per
+# typename. Each implementer remaps the synthetic Searchable.name to a concrete column
+# (Film.TITLE, Actor.FIRST_NAME).
+interface Searchable {
+    name: String!
+}
+
+# B2 union-variant fixture. Same two-stage native fetcher as Searchable; differs only
+# in the participant-set source (union members vs. interface implementers). The
+# emitter shares MultiTablePolymorphicEmitter between both forms.
+union Document = Film | Actor
 
 # Implements Content; discriminator value 'FILM'. Adds a length field plus a cross-table
 # participant field exercising stub-interface-union-fetchers.md Track A Phase 2: rating lives
