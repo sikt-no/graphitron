@@ -43,10 +43,14 @@ import static no.sikt.graphitron.rewrite.BuildContext.candidateHint;
  *       DB-string mapping (via {@code @field(name:)} on each enum value, defaulting to the
  *       value name itself). Returns {@code null} when the GraphQL type is not an enum.</li>
  *   <li>{@link #validateEnumFilter} matches a GraphQL enum against a jOOQ-generated Java enum
- *       column class. Returns the Java enum's fully qualified class name on success,
- *       {@code null} when the column is not an enum (the GraphQL type may or may not be one),
- *       or the empty string when validation fails (mismatches appended to the errors list).
- *       The tri-state preserves three honest outcomes the callers branch on directly.</li>
+ *       column class. Returns a sealed {@link EnumValidation} the caller switches on:
+ *       {@link EnumValidation.NotEnum} when the column is not a jOOQ enum (the GraphQL side may
+ *       still be one — the caller treats that as "no enum coercion needed"),
+ *       {@link EnumValidation.Valid} carrying the matched Java enum's fully qualified class name,
+ *       or {@link EnumValidation.Mismatch} carrying a single composed rejection message that the
+ *       caller appends to its accumulating errors list. Replaces the tri-state
+ *       null/fqcn/empty-string sentinel that mirrored {@link ConditionResolver}'s pre-Phase-6c
+ *       dual-signal pattern.</li>
  *   <li>{@link #deriveExtraction} picks the {@link CallSiteExtraction} strategy for a scalar
  *       column-bound value, given the GraphQL type, the target column, the validated enum
  *       class name (when applicable), and the generated static-map field name to use for
@@ -71,6 +75,28 @@ import static no.sikt.graphitron.rewrite.BuildContext.candidateHint;
  * pattern shared with {@link InputFieldResolver#resolve}.
  */
 final class EnumMappingResolver {
+
+    /**
+     * Outcome of {@link #validateEnumFilter}. Three terminal arms; the caller exhausts them with
+     * a switch.
+     *
+     * <ul>
+     *   <li>{@link NotEnum} — the jOOQ column class is not a Java enum. The GraphQL type may
+     *       still be an enum (text-mapped); the caller treats this as "no enum coercion bound".</li>
+     *   <li>{@link Valid} — the column is a jOOQ enum and every GraphQL enum value maps to a
+     *       Java enum constant. Carries the Java enum's fully qualified class name.</li>
+     *   <li>{@link Mismatch} — the column is a jOOQ enum but the GraphQL side either isn't an
+     *       enum or has values that don't line up with the Java constants. Carries the composed
+     *       rejection message; the caller appends to its errors list.</li>
+     * </ul>
+     */
+    sealed interface EnumValidation {
+        record NotEnum() implements EnumValidation {}
+        record Valid(String fqcn) implements EnumValidation {}
+        record Mismatch(String message) implements EnumValidation {}
+    }
+
+    private static final EnumValidation NOT_ENUM = new EnumValidation.NotEnum();
 
     private final BuildContext ctx;
 
@@ -99,25 +125,23 @@ final class EnumMappingResolver {
 
     /**
      * Validates that a GraphQL enum type's values match the Java enum constants of the column
-     * type. Returns the fully qualified Java enum class name when the column is an enum and
-     * all values validate, {@code null} when the column is not an enum, or the empty string
-     * when the column is an enum but validation fails (errors are appended to {@code errors}).
+     * type. Returns a sealed {@link EnumValidation} the caller switches on; the {@code Mismatch}
+     * arm carries a single composed message ready for the caller's accumulating errors list.
      */
-    String validateEnumFilter(String graphqlTypeName, ColumnRef column, List<String> errors) {
+    EnumValidation validateEnumFilter(String graphqlTypeName, ColumnRef column) {
         Class<?> colClass;
         try {
             colClass = Class.forName(column.columnClass());
         } catch (ClassNotFoundException e) {
-            return null;
+            return NOT_ENUM;
         }
         if (!colClass.isEnum()) {
-            return null;
+            return NOT_ENUM;
         }
         var schemaType = ctx.schema.getType(graphqlTypeName);
         if (!(schemaType instanceof GraphQLEnumType graphqlEnum)) {
-            errors.add("column '" + column.sqlName() + "' is a jOOQ enum (" + colClass.getSimpleName()
-                + ") but GraphQL type '" + graphqlTypeName + "' is not an enum");
-            return "";
+            return new EnumValidation.Mismatch("column '" + column.sqlName() + "' is a jOOQ enum ("
+                + colClass.getSimpleName() + ") but GraphQL type '" + graphqlTypeName + "' is not an enum");
         }
         var javaConstants = Arrays.stream(colClass.getEnumConstants())
             .map(c -> ((Enum<?>) c).name())
@@ -131,18 +155,20 @@ final class EnumMappingResolver {
             }
         }
         if (!mismatches.isEmpty()) {
-            errors.add("GraphQL enum '" + graphqlTypeName + "' has values that don't match jOOQ enum "
-                + colClass.getSimpleName() + ": " + String.join("; ", mismatches));
-            return "";
+            return new EnumValidation.Mismatch("GraphQL enum '" + graphqlTypeName
+                + "' has values that don't match jOOQ enum " + colClass.getSimpleName() + ": "
+                + String.join("; ", mismatches));
         }
-        return colClass.getName();
+        return new EnumValidation.Valid(colClass.getName());
     }
 
     /**
      * Derives the {@link CallSiteExtraction} strategy for a scalar column-bound value given
-     * its GraphQL type and target column. {@code enumClassName} is the result of
-     * {@link #validateEnumFilter} (non-null only for jOOQ-enum columns). {@code mapFieldName}
-     * is the generated static-map field name used when the GraphQL type is a text-mapped enum.
+     * its GraphQL type and target column. {@code enumClassName} is the FQCN from
+     * {@link EnumValidation.Valid}; pass {@code null} when the column is not a jOOQ enum (the
+     * {@link EnumValidation.NotEnum} arm) so the {@code TextMapLookup} / {@code JooqConvert} /
+     * {@code Direct} fallbacks can take over. {@code mapFieldName} is the generated static-map
+     * field name used when the GraphQL type is a text-mapped enum.
      */
     CallSiteExtraction deriveExtraction(String typeName, ColumnRef columnRef,
                                         String enumClassName, String mapFieldName) {
@@ -231,9 +257,14 @@ final class EnumMappingResolver {
                     + "move list cardinality to the outer argument");
                 continue;
             }
-            String enumClassName = validateEnumFilter(cf.typeName(), cf.column(), errors);
-            if (enumClassName != null && enumClassName.isEmpty()) {
-                continue;
+            String enumClassName;
+            switch (validateEnumFilter(cf.typeName(), cf.column())) {
+                case EnumValidation.NotEnum n -> enumClassName = null;
+                case EnumValidation.Valid v -> enumClassName = v.fqcn();
+                case EnumValidation.Mismatch m -> {
+                    errors.add(m.message());
+                    continue;
+                }
             }
             String mapFieldName = fieldDef.getName().toUpperCase() + "_"
                 + argName.toUpperCase() + "_" + sdlField.getName().toUpperCase() + "_MAP";
