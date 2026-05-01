@@ -179,6 +179,20 @@ dispatch arm lands.
   `graphql.execution.AbortExecutionException`, or any class with the simple name
   `ValidationViolationGraphQLException`). Both surface as `UnclassifiedField` on the
   carrier with reasons that name the offending `@error` types.
+- §3 rule 8 (duplicate-criteria classifier check) in the carrier classifier:
+  `FieldBuilder.checkDuplicateMatchCriteria` walks the channel's flattened handler list
+  and rejects two intra-variant handlers with identical match-criteria tuples
+  (`(exceptionClassName, matches)` for `ExceptionHandler`, `(sqlState, matches)` for
+  `SqlStateHandler`, `(vendorCode, matches)` for `VendorCodeHandler`). Optional
+  `matches` equality treats absent and present as distinct values, and an absent
+  `matches` collides only with another absent `matches`. Cross-variant overlap is
+  intentionally allowed (an `ExceptionHandler(SQLException)` and a
+  `SqlStateHandler("23503")` both match a Postgres FK violation; §3 source-order picks
+  the first). Catches both intra-type duplicates (within one `@error` type's `handlers`
+  array) and cross-type duplicates (two `@error` types in the same channel). Surfaces
+  as `UnclassifiedField` on the carrier with a reason naming both colliding handler
+  fingerprints, closing the legacy gap where
+  `ExceptionStrategyConfigurationGenerator` silently allowed duplicates.
 - `ExceptionHandler.exceptionClassName` resolution check at parse time:
   `TypeBuilder.validateExceptionClass` reflects the className with `Class.forName`
   on the classifier classpath and verifies the resolved class extends
@@ -206,7 +220,6 @@ dispatch arm lands.
   variants per §1's table; the nine reject rules (intra-type and channel-level,
   including the validation-shadowing rule and the `path`/`message`-only structural
   rule) fire as `UnclassifiedType` / `UnclassifiedField`.
-- §3's duplicate-criteria classifier check on flattened channel mappings.
 - `(List<String>, String)` constructor reflection check on each `@error` type's
   developer-supplied class (parallels `@record` reflection in
   `TypeBuilder.buildResultType`).
