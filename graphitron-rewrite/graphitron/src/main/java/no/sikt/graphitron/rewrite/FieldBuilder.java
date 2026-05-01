@@ -150,12 +150,14 @@ class FieldBuilder {
     private final ServiceDirectiveResolver serviceResolver;
     private final TableMethodDirectiveResolver tableMethodResolver;
     private final ExternalFieldDirectiveResolver externalFieldResolver;
+    private final LookupKeyDirectiveResolver lookupKeyResolver;
     FieldBuilder(BuildContext ctx, ServiceCatalog svc) {
         this.ctx = ctx;
         this.svc = svc;
         this.serviceResolver = new ServiceDirectiveResolver(ctx, svc, this);
         this.tableMethodResolver = new TableMethodDirectiveResolver(ctx, svc, this);
         this.externalFieldResolver = new ExternalFieldDirectiveResolver(ctx, svc, this);
+        this.lookupKeyResolver = new LookupKeyDirectiveResolver(ctx, svc, this);
     }
 
     // ===== Shared resolution helpers =====
@@ -232,30 +234,18 @@ class FieldBuilder {
             boolean isList = returnType.wrapper().isList();
             var parentBatchKey = deriveSplitQueryBatchKey(parentTableType.table(), referencePath.elements(), isList);
             if (hasSplitQuery && hasLookupKey) {
-                if (returnType.wrapper() instanceof FieldWrapper.Connection) {
-                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.INVALID_SCHEMA,
-                        "@asConnection on @lookupKey fields is invalid: @lookupKey establishes a positional "
-                        + "correspondence between the input key list and the output list (one entry per key), "
-                        + "which pagination would break. Drop @asConnection or drop @lookupKey.");
-                }
-                if (returnType.wrapper() instanceof FieldWrapper.Single) {
-                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.INVALID_SCHEMA,
-                        "Single-cardinality @splitQuery @lookupKey is not supported; pass a list-returning field or drop @lookupKey");
+                var lookupResolved = lookupKeyResolver.resolveAtChild(returnType, true);
+                if (lookupResolved instanceof LookupKeyDirectiveResolver.Resolved.Rejected r) {
+                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, r.kind(), r.message());
                 }
                 return new no.sikt.graphitron.rewrite.model.ChildField.SplitLookupTableField(
                     parentTypeName, name, location, returnType, referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination(), parentBatchKey,
                     tfc.lookupMapping());
             }
             if (!hasSplitQuery && hasLookupKey) {
-                if (returnType.wrapper() instanceof FieldWrapper.Connection) {
-                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.INVALID_SCHEMA,
-                        "@asConnection on @lookupKey fields is invalid: @lookupKey establishes a positional "
-                        + "correspondence between the input key list and the output list (one entry per key), "
-                        + "which pagination would break. Drop @asConnection or drop @lookupKey.");
-                }
-                if (returnType.wrapper() instanceof FieldWrapper.Single) {
-                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.INVALID_SCHEMA,
-                        "Single-cardinality @lookupKey is not supported; pass a list-returning field or drop @lookupKey");
+                var lookupResolved = lookupKeyResolver.resolveAtChild(returnType, false);
+                if (lookupResolved instanceof LookupKeyDirectiveResolver.Resolved.Rejected r) {
+                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, r.kind(), r.message());
                 }
                 return new no.sikt.graphitron.rewrite.model.ChildField.LookupTableField(
                     parentTypeName, name, location, returnType, referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination(),
@@ -2130,14 +2120,18 @@ class FieldBuilder {
         if (hasLookupKeyAnywhere(fieldDef)) {
             String lookupTypeName = baseTypeName(fieldDef);
             var returnType = ctx.resolveReturnType(lookupTypeName, buildWrapper(fieldDef));
-            if (!(returnType instanceof ReturnTypeRef.TableBoundReturnType tb)) {
-                return new GraphitronField.UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
-                    "@lookupKey requires a @table-annotated return type");
-            }
-            var tfc = resolveTableFieldComponents(fieldDef, tb.table(), lookupTypeName);
-            if (tfc.error() != null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, tfc.error());
-            return new QueryField.QueryLookupTableField(parentTypeName, name, location, tb, tfc.filters(), tfc.orderBy(), tfc.pagination(),
-                tfc.lookupMapping());
+            return switch (lookupKeyResolver.resolveAtRoot(returnType)) {
+                case LookupKeyDirectiveResolver.Resolved.Rejected r ->
+                    new UnclassifiedField(parentTypeName, name, location, fieldDef, r.kind(), r.message());
+                case LookupKeyDirectiveResolver.Resolved.Ok ok -> {
+                    var tb = ok.returnType();
+                    var tfc = resolveTableFieldComponents(fieldDef, tb.table(), lookupTypeName);
+                    yield tfc.error() != null
+                        ? new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, tfc.error())
+                        : new QueryField.QueryLookupTableField(parentTypeName, name, location, tb, tfc.filters(), tfc.orderBy(), tfc.pagination(),
+                            tfc.lookupMapping());
+                }
+            };
         }
 
         if (fieldDef.hasAppliedDirective(DIR_TABLE_METHOD)) {
