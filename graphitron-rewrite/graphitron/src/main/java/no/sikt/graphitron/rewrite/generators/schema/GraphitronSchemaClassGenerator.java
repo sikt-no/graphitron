@@ -8,10 +8,12 @@ import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.generators.util.QueryNodeFetcherClassGenerator;
+import no.sikt.graphitron.rewrite.model.GraphitronType.InterfaceType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.NodeType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.RootType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableInterfaceType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.UnionType;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
 
 import javax.lang.model.element.Modifier;
@@ -121,6 +123,28 @@ public final class GraphitronSchemaClassGenerator {
                 }
                 cb.add("default -> null;\n");
                 cb.unindent().add("};\n");
+                cb.unindent().add("});\n");
+                body.add(cb.build());
+            });
+
+        // Plain InterfaceType / UnionType TypeResolvers — read the synthetic __typename column
+        // projected by R36 Track B's stage-1 narrow-union emitter. The Node interface is
+        // registered separately via QueryNodeFetcher.registerTypeResolver above; skip it here
+        // so we don't double-register. Federation's _Entity union is injected by
+        // Federation.transform() after schemaBuilder.build(), so it does not appear in
+        // schema.types() and needs no explicit skip.
+        schema.types().entrySet().stream()
+            .filter(e -> e.getValue() instanceof InterfaceType || e.getValue() instanceof UnionType)
+            .filter(e -> !"Node".equals(e.getKey()))
+            .sorted(Map.Entry.comparingByKey())
+            .forEach(e -> {
+                var cb = CodeBlock.builder();
+                cb.add("codeRegistry.typeResolver($S, env -> {\n", e.getKey()).indent();
+                cb.addStatement("$T record = ($T) env.getObject()", JOOQ_RECORD, JOOQ_RECORD);
+                cb.addStatement("if (record == null) return null");
+                cb.addStatement("String typeName = record.get($T.field($T.name($S)), String.class)",
+                    JOOQ_DSL, JOOQ_DSL, "__typename");
+                cb.addStatement("return typeName == null ? null : env.getSchema().getObjectType(typeName)");
                 cb.unindent().add("});\n");
                 body.add(cb.build());
             });
