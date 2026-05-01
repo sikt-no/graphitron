@@ -3384,6 +3384,26 @@ class GraphitronSchemaBuilderTest {
                     .contains("@error backing class")
                     .contains("java.lang.RuntimeException")
                     .contains("(List<String> path, String message) constructor");
+            }),
+
+        REJECT_ERROR_WITH_RECORD_MISSING_MARKER(
+            "@error with @record className that has the canonical constructor but does not implement GraphitronError → UnclassifiedType",
+            """
+            type BadError
+                @error(handlers: [{handler: VALIDATION}])
+                @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.MissingMarkerErrorBackingFixture"}) {
+                path: [String!]!
+                message: String!
+            }
+            type Query { x: String }
+            """,
+            schema -> {
+                var t = (UnclassifiedType) schema.type("BadError");
+                assertThat(t.reason())
+                    .contains("@error backing class")
+                    .contains("MissingMarkerErrorBackingFixture")
+                    .contains("GraphitronError")
+                    .contains("marker interface");
             });
 
         final String sdl;

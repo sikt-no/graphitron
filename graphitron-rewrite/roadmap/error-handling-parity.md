@@ -166,8 +166,9 @@ dispatch arm lands.
   Currently gated on `ResultReturnType` payloads (`@record`); `@table`-returning
   fetchers carry an empty channel pending a payload-factory shape for jOOQ Record
   returns. The errors-slot match identifies the unique constructor parameter whose
-  element type's simple name is `GraphitronError`; the full marker-interface
-  enforcement (every `@error` class implements `GraphitronError`) lands later
+  element type's simple name is `GraphitronError`. Marker-interface enforcement now
+  also runs on every `@error` backing class resolved via `@record` co-location (see
+  the dedicated bullet below); enforcement on classes resolved without `@record` lands
   alongside the SDL→class lookup for `@error` types.
 - §1 channel-level reject rules 7 and 9 in the carrier classifier:
   `FieldBuilder.checkChannelLevelHandlerRules` runs after `mappedErrorTypes` resolves
@@ -302,18 +303,34 @@ dispatch arm lands.
   route the catch arm through `catchArm(outputPackage, errorChannel)` so dispatch
   fires when the channel is populated. Insert/update/upsert remain stubs; they
   inherit the slot and the emit machinery once they un-stub.
+- Marker-interface enforcement on `@error` backing classes:
+  `TypeBuilder.validateImplementsGraphitronError` reflects the developer-supplied class
+  resolved from the `@record` co-location and walks its supertype graph for an interface
+  whose simple name is `"GraphitronError"`. The check runs only after
+  `validatePathMessageConstructor` has succeeded (so the class is known-loadable) and
+  rejects the parent `ErrorType` as `UnclassifiedType` when the marker is absent. Simple-name
+  matching mirrors the established pattern in `FieldBuilder.isGraphitronErrorListSlot`: the
+  marker is generated output at `<outputPackage>.schema.GraphitronError`, so the FQN varies
+  per consumer and only the simple name is stable. Rationale is consumer-side: the emitted
+  `ErrorRouter.Mapping.build` factory's return type is `GraphitronError` and the typed
+  errors-channel list handed to the payload constructor is
+  `List<? extends GraphitronError>`, so a non-marker class would not even compile through
+  the generated `ErrorRouter`. The `@record`-omitted path (no co-located className) still
+  leaves `ErrorType.classFqn` empty, deferring per-type marker enforcement to the §2c
+  SDL→class lookup that is still remaining work.
 
 **Remaining work:**
 
 - `@service` / `@tableMethod` declared checked exceptions checked against the field's
   `ErrorChannel` and routed through the same `ErrorRouter.dispatch` (§4).
-- Marker-interface enforcement: every `@error` class implements `GraphitronError`.
 - `CustomSchemaBasedErrorStrategy` consumer subclass and `ExceptionHandlingBuilder`
   wiring go away in `graphitron-test` once the catch-arm emission lands.
 - `@error` SDL → backing class lookup beyond the temporary `@record` co-location
   path: a dedicated lookup so consumers don't need to spell out the `@record` directive
   on every `@error` type (and so the dispatch arm has factories for every `@error`
-  type, not only the co-located ones).
+  type, not only the co-located ones). The marker-interface check
+  (`TypeBuilder.validateImplementsGraphitronError`) reuses the same simple-name match
+  pattern and is ready to run against whichever class the lookup resolves.
 - §3 hash-suffix dedup for distinct channels that collide on the same payload-class
   base name: produce `FILM_PAYLOAD_A1B2C3D4` instead of throwing the
   collision-detected exception. No production fixture exercises this today; ship when
