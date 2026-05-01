@@ -202,13 +202,13 @@ Phase 1B folds the encode-helper lookup and the `ScalarReturnType("ID")` / `Tabl
 
 ## Plan
 
-### Phase 1 — Model + classifier ✅ Landed
+### Phase 1A — Initial model + classifier
 
-**Status: complete across all four DML variants and both service variants.** The shape, the shared classifier helper, and the cross-variant classifier-test scaffolding all shipped as part of R50's cleanup pass. This section documents what's in the codebase; for the historical narrative of how the shape evolved (per-variant draft → DELETE-first reality → R50 unification), see the deleted commits referenced in [Phase 3](#phase-3--delete-emission--landed).
+**Status: ✅ Landed across all four DML variants and both service variants.** The shape, the shared classifier helper, and the cross-variant classifier-test scaffolding all shipped as part of R50's cleanup pass. This section documents what's in the codebase; for the historical narrative of how the shape evolved (per-variant draft → DELETE-first reality → R50 unification), see commit `31c64a2` and the R50 series.
 
 #### 1a. DML record shape
 
-All four DML variants are identical. From `MutationField.java`:
+All four DML variants are identical. From `model/MutationField.java`:
 
 ```java
 sealed interface DmlTableField extends MutationField
@@ -230,6 +230,8 @@ record MutationDeleteTableField(
     Optional<ErrorChannel> errorChannel
 ) implements DmlTableField {}
 ```
+
+> Phase 1B replaces `(ReturnTypeRef returnType, Optional<HelperRef.Encode> encodeReturn)` with a single `DmlReturnExpression returnExpression` slot — see [Phase 1B](#phase-1b--model-alignment). The shape above reflects the codebase as of the last R50-cleanup commit; the rest of this subsection describes how today's emitter consumes it.
 
 There are no per-variant fields. Everything an emitter needs is on `tableInputArg`:
 - `tableInputArg.name()` → the SDL argument name (used as the `env.getArgument(...)` key).
@@ -317,9 +319,9 @@ Target coverage table (`GraphitronSchemaBuilderTest.rootFieldClassification` —
 
 ---
 
-### Phase 1B — Model alignment ▶ Next up
+### Phase 1B — Model alignment
 
-**Goal:** bring the model into line with the *Generation-thinking*, *Narrow component types*, and *Classifier guarantees shape emitter assumptions* principles before any new DML emitter lands. Two changes, both shippable in one commit:
+**Status: ▶ Next up.** Bring the model into line with the *Generation-thinking*, *Narrow component types*, and *Classifier guarantees shape emitter assumptions* principles before any new DML emitter lands. Two changes, both shippable in one commit:
 
 1. Pre-resolve the return-expression dispatch into a sealed `DmlReturnExpression` sub-variant carried on `DmlTableField`, replacing the broad `(returnType, encodeReturn)` slots.
 2. Tag the load-bearing classifier guarantees that emitters lean on (`@LoadBearingClassifierCheck` on `classifyMutationInput`; `@DependsOnClassifierCheck` on `buildMutationDeleteFetcher`).
@@ -460,9 +462,9 @@ This phase is a model refactor, not a behaviour change. The pipeline tests that 
 
 ---
 
-### Phase 2 — INSERT emission ▶ After 1B
+### Phase 2 — INSERT emission
 
-**Goal:** lift `MutationInsertTableField` out of `NOT_IMPLEMENTED_REASONS`. The record and classifier are already in place from Phase 1; this phase is purely the emitter and the partition flip.
+**Status: After 1B.** Lift `MutationInsertTableField` out of `NOT_IMPLEMENTED_REASONS`. The record and classifier are already in place from Phase 1A; this phase is purely the emitter and the partition flip.
 
 #### Emitter (`buildMutationInsertFetcher`)
 
@@ -522,9 +524,9 @@ If INSERT's pipeline test stays compile-only (no execution path against PostgreS
 
 ---
 
-### Phase 3 — DELETE emission ✅ Landed (pending Phase 1B retrofit)
+### Phase 3 — DELETE emission
 
-Initial emitter shipped in commit `31c64a2`; rebased onto the post-R50 `(tableInputArg, encodeReturn)` shape during the R50 cleanup pass. `buildMutationDeleteFetcher` emits `dsl.deleteFrom(table).where(<chained .eq().and()>).returningResult(<keys or $fields>).fetchOne(r -> …)`, reading from `f.tableInputArg().fieldBindings()` and `f.encodeReturn().orElseThrow().paramSignature()`.
+**Status: ✅ Landed; pending Phase 1B retrofit.** Initial emitter shipped in commit `31c64a2`; rebased onto the post-R50 `(tableInputArg, encodeReturn)` shape during the R50 cleanup pass. `buildMutationDeleteFetcher` emits `dsl.deleteFrom(table).where(<chained .eq().and()>).returningResult(<keys or $fields>).fetchOne(r -> …)`, reading from `f.tableInputArg().fieldBindings()` and `f.encodeReturn().orElseThrow().paramSignature()`.
 
 > Phase 1B migrates this emitter to pattern-match on `f.returnExpression()` and adds the `@DependsOnClassifierCheck(key = "dml-mutation-shape-guarantees", ...)` annotation. The shape of emitted code does not change; the emitter source loses its `instanceof ScalarReturnType` guard and `f.returnType().wrapper().isList()` lookup.
 
@@ -557,9 +559,9 @@ When the WHERE clause matches no row, `.fetchOne(...)` returns `null`. The emitt
 
 ---
 
-### Phase 4 — UPDATE emission ▶ After 1B
+### Phase 4 — UPDATE emission
 
-Record + classifier already done; only the emitter and the partition flip remain. UPDATE combines INSERT's value-binding pattern (the SET clause) with DELETE's WHERE-clause pattern.
+**Status: After 1B.** Record + classifier already done; only the emitter and the partition flip remain. UPDATE combines INSERT's value-binding pattern (the SET clause) with DELETE's WHERE-clause pattern.
 
 #### Emitter (`buildMutationUpdateFetcher`)
 
@@ -596,9 +598,9 @@ Pipeline: at minimum a UPDATE-with-no-non-`@lookupKey`-field rejection (Invarian
 
 ---
 
-### Phase 5 — UPSERT emission ▶ After 1B
+### Phase 5 — UPSERT emission
 
-Record + classifier already done; only the emitter and the partition flip remain.
+**Status: After 1B.** Record + classifier already done; only the emitter and the partition flip remain.
 
 #### Emitter (`buildMutationUpsertFetcher`)
 
@@ -637,7 +639,7 @@ Pipeline: at minimum the all-`@lookupKey` case (`doNothing()` path) and a partia
 
 ### Phase 6 — Service mutations
 
-Records + classifier already done. `classifyMutationField`'s `@service` arm runs `resolveServiceField`, `validateRootServiceInvariants` (§1 Connection rejection, §2 no `Sources` parameter at root), and the strict-return check, then emits the appropriate variant carrying the resolved `MethodRef`. Only the two emitters and the partition flip remain.
+**Status: Ready (independent of 1B).** Records + classifier already done. `classifyMutationField`'s `@service` arm runs `resolveServiceField`, `validateRootServiceInvariants` (§1 Connection rejection, §2 no `Sources` parameter at root), and the strict-return check, then emits the appropriate variant carrying the resolved `MethodRef`. Only the two emitters and the partition flip remain. Service variants don't carry `DmlReturnExpression` (their return shape comes from the developer method's reflected return type, not from a four-arm DML dispatch), so Phase 6 can land before, alongside, or after Phase 1B.
 
 **Synchronous, no DataLoader.** Both service-mutation variants emit synchronous methods — same as root service queries. Root mutation fields have no parent-batching context; per-request concurrency is irrelevant, and the developer-supplied method owns any transaction scope.
 
