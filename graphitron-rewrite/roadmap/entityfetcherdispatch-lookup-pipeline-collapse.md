@@ -63,7 +63,7 @@ The dispatcher *keeps owning the decode*. The R50 changelog explicitly classifie
 |---|---|---|---|
 | Source of values | `env.getArgument` / `sf.getArguments()` | `bindings.get(i)` → `(idx, cols, repEnv)` | Caller-supplied `valueExpr` callback. |
 | `__typename` literal | not projected | `DSL.inline("<TypeName>").as("__typename")` | Caller appends to the `fields` list before calling the join helper. Helper stays type-agnostic. |
-| Join syntax | `.using(table.C1, …)` | `.on(t.C1.eq(input.field("C1", T.class)).and(…))` | **Switch dispatcher to `.using(...)`**. Dispatcher's FROM side is the entity's own jOOQ table only — no FK chain, so no quoted-name collision risk. |
+| Join syntax | `.using(table.C1, …)` | `.on(t.C1.eq(input.field("C1", T.class)).and(…))` | **Switch dispatcher to `.using(...)`**. Dispatcher's FROM side is the entity's own jOOQ table only — no FK chain, so no quoted-name collision risk. Implementer: verify by running the `_entities` and `Query.nodes` execution tests after the flip; the f-E SQL-shape pin will also catch a regression. |
 | `where(condition)` | declared by caller, default `DSL.noCondition()` | absent today | Dispatcher's `select<TypeName>Alt<N>` declares `Condition condition = DSL.noCondition();` before the join body. jOOQ folds this away at render time. |
 
 The `idx` cell, the typed-row arity, and the order-by-idx scatter are already identical and move into the helper unchanged.
