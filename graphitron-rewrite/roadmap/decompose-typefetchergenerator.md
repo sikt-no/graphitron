@@ -13,16 +13,16 @@ depends-on: [stub-interface-union-fetchers]
 `TypeFetcherGenerator.java` is 1 646 lines, one public entry point
 (`generate(GraphitronSchema)`), and ~30 private methods that implement
 per-field-variant emitters plus shared helpers. It is the counterpart to
-[`decompose-fieldbuilder.md`](decompose-fieldbuilder.md): a central
-generator that has accumulated coverage faster than its file shape can
-absorb.
+the now-shipped `FieldBuilder` decomposition (R6, see
+[`changelog.md`](changelog.md)): a central generator that has accumulated
+coverage faster than its file shape can absorb.
 
 ## Question to answer
 
 Two options on the table; this is a planning item, not yet a fix.
 
-- **Decompose along the field taxonomy** (parallel to the
-  `decompose-fieldbuilder` proposal). Per-variant emitter classes
+- **Decompose along the field taxonomy** (parallel to the shipped R6
+  `FieldBuilder` lift). Per-variant emitter classes
   (`QueryTableFieldEmitter`, `SplitTableFieldEmitter`, etc.) plus shared
   utilities. Existing `FetcherEmitter`, `InlineLookupTableFieldEmitter`,
   `LookupValuesJoinEmitter`, `SplitRowsMethodEmitter` already follow this
@@ -46,10 +46,10 @@ after that plan moves to Done.
 
 ## Coordinates with
 
-- [`decompose-fieldbuilder.md`](decompose-fieldbuilder.md) — same shape
-  question, different file. Whichever lands first sets the precedent;
-  consider doing them as a coordinated pair if both go to Spec close in
-  time.
+- R6 `decompose-fieldbuilder` (shipped, see [`changelog.md`](changelog.md))
+  — same shape question, different file. R6 set the precedent: lift each
+  cross-cutting concern into a sibling resolver returning a sealed
+  `Resolved`; the same shape applies here per-variant emitter.
 - [`source-orientation-javadocs.md`](source-orientation-javadocs.md) — a
   class-level Javadoc with a `## Layout` table is the partial-mitigation
   option if decomposition is deferred indefinitely.
