@@ -430,6 +430,16 @@ walk `params()` to build call-site argument lists; a lifter ref must never
 flow through that path. `LifterRef` is a purpose-typed sibling of `MethodRef` that
 carries exactly what the lifter call site needs, no more.
 
+The in-tree precedent is
+[`HelperRef`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/model/HelperRef.java)
+(R50, Done): a sealed `MethodRef` sibling whose `Encode` / `Decode` permits
+hold a pre-resolved `ClassName` plus a simple method name, kept apart from
+`MethodRef` for the same reason — `MethodRef`'s param-list contract is wrong
+for `NodeIdEncoder` helpers, and a separate type makes the boundary explicit.
+`LifterRef` follows the same shape (`ClassName` + method name, no `params` /
+`returnType` slots) and the same rationale; the precedent justifies the
+sibling pattern without first-principles argument.
+
 **DataLoader-key equality.** `Row1<Long>` (and the wider `RowN<...>` family)
 is the same key type used by `BatchKey.RowKeyed` today; the lifter path
 inherits whatever value-equality contract the existing column-keyed
@@ -541,9 +551,9 @@ rejects unresolvable hops. With the lifter present we know the schema author
 has supplied the keying contract directly, so we skip the walker and produce
 `joinPath = [hop]` from the same `LiftedHop` instance the BatchKey holds.
 `FieldBuilder.classifyChildFieldOnResultType` forks early on a
-`hasBatchKeyLifter` predicate and routes through `resolveBatchKeyLifter`
-(§1e); downstream code sees a sealed `JoinStep` whose identity tells it
-which JOIN flavour to emit.
+`hasBatchKeyLifter` predicate and routes through
+`BatchKeyLifterDirectiveResolver.resolve` (§1e); downstream code sees a
+sealed `JoinStep` whose identity tells it which JOIN flavour to emit.
 
 **Single-hop guarantee, type-system-enforced.** Because `LifterRowKeyed`
 holds a single `LiftedHop` (not a `List<LiftedHop>`), the single-hop
@@ -646,50 +656,58 @@ verbatim per §Surface. Place it after `@reference` /
 
 #### 1d. `FieldBuilder.classifyChildFieldOnResultType` extension
 
-Inside the existing object-return arm at
-[`FieldBuilder.java:2009-2055`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java),
-add a `hasBatchKeyLifter` branch ahead of the existing `parsePath` call. The
-classifier guarantee is produced by `resolveBatchKeyLifter` (§1e) and
-annotated there (annotations target methods, not locals); the branch in
-`classifyChildFieldOnResultType` consumes that helper's result:
+Post-R6, `classifyChildFieldOnResultType` no longer calls `parsePath` at
+method scope; the call is inside the `ReturnTypeRef.TableBoundReturnType`
+arm of a return-type switch (around `FieldBuilder.java:2083` on current
+trunk; line moves with each landing). The `@batchKeyLifter` branch
+naturally lives inside that arm too — the lifter only applies to
+table-bound returns, so other arms are AUTHOR_ERROR by Invariant #1.
+
+The branch consumes the resolver's result (§1e: now a standalone
+`BatchKeyLifterDirectiveResolver` per the R6 pattern, not a private
+method on `FieldBuilder`). It also consumes `resolveTableFieldComponents`
+through the post-R6 sealed `TableFieldComponents.{Ok, Rejected}` shape
+(was a six-nullable-field record before R6):
 
 ```java
-boolean hasLifter = fieldDef.hasAppliedDirective(DIR_BATCH_KEY_LIFTER);
-if (hasLifter) {
-    var lifterResult = resolveBatchKeyLifter(parentTypeName, fieldDef,
-            parentResultType, /* targetSqlTableName */ targetSqlTableName);
-    if (lifterResult.error() != null) {
+// Inside the ReturnTypeRef.TableBoundReturnType arm.
+if (fieldDef.hasAppliedDirective(DIR_BATCH_KEY_LIFTER)) {
+    var lifterResult = batchKeyLifterDirectiveResolver.resolve(
+            parentTypeName, fieldDef, parentResultType, targetSqlTableName);
+    if (lifterResult instanceof BatchKeyLifterDirectiveResolver.Resolved.Rejected rj) {
         return new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                RejectionKind.AUTHOR_ERROR, lifterResult.error());
+                rj.kind(), rj.message());
     }
-    var batchKey = lifterResult.batchKey();
+    var ok = (BatchKeyLifterDirectiveResolver.Resolved.Ok) lifterResult;
+    var batchKey = ok.batchKey();
     // joinPath publishes the same hop instance held by the BatchKey; the
     // List wrap is the rows-method emitter's existing API surface.
     var joinPath = List.<JoinStep>of(batchKey.hop());
-    var tfc = resolveTableFieldComponents(fieldDef, lifterResult.targetTable(), elementTypeName);
-    if (tfc.error() != null) {
+    var components = resolveTableFieldComponents(fieldDef, ok.targetTable(), elementTypeName);
+    if (components instanceof TableFieldComponents.Rejected rj) {
         return new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                RejectionKind.AUTHOR_ERROR, tfc.error());
+                RejectionKind.AUTHOR_ERROR, rj.message());
     }
+    var tfc = (TableFieldComponents.Ok) components;
     if (hasLookupKeyAnywhere(fieldDef)) {
         return new RecordLookupTableField(parentTypeName, name, location,
-                lifterResult.tbReturnType(), joinPath,
+                ok.tbReturnType(), joinPath,
                 tfc.filters(), tfc.orderBy(), tfc.pagination(),
                 batchKey, tfc.lookupMapping());
     }
     return new RecordTableField(parentTypeName, name, location,
-            lifterResult.tbReturnType(), joinPath,
+            ok.tbReturnType(), joinPath,
             tfc.filters(), tfc.orderBy(), tfc.pagination(),
             batchKey);
 }
 ```
 
-The non-lifter path (existing code at `:2020-2055`) is unchanged. The branch
-order matters: `hasBatchKeyLifter` runs first so the AUTHOR_ERROR cases for
-the directive on a wrong parent shape (`JooqTableRecordType`,
+The non-lifter path (existing code in the same arm) is unchanged. The
+branch order matters: `hasBatchKeyLifter` runs first so the AUTHOR_ERROR
+cases for the directive on a wrong parent shape (`JooqTableRecordType`,
 `JooqRecordType`, untyped `PojoResultType`) surface with the
 directive-specific message rather than the generic missing-FK rejection.
-Implement those rejections inside `resolveBatchKeyLifter` per Invariant #1.
+Those rejections are produced inside the resolver per Invariant #1.
 `PojoResultType` and `JavaRecordType` parents (both with non-null
 `fqClassName`) take the lifter path.
 
@@ -718,63 +736,94 @@ root — defer a query-root branch until a use case appears, since query roots
 classify fundamentally differently and `@batchKeyLifter` has no semantics
 without a parent.
 
-#### 1e. `resolveBatchKeyLifter` helper
+#### 1e. `BatchKeyLifterDirectiveResolver`
 
-A new private method on `FieldBuilder`. It is the sole producer of two
-distinct facts the emitter side later relies on. Each fact gets its own
-load-bearing key so a future relaxation invalidates only the consumers that
-actually relied on the relaxed half:
+A new standalone resolver, sibling to the ten directive/projection
+resolvers R6 lifted out of `FieldBuilder` (`ServiceDirectiveResolver`,
+`LookupKeyDirectiveResolver`, `ExternalFieldDirectiveResolver`,
+`OrderByResolver`, `ConditionResolver`, etc.). Lives at
+`graphitron/src/main/java/no/sikt/graphitron/rewrite/BatchKeyLifterDirectiveResolver.java`,
+matching the established pattern: sealed `Resolved.{Ok, Rejected}`
+result, constructor-injected dependencies, single `resolve(...)`
+entry point. Inlining this on `FieldBuilder` would re-introduce the
+class-bloat R6 just removed and would not match the load-bearing
+audit's annotation conventions (which key off resolver methods).
+
+It is the sole producer of two distinct facts the emitter side later
+relies on. Each fact gets its own load-bearing key so a future
+relaxation invalidates only the consumers that actually relied on the
+relaxed half:
 
 ```java
-@LoadBearingClassifierCheck(
-    key = "lifter-classifies-as-record-table-field",
-    description = "A field carrying @batchKeyLifter classifies as "
-        + "RecordTableField or RecordLookupTableField (never any other "
-        + "variant). RecordParentBatchKey-typed call sites in GeneratorUtils "
-        + "depend on this routing.")
-@LoadBearingClassifierCheck(
-    key = "lifter-batchkey-is-lifterrowkeyed",
-    description = "On the lifter path, the field's BatchKey is "
-        + "LifterRowKeyed (and never any other RecordParentBatchKey permit). "
-        + "buildRecordParentKeyExtraction's two-arm switch and the "
-        + "rows-method prelude's RecordParentBatchKey accessor pair rely on "
-        + "this so the type system carries the discrimination.")
-private BatchKeyLifterResult resolveBatchKeyLifter(
-        String parentTypeName, GraphQLFieldDefinition fieldDef,
-        ResultType parentResultType, String targetSqlTableName) {
-    // 1. Parent shape: must be PojoResultType or JavaRecordType, both with
-    //    non-null fqClassName. (§Invariants 1.) If wrong shape, return error
-    //    with AUTHOR_ERROR pointing at the alternative directive (@reference
-    //    for @table parents, catalog FK for JooqTableRecordType /
-    //    JooqRecordType, etc.).
-    // 2. targetColumns: non-empty list (§Invariants 6); each resolves on the
-    //    target table (§Invariants 5). Use BuildContext.candidateHint for misses.
-    // 3. lifter: className + method via ExternalCodeReference. Class.forName,
-    //    locate the static method, verify single parameter assignable from
-    //    parent fqClassName, verify return type is org.jooq.RowN
-    //    (§Invariants 2-3). Capture the loaded Class<?> as a JavaPoet ClassName.
-    // 4. Arity + column-class match (§Invariants 4).
-    // 5. Build the JoinStep.LiftedHop once from the resolved targetTable +
-    //    targetColumns + alias, then construct
-    //    BatchKey.LifterRowKeyed(hop, lifterRef). The hop is the *only* source
-    //    of truth for the target-side column tuple; the BatchKey reads through
-    //    it via targetKeyColumns(). No second copy of the column list exists.
-    // 6. Resolve ReturnTypeRef.TableBoundReturnType for the field's @table
-    //    return. Publish joinPath = [hop] using the same hop instance held
-    //    by the BatchKey.
-}
+public final class BatchKeyLifterDirectiveResolver {
 
-private record BatchKeyLifterResult(
-    BatchKey.LifterRowKeyed batchKey,         // holds the LiftedHop directly
-    ReturnTypeRef.TableBoundReturnType tbReturnType,
-    String error
-) {
-    // No separate liftedHop / targetTable / targetColumns slots: every reader
-    // reaches them through batchKey.hop(). One source of truth.
-    JoinStep.LiftedHop liftedHop() { return batchKey.hop(); }
-    TableRef targetTable()         { return batchKey.hop().targetTable(); }
+    public sealed interface Resolved {
+        record Ok(
+            BatchKey.LifterRowKeyed batchKey,         // holds the LiftedHop directly
+            ReturnTypeRef.TableBoundReturnType tbReturnType
+        ) implements Resolved {
+            // No separate liftedHop / targetTable / targetColumns slots: every
+            // reader reaches them through batchKey.hop(). One source of truth.
+            public JoinStep.LiftedHop liftedHop() { return batchKey.hop(); }
+            public TableRef targetTable()         { return batchKey.hop().targetTable(); }
+        }
+        record Rejected(RejectionKind kind, String message) implements Resolved {}
+    }
+
+    private final BuildContext ctx;
+    private final ServiceCatalog services;
+    private final JooqCatalog jooq;
+
+    BatchKeyLifterDirectiveResolver(BuildContext ctx, ServiceCatalog services, JooqCatalog jooq) {
+        this.ctx = ctx;
+        this.services = services;
+        this.jooq = jooq;
+    }
+
+    @LoadBearingClassifierCheck(
+        key = "lifter-classifies-as-record-table-field",
+        description = "A field carrying @batchKeyLifter classifies as "
+            + "RecordTableField or RecordLookupTableField (never any other "
+            + "variant). RecordParentBatchKey-typed call sites in GeneratorUtils "
+            + "depend on this routing.")
+    @LoadBearingClassifierCheck(
+        key = "lifter-batchkey-is-lifterrowkeyed",
+        description = "On the lifter path, the field's BatchKey is "
+            + "LifterRowKeyed (and never any other RecordParentBatchKey permit). "
+            + "buildRecordParentKeyExtraction's two-arm switch and the "
+            + "rows-method prelude's RecordParentBatchKey accessor pair rely on "
+            + "this so the type system carries the discrimination.")
+    public Resolved resolve(
+            String parentTypeName, GraphQLFieldDefinition fieldDef,
+            ResultType parentResultType, String targetSqlTableName) {
+        // 1. Parent shape: must be PojoResultType or JavaRecordType, both with
+        //    non-null fqClassName. (§Invariants 1.) If wrong shape, return
+        //    Resolved.Rejected(AUTHOR_ERROR, ...) pointing at the alternative
+        //    directive (@reference for @table parents, catalog FK for
+        //    JooqTableRecordType / JooqRecordType, etc.).
+        // 2. targetColumns: non-empty list (§Invariants 6); each resolves on the
+        //    target table (§Invariants 5). Use BuildContext.candidateHint for misses.
+        // 3. lifter: className + method via ExternalCodeReference. Class.forName,
+        //    locate the static method, verify single parameter assignable from
+        //    parent fqClassName, verify return type is org.jooq.RowN
+        //    (§Invariants 2-3). Capture the loaded Class<?> as a JavaPoet ClassName.
+        // 4. Arity + column-class match (§Invariants 4).
+        // 5. Build the JoinStep.LiftedHop once from the resolved targetTable +
+        //    targetColumns + alias, then construct
+        //    BatchKey.LifterRowKeyed(hop, lifterRef). The hop is the *only* source
+        //    of truth for the target-side column tuple; the BatchKey reads through
+        //    it via targetKeyColumns(). No second copy of the column list exists.
+        // 6. Resolve ReturnTypeRef.TableBoundReturnType for the field's @table
+        //    return. The Ok arm carries it; joinPath = [hop] is published by the
+        //    caller using the same hop instance held by the BatchKey.
+    }
 }
 ```
+
+The resolver is wired into `FieldBuilder`'s existing constructor-injection
+slot list, alongside the ten R6 resolvers. `classifyChildFieldOnResultType`
+calls `batchKeyLifterDirectiveResolver.resolve(...)` and switches on the
+sealed result (§1d).
 
 The single-hop guarantee is *not* re-stated as a load-bearing key on either
 side: it is enforced by the model shape (`LifterRowKeyed` holds one
@@ -789,11 +838,11 @@ The class loader / method walker borrows the existing
 `ServiceCatalog.reflectServiceMethod` shape but is simpler: only one parameter
 to classify, no `Sources`/`Arg`/`Context` slot detection, no
 `expectedReturnType` strict-equality (the return-type check is the RowN
-discriminator). Place the helper on `ServiceCatalog` if the method-resolution
-machinery (e.g. `Class.forName` exception handling, the candidate-hint format
-on missing methods) is reusable; otherwise inline it on `FieldBuilder`. First
-implementation should inline; lift to `ServiceCatalog` if R6
-(`decompose-fieldbuilder`) extracts a shared resolver later.
+discriminator). Lives inside `BatchKeyLifterDirectiveResolver` for v1; if
+a second directive needs the same `Class.forName` + RowN reflection
+walker, lift the shared piece to `ServiceCatalog` then. The resolver
+holds the `ServiceCatalog` reference already, so the lift is a private
+method move plus a constructor-injection-point swap.
 
 #### 1f. Pipeline tests
 
@@ -1247,7 +1296,11 @@ from the existing "Column value binding" section.
   violated *Sealed hierarchies over enums*).
 - New `JoinStep.LiftedHop` permit (sealed hierarchy now three variants),
   new `JoinStep.WithTarget` capability mixed in by `FkJoin` and `LiftedHop`,
-  and new `LifterRef(ClassName, String)` typed reference
+  and new `LifterRef(ClassName, String)` typed reference (sibling of
+  `MethodRef`, shaped after R50's `HelperRef` precedent)
+- New `BatchKeyLifterDirectiveResolver` standalone resolver, sibling to
+  R6's ten directive/projection resolvers; classifier-side directive
+  logic stays out of `FieldBuilder`
 - `GeneratorUtils.buildRecordKeyExtraction` renamed to
   `buildRecordParentKeyExtraction`; parameter narrows from `BatchKey` to
   `BatchKey.RecordParentBatchKey` so mis-routing the @service-only permits
@@ -1269,8 +1322,8 @@ from the existing "Column value binding" section.
 - New per-fact `@LoadBearingClassifierCheck` /
   `@DependsOnClassifierCheck` key pairs:
   `lifter-classifies-as-record-table-field` and
-  `lifter-batchkey-is-lifterrowkeyed` (both with producer pairs in
-  `FieldBuilder.resolveBatchKeyLifter`). The single-hop invariant is a
+  `lifter-batchkey-is-lifterrowkeyed` (both with producer pairs on
+  `BatchKeyLifterDirectiveResolver.resolve`). The single-hop invariant is a
   structural model property (`LifterRowKeyed` holds one `LiftedHop`, not
   a list) documented in a plain javadoc comment on the rows-method
   prelude rather than as a keyed fact;
