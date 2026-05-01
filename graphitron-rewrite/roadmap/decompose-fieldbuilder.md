@@ -1,7 +1,7 @@
 ---
 id: R6
 title: "Decompose `FieldBuilder`"
-status: Spec
+status: In Review
 bucket: architecture
 priority: 2
 theme: structural-refactor
@@ -10,7 +10,7 @@ depends-on: []
 
 # Decompose `FieldBuilder`
 
-`FieldBuilder.java` is 3,101 lines with ~76 member declarations, and growing fast (the file added ~880 lines between the 2026-04-28 audit and the 2026-05-01 refresh). Argument-resolution unification has shipped (Phase 4 landed under Done), so this is no longer blocked.
+`FieldBuilder.java` is 3,163 lines with ~73 member declarations after Phase 1 lifted `@service` resolution into [`ServiceDirectiveResolver`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/ServiceDirectiveResolver.java). Argument-resolution unification has shipped (Phase 4 landed under Done), so this is no longer blocked.
 
 ## The wrong axis
 
@@ -51,10 +51,14 @@ Likely shape:
 
 *Directive resolvers* (eliminate inline duplication and byte-identical rejection strings):
 
-- `ServiceDirectiveResolver` (`@service`: method lookup, return-type classification, polymorphic-not-supported rejection).
+- `ServiceDirectiveResolver` (`@service`: method lookup, return-type classification, root invariants, errors-channel lift, polymorphic-not-supported rejection). **Phase 1 — shipped.**
 - `TableMethodDirectiveResolver` (`@tableMethod`: argMapping, `svc.reflectTableMethod`, expected-return-class strict check).
 - `ExternalFieldDirectiveResolver` (`@externalField`: methodName defaulting, parent-table-class check).
 - `LookupKeyDirectiveResolver` (`@lookupKey`: target-table check, mapping projection).
+
+The shipped Phase 1 resolver returns a sealed `Resolved` with a three-arm `Success` sub-interface (`TableBound` / `Result` / `Scalar`, each carrying the resolved `MethodRef` and typed `ReturnTypeRef`), an `ErrorsLifted` arm for the polymorphic-of-`@error` lift, and a `Rejected(kind, message)` arm absorbing every error path (parse failure, root-invariants failure, polymorphic-not-supported). Each classify arm projects `Success` into its specific variant (`QueryServiceTableField` / `MutationServiceTableField` / `ServiceTableField`) since variant identity differs across parent contexts. Parent-context-only concerns (join-path parse, the `@record`-typed-parent DEFERRED rejection on result-type parents) stay in the classify arm. Subsequent directive resolvers should follow the same `Resolved`/`Success` shape, keeping per-arm projection out of the resolver.
+
+Helpers shared by directive resolvers (`parseExternalRef`, `parseContextArguments`, `buildWrapper`, `enrichArgExtractions`, `liftToErrorsField`, `fieldArgumentNames`) are package-private members of `FieldBuilder` today; the resolver holds a reference to `FieldBuilder` and calls back through them. When the second consumer (`@tableMethod`) lands, migrate the still-shared helpers to a common location (likely `BuildContext`); single-consumer helpers can move with their resolver.
 
 *Projection resolvers* (lift bundled bulk into focused units, each independently testable):
 
@@ -73,7 +77,7 @@ After the extraction, `FieldBuilder` is a small coordinator. Each parent-context
 
 Land one resolver at a time. Each is its own commit, mergeable independently:
 
-1. *`ServiceDirectiveResolver`*. Highest duplication (4 inline resolution sites with 4 byte-identical rejection sites, plus the `@record` sibling), so the proof-of-pattern diff is largest and easiest to argue. After this lands, the shape is established and the rest is mechanical.
+1. *`ServiceDirectiveResolver`* — **shipped.** Lifted `@service` resolution out of all four arms (`classifyQueryField`, `classifyMutationField`, `classifyChildFieldOnResultType`, `classifyChildFieldOnTableType`); each arm now switches over a sealed `Resolved` to project into its specific variant. The shape (helpers stay package-private on `FieldBuilder`, callback into them through a `FieldBuilder` reference, parent-context concerns stay in the arm) is the template the other directive resolvers should follow.
 2. The other directive resolvers (`@tableMethod`, `@externalField`, `@lookupKey`), in any order.
 3. *`OrderByResolver`*. Largest single projection concern (~400 lines), highest testability win, and once extracted, `resolveTableFieldComponents` shrinks substantially.
 4. The remaining projection resolvers (`Pagination`, `Condition`, `LookupMapping`, `InputField`, `MutationInput`).
@@ -85,4 +89,4 @@ The earlier `QueryFieldBuilder` / `MutationFieldBuilder` / `ChildFieldBuilder` f
 
 ## Notes
 
-Size figures audited 2026-05-01 against trunk (`FieldBuilder.java`); refresh on each plan revision rather than letting the prose drift.
+Size figures audited 2026-05-01 against trunk (`FieldBuilder.java`); refresh on each plan revision rather than letting the prose drift. Phase 1 dropped `FieldBuilder` from 3,301 → 3,163 lines (-138) and added 238 lines in `ServiceDirectiveResolver`; the four classify arms shrank substantially (each `@service` block went from ~25 lines to ~12 lines) and three helpers (`resolveServiceField`, `validateRootServiceInvariants`, `computeExpectedServiceReturnType`) plus the `ServiceResolution` record moved out.

@@ -17,9 +17,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R1` | `BatchKey` lifter directive | Spec | [plan](batchkey-lifter-directive.md) |
 | `R36` | Stub #3: Interface / union fetchers <sub>blocked by: [entityfetcherdispatch-lookup-pipeline-collapse](entityfetcherdispatch-lookup-pipeline-collapse.md)</sub> | In Progress | [plan](stub-interface-union-fetchers.md) |
 | `R40` | Argument-level `@nodeId` support | Spec | [plan](argument-level-nodeid.md) |
-| `R6` | Decompose `FieldBuilder` | Spec | [plan](decompose-fieldbuilder.md) |
 | `R49` | Stub: scalar/`@record`-returning `@service` child field (`ServiceRecordField`) <sub>blocked by: [service-rows-method-body](service-rows-method-body.md)</sub> | Spec | [plan](service-record-field.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
+| `R6` | Decompose `FieldBuilder` | In Review | [plan](decompose-fieldbuilder.md) |
 | `R3` | Classification vocabulary follow-ups | Spec | [plan](classification-vocabulary-followups.md) |
 | `R55` | Collapse EntityFetcherDispatch per-typeId VALUES emission onto the shared row-builder | Spec | [plan](entityfetcherdispatch-lookup-pipeline-collapse.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
@@ -130,7 +130,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### structural-refactor
 
-- `R6` [**Decompose `FieldBuilder`**](decompose-fieldbuilder.md) — Spec, architecture
+- `R6` [**Decompose `FieldBuilder`**](decompose-fieldbuilder.md) — In Review, architecture
 - `R56` [**Extract `ConnectionPromoter` from `GraphitronSchemaBuilder`**](extract-connection-promoter.md) — Backlog, architecture
 - `R33` [**Shared interface for `QueryField` / `ChildField` table-bound parallels**](shared-interface-queryfield-childfield.md) — Backlog, cleanup
 - `R7` [**Decompose `TypeFetcherGenerator`**](decompose-typefetchergenerator.md) — Backlog, architecture, blocked by [stub-interface-union-fetchers](stub-interface-union-fetchers.md)
