@@ -144,7 +144,7 @@ class FieldBuilder {
         this.serviceResolver = new ServiceDirectiveResolver(ctx, svc, this, enumMappingResolver);
         this.tableMethodResolver = new TableMethodDirectiveResolver(ctx, svc, this, enumMappingResolver);
         this.externalFieldResolver = new ExternalFieldDirectiveResolver(ctx, svc, this);
-        this.lookupKeyResolver = new LookupKeyDirectiveResolver(ctx, svc, this);
+        this.lookupKeyResolver = new LookupKeyDirectiveResolver();
         this.orderByResolver = new OrderByResolver(ctx);
         this.lookupMappingResolver = new LookupMappingResolver();
         this.paginationResolver = new PaginationResolver();
@@ -170,12 +170,15 @@ class FieldBuilder {
             .orElse(null);
     }
 
-    private record TableFieldComponents(List<WhereFilter> filters, OrderBySpec orderBy, PaginationSpec pagination,
-                                        String error, LookupMapping lookupMapping) {
-        /** Construct an error result with no component values. */
-        static TableFieldComponents error(String message) {
-            return new TableFieldComponents(null, null, null, message, null);
-        }
+    /**
+     * Outcome of {@link #resolveTableFieldComponents}. Two terminal arms the caller exhausts
+     * with a switch or {@code instanceof}; mirrors the per-resolver {@code Resolved} shapes the
+     * orchestrator threads together.
+     */
+    private sealed interface TableFieldComponents {
+        record Ok(List<WhereFilter> filters, OrderBySpec orderBy, PaginationSpec pagination,
+                  LookupMapping lookupMapping) implements TableFieldComponents {}
+        record Rejected(String message) implements TableFieldComponents {}
     }
 
     /**
@@ -220,8 +223,9 @@ class FieldBuilder {
             if (referencePath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, referencePath.errorMessage());
             }
-            var tfc = resolveTableFieldComponents(fieldDef, returnType.table(), elementTypeName);
-            if (tfc.error() != null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, tfc.error());
+            var components = resolveTableFieldComponents(fieldDef, returnType.table(), elementTypeName);
+            if (components instanceof TableFieldComponents.Rejected rj) return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, rj.message());
+            var tfc = (TableFieldComponents.Ok) components;
             boolean hasSplitQuery = fieldDef.hasAppliedDirective(DIR_SPLIT_QUERY);
             boolean hasLookupKey  = hasLookupKeyAnywhere(fieldDef);
             boolean isList = returnType.wrapper().isList();
@@ -268,8 +272,9 @@ class FieldBuilder {
             if (referencePath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, referencePath.errorMessage());
             }
-            var tfc = resolveTableFieldComponents(fieldDef, tableInterfaceType.table(), elementTypeName);
-            if (tfc.error() != null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, tfc.error());
+            var components = resolveTableFieldComponents(fieldDef, tableInterfaceType.table(), elementTypeName);
+            if (components instanceof TableFieldComponents.Rejected rj) return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, rj.message());
+            var tfc = (TableFieldComponents.Ok) components;
             var joinPathError = validateSingleHopFkJoin(referencePath.elements(), name);
             if (joinPathError != null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, joinPathError);
             var knownValues = knownDiscriminatorValues(tableInterfaceType);
@@ -538,14 +543,18 @@ class FieldBuilder {
                 columnName, name, col.get().javaName());
         }
         var columnRef = new ColumnRef(col.get().sqlName(), col.get().javaName(), col.get().columnClass());
-        String enumClassName = enumMappingResolver.validateEnumFilter(typeName, columnRef, errors);
-        if (enumClassName != null && enumClassName.isEmpty()) {
-            // Enum validation failed; error already appended. Emit UnclassifiedArg so
-            // projectFilters surfaces the structural failure (even though the enum-value-mismatch
-            // is already an error; keeping this consistent keeps the classify-never-returns-null
-            // invariant).
-            return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
-                "enum filter validation failed for column '" + columnRef.sqlName() + "'");
+        String enumClassName;
+        switch (enumMappingResolver.validateEnumFilter(typeName, columnRef)) {
+            case EnumMappingResolver.EnumValidation.NotEnum n -> enumClassName = null;
+            case EnumMappingResolver.EnumValidation.Valid v -> enumClassName = v.fqcn();
+            case EnumMappingResolver.EnumValidation.Mismatch m -> {
+                errors.add(m.message());
+                // Emit UnclassifiedArg so projectFilters surfaces the structural failure (even
+                // though the mismatch is already an error; keeping this consistent keeps the
+                // classify-never-returns-null invariant).
+                return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
+                    "enum filter validation failed for column '" + columnRef.sqlName() + "'");
+            }
         }
         CallSiteExtraction extraction = enumMappingResolver.deriveExtraction(typeName, columnRef, enumClassName,
             fieldDef.getName().toUpperCase() + "_" + name.toUpperCase() + "_MAP");
@@ -603,14 +612,14 @@ class FieldBuilder {
     private TableFieldComponents projectForFilter(List<ArgumentRef> refs, GraphQLFieldDefinition fieldDef,
                                                   TableRef rt, String returnTypeName, List<String> errors) {
         var filters = projectFilters(refs, fieldDef, rt, returnTypeName, errors);
-        if (filters == null) return TableFieldComponents.error(String.join("; ", errors));
+        if (filters == null) return new TableFieldComponents.Rejected(String.join("; ", errors));
         ConditionFilter fieldCondition;
         switch (conditionResolver.resolveField(fieldDef)) {
             case ConditionResolver.FieldConditionResult.None n -> fieldCondition = null;
             case ConditionResolver.FieldConditionResult.Ok ok -> fieldCondition = ok.filter();
             case ConditionResolver.FieldConditionResult.Rejected r -> {
                 errors.add(r.message());
-                return TableFieldComponents.error(String.join("; ", errors));
+                return new TableFieldComponents.Rejected(String.join("; ", errors));
             }
         }
         if (fieldCondition != null) {
@@ -621,7 +630,7 @@ class FieldBuilder {
         var orderByResolved = orderByResolver.resolve(refs, fieldDef, rt.tableName());
         if (orderByResolved instanceof OrderByResolver.Resolved.Rejected r) {
             errors.add(r.message());
-            return TableFieldComponents.error(String.join("; ", errors));
+            return new TableFieldComponents.Rejected(String.join("; ", errors));
         }
         OrderBySpec orderBy = ((OrderByResolver.Resolved.Ok) orderByResolved).spec();
         var lookupMapping = lookupMappingResolver.resolve(refs, rt);
@@ -638,9 +647,9 @@ class FieldBuilder {
             String msg = errors.isEmpty()
                 ? "@lookupKey is declared but no argument resolved to a lookup column"
                 : String.join("; ", errors);
-            return TableFieldComponents.error(msg);
+            return new TableFieldComponents.Rejected(msg);
         }
-        return new TableFieldComponents(filters, orderBy, paginationResolver.resolve(refs, fieldDef), null, lookupMapping);
+        return new TableFieldComponents.Ok(filters, orderBy, paginationResolver.resolve(refs, fieldDef), lookupMapping);
     }
 
     /**
@@ -1678,11 +1687,14 @@ class FieldBuilder {
                     new UnclassifiedField(parentTypeName, name, location, fieldDef, r.kind(), r.message());
                 case LookupKeyDirectiveResolver.Resolved.Ok ok -> {
                     var tb = ok.returnType();
-                    var tfc = resolveTableFieldComponents(fieldDef, tb.table(), lookupTypeName);
-                    yield tfc.error() != null
-                        ? new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, tfc.error())
-                        : new QueryField.QueryLookupTableField(parentTypeName, name, location, tb, tfc.filters(), tfc.orderBy(), tfc.pagination(),
-                            tfc.lookupMapping());
+                    var components = resolveTableFieldComponents(fieldDef, tb.table(), lookupTypeName);
+                    yield switch (components) {
+                        case TableFieldComponents.Rejected rj ->
+                            new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, rj.message());
+                        case TableFieldComponents.Ok tfc ->
+                            new QueryField.QueryLookupTableField(parentTypeName, name, location, tb, tfc.filters(), tfc.orderBy(), tfc.pagination(),
+                                tfc.lookupMapping());
+                    };
                 }
             };
         }
@@ -1707,14 +1719,16 @@ class FieldBuilder {
         if (elementType instanceof TableBackedType tbt && !(elementType instanceof TableInterfaceType)) {
             var wrapper = buildWrapper(fieldDef);
             var returnType = (ReturnTypeRef.TableBoundReturnType) ctx.resolveReturnType(elementTypeName, wrapper);
-            var tfc = resolveTableFieldComponents(fieldDef, returnType.table(), elementTypeName);
-            if (tfc.error() != null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, tfc.error());
+            var components = resolveTableFieldComponents(fieldDef, returnType.table(), elementTypeName);
+            if (components instanceof TableFieldComponents.Rejected rj) return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, rj.message());
+            var tfc = (TableFieldComponents.Ok) components;
             return new QueryField.QueryTableField(parentTypeName, name, location, returnType, tfc.filters(), tfc.orderBy(), tfc.pagination());
         }
         if (elementType instanceof TableInterfaceType tableInterfaceType) {
             var wrapper = buildWrapper(fieldDef);
-            var tfc = resolveTableFieldComponents(fieldDef, tableInterfaceType.table(), elementTypeName);
-            if (tfc.error() != null) return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, tfc.error());
+            var components = resolveTableFieldComponents(fieldDef, tableInterfaceType.table(), elementTypeName);
+            if (components instanceof TableFieldComponents.Rejected rj) return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, rj.message());
+            var tfc = (TableFieldComponents.Ok) components;
             var knownValues = knownDiscriminatorValues(tableInterfaceType);
             return new QueryField.QueryTableInterfaceField(parentTypeName, name, location,
                 new ReturnTypeRef.TableBoundReturnType(elementTypeName, tableInterfaceType.table(), wrapper),
@@ -1762,16 +1776,18 @@ class FieldBuilder {
         }
 
         if (fieldDef.hasAppliedDirective(DIR_MUTATION)) {
-            String typeName = mutationInputResolver.getMutationTypeName(fieldDef);
-            if (typeName != null) {
-                if (!"INSERT".equals(typeName) && !"UPDATE".equals(typeName)
-                        && !"DELETE".equals(typeName) && !"UPSERT".equals(typeName)) {
+            MutationInputResolver.DmlKind kind;
+            switch (mutationInputResolver.parseDmlKind(fieldDef)) {
+                case MutationInputResolver.DmlKindResult.Absent a -> kind = null;
+                case MutationInputResolver.DmlKindResult.Kind k -> kind = k.kind();
+                case MutationInputResolver.DmlKindResult.Unknown u -> {
                     return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
-                        "unknown @mutation(typeName:) value '" + typeName + "'");
+                        "unknown @mutation(typeName:) value '" + u.raw() + "'");
                 }
-
+            }
+            if (kind != null) {
                 ArgumentRef.InputTypeArg.TableInputArg tia;
-                switch (mutationInputResolver.resolveInput(fieldDef, typeName)) {
+                switch (mutationInputResolver.resolveInput(fieldDef, kind)) {
                     case MutationInputResolver.Resolved.Ok ok -> tia = ok.tia();
                     case MutationInputResolver.Resolved.Rejected r -> {
                         return new UnclassifiedField(parentTypeName, name, location, fieldDef,
@@ -1782,7 +1798,7 @@ class FieldBuilder {
                 String rawReturn = baseTypeName(fieldDef);
                 ReturnTypeRef returnType = ctx.resolveReturnType(rawReturn, buildWrapper(fieldDef));
 
-                String returnTypeError = MutationInputResolver.validateReturnType(returnType, typeName);
+                String returnTypeError = MutationInputResolver.validateReturnType(returnType, kind);
                 if (returnTypeError != null) {
                     return new UnclassifiedField(parentTypeName, name, location, fieldDef,
                         RejectionKind.AUTHOR_ERROR, returnTypeError);
@@ -1805,16 +1821,15 @@ class FieldBuilder {
 
                 Optional<HelperRef.Encode> enc = encodeReturn;
                 String dmlTableSqlName = tia.inputTable().tableName();
-                return switch (typeName) {
-                    case "INSERT" -> buildDmlField(returnType, parentTypeName, name, location, fieldDef, dmlTableSqlName,
+                return switch (kind) {
+                    case INSERT -> buildDmlField(returnType, parentTypeName, name, location, fieldDef, dmlTableSqlName,
                         (pa, ch) -> new MutationField.MutationInsertTableField(parentTypeName, name, location, returnType, tia, enc, pa, ch));
-                    case "UPDATE" -> buildDmlField(returnType, parentTypeName, name, location, fieldDef, dmlTableSqlName,
+                    case UPDATE -> buildDmlField(returnType, parentTypeName, name, location, fieldDef, dmlTableSqlName,
                         (pa, ch) -> new MutationField.MutationUpdateTableField(parentTypeName, name, location, returnType, tia, enc, pa, ch));
-                    case "DELETE" -> buildDmlField(returnType, parentTypeName, name, location, fieldDef, dmlTableSqlName,
+                    case DELETE -> buildDmlField(returnType, parentTypeName, name, location, fieldDef, dmlTableSqlName,
                         (pa, ch) -> new MutationField.MutationDeleteTableField(parentTypeName, name, location, returnType, tia, enc, pa, ch));
-                    case "UPSERT" -> buildDmlField(returnType, parentTypeName, name, location, fieldDef, dmlTableSqlName,
+                    case UPSERT -> buildDmlField(returnType, parentTypeName, name, location, fieldDef, dmlTableSqlName,
                         (pa, ch) -> new MutationField.MutationUpsertTableField(parentTypeName, name, location, returnType, tia, enc, pa, ch));
-                    default       -> throw new IllegalStateException("unreachable: typeName=" + typeName);
                 };
             }
         }
@@ -1981,8 +1996,9 @@ class FieldBuilder {
         }
         return switch (resolvedReturnType) {
             case ReturnTypeRef.TableBoundReturnType tb -> {
-                var tfc = resolveTableFieldComponents(fieldDef, tb.table(), elementTypeName);
-                if (tfc.error() != null) yield new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, tfc.error());
+                var components = resolveTableFieldComponents(fieldDef, tb.table(), elementTypeName);
+                if (components instanceof TableFieldComponents.Rejected rj) yield new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, rj.message());
+                var tfc = (TableFieldComponents.Ok) components;
                 var batchKey = deriveBatchKeyForResultType(objectPath.elements(), parentResultType);
                 if (hasLookupKeyAnywhere(fieldDef)) {
                     if (batchKey == null) {
