@@ -27,15 +27,9 @@ import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
  * cardinality validation today and is intentionally left untouched: tightening its invariants
  * would be a behavior change, separate from this lift.
  *
- * <p>Mapping projection ({@code projectForLookup}) is not folded into this resolver: today it
- * runs inside {@code resolveTableFieldComponents} (a state-2 bundled monolith) and post-dates
- * argument classification, so it doesn't fit the directive-axis shape. It will fold into a
- * dedicated {@code LookupMappingResolver} under R6 Phase 5 (projection resolvers).
- *
- * <p>Implementation note: like sibling directive resolvers, the constructor takes
- * {@link BuildContext}, {@link ServiceCatalog}, and {@link FieldBuilder} for uniform wiring,
- * even though Phase 2c's purely structural validation needs none of them. When projection logic
- * folds in under Phase 5 these dependencies will be needed.
+ * <p>Mapping projection ({@code projectForLookup}) lives in the dedicated
+ * {@link LookupMappingResolver} (Phase 6a); this resolver is purely directive-level invariant
+ * checking and holds no dependencies.
  */
 final class LookupKeyDirectiveResolver {
 
@@ -55,11 +49,7 @@ final class LookupKeyDirectiveResolver {
         record Rejected(RejectionKind kind, String message) implements Resolved {}
     }
 
-    LookupKeyDirectiveResolver(BuildContext ctx, ServiceCatalog svc, FieldBuilder fb) {
-        // Phase 2c is purely structural validation and needs no dependencies. The constructor
-        // signature matches sibling resolvers for uniform wiring; Phase 5 (projection-resolver
-        // fold-in) will make these fields load-bearing.
-    }
+    LookupKeyDirectiveResolver() {}
 
     /**
      * Validates the root-site invariant for {@code @lookupKey}: the resolved return type must be

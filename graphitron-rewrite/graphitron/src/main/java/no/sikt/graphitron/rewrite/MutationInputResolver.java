@@ -33,10 +33,11 @@ import static no.sikt.graphitron.rewrite.BuildContext.DIR_MUTATION;
  * <p>Three responsibilities cluster here, all centred on {@code @mutation} field classification:
  *
  * <ul>
- *   <li>{@link #getMutationTypeName} — reads the {@code typeName} argument off the
- *       {@code @mutation} directive, returning {@code null} when absent or unparseable. Used by
- *       the mutation-classification arm to dispatch to the four DML statement variants
- *       ({@code INSERT} / {@code UPDATE} / {@code DELETE} / {@code UPSERT}).</li>
+ *   <li>{@link #parseDmlKind} — reads the {@code typeName} argument off the {@code @mutation}
+ *       directive and lifts it into a sealed {@link DmlKindResult}. Used by the
+ *       mutation-classification arm to dispatch to the four DML statement variants
+ *       ({@link DmlKind#INSERT} / {@link DmlKind#UPDATE} / {@link DmlKind#DELETE} /
+ *       {@link DmlKind#UPSERT}).</li>
  *   <li>{@link #validateReturnType} — validates Invariant #14 (mutation return must be
  *       {@code ID}, {@code [ID]}, {@code T}, or {@code [T]} where {@code T} is a {@code @table}
  *       type). Returns a non-null rejection reason on violation, {@code null} on success.</li>
@@ -72,6 +73,45 @@ final class MutationInputResolver {
         record Rejected(String message) implements Resolved {}
     }
 
+    /**
+     * The four DML statement kinds {@code @mutation(typeName:)} can take. Lifting the schema's
+     * raw String into an enum lets every downstream switch (kind dispatch, invariant rules,
+     * return-type validation) be exhaustive at compile time.
+     */
+    enum DmlKind {
+        INSERT, UPDATE, DELETE, UPSERT;
+
+        /** UPDATE / DELETE / UPSERT require at least one {@code @lookupKey} binding. */
+        boolean requiresLookupKey() {
+            return this != INSERT;
+        }
+        /** UPDATE / DELETE require all PK columns to be covered by {@code @lookupKey} bindings. */
+        boolean requiresPkCoverage() {
+            return this == UPDATE || this == DELETE;
+        }
+    }
+
+    /**
+     * Outcome of {@link #parseDmlKind}. Three terminal arms.
+     *
+     * <ul>
+     *   <li>{@link Absent} — {@code @mutation} or its {@code typeName:} argument is unset on the
+     *       field. Pre-existing behaviour treats this as "not a DML field"; the caller falls
+     *       through to its surrounding "directive missing" rejection.</li>
+     *   <li>{@link Kind} — the argument resolves to one of the four well-formed values.</li>
+     *   <li>{@link Unknown} — the argument is set but doesn't match any {@link DmlKind}; the
+     *       caller surfaces an {@link no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField}
+     *       carrying the raw value.</li>
+     * </ul>
+     */
+    sealed interface DmlKindResult {
+        record Absent() implements DmlKindResult {}
+        record Kind(DmlKind kind) implements DmlKindResult {}
+        record Unknown(String raw) implements DmlKindResult {}
+    }
+
+    private static final DmlKindResult ABSENT = new DmlKindResult.Absent();
+
     private final BuildContext ctx;
     private final ConditionResolver conditionResolver;
     private final EnumMappingResolver enumMapping;
@@ -84,20 +124,26 @@ final class MutationInputResolver {
 
     /**
      * Reads the {@code typeName} argument off the {@code @mutation} directive on
-     * {@code fieldDef}. Returns {@code null} when the directive is absent, the argument is
-     * unset, or the value isn't an enum/string. The four well-formed values
-     * ({@code "INSERT"} / {@code "UPDATE"} / {@code "DELETE"} / {@code "UPSERT"}) are validated
-     * by the caller against an explicit allow-list.
+     * {@code fieldDef} and lifts the raw String into a sealed {@link DmlKindResult} the caller
+     * switches on. {@link DmlKindResult.Absent} signals the directive is absent or the argument
+     * is unset; {@link DmlKindResult.Kind} carries the resolved {@link DmlKind};
+     * {@link DmlKindResult.Unknown} carries the raw value when it doesn't match any kind.
      */
-    String getMutationTypeName(GraphQLFieldDefinition fieldDef) {
+    DmlKindResult parseDmlKind(GraphQLFieldDefinition fieldDef) {
         var dir = fieldDef.getAppliedDirective(DIR_MUTATION);
-        if (dir == null) return null;
+        if (dir == null) return ABSENT;
         var arg = dir.getArgument(ARG_TYPE_NAME);
-        if (arg == null) return null;
+        if (arg == null) return ABSENT;
         Object value = arg.getValue();
-        if (value instanceof EnumValue ev) return ev.getName();
-        if (value instanceof String s) return s;
-        return null;
+        String raw = value instanceof EnumValue ev ? ev.getName()
+            : value instanceof String s ? s
+            : null;
+        if (raw == null) return ABSENT;
+        try {
+            return new DmlKindResult.Kind(DmlKind.valueOf(raw));
+        } catch (IllegalArgumentException e) {
+            return new DmlKindResult.Unknown(raw);
+        }
     }
 
     /**
@@ -106,18 +152,18 @@ final class MutationInputResolver {
      * Returns a non-null rejection reason on violation; {@code null} when the return type is
      * acceptable.
      */
-    static String validateReturnType(ReturnTypeRef returnType, String typeName) {
+    static String validateReturnType(ReturnTypeRef returnType, DmlKind kind) {
         return switch (returnType) {
             case ReturnTypeRef.ScalarReturnType s -> {
                 if (!"ID".equals(s.returnTypeName())) {
-                    yield "@mutation(typeName: " + typeName + ") return type '"
+                    yield "@mutation(typeName: " + kind + ") return type '"
                         + s.returnTypeName() + "' is not yet supported; use ID or a @table type";
                 }
                 yield null;
             }
             case ReturnTypeRef.TableBoundReturnType tb -> {
                 if (tb.wrapper() instanceof FieldWrapper.Connection) {
-                    yield "@mutation(typeName: " + typeName + ") return type '"
+                    yield "@mutation(typeName: " + kind + ") return type '"
                         + tb.returnTypeName() + "' (Connection) is not yet supported; use ID or a @table type";
                 }
                 yield null;
@@ -130,14 +176,14 @@ final class MutationInputResolver {
                 // construction; this validator only screens for the wrapper shape (single,
                 // not list/connection).
                 if (r.wrapper().isList()) {
-                    yield "@mutation(typeName: " + typeName + ") return type '"
+                    yield "@mutation(typeName: " + kind + ") return type '"
                         + r.returnTypeName() + "' (list of @record) is not yet supported; "
                         + "use a single @record payload, an ID, or a @table type";
                 }
                 yield null;
             }
             case ReturnTypeRef.PolymorphicReturnType p ->
-                "@mutation(typeName: " + typeName + ") return type '"
+                "@mutation(typeName: " + kind + ") return type '"
                     + p.returnTypeName() + "' (interface/union) is not yet supported; use ID or a @table type";
         };
     }
@@ -151,10 +197,10 @@ final class MutationInputResolver {
      * binding plus (for UPDATE / DELETE) full PK coverage and (for UPDATE) at least one
      * non-{@code @lookupKey} field.
      *
-     * @param typeName one of {@code "INSERT"} / {@code "UPDATE"} / {@code "DELETE"} /
-     *                 {@code "UPSERT"}
+     * @param kind one of {@link DmlKind#INSERT} / {@link DmlKind#UPDATE} /
+     *             {@link DmlKind#DELETE} / {@link DmlKind#UPSERT}
      */
-    Resolved resolveInput(GraphQLFieldDefinition fieldDef, String typeName) {
+    Resolved resolveInput(GraphQLFieldDefinition fieldDef, DmlKind kind) {
         var args = fieldDef.getArguments();
         ArgumentRef.InputTypeArg.TableInputArg foundTia = null;
         String multipleArgsError = null;
@@ -229,13 +275,12 @@ final class MutationInputResolver {
                 "@mutation input '" + foundTia.typeName() + "' field '" + f.name() + "': " + reason);
         }
 
-        boolean requiresLookupKey = "UPDATE".equals(typeName) || "DELETE".equals(typeName) || "UPSERT".equals(typeName);
-        if (requiresLookupKey && foundTia.fieldBindings().isEmpty()) {
+        if (kind.requiresLookupKey() && foundTia.fieldBindings().isEmpty()) {
             return new Resolved.Rejected(
-                "@mutation(typeName: " + typeName + ") requires at least one @lookupKey field in the input type");
+                "@mutation(typeName: " + kind + ") requires at least one @lookupKey field in the input type");
         }
 
-        if ("UPDATE".equals(typeName)) {
+        if (kind == DmlKind.UPDATE) {
             var lookupKeyNames = foundTia.fieldBindings().stream()
                 .map(InputColumnBinding.MapBinding::fieldName)
                 .collect(Collectors.toSet());
@@ -248,7 +293,7 @@ final class MutationInputResolver {
             }
         }
 
-        if ("UPDATE".equals(typeName) || "DELETE".equals(typeName)) {
+        if (kind.requiresPkCoverage()) {
             var pkColumns = ctx.catalog.findPkColumns(foundTia.inputTable().tableName());
             if (!pkColumns.isEmpty()) {
                 var boundSqlNames = foundTia.fieldBindings().stream()
@@ -260,7 +305,7 @@ final class MutationInputResolver {
                     .toList();
                 if (!missing.isEmpty()) {
                     return new Resolved.Rejected(
-                        "@mutation(typeName: " + typeName
+                        "@mutation(typeName: " + kind
                             + ") @lookupKey fields do not cover all PK column(s); missing: "
                             + String.join(", ", missing));
                 }

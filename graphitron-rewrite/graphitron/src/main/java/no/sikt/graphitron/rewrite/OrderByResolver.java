@@ -4,14 +4,11 @@ import graphql.language.BooleanValue;
 import graphql.language.EnumValue;
 import graphql.language.StringValue;
 import graphql.schema.GraphQLAppliedDirective;
-import graphql.schema.GraphQLArgument;
 import graphql.schema.GraphQLEnumType;
 import graphql.schema.GraphQLEnumValueDefinition;
 import graphql.schema.GraphQLFieldDefinition;
 import graphql.schema.GraphQLInputObjectType;
 import graphql.schema.GraphQLList;
-import graphql.schema.GraphQLNamedType;
-import graphql.schema.GraphQLNonNull;
 import graphql.schema.GraphQLType;
 import graphql.schema.GraphQLTypeUtil;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
@@ -54,7 +51,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.baseTypeName;
  *
  * <p>Every rejection path adds exactly one message to the {@link Resolved.Rejected} arm. The
  * caller appends that message to its accumulating {@code errors} list and surfaces a
- * {@code TableFieldComponents.error(...)}. Notably, the resolver owns the fallback
+ * {@code TableFieldComponents.Rejected}. Notably, the resolver owns the fallback
  * "could not resolve @defaultOrder columns in table '...'" rejection message that was previously
  * synthesized at the {@code projectForFilter} call site — it belongs inside the resolver since
  * it's the rejection reason for one specific failure path (silent {@code null} from the column /
@@ -108,8 +105,7 @@ final class OrderByResolver {
 
         for (var ref : refs) {
             if (ref instanceof ArgumentRef.OrderByArg ob) {
-                var arg = fieldDef.getArgument(ob.name());
-                return resolveOrderByArgSpec(arg, fieldDef, tableSqlName);
+                return resolveOrderByArgSpec(ob, fieldDef, tableSqlName);
             }
         }
         return resolveDefaultOrderSpec(fieldDef, tableSqlName);
@@ -263,53 +259,20 @@ final class OrderByResolver {
 
     /**
      * Resolves an {@code @orderBy} argument into an {@link OrderBySpec.Argument}, or a
-     * {@link Resolved.Rejected} when the input type structure is invalid or a referenced enum
-     * value's columns can't be resolved.
+     * {@link Resolved.Rejected} when a referenced enum value's columns can't be resolved.
+     *
+     * <p>Input-type structure (single sort enum + single direction field) is already validated by
+     * {@code FieldBuilder.classifyOrderByArg} at classification time, which is what populates
+     * {@link ArgumentRef.OrderByArg#sortFieldName()} / {@link ArgumentRef.OrderByArg#directionFieldName()}.
+     * The classifier rejects malformed shapes as {@link ArgumentRef.UnclassifiedArg} before they
+     * reach this resolver, so the only failure modes here are catalog-side: an {@code @order}'d
+     * enum value whose columns / index don't resolve in {@code tableSqlName}.
      */
-    private Resolved resolveOrderByArgSpec(GraphQLArgument arg, GraphQLFieldDefinition fieldDef, String tableSqlName) {
+    private Resolved resolveOrderByArgSpec(ArgumentRef.OrderByArg ob, GraphQLFieldDefinition fieldDef, String tableSqlName) {
         var errors = new ArrayList<String>();
-        String name = arg.getName();
-        GraphQLType type = arg.getType();
-        boolean nonNull = type instanceof GraphQLNonNull;
-        boolean list = GraphQLTypeUtil.unwrapNonNull(type) instanceof GraphQLList;
-        String typeName = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(type)).getName();
-
-        var rawType = ctx.schema.getType(typeName);
-        if (!(rawType instanceof GraphQLInputObjectType inputType)) {
-            return new Resolved.Rejected(
-                "argument '" + name + "': @orderBy argument type '" + typeName + "' is not an input type");
-        }
-        String sortFieldName = null;
-        String directionFieldName = null;
-        for (var field : inputType.getFieldDefinitions()) {
-            var fieldType = GraphQLTypeUtil.unwrapNonNull(field.getType());
-            if (!(fieldType instanceof GraphQLEnumType enumType)) continue;
-            boolean isSortEnum = enumType.getValues().stream()
-                .anyMatch(v -> v.hasAppliedDirective("order") || v.hasAppliedDirective("index"));
-            if (isSortEnum) {
-                if (sortFieldName != null) {
-                    return new Resolved.Rejected(
-                        "argument '" + name + "': @orderBy input type '" + typeName + "' must have exactly one sort enum field, but found multiple");
-                }
-                sortFieldName = field.getName();
-            } else {
-                if (directionFieldName != null) {
-                    return new Resolved.Rejected(
-                        "argument '" + name + "': @orderBy input type '" + typeName + "' must have exactly one direction field, but found multiple");
-                }
-                directionFieldName = field.getName();
-            }
-        }
-        if (sortFieldName == null) {
-            return new Resolved.Rejected(
-                "argument '" + name + "': @orderBy input type '" + typeName + "' has no sort enum field (no enum values with @order)");
-        }
-        if (directionFieldName == null) {
-            return new Resolved.Rejected(
-                "argument '" + name + "': @orderBy input type '" + typeName + "' has no direction field");
-        }
-        GraphQLEnumType sortEnum = (GraphQLEnumType) GraphQLTypeUtil.unwrapNonNull(
-            inputType.getFieldDefinition(sortFieldName).getType());
+        var inputType = (GraphQLInputObjectType) ctx.schema.getType(ob.typeName());
+        var sortEnum = (GraphQLEnumType) GraphQLTypeUtil.unwrapNonNull(
+            inputType.getFieldDefinition(ob.sortFieldName()).getType());
         var namedOrders = new ArrayList<OrderBySpec.NamedOrder>();
         for (var value : sortEnum.getValues()) {
             if (!value.hasAppliedDirective("order") && !value.hasAppliedDirective("index")) continue;
@@ -320,7 +283,7 @@ final class OrderByResolver {
         var baseResolved = resolveDefaultOrderSpec(fieldDef, tableSqlName);
         if (baseResolved instanceof Resolved.Rejected r) return r;
         OrderBySpec baseSpec = ((Resolved.Ok) baseResolved).spec();
-        return new Resolved.Ok(new OrderBySpec.Argument(name, typeName, nonNull, list,
-            sortFieldName, directionFieldName, List.copyOf(namedOrders), baseSpec));
+        return new Resolved.Ok(new OrderBySpec.Argument(ob.name(), ob.typeName(), ob.nonNull(), ob.list(),
+            ob.sortFieldName(), ob.directionFieldName(), List.copyOf(namedOrders), baseSpec));
     }
 }
