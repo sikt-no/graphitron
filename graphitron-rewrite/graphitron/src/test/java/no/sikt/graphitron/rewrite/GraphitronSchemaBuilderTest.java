@@ -720,7 +720,7 @@ class GraphitronSchemaBuilderTest {
                 assertThat(f.returnType().wrapper()).isInstanceOf(FieldWrapper.Single.class);
                 assertThat(f.joinPath()).hasSize(1);
                 var rk = (BatchKey.RowKeyed) f.batchKey();
-                assertThat(rk.keyColumns()).extracting(ColumnRef::sqlName)
+                assertThat(rk.parentKeyColumns()).extracting(ColumnRef::sqlName)
                     .containsExactly("address_id");
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(SplitTableField.class); }
@@ -737,7 +737,7 @@ class GraphitronSchemaBuilderTest {
                 var f = (SplitTableField) schema.field("Customer", "address");
                 assertThat(f.joinPath()).hasSize(1);
                 var rk = (BatchKey.RowKeyed) f.batchKey();
-                assertThat(rk.keyColumns()).extracting(ColumnRef::sqlName)
+                assertThat(rk.parentKeyColumns()).extracting(ColumnRef::sqlName)
                     .containsExactly("address_id");
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(SplitTableField.class); }
@@ -1225,7 +1225,7 @@ class GraphitronSchemaBuilderTest {
         assertThat(stf.parentTypeName()).isEqualTo("FilmInfo");
         assertThat(stf.batchKey()).isInstanceOf(BatchKey.RowKeyed.class);
         var rk = (BatchKey.RowKeyed) stf.batchKey();
-        assertThat(rk.keyColumns()).extracting(ColumnRef::javaName).containsExactly("FILM_ID");
+        assertThat(rk.parentKeyColumns()).extracting(ColumnRef::javaName).containsExactly("FILM_ID");
     }
 
     // ===== ServiceTableField / ServiceRecordField =====
@@ -1639,7 +1639,7 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var f = (RecordLookupTableField) schema.field("FilmDetails", "language");
                 assertThat(f.batchKey()).isInstanceOf(no.sikt.graphitron.rewrite.model.BatchKey.RowKeyed.class);
-                assertThat(((no.sikt.graphitron.rewrite.model.BatchKey.RowKeyed) f.batchKey()).keyColumns()).isNotEmpty();
+                assertThat(((no.sikt.graphitron.rewrite.model.BatchKey.RowKeyed) f.batchKey()).parentKeyColumns()).isNotEmpty();
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(RecordLookupTableField.class); }
         },

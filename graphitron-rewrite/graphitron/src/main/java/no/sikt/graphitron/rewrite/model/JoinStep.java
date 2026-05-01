@@ -14,7 +14,16 @@ import java.util.List;
  *       with an optional WHERE filter on the enclosing SELECT.</li>
  *   <li>{@link ConditionJoin} — navigate via a user-supplied condition method (no FK constraint);
  *       the condition becomes the ON clause of an explicit JOIN.</li>
+ *   <li>{@link LiftedHop} — single-hop terminal pre-keyed by a {@link BatchKey.LifterRowKeyed};
+ *       no FK, no source-side columns, the DataLoader key tuple <em>is</em> the target-column
+ *       tuple.</li>
  * </ul>
+ *
+ * <p>{@link FkJoin} and {@link LiftedHop} share the {@link WithTarget} capability so the
+ * rows-method prelude reads {@code targetTable}, {@code targetColumns}, and {@code alias}
+ * uniformly without per-accessor sealed switches. The genuine identity fork (FK source-side
+ * columns vs. lifter target-side columns for the JOIN-on predicate) stays a sealed switch.
+ * Capabilities express what is uniformly true; sealed switches express what varies by identity.
  *
  * <p><b>Variant contrast:</b>
  * <pre>
@@ -53,7 +62,21 @@ import java.util.List;
  *       rejecting it.</li>
  * </ol>
  */
-public sealed interface JoinStep permits JoinStep.FkJoin, JoinStep.ConditionJoin {
+public sealed interface JoinStep permits JoinStep.FkJoin, JoinStep.ConditionJoin, JoinStep.LiftedHop {
+
+    /**
+     * Capability mixed in by hops that pre-resolve a target table the prelude joins to. Lets
+     * the rows-method prelude's FK-chain loop read {@code targetTable()},
+     * {@code targetColumns()}, and {@code alias()} polymorphically — exactly where the
+     * accessors mean the same thing on every implementor. The genuine identity fork (FK
+     * source-side columns vs. lifter target-side columns for the JOIN-on predicate) stays a
+     * sealed switch.
+     */
+    interface WithTarget {
+        TableRef targetTable();
+        List<ColumnRef> targetColumns();
+        String alias();
+    }
 
     /**
      * One hop navigated by a jOOQ foreign key.
@@ -105,7 +128,7 @@ public sealed interface JoinStep permits JoinStep.FkJoin, JoinStep.ConditionJoin
         List<ColumnRef> targetColumns,
         MethodRef whereFilter,
         String alias
-    ) implements JoinStep {}
+    ) implements JoinStep, WithTarget {}
 
     /**
      * One hop navigated by a user-supplied condition method (no FK constraint involved).
@@ -124,4 +147,31 @@ public sealed interface JoinStep permits JoinStep.FkJoin, JoinStep.ConditionJoin
      * SELECT; this condition is the JOIN's ON clause.
      */
     record ConditionJoin(MethodRef condition, String alias) implements JoinStep {}
+
+    /**
+     * One hop pre-keyed by a {@link BatchKey.LifterRowKeyed} — no foreign key, no traversal
+     * direction, no source-side columns. The DataLoader key tuple carried by the BatchKey
+     * <em>is</em> the target-column tuple, so the JOIN-on predicate of the rows-method becomes
+     * {@code target.<targetColumns[i]> = parentInput.field(i+1)} directly.
+     *
+     * <p>{@link BatchKey.LifterRowKeyed} holds a single {@code LiftedHop} on its own record;
+     * the classifier publishes the same instance through {@code joinPath = [hop]} for back-compat
+     * with the existing rows-method loop, but the BatchKey is the source of truth. This makes
+     * the single-hop invariant a type fact (one record, one hop) rather than a classifier
+     * convention.
+     *
+     * <p>{@code targetTable} is the field's {@code @table} return; {@code targetColumns} is what
+     * the directive supplied (validated against the catalog); {@code alias} follows the same
+     * {@code fieldName + "_" + stepIndex} scheme as {@link FkJoin#alias}.
+     */
+    record LiftedHop(
+        TableRef targetTable,
+        List<ColumnRef> targetColumns,
+        String alias
+    ) implements JoinStep, WithTarget {
+
+        public LiftedHop {
+            targetColumns = List.copyOf(targetColumns);
+        }
+    }
 }

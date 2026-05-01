@@ -218,7 +218,7 @@ class ServiceCatalog {
                 } else if (pName != null && ctxKeys.contains(pName)) {
                     params.add(new MethodRef.Param.Typed(displayName, typeName, new ParamSource.Context()));
                 } else {
-                    Optional<BatchKey> batchKey = classifySourcesType(p.getParameterizedType(), parentPkColumns);
+                    Optional<BatchKey.ParentKeyed> batchKey = classifySourcesType(p.getParameterizedType(), parentPkColumns);
                     if (batchKey.isEmpty()) {
                         if (pName == null) {
                             return new ServiceReflectionResult(null,
@@ -560,7 +560,7 @@ class ServiceCatalog {
      * the user's declared type args are used only to determine the arity and variant. Pass
      * {@link List#of()} when no parent table context is available.
      */
-    static Optional<BatchKey> classifySourcesType(java.lang.reflect.Type paramType,
+    static Optional<BatchKey.ParentKeyed> classifySourcesType(java.lang.reflect.Type paramType,
             List<ColumnRef> parentPkColumns) {
         if (!(paramType instanceof java.lang.reflect.ParameterizedType pt)) {
             return Optional.empty();

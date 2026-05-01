@@ -116,8 +116,7 @@ class LoadBearingGuaranteeAuditTest {
             Map<String, List<String>> producers, Map<String, List<String>> consumers,
             List<AuditViolation> violations) {
 
-        LoadBearingClassifierCheck producer = el.getAnnotation(LoadBearingClassifierCheck.class);
-        if (producer != null) {
+        for (LoadBearingClassifierCheck producer : el.getAnnotationsByType(LoadBearingClassifierCheck.class)) {
             producers.computeIfAbsent(producer.key(), k -> new ArrayList<>()).add(site);
             if (producer.description().isBlank()) {
                 violations.add(new AuditViolation(

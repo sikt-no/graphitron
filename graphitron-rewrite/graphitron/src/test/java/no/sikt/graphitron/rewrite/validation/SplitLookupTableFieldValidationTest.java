@@ -28,7 +28,7 @@ class SplitLookupTableFieldValidationTest {
         return new ReturnTypeRef.TableBoundReturnType("Film", FILM_TABLE, wrapper);
     }
 
-    private static final BatchKey PARENT_BATCH_KEY = new BatchKey.RowKeyed(List.of());
+    private static final BatchKey.ParentKeyed PARENT_BATCH_KEY = new BatchKey.RowKeyed(List.of());
 
     // Single-cardinality @splitQuery @lookupKey is rejected at classifier time in
     // FieldBuilder; the emitter-level validator no longer carries a fallback check

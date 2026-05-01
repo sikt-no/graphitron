@@ -129,7 +129,7 @@ public final class SplitRowsMethodEmitter {
         ClassName tablesClass = ClassName.get(jooqPackage, "Tables");
 
         BatchKey.RowKeyed rowKeyed = (BatchKey.RowKeyed) batchKey;
-        List<ColumnRef> pkCols = rowKeyed.keyColumns();
+        List<ColumnRef> pkCols = rowKeyed.parentKeyColumns();
         TypeName keyElement = GeneratorUtils.keyElementType(batchKey);
 
         int parentRowArity = pkCols.size() + 1;
@@ -483,7 +483,7 @@ public final class SplitRowsMethodEmitter {
         // JOIN parentInput on step 0's source columns (target/terminal side for list cardinality).
         // parentInput.field(n, Class<T>) returns Field<T>, matching the FK column's type in
         // .eq(...). Position mapping: index 0 is idx, indices 1..N are the parent PK columns
-        // in the order declared by BatchKey.RowKeyed.keyColumns(). ON rather than USING dodges
+        // in the order declared by BatchKey.RowKeyed.parentKeyColumns(). ON rather than USING dodges
         // junction-column collisions, as Phase 2a C2 established.
         var onCond = CodeBlock.builder();
         for (int i = 0; i < firstHop.sourceColumns().size(); i++) {

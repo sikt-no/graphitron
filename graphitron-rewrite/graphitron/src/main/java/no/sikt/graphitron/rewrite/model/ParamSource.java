@@ -57,7 +57,7 @@ public sealed interface ParamSource
      * The DataLoader batch-key list ({@code List<KeyType>}).
      * The element type and key-construction strategy are determined by {@link BatchKey}.
      */
-    record Sources(BatchKey batchKey) implements ParamSource {}
+    record Sources(BatchKey.ParentKeyed batchKey) implements ParamSource {}
 
     /** The jOOQ {@code DSLContext}; injected by the framework. */
     record DslContext() implements ParamSource {}

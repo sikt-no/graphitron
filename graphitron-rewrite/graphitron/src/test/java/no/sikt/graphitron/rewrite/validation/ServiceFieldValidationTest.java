@@ -33,7 +33,7 @@ class ServiceFieldValidationTest {
     // ===== ServiceRecordField — non-table return type =====
 
     private static final MethodRef RESOLVED_METHOD = new MethodRef.Basic("com.example.Service", "method", TypeName.VOID, List.of());
-    private static final BatchKey RESOLVED_BATCH_KEY = new BatchKey.RowKeyed(
+    private static final BatchKey.ParentKeyed RESOLVED_BATCH_KEY = new BatchKey.RowKeyed(
         List.of(new ColumnRef("FILM_ID", "filmId", "java.lang.Integer")));
 
     enum RecordCase implements ValidatorCase {
@@ -160,7 +160,7 @@ class ServiceFieldValidationTest {
     private static final ReturnTypeRef.TableBoundReturnType FILM_RETURN =
         new ReturnTypeRef.TableBoundReturnType("Film", FILM_TABLE_SINGLE_PK, new FieldWrapper.Single(true));
 
-    private static ServiceTableField serviceField(BatchKey batchKey) {
+    private static ServiceTableField serviceField(BatchKey.ParentKeyed batchKey) {
         return new ServiceTableField("Film", "externalChild", null, FILM_RETURN,
             List.of(), List.of(), new OrderBySpec.None(), null,
             new MethodRef.Basic("com.example.FilmService", "getFilms", TypeName.OBJECT,
