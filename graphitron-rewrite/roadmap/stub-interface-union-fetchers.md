@@ -5,7 +5,7 @@ status: In Progress
 bucket: stubs
 priority: 1
 theme: interface-union
-depends-on: [entityfetcherdispatch-lookup-pipeline-collapse]
+depends-on: []
 ---
 
 # Stub #3: Interface / union fetchers
@@ -241,6 +241,8 @@ var filmRows = dsl.select(Film.$fields(sel, film, env))
 
 Per-typename row-builder is the same shared primitive that R55 collapses across `Query.nodes`, federation `_entities`, and now Track B. The generator reuses (does not duplicate) that emission. Selection-set narrowing works at full strength: only fields under `... on Film { … }` reach `Film.$fields`, and typed reads survive end-to-end.
 
+**Join syntax**: stage-2 emission follows the dispatcher shape `.on(t.PK.eq(input.field("PK", T.class)))`, not `.using(...)`. R55's reviewer pass kept `.on(...)` on the dispatcher to avoid USING collapsing joined columns under `<TypeName>.$fields(env, t, env)` projections (which reference the join key columns themselves). Track B's stage 2 calls the same `<Type>.$fields(...)` per typename and inherits the same constraint, so it reuses `ValuesJoinRowBuilder` with the dispatcher-shape callsite, not the lookup-root `.using(...)` callsite.
+
 #### Merge in stage-1 order
 
 The fetcher iterates stage-1 results in their (sorted, paginated) order; for each `(typename, pk)` it looks up the typed Record from the per-typename result map and assembles the final `Result<Record>`. `__typename` from stage 1 carries through as a column on each typed Record so the TypeResolver routes correctly.
@@ -287,12 +289,12 @@ Execution (`GraphQLQueryTest`):
 
 ### Order and sub-phases
 
-- **B1, TypeResolver wiring** for non-`Node` `InterfaceType` / `UnionType`. Standalone, small. Has no dependency on R55 and is the sub-phase exception to this plan's front-matter `depends-on`. Lands first; also a prerequisite for any developer who returns a multi-table interface from `@service`.
-- **B2, `QueryInterfaceField` / `QueryUnionField`** root case: stage-1 emitter, stage-2 dispatch via the shared row-builder, validation rejections. Composite-PK jsonbArray sort lives here. Blocked on R55.
+- **B1, TypeResolver wiring** for non-`Node` `InterfaceType` / `UnionType`. Standalone, small. Lands first; also a prerequisite for any developer who returns a multi-table interface from `@service`.
+- **B2, `QueryInterfaceField` / `QueryUnionField`** root case: stage-1 emitter, stage-2 dispatch via the shared row-builder, validation rejections. Composite-PK jsonbArray sort lives here.
 - **B3, `ChildField.InterfaceField` / `ChildField.UnionField`** child case: B2's emitter plus the parent-FK condition per branch.
 - **B4, connection pagination.** Build on B1-B3.
 
-The front-matter `depends-on` declares the hard ordering: R55 (`entityfetcherdispatch-lookup-pipeline-collapse`) extracts `ValuesJoinRowBuilder` from the existing two duplicate sites (`LookupValuesJoinEmitter` and `EntityFetcherDispatchClassGenerator`); B2's stage-2 emission is the third consumer. Without R55 in place, B2 would fork a third copy of the same `VALUES (idx, c1, …) JOIN <table> ORDER BY idx` primitive that R55 then has to collapse anyway. Pure churn. B1 carves out as the sub-phase that doesn't touch the row-builder and can ship while R55 is still in flight.
+R55 (`entityfetcherdispatch-lookup-pipeline-collapse`) shipped 2026-05-01, extracting `ValuesJoinRowBuilder` from the two existing duplicate sites (`LookupValuesJoinEmitter` and `EntityFetcherDispatchClassGenerator`); B2's stage-2 emission is the third consumer and reuses (does not fork) that primitive.
 
 ### Non-goals (Track B v1)
 
@@ -305,7 +307,7 @@ The front-matter `depends-on` declares the hard ordering: R55 (`entityfetcherdis
 
 ## Order and gating
 
-Track A is fully shipped (same-table Phase 1 plus cross-table Phase 2). Track B's sub-phases B1-B4 are listed in the Track B section above; B1 is the smallest standalone deliverable and unblocks any developer returning a multi-table interface from `@service` independently of Track B's main thrust. R55's shared row-builder collapse overlaps with B2's stage-2 emission; either ordering of (R55, B2) is workable.
+Track A is fully shipped (same-table Phase 1 plus cross-table Phase 2). R55's shared row-builder collapse shipped 2026-05-01 and unblocks B2. Track B's sub-phases B1-B4 are listed in the Track B section above; B1 is the smallest standalone deliverable and lands first.
 
 ---
 
