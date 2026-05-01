@@ -88,7 +88,6 @@ import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_CLASS_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_CONNECTION_NAME;
-import static no.sikt.graphitron.rewrite.BuildContext.ARG_DEFAULT_FIRST_VALUE;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_CONTEXT_ARGUMENTS;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_KEY;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_ARG_MAPPING;
@@ -144,6 +143,7 @@ class FieldBuilder {
     private final LookupKeyDirectiveResolver lookupKeyResolver;
     private final OrderByResolver orderByResolver;
     private final LookupMappingResolver lookupMappingResolver;
+    private final PaginationResolver paginationResolver;
     FieldBuilder(BuildContext ctx, ServiceCatalog svc) {
         this.ctx = ctx;
         this.svc = svc;
@@ -153,6 +153,7 @@ class FieldBuilder {
         this.lookupKeyResolver = new LookupKeyDirectiveResolver(ctx, svc, this);
         this.orderByResolver = new OrderByResolver(ctx);
         this.lookupMappingResolver = new LookupMappingResolver();
+        this.paginationResolver = new PaginationResolver();
     }
 
     // ===== Shared resolution helpers =====
@@ -365,7 +366,7 @@ class FieldBuilder {
         // Per-type metadata (name, element, item nullability) lives on ConnectionType in
         // schema.types(); this wrapper only carries per-carrier-site pagination metadata.
         if (fieldDef.hasAppliedDirective(DIR_AS_CONNECTION) && unwrappedOnce instanceof GraphQLList) {
-            int defaultPageSize = resolveDefaultFirstValue(fieldDef);
+            int defaultPageSize = paginationResolver.resolveDefaultFirstValue(fieldDef);
             return new FieldWrapper.Connection(outerNullable, defaultPageSize);
         }
 
@@ -423,7 +424,7 @@ class FieldBuilder {
         if (arg.hasAppliedDirective(DIR_ORDER_BY)) {
             return classifyOrderByArg(arg, name, typeName, nonNull, list, errors);
         }
-        if (isPaginationArg(name)) {
+        if (paginationResolver.isPaginationArg(name)) {
             ArgumentRef.PaginationArgRef.Role role = switch (name) {
                 case "first"  -> ArgumentRef.PaginationArgRef.Role.FIRST;
                 case "last"   -> ArgumentRef.PaginationArgRef.Role.LAST;
@@ -792,7 +793,7 @@ class FieldBuilder {
                 : String.join("; ", errors);
             return TableFieldComponents.error(msg);
         }
-        return new TableFieldComponents(filters, orderBy, projectPaginationSpec(refs, fieldDef), null, lookupMapping);
+        return new TableFieldComponents(filters, orderBy, paginationResolver.resolve(refs, fieldDef), null, lookupMapping);
     }
 
     /**
@@ -816,7 +817,7 @@ class FieldBuilder {
      * Projects the classified arguments into a {@link WhereFilter} list for a table-bound field.
      *
      * <p>{@link ArgumentRef.OrderByArg} and {@link ArgumentRef.PaginationArgRef} are skipped
-     * (handled by {@link OrderByResolver} / {@link #projectPaginationSpec}).
+     * (handled by {@link OrderByResolver} / {@link PaginationResolver}).
      * {@link ArgumentRef.UnclassifiedArg} and {@link ArgumentRef.ScalarArg.UnboundArg} add to
      * {@code errors}. For {@link ArgumentRef.InputTypeArg} variants the arg-level, input-field-level
      * {@code @condition} predicates and (for {@code @table} inputs) implicit column-equality
@@ -837,7 +838,7 @@ class FieldBuilder {
         for (var ref : refs) {
             switch (ref) {
                 case ArgumentRef.OrderByArg ignored -> {}                     // handled by OrderByResolver
-                case ArgumentRef.PaginationArgRef ignored -> {}               // handled by projectPaginationSpec
+                case ArgumentRef.PaginationArgRef ignored -> {}               // handled by PaginationResolver
                 case ArgumentRef.InputTypeArg.TableInputArg tia -> {
                     // Arg-level @condition and field-level @condition predicates.
                     tia.argCondition().ifPresent(ac -> argConditions.add(ac.filter()));
@@ -1162,51 +1163,6 @@ class FieldBuilder {
             return "";
         }
         return colClass.getName();
-    }
-
-    /**
-     * Projects the classified arguments into a {@link PaginationSpec} for a list/connection field.
-     * Returns {@code null} when no pagination arguments are present and {@code @asConnection} is
-     * not declared on the field.
-     */
-    private PaginationSpec projectPaginationSpec(List<ArgumentRef> refs, GraphQLFieldDefinition fieldDef) {
-        PaginationSpec.PaginationArg first = null, last = null, after = null, before = null;
-        for (var ref : refs) {
-            if (!(ref instanceof ArgumentRef.PaginationArgRef p)) continue;
-            var paginationArg = new PaginationSpec.PaginationArg(p.typeName(), p.nonNull());
-            switch (p.role()) {
-                case FIRST  -> first  = paginationArg;
-                case LAST   -> last   = paginationArg;
-                case AFTER  -> after  = paginationArg;
-                case BEFORE -> before = paginationArg;
-            }
-        }
-
-        // @asConnection without explicit pagination args: synthesize forward-pagination defaults
-        if (first == null && last == null && after == null && before == null
-                && fieldDef.hasAppliedDirective(DIR_AS_CONNECTION)) {
-            first = new PaginationSpec.PaginationArg("Int", false);
-            after = new PaginationSpec.PaginationArg("String", false);
-        }
-
-        if (first == null && last == null && after == null && before == null) return null;
-        return new PaginationSpec(first, last, after, before);
-    }
-
-    private static boolean isPaginationArg(String argName) {
-        return "first".equals(argName) || "last".equals(argName)
-            || "after".equals(argName) || "before".equals(argName);
-    }
-
-    private static int resolveDefaultFirstValue(GraphQLFieldDefinition fieldDef) {
-        var dir = fieldDef.getAppliedDirective(DIR_AS_CONNECTION);
-        if (dir == null) return FieldWrapper.DEFAULT_PAGE_SIZE;
-        var arg = dir.getArgument(ARG_DEFAULT_FIRST_VALUE);
-        if (arg == null || arg.getValue() == null) return FieldWrapper.DEFAULT_PAGE_SIZE;
-        Object val = arg.getValue();
-        if (val instanceof graphql.language.IntValue iv) return iv.getValue().intValueExact();
-        if (val instanceof Number n) return n.intValue();
-        return FieldWrapper.DEFAULT_PAGE_SIZE;
     }
 
     // ===== Field classification =====
