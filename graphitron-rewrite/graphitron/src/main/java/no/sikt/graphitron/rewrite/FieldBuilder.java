@@ -92,6 +92,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.ARG_METHOD;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_TYPE_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_AS_CONNECTION;
+import static no.sikt.graphitron.rewrite.BuildContext.DIR_BATCH_KEY_LIFTER;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_EXTERNAL_FIELD;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_FIELD;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_LOOKUP_KEY;
@@ -137,6 +138,7 @@ class FieldBuilder {
     private final InputFieldResolver inputFieldResolver;
     private final MutationInputResolver mutationInputResolver;
     private final EnumMappingResolver enumMappingResolver;
+    private final BatchKeyLifterDirectiveResolver batchKeyLifterResolver;
     FieldBuilder(BuildContext ctx, ServiceCatalog svc) {
         this.ctx = ctx;
         this.svc = svc;
@@ -151,6 +153,7 @@ class FieldBuilder {
         this.conditionResolver = new ConditionResolver(ctx, svc);
         this.inputFieldResolver = new InputFieldResolver(ctx);
         this.mutationInputResolver = new MutationInputResolver(ctx, conditionResolver, enumMappingResolver);
+        this.batchKeyLifterResolver = new BatchKeyLifterDirectiveResolver(ctx, this);
     }
 
     // ===== Shared resolution helpers =====
@@ -2084,6 +2087,30 @@ class FieldBuilder {
         }
         return switch (resolvedReturnType) {
             case ReturnTypeRef.TableBoundReturnType tb -> {
+                // @batchKeyLifter takes precedence over the catalog-FK path so directive-specific
+                // rejections surface before the generic missing-FK message.
+                if (fieldDef.hasAppliedDirective(DIR_BATCH_KEY_LIFTER)) {
+                    var lifterResult = batchKeyLifterResolver.resolve(parentTypeName, fieldDef, parentResultType, elementTypeName);
+                    if (lifterResult instanceof BatchKeyLifterDirectiveResolver.Resolved.Rejected rj) {
+                        yield new UnclassifiedField(parentTypeName, name, location, fieldDef, rj.kind(), rj.message());
+                    }
+                    var ok = (BatchKeyLifterDirectiveResolver.Resolved.Ok) lifterResult;
+                    var components = resolveTableFieldComponents(fieldDef, ok.targetTable(), elementTypeName);
+                    if (components instanceof TableFieldComponents.Rejected rj) {
+                        yield new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, rj.message());
+                    }
+                    var tfc = (TableFieldComponents.Ok) components;
+                    // joinPath publishes the same hop instance held by the BatchKey; the List wrap
+                    // is the rows-method emitter's existing API surface.
+                    List<JoinStep> joinPath = List.of(ok.liftedHop());
+                    if (hasLookupKeyAnywhere(fieldDef)) {
+                        yield new RecordLookupTableField(parentTypeName, name, location, ok.tbReturnType(), joinPath,
+                            tfc.filters(), tfc.orderBy(), tfc.pagination(), ok.batchKey(), tfc.lookupMapping());
+                    }
+                    yield new RecordTableField(parentTypeName, name, location, ok.tbReturnType(), joinPath,
+                        tfc.filters(), tfc.orderBy(), tfc.pagination(), ok.batchKey());
+                }
+
                 var components = resolveTableFieldComponents(fieldDef, tb.table(), elementTypeName);
                 if (components instanceof TableFieldComponents.Rejected rj) yield new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, rj.message());
                 var tfc = (TableFieldComponents.Ok) components;
@@ -2091,14 +2118,14 @@ class FieldBuilder {
                 if (hasLookupKeyAnywhere(fieldDef)) {
                     if (batchKey == null) {
                         yield new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.DEFERRED,
-                            "RecordLookupTableField requires a FK join path and a typed backing class for batch key extraction");
+                            "RecordLookupTableField requires a FK join path and a typed backing class for batch key extraction; for free-form DTO parents, supply @batchKeyLifter on the field");
                     }
                     yield new RecordLookupTableField(parentTypeName, name, location, tb, objectPath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination(),
                         batchKey, tfc.lookupMapping());
                 }
                 if (batchKey == null) {
                     yield new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.DEFERRED,
-                        "RecordTableField requires a FK join path and a typed backing class for batch key extraction");
+                        "RecordTableField requires a FK join path and a typed backing class for batch key extraction; for free-form DTO parents, supply @batchKeyLifter on the field");
                 }
                 yield new RecordTableField(parentTypeName, name, location, tb, objectPath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination(), batchKey);
             }
@@ -2189,6 +2216,12 @@ class FieldBuilder {
     private GraphitronField classifyChildFieldOnTableType(GraphQLFieldDefinition fieldDef, String parentTypeName, TableBackedType tableType, Set<String> expandingTypes) {
         String name = fieldDef.getName();
         SourceLocation location = locationOf(fieldDef);
+
+        if (fieldDef.hasAppliedDirective(DIR_BATCH_KEY_LIFTER)) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                RejectionKind.AUTHOR_ERROR,
+                "@batchKeyLifter is for @record (non-table) parents; use @reference on a @table parent");
+        }
 
         if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
             var resolved = serviceResolver.resolve(parentTypeName, fieldDef, tableType.table().primaryKeyColumns());
