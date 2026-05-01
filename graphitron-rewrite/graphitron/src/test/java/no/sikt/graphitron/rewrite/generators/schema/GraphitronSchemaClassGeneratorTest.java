@@ -350,18 +350,23 @@ class GraphitronSchemaClassGeneratorTest {
 
     @Test
     void build_doesNotDoubleRegisterNodeInterface_whenNodeTypesPresent() {
-        // QueryNodeFetcher.registerTypeResolver registers .typeResolver("Node", ...) when the
-        // schema has at least one NodeType. The plain-interface path must skip "Node" so we
-        // don't double-register; graphql-java's GraphQLCodeRegistry.Builder rejects a
-        // duplicate typeResolver for the same type name with an IllegalArgumentException.
+        // When the schema has a NodeType, GraphitronSchemaClassGenerator delegates Node-resolver
+        // registration to QueryNodeFetcher.registerTypeResolver(codeRegistry); the actual
+        // codeRegistry.typeResolver("Node", ...) call lives in QueryNodeFetcher's own emitted
+        // class, not inline in GraphitronSchema.build(). The plain-interface path must skip
+        // "Node" so it doesn't emit a second, inline registration that would conflict with
+        // QueryNodeFetcher's; graphql-java's GraphQLCodeRegistry.Builder rejects a duplicate
+        // typeResolver for the same type name with an IllegalArgumentException.
         var body = buildBody("""
             type Query { x: String }
-            type Film implements Node @table(name: "film") @node { id: ID! }
+            type Film implements Node @table(name: "film") @node(keyColumns: ["film_id"]) { id: ID! @nodeId }
             """);
-        long nodeResolverCount = body.lines()
-            .filter(l -> l.contains("codeRegistry.typeResolver(\"Node\""))
-            .count();
-        assertThat(nodeResolverCount).isEqualTo(1);
+        assertThat(body)
+            .as("delegates Node resolver registration to QueryNodeFetcher")
+            .contains("QueryNodeFetcher.registerTypeResolver(codeRegistry)");
+        assertThat(body)
+            .as("does not emit a second inline codeRegistry.typeResolver(\"Node\", ...) call")
+            .doesNotContain("codeRegistry.typeResolver(\"Node\"");
     }
 
     @Test
