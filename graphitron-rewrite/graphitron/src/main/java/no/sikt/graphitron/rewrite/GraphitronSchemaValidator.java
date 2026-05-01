@@ -197,9 +197,15 @@ public class GraphitronSchemaValidator {
     }
     private void validateInterfaceType(no.sikt.graphitron.rewrite.model.GraphitronType.InterfaceType type, List<ValidationError> errors) {
         validateParticipants(type.name(), type.participants(), errors);
+        // R36 Track B's PK-presence and PK-arity constraints are scoped to fields that actually
+        // emit the multi-table polymorphic fetcher (validateQueryInterfaceField /
+        // validateQueryUnionField). Interfaces dispatched via other paths — notably the Node
+        // interface's QueryNodeFetcher — bypass those constraints.
     }
     private void validateUnionType(no.sikt.graphitron.rewrite.model.GraphitronType.UnionType type, List<ValidationError> errors) {
         validateParticipants(type.name(), type.participants(), errors);
+        // Same scoping as validateInterfaceType: see validateQueryUnionField for the PK-presence
+        // and PK-arity checks that R36 Track B's emitter requires.
     }
 
     /**
@@ -241,6 +247,75 @@ public class GraphitronSchemaValidator {
 
     private void validateParticipants(String typeName, java.util.List<no.sikt.graphitron.rewrite.model.ParticipantRef> participants, List<ValidationError> errors) {
         // Unbound participants are caught by the builder (UnclassifiedType). Nothing to validate here.
+    }
+
+    /**
+     * R36 Track B: validates a {@link no.sikt.graphitron.rewrite.model.QueryField.QueryInterfaceField}
+     * or {@link no.sikt.graphitron.rewrite.model.QueryField.QueryUnionField}'s participant set
+     * against the constraints of the two-stage native fetcher emission:
+     *
+     * <ul>
+     *   <li>Every {@link no.sikt.graphitron.rewrite.model.ParticipantRef.TableBound} participant
+     *       must declare a primary key. Stage 1 needs row identity per branch.</li>
+     *   <li>All TableBound participants must share the same PK arity. Stage 1 projects
+     *       {@code (typename, pk0..pkN-1, sort)} per branch, and the column count must align
+     *       across UNION ALL branches. v1 doesn't NULL-pad; mixed arity rejects upstream.</li>
+     * </ul>
+     *
+     * <p>{@link no.sikt.graphitron.rewrite.model.ParticipantRef.Unbound} participants are
+     * skipped: they are handled by the {@code @error} carrier path or never reach the SQL
+     * emitter. Only {@link no.sikt.graphitron.rewrite.model.GraphitronType.TableInterfaceType}
+     * has its own dedicated single-table emitter and bypasses this check.
+     *
+     * <p>Scoped to fields, not types, so an interface like {@code Node} (dispatched via
+     * {@code QueryNodeFetcher}, not the multi-table polymorphic emitter) does not trip the
+     * arity rule when its implementers have heterogeneous PK shapes.
+     *
+     * @param qualifiedName field qualified name used in the error message header (e.g.
+     *                      {@code "Query.search"}). Pass {@code field.qualifiedName()}.
+     */
+    private void validateMultiTableParticipants(String qualifiedName, SourceLocation location,
+            java.util.List<no.sikt.graphitron.rewrite.model.ParticipantRef> participants, List<ValidationError> errors) {
+        var tableBound = participants.stream()
+            .filter(p -> p instanceof no.sikt.graphitron.rewrite.model.ParticipantRef.TableBound)
+            .map(p -> (no.sikt.graphitron.rewrite.model.ParticipantRef.TableBound) p)
+            .toList();
+        if (tableBound.isEmpty()) return;
+
+        for (var tb : tableBound) {
+            if (!tb.table().hasPrimaryKey()) {
+                errors.add(new ValidationError(RejectionKind.AUTHOR_ERROR,
+                    qualifiedName,
+                    "Field '" + qualifiedName + "': participant '" + tb.typeName()
+                        + "' has no primary key on table '" + tb.table().tableName()
+                        + "'; multi-table interface/union fetchers require a primary key on every participant",
+                    location
+                ));
+            }
+        }
+
+        // Arity check: only meaningful when every participant has at least one PK column.
+        // PK-less participants surface their own dedicated error above; reporting an arity
+        // mismatch on top would noise the message stream.
+        var pkBearing = tableBound.stream()
+            .filter(tb -> tb.table().hasPrimaryKey())
+            .toList();
+        if (pkBearing.size() < 2) return;
+        int expected = pkBearing.get(0).table().primaryKeyColumns().size();
+        for (var tb : pkBearing.subList(1, pkBearing.size())) {
+            int actual = tb.table().primaryKeyColumns().size();
+            if (actual != expected) {
+                errors.add(new ValidationError(RejectionKind.AUTHOR_ERROR,
+                    qualifiedName,
+                    "Field '" + qualifiedName + "': primary-key arity mismatch — '" + pkBearing.get(0).typeName()
+                        + "' has " + expected + " PK column" + (expected == 1 ? "" : "s")
+                        + " but '" + tb.typeName() + "' has " + actual
+                        + "; v1 multi-table interface/union fetchers require uniform PK arity across participants",
+                    location
+                ));
+                return; // one mismatch is enough; subsequent ones are noise
+            }
+        }
     }
 
     // --- Field validators (stubs — filled in as test classes are added) ---
@@ -295,9 +370,11 @@ public class GraphitronSchemaValidator {
     }
     private void validateQueryInterfaceField(no.sikt.graphitron.rewrite.model.QueryField.QueryInterfaceField field, List<ValidationError> errors) {
         validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
+        validateMultiTableParticipants(field.qualifiedName(), field.location(), field.participants(), errors);
     }
     private void validateQueryUnionField(no.sikt.graphitron.rewrite.model.QueryField.QueryUnionField field, List<ValidationError> errors) {
         validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
+        validateMultiTableParticipants(field.qualifiedName(), field.location(), field.participants(), errors);
     }
     private void validateQueryServiceTableField(no.sikt.graphitron.rewrite.model.QueryField.QueryServiceTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         // Unresolved service method is caught by the builder (UnclassifiedField).

@@ -100,19 +100,40 @@ public sealed interface QueryField extends RootField
         PaginationSpec pagination
     ) implements QueryField, SqlGeneratingField {}
 
+    /**
+     * A root query field returning a multi-table {@link GraphitronType.InterfaceType}.
+     * Carries the resolved participants list so the fetcher emitter can drive R36 Track B's
+     * two-stage SQL: a narrow UNION ALL projecting {@code (__typename, __pk0__, ...)} per branch
+     * and a per-typename batched lookup using {@code <Type>.$fields}.
+     */
     record QueryInterfaceField(
         String parentTypeName,
         String name,
         SourceLocation location,
-        ReturnTypeRef.PolymorphicReturnType returnType
-    ) implements QueryField {}
+        ReturnTypeRef.PolymorphicReturnType returnType,
+        List<ParticipantRef> participants
+    ) implements QueryField {
+        public QueryInterfaceField {
+            participants = List.copyOf(participants);
+        }
+    }
 
+    /**
+     * A root query field returning a multi-table {@link GraphitronType.UnionType}.
+     * Same two-stage shape as {@link QueryInterfaceField}; differs only in the source of the
+     * participant set (union member types vs. interface implementers).
+     */
     record QueryUnionField(
         String parentTypeName,
         String name,
         SourceLocation location,
-        ReturnTypeRef.PolymorphicReturnType returnType
-    ) implements QueryField {}
+        ReturnTypeRef.PolymorphicReturnType returnType,
+        List<ParticipantRef> participants
+    ) implements QueryField {
+        public QueryUnionField {
+            participants = List.copyOf(participants);
+        }
+    }
 
     /**
      * A root query field backed by a developer-provided service method, returning a table-mapped type.

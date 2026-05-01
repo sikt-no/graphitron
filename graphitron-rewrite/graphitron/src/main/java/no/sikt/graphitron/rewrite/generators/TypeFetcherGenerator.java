@@ -171,6 +171,8 @@ public class TypeFetcherGenerator {
         QueryField.QueryTableInterfaceField.class,
         ChildField.TableInterfaceField.class,
         ChildField.ParticipantColumnReferenceField.class,
+        QueryField.QueryInterfaceField.class,
+        QueryField.QueryUnionField.class,
         ChildField.ErrorsField.class);
 
     /**
@@ -227,11 +229,6 @@ public class TypeFetcherGenerator {
      */
     public static final Map<Class<? extends GraphitronField>, String> NOT_IMPLEMENTED_REASONS =
         Map.ofEntries(
-            // QueryField stubs
-            Map.entry(QueryField.QueryInterfaceField.class,
-                "QueryInterfaceField not yet implemented — see graphitron-rewrite/roadmap/stub-interface-union-fetchers.md"),
-            Map.entry(QueryField.QueryUnionField.class,
-                "QueryUnionField not yet implemented — see graphitron-rewrite/roadmap/stub-interface-union-fetchers.md"),
             // MutationField stubs — see graphitron-rewrite/roadmap/mutations.md
             Map.entry(MutationField.MutationInsertTableField.class,
                 "Mutation insert not yet implemented — see graphitron-rewrite/roadmap/mutations.md"),
@@ -296,7 +293,9 @@ public class TypeFetcherGenerator {
         // its own jOOQ statement inline (e.g. MutationDeleteTableField).
         boolean needsGraphitronContextHelper = fields.stream().anyMatch(f ->
             f instanceof SqlGeneratingField
-            || f instanceof MutationField.MutationDeleteTableField);
+            || f instanceof MutationField.MutationDeleteTableField
+            || f instanceof QueryField.QueryInterfaceField
+            || f instanceof QueryField.QueryUnionField);
 
         for (var field : fields) {
             switch (field) {
@@ -359,8 +358,12 @@ public class TypeFetcherGenerator {
                 case QueryField.QueryServiceRecordField f     -> builder.addMethod(buildQueryServiceRecordFetcher(f, outputPackage));
                 // Stub variants — see NOT_IMPLEMENTED_REASONS
                 case QueryField.QueryTableInterfaceField f    -> builder.addMethod(buildQueryTableInterfaceFieldFetcher(f, outputPackage, jooqPackage));
-                case QueryField.QueryInterfaceField f         -> builder.addMethod(stub(f));
-                case QueryField.QueryUnionField f             -> builder.addMethod(stub(f));
+                case QueryField.QueryInterfaceField f -> MultiTablePolymorphicEmitter
+                    .emitMethods(f.name(), f.participants(), f.returnType().wrapper().isList(), outputPackage, jooqPackage)
+                    .forEach(builder::addMethod);
+                case QueryField.QueryUnionField f -> MultiTablePolymorphicEmitter
+                    .emitMethods(f.name(), f.participants(), f.returnType().wrapper().isList(), outputPackage, jooqPackage)
+                    .forEach(builder::addMethod);
                 case MutationField.MutationInsertTableField f  -> builder.addMethod(stub(f));
                 case MutationField.MutationUpdateTableField f  -> builder.addMethod(stub(f));
                 case MutationField.MutationDeleteTableField f  -> builder.addMethod(buildMutationDeleteFetcher(f, outputPackage, jooqPackage));

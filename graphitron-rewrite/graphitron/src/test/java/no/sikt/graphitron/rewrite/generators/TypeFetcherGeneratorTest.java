@@ -1289,4 +1289,197 @@ class TypeFetcherGeneratorTest {
         assertThat(rows.returnType().toString())
             .isEqualTo("java.util.List<java.lang.String>");
     }
+
+    // ===== R36 Track B2: QueryInterfaceField / QueryUnionField (multi-table polymorphic) =====
+    //
+    // Two-stage emission: Stage 1 narrow UNION ALL projecting (typename, pk, sort) per branch.
+    // Stage 2 per-typename batched lookup using the post-R55 ValuesJoinRowBuilder primitive
+    // with the dispatcher-shape .on(...) join. Result records carry __typename so the
+    // schema-class TypeResolver routes each row to its concrete GraphQL type.
+
+    private static QueryField.QueryInterfaceField queryInterfaceField(String name, boolean isList,
+                                                                       List<ParticipantRef> participants) {
+        var wrapper = isList ? (FieldWrapper) nonNullList() : single();
+        var returnType = new ReturnTypeRef.PolymorphicReturnType("Searchable", wrapper);
+        return new QueryField.QueryInterfaceField("Query", name, null, returnType, participants);
+    }
+
+    private static QueryField.QueryUnionField queryUnionField(String name, boolean isList,
+                                                               List<ParticipantRef> participants) {
+        var wrapper = isList ? (FieldWrapper) nonNullList() : single();
+        var returnType = new ReturnTypeRef.PolymorphicReturnType("Document", wrapper);
+        return new QueryField.QueryUnionField("Query", name, null, returnType, participants);
+    }
+
+    private static List<ParticipantRef> filmAndActorParticipants() {
+        return List.of(
+            new ParticipantRef.TableBound("Film", filmTableWithPk(), null),
+            new ParticipantRef.TableBound("Actor",
+                new TableRef("actor", "ACTOR", "Actor",
+                    List.of(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer"))),
+                null));
+    }
+
+    @Test
+    void queryInterfaceField_list_returnsListOfRecord() {
+        var field = queryInterfaceField("search", true, filmAndActorParticipants());
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
+            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+        assertThat(method(spec, "search").returnType().toString())
+            .isEqualTo("graphql.execution.DataFetcherResult<java.util.List<org.jooq.Record>>");
+    }
+
+    @Test
+    void queryInterfaceField_single_returnsRecord() {
+        var field = queryInterfaceField("documentById", false, filmAndActorParticipants());
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
+            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+        assertThat(method(spec, "documentById").returnType().toString())
+            .isEqualTo("graphql.execution.DataFetcherResult<org.jooq.Record>");
+    }
+
+    @Test
+    void queryInterfaceField_emitsTwoStageStructure() {
+        // Stage 1: narrow UNION ALL projecting (__typename, __pk0__, __sort__) per branch.
+        // Stage 2: per-typename dispatch into select<Participant>For<Field> helpers.
+        var field = queryInterfaceField("search", true, filmAndActorParticipants());
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
+            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+        var body = method(spec, "search").code().toString();
+        assertThat(body)
+            .as("stage 1: narrow UNION ALL of per-branch projections")
+            .contains(".unionAll(");
+        assertThat(body)
+            .as("stage 1: synthetic typename literal")
+            .contains("\"__typename\"");
+        assertThat(body)
+            .as("stage 1: PK projection alias")
+            .contains("\"__pk0__\"");
+        assertThat(body)
+            .as("stage 1: ordered by sort key")
+            .contains("\"__sort__\"");
+        assertThat(body)
+            .as("stage 2 dispatch into per-typename helpers")
+            .contains("selectFilmForSearch(")
+            .contains("selectActorForSearch(");
+    }
+
+    @Test
+    void queryInterfaceField_stage1ProjectsTypenameAndPksPerBranch() {
+        var field = queryInterfaceField("search", true, filmAndActorParticipants());
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
+            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+        var body = method(spec, "search").code().toString();
+        assertThat(body)
+            .as("each branch projects DSL.inline(\"<Type>\")")
+            .contains("inline(\"Film\")")
+            .contains("inline(\"Actor\")");
+        assertThat(body)
+            .as("each branch projects its PK column aliased to __pk0__")
+            .contains("FILM_ID.as(\"__pk0__\")")
+            .contains("ACTOR_ID.as(\"__pk0__\")");
+    }
+
+    @Test
+    void queryInterfaceField_perTypenameHelpersExist_andCallParticipantFields() {
+        // Stage 2 invokes <Type>.$fields(env.getSelectionSet(), t, env) for the typed projection.
+        // Selection-set narrowing works at full strength only with $fields, not asterisk().
+        var field = queryInterfaceField("search", true, filmAndActorParticipants());
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
+            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+        var film = method(spec, "selectFilmForSearch");
+        var actor = method(spec, "selectActorForSearch");
+        assertThat(film.code().toString()).contains("Film.$fields(env.getSelectionSet(), t, env)");
+        assertThat(actor.code().toString()).contains("Actor.$fields(env.getSelectionSet(), t, env)");
+    }
+
+    @Test
+    void queryInterfaceField_perTypenameHelpers_useDispatcherShapeOnNotUsing() {
+        // R55 reviewer pivot: dispatcher uses .on(...) not .using(...) because the SELECT
+        // projection includes <Type>.$fields(...) which references t.<col> directly.
+        // USING would collapse joined columns and risk colliding with $fields-emitted projections.
+        var field = queryInterfaceField("search", true, filmAndActorParticipants());
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
+            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+        var body = method(spec, "selectFilmForSearch").code().toString();
+        assertThat(body)
+            .as("dispatcher shape uses .on(...) for the values-derived join")
+            .contains(".join(input).on(");
+        assertThat(body)
+            .as("does not use .using(...) — would collapse t.<col> with $fields projections")
+            .doesNotContain(".join(input).using(");
+    }
+
+    @Test
+    void queryInterfaceField_perTypenameHelpers_addTypenameLiteralToSelect() {
+        // Each typed Record carries the synthetic __typename column so the schema-class
+        // TypeResolver (registered by GraphitronSchemaClassGenerator under R36 B1) routes
+        // each row back to its concrete GraphQL type.
+        var field = queryInterfaceField("search", true, filmAndActorParticipants());
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
+            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+        var body = method(spec, "selectFilmForSearch").code().toString();
+        assertThat(body).contains("inline(\"Film\")")
+            .contains(".as(\"__typename\")");
+    }
+
+    @Test
+    void queryInterfaceField_perTypenameHelpers_arePrivateStatic() {
+        var field = queryInterfaceField("search", true, filmAndActorParticipants());
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
+            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+        assertThat(method(spec, "selectFilmForSearch").modifiers())
+            .containsExactlyInAnyOrder(
+                javax.lang.model.element.Modifier.PRIVATE,
+                javax.lang.model.element.Modifier.STATIC);
+    }
+
+    @Test
+    void queryInterfaceField_compositePkParticipant_emitsJsonbArraySortKey() {
+        // R36 plan: composite-key sort projects DSL.jsonbArray(pk1, pk2, ...).as("__sort__").
+        // JSONB arrays compare element-wise in PostgreSQL, so composite ordering reduces to a
+        // single comparable column at no extra Java cost.
+        var compositeTable = new TableRef("bar", "BAR", "Bar",
+            List.of(
+                new ColumnRef("id_1", "ID_1", "java.lang.Integer"),
+                new ColumnRef("id_2", "ID_2", "java.lang.Integer")));
+        var participants = List.<ParticipantRef>of(
+            new ParticipantRef.TableBound("Bar", compositeTable, null));
+        var field = queryInterfaceField("compositeSearch", true, participants);
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
+            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+        var body = method(spec, "compositeSearch").code().toString();
+        assertThat(body)
+            .as("composite PK sort key uses jsonbArray(...)")
+            .contains("jsonbArray(")
+            .contains(".as(\"__sort__\")");
+    }
+
+    @Test
+    void queryUnionField_emitsTwoStageStructure_likeInterfaceField() {
+        // QueryUnionField shares MultiTablePolymorphicEmitter with QueryInterfaceField; the
+        // emitted bodies are identical apart from the participant-list source. This pin
+        // ratchets the equivalence so a future refactor that drifts one without the other
+        // fails fast.
+        var field = queryUnionField("search", true, filmAndActorParticipants());
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
+            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+        var body = method(spec, "search").code().toString();
+        assertThat(body).contains(".unionAll(");
+        assertThat(body).contains("\"__typename\"");
+        assertThat(body).contains("selectFilmForSearch(")
+            .contains("selectActorForSearch(");
+    }
+
+    @Test
+    void queryInterfaceField_isImplementedLeaf_notInNotImplementedReasons() {
+        // R36 Track B2 lifts QueryInterfaceField and QueryUnionField from
+        // NOT_IMPLEMENTED_REASONS to IMPLEMENTED_LEAVES; the partition test guards the
+        // disjoint partition invariant, this asserts membership directly so a regression in
+        // the lift surfaces here too.
+        assertThat(TypeFetcherGenerator.IMPLEMENTED_LEAVES)
+            .contains(QueryField.QueryInterfaceField.class, QueryField.QueryUnionField.class);
+        assertThat(TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS)
+            .doesNotContainKeys(QueryField.QueryInterfaceField.class, QueryField.QueryUnionField.class);
+    }
 }

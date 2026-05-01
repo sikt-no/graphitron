@@ -1803,11 +1803,13 @@ class FieldBuilder {
         }
         if (elementType instanceof InterfaceType interfaceType) {
             return new QueryField.QueryInterfaceField(parentTypeName, name, location,
-                new ReturnTypeRef.PolymorphicReturnType(elementTypeName, buildWrapper(fieldDef)));
+                new ReturnTypeRef.PolymorphicReturnType(elementTypeName, buildWrapper(fieldDef)),
+                interfaceType.participants());
         }
         if (elementType instanceof UnionType unionType) {
             return new QueryField.QueryUnionField(parentTypeName, name, location,
-                new ReturnTypeRef.PolymorphicReturnType(elementTypeName, buildWrapper(fieldDef)));
+                new ReturnTypeRef.PolymorphicReturnType(elementTypeName, buildWrapper(fieldDef)),
+                unionType.participants());
         }
 
         return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,

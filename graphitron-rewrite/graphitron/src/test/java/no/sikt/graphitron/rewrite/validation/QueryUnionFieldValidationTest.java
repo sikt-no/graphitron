@@ -1,49 +1,92 @@
 package no.sikt.graphitron.rewrite.validation;
 
-import no.sikt.graphitron.rewrite.ValidationError;
+import no.sikt.graphitron.rewrite.GraphitronSchema;
+import no.sikt.graphitron.rewrite.RejectionKind;
+import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
-import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.model.GraphitronType;
+import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.QueryField.QueryUnionField;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.EnumSource;
+import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.rewrite.test.tier.UnitTier;
+import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
-import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.stubbedError;
+import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.assertHasKind;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
-import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 
+/**
+ * Validates {@link QueryUnionField} (R36 Track B's multi-table polymorphic root case for
+ * unions). Mirrors {@link QueryInterfaceFieldValidationTest} since
+ * {@code GraphitronSchemaValidator.validateUnionType} shares the multi-table participant
+ * checks with {@code validateInterfaceType}.
+ */
 @UnitTier
 class QueryUnionFieldValidationTest {
 
-    enum Case implements ValidatorCase {
+    private static final TableRef FILM = new TableRef("film", "FILM", "Film",
+        List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer")));
+    private static final TableRef ACTOR = new TableRef("actor", "ACTOR", "Actor",
+        List.of(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer")));
+    private static final TableRef BAR = new TableRef("bar", "BAR", "Bar",
+        List.of(
+            new ColumnRef("id_1", "ID_1", "java.lang.Integer"),
+            new ColumnRef("id_2", "ID_2", "java.lang.Integer")));
+    private static final TableRef NO_PK = new TableRef("kpis", "KPIS", "Kpis", List.of());
 
-        STUBBED("single cardinality — not yet implemented, produces stubbed-variant error",
-            new QueryUnionField("Query", "search", null, new ReturnTypeRef.PolymorphicReturnType("Film", new FieldWrapper.Single(true))),
-            List.of(stubbedError("Query.search", QueryUnionField.class)));
-
-        private final String description;
-        private final GraphitronField field;
-        private final List<String> errors;
-
-        Case(String description, GraphitronField field, List<String> errors) {
-            this.description = description;
-            this.field = field;
-            this.errors = errors;
-        }
-
-        @Override public GraphitronField field() { return field; }
-        @Override public List<String> errors() { return errors; }
-        @Override public String toString() { return description; }
+    @Test
+    void wellFormed_twoSameArityParticipants_noErrors() {
+        var participants = List.<ParticipantRef>of(
+            new ParticipantRef.TableBound("Film", FILM, null),
+            new ParticipantRef.TableBound("Actor", ACTOR, null));
+        var union = new GraphitronType.UnionType("Document", null, participants);
+        var field = new QueryUnionField("Query", "search", null,
+            new ReturnTypeRef.PolymorphicReturnType("Document", new FieldWrapper.List(false, false)),
+            participants);
+        var sch = new GraphitronSchema(
+            java.util.Map.of(
+                "Document", union,
+                "Query", new GraphitronType.RootType("Query", null)),
+            java.util.Map.of(graphql.schema.FieldCoordinates.coordinates("Query", "search"), field));
+        assertThat(validate(sch)).isEmpty();
     }
 
-    @ParameterizedTest(name = "{0}")
-    @EnumSource(Case.class)
-    void unionQueryFieldValidation(Case tc) {
-        assertThat(validate(tc.field()))
-            .extracting(ValidationError::message)
-            .containsExactlyInAnyOrderElementsOf(tc.errors());
+    @Test
+    void rejects_participantWithoutPrimaryKey() {
+        var participants = List.<ParticipantRef>of(
+            new ParticipantRef.TableBound("Film", FILM, null),
+            new ParticipantRef.TableBound("Kpis", NO_PK, null));
+        var union = new GraphitronType.UnionType("Document", null, participants);
+        var field = new QueryUnionField("Query", "search", null,
+            new ReturnTypeRef.PolymorphicReturnType("Document", new FieldWrapper.List(false, false)),
+            participants);
+        var sch = new GraphitronSchema(
+            java.util.Map.of(
+                "Document", union,
+                "Query", new GraphitronType.RootType("Query", null)),
+            java.util.Map.of(graphql.schema.FieldCoordinates.coordinates("Query", "search"), field));
+        assertHasKind(validate(sch), RejectionKind.AUTHOR_ERROR,
+            "Field 'Query.search': participant 'Kpis' has no primary key");
+    }
+
+    @Test
+    void rejects_mismatchedPkArityAcrossParticipants() {
+        var participants = List.<ParticipantRef>of(
+            new ParticipantRef.TableBound("Film", FILM, null),
+            new ParticipantRef.TableBound("Bar", BAR, null));
+        var union = new GraphitronType.UnionType("Document", null, participants);
+        var field = new QueryUnionField("Query", "search", null,
+            new ReturnTypeRef.PolymorphicReturnType("Document", new FieldWrapper.List(false, false)),
+            participants);
+        var sch = new GraphitronSchema(
+            java.util.Map.of(
+                "Document", union,
+                "Query", new GraphitronType.RootType("Query", null)),
+            java.util.Map.of(graphql.schema.FieldCoordinates.coordinates("Query", "search"), field));
+        assertHasKind(validate(sch), RejectionKind.AUTHOR_ERROR,
+            "Field 'Query.search': primary-key arity mismatch");
     }
 }
