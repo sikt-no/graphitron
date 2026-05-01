@@ -17,6 +17,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R1` | `BatchKey` lifter directive | Spec | [plan](batchkey-lifter-directive.md) |
 | `R36` | Stub #3: Interface / union fetchers | In Progress | [plan](stub-interface-union-fetchers.md) |
 | `R40` | Argument-level `@nodeId` support | Spec | [plan](argument-level-nodeid.md) |
+| `R6` | Decompose `FieldBuilder` | Spec | [plan](decompose-fieldbuilder.md) |
 | `R49` | Stub: scalar/`@record`-returning `@service` child field (`ServiceRecordField`) <sub>blocked by: [service-rows-method-body](service-rows-method-body.md)</sub> | Spec | [plan](service-record-field.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
 | `R3` | Classification vocabulary follow-ups | Spec | [plan](classification-vocabulary-followups.md) |
@@ -38,7 +39,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 ### Architecture
 
-- `R6` [**Decompose `FieldBuilder`**](decompose-fieldbuilder.md): `FieldBuilder.java` is 2,825 lines with ~67 member declarations, and growing fast (the file added ~600 lines between the 2026-04-28 audit and the 2026-04-30 refresh). Argument-resolution unification has shipped (Phase 4 landed under Done), so this is no longer blocked.
 - `R5` [**Composite-key `@lookupKey` on list-of-input-object arguments**](composite-key-lookupkey.md): Add `ArgumentRef.CompositeLookupArg` carrying `(input-field-name, target-column)` pairs resolved from `@field(name:)` directives; `buildInputRowsMethod` already handles arbitrary-arity VALUES + JOIN.
 - `R52` [**Lift lookup-vs-query operation taxonomy into the model**](lift-operation-taxonomy.md): R50 named the lookup-vs-query split as a documentation-level distinction without lifting it into the model. The distinction is real and structurally consequential: lookups carry a derived VALUES table with an `idx` column to preserve per-input-row identity, queries fold predicates into a WHERE with no input-row identity to track. Today the split is encoded only by variant identity (`LookupMapping` vs everything else) and routing decisions taken in individual generators.
 - `R32` [**Implement `@service` rows-method body**](service-rows-method-body.md): `buildServiceRowsMethod` (`TypeFetcherGenerator.java:1501`) emits a stub that throws `UnsupportedOperationException`. Fill the body so `@service` batched fields actually invoke the user's service method and project results back into GraphQL. Three concerns in one emitter:
@@ -129,7 +129,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### structural-refactor
 
-- `R6` [**Decompose `FieldBuilder`**](decompose-fieldbuilder.md) — Backlog, architecture
+- `R6` [**Decompose `FieldBuilder`**](decompose-fieldbuilder.md) — Spec, architecture
 - `R33` [**Shared interface for `QueryField` / `ChildField` table-bound parallels**](shared-interface-queryfield-childfield.md) — Backlog, cleanup
 - `R7` [**Decompose `TypeFetcherGenerator`**](decompose-typefetchergenerator.md) — Backlog, architecture, blocked by [stub-interface-union-fetchers](stub-interface-union-fetchers.md)
 - `R21` [**Load-bearing classifier guarantee audit annotations**](load-bearing-guarantee-audit.md) — In Review
