@@ -7,6 +7,7 @@ import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
+import no.sikt.graphitron.rewrite.generators.schema.ErrorMappingsClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ConnectionHelperClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ConnectionResultClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.OrderByResultClassGenerator;
@@ -18,6 +19,7 @@ import no.sikt.graphitron.rewrite.model.CallParam;
 import no.sikt.graphitron.rewrite.model.CallSiteCompaction;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ChildField;
+import no.sikt.graphitron.rewrite.model.ErrorChannel;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.JoinStep;
@@ -43,6 +45,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -992,7 +995,7 @@ public class TypeFetcherGenerator {
             ? ParameterizedTypeName.get(RESULT, recordClass)
             : recordClass;
         return buildServiceFetcherCommon(qstf.name(), qstf.method(), qstf.parentTypeName(),
-            returnType, outputPackage);
+            returnType, qstf.errorChannel(), outputPackage);
     }
 
     /**
@@ -1014,7 +1017,7 @@ public class TypeFetcherGenerator {
                                                               String outputPackage) {
         TypeName returnType = computeServiceRecordReturnType(qsrf);
         return buildServiceFetcherCommon(qsrf.name(), qsrf.method(), qsrf.parentTypeName(),
-            returnType, outputPackage);
+            returnType, qsrf.errorChannel(), outputPackage);
     }
 
     /**
@@ -1039,9 +1042,14 @@ public class TypeFetcherGenerator {
      * Shared body shape for {@link #buildQueryServiceTableFetcher} and
      * {@link #buildQueryServiceRecordFetcher}: optional {@code dsl} local + direct
      * {@code return ServiceClass.method(<args>);}.
+     *
+     * <p>The catch arm forks on {@code errorChannel}: a present channel routes through
+     * {@code ErrorRouter.dispatch} with the channel's mapping table and synthesized payload
+     * factory; an absent channel routes through {@code ErrorRouter.redact}. R12 §3.
      */
     private static MethodSpec buildServiceFetcherCommon(String fieldName, MethodRef method,
                                                         String parentTypeName, TypeName valueType,
+                                                        Optional<ErrorChannel> errorChannel,
                                                         String outputPackage) {
         var dslContextClass = ClassName.get("org.jooq", "DSLContext");
         var serviceClass = ClassName.bestGuess(method.className());
@@ -1066,7 +1074,7 @@ public class TypeFetcherGenerator {
             ArgCallEmitter.buildMethodBackedCallArgs(method, null, conditionsClassName));
         builder.addCode(returnSyncSuccess(valueType, "payload"));
         builder.nextControlFlow("catch ($T e)", Exception.class);
-        builder.addCode(redactCatchArm(outputPackage));
+        builder.addCode(catchArm(outputPackage, errorChannel));
         builder.endControlFlow();
 
         return builder.build();
@@ -1640,7 +1648,7 @@ public class TypeFetcherGenerator {
             .addCode(CodeBlock.builder()
                 .add("return $T.$L(env)\n", queryNodeFetcher,
                     no.sikt.graphitron.rewrite.generators.util.QueryNodeFetcherClassGenerator.DISPATCH_NODES_METHOD)
-                .add("    ").add(asyncWrapTail(valueType, outputPackage)).add(";\n")
+                .add("    ").add(asyncWrapTail(valueType, outputPackage, Optional.empty())).add(";\n")
                 .build())
             .build();
     }
@@ -1734,7 +1742,7 @@ public class TypeFetcherGenerator {
         return methodBuilder
             .addCode(CodeBlock.builder()
                 .add("return loader.load(key, env)\n")
-                .add("    ").add(asyncWrapTail(valueType, outputPackage)).add(";\n")
+                .add("    ").add(asyncWrapTail(valueType, outputPackage, Optional.empty())).add(";\n")
                 .build())
             .build();
     }
@@ -1889,7 +1897,7 @@ public class TypeFetcherGenerator {
         return methodBuilder
             .addCode(CodeBlock.builder()
                 .add("return loader.load(key, env)\n")
-                .add("    ").add(asyncWrapTail(valueType, outputPackage)).add(";\n")
+                .add("    ").add(asyncWrapTail(valueType, outputPackage, Optional.empty())).add(";\n")
                 .build())
             .build();
     }
@@ -1961,7 +1969,7 @@ public class TypeFetcherGenerator {
             .addCode(GeneratorUtils.buildRecordKeyExtraction((BatchKey.RowKeyed) batchKey, resultType, jooqPackage))
             .addCode(CodeBlock.builder()
                 .add("return loader.load(key, env)\n")
-                .add("    ").add(asyncWrapTail(valueType, outputPackage)).add(";\n")
+                .add("    ").add(asyncWrapTail(valueType, outputPackage, Optional.empty())).add(";\n")
                 .build())
             .build();
     }
@@ -1992,13 +2000,17 @@ public class TypeFetcherGenerator {
     }
 
     // -----------------------------------------------------------------------
-    // R12 §3 fetcher try/catch wrap helpers (C3d).
+    // R12 §3 fetcher try/catch wrap helpers.
     //
     // Every emitted fetcher returns DataFetcherResult<P> (sync) or
     // CompletableFuture<DataFetcherResult<P>> (async). The success arm wraps the
-    // produced payload; the catch arm funnels thrown exceptions through
-    // ErrorRouter.redact (no-channel disposition; C3g will swap to dispatch when
-    // the field carries an Optional<ErrorChannel>).
+    // produced payload; the catch arm forks on the field's ErrorChannel:
+    //   - present  -> ErrorRouter.dispatch(e, ErrorMappings.<CONST>, env, factory)
+    //   - empty    -> ErrorRouter.redact(e, env)
+    // Async paths today are all DataLoader-based child fields (BatchKeyField); none
+    // implement WithErrorChannel, so they remain on the redact branch. When the
+    // mutation-service builders (today still stubs) become live emitters, the same
+    // fork applies on the .exceptionally(...) arm via asyncWrapTail's channel param.
     // -----------------------------------------------------------------------
 
     /** Box primitive value types so they can sit inside {@code DataFetcherResult<P>}. */
@@ -2022,15 +2034,71 @@ public class TypeFetcherGenerator {
             no.sikt.graphitron.rewrite.generators.schema.ErrorRouterClassGenerator.CLASS_NAME);
     }
 
+    private static ClassName errorMappingsClass(String outputPackage) {
+        return ClassName.get(
+            outputPackage + ".schema",
+            ErrorMappingsClassGenerator.CLASS_NAME);
+    }
+
     /**
-     * Builds the standard catch arm for a synchronous fetcher: redact the throw via the
-     * {@code ErrorRouter} emitted at {@code <outputPackage>.schema.ErrorRouter}.
+     * Builds the catch arm for a synchronous fetcher. Forks on {@code errorChannel}: a present
+     * channel emits {@code return ErrorRouter.dispatch(e, ErrorMappings.<CONST>, env, factory)}
+     * with the channel's mapping table and the synthesized payload factory; an absent channel
+     * emits {@code return ErrorRouter.redact(e, env)} (no-channel privacy disposition).
      *
-     * <p>Used by every sync fetcher builder after emitting the success-path
-     * {@code return DataFetcherResult.<P>newResult().data(payload).build()}.
+     * <p>Used by every sync fetcher builder backing a {@link no.sikt.graphitron.rewrite.model.WithErrorChannel}
+     * field after emitting the success-path
+     * {@code return DataFetcherResult.<P>newResult().data(payload).build()}. Spec: R12 §3.
+     */
+    private static CodeBlock catchArm(String outputPackage, Optional<ErrorChannel> errorChannel) {
+        return errorChannel
+            .map(channel -> dispatchCatchArm(outputPackage, channel))
+            .orElseGet(() -> redactCatchArm(outputPackage));
+    }
+
+    /**
+     * Builds the standard catch arm for a synchronous fetcher without a typed-error channel:
+     * redact the throw via the {@code ErrorRouter} emitted at {@code <outputPackage>.schema.ErrorRouter}.
      */
     private static CodeBlock redactCatchArm(String outputPackage) {
         return CodeBlock.of("return $T.redact(e, env);\n", errorRouterClass(outputPackage));
+    }
+
+    /**
+     * Builds the channel-aware catch arm: routes the throw through {@code ErrorRouter.dispatch}
+     * with this channel's mapping-table constant and a synthesized payload factory lambda
+     * that binds the errors slot per {@link ErrorChannel#payloadCtorParams}.
+     */
+    private static CodeBlock dispatchCatchArm(String outputPackage, ErrorChannel channel) {
+        return CodeBlock.builder()
+            .add("return $T.dispatch(\n", errorRouterClass(outputPackage))
+            .add("    e,\n")
+            .add("    $T.$L,\n", errorMappingsClass(outputPackage), channel.mappingsConstantName())
+            .add("    env,\n")
+            .add("    ").add(payloadFactoryLambda(channel)).add(");\n")
+            .build();
+    }
+
+    /**
+     * Synthesizes the {@code (errors) -> new <PayloadClass>(...)} factory lambda from
+     * {@link ErrorChannel#payloadCtorParams()}: the errors slot binds the lambda parameter;
+     * every other slot prints its pre-resolved
+     * {@link ErrorChannel.PayloadConstructorParam#defaultLiteral()}. Per the channel's
+     * invariant, exactly one parameter is the errors slot.
+     */
+    private static CodeBlock payloadFactoryLambda(ErrorChannel channel) {
+        var args = CodeBlock.builder();
+        boolean first = true;
+        for (var param : channel.payloadCtorParams()) {
+            if (!first) args.add(", ");
+            if (param.isErrorsSlot()) {
+                args.add("errors");
+            } else {
+                args.add(param.defaultLiteral());
+            }
+            first = false;
+        }
+        return CodeBlock.of("errors -> new $T($L)", channel.payloadClass(), args.build());
     }
 
     /**
@@ -2046,17 +2114,29 @@ public class TypeFetcherGenerator {
     /**
      * Async tail for fetchers whose body ends with a {@code CompletableFuture<P>} expression
      * (typically {@code loader.load(key, env)}). Adds {@code .thenApply(...)} to lift the
-     * payload into a {@code DataFetcherResult<P>}, then {@code .exceptionally(...)} to redact
+     * payload into a {@code DataFetcherResult<P>}, then {@code .exceptionally(...)} to route
      * any exception that escapes past the synchronous wrapper (DataLoader bookkeeping, etc.).
+     * The {@code .exceptionally} arm forks on {@code errorChannel} the same way
+     * {@link #catchArm} does for sync fetchers.
      *
      * <p>Spec: §3 "CompletionException unwrap and async fetcher path".
      */
-    private static CodeBlock asyncWrapTail(TypeName valueType, String outputPackage) {
+    private static CodeBlock asyncWrapTail(TypeName valueType, String outputPackage,
+                                           Optional<ErrorChannel> errorChannel) {
+        var routerCall = errorChannel
+            .map(channel -> CodeBlock.builder()
+                .add("$T.dispatch(t, $T.$L, env, ",
+                    errorRouterClass(outputPackage),
+                    errorMappingsClass(outputPackage),
+                    channel.mappingsConstantName())
+                .add(payloadFactoryLambda(channel))
+                .add(")")
+                .build())
+            .orElseGet(() -> CodeBlock.of("$T.redact(t, env)", errorRouterClass(outputPackage)));
         return CodeBlock.builder()
             .add(".thenApply(payload -> $T.<$T>newResult().data(payload).build())\n",
                 DATA_FETCHER_RESULT, boxed(valueType))
-            .add(".exceptionally(t -> $T.redact(t, env))",
-                errorRouterClass(outputPackage))
+            .add(".exceptionally(t -> ").add(routerCall).add(")")
             .build();
     }
 

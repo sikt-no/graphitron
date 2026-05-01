@@ -13,6 +13,7 @@ import no.sikt.graphitron.rewrite.model.BodyParam;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.rewrite.model.ErrorChannel;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.JoinStep;
@@ -775,6 +776,87 @@ class TypeFetcherGeneratorTest {
 
         assertThat(method(spec, "nums").returnType().toString())
             .isEqualTo("graphql.execution.DataFetcherResult<java.util.List<? extends java.lang.Number>>");
+    }
+
+    // ===== R12 §3 try/catch wrapper: dispatch arm vs redact arm =====
+
+    private static ErrorChannel sakPayloadChannel() {
+        // Mirrors the SakPayload(String data, List<? extends GraphitronError> errors) shape
+        // used by ErrorChannelClassificationTest. The mappedErrorTypes list is empty here
+        // because the catch-arm emission only walks payloadCtorParams + mappingsConstantName.
+        return new ErrorChannel(
+            List.of(),
+            ClassName.bestGuess("com.example.SakPayload"),
+            List.of(
+                new ErrorChannel.PayloadConstructorParam("data",
+                    ClassName.get("java.lang", "String"), false, "null"),
+                new ErrorChannel.PayloadConstructorParam("errors",
+                    ParameterizedTypeName.get(
+                        ClassName.get("java.util", "List"),
+                        WildcardTypeName.subtypeOf(ClassName.bestGuess("com.example.GraphitronError"))),
+                    true, null)),
+            "SAK_PAYLOAD");
+    }
+
+    @Test
+    void queryServiceRecordField_withErrorChannel_catchArmDispatchesThroughErrorRouter() {
+        // R12 §3: when the field's WithErrorChannel resolves to a present channel, the catch
+        // arm calls ErrorRouter.dispatch with the channel's mapping-table constant and a
+        // synthesized payload-factory lambda. No-channel fields still route through redact —
+        // covered by every existing service-record test (all pass Optional.empty()).
+        var method = new MethodRef.Basic(
+            "no.sikt.graphitron.rewrite.TestServiceStub", "runSak",
+            ClassName.bestGuess("com.example.SakPayload"), List.of());
+        var field = new QueryField.QueryServiceRecordField("Query", "sak", null,
+            new ReturnTypeRef.ScalarReturnType("SakPayload", single()), method,
+            Optional.of(sakPayloadChannel()));
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
+            List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+
+        var body = method(spec, "sak").code().toString();
+        assertThat(body).contains("ErrorRouter.dispatch");
+        assertThat(body).contains("ErrorMappings.SAK_PAYLOAD");
+        // Synthesized payload factory: errors-slot binds the lambda parameter, defaulted slot
+        // prints its literal. SakPayload's ctor is (data, errors), so "null, errors" — order
+        // mirrors payloadCtorParams.
+        assertThat(body).contains("errors -> new com.example.SakPayload(null, errors)");
+        assertThat(body).doesNotContain("ErrorRouter.redact");
+    }
+
+    @Test
+    void queryServiceRecordField_withoutErrorChannel_catchArmStillRedacts() {
+        // Counter-test: an absent channel keeps the redact disposition. Same fetcher shape as
+        // the dispatch test above but with Optional.empty() for the channel.
+        var method = new MethodRef.Basic(
+            "com.example.Service", "filmCount", ClassName.get("java.lang", "Integer"), List.of());
+        var field = new QueryField.QueryServiceRecordField("Query", "filmCount", null,
+            new ReturnTypeRef.ScalarReturnType("Int", single()), method, Optional.empty());
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
+            List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+
+        var body = method(spec, "filmCount").code().toString();
+        assertThat(body).contains("ErrorRouter.redact(e, env)");
+        assertThat(body).doesNotContain("ErrorRouter.dispatch");
+        assertThat(body).doesNotContain("ErrorMappings");
+    }
+
+    @Test
+    void queryServiceTableField_withErrorChannel_catchArmDispatchesThroughErrorRouter() {
+        // Same dispatch wiring applies on the @table-bound service path
+        // (buildQueryServiceTableFetcher → buildServiceFetcherCommon shared body shape).
+        var method = new MethodRef.Basic(
+            "no.sikt.graphitron.rewrite.TestServiceStub", "getFilm",
+            ClassName.get("no.sikt.graphitron.rewrite.test.jooq.tables.records", "FilmRecord"),
+            List.of());
+        var field = new QueryField.QueryServiceTableField("Query", "getFilm", null,
+            tableBoundFilm(single()), method, Optional.of(sakPayloadChannel()));
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
+            List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+
+        var body = method(spec, "getFilm").code().toString();
+        assertThat(body).contains("ErrorRouter.dispatch");
+        assertThat(body).contains("ErrorMappings.SAK_PAYLOAD");
+        assertThat(body).doesNotContain("ErrorRouter.redact");
     }
 
     // ===== QueryTableInterfaceField =====

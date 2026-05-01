@@ -243,6 +243,59 @@ class FetcherPipelineTest {
         assertThat(fetchers.methodSpecs()).extracting(MethodSpec::name).doesNotContain("errors");
     }
 
+    // ===== R12 §3 try/catch wrapper: end-to-end SDL exercising the dispatch arm =====
+
+    private static final String SAK_DISPATCH_SDL = """
+            type ValidationErr @error(handlers: [{handler: VALIDATION}]) {
+                path: [String!]!
+                message: String!
+            }
+            type DbErr @error(handlers: [{handler: DATABASE, sqlState: "23503"}]) {
+                path: [String!]!
+                message: String!
+            }
+            union SakError = ValidationErr | DbErr
+            type SakPayload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.SakPayload"}) {
+                data: String
+                errors: [SakError]
+            }
+            type Query {
+                sak: SakPayload
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runSak"})
+            }
+            """;
+
+    @Test
+    void serviceField_withResolvedErrorChannel_catchArmCallsErrorRouterDispatch() {
+        // R12 §3 end-to-end: classifier resolves the ErrorChannel for a @service field whose
+        // payload exposes an errors slot, then the emitter wires the catch arm through
+        // ErrorRouter.dispatch with the channel's mapping-table constant. Counterpart to the
+        // unit test queryServiceRecordField_withErrorChannel_* but going through the full
+        // SDL → classifier → emitter pipeline.
+        var sak = method(findSpec("QueryFetchers", SAK_DISPATCH_SDL), "sak");
+        var body = sak.code().toString();
+        assertThat(body).contains("ErrorRouter.dispatch");
+        assertThat(body).contains("ErrorMappings.SAK_PAYLOAD");
+        assertThat(body).doesNotContain("ErrorRouter.redact");
+    }
+
+    @Test
+    void serviceField_withoutErrorChannel_catchArmCallsErrorRouterRedact() {
+        // Counterpart: a @service field whose payload has no errors slot keeps the no-channel
+        // disposition (redact). Distinct fixture from SAK_DISPATCH_SDL — the payload is a plain
+        // scalar with no @error types reachable.
+        var sdl = """
+            type Query {
+                count: Int
+                    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService", method: "filmCount"})
+            }
+            """;
+        var count = method(findSpec("QueryFetchers", sdl), "count");
+        var body = count.code().toString();
+        assertThat(body).contains("ErrorRouter.redact(e, env)");
+        assertThat(body).doesNotContain("ErrorRouter.dispatch");
+    }
+
     // ===== Column fields → wired via ColumnFetcher =====
 
     @Test

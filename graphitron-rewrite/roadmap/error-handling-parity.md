@@ -251,6 +251,18 @@ dispatch arm lands.
 - `GraphitronError` marker interface emitted via `GraphitronErrorInterfaceGenerator`.
 - `ValidationViolationGraphQLException` emitted via
   `ValidationViolationGraphQLExceptionGenerator`.
+- Per-fetcher try/catch wrapper now wires the catch arm through the channel: a
+  present `ErrorChannel` emits `return ErrorRouter.dispatch(e, ErrorMappings.<CONST>,
+  env, errors -> new <PayloadClass>(...))` with the synthesized payload-factory lambda
+  walking `payloadCtorParams` (errors slot binds the lambda parameter; every other
+  slot prints its `defaultLiteral`); an absent channel keeps the existing
+  `ErrorRouter.redact` disposition. Live on `buildServiceFetcherCommon` (the shared
+  body shape for `QueryServiceTableField` / `QueryServiceRecordField`). The async
+  helper (`asyncWrapTail`) takes a matching `Optional<ErrorChannel>` so future
+  `MutationServiceTableField` / `MutationServiceRecordField` implementations get the
+  same fork on the `.exceptionally(...)` arm; today's async call sites are all
+  DataLoader-backed child fields with no `WithErrorChannel`, so they pass
+  `Optional.empty()`.
 
 **Remaining work:**
 
@@ -258,10 +270,12 @@ dispatch arm lands.
   variants per §1's table; the nine reject rules (intra-type and channel-level,
   including the validation-shadowing rule and the `path`/`message`-only structural
   rule) fire as `UnclassifiedType` / `UnclassifiedField`.
-- Try/catch wrapper on every fetcher body (channel → `ErrorRouter.dispatch`; no channel
-  → `ErrorRouter.redact`); `.exceptionally(...)` on async fetchers. `ErrorMappings`
-  and the dispatch infrastructure are in place (`Mapping[]` constants, validation
-  fan-out arm, source-order match loop), pending the catch-arm emission.
+- DML mutation fetchers (`MutationDeleteTableField` and the still-stubbed
+  insert/update/upsert variants) extended to construct the typed payload class on
+  the success arm and route through `ErrorRouter.dispatch` on the catch arm. Today
+  they keep `redact` because the success path returns a raw row, not a payload, and
+  the schema-mapped payload-assembly work is a separate emitter concern. Live
+  fixtures for DML + `ErrorChannel` follow once that lands.
 - `@service` / `@tableMethod` declared checked exceptions checked against the field's
   `ErrorChannel` and routed through the same `ErrorRouter.dispatch` (§4).
 - Marker-interface enforcement: every `@error` class implements `GraphitronError`.
