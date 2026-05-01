@@ -217,6 +217,23 @@ dispatch arm lands.
   `TypeBuilder.buildResultType`. Applies to the GENERIC arm; the no-discriminator
   DATABASE lift to `ExceptionHandler(SQLException)` is unconditionally resolvable so
   the check is skipped there.
+- `TypeBuilder.parseErrorHandler` parse-time lift (§1's table) and intra-type reject
+  rules 1-5: each SDL `{handler: ...}` entry returns one of the four sealed
+  variants by reading the discriminator and the optional `className`/`sqlState`/
+  `code`/`matches`/`description` fields. `GENERIC` lifts to `ExceptionHandler`;
+  `DATABASE` with `sqlState` lifts to `SqlStateHandler`, with `code` to
+  `VendorCodeHandler`, with neither to `ExceptionHandler(java.sql.SQLException)`;
+  `VALIDATION` lifts to `ValidationHandler`. A missing or unknown `handler` value,
+  `GENERIC` without `className` (rule 1), `GENERIC` carrying `sqlState` or `code`
+  (rule 2), `DATABASE` carrying both `sqlState` and `code` (rule 3), `DATABASE`
+  carrying any explicit `className` (rule 4), or `VALIDATION` carrying any of
+  `className`/`sqlState`/`code`/`matches` (rule 5) appends a reason and surfaces
+  the parent `ErrorType` as `UnclassifiedType` per §1's table.
+  `TypeBuilder.buildErrorType` enforces rule 6 (the `path: [String!]!` /
+  `message: String!` structural contract on every `@error` type, rejecting missing
+  fields, wrong-shape declarations, and any extra field beyond `path` and
+  `message`). Rules 7-9 are already tracked separately (channel-level, in
+  `FieldBuilder`).
 - `TypeBuilder.buildErrorType` wears `@LoadBearingClassifierCheck(key =
   "error-type.path-message-fields")` (the producer side; the consumer annotation lands
   with the dispatch arm).
@@ -266,10 +283,6 @@ dispatch arm lands.
 
 **Remaining work:**
 
-- `TypeBuilder.parseErrorHandler` lifts SDL `ErrorHandler` entries to the sealed
-  variants per §1's table; the nine reject rules (intra-type and channel-level,
-  including the validation-shadowing rule and the `path`/`message`-only structural
-  rule) fire as `UnclassifiedType` / `UnclassifiedField`.
 - DML mutation fetchers (`MutationDeleteTableField` and the still-stubbed
   insert/update/upsert variants) extended to construct the typed payload class on
   the success arm and route through `ErrorRouter.dispatch` on the catch arm. Today
