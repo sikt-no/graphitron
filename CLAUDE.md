@@ -13,7 +13,23 @@ The next-generation Graphitron generator: a Maven-based code generator that turn
 
 ## Environment (agent sessions)
 
-Maven 3.9.11 at `/opt/maven`; Java 25 default. Pre-configured, no installation needed. (On older sandbox images that still default to Java 21, install JDK 25 with `sudo apt-get install -y openjdk-25-jdk-headless` and either `sudo update-alternatives --set java /usr/lib/jvm/java-25-openjdk-amd64/bin/java` or export `JAVA_HOME=/usr/lib/jvm/java-25-openjdk-amd64`.)
+Maven 3.9.11 at `/opt/maven`; Java 25 default. Pre-configured, no installation needed.
+
+Verify before building:
+
+```bash
+mvn -version  # expect "Java version: 25.x"
+```
+
+If `mvn -version` reports Java 21 (older sandbox image, or a session that pre-set `JAVA_HOME`), set up Java 25:
+
+```bash
+sudo apt-get install -y openjdk-25-jdk-headless
+export JAVA_HOME=/usr/lib/jvm/java-25-openjdk-amd64
+mvn -version  # confirm Java 25
+```
+
+Both steps are needed when a session inherits `JAVA_HOME=/usr/lib/jvm/java-21-...`: `apt-get install` switches `update-alternatives` (so `java`/`javac` on PATH point at 25) but does not touch `JAVA_HOME`, and Maven honours `JAVA_HOME` over PATH. Setting `JAVA_HOME` is the reliable step; the alternatives switch is a happy side-effect of `apt-get install`. The parent pom's `requireJavaVersion` enforcer fails with a clear "Detected JDK ... is version 21.x.x which is not in the allowed range [25,)" when this is wrong, so a stale `JAVA_HOME` is loud, not silent.
 
 **Claude Code Web:** see [`.claude/web-environment.md`](.claude/web-environment.md) for the web-sandbox setup (no Docker, native PostgreSQL via `-Plocal-db`).
 
