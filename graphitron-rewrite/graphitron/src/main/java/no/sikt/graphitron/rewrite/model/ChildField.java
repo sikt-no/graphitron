@@ -185,7 +185,7 @@ public sealed interface ChildField extends GraphitronField
         List<WhereFilter> filters,
         OrderBySpec orderBy,
         PaginationSpec pagination,
-        BatchKey batchKey
+        BatchKey.ParentKeyed batchKey
     ) implements TableTargetField, BatchKeyField {
         @Override
         public String rowsMethodName() {
@@ -214,7 +214,7 @@ public sealed interface ChildField extends GraphitronField
         List<WhereFilter> filters,
         OrderBySpec orderBy,
         PaginationSpec pagination,
-        BatchKey batchKey,
+        BatchKey.ParentKeyed batchKey,
         LookupMapping lookupMapping
     ) implements TableTargetField, BatchKeyField, LookupField {
         @Override
@@ -344,7 +344,7 @@ public sealed interface ChildField extends GraphitronField
         OrderBySpec orderBy,
         PaginationSpec pagination,
         MethodRef method,
-        BatchKey batchKey
+        BatchKey.ParentKeyed batchKey
     ) implements TableTargetField, MethodBackedField, BatchKeyField {
         @Override
         public String rowsMethodName() {
@@ -373,7 +373,7 @@ public sealed interface ChildField extends GraphitronField
         ReturnTypeRef returnType,
         List<JoinStep> joinPath,
         MethodRef method,
-        BatchKey batchKey
+        BatchKey.ParentKeyed batchKey
     ) implements ChildField, MethodBackedField, BatchKeyField {
 
         @Override
@@ -435,7 +435,7 @@ public sealed interface ChildField extends GraphitronField
         List<WhereFilter> filters,
         OrderBySpec orderBy,
         PaginationSpec pagination,
-        BatchKey batchKey
+        BatchKey.RecordParentBatchKey batchKey
     ) implements TableTargetField, BatchKeyField {
         @Override
         public String rowsMethodName() {
@@ -452,7 +452,7 @@ public sealed interface ChildField extends GraphitronField
         List<WhereFilter> filters,
         OrderBySpec orderBy,
         PaginationSpec pagination,
-        BatchKey batchKey,
+        BatchKey.RecordParentBatchKey batchKey,
         LookupMapping lookupMapping
     ) implements TableTargetField, BatchKeyField, LookupField {
         @Override

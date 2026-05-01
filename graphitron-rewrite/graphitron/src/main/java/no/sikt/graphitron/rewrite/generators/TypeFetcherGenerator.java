@@ -392,11 +392,11 @@ public class TypeFetcherGenerator {
                 // resolver reads it back via FetcherEmitter's ParticipantColumnReferenceField arm.
                 case ChildField.ParticipantColumnReferenceField ignored -> { }
                 case ChildField.RecordTableField rtf -> {
-                    builder.addMethod(buildRecordBasedDataFetcher(rtf, resultType, jooqPackage, outputPackage));
+                    builder.addMethod(buildRecordBasedDataFetcher(rtf, rtf.batchKey(), resultType, jooqPackage, outputPackage));
                     builder.addMethod(SplitRowsMethodEmitter.buildRowsMethod(rtf, outputPackage, jooqPackage));
                 }
                 case ChildField.RecordLookupTableField rltf -> {
-                    builder.addMethod(buildRecordBasedDataFetcher(rltf, resultType, jooqPackage, outputPackage));
+                    builder.addMethod(buildRecordBasedDataFetcher(rltf, rltf.batchKey(), resultType, jooqPackage, outputPackage));
                     builder.addMethod(SplitRowsMethodEmitter.buildRowsMethod(rltf, outputPackage, jooqPackage));
                     // Input-rows helper identical in shape to SplitLookupTableField's — reads
                     // @lookupKey args from env.getArgument(name) and emits the typed Row<M+1>[].
@@ -1753,7 +1753,7 @@ public class TypeFetcherGenerator {
         boolean isList = returnType.wrapper().isList();
         TypeName valueType = isList ? ParameterizedTypeName.get(LIST, perKeyType) : perKeyType;
 
-        var batchKey = bkf.batchKey();
+        var batchKey = (BatchKey.ParentKeyed) bkf.batchKey();
         boolean isMapped = batchKey instanceof BatchKey.MappedRowKeyed
                         || batchKey instanceof BatchKey.MappedRecordKeyed;
         TypeName keyType = GeneratorUtils.keyElementType(batchKey);
@@ -1899,7 +1899,7 @@ public class TypeFetcherGenerator {
         }
         var returnType = ParameterizedTypeName.get(COMPLETABLE_FUTURE, valueType);
 
-        var batchKey = bkf.batchKey();
+        var batchKey = (BatchKey.ParentKeyed) bkf.batchKey();
         TypeName keyType = GeneratorUtils.keyElementType(batchKey);
         var loaderType = ParameterizedTypeName.get(DATA_LOADER, keyType, valueType);
         String rowsMethodName = bkf.rowsMethodName();
@@ -1971,21 +1971,20 @@ public class TypeFetcherGenerator {
      * Builds the DataFetcher method for a record-parent batched field
      * ({@link ChildField.RecordTableField}, {@link ChildField.RecordLookupTableField}). Shape is
      * identical to {@link #buildSplitQueryDataFetcher} except key extraction uses
-     * {@link GeneratorUtils#buildRecordKeyExtraction} (backing-object accessor) instead of
-     * {@link GeneratorUtils#buildKeyExtraction} (jOOQ table-row accessor).
+     * {@link GeneratorUtils#buildRecordParentKeyExtraction} (backing-object or lifter-call
+     * accessor) instead of {@link GeneratorUtils#buildKeyExtraction} (jOOQ table-row accessor).
      *
      * @param <T> the concrete field type — must implement both {@link ChildField.TableTargetField}
      *            (for {@code returnType()} and {@code name()}) and {@link BatchKeyField} (for
      *            {@code batchKey()} and {@code rowsMethodName()}).
      */
     private static <T extends ChildField.TableTargetField & BatchKeyField> MethodSpec
-            buildRecordBasedDataFetcher(T field, GraphitronType.ResultType resultType, String jooqPackage,
-                    String outputPackage) {
+            buildRecordBasedDataFetcher(T field, BatchKey.RecordParentBatchKey batchKey,
+                    GraphitronType.ResultType resultType, String jooqPackage, String outputPackage) {
 
         boolean isList = field.returnType().wrapper().isList();
         TypeName valueType = isList ? ParameterizedTypeName.get(LIST, RECORD) : RECORD;
 
-        var batchKey = field.batchKey();
         TypeName keyType = GeneratorUtils.keyElementType(batchKey);
         var loaderType = ParameterizedTypeName.get(DATA_LOADER, keyType, valueType);
         String rowsMethodName = field.rowsMethodName();
@@ -2009,7 +2008,7 @@ public class TypeFetcherGenerator {
                 "$T loader = env.getDataLoaderRegistry()\n" +
                 "    .computeIfAbsent(name, k -> $T.newDataLoader($L));\n",
                 loaderType, DATA_LOADER_FACTORY, lambdaBlock)
-            .addCode(GeneratorUtils.buildRecordKeyExtraction((BatchKey.RowKeyed) batchKey, resultType, jooqPackage))
+            .addCode(GeneratorUtils.buildRecordParentKeyExtraction(batchKey, resultType, jooqPackage))
             .addCode(CodeBlock.builder()
                 .add("return loader.load(key, env)\n")
                 .add("    ").add(asyncWrapTail(valueType, outputPackage, Optional.empty())).add(";\n")

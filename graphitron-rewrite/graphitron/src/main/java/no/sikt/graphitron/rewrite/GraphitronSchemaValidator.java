@@ -442,17 +442,17 @@ public class GraphitronSchemaValidator {
     private void validateReferenceLeadsToType(String fieldName, SourceLocation location, List<JoinStep> path, String typeName, no.sikt.graphitron.rewrite.model.TableRef targetTable, List<ValidationError> errors) {
         if (path.isEmpty()) return; // classifier guarantees non-empty for this variant; skip in isolated validator unit tests
         var lastStep = path.getLast();
-        switch (lastStep) {
-            case JoinStep.FkJoin fk -> {
-                if (!fk.targetTable().tableName().equalsIgnoreCase(targetTable.tableName())) {
-                    errors.add(new ValidationError(RejectionKind.AUTHOR_ERROR,
-                        fieldName,
-                        "Field '" + fieldName + "': @reference path does not lead to the table of type '" + typeName + "'",
-                        location
-                    ));
-                }
+        // FkJoin and LiftedHop both implement WithTarget — the targetTable accessor means the
+        // same thing on each, so the comparison is uniform. ConditionJoin has no pre-resolved
+        // target table and is skipped per the existing convention.
+        if (lastStep instanceof JoinStep.WithTarget wt) {
+            if (!wt.targetTable().tableName().equalsIgnoreCase(targetTable.tableName())) {
+                errors.add(new ValidationError(RejectionKind.AUTHOR_ERROR,
+                    fieldName,
+                    "Field '" + fieldName + "': @reference path does not lead to the table of type '" + typeName + "'",
+                    location
+                ));
             }
-            case JoinStep.ConditionJoin ignored -> { /* no FK tables to check */ }
         }
     }
     private void validateTableField(no.sikt.graphitron.rewrite.model.ChildField.TableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {

@@ -160,7 +160,7 @@ public interface MethodRef {
          *
          * <p>{@link #source()} returns {@code new ParamSource.Sources(batchKey)}.
          */
-        record Sourced(String name, BatchKey batchKey) implements Param {
+        record Sourced(String name, BatchKey.ParentKeyed batchKey) implements Param {
             @Override public String typeName() { return batchKey.javaTypeName(); }
             @Override public ParamSource source() { return new ParamSource.Sources(batchKey); }
         }

@@ -149,8 +149,11 @@ class GeneratorUtils {
      */
     static TypeName keyElementType(BatchKey batchKey) {
         return switch (batchKey) {
-            case BatchKey.RowKeyed _, BatchKey.MappedRowKeyed _       -> buildRowKeyType(batchKey.keyColumns());
-            case BatchKey.RecordKeyed _, BatchKey.MappedRecordKeyed _ -> buildRecordNKeyType(batchKey.keyColumns());
+            case BatchKey.RowKeyed rk           -> buildRowKeyType(rk.parentKeyColumns());
+            case BatchKey.MappedRowKeyed mrk    -> buildRowKeyType(mrk.parentKeyColumns());
+            case BatchKey.LifterRowKeyed lrk    -> buildRowKeyType(lrk.targetKeyColumns());
+            case BatchKey.RecordKeyed rk        -> buildRecordNKeyType(rk.parentKeyColumns());
+            case BatchKey.MappedRecordKeyed mrk -> buildRecordNKeyType(mrk.parentKeyColumns());
         };
     }
 
@@ -173,20 +176,41 @@ class GeneratorUtils {
     }
 
     /**
-     * Emits the {@code RowN<...> key = DSL.row(...)} statement for a {@link ChildField.RecordTableField}
-     * DataFetcher, extracting the FK value(s) from the {@code @record} parent's backing Java object.
+     * Emits the {@code RowN<...> key = ...} statement for a {@link ChildField.RecordTableField}
+     * DataFetcher, extracting the batch-key value(s) from the {@code @record} parent.
      *
-     * <p>The accessor per ResultType variant:
+     * <p>The narrowed parameter type is exhaustive over {@link BatchKey.RecordParentBatchKey}
+     * — the two permits ({@link BatchKey.RowKeyed} and {@link BatchKey.LifterRowKeyed}) are the
+     * only routes here. Mis-routing a {@code @service}-only permit ({@link BatchKey.RecordKeyed}
+     * et al.) is a compile error, not a runtime {@code IllegalStateException}.
+     *
+     * <p>{@link BatchKey.RowKeyed} arm reads from the parent's backing Java object via the
+     * accessor per {@link GraphitronType.ResultType} variant:
      * <ul>
      *   <li>{@link GraphitronType.JooqTableRecordType}: {@code ((Record) env.getSource()).get(Tables.T.FK_COL)}</li>
      *   <li>{@link GraphitronType.JooqRecordType}: {@code ((Record) env.getSource()).get("sql_name")}</li>
      *   <li>{@link GraphitronType.JavaRecordType}: {@code ((BackingClass) env.getSource()).lowerCamelCase()}</li>
      *   <li>{@link GraphitronType.PojoResultType} (non-null class): {@code ((BackingClass) env.getSource()).getLowerCamelCase()}</li>
      * </ul>
+     *
+     * <p>{@link BatchKey.LifterRowKeyed} arm calls the developer-supplied static lifter on the
+     * parent's backing class: {@code Row1<Long> key = Lifters.method((BackingClass) env.getSource())}.
      */
-    static CodeBlock buildRecordKeyExtraction(BatchKey.RowKeyed batchKey, GraphitronType.ResultType resultType, String jooqPackage) {
+    static CodeBlock buildRecordParentKeyExtraction(
+            BatchKey.RecordParentBatchKey batchKey,
+            GraphitronType.ResultType resultType,
+            String jooqPackage) {
         TypeName keyType = keyElementType(batchKey);
-        List<ColumnRef> fkCols = batchKey.keyColumns();
+        return switch (batchKey) {
+            case BatchKey.RowKeyed rk        -> buildFkRowKey(rk, keyType, resultType, jooqPackage);
+            case BatchKey.LifterRowKeyed lrk -> buildLifterRowKey(lrk, keyType, resultType);
+        };
+    }
+
+    private static CodeBlock buildFkRowKey(
+            BatchKey.RowKeyed batchKey, TypeName keyType,
+            GraphitronType.ResultType resultType, String jooqPackage) {
+        List<ColumnRef> fkCols = batchKey.parentKeyColumns();
         var rowArgs = CodeBlock.builder();
         for (int i = 0; i < fkCols.size(); i++) {
             if (i > 0) rowArgs.add(", ");
@@ -213,6 +237,29 @@ class GeneratorUtils {
             .build();
     }
 
+    private static CodeBlock buildLifterRowKey(
+            BatchKey.LifterRowKeyed lrk, TypeName keyType,
+            GraphitronType.ResultType resultType) {
+        ClassName backingClass = backingClassOf(resultType);
+        var lifter = lrk.lifter();
+        return CodeBlock.builder()
+            .addStatement("$T key = $T.$L(($T) env.getSource())",
+                keyType, lifter.declaringClass(), lifter.methodName(), backingClass)
+            .build();
+    }
+
+    private static ClassName backingClassOf(GraphitronType.ResultType resultType) {
+        if (resultType instanceof GraphitronType.PojoResultType prt) {
+            return ClassName.bestGuess(prt.fqClassName());
+        }
+        if (resultType instanceof GraphitronType.JavaRecordType jrt) {
+            return ClassName.bestGuess(jrt.fqClassName());
+        }
+        throw new IllegalStateException(
+            "LifterRowKeyed must come from a PojoResultType or JavaRecordType parent; got "
+            + resultType.getClass().getSimpleName());
+    }
+
     /**
      * Companion to {@link #buildKeyExtraction} for single-cardinality
      * {@code @splitQuery} fetchers where the BatchKey's columns sit on the parent's FK side.
@@ -232,7 +279,7 @@ class GeneratorUtils {
         }
         var tablesClass = ResolvedTableNames.ofTable(parentTable, jooqPackage).tablesClass();
         String tableField = parentTable.javaFieldName();
-        List<ColumnRef> pkCols = rk.keyColumns();
+        List<ColumnRef> pkCols = rk.parentKeyColumns();
         TypeName keyType = keyElementType(batchKey);
         var out = CodeBlock.builder();
         var rowArgs = CodeBlock.builder();
@@ -258,11 +305,18 @@ class GeneratorUtils {
         return out.build();
     }
 
-    static CodeBlock buildKeyExtraction(BatchKey batchKey, TableRef parentTable, String jooqPackage) {
+    /**
+     * Emits the {@code RowN<...> key = ...} or {@code RecordN<...> key = ...} statement for a
+     * {@code @table}-parent {@code @splitQuery} fetcher. Parameter narrowed to
+     * {@link BatchKey.ParentKeyed}: the four catalog-resolvable permits are the only routes
+     * here, and {@link BatchKey.LifterRowKeyed} is excluded by the type system, not by a
+     * defensive {@code IllegalStateException} arm.
+     */
+    static CodeBlock buildKeyExtraction(BatchKey.ParentKeyed batchKey, TableRef parentTable, String jooqPackage) {
         TypeName keyType = keyElementType(batchKey);
         var tablesClass = ResolvedTableNames.ofTable(parentTable, jooqPackage).tablesClass();
         String tableField = parentTable.javaFieldName();
-        List<ColumnRef> pkCols = batchKey.keyColumns();
+        List<ColumnRef> pkCols = batchKey.parentKeyColumns();
         return switch (batchKey) {
             case BatchKey.RowKeyed _, BatchKey.MappedRowKeyed _ -> {
                 var rowArgs = CodeBlock.builder();

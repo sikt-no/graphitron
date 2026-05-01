@@ -162,7 +162,7 @@ class FieldBuilder {
      * <p>A {@code null} result means the service method lacks the required {@code Sources}
      * parameter — the validator will surface this as an error before code generation runs.
      */
-    private static BatchKey extractBatchKey(MethodRef method) {
+    private static BatchKey.ParentKeyed extractBatchKey(MethodRef method) {
         return method.params().stream()
             .filter(p -> p instanceof MethodRef.Param.Sourced)
             .map(p -> ((MethodRef.Param.Sourced) p).batchKey())
@@ -2148,7 +2148,7 @@ class FieldBuilder {
      * unconditionally uses {@code fk.sourceColumns()} because record parents never batch by
      * parent PK.
      */
-    private static BatchKey deriveSplitQueryBatchKey(TableRef parentTable, List<JoinStep> path, boolean isList) {
+    private static BatchKey.ParentKeyed deriveSplitQueryBatchKey(TableRef parentTable, List<JoinStep> path, boolean isList) {
         if (!isList && !path.isEmpty() && path.get(0) instanceof JoinStep.FkJoin fk) {
             return new BatchKey.RowKeyed(fk.sourceColumns());
         }
@@ -2168,7 +2168,7 @@ class FieldBuilder {
      *       (cannot generate a typed cast for key extraction)</li>
      * </ul>
      */
-    private static BatchKey deriveBatchKeyForResultType(
+    private static BatchKey.RecordParentBatchKey deriveBatchKeyForResultType(
             List<JoinStep> joinPath, GraphitronType.ResultType parentResultType) {
         if (joinPath.isEmpty() || !(joinPath.get(0) instanceof JoinStep.FkJoin fkJoin)) {
             return null;
