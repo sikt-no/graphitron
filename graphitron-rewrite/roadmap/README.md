@@ -17,7 +17,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R1` | `BatchKey` lifter directive | Spec | [plan](batchkey-lifter-directive.md) |
 | `R36` | Stub #3: Interface / union fetchers | In Progress | [plan](stub-interface-union-fetchers.md) |
 | `R40` | Argument-level `@nodeId` support | Spec | [plan](argument-level-nodeid.md) |
-| `R48` | Stub: `@externalField` resolved-reference path (`ComputedField`) | Spec | [plan](computed-field-with-reference.md) |
 | `R49` | Stub: scalar/`@record`-returning `@service` child field (`ServiceRecordField`) <sub>blocked by: [service-rows-method-body](service-rows-method-body.md)</sub> | Spec | [plan](service-record-field.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
 | `R3` | Classification vocabulary follow-ups | Spec | [plan](classification-vocabulary-followups.md) |
@@ -98,7 +97,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### service
 
 - `R1` [**`BatchKey` lifter directive**](batchkey-lifter-directive.md) — Spec, architecture
-- `R48` [**Stub: `@externalField` resolved-reference path (`ComputedField`)**](computed-field-with-reference.md) — Spec, stubs
 - `R49` [**Stub: scalar/`@record`-returning `@service` child field (`ServiceRecordField`)**](service-record-field.md) — Spec, stubs, blocked by [service-rows-method-body](service-rows-method-body.md)
 - `R54` [**Rename @externalField (parallel-support, deprecation, migration)**](rename-externalfield-directive.md) — Backlog, cleanup
 - `R45` [**Typed context-value registry for `@service`**](typed-context-value-registry.md) — Spec, architecture
