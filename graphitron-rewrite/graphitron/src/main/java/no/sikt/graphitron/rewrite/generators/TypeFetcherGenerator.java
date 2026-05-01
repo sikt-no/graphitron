@@ -358,12 +358,28 @@ public class TypeFetcherGenerator {
                 case QueryField.QueryServiceRecordField f     -> builder.addMethod(buildQueryServiceRecordFetcher(f, outputPackage));
                 // Stub variants — see NOT_IMPLEMENTED_REASONS
                 case QueryField.QueryTableInterfaceField f    -> builder.addMethod(buildQueryTableInterfaceFieldFetcher(f, outputPackage, jooqPackage));
-                case QueryField.QueryInterfaceField f -> MultiTablePolymorphicEmitter
-                    .emitMethods(f.name(), f.participants(), f.returnType().wrapper().isList(), outputPackage, jooqPackage)
-                    .forEach(builder::addMethod);
-                case QueryField.QueryUnionField f -> MultiTablePolymorphicEmitter
-                    .emitMethods(f.name(), f.participants(), f.returnType().wrapper().isList(), outputPackage, jooqPackage)
-                    .forEach(builder::addMethod);
+                case QueryField.QueryInterfaceField f -> {
+                    if (f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
+                        MultiTablePolymorphicEmitter
+                            .emitConnectionMethods(f.name(), f.participants(), conn.defaultPageSize(), outputPackage, jooqPackage)
+                            .forEach(builder::addMethod);
+                    } else {
+                        MultiTablePolymorphicEmitter
+                            .emitMethods(f.name(), f.participants(), f.returnType().wrapper().isList(), outputPackage, jooqPackage)
+                            .forEach(builder::addMethod);
+                    }
+                }
+                case QueryField.QueryUnionField f -> {
+                    if (f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
+                        MultiTablePolymorphicEmitter
+                            .emitConnectionMethods(f.name(), f.participants(), conn.defaultPageSize(), outputPackage, jooqPackage)
+                            .forEach(builder::addMethod);
+                    } else {
+                        MultiTablePolymorphicEmitter
+                            .emitMethods(f.name(), f.participants(), f.returnType().wrapper().isList(), outputPackage, jooqPackage)
+                            .forEach(builder::addMethod);
+                    }
+                }
                 case MutationField.MutationInsertTableField f  -> builder.addMethod(stub(f));
                 case MutationField.MutationUpdateTableField f  -> builder.addMethod(stub(f));
                 case MutationField.MutationDeleteTableField f  -> builder.addMethod(buildMutationDeleteFetcher(f, outputPackage, jooqPackage));

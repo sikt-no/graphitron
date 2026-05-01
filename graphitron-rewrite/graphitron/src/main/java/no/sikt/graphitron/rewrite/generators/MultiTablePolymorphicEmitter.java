@@ -60,8 +60,11 @@ public final class MultiTablePolymorphicEmitter {
     private static final ClassName LINKED_HASH_MAP  = ClassName.get("java.util", "LinkedHashMap");
     private static final ClassName MAP              = ClassName.get("java.util", "Map");
     private static final ClassName FIELD            = ClassName.get("org.jooq", "Field");
+    private static final ClassName SORT_FIELD       = ClassName.get("org.jooq", "SortField");
     private static final ClassName TABLE            = ClassName.get("org.jooq", "Table");
     private static final ClassName DSL_CONTEXT      = ClassName.get("org.jooq", "DSLContext");
+    /** Stage-1 derived-table alias used by the connection-mode UNION-ALL wrapper. */
+    private static final String CONNECTION_PAGES_ALIAS = "pages";
     /** Directive context surfaced in {@link ValuesJoinRowBuilder}'s arity-cap error messages. */
     private static final String DIRECTIVE_CONTEXT = "@interface participant PK";
 
@@ -105,7 +108,46 @@ public final class MultiTablePolymorphicEmitter {
         methods.add(buildMainFetcher(fieldName, tableBoundParticipants,
             participantJoinPaths, isList, outputPackage, jooqPackage));
         for (var participant : tableBoundParticipants) {
-            methods.add(buildPerTypenameSelect(fieldName, participant, outputPackage, jooqPackage));
+            methods.add(buildPerTypenameSelect(fieldName, participant, false,
+                outputPackage, jooqPackage));
+        }
+        return methods;
+    }
+
+    /**
+     * Connection-fetcher overload (R36 Track B4a). Emits the public main fetcher plus one
+     * private {@code select<Participant>For<Field>} helper per table-bound participant. The
+     * main fetcher returns a {@code DataFetcherResult<ConnectionResult>}; stage 1 wraps the
+     * UNION-ALL of per-branch projections in a derived table {@code pages} so cursor
+     * decode + seek + LIMIT N+1 apply uniformly across the union; stage 2 reuses the same
+     * VALUES-JOIN dispatch as the list path but additionally projects {@code __sort__} on
+     * each typed Record so {@code ConnectionHelper.encodeCursor} can read the sort key for
+     * cursor encoding on edges and {@code pageInfo.startCursor}/{@code endCursor}.
+     *
+     * <p>v1 scope (B4a): forward and backward pagination ({@code first}/{@code last}/{@code after}/
+     * {@code before}); single-PK participants only (the {@code __sort__} column is typed as the
+     * participant's PK column class, which the cursor encoder/decoder can round-trip through
+     * jOOQ's {@code DataType.convert}). Composite-PK participants would project a JSONB {@code __sort__}
+     * column whose cursor round-trip is not yet covered, so the validator rejects them under
+     * connection mode. {@code totalCount} is always {@code null} on this path; landing the
+     * polymorphic count query is B4c. Child connections ({@code ChildField.InterfaceField} +
+     * {@code @asConnection}) are B4d.
+     */
+    public static List<MethodSpec> emitConnectionMethods(
+            String fieldName,
+            List<ParticipantRef> participants,
+            int defaultPageSize,
+            String outputPackage, String jooqPackage) {
+        var tableBoundParticipants = participants.stream()
+            .filter(p -> p instanceof ParticipantRef.TableBound)
+            .map(p -> (ParticipantRef.TableBound) p)
+            .toList();
+        var methods = new ArrayList<MethodSpec>();
+        methods.add(buildConnectionFetcher(fieldName, tableBoundParticipants, defaultPageSize,
+            outputPackage, jooqPackage));
+        for (var participant : tableBoundParticipants) {
+            methods.add(buildPerTypenameSelect(fieldName, participant, true,
+                outputPackage, jooqPackage));
         }
         return methods;
     }
@@ -211,6 +253,179 @@ public final class MultiTablePolymorphicEmitter {
         builder.addCode(redactCatchArm(outputPackage));
         builder.endControlFlow();
         return builder.build();
+    }
+
+    /**
+     * R36 Track B4a connection main fetcher. Mirrors {@link #buildMainFetcher} for the list path
+     * but returns {@code DataFetcherResult<ConnectionResult>}: stage 1 wraps the per-branch
+     * UNION ALL in a derived table {@code pages} and applies {@code .orderBy/.seek/.limit} from
+     * a {@code ConnectionHelper.PageRequest} so cursor decoding and page-size + 1 over-fetch
+     * happen against the union as a whole; stage 2 dispatches per-typename and the resulting
+     * typed Records carry both {@code __typename} (for the schema-class TypeResolver) and
+     * {@code __sort__} (for {@code ConnectionHelper.encodeCursor}).
+     *
+     * <p>{@code ConnectionResult} is constructed with {@code (table, condition) = (null, null)}
+     * — the {@code totalCount} resolver short-circuits to {@code null} in that case, matching
+     * the Split-Connection scatter path. Real polymorphic {@code totalCount} (running a
+     * {@code SELECT count(*) FROM (UNION ALL) AS x}) is the B4c sub-phase.
+     */
+    private static MethodSpec buildConnectionFetcher(
+            String fieldName, List<ParticipantRef.TableBound> participants,
+            int defaultPageSize, String outputPackage, String jooqPackage) {
+
+        var connectionResultClass = ClassName.get(outputPackage + ".util",
+            no.sikt.graphitron.rewrite.generators.util.ConnectionResultClassGenerator.CLASS_NAME);
+        var connectionHelperClass = ClassName.get(outputPackage + ".util",
+            no.sikt.graphitron.rewrite.generators.util.ConnectionHelperClassGenerator.CLASS_NAME);
+        var pageRequestClass = ClassName.get(outputPackage + ".util",
+            "ConnectionHelper", "PageRequest");
+
+        TypeName valueType = connectionResultClass;
+
+        var builder = MethodSpec.methodBuilder(fieldName)
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(syncResultType(valueType))
+            .addParameter(ENV, "env");
+
+        builder.beginControlFlow("try");
+        builder.addStatement("$T dsl = graphitronContext(env).getDslContext(env)", DSL_CONTEXT);
+
+        if (participants.isEmpty()) {
+            // Defensive empty path: validator rejects an empty participant set, but emit a
+            // non-throwing fallback so the generator output type-checks. List.of() flows cleanly
+            // through ConnectionResult — pageInfo.startCursor/endCursor return null, edges/nodes
+            // return empty.
+            builder.addStatement("$T page = $T.pageRequest(null, null, null, null, $L,\n"
+                + "        $T.of(), $T.of(), $T.of())",
+                pageRequestClass, connectionHelperClass, defaultPageSize, LIST, LIST, LIST);
+            builder.addStatement("$T payload = new $T($T.of(), page, null, null)",
+                valueType, connectionResultClass, LIST);
+            builder.addCode(returnSyncSuccess(valueType, "payload"));
+            builder.nextControlFlow("catch ($T e)", Exception.class);
+            builder.addCode(redactCatchArm(outputPackage));
+            builder.endControlFlow();
+            return builder.build();
+        }
+
+        // Sort-key Field<T>: typed by the first participant's first PK column. v1 (B4a) requires
+        // all participants to share the same PK column class (validator enforces); composite PKs
+        // rejected for the connection path because the composite jsonbArray cursor round-trip is
+        // not yet covered.
+        var firstPk = participants.get(0).table().primaryKeyColumns().get(0);
+        ClassName pkColumnClass = ClassName.bestGuess(firstPk.columnClass());
+        var sortFieldType = ParameterizedTypeName.get(FIELD, pkColumnClass);
+        var listOfSortField = ParameterizedTypeName.get(LIST, ParameterizedTypeName.get(SORT_FIELD,
+            WildcardTypeName.subtypeOf(Object.class)));
+        var fieldWildcard = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
+        var listOfFieldWildcard = ParameterizedTypeName.get(LIST, fieldWildcard);
+
+        builder.addStatement("$T sortField = $T.field($T.name($S), $T.class)",
+            sortFieldType, DSL, DSL, SORT_COLUMN, pkColumnClass);
+        // __typename ASC is appended as a secondary sort and as a seek tiebreaker so rows with
+        // identical PKs across participants (e.g. Film(1) and Actor(1)) order deterministically
+        // and the cursor "after sort=3" resolves consistently across pages. Without it, ties
+        // resolve undefined-order on the database side, and pagination at a tie boundary can
+        // double-count or skip rows depending on the planner.
+        var fieldOfString = ParameterizedTypeName.get(FIELD, ClassName.get(String.class));
+        builder.addStatement("$T tieField = $T.field($T.name($S), String.class)",
+            fieldOfString, DSL, DSL, TYPENAME_COLUMN);
+        builder.addStatement("$T orderBy = $T.of(sortField.asc(), tieField.asc())", listOfSortField, LIST);
+        builder.addStatement("$T extraFields = new $T<>($T.<$T>of(sortField, tieField))",
+            listOfFieldWildcard, ARRAY_LIST, LIST, fieldWildcard);
+
+        builder.addStatement("$T first = env.getArgument($S)", ClassName.get(Integer.class), "first");
+        builder.addStatement("$T last = env.getArgument($S)", ClassName.get(Integer.class), "last");
+        builder.addStatement("String after = env.getArgument($S)", "after");
+        builder.addStatement("String before = env.getArgument($S)", "before");
+
+        builder.addStatement("$T page = $T.pageRequest(first, last, after, before, $L,\n"
+            + "        orderBy, extraFields, $T.of())",
+            pageRequestClass, connectionHelperClass, defaultPageSize, LIST);
+
+        // Stage 1: UNION ALL of branches as derived table; outer SELECT applies .orderBy/.seek/.limit.
+        builder.addCode(buildStage1ConnectionBlock(participants, jooqPackage, pkColumnClass));
+
+        // Stage 1.5: group stage-1 rows by __typename into (idx, pks) bindings.
+        // For B4a single-PK participants, the binding tuple has a single PK slot.
+        builder.addStatement("Object[] result = new Object[stage1.size()]");
+        var listOfObjArray = ParameterizedTypeName.get(LIST, ArrayTypeName.of(ClassName.get(Object.class)));
+        var byTypeMap = ParameterizedTypeName.get(MAP, ClassName.get(String.class), listOfObjArray);
+        builder.addStatement("$T byType = new $T<>()", byTypeMap, LINKED_HASH_MAP);
+        builder.beginControlFlow("for (int i = 0; i < stage1.size(); i++)");
+        builder.addStatement("$T r = stage1.get(i)", RECORD);
+        builder.addStatement("String tn = r.get($S, String.class)", TYPENAME_COLUMN);
+        builder.addStatement("Object[] pks = new Object[]{r.get($S)}", PK_COLUMN_PREFIX + 0 + PK_COLUMN_SUFFIX);
+        builder.addStatement("byType.computeIfAbsent(tn, k -> new $T<>()).add(new Object[]{i, pks})", ARRAY_LIST);
+        builder.endControlFlow();
+
+        // Stage 2: per-typename dispatch.
+        for (var participant : participants) {
+            String typeName = participant.typeName();
+            builder.beginControlFlow("if (byType.containsKey($S))", typeName);
+            builder.addStatement("$L(byType.get($S), env, dsl, result)",
+                perTypenameMethodName(fieldName, typeName), typeName);
+            builder.endControlFlow();
+        }
+
+        // Merge: walk result[] in stage-1 order; each non-null entry is a typed Record carrying
+        // __typename and __sort__. ConnectionResult.trimmedResult() trims to pageSize.
+        var listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
+        builder.addStatement("$T payload = new $T<>(stage1.size())", listOfRecord, ARRAY_LIST);
+        builder.beginControlFlow("for (Object o : result)");
+        builder.addStatement("if (o instanceof $T r) payload.add(r)", RECORD);
+        builder.endControlFlow();
+
+        builder.addStatement("$T cr = new $T(payload, page, null, null)",
+            valueType, connectionResultClass);
+        builder.addCode(returnSyncSuccess(valueType, "cr"));
+        builder.nextControlFlow("catch ($T e)", Exception.class);
+        builder.addCode(redactCatchArm(outputPackage));
+        builder.endControlFlow();
+        return builder.build();
+    }
+
+    /**
+     * Connection-mode stage 1: emits the same per-branch UNION ALL of
+     * {@code (typename, pk0, sort)} projections as the list path, but wrapped as a derived table
+     * {@code pages} so the outer query can apply {@code .orderBy(page.effectiveOrderBy())},
+     * {@code .seek(page.seekFields())}, and {@code .limit(page.limit())} uniformly across all
+     * branches. The outer SELECT projects {@code __typename, __pk0__, __sort__} as plain
+     * {@code DSL.field(name, class)} references against the derived table.
+     */
+    private static CodeBlock buildStage1ConnectionBlock(
+            List<ParticipantRef.TableBound> participants, String jooqPackage, ClassName pkColumnClass) {
+        var b = CodeBlock.builder();
+        var tablesClass = ClassName.get(jooqPackage, "Tables");
+
+        for (var participant : participants) {
+            var jooqTableClass = ClassName.get(jooqPackage + ".tables", participant.table().javaClassName());
+            String alias = "stage1_" + participant.typeName();
+            b.addStatement("$T $L = $T.$L", jooqTableClass, alias, tablesClass, participant.table().javaFieldName());
+        }
+
+        var resultBound = ParameterizedTypeName.get(RESULT, WildcardTypeName.subtypeOf(RECORD));
+        b.add("$T stage1 = dsl.select(\n", resultBound);
+        b.add("        $T.field($T.name($S), $T.class),\n", DSL, DSL, TYPENAME_COLUMN, ClassName.get(String.class));
+        b.add("        $T.field($T.name($S), $T.class),\n", DSL, DSL, PK_COLUMN_PREFIX + 0 + PK_COLUMN_SUFFIX, pkColumnClass);
+        b.add("        sortField)\n");
+        b.add("    .from(\n");
+        for (int p = 0; p < participants.size(); p++) {
+            var participant = participants.get(p);
+            String alias = "stage1_" + participant.typeName();
+            if (p == 0) {
+                b.add("        dsl.select($L)\n", branchProjection(participant, alias));
+                b.add("            .from($L)\n", alias);
+            } else {
+                b.add("        .unionAll(dsl.select($L)\n", branchProjection(participant, alias));
+                b.add("            .from($L))\n", alias);
+            }
+        }
+        b.add("        .asTable($S))\n", CONNECTION_PAGES_ALIAS);
+        b.add("    .orderBy(page.effectiveOrderBy())\n");
+        b.add("    .seek(page.seekFields())\n");
+        b.add("    .limit(page.limit())\n");
+        b.add("    .fetch();\n");
+        return b.build();
     }
 
     /**
@@ -339,6 +554,7 @@ public final class MultiTablePolymorphicEmitter {
      */
     private static MethodSpec buildPerTypenameSelect(
             String fieldName, ParticipantRef.TableBound participant,
+            boolean includeSortKey,
             String outputPackage, String jooqPackage) {
         var jooqTableClass = ClassName.get(jooqPackage + ".tables", participant.table().javaClassName());
         var typeClass = ClassName.get(outputPackage + ".types", participant.typeName());
@@ -377,6 +593,16 @@ public final class MultiTablePolymorphicEmitter {
         b.addStatement("$T fields = new $T($T.$$fields(env.getSelectionSet(), $L, env))",
             arrayListOfField, arrayListOfField, typeClass, tableLocal);
         b.addStatement("fields.add($T.inline($S).as($S))", DSL, participant.typeName(), TYPENAME_COLUMN);
+
+        // Connection mode (R36 Track B4a): project the participant's PK column under the
+        // synthetic {@code __sort__} alias on each typed stage-2 Record so
+        // {@code ConnectionHelper.encodeCursor(record, [DSL.field("__sort__")])} can read it
+        // back when emitting per-edge cursors and pageInfo.start/endCursor. Single-PK only;
+        // composite-PK rejection lives in the validator.
+        if (includeSortKey) {
+            ColumnRef pkCol = participant.table().primaryKeyColumns().get(0);
+            b.addStatement("fields.add($L.$L.as($S))", tableLocal, pkCol.javaName(), SORT_COLUMN);
+        }
 
         // idx column from the input derived table — needed both for the projection and the
         // ORDER BY, so materialise once.

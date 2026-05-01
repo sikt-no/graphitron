@@ -1483,6 +1483,146 @@ class TypeFetcherGeneratorTest {
             .doesNotContainKeys(QueryField.QueryInterfaceField.class, QueryField.QueryUnionField.class);
     }
 
+    // ===== R36 Track B4a: connection pagination on QueryInterfaceField / QueryUnionField =====
+    //
+    // The connection emit path mirrors the list path but: (a) returns
+    // DataFetcherResult<ConnectionResult>, (b) wraps stage 1's UNION ALL in a derived table
+    // 'pages' so .orderBy/.seek/.limit apply uniformly across the union, (c) calls
+    // ConnectionHelper.pageRequest to derive PageRequest, (d) appends __typename ASC as a
+    // secondary sort + cursor tiebreaker so rows with tied sort keys order deterministically,
+    // and (e) per-typename stage 2 helpers project the participant PK aliased as __sort__
+    // so ConnectionHelper.encodeCursor can read the sort key off each typed Record.
+
+    private static QueryField.QueryInterfaceField queryInterfaceConnectionField(String name,
+                                                                                 List<ParticipantRef> participants,
+                                                                                 int defaultPageSize) {
+        var wrapper = new FieldWrapper.Connection(false, defaultPageSize);
+        var returnType = new ReturnTypeRef.PolymorphicReturnType("Searchable", wrapper);
+        return new QueryField.QueryInterfaceField("Query", name, null, returnType, participants);
+    }
+
+    private static QueryField.QueryUnionField queryUnionConnectionField(String name,
+                                                                        List<ParticipantRef> participants,
+                                                                        int defaultPageSize) {
+        var wrapper = new FieldWrapper.Connection(false, defaultPageSize);
+        var returnType = new ReturnTypeRef.PolymorphicReturnType("Document", wrapper);
+        return new QueryField.QueryUnionField("Query", name, null, returnType, participants);
+    }
+
+    @Test
+    void queryInterfaceField_connection_returnsDataFetcherResultOfConnectionResult() {
+        var field = queryInterfaceConnectionField("searchConnection", filmAndActorParticipants(), 5);
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
+            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+        assertThat(method(spec, "searchConnection").returnType().toString())
+            .isEqualTo("graphql.execution.DataFetcherResult<" + DEFAULT_OUTPUT_PACKAGE
+                + ".util.ConnectionResult>");
+    }
+
+    @Test
+    void queryInterfaceField_connection_callsConnectionHelperPageRequest() {
+        // ConnectionHelper.pageRequest derives PageRequest (limit, effectiveOrderBy, seekFields,
+        // selectFields) from (first, last, after, before, defaultPageSize, orderBy, extraFields,
+        // selection). The default page size threads from FieldWrapper.Connection.defaultPageSize().
+        var field = queryInterfaceConnectionField("searchConnection", filmAndActorParticipants(), 5);
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
+            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+        var body = method(spec, "searchConnection").code().toString();
+        assertThat(body).contains("ConnectionHelper.pageRequest(first, last, after, before, 5,");
+    }
+
+    @Test
+    void queryInterfaceField_connection_stage1WrapsUnionAllAsDerivedTable() {
+        // Stage 1 in connection mode wraps the per-branch UNION ALL in .asTable("pages") so the
+        // outer query can apply seek/limit uniformly. The list path emits a flat
+        // dsl.select(...).from(...).unionAll(...).orderBy(...).fetch() chain instead; this test
+        // pins the divergence.
+        var field = queryInterfaceConnectionField("searchConnection", filmAndActorParticipants(), 5);
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
+            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+        var body = method(spec, "searchConnection").code().toString();
+        assertThat(body).contains(".asTable(\"pages\")");
+        assertThat(body).contains(".unionAll(");
+    }
+
+    @Test
+    void queryInterfaceField_connection_appliesSeekAndLimit() {
+        var field = queryInterfaceConnectionField("searchConnection", filmAndActorParticipants(), 5);
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
+            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+        var body = method(spec, "searchConnection").code().toString();
+        assertThat(body)
+            .contains(".orderBy(page.effectiveOrderBy())")
+            .contains(".seek(page.seekFields())")
+            .contains(".limit(page.limit())");
+    }
+
+    @Test
+    void queryInterfaceField_connection_perTypenameHelperProjectsSortKey() {
+        // Each typed stage-2 Record carries the participant PK aliased as __sort__ so
+        // ConnectionHelper.encodeCursor (which reads the orderByColumns by Field<?> identity)
+        // finds the sort key on each row when emitting per-edge cursors and pageInfo
+        // start/endCursor.
+        var field = queryInterfaceConnectionField("searchConnection", filmAndActorParticipants(), 5);
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
+            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+        var film = method(spec, "selectFilmForSearchConnection").code().toString();
+        assertThat(film)
+            .as("Film stage-2 helper aliases its PK as __sort__")
+            .contains("FILM_ID.as(\"__sort__\")");
+        var actor = method(spec, "selectActorForSearchConnection").code().toString();
+        assertThat(actor)
+            .as("Actor stage-2 helper aliases its PK as __sort__")
+            .contains("ACTOR_ID.as(\"__sort__\")");
+    }
+
+    @Test
+    void queryInterfaceField_connection_wrapsResultInConnectionResult() {
+        // ConnectionResult takes (List<Record>, PageRequest, Table<?>, Condition). B4a passes
+        // (payload, page, null, null) — totalCount short-circuits to null on null table+condition
+        // until B4c lands the polymorphic count query.
+        var field = queryInterfaceConnectionField("searchConnection", filmAndActorParticipants(), 5);
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
+            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+        var body = method(spec, "searchConnection").code().toString();
+        assertThat(body).contains(".util.ConnectionResult(payload, page, null, null)");
+    }
+
+    @Test
+    void queryInterfaceField_connection_addsTypenameTiebreakerToOrderBy() {
+        // Without a tiebreaker, two rows with the same __sort__ value (e.g. Film(1) and Actor(1))
+        // resolve in undefined order and pagination at a tie boundary can double-count or skip.
+        // The emitter appends __typename ASC as a secondary ordering and cursor seek field.
+        var field = queryInterfaceConnectionField("searchConnection", filmAndActorParticipants(), 5);
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
+            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+        var body = method(spec, "searchConnection").code().toString();
+        assertThat(body)
+            .as("orderBy combines sort key + typename tiebreaker")
+            .contains("List.of(sortField.asc(), tieField.asc())");
+        assertThat(body)
+            .as("extraFields drives both cursor encoding and seek; both columns appear")
+            .contains("of(sortField, tieField)");
+    }
+
+    @Test
+    void queryUnionField_connection_emitsSameShapeAsInterfaceField() {
+        // Union variant parity: same emitter, same body shape. Ratchet against drift between
+        // QueryInterfaceField and QueryUnionField on the connection path the same way the
+        // list path does in queryUnionField_emitsTwoStageStructure_likeInterfaceField.
+        var field = queryUnionConnectionField("documentsConnection", filmAndActorParticipants(), 5);
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
+            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+        var body = method(spec, "documentsConnection").code().toString();
+        assertThat(body)
+            .contains(".asTable(\"pages\")")
+            .contains("ConnectionHelper.pageRequest(")
+            .contains(".seek(page.seekFields())")
+            .contains(".util.ConnectionResult(payload, page, null, null)");
+        assertThat(method(spec, "selectFilmForDocumentsConnection").code().toString())
+            .contains("FILM_ID.as(\"__sort__\")");
+    }
+
     // ===== R36 Track B3: ChildField.InterfaceField / ChildField.UnionField (multi-table polymorphic child) =====
     //
     // Same two-stage emission as B2's root case; differs by an additional per-branch

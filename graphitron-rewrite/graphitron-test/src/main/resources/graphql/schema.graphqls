@@ -153,6 +153,18 @@ type Query {
     # B2 union-variant fixture: same two-stage emission as Searchable, member-types form.
     # Document = Film | Actor exercises QueryUnionField on the same fetcher path.
     documents: [Document!]!
+
+    # stub-interface-union-fetchers.md Track B (B4a): polymorphic connection. Same Searchable
+    # interface as Query.search, but wrapped in @asConnection so the schema-transform exposes
+    # SearchableConnection / SearchableEdge / pageInfo / totalCount. The polymorphic emitter
+    # wraps the per-branch UNION ALL in a derived table 'pages' so cursor decode + .seek + LIMIT
+    # N+1 apply uniformly across the union; per-typename stage 2 additionally projects __sort__
+    # so ConnectionHelper.encodeCursor can read it back per edge. totalCount is null on this
+    # path until B4c lands the polymorphic count query.
+    searchConnection: [Searchable!]! @asConnection(defaultFirstValue: 5)
+
+    # B4a union-variant fixture, mirrors searchConnection.
+    documentsConnection: [Document!]! @asConnection(defaultFirstValue: 5)
 }
 
 type Customer implements Node @table(name: "customer") @node {
