@@ -4458,6 +4458,95 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var f = (UnclassifiedField) schema.field("Mutation", "updateFilm");
                 assertThat(f.reason()).contains("@lookupKey on a list-typed input field is not supported");
+            }),
+
+        DML_RECORD_PAYLOAD_RETURN_HAPPY(
+            "DML returning a @record payload with row+errors slots → MutationDeleteTableField with PayloadAssembly + ErrorChannel populated",
+            """
+            type ValidationErr @error(handlers: [{handler: VALIDATION}]) {
+                path: [String!]!
+                message: String!
+            }
+            type DbErr @error(handlers: [{handler: DATABASE, sqlState: "23503"}]) {
+                path: [String!]!
+                message: String!
+            }
+            union DeleteFilmError = ValidationErr | DbErr
+            type Film @table(name: "film") { title: String }
+            type DeleteFilmPayload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DeleteFilmPayload"}) {
+                film: Film
+                errors: [DeleteFilmError]
+            }
+            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") @lookupKey }
+            type Query { x: String }
+            type Mutation { deleteFilm(in: FilmInput!): DeleteFilmPayload @mutation(typeName: DELETE) }
+            """,
+            schema -> {
+                var f = (MutationField.MutationDeleteTableField) schema.field("Mutation", "deleteFilm");
+                assertThat(f.payloadAssembly()).isPresent();
+                assertThat(f.payloadAssembly().get().payloadClass().reflectionName())
+                    .isEqualTo("no.sikt.graphitron.codereferences.dummyreferences.DeleteFilmPayload");
+                assertThat(f.payloadAssembly().get().rowSlotIndex()).isEqualTo(0);
+                assertThat(f.errorChannel()).isPresent();
+            }),
+
+        DML_RECORD_PAYLOAD_ROW_ONLY_HAPPY(
+            "DML returning a @record payload with row slot but no errors slot → PayloadAssembly populated, ErrorChannel empty",
+            """
+            type Film @table(name: "film") { title: String }
+            type DeleteFilmPayload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DeleteFilmRowOnlyPayload"}) {
+                film: Film
+            }
+            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") @lookupKey }
+            type Query { x: String }
+            type Mutation { deleteFilm(in: FilmInput!): DeleteFilmPayload @mutation(typeName: DELETE) }
+            """,
+            schema -> {
+                var f = (MutationField.MutationDeleteTableField) schema.field("Mutation", "deleteFilm");
+                assertThat(f.payloadAssembly()).isPresent();
+                assertThat(f.payloadAssembly().get().rowSlotIndex()).isEqualTo(0);
+                assertThat(f.errorChannel()).isEmpty();
+            }),
+
+        DML_RECORD_PAYLOAD_LIST_REJECTED(
+            "DML returning a list of @record payloads → UnclassifiedField (Invariant #14, list-payload not yet supported)",
+            """
+            type Film @table(name: "film") { title: String }
+            type DeleteFilmPayload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DeleteFilmRowOnlyPayload"}) {
+                film: Film
+            }
+            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") @lookupKey }
+            type Query { x: String }
+            type Mutation { deleteFilms(in: FilmInput!): [DeleteFilmPayload] @mutation(typeName: DELETE) }
+            """,
+            schema -> {
+                var f = (UnclassifiedField) schema.field("Mutation", "deleteFilms");
+                assertThat(f.reason())
+                    .contains("(list of @record) is not yet supported");
+            }),
+
+        DML_RECORD_PAYLOAD_NO_ROW_SLOT_REJECTED(
+            "DML returning a @record payload whose constructor has no FilmRecord parameter → UnclassifiedField",
+            """
+            type Film @table(name: "film") { title: String }
+            type SakPayload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.SakPayload"}) {
+                data: String
+                errors: [ValidationErr]
+            }
+            type ValidationErr @error(handlers: [{handler: VALIDATION}]) {
+                path: [String!]!
+                message: String!
+            }
+            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") @lookupKey }
+            type Query { x: String }
+            type Mutation { deleteFilm(in: FilmInput!): SakPayload @mutation(typeName: DELETE) }
+            """,
+            schema -> {
+                var f = (UnclassifiedField) schema.field("Mutation", "deleteFilm");
+                assertThat(f.reason())
+                    .contains("no parameter typed as")
+                    .contains("FilmRecord")
+                    .contains("requires exactly one row-slot parameter");
             });
 
         final String description;

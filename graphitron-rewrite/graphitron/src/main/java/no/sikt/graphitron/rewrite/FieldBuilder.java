@@ -39,6 +39,7 @@ import no.sikt.graphitron.rewrite.model.ChildField.UnionField;
 import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.ErrorChannel;
+import no.sikt.graphitron.rewrite.model.PayloadAssembly;
 import no.sikt.graphitron.rewrite.model.InputColumnBinding;
 import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
@@ -1355,6 +1356,122 @@ class FieldBuilder {
             mappedErrorTypes, payloadClassName, paramShapes, mappingsConstantName));
     }
 
+    // ===== Carrier classifier: DML PayloadAssembly resolution (R12 DML chunk) =====
+
+    /**
+     * Outcome of the carrier-side {@code PayloadAssembly} resolution. Three terminal states,
+     * symmetric with {@link ErrorChannelResult}:
+     *
+     * <ul>
+     *   <li>{@link NoAssembly} — the return type isn't a {@code @record} payload; the DML
+     *       fetcher takes the raw-row emission path (existing behaviour for {@code @table}
+     *       and {@code ID} returns).</li>
+     *   <li>{@link Assembly} — the payload class's canonical constructor exposes one
+     *       parameter typed as the DML's table record; the emitter constructs the payload by
+     *       binding that slot to the SQL row record.</li>
+     *   <li>{@link Reject} — the payload is a {@code @record} type but the constructor doesn't
+     *       expose a single matching row slot; the field surfaces as {@code UnclassifiedField}
+     *       on the carrier with the carried reason.</li>
+     * </ul>
+     */
+    private sealed interface DmlPayloadAssemblyResult {
+        record NoAssembly() implements DmlPayloadAssemblyResult {}
+        record Assembly(PayloadAssembly assembly) implements DmlPayloadAssemblyResult {}
+        record Reject(String reason) implements DmlPayloadAssemblyResult {}
+    }
+
+    private static final DmlPayloadAssemblyResult NO_ASSEMBLY = new DmlPayloadAssemblyResult.NoAssembly();
+
+    /**
+     * Resolves a DML mutation field's success-arm payload-construction recipe per R12. The
+     * caller passes the field's return type and the SQL name of the table its single
+     * {@code @table} input argument drives ({@code tia.inputTable().tableName()}); the resolver
+     * looks up the table's record class on the jOOQ catalog, then walks the developer-supplied
+     * payload class's canonical constructor to find the unique parameter typed as that record
+     * class. That parameter is the row slot; the emitter binds the SQL row record there at the
+     * success arm.
+     *
+     * <p>Symmetric with {@link #resolveErrorChannel}: the two reflect on the same payload class
+     * for the same kind of return type, but resolve different concerns. Both run from
+     * {@link #buildDmlField} so a misconfigured payload surfaces on its own terms regardless of
+     * which side caught it first. The duplication of the per-parameter shape walk between the
+     * two methods is intentional; the two share the same {@link ErrorChannel.PayloadConstructorParam}
+     * type but each owns its copy of the list.
+     */
+    private DmlPayloadAssemblyResult resolveDmlPayloadAssembly(ReturnTypeRef returnType, String dmlTableSqlName) {
+        if (!(returnType instanceof ReturnTypeRef.ResultReturnType result)) {
+            return NO_ASSEMBLY;
+        }
+        if (result.fqClassName() == null) {
+            return NO_ASSEMBLY;
+        }
+
+        Class<?> tableRecordClass = ctx.catalog.findRecordClass(dmlTableSqlName).orElse(null);
+        if (tableRecordClass == null) {
+            return new DmlPayloadAssemblyResult.Reject(
+                "DML target table '" + dmlTableSqlName + "' is not in the jOOQ catalog; "
+                    + "cannot resolve a row-slot type for payload class '" + result.fqClassName() + "'");
+        }
+
+        Class<?> payloadCls;
+        try {
+            payloadCls = Class.forName(result.fqClassName());
+        } catch (ClassNotFoundException e) {
+            return new DmlPayloadAssemblyResult.Reject(
+                "payload class '" + result.fqClassName() + "' could not be loaded");
+        }
+
+        var ctors = payloadCls.getDeclaredConstructors();
+        if (ctors.length == 0) {
+            return new DmlPayloadAssemblyResult.Reject(
+                "payload class '" + result.fqClassName() + "' has no declared constructors");
+        }
+        if (ctors.length > 1) {
+            return new DmlPayloadAssemblyResult.Reject(
+                "payload class '" + result.fqClassName() + "' has " + ctors.length
+                    + " declared constructors; the carrier requires a single canonical "
+                    + "(all-fields) constructor");
+        }
+        var ctor = ctors[0];
+        var parameters = ctor.getParameters();
+        var genericParameterTypes = ctor.getGenericParameterTypes();
+
+        var paramShapes = new java.util.ArrayList<ErrorChannel.PayloadConstructorParam>(parameters.length);
+        int rowSlotIndex = -1;
+        for (int i = 0; i < parameters.length; i++) {
+            var p = parameters[i];
+            boolean isErrorsSlot = isGraphitronErrorListSlot(p.getType(), genericParameterTypes[i]);
+            boolean isRowSlot = !isErrorsSlot && p.getType().equals(tableRecordClass);
+            if (isRowSlot) {
+                if (rowSlotIndex >= 0) {
+                    return new DmlPayloadAssemblyResult.Reject(
+                        "payload class '" + result.fqClassName()
+                            + "' has multiple parameters typed as " + tableRecordClass.getName()
+                            + " on its constructor; the DML's table '" + dmlTableSqlName
+                            + "' requires exactly one row-slot parameter");
+                }
+                rowSlotIndex = i;
+            }
+            String paramName = p.isNamePresent() ? p.getName() : ("arg" + i);
+            no.sikt.graphitron.javapoet.TypeName paramTypeName =
+                no.sikt.graphitron.javapoet.TypeName.get(genericParameterTypes[i]);
+            String defaultLiteral = isErrorsSlot ? null : defaultLiteralFor(p.getType());
+            paramShapes.add(new ErrorChannel.PayloadConstructorParam(
+                paramName, paramTypeName, isErrorsSlot, defaultLiteral));
+        }
+        if (rowSlotIndex < 0) {
+            return new DmlPayloadAssemblyResult.Reject(
+                "payload class '" + result.fqClassName()
+                    + "' has no parameter typed as " + tableRecordClass.getName()
+                    + " on its constructor; the DML's table '" + dmlTableSqlName
+                    + "' requires exactly one row-slot parameter assignable from this record class");
+        }
+
+        var payloadClassName = ClassName.bestGuess(result.fqClassName());
+        return new DmlPayloadAssemblyResult.Assembly(new PayloadAssembly(
+            payloadClassName, paramShapes, rowSlotIndex));
+    }
+
     /**
      * Lightweight predicate for "this GraphQL field is an {@code errors}-shaped field" used by
      * the carrier classifier to walk a payload's fields without materialising a full
@@ -1638,6 +1755,44 @@ class FieldBuilder {
         };
     }
 
+    /**
+     * Variant of {@link #buildWithChannel} used by {@code DmlTableField} construction sites:
+     * resolves the {@link PayloadAssembly} (DML success-arm payload-construction recipe) and
+     * the {@link ErrorChannel} (catch-arm dispatch recipe) and forwards both to {@code builder}.
+     * A rejection on either side surfaces as {@code UnclassifiedField}; a {@code NoAssembly}
+     * (the return type isn't a {@code @record} payload) or {@code NoChannel} (the payload has
+     * no errors-shaped field) yields {@link Optional#empty()} on the corresponding slot.
+     *
+     * <p>The two resolutions are independent: a DML field can carry an assembly without a
+     * channel (payload constructs on success, {@code redact} on catch) or a channel without an
+     * assembly (impossible today since channel resolution requires {@code ResultReturnType}
+     * and so does assembly resolution, but kept symmetric for the model's clarity).
+     */
+    private GraphitronField buildDmlField(
+            ReturnTypeRef returnType, String parentTypeName, String fieldName,
+            SourceLocation location, GraphQLFieldDefinition fieldDef, String dmlTableSqlName,
+            java.util.function.BiFunction<Optional<PayloadAssembly>, Optional<ErrorChannel>, GraphitronField> builder) {
+        Optional<PayloadAssembly> assembly;
+        switch (resolveDmlPayloadAssembly(returnType, dmlTableSqlName)) {
+            case DmlPayloadAssemblyResult.NoAssembly ignored -> assembly = Optional.empty();
+            case DmlPayloadAssemblyResult.Assembly a -> assembly = Optional.of(a.assembly());
+            case DmlPayloadAssemblyResult.Reject r -> {
+                return new UnclassifiedField(parentTypeName, fieldName, location, fieldDef,
+                    RejectionKind.AUTHOR_ERROR, r.reason());
+            }
+        }
+        Optional<ErrorChannel> channel;
+        switch (resolveErrorChannel(returnType)) {
+            case ErrorChannelResult.NoChannel ignored -> channel = Optional.empty();
+            case ErrorChannelResult.Channel c -> channel = Optional.of(c.channel());
+            case ErrorChannelResult.Reject r -> {
+                return new UnclassifiedField(parentTypeName, fieldName, location, fieldDef,
+                    RejectionKind.AUTHOR_ERROR, r.reason());
+            }
+        }
+        return builder.apply(assembly, channel);
+    }
+
     // ===== Root field classification (P5) =====
 
     private GraphitronField classifyRootField(GraphQLFieldDefinition fieldDef, String parentTypeName) {
@@ -1826,15 +1981,16 @@ class FieldBuilder {
                 }
 
                 Optional<HelperRef.Encode> enc = encodeReturn;
+                String dmlTableSqlName = tia.inputTable().tableName();
                 return switch (typeName) {
-                    case "INSERT" -> buildWithChannel(returnType, parentTypeName, name, location, fieldDef, ch ->
-                        new MutationField.MutationInsertTableField(parentTypeName, name, location, returnType, tia, enc, ch));
-                    case "UPDATE" -> buildWithChannel(returnType, parentTypeName, name, location, fieldDef, ch ->
-                        new MutationField.MutationUpdateTableField(parentTypeName, name, location, returnType, tia, enc, ch));
-                    case "DELETE" -> buildWithChannel(returnType, parentTypeName, name, location, fieldDef, ch ->
-                        new MutationField.MutationDeleteTableField(parentTypeName, name, location, returnType, tia, enc, ch));
-                    case "UPSERT" -> buildWithChannel(returnType, parentTypeName, name, location, fieldDef, ch ->
-                        new MutationField.MutationUpsertTableField(parentTypeName, name, location, returnType, tia, enc, ch));
+                    case "INSERT" -> buildDmlField(returnType, parentTypeName, name, location, fieldDef, dmlTableSqlName,
+                        (pa, ch) -> new MutationField.MutationInsertTableField(parentTypeName, name, location, returnType, tia, enc, pa, ch));
+                    case "UPDATE" -> buildDmlField(returnType, parentTypeName, name, location, fieldDef, dmlTableSqlName,
+                        (pa, ch) -> new MutationField.MutationUpdateTableField(parentTypeName, name, location, returnType, tia, enc, pa, ch));
+                    case "DELETE" -> buildDmlField(returnType, parentTypeName, name, location, fieldDef, dmlTableSqlName,
+                        (pa, ch) -> new MutationField.MutationDeleteTableField(parentTypeName, name, location, returnType, tia, enc, pa, ch));
+                    case "UPSERT" -> buildDmlField(returnType, parentTypeName, name, location, fieldDef, dmlTableSqlName,
+                        (pa, ch) -> new MutationField.MutationUpsertTableField(parentTypeName, name, location, returnType, tia, enc, pa, ch));
                     default       -> throw new IllegalStateException("unreachable: typeName=" + typeName);
                 };
             }

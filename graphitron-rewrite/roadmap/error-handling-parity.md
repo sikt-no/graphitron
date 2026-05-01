@@ -280,15 +280,31 @@ dispatch arm lands.
   same fork on the `.exceptionally(...)` arm; today's async call sites are all
   DataLoader-backed child fields with no `WithErrorChannel`, so they pass
   `Optional.empty()`.
+- DML payload assembly + dispatch (the DML-specific extension of the per-fetcher
+  wrapper). Invariant #14 (DML rejects `ResultReturnType`) is lifted in
+  `FieldBuilder.validateMutationReturnType`: a `@record`-typed payload return is
+  accepted as long as its wrapper is single (list-of-payload remains rejected with
+  a follow-up message). A new sibling resolver `resolveDmlPayloadAssembly` reflects
+  the developer-supplied payload class's canonical constructor and looks for the
+  unique parameter typed as the DML's table record (resolved through
+  `JooqCatalog.findRecordClass(tableSqlName)`); that parameter is the row slot. A
+  missing or duplicate row slot rejects the carrier with a descriptive reason.
+  The new `PayloadAssembly` record (`payloadClass: ClassName`, `params: List<PayloadConstructorParam>`,
+  `rowSlotIndex: int`) is held in a new `Optional<PayloadAssembly> payloadAssembly()`
+  slot on every `DmlTableField` permit; channel resolution is symmetric and
+  independent (a payload with a row slot but no errors-shaped GraphQL field carries
+  an assembly without a channel and falls back to `redact`). The delete emitter
+  (`buildMutationDeleteFetcher`) gains a third branch: when `payloadAssembly` is
+  present, capture the row record from `dsl.deleteFrom(...).where(...).returning().fetchOne()`
+  in a typed local, then construct `new PayloadClass(...)` walking
+  `payloadAssembly.params()` (row local at `rowSlotIndex`, `null` at the errors
+  slot, `defaultLiteral` elsewhere); wrap in `DataFetcherResult<PayloadClass>` and
+  route the catch arm through `catchArm(outputPackage, errorChannel)` so dispatch
+  fires when the channel is populated. Insert/update/upsert remain stubs; they
+  inherit the slot and the emit machinery once they un-stub.
 
 **Remaining work:**
 
-- DML mutation fetchers (`MutationDeleteTableField` and the still-stubbed
-  insert/update/upsert variants) extended to construct the typed payload class on
-  the success arm and route through `ErrorRouter.dispatch` on the catch arm. Today
-  they keep `redact` because the success path returns a raw row, not a payload, and
-  the schema-mapped payload-assembly work is a separate emitter concern. Live
-  fixtures for DML + `ErrorChannel` follow once that lands.
 - `@service` / `@tableMethod` declared checked exceptions checked against the field's
   `ErrorChannel` and routed through the same `ErrorRouter.dispatch` (§4).
 - Marker-interface enforcement: every `@error` class implements `GraphitronError`.

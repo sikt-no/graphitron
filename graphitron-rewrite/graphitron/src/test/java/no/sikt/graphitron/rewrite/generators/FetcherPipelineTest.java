@@ -296,6 +296,91 @@ class FetcherPipelineTest {
         assertThat(body).doesNotContain("ErrorRouter.dispatch");
     }
 
+    // ===== R12 DML payload assembly + dispatch (lifted Invariant #14) =====
+
+    private static final String DML_DELETE_PAYLOAD_DISPATCH_SDL = """
+            type ValidationErr @error(handlers: [{handler: VALIDATION}]) {
+                path: [String!]!
+                message: String!
+            }
+            type DbErr @error(handlers: [{handler: DATABASE, sqlState: "23503"}]) {
+                path: [String!]!
+                message: String!
+            }
+            union DeleteFilmError = ValidationErr | DbErr
+            type Film @table(name: "film") { title: String }
+            type DeleteFilmPayload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DeleteFilmPayload"}) {
+                film: Film
+                errors: [DeleteFilmError]
+            }
+            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") @lookupKey }
+            type Query { dummy: String }
+            type Mutation { deleteFilm(in: FilmInput!): DeleteFilmPayload @mutation(typeName: DELETE) }
+            """;
+
+    @Test
+    void dmlDeleteField_recordPayloadReturn_successArmConstructsPayloadAndCatchArmDispatches() {
+        // The carrier classifier resolves both PayloadAssembly (row slot for film) and
+        // ErrorChannel (errors slot for the union). The emitter captures the row record from
+        // .returning().fetchOne(), constructs the developer's payload class, and wraps the
+        // catch arm through ErrorRouter.dispatch with the channel's mapping-table constant.
+        var deleteFilm = method(findSpec("MutationFetchers", DML_DELETE_PAYLOAD_DISPATCH_SDL), "deleteFilm");
+        var body = deleteFilm.code().toString();
+        assertThat(body)
+            .contains("FilmRecord row = dsl")
+            .contains(".deleteFrom")
+            .contains(".returning()")
+            .contains(".fetchOne()")
+            .contains("DeleteFilmPayload payload = new")
+            .contains("ErrorRouter.dispatch")
+            .contains("ErrorMappings.DELETE_FILM_PAYLOAD")
+            .doesNotContain("ErrorRouter.redact");
+        assertThat(deleteFilm.returnType().toString())
+            .contains("DataFetcherResult<no.sikt.graphitron.codereferences.dummyreferences.DeleteFilmPayload>");
+    }
+
+    @Test
+    void dmlDeleteField_recordPayloadReturnNoErrorsField_successArmConstructsPayloadCatchArmRedacts() {
+        // Counterpart: a payload with the row slot but no errors slot. The emitter still
+        // constructs the payload on the success arm; catch falls back to ErrorRouter.redact
+        // because no channel was resolved.
+        var sdl = """
+            type Film @table(name: "film") { title: String }
+            type DeleteFilmPayload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DeleteFilmRowOnlyPayload"}) {
+                film: Film
+            }
+            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") @lookupKey }
+            type Query { dummy: String }
+            type Mutation { deleteFilm(in: FilmInput!): DeleteFilmPayload @mutation(typeName: DELETE) }
+            """;
+        var deleteFilm = method(findSpec("MutationFetchers", sdl), "deleteFilm");
+        var body = deleteFilm.code().toString();
+        assertThat(body)
+            .contains("FilmRecord row = dsl")
+            .contains("DeleteFilmRowOnlyPayload payload = new")
+            .contains("ErrorRouter.redact(e, env)")
+            .doesNotContain("ErrorRouter.dispatch");
+    }
+
+    @Test
+    void dmlDeleteField_tableReturn_keepsExistingRawRowEmissionAndRedacts() {
+        // Regression check for the existing @table-return path: payloadAssembly empty, raw row
+        // returned, catch arm uses redact (today's behaviour, untouched by the lift).
+        var sdl = """
+            type Film @table(name: "film") { title: String }
+            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") @lookupKey }
+            type Query { dummy: String }
+            type Mutation { deleteFilm(in: FilmInput!): Film @mutation(typeName: DELETE) }
+            """;
+        var deleteFilm = method(findSpec("MutationFetchers", sdl), "deleteFilm");
+        var body = deleteFilm.code().toString();
+        assertThat(body)
+            .contains("Object payload = dsl")
+            .contains(".returningResult(")
+            .contains("ErrorRouter.redact(e, env)")
+            .doesNotContain("ErrorRouter.dispatch");
+    }
+
     // ===== Column fields → wired via ColumnFetcher =====
 
     @Test

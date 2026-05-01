@@ -22,7 +22,7 @@ class MutationUpsertTableFieldValidationTest {
     enum Case implements ValidatorCase {
 
         STUBBED("upsert mutation field — not yet implemented, produces stubbed-variant error",
-            new MutationUpsertTableField("Mutation", "upsertFilm", null, new ReturnTypeRef.ScalarReturnType("Film", new FieldWrapper.Single(true)), null, Optional.empty(), Optional.empty()),
+            new MutationUpsertTableField("Mutation", "upsertFilm", null, new ReturnTypeRef.ScalarReturnType("Film", new FieldWrapper.Single(true)), null, Optional.empty(), Optional.empty(), Optional.empty()),
             List.of(stubbedError("Mutation.upsertFilm", MutationUpsertTableField.class)));
 
         private final String description;
