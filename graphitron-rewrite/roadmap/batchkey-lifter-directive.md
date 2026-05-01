@@ -548,11 +548,14 @@ which JOIN flavour to emit.
 **Single-hop guarantee, type-system-enforced.** Because `LifterRowKeyed`
 holds a single `LiftedHop` (not a `List<LiftedHop>`), the single-hop
 invariant is a type fact rather than a classifier convention: there is
-nowhere for a second hop to live on the lifter path. The rows-method prelude
-relies on this to skip the multi-hop FK-chain bridging logic; the consumer
-side wears `@DependsOnClassifierCheck(key = "lifter-path-is-single-hop")`
-(§2d) for find-usages navigation, but the underlying guarantee is enforced
-by the model shape itself, not by an out-of-band annotation.
+nowhere for a second hop to live on the lifter path. The rows-method
+prelude relies on this to skip the multi-hop FK-chain bridging logic, but
+no `@DependsOnClassifierCheck` annotation pairs with the guarantee: there
+is no classifier check to depend on, only a model shape. The prelude
+documents the reliance with a plain javadoc note (§2d); plain find-usages
+on `LifterRowKeyed.hop` recovers the same navigation an annotation would,
+without bending the load-bearing audit's "every consumer key has a
+producer" rule.
 
 ---
 
@@ -773,18 +776,14 @@ private record BatchKeyLifterResult(
 }
 ```
 
-The single-hop guarantee is *not* re-stated as a producer-side load-bearing
-key — it is enforced by the model shape (`LifterRowKeyed` holds one
-`LiftedHop`, not a `List<LiftedHop>`). The §2d consumer that skips multi-hop
-bridging on the lifter path still tags itself with
-`@DependsOnClassifierCheck(key = "lifter-path-is-single-hop")` for
-find-usages navigation, but that key has no corresponding
-`@LoadBearingClassifierCheck` producer because the type system *is* the
-producer; the consumer-side key documents the reliance without duplicating
-the guarantee. The audit's "every consumer key has a producer" rule is
-relaxed for keys whose guarantee is structural — declared via a comment on
-the audit test rather than by a dummy `@LoadBearingClassifierCheck` (an
-audit-test update lands alongside this directive).
+The single-hop guarantee is *not* re-stated as a load-bearing key on either
+side: it is enforced by the model shape (`LifterRowKeyed` holds one
+`LiftedHop`, not a `List<LiftedHop>`), and a `@DependsOnClassifierCheck`
+without a paired producer would either bend the audit rule or require a
+dummy `@LoadBearingClassifierCheck` that documents nothing the type system
+doesn't already say. The §2d consumer that skips multi-hop bridging on the
+lifter path documents its reliance with a plain javadoc comment instead.
+`LoadBearingGuaranteeAuditTest` is unchanged; no allowlist is added.
 
 The class loader / method walker borrows the existing
 `ServiceCatalog.reflectServiceMethod` shape but is simpler: only one parameter
@@ -1009,14 +1008,11 @@ ConditionJoin-impossibility check lifts to one early guard:
         + "LiftedHop (never ConditionJoin) — both implement WithTarget, so "
         + "the FK-chain loop reads target accessors uniformly through the "
         + "capability without a sealed switch per accessor.")
-@DependsOnClassifierCheck(
-    key = "lifter-path-is-single-hop",
-    reliesOn = "LifterRowKeyed holds a single LiftedHop on its own record, "
-        + "so the lifter-path joinPath is always [hop]. The prelude skips "
-        + "the multi-hop bridging branch on the lifter path; the underlying "
-        + "guarantee is structural (the model has no slot for a second "
-        + "hop), so no producer-side @LoadBearingClassifierCheck pairs "
-        + "with this key — see the audit-test note in §1e.")
+// Single-hop on the lifter path is enforced structurally:
+// LifterRowKeyed holds one LiftedHop, not List<LiftedHop>. No
+// @DependsOnClassifierCheck pairs with this guarantee, because there is
+// no classifier check to pair with; the model shape itself is the source.
+// Find-usages on LifterRowKeyed.hop recovers the same navigation.
 private static PreludeBindings emitParentInputAndFkChain(...) {
     // Single early identity guard: the @record-parent path admits no
     // ConditionJoin steps (the @table-parent path takes ConditionJoin).
@@ -1059,14 +1055,21 @@ List<ColumnRef> joinOnCols = switch (joinPath.get(0)) {
 
 After this landing, the prelude has no `instanceof` chain and no defensive
 cast where the accessor is uniform; sealed-switch usage is reserved for the
-identity fork that genuinely varies. The two consumer-side
-`@DependsOnClassifierCheck` annotations cite distinct keys so a future
+identity fork that genuinely varies. The two paired-key load-bearing facts
+(`lifter-classifies-as-record-table-field` and
+`lifter-batchkey-is-lifterrowkeyed`) cite distinct keys so a future
 relaxation of either guarantee fails the audit only at the consumers that
-actually relied on the relaxed half (finding 7).
+actually relied on the relaxed half.
 
 The `parentInput` VALUES table's column types come from the same side-aware
 accessor used at Cast 1, and on the lifter path those are the target-side
-columns, which match the lifter's `RowN` type-args by Invariant #4.
+columns, which match the lifter's `RowN` type-args by Invariant #4. The
+existing rows-method already binds parent-input values via the column's
+jOOQ `DataType` (per the *Column value binding* emitter convention,
+`DSL.val(rawValue, col.getDataType())`); `LifterRowKeyed` inherits this
+without an emitter change because the side-aware accessor returns
+`ColumnRef` instances whose `getDataType()` is the same shape the
+`RowKeyed` path already feeds.
 
 #### 2e. Validator updates and load-bearing audit
 
@@ -1122,19 +1125,21 @@ promoted to build-time errors by the existing
 `UnclassifiedField` → validator pipeline; no further new gate is needed.
 
 **Load-bearing annotation audit.** The consumer-side annotations introduced
-in §2d cite three distinct keys: `lifter-classifies-as-record-table-field`
-and `lifter-batchkey-is-lifterrowkeyed` (each paired with a
-`@LoadBearingClassifierCheck` producer in §1e), and
-`lifter-path-is-single-hop` (a structural-guarantee key, no producer pair —
-the type system itself is the producer; see §1e for the audit-test relaxation).
+in §2d cite two paired keys: `lifter-classifies-as-record-table-field` and
+`lifter-batchkey-is-lifterrowkeyed`, each paired with a
+`@LoadBearingClassifierCheck` producer in §1e.
 [`LoadBearingGuaranteeAuditTest`](../graphitron/src/test/java/no/sikt/graphitron/rewrite/model/LoadBearingGuaranteeAuditTest.java)
-walks the rewrite module's compiled output, groups by key, and fails on any
-consumer whose key has no producer (or any duplicate producer); this
-landing extends the audit with an allowlist for structural-guarantee keys.
-Splitting the formerly-monolithic `lifter-path-shape` key into three
-ensures a future relaxation of one fact (e.g. multi-hop becomes possible)
-fails the audit precisely at the consumers that actually relied on
-single-hop, not at unrelated lifter consumers.
+walks the rewrite module's compiled output, groups by key, and fails on
+any consumer whose key has no producer (or any duplicate producer); the
+test is unchanged by this landing. The single-hop guarantee is *not* a
+keyed fact: it is a structural model property (`LifterRowKeyed` holds
+one `LiftedHop`, not a list), documented in a plain javadoc comment on
+the §2d consumer (see §1e for the rationale: a `@DependsOnClassifierCheck`
+without a paired producer would either bend the audit rule or require a
+dummy producer that says nothing the type system doesn't already say).
+Splitting the formerly-monolithic `lifter-path-shape` key into two paired
+keys still ensures a future relaxation of either fact fails the audit
+precisely at the consumers that actually relied on the relaxed half.
 
 If future validation logic adds a `BatchKey`-keyed check (e.g. a hypothetical
 "every parent table has a PK" gate), `LifterRowKeyed` will participate in the
@@ -1262,10 +1267,14 @@ from the existing "Column value binding" section.
   error. The stub is replaced by an `IllegalStateException` (post-validate
   reachability is a classifier bug).
 - New per-fact `@LoadBearingClassifierCheck` /
-  `@DependsOnClassifierCheck` keys: `lifter-classifies-as-record-table-field`,
-  `lifter-batchkey-is-lifterrowkeyed` (both with producer pairs), and
-  `lifter-path-is-single-hop` (structural-guarantee key, no producer pair —
-  the type system is the producer; audit-test allowlist updated)
+  `@DependsOnClassifierCheck` key pairs:
+  `lifter-classifies-as-record-table-field` and
+  `lifter-batchkey-is-lifterrowkeyed` (both with producer pairs in
+  `FieldBuilder.resolveBatchKeyLifter`). The single-hop invariant is a
+  structural model property (`LifterRowKeyed` holds one `LiftedHop`, not
+  a list) documented in a plain javadoc comment on the rows-method
+  prelude rather than as a keyed fact;
+  `LoadBearingGuaranteeAuditTest` is unchanged.
 - The two `RecordTableField` / `RecordLookupTableField` deferred rejections
   closed for DTO parents
 - Test count delta and full-build status per the existing changelog format
