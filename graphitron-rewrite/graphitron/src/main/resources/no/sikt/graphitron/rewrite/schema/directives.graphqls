@@ -131,6 +131,41 @@ directive @multitableReference(
     routes: [ReferencesForType!]
 ) on FIELD_DEFINITION
 
+"""
+Supplies a DTO-to-batch-key lifting function for a child field whose @record
+parent has no FK metadata in the jOOQ catalog. Applies when the parent's
+backing class is a plain POJO or a Java record (not a jOOQ Record /
+TableRecord). The parent's @record(record: {className: ...}) must declare a
+backing class; the directive is rejected on @record types with no class.
+
+The lifter is a static Java method that extracts the batch-key value(s) from
+the parent instance. The lifted RowN is matched against the named target
+columns on the field's @table return type to drive a column-keyed DataLoader.
+
+Required when a field on a non-table-backed @record parent returns a @table
+type and would otherwise be rejected as 'RecordTableField (or
+RecordLookupTableField) requires a FK join path and a typed backing class for
+batch key extraction'. Rejected on @table parents (use @reference there) and
+on jOOQ-backed @record parents (JooqTableRecordType / JooqRecordType — the
+catalog record already drives batching).
+"""
+directive @batchKeyLifter(
+  """
+  Static Java method (className, method) that takes the parent's backing class
+  and returns a jOOQ Row1..RowN. The arity must equal targetColumns.size();
+  each RowN type argument must equal the corresponding targetColumn's Java
+  column class.
+  """
+  lifter: ExternalCodeReference!
+
+  """
+  SQL names of columns on the field's @table return type. Lifted RowN values
+  match these columns positionally; the rows-method emitter uses them as the
+  JOIN target on a single-hop JoinStep.LiftedHop.
+  """
+  targetColumns: [String!]!
+) on FIELD_DEFINITION
+
 input ReferencesForType {
     "Name of the GraphQL type the reference path should apply to. This name is case sensitive."
     typeName: String!
