@@ -5,7 +5,7 @@ status: In Progress
 bucket: stubs
 priority: 1
 theme: interface-union
-depends-on: [entityfetcherdispatch-lookup-pipeline-collapse]
+depends-on: []
 ---
 
 # Stub #3: Interface / union fetchers
@@ -287,12 +287,12 @@ Execution (`GraphQLQueryTest`):
 
 ### Order and sub-phases
 
-- **B1, TypeResolver wiring** for non-`Node` `InterfaceType` / `UnionType`. Standalone, small. Has no dependency on R55 and is the sub-phase exception to this plan's front-matter `depends-on`. Lands first; also a prerequisite for any developer who returns a multi-table interface from `@service`.
-- **B2, `QueryInterfaceField` / `QueryUnionField`** root case: stage-1 emitter, stage-2 dispatch via the shared row-builder, validation rejections. Composite-PK jsonbArray sort lives here. Blocked on R55.
+- **B1, TypeResolver wiring** for non-`Node` `InterfaceType` / `UnionType`. Standalone, small. Lands first; also a prerequisite for any developer who returns a multi-table interface from `@service`.
+- **B2, `QueryInterfaceField` / `QueryUnionField`** root case: stage-1 emitter, stage-2 dispatch via the shared row-builder, validation rejections. Composite-PK jsonbArray sort lives here.
 - **B3, `ChildField.InterfaceField` / `ChildField.UnionField`** child case: B2's emitter plus the parent-FK condition per branch.
 - **B4, connection pagination.** Build on B1-B3.
 
-The front-matter `depends-on` declares the hard ordering: R55 (`entityfetcherdispatch-lookup-pipeline-collapse`) extracts `ValuesJoinRowBuilder` from the existing two duplicate sites (`LookupValuesJoinEmitter` and `EntityFetcherDispatchClassGenerator`); B2's stage-2 emission is the third consumer. Without R55 in place, B2 would fork a third copy of the same `VALUES (idx, c1, …) JOIN <table> ORDER BY idx` primitive that R55 then has to collapse anyway. Pure churn. B1 carves out as the sub-phase that doesn't touch the row-builder and can ship while R55 is still in flight.
+R55 (`entityfetcherdispatch-lookup-pipeline-collapse`) extracted `ValuesJoinRowBuilder` from `LookupValuesJoinEmitter` and `EntityFetcherDispatchClassGenerator`; B2's stage-2 emission is the third consumer of that helper. Without R55's collapse first, B2 would have forked a third copy of the same `VALUES (idx, c1, …) JOIN <table> ORDER BY idx` primitive. With R55 shipped, B2 calls into the helper directly.
 
 ### Non-goals (Track B v1)
 
@@ -305,7 +305,7 @@ The front-matter `depends-on` declares the hard ordering: R55 (`entityfetcherdis
 
 ## Order and gating
 
-Track A is fully shipped (same-table Phase 1 plus cross-table Phase 2). Track B's sub-phases B1-B4 are listed in the Track B section above; B1 is the smallest standalone deliverable and unblocks any developer returning a multi-table interface from `@service` independently of Track B's main thrust. R55's shared row-builder collapse overlaps with B2's stage-2 emission; either ordering of (R55, B2) is workable.
+Track A is fully shipped (same-table Phase 1 plus cross-table Phase 2). Track B's sub-phases B1-B4 are listed in the Track B section above; B1 is the smallest standalone deliverable and unblocks any developer returning a multi-table interface from `@service` independently of Track B's main thrust. R55's shared row-builder collapse has shipped; B2's stage-2 emission consumes `ValuesJoinRowBuilder` directly.
 
 ---
 
