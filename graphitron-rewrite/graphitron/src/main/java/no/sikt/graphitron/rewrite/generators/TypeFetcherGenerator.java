@@ -1097,7 +1097,12 @@ public class TypeFetcherGenerator {
         var names = GeneratorUtils.ResolvedTableNames.of(tableRef, f.returnType().returnTypeName(), outputPackage, jooqPackage);
         var dslContextClass = ClassName.get("org.jooq", "DSLContext");
 
-        TypeName valueType = ClassName.OBJECT;
+        // The fetcher's value type is the developer-supplied payload class when a
+        // PayloadAssembly is present (R12 DML payload return); Object otherwise (the existing
+        // ID and @table paths).
+        TypeName valueType = f.payloadAssembly()
+            .map(pa -> (TypeName) pa.payloadClass())
+            .orElse(ClassName.OBJECT);
         var builder = MethodSpec.methodBuilder(f.name())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(syncResultType(valueType))
@@ -1121,20 +1126,51 @@ public class TypeFetcherGenerator {
             if (i > 0) whereExpr.add(")");
         }
 
-        var body = CodeBlock.builder()
-            .add("$T payload = dsl\n", valueType).indent()
-            .add(".deleteFrom($T.$L)\n", names.tablesClass(), tableRef.javaFieldName())
-            .add(".where(").add(whereExpr.build()).add(")\n");
-
         boolean isList = f.returnType().wrapper().isList();
-        if (f.returnType() instanceof ReturnTypeRef.ScalarReturnType) {
+        if (f.payloadAssembly().isPresent()) {
+            // ResultReturnType payload: capture the row record from .returning().fetchOne(),
+            // then construct the payload by walking the assembly's params (row local at the
+            // row slot, null at the errors slot, defaultLiteral elsewhere). The payload-shape
+            // classifier guarantees one row slot exists and rejects list-payload returns at
+            // FieldBuilder.validateMutationReturnType, so .fetchOne() is the only shape here.
+            var assembly = f.payloadAssembly().get();
+            TypeName rowType = assembly.params().get(assembly.rowSlotIndex()).type();
+            String tableLocal = names.tableLocalName();
+            var dml = CodeBlock.builder();
+            dml.add("$T $L = $T.$L;\n", names.jooqTableClass(), tableLocal, names.tablesClass(), tableRef.javaFieldName());
+            dml.add("$T row = dsl\n", rowType).indent()
+                .add(".deleteFrom($L)\n", tableLocal)
+                .add(".where(").add(whereExpr.build()).add(")\n")
+                .add(".returning()\n")
+                .add(".fetchOne();\n").unindent();
+            builder.addCode(dml.build());
+
+            var ctor = CodeBlock.builder().add("$T payload = new $T(", valueType, valueType);
+            var params = assembly.params();
+            for (int i = 0; i < params.size(); i++) {
+                if (i > 0) ctor.add(", ");
+                var p = params.get(i);
+                if (i == assembly.rowSlotIndex()) {
+                    ctor.add("row");
+                } else if (p.isErrorsSlot()) {
+                    ctor.add("null");
+                } else {
+                    ctor.add(p.defaultLiteral());
+                }
+            }
+            ctor.add(");\n");
+            builder.addCode(ctor.build());
+        } else if (f.returnType() instanceof ReturnTypeRef.ScalarReturnType) {
             // ID return: project the NodeType's key columns and call the per-type encoder helper
             // resolved by the classifier (encode<TypeName>(v0, v1, ...)). The typeId is baked into
             // the method name; no generic encode(typeId, ...) call is emitted from the rewrite.
             var encode = f.encodeReturn().orElseThrow();
             var keyCols = encode.paramSignature();
-
-            body.add(".returningResult(");
+            var body = CodeBlock.builder()
+                .add("$T payload = dsl\n", valueType).indent()
+                .add(".deleteFrom($T.$L)\n", names.tablesClass(), tableRef.javaFieldName())
+                .add(".where(").add(whereExpr.build()).add(")\n")
+                .add(".returningResult(");
             for (int i = 0; i < keyCols.size(); i++) {
                 if (i > 0) body.add(", ");
                 body.add("$T.$L.$L", names.tablesClass(), tableRef.javaFieldName(), keyCols.get(i).javaName());
@@ -1148,27 +1184,25 @@ public class TypeFetcherGenerator {
                 lambda.add("r.get($T.$L.$L)", names.tablesClass(), tableRef.javaFieldName(), col.javaName());
             }
             lambda.add(")");
-            body.add(isList ? ".fetch(" : ".fetchOne(").add(lambda.build()).add(");\n");
+            body.add(isList ? ".fetch(" : ".fetchOne(").add(lambda.build()).add(");\n").unindent();
+            builder.addCode(body.build());
         } else {
             // TableBoundReturnType: use Type.$fields(env.getSelectionSet(), table, env) and
             // return the row record. graphql-java's column fetchers walk it.
             String tableLocal = names.tableLocalName();
-            // Need a local variable for the table to pass to $fields(...). Inject above the
-            // dsl.deleteFrom(...) chain : but we've already started the chain. Re-build the body.
-            body = CodeBlock.builder();
+            var body = CodeBlock.builder();
             body.add("$T $L = $T.$L;\n", names.jooqTableClass(), tableLocal, names.tablesClass(), tableRef.javaFieldName());
             body.add("$T payload = dsl\n", valueType).indent()
                 .add(".deleteFrom($L)\n", tableLocal)
                 .add(".where(").add(whereExpr.build()).add(")\n")
                 .add(".returningResult($T.$$fields(env.getSelectionSet(), $L, env))\n",
                     names.typeClass(), tableLocal)
-                .add(isList ? ".fetch(r -> r);\n" : ".fetchOne(r -> r);\n");
+                .add(isList ? ".fetch(r -> r);\n" : ".fetchOne(r -> r);\n").unindent();
+            builder.addCode(body.build());
         }
-        body.unindent();
-        builder.addCode(body.build());
         builder.addCode(returnSyncSuccess(valueType, "payload"));
         builder.nextControlFlow("catch ($T e)", Exception.class);
-        builder.addCode(redactCatchArm(outputPackage));
+        builder.addCode(catchArm(outputPackage, f.errorChannel()));
         builder.endControlFlow();
         return builder.build();
     }

@@ -39,6 +39,7 @@ class MutationDeleteTableFieldValidationTest {
                     Optional.empty(),
                     List.of()),
                 Optional.empty(),
+                Optional.empty(),
                 Optional.empty()),
             List.of());
 
