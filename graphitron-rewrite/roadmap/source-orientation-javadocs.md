@@ -68,7 +68,7 @@ both what it is and that its long-term place in the tree is open.
 
 - `TypeFetcherGenerator` decomposition. Tracked separately under
   [`decompose-typefetchergenerator.md`](decompose-typefetchergenerator.md).
-- `FieldBuilder` decomposition. Already tracked under
-  [`decompose-fieldbuilder.md`](decompose-fieldbuilder.md).
+- `FieldBuilder` decomposition. Shipped under R6; see
+  [`changelog.md`](changelog.md).
 - Method-level Javadoc within these classes. The class-level pass is
   the on-ramp gap; per-method docs can grow case by case.
