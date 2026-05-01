@@ -318,6 +318,46 @@ public class GraphitronSchemaValidator {
         }
     }
 
+    /**
+     * R36 Track B4a guard: when a multi-table polymorphic field carries
+     * {@link no.sikt.graphitron.rewrite.model.FieldWrapper.Connection}, restrict the participant
+     * shape to what the connection emitter can pin a cursor across in v1. Specifically: every
+     * PK-bearing participant must have a single PK column, because the synthetic
+     * {@code __sort__} column is typed as the participant PK class for cursor encode/decode
+     * round-trip. Composite-PK participants would require either a JSONB cursor (whose
+     * {@code String → JSONB} convert path is not yet exercised) or a positional
+     * ({@code pk0, pk1, …}) cursor (whose seek tuple needs careful jOOQ wiring); both are
+     * tracked as connection follow-ups.
+     *
+     * <p>No-op when the wrapper is not {@code Connection}; PK-less participants are caught by
+     * {@link #validateMultiTableParticipants} above and are not reported again here.
+     */
+    private void validateMultiTableConnectionConstraints(String qualifiedName, SourceLocation location,
+            no.sikt.graphitron.rewrite.model.FieldWrapper wrapper,
+            java.util.List<no.sikt.graphitron.rewrite.model.ParticipantRef> participants,
+            List<ValidationError> errors) {
+        if (!(wrapper instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection)) return;
+        var tableBound = participants.stream()
+            .filter(p -> p instanceof no.sikt.graphitron.rewrite.model.ParticipantRef.TableBound)
+            .map(p -> (no.sikt.graphitron.rewrite.model.ParticipantRef.TableBound) p)
+            .filter(tb -> tb.table().hasPrimaryKey())
+            .toList();
+        for (var tb : tableBound) {
+            int arity = tb.table().primaryKeyColumns().size();
+            if (arity != 1) {
+                errors.add(new ValidationError(RejectionKind.AUTHOR_ERROR,
+                    qualifiedName,
+                    "Field '" + qualifiedName + "': @asConnection on a multi-table interface/union "
+                        + "requires every participant to have a single primary-key column; "
+                        + "participant '" + tb.typeName() + "' has " + arity + " PK columns. "
+                        + "Composite-PK cursor pagination is not yet supported on the polymorphic path",
+                    location
+                ));
+                return;
+            }
+        }
+    }
+
     // --- Field validators (stubs — filled in as test classes are added) ---
 
     private void validateQueryLookupTableField(no.sikt.graphitron.rewrite.model.QueryField.QueryLookupTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
@@ -371,10 +411,14 @@ public class GraphitronSchemaValidator {
     private void validateQueryInterfaceField(no.sikt.graphitron.rewrite.model.QueryField.QueryInterfaceField field, List<ValidationError> errors) {
         validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
         validateMultiTableParticipants(field.qualifiedName(), field.location(), field.participants(), errors);
+        validateMultiTableConnectionConstraints(field.qualifiedName(), field.location(),
+            field.returnType().wrapper(), field.participants(), errors);
     }
     private void validateQueryUnionField(no.sikt.graphitron.rewrite.model.QueryField.QueryUnionField field, List<ValidationError> errors) {
         validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
         validateMultiTableParticipants(field.qualifiedName(), field.location(), field.participants(), errors);
+        validateMultiTableConnectionConstraints(field.qualifiedName(), field.location(),
+            field.returnType().wrapper(), field.participants(), errors);
     }
     private void validateQueryServiceTableField(no.sikt.graphitron.rewrite.model.QueryField.QueryServiceTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         // Unresolved service method is caught by the builder (UnclassifiedField).
@@ -512,10 +556,14 @@ public class GraphitronSchemaValidator {
     private void validateInterfaceField(no.sikt.graphitron.rewrite.model.ChildField.InterfaceField field, List<ValidationError> errors) {
         validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
         validateMultiTableParticipants(field.qualifiedName(), field.location(), field.participants(), errors);
+        validateMultiTableConnectionConstraints(field.qualifiedName(), field.location(),
+            field.returnType().wrapper(), field.participants(), errors);
     }
     private void validateUnionField(no.sikt.graphitron.rewrite.model.ChildField.UnionField field, List<ValidationError> errors) {
         validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
         validateMultiTableParticipants(field.qualifiedName(), field.location(), field.participants(), errors);
+        validateMultiTableConnectionConstraints(field.qualifiedName(), field.location(),
+            field.returnType().wrapper(), field.participants(), errors);
     }
     private void validateNestingField(no.sikt.graphitron.rewrite.model.ChildField.NestingField field, List<ValidationError> errors) {
         // List cardinality has no source-passthrough semantic: one parent Record in, one list value out.

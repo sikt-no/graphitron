@@ -2404,6 +2404,157 @@ class GraphQLQueryTest {
             .allSatisfy(i -> assertThat(i.get("__typename")).isEqualTo("Film"));
     }
 
+    // ===== Multi-table polymorphic Connection (Track B4a) =====
+    //
+    // searchConnection wraps the same Searchable interface as Query.search but in @asConnection
+    // form. The emitter wraps the per-branch UNION ALL in a derived table 'pages' so cursor
+    // decode + .seek + LIMIT N+1 apply uniformly across the union; each typed stage-2 Record
+    // carries both __typename and __sort__ so ConnectionHelper.encodeCursor can read the sort
+    // key on each edge. Default page size is 5 (set in fixture) so a default-args query returns
+    // exactly 5 of the 8 total rows. The emitter adds (sortField ASC, typenameField ASC) as a
+    // composite ORDER BY so rows tied on sort key (e.g. Film(1)/Actor(1)) order deterministically.
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void searchConnection_firstPage_returnsFirstNAcrossParticipants() {
+        // first: 3 returns the 3 lowest sort keys: Actor(1), Film(1), Actor(2). Tie order uses
+        // typename ASC so 'Actor' precedes 'Film' on shared sort keys.
+        Map<String, Object> data = execute("""
+            { searchConnection(first: 3) {
+                nodes { __typename ... on Film { filmId } ... on Actor { actorId } }
+                pageInfo { hasNextPage hasPreviousPage }
+            } }
+            """);
+        var conn = (Map<String, Object>) data.get("searchConnection");
+        List<Map<String, Object>> nodes = (List<Map<String, Object>>) conn.get("nodes");
+        assertThat(nodes).hasSize(3);
+        var pageInfo = (Map<String, Object>) conn.get("pageInfo");
+        assertThat(pageInfo.get("hasNextPage")).isEqualTo(true);
+        assertThat(pageInfo.get("hasPreviousPage")).isEqualTo(false);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void searchConnection_defaultPageSize_returnsFiveOfEight() {
+        // Fixture sets defaultFirstValue: 5. With 5 films + 3 actors = 8 rows total, an
+        // unargumented query returns the first 5 by sort key and reports hasNextPage=true.
+        Map<String, Object> data = execute("""
+            { searchConnection { nodes { __typename } pageInfo { hasNextPage } } }
+            """);
+        var conn = (Map<String, Object>) data.get("searchConnection");
+        List<Map<String, Object>> nodes = (List<Map<String, Object>>) conn.get("nodes");
+        assertThat(nodes).hasSize(5);
+        var pageInfo = (Map<String, Object>) conn.get("pageInfo");
+        assertThat(pageInfo.get("hasNextPage")).isEqualTo(true);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void searchConnection_withAfterCursor_returnsNextPage() {
+        // Page 1 (first: 3) + after cursor → page 2 (first: 3) returns the next 3 by sort key.
+        Map<String, Object> page1Data = execute("""
+            { searchConnection(first: 3) {
+                edges { cursor }
+                pageInfo { endCursor }
+            } }
+            """);
+        var conn1 = (Map<String, Object>) page1Data.get("searchConnection");
+        var pageInfo1 = (Map<String, Object>) conn1.get("pageInfo");
+        String endCursor = (String) pageInfo1.get("endCursor");
+        assertThat(endCursor).isNotNull();
+
+        Map<String, Object> page2Data = execute(
+            "{ searchConnection(first: 3, after: \"" + endCursor + "\") { "
+            + "nodes { __typename } pageInfo { hasNextPage } } }");
+        var conn2 = (Map<String, Object>) page2Data.get("searchConnection");
+        List<Map<String, Object>> nodes2 = (List<Map<String, Object>>) conn2.get("nodes");
+        assertThat(nodes2).hasSize(3);
+        var pageInfo2 = (Map<String, Object>) conn2.get("pageInfo");
+        // 8 total - 3 (page1) - 3 (page2) = 2 remaining → hasNextPage true.
+        assertThat(pageInfo2.get("hasNextPage")).isEqualTo(true);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void searchConnection_lastPage_hasNextPageFalse() {
+        // first: 8 returns all 8 rows; hasNextPage is false because over-fetch returns 8 rows
+        // (less than pageSize+1 = 9).
+        Map<String, Object> data = execute("""
+            { searchConnection(first: 8) {
+                nodes { __typename }
+                pageInfo { hasNextPage }
+            } }
+            """);
+        var conn = (Map<String, Object>) data.get("searchConnection");
+        List<Map<String, Object>> nodes = (List<Map<String, Object>>) conn.get("nodes");
+        assertThat(nodes).hasSize(8);
+        var pageInfo = (Map<String, Object>) conn.get("pageInfo");
+        assertThat(pageInfo.get("hasNextPage")).isEqualTo(false);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void searchConnection_inlineFragmentsResolvePerTypeOnConnectionPath() {
+        // Confirms the connection path retains TypeResolver routing: inline fragments dispatch
+        // per concrete type so Film rows have filmId+title, Actor rows have actorId+firstName.
+        Map<String, Object> data = execute("""
+            { searchConnection(first: 8) {
+                nodes {
+                    __typename
+                    ... on Film { filmId title }
+                    ... on Actor { actorId firstName }
+                }
+            } }
+            """);
+        var conn = (Map<String, Object>) data.get("searchConnection");
+        List<Map<String, Object>> nodes = (List<Map<String, Object>>) conn.get("nodes");
+        var filmRows = nodes.stream().filter(i -> "Film".equals(i.get("__typename"))).toList();
+        var actorRows = nodes.stream().filter(i -> "Actor".equals(i.get("__typename"))).toList();
+        assertThat(filmRows).hasSize(5);
+        assertThat(actorRows).hasSize(3);
+        assertThat(filmRows).allSatisfy(i -> {
+            assertThat(i.get("filmId")).as("Film.filmId").isNotNull();
+            assertThat(i.get("title")).as("Film.title").isNotNull();
+        });
+        assertThat(actorRows).allSatisfy(i -> {
+            assertThat(i.get("actorId")).as("Actor.actorId").isNotNull();
+            assertThat(i.get("firstName")).as("Actor.firstName").isNotNull();
+        });
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void documentsConnection_unionVariant_works() {
+        // Union variant equivalent: documentsConnection wraps `Document = Film | Actor` in
+        // @asConnection. Same emitter path as searchConnection; this test pins parity.
+        Map<String, Object> data = execute("""
+            { documentsConnection(first: 4) {
+                nodes { __typename ... on Film { filmId } ... on Actor { actorId } }
+                pageInfo { hasNextPage }
+            } }
+            """);
+        var conn = (Map<String, Object>) data.get("documentsConnection");
+        List<Map<String, Object>> nodes = (List<Map<String, Object>>) conn.get("nodes");
+        assertThat(nodes).hasSize(4);
+        assertThat(nodes).extracting(i -> (String) i.get("__typename"))
+            .allSatisfy(tn -> assertThat(tn).isIn("Film", "Actor"));
+        var pageInfo = (Map<String, Object>) conn.get("pageInfo");
+        assertThat(pageInfo.get("hasNextPage")).isEqualTo(true);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void searchConnection_totalCount_returnsNullUntilB4c() {
+        // B4a passes (table, condition) = (null, null) to ConnectionResult so totalCount short-
+        // circuits to null; the polymorphic count query lands in B4c. Confirming the null result
+        // documents the current contract and pins the regression boundary.
+        Map<String, Object> data = execute("""
+            { searchConnection(first: 1) { totalCount } }
+            """);
+        var conn = (Map<String, Object>) data.get("searchConnection");
+        assertThat(conn.get("totalCount")).isNull();
+    }
+
     // ===== ChildField.UnionField (Track B3) =====
     //
     // Address.occupants returns a union of Customer + Staff rows whose address_id matches
