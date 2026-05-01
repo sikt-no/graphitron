@@ -311,6 +311,88 @@ class GraphitronSchemaClassGeneratorTest {
         assertThat(zebraIdx).as("typeResolvers before .query()").isLessThan(queryIdx);
     }
 
+    // ===== plain InterfaceType / UnionType TypeResolver emission (R36 Track B1) =====
+
+    private static final String PLAIN_INTERFACE_SDL = """
+        type Query { search: [Searchable!]! }
+        interface Searchable { id: ID! }
+        type Film implements Searchable @table(name: "film") { id: ID! }
+        type Actor implements Searchable @table(name: "actor") { id: ID! }
+        """;
+
+    @Test
+    void build_emitsTypeResolver_forPlainInterfaceType() {
+        var body = buildBody(PLAIN_INTERFACE_SDL);
+        assertThat(body).contains("codeRegistry.typeResolver(\"Searchable\"");
+    }
+
+    @Test
+    void build_typeResolverForPlainInterface_readsTypenameViaDslField() {
+        // Reads the synthetic __typename column R36 Track B's stage-1 emitter projects on every
+        // branch. DSL.field(DSL.name("__typename")) is the typed read used elsewhere in the
+        // generated code; the bare-string overload would also work but the typed form is what
+        // the plan specifies and what stage 2's typed Records carry forward.
+        var body = buildBody(PLAIN_INTERFACE_SDL);
+        assertThat(body).contains("\"__typename\"");
+        assertThat(body).contains("env.getSchema().getObjectType(typeName)");
+    }
+
+    @Test
+    void build_emitsTypeResolver_forUnionType() {
+        var body = buildBody("""
+            type Query { document: Document }
+            union Document = Film | Actor
+            type Film @table(name: "film") { id: ID! }
+            type Actor @table(name: "actor") { id: ID! }
+            """);
+        assertThat(body).contains("codeRegistry.typeResolver(\"Document\"");
+    }
+
+    @Test
+    void build_doesNotDoubleRegisterNodeInterface_whenNodeTypesPresent() {
+        // QueryNodeFetcher.registerTypeResolver registers .typeResolver("Node", ...) when the
+        // schema has at least one NodeType. The plain-interface path must skip "Node" so we
+        // don't double-register; graphql-java's GraphQLCodeRegistry.Builder rejects a
+        // duplicate typeResolver for the same type name with an IllegalArgumentException.
+        var body = buildBody("""
+            type Query { x: String }
+            type Film implements Node @table(name: "film") @node { id: ID! }
+            """);
+        long nodeResolverCount = body.lines()
+            .filter(l -> l.contains("codeRegistry.typeResolver(\"Node\""))
+            .count();
+        assertThat(nodeResolverCount).isEqualTo(1);
+    }
+
+    @Test
+    void build_skipsNodeInterface_whenNoNodeTypePresent() {
+        // TestSchemaHelper injects `interface Node { id: ID! }` into every test SDL. Without a
+        // NodeType, QueryNodeFetcher's resolver registration is suppressed; the plain-interface
+        // path also skips "Node" so the orphan declaration doesn't end up with a resolver
+        // pointing at no concrete types.
+        var body = buildBody("type Query { x: String }");
+        assertThat(body).doesNotContain("codeRegistry.typeResolver(\"Node\"");
+    }
+
+    @Test
+    void build_typeResolverForPlainInterfaces_alphabeticalOrder_beforeSchemaBuilder() {
+        // Resolver registration order is deterministic (sorted by type name) and lands before
+        // .query()/.additionalType() so the code registry is fully populated before build.
+        var body = buildBody("""
+            type Query { a: AlphaInterface, z: ZebraInterface }
+            interface AlphaInterface { id: ID! }
+            interface ZebraInterface { id: ID! }
+            type AlphaImpl implements AlphaInterface @table(name: "film") { id: ID! }
+            type ZebraImpl implements ZebraInterface @table(name: "actor") { id: ID! }
+            """);
+        int alphaIdx = body.indexOf("codeRegistry.typeResolver(\"AlphaInterface\"");
+        int zebraIdx = body.indexOf("codeRegistry.typeResolver(\"ZebraInterface\"");
+        int queryIdx = body.indexOf(".query(");
+        assertThat(alphaIdx).as("AlphaInterface resolver before ZebraInterface (alphabetical)")
+            .isGreaterThanOrEqualTo(0).isLessThan(zebraIdx);
+        assertThat(zebraIdx).as("typeResolvers before .query()").isLessThan(queryIdx);
+    }
+
     // ===== federation overload =====
 
     @Test
