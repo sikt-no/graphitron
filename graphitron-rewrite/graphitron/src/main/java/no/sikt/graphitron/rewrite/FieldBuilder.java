@@ -149,10 +149,12 @@ class FieldBuilder {
     private final BuildContext ctx;
     private final ServiceCatalog svc;
     private final ServiceDirectiveResolver serviceResolver;
+    private final TableMethodDirectiveResolver tableMethodResolver;
     FieldBuilder(BuildContext ctx, ServiceCatalog svc) {
         this.ctx = ctx;
         this.svc = svc;
         this.serviceResolver = new ServiceDirectiveResolver(ctx, svc, this);
+        this.tableMethodResolver = new TableMethodDirectiveResolver(ctx, svc, this);
     }
 
     // ===== Shared resolution helpers =====
@@ -2138,50 +2140,16 @@ class FieldBuilder {
         }
 
         if (fieldDef.hasAppliedDirective(DIR_TABLE_METHOD)) {
-            String rawTypeName = baseTypeName(fieldDef);
-            String elementTypeName = ctx.isConnectionType(rawTypeName) ? ctx.connectionElementTypeName(rawTypeName) : rawTypeName;
-            var returnType = ctx.resolveReturnType(elementTypeName, buildWrapper(fieldDef));
-            if (!(returnType instanceof ReturnTypeRef.TableBoundReturnType tb)) {
-                return new GraphitronField.UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
-                    "@tableMethod requires a @table-annotated return type");
-            }
-            // Invariants §1: Connection wrapper not supported on @tableMethod at root.
-            if (tb.wrapper() instanceof FieldWrapper.Connection) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.INVALID_SCHEMA,
-                    "@tableMethod at the root does not support Connection return types — use [T] or T instead");
-            }
-            var qtmRef = parseExternalRef(parentTypeName, fieldDef, DIR_TABLE_METHOD, ARG_TABLE_METHOD_REF);
-            if (qtmRef != null && qtmRef.lookupError() != null) {
-                return new GraphitronField.UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
-                    "table method could not be resolved — " + qtmRef.lookupError());
-            }
-            if (qtmRef != null && qtmRef.argMappingError() != null) {
-                return new GraphitronField.UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
-                    "table method could not be resolved — @tableMethod " + qtmRef.argMappingError());
-            }
-            var qtmArgMapping = qtmRef != null ? qtmRef.argMapping() : Map.<String, String>of();
-            var qtmArgBindingsResult = ArgBindingMap.of(fieldArgumentNames(fieldDef), qtmArgMapping);
-            if (qtmArgBindingsResult instanceof ArgBindingMap.Result.UnknownArgRef qtmUnknown) {
-                return new GraphitronField.UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
-                    "table method could not be resolved — @tableMethod " + qtmUnknown.message());
-            }
-            var qtmArgBindings = ((ArgBindingMap.Result.Ok) qtmArgBindingsResult).map();
-            List<String> qtmCtxArgs = parseContextArguments(fieldDef, DIR_TABLE_METHOD);
-            // Invariants §3 (return-type strictness): the developer's @tableMethod must return
-            // the generated jOOQ table class exactly, not a wider Table<R>. Computed from the
-            // resolved @table-bound return type's TableRef + the build-context jOOQ package.
-            ClassName expectedReturnClass = ClassName.get(
-                ctx.ctx().jooqPackage() + ".tables", tb.table().javaClassName());
-            var qtmResult = svc.reflectTableMethod(
-                qtmRef != null ? qtmRef.className() : null,
-                qtmRef != null ? qtmRef.methodName() : null,
-                qtmArgBindings, new java.util.HashSet<>(qtmCtxArgs),
-                expectedReturnClass);
-            if (qtmResult.failed()) {
-                return new GraphitronField.UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
-                    "table method could not be resolved — " + qtmResult.failureReason());
-            }
-            return new QueryField.QueryTableMethodTableField(parentTypeName, name, location, tb, enrichArgExtractions(qtmResult.ref(), fieldDef));
+            return switch (tableMethodResolver.resolve(parentTypeName, fieldDef, true)) {
+                case TableMethodDirectiveResolver.Resolved.Rejected r ->
+                    new UnclassifiedField(parentTypeName, name, location, fieldDef, r.kind(), r.message());
+                case TableMethodDirectiveResolver.Resolved.TableBound tb ->
+                    new QueryField.QueryTableMethodTableField(parentTypeName, name, location, tb.returnType(), tb.method());
+                // NonTableBound is rejected inside the resolver when isRoot=true; the arm exists
+                // to satisfy switch exhaustiveness over the shared sealed Resolved type.
+                case TableMethodDirectiveResolver.Resolved.NonTableBound nb ->
+                    throw new IllegalStateException("@tableMethod root resolver returned NonTableBound; should have rejected upstream");
+            };
         }
 
         String rawTypeName = baseTypeName(fieldDef);
@@ -2818,44 +2786,18 @@ class FieldBuilder {
         }
 
         if (fieldDef.hasAppliedDirective(DIR_TABLE_METHOD)) {
-            String rawTypeName = baseTypeName(fieldDef);
-            String elementTypeName = ctx.isConnectionType(rawTypeName) ? ctx.connectionElementTypeName(rawTypeName) : rawTypeName;
-            var returnType = ctx.resolveReturnType(elementTypeName, buildWrapper(fieldDef));
             var tableMethodPath = ctx.parsePath(fieldDef, name, tableType.table().tableName(), null);
             if (tableMethodPath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, tableMethodPath.errorMessage());
             }
-            var tmRef = parseExternalRef(parentTypeName, fieldDef, DIR_TABLE_METHOD, ARG_TABLE_METHOD_REF);
-            if (tmRef != null && tmRef.lookupError() != null) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
-                    "table method could not be resolved — " + tmRef.lookupError());
-            }
-            if (tmRef != null && tmRef.argMappingError() != null) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
-                    "table method could not be resolved — @tableMethod " + tmRef.argMappingError());
-            }
-            var tmArgMapping = tmRef != null ? tmRef.argMapping() : Map.<String, String>of();
-            var tmArgBindingsResult = ArgBindingMap.of(fieldArgumentNames(fieldDef), tmArgMapping);
-            if (tmArgBindingsResult instanceof ArgBindingMap.Result.UnknownArgRef tmUnknown) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
-                    "table method could not be resolved — @tableMethod " + tmUnknown.message());
-            }
-            var tmArgBindings = ((ArgBindingMap.Result.Ok) tmArgBindingsResult).map();
-            List<String> tmCtxArgs = parseContextArguments(fieldDef, DIR_TABLE_METHOD);
-            // Invariants §3 (return-type strictness) — applies to child @tableMethod too.
-            ClassName tmExpectedReturnClass = returnType instanceof ReturnTypeRef.TableBoundReturnType tbr
-                ? ClassName.get(ctx.ctx().jooqPackage() + ".tables", tbr.table().javaClassName())
-                : null;
-            var tmResult = svc.reflectTableMethod(
-                tmRef != null ? tmRef.className() : null,
-                tmRef != null ? tmRef.methodName() : null,
-                tmArgBindings, new java.util.HashSet<>(tmCtxArgs),
-                tmExpectedReturnClass);
-            if (tmResult.failed()) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
-                    "table method could not be resolved — " + tmResult.failureReason());
-            }
-            return new TableMethodField(parentTypeName, name, location, returnType, tableMethodPath.elements(), enrichArgExtractions(tmResult.ref(), fieldDef));
+            return switch (tableMethodResolver.resolve(parentTypeName, fieldDef, false)) {
+                case TableMethodDirectiveResolver.Resolved.Rejected r ->
+                    new UnclassifiedField(parentTypeName, name, location, fieldDef, r.kind(), r.message());
+                case TableMethodDirectiveResolver.Resolved.TableBound tb ->
+                    new TableMethodField(parentTypeName, name, location, tb.returnType(), tableMethodPath.elements(), tb.method());
+                case TableMethodDirectiveResolver.Resolved.NonTableBound nb ->
+                    new TableMethodField(parentTypeName, name, location, nb.returnType(), tableMethodPath.elements(), nb.method());
+            };
         }
 
         if (!isScalarOrEnum(fieldDef)) {
