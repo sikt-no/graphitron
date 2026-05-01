@@ -143,6 +143,7 @@ class FieldBuilder {
     private final ExternalFieldDirectiveResolver externalFieldResolver;
     private final LookupKeyDirectiveResolver lookupKeyResolver;
     private final OrderByResolver orderByResolver;
+    private final LookupMappingResolver lookupMappingResolver;
     FieldBuilder(BuildContext ctx, ServiceCatalog svc) {
         this.ctx = ctx;
         this.svc = svc;
@@ -151,6 +152,7 @@ class FieldBuilder {
         this.externalFieldResolver = new ExternalFieldDirectiveResolver(ctx, svc, this);
         this.lookupKeyResolver = new LookupKeyDirectiveResolver(ctx, svc, this);
         this.orderByResolver = new OrderByResolver(ctx);
+        this.lookupMappingResolver = new LookupMappingResolver();
     }
 
     // ===== Shared resolution helpers =====
@@ -475,7 +477,7 @@ class FieldBuilder {
         // positionally). Both arms carry the per-NodeType decode<TypeName> helper.
         //
         // Today's classifier only emits the lookup-key path for both arms (consumed by
-        // projectForLookup → ScalarLookupArg / DecodedRecord). Non-lookup-key composite-PK
+        // LookupMappingResolver → ScalarLookupArg / DecodedRecord). Non-lookup-key composite-PK
         // NodeId args (mutation key, top-level filter) need projectFilters wiring that has
         // not yet shipped; surface them as UnclassifiedArg so the gap is visible at validate
         // time rather than silently producing a degenerate path.
@@ -774,7 +776,7 @@ class FieldBuilder {
             return TableFieldComponents.error(String.join("; ", errors));
         }
         OrderBySpec orderBy = ((OrderByResolver.Resolved.Ok) orderByResolved).spec();
-        var lookupMapping = projectForLookup(refs, rt);
+        var lookupMapping = lookupMappingResolver.resolve(refs, rt);
         // LookupField invariant: if any @lookupKey is present, the mapping must be non-empty.
         // ColumnMapping must have at least one arg. (Pre-R50 phase (f-D), a NodeIdMapping arm
         // covered scalar NodeId @lookupKey args; that's now folded onto ColumnMapping carrying
@@ -791,55 +793,6 @@ class FieldBuilder {
             return TableFieldComponents.error(msg);
         }
         return new TableFieldComponents(filters, orderBy, projectPaginationSpec(refs, fieldDef), null, lookupMapping);
-    }
-
-    /**
-     * Projects {@code @lookupKey}-bearing scalar arguments into a {@link LookupMapping} for the
-     * target table. Reads only from {@link ArgumentRef.ScalarArg.ColumnArg#isLookupKey()} — the
-     * classifier is the single source of truth; this projection does not re-read the SDL.
-     *
-     * <p>Non-lookup fields receive an empty-columns mapping (the field will still validate and
-     * generate correctly via {@link GeneratedConditionFilter} or the standard filter path).
-     * {@link no.sikt.graphitron.rewrite.model.LookupField} variants must have at least one
-     * column; that invariant is enforced by {@link #projectForFilter} before the field is
-     * constructed as a {@code LookupField} variant.
-     */
-    private LookupMapping projectForLookup(List<ArgumentRef> refs, TableRef targetTable) {
-        var args = new ArrayList<ColumnMapping.LookupArg>();
-        for (var ref : refs) {
-            switch (ref) {
-                case ArgumentRef.ScalarArg.ColumnArg ca when ca.isLookupKey() ->
-                    args.add(new ColumnMapping.LookupArg.ScalarLookupArg(
-                        ca.name(), ca.column(), ca.extraction(), ca.list()));
-                case ArgumentRef.ScalarArg.CompositeColumnArg cca when cca.isLookupKey() -> {
-                    // R50 phase (g-A): composite-PK NodeId scalar @lookupKey arg. Decode runs
-                    // once per row at the arg layer; positional RecordBindings index the Record<N>.
-                    // Failure mode is ThrowOnMismatch — null returns surface as
-                    // GraphqlErrorException via LookupValuesJoinEmitter's per-row throw.
-                    var bindings = new ArrayList<InputColumnBinding.RecordBinding>();
-                    for (int i = 0; i < cca.columns().size(); i++) {
-                        bindings.add(new InputColumnBinding.RecordBinding(i, cca.columns().get(i)));
-                    }
-                    var decodeMethod = switch (cca.extraction()) {
-                        case CallSiteExtraction.ThrowOnMismatch t -> t.decodeMethod();
-                        case CallSiteExtraction.SkipMismatchedElement s -> s.decodeMethod();
-                    };
-                    args.add(new ColumnMapping.LookupArg.DecodedRecord(
-                        cca.name(), cca.list(), decodeMethod, bindings));
-                }
-                case ArgumentRef.InputTypeArg.TableInputArg tia -> {
-                    // Composite-key Map input: each MapBinding contributes one slot. List
-                    // cardinality lives on the outer arg — individual input fields are guaranteed
-                    // scalar by buildLookupBindings.
-                    if (!tia.fieldBindings().isEmpty()) {
-                        args.add(new ColumnMapping.LookupArg.MapInput(
-                            tia.name(), tia.list(), tia.fieldBindings()));
-                    }
-                }
-                default -> {}
-            }
-        }
-        return new ColumnMapping(args, targetTable);
     }
 
     /**
@@ -917,7 +870,7 @@ class FieldBuilder {
                 case ArgumentRef.ScalarArg.ColumnArg ca -> {
                     boolean autoSuppressed = ca.suppressedByFieldOverride()
                         || (ca.argCondition().isPresent() && ca.argCondition().get().override());
-                    // Lookup-key args are consumed by projectForLookup → LookupMapping and
+                    // Lookup-key args are consumed by LookupMappingResolver → LookupMapping and
                     // emitted via VALUES+JOIN by LookupValuesJoinEmitter. They must not appear
                     // as GeneratedConditionFilter bodyParams (per docs/argument-resolution.md Phase 1).
                     if (!autoSuppressed && !ca.isLookupKey()) {
@@ -930,7 +883,7 @@ class FieldBuilder {
                 }
                 case ArgumentRef.ScalarArg.CompositeColumnArg cca -> {
                     // R50 phase (g-A): composite-PK NodeId scalar args only ship with @lookupKey
-                    // today (consumed by projectForLookup → DecodedRecord). The classifier rejects
+                    // today (consumed by LookupMappingResolver → DecodedRecord). The classifier rejects
                     // non-lookup-key composite-PK args as UnclassifiedArg, so they never reach
                     // this branch with isLookupKey == false. Lookup-key args are routed away
                     // from bodyParams the same way ColumnArg's @lookupKey path is.
