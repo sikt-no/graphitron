@@ -83,7 +83,7 @@ final class SelectMethodBody {
         String tableLocal = "t";
         String inputAlias = decap(entity.typeName()) + "Alt" + altIndex + "Input";
         List<ColumnRef> columns = alt.columns();
-        Function<ColumnRef, ColumnRef> column = c -> c;
+        Function<ColumnRef, ColumnRef> column = Function.identity();
 
         var b = CodeBlock.builder();
         b.addStatement("if (bindings.isEmpty()) return");
@@ -99,7 +99,7 @@ final class SelectMethodBody {
         b.addStatement("Object[] cols = (Object[]) binding[1]");
         CodeBlock cells = ValuesJoinRowBuilder.cellsCode(
             columns, column, CodeBlock.of("$T.val(idx, $T.class)", DSL, Integer.class), tableLocal,
-            (col, idx) -> CodeBlock.of("cols[$L]", idx));
+            (_, idx) -> CodeBlock.of("cols[$L]", idx));
         b.addStatement("rows[i] = $T.row($L)", DSL, cells);
         b.endControlFlow();
 
