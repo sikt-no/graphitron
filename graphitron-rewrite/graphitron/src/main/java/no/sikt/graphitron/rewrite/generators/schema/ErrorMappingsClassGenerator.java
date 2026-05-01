@@ -110,8 +110,8 @@ public final class ErrorMappingsClassGenerator {
      * {@code @error} type declaration order, then {@code handlers} array order within each type).
      *
      * <p>Handlers carried on an {@link ErrorType} whose {@code classFqn} is empty are skipped
-     * silently: the {@code (List<String>, String) -> GraphitronError} factory needs a backing
-     * class. The fallthrough produces an empty {@code Mapping[]} for channels whose every
+     * silently: the {@code (List<String>, String) -> Object} factory needs a backing class to
+     * instantiate. The fallthrough produces an empty {@code Mapping[]} for channels whose every
      * mapped {@code @error} type lacks a backing class; the dispatch arm then routes through
      * the unmatched/redact arm, which is the safe disposition until R12's class-resolution
      * lift lands.

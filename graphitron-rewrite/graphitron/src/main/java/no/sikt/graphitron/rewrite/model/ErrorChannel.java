@@ -64,8 +64,10 @@ public record ErrorChannel(
      *       for {@code com.example.Film}, a primitive for {@code long}, or a parameterised
      *       list type for the errors slot.</li>
      *   <li>{@code isErrorsSlot} : exactly one parameter has this set; it is the slot the
-     *       lambda parameter binds to. Identified at classify time as the parameter whose
-     *       type is assignable from {@code List<? extends GraphitronError>}.</li>
+     *       lambda parameter binds to. Identified at classify time by channel-typed
+     *       structural match: the parameter is a {@code List}/{@code Iterable}/{@code
+     *       Collection} (or subtype) whose element-type upper bound is a supertype of every
+     *       channel {@code @error} class.</li>
      *   <li>{@code defaultLiteral} : the literal expression to print at this slot when the
      *       lambda is constructed, for non-errors slots only ({@code "null"} for reference
      *       types, {@code "0"} / {@code "0L"} / {@code "0.0"} / {@code "false"} /

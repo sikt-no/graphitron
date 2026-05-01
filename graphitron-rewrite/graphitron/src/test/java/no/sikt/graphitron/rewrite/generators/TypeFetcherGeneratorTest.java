@@ -781,9 +781,11 @@ class TypeFetcherGeneratorTest {
     // ===== R12 §3 try/catch wrapper: dispatch arm vs redact arm =====
 
     private static ErrorChannel sakPayloadChannel() {
-        // Mirrors the SakPayload(String data, List<? extends GraphitronError> errors) shape
-        // used by ErrorChannelClassificationTest. The mappedErrorTypes list is empty here
-        // because the catch-arm emission only walks payloadCtorParams + mappingsConstantName.
+        // Mirrors the SakPayload(String data, List<?> errors) shape used by
+        // ErrorChannelClassificationTest. The mappedErrorTypes list is empty here because the
+        // catch-arm emission only walks payloadCtorParams + mappingsConstantName; the slot
+        // typed as List<?> matches structurally without needing the channel @error classes
+        // resolved.
         return new ErrorChannel(
             List.of(),
             ClassName.bestGuess("com.example.SakPayload"),
@@ -793,7 +795,7 @@ class TypeFetcherGeneratorTest {
                 new ErrorChannel.PayloadConstructorParam("errors",
                     ParameterizedTypeName.get(
                         ClassName.get("java.util", "List"),
-                        WildcardTypeName.subtypeOf(ClassName.bestGuess("com.example.GraphitronError"))),
+                        WildcardTypeName.subtypeOf(ClassName.OBJECT)),
                     true, null)),
             "SAK_PAYLOAD");
     }

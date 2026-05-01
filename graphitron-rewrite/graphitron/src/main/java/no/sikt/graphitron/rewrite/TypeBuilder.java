@@ -576,12 +576,12 @@ class TypeBuilder {
             + "@error class via its (List<String> path, String message) constructor, and the runtime "
             + "fan-out for VALIDATION assumes the same shape. Relaxing this check breaks the generated "
             + "factory call. When @record co-locates a className, the same arm reflects the backing "
-            + "class to verify both the canonical constructor and that the class implements the "
-            + "GraphitronError marker (matched by simple name); the schema-emitted "
-            + "ErrorRouter.Mapping.build factory's return type is GraphitronError, and the typed "
-            + "errors-channel list handed to the payload constructor is "
-            + "List<? extends GraphitronError>, so a non-marker class would not even compile through "
-            + "the generated ErrorRouter.")
+            + "class to verify the canonical constructor (validatePathMessageConstructor) and the "
+            + "path()/message() accessors graphql-java's PropertyDataFetcher reads at runtime "
+            + "(validatePathMessageAccessors). No marker interface is required; the channel-typed "
+            + "errors-slot match in FieldBuilder.resolveErrorChannel matches against the channel's "
+            + "@error classes structurally, and the runtime contract is enforced loudly at classify "
+            + "time by these accessor / constructor reflections.")
     private GraphitronType buildErrorType(GraphQLObjectType objType) {
         String name = objType.getName();
         SourceLocation location = locationOf(objType);
@@ -647,9 +647,9 @@ class TypeBuilder {
                     if (ctorReason != null) {
                         rejectReasons.add(ctorReason);
                     } else {
-                        String markerReason = validateImplementsGraphitronError(className);
-                        if (markerReason != null) {
-                            rejectReasons.add(markerReason);
+                        String accessorReason = validatePathMessageAccessors(className);
+                        if (accessorReason != null) {
+                            rejectReasons.add(accessorReason);
                         } else {
                             classFqn = Optional.of(className);
                         }
@@ -709,53 +709,60 @@ class TypeBuilder {
     }
 
     /**
-     * Reflects the developer-supplied {@code @error} backing class and verifies it implements
-     * (transitively) an interface whose simple name is {@code "GraphitronError"}. Returns a
-     * non-null reason string when the class does not implement the marker; returns {@code null}
-     * on success.
+     * Reflects the developer-supplied {@code @error} backing class and verifies it exposes the
+     * runtime accessor contract graphql-java's {@code PropertyDataFetcher} reads when
+     * serialising the error into a response: a no-arg {@code path()} returning
+     * {@link java.util.List} (raw or parameterised; the runtime treats it as
+     * {@code List<String>}) and a no-arg {@code message()} returning {@link String}. Returns a
+     * non-null reason string when either accessor is missing or wrong-typed; returns
+     * {@code null} on success.
      *
-     * <p>Matched by simple name to mirror the established pattern in
-     * {@code FieldBuilder.isGraphitronErrorListSlot}: the marker is emitted as generated output
-     * at {@code <outputPackage>.schema.GraphitronError}, so the FQN varies per consumer. The
-     * developer's compiled class file is on the classifier classpath and already declares
-     * {@code implements <some-package>.GraphitronError} against whichever copy lives in their
-     * tree, so a simple-name match against any transitive interface is the safe and portable
-     * way to recognise the marker.
+     * <p>Surfaces the previously-implicit runtime contract at classify time: a class with the
+     * canonical constructor but missing accessors would compile, generate, and only fail at
+     * the first request when graphql-java tries to read {@code path}/{@code message} off the
+     * instance. The check is the structural successor to the dropped marker-interface
+     * requirement: instead of mandating an {@code implements GraphitronError} clause that
+     * pulled accessor presence in transitively, we discover the accessors directly on the
+     * developer's class.
      *
      * <p>The class is presumed to be loadable: this method is invoked after
-     * {@link #validatePathMessageConstructor} succeeded, so {@link Class#forName} will not throw
-     * here. If it somehow does (classloader race), the rejection reason mentions the load
-     * failure rather than the marker.
+     * {@link #validatePathMessageConstructor} succeeded, so {@link Class#forName} will not
+     * throw here. If it somehow does (classloader race), the rejection reason mentions the
+     * load failure rather than the accessors.
      */
-    private static String validateImplementsGraphitronError(String className) {
+    private static String validatePathMessageAccessors(String className) {
         Class<?> cls;
         try {
             cls = Class.forName(className);
         } catch (ClassNotFoundException e) {
             return "@error backing class '" + className + "' could not be loaded";
         }
-        if (implementsGraphitronError(cls)) {
-            return null;
+        java.lang.reflect.Method pathAccessor;
+        java.lang.reflect.Method messageAccessor;
+        try {
+            pathAccessor = cls.getMethod("path");
+        } catch (NoSuchMethodException e) {
+            return "@error backing class '" + className + "' must declare a no-arg path() "
+                + "accessor returning List<String>; graphql-java's PropertyDataFetcher reads it "
+                + "at runtime to serialise the error";
         }
-        return "@error backing class '" + className + "' must implement the GraphitronError "
-            + "marker interface; the schema-emitted ErrorRouter.Mapping.build factory returns "
-            + "GraphitronError, and the runtime errors-channel list passed to the payload "
-            + "constructor is List<? extends GraphitronError>";
-    }
-
-    /**
-     * Walks the supertype graph (interfaces and superclass chain) of {@code cls} looking for an
-     * interface whose simple name is {@code "GraphitronError"}. Termination guarantees: the
-     * superclass chain ends at {@link Object} (or null for interfaces), and every interface
-     * graph is acyclic, so the recursion is bounded by the type's declared ancestry.
-     */
-    private static boolean implementsGraphitronError(Class<?> cls) {
-        if (cls == null || cls == Object.class) return false;
-        if (cls.isInterface() && "GraphitronError".equals(cls.getSimpleName())) return true;
-        for (var iface : cls.getInterfaces()) {
-            if (implementsGraphitronError(iface)) return true;
+        try {
+            messageAccessor = cls.getMethod("message");
+        } catch (NoSuchMethodException e) {
+            return "@error backing class '" + className + "' must declare a no-arg message() "
+                + "accessor returning String; graphql-java's PropertyDataFetcher reads it at "
+                + "runtime to serialise the error";
         }
-        return implementsGraphitronError(cls.getSuperclass());
+        if (!java.util.List.class.isAssignableFrom(pathAccessor.getReturnType())) {
+            return "@error backing class '" + className + "' has path() returning "
+                + pathAccessor.getReturnType().getName() + "; expected java.util.List "
+                + "(parameterised List<String> or raw List)";
+        }
+        if (messageAccessor.getReturnType() != String.class) {
+            return "@error backing class '" + className + "' has message() returning "
+                + messageAccessor.getReturnType().getName() + "; expected java.lang.String";
+        }
+        return null;
     }
 
     private static Class<?> elementClass(java.lang.reflect.Type t) {

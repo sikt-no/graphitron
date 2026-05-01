@@ -21,9 +21,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>The fixtures use {@code SakPayload} (in {@code dummyreferences}) as the developer-supplied
  * payload class: a Java record with the all-fields constructor
- * {@code (String data, List<? extends GraphitronError> errors)}. The carrier classifier
- * matches the errors slot by simple-name {@code GraphitronError} until the marker-interface
- * enforcement check lands later in error-handling-parity.md.
+ * {@code (String data, List<?> errors)}. The carrier classifier matches the errors slot by
+ * channel-typed structural match: the parameter is the unique parameterised
+ * List/Iterable/Collection whose element-type upper bound is a supertype of every channel
+ * {@code @error} class. The fixture's {@code @error} types have no resolved backing class, so
+ * the constraint is vacuous and {@code List<?>} (element bound {@code Object}) suffices.
  */
 @UnitTier
 class ErrorChannelClassificationTest {
@@ -84,7 +86,7 @@ class ErrorChannelClassificationTest {
     void payloadConstructor_recordsErrorsSlotAndDefaultLiterals() {
         // Verifies the per-parameter shape: the errors slot has isErrorsSlot=true and a null
         // defaultLiteral; every other slot has the appropriate language default. SakPayload is
-        // (String data, List<? extends GraphitronError> errors), so two params: data → "null",
+        // (String data, List<?> errors), so two params: data → "null",
         // errors → no defaultLiteral and isErrorsSlot=true.
         var schema = build(UNION_ERROR_PAYLOAD_SDL + """
             type Query { sak: SakPayload %s }
