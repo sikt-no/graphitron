@@ -10,7 +10,7 @@ depends-on: []
 
 # Stub #3: Interface / union fetchers
 
-Track A is **fully done** (same-table Phase 1 closed 2026-04-27, cross-table Phase 2 closed 2026-04-30). The remaining work is Track B (multi-table polymorphic variants, which requires a design decision before any code can be written), and the supporting prerequisite *NodeId from JSON-encoded row identity*. `TypeResolver` wiring for non-`Node` interface and union types is also covered here as a companion concern: Track A's `TableInterfaceType` already wires it; Track B closes the gap for plain `InterfaceType` / `UnionType`.
+Track A is **fully done** (same-table Phase 1 closed 2026-04-27, cross-table Phase 2 closed 2026-04-30). The remaining work is Track B: native multi-table polymorphism for plain `InterfaceType` and `UnionType`. Graphitron generates the SQL itself; no `@service` required. The design is two-stage (narrow UNION ALL of keys plus per-typename batched lookup) and reuses the post-R50 per-typeId VALUES-and-JOIN row-builder. Companion concern: `TypeResolver` wiring for non-`Node` `InterfaceType` / `UnionType`. Track A's `TableInterfaceType` already wires it; Track B closes the gap for the remaining cases.
 
 Priority number `#3` must stay stable: it is embedded in emitted reason strings consumed by existing schema authors.
 
@@ -206,87 +206,115 @@ rework.
 
 **Variants:** `QueryField.QueryInterfaceField`, `QueryField.QueryUnionField`, `ChildField.InterfaceField`, `ChildField.UnionField`
 
-All four carry only `PolymorphicReturnType` — no table, no `MethodRef`. The classifier produces them when the return type is a multi-table `InterfaceType` or `UnionType` and no `@service` / `@tableMethod` is present.
+All four carry only `PolymorphicReturnType` plus the participants list, with no inherent table or method reference. The classifier already produces them when the return type is a plain `InterfaceType` (multi-table) or `UnionType`; today they sit in `NOT_IMPLEMENTED_REASONS` as build-time errors. Track B turns them into working leaves: Graphitron generates the SQL natively, no `@service` required.
 
-### Design decision (resolve before coding)
+### Design
 
-Without a table binding or a method reference, there is no SQL for Graphitron to generate. Two options:
+Two-stage emission per fetcher:
 
-**Option 1 — Reject at classification.** These variants become `UnclassifiedField` when the field has no `@service`. The error message should say: "Multi-table interface/union fields require `@service` for developer-supplied dispatch, or `@table @discriminate` on the interface type for single-table polymorphism." The four variants disappear from the model; their `NOT_IMPLEMENTED_REASONS` entries and `stub(f)` arms are removed.
+1. **Stage 1, narrow UNION ALL across participants.** One SQL statement projects `(typename, pk_columns, sort_key)` per branch. The database does `ORDER BY` and `LIMIT` across the union in one shot.
+2. **Stage 2, per-typename batched lookup.** Group stage-1 results by `__typename`; for each group, run one typed `WHERE pk IN (<values>)` SELECT against that participant's table using its existing `<Type>.$fields(sel, table, env)`. Reuses the post-R50 per-typeId VALUES-and-JOIN row-builder collapsed in R55.
 
-**Option 2 — Keep variants, improve the stub message.** The fetcher body emits a better `UnsupportedOperationException` message pointing to the two options above. Structurally the same as today but more actionable.
+This keeps stage 1's wire payload narrow (typename plus PK plus sort columns only, fixed width regardless of selection-set depth), and stage 2 returns typed Records that flow through the existing `PropertyDataFetcher` / `ColumnFetcher` machinery unchanged. No JSONB wrapping of data, no NULL-padded superset, no second-stage LEFT-JOIN-per-table dance.
 
-Recommendation: **Option 1.** Consistent with how the classifier already rejects other unsupported patterns. The model variants (`QueryInterfaceField`, etc.) may survive as separate classified paths if `@service` + interface-return becomes an explicit classification in the future.
+#### Stage 1: narrow union of keys
 
-### TypeResolver wiring for `InterfaceType` / `UnionType`
+For each `ParticipantRef.TableBound` participant, emit a SELECT projecting:
 
-Even under Option 1, `InterfaceType` and `UnionType` exist in the schema (e.g. the `Node` interface, or user types whose fields are all `@service`-backed). Their TypeResolvers still need wiring; today none are emitted, so a runtime resolution against any non-`Node` interface or union would fail with `Can't resolve type for object`. (Track A's `TableInterfaceType` already gets a `TypeResolver` via the `__typename` convention; the gap is for the multi-table cases.)
+- `inline("<Participant>").as("__typename")`: the constant type name, text in every branch.
+- The participant's PK columns under stable aliases (`__pk0__`, `__pk1__`, …). Single-PK participants project one column; composite-PK participants project up to `MAX_PK_ARITY` columns. Participants that don't have a PK at every slot NULL-pad with the correct typed cast, but see **scope cuts** below: the v1 plan only supports participants whose PK column lists positionally align without collisions, so most schemas project the same shape per branch with no padding.
+- A sort-key column (`__sort__`). Default: the participant's PK (single-column). With an interface-level `@orderBy`, the column expression resolved per participant. **Composite-key sort** projects `DSL.jsonbArray(pk_col_1, pk_col_2, …).as("__sort__")`. JSONB arrays compare element-wise in PostgreSQL, so composite ordering reduces to a single comparable column at no extra Java cost.
+- Top-level WHERE clause for `ChildField.InterfaceField` / `UnionField`: the parent's FK condition translated to each branch's WHERE.
 
-Pattern: emit `codeRegistry.typeResolver("<Name>", env -> { ... })` for each non-`Node` `InterfaceType` and `UnionType` in `schema.types()`. Use the `__typename` convention: the resolver reads `record.get("__typename")` (same contract as `QueryNodeFetcher.registerTypeResolver`) and calls `env.getSchema().getObjectType(value)`. Document this as a required contract for `@service` methods returning multi-table interface / union types (see `graphitroncontext-extension-point-docs.md`).
+Stage 1 is one statement; the planner can use participant-table indexes on the sort key. Pagination (limit / offset, or seek-cursor) attaches to this single statement.
 
-### Prerequisite: NodeId from JSON-encoded row identity
+#### Stage 2: typed batched lookup per typename
 
-A multi-table interface/union fetcher needs to produce a relay nodeId for each
-row, but the row's identity arrives as a JSON value rather than a fully
-materialised `TableRecord`. The shape mirrors what the legacy multi-table
-interface fetcher emits:
-`DSL.jsonbArray(DSL.inline("Customer"), CUSTOMER.CUSTOMER_ID)` produces a
-`JSONB` value whose first element is the GraphQL type name and whose
-remaining elements are the primary-key columns of the row's source table.
-
-Track B (and federation `_entities` over a `@node` type — see
-[`federation-via-federation-jvm.md`](federation-via-federation-jvm.md)) need to
-lift that JSON value into the corresponding `TableRecord<?>` (using the
-typeName to pick the record class, and the remaining JSON elements as
-positional column values), then run the lifted record through
-`NodeIdEncoder.encode(typeId, pkValues...)`. End result: a fully-formed relay
-nodeId that round-trips back through `Query.node` to the same row.
-
-The current rewrite nodeId path
-(`generators/util/NodeIdEncoderClassGenerator.java`,
-`generators/util/QueryNodeFetcherClassGenerator.java`) assumes the caller
-already has `(typeId, pkColumnValues...)` in hand; that works for
-fixed-table fetchers but not for polymorphic-at-SQL-time row identity.
-
-Sketch: a new helper on `NodeIdEncoder` (or a sibling `NodeIdJsonRowLifter`)
-accepts the JSONB value and returns the encoded ID:
+The Java side groups stage-1 results by `__typename` into `Map<String, List<PkRow>>`. For each non-empty group, the generator emits a per-typename method (or a dispatch table) that runs the existing post-R50 lookup-shape SQL:
 
 ```java
-public static String encodeFromJsonRow(JSONB jsonRow) {
-    var arr = parseJsonArray(jsonRow);                  // ["Customer", "42"]
-    String typeName = arr.getFirst();
-    Class<? extends TableRecord<?>> recordClass = registry.recordClassFor(typeName);
-    TableRecord<?> rec = lift(recordClass, arr.tail()); // populate PK columns positionally
-    return encode(typeIdFor(typeName), pkValuesOf(rec));
-}
+var filmRows = dsl.select(Film.$fields(sel, film, env))
+    .from(film)
+    .where(row(film.FILM_ID).in( /* stage-1 PK rows for "Film" */ ))
+    .fetch();
 ```
 
-Open questions to resolve when this prerequisite is specced (separately from
-Track B's classifier decision):
+Per-typename row-builder is the same shared primitive that R55 collapses across `Query.nodes`, federation `_entities`, and now Track B. The generator reuses (does not duplicate) that emission. Selection-set narrowing works at full strength: only fields under `... on Film { … }` reach `Film.$fields`, and typed reads survive end-to-end.
 
-- **Where does the registry live?** Inline static fields on `NodeIdEncoder`, or a separate generated class so the encoder stays usable in contexts with no jOOQ-record dependency.
-- **Type-name vs. type-id in the JSON head.** Legacy uses the GraphQL type name (`"Customer"`); rewrite's `NodeIdEncoder.encode` takes the `typeId` (`__NODE_TYPE_ID`). Confirm direction with the federation plan before locking it in.
-- **Null-safety contract.** Match `NodeIdEncoder.encode`: a JSON null in any PK slot returns a null ID, no exception.
-- **Composite-key correctness.** Verify the lifter handles tables whose `nodeKeyColumns()` are not a single column; preserve column order in the JSON-array-tail mapping.
+#### Merge in stage-1 order
 
-Legacy reference shape:
-`FetchMultiTableDBMethodGenerator.getPrimaryKeyFieldsArray` —
-`graphitron-codegen-parent/.../db/FetchMultiTableDBMethodGenerator.java:411`.
+The fetcher iterates stage-1 results in their (sorted, paginated) order; for each `(typename, pk)` it looks up the typed Record from the per-typename result map and assembles the final `Result<Record>`. `__typename` from stage 1 carries through as a column on each typed Record so the TypeResolver routes correctly.
+
+#### TypeResolver wiring
+
+Each non-`Node` `InterfaceType` and `UnionType` gets a TypeResolver in `GraphitronSchemaClassGenerator`. The resolver reads `record.get(DSL.field(DSL.name("__typename")), String.class)` and returns `env.getSchema().getObjectType(value)`, the same `__typename` convention `QueryNodeFetcher.registerTypeResolver` already uses for the `Node` interface. Track A's `TableInterfaceType` resolver path stays unchanged; this lands the missing wiring for the plain-interface and union cases.
+
+### Validation
+
+`GraphitronSchemaValidator.validateInterfaceType` / `validateUnionType` reject schemas that v1 cannot align in stage 1. Defer the more elaborate alignment cases to follow-ups; a clear validation error keeps schema authors from hitting confusing runtime behaviour.
+
+1. **Participants without a PK.** Stage 1 needs row identity per branch. A participant whose `TableRef.primaryKeyColumns` is empty cannot be unioned. Reject with a pointer to declaring `@node(keyColumns: …)` or a real PK on the underlying table.
+2. **PK column-name collisions across participants.** When two participants in the same interface or union project PK columns with the same Java name but different SQL types (e.g. one declares `id int4`, another declares `id varchar`), positional alignment in stage 1 silently casts on PostgreSQL's union-resolution rules and produces surprises. Detect at validation, reject with a clear message naming the colliding pair. Collision-free participant sets cover the vast majority of schemas; collision handling (per-slot `cast(... as text)` with stage-2 parsing, or jsonbArray packing) lands as a follow-up.
+
+### Fixture
+
+A multi-table interface fixture using existing tables: `interface Searchable` implemented by `Film @table` and `Actor @table` (single int PKs, no collision). Add `Query.search: [Searchable!]!` for the root case and a child-field fixture for `ChildField.InterfaceField`. A parallel union fixture (`union Document = Film | Actor`) covers `UnionField`. Composite-key sort exercise piggybacks on the existing `bar` table with two key columns (used by the rewrite's NodeId tests); declare a third participant in the search interface with composite PK to force the jsonbArray sort path.
+
+### Tests
+
+Unit (`TypeFetcherGeneratorTest`):
+
+- `_emitsTwoStageStructure`: body contains both a UNION ALL stage-1 emission and a per-typename stage-2 lookup call.
+- `_stage1ProjectsTypenameAndPks`: stage-1 SELECT shape, `__typename` constant per branch, `__pk0__`..`__pkN__` typed.
+- `_stage1SortKeyForCompositePk_emitsJsonbArray`: composite-PK participant projects `DSL.jsonbArray(...).as("__sort__")`.
+- `_perTypenameLookup_callsParticipantFields`: stage-2 calls each participant's `$fields(sel, <participantTable>, env)`.
+- `_childInterfaceField_emitsParentFkConditionPerBranch`: `ChildField.InterfaceField` adds the parent FK to each branch's WHERE.
+
+Classification (`GraphitronSchemaBuilderTest`):
+
+- New cases asserting `QueryField.QueryInterfaceField`, `QueryField.QueryUnionField`, `ChildField.InterfaceField`, `ChildField.UnionField` are produced and lifted out of `NOT_IMPLEMENTED_REASONS`.
+- Validation rejection cases: PK-less participant, PK column-name collision.
+
+Schema-class (`GraphitronSchemaClassGeneratorTest`): TypeResolver presence and `__typename` resolution path for non-`Node` `InterfaceType` and `UnionType`.
+
+Execution (`GraphQLQueryTest`):
+
+- `search_returnsAllParticipantTypes`: stage 1 + stage 2 produces concatenated rows; TypeResolver routes per row.
+- `search_orderedByPkAcrossParticipants`: ORDER BY runs DB-side; results interleave correctly.
+- `search_compositePkParticipant_jsonbArraySorts`: a participant with composite PK orders correctly alongside single-PK participants.
+- `search_paginatedByLimit`: LIMIT N applies database-side; exactly N rows returned.
+- `search_emptyResult_noStage2Roundtrips`: stage 1 returns 0 rows; no stage-2 queries fire (SQL_LOG capture).
+
+### Order and sub-phases
+
+- **B1, TypeResolver wiring** for non-`Node` `InterfaceType` / `UnionType`. Standalone, small. Lands first because it's also a prerequisite for any developer who returns a multi-table interface from `@service`.
+- **B2, `QueryInterfaceField` / `QueryUnionField`** root case: stage-1 emitter, stage-2 dispatch via the shared row-builder, validation rejections. Composite-PK jsonbArray sort lives here.
+- **B3, `ChildField.InterfaceField` / `ChildField.UnionField`** child case: B2's emitter plus the parent-FK condition per branch.
+- **B4, connection pagination.** Build on B1-B3.
+
+R55 (collapse `EntityFetcherDispatch` per-typeId VALUES emission onto the shared row-builder) overlaps with B2's stage-2 emission. If R55 lands first, B2 calls into the shared builder; if not, B2 forks a parallel implementation that R55 later collapses. Both orderings are tractable.
+
+### Non-goals (Track B v1)
+
+- Mixed PK arity / type across participants. Validation rejects; collision-handling follow-up.
+- Per-participant SQL-level filtering directives beyond what the schema model already exposes (`@condition` on the field carries through trivially via stage-1 WHERE).
+- Stage-1-as-CTE optimisation (rendering `WITH keys AS (...)`). The straight UNION ALL form is sufficient until profiling shows otherwise.
+- Mixing this story with NodeId encoding for relay round-trip. Track B does not produce relay nodeIds inside stage 1. Per-field `@nodeId` projections on participants encode in stage 2's typed Record path using the existing `NodeIdEncoder.encode(typeId, pkValues...)`. No JSON-row-identity helper.
 
 ---
 
 ## Order and gating
 
-Track A is fully shipped (same-table Phase 1 plus cross-table Phase 2). What remains: Track B's design decision (Option 1 vs. Option 2 above) is a prerequisite for any Track B code; the JSON-row-identity prerequisite ships alongside Track B (or earlier as an independent foundation if federation needs it first).
+Track A is fully shipped (same-table Phase 1 plus cross-table Phase 2). Track B's sub-phases B1-B4 are listed in the Track B section above; B1 is the smallest standalone deliverable and unblocks any developer returning a multi-table interface from `@service` independently of Track B's main thrust. R55's shared row-builder collapse overlaps with B2's stage-2 emission; either ordering of (R55, B2) is workable.
 
 ---
 
 ## Non-goals
 
-- Per-participant sub-queries for multi-table interface fetchers without `@service` (requires a new directive or classification path).
-- `NodeIdReferenceField` JOIN-projection form (tracked separately under Cleanup).
+- `NodeIdReferenceField` JOIN-projection form (tracked separately under R50 follow-ups).
 - TypeResolver for the built-in `Node` interface (already wired via `QueryNodeFetcher.registerTypeResolver`).
-- Track A's same-table selection-set projection — closed and shipped; this plan covers only the remaining cross-table follow-up.
+- Track A's same-table and cross-table emission, closed and shipped; this plan now covers only Track B's multi-table polymorphism.
+- NodeId-from-JSON-encoded-row-identity helper. Earlier drafts of this plan listed it as a Track B prerequisite mirroring legacy's `jsonbArray('Customer', CUSTOMER_ID)` row-identity column. The two-stage design (narrow union of typed PKs plus per-typename batched lookup) makes it unnecessary: identity flows as typed PK columns through stage 1 and as typed Records through stage 2; relay nodeId encoding for individual rows happens at the per-field level using the same `NodeIdEncoder.encode(typeId, pkValues...)` everything else uses.
 
 ---
 
@@ -295,3 +323,4 @@ Track A is fully shipped (same-table Phase 1 plus cross-table Phase 2). What rem
 - **2026-04-27** — Track A complete. `QueryTableInterfaceField` and `ChildField.TableInterfaceField` lifted from `NOT_IMPLEMENTED_REASONS` to `IMPLEMENTED_LEAVES`. `discriminatorColumn` added to both records; classifier, `QueryConditionsGenerator`, `TypeFetcherGenerator` (new `buildQueryTableInterfaceFieldFetcher`, `buildTableInterfaceFieldFetcher`, `buildJoinPathCondition`), and `GraphitronSchemaClassGenerator` (TypeResolver wiring) updated. Fixtures: `content` table, `allContent` root query, `Film.filmContent` child field, `Content` / `FilmContent` / `ShortContent` SDL. Review identified six cleanup items (see Track A cleanup section above).
 - **2026-04-27** — Track A cleanup complete. All six review items resolved. Added discriminator-value WHERE filter (`buildDiscriminatorFilter`), `knownDiscriminatorValues` on both model records, SQL column name resolution via `JooqCatalog.findColumn` in `TypeBuilder`, FK column SQL-name fix in `buildJoinPathCondition`. Added 18 new unit tests (TypeFetcherGeneratorTest, GraphitronSchemaClassGeneratorTest) and 5 execution tests (GraphQLQueryTest). Same-table Track A is fully closed.
 - **2026-04-30** — Track A Phase 2 (cross-table participant fields) shipped. New `ChildField.ParticipantColumnReferenceField` leaf classified by `FieldBuilder` for single-hop `@reference` fields on `TableInterfaceType` participants whose target differs from the participant's own table. `ParticipantRef.TableBound` extended with `crossTableFields: List<CrossTableField>` populated by `TypeBuilder.extractCrossTableFields`. `TypeFetcherGenerator` emits per-occurrence discriminator-gated LEFT JOINs via two new helpers (`buildCrossTableAliasDeclarations`, `buildCrossTableJoinChain`) and lifts the SQL chain into a `SelectJoinStep<Record> step` variable so JOINs apply between `.from` and `.where`. Per-field DataFetcher value: `ColumnFetcher<>(DSL.field(DSL.name(alias), <columnClass>.class))` reading by alias from the parent record. Selection-set gating uses graphql-java 25's `Type.field` (dot, not slash) form. Fixtures: `short_description` column on `content`, `ShortContent.description`, `FilmContent.rating` via `content_film_id_fkey`. Tests: 5 new unit tests in `TypeFetcherGeneratorTest`, 1 new classification enum (2 cases) in `GraphitronSchemaBuilderTest`, 5 new execution tests in `GraphQLQueryTest`.
+- **2026-05-01** — Track B design pivot. The previous "Option 1 (reject without `@service`) vs. Option 2 (better stub message)" framing assumed Graphitron could not generate SQL across heterogeneous participant tables without developer-supplied dispatch. That premise was wrong: per-participant `<Type>.$fields(sel, table, env)` plus typed `TableRef.primaryKeyColumns` give us everything we need to emit native SQL. Track B's design is now two-stage: (1) narrow UNION ALL across participants projecting `(typename, pk_columns, sort_key)` so PostgreSQL handles ORDER BY and LIMIT in one statement; (2) per-typename batched lookup using the post-R50 VALUES-and-JOIN row-builder (shared with `Query.nodes` and federation `_entities`, collapsed in R55). Composite-key sort uses `DSL.jsonbArray(...)` for element-wise comparison. NodeId-from-JSON-row-identity is no longer a prerequisite: typed PKs flow through stage 1, typed Records through stage 2, relay nodeId encoding remains at the per-field level. Validation rejects PK collisions and PK-less participants for v1; collision-handling deferred. Sub-phases B1 (TypeResolver wiring), B2 (root case), B3 (child case), B4 (connection pagination).
