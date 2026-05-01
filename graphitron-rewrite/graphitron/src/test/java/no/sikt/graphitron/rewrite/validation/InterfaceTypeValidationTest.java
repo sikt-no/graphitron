@@ -24,7 +24,10 @@ class InterfaceTypeValidationTest {
             new InterfaceType("Node", null, List.of()),
             List.of()),
 
-        ALL_BOUND("all implementing types are table-bound — valid",
+        ALL_BOUND_PK_LESS("all implementing types are table-bound — type-level validator does "
+            + "not enforce R36 Track B's PK constraints; that runs at field level "
+            + "(see QueryInterfaceFieldValidationTest) so the Node interface (heterogeneous "
+            + "PK arities, dispatched via QueryNodeFetcher) does not trip a false rejection",
             new InterfaceType("Media", null, List.of(
                 new ParticipantRef.TableBound("Film", new TableRef("film", "FILM", "Film", List.of()), null),
                 new ParticipantRef.TableBound("Actor", new TableRef("actor", "ACTOR", "Actor", List.of()), null)
