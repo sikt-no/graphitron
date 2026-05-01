@@ -5,7 +5,7 @@ status: In Progress
 bucket: stubs
 priority: 1
 theme: interface-union
-depends-on: []
+depends-on: [entityfetcherdispatch-lookup-pipeline-collapse]
 ---
 
 # Stub #3: Interface / union fetchers
@@ -287,12 +287,12 @@ Execution (`GraphQLQueryTest`):
 
 ### Order and sub-phases
 
-- **B1, TypeResolver wiring** for non-`Node` `InterfaceType` / `UnionType`. Standalone, small. Lands first because it's also a prerequisite for any developer who returns a multi-table interface from `@service`.
-- **B2, `QueryInterfaceField` / `QueryUnionField`** root case: stage-1 emitter, stage-2 dispatch via the shared row-builder, validation rejections. Composite-PK jsonbArray sort lives here.
+- **B1, TypeResolver wiring** for non-`Node` `InterfaceType` / `UnionType`. Standalone, small. Has no dependency on R55 and is the sub-phase exception to this plan's front-matter `depends-on`. Lands first; also a prerequisite for any developer who returns a multi-table interface from `@service`.
+- **B2, `QueryInterfaceField` / `QueryUnionField`** root case: stage-1 emitter, stage-2 dispatch via the shared row-builder, validation rejections. Composite-PK jsonbArray sort lives here. Blocked on R55.
 - **B3, `ChildField.InterfaceField` / `ChildField.UnionField`** child case: B2's emitter plus the parent-FK condition per branch.
 - **B4, connection pagination.** Build on B1-B3.
 
-R55 (collapse `EntityFetcherDispatch` per-typeId VALUES emission onto the shared row-builder) overlaps with B2's stage-2 emission. If R55 lands first, B2 calls into the shared builder; if not, B2 forks a parallel implementation that R55 later collapses. Both orderings are tractable.
+The front-matter `depends-on` declares the hard ordering: R55 (`entityfetcherdispatch-lookup-pipeline-collapse`) extracts `ValuesJoinRowBuilder` from the existing two duplicate sites (`LookupValuesJoinEmitter` and `EntityFetcherDispatchClassGenerator`); B2's stage-2 emission is the third consumer. Without R55 in place, B2 would fork a third copy of the same `VALUES (idx, c1, …) JOIN <table> ORDER BY idx` primitive that R55 then has to collapse anyway. Pure churn. B1 carves out as the sub-phase that doesn't touch the row-builder and can ship while R55 is still in flight.
 
 ### Non-goals (Track B v1)
 
