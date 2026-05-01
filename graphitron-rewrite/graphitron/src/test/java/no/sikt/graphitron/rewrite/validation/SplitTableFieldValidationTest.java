@@ -28,7 +28,7 @@ class SplitTableFieldValidationTest {
         return new ReturnTypeRef.TableBoundReturnType("Actor", new TableRef("actor", "ACTOR", "Actor", List.of()), wrapper);
     }
 
-    private static final BatchKey PARENT_BATCH_KEY = new BatchKey.RowKeyed(List.of());
+    private static final BatchKey.ParentKeyed PARENT_BATCH_KEY = new BatchKey.RowKeyed(List.of());
 
     // Emitter-level validator messages. Kept inline (rather than read from
     // SplitRowsMethodEmitter.unsupportedReason) so a change to the production string breaks

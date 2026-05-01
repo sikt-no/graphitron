@@ -381,7 +381,7 @@ class TypeFetcherGeneratorTest {
 
     // ===== @service field with mapped (Set<...>) batch key =====
 
-    private static GraphitronField mappedServiceField(String parentType, String name, boolean isList, BatchKey batchKey) {
+    private static GraphitronField mappedServiceField(String parentType, String name, boolean isList, BatchKey.ParentKeyed batchKey) {
         var returnWrapper = isList ? (FieldWrapper) listWrapper() : single();
         var returnType = tableBoundFilm(returnWrapper);
         var method = new MethodRef.Basic(
@@ -392,7 +392,7 @@ class TypeFetcherGeneratorTest {
             List.of(), List.of(), new OrderBySpec.None(), null, method, batchKey);
     }
 
-    private static TypeSpec specWithMappedServiceField(String parentType, String fieldName, boolean isList, BatchKey batchKey) {
+    private static TypeSpec specWithMappedServiceField(String parentType, String fieldName, boolean isList, BatchKey.ParentKeyed batchKey) {
         return TypeFetcherGenerator.generateTypeSpec(parentType, LANGUAGE_TABLE,
             List.of(mappedServiceField(parentType, fieldName, isList, batchKey)));
     }
@@ -1198,7 +1198,7 @@ class TypeFetcherGeneratorTest {
     // each variant.
 
     private static no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField scalarServiceRecordField(
-            String parentType, String name, boolean isList, BatchKey batchKey, no.sikt.graphitron.javapoet.TypeName perKeyType) {
+            String parentType, String name, boolean isList, BatchKey.ParentKeyed batchKey, no.sikt.graphitron.javapoet.TypeName perKeyType) {
         var returnWrapper = isList ? (FieldWrapper) listWrapper() : single();
         var returnType = new no.sikt.graphitron.rewrite.model.ReturnTypeRef.ScalarReturnType("String", returnWrapper);
         var method = new MethodRef.Basic(
@@ -1209,7 +1209,7 @@ class TypeFetcherGeneratorTest {
     }
 
     private static no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField recordBackedServiceRecordField(
-            String parentType, String name, boolean isList, BatchKey batchKey, String fqBackingClass) {
+            String parentType, String name, boolean isList, BatchKey.ParentKeyed batchKey, String fqBackingClass) {
         var returnWrapper = isList ? (FieldWrapper) listWrapper() : single();
         var returnType = new no.sikt.graphitron.rewrite.model.ReturnTypeRef.ResultReturnType(
             "FilmDetails", returnWrapper, fqBackingClass);

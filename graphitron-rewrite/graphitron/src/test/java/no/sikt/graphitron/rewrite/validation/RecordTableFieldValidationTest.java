@@ -27,7 +27,7 @@ class RecordTableFieldValidationTest {
         return new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", List.of()), wrapper);
     }
 
-    private static final BatchKey BATCH_KEY = new BatchKey.RowKeyed(List.of());
+    private static final BatchKey.RecordParentBatchKey BATCH_KEY = new BatchKey.RowKeyed(List.of());
 
     // Validator messages for the intra-variant runtime-stub branches of
     // SplitRowsMethodEmitter.unsupportedReason(RecordTableField). Kept inline — a change to the

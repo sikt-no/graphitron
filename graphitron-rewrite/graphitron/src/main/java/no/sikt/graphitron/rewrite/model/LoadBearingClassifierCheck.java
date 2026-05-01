@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
 import java.lang.annotation.ElementType;
+import java.lang.annotation.Repeatable;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
@@ -28,6 +29,7 @@ import java.lang.annotation.Target;
  */
 @Retention(RetentionPolicy.RUNTIME)
 @Target({ElementType.METHOD, ElementType.TYPE})
+@Repeatable(LoadBearingClassifierChecks.class)
 public @interface LoadBearingClassifierCheck {
 
     /**

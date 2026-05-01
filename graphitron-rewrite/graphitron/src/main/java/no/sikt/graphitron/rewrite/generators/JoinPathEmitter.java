@@ -56,6 +56,7 @@ public final class JoinPathEmitter {
     private static String targetJavaClassName(JoinStep step, int index, int size, TableRef terminalTable) {
         return switch (step) {
             case JoinStep.FkJoin fk -> fk.targetTable().javaClassName();
+            case JoinStep.LiftedHop lh -> lh.targetTable().javaClassName();
             case JoinStep.ConditionJoin cj ->
                 // ConditionJoin does not carry a resolved TableRef (see classification-vocab item 5).
                 // When this is the terminal step and the caller knows the terminal table, use it;
