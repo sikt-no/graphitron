@@ -277,6 +277,192 @@ class ErrorChannelClassificationTest {
     }
 
     @Test
+    void rule8_duplicateExceptionHandlersAcrossTypes_rejectsCarrier() {
+        // Two @error types in the same channel each declare {handler: GENERIC, className:
+        // "java.lang.RuntimeException"} with no matches. Identical (variant, criteria) tuples;
+        // the second is unreachable at dispatch.
+        var schema = build("""
+            type RuntimeA @error(handlers: [{handler: GENERIC, className: "java.lang.RuntimeException"}]) {
+                path: [String!]!
+                message: String!
+            }
+            type RuntimeB @error(handlers: [{handler: GENERIC, className: "java.lang.RuntimeException"}]) {
+                path: [String!]!
+                message: String!
+            }
+            union SakError = RuntimeA | RuntimeB
+            type SakPayload @record(record: {className: "%s"}) {
+                data: String
+                errors: [SakError]
+            }
+            type Query { sak: SakPayload %s }
+            """.formatted(SAK_PAYLOAD_FQN, SERVICE_DECL));
+
+        var field = schema.field("Query", "sak");
+        assertThat(field).isInstanceOf(UnclassifiedField.class);
+        var u = (UnclassifiedField) field;
+        assertThat(u.reason())
+            .contains("identical match-criteria")
+            .contains("RuntimeA")
+            .contains("RuntimeB")
+            .contains("java.lang.RuntimeException");
+    }
+
+    @Test
+    void rule8_duplicateExceptionHandlersWithinSameType_rejectsCarrier() {
+        // Two ExceptionHandler entries on the same @error type's handlers array, identical
+        // criteria. A duplicate within a single @error is rejected the same way as one
+        // spanning two types.
+        var schema = build("""
+            type DupHandlers @error(handlers: [
+                {handler: GENERIC, className: "java.lang.RuntimeException"},
+                {handler: GENERIC, className: "java.lang.RuntimeException"}
+            ]) {
+                path: [String!]!
+                message: String!
+            }
+            union SakError = DupHandlers
+            type SakPayload @record(record: {className: "%s"}) {
+                data: String
+                errors: [SakError]
+            }
+            type Query { sak: SakPayload %s }
+            """.formatted(SAK_PAYLOAD_FQN, SERVICE_DECL));
+
+        var field = schema.field("Query", "sak");
+        assertThat(field).isInstanceOf(UnclassifiedField.class);
+        var u = (UnclassifiedField) field;
+        assertThat(u.reason())
+            .contains("identical match-criteria")
+            .contains("DupHandlers")
+            .contains("java.lang.RuntimeException");
+    }
+
+    @Test
+    void rule8_duplicateSqlStateHandlers_rejectsCarrier() {
+        // Two @error types each declare {handler: DATABASE, sqlState: "23503"} → identical
+        // SqlStateHandler tuples. The second is unreachable.
+        var schema = build("""
+            type FkA @error(handlers: [{handler: DATABASE, sqlState: "23503"}]) {
+                path: [String!]!
+                message: String!
+            }
+            type FkB @error(handlers: [{handler: DATABASE, sqlState: "23503"}]) {
+                path: [String!]!
+                message: String!
+            }
+            union SakError = FkA | FkB
+            type SakPayload @record(record: {className: "%s"}) {
+                data: String
+                errors: [SakError]
+            }
+            type Query { sak: SakPayload %s }
+            """.formatted(SAK_PAYLOAD_FQN, SERVICE_DECL));
+
+        var field = schema.field("Query", "sak");
+        assertThat(field).isInstanceOf(UnclassifiedField.class);
+        var u = (UnclassifiedField) field;
+        assertThat(u.reason())
+            .contains("identical match-criteria")
+            .contains("FkA")
+            .contains("FkB")
+            .contains("23503");
+    }
+
+    @Test
+    void rule8_duplicateVendorCodeHandlers_rejectsCarrier() {
+        // Two @error types each declare {handler: DATABASE, code: "1"} → identical
+        // VendorCodeHandler tuples.
+        var schema = build("""
+            type OraA @error(handlers: [{handler: DATABASE, code: "1"}]) {
+                path: [String!]!
+                message: String!
+            }
+            type OraB @error(handlers: [{handler: DATABASE, code: "1"}]) {
+                path: [String!]!
+                message: String!
+            }
+            union SakError = OraA | OraB
+            type SakPayload @record(record: {className: "%s"}) {
+                data: String
+                errors: [SakError]
+            }
+            type Query { sak: SakPayload %s }
+            """.formatted(SAK_PAYLOAD_FQN, SERVICE_DECL));
+
+        var field = schema.field("Query", "sak");
+        assertThat(field).isInstanceOf(UnclassifiedField.class);
+        var u = (UnclassifiedField) field;
+        assertThat(u.reason())
+            .contains("identical match-criteria")
+            .contains("OraA")
+            .contains("OraB");
+    }
+
+    @Test
+    void rule8_crossVariantOverlapIsAccepted() {
+        // ExceptionHandler(SQLException) and SqlStateHandler("23503") discriminate on different
+        // fields. They may both match the same SQLException; §3 source-order picks the first.
+        // This is the canonical "specific arm before fallback" pattern and must NOT be rejected.
+        var schema = build("""
+            type FkErr @error(handlers: [{handler: DATABASE, sqlState: "23503"}]) {
+                path: [String!]!
+                message: String!
+            }
+            type DbErr @error(handlers: [{handler: GENERIC, className: "java.sql.SQLException"}]) {
+                path: [String!]!
+                message: String!
+            }
+            union SakError = FkErr | DbErr
+            type SakPayload @record(record: {className: "%s"}) {
+                data: String
+                errors: [SakError]
+            }
+            type Query { sak: SakPayload %s }
+            """.formatted(SAK_PAYLOAD_FQN, SERVICE_DECL));
+
+        var f = (QueryField.QueryServiceRecordField) schema.field("Query", "sak");
+        assertThat(f.errorChannel()).isPresent();
+        assertThat(f.errorChannel().get().mappedErrorTypes())
+            .extracting(et -> et.name())
+            .containsExactly("FkErr", "DbErr");
+    }
+
+    @Test
+    void rule8_distinctMatchesValuesDoNotCollide() {
+        // Two ExceptionHandler entries with the same className but different `matches` substrings
+        // are NOT a duplicate: tuple equality treats absent matches as distinct from any present
+        // matches, and two present-matches values discriminate on the substring filter. Both
+        // arms are reachable (different incoming messages select different mappings).
+        var schema = build("""
+            type WithMatches @error(handlers: [
+                {handler: GENERIC, className: "java.lang.IllegalArgumentException", matches: "foo"}
+            ]) {
+                path: [String!]!
+                message: String!
+            }
+            type WithoutMatches @error(handlers: [
+                {handler: GENERIC, className: "java.lang.IllegalArgumentException"}
+            ]) {
+                path: [String!]!
+                message: String!
+            }
+            union SakError = WithMatches | WithoutMatches
+            type SakPayload @record(record: {className: "%s"}) {
+                data: String
+                errors: [SakError]
+            }
+            type Query { sak: SakPayload %s }
+            """.formatted(SAK_PAYLOAD_FQN, SERVICE_DECL));
+
+        var f = (QueryField.QueryServiceRecordField) schema.field("Query", "sak");
+        assertThat(f.errorChannel()).isPresent();
+        assertThat(f.errorChannel().get().mappedErrorTypes())
+            .extracting(et -> et.name())
+            .containsExactly("WithMatches", "WithoutMatches");
+    }
+
+    @Test
     void mutationDmlField_tableReturn_carriesEmptyChannel() {
         // DML mutations return @table or ID. @table-returning fetchers don't yet build an
         // ErrorChannel (the carrier helper is gated on ResultReturnType pending a payload-factory
