@@ -106,7 +106,6 @@ import static no.sikt.graphitron.rewrite.BuildContext.ARG_OVERRIDE;
 import static no.sikt.graphitron.rewrite.BuildContext.argBoolean;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_PATH;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_PRIMARY_KEY;
-import static no.sikt.graphitron.rewrite.BuildContext.ARG_EXTERNAL_FIELD_REF;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_SERVICE_REF;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_TABLE_METHOD_REF;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_TYPE_NAME;
@@ -150,11 +149,13 @@ class FieldBuilder {
     private final ServiceCatalog svc;
     private final ServiceDirectiveResolver serviceResolver;
     private final TableMethodDirectiveResolver tableMethodResolver;
+    private final ExternalFieldDirectiveResolver externalFieldResolver;
     FieldBuilder(BuildContext ctx, ServiceCatalog svc) {
         this.ctx = ctx;
         this.svc = svc;
         this.serviceResolver = new ServiceDirectiveResolver(ctx, svc, this);
         this.tableMethodResolver = new TableMethodDirectiveResolver(ctx, svc, this);
+        this.externalFieldResolver = new ExternalFieldDirectiveResolver(ctx, svc, this);
     }
 
     // ===== Shared resolution helpers =====
@@ -2742,47 +2743,12 @@ class FieldBuilder {
             if (externalPath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, externalPath.errorMessage());
             }
-            // Alias-collision check: the wiring side looks up the field by name via
-            // DSL.field("<name>") against the result Record. If the GraphQL field name collides
-            // with a real SQL column on the parent @table, the alias shadows it and ColumnFetcher
-            // resolves to the wrong value.
-            if (ctx.catalog.findColumn(tableType.table().tableName(), name).isPresent()) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
-                    "@externalField name '" + name + "' collides with column '" + name
-                        + "' on table '" + tableType.table().tableName()
-                        + "'; rename the GraphQL field or use @field(name: ...) to disambiguate");
-            }
-            var extRef = parseExternalRef(parentTypeName, fieldDef, DIR_EXTERNAL_FIELD, ARG_EXTERNAL_FIELD_REF);
-            if (extRef != null && extRef.lookupError() != null) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
-                    "external field reference could not be resolved — " + extRef.lookupError());
-            }
-            if (extRef != null && extRef.argMappingError() != null) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, extRef.argMappingError());
-            }
-            ClassName parentTableClass = ClassName.get(
-                ctx.ctx().jooqPackage() + ".tables", tableType.table().javaClassName());
-            // `className` is the only required schema-level input; surface a targeted error here
-            // so reflectExternalField below can require non-null className/methodName.
-            String extClassName = extRef != null ? extRef.className() : null;
-            if (extClassName == null) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
-                    "external field reference could not be resolved — missing className");
-            }
-            // When `method` is omitted from the @externalField reference, default to the GraphQL
-            // field name. The static-method-name-equals-field-name convention is the common case;
-            // requiring `method:` only when it diverges removes ceremony from the schema.
-            String resolvedMethodName = extRef.methodName() != null ? extRef.methodName() : name;
-            var extResult = svc.reflectExternalField(extClassName, resolvedMethodName, parentTableClass);
-            if (extResult.failed()) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
-                    "external field reference could not be resolved — " + extResult.failureReason());
-            }
-            String extTypeName = baseTypeName(fieldDef);
-            return new ComputedField(parentTypeName, name, location,
-                ctx.resolveReturnType(extTypeName, buildWrapper(fieldDef)),
-                externalPath.elements(),
-                extResult.ref());
+            return switch (externalFieldResolver.resolve(parentTypeName, fieldDef, tableType.table())) {
+                case ExternalFieldDirectiveResolver.Resolved.Rejected r ->
+                    new UnclassifiedField(parentTypeName, name, location, fieldDef, r.kind(), r.message());
+                case ExternalFieldDirectiveResolver.Resolved.Success s ->
+                    new ComputedField(parentTypeName, name, location, s.returnType(), externalPath.elements(), s.method());
+            };
         }
 
         if (fieldDef.hasAppliedDirective(DIR_TABLE_METHOD)) {
