@@ -145,6 +145,7 @@ class FieldBuilder {
     private final LookupMappingResolver lookupMappingResolver;
     private final PaginationResolver paginationResolver;
     private final ConditionResolver conditionResolver;
+    private final InputFieldResolver inputFieldResolver;
     FieldBuilder(BuildContext ctx, ServiceCatalog svc) {
         this.ctx = ctx;
         this.svc = svc;
@@ -156,6 +157,7 @@ class FieldBuilder {
         this.lookupMappingResolver = new LookupMappingResolver();
         this.paginationResolver = new PaginationResolver();
         this.conditionResolver = new ConditionResolver(ctx, svc);
+        this.inputFieldResolver = new InputFieldResolver(ctx);
     }
 
     // ===== Shared resolution helpers =====
@@ -476,7 +478,7 @@ class FieldBuilder {
                         + "': @notGenerated is no longer supported. Remove the directive; fields must be fully described by the schema.");
                 }
             }
-            List<InputField> plainFields = classifyPlainInputFields(typeName, rt, errors);
+            List<InputField> plainFields = inputFieldResolver.resolve(typeName, rt, errors);
             return new ArgumentRef.InputTypeArg.PlainInputArg(
                 name, typeName, nonNull, list, argCondition, plainFields);
         }
@@ -578,30 +580,6 @@ class FieldBuilder {
             return new CallSiteExtraction.TextMapLookup(mapFieldName, textEnumMapping);
         }
         return new CallSiteExtraction.Direct();
-    }
-
-    /**
-     * Classifies the fields of a plain (non-{@code @table}) input type at call site against {@code rt}.
-     * Used to populate {@link ArgumentRef.InputTypeArg.PlainInputArg#fields()}.
-     * Returns {@link List#of()} when {@code rt} is {@code null} or the type is not an input object.
-     * Fields that fail column resolution are silently skipped (their conditions cannot be built).
-     * {@code @notGenerated} fields are rejected up front by {@link #classifyArgument} as an
-     * {@link ArgumentRef.UnclassifiedArg}, so they never reach this classifier.
-     */
-    private List<InputField> classifyPlainInputFields(String typeName, TableRef rt, List<String> errors) {
-        if (rt == null) return List.of();
-        var rawType = ctx.schema.getType(typeName);
-        if (!(rawType instanceof GraphQLInputObjectType iot)) return List.of();
-        var condErrors = new ArrayList<String>();
-        var classified = new ArrayList<InputField>();
-        for (var f : iot.getFieldDefinitions()) {
-            var res = ctx.classifyInputField(f, typeName, rt, new LinkedHashSet<>(), condErrors);
-            if (res instanceof InputFieldResolution.Resolved r) {
-                classified.add(r.field());
-            }
-        }
-        condErrors.forEach(e -> errors.add("plain input type '" + typeName + "': " + e));
-        return List.copyOf(classified);
     }
 
     /**
