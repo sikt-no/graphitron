@@ -173,6 +173,8 @@ public class TypeFetcherGenerator {
         ChildField.ParticipantColumnReferenceField.class,
         QueryField.QueryInterfaceField.class,
         QueryField.QueryUnionField.class,
+        ChildField.InterfaceField.class,
+        ChildField.UnionField.class,
         ChildField.ErrorsField.class);
 
     /**
@@ -250,10 +252,6 @@ public class TypeFetcherGenerator {
                 "CompositeColumnReferenceField (rooted-at-parent NodeId reference) not yet implemented — JOIN-with-projection emission tracked in R24; rooted-at-parent fixture (parent_node + child_ref) is in nodeidfixture and ready to drive coverage. See graphitron-rewrite/roadmap/nodeidreferencefield-join-projection-form.md"),
             Map.entry(ChildField.TableMethodField.class,
                 "TableMethodField not yet implemented — see graphitron-rewrite/roadmap/tablemethod-scalar-return.md"),
-            Map.entry(ChildField.InterfaceField.class,
-                "InterfaceField not yet implemented — see graphitron-rewrite/roadmap/stub-interface-union-fetchers.md"),
-            Map.entry(ChildField.UnionField.class,
-                "UnionField not yet implemented — see graphitron-rewrite/roadmap/stub-interface-union-fetchers.md"),
             Map.entry(ChildField.MultitableReferenceField.class,
                 "MultitableReferenceField not yet implemented — see graphitron-rewrite/roadmap/multitable-reference-on-scalar.md")
         );
@@ -295,7 +293,9 @@ public class TypeFetcherGenerator {
             f instanceof SqlGeneratingField
             || f instanceof MutationField.MutationDeleteTableField
             || f instanceof QueryField.QueryInterfaceField
-            || f instanceof QueryField.QueryUnionField);
+            || f instanceof QueryField.QueryUnionField
+            || f instanceof ChildField.InterfaceField
+            || f instanceof ChildField.UnionField);
 
         for (var field : fields) {
             switch (field) {
@@ -408,8 +408,14 @@ public class TypeFetcherGenerator {
                     }
                 }
                 case ChildField.TableMethodField f              -> builder.addMethod(stub(f));
-                case ChildField.InterfaceField f                -> builder.addMethod(stub(f));
-                case ChildField.UnionField f                    -> builder.addMethod(stub(f));
+                case ChildField.InterfaceField f -> MultiTablePolymorphicEmitter
+                    .emitMethods(f.name(), f.participants(), f.participantJoinPaths(),
+                        f.returnType().wrapper().isList(), outputPackage, jooqPackage)
+                    .forEach(builder::addMethod);
+                case ChildField.UnionField f -> MultiTablePolymorphicEmitter
+                    .emitMethods(f.name(), f.participants(), f.participantJoinPaths(),
+                        f.returnType().wrapper().isList(), outputPackage, jooqPackage)
+                    .forEach(builder::addMethod);
                 case ChildField.NestingField ignored            -> { /* wired via FetcherRegistrationsEmitter: env -> env.getSource() */ }
                 case ChildField.ConstructorField ignored        -> { /* wired via FetcherRegistrationsEmitter: env -> env.getSource() */ }
                 // ServiceRecordField is dispatched alongside ServiceTableField above (shared

@@ -1482,4 +1482,117 @@ class TypeFetcherGeneratorTest {
         assertThat(TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS)
             .doesNotContainKeys(QueryField.QueryInterfaceField.class, QueryField.QueryUnionField.class);
     }
+
+    // ===== R36 Track B3: ChildField.InterfaceField / ChildField.UnionField (multi-table polymorphic child) =====
+    //
+    // Same two-stage emission as B2's root case; differs by an additional per-branch
+    // WHERE <participant>.<fk> = parentRecord.<parent_pk> derived from each participant's
+    // auto-discovered FK back to the parent table. The fetcher opens with
+    // Record parentRecord = (Record) env.getSource() to read parent-side PK values.
+
+    private static java.util.Map<String, List<JoinStep>> filmActorChildJoinPaths() {
+        // film_actor → film via film_actor_film_id_fkey: source columns sit on film_actor side.
+        // film_actor → actor via film_actor_actor_id_fkey: same shape.
+        var filmActorTable = new TableRef("film_actor", "FILM_ACTOR", "FilmActor",
+            List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"),
+                    new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer")));
+        var filmTable = filmTableWithPk();
+        var actorTable = new TableRef("actor", "ACTOR", "Actor",
+            List.of(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer")));
+        // FK direction: film_actor (source/FK holder) → film (target/PK side) and similarly for actor.
+        var filmFk = new JoinStep.FkJoin("film_actor_film_id_fkey", "",
+            filmActorTable, List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer")),
+            filmTable, List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer")), null, "related_0");
+        var actorFk = new JoinStep.FkJoin("film_actor_actor_id_fkey", "",
+            filmActorTable, List.of(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer")),
+            actorTable, List.of(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer")), null, "related_1");
+        return java.util.Map.of(
+            "Film", List.<JoinStep>of(filmFk),
+            "Actor", List.<JoinStep>of(actorFk));
+    }
+
+    private static ChildField.InterfaceField childInterfaceField(String parentType, String name, boolean isList) {
+        var wrapper = isList ? (FieldWrapper) nonNullList() : single();
+        var returnType = new ReturnTypeRef.PolymorphicReturnType("FilmOrActor", wrapper);
+        var participants = List.<ParticipantRef>of(
+            new ParticipantRef.TableBound("Film", filmTableWithPk(), null),
+            new ParticipantRef.TableBound("Actor",
+                new TableRef("actor", "ACTOR", "Actor",
+                    List.of(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer"))),
+                null));
+        return new ChildField.InterfaceField(parentType, name, null,
+            returnType, participants, filmActorChildJoinPaths());
+    }
+
+    private static ChildField.UnionField childUnionField(String parentType, String name, boolean isList) {
+        var wrapper = isList ? (FieldWrapper) nonNullList() : single();
+        var returnType = new ReturnTypeRef.PolymorphicReturnType("FilmOrActor", wrapper);
+        var participants = List.<ParticipantRef>of(
+            new ParticipantRef.TableBound("Film", filmTableWithPk(), null),
+            new ParticipantRef.TableBound("Actor",
+                new TableRef("actor", "ACTOR", "Actor",
+                    List.of(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer"))),
+                null));
+        return new ChildField.UnionField(parentType, name, null,
+            returnType, participants, filmActorChildJoinPaths());
+    }
+
+    @Test
+    void childInterfaceField_emitsParentRecordReadFromEnvSource() {
+        // R36 plan B3: child fetcher reads the parent jOOQ Record from env.getSource() so each
+        // stage-1 branch can reference parent PK values in its WHERE predicate.
+        var field = childInterfaceField("FilmActor", "related", true);
+        var spec = TypeFetcherGenerator.generateTypeSpec("FilmActor",
+            new TableRef("film_actor", "FILM_ACTOR", "FilmActor", List.of()),
+            null, List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+        var body = method(spec, "related").code().toString();
+        assertThat(body)
+            .as("child fetcher reads parent Record from env.getSource()")
+            .contains("parentRecord = (org.jooq.Record) env.getSource()");
+    }
+
+    @Test
+    void childInterfaceField_emitsParentFkConditionPerBranch() {
+        // R36 plan B3 acceptance test: each branch of the stage-1 UNION ALL carries its own
+        // .where(participant.<fk> = parentRecord.<parent_pk>) predicate.
+        var field = childInterfaceField("FilmActor", "related", true);
+        var spec = TypeFetcherGenerator.generateTypeSpec("FilmActor",
+            new TableRef("film_actor", "FILM_ACTOR", "FilmActor", List.of()),
+            null, List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+        var body = method(spec, "related").code().toString();
+        assertThat(body)
+            .as("Film branch's WHERE references stage1 alias and typed parentRecord film_id read")
+            .contains("stage1_Film.FILM_ID.eq(parentRecord.get(org.jooq.impl.DSL.name(\"film_id\"), java.lang.Integer.class))");
+        assertThat(body)
+            .as("Actor branch's WHERE references stage1 alias and typed parentRecord actor_id read")
+            .contains("stage1_Actor.ACTOR_ID.eq(parentRecord.get(org.jooq.impl.DSL.name(\"actor_id\"), java.lang.Integer.class))");
+    }
+
+    @Test
+    void childUnionField_emitsSameTwoStageStructureAsInterfaceField() {
+        // ChildField.UnionField shares MultiTablePolymorphicEmitter with ChildField.InterfaceField;
+        // body shape is identical apart from the participant-list source. Pin the equivalence so
+        // a future drift in either path fails fast.
+        var field = childUnionField("FilmActor", "related", true);
+        var spec = TypeFetcherGenerator.generateTypeSpec("FilmActor",
+            new TableRef("film_actor", "FILM_ACTOR", "FilmActor", List.of()),
+            null, List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+        var body = method(spec, "related").code().toString();
+        assertThat(body).contains("parentRecord = (org.jooq.Record) env.getSource()");
+        assertThat(body).contains(".unionAll(");
+        assertThat(body).contains("stage1_Film.FILM_ID.eq(parentRecord.get(org.jooq.impl.DSL.name(\"film_id\"), java.lang.Integer.class))");
+        assertThat(body).contains("stage1_Actor.ACTOR_ID.eq(parentRecord.get(org.jooq.impl.DSL.name(\"actor_id\"), java.lang.Integer.class))");
+        assertThat(body).contains("selectFilmForRelated(")
+            .contains("selectActorForRelated(");
+    }
+
+    @Test
+    void childInterfaceField_isImplementedLeaf_notInNotImplementedReasons() {
+        // R36 Track B3 lifts ChildField.InterfaceField and ChildField.UnionField from
+        // NOT_IMPLEMENTED_REASONS into IMPLEMENTED_LEAVES.
+        assertThat(TypeFetcherGenerator.IMPLEMENTED_LEAVES)
+            .contains(ChildField.InterfaceField.class, ChildField.UnionField.class);
+        assertThat(TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS)
+            .doesNotContainKeys(ChildField.InterfaceField.class, ChildField.UnionField.class);
+    }
 }

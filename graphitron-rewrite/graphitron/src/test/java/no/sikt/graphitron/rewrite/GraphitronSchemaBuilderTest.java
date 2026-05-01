@@ -1449,13 +1449,16 @@ class GraphitronSchemaBuilderTest {
 
         INTERFACE_FIELD(
             "field returning a plain interface (no @table) → InterfaceField",
+            // R36 Track B3 requires per-participant FK auto-discovery from the parent table
+            // to each participant's table. Customer has a single FK to address
+            // (customer.address_id), so the auto-discovery resolves cleanly.
             """
             interface Named { name: String }
-            type Language implements Named @table(name: "language") { name: String }
-            type Film @table(name: "film") { language: Named }
-            type Query { film: Film }
+            type Address implements Named @table(name: "address") { name: String @field(name: "ADDRESS") }
+            type Customer @table(name: "customer") { address: Named }
+            type Query { customer: Customer }
             """,
-            schema -> assertThat(schema.field("Film", "language")).isInstanceOf(InterfaceField.class)) {
+            schema -> assertThat(schema.field("Customer", "address")).isInstanceOf(InterfaceField.class)) {
             @Override public Set<Class<?>> variants() { return Set.of(InterfaceField.class); }
         },
 
@@ -1486,14 +1489,17 @@ class GraphitronSchemaBuilderTest {
 
         UNION_FIELD(
             "field returning a union → UnionField",
+            // FilmActor has a single FK to film (film_actor_film_id_fkey) and a single FK to
+            // actor (film_actor_actor_id_fkey); the per-participant auto-discovery resolves
+            // each branch's FK independently.
             """
-            type Language @table(name: "language") { name: String }
             type Film @table(name: "film") { title: String }
-            union MediaItem = Language | Film
-            type Actor @table(name: "actor") { media: MediaItem }
-            type Query { actor: Actor }
+            type Actor @table(name: "actor") { firstName: String @field(name: "FIRST_NAME") }
+            union FilmOrActor = Film | Actor
+            type FilmActor @table(name: "film_actor") { related: FilmOrActor }
+            type Query { filmActor: FilmActor }
             """,
-            schema -> assertThat(schema.field("Actor", "media")).isInstanceOf(UnionField.class)) {
+            schema -> assertThat(schema.field("FilmActor", "related")).isInstanceOf(UnionField.class)) {
             @Override public Set<Class<?>> variants() { return Set.of(UnionField.class); }
         },
 
