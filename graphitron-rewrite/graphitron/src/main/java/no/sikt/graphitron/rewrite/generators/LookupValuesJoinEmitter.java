@@ -1,10 +1,8 @@
 package no.sikt.graphitron.rewrite.generators;
 
-import no.sikt.graphitron.javapoet.ArrayTypeName;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
-import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.generators.util.ValuesJoinRowBuilder;
 import no.sikt.graphitron.rewrite.model.ChildField;
@@ -61,14 +59,10 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.toCamelCase;
  */
 final class LookupValuesJoinEmitter {
 
-    private LookupValuesJoinEmitter() {}
+    /** Directive context surfaced in {@link ValuesJoinRowBuilder}'s arity-cap error messages. */
+    private static final String DIRECTIVE_CONTEXT = "@lookupKey";
 
-    /** Lookup-internal slot list mapped to the helper's per-target-column slot view. */
-    private static List<ValuesJoinRowBuilder.Slot> rowBuilderSlots(List<Slot> slots) {
-        return slots.stream()
-            .map(s -> new ValuesJoinRowBuilder.Slot(s.targetColumn()))
-            .toList();
-    }
+    private LookupValuesJoinEmitter() {}
 
     /**
      * Flat per-slot view of a {@link ColumnMapping}'s args, internal to this emitter.
@@ -159,12 +153,11 @@ final class LookupValuesJoinEmitter {
      */
     static MethodSpec buildInputRowsMethod(LookupField field, ClassName targetTableClass) {
         List<Slot> slots = requireSlots(field);
-        List<ValuesJoinRowBuilder.Slot> rbSlots = rowBuilderSlots(slots);
         Map<String, RootSource> roots = rootSources(slots);
 
         var builder = MethodSpec.methodBuilder(inputRowsMethodName(field))
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
-            .returns(ValuesJoinRowBuilder.rowArrayType(rbSlots))
+            .returns(ValuesJoinRowBuilder.rowArrayType(slots, Slot::targetColumn, DIRECTIVE_CONTEXT))
             .addParameter(ENV, "env")
             .addParameter(targetTableClass, "table");
 
@@ -180,7 +173,7 @@ final class LookupValuesJoinEmitter {
             }
         }
 
-        addRowBuildingCore(builder, slots, rbSlots, roots);
+        addRowBuildingCore(builder, slots, roots);
         return builder.build();
     }
 
@@ -199,12 +192,11 @@ final class LookupValuesJoinEmitter {
      */
     static MethodSpec buildChildInputRowsMethod(LookupField field, ClassName targetTableClass) {
         List<Slot> slots = requireSlots(field);
-        List<ValuesJoinRowBuilder.Slot> rbSlots = rowBuilderSlots(slots);
         Map<String, RootSource> roots = rootSources(slots);
 
         var builder = MethodSpec.methodBuilder(inputRowsMethodName(field))
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
-            .returns(ValuesJoinRowBuilder.rowArrayType(rbSlots))
+            .returns(ValuesJoinRowBuilder.rowArrayType(slots, Slot::targetColumn, DIRECTIVE_CONTEXT))
             .addParameter(SELECTED_FIELD, "sf")
             .addParameter(targetTableClass, "table");
 
@@ -220,7 +212,7 @@ final class LookupValuesJoinEmitter {
             }
         }
 
-        addRowBuildingCore(builder, slots, rbSlots, roots);
+        addRowBuildingCore(builder, slots, roots);
         return builder.build();
     }
 
@@ -241,13 +233,12 @@ final class LookupValuesJoinEmitter {
      * loop, return. Assumes each column's value is already in a local named via
      * {@link #argLocalName} and that {@code table} refers to the target-table alias.
      *
-     * <p>{@code typeArgs} — the {@code Row<N+1>} / {@code Record<N+1>} parameterisation
-     * ({@code Integer} for {@code idx}, then the columns) computed once by the caller via
-     * {@link #rowTypeArgs}.
+     * <p>The typed {@code Row<N+1>} / {@code Record<N+1>} parameterisation ({@code Integer} for
+     * {@code idx}, then the columns) is computed by {@link ValuesJoinRowBuilder#rowTypeArgs} via
+     * the {@code Slot::targetColumn} projection.
      */
     private static void addRowBuildingCore(MethodSpec.Builder builder,
-            List<Slot> slots, List<ValuesJoinRowBuilder.Slot> rbSlots,
-            Map<String, RootSource> roots) {
+            List<Slot> slots, Map<String, RootSource> roots) {
         // Row count N — from the first list root's length, or 1 if every root is scalar.
         var primaryList = roots.values().stream().filter(RootSource::list).findFirst().orElse(null);
         if (primaryList == null) {
@@ -261,7 +252,7 @@ final class LookupValuesJoinEmitter {
         // for-loop body below — including the decode-args block which is lookup-specific and
         // must run before cell construction so each slotValueExpr can read decoded values.
         var arrayCode = CodeBlock.builder();
-        ValuesJoinRowBuilder.emitRowArrayDecl(arrayCode, rbSlots, "rows", "n");
+        ValuesJoinRowBuilder.emitRowArrayDecl(arrayCode, slots, Slot::targetColumn, DIRECTIVE_CONTEXT, "rows", "n");
         builder.addCode(arrayCode.build());
         builder.beginControlFlow("for (int i = 0; i < n; i++)");
 
@@ -298,9 +289,10 @@ final class LookupValuesJoinEmitter {
 
         // Per-cell typed values delegated to the row-builder; the slot-to-value bridge stays here
         // because slotValueExpr depends on lookup-specific RootSource / DecodedRecord context.
+        // The helper passes the rich Slot back through the callback (no parallel-list bridge).
         CodeBlock cells = ValuesJoinRowBuilder.cellsCode(
-            rbSlots, CodeBlock.of("$T.inline(i)", DSL), "table",
-            (rbSlot, idx) -> slotValueExpr(slots.get(idx), roots.get(slots.get(idx).argName())));
+            slots, Slot::targetColumn, CodeBlock.of("$T.inline(i)", DSL), "table",
+            (slot, idx) -> slotValueExpr(slot, roots.get(slot.argName())));
         builder.addStatement("rows[i] = $T.row($L)", DSL, cells);
         builder.endControlFlow();
         builder.addStatement("return rows");
@@ -346,24 +338,24 @@ final class LookupValuesJoinEmitter {
     static CodeBlock buildFetcherBody(LookupField field, CodeBlock typeFieldsCall, String srcAlias) {
         ColumnMapping cm = (ColumnMapping) field.lookupMapping();
         List<Slot> slots = flattenSlots(cm);
-        List<ValuesJoinRowBuilder.Slot> rbSlots = rowBuilderSlots(slots);
         String alias = inputTableAlias(field);
 
         // VALUES column labels — "idx", then one per lookup slot. Labels must match the target
         // column's SQL name (e.g. "film_id"), not the jOOQ Java field name (e.g. "FILM_ID"), because
         // Postgres treats quoted identifiers case-sensitively and USING compares the rendered names.
-        CodeBlock aliasArgs = ValuesJoinRowBuilder.aliasArgs(rbSlots, alias);
+        CodeBlock aliasArgs = ValuesJoinRowBuilder.aliasArgs(slots, Slot::targetColumn, alias);
         // USING column arguments — references to target-table field constants.
-        CodeBlock usingArgs = ValuesJoinRowBuilder.usingArgs(rbSlots, srcAlias);
+        CodeBlock usingArgs = ValuesJoinRowBuilder.usingArgs(slots, Slot::targetColumn, srcAlias);
 
         return CodeBlock.builder()
             .addStatement("$T rows = $L(env, $L)",
-                ValuesJoinRowBuilder.rowArrayType(rbSlots), inputRowsMethodName(field), srcAlias)
+                ValuesJoinRowBuilder.rowArrayType(slots, Slot::targetColumn, DIRECTIVE_CONTEXT),
+                inputRowsMethodName(field), srcAlias)
             .addStatement("$T dsl = graphitronContext(env).getDslContext(env)",
                 ClassName.get("org.jooq", "DSLContext"))
             .add("if (rows.length == 0) return dsl.newResult();\n")
             .addStatement("$T input = $T.values(rows).as($L)",
-                ValuesJoinRowBuilder.inputTableType(rbSlots), DSL, aliasArgs)
+                ValuesJoinRowBuilder.inputTableType(slots, Slot::targetColumn, DIRECTIVE_CONTEXT), DSL, aliasArgs)
             .add("return dsl\n")
             .indent()
             .add(".select($L)\n", typeFieldsCall)
