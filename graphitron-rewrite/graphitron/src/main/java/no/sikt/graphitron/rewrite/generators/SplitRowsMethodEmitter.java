@@ -99,11 +99,20 @@ public final class SplitRowsMethodEmitter {
      * one sibling; per-sibling locals (typed Row/Record/Table type names, the projection list,
      * etc.) stay in the sibling.
      */
+    /**
+     * {@code joinOnCols} is the column list the rows-method's {@code JOIN parentInput ... ON ...}
+     * predicate matches against {@code firstAlias}: on the catalog-FK path, that's
+     * {@link JoinStep.FkJoin#sourceColumns()} (FK-holder side, terminal for list cardinality); on
+     * the lifter path, {@link JoinStep.LiftedHop#targetColumns()} (the DataLoader key tuple IS the
+     * target-column tuple by {@link BatchKey.LifterRowKeyed} construction). The prelude resolves
+     * this fork once via a sealed switch and exports the ready list; the consumer iterates without
+     * re-switching.
+     */
     private record PreludeBindings(
         List<String> aliases,
         String terminalAlias,
         String firstAlias,
-        JoinStep.FkJoin firstHop,
+        List<ColumnRef> joinOnCols,
         TypeName keyElement,
         List<ColumnRef> pkCols
     ) {}
@@ -128,8 +137,17 @@ public final class SplitRowsMethodEmitter {
         TableRef terminalTable = returnType.table();
         ClassName tablesClass = ClassName.get(jooqPackage, "Tables");
 
-        BatchKey.RowKeyed rowKeyed = (BatchKey.RowKeyed) batchKey;
-        List<ColumnRef> pkCols = rowKeyed.parentKeyColumns();
+        // Side-aware column list: parent-side columns on the catalog-FK path, target-side
+        // columns on the lifter path. Both produce RowN<...> of the same Java types — that's
+        // the lifter contract enforced by BatchKeyLifterDirectiveResolver. Limited to the two
+        // permits that ever reach the prelude; the @service-only ParentKeyed permits never do.
+        List<ColumnRef> pkCols = switch (batchKey) {
+            case BatchKey.RowKeyed rk        -> rk.parentKeyColumns();
+            case BatchKey.LifterRowKeyed lrk -> lrk.targetKeyColumns();
+            default -> throw new IllegalStateException(
+                "SplitRowsMethodEmitter prelude reached with unsupported BatchKey: "
+                + batchKey.getClass().getSimpleName());
+        };
         TypeName keyElement = GeneratorUtils.keyElementType(batchKey);
 
         int parentRowArity = pkCols.size() + 1;
@@ -149,10 +167,24 @@ public final class SplitRowsMethodEmitter {
         List<String> aliases = JoinPathEmitter.generateAliases(joinPath, terminalTable);
         String terminalAlias = aliases.get(aliases.size() - 1);
         String firstAlias = aliases.get(0);
-        // Classifier contract: joinPath is non-empty and its first step is an FkJoin. Empty paths
-        // are rejected in BuildContext.parsePath; ConditionJoin-first paths are short-circuited
-        // by unsupportedReason on each enclosing variant.
-        JoinStep.FkJoin firstHop = (JoinStep.FkJoin) joinPath.get(0);
+        // Classifier contract: joinPath is non-empty and its first step carries a target table
+        // (FkJoin or LiftedHop, both implementing JoinStep.WithTarget). Empty paths are rejected
+        // in BuildContext.parsePath; ConditionJoin-first paths are short-circuited by
+        // unsupportedReason on each enclosing variant. The lifter path is single-hop by type
+        // construction (BatchKey.LifterRowKeyed holds one LiftedHop, not a list), so the bridging
+        // loop below never executes for it.
+        JoinStep firstStep = joinPath.get(0);
+        // JOIN-on predicate columns: parent-side FK-holder columns (FkJoin.sourceColumns) for
+        // catalog FKs, target-side columns (LiftedHop.targetColumns) for the lifter path. This
+        // is the genuine identity fork — sealed switch belongs here, not at the uniform target
+        // accessors above.
+        List<ColumnRef> joinOnCols = switch (firstStep) {
+            case JoinStep.FkJoin fk          -> fk.sourceColumns();
+            case JoinStep.LiftedHop lh       -> lh.targetColumns();
+            case JoinStep.ConditionJoin cj   -> throw new IllegalStateException(
+                "ConditionJoin cannot be the first hop of a Split/Record rows-method; "
+                + "unsupportedReason should have short-circuited upstream");
+        };
 
         // Empty-input short-circuit — before touching the DSL context.
         body.beginControlFlow("if (keys.isEmpty())");
@@ -189,18 +221,20 @@ public final class SplitRowsMethodEmitter {
             parentInputTableType, DSL, parentInputAlias.build());
 
         // FK chain aliases — one declaration per hop. Single-cardinality emits a single
-        // declaration (joinPath.size() == 1).
+        // declaration (joinPath.size() == 1). Reads target accessors uniformly through the
+        // WithTarget capability — FkJoin and LiftedHop both expose the same targetTable /
+        // targetColumns / alias, so the loop body needs no per-accessor sealed switch.
         for (int i = 0; i < joinPath.size(); i++) {
-            JoinStep.FkJoin fk = (JoinStep.FkJoin) joinPath.get(i);
+            JoinStep.WithTarget step = (JoinStep.WithTarget) joinPath.get(i);
             ClassName jooqTableClass = ClassName.get(
                 jooqPackage + ".tables",
-                fk.targetTable().javaClassName());
+                step.targetTable().javaClassName());
             body.addStatement("$T $L = $T.$L.as($S)",
-                jooqTableClass, aliases.get(i), tablesClass, fk.targetTable().javaFieldName(),
+                jooqTableClass, aliases.get(i), tablesClass, step.targetTable().javaFieldName(),
                 fieldName + "_" + aliases.get(i));
         }
 
-        return new PreludeBindings(aliases, terminalAlias, firstAlias, firstHop, keyElement, pkCols);
+        return new PreludeBindings(aliases, terminalAlias, firstAlias, joinOnCols, keyElement, pkCols);
     }
 
     /**
@@ -408,7 +442,7 @@ public final class SplitRowsMethodEmitter {
         List<String> aliases = p.aliases();
         String terminalAlias = p.terminalAlias();
         String firstAlias = p.firstAlias();
-        JoinStep.FkJoin firstHop = p.firstHop();
+        List<ColumnRef> joinOnCols = p.joinOnCols();
         TypeName keyElement = p.keyElement();
         TypeName keysListType = ParameterizedTypeName.get(LIST, keyElement);
         List<ColumnRef> pkCols = p.pkCols();
@@ -483,16 +517,21 @@ public final class SplitRowsMethodEmitter {
         // JOIN parentInput on step 0's source columns (target/terminal side for list cardinality).
         // parentInput.field(n, Class<T>) returns Field<T>, matching the FK column's type in
         // .eq(...). Position mapping: index 0 is idx, indices 1..N are the parent PK columns
-        // in the order declared by BatchKey.RowKeyed.parentKeyColumns(). ON rather than USING dodges
-        // junction-column collisions, as Phase 2a C2 established.
+        // in the order declared by BatchKey.RowKeyed.parentKeyColumns() (or
+        // LifterRowKeyed.targetKeyColumns() on the lifter path; same Java type per Invariant #4).
+        // ON rather than USING dodges junction-column collisions, as Phase 2a C2 established.
+        // joinOnCols is FkJoin.sourceColumns() on the catalog-FK path (FK-holder columns sitting
+        // on the terminal/firstAlias side for list cardinality) or LiftedHop.targetColumns() on
+        // the lifter path (target-side keys; firstAlias is the terminal). Either way the column
+        // is addressable via firstAlias.
         var onCond = CodeBlock.builder();
-        for (int i = 0; i < firstHop.sourceColumns().size(); i++) {
+        for (int i = 0; i < joinOnCols.size(); i++) {
             if (i > 0) onCond.add(".and(");
             ColumnRef pk = pkCols.get(i);
             ClassName pkType = ClassName.bestGuess(pk.columnClass());
             onCond.add("$L.$L.eq(parentInput.field($L, $T.class))",
                 firstAlias,
-                firstHop.sourceColumns().get(i).javaName(),
+                joinOnCols.get(i).javaName(),
                 i + 1, pkType);
             if (i > 0) onCond.add(")");
         }
@@ -588,7 +627,10 @@ public final class SplitRowsMethodEmitter {
         PreludeBindings p = emitParentInputAndFkChain(
             body, fieldName, batchKey, returnType, joinPath, jooqPackage);
         String firstAlias = p.firstAlias();
-        JoinStep.FkJoin firstHop = p.firstHop();
+        // Single-cardinality only reaches the @table-parent SplitTableField path (Invariant #10
+        // rejects single-cardinality record-parent fields at validate time), so the first hop is
+        // always an FkJoin here. The lifter path is list-only by classifier construction.
+        JoinStep.FkJoin firstHop = (JoinStep.FkJoin) joinPath.get(0);
         TypeName keyElement = p.keyElement();
         TypeName keysListType = ParameterizedTypeName.get(LIST, keyElement);
         List<ColumnRef> pkCols = p.pkCols();
@@ -711,7 +753,7 @@ public final class SplitRowsMethodEmitter {
         List<String> aliases = p.aliases();
         String terminalAlias = p.terminalAlias();
         String firstAlias = p.firstAlias();
-        JoinStep.FkJoin firstHop = p.firstHop();
+        List<ColumnRef> joinOnCols = p.joinOnCols();
         TypeName keyElement = p.keyElement();
         TypeName keysListType = ParameterizedTypeName.get(LIST, keyElement);
         List<ColumnRef> pkCols = p.pkCols();
@@ -783,14 +825,16 @@ public final class SplitRowsMethodEmitter {
             inner.add(".join($L).onKey($T.$L)\n",
                 prevAlias, keysClass, bridging.fkJavaConstant());
         }
+        // joinOnCols: FkJoin.sourceColumns() on the catalog-FK path or LiftedHop.targetColumns()
+        // on the lifter path; both addressable via firstAlias on the terminal side.
         var onCond = CodeBlock.builder();
-        for (int i = 0; i < firstHop.sourceColumns().size(); i++) {
+        for (int i = 0; i < joinOnCols.size(); i++) {
             if (i > 0) onCond.add(".and(");
             ColumnRef pk = pkCols.get(i);
             ClassName pkType = ClassName.bestGuess(pk.columnClass());
             onCond.add("$L.$L.eq(parentInput.field($L, $T.class))",
                 firstAlias,
-                firstHop.sourceColumns().get(i).javaName(),
+                joinOnCols.get(i).javaName(),
                 i + 1, pkType);
             if (i > 0) onCond.add(")");
         }
