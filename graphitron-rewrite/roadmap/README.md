@@ -28,7 +28,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R8` | Docs as an index into classification tests | Ready (deferred) | [plan](docs-as-index-into-tests.md) |
 | `R26` | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` <sub>blocked by: [graphitron-lsp](graphitron-lsp.md)</sub> | In Progress | [plan](retire-maven-plugin.md) |
 | `R18` | Java LSP rewrite + introspect retirement + `dev` goal | Ready | [plan](graphitron-lsp.md) |
-| `R21` | Load-bearing classifier guarantee audit annotations | In Review | [plan](load-bearing-guarantee-audit.md) |
 | `R9` | Fold graphitron.sikt.no into the Maven build (AsciiDoc + GitHub Pages) | In Progress | [plan](docs-site-asciidoc.md) |
 
 ---
@@ -130,7 +129,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R56` [**Extract `ConnectionPromoter` from `GraphitronSchemaBuilder`**](extract-connection-promoter.md) — Backlog, architecture
 - `R33` [**Shared interface for `QueryField` / `ChildField` table-bound parallels**](shared-interface-queryfield-childfield.md) — Backlog, cleanup
 - `R7` [**Decompose `TypeFetcherGenerator`**](decompose-typefetchergenerator.md) — Backlog, architecture, blocked by [stub-interface-union-fetchers](stub-interface-union-fetchers.md)
-- `R21` [**Load-bearing classifier guarantee audit annotations**](load-bearing-guarantee-audit.md) — In Review
 
 ### docs
 
