@@ -79,7 +79,7 @@ Three concrete consequences on trunk today:
    validator path puts a "you can't fix this; file a generator bug" message in
    the same compiler-style log line as a typo. The honest fix is an
    `AssertionError` at the unreachable branch, not a user-facing rejection
-   class — see Phase A.
+   class — see Phase 0.
 
 `InvalidSchema` is the smallest of the three: today the messages embed
 directive *names* as bare strings ("`@asConnection` on inline (non-`@splitQuery`)
@@ -299,7 +299,7 @@ Each of `AuthorError` and `InvalidSchema` is itself sealed with two leaf
 arms (`UnknownName` / `Structural` and `DirectiveConflict` / `Structural`
 respectively). There is no `INTERNAL_INVARIANT` arm: the single trunk site
 that produces today's `RejectionKind.INTERNAL_INVARIANT` is a defensive
-fallthrough that becomes an `AssertionError` (see Phase A).
+fallthrough that becomes an `AssertionError` (see Phase 0).
 
 ### `UnclassifiedField` / `UnclassifiedType` carry a `Rejection` instead of a pair
 
@@ -333,7 +333,7 @@ record UnclassifiedType(
 `UnclassifiedType` does not carry a `RejectionKind` field today (its sites all
 flow through `validateUnclassifiedType` which hardcodes
 `RejectionKind.AUTHOR_ERROR` for the validator output — see
-[`GraphitronSchemaValidator.java:919`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/GraphitronSchemaValidator.java)).
+[`GraphitronSchemaValidator.java:871`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/GraphitronSchemaValidator.java)).
 Lifting it onto `Rejection` makes the kind explicit at the construction
 site instead of asserted at the validator. None of today's `TypeBuilder` sites
 produce anything other than `AuthorError` or `Deferred` for an unclassified
@@ -545,11 +545,16 @@ items at the top.
 - Add `Rejection.java` (top-level sealed + sub-sealed `AuthorError` and
   `InvalidSchema` + `Deferred` + `StubKey` + `EmitBlockReason`).
 - Migrate `UnclassifiedField` to carry `Rejection` instead of `(kind, reason)`.
-- Migrate every resolver's `Resolved.Rejected(RejectionKind, String)` to
-  `Resolved.Rejected(Rejection)` — see "Resolver-side `Resolved.Rejected`
-  carries `Rejection`" above. The ten resolvers and their consumer sites
-  in `FieldBuilder` move together; piecewise migration would require a
-  trivial bridge constructor and isn't worth the churn.
+- Migrate every rejection-producing resolver's rejection arm to carry a
+  `Rejection`: most are `Resolved.Rejected(RejectionKind, String) →
+  Resolved.Rejected(Rejection)`; `NodeIdLeafResolver`'s
+  `Resolved.Rejected(String message)` widens the same way (the consumer
+  picked `AUTHOR_ERROR` at the boundary, so the `Rejection` it now carries
+  is an `AuthorError`); `EnumMappingResolver`'s `EnumValidation.Mismatch(String)`
+  becomes `Mismatch(Rejection)`. See "Resolver-side `Resolved.Rejected`
+  carries `Rejection`" above. The ten resolvers and their consumer sites in
+  `FieldBuilder` move together; piecewise migration would require a trivial
+  bridge constructor and isn't worth the churn.
 - Update every `UnclassifiedField` construction site in `FieldBuilder`,
   `MutationInputResolver`, `LookupKeyDirectiveResolver`, `OrderByResolver`,
   `ServiceDirectiveResolver`, `TableMethodDirectiveResolver`,
