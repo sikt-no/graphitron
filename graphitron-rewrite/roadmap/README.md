@@ -20,7 +20,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R15` | Sweep doc drift between rewrite docs and `model/` taxonomy <sub>blocked by: [docs-site-asciidoc](docs-site-asciidoc.md)</sub> | Spec | [plan](fix-legacy-refs-in-rewrite-docs.md) |
 | `R3` | Classification vocabulary follow-ups | Spec | [plan](classification-vocabulary-followups.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
-| `R58` | Lift `UnclassifiedField` / `UnclassifiedType` onto sealed-result shape | Ready | [plan](lift-unclassified-field-onto-sealed-result.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec | [plan](nestingfield-multiparent-tablefield.md) |
 | `R13` | Faceted search on `@asConnection` | Spec | [plan](faceted-search.md) |
 | `R12` | Error-handling parity: emit per-fetcher error channels from `@error` <sub>blocked by: [mutations](mutations.md)</sub> | In Progress | [plan](error-handling-parity.md) |
@@ -48,9 +47,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 ### Stubs
 
-- `R42` [**Stub: `@reference` on a scalar (FK column) field (`ColumnReferenceField`)**](column-reference-on-scalar-field.md): Lift `ChildField.ColumnReferenceField` out of `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS`. Today schemas using `@reference` on a scalar field (mapping the field to an FK column on the parent table) fail validation with `[deferred]`. Carved out of the original umbrella (R37) for independent prioritisation; not currently a blocker for any in-flight migration.
-- `R43` [**Stub: `@tableMethod` with scalar/enum return (`TableMethodField`)**](tablemethod-scalar-return.md): Lift `ChildField.TableMethodField` out of `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS`. Today schemas using `@tableMethod` to return a non-table type (scalar / enum) fail validation with `[deferred]`. Carved out of the original umbrella (R37) for independent prioritisation; not currently a blocker for any in-flight migration.
-- `R44` [**Stub: `@multitableReference` on a scalar field (`MultitableReferenceField`)**](multitable-reference-on-scalar.md): Lift `ChildField.MultitableReferenceField` out of `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS`. Today schemas using `@reference` on a scalar field whose target is a multi-table interface or union fail validation with `[deferred]`. Carved out of the original umbrella (R37) for independent prioritisation; not currently a blocker for any in-flight migration.
+- `R42` [**Stub: `@reference` on a scalar (FK column) field (`ColumnReferenceField`)**](column-reference-on-scalar-field.md): Lift `ChildField.ColumnReferenceField` out of `TypeFetcherGenerator.STUBBED_VARIANTS`. Today schemas using `@reference` on a scalar field (mapping the field to an FK column on the parent table) fail validation with `[deferred]`. Carved out of the original umbrella (R37) for independent prioritisation; not currently a blocker for any in-flight migration.
+- `R43` [**Stub: `@tableMethod` with scalar/enum return (`TableMethodField`)**](tablemethod-scalar-return.md): Lift `ChildField.TableMethodField` out of `TypeFetcherGenerator.STUBBED_VARIANTS`. Today schemas using `@tableMethod` to return a non-table type (scalar / enum) fail validation with `[deferred]`. Carved out of the original umbrella (R37) for independent prioritisation; not currently a blocker for any in-flight migration.
+- `R44` [**Stub: `@multitableReference` on a scalar field (`MultitableReferenceField`)**](multitable-reference-on-scalar.md): Lift `ChildField.MultitableReferenceField` out of `TypeFetcherGenerator.STUBBED_VARIANTS`. Today schemas using `@reference` on a scalar field whose target is a multi-table interface or union fail validation with `[deferred]`. Carved out of the original umbrella (R37) for independent prioritisation; not currently a blocker for any in-flight migration.
 
 ### Cleanup
 
@@ -125,7 +124,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R56` [**Extract `ConnectionPromoter` from `GraphitronSchemaBuilder`**](extract-connection-promoter.md) — Backlog, architecture
 - `R33` [**Shared interface for `QueryField` / `ChildField` table-bound parallels**](shared-interface-queryfield-childfield.md) — Backlog, cleanup
-- `R58` [**Lift `UnclassifiedField` / `UnclassifiedType` onto sealed-result shape**](lift-unclassified-field-onto-sealed-result.md) — Ready, architecture
 - `R7` [**Decompose `TypeFetcherGenerator`**](decompose-typefetchergenerator.md) — Backlog, architecture
 
 ### docs
