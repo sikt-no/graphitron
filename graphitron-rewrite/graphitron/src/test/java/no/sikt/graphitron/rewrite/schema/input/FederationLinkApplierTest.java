@@ -89,6 +89,34 @@ class FederationLinkApplierTest {
     }
 
     @Test
+    void multipleFederationLinksReportEachFileAndLine() {
+        var registry = InMemoryRegistry.of(Map.of(
+            "first.graphqls",
+            """
+            extend schema
+              @link(url: "https://specs.apollo.dev/federation/v2.6",
+                    import: ["@key", "@shareable"])
+            type Foo { id: ID! }
+            """,
+            "second.graphqls",
+            """
+            extend schema
+              @link(url: "https://specs.apollo.dev/federation/v2.4",
+                    import: ["@key", "@override"])
+            type Bar { id: ID! }
+            """
+        ));
+
+        assertThatThrownBy(() -> FederationLinkApplier.apply(registry))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("more than one federation @link")
+                .hasMessageContaining("first.graphqls:")
+                .hasMessageContaining("second.graphqls:")
+                .hasMessageContaining("federation/v2.6")
+                .hasMessageContaining("federation/v2.4");
+    }
+
+    @Test
     void noFederationLinkNoOp() {
         var registry = InMemoryRegistry.of(Map.of(
             "schema.graphqls",
