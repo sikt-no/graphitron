@@ -112,38 +112,28 @@ class FederationLinkApplierTest {
     }
 
     @Test
-    void programmaticallyInjectedDirectiveReportsItAsSuch() {
-        // Simulates the scenario where some non-SDL pipeline stage already populated the
-        // registry with @tag (no source file) before federation injection runs. We can't
-        // point the developer at a .graphqls file, so the message needs to redirect them
-        // toward the code path that registered the duplicate.
+    void federationLibraryDoubleDeclarationOnV26ReportsLibraryBug() {
+        // federation-graphql-java-support 6.0.0's bundled definitions_fed2_6.graphqls and
+        // definitions_fed2_7.graphqls each declare `directive @tag` twice. When the consumer's
+        // @link URL points at v2.6 or v2.7, loadFederationImportedDefinitions returns @tag
+        // twice and our second registry.add fails. The error needs to name the library bug
+        // and the workaround (move off v2.6 / v2.7), not blame the user's schema.
         var registry = InMemoryRegistry.of(Map.of(
             "schema.graphqls",
             """
             extend schema
-              @link(url: "https://specs.apollo.dev/federation/v2.10",
+              @link(url: "https://specs.apollo.dev/federation/v2.6",
                     import: ["@tag"])
             type Foo { id: ID! }
             """
         ));
-        // Inject @tag with a SourceLocation that has no source file (mirrors what happens
-        // when a definition is created programmatically rather than parsed from SDL).
-        var noFileLoc = new graphql.language.SourceLocation(1, 1);
-        var tagDef = graphql.language.DirectiveDefinition.newDirectiveDefinition()
-                .name("tag")
-                .sourceLocation(noFileLoc)
-                .directiveLocation(graphql.language.DirectiveLocation.newDirectiveLocation().name("FIELD_DEFINITION").build())
-                .build();
-        registry.add(tagDef);
 
         assertThatThrownBy(() -> FederationLinkApplier.apply(registry))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("'@tag'")
-                .hasMessageContaining("no source file location")
-                .hasMessageContaining("added programmatically")
-                .hasMessageContaining("Search your schema-loading pipeline")
-                .hasMessageContaining("Existing definition in registry:")
-                .hasMessageContaining("directive @tag");
+                .hasMessageContaining("federation v2.6")
+                .hasMessageContaining("declares '@tag' twice")
+                .hasMessageContaining("federation-graphql-java-support bug")
+                .hasMessageContaining("v2.8 or later");
     }
 
     @Test
