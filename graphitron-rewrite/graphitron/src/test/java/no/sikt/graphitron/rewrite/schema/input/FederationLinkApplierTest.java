@@ -141,7 +141,9 @@ class FederationLinkApplierTest {
                 .hasMessageContaining("'@tag'")
                 .hasMessageContaining("no source file location")
                 .hasMessageContaining("added programmatically")
-                .hasMessageContaining("Search your schema-loading pipeline");
+                .hasMessageContaining("Search your schema-loading pipeline")
+                .hasMessageContaining("Existing definition in registry:")
+                .hasMessageContaining("directive @tag");
     }
 
     @Test

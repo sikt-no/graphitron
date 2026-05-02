@@ -2,11 +2,13 @@ package no.sikt.graphitron.rewrite.schema.input;
 
 import com.apollographql.federation.graphqljava.directives.LinkDirectiveProcessor;
 import com.apollographql.federation.graphqljava.exceptions.MultipleFederationLinksException;
+import graphql.language.AstPrinter;
 import graphql.language.Argument;
 import graphql.language.ArrayValue;
 import graphql.language.Directive;
 import graphql.language.DirectiveDefinition;
 import graphql.language.NamedNode;
+import graphql.language.Node;
 import graphql.language.ObjectValue;
 import graphql.language.SDLDefinition;
 import graphql.language.SourceLocation;
@@ -110,14 +112,31 @@ public final class FederationLinkApplier {
         // graphitron) injecting the definition into the registry programmatically before
         // FederationLinkApplier runs. The federation library's own injection runs through this
         // same applier, so a self-collision here points at a third party.
+        //
+        // Print the existing definition's full SDL so the developer can compare it to the
+        // canonical federation-graphql-java-support shape and spot which side is the duplicate.
+        // Federation 2.x defines @tag as `directive @tag(name: String!) repeatable on
+        // FIELD_DEFINITION | OBJECT | INTERFACE | UNION | ARGUMENT_DEFINITION | SCALAR |
+        // ENUM | ENUM_VALUE | INPUT_OBJECT | INPUT_FIELD_DEFINITION | SCHEMA`; if the printed
+        // shape differs, the duplicate came from somewhere else.
+        Node<?> existing = findExistingDefinition(registry, def, name);
+        String existingSdl = existing != null ? AstPrinter.printAst(existing) : "(unavailable)";
         return "Federation directive injection collided with an existing " + kind + " " + ref
                 + " in the registry, but that " + kind + " has no source file location, "
                 + "so it was added programmatically rather than declared in a schema file. "
                 + "Search your schema-loading pipeline (and any Maven plugins layered on top of "
                 + "graphitron-maven) for code that adds " + ref + " before FederationLinkApplier "
                 + "runs; then remove that programmatic injection so federation-graphql-java-support "
-                + "can inject the canonical " + kind + " on its own. "
+                + "can inject the canonical " + kind + " on its own.\n\n"
+                + "Existing definition in registry:\n" + existingSdl + "\n\n"
                 + "(Underlying registry error: " + registryErrorMessage + ")";
+    }
+
+    private static Node<?> findExistingDefinition(TypeDefinitionRegistry registry, SDLDefinition<?> def, String name) {
+        if (name == null) return null;
+        return def instanceof DirectiveDefinition
+                ? registry.getDirectiveDefinition(name).orElse(null)
+                : registry.getType(name).orElse(null);
     }
 
     private static SourceLocation findExistingDeclarationLocation(TypeDefinitionRegistry registry, SDLDefinition<?> def, String name) {
