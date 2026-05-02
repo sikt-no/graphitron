@@ -27,7 +27,6 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Pipeline test for {@link ErrorMappingsClassGenerator}: builds a synthesized schema with
@@ -80,9 +79,11 @@ class ErrorMappingsClassGeneratorTest {
     }
 
     @Test
-    void rejects_collidingChannelsWithDifferentHandlerLists() {
-        // Same payload class → same mappingsConstantName, but different handler lists. The §3
-        // hash-suffix dedup hasn't landed; the emitter must reject explicitly.
+    void dedups_collidingChannelsWithDifferentHandlerLists_intoSuffixedConstants() {
+        // Same payload class with different handler lists: the §3 hash-suffix dedup pass
+        // (MappingsConstantNameDedup, run during schema build) resolves the collision by
+        // keeping the first-seen channel's bare name and assigning suffixed names to subsequent
+        // distinct shapes. The emitter sees already-resolved names and just emits.
         var ch1 = channel("FilmPayload", FILM_PAYLOAD_FQN, "FILM_PAYLOAD",
             List.of(errorType("FilmNotFoundException", FILM_NOT_FOUND_FQN,
                 List.of(new ExceptionHandler("java.lang.RuntimeException",
@@ -91,11 +92,15 @@ class ErrorMappingsClassGeneratorTest {
             List.of(errorType("FilmFkViolation", FILM_FK_FQN,
                 List.of(new SqlStateHandler("23503", Optional.empty(), Optional.empty())))));
 
-        var schema = synthesizeSchema(List.of(ch1, ch2));
-        assertThatThrownBy(() -> ErrorMappingsClassGenerator.generate(schema, OUTPUT_PACKAGE))
-            .isInstanceOf(IllegalStateException.class)
-            .hasMessageContaining("FILM_PAYLOAD")
-            .hasMessageContaining("hash-suffix");
+        var schema = synthesizeSchemaWithDedup(List.of(ch1, ch2));
+        var spec = ErrorMappingsClassGenerator.generate(schema, OUTPUT_PACKAGE).get(0);
+
+        var names = spec.fieldSpecs().stream().map(FieldSpec::name).toList();
+        assertThat(names).hasSize(2);
+        assertThat(names).contains("FILM_PAYLOAD");
+        assertThat(names.stream().filter(n -> n.startsWith("FILM_PAYLOAD_") && n.length() == "FILM_PAYLOAD_".length() + 8))
+            .as("expected one suffixed FILM_PAYLOAD_<8hex> constant alongside the bare name")
+            .hasSize(1);
     }
 
     @Test
@@ -263,5 +268,17 @@ class ErrorMappingsClassGeneratorTest {
             fields.put(FieldCoordinates.coordinates("Mutation", fieldName), field);
         }
         return new GraphitronSchema(types, fields);
+    }
+
+    /**
+     * Same as {@link #synthesizeSchema} but runs the §3 hash-suffix dedup pass over the
+     * synthesized fields before constructing the {@link GraphitronSchema}. Mirrors the
+     * production schema-build flow where {@code MappingsConstantNameDedup} runs between
+     * field classification and emitter invocation.
+     */
+    private static GraphitronSchema synthesizeSchemaWithDedup(List<ErrorChannel> channels) {
+        var raw = synthesizeSchema(channels);
+        var deduped = no.sikt.graphitron.rewrite.MappingsConstantNameDedup.apply(raw.fields());
+        return new GraphitronSchema(raw.types(), deduped);
     }
 }
