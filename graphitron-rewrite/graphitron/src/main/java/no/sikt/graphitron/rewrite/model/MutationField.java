@@ -21,23 +21,22 @@ public sealed interface MutationField extends RootField, WithErrorChannel
     /**
      * Sealed common supertype of the four DML mutation variants. Carries the per-field data the
      * INSERT / UPDATE / DELETE / UPSERT emitters share: the {@code @table} input argument that
-     * drives the DML statement, and the optional encode helper used when the return type is
-     * {@code ScalarReturnType("ID")}. Introduced so {@code buildMutationReturnExpression} can
-     * dispatch over a single supertype.
+     * drives the DML statement and a pre-resolved {@link DmlReturnExpression} arm that captures
+     * the entire return-shape dispatch (encoded ID, projected {@code @table}, or R12 payload).
      *
-     * <p>{@code encodeReturn} is {@link Optional#of(Object)} for {@code ScalarReturnType("ID")}
-     * returns and {@link Optional#empty()} otherwise; the classifier guarantees this invariant
-     * before constructing the variant. The {@link HelperRef.Encode} resolves to the per-type
-     * {@code encode<TypeName>} helper on the generated {@code NodeIdEncoder}, so the emitter
-     * never reaches back into {@code JooqCatalog} for typeId or key columns.
+     * <p>Phase 1B of {@code graphitron-rewrite/roadmap/mutations.md} replaced the broad
+     * {@code (returnType: ReturnTypeRef, encodeReturn: Optional<HelperRef.Encode>,
+     * payloadAssembly: Optional<PayloadAssembly>)} triple with a single
+     * {@link DmlReturnExpression} slot. The classifier picks the arm once; emitters
+     * pattern-match on {@link #returnExpression()} with no {@code instanceof ScalarReturnType},
+     * no {@code wrapper().isList()} lookup, no {@code Optional.orElseThrow()}, and no
+     * {@code payloadAssembly().isPresent()} predicate.
      */
     sealed interface DmlTableField extends MutationField
             permits MutationInsertTableField, MutationUpdateTableField,
                     MutationDeleteTableField, MutationUpsertTableField {
-        ReturnTypeRef returnType();
+        DmlReturnExpression returnExpression();
         ArgumentRef.InputTypeArg.TableInputArg tableInputArg();
-        Optional<HelperRef.Encode> encodeReturn();
-        Optional<PayloadAssembly> payloadAssembly();
         SourceLocation location();
     }
 
@@ -45,10 +44,8 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         String parentTypeName,
         String name,
         SourceLocation location,
-        ReturnTypeRef returnType,
+        DmlReturnExpression returnExpression,
         ArgumentRef.InputTypeArg.TableInputArg tableInputArg,
-        Optional<HelperRef.Encode> encodeReturn,
-        Optional<PayloadAssembly> payloadAssembly,
         Optional<ErrorChannel> errorChannel
     ) implements DmlTableField {}
 
@@ -56,10 +53,8 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         String parentTypeName,
         String name,
         SourceLocation location,
-        ReturnTypeRef returnType,
+        DmlReturnExpression returnExpression,
         ArgumentRef.InputTypeArg.TableInputArg tableInputArg,
-        Optional<HelperRef.Encode> encodeReturn,
-        Optional<PayloadAssembly> payloadAssembly,
         Optional<ErrorChannel> errorChannel
     ) implements DmlTableField {}
 
@@ -67,10 +62,8 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         String parentTypeName,
         String name,
         SourceLocation location,
-        ReturnTypeRef returnType,
+        DmlReturnExpression returnExpression,
         ArgumentRef.InputTypeArg.TableInputArg tableInputArg,
-        Optional<HelperRef.Encode> encodeReturn,
-        Optional<PayloadAssembly> payloadAssembly,
         Optional<ErrorChannel> errorChannel
     ) implements DmlTableField {}
 
@@ -78,10 +71,8 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         String parentTypeName,
         String name,
         SourceLocation location,
-        ReturnTypeRef returnType,
+        DmlReturnExpression returnExpression,
         ArgumentRef.InputTypeArg.TableInputArg tableInputArg,
-        Optional<HelperRef.Encode> encodeReturn,
-        Optional<PayloadAssembly> payloadAssembly,
         Optional<ErrorChannel> errorChannel
     ) implements DmlTableField {}
 

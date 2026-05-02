@@ -1,10 +1,9 @@
 package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.rewrite.ValidationError;
+import no.sikt.graphitron.rewrite.model.DmlReturnExpression;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.MutationField.MutationInsertTableField;
-import no.sikt.graphitron.rewrite.model.FieldWrapper;
-import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -21,8 +20,10 @@ class MutationInsertTableFieldValidationTest {
 
     enum Case implements ValidatorCase {
 
-        STUBBED("insert mutation field — not yet implemented, produces stubbed-variant error",
-            new MutationInsertTableField("Mutation", "createFilm", null, new ReturnTypeRef.ScalarReturnType("Film", new FieldWrapper.Single(true)), null, Optional.empty(), Optional.empty(), Optional.empty()),
+        STUBBED("insert mutation field, not yet implemented, produces stubbed-variant error",
+            new MutationInsertTableField("Mutation", "createFilm", null,
+                new DmlReturnExpression.ProjectedSingle("Film"),
+                null, Optional.empty()),
             List.of(stubbedError("Mutation.createFilm", MutationInsertTableField.class)));
 
         private final String description;
