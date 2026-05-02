@@ -923,26 +923,31 @@ class BuildContext {
                 case NodeIdLeafResolver.Resolved.Rejected r ->
                     { return new InputFieldResolution.Unresolved(name, null, r.message()); }
                 case NodeIdLeafResolver.Resolved.SameTable st -> {
+                    // Input-field filter leaves always use Skip semantics: malformed ids drop
+                    // silently to "no row matches", never throw. Argument-level lookup leaves
+                    // pick Throw at their own classify site.
                     Optional<ArgConditionRef> cond = buildInputFieldCondition(field, name, errors);
+                    var extraction = new no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement(st.decodeMethod());
                     if (st.keyColumns().size() == 1) {
                         return new InputFieldResolution.Resolved(new InputField.ColumnField(
                             parentTypeName, name, locationOf(field), typeName, nonNull, /* list= */ true,
-                            st.keyColumns().get(0), cond, st.extraction()));
+                            st.keyColumns().get(0), cond, extraction));
                     }
                     return new InputFieldResolution.Resolved(new InputField.CompositeColumnField(
                         parentTypeName, name, locationOf(field), typeName, nonNull, /* list= */ true,
-                        st.keyColumns(), cond, st.extraction()));
+                        st.keyColumns(), cond, extraction));
                 }
                 case NodeIdLeafResolver.Resolved.FkTarget ft -> {
                     Optional<ArgConditionRef> cond = buildInputFieldCondition(field, name, errors);
+                    var extraction = new no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement(ft.decodeMethod());
                     if (ft.keyColumns().size() == 1) {
                         return new InputFieldResolution.Resolved(new InputField.ColumnReferenceField(
                             parentTypeName, name, locationOf(field), typeName, nonNull, list,
-                            ft.keyColumns().get(0), ft.joinPath(), cond, ft.extraction()));
+                            ft.keyColumns().get(0), ft.joinPath(), cond, extraction));
                     }
                     return new InputFieldResolution.Resolved(new InputField.CompositeColumnReferenceField(
                         parentTypeName, name, locationOf(field), typeName, nonNull, list,
-                        ft.keyColumns(), ft.joinPath(), cond, ft.extraction()));
+                        ft.keyColumns(), ft.joinPath(), cond, extraction));
                 }
             }
         }

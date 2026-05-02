@@ -83,14 +83,21 @@ final class NodeIdLeafResolver {
          * Carriers wrap with {@code isLookupKey: true} on the argument side; on the input-field
          * side this folds onto column-shaped successors.
          *
+         * <p>The {@code decodeMethod} is exposed directly rather than wrapped in an extraction
+         * arm because the failure-mode choice (Skip vs Throw) is caller-specific: input-field
+         * filter leaves want {@code SkipMismatchedElement} ("malformed id → no match"),
+         * argument-level lookup leaves want {@code ThrowOnMismatch} (the existing
+         * {@code @lookupKey} contract; lookup-key dispatch on a wrong-type id is a contract
+         * violation rather than a silent miss).
+         *
          * @param refTypeName  the resolved (or inferred) GraphQL type name of {@code T}
+         * @param decodeMethod {@code decode<TypeName>} helper resolved on the target NodeType
          * @param keyColumns   {@code T}'s key columns (PK or {@code @node(keyColumns:)})
-         * @param extraction   always {@link CallSiteExtraction.NodeIdDecodeKeys.SkipMismatchedElement}
          */
         record SameTable(
                 String refTypeName,
-                List<ColumnRef> keyColumns,
-                CallSiteExtraction.NodeIdDecodeKeys extraction)
+                HelperRef.Decode decodeMethod,
+                List<ColumnRef> keyColumns)
             implements Resolved {}
 
         /**
@@ -99,18 +106,23 @@ final class NodeIdLeafResolver {
          * columns reachable through {@code joinPath}; decoded keys feed the
          * {@code In} / {@code RowIn} / {@code Eq} / {@code RowEq} body params.
          *
+         * <p>{@code joinPath[0]} is always a {@link FkJoin}; its {@code sourceColumns} sit on
+         * the field's containing table (the FK-holder), and the body emitter uses those columns
+         * directly when {@code targetColumns} positionally match the resolved {@code keyColumns}.
+         * The pathological case (FK target ≠ NodeType key) is rejected at projection time.
+         *
          * @param refTypeName  the resolved (or inferred) GraphQL type name of {@code T}
          * @param targetTable  resolved {@link TableRef} for {@code T.table()}
+         * @param decodeMethod {@code decode<TypeName>} helper resolved on the target NodeType
          * @param keyColumns   {@code T}'s key columns
          * @param joinPath     single-hop FK path from the containing table to {@code T.table()}
-         * @param extraction   always {@link CallSiteExtraction.NodeIdDecodeKeys.SkipMismatchedElement}
          */
         record FkTarget(
                 String refTypeName,
                 TableRef targetTable,
+                HelperRef.Decode decodeMethod,
                 List<ColumnRef> keyColumns,
-                List<JoinStep> joinPath,
-                CallSiteExtraction.NodeIdDecodeKeys extraction)
+                List<JoinStep> joinPath)
             implements Resolved {}
 
         /**
@@ -165,10 +177,9 @@ final class NodeIdLeafResolver {
                 + "': unable to resolve the NodeType backing table '" + targetTableName
                 + "' (zero or multiple GraphQL types map to it).");
         }
-        var extraction = new CallSiteExtraction.SkipMismatchedElement(decodeMethod);
 
         if (targetTableName.equalsIgnoreCase(containingTable.tableName())) {
-            return new Resolved.SameTable(refTypeName, keys.keyColumns(), extraction);
+            return new Resolved.SameTable(refTypeName, decodeMethod, keys.keyColumns());
         }
 
         var joinPath = resolveFkJoinPath(leaf, leafName, containingTable, targetTableName);
@@ -177,7 +188,7 @@ final class NodeIdLeafResolver {
         }
         TableRef targetTable = ctx.resolveTable(targetTableName);
         return new Resolved.FkTarget(
-            refTypeName, targetTable, keys.keyColumns(), joinPath.path(), extraction);
+            refTypeName, targetTable, decodeMethod, keys.keyColumns(), joinPath.path());
     }
 
     // ===== Helpers =====
