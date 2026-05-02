@@ -165,6 +165,36 @@ type Query {
 
     # B4a union-variant fixture, mirrors searchConnection.
     documentsConnection: [Document!]! @asConnection(defaultFirstValue: 5)
+
+    # R1 Phase 2f fixture: @batchKeyLifter end-to-end. The service hand-rolls three
+    # CreateFilmPayload rows (no DB round-trip), and the lifter on CreateFilmPayload.language
+    # extracts language_id keys for the DataLoader-batched lookup. MutationPayloadLifterTest
+    # asserts one batched language query with two distinct keys for three payload rows.
+    recentlyCreatedFilms: [CreateFilmPayload!]!
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.CreateFilmPayloadService",
+            method: "recentlyCreatedFilms"
+        })
+}
+
+# R1 Phase 2f fixture: free-form (non-table-backed) @record payload. The backing class is a
+# Java record with a single Integer languageId field. The child `language` field uses
+# @batchKeyLifter to supply the key extraction the catalog cannot infer (no FK metadata on a
+# DTO parent). See batchkey-lifter-directive.md.
+type CreateFilmPayload @record(record: {className: "no.sikt.graphitron.rewrite.test.services.CreateFilmPayload"}) {
+    languageId: Int!
+    # @batchKeyLifter (RecordTableField + LifterRowKeyed): per-parent Row1<Integer> lift of the
+    # languageId, fed into the rows-method's `language_id IN (...)` batch. Phase 2e gates
+    # single-cardinality returns at the validator (Inv #10) — this list-cardinality return is
+    # the supported shape; each parent yields a 0..1-element Language list.
+    language: [Language!]!
+        @batchKeyLifter(
+            lifter: {
+                className: "no.sikt.graphitron.rewrite.test.services.CreateFilmPayloadLifter",
+                method: "liftLanguageId"
+            },
+            targetColumns: ["language_id"]
+        )
 }
 
 type Customer implements Node @table(name: "customer") @node {
