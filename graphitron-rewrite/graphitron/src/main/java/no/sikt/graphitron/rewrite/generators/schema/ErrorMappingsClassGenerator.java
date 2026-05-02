@@ -47,9 +47,11 @@ public final class ErrorMappingsClassGenerator {
 
     @DependsOnClassifierCheck(
         key = "error-channel.mappings-constant",
-        reliesOn = "groups channels by ErrorChannel.mappingsConstantName, treating identical "
-            + "names as guaranteed-shared shapes; the mismatch path throws because the classifier "
-            + "would have hash-suffixed colliding shapes if the dedup logic were live.")
+        reliesOn = "groups channels by ErrorChannel.mappingsConstantName, trusting that the §3 "
+            + "hash-suffix dedup pass (MappingsConstantNameDedup, run during schema build) has "
+            + "already resolved any collisions. Two channels sharing a constant therefore "
+            + "guarantees the same handler shape; a divergent shape would indicate the dedup "
+            + "pass missed a variant and is treated as an internal classifier bug.")
     public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage) {
         var schemaPackage = outputPackage.isEmpty() ? "" : outputPackage + ".schema";
         var errorRouter = ClassName.get(schemaPackage, ErrorRouterClassGenerator.CLASS_NAME);
@@ -57,6 +59,10 @@ public final class ErrorMappingsClassGenerator {
         var mappingArray = ArrayTypeName.of(mapping);
 
         // Group every classified channel by its mappingsConstantName, preserving first-seen order.
+        // The classifier-side dedup pass (MappingsConstantNameDedup) has already resolved any
+        // hash-suffix collisions, so a shared constant name guarantees a shared handler shape.
+        // A mismatch here would indicate the dedup pass missed a WithErrorChannel variant; we
+        // surface that as an internal sanity-check rather than an author-facing error.
         var byConstant = new LinkedHashMap<String, ErrorChannel>();
         for (var field : schema.fields().values()) {
             if (!(field instanceof WithErrorChannel withChannel)) continue;
@@ -66,11 +72,10 @@ public final class ErrorMappingsClassGenerator {
                     throw new IllegalStateException(
                         "ErrorMappings: two channels share the constant '"
                             + channel.mappingsConstantName()
-                            + "' but declare different handler lists. The §3 hash-suffix"
-                            + " dedup (e.g. " + channel.mappingsConstantName() + "_A1B2C3D4)"
-                            + " is a follow-up addition; if you have hit this in a real"
-                            + " schema, the fix is to differentiate the channels at"
-                            + " classify time.");
+                            + "' but declare different handler lists. The §3 hash-suffix dedup"
+                            + " pass should have rewritten one of them; this is an internal"
+                            + " classifier bug. Add the missing WithErrorChannel variant to"
+                            + " MappingsConstantNameDedup.withResolvedChannel.");
                 }
             });
         }
