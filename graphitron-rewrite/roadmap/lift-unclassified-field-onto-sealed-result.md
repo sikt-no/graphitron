@@ -360,8 +360,9 @@ classifier's).
 
 ### Resolver-side `Resolved.Rejected` carries `Rejection`
 
-The ten R6 resolvers each declare a `Resolved.Rejected(RejectionKind kind,
-String message)` arm:
+The eleven rejection-producing resolvers each declare a
+`Resolved.Rejected(RejectionKind kind, String message)` arm (or a `String message` arm
+projected to `AUTHOR_ERROR` at the boundary):
 
 - `ServiceDirectiveResolver`, `TableMethodDirectiveResolver`,
   `ExternalFieldDirectiveResolver`, `LookupKeyDirectiveResolver`
@@ -370,8 +371,16 @@ String message)` arm:
   `MutationInputResolver` (projection resolvers; `ConditionResolver`
   has two sealed result types, both with their own Rejected arm).
 - `BatchKeyLifterDirectiveResolver` (R1's resolver, sibling to the R6 set).
+- `NodeIdLeafResolver` (R40-introduced sibling, sealed `Resolved.Rejected(String message)`
+  with eight construction sites; the consumer in `FieldBuilder` projects it to
+  `AUTHOR_ERROR` at the boundary).
 - `FieldBuilder`'s internal `TableFieldComponents.Rejected` (six sites
   consume it).
+
+`InputFieldResolver`, `LookupMappingResolver`, and `PaginationResolver` are total
+projections with no `Resolved.Rejected` arm and stay as-is. The thirteen-resolver
+roster on trunk (`ls graphitron/.../*Resolver.java | wc -l`) breaks down as eleven
+rejection-producing + three pure-success.
 
 Every consumer in `FieldBuilder` reads `r.kind()` and `r.message()` and
 rebuilds an `UnclassifiedField` with those two fields. The rebuild is
@@ -520,13 +529,15 @@ maps to any `Rejection` arm.
   `ServiceDirectiveResolver`, `TableMethodDirectiveResolver`,
   `ExternalFieldDirectiveResolver`, `EnumMappingResolver`,
   `ConditionResolver`, `BatchKeyLifterDirectiveResolver`,
-  `CheckedExceptionMatcher`, and the input field / errors-field paths in
-  `FieldBuilder`. Concrete site list (sorted by file + line, generated from
+  `NodeIdLeafResolver`, `CheckedExceptionMatcher`, and the input field /
+  errors-field paths in `FieldBuilder`. Concrete site list (sorted by file +
+  line, generated from
   `grep -n "new UnclassifiedField\|new Resolved.Rejected" graphitron/src/main`):
-  ~50 `UnclassifiedField` sites + ~30 `Resolved.Rejected` sites. Each site
-  picks the right `Rejection` sub-arm based on the data it already has.
-  `BuildContext.candidateHint`-using sites pick `AuthorError.UnknownName`;
-  the rest of the AUTHOR_ERROR sites pick `AuthorError.Structural`.
+  ~50 `UnclassifiedField` sites + ~38 `Resolved.Rejected` sites (including
+  `NodeIdLeafResolver`'s eight). Each site picks the right `Rejection` sub-arm
+  based on the data it already has. `BuildContext.candidateHint`-using sites
+  pick `AuthorError.UnknownName`; the rest of the AUTHOR_ERROR sites pick
+  `AuthorError.Structural`.
 - Update
   [`GraphitronSchemaValidator.validateUnclassifiedField`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/GraphitronSchemaValidator.java)
   to project `field.rejection()` to a `RejectionKind` and surface the
@@ -713,11 +724,14 @@ Cross-cutting checks (`validatePaginationRequiresOrdering`,
   Forty sites in `GraphitronSchemaValidator` (`validateMultiTableParticipants`,
   `validateConnectionType`, `validateColumnReferenceField`, the various
   cardinality / pagination guards, etc.) construct `ValidationError`
-  directly without going through `UnclassifiedField`. Today their kind
-  is asserted at the construction site (always `AUTHOR_ERROR` or
-  `INVALID_SCHEMA`); rebuilding them on top of `Rejection` would unify
-  the formatter's input shape but is mechanical and not on the path of
-  any in-flight item. Files separately as a follow-up.
+  directly without going through `UnclassifiedField`; one site in
+  `GraphitronSchemaBuilder.buildRecipeErrors` (federation-recipe rewrap of
+  `SchemaProblem`, around line 594) does the same on the builder side.
+  Today their kind is asserted at the construction site (always
+  `AUTHOR_ERROR` or `INVALID_SCHEMA`); rebuilding them on top of `Rejection`
+  would unify the formatter's input shape but is mechanical and not on the
+  path of any in-flight item. Files separately as a follow-up; the follow-up
+  walks both files, not just the validator.
 - LSP fix-its consuming the typed `AuthorError.UnknownName.candidates`.
   R18's plan describes what the LSP will do with classifier output; this
   plan supplies the typed shape it needs but does not also wire the LSP.
@@ -733,14 +747,19 @@ Cross-cutting checks (`validatePaginationRequiresOrdering`,
   `(attempt, candidates)` shape, so a single arm with an enum tag is the
   right cardinality. If a kind grows arm-specific data later, it splits at
   that point under R58's same precedent.
-- Lifting `ArgumentRef.UnclassifiedArg.reason: String` onto `Rejection`.
-  `UnclassifiedArg` is a sibling rejection-carrier on the argument
-  classification axis (constructed by the builder when an argument doesn't
-  fit any other variant; surfaced as a validation error downstream). Same
-  pattern, separate axis: the rejection still has to flow through `projectFilters`
-  and the field-level error aggregation before it reaches the validator,
-  which is its own thread of work. Could share the same `Rejection` shape
-  but doesn't have to. Re-evaluate after R58 lands.
+- Lifting `ArgumentRef.UnclassifiedArg.reason: String` and the closer sibling
+  `ArgumentRef.ScalarArg.UnboundArg(attemptedColumnName, reason)` onto
+  `Rejection`. Both are rejection-carriers on the argument classification axis.
+  `UnboundArg` is the more interesting one: it already carries a typed
+  `attemptedColumnName` field — the same shape `AuthorError.UnknownName(attempt,
+  candidates)` would encode, minus the candidate list. The catalog-side candidate
+  set at construction time is in scope (the call site has already walked the target
+  table's columns), so the post-R58 follow-up is small. `UnclassifiedArg` is the
+  catch-all on the same axis with just prose. Same pattern, separate axis: the
+  rejections still flow through `projectFilters` and the field-level error aggregation
+  before they reach the validator, which is its own thread of work. Could share the
+  same `Rejection` shape but don't have to. Re-evaluate after R58 lands; if the
+  follow-up plan happens, walk both records together.
 - Threading nested rejection chains through the `nestedFields` rewrap site
   in `FieldBuilder.classifyChildFieldOnTableType` (around line 411). Today
   the inner `UnclassifiedField`'s reason is prefixed with
