@@ -156,6 +156,31 @@ public class GraphitronSchemaBuilder {
         return new Bundle(result.model, result.assembled, federationLink);
     }
 
+    /**
+     * Test-only seam: builds and returns the {@link BuildContext} after type classification,
+     * without running field classification. Used by resolver-tier unit tests
+     * ({@link no.sikt.graphitron.rewrite.NodeIdLeafResolverTest}) that need the same fully-wired
+     * {@code BuildContext} the orchestrator hands to {@link FieldBuilder}, but without the
+     * field-classification side effects (which would consume the resolver).
+     */
+    static BuildContext buildContextForTests(AttributedRegistry attributed, RewriteContext ctx) {
+        var registry = attributed.registry();
+        var runtimeWiring = EchoingWiringFactory.newEchoingWiring(wiring ->
+            registry.scalars().forEach((name, v) -> {
+                if (!ScalarInfo.isGraphqlSpecifiedScalar(name)) {
+                    wiring.scalar(EchoingWiringFactory.fakeScalar(name));
+                }
+            })
+        );
+        GraphQLSchema assembled = new SchemaGenerator().makeExecutableSchema(registry, runtimeWiring);
+        var bctx = new BuildContext(assembled, new JooqCatalog(ctx.jooqPackage()), ctx);
+        var svc = new ServiceCatalog(bctx);
+        bctx.svc = svc;
+        var typeBuilder = new TypeBuilder(bctx, svc);
+        bctx.types = typeBuilder.buildTypes();
+        return bctx;
+    }
+
     private record BuildResult(GraphitronSchema model, GraphQLSchema assembled) {}
 
     private static BuildResult buildSchema(BuildContext ctx, TypeBuilder typeBuilder, FieldBuilder fieldBuilder) {

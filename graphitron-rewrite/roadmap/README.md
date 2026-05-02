@@ -17,7 +17,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R36` | Stub #3: Interface / union fetchers | In Review | [plan](stub-interface-union-fetchers.md) |
 | `R49` | Stub: scalar/`@record`-returning `@service` child field (`ServiceRecordField`) <sub>blocked by: [service-rows-method-body](service-rows-method-body.md)</sub> | Spec | [plan](service-record-field.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
-| `R40` | Argument-level `@nodeId` support | In Progress | [plan](argument-level-nodeid.md) |
+| `R40` | Argument-level `@nodeId` support | In Review | [plan](argument-level-nodeid.md) |
 | `R3` | Classification vocabulary follow-ups | Spec | [plan](classification-vocabulary-followups.md) |
 | `R58` | Lift `UnclassifiedField` / `UnclassifiedType` onto sealed-result shape | Spec | [plan](lift-unclassified-field-onto-sealed-result.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
@@ -88,7 +88,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### nodeid
 
-- `R40` [**Argument-level `@nodeId` support**](argument-level-nodeid.md) — In Progress, architecture
+- `R40` [**Argument-level `@nodeId` support**](argument-level-nodeid.md) — In Review, architecture
 - `R57` [**FK-target argument @nodeId, JOIN-with-translation emission**](nodeid-fk-target-arg-join-translation.md) — Backlog, architecture
 - `R24` [**`NodeIdReferenceField` JOIN-projection form**](nodeidreferencefield-join-projection-form.md) — Backlog, cleanup
 
