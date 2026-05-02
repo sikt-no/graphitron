@@ -237,6 +237,13 @@ class GeneratorUtils {
             .build();
     }
 
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "lifter-batchkey-is-lifterrowkeyed",
+        reliesOn = "The two-arm sealed switch in buildRecordParentKeyExtraction routes "
+            + "BatchKey.LifterRowKeyed here. BatchKeyLifterDirectiveResolver guarantees this arm "
+            + "is reached only when the parent is PojoResultType or JavaRecordType with a non-null "
+            + "fqClassName, so backingClassOf and the (BackingClass) env.getSource() coercion below "
+            + "are safe without a null check on the backing class.")
     private static CodeBlock buildLifterRowKey(
             BatchKey.LifterRowKeyed lrk, TypeName keyType,
             GraphitronType.ResultType resultType) {

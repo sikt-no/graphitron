@@ -127,6 +127,21 @@ public final class SplitRowsMethodEmitter {
      * <p>Single-cardinality callers pass a single-hop {@code joinPath}; the FK-chain loop emits
      * one declaration in that case.
      */
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "lifter-classifies-as-record-table-field",
+        reliesOn = "The BatchKey side-aware switch admits exactly RowKeyed and LifterRowKeyed; "
+            + "the JOIN-on side-aware switch admits exactly FkJoin and LiftedHop. "
+            + "BatchKeyLifterDirectiveResolver guarantees a @batchKeyLifter field classifies as "
+            + "RecordTableField or RecordLookupTableField (carrying RecordParentBatchKey + a "
+            + "single-hop joinPath whose first step is LiftedHop), so the prelude can read target "
+            + "accessors uniformly via WithTarget without per-accessor identity checks.")
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "lifter-batchkey-is-lifterrowkeyed",
+        reliesOn = "The BatchKey switch's LifterRowKeyed arm reads targetKeyColumns() to produce "
+            + "the parent-input VALUES column types. BatchKeyLifterDirectiveResolver guarantees "
+            + "the lifter path's BatchKey is LifterRowKeyed (never RowKeyed), so this arm is the "
+            + "sole route for that path; the RowKeyed arm covers only the catalog-FK record-parent "
+            + "case and reads parentKeyColumns() instead.")
     private static PreludeBindings emitParentInputAndFkChain(
             CodeBlock.Builder body,
             String fieldName,
