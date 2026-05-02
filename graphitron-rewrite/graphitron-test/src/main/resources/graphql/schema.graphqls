@@ -172,6 +172,13 @@ type Query {
     # B4a union-variant fixture, mirrors searchConnection.
     documentsConnection: [Document!]! @asConnection(defaultFirstValue: 5)
 
+    # R36 item 1 fixture: composite-PK participants in connection-mode. paged_a + paged_b have
+    # composite (Integer, Integer) PKs; the polymorphic emitter projects DSL.jsonbArray(k1, k2)
+    # as the synthetic __sort__ column and types it as JSONB so PostgreSQL's lexicographic
+    # JSONB ordering reproduces the multi-column ordering across the union, and the cursor
+    # encoder/decoder round-trips JSONB through JSONB.toString() + Convert.convert(String, JSONB.class).
+    pagedItems: [PagedItem!]! @asConnection(defaultFirstValue: 3)
+
     # R1 Phase 2f fixture: @batchKeyLifter end-to-end. The service hand-rolls three
     # CreateFilmPayload rows (no DB round-trip), and the lifter on CreateFilmPayload.language
     # extracts language_id keys for the DataLoader-batched lookup. MutationPayloadLifterTest
@@ -667,4 +674,23 @@ type ShortContent implements Content @table(name: "content") @discriminator(valu
     contentId:   Int!    @field(name: "CONTENT_ID")
     title:       String! @field(name: "TITLE")
     description: String  @field(name: "SHORT_DESCRIPTION")
+}
+
+# R36 item 1 fixture: composite-PK participants in @asConnection multi-table polymorphic.
+# Two tables share the same composite (Integer, Integer) PK shape so the polymorphic emitter
+# can produce JSONB-typed __sort__ across both branches without per-branch coercion.
+interface PagedItem {
+    name: String!
+}
+
+type PagedA implements PagedItem @table(name: "paged_a") {
+    k1:   Int!    @field(name: "K1")
+    k2:   Int!    @field(name: "K2")
+    name: String! @field(name: "NAME")
+}
+
+type PagedB implements PagedItem @table(name: "paged_b") {
+    k1:   Int!    @field(name: "K1")
+    k2:   Int!    @field(name: "K2")
+    name: String! @field(name: "NAME")
 }
