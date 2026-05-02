@@ -189,8 +189,9 @@ Fields are classified separately for root types (Query/Mutation) and nested type
 | Schema Pattern | `ChildField` Variant | `*Fetchers` Generates |
 |---|---|---|
 | Scalar/enum with `@field` | `PropertyField` | Column method in `wiring()` |
-| Return `@table`, `@lookupKey` | `RecordLookupTableField` | Async DataLoader fetcher + `rows*()` method |
-| Return `@table` (default) | `RecordTableField` | Async DataLoader fetcher + `rows*()` method |
+| Return `@table`, `@lookupKey` (catalog FK from parent's jOOQ TableRecord) | `RecordLookupTableField` (with `BatchKey.RecordParentBatchKey`) | Async DataLoader fetcher + `rows*()` method |
+| Return `@table` (default; catalog FK from parent's jOOQ TableRecord) | `RecordTableField` (with `BatchKey.RecordParentBatchKey`) | Async DataLoader fetcher + `rows*()` method |
+| Return `@table` with `@batchKeyLifter` (parent is `PojoResultType` or `JavaRecordType`; no catalog FK required) | `RecordTableField` / `RecordLookupTableField` (with `BatchKey.LifterRowKeyed`) | Async DataLoader fetcher + `rows*()` method; the developer-supplied static lifter populates the batched VALUES rows |
 | Return non-table type | `RecordField` | Column method in `wiring()` |
 | `@service`, return `@table` | `ServiceTableField` | Async DataLoader fetcher + `rows*()` method |
 | `@service`, return non-table | `ServiceRecordField` | Field method stub |
@@ -251,10 +252,10 @@ All source lives under `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewr
 | Column reference | `ColumnRef.java` | Resolved column with Java type |
 | Return type | `ReturnTypeRef.java` | `TableBound` / `Result` / `Scalar` / `Polymorphic` |
 | Cardinality | `FieldWrapper.java` | `Single` / `List` / `Connection` |
-| Join path | `JoinStep.java` | `FkJoin` / `ConditionJoin` |
+| Join path | `JoinStep.java` | `FkJoin` / `ConditionJoin` / `LiftedHop` |
 | WHERE filters | `WhereFilter.java` | `GeneratedConditionFilter` / `ConditionFilter` ; call-site contract |
 | Service methods | `MethodRef.java` | Resolved Java method with `ParamSource` variants |
-| DataLoader keys | `BatchKey.java` | `RowKeyed` / `RecordKeyed` / `ObjectBased` |
+| DataLoader keys | `BatchKey.java` | `RowKeyed` / `RecordKeyed` / `MappedRowKeyed` / `MappedRecordKeyed` / `LifterRowKeyed` |
 | Ordering | `OrderBySpec.java` | `Fixed` / `Argument` / `None` |
 | Pagination | `PaginationSpec.java` | Relay cursor arguments |
 | Argument extraction | `CallSiteExtraction.java` | `Direct` / `EnumValueOf` / `TextMapLookup` / `ContextArg` / `JooqConvert` |

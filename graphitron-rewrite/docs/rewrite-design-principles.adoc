@@ -18,7 +18,7 @@ Signs a model type needs more pre-resolution:
 
 When different variants of a concept carry different data, use a sealed interface ; not an enum with a shared field set. An enum forces every variant to have the same shape; a sealed record hierarchy gives each variant exactly the fields it needs.
 
-`BatchKey` illustrates the pattern: `RowKeyed` and `RecordKeyed` carry `keyColumns: List<ColumnRef>`, while `ObjectBased` carries `fqClassName: String`. None carry fields they don't use. The compiler enforces exhaustive switches ; when a new variant is added, every switch that doesn't handle it becomes a compile error.
+`BatchKey` illustrates the pattern: `RowKeyed` / `RecordKeyed` / `MappedRowKeyed` / `MappedRecordKeyed` carry `parentKeyColumns: List<ColumnRef>`, while `LifterRowKeyed` carries a `JoinStep.LiftedHop` plus a `LifterRef`. The variants split across two sealed sub-interfaces (`ParentKeyed` for the catalog-PK arms, `RecordParentBatchKey` for the `@record`-parent arms) so side-aware accessors live exactly where they apply. None carry fields they don't use. The compiler enforces exhaustive switches ; when a new variant is added, every switch that doesn't handle it becomes a compile error.
 
 == Classification belongs at the parse boundary
 
@@ -171,6 +171,25 @@ predicates), `DSL.val(rawValue, col.getDataType())` does the coercion inside jOO
 Java-side step, and no `CallSiteExtraction` switch is needed.
 
 Precedent: `LookupValuesJoinEmitter.addRowBuildingCore` (search for `DSL.val` with two arguments).
+
+For DTO-parent batching ; where the parent's backing class is a plain POJO or Java record without a
+jOOQ FK to the child's `@table` ; see <<dto-parent-batching,DTO-parent batching>> below; the lifter
+contract is how the schema author hands the framework a typed key when the catalog can't supply one.
+
+[#dto-parent-batching]
+=== DTO-parent batching
+
+When a `@record` parent's backing class is not a jOOQ `TableRecord`, the catalog cannot supply the
+FK columns the column-keyed DataLoader path needs to batch a child `@table` field. The `@batchKeyLifter`
+directive closes that gap: the schema author supplies a static Java method that lifts a `RowN<...>`
+batch key out of the parent DTO, plus the `targetColumns` (column names on the child table) the
+key positions match. The classifier reflects on the lifter once at build time, validates the per-position
+column-class match, and produces a `BatchKey.LifterRowKeyed` carrying a `JoinStep.LiftedHop` (target
+table + key columns, single-hop by construction) and a `LifterRef` (declaring class + method name).
+The emitter feeds that into the existing `SplitRowsMethodEmitter.buildListMethod` path with no
+identity branching: target accessors come from the `JoinStep.WithTarget` capability, key extraction
+from the lifter call. The lifter is the *single place* where the DTO → key mapping lives; if a
+schema author needs a different key, they author a new lifter method, not a new emitter arm.
 
 === Helper-locality
 
