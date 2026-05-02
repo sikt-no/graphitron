@@ -25,10 +25,18 @@ class GraphitronContextInterfaceGeneratorTest {
     }
 
     @Test
-    void generatedInterface_hasThreeMethods() {
+    void generatedInterface_hasFourMethods() {
         TypeSpec spec = GraphitronContextInterfaceGenerator.generate().get(0);
         assertThat(spec.methodSpecs()).extracting(m -> m.name())
-            .containsExactlyInAnyOrder("getDslContext", "getContextArgument", "getTenantId");
+            .containsExactlyInAnyOrder("getDslContext", "getContextArgument", "getTenantId", "getValidator");
+    }
+
+    @Test
+    void getValidator_hasDefaultImplementationReturningHolderInstance() {
+        var method = findMethod("getValidator");
+        assertThat(method.modifiers()).contains(Modifier.DEFAULT);
+        assertThat(method.returnType().toString()).isEqualTo("jakarta.validation.Validator");
+        assertThat(method.code().toString()).contains("DefaultValidatorHolder.INSTANCE");
     }
 
     @Test

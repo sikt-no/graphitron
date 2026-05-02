@@ -331,22 +331,27 @@ wrapper + dispatch arm lands; phasing within is the implementer's call.
     payload. The catch arm fills the errors slot via the dispatcher.
 
   *Native Jakarta validation* (§5):
-  - **Landed (subtractive piece)**: `ValidationViolationGraphQLException`,
+  - **Landed**: `ValidationViolationGraphQLException`,
     `ValidationViolationGraphQLExceptionGenerator`, the dispatcher's validation
-    arm, `ValidationMapping`, and §1 reject rule 9 are all gone. Validation no
-    longer reaches the catch arm.
-  - **Remaining**: wire `jakarta.validation.Validator` directly. Default
-    factory: `Validation.buildDefaultValidatorFactory().getValidator()` lazily;
-    consumer can install a `Validator` via `Graphitron.Builder`.
-  - The wrapper inserts a pre-execution validation step when the channel
-    carries a `ValidationHandler`. If `validator.validate(input)` returns
-    violations, the wrapper builds the payload's errors-arm directly with the
-    violations (as `GraphQLError`s) and returns; the service is never called.
-  - Translate `ConstraintViolation` to `GraphQLError` via a generated helper
-    (`ConstraintViolations.toGraphQLError`): bean property path → GraphQL
-    response path with the field path prefix and arg name; message → message;
-    constraint annotation simple name → optional `extensions.constraint` when
-    the SDL `@error` type declares an `extensions` field.
+    arm, `ValidationMapping`, and §1 reject rule 9 are all gone. The
+    `ConstraintViolations` helper (`<outputPackage>.schema.ConstraintViolations`)
+    translates each `ConstraintViolation` into a `GraphQLError` whose path
+    splices the field's execution path, the bound argument name, and the
+    violation's bean property path (`PROPERTY` / `BEAN` → name, list element →
+    int index, map entry → key). `GraphitronContext.getValidator(env)` provides
+    a default-factory-backed validator with a holder-class lazy initialiser;
+    consumers override the method for custom factories.
+  - The service-fetcher wrapper (`buildServiceFetcherCommon`) emits a
+    pre-execution validation block ahead of the try when the channel carries
+    any `ValidationHandler`: walks every `Arg`-sourced parameter, validates each
+    non-null arg, accumulates violations as `GraphQLError`s, and short-circuits
+    with the payload's errors-arm filled by the violations list.
+  - **Remaining**:
+    - Optional `extensions.constraint` field population when the SDL `@error`
+      type declares an `extensions` field (the source-class accessor reflection
+      check from §2c will detect the SDL signal automatically).
+    - DML-side wrapper integration once the `MutationServiceTableField` /
+      `MutationServiceRecordField` emitters un-stub.
 
   *Test fixture updates*: `SakPayload`, `DeleteFilmPayload` errors slots become
   `List<Object>`. SDL fixtures stop using `@record` co-locations on `@error`
