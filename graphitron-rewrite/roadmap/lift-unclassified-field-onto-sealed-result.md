@@ -1,7 +1,7 @@
 ---
 id: R58
 title: "Lift `UnclassifiedField` / `UnclassifiedType` onto sealed-result shape"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 5
 theme: structural-refactor
