@@ -326,13 +326,10 @@ public sealed interface ChildField extends GraphitronField
      *
      * <p>Parameter binding (including context arguments) is fully encoded in
      * {@link MethodRef#params()} via {@link ParamSource}.
-     */
-    /**
-     * @param batchKey the batch key derived from the service method's {@link MethodRef.Param.Sourced}
-     *     parameter at classification time, or {@code null} when the method has no such parameter.
-     *     A {@code null} batch key means the field will fail validation — the validator reports the
-     *     missing {@code Sources} parameter. Generation never sees a {@code null} batch key because
-     *     validation is a prerequisite.
+     *
+     * @param batchKey derived from the service method's {@link MethodRef.Param.Sourced}
+     *     parameter; {@code null} when the method has no such parameter, which fails validation
+     *     (generation runs only post-validation, so it never observes {@code null}).
      */
     record ServiceTableField(
         String parentTypeName,
@@ -358,13 +355,10 @@ public sealed interface ChildField extends GraphitronField
      *
      * <p>Parameter binding (including context arguments) is fully encoded in
      * {@link MethodRef#params()} via {@link ParamSource}.
-     */
-    /**
-     * @param batchKey the batch key derived from the service method's
-     *     {@link MethodRef.Param.Sourced} parameter at classification time, or {@code null} when
-     *     the method has no such parameter. A {@code null} batch key means the field will fail
-     *     validation — the validator reports the missing {@code Sources} parameter. Generation
-     *     never sees a {@code null} batch key because validation is a prerequisite.
+     *
+     * @param batchKey derived from the service method's {@link MethodRef.Param.Sourced}
+     *     parameter; {@code null} when the method has no such parameter, which fails validation
+     *     (generation runs only post-validation, so it never observes {@code null}).
      */
     record ServiceRecordField(
         String parentTypeName,
