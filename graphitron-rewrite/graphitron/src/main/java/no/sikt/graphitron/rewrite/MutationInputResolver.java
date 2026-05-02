@@ -250,9 +250,9 @@ final class MutationInputResolver {
         if (foundTia.list()) {
             return new Resolved.Rejected(
                 "listed @table input arguments on @mutation fields are not yet supported"
-                    + " — the supported shape is a single non-list @table input wrapper (e.g."
-                    + " 'argName: SomeInput' rather than 'argName: [SomeInput!]!');"
-                    + " split bulk operations into per-row mutations or accept the list as a non-@table input");
+                    + " — declare the argument as a single non-list @table input wrapper"
+                    + " (e.g. 'argName: SomeInput' rather than 'argName: [SomeInput!]!') and"
+                    + " issue one mutation per row, or wait for bulk-mutation support to land");
         }
         if (foundTia.argCondition().isPresent()) {
             return new Resolved.Rejected(
