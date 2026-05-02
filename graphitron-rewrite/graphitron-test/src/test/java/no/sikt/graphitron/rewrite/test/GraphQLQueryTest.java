@@ -2544,15 +2544,69 @@ class GraphQLQueryTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void searchConnection_totalCount_returnsNullUntilB4c() {
-        // B4a passes (table, condition) = (null, null) to ConnectionResult so totalCount short-
-        // circuits to null; the polymorphic count query lands in B4c. Confirming the null result
-        // documents the current contract and pins the regression boundary.
+    void searchConnection_totalCount_returnsTotalRowCountAcrossParticipants() {
+        // B4b: ConnectionResult now carries the UNION-ALL derived table 'pages' so
+        // ConnectionHelper.totalCount runs SELECT count(*) FROM (UNION ALL Film + Actor) AS pages.
+        // 5 films + 3 actors = 8 total; the count is independent of the page window.
         Map<String, Object> data = execute("""
             { searchConnection(first: 1) { totalCount } }
             """);
         var conn = (Map<String, Object>) data.get("searchConnection");
-        assertThat(conn.get("totalCount")).isNull();
+        assertThat(conn.get("totalCount")).isEqualTo(8);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void searchConnection_totalCount_independentOfAfterCursor() {
+        // The count is over the full UNION ALL, not the page window — so paging past the start
+        // with an after cursor still reports the full 8.
+        Map<String, Object> page1Data = execute("""
+            { searchConnection(first: 3) { pageInfo { endCursor } } }
+            """);
+        var pageInfo1 = (Map<String, Object>) ((Map<String, Object>) page1Data.get("searchConnection")).get("pageInfo");
+        String endCursor = (String) pageInfo1.get("endCursor");
+
+        Map<String, Object> page2Data = execute(
+            "{ searchConnection(first: 3, after: \"" + endCursor + "\") { totalCount } }");
+        var conn = (Map<String, Object>) page2Data.get("searchConnection");
+        assertThat(conn.get("totalCount")).isEqualTo(8);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void searchConnection_totalCount_isLazyOnSelection_noCountSqlWhenUnselected() {
+        // The polymorphic totalCount path should remain lazy on selection just like the
+        // single-table case. graphql-java only invokes the resolver when the client picks
+        // the field; no SELECT count should fire for an unselected totalCount.
+        SQL_LOG.clear();
+        execute("{ searchConnection(first: 2) { nodes { __typename } pageInfo { hasNextPage } } }");
+        assertThat(SQL_LOG)
+            .as("no SELECT count statement should be issued when totalCount is not selected")
+            .noneMatch(s -> s.contains("select count"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void searchConnection_totalCount_selected_issuesCountSql() {
+        // Companion ratchet: when totalCount IS selected, exactly one count statement runs;
+        // pages-derived-table emission shows up as a `select count(*) from (...) as "pages"` shape.
+        SQL_LOG.clear();
+        execute("{ searchConnection(first: 2) { totalCount nodes { __typename } } }");
+        assertThat(SQL_LOG)
+            .filteredOn(s -> s.contains("select count"))
+            .as("selecting totalCount should issue exactly one SELECT count statement")
+            .hasSize(1);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void documentsConnection_totalCount_unionVariant_returnsTotalRowCount() {
+        // Union variant parity: same emitter path, same totalCount shape.
+        Map<String, Object> data = execute("""
+            { documentsConnection(first: 1) { totalCount } }
+            """);
+        var conn = (Map<String, Object>) data.get("documentsConnection");
+        assertThat(conn.get("totalCount")).isEqualTo(8);
     }
 
     // ===== ChildField.UnionField (Track B3) =====

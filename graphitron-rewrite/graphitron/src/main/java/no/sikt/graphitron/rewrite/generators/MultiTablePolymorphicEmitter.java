@@ -65,6 +65,8 @@ public final class MultiTablePolymorphicEmitter {
     private static final ClassName DSL_CONTEXT      = ClassName.get("org.jooq", "DSLContext");
     /** Stage-1 derived-table alias used by the connection-mode UNION-ALL wrapper. */
     private static final String CONNECTION_PAGES_ALIAS = "pages";
+    /** Local variable name carrying the UNION-ALL derived table — referenced by both the page query and {@code ConnectionResult.table()} for {@code totalCount}. */
+    private static final String CONNECTION_PAGES_LOCAL = "pagesTable";
     /** Directive context surfaced in {@link ValuesJoinRowBuilder}'s arity-cap error messages. */
     private static final String DIRECTIVE_CONTEXT = "@interface participant PK";
 
@@ -124,14 +126,16 @@ public final class MultiTablePolymorphicEmitter {
      * each typed Record so {@code ConnectionHelper.encodeCursor} can read the sort key for
      * cursor encoding on edges and {@code pageInfo.startCursor}/{@code endCursor}.
      *
-     * <p>v1 scope (B4a): forward and backward pagination ({@code first}/{@code last}/{@code after}/
+     * <p>v1 scope: forward and backward pagination ({@code first}/{@code last}/{@code after}/
      * {@code before}); single-PK participants only (the {@code __sort__} column is typed as the
      * participant's PK column class, which the cursor encoder/decoder can round-trip through
      * jOOQ's {@code DataType.convert}). Composite-PK participants would project a JSONB {@code __sort__}
      * column whose cursor round-trip is not yet covered, so the validator rejects them under
-     * connection mode. {@code totalCount} is always {@code null} on this path; landing the
-     * polymorphic count query is B4c. Child connections ({@code ChildField.InterfaceField} +
-     * {@code @asConnection}) are B4d.
+     * connection mode. As of B4b, {@code totalCount} runs a polymorphic
+     * {@code SELECT count(*) FROM (UNION ALL) AS pages} via the same UNION-ALL derived table the
+     * page query uses (held in a local {@code pagesTable} reference); the resolver remains lazy
+     * on selection. Child connections ({@code ChildField.InterfaceField} + {@code @asConnection})
+     * are B4c.
      */
     public static List<MethodSpec> emitConnectionMethods(
             String fieldName,
@@ -264,10 +268,13 @@ public final class MultiTablePolymorphicEmitter {
      * typed Records carry both {@code __typename} (for the schema-class TypeResolver) and
      * {@code __sort__} (for {@code ConnectionHelper.encodeCursor}).
      *
-     * <p>{@code ConnectionResult} is constructed with {@code (table, condition) = (null, null)}
-     * — the {@code totalCount} resolver short-circuits to {@code null} in that case, matching
-     * the Split-Connection scatter path. Real polymorphic {@code totalCount} (running a
-     * {@code SELECT count(*) FROM (UNION ALL) AS x}) is the B4c sub-phase.
+     * <p>{@code ConnectionResult} is constructed with {@code (table, condition) =
+     * (pagesTable, DSL.noCondition())} so the same UNION-ALL derived table backs both the page
+     * query and {@code ConnectionHelper.totalCount}'s {@code SELECT count(*)}; the count resolver
+     * remains lazy on selection (graphql-java only invokes it when the client picks the field).
+     * Per-branch WHERE predicates (B4c child case, when wired) live inside the union, so the
+     * outer carrier condition is a no-op. The empty-participants defensive path keeps
+     * {@code (null, null)} since there is no derived table to count.
      */
     private static MethodSpec buildConnectionFetcher(
             String fieldName, List<ParticipantRef.TableBound> participants,
@@ -375,8 +382,13 @@ public final class MultiTablePolymorphicEmitter {
         builder.addStatement("if (o instanceof $T r) payload.add(r)", RECORD);
         builder.endControlFlow();
 
-        builder.addStatement("$T cr = new $T(payload, page, null, null)",
-            valueType, connectionResultClass);
+        // Bind the same UNION-ALL derived table {@code pagesTable} onto ConnectionResult so
+        // ConnectionHelper.totalCount can issue {@code SELECT count(*) FROM (UNION ALL) AS pages}
+        // lazily on selection. The condition is DSL.noCondition() because per-branch WHEREs
+        // (when wired for B4c child connections) live inside the union; the outer count adds
+        // nothing further.
+        builder.addStatement("$T cr = new $T(payload, page, $L, $T.noCondition())",
+            valueType, connectionResultClass, CONNECTION_PAGES_LOCAL, DSL);
         builder.addCode(returnSyncSuccess(valueType, "cr"));
         builder.nextControlFlow("catch ($T e)", Exception.class);
         builder.addCode(redactCatchArm(outputPackage));
@@ -385,12 +397,18 @@ public final class MultiTablePolymorphicEmitter {
     }
 
     /**
-     * Connection-mode stage 1: emits the same per-branch UNION ALL of
-     * {@code (typename, pk0, sort)} projections as the list path, but wrapped as a derived table
-     * {@code pages} so the outer query can apply {@code .orderBy(page.effectiveOrderBy())},
-     * {@code .seek(page.seekFields())}, and {@code .limit(page.limit())} uniformly across all
-     * branches. The outer SELECT projects {@code __typename, __pk0__, __sort__} as plain
-     * {@code DSL.field(name, class)} references against the derived table.
+     * Connection-mode stage 1: emits the per-branch UNION ALL of {@code (typename, pk0, sort)}
+     * projections as a derived table {@code pages} held in a local variable
+     * {@code pagesTable} (typed {@code Table<?>}); the page query then runs
+     * {@code dsl.select(...).from(pagesTable).orderBy().seek().limit().fetch()} so cursor
+     * decoding and page-size + 1 over-fetch happen uniformly across the union.
+     *
+     * <p>Materialising the derived table as a local lets the connection fetcher pass the
+     * <em>same</em> {@code Table<?>} reference into {@code ConnectionResult} so
+     * {@code ConnectionHelper.totalCount} can issue {@code SELECT count(*) FROM pagesTable}
+     * lazily on selection (B4b). Per-branch WHERE predicates (B4c child case, when wired)
+     * sit inside each branch, so the outer count needs no additional condition; the fetcher
+     * binds {@code DSL.noCondition()} as the carrier condition.
      */
     private static CodeBlock buildStage1ConnectionBlock(
             List<ParticipantRef.TableBound> participants, String jooqPackage, ClassName pkColumnClass) {
@@ -403,24 +421,28 @@ public final class MultiTablePolymorphicEmitter {
             b.addStatement("$T $L = $T.$L", jooqTableClass, alias, tablesClass, participant.table().javaFieldName());
         }
 
-        var resultBound = ParameterizedTypeName.get(RESULT, WildcardTypeName.subtypeOf(RECORD));
-        b.add("$T stage1 = dsl.select(\n", resultBound);
-        b.add("        $T.field($T.name($S), $T.class),\n", DSL, DSL, TYPENAME_COLUMN, ClassName.get(String.class));
-        b.add("        $T.field($T.name($S), $T.class),\n", DSL, DSL, PK_COLUMN_PREFIX + 0 + PK_COLUMN_SUFFIX, pkColumnClass);
-        b.add("        sortField)\n");
-        b.add("    .from(\n");
+        var tableWildcard = ParameterizedTypeName.get(TABLE, WildcardTypeName.subtypeOf(Object.class));
+        b.add("$T $L =\n", tableWildcard, CONNECTION_PAGES_LOCAL);
         for (int p = 0; p < participants.size(); p++) {
             var participant = participants.get(p);
             String alias = "stage1_" + participant.typeName();
             if (p == 0) {
-                b.add("        dsl.select($L)\n", branchProjection(participant, alias));
-                b.add("            .from($L)\n", alias);
+                b.add("    dsl.select($L)\n", branchProjection(participant, alias));
+                b.add("        .from($L)\n", alias);
             } else {
-                b.add("        .unionAll(dsl.select($L)\n", branchProjection(participant, alias));
-                b.add("            .from($L))\n", alias);
+                b.add("    .unionAll(dsl.select($L)\n", branchProjection(participant, alias));
+                b.add("        .from($L))\n", alias);
             }
         }
-        b.add("        .asTable($S))\n", CONNECTION_PAGES_ALIAS);
+        b.add("    .asTable($S);\n", CONNECTION_PAGES_ALIAS);
+
+        var resultBound = ParameterizedTypeName.get(RESULT, WildcardTypeName.subtypeOf(RECORD));
+        b.add("$T stage1 = dsl\n", resultBound);
+        b.add("    .select(\n");
+        b.add("        $T.field($T.name($S), $T.class),\n", DSL, DSL, TYPENAME_COLUMN, ClassName.get(String.class));
+        b.add("        $T.field($T.name($S), $T.class),\n", DSL, DSL, PK_COLUMN_PREFIX + 0 + PK_COLUMN_SUFFIX, pkColumnClass);
+        b.add("        sortField)\n");
+        b.add("    .from($L)\n", CONNECTION_PAGES_LOCAL);
         b.add("    .orderBy(page.effectiveOrderBy())\n");
         b.add("    .seek(page.seekFields())\n");
         b.add("    .limit(page.limit())\n");
