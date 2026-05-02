@@ -1,7 +1,7 @@
 ---
 id: R59
 title: "Sharpen author-error messages with concrete remediations"
-status: Backlog
+status: In Review
 bucket: validation
 priority: 5
 theme: docs
@@ -18,5 +18,7 @@ Several validator rejection messages name the offending construct accurately but
 - `no foreign key found between tables 'X' and 'Y'; add a @reference directive to specify the join path` (`BuildContext.java:529`). Already actionable; a one-line example of the directive's syntax would save a docs trip.
 
 Separately, the `RecordTableField requires a FK join path…` rejection at `FieldBuilder.java:2515-2525` is classified `RejectionKind.DEFERRED`, but R1 already shipped the `@batchKeyLifter` directive specifically to close it on free-form DTO parents. The `[deferred]` label misleads authors into thinking they're blocked on a future release; it should be `AUTHOR_ERROR` (the message body is already correct: "for free-form DTO parents, supply `@batchKeyLifter` on the field").
+
+Adjacent diagnostic-noise fix shipped under the same item: SDL source paths in the validator's gcc-style error and warning lines (`file:line:col: error: ...`) emitted whatever absolute path graphql-java captured during parse. On a deeply-nested module that produces lines wider than terminals, eating vertical space when each error wraps. `GraphQLRewriteGenerator.relativiseSourceName` relativises against `ctx.basedir()` so the path shrinks to the natural project-relative form (e.g. `src/main/resources/schema/.../sak.graphqls`), with fallbacks when the source is null, not absolute, or sits outside basedir.
 
 Scope: tighten the message strings and re-classify the one rejection. No structural changes to the validator pipeline; no new tests beyond updating existing substring assertions. Single commit per message is fine. The DEFERRED → AUTHOR_ERROR flip is the only behavior-changing piece and should land in its own commit so it can be reverted independently if a real "deferred" case for those variants surfaces later.
