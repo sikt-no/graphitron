@@ -1,16 +1,17 @@
 package no.sikt.graphitron.rewrite.validation;
 
+import no.sikt.graphitron.rewrite.ArgumentRef;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.DmlReturnExpression;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.MutationField.MutationUpdateTableField;
+import no.sikt.graphitron.rewrite.model.TableRef;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
 import java.util.Optional;
 
-import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.stubbedError;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
@@ -20,11 +21,18 @@ class MutationUpdateTableFieldValidationTest {
 
     enum Case implements ValidatorCase {
 
-        STUBBED("update mutation field, not yet implemented, produces stubbed-variant error",
-            new MutationUpdateTableField("Mutation", "updateFilm", null,
+        VALID("update mutation field, well-formed, no validation errors",
+            new MutationUpdateTableField(
+                "Mutation", "updateFilm", null,
                 new DmlReturnExpression.ProjectedSingle("Film"),
-                null, Optional.empty()),
-            List.of(stubbedError("Mutation.updateFilm", MutationUpdateTableField.class)));
+                new ArgumentRef.InputTypeArg.TableInputArg(
+                    "in", "FilmInput", true, false,
+                    new TableRef("film", "FILM", "Film", List.of()),
+                    List.of(),
+                    Optional.empty(),
+                    List.of()),
+                Optional.empty()),
+            List.of());
 
         private final String description;
         private final GraphitronField field;

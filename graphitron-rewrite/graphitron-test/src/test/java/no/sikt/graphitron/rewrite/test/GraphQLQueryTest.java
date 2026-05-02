@@ -3244,4 +3244,50 @@ class GraphQLQueryTest {
                 .execute();
         }
     }
+
+    // ===== R22 Phase 4: UPDATE emitter (DML mutation, TableBoundReturnType) =====
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void updateFilm_updatesRowAndReturnsProjectedFilm() {
+        // UPDATE mutation with @table return: emitter runs
+        // `dsl.update(film).set(title, val).where(film_id.eq(val)).returningResult($fields)
+        //  .fetchOne(r -> r)`. Verifies the SET clause writes, the WHERE clause matches, and the
+        // RETURNING projection flows back through graphql-java for the selected columns.
+        // Pre-inserts a marker row by jOOQ so the test does not depend on (or mutate) any
+        // pre-existing Sakila row, and cleans up in finally.
+        String originalMarker = "R22-PHASE-4-FILM-" + java.util.UUID.randomUUID();
+        String updatedMarker  = "R22-PHASE-4-FILM-UPDATED-" + java.util.UUID.randomUUID();
+        var filmTable = org.jooq.impl.DSL.table("film");
+        var filmIdCol = org.jooq.impl.DSL.field("film_id", Integer.class);
+        Integer filmId = dsl.insertInto(filmTable)
+            .set(org.jooq.impl.DSL.field("title"), originalMarker)
+            .set(org.jooq.impl.DSL.field("language_id"), (short) 1)
+            .returningResult(filmIdCol)
+            .fetchOne()
+            .value1();
+        try {
+            Map<String, Object> data = execute("""
+                mutation {
+                    updateFilm(in: { filmId: %d, title: "%s" }) {
+                        title
+                        languageId
+                    }
+                }
+                """.formatted(filmId, updatedMarker));
+
+            Map<String, Object> updated = (Map<String, Object>) data.get("updateFilm");
+            assertThat(updated).containsEntry("title", updatedMarker);
+            // languageId was not in the SET clause, so it carries through unchanged.
+            assertThat(updated).containsEntry("languageId", 1);
+
+            // Re-read by PK to confirm the SET clause actually wrote, not just that RETURNING
+            // returned the projected shape.
+            String dbTitle = dsl.select(org.jooq.impl.DSL.field("title", String.class))
+                .from(filmTable).where(filmIdCol.eq(filmId)).fetchOne().value1();
+            assertThat(dbTitle).isEqualTo(updatedMarker);
+        } finally {
+            dsl.deleteFrom(filmTable).where(filmIdCol.eq(filmId)).execute();
+        }
+    }
 }

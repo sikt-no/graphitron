@@ -738,8 +738,18 @@ input FilmCreateInput @table(name: "film") {
     languageId: Int!    @field(name: "language_id")
 }
 
+# R22 Phase 4 fixture: minimal UPDATE input. `filmId` is the @lookupKey (covers the single-column
+# PK); `title` is the SET-clause field. Invariant #4 requires at least one non-@lookupKey field.
+input FilmUpdateInput @table(name: "film") {
+    filmId: Int!    @field(name: "film_id") @lookupKey
+    title:  String! @field(name: "title")
+}
+
 type Mutation {
     # R22 Phase 2: INSERT emitter with TableBoundReturnType return. The fetcher emits
     # `dsl.insertInto(film, title, language_id).values(...).returningResult(<$fields>).fetchOne(r -> r)`.
     createFilm(in: FilmCreateInput!): Film @mutation(typeName: INSERT)
+    # R22 Phase 4: UPDATE emitter with TableBoundReturnType return. The fetcher emits
+    # `dsl.update(film).set(title, val).where(film_id.eq(val)).returningResult(<$fields>).fetchOne(r -> r)`.
+    updateFilm(in: FilmUpdateInput!): Film @mutation(typeName: UPDATE)
 }
