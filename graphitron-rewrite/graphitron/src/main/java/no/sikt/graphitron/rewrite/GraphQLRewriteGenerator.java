@@ -100,8 +100,8 @@ public class GraphQLRewriteGenerator {
     public void validate() {
         var bundle = GraphitronSchemaBuilder.buildBundle(loadAttributedRegistry(), ctx);
         var schema = bundle.model();
-        logWarnings(schema);
-        var errors = validateAndLogErrors(schema);
+        logWarnings(schema, ctx.basedir());
+        var errors = validateAndLogErrors(schema, ctx.basedir());
         if (!errors.isEmpty()) {
             throw new ValidationFailedException(errors);
         }
@@ -137,9 +137,9 @@ public class GraphQLRewriteGenerator {
         var assembled = bundle.assembled();
         boolean federationLink = bundle.federationLink();
 
-        logWarnings(schema);
+        logWarnings(schema, ctx.basedir());
 
-        var errors = validateAndLogErrors(schema);
+        var errors = validateAndLogErrors(schema, ctx.basedir());
         if (!errors.isEmpty()) {
             throw new ValidationFailedException(errors);
         }
@@ -220,28 +220,49 @@ public class GraphQLRewriteGenerator {
         }
     }
 
-    private static void logWarnings(GraphitronSchema schema) {
+    private static void logWarnings(GraphitronSchema schema, Path basedir) {
         schema.warnings().forEach(w -> {
             var loc = w.location();
             if (loc != null) {
-                LOGGER.warn("{}:{}:{}: warning: {}", loc.getSourceName(), loc.getLine(), loc.getColumn(), w.message());
+                LOGGER.warn("{}:{}:{}: warning: {}", relativiseSourceName(loc.getSourceName(), basedir), loc.getLine(), loc.getColumn(), w.message());
             } else {
                 LOGGER.warn("warning: {}", w.message());
             }
         });
     }
 
-    private static List<ValidationError> validateAndLogErrors(GraphitronSchema schema) {
+    private static List<ValidationError> validateAndLogErrors(GraphitronSchema schema, Path basedir) {
         var errors = new GraphitronSchemaValidator().validate(schema);
         errors.forEach(e -> {
             var loc = e.location();
             String kindPrefix = "[" + e.kind().displayName() + "] ";
             if (loc != null) {
-                LOGGER.error("{}:{}:{}: error: {}{}", loc.getSourceName(), loc.getLine(), loc.getColumn(), kindPrefix, e.message());
+                LOGGER.error("{}:{}:{}: error: {}{}", relativiseSourceName(loc.getSourceName(), basedir), loc.getLine(), loc.getColumn(), kindPrefix, e.message());
             } else {
                 LOGGER.error("error: {}{}", kindPrefix, e.message());
             }
         });
         return errors;
+    }
+
+    /**
+     * Relativise an SDL source path against the Maven project's basedir so build logs show
+     * 'src/main/resources/schema/foo.graphqls' rather than the full absolute path. Falls back to
+     * the original string when the source is null, not absolute, or sits outside basedir (where
+     * relativising would yield a hard-to-read '../...' path).
+     */
+    private static String relativiseSourceName(String sourceName, Path basedir) {
+        if (sourceName == null) return null;
+        Path src;
+        try {
+            src = Path.of(sourceName);
+        } catch (java.nio.file.InvalidPathException ex) {
+            return sourceName;
+        }
+        if (!src.isAbsolute()) return sourceName;
+        Path base = basedir.toAbsolutePath().normalize();
+        Path abs = src.normalize();
+        if (!abs.startsWith(base)) return sourceName;
+        return base.relativize(abs).toString();
     }
 }
