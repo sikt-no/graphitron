@@ -21,7 +21,7 @@ Splitting accessor-derivation again into `Single` and `Many` rather than overloa
 
 ## Current state
 
-`FieldBuilder.classifyChildFieldOnResultType` (the method around L2475 in today's tree; line drift expected, see References) handles `@record`-parent child fields with table-bound returns by:
+`FieldBuilder.classifyChildFieldOnResultType` (currently L2500, line drift expected, see References) handles `@record`-parent child fields with table-bound returns by:
 
 1. Parsing the `@reference` path against the parent's optional SQL anchor (only `JooqTableRecordType` provides one today).
 2. Calling `deriveBatchKeyForResultType(joinPath, parentResultType)`, which returns `BatchKey.RowKeyed(fkJoin.sourceColumns())` when the path's first hop is an `FkJoin` and the parent has a non-null backing class; otherwise `null`.
@@ -59,11 +59,12 @@ The `@batchKeyLifter` directive continues to work unchanged; nothing in this pla
 ## What we're NOT doing
 
 - **Free-form DTO parents (shape (a)).** The existing AUTHOR_ERROR remediation continues to fire, with text updated only to reflect the new auto-derivation as a third option ("…back the parent with a typed jOOQ TableRecord, expose a typed accessor returning the child's TableRecord, or supply @batchKeyLifter").
-- **`JooqRecordType` / `JooqTableRecordType` parents.** These already get FK-derived batch keys; the new path is unreachable for them. Implementation guards by entering only when `deriveBatchKeyForResultType` returns null, which can only happen on `PojoResultType` / `JavaRecordType`.
+- **`JooqRecordType` / `JooqTableRecordType` parents.** These already get FK-derived batch keys; the auto-derivation should not run for them. The live `deriveBatchKeyForResultType` returns null whenever the join path's first hop isn't an `FkJoin`, regardless of parent variant, so the structural unreachability claim isn't free; making it free is part of the implementation. The new derivation switches over `GraphitronType.ResultType`'s four permits as a sealed switch and returns `AccessorDerivation.None` for `JooqRecordType` and `JooqTableRecordType` arms. Per *Sealed hierarchies over enums*, exhaustiveness becomes a compile-time fact rather than a documented assumption; if the `ResultType` taxonomy grows a fifth permit, the switch fails to compile and the implementer decides whether the new variant is accessor-eligible.
 - **Multiple matching accessors.** If reflection finds two methods that both satisfy the match rule (e.g. a `getSvar()` and a differently-named accessor for the same element class), reject with AUTHOR_ERROR naming both candidates and asking the author to disambiguate via `@batchKeyLifter`. We will not invent a tie-break.
 - **Heterogeneous element types.** If the accessor's element type is a `TableRecord` but does NOT match the field's `@table` return, do not auto-derive. The author may have intended a non-trivial transform; `@batchKeyLifter` is the explicit escape hatch.
 - **Inheritance-walking on the parent class.** Match the accessor on the parent class (or its declared supertypes via `Class.getMethods()`, which already walks). No special handling for synthetic / bridge methods beyond `Method.isBridge()` skipping.
 - **Cross-cutting BatchKey clean-up.** This plan adds two variants; it does not retune the `RowKeyed`-shared-by-two-sub-hierarchies wrinkle (`RowKeyed` permits both `ParentKeyed` and `RecordParentBatchKey`). That's intentional under *Sealed hierarchies over enums*' "the smell is shared accessors, not shared variants" rule and stays out of scope here.
+- **`Row1<T>` / `RowN<...>` → `RecordN<...>` key-emission switch.** Tracked under R61 ([`emit-record1-keys-instead-of-row1.md`](emit-record1-keys-instead-of-row1.md)) for the `ParentKeyed` axis (`RowKeyed` / `MappedRowKeyed`). R60's accessor permits emit `RowN` / `List<RowN>` keys, mirroring `LifterRowKeyed`'s existing convention so the new permits sit consistently next to their sibling. If R61 lands first, R60's accessor permits adopt `RecordN` in the same sweep R61 applies to `RowKeyed` / `LifterRowKeyed`; if R60 lands first, R61 picks up the accessor permits as it generalises. Either ordering works; neither item depends on the other.
 
 ## Implementation approach
 
@@ -150,7 +151,7 @@ record AccessorRef(
 
 **File:** `graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java`
 
-a. **In `classifyChildFieldOnResultType`'s `TableBoundReturnType` arm**, between the FK-derivation null-check and the existing rejection (currently around L2566-L2577 in today's tree; line drift expected, see References), insert the accessor-derivation attempt. The codebase's rejection API is the `Rejection.structural(message)` factory (returning a `Rejection.AuthorError.Structural`), not an enum form:
+a. **In `classifyChildFieldOnResultType`'s `TableBoundReturnType` arm**, between the FK-derivation null-check and the existing rejection (currently around L2610-L2621 in today's tree; line drift expected, see References), insert the accessor-derivation attempt. The codebase's rejection API is the `Rejection.structural(message)` factory (returning a `Rejection.AuthorError.Structural`), not an enum form:
 
 ```java
 var batchKey = deriveBatchKeyForResultType(objectPath.elements(), parentResultType);
@@ -191,7 +192,7 @@ b. **`deriveBatchKeyFromTypedAccessor` helper** (new, on `FieldBuilder`).
 
 The match rule classifies each candidate method into one of four typed outcomes (`Match.Single` / `Match.Many` / `Match.CardinalityMismatch` / `Match.NoMatch`); cardinality alignment is part of the match rule, not a downstream filter. The four outcomes feed the loop's reduction rule below:
 
-- Resolve the parent backing class via `parentResultType` switch (`PojoResultType.fqClassName()` / `JavaRecordType.fqClassName()`); return `AccessorDerivation.None` if the class is not load-able (already a precondition for the rejection path, so this is the same branch).
+- Resolve the parent backing class via a sealed switch over `parentResultType: GraphitronType.ResultType`'s four permits. `PojoResultType` (with non-null `fqClassName`) and `JavaRecordType` arms feed reflection with `Class.forName(fqClassName)`; `JooqRecordType` and `JooqTableRecordType` arms return `AccessorDerivation.None` (those parents already participate in FK-derivation); `PojoResultType` with null `fqClassName` returns `AccessorDerivation.None` (already a precondition for the rejection path, so this is the same branch). Exhaustiveness is a compile-time fact via the sealed switch; no `default` arm.
 - Iterate `parentClass.getMethods()`. For each method `m`:
   - Skip if `m.isBridge()` or `m.isSynthetic()`.
   - Skip if `m.getParameterCount() != 0` or `Modifier.isStatic(m.getModifiers())`.
@@ -298,7 +299,7 @@ The annotations live under `no.sikt.graphitron.rewrite.model`; existing `@LoadBe
 
 ### 5. Rewrite the existing FK-only rejection message
 
-**File:** `graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java` (RecordTableField branch at L2575, RecordLookupTableField branch at L2569).
+**File:** `graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java` (RecordTableField branch at L2619, RecordLookupTableField branch at L2613; line-number drift expected, re-anchor by identifier).
 
 Replace both `Rejection.structural(...)` argument strings with the literal three-option text quoted in §2.a (the `if (batchKey == null)` fallback that fires when accessor-derivation also fails). The rewrite is wholesale, not an append: the original sentence's "Add @batchKeyLifter ... or back the parent with a typed jOOQ TableRecord" two-option phrasing is restructured around three options. The lookup variant substitutes `RecordLookupTableField` for `RecordTableField` in the leading clause; the rest of the text is identical.
 
@@ -306,12 +307,12 @@ Replace both `Rejection.structural(...)` argument strings with the literal three
 
 ### Unit tests
 
-**`BatchKeyTest`** (existing or new).
+This plan adds **`BatchKeyTest`** at `graphitron/src/test/java/no/sikt/graphitron/rewrite/model/BatchKeyTest.java` (`@UnitTier`). No `BatchKeyTest` exists today; the new class is the primary unit-tier home for `BatchKey` invariants going forward. Cases:
 
-- `AccessorRowKeyedSingle.javaTypeName()` for one-column PK: `"java.util.List<org.jooq.Row1<java.lang.Long>>"`.
+- `AccessorRowKeyedSingle.javaTypeName()` for one-column PK: `"java.util.List<org.jooq.Row1<java.lang.Long>>"` (matches the convention `LifterRowKeyed` follows today; revisit under R61 if that key-emission convention shifts to `RecordN`).
 - `AccessorRowKeyedMany.javaTypeName()` for two-column composite PK.
 - `AccessorRowKeyedSingle.targetKeyColumns()` and `AccessorRowKeyedMany.targetKeyColumns()` each return the same instance as `hop.targetColumns()` (single source of truth, mirrors `LifterRowKeyed`'s own contract).
-- The sealed switch over `RecordParentBatchKey` is exhaustive across the four permits: a small test that switches on a `RecordParentBatchKey` value with `default -> fail()` must not fall through for any concrete instance; verifies the compiler's exhaustiveness check is the gate when a future fifth permit is added.
+- The sealed switch over `RecordParentBatchKey` is exhaustive across the four permits at compile time: rather than a runtime `default -> fail()` that catches a stale concrete instance, the test is a pattern-matching switch expression with no `default` arm that returns a sentinel for each permit; if a future fifth permit is added without updating the test, the test source itself fails to compile, surfacing the gap at the same site (and on the same build) the production switch site does. A redundant `default -> fail()` would only fire on shapes the compiler already rejects, so it adds no signal.
 
 ### Pipeline tests
 
@@ -327,18 +328,18 @@ Per the testing-tier rules in `rewrite-design-principles.adoc`, none of these as
 
 ### Compilation tests
 
-**`GraphitronCompilationTest`**: extend the existing fixtures schema with the two accepting cases (list field with list accessor → `AccessorRowKeyedMany`, single field with single accessor → `AccessorRowKeyedSingle`) and confirm the generated DataFetcher / rows-method compiles. The compilation tier validates that `buildRecordParentKeyExtraction`'s two new arms and the `buildRecordBasedDataFetcher` `loadMany` branch produce well-typed code under `<release>17</release>`.
+The compilation-tier surface today is `GeneratedSourcesSmokeTest` and `GeneratedSourcesLintTest` (both `@CompilationTier`, in `graphitron-test/src/test/java/no/sikt/graphitron/rewrite/test/`); they assert that the generator emits the expected classes and that `mvn compile -pl :graphitron-test -Plocal-db` produces well-typed code under `<release>17</release>`. Extend the fixtures schema (`graphitron-test/src/main/resources/graphql/schema.graphqls`) with the two accepting cases (list field with list accessor → `AccessorRowKeyedMany`, single field with single accessor → `AccessorRowKeyedSingle`), and add the two backing payload classes alongside the existing `CreateFilmPayload` (see Execution tests §"Fixture path"). `GeneratedSourcesSmokeTest`'s class roster picks up the new `*Type` / `*Fetchers` classes; `GeneratedSourcesLintTest` continues to assert no missing imports / unused types. The compilation tier covers `buildRecordParentKeyExtraction`'s two new arms and the `buildRecordBasedDataFetcher` `loadMany` branch by virtue of the schema additions; no new test class is needed.
 
 ### Execution tests
 
-**`GraphQLQueryTest`** in `graphitron-test`. Fixtures need a payload-shape parent and a list-of-children accessor.
+A new execution-tier test class in `graphitron-test/src/test/java/no/sikt/graphitron/rewrite/test/`, `@ExecutionTier`-annotated, sibling to the existing `MutationPayloadLifterTest` (which exercises `@batchKeyLifter` on `CreateFilmPayload`; the cousin path the new accessor permits replace authoring-side). Suggested name: `AccessorDerivedBatchKeyTest`. Two cases:
 
-- **Fixture suggestion (concrete):** add a mutation `lagreTodos(input: ...): LagreTodosPayload` whose payload is `LagreTodosPayload(todos: List<TodoRecord>)` (mirrors the in-the-wild `LagreKvotesporsmalSvarPayload.svar` shape). The schema field `todos: [Todo]` returns `@table(table: "todo")`; the payload class exposes `getTodos(): List<TodoRecord>`. Verify a mutation call returns the inserted rows projected through the regular Todo selection set, including any of Todo's own `@table` children.
-- **Single-accessor fixture:** add a `getOwner(): UserRecord` accessor on a smaller payload with `owner: User` (single). Verify the resolver returns the user.
+- **Many-accessor fixture:** add a mutation `createFilms(input: ...): CreateFilmsPayload` whose payload is a Java record `CreateFilmsPayload(List<FilmRecord> films)` exposing `films(): List<FilmRecord>` via the record's accessor (records produce zero-arg accessors automatically; matches the §2.b match rule's exact-name arm). Schema field `films: [Film]` returns `@table(table: "film")`. Verify the mutation returns rows projected through Film's selection set, including a child `@table` field (e.g. `language`) so the second-hop DataLoader chain is also exercised.
+- **Single-accessor fixture:** add a payload `CreateFilmSinglePayload(FilmRecord film)` with schema field `film: Film` (single). Verify the resolver returns the inserted film and resolves at least one of its `@table` children.
 
-The fixture lives in `graphitron-test/src/main/resources/graphql/schema.graphqls` plus the `graphitron-fixtures-codegen` payload class. Use the same tier as R23's two-parent execution test.
+**Fixture path.** The payload classes live alongside `CreateFilmPayload` at `graphitron-fixtures/src/main/java/no/sikt/graphitron/rewrite/test/services/` (the Java sources sibling to schema.graphqls, compiled as part of the fixtures jar that `graphitron-test` consumes). The `graphitron-fixtures-codegen` module is a code-generator stub for the NodeId fixture; payload classes do not live there. Schema additions go in `graphitron-test/src/main/resources/graphql/schema.graphqls`. The mutation and service-method scaffolding mirror the existing `recentlyCreatedFilms` / `CreateFilmPayload` shape.
 
-*Before landing:* confirm the payload-class shape compiles in `graphitron-fixtures-codegen` (a Java-25 module emitting Java-17-compatible code per `CLAUDE.md`'s release-target note), and that `-Plocal-db` is included in every `mvn install` run during development (per the fixtures-jar clobber footgun).
+*Before landing:* confirm the payload-class shape compiles in `graphitron-fixtures` (whose generated jOOQ classes are Java 17 compatible per `CLAUDE.md`'s release-target note), and that `-Plocal-db` is included in every `mvn install` run during development (per the fixtures-jar clobber footgun).
 
 ## Success criteria
 
@@ -359,14 +360,19 @@ The fixture lives in `graphitron-test/src/main/resources/graphql/schema.graphqls
 
 Identifier-level references; line numbers drift. Re-anchor by name during implementation:
 
-- Classifier rejection site: `FieldBuilder.classifyChildFieldOnResultType`'s `TableBoundReturnType` arm, both the plain (`RecordTableField`) and lookup (`RecordLookupTableField`) branches. Today the two `Rejection.structural(...)` calls live at L2569 and L2575.
-- FK-derivation helper that returns null in the no-FK case: `FieldBuilder.deriveBatchKeyForResultType` (currently L2645).
+- Classifier rejection site: `FieldBuilder.classifyChildFieldOnResultType`'s `TableBoundReturnType` arm, both the plain (`RecordTableField`) and lookup (`RecordLookupTableField`) branches. Today the two `Rejection.structural(...)` calls live at L2619 and L2613.
+- FK-derivation helper that returns null in the no-FK case: `FieldBuilder.deriveBatchKeyForResultType` (currently L2689).
 - Mirror for the reflection walk: `ServiceCatalog.classifySourcesType` (container-and-element classification, currently L594).
-- Codegen switch to extend: `GeneratorUtils.buildRecordParentKeyExtraction` (currently L199, two-arm sealed switch over `RecordParentBatchKey`); paired with `TypeFetcherGenerator.buildRecordBasedDataFetcher` (currently L2419, the `loader.load` dispatch).
+- Codegen switch to extend: `GeneratorUtils.buildRecordParentKeyExtraction` (currently L199, two-arm sealed switch over `RecordParentBatchKey`); paired with `TypeFetcherGenerator.buildRecordBasedDataFetcher` (currently L2555, the `loader.load` dispatch).
 - Sealed taxonomy doc to extend: `BatchKey` (top-level sealed interface and `RecordParentBatchKey` permits clause); `LifterRowKeyed` is the structural template, including the `JoinStep.LiftedHop` ownership pattern and the `targetKeyColumns()` delegation.
 - `JoinStep.LiftedHop` constructor shape: `LiftedHop(TableRef targetTable, List<ColumnRef> targetColumns, String alias)` (currently L167).
 - Rejection API: `Rejection.structural(message)` factory (in `model/Rejection.java`), producing a `Rejection.AuthorError.Structural`. Avoid invented enum forms.
-- Load-bearing template: `BatchKeyLifterDirectiveResolver` carries paired `@LoadBearingClassifierCheck(key = "lifter-classifies-as-record-table-field")` and `@LoadBearingClassifierCheck(key = "lifter-batchkey-is-lifterrowkeyed")` annotations at L111 and L117; `GeneratorUtils.buildLifterRowKey` carries the matching `@DependsOnClassifierCheck(key = "lifter-batchkey-is-lifterrowkeyed")` at L240. New keys in §4 follow the same shape.
+- Load-bearing template: `BatchKeyLifterDirectiveResolver` carries paired `@LoadBearingClassifierCheck(key = "lifter-classifies-as-record-table-field")` and `@LoadBearingClassifierCheck(key = "lifter-batchkey-is-lifterrowkeyed")` annotations at L111 and L117; `GeneratorUtils.buildLifterRowKey` (currently L247) carries the matching `@DependsOnClassifierCheck(key = "lifter-batchkey-is-lifterrowkeyed")` annotation (currently L242). New keys in §4 follow the same shape.
 - Audit harness: `LoadBearingGuaranteeAuditTest` enforces producer / consumer pairing across the rewrite module.
+- Execution-tier sibling test for the cousin path: `MutationPayloadLifterTest` (`graphitron-test/src/test/java/.../test/`) exercises `@batchKeyLifter` on `CreateFilmPayload`. The new `AccessorDerivedBatchKeyTest` mirrors its tier and fixture style.
 - Principles cross-refs: *Sealed hierarchies over enums for typed information*, *Narrow component types over broad interfaces*, *Classifier guarantees shape emitter assumptions*, *Builder-step results are sealed*, *Classification belongs at the parse boundary* in `graphitron-rewrite/docs/rewrite-design-principles.adoc`.
-- Related (no overlap): `BatchKeyLifterDirectiveResolver` (the existing lifter-directive path); R36-era composite-PK plumbing (multi-column PK case for the new accessor path uses the same `ColumnRef` list shape).
+- Related roadmap items (no hard dependency, no file collision):
+  - R32 ([`service-rows-method-body.md`](service-rows-method-body.md), Spec): strict child-`@service` return-type validation on the `ParentKeyed` axis. Different code site (`ServiceDirectiveResolver`) and different `BatchKey` sub-hierarchy (`ParentKeyed`); R60 lives on the `RecordParentBatchKey` sub-hierarchy. The two specs do not overlap.
+  - R61 ([`emit-record1-keys-instead-of-row1.md`](emit-record1-keys-instead-of-row1.md), Backlog): `Row1<T>`/`RowN<...>` → `RecordN<...>` key-emission switch. R60 mirrors `LifterRowKeyed`'s existing `RowN` convention; whichever item lands first, the second sweeps the new permits in along with the existing siblings. See *What we're NOT doing* §"`Row1` / `RowN` → `RecordN` key-emission switch".
+  - R36-era composite-PK plumbing (multi-column PK case for the new accessor path uses the same `ColumnRef` list shape).
+  - `BatchKeyLifterDirectiveResolver` (the existing lifter-directive path; `LifterRowKeyed` is R60's structural template).
