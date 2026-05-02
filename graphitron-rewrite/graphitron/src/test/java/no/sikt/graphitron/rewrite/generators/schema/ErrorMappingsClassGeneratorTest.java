@@ -5,8 +5,8 @@ import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.FieldSpec;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
+import no.sikt.graphitron.rewrite.model.DefaultedSlot;
 import no.sikt.graphitron.rewrite.model.ErrorChannel;
-import no.sikt.graphitron.rewrite.model.ErrorChannel.PayloadConstructorParam;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
@@ -227,13 +227,11 @@ class ErrorMappingsClassGeneratorTest {
 
     private static ErrorChannel channel(String payloadSimple, String payloadFqn, String constantName,
                                         List<ErrorType> mappedErrorTypes) {
-        var stringType = ClassName.get(String.class);
-        var listType = ClassName.get(List.class);
-        var ctorParams = List.of(
-            new PayloadConstructorParam("data", stringType, false, "null"),
-            new PayloadConstructorParam("errors", (TypeName) listType, true, null));
+        var stringType = (TypeName) ClassName.get(String.class);
+        var defaultedSlots = List.of(
+            new DefaultedSlot(0, "data", stringType, "null"));
         return new ErrorChannel(mappedErrorTypes, ClassName.bestGuess(payloadFqn),
-            ctorParams, constantName);
+            1, defaultedSlots, constantName);
     }
 
     /** Synthesises a minimal schema with one MutationServiceRecordField per channel supplied. */
