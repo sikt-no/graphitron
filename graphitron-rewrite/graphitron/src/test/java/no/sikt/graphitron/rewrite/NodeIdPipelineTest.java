@@ -776,7 +776,7 @@ class NodeIdPipelineTest {
                     cm.args().get(0);
                 assertThat(arg.argName()).isEqualTo("id");
                 assertThat(arg.list()).isFalse();
-                assertThat(arg.decodeMethod().methodName()).isEqualTo("decodeBar");
+                assertThat(arg.extraction().decodeMethod().methodName()).isEqualTo("decodeBar");
                 assertThat(arg.bindings()).hasSize(2);
                 assertThat(arg.bindings()).extracting(b -> b.targetColumn().sqlName())
                     .containsExactly("id_1", "id_2");
@@ -901,7 +901,7 @@ class NodeIdPipelineTest {
                     cm.args().get(0);
                 assertThat(arg.list()).isFalse();
                 assertThat(arg.targetColumn().sqlName()).isEqualTo("id");
-                assertThat(arg.extraction()).isInstanceOf(CallSiteExtraction.ThrowOnMismatch.class);
+                assertThat(arg.extraction()).isInstanceOf(CallSiteExtraction.SkipMismatchedElement.class);
             }),
 
         SAME_TABLE_LIST_SINGLE_PK(
@@ -936,7 +936,8 @@ class NodeIdPipelineTest {
                     cm.args().get(0);
                 assertThat(arg.list()).isTrue();
                 assertThat(arg.bindings()).hasSize(2);
-                assertThat(arg.decodeMethod().methodName()).isEqualTo("decodeBar");
+                assertThat(arg.extraction()).isInstanceOf(CallSiteExtraction.SkipMismatchedElement.class);
+                assertThat(arg.extraction().decodeMethod().methodName()).isEqualTo("decodeBar");
             }),
 
         BARE_NODEID_DEFAULTS_TO_BACKING_TABLE(
@@ -953,7 +954,7 @@ class NodeIdPipelineTest {
                 var cm = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) f.lookupMapping();
                 var arg = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping.LookupArg.DecodedRecord)
                     cm.args().get(0);
-                assertThat(arg.decodeMethod().methodName()).isEqualTo("decodeBar");
+                assertThat(arg.extraction().decodeMethod().methodName()).isEqualTo("decodeBar");
             }),
 
         T_NOT_IN_SCHEMA(

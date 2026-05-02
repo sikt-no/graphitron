@@ -67,12 +67,13 @@ final class LookupMappingResolver {
                     for (int i = 0; i < cca.columns().size(); i++) {
                         bindings.add(new InputColumnBinding.RecordBinding(i, cca.columns().get(i)));
                     }
-                    var decodeMethod = switch (cca.extraction()) {
-                        case CallSiteExtraction.ThrowOnMismatch t -> t.decodeMethod();
-                        case CallSiteExtraction.SkipMismatchedElement s -> s.decodeMethod();
-                    };
+                    if (!(cca.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys nodeIdExtraction)) {
+                        throw new IllegalStateException(
+                            "CompositeColumnArg @lookupKey arg '" + cca.name() + "' must carry a"
+                            + " NodeIdDecodeKeys extraction; got " + cca.extraction().getClass().getSimpleName());
+                    }
                     args.add(new ColumnMapping.LookupArg.DecodedRecord(
-                        cca.name(), cca.list(), decodeMethod, bindings));
+                        cca.name(), cca.list(), nodeIdExtraction, bindings));
                 }
                 case ArgumentRef.InputTypeArg.TableInputArg tia -> {
                     if (!tia.fieldBindings().isEmpty()) {

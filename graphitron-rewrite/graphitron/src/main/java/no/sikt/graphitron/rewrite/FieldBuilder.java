@@ -598,12 +598,14 @@ class FieldBuilder {
                 case NodeIdLeafResolver.Resolved.Rejected r ->
                     { return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list, r.message()); }
                 case NodeIdLeafResolver.Resolved.SameTable st -> {
-                    // Same-table @nodeId arg = lookup-by-id semantics. The existing @lookupKey
-                    // dispatch path (LookupValuesJoinEmitter) requires ThrowOnMismatch — the
-                    // per-row decode in addRowBuildingCore throws on null. Reusing that path
-                    // gives R40 lookup semantics for free; failure-mode parity (Skip vs Throw)
-                    // for the arg side is a deferred shape question, not blocking R40.
-                    var extraction = new CallSiteExtraction.ThrowOnMismatch(st.decodeMethod());
+                    // Same-table @nodeId arg = lookup-by-id semantics with filter failure mode:
+                    // a malformed encoded id drops silently to "no row matches", restoring the
+                    // originally-specified Skip semantics. The emitter's per-row decode site
+                    // branches on the NodeIdDecodeKeys arm; ThrowOnMismatch is reserved for
+                    // synthesised lookup-key paths (the implicit scalar-ID arm below) where a
+                    // wrong-type id is an authored-input contract violation rather than a
+                    // filter miss.
+                    var extraction = new CallSiteExtraction.SkipMismatchedElement(st.decodeMethod());
                     var keys = st.keyColumns();
                     if (keys.size() == 1) {
                         return new ArgumentRef.ScalarArg.ColumnArg(

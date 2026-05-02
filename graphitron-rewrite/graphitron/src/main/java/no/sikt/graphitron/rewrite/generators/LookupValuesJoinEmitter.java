@@ -86,15 +86,44 @@ final class LookupValuesJoinEmitter {
         boolean isComposite() { return compositeFieldName != null; }
     }
 
-    /** Per-binding slot for a {@link ColumnMapping.LookupArg.DecodedRecord}: which decode helper to call and which positional Record value to read. */
-    private record DecodeBinding(HelperRef.Decode decodeMethod, int index) {}
+    /**
+     * Per-binding slot for any NodeId-decoded arg: which extraction arm
+     * ({@link no.sikt.graphitron.rewrite.model.CallSiteExtraction.NodeIdDecodeKeys.SkipMismatchedElement Skip}
+     * or
+     * {@link no.sikt.graphitron.rewrite.model.CallSiteExtraction.NodeIdDecodeKeys.ThrowOnMismatch Throw})
+     * governs the per-row decode, and which positional {@code Record<N>} value to read. Used by
+     * both {@link ColumnMapping.LookupArg.DecodedRecord} (composite-PK NodeId) and
+     * {@link ColumnMapping.LookupArg.ScalarLookupArg} when its extraction is a
+     * {@link no.sikt.graphitron.rewrite.model.CallSiteExtraction.NodeIdDecodeKeys} arm
+     * ({@code index} = 0 in that arity-1 case; {@code Record1.value1()} reads the only slot).
+     */
+    private record DecodeBinding(
+            no.sikt.graphitron.rewrite.model.CallSiteExtraction.NodeIdDecodeKeys extraction,
+            int index) {
+
+        no.sikt.graphitron.rewrite.model.HelperRef.Decode decodeMethod() {
+            return extraction.decodeMethod();
+        }
+    }
 
     private static List<Slot> flattenSlots(ColumnMapping cm) {
         var slots = new java.util.ArrayList<Slot>();
         for (var arg : cm.args()) {
             switch (arg) {
-                case ColumnMapping.LookupArg.ScalarLookupArg s ->
-                    slots.add(new Slot(s.argName(), s.targetColumn(), s.list(), null, s.extraction(), null));
+                case ColumnMapping.LookupArg.ScalarLookupArg s -> {
+                    // Hoist the per-row decode for arity-1 NodeId-as-lookup-key (Throw or Skip)
+                    // onto the same DecodeBinding mechanism DecodedRecord uses. The slot's own
+                    // extraction folds to Direct so slotValueExpr reads from the hoisted
+                    // Record1<T>.value1() local; the Throw/Skip branch fires once per arg per row
+                    // in addRowBuildingCore.
+                    if (s.extraction() instanceof no.sikt.graphitron.rewrite.model.CallSiteExtraction.NodeIdDecodeKeys nid) {
+                        slots.add(new Slot(s.argName(), s.targetColumn(), s.list(), null,
+                            new no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct(),
+                            new DecodeBinding(nid, 0)));
+                    } else {
+                        slots.add(new Slot(s.argName(), s.targetColumn(), s.list(), null, s.extraction(), null));
+                    }
+                }
                 case ColumnMapping.LookupArg.MapInput m -> {
                     for (var b : m.bindings()) {
                         slots.add(new Slot(m.argName(), b.targetColumn(), m.list(), b.fieldName(), b.extraction(), null));
@@ -104,7 +133,7 @@ final class LookupValuesJoinEmitter {
                     for (var b : d.bindings()) {
                         slots.add(new Slot(d.argName(), b.targetColumn(), d.list(), null,
                             new no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct(),
-                            new DecodeBinding(d.decodeMethod(), b.index())));
+                            new DecodeBinding(d.extraction(), b.index())));
                     }
                 }
             }
@@ -254,19 +283,33 @@ final class LookupValuesJoinEmitter {
         var arrayCode = CodeBlock.builder();
         ValuesJoinRowBuilder.emitRowArrayDecl(arrayCode, slots, Slot::targetColumn, DIRECTIVE_CONTEXT, "rows", "n");
         builder.addCode(arrayCode.build());
-        builder.beginControlFlow("for (int i = 0; i < n; i++)");
 
-        // Per-row decode locals for DecodedRecord args: one decode<TypeName> call per arg per row,
-        // shared across all positional bindings. Null returns surface as GraphqlErrorException
-        // (ThrowOnMismatch contract — composite-PK NodeId @lookupKey is an authored-input
-        // contract surface). Emitted before cells so each binding's slotValueExpr can read
-        // <argLocal>Rec.value<N>().
+        // Per-row decode locals for NodeId-decoded args (DecodedRecord composite-PK paths and
+        // arity-1 ScalarLookupArg paths whose extraction is a NodeIdDecodeKeys arm): one
+        // decode<TypeName> call per arg per row, shared across all positional bindings. The
+        // failure-mode arm decides what happens on a null return:
+        //   - ThrowOnMismatch: synthesised lookup-key paths where a wrong-type id is an
+        //     authored-input contract violation. Emit a GraphqlErrorException.
+        //   - SkipMismatchedElement: same-table @nodeId filter paths where a malformed id
+        //     drops silently to "no row matches". Emit `continue` so the row is dropped from
+        //     the VALUES set.
         Map<String, DecodeBinding> decodeArgs = new LinkedHashMap<>();
         for (var slot : slots) {
             if (slot.decodeBinding() != null) {
                 decodeArgs.putIfAbsent(slot.argName(), slot.decodeBinding());
             }
         }
+        boolean anySkip = decodeArgs.values().stream()
+            .anyMatch(db -> db.extraction() instanceof no.sikt.graphitron.rewrite.model.CallSiteExtraction.NodeIdDecodeKeys.SkipMismatchedElement);
+        if (anySkip) {
+            // Effective row count tracks how many rows survived the per-row Skip checks. The
+            // tail trims rows[] to this length when shorter than n; the call site's existing
+            // `if (rows.length == 0) return dsl.newResult();` short-circuit then catches the
+            // all-skipped case without further bookkeeping.
+            builder.addStatement("int effective = 0");
+        }
+        builder.beginControlFlow("for (int i = 0; i < n; i++)");
+
         ClassName graphqlErr = ClassName.get("graphql", "GraphqlErrorException");
         for (var entry : decodeArgs.entrySet()) {
             String argName = entry.getKey();
@@ -282,8 +325,13 @@ final class LookupValuesJoinEmitter {
             builder.addStatement("$T $L = ($L instanceof $T _s) ? $T.$L(_s) : null",
                 recordType, recLocal, rawElem, String.class, encoderClass, methodName);
             builder.beginControlFlow("if ($L == null)", recLocal);
-            builder.addStatement("throw $T.newErrorException().message($S).build()", graphqlErr,
-                "Decoded NodeId did not match the expected type for argument '" + argName + "'");
+            switch (db.extraction()) {
+                case no.sikt.graphitron.rewrite.model.CallSiteExtraction.NodeIdDecodeKeys.ThrowOnMismatch t ->
+                    builder.addStatement("throw $T.newErrorException().message($S).build()", graphqlErr,
+                        "Decoded NodeId did not match the expected type for argument '" + argName + "'");
+                case no.sikt.graphitron.rewrite.model.CallSiteExtraction.NodeIdDecodeKeys.SkipMismatchedElement s ->
+                    builder.addStatement("continue");
+            }
             builder.endControlFlow();
         }
 
@@ -293,9 +341,18 @@ final class LookupValuesJoinEmitter {
         CodeBlock cells = ValuesJoinRowBuilder.cellsCode(
             slots, Slot::targetColumn, CodeBlock.of("$T.inline(i)", DSL), "table",
             (slot, idx) -> slotValueExpr(slot, roots.get(slot.argName())));
-        builder.addStatement("rows[i] = $T.row($L)", DSL, cells);
+        if (anySkip) {
+            builder.addStatement("rows[effective++] = $T.row($L)", DSL, cells);
+        } else {
+            builder.addStatement("rows[i] = $T.row($L)", DSL, cells);
+        }
         builder.endControlFlow();
-        builder.addStatement("return rows");
+        if (anySkip) {
+            builder.addStatement("return effective < n ? $T.copyOf(rows, effective) : rows",
+                ClassName.get("java.util", "Arrays"));
+        } else {
+            builder.addStatement("return rows");
+        }
     }
 
     private static String decodeRecordLocal(String rootLocalName) {
@@ -411,53 +468,24 @@ final class LookupValuesJoinEmitter {
      * column's Converter.
      */
     private static CodeBlock slotValueExpr(Slot slot, RootSource root) {
-        // DecodedRecord binding: read positional Record<N> value from the per-row decode local
-        // declared by addRowBuildingCore. The shared local means decode<TypeName> runs once per
-        // row across all bindings of the same arg (per spec: "runs once per input row").
+        // NodeId-decoded slots (both DecodedRecord composite-PK and arity-1 ScalarLookupArg
+        // with NodeIdDecodeKeys extraction) read from the per-row decode local declared by
+        // addRowBuildingCore. The shared local means decode<TypeName> runs once per row across
+        // all bindings of the same arg, and the Throw/Skip branch fires once at the hoisted
+        // null check rather than inline per cell.
         if (slot.decodeBinding() != null) {
             String recLocal = decodeRecordLocal(root.localName());
             return CodeBlock.of("$L.value$L()", recLocal, slot.decodeBinding().index() + 1);
         }
-        CodeBlock raw;
         if (slot.isComposite()) {
             CodeBlock elem = root.list()
                 ? CodeBlock.of("$L.get(i)", root.localName())
                 : CodeBlock.of("$L", root.localName());
-            raw = CodeBlock.of("(($T<?, ?>) $L).get($S)", Map.class, elem, slot.compositeFieldName());
-        } else {
-            raw = root.list()
-                ? CodeBlock.of("$L.get(i)", root.localName())
-                : CodeBlock.of("$L", root.localName());
+            return CodeBlock.of("(($T<?, ?>) $L).get($S)", Map.class, elem, slot.compositeFieldName());
         }
-        // R50 phase (f-C): NodeId-as-lookup-key arity-1 fold. The raw String reaches the per-row
-        // decode<TypeName> helper inline; a null return is an authored-input contract violation
-        // and surfaces as a GraphqlErrorException via the same Supplier throw-in-expression
-        // pattern ArgCallEmitter uses for the canonical [ID!] @nodeId fold.
-        if (slot.extraction() instanceof no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch ton) {
-            ClassName encoderClass = ton.decodeMethod().encoderClass();
-            String methodName = ton.decodeMethod().methodName();
-            // Java 17 compatibility: pattern matching with parameterised types
-            // ({@code instanceof Record1<Integer> _r}) requires Java 21+. We emit a raw
-            // {@code instanceof RecordN _r} instead, then cast {@code _r.value1()} to the
-            // column's Java class — equivalent semantics (Record1 always carries one
-            // typed slot under the hood) and compiles against the {@code <release>17</release>}
-            // bound graphitron-test enforces on generated output.
-            ClassName recordRaw = ClassName.get("org.jooq",
-                "Record" + ton.decodeMethod().outputColumnShape().size());
-            ClassName valueClass = ClassName.bestGuess(
-                ton.decodeMethod().outputColumnShape().get(0).columnClass());
-            // Cast to Object first so the {@code instanceof Record1 _r} pattern is conditional
-            // (raw {@code Record1} is a strict subtype of {@code Object}); without the cast,
-            // {@code instanceof Record1<X> _r} is an unconditional pattern requiring Java 21+.
-            return CodeBlock.of(
-                "($L) instanceof String _s ? (((Object) $T.$L(_s)) instanceof $T _r ? ($T) _r.value1() : "
-                + "(($T<?>) () -> { throw $T.newErrorException().message($S).build(); }).get()) : null",
-                raw, encoderClass, methodName, recordRaw, valueClass,
-                ClassName.get("java.util.function", "Supplier"),
-                ClassName.get("graphql", "GraphqlErrorException"),
-                "Decoded NodeId did not match the expected type for argument '" + slot.argName() + "'");
-        }
-        return raw;
+        return root.list()
+            ? CodeBlock.of("$L.get(i)", root.localName())
+            : CodeBlock.of("$L", root.localName());
     }
 
 }
