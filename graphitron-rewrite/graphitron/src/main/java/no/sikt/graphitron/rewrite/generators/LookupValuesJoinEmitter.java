@@ -436,10 +436,23 @@ final class LookupValuesJoinEmitter {
         if (slot.extraction() instanceof no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch ton) {
             ClassName encoderClass = ton.decodeMethod().encoderClass();
             String methodName = ton.decodeMethod().methodName();
+            // Java 17 compatibility: pattern matching with parameterised types
+            // ({@code instanceof Record1<Integer> _r}) requires Java 21+. We emit a raw
+            // {@code instanceof RecordN _r} instead, then cast {@code _r.value1()} to the
+            // column's Java class — equivalent semantics (Record1 always carries one
+            // typed slot under the hood) and compiles against the {@code <release>17</release>}
+            // bound graphitron-test enforces on generated output.
+            ClassName recordRaw = ClassName.get("org.jooq",
+                "Record" + ton.decodeMethod().outputColumnShape().size());
+            ClassName valueClass = ClassName.bestGuess(
+                ton.decodeMethod().outputColumnShape().get(0).columnClass());
+            // Cast to Object first so the {@code instanceof Record1 _r} pattern is conditional
+            // (raw {@code Record1} is a strict subtype of {@code Object}); without the cast,
+            // {@code instanceof Record1<X> _r} is an unconditional pattern requiring Java 21+.
             return CodeBlock.of(
-                "($L) instanceof String _s ? ($T.$L(_s) instanceof $T _r ? _r.value1() : "
+                "($L) instanceof String _s ? (((Object) $T.$L(_s)) instanceof $T _r ? ($T) _r.value1() : "
                 + "(($T<?>) () -> { throw $T.newErrorException().message($S).build(); }).get()) : null",
-                raw, encoderClass, methodName, ton.decodeMethod().returnType(),
+                raw, encoderClass, methodName, recordRaw, valueClass,
                 ClassName.get("java.util.function", "Supplier"),
                 ClassName.get("graphql", "GraphqlErrorException"),
                 "Decoded NodeId did not match the expected type for argument '" + slot.argName() + "'");
