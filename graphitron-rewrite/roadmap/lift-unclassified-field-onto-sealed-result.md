@@ -151,38 +151,80 @@ public sealed interface Rejection {
     String message();
 
     /**
-     * Author-correctable: the classifier resolved a name (column, table, FK,
-     * service method, NodeId key, …) that the catalog or SDL registry did not
-     * recognise. {@code attempt} is what the author wrote; {@code candidates}
-     * is the closed set the catalog had at this site; {@code attemptKind}
-     * names the lookup space ("column", "table", "FK", …) for the rendered
-     * message and for LSP fix-its.
-     *
-     * <p>Successor of {@link no.sikt.graphitron.rewrite.BuildContext#candidateHint}
-     * call sites: the message renders the same "; did you mean: …" suffix
-     * the helper produces today, but the candidate list survives as a list
-     * for downstream tooling.
+     * Author-correctable. Two sub-arms because the data shapes diverge: most
+     * AUTHOR_ERROR sites today are structural rule violations carrying just
+     * prose; a minority resolve a name against a closed set and carry the
+     * lookup attempt + candidates. Forcing every site to construct an empty
+     * {@code candidates} list to fit a single arm violates *Sealed
+     * hierarchies over enums for typed information* on the rejection axis.
+     * Mirrors R1's split of {@code BatchKey} into {@code ParentKeyed} /
+     * {@code RecordParentBatchKey}: each sub-arm's accessors apply uniformly
+     * to that arm.
      */
-    record AuthorError(
-        String summary,
-        AttemptKind attemptKind,
-        String attempt,
-        List<String> candidates
-    ) implements Rejection {
-        @Override public String message() { /* renders summary + did-you-mean */ }
+    sealed interface AuthorError extends Rejection {
+        /**
+         * The classifier resolved a name (column, table, FK, service method,
+         * NodeId key, lifter method, …) that the catalog or SDL registry did
+         * not recognise. {@code attempt} is what the author wrote;
+         * {@code candidates} is the closed set the catalog had at this site;
+         * {@code attemptKind} names the lookup space for the rendered
+         * message and for LSP fix-its.
+         *
+         * <p>Successor of {@link no.sikt.graphitron.rewrite.BuildContext#candidateHint}
+         * call sites (~25 across {@code BuildContext}, {@code FieldBuilder},
+         * {@code EnumMappingResolver}, {@code ServiceCatalog},
+         * {@code BatchKeyLifterDirectiveResolver}): the message renders the
+         * same "; did you mean: …" suffix the helper produces today, but the
+         * candidate list survives as a list for downstream tooling.
+         */
+        record UnknownName(
+            String summary,
+            AttemptKind attemptKind,
+            String attempt,
+            List<String> candidates
+        ) implements AuthorError {
+            @Override public String message() { /* renders summary + did-you-mean */ }
+        }
+
+        /**
+         * Author-correctable structural rule violations that don't resolve a
+         * name against a closed set. The majority arm: ~80+ sites today
+         * (e.g. "@reference path is required", "paginated fields must have
+         * ordering", "@service on a child field requires a Sources parameter").
+         */
+        record Structural(String reason) implements AuthorError {
+            @Override public String message() { return reason; }
+        }
     }
 
     /**
-     * Structural: a directive combination cannot work, period. {@code directives}
-     * names the directive identifiers (not the prose forms) the classifier
-     * inspected at this site; {@code reason} explains the conflict in terms
-     * of those identifiers.
+     * Structural rule violations the author can't fix without dropping or
+     * replacing a directive: "this combination cannot work, period". Two
+     * sub-arms by the same logic as {@link AuthorError}: a minority of sites
+     * are directive-conflict ("@X conflicts with @Y", "@asConnection on
+     * inline (non-@splitQuery) TableField"), the majority are structural
+     * rules without a clean directive enumeration ("lookup fields must not
+     * return a connection", "result type does not match input cardinality").
      */
-    record InvalidSchema(
-        List<DirectiveName> directives,
-        String reason
-    ) implements Rejection {
-        @Override public String message() { /* renders reason with @directive identifiers */ }
+    sealed interface InvalidSchema extends Rejection {
+        /**
+         * Two or more directives co-occur on the same declaration in a
+         * combination the classifier rejects, or one directive is rejected
+         * because of where it appears. {@code directives} names the bare
+         * identifiers (not the prose forms); {@code reason} renders with
+         * the {@code @}-prefixed forms via {@link DirectiveName#toString}.
+         */
+        record DirectiveConflict(
+            List<DirectiveName> directives,
+            String reason
+        ) implements InvalidSchema {
+            @Override public String message() { /* renders reason with @directive identifiers */ }
+        }
+
+        /** Structural-rule majority: ~20 sites; just prose. */
+        record Structural(String reason) implements InvalidSchema {
+            @Override public String message() { return reason; }
+        }
     }
 
     /**
@@ -203,8 +245,9 @@ public sealed interface Rejection {
     }
 
     enum AttemptKind {
-        COLUMN, TABLE, FOREIGN_KEY, SERVICE_METHOD, TABLE_METHOD, ENUM_CONSTANT,
-        TYPE_NAME, NODEID_KEY_COLUMN, ARGUMENT_NAME, FIELD_NAME
+        COLUMN, TABLE, FOREIGN_KEY, SERVICE_METHOD, TABLE_METHOD, LIFTER_METHOD,
+        ENUM_CONSTANT, TYPE_NAME, NODEID_KEY_COLUMN, ARGUMENT_NAME, FIELD_NAME,
+        DML_KIND
     }
 
     /**
@@ -237,9 +280,11 @@ public sealed interface Rejection {
 }
 ```
 
-Sealed permits are exhaustive: `AuthorError`, `InvalidSchema`, `Deferred`. The
-`INTERNAL_INVARIANT` arm is **not** a permit — see "Phase D" below for where it
-goes instead.
+Top-level permits are exhaustive: `AuthorError`, `InvalidSchema`, `Deferred`.
+Each of `AuthorError` and `InvalidSchema` is itself sealed with two leaf
+arms (`UnknownName` / `Structural` and `DirectiveConflict` / `Structural`
+respectively). The `INTERNAL_INVARIANT` arm is **not** a permit — see
+"`ClassifierBug` channel" below for where it goes instead.
 
 ### `UnclassifiedField` / `UnclassifiedType` carry a `Rejection` instead of a pair
 
@@ -303,8 +348,96 @@ public enum RejectionKind {
 }
 ```
 
+The switch is exhaustive at the top-level sealed interface; `AuthorError`'s
+internal sub-arms are transparent to the projection (both project to
+`AUTHOR_ERROR`). When a future kind is added at the top level, every
+`switch (rejection)` site that doesn't handle it is a compile error — the
+load-bearing-guarantee shape from the design principles, applied to the
+rejection axis.
+
 `ValidationError` keeps its current shape (it is the formatter's view, not the
 classifier's).
+
+### Resolver-side `Resolved.Rejected` carries `Rejection`
+
+The ten R6 resolvers each declare a `Resolved.Rejected(RejectionKind kind,
+String message)` arm:
+
+- `ServiceDirectiveResolver`, `TableMethodDirectiveResolver`,
+  `ExternalFieldDirectiveResolver`, `LookupKeyDirectiveResolver`
+  (directive resolvers).
+- `OrderByResolver`, `EnumMappingResolver`, `ConditionResolver`,
+  `MutationInputResolver` (projection resolvers; `ConditionResolver`
+  has two sealed result types, both with their own Rejected arm).
+- `BatchKeyLifterDirectiveResolver` (R1's resolver, sibling to the R6 set).
+- `FieldBuilder`'s internal `TableFieldComponents.Rejected` (six sites
+  consume it).
+
+Every consumer in `FieldBuilder` reads `r.kind()` and `r.message()` and
+rebuilds an `UnclassifiedField` with those two fields. The rebuild is
+mechanical and lossy: a typed `UnknownName` rejection produced by
+`EnumMappingResolver` gets projected to a `(RejectionKind, String)` pair,
+then back into a fresh `Rejection.AuthorError.Structural` by the
+consumer — the typed candidate list is dropped at the boundary unless the
+consumer happens to re-derive it.
+
+The lift: each `Resolved.Rejected` arm is rewritten as
+`Resolved.Rejected(Rejection rejection)`. Consumers thread the rejection
+through to the `UnclassifiedField` directly:
+
+```java
+// Today:
+case LookupKeyDirectiveResolver.Resolved.Rejected r ->
+    new UnclassifiedField(parentTypeName, name, location, fieldDef, r.kind(), r.message());
+
+// After:
+case LookupKeyDirectiveResolver.Resolved.Rejected r ->
+    new UnclassifiedField(parentTypeName, name, location, fieldDef, r.rejection());
+```
+
+This is what makes the typed `candidates` lift load-bearing in practice:
+without the resolver-side lift, every resolver-produced `AuthorError.UnknownName`
+would be flattened back to `Structural` at the FieldBuilder boundary, and the
+candidate list would survive only at sites where FieldBuilder constructs the
+rejection itself. With the lift, a candidate list constructed inside any
+resolver flows out through the same untyped channel.
+
+`MutationInputResolver`'s `DmlKindResult.Unknown(String typeName, String message)`
+is the same pattern with one extra component (the unknown raw `typeName`); its
+`message` field becomes a `Rejection.AuthorError.UnknownName` carrying
+`(typeName, dmlKindCandidates)` — the existing 8+ string-equality comparisons
+the R6 review-driven tightening lifted to a `DmlKind` enum already produce a
+clean candidate list, but it currently gets stringified.
+
+### Construction ergonomics
+
+`Rejection` ships with one static factory per common shape so call sites
+read clearly without naming the sub-arm:
+
+```java
+public static Rejection unknownColumn(String attempt, List<String> candidates) {
+    return new AuthorError.UnknownName(
+        "column '" + attempt + "' could not be resolved",
+        AttemptKind.COLUMN, attempt, candidates);
+}
+public static Rejection structural(String reason)            { return new AuthorError.Structural(reason); }
+public static Rejection invalidSchema(String reason)         { return new InvalidSchema.Structural(reason); }
+public static Rejection deferred(String summary, String planSlug, Class<? extends GraphitronField> fieldClass) {
+    return new Deferred(summary, planSlug, new StubKey.VariantClass(fieldClass));
+}
+```
+
+Factories for the candidateHint-using sites match the helper's parameter
+list 1:1, so `BuildContext.candidateHint(attempt, candidates)` becomes
+`Rejection.unknownColumn(attempt, candidates)` (or the matching
+`unknownTable` / `unknownForeignKey` / …) at the call site; no arm name
+appears in the migrated callsite code. The candidate-hint sites are the
+load-bearing ergonomics target; structural sites land via
+`Rejection.structural(prose)` and `Rejection.invalidSchema(prose)` and
+read identically to today.
+
+The factories are small and live next to the arm definitions so the
+sub-arm shapes don't bleed into every call site.
 
 ### `ClassifierBug` channel for what was `INTERNAL_INVARIANT`
 
@@ -343,24 +476,57 @@ bug channel rather than presenting itself as a fixable schema error.
 `addWarning(BuildWarning)`. `GraphitronSchema` gains a
 `List<ClassifierBug> classifierBugs()` accessor parallel to `warnings()`.
 
+`ValidateMojo` / `GenerateMojo` consume `classifierBugs()` and emit a
+separate "this is a Graphitron bug" log section before the `errors()`
+section, then non-zero exit with a distinct exit code (or a clear separate
+log preamble — the exit code split is the secondary mechanism, the log
+routing is the primary).
+
+The classifier-bug surface is intentionally narrow: only the
+`FieldBuilder.java:417` site exists today, and the goal is to keep it that
+way. New sites get added as generator bugs are caught, not as a routine
+error category. Tests that referenced `INTERNAL_INVARIANT` (e.g. variant
+tests with `"internal-invariant"` in the prose) shift to assertions over the
+`ClassifierBug` channel.
+
 ---
 
-## Phase A — Sealed `Rejection` plumbing, `UnclassifiedField` lift
+## Phase A — Sealed `Rejection` plumbing, `UnclassifiedField` lift, `ClassifierBug` carve-out
 
-Single-PR scope:
+Single-PR scope. The `INTERNAL_INVARIANT` removal lands in this phase
+because there is exactly one site producing it today and keeping the enum
+value alive across phases creates a transitional state where the
+sealed-rejection switch can't be exhaustive against a value that no longer
+maps to any `Rejection` arm.
 
-- Add `Rejection.java` (sealed interface + arms + `DirectiveName` + `StubKey`).
+- Add `Rejection.java` (top-level sealed + sub-sealed `AuthorError` and
+  `InvalidSchema` + `Deferred` + `DirectiveName` + `StubKey`).
+- Add `ClassifierBug.java` and `BuildContext.addClassifierBug` /
+  `GraphitronSchema.classifierBugs()` accessors.
+- Migrate the single `INTERNAL_INVARIANT` site
+  ([`FieldBuilder.java:417`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java))
+  to call `addClassifierBug` and return an `UnclassifiedField` whose rejection
+  is a `Deferred` with `StubKey.SemanticKey("classifier-bug-fallback")`.
+- Drop `INTERNAL_INVARIANT` from `RejectionKind` (the enum is now a closed
+  three-value projection of `Rejection`).
 - Migrate `UnclassifiedField` to carry `Rejection` instead of `(kind, reason)`.
-- Migrate `RejectionKind` to the three-value form with `of(Rejection)`.
+- Migrate every resolver's `Resolved.Rejected(RejectionKind, String)` to
+  `Resolved.Rejected(Rejection)` — see "Resolver-side `Resolved.Rejected`
+  carries `Rejection`" above. The ten resolvers and their consumer sites
+  in `FieldBuilder` move together; piecewise migration would require a
+  trivial bridge constructor and isn't worth the churn.
 - Update every `UnclassifiedField` construction site in `FieldBuilder`,
   `MutationInputResolver`, `LookupKeyDirectiveResolver`, `OrderByResolver`,
   `ServiceDirectiveResolver`, `TableMethodDirectiveResolver`,
   `ExternalFieldDirectiveResolver`, `EnumMappingResolver`,
-  `ConditionResolver`, `CheckedExceptionMatcher`, and the input field /
-  errors-field paths in `FieldBuilder`. Concrete site list (sorted by file +
-  line, generated from `grep -n "new UnclassifiedField" graphitron/src/main`):
-  ~50 sites. Each site picks the right `Rejection` arm based on the data it
-  already has.
+  `ConditionResolver`, `BatchKeyLifterDirectiveResolver`,
+  `CheckedExceptionMatcher`, and the input field / errors-field paths in
+  `FieldBuilder`. Concrete site list (sorted by file + line, generated from
+  `grep -n "new UnclassifiedField\|new Resolved.Rejected" graphitron/src/main`):
+  ~50 `UnclassifiedField` sites + ~30 `Resolved.Rejected` sites. Each site
+  picks the right `Rejection` sub-arm based on the data it already has.
+  `BuildContext.candidateHint`-using sites pick `AuthorError.UnknownName`;
+  the rest of the AUTHOR_ERROR sites pick `AuthorError.Structural`.
 - Update
   [`GraphitronSchemaValidator.validateUnclassifiedField`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/GraphitronSchemaValidator.java)
   to project `field.rejection()` to a `RejectionKind` and surface the
@@ -470,43 +636,6 @@ adapts to the renamed constant; the partition itself does not change.
 
 ---
 
-## Phase D — `ClassifierBug` channel for `INTERNAL_INVARIANT`
-
-Net new pieces:
-
-- `ClassifierBug` record (under `graphitron/src/main/java/no/sikt/graphitron/rewrite/`).
-- `BuildContext.addClassifierBug(ClassifierBug)` method + private
-  `List<ClassifierBug>` field, paralleling `addWarning`.
-- `GraphitronSchema.classifierBugs(): List<ClassifierBug>` accessor + ctor
-  parameter, paralleling `warnings()`.
-- `ValidateMojo` / `GenerateMojo` consume `classifierBugs()` and emit a
-  separate "this is a Graphitron bug" log section before the `errors()`
-  section, then non-zero exit with a distinct exit code (or a clear separate
-  log preamble — the exit code split is the secondary mechanism, the log
-  routing is the primary).
-
-Single trunk site converts:
-
-- `FieldBuilder.java:417`: the nested-variant fallthrough. Today's
-  `UnclassifiedField(parentTypeName, name, location, fieldDef,
-  RejectionKind.INTERNAL_INVARIANT, "...")` becomes
-  `ctx.addClassifierBug(new ClassifierBug(...))` plus an
-  `UnclassifiedField` whose rejection is a `Deferred` with
-  `StubKey.SemanticKey("classifier-bug-fallback")` — so the field still
-  surfaces as a build-time error against the user, but the actual diagnostic
-  the developer reads is the `ClassifierBug` entry.
-
-The classifier-bug surface is intentionally narrow: only this single site
-exists today, and the goal is to keep it that way. New sites get added as
-generator bugs are caught, not as a routine error category.
-
-`RejectionKind` no longer has an `INTERNAL_INVARIANT` value after this
-phase. Tests that referenced it (e.g. variant tests with
-`"INTERNAL_INVARIANT"` in the prose) shift to assertions over the
-`ClassifierBug` channel.
-
----
-
 ## Validator changes
 
 `GraphitronSchemaValidator.validateField` and `validateType` keep their switch
@@ -580,12 +709,18 @@ Cross-cutting checks (`validatePaginationRequiresOrdering`,
   case in `TypeBuilder`); a sealed lift on a single-arm hierarchy is
   premature. Re-evaluate if R3 §3 audit work or future warnings push the
   count past three.
-- Lifting `ValidationError.message` similarly. The validator is the
-  formatter; structured data on the rejection side flows *into* the
-  formatter, not through it.
-- LSP fix-its consuming the typed `AuthorError.candidates`. R18's plan
-  describes what the LSP will do with classifier output; this plan supplies
-  the typed shape it needs but does not also wire the LSP.
+- Lifting validator-side `ValidationError` construction onto `Rejection`.
+  Forty sites in `GraphitronSchemaValidator` (`validateMultiTableParticipants`,
+  `validateConnectionType`, `validateColumnReferenceField`, the various
+  cardinality / pagination guards, etc.) construct `ValidationError`
+  directly without going through `UnclassifiedField`. Today their kind
+  is asserted at the construction site (always `AUTHOR_ERROR` or
+  `INVALID_SCHEMA`); rebuilding them on top of `Rejection` would unify
+  the formatter's input shape but is mechanical and not on the path of
+  any in-flight item. Files separately as a follow-up.
+- LSP fix-its consuming the typed `AuthorError.UnknownName.candidates`.
+  R18's plan describes what the LSP will do with classifier output; this
+  plan supplies the typed shape it needs but does not also wire the LSP.
 - Renaming `RejectionKind` itself (e.g. to `RejectionClass` to avoid the
   enum-of-typed-information shape). With three values and a derived
   projection role, the name reads cleanly enough.
@@ -593,30 +728,61 @@ Cross-cutting checks (`validatePaginationRequiresOrdering`,
   The validator's external contract — emit `(kind, message, location)` —
   is what `ValidateMojo` and watch-mode formatters consume; changing it is
   a separate decision.
-- Splitting `Rejection.AuthorError` further by `AttemptKind`. The kinds
-  enumerate the lookup spaces but every space carries the same
+- Splitting `Rejection.AuthorError.UnknownName` further by `AttemptKind`.
+  The kinds enumerate the lookup spaces but every space carries the same
   `(attempt, candidates)` shape, so a single arm with an enum tag is the
   right cardinality. If a kind grows arm-specific data later, it splits at
   that point under R58's same precedent.
+- Lifting `ArgumentRef.UnclassifiedArg.reason: String` onto `Rejection`.
+  `UnclassifiedArg` is a sibling rejection-carrier on the argument
+  classification axis (constructed by the builder when an argument doesn't
+  fit any other variant; surfaced as a validation error downstream). Same
+  pattern, separate axis: the rejection still has to flow through `projectFilters`
+  and the field-level error aggregation before it reaches the validator,
+  which is its own thread of work. Could share the same `Rejection` shape
+  but doesn't have to. Re-evaluate after R58 lands.
+- Threading nested rejection chains through the `nestedFields` rewrap site
+  in `FieldBuilder.classifyChildFieldOnTableType` (around line 411). Today
+  the inner `UnclassifiedField`'s reason is prefixed with
+  `"nested type 'X' field 'Y': "` and re-stamped as a fresh outer
+  `UnclassifiedField`, dropping the inner rejection's typed structure.
+  With typed rejections we could carry an inner `Rejection` as a child
+  component on a new `Rejection.NestedReject(outerSite, inner)` arm. That
+  shape would also benefit error-aggregation consumers (LSP, watch-mode)
+  but is a non-trivial addition (every consumer that reads `rejection()`
+  has to recurse). Out of scope here; reach for it if the prose-prefix
+  pattern starts swallowing recoverable structure at more sites.
+- Switching the watch-mode delta tracker's key from `(file, coordinate,
+  kind, message)` to `(file, coordinate, rejection)`. Today's keying on
+  `message` couples the delta tracker to cosmetic prose changes; a typed
+  key would survive renderer evolution. Falls out naturally once R58
+  lands; not in this plan because the delta tracker lives in the watch-mode
+  formatter, which has its own roadmap surface.
 
 ---
 
 ## Phasing summary
 
-Default landing order is A → B → C → D, single PR per phase. A and B are
-the structural lift; C is the validator-gate consolidation; D is the
-classifier-bug carve-out. Each phase compiles cleanly on its own and leaves
-the validator's external contract unchanged.
+Default landing order is A → B → C, single PR per phase. A is the
+structural lift, the resolver-side `Resolved.Rejected` lift, and the
+`ClassifierBug` carve-out (kept together because they share the
+`RejectionKind` enum's value-set transition); B is the mechanical
+`UnclassifiedType` mirror; C is the `STUBBED_VARIANTS` rename and
+validator-gate consolidation. Each phase compiles cleanly on its own and
+leaves the validator's external contract unchanged.
 
-A and B can collapse into one PR if the diff size allows. C and D each
-warrant their own PR — C touches the generator's stub map and the validator's
-deferred-gate path together, and D introduces a new public surface
-(`ClassifierBug` channel) that wants its own review.
+A and B can collapse into one PR if the diff size allows; A by itself is
+roughly 50 + 30 = ~80 mechanical site updates plus the new types, and B
+adds another ~22, so the combined diff likely sits around 1000 lines and
+is borderline for a single PR. The default is two PRs unless the second
+clearly shrinks. C warrants its own PR: it touches the generator's stub
+map and the validator's deferred-gate path together, and the prose-drift
+audit (see below) is a separate review concern from the structural lift.
 
 The whole plan is internal-refactor scoped: no user-visible directive,
 goal, or output format changes. The validator's log surface is byte-stable
 through Phase B; Phase C may slightly normalise prose for the few stubbed
 variants whose hand-rolled message diverges from the new uniform renderer
-(audit and document any drift in the Phase C commit message); Phase D
+(audit and document any drift in the Phase C commit message). Phase A
 introduces a new "classifier bug" log preamble where today there is none,
 and that is the only user-visible change in the entire plan.
