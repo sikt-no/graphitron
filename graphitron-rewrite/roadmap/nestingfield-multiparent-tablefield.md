@@ -20,7 +20,7 @@ Allow a plain-object (NestingField) type to be used under multiple `@table` pare
 - `ColumnField` — compared by `sqlName()` + `columnClass()`. Relies on jOOQ's name-based `Record.get(Field)` fallback at runtime to project the same-named column across parents.
 - Inner `NestingField` — recurses via `compareNestedFieldsShape(rnf, onf, repParent, otherParent, errors)`, threading the outer parent names so deep errors still name the original tables.
 
-Everything else — `TableField`, `LookupTableField`, `SplitTableField`, `SplitLookupTableField`, `RecordTableField`, `RecordLookupTableField`, `ConstructorField`, `NodeIdField` — lands in the catch-all arm with the "classifies as X which is not yet supported across multiple parents" self-contained message.
+Everything else — `TableField`, `LookupTableField`, `SplitTableField`, `SplitLookupTableField`, `RecordTableField`, `RecordLookupTableField`, `ConstructorField`, and the column-shaped NodeId carriers (`ColumnReferenceField`, `CompositeColumnField`, `CompositeColumnReferenceField`) — lands in the catch-all arm with the "classifies as X which is not yet supported across multiple parents" self-contained message.
 
 Two problems with the status quo:
 
@@ -51,7 +51,7 @@ Verification: a two-parent NestingField fixture where both parents' inline `Tabl
 
 - **BatchKey leaves under NestingField across parents.** `SplitTableField` / `LookupTableField` / `SplitLookupTableField` / `RecordTableField` / `RecordLookupTableField` all have per-field DataLoader or rows-method generation that's keyed off the outer parent context today. Reconciling those across a shared NestingField is a larger piece of work — separate Backlog entry (§3 below). The catch-all arm in the validator stays as the fallback; only the error-message pointer gets fixed.
 - **Deeper inline recursion.** Already works via the existing `NestingField` recursion branch in `compareNestedFieldsShape`.
-- **`ConstructorField` / `NodeIdField` / reference-scalar leaves.** No known real-world demand; stay rejected.
+- **`ConstructorField` / column-shaped NodeId carriers / reference-scalar leaves.** No known real-world demand; stay rejected. (R50 retired the dedicated `NodeIdField` / `NodeIdReferenceField` variants; the surviving carriers route through the column arm by default and only the composite / reference forms reach this catch-all.)
 - **Shape-compat of `filters` / `orderBy` / `pagination`.** Deliberately left per-parent (see "Desired end state" rationale). If a future schema author wants to enforce them matching, that's a separate opt-in directive.
 - **Inline-subquery alias rename.** Orthogonal to this plan. The `table` → `<entity>Table` rename shipped under "Generated-fetcher quality pass" (Done in roadmap) and the `ArgCallEmitter.buildCallArgs` hardcoded `"table"` fix tracked in [plan-classification-vocabulary-followups.md](plan-classification-vocabulary-followups.md) §7 both touch inline-subquery alias identity but neither interacts with the multi-parent shape check landing here.
 
