@@ -179,6 +179,14 @@ type Query {
     # encoder/decoder round-trips JSONB through JSONB.toString() + Convert.convert(String, JSONB.class).
     pagedItems: [PagedItem!]! @asConnection(defaultFirstValue: 3)
 
+    # R36 item 2 fixture: composite-PK parent for child interface @asConnection. Project has
+    # composite PK (org_id, project_id); ProjectNote and ProjectEvent are single-PK children
+    # that FK back via composite (org_id, project_id) → project(org_id, project_id). Exercises
+    # the B4c-2 RowN widening end-to-end against PostgreSQL: DataLoader key element widens to
+    # Row2<Integer, Integer>, parentInput VALUES widens to Row3<Integer, Integer, Integer>,
+    # batchedBranchJoinPredicate emits an AND-chain over the composite FK columns.
+    projects: [Project!]!
+
     # R1 Phase 2f fixture: @batchKeyLifter end-to-end. The service hand-rolls three
     # CreateFilmPayload rows (no DB round-trip), and the lifter on CreateFilmPayload.language
     # extracts language_id keys for the DataLoader-batched lookup. MutationPayloadLifterTest
@@ -693,4 +701,31 @@ type PagedB implements PagedItem @table(name: "paged_b") {
     k1:   Int!    @field(name: "K1")
     k2:   Int!    @field(name: "K2")
     name: String! @field(name: "NAME")
+}
+
+# R36 item 2 fixture: composite-PK parent for child interface @asConnection.
+# Project's PK is (org_id, project_id); items wraps a polymorphic child (ProjectNote +
+# ProjectEvent) auto-discovered via composite FKs back to project. Stays single-PK on the
+# participant side so item 1's JSONB-cursor concern is out of scope here.
+interface ProjectItem {
+    label: String!
+}
+
+type ProjectNote implements ProjectItem @table(name: "project_note") {
+    noteId: Int!    @field(name: "NOTE_ID")
+    body:   String! @field(name: "BODY")
+    label:  String! @field(name: "BODY")
+}
+
+type ProjectEvent implements ProjectItem @table(name: "project_event") {
+    eventId: Int!    @field(name: "EVENT_ID")
+    summary: String! @field(name: "SUMMARY")
+    label:   String! @field(name: "SUMMARY")
+}
+
+type Project @table(name: "project") {
+    orgId:     Int!    @field(name: "ORG_ID")
+    projectId: Int!    @field(name: "PROJECT_ID")
+    name:      String! @field(name: "NAME")
+    items:     [ProjectItem!]! @asConnection(defaultFirstValue: 5)
 }
