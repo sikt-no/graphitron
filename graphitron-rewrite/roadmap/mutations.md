@@ -14,6 +14,9 @@ depends-on: []
 > `MutationDeleteTableField`, `MutationUpsertTableField`,
 > `MutationServiceTableField`, `MutationServiceRecordField`.
 > Closes generator stub #4 — the highest-aggregate production rejection (131 combined).
+>
+> **Progress:** four of six landed (DELETE, INSERT, both service variants).
+> UPDATE and UPSERT remain.
 
 ---
 
@@ -30,9 +33,10 @@ R22's dependency on R50 (Lift NodeId out of the model) has cleared, and R50's cl
 
 What remains for R22:
 
-1. ~~**Phase 1B — model alignment.**~~ Landed. `DmlReturnExpression` carries the entire return-shape dispatch as a five-arm sealed sub-variant on `DmlTableField`; the `Payload` arm absorbs the R12-introduced `Optional<PayloadAssembly>` slot so each DML record dropped from 8 components to 6. `buildDmlField` carries `@LoadBearingClassifierCheck(key = "dml-mutation-shape-guarantees")`; `buildMutationDeleteFetcher` carries the matching `@DependsOnClassifierCheck` and pattern-matches the variant with no defensive checks. INSERT / UPDATE / UPSERT can now land emitters that read a pre-resolved arm.
-2. **Phases 2 / 4 / 5 — DML emitters** (INSERT, UPDATE, UPSERT).
-3. ~~**Phase 6 — service emitters** (`MutationServiceTableField`, `MutationServiceRecordField`).~~ Landed: both emitters delegate to the shared `buildServiceFetcherCommon` helper, picking up R12's wrapper integration for free.
+1. ~~**Phase 1B — model alignment.**~~ Landed. `DmlReturnExpression` carries the entire return-shape dispatch as a five-arm sealed sub-variant on `DmlTableField`; the `Payload` arm absorbs the R12-introduced `Optional<PayloadAssembly>` slot so each DML record dropped from 8 components to 6.
+2. ~~**Phase 2 — INSERT emission.**~~ Landed. Same commit also extracted the verb-neutral `buildDmlFetcher` + `emitDmlReturnExpression` skeleton (shared between INSERT and DELETE; UPDATE / UPSERT will land against the same skeleton). Partition flipped, validator test `VALID`, execution test against PostgreSQL covers the `RETURNING $fields` shape end-to-end. INSERT closes the highest-volume DML rejection class.
+3. **Phases 4 / 5 — DML emitters** (UPDATE, UPSERT).
+4. ~~**Phase 6 — service emitters** (`MutationServiceTableField`, `MutationServiceRecordField`).~~ Landed: both emitters delegate to the shared `buildServiceFetcherCommon` helper, picking up R12's wrapper integration for free.
 
 The *Consolidation* item that previously called for an emitter-side `buildMutationReturnExpression` helper is replaced by Phase 1B's model lift.
 
@@ -45,7 +49,7 @@ The *Consolidation* item that previously called for an emitter-side `buildMutati
 | Phase 1A (initial model + classifier) | **Landed** | All four DML records carry the shared `(tableInputArg, returnType, encodeReturn, errorChannel)` shape via `DmlTableField`; shared `classifyMutationInput` enforces Invariants #1–#14. Both service variants populated by `classifyMutationField` via `resolveServiceField`. |
 | Phase 1B (model alignment) | **Landed** | `DmlReturnExpression` sealed sub-variant carries the entire return-shape dispatch on `DmlTableField`. Five arms (`EncodedSingle`, `EncodedList`, `ProjectedSingle`, `ProjectedList`, `Payload`) — `Payload` absorbs the R12-introduced `Optional<PayloadAssembly>` slot so the broad `(returnType, encodeReturn, payloadAssembly)` triple collapses to one slot. Records went from 8 components to 6. `@LoadBearingClassifierCheck(key = "dml-mutation-shape-guarantees")` on `buildDmlField`; `@DependsOnClassifierCheck` on `buildMutationDeleteFetcher`. See [Phase 1B](#phase-1b--model-alignment). |
 | `MutationDeleteTableField` | **Landed** | `buildMutationDeleteFetcher` pattern-matches on `f.returnExpression()` (no `instanceof ScalarReturnType` / `wrapper().isList()` / `payloadAssembly().isPresent()` predicates). Per-arm bodies live in `emitDeleteEncoded` / `emitDeleteProjected` / `emitDeletePayload` helpers. |
-| `MutationInsertTableField` | **Ready (Phase 2)** | Record + classifier done. Lands `buildMutationInsertFetcher` against the post-1B `returnExpression` shape and flips `IMPLEMENTED_LEAVES`. |
+| `MutationInsertTableField` | **Landed** | `buildMutationInsertFetcher` shares the verb-neutral `buildDmlFetcher` skeleton + `emitDmlReturnExpression` projection terminator with DELETE. Column list and parallel values list both walk `tia.fields()` once; values use `DSL.val(in.get(name), Tables.T.COL.getDataType())` for converter-mediated coercion. Partition flipped to `IMPLEMENTED_LEAVES`. Validation test `VALID`. Execution-tier test `createFilm_insertsRowAndReturnsProjectedFilm` against PostgreSQL verifies the `RETURNING $fields` shape end-to-end (resolves DELETE's deferred verification). |
 | `MutationUpdateTableField` | **Ready (Phase 4)** | Record + classifier done. Lands `buildMutationUpdateFetcher` against the post-1B shape. |
 | `MutationUpsertTableField` | **Ready (Phase 5)** | Record + classifier done. Lands `buildMutationUpsertFetcher` against the post-1B shape. |
 | `MutationServiceTableField` | **Landed** | `buildMutationServiceTableFetcher` delegates to the shared `buildServiceFetcherCommon` helper, inheriting the R12 §3 try/catch wrapper, §5 Jakarta validation pre-step, and §2c `resultAssembly` success-arm assembly. Wears `@DependsOnClassifierCheck(key = "service-catalog-strict-service-return", ...)` for the strict-return guarantee. Validation test flipped from `STUBBED` to `VALID`. |
@@ -478,7 +482,16 @@ This phase is a model refactor, not a behaviour change. All pipeline / validatio
 
 ### Phase 2 — INSERT emission
 
-**Status: After 1B.** Lift `MutationInsertTableField` out of `NOT_IMPLEMENTED_REASONS`. The record and classifier are already in place from Phase 1A; this phase is purely the emitter and the partition flip.
+**Status: ✅ Landed.** `buildMutationInsertFetcher` shares the verb-neutral `buildDmlFetcher` (try/catch envelope, table-local declaration, `dsl` chain, `payload` bind, `returnSyncSuccess` / `catchArm`) and `emitDmlReturnExpression` (projection terminator pattern-matching the `DmlReturnExpression` arm) with DELETE. The verb-specific portion is just the chain that goes between `dsl\n` and `.returningResult(...)`:
+
+```java
+var dmlChain = CodeBlock.builder()
+    .add(".insertInto($L, ", tableLocal).add(colList).add(")\n")
+    .add(".values(\n").indent().add(valList).add(")\n").unindent()
+    .build();
+```
+
+UPDATE / UPSERT will land against the same skeleton with their own `dmlChain` shape.
 
 #### Emitter (`buildMutationInsertFetcher`)
 
@@ -515,7 +528,7 @@ public static Object createFilm(DataFetchingEnvironment env) {
 
   Single-vs-list differs only in the terminal `.fetchOne` / `.fetch`; the per-shape projection is shared between the two arms of each shape.
 
-`buildMutationInsertFetcher` lands wearing `@DependsOnClassifierCheck(key = "dml-mutation-shape-guarantees", reliesOn = "...")` per Phase 1B's annotation contract.
+`buildMutationInsertFetcher` wears `@DependsOnClassifierCheck(key = "dml-mutation-shape-guarantees", ...)` per Phase 1B's annotation contract.
 
 #### `RETURNING` with nested selections (`TableBoundReturnType`)
 
@@ -523,18 +536,20 @@ public static Object createFilm(DataFetchingEnvironment env) {
 
 If INSERT's pipeline test stays compile-only (no execution path against PostgreSQL), explicitly note the verification gap in the commit message; otherwise we ship two unverified `RETURNING` emitters in a row.
 
-#### Implementation sites
+#### Implementation sites (landed)
 
-- Add `buildMutationInsertFetcher(MutationField.MutationInsertTableField, String outputPackage, String jooqPackage)` in `TypeFetcherGenerator.java`. Update the `case MutationField.MutationInsertTableField f -> builder.addMethod(stub(f));` arm to call the new emitter.
-- Move `MutationInsertTableField.class` from `NOT_IMPLEMENTED_REASONS` to `IMPLEMENTED_LEAVES` in the same commit (`GeneratorCoverageTest` enforces the partition).
-- Flip `MutationInsertTableFieldValidationTest`'s `STUBBED` case to `VALID` (mirror `MutationDeleteTableFieldValidationTest`).
-- Optionally tighten the `INSERT_MUTATION_FIELD` SDL in `GraphitronSchemaBuilderTest.rootFieldClassification` to assert post-emission shape (the existing case already classifies; the assertion can grow to inspect `tableInputArg.inputTable()` etc.).
+- `buildMutationInsertFetcher(MutationField.MutationInsertTableField, String outputPackage, String jooqPackage)` in `TypeFetcherGenerator.java`. Switch arm dispatches to it.
+- `MutationInsertTableField.class` is in `IMPLEMENTED_LEAVES` (removed from `NOT_IMPLEMENTED_REASONS`).
+- `MutationInsertTableFieldValidationTest` flipped from `STUBBED` to `VALID` (mirror of `MutationDeleteTableFieldValidationTest`).
+- `StubbedVariantPipelineTest`'s `mutationInsertOnATableType_surfacesStubbedError` was repurposed to UPDATE (still stubbed) — INSERT no longer surfaces a stub error.
+- `needsGraphitronContextHelper` widened from `MutationDeleteTableField` to `DmlTableField` so INSERT (and future UPDATE / UPSERT) get the helper too.
+- Verb-neutral `buildDmlFetcher`, `emitDmlReturnExpression`, `emitEncoded`, `emitProjected`, `emitPayload` extracted from DELETE's per-arm helpers; INSERT and DELETE both call them. UPDATE / UPSERT will reuse them in Phases 4 / 5.
 
-#### Tests
+#### Tests (landed)
 
-**Pipeline (required):** Add the negative cases the schema-builder coverage table calls for — at minimum `INSERT_MUTATION_NO_INPUT_ARG`, `INSERT_MUTATION_LISTED_INPUT`, and one return-type rejection (e.g. `Int` return). Composite-PK happy path exercises the multi-column key-projection path in the emitter.
+**Execution:** `GraphQLQueryTest.createFilm_insertsRowAndReturnsProjectedFilm` against PostgreSQL verifies the `RETURNING $fields` projection shape end-to-end on the `Projected` arm. The test selects `title`, `languageId`, and `rentalRate` — the last is a DB-side default, so it also verifies that defaulted columns flow back through `RETURNING`. Resolves the verification gap DELETE shipped with. Fixture: `schema.graphqls` gained a `type Mutation { createFilm(in: FilmCreateInput!): Film @mutation(typeName: INSERT) }` and a corresponding `FilmCreateInput @table(name: "film") { title, languageId }`; only the two NOT-NULL-no-default columns on `film` are exposed (everything else has a DB default).
 
-**Execution (recommended, deferred allowed):** the original `mutations.md` required this. Given DELETE shipped without one, INSERT's commit message should call out whether an execution test landed. If deferred, file a follow-up in the roadmap. Fixture work needed: `graphitron-test/src/main/resources/graphql/schema.graphqls` has no `Mutation` type yet — the first variant adds one with `type Mutation { … }`; subsequent variants extend it with `extend type Mutation { … }`. Sakila's `film` table has several NOT-NULL columns without defaults (`language_id`, `rental_duration`, `rental_rate`, `replacement_cost`); the fixture input type must cover them or the INSERT fails at execute time per Invariant #6.
+**Pipeline (deferred):** the negative cases the schema-builder coverage table calls for (`INSERT_MUTATION_NO_INPUT_ARG`, `INSERT_MUTATION_LISTED_INPUT`, `Int`-return rejection) are tracked in [Open decisions](#open-decisions). Cross-cutting negative-case coverage applies symmetrically to all four DML verbs and is best added once across the matrix.
 
 ---
 
