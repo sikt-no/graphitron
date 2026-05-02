@@ -15,7 +15,7 @@ depends-on: []
 > `MutationServiceTableField`, `MutationServiceRecordField`.
 > Closes generator stub #4 — the highest-aggregate production rejection (131 combined).
 >
-> **Progress:** all six landed. R22 closed.
+> **Progress:** all six DML emitters landed (Phases 1 through 6). A code-review pass surfaced two architectural follow-ups; see [Architectural follow-ups](#architectural-follow-ups-post-shipping-review). The new scope is the only remaining work in R22.
 
 ---
 
@@ -34,7 +34,8 @@ What remains for R22:
 
 1. ~~**Phase 1B — model alignment.**~~ Landed. `DmlReturnExpression` carries the entire return-shape dispatch as a five-arm sealed sub-variant on `DmlTableField`; the `Payload` arm absorbs the R12-introduced `Optional<PayloadAssembly>` slot so each DML record dropped from 8 components to 6.
 2. ~~**Phase 2 — INSERT emission.**~~ Landed. Same commit also extracted the verb-neutral `buildDmlFetcher` + `emitDmlReturnExpression` skeleton (shared between INSERT and DELETE; UPDATE / UPSERT will land against the same skeleton). Partition flipped, validator test `VALID`, execution test against PostgreSQL covers the `RETURNING $fields` shape end-to-end. INSERT closes the highest-volume DML rejection class.
-3. **Phases 4 / 5 — DML emitters** (UPDATE, UPSERT).
+3. ~~**Phases 4 / 5 — DML emitters** (UPDATE, UPSERT).~~ Landed. Both emit against the shared verb-neutral `buildDmlFetcher` skeleton. UPSERT additionally carries an Oracle-dialect runtime guard (jOOQ silently translates `INSERT ... ON CONFLICT` to `MERGE INTO`).
+5. **Architectural follow-ups (post-shipping review).** Two lifts identified during the post-Phase-5 review: lift the `@lookupKey` partition onto `TableInputArg`, and type UPSERT's PostgreSQL-only requirement as model data. See [Architectural follow-ups](#architectural-follow-ups-post-shipping-review).
 4. ~~**Phase 6 — service emitters** (`MutationServiceTableField`, `MutationServiceRecordField`).~~ Landed: both emitters delegate to the shared `buildServiceFetcherCommon` helper, picking up R12's wrapper integration for free.
 
 The *Consolidation* item that previously called for an emitter-side `buildMutationReturnExpression` helper is replaced by Phase 1B's model lift.
@@ -776,6 +777,49 @@ All three pieces this section originally listed have either shipped or have been
   plan could lift the guard by hand-emitting an Oracle-native `MERGE` only when the dialect
   family is Oracle (rather than relying on jOOQ's emulation).
 - **`@mutation` + `@service` combination**: already rejected at classifier time by `classifyMutationField`'s mutual-exclusion guard.
+
+---
+
+## Architectural follow-ups (post-shipping review)
+
+Two architectural lifts surfaced during a code-review pass after Phase 5 landed. Both tighten the model the emitters consume and pull information that today is spread across the validator and the emitters back into the type system. Neither is a blocker for the work that landed in Phases 1 through 6; both are scoped follow-ups.
+
+### Lift 1: the `@lookupKey` partition belongs on `TableInputArg`
+
+**Sites today.** `MutationInputResolver.resolveInput` (the Invariant #4 check), `TypeFetcherGenerator.buildMutationUpdateFetcher` (the SET clause), and `TypeFetcherGenerator.buildMutationUpsertFetcher` (the SET clause and the doNothing/doUpdate dispatch). All three consumers build a `Set<String>` of `@lookupKey` field names by streaming `tia.fieldBindings()`, then partition `tia.fields()` against it.
+
+**The smell.** Per *Generation-thinking*: "if two consumers evaluate the same predicate over a model field, the branch belongs in the model." Three consumers (one validator, two emitters) evaluating the same name-set partition is exactly that. The classifier already knows which `InputField.ColumnField` is a `@lookupKey`, since that's how `fieldBindings` was populated; the model just doesn't carry the partition forward.
+
+**The lift, ordered by smallest delta.**
+
+1. *Split projections on `TableInputArg`.* Add `lookupKeyFields(): List<InputField.ColumnField>` and `setFields(): List<InputField.ColumnField>`, computed once at classify time from the same data that builds `fieldBindings`. The validator's Invariant #4 check becomes `tia.setFields().isEmpty() ? Rejected : Ok`. UPDATE walks `setFields()` directly, no filter. UPSERT walks `fields()` for the INSERT cols/vals and `setFields()` for the SET clause; the doNothing/doUpdate dispatch reads off `setFields().isEmpty()`. The three name-set rebuilds disappear.
+2. *Linked binding on `InputField.ColumnField`.* Have `ColumnField` carry an `Optional<MapBinding>` so the partition is reachable per-field via a typed accessor rather than a name lookup. Slightly larger surface change but removes the "two parallel lists, indexed by name" shape across the model.
+3. *Sealed split.* Sub-variant `LookupKeyColumnField` vs `RegularColumnField` under `InputField.ColumnField`. Most aligned with *Sealed hierarchies over enums*, but the broadest refactor and likely overkill for a single consumer pair.
+
+Recommend (1) as the in-scope lift; (2) and (3) are alternatives noted for context in case the implementer finds (1) cramps a downstream call site.
+
+**Consumer-side delta.** All three sites shrink to direct walks over the typed projections: no `Set<String>` rebuild, no `lookupNames.contains(cf.name())` predicate, and one source of truth for "this field goes in the SET clause".
+
+**Pipeline check.** A `MutationInputResolverTest` case already exercises the Invariant #4 rejection; the partition lift moves the decision site (from "predicate at classify time" to "structural projection") without changing the rejection wording. Update the test if the wording shifts.
+
+### Lift 2: type UPSERT's PostgreSQL-only requirement on the model
+
+**Site today.** `TypeFetcherGenerator.buildMutationUpsertFetcher` builds a `postDslGuard` `CodeBlock` inline; the shared `buildDmlFetcher` was given a 9-arg overload that admits this `CodeBlock` as a generic pre-DSL guard. UPSERT is the only caller; INSERT, UPDATE, and DELETE pass an empty block through the 8-arg overload.
+
+**The smell.** "UPSERT only emits valid SQL on PostgreSQL" is an architectural fact about `MutationUpsertTableField`. Today it is expressed only as runtime-emitted Java that performs a string-prefix check on `dsl.dialect().name()`. A reader of the model cannot see the constraint; the shared skeleton grew an open-ended escape hatch (`postDslGuard`) that any future verb can fill with arbitrary code, blunting the verb-neutral promise of `buildDmlFetcher`.
+
+**The lift.** Carry the requirement as typed model data: a sealed `DialectRequirement { None, RequiresFamily(SqlDialectFamily) }` on `DmlTableField` (or as `Optional<DialectRequirement>`). The shared `buildDmlFetcher` consults the field's `DialectRequirement` and renders the runtime guard via a single helper; the 9-arg overload disappears and the skeleton stays verb-neutral. UPSERT's record carries `RequiresFamily(POSTGRES)`; the other three carry `None`.
+
+Two payoffs:
+
+1. *Discoverability.* The constraint lives on the model, not buried inside an emitter helper. A reviewer reading `MutationUpsertTableField` sees that the variant requires PostgreSQL.
+2. *Build-time check, eventually.* When the consumer's configured target dialect becomes known at codegen time (a separate plan), the validator can fail at validate time per *Validator mirrors classifier invariants*, rather than at first request. Until that lands, the runtime guard remains, but rendered from typed data instead of free-form code.
+
+**Out-of-scope adjacent finding.** A third review item sits in R58's domain rather than R22's: `SplitRowsMethodEmitter.unsupportedReason` returns `Optional<Rejection.Deferred>` (per R58 Phase C), but the four `buildFor*` callers immediately call `.message()` to feed `buildRuntimeStub` (which still takes a `String`), discarding the typed `EmitBlockReason`. Lifting `buildRuntimeStub` to accept `Rejection.Deferred` directly is a small win, but it lives outside R22; flagged here only so the implementing session knows it was considered and deliberately deferred. A `roadmap` entry should track it if it is not already covered.
+
+### Phasing
+
+Both lifts are independent and can land in either order. Lift 1 is the larger of the two and touches three call sites plus the `TableInputArg` record; Lift 2 is local to `MutationUpsertTableField` and `TypeFetcherGenerator`. The execution-tier tests on real PostgreSQL (`updateFilm_updatesRowAndReturnsProjectedFilm`, both `upsertFilm_*_branch_*` cases) gate both lifts: emitted SQL must remain identical, only the model and emitter shape changes.
 
 ---
 
