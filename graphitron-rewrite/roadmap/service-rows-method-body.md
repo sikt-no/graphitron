@@ -1,7 +1,7 @@
 ---
 id: R32
 title: "Implement `@service` rows-method body"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 6
 theme: service
