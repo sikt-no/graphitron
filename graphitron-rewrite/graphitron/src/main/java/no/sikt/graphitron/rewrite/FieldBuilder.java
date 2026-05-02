@@ -614,36 +614,30 @@ class FieldBuilder {
                         name, typeName, nonNull, list, keys, extraction,
                         argCondition, fieldOverride, /* isLookupKey= */ true);
                 }
-                case NodeIdLeafResolver.Resolved.FkTarget ft -> {
+                case NodeIdLeafResolver.Resolved.FkTarget.DirectFk direct -> {
                     // FK-target @nodeId arg = filter semantics. Skip extraction (malformed ids
                     // drop silently to "no match"). projectFilters emits BodyParam.In/Eq/RowIn
-                    // /RowEq using FK source columns from joinPath — direct, no JOIN — but
-                    // only when the FK's targetColumns positionally match the NodeType key
-                    // columns (the simple direct-FK case where FK target = NodeType key).
-                    // Pathological cases where they differ (e.g. R50 parent_node + child_ref
-                    // fixture: FK targets parent.alt_key, NodeType key is parent.pk_id) need
-                    // JOIN-with-translation emission and are filed as a sibling follow-on
-                    // parallel to R24's output-side JOIN-with-projection arm.
-                    var fkJoin = (JoinStep.FkJoin) ft.joinPath().get(0);
-                    if (!sameColumnsBySqlName(fkJoin.targetColumns(), ft.keyColumns())) {
-                        return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
-                            "@nodeId(typeName: '" + ft.refTypeName() + "') FK-target arg on table '"
-                            + rt.tableName() + "': the FK's target columns do not positionally"
-                            + " match NodeType '" + ft.refTypeName() + "''s key columns,"
-                            + " so emission requires JOIN-with-translation."
-                            + " This pathological case is deferred to a sibling follow-on parallel"
-                            + " to R24's output-side JOIN-with-projection emission.");
-                    }
-                    var extraction = new CallSiteExtraction.SkipMismatchedElement(ft.decodeMethod());
-                    var keys = ft.keyColumns();
+                    // /RowEq using DirectFk's fkSourceColumns directly — no JOIN, the resolver
+                    // has already verified the FK's targetColumns positionally match the
+                    // NodeType key columns.
+                    var extraction = new CallSiteExtraction.SkipMismatchedElement(direct.decodeMethod());
+                    var keys = direct.keyColumns();
                     if (keys.size() == 1) {
                         return new ArgumentRef.ScalarArg.ColumnReferenceArg(
-                            name, typeName, nonNull, list, keys.get(0), ft.joinPath(),
+                            name, typeName, nonNull, list, keys.get(0), direct.joinPath(),
                             extraction, argCondition, fieldOverride);
                     }
                     return new ArgumentRef.ScalarArg.CompositeColumnReferenceArg(
-                        name, typeName, nonNull, list, keys, ft.joinPath(),
+                        name, typeName, nonNull, list, keys, direct.joinPath(),
                         extraction, argCondition, fieldOverride);
+                }
+                case NodeIdLeafResolver.Resolved.FkTarget.TranslatedFk translated -> {
+                    // Pathological case (FK targetColumns ≠ NodeType keyColumns; e.g. R50
+                    // parent_node + child_ref fixture). Emission requires JOIN-with-translation
+                    // and is deferred to a sibling follow-on parallel to R24's output-side
+                    // JOIN-with-projection arm.
+                    return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
+                        translatedFkRejectionReason(translated.refTypeName(), rt.tableName()));
                 }
             }
         }
@@ -851,6 +845,14 @@ class FieldBuilder {
      * input fields are grouped into a single {@link GeneratedConditionFilter} entry. The condition
      * class is named {@code <returnTypeName>Conditions} and the method {@code <fieldName>Condition}.
      */
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "nodeid-fk.direct-fk-keys-match",
+        reliesOn = "The ColumnReferenceArg / CompositeColumnReferenceArg arms read"
+            + " joinPath[0].sourceColumns() straight into BodyParam.{Eq,In,RowEq,RowIn} on the"
+            + " assumption that those columns positionally correspond to the NodeType keys"
+            + " bound by the decoded record. NodeIdLeafResolver only produces these carriers"
+            + " on the DirectFk arm (TranslatedFk routes to UnclassifiedArg upstream), so the"
+            + " projection skips the per-position check it would otherwise need.")
     private List<WhereFilter> projectFilters(List<ArgumentRef> refs, GraphQLFieldDefinition fieldDef,
                                              TableRef rt, String returnTypeName, List<String> errors) {
         var bodyParams = new ArrayList<BodyParam>();
@@ -1014,6 +1016,13 @@ class FieldBuilder {
      * {@code pathPrefix} is the list of Map keys from {@code outerArgName} down to the parent of
      * {@code fields}; empty at the top level.
      */
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "nodeid-fk.direct-fk-keys-match",
+        reliesOn = "implicitBodyParam / compositeImplicitBodyParam consume"
+            + " InputField.{Column,CompositeColumn}ReferenceField carriers built only on the"
+            + " DirectFk arm; the TranslatedFk arm routes upstream to InputFieldResolution.Unresolved"
+            + " so this walker never sees a JOIN-with-translation shape that would need a separate"
+            + " FK-source-column rebinding step.")
     private void walkInputFieldConditions(
             List<InputField> fields, String outerArgName, List<String> pathPrefix,
             boolean enclosingOverride, Set<String> lookupBoundNames,
@@ -1078,18 +1087,18 @@ class FieldBuilder {
     }
 
     /**
-     * Returns {@code true} when {@code a} and {@code b} have the same length and each pair of
-     * positionally aligned columns has the same SQL name (case-insensitive). Used by R40's
-     * FK-target arm to gate the simple direct-FK emission (FK target columns ≡ NodeType key
-     * columns); pathological cases where they differ require JOIN-with-translation emission
-     * and are deferred to a sibling follow-on parallel to R24.
+     * Shared rejection text for the {@code TranslatedFk} arm. The message naming is asserted on
+     * by {@code NodeIdPipelineTest.ArgumentFkTargetNodeIdCase.FK_TARGET_PATHOLOGICAL_KEY_MISMATCH_DEFERRED}
+     * and the parallel input-field-side case via the substrings {@code "FK's target columns do
+     * not positionally match"} and {@code "deferred"}.
      */
-    private static boolean sameColumnsBySqlName(List<ColumnRef> a, List<ColumnRef> b) {
-        if (a.size() != b.size()) return false;
-        for (int i = 0; i < a.size(); i++) {
-            if (!a.get(i).sqlName().equalsIgnoreCase(b.get(i).sqlName())) return false;
-        }
-        return true;
+    static String translatedFkRejectionReason(String refTypeName, String containingTableName) {
+        return "@nodeId(typeName: '" + refTypeName + "') FK-target on table '"
+            + containingTableName + "': the FK's target columns do not positionally"
+            + " match NodeType '" + refTypeName + "''s key columns,"
+            + " so emission requires JOIN-with-translation."
+            + " This pathological case is deferred to a sibling follow-on parallel"
+            + " to R24's output-side JOIN-with-projection emission.";
     }
 
     /**

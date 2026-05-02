@@ -106,24 +106,72 @@ final class NodeIdLeafResolver {
          * columns reachable through {@code joinPath}; decoded keys feed the
          * {@code In} / {@code RowIn} / {@code Eq} / {@code RowEq} body params.
          *
-         * <p>{@code joinPath[0]} is always a {@link FkJoin}; its {@code sourceColumns} sit on
-         * the field's containing table (the FK-holder), and the body emitter uses those columns
-         * directly when {@code targetColumns} positionally match the resolved {@code keyColumns}.
-         * The pathological case (FK target ≠ NodeType key) is rejected at projection time.
+         * <p>Sealed into two arms on the positional-correspondence question between the FK's
+         * {@code targetColumns} and {@code T}'s {@code keyColumns}:
          *
-         * @param refTypeName  the resolved (or inferred) GraphQL type name of {@code T}
-         * @param targetTable  resolved {@link TableRef} for {@code T.table()}
-         * @param decodeMethod {@code decode<TypeName>} helper resolved on the target NodeType
-         * @param keyColumns   {@code T}'s key columns
-         * @param joinPath     single-hop FK path from the containing table to {@code T.table()}
+         * <ul>
+         *   <li>{@link DirectFk} — FK target columns positionally match {@code T}'s key columns.
+         *       Emission binds decoded keys directly against {@code joinPath[0].sourceColumns()}
+         *       on the field's own table; no JOIN, no translation. This is the only shape any
+         *       projection arm emits today.</li>
+         *   <li>{@link TranslatedFk} — FK target columns differ from {@code T}'s key columns
+         *       (e.g. parent_node + child_ref where the FK targets parent.alt_key but the
+         *       NodeType key is parent.pk_id). Emission requires JOIN-with-translation;
+         *       deferred to the sibling Backlog item filed alongside R40, parallel to R24's
+         *       output-side JOIN-with-projection arm.</li>
+         * </ul>
          */
-        record FkTarget(
-                String refTypeName,
-                TableRef targetTable,
-                HelperRef.Decode decodeMethod,
-                List<ColumnRef> keyColumns,
-                List<JoinStep> joinPath)
-            implements Resolved {}
+        sealed interface FkTarget extends Resolved {
+            String refTypeName();
+            TableRef targetTable();
+            HelperRef.Decode decodeMethod();
+            List<ColumnRef> keyColumns();
+            List<JoinStep> joinPath();
+
+            /**
+             * Direct-FK arm: FK target columns positionally match {@code T}'s key columns.
+             * The body emitter binds decoded keys directly against {@code fkSourceColumns}
+             * (which are also reachable as {@code joinPath[0].sourceColumns()}; both are kept
+             * on the carrier so the emitter consumes the load-bearing slot directly without
+             * re-extracting it through the join path).
+             *
+             * @param refTypeName     the resolved (or inferred) GraphQL type name of {@code T}
+             * @param targetTable     resolved {@link TableRef} for {@code T.table()}
+             * @param decodeMethod    {@code decode<TypeName>} helper resolved on the target NodeType
+             * @param keyColumns      {@code T}'s key columns
+             * @param fkSourceColumns FK source columns on the field's own containing table,
+             *                        positionally aligned with {@code keyColumns}
+             * @param joinPath        single-hop FK path from the containing table to {@code T.table()}
+             */
+            record DirectFk(
+                    String refTypeName,
+                    TableRef targetTable,
+                    HelperRef.Decode decodeMethod,
+                    List<ColumnRef> keyColumns,
+                    List<ColumnRef> fkSourceColumns,
+                    List<JoinStep> joinPath)
+                implements FkTarget {}
+
+            /**
+             * Translated-FK arm: FK target columns differ from {@code T}'s key columns.
+             * Emission requires JOIN-with-translation; carriers route to {@code UnclassifiedArg}
+             * (argument side) / {@code InputFieldResolution.Unresolved} (input-field side) with
+             * a deferred-emission hint until the sibling follow-on lands.
+             *
+             * @param refTypeName  the resolved (or inferred) GraphQL type name of {@code T}
+             * @param targetTable  resolved {@link TableRef} for {@code T.table()}
+             * @param decodeMethod {@code decode<TypeName>} helper resolved on the target NodeType
+             * @param keyColumns   {@code T}'s key columns
+             * @param joinPath     single-hop FK path from the containing table to {@code T.table()}
+             */
+            record TranslatedFk(
+                    String refTypeName,
+                    TableRef targetTable,
+                    HelperRef.Decode decodeMethod,
+                    List<ColumnRef> keyColumns,
+                    List<JoinStep> joinPath)
+                implements FkTarget {}
+        }
 
         /**
          * Rejected: the leaf cannot be classified as either shape. Carries a single fully
@@ -146,6 +194,17 @@ final class NodeIdLeafResolver {
      *
      * <p>{@code leafName} is the GraphQL field-/argument-name; surfaces only in error messages.
      */
+    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
+        key = "nodeid-fk.direct-fk-keys-match",
+        description = "FK target columns positionally match NodeType key columns;"
+                    + " emission can bind decoded keys directly against fkSourceColumns."
+                    + " The resolver picks Resolved.FkTarget.DirectFk only when this holds;"
+                    + " the pathological case (FK target ≠ NodeType key) is sorted to"
+                    + " TranslatedFk and rejected at projection time. The projection arms for"
+                    + " ColumnReferenceArg / CompositeColumnReferenceArg /"
+                    + " InputField.{Column,CompositeColumn}ReferenceField read fkSourceColumns"
+                    + " straight into BodyParam.{Eq,In,RowEq,RowIn} and assume positional"
+                    + " correspondence with the decoded NodeType keys.")
     Resolved resolve(GraphQLDirectiveContainer leaf, String leafName, TableRef containingTable) {
         var typeNameInference = inferTypeName(leaf, containingTable);
         if (typeNameInference.error() != null) {
@@ -187,8 +246,32 @@ final class NodeIdLeafResolver {
             return new Resolved.Rejected(joinPath.error());
         }
         TableRef targetTable = ctx.resolveTable(targetTableName);
-        return new Resolved.FkTarget(
+        var fkJoin = (FkJoin) joinPath.path().get(0);
+        if (sameColumnsBySqlName(fkJoin.targetColumns(), keys.keyColumns())) {
+            return new Resolved.FkTarget.DirectFk(
+                refTypeName, targetTable, decodeMethod, keys.keyColumns(),
+                fkJoin.sourceColumns(), joinPath.path());
+        }
+        return new Resolved.FkTarget.TranslatedFk(
             refTypeName, targetTable, decodeMethod, keys.keyColumns(), joinPath.path());
+    }
+
+    /**
+     * Positional match by SQL name. Two column lists agree when they have the same length and
+     * every position holds an equal {@code sqlName()}. Lifted from {@code FieldBuilder} so the
+     * predicate has a single home; both call-site projections (argument and input-field) read
+     * the resolver's variant choice rather than recomputing locally.
+     */
+    private static boolean sameColumnsBySqlName(List<ColumnRef> a, List<ColumnRef> b) {
+        if (a.size() != b.size()) {
+            return false;
+        }
+        for (int i = 0; i < a.size(); i++) {
+            if (!a.get(i).sqlName().equalsIgnoreCase(b.get(i).sqlName())) {
+                return false;
+            }
+        }
+        return true;
     }
 
     // ===== Helpers =====
