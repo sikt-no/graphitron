@@ -10,7 +10,8 @@ import java.util.List;
  * {@code hasId} predicate; lookup-key NodeId args fold onto
  * {@link ColumnMapping.LookupArg.ScalarLookupArg} (single-key NodeType) or
  * {@link ColumnMapping.LookupArg.DecodedRecord} (composite-key NodeType, lands in phase g)
- * with {@link CallSiteExtraction.NodeIdDecodeKeys.ThrowOnMismatch}.
+ * carrying a {@link CallSiteExtraction.NodeIdDecodeKeys} arm (Throw on synthesised lookup-key
+ * paths, Skip on the same-table {@code @nodeId} filter path).
  *
  * <p>The sealed interface is retained for shape-locality (every {@link LookupField} carries
  * a {@code LookupMapping}); a future "rooted at parent via correlated subquery" variant from
@@ -127,14 +128,19 @@ public sealed interface LookupMapping permits LookupMapping.ColumnMapping {
              * index the Record positionally. {@code extraction} on the bindings is structurally
              * always {@code Direct}, so {@link InputColumnBinding.RecordBinding} omits it.
              *
-             * <p>Failure-mode is {@link CallSiteExtraction.NodeIdDecodeKeys.ThrowOnMismatch}:
-             * a {@code null} return on a lookup-key arg is an authored-input contract violation
-             * and surfaces as a {@code GraphqlErrorException}.
+             * <p>Failure-mode lives on the carrier as
+             * {@link CallSiteExtraction.NodeIdDecodeKeys}:
+             * {@link CallSiteExtraction.NodeIdDecodeKeys.ThrowOnMismatch ThrowOnMismatch} on
+             * synthesised lookup-key paths (a wrong-type id is an authored-input contract violation),
+             * {@link CallSiteExtraction.NodeIdDecodeKeys.SkipMismatchedElement SkipMismatchedElement}
+             * on the same-table {@code @nodeId} filter path (a malformed id drops silently to
+             * "no row matches" instead of a 500). The emitter branches on the arm at the per-row
+             * decode site.
              */
             record DecodedRecord(
                 String argName,
                 boolean list,
-                HelperRef.Decode decodeMethod,
+                CallSiteExtraction.NodeIdDecodeKeys extraction,
                 List<InputColumnBinding.RecordBinding> bindings
             ) implements LookupArg {
 
