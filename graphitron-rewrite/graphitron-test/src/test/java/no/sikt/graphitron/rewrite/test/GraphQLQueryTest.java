@@ -3013,6 +3013,168 @@ class GraphQLQueryTest {
             .hasSize(1);
     }
 
+    // ===== Composite-PK parent for child interface @asConnection (R36 item 2) =====
+    //
+    // Project's PK is (org_id, project_id); ProjectNote and ProjectEvent FK back via
+    // composite (org_id, project_id) → project. The B4c-2 RowN widening pins Row1 → Row2 at the
+    // unit-tier (TypeFetcherGeneratorTest); these tests carry it through to PostgreSQL.
+    //
+    // Seed (init.sql):
+    //   project (org_id, project_id, name): (1,100,'Atlas'), (1,101,'Beacon'), (2,100,'Cipher')
+    //   project_note (note_id auto, org_id, project_id, body):
+    //     (1, 1, 100, 'Atlas-N1'), (2, 1, 100, 'Atlas-N2'), (3, 1, 100, 'Atlas-N3'),
+    //     (4, 1, 101, 'Beacon-N1'), (5, 1, 101, 'Beacon-N2'), (6, 2, 100, 'Cipher-N1')
+    //   project_event (event_id auto, org_id, project_id, summary):
+    //     (1, 1, 100, 'Atlas-E1'),
+    //     (2, 1, 101, 'Beacon-E1'), (3, 1, 101, 'Beacon-E2'),
+    //     (4, 2, 100, 'Cipher-E1')
+    // Per-parent counts: Atlas 3+1=4, Beacon 2+2=4, Cipher 1+1=2.
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void projectItemsConnection_returnsParentScopedRows() {
+        // Each parent's connection counts only its own children. Atlas has 4 items, Cipher has 2.
+        // The parent PK columns (orgId, projectId) must be projected so the child fetcher can
+        // extract them from env.getSource() — selecting them explicitly satisfies the framework's
+        // jOOQ row-type contract on the parent Record.
+        Map<String, Object> data = execute("""
+            { projects { name orgId projectId items { nodes { __typename } } } }
+            """);
+        var projects = (List<Map<String, Object>>) data.get("projects");
+        var byName = projects.stream()
+            .collect(java.util.stream.Collectors.toMap(p -> (String) p.get("name"), java.util.function.Function.identity()));
+        var atlasItems = (List<Map<String, Object>>) ((Map<String, Object>) byName.get("Atlas").get("items")).get("nodes");
+        var beaconItems = (List<Map<String, Object>>) ((Map<String, Object>) byName.get("Beacon").get("items")).get("nodes");
+        var cipherItems = (List<Map<String, Object>>) ((Map<String, Object>) byName.get("Cipher").get("items")).get("nodes");
+        assertThat(atlasItems).hasSize(4);
+        assertThat(beaconItems).hasSize(4);
+        assertThat(cipherItems).hasSize(2);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void projectItemsConnection_totalCount_isParentScoped() {
+        // Per-parent ConnectionResult uses idxField.eq(i) so totalCount restricts to the carrier
+        // parent's slice of the union. Cipher should report exactly 2; Atlas exactly 4.
+        Map<String, Object> data = execute("""
+            { projects { name orgId projectId items { totalCount } } }
+            """);
+        var projects = (List<Map<String, Object>>) data.get("projects");
+        var byName = projects.stream()
+            .collect(java.util.stream.Collectors.toMap(p -> (String) p.get("name"), java.util.function.Function.identity()));
+        assertThat(((Map<String, Object>) byName.get("Atlas").get("items")).get("totalCount")).isEqualTo(4);
+        assertThat(((Map<String, Object>) byName.get("Beacon").get("items")).get("totalCount")).isEqualTo(4);
+        assertThat(((Map<String, Object>) byName.get("Cipher").get("items")).get("totalCount")).isEqualTo(2);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void projectItemsConnection_paginationWithAfterCursor() {
+        // Sort order within a parent is (sortField ASC, __typename ASC). Beacon has Notes 4, 5
+        // and Events 2, 3. PK ASC interleave: Event(2), Event(3), Note(4), Note(5). first: 2
+        // returns the first two Events; after-cursor advances to the two Notes.
+        Map<String, Object> page1Data = execute("""
+            { projects {
+                name orgId projectId
+                items(first: 2) {
+                    edges { node { __typename ... on ProjectNote { noteId } ... on ProjectEvent { eventId } } }
+                    pageInfo { endCursor hasNextPage }
+                }
+            } }
+            """);
+        var projects = (List<Map<String, Object>>) page1Data.get("projects");
+        var beacon = projects.stream().filter(p -> "Beacon".equals(p.get("name"))).findFirst().orElseThrow();
+        var page1Conn = (Map<String, Object>) beacon.get("items");
+        var pageInfo1 = (Map<String, Object>) page1Conn.get("pageInfo");
+        assertThat(pageInfo1.get("hasNextPage")).isEqualTo(true);
+        String endCursor = (String) pageInfo1.get("endCursor");
+        assertThat(endCursor).isNotNull();
+
+        // Page 2: filter to Beacon only via the after cursor on the second projects fetch.
+        // Since `projects` returns all parents, we re-fetch with after cursor and filter again.
+        Map<String, Object> page2Data = execute(
+            "{ projects { name orgId projectId items(first: 2, after: \"" + endCursor + "\") { "
+            + "nodes { __typename ... on ProjectNote { noteId } ... on ProjectEvent { eventId } } "
+            + "pageInfo { hasNextPage } } } }");
+        var projects2 = (List<Map<String, Object>>) page2Data.get("projects");
+        var beacon2 = projects2.stream().filter(p -> "Beacon".equals(p.get("name"))).findFirst().orElseThrow();
+        var page2Conn = (Map<String, Object>) beacon2.get("items");
+        var nodes2 = (List<Map<String, Object>>) page2Conn.get("nodes");
+        assertThat(nodes2).extracting(n -> n.get("__typename"))
+            .as("Beacon page 2 should be the two Notes after the two Events")
+            .containsExactly("ProjectNote", "ProjectNote");
+        assertThat(((Map<String, Object>) page2Conn.get("pageInfo")).get("hasNextPage")).isEqualTo(false);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void projectItemsConnection_inlineFragmentResolvesPerType() {
+        // Inline fragments dispatch per concrete type so ProjectNote rows expose noteId+body and
+        // ProjectEvent rows expose eventId+summary. The TypeResolver routes via __typename on
+        // each typed Record.
+        Map<String, Object> data = execute("""
+            { projects {
+                name orgId projectId
+                items {
+                    nodes {
+                        __typename
+                        ... on ProjectNote { noteId body }
+                        ... on ProjectEvent { eventId summary }
+                    }
+                }
+            } }
+            """);
+        var projects = (List<Map<String, Object>>) data.get("projects");
+        var atlas = projects.stream().filter(p -> "Atlas".equals(p.get("name"))).findFirst().orElseThrow();
+        var atlasItems = (List<Map<String, Object>>) ((Map<String, Object>) atlas.get("items")).get("nodes");
+        var noteRows = atlasItems.stream().filter(n -> "ProjectNote".equals(n.get("__typename"))).toList();
+        var eventRows = atlasItems.stream().filter(n -> "ProjectEvent".equals(n.get("__typename"))).toList();
+        assertThat(noteRows).hasSize(3);
+        assertThat(eventRows).hasSize(1);
+        assertThat(noteRows).allSatisfy(n -> {
+            assertThat(n.get("noteId")).as("ProjectNote.noteId").isNotNull();
+            assertThat((String) n.get("body")).as("ProjectNote.body").startsWith("Atlas-N");
+        });
+        assertThat(eventRows).allSatisfy(e -> {
+            assertThat(e.get("eventId")).as("ProjectEvent.eventId").isNotNull();
+            assertThat((String) e.get("summary")).as("ProjectEvent.summary").isEqualTo("Atlas-E1");
+        });
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void projectItemsConnection_dataLoaderBatchesAcrossParents() {
+        // R36 Track B4c-2 batching ratchet for composite-PK parents: with 3 parents (Atlas,
+        // Beacon, Cipher) fetching items in one request, the DataLoader collapses the per-branch
+        // UNION-ALL page-rows query to ONE invocation. parentInput VALUES is keyed Row3<Integer,
+        // Integer, Integer> (idx + composite parent PK) and the per-branch JOIN ON emits an
+        // AND-chain over (org_id, project_id). Without B4c-2's RowN widening this would have
+        // failed to compile; without B4c-2's batching this would fire 3 separate UNION-ALLs.
+        SQL_LOG.clear();
+        Map<String, Object> data = execute("""
+            { projects {
+                name orgId projectId
+                items(first: 1) {
+                    edges { node { __typename } }
+                }
+            } }
+            """);
+        var projects = (List<Map<String, Object>>) data.get("projects");
+        assertThat(projects).hasSize(3);
+        // The page-rows rows-method fires once across all 3 parents.
+        var parentInputQueries = SQL_LOG.stream()
+            .filter(s -> s.contains("as \"parentinput\""))
+            .toList();
+        assertThat(parentInputQueries)
+            .as("rows-method fires once for the composite-PK-parent batch; SQL_LOG: " + parentInputQueries)
+            .hasSize(1);
+        // The composite FK AND-chain shows up as two equality conjuncts on the FK columns.
+        assertThat(parentInputQueries.get(0))
+            .as("composite-FK JOIN predicate joins on both org_id and project_id")
+            .contains("\"org_id\"")
+            .contains("\"project_id\"");
+    }
+
     @Test
     @SuppressWarnings("unchecked")
     void addressOccupantsConnection_inlineFragmentResolvesPerType() {

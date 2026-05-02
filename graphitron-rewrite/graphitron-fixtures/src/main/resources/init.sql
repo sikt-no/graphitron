@@ -299,6 +299,48 @@ CREATE TABLE paged_b (
 );
 INSERT INTO paged_b (k1, k2, name) VALUES (1, 1, 'B-1-1'), (1, 3, 'B-1-3'), (3, 1, 'B-3-1');
 
+-- R36 item 2 fixture: composite-PK parent for child interface @asConnection. Sakila has no
+-- junction-as-parent shape (film_actor and film_category are pure junctions with no children
+-- FK-referencing them), so we synthesise one. project (org_id, project_id) is the composite-PK
+-- parent; project_note and project_event are single-PK children referencing it via a composite
+-- FK. Exercises the B4c-2 RowN widening end-to-end (DataLoader key element widens to
+-- Row2<Integer, Integer>; parentInput VALUES widens to Row3<Integer, Integer, Integer>;
+-- batchedBranchJoinPredicate emits an AND-chain over (org_id, project_id)) against PostgreSQL.
+CREATE TABLE project (
+    org_id     integer     NOT NULL,
+    project_id integer     NOT NULL,
+    name       varchar(50) NOT NULL,
+    PRIMARY KEY (org_id, project_id)
+);
+INSERT INTO project (org_id, project_id, name) VALUES
+    (1, 100, 'Atlas'), (1, 101, 'Beacon'), (2, 100, 'Cipher');
+
+CREATE TABLE project_note (
+    note_id    serial      PRIMARY KEY,
+    org_id     integer     NOT NULL,
+    project_id integer     NOT NULL,
+    body       varchar(50) NOT NULL,
+    CONSTRAINT project_note_project_fkey FOREIGN KEY (org_id, project_id)
+        REFERENCES project(org_id, project_id)
+);
+INSERT INTO project_note (org_id, project_id, body) VALUES
+    (1, 100, 'Atlas-N1'), (1, 100, 'Atlas-N2'), (1, 100, 'Atlas-N3'),
+    (1, 101, 'Beacon-N1'), (1, 101, 'Beacon-N2'),
+    (2, 100, 'Cipher-N1');
+
+CREATE TABLE project_event (
+    event_id   serial      PRIMARY KEY,
+    org_id     integer     NOT NULL,
+    project_id integer     NOT NULL,
+    summary    varchar(50) NOT NULL,
+    CONSTRAINT project_event_project_fkey FOREIGN KEY (org_id, project_id)
+        REFERENCES project(org_id, project_id)
+);
+INSERT INTO project_event (org_id, project_id, summary) VALUES
+    (1, 100, 'Atlas-E1'),
+    (1, 101, 'Beacon-E1'), (1, 101, 'Beacon-E2'),
+    (2, 100, 'Cipher-E1');
+
 -- ===========================
 -- nodeidfixture schema
 -- ===========================
