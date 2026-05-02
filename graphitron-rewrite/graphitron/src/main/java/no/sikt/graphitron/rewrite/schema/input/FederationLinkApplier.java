@@ -2,13 +2,11 @@ package no.sikt.graphitron.rewrite.schema.input;
 
 import com.apollographql.federation.graphqljava.directives.LinkDirectiveProcessor;
 import com.apollographql.federation.graphqljava.exceptions.MultipleFederationLinksException;
-import graphql.language.AstPrinter;
 import graphql.language.Argument;
 import graphql.language.ArrayValue;
 import graphql.language.Directive;
 import graphql.language.DirectiveDefinition;
 import graphql.language.NamedNode;
-import graphql.language.Node;
 import graphql.language.ObjectValue;
 import graphql.language.SDLDefinition;
 import graphql.language.SourceLocation;
@@ -67,7 +65,7 @@ public final class FederationLinkApplier {
             defs.forEach(def -> {
                 var error = registry.add(def);
                 if (error.isPresent()) {
-                    throw new IllegalStateException(buildManualDeclarationMessage(registry, def, error.get().getMessage()));
+                    throw new IllegalStateException(buildCollisionMessage(registry, def));
                 }
             });
             return true;
@@ -81,16 +79,16 @@ public final class FederationLinkApplier {
 
     /**
      * Builds the error message for a definition that the federation library is injecting but a
-     * matching name already exists in the registry. The "matching name already exists" can come
-     * from two places: a hand-written {@code directive @<name>} or {@code scalar <name>} in the
-     * consumer's SDL, or a programmatic injection elsewhere in the build (another loader stage,
-     * a Maven plugin, an SDK that pre-populates the registry). The two are diagnosed differently:
-     * a user-typed declaration carries a {@link SourceLocation} with the file path and line so we
-     * can point the developer straight at the offending text; a programmatic injection has a
-     * source-name-less location and needs a different remediation, namely "go find the code that
-     * registered this".
+     * matching name already exists in the registry. Two distinct causes need different remediation:
+     * a hand-written declaration in the consumer's SDL (carries a {@link SourceLocation} with a
+     * file path) gets a "remove the manual declaration at file:line" message; a source-name-less
+     * existing definition is the federation library injecting the same directive twice, which is
+     * a known bug in {@code federation-graphql-java-support} v6.0.0's bundled
+     * {@code definitions_fed2_6.graphqls} and {@code definitions_fed2_7.graphqls} (each declares
+     * {@code directive @tag} twice). The remediation there is to bump the consumer's {@code @link}
+     * URL to a non-buggy spec version, not to touch graphitron or any consumer code.
      */
-    private static String buildManualDeclarationMessage(TypeDefinitionRegistry registry, SDLDefinition<?> def, String registryErrorMessage) {
+    private static String buildCollisionMessage(TypeDefinitionRegistry registry, SDLDefinition<?> def) {
         String name = def instanceof NamedNode<?> n ? n.getName() : null;
         boolean isDirective = def instanceof DirectiveDefinition;
         String kind = isDirective ? "directive" : "type";
@@ -107,36 +105,27 @@ public final class FederationLinkApplier {
                     + "Remove the manual " + ref + " " + kind + " definition from your schema SDL.";
         }
 
-        // No source file means the existing definition wasn't typed into a .graphqls file. The
-        // most common cause is another stage of graphitron (or a build plugin layered on top of
-        // graphitron) injecting the definition into the registry programmatically before
-        // FederationLinkApplier runs. The federation library's own injection runs through this
-        // same applier, so a self-collision here points at a third party.
-        //
-        // Print the existing definition's full SDL so the developer can compare it to the
-        // canonical federation-graphql-java-support shape and spot which side is the duplicate.
-        // Federation 2.x defines @tag as `directive @tag(name: String!) repeatable on
-        // FIELD_DEFINITION | OBJECT | INTERFACE | UNION | ARGUMENT_DEFINITION | SCALAR |
-        // ENUM | ENUM_VALUE | INPUT_OBJECT | INPUT_FIELD_DEFINITION | SCHEMA`; if the printed
-        // shape differs, the duplicate came from somewhere else.
-        Node<?> existing = findExistingDefinition(registry, def, name);
-        String existingSdl = existing != null ? AstPrinter.printAst(existing) : "(unavailable)";
-        return "Federation directive injection collided with an existing " + kind + " " + ref
-                + " in the registry, but that " + kind + " has no source file location, "
-                + "so it was added programmatically rather than declared in a schema file. "
-                + "Search your schema-loading pipeline (and any Maven plugins layered on top of "
-                + "graphitron-maven) for code that adds " + ref + " before FederationLinkApplier "
-                + "runs; then remove that programmatic injection so federation-graphql-java-support "
-                + "can inject the canonical " + kind + " on its own.\n\n"
-                + "Existing definition in registry:\n" + existingSdl + "\n\n"
-                + "(Underlying registry error: " + registryErrorMessage + ")";
-    }
-
-    private static Node<?> findExistingDefinition(TypeDefinitionRegistry registry, SDLDefinition<?> def, String name) {
-        if (name == null) return null;
-        return def instanceof DirectiveDefinition
-                ? registry.getDirectiveDefinition(name).orElse(null)
-                : registry.getType(name).orElse(null);
+        // No source file means the existing entry was not parsed from any .graphqls; it was added
+        // by federation-graphql-java-support itself. The library's own SDL for federation v2.6 and
+        // v2.7 declares `directive @tag` twice in the same file (once with the v2.0 location set,
+        // again with the v2.4 location set that adds SCHEMA), so loadFederationImportedDefinitions
+        // returns @tag twice and the second registry.add fails. The fix is to move off the buggy
+        // spec version, since v2.8+ and v2.5- declare each directive exactly once.
+        String version = federationLinkVersion(registry);
+        if ("v2.6".equals(version) || "v2.7".equals(version)) {
+            return "Your @link URL points at federation " + version + ", whose SDL bundled with "
+                    + "federation-graphql-java-support 6.0.0 declares " + ref + " twice. The library "
+                    + "returns the duplicate to graphitron, which then fails on the second registry "
+                    + "add. This is a federation-graphql-java-support bug, not a problem with your "
+                    + "schema or with graphitron.\n\n"
+                    + "Workaround: change your @link URL to federation v2.8 or later, or to v2.5 or "
+                    + "earlier. v2.6 and v2.7 are the only affected spec versions.";
+        }
+        return "federation-graphql-java-support returned " + ref + " twice from "
+                + "loadFederationImportedDefinitions, so the second registry add collided with the "
+                + "first. This is a library bug; the federation @link URL in your schema is "
+                + (version != null ? "'" + version + "'" : "(could not be determined)")
+                + ". Try a different federation spec version.";
     }
 
     private static SourceLocation findExistingDeclarationLocation(TypeDefinitionRegistry registry, SDLDefinition<?> def, String name) {
@@ -144,6 +133,28 @@ public final class FederationLinkApplier {
         return def instanceof DirectiveDefinition
                 ? registry.getDirectiveDefinition(name).map(DirectiveDefinition::getSourceLocation).orElse(null)
                 : registry.getType(name).map(t -> t.getSourceLocation()).orElse(null);
+    }
+
+    /**
+     * Returns the {@code v2.X} suffix from the schema's federation {@code @link} URL, or
+     * {@code null} when no federation {@code @link} is found. Used to pinpoint the
+     * {@code federation-graphql-java-support} double-declaration bug to a specific spec version.
+     */
+    private static String federationLinkVersion(TypeDefinitionRegistry registry) {
+        return Stream.concat(
+                        registry.schemaDefinition()
+                                .map(sd -> sd.getDirectives("link").stream())
+                                .orElse(Stream.empty()),
+                        registry.getSchemaExtensionDefinitions().stream()
+                                .flatMap(ext -> ext.getDirectives("link").stream()))
+                .map(FederationLinkApplier::federationUrl)
+                .filter(Objects::nonNull)
+                .map(url -> {
+                    int slash = url.lastIndexOf('/');
+                    return slash >= 0 ? url.substring(slash + 1) : url;
+                })
+                .findFirst()
+                .orElse(null);
     }
 
     /**
