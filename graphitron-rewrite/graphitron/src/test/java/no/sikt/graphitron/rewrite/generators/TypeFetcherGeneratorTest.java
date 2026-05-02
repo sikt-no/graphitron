@@ -1578,14 +1578,34 @@ class TypeFetcherGeneratorTest {
 
     @Test
     void queryInterfaceField_connection_wrapsResultInConnectionResult() {
-        // ConnectionResult takes (List<Record>, PageRequest, Table<?>, Condition). B4a passes
-        // (payload, page, null, null) — totalCount short-circuits to null on null table+condition
-        // until B4c lands the polymorphic count query.
+        // ConnectionResult takes (List<Record>, PageRequest, Table<?>, Condition). B4b binds
+        // (payload, page, pagesTable, DSL.noCondition()) so ConnectionHelper.totalCount can run
+        // SELECT count(*) FROM (UNION ALL) AS pages lazily on selection. Per-branch WHEREs (when
+        // wired for child connections) live inside the union, so the outer condition is a no-op.
         var field = queryInterfaceConnectionField("searchConnection", filmAndActorParticipants(), 5);
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
             DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
         var body = method(spec, "searchConnection").code().toString();
-        assertThat(body).contains(".util.ConnectionResult(payload, page, null, null)");
+        assertThat(body).contains(".util.ConnectionResult(payload, page, pagesTable, org.jooq.impl.DSL.noCondition())");
+    }
+
+    @Test
+    void queryInterfaceField_connection_liftsUnionAllAsTableLocal() {
+        // B4b lifts the UNION-ALL derived table to a local Table<?> pagesTable variable so the
+        // same reference backs both the page query (.from(pagesTable)) and ConnectionResult.table()
+        // for totalCount. Without the local, totalCount would have to re-emit the entire
+        // UNION ALL, doubling the emission size.
+        var field = queryInterfaceConnectionField("searchConnection", filmAndActorParticipants(), 5);
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
+            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+        var body = method(spec, "searchConnection").code().toString();
+        assertThat(body)
+            .as("UNION-ALL is materialized as a local Table<?>")
+            .contains("Table<?> pagesTable")
+            .contains(".asTable(\"pages\")");
+        assertThat(body)
+            .as("the page query references the local pagesTable")
+            .contains(".from(pagesTable)");
     }
 
     @Test
@@ -1618,7 +1638,7 @@ class TypeFetcherGeneratorTest {
             .contains(".asTable(\"pages\")")
             .contains("ConnectionHelper.pageRequest(")
             .contains(".seek(page.seekFields())")
-            .contains(".util.ConnectionResult(payload, page, null, null)");
+            .contains(".util.ConnectionResult(payload, page, pagesTable, org.jooq.impl.DSL.noCondition())");
         assertThat(method(spec, "selectFilmForDocumentsConnection").code().toString())
             .contains("FILM_ID.as(\"__sort__\")");
     }
