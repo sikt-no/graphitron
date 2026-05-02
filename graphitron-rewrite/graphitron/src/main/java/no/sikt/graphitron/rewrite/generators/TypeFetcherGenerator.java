@@ -160,6 +160,8 @@ public class TypeFetcherGenerator {
         QueryField.QueryServiceTableField.class,
         QueryField.QueryServiceRecordField.class,
         MutationField.MutationDeleteTableField.class,
+        MutationField.MutationServiceTableField.class,
+        MutationField.MutationServiceRecordField.class,
         ChildField.ServiceTableField.class,
         ChildField.ServiceRecordField.class,
         ChildField.SplitTableField.class,
@@ -239,10 +241,6 @@ public class TypeFetcherGenerator {
                 "Mutation update not yet implemented — see graphitron-rewrite/roadmap/mutations.md"),
             Map.entry(MutationField.MutationUpsertTableField.class,
                 "Mutation upsert not yet implemented — see graphitron-rewrite/roadmap/mutations.md"),
-            Map.entry(MutationField.MutationServiceTableField.class,
-                "MutationServiceTableField not yet implemented — see graphitron-rewrite/roadmap/mutations.md"),
-            Map.entry(MutationField.MutationServiceRecordField.class,
-                "MutationServiceRecordField not yet implemented — see graphitron-rewrite/roadmap/mutations.md"),
             // ChildField stubs — TableTargetField sub-hierarchy
             // (ChildField.TableField and ChildField.LookupTableField are in PROJECTED_LEAVES —
             // inline emission via TypeClassGenerator.$fields; see G5 and argres Phase 2a)
@@ -385,8 +383,8 @@ public class TypeFetcherGenerator {
                 case MutationField.MutationUpdateTableField f  -> builder.addMethod(stub(f));
                 case MutationField.MutationDeleteTableField f  -> builder.addMethod(buildMutationDeleteFetcher(f, outputPackage, jooqPackage));
                 case MutationField.MutationUpsertTableField f  -> builder.addMethod(stub(f));
-                case MutationField.MutationServiceTableField f -> builder.addMethod(stub(f));
-                case MutationField.MutationServiceRecordField f -> builder.addMethod(stub(f));
+                case MutationField.MutationServiceTableField f -> builder.addMethod(buildMutationServiceTableFetcher(f, outputPackage, jooqPackage));
+                case MutationField.MutationServiceRecordField f -> builder.addMethod(buildMutationServiceRecordFetcher(f, outputPackage));
                 case ChildField.ColumnReferenceField f          -> {
                     if (f.compaction() instanceof CallSiteCompaction.NodeIdEncodeKeys) {
                         // Reference-side NodeId carrier: no fetcher method. The DataFetcher value
@@ -1083,9 +1081,68 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * Shared body shape for {@link #buildQueryServiceTableFetcher} and
-     * {@link #buildQueryServiceRecordFetcher}: optional {@code dsl} local + direct
-     * {@code return ServiceClass.method(<args>);}.
+     * Emits the fetcher for a {@link MutationField.MutationServiceTableField}: identical body
+     * shape to {@link #buildQueryServiceTableFetcher}. Root mutation fields have no parent table
+     * and no parent-batching context, so the emission delegates to the shared
+     * {@link #buildServiceFetcherCommon} helper without alteration. The shared helper handles
+     * the R12 §5 pre-execution Jakarta validation pre-step, the §3 try/catch wrapper, and the
+     * §2c {@code resultAssembly} success-arm payload assembly uniformly across query and
+     * mutation services. Phase 6 of mutations.md.
+     */
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "service-catalog-strict-service-return",
+        reliesOn = "Declares the typed Result<XRecord> (or XRecord) return on the fetcher and "
+            + "lets graphql-java's column fetchers traverse it directly. Inherits the same "
+            + "service-catalog strictness as buildQueryServiceTableFetcher; mutation services "
+            + "share the same MethodRef strictness path through ServiceCatalog.reflectServiceMethod.")
+    private static MethodSpec buildMutationServiceTableFetcher(MutationField.MutationServiceTableField mstf,
+                                                                String outputPackage, String jooqPackage) {
+        var tableRef = mstf.returnType().table();
+        var recordClass = ClassName.get(jooqPackage + ".tables.records",
+            tableRef.javaClassName() + "Record");
+        boolean isList = mstf.returnType().wrapper().isList();
+        TypeName returnType = isList
+            ? ParameterizedTypeName.get(RESULT, recordClass)
+            : recordClass;
+        return buildServiceFetcherCommon(mstf.name(), mstf.method(), mstf.parentTypeName(),
+            returnType, mstf.errorChannel(), mstf.resultAssembly(), outputPackage);
+    }
+
+    /**
+     * Emits the fetcher for a {@link MutationField.MutationServiceRecordField}: identical body
+     * shape to {@link #buildQueryServiceRecordFetcher}. Both {@code ResultReturnType} (with or
+     * without a {@code @record} backing class) and {@code ScalarReturnType} return shapes are
+     * handled by {@link #computeMutationServiceRecordReturnType}, mirroring the query side.
+     * Phase 6 of mutations.md.
+     */
+    private static MethodSpec buildMutationServiceRecordFetcher(MutationField.MutationServiceRecordField msrf,
+                                                                 String outputPackage) {
+        TypeName returnType = computeMutationServiceRecordReturnType(msrf);
+        return buildServiceFetcherCommon(msrf.name(), msrf.method(), msrf.parentTypeName(),
+            returnType, msrf.errorChannel(), msrf.resultAssembly(), outputPackage);
+    }
+
+    /**
+     * Mirrors {@link #computeServiceRecordReturnType} for the mutation side. Identical policy:
+     * {@code ResultReturnType} with a non-null {@code fqClassName} produces a typed declaration;
+     * everything else faithfully reflects the developer method's reflected return type.
+     */
+    private static TypeName computeMutationServiceRecordReturnType(MutationField.MutationServiceRecordField msrf) {
+        boolean isList = msrf.returnType().wrapper().isList();
+        if (msrf.returnType() instanceof ReturnTypeRef.ResultReturnType r && r.fqClassName() != null) {
+            ClassName recordCls = ClassName.bestGuess(r.fqClassName());
+            return isList ? ParameterizedTypeName.get(LIST, recordCls) : recordCls;
+        }
+        return msrf.method().returnType();
+    }
+
+    /**
+     * Shared body shape for the four service-backed root fetchers
+     * ({@link #buildQueryServiceTableFetcher}, {@link #buildQueryServiceRecordFetcher},
+     * {@link #buildMutationServiceTableFetcher}, {@link #buildMutationServiceRecordFetcher}):
+     * optional {@code dsl} local + direct {@code return ServiceClass.method(<args>);}. Mutation
+     * services share the body shape because they run synchronously, on a root field with no
+     * parent-batching context, and the developer-supplied method owns the transaction scope.
      *
      * <p>When the channel carries any {@link no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ValidationHandler},
      * the wrapper inserts a pre-execution Jakarta validation step ahead of the try block:

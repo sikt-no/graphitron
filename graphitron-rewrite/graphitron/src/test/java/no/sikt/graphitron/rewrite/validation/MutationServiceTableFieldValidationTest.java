@@ -14,7 +14,6 @@ import org.junit.jupiter.params.provider.EnumSource;
 import java.util.List;
 import java.util.Optional;
 
-import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.stubbedError;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
@@ -29,12 +28,12 @@ class MutationServiceTableFieldValidationTest {
 
     enum Case implements ValidatorCase {
 
-        STUBBED("service mutation field with resolved method — not yet implemented, produces stubbed-variant error",
+        VALID("service mutation field with resolved method — passes validation (Invariants §1/§2 enforced at classifier time)",
             new MutationServiceTableField("Mutation", "externalMutation", null,
                 FILM_RETURN,
                 new MethodRef.Basic("com.example.Service", "method", TypeName.VOID, List.of()),
                 Optional.empty(), Optional.empty()),
-            List.of(stubbedError("Mutation.externalMutation", MutationServiceTableField.class)));
+            List.of());
 
         private final String description;
         private final GraphitronField field;
