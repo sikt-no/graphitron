@@ -58,7 +58,7 @@ The key distinction from model-level sealed hierarchies: builder-internal hierar
 
 == Builder-step results are sealed, not strings or out-params
 
-Every builder-step lift returns a sealed `Resolved` result; rejection is a variant, not a return-string-or-null. R6's lift of cross-cutting concerns out of `FieldBuilder` produced ten siblings on the same shape: `ServiceDirectiveResolver`, `TableMethodDirectiveResolver`, `ExternalFieldDirectiveResolver`, `LookupKeyDirectiveResolver`, `OrderByResolver`, `ConditionResolver`, `MutationInputResolver`, `EnumMappingResolver`, `BatchKeyLifterDirectiveResolver`, `NodeIdLeafResolver`. Each entry point returns a sealed `Resolved` (typically `{None | Ok | Rejected}`, or domain-specific arms like `ServiceDirectiveResolver.Resolved.{Success.{TableBound | Result | Scalar} | ErrorsLifted | Rejected}`), and the caller's switch is exhaustive across success and failure modes both.
+Every builder-step lift returns a sealed `Resolved` result; rejection is a variant, not a return-string-or-null. Thirteen resolver siblings lifted out of `FieldBuilder` (R6 produced eleven; R1 added `BatchKeyLifterDirectiveResolver`; R40 added `NodeIdLeafResolver`) share this shape. Each entry point returns a sealed `Resolved` (typically `{None | Ok | Rejected}`, or domain-specific arms like `ServiceDirectiveResolver.Resolved.{Success.{TableBound | Result | Scalar} | ErrorsLifted | Rejected}`), and the caller's switch is exhaustive across success and failure modes both.
 
 Anti-patterns this rule replaces:
 
