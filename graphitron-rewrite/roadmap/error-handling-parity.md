@@ -318,48 +318,47 @@ wrapper + dispatch arm lands; phasing within is the implementer's call.
 **Remaining work:**
 
 - **Per-(channel, @error type, handler) source-class accessor reflection check
-  (§2c).** The SDL grammar currently restricts `@error` types to exactly
-  `path: [String!]!` and `message: String!`, both populated by the synthesized
-  per-@error-type `DataFetcher`s landed alongside the TypeResolver wiring; no
-  source-class accessor is consulted for these fields. The check becomes
-  meaningful when the path/message restriction is relaxed to allow extras
-  (e.g. `code: String!`, `extensions: ErrorExtensions`); those would route
-  through `PropertyDataFetcher`, and the classifier needs to verify the source
-  class has the matching accessor at build time. Tracked here as the gating
-  step for that future SDL surface expansion.
+  (§2c).** *Gated on SDL grammar relaxation.* The SDL grammar currently
+  restricts `@error` types to exactly `path: [String!]!` and `message: String!`,
+  both populated by the synthesized per-@error-type `DataFetcher`s landed
+  alongside the TypeResolver wiring; no source-class accessor is consulted for
+  these fields. The check becomes meaningful when the path/message restriction
+  is relaxed to allow extras (e.g. `code: String!`,
+  `extensions: ErrorExtensions`); those would route through `PropertyDataFetcher`,
+  and the classifier needs to verify the source class has the matching accessor
+  at build time. Tracked here as the gating step for that future SDL surface
+  expansion. The §5 `extensions.constraint` follow-up below rides on the same
+  signal.
 
-  *Native Jakarta validation* (§5):
-  - **Landed**: `ValidationViolationGraphQLException`,
-    `ValidationViolationGraphQLExceptionGenerator`, the dispatcher's validation
-    arm, `ValidationMapping`, and §1 reject rule 9 are all gone. The
-    `ConstraintViolations` helper (`<outputPackage>.schema.ConstraintViolations`)
-    translates each `ConstraintViolation` into a `GraphQLError` whose path
-    splices the field's execution path, the bound argument name, and the
-    violation's bean property path (`PROPERTY` / `BEAN` → name, list element →
-    int index, map entry → key). `GraphitronContext.getValidator(env)` provides
-    a default-factory-backed validator with a holder-class lazy initialiser;
-    consumers override the method for custom factories.
-  - The service-fetcher wrapper (`buildServiceFetcherCommon`) emits a
-    pre-execution validation block ahead of the try when the channel carries
-    any `ValidationHandler`: walks every `Arg`-sourced parameter, validates each
-    non-null arg, accumulates violations as `GraphQLError`s, and short-circuits
-    with the payload's errors-arm filled by the violations list.
-  - Mutation-side wrapper integration: **landed**. Phase 6 of `mutations.md`
-    un-stubbed `MutationServiceTableField` and `MutationServiceRecordField` by
-    delegating to the shared `buildServiceFetcherCommon` helper, so the §3
-    try/catch dispatch arm, §5 Jakarta validation pre-step, and §2c
-    `resultAssembly` success-arm assembly all carry over for free on the
-    mutation side. (DML-on-jOOQ-table wrapper integration for the remaining
-    INSERT/UPDATE/UPSERT stubs is tracked in `mutations.md` Phases 2/4/5.)
-  - **Remaining**:
-    - Optional `extensions.constraint` field population when the SDL `@error`
-      type declares an `extensions` field (the source-class accessor reflection
-      check from §2c will detect the SDL signal automatically).
+- **Lift `errorChannel` onto child `@service` and `@tableMethod` variants.**
+  *Not gated; surfaces today.* `ServiceTableField` / `ServiceRecordField`
+  (child `@service`) and `TableMethodField` / `QueryTableMethodTableField`
+  (root + child `@tableMethod`) don't carry an `errorChannel` slot, so
+  `FieldBuilder.checkDeclaredCheckedExceptions` runs with `Optional.empty()`
+  channel at six of its eight call sites and blanket-rejects any non-exempt
+  declared checked exception on those variants. Until the lift lands, schema
+  authors of those fields must keep service method signatures clean of
+  non-exempt checked exceptions, which is friction the §4 design already
+  contemplates as temporary. The lift is also the natural collapse of those six
+  `Optional.empty()` literals into a single `MethodBackedField`-capability
+  validation pass (the same shape `MappingsConstantNameDedup` already runs as a
+  cross-field post-classify pass).
 
-  *Test fixture updates*: `SakPayload`, `DeleteFilmPayload` errors slots become
-  `List<Object>`. SDL fixtures stop using `@record` co-locations on `@error`
-  types. New fixtures cover the service-method-returns-domain-object shape and
-  the validator integration.
+- **Test fixture updates for source-direct dispatch.** *Not gated.*
+  `SakPayload` and `DeleteFilmPayload` errors slots become `List<Object>`
+  (the source-direct contract puts matched throwables and `GraphQLError`s
+  directly into the list, with no developer-supplied data class). SDL fixtures
+  stop using `@record` co-locations on `@error` types (the source-direct
+  contract removes the developer-supplied data class). New fixtures cover the
+  service-method-returns-domain-object shape (`ResultAssembly.Assembly` arm)
+  and the validator integration (`ValidationHandler` channel + Jakarta
+  pre-step).
+
+- **§5 `extensions.constraint` field population.** *Gated on the §2c
+  source-class accessor check above.* When the SDL `@error` type declares an
+  `extensions` field, the source-class accessor reflection check from §2c
+  detects the SDL signal automatically and populates `extensions.constraint`
+  from the violation's constraint metadata.
 - Resolve `mappingsConstantName` collision suffix at classify time
   (subsumes the standalone §3 hash-suffix dedup follow-up): **landed**.
   The per-field classifier (`FieldBuilder.resolveErrorChannel`) stamps every
@@ -396,15 +395,10 @@ wrapper + dispatch arm lands; phasing within is the implementer's call.
   `@LoadBearingClassifierCheck(key = "service-method.declared-exceptions-covered")`.
   Direct unit coverage in `CheckedExceptionMatcherTest`; classifier
   integration coverage in `CheckedExceptionClassificationTest` and the new
-  declared-exception capture cases in `ServiceCatalogTest`.
-
-  *Tablemethod / child @service follow-up*: those variant records don't
-  currently carry an `errorChannel` slot, so the §4 check runs with
-  `Optional.empty()` channel for them and rejects any non-exempt declared
-  checked exception. Lifting `errorChannel` onto the tablemethod variants
-  (and onto child `ServiceTableField` / `ServiceRecordField`) is a separate
-  enhancement; until then, schema authors of those fields must keep service
-  method signatures clean of non-exempt checked exceptions.
+  declared-exception capture cases in `ServiceCatalogTest`. The
+  child-variant `errorChannel` lift that would let this check run against a
+  populated channel on tablemethods and child `@service` is tracked above as
+  its own Remaining-work bullet.
 
   *R2 retirement*: the
   [`checked-exceptions-typed-errors.md`](checked-exceptions-typed-errors.md)
