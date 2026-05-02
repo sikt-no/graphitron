@@ -65,7 +65,7 @@ public final class FederationLinkApplier {
             defs.forEach(def -> {
                 var error = registry.add(def);
                 if (error.isPresent()) {
-                    throw new IllegalStateException(buildManualDeclarationMessage(registry, def));
+                    throw new IllegalStateException(buildManualDeclarationMessage(registry, def, error.get().getMessage()));
                 }
             });
             return true;
@@ -78,32 +78,53 @@ public final class FederationLinkApplier {
     }
 
     /**
-     * Builds the error message for a manually-declared federation definition that collides with one
-     * the federation library is injecting from the {@code @link} import. Reports the offending name,
-     * whether it is a directive or a type, and (when the registry knows it) the source file and line
-     * of the manual declaration so the developer can jump straight to the file to delete.
+     * Builds the error message for a definition that the federation library is injecting but a
+     * matching name already exists in the registry. The "matching name already exists" can come
+     * from two places: a hand-written {@code directive @<name>} or {@code scalar <name>} in the
+     * consumer's SDL, or a programmatic injection elsewhere in the build (another loader stage,
+     * a Maven plugin, an SDK that pre-populates the registry). The two are diagnosed differently:
+     * a user-typed declaration carries a {@link SourceLocation} with the file path and line so we
+     * can point the developer straight at the offending text; a programmatic injection has a
+     * source-name-less location and needs a different remediation, namely "go find the code that
+     * registered this".
      */
-    private static String buildManualDeclarationMessage(TypeDefinitionRegistry registry, SDLDefinition<?> def) {
+    private static String buildManualDeclarationMessage(TypeDefinitionRegistry registry, SDLDefinition<?> def, String registryErrorMessage) {
         String name = def instanceof NamedNode<?> n ? n.getName() : null;
         boolean isDirective = def instanceof DirectiveDefinition;
         String kind = isDirective ? "directive" : "type";
         String ref = name != null
                 ? "'" + (isDirective ? "@" : "") + name + "'"
                 : "a federation " + kind;
-        String location = findExistingDeclarationLocation(registry, def, name);
-        String at = location != null ? " at " + location : "";
-        return "Your schema manually declares " + ref + at + ", but that " + kind + " is injected "
-                + "automatically by federation-graphql-java-support based on your @link import. "
-                + "Remove the manual " + ref + " " + kind + " definition from your schema SDL.";
+        SourceLocation existingLoc = findExistingDeclarationLocation(registry, def, name);
+        boolean hasSourceFile = existingLoc != null && existingLoc.getSourceName() != null;
+
+        if (hasSourceFile) {
+            String at = existingLoc.getSourceName() + ":" + existingLoc.getLine();
+            return "Your schema declares " + ref + " at " + at + ", but that " + kind + " is injected "
+                    + "automatically by federation-graphql-java-support based on your @link import. "
+                    + "Remove the manual " + ref + " " + kind + " definition from your schema SDL.";
+        }
+
+        // No source file means the existing definition wasn't typed into a .graphqls file. The
+        // most common cause is another stage of graphitron (or a build plugin layered on top of
+        // graphitron) injecting the definition into the registry programmatically before
+        // FederationLinkApplier runs. The federation library's own injection runs through this
+        // same applier, so a self-collision here points at a third party.
+        return "Federation directive injection collided with an existing " + kind + " " + ref
+                + " in the registry, but that " + kind + " has no source file location, "
+                + "so it was added programmatically rather than declared in a schema file. "
+                + "Search your schema-loading pipeline (and any Maven plugins layered on top of "
+                + "graphitron-maven) for code that adds " + ref + " before FederationLinkApplier "
+                + "runs; then remove that programmatic injection so federation-graphql-java-support "
+                + "can inject the canonical " + kind + " on its own. "
+                + "(Underlying registry error: " + registryErrorMessage + ")";
     }
 
-    private static String findExistingDeclarationLocation(TypeDefinitionRegistry registry, SDLDefinition<?> def, String name) {
+    private static SourceLocation findExistingDeclarationLocation(TypeDefinitionRegistry registry, SDLDefinition<?> def, String name) {
         if (name == null) return null;
-        SourceLocation loc = def instanceof DirectiveDefinition
+        return def instanceof DirectiveDefinition
                 ? registry.getDirectiveDefinition(name).map(DirectiveDefinition::getSourceLocation).orElse(null)
                 : registry.getType(name).map(t -> t.getSourceLocation()).orElse(null);
-        if (loc == null || loc.getSourceName() == null) return null;
-        return loc.getSourceName() + ":" + loc.getLine();
     }
 
     /**

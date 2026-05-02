@@ -84,6 +84,7 @@ class FederationLinkApplierTest {
         assertThatThrownBy(() -> FederationLinkApplier.apply(registry))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("'@external'")
+                .hasMessageContaining("Your schema declares")
                 .hasMessageContaining("Remove the manual")
                 .hasMessageContaining("directive definition from your schema SDL")
                 .hasMessageContaining("schema.graphqls:4");
@@ -108,6 +109,39 @@ class FederationLinkApplierTest {
                 .hasMessageContaining("type is injected")
                 .hasMessageContaining("Remove the manual 'link__Import' type definition")
                 .hasMessageContaining("schema.graphqls:4");
+    }
+
+    @Test
+    void programmaticallyInjectedDirectiveReportsItAsSuch() {
+        // Simulates the scenario where some non-SDL pipeline stage already populated the
+        // registry with @tag (no source file) before federation injection runs. We can't
+        // point the developer at a .graphqls file, so the message needs to redirect them
+        // toward the code path that registered the duplicate.
+        var registry = InMemoryRegistry.of(Map.of(
+            "schema.graphqls",
+            """
+            extend schema
+              @link(url: "https://specs.apollo.dev/federation/v2.10",
+                    import: ["@tag"])
+            type Foo { id: ID! }
+            """
+        ));
+        // Inject @tag with a SourceLocation that has no source file (mirrors what happens
+        // when a definition is created programmatically rather than parsed from SDL).
+        var noFileLoc = new graphql.language.SourceLocation(1, 1);
+        var tagDef = graphql.language.DirectiveDefinition.newDirectiveDefinition()
+                .name("tag")
+                .sourceLocation(noFileLoc)
+                .directiveLocation(graphql.language.DirectiveLocation.newDirectiveLocation().name("FIELD_DEFINITION").build())
+                .build();
+        registry.add(tagDef);
+
+        assertThatThrownBy(() -> FederationLinkApplier.apply(registry))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("'@tag'")
+                .hasMessageContaining("no source file location")
+                .hasMessageContaining("added programmatically")
+                .hasMessageContaining("Search your schema-loading pipeline");
     }
 
     @Test
