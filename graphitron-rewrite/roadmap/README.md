@@ -14,7 +14,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Plan |
 |---|---|---|---|
-| `R36` | Stub #3: Interface / union fetchers | In Review | [plan](stub-interface-union-fetchers.md) |
+| `R36` | Stub #3: Interface / union fetchers | Ready | [plan](stub-interface-union-fetchers.md) |
 | `R49` | Stub: scalar/`@record`-returning `@service` child field (`ServiceRecordField`) <sub>blocked by: [service-rows-method-body](service-rows-method-body.md)</sub> | Spec | [plan](service-record-field.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
 | `R15` | Sweep doc drift between rewrite docs and `model/` taxonomy <sub>blocked by: [docs-site-asciidoc](docs-site-asciidoc.md)</sub> | Spec | [plan](fix-legacy-refs-in-rewrite-docs.md) |
@@ -82,7 +82,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### interface-union
 
-- `R36` [**Stub #3: Interface / union fetchers**](stub-interface-union-fetchers.md) — In Review, stubs
+- `R36` [**Stub #3: Interface / union fetchers**](stub-interface-union-fetchers.md) — Ready, stubs
 - `R44` [**Stub: `@multitableReference` on a scalar field (`MultitableReferenceField`)**](multitable-reference-on-scalar.md) — Backlog, stubs, blocked by [stub-interface-union-fetchers](stub-interface-union-fetchers.md)
 
 ### nodeid
