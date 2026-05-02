@@ -5,7 +5,11 @@ import com.apollographql.federation.graphqljava.exceptions.MultipleFederationLin
 import graphql.language.Argument;
 import graphql.language.ArrayValue;
 import graphql.language.Directive;
+import graphql.language.DirectiveDefinition;
+import graphql.language.NamedNode;
 import graphql.language.ObjectValue;
+import graphql.language.SDLDefinition;
+import graphql.language.SourceLocation;
 import graphql.language.StringValue;
 import graphql.language.Value;
 import graphql.schema.idl.TypeDefinitionRegistry;
@@ -61,12 +65,7 @@ public final class FederationLinkApplier {
             defs.forEach(def -> {
                 var error = registry.add(def);
                 if (error.isPresent()) {
-                    var name = def instanceof graphql.language.NamedNode<?> n ? n.getName() : null;
-                    var ref = name != null ? "'@" + name + "'" : "a federation directive";
-                    throw new IllegalStateException(
-                            "Your schema manually declares " + ref + ", but that directive is injected "
-                            + "automatically by federation-graphql-java-support based on your @link import. "
-                            + "Remove the manual " + ref + " directive definition from your schema SDL.");
+                    throw new IllegalStateException(buildManualDeclarationMessage(registry, def));
                 }
             });
             return true;
@@ -76,6 +75,35 @@ public final class FederationLinkApplier {
             // replacement that already names every offending @link, its url, and its imports.
             throw new IllegalStateException(buildMultipleLinksMessage(registry));
         }
+    }
+
+    /**
+     * Builds the error message for a manually-declared federation definition that collides with one
+     * the federation library is injecting from the {@code @link} import. Reports the offending name,
+     * whether it is a directive or a type, and (when the registry knows it) the source file and line
+     * of the manual declaration so the developer can jump straight to the file to delete.
+     */
+    private static String buildManualDeclarationMessage(TypeDefinitionRegistry registry, SDLDefinition<?> def) {
+        String name = def instanceof NamedNode<?> n ? n.getName() : null;
+        boolean isDirective = def instanceof DirectiveDefinition;
+        String kind = isDirective ? "directive" : "type";
+        String ref = name != null
+                ? "'" + (isDirective ? "@" : "") + name + "'"
+                : "a federation " + kind;
+        String location = findExistingDeclarationLocation(registry, def, name);
+        String at = location != null ? " at " + location : "";
+        return "Your schema manually declares " + ref + at + ", but that " + kind + " is injected "
+                + "automatically by federation-graphql-java-support based on your @link import. "
+                + "Remove the manual " + ref + " " + kind + " definition from your schema SDL.";
+    }
+
+    private static String findExistingDeclarationLocation(TypeDefinitionRegistry registry, SDLDefinition<?> def, String name) {
+        if (name == null) return null;
+        SourceLocation loc = def instanceof DirectiveDefinition
+                ? registry.getDirectiveDefinition(name).map(DirectiveDefinition::getSourceLocation).orElse(null)
+                : registry.getType(name).map(t -> t.getSourceLocation()).orElse(null);
+        if (loc == null || loc.getSourceName() == null) return null;
+        return loc.getSourceName() + ":" + loc.getLine();
     }
 
     /**
