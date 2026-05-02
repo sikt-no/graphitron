@@ -433,7 +433,21 @@ class NodeIdPipelineTest {
             input Foo @table(name: "qux") { relatedId: ID! @nodeId(typeName: "Baz") }
             type Query { x: String }
             """,
-            schema -> assertThat(schema.type("Foo")).isInstanceOf(GraphitronType.UnclassifiedType.class));
+            schema -> assertThat(schema.type("Foo")).isInstanceOf(GraphitronType.UnclassifiedType.class)),
+
+        NODE_TARGET_NO_METADATA_PK_FALLBACK(
+            "input `id: ID! @nodeId(typeName: 'Qux')` where Qux has @node but its table has no NodeId metadata → ColumnReferenceField via catalog PK fallback (regression: pre-fix, the empty keyColumns list propagated into CompositeColumnReferenceField and tripped the arity invariant)",
+            """
+            type Qux implements Node @table(name: "qux") @node { id: ID! name: String }
+            input Foo @table(name: "qux") { id: ID! @nodeId(typeName: "Qux") }
+            type Query { x: String }
+            """,
+            schema -> {
+                var t = (GraphitronType.TableInputType) schema.type("Foo");
+                var f = (InputField.ColumnReferenceField) t.inputFields().get(0);
+                assertThat(f.column().sqlName()).isEqualTo("name");
+                assertThat(f.joinPath()).isEmpty();
+            });
 
         final String sdl;
         final Consumer<GraphitronSchema> assertions;
