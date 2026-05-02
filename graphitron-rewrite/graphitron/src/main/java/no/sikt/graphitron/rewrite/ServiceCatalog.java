@@ -640,8 +640,9 @@ class ServiceCatalog {
             return null;
         }
         return "sources type '" + elementClass.getName() + "' is not backed by a jOOQ TableRecord"
-            + " — free-form DTO sources are not supported until the 'BatchKey lifter directive'"
-            + " feature lands (see roadmap/batchkey-lifter-directive.md)";
+            + " — free-form DTO sources on @service SOURCES parameters are not supported."
+            + " The @batchKeyLifter directive solves the analogous case for child fields on @record"
+            + " parents (not @service SOURCES)";
     }
 
     // ===== Result container =====
