@@ -134,12 +134,39 @@ public final class MultiTablePolymorphicEmitter {
      * connection mode. As of B4b, {@code totalCount} runs a polymorphic
      * {@code SELECT count(*) FROM (UNION ALL) AS pages} via the same UNION-ALL derived table the
      * page query uses (held in a local {@code pagesTable} reference); the resolver remains lazy
-     * on selection. Child connections ({@code ChildField.InterfaceField} + {@code @asConnection})
-     * are B4c.
+     * on selection.
+     *
+     * <p>Root-fetcher form: no parent linkage. For child connections, see the overload taking
+     * {@code participantJoinPaths}.
      */
     public static List<MethodSpec> emitConnectionMethods(
             String fieldName,
             List<ParticipantRef> participants,
+            int defaultPageSize,
+            String outputPackage, String jooqPackage) {
+        return emitConnectionMethods(fieldName, participants, Map.of(), defaultPageSize,
+            outputPackage, jooqPackage);
+    }
+
+    /**
+     * Connection-fetcher overload for child interface/union fields (R36 Track B4c-1). Same shape
+     * as the root form but each stage-1 branch carries a parent-FK {@code WHERE} predicate
+     * derived from the participant's auto-discovered FK back to the parent table, mirroring
+     * B3's child case for the list path. The main fetcher reads {@code parentRecord} from
+     * {@code env.getSource()} when {@code participantJoinPaths} is non-empty.
+     *
+     * <p>Per-parent inline shape: each parent row triggers its own polymorphic UNION-ALL +
+     * pagination. DataLoader-batched windowed CTE form (one query per request) is the B4c-2
+     * follow-up; see {@code stub-interface-union-fetchers.md}.
+     *
+     * @param participantJoinPaths typename-keyed FK chain from the parent table to each
+     *                              {@link ParticipantRef.TableBound} participant. Empty for
+     *                              root-fetcher emission. v1 supports only single-hop FK chains.
+     */
+    public static List<MethodSpec> emitConnectionMethods(
+            String fieldName,
+            List<ParticipantRef> participants,
+            Map<String, List<JoinStep>> participantJoinPaths,
             int defaultPageSize,
             String outputPackage, String jooqPackage) {
         var tableBoundParticipants = participants.stream()
@@ -147,8 +174,8 @@ public final class MultiTablePolymorphicEmitter {
             .map(p -> (ParticipantRef.TableBound) p)
             .toList();
         var methods = new ArrayList<MethodSpec>();
-        methods.add(buildConnectionFetcher(fieldName, tableBoundParticipants, defaultPageSize,
-            outputPackage, jooqPackage));
+        methods.add(buildConnectionFetcher(fieldName, tableBoundParticipants,
+            participantJoinPaths, defaultPageSize, outputPackage, jooqPackage));
         for (var participant : tableBoundParticipants) {
             methods.add(buildPerTypenameSelect(fieldName, participant, true,
                 outputPackage, jooqPackage));
@@ -272,12 +299,19 @@ public final class MultiTablePolymorphicEmitter {
      * (pagesTable, DSL.noCondition())} so the same UNION-ALL derived table backs both the page
      * query and {@code ConnectionHelper.totalCount}'s {@code SELECT count(*)}; the count resolver
      * remains lazy on selection (graphql-java only invokes it when the client picks the field).
-     * Per-branch WHERE predicates (B4c child case, when wired) live inside the union, so the
-     * outer carrier condition is a no-op. The empty-participants defensive path keeps
-     * {@code (null, null)} since there is no derived table to count.
+     * Per-branch WHERE predicates (B4c-1 child case) live inside the union, so the outer carrier
+     * condition is a no-op — totalCount under the child path counts only the rows belonging to
+     * the carrier parent. The empty-participants defensive path keeps {@code (null, null)} since
+     * there is no derived table to count.
+     *
+     * <p>Child fetcher form: when {@code participantJoinPaths} is non-empty, the method opens
+     * with {@code Record parentRecord = (Record) env.getSource();} and each stage-1 branch
+     * carries a {@code .where(<participant>.<fk> = parentRecord.<parent_pk>)} predicate. Per
+     * parent inline; DataLoader-batched windowed CTE form is the B4c-2 follow-up.
      */
     private static MethodSpec buildConnectionFetcher(
             String fieldName, List<ParticipantRef.TableBound> participants,
+            Map<String, List<JoinStep>> participantJoinPaths,
             int defaultPageSize, String outputPackage, String jooqPackage) {
 
         var connectionResultClass = ClassName.get(outputPackage + ".util",
@@ -288,6 +322,7 @@ public final class MultiTablePolymorphicEmitter {
             "ConnectionHelper", "PageRequest");
 
         TypeName valueType = connectionResultClass;
+        boolean isChildFetcher = !participantJoinPaths.isEmpty();
 
         var builder = MethodSpec.methodBuilder(fieldName)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -295,6 +330,9 @@ public final class MultiTablePolymorphicEmitter {
             .addParameter(ENV, "env");
 
         builder.beginControlFlow("try");
+        if (isChildFetcher) {
+            builder.addStatement("$T parentRecord = ($T) env.getSource()", RECORD, RECORD);
+        }
         builder.addStatement("$T dsl = graphitronContext(env).getDslContext(env)", DSL_CONTEXT);
 
         if (participants.isEmpty()) {
@@ -350,7 +388,10 @@ public final class MultiTablePolymorphicEmitter {
             pageRequestClass, connectionHelperClass, defaultPageSize, LIST);
 
         // Stage 1: UNION ALL of branches as derived table; outer SELECT applies .orderBy/.seek/.limit.
-        builder.addCode(buildStage1ConnectionBlock(participants, jooqPackage, pkColumnClass));
+        // For child connections (B4c-1), each branch additionally carries a parent-FK WHERE
+        // predicate so the union restricts to rows matching the carrier parentRecord's PK.
+        builder.addCode(buildStage1ConnectionBlock(participants, participantJoinPaths,
+            jooqPackage, pkColumnClass));
 
         // Stage 1.5: group stage-1 rows by __typename into (idx, pks) bindings.
         // For B4a single-PK participants, the binding tuple has a single PK slot.
@@ -406,12 +447,18 @@ public final class MultiTablePolymorphicEmitter {
      * <p>Materialising the derived table as a local lets the connection fetcher pass the
      * <em>same</em> {@code Table<?>} reference into {@code ConnectionResult} so
      * {@code ConnectionHelper.totalCount} can issue {@code SELECT count(*) FROM pagesTable}
-     * lazily on selection (B4b). Per-branch WHERE predicates (B4c child case, when wired)
-     * sit inside each branch, so the outer count needs no additional condition; the fetcher
-     * binds {@code DSL.noCondition()} as the carrier condition.
+     * lazily on selection (B4b). Per-branch WHERE predicates (B4c-1 child case) sit inside
+     * each branch, so the outer count needs no additional condition; the fetcher binds
+     * {@code DSL.noCondition()} as the carrier condition.
+     *
+     * <p>When {@code participantJoinPaths} is non-empty (child connection), each branch's
+     * inner SELECT carries a {@code .where(<participant>.<fk> = parentRecord.<parent_pk>)}
+     * predicate restricting the union to rows belonging to the carrier parent.
      */
     private static CodeBlock buildStage1ConnectionBlock(
-            List<ParticipantRef.TableBound> participants, String jooqPackage, ClassName pkColumnClass) {
+            List<ParticipantRef.TableBound> participants,
+            Map<String, List<JoinStep>> participantJoinPaths,
+            String jooqPackage, ClassName pkColumnClass) {
         var b = CodeBlock.builder();
         var tablesClass = ClassName.get(jooqPackage, "Tables");
 
@@ -426,12 +473,21 @@ public final class MultiTablePolymorphicEmitter {
         for (int p = 0; p < participants.size(); p++) {
             var participant = participants.get(p);
             String alias = "stage1_" + participant.typeName();
+            CodeBlock branchWhere = branchParentFkWhere(participant, participantJoinPaths);
             if (p == 0) {
                 b.add("    dsl.select($L)\n", branchProjection(participant, alias));
                 b.add("        .from($L)\n", alias);
+                if (branchWhere != null) {
+                    b.add("        .where($L)\n", branchWhere);
+                }
             } else {
                 b.add("    .unionAll(dsl.select($L)\n", branchProjection(participant, alias));
-                b.add("        .from($L))\n", alias);
+                if (branchWhere != null) {
+                    b.add("        .from($L)\n", alias);
+                    b.add("        .where($L))\n", branchWhere);
+                } else {
+                    b.add("        .from($L))\n", alias);
+                }
             }
         }
         b.add("    .asTable($S);\n", CONNECTION_PAGES_ALIAS);

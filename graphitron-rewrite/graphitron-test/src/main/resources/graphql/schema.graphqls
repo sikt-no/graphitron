@@ -203,6 +203,11 @@ type Address implements Node @table(name: "address") @node {
     # parent-FK condition auto-discovers cleanly. Each row in the result is the linked
     # customer or staff row whose address_id matches the parent Address record.
     occupants:  [AddressOccupant!]!
+    # Track B4c-1 fixture: ChildField.UnionField + @asConnection. Same auto-discovered FK
+    # paths as Address.occupants; the connection-mode emitter wraps the per-branch UNION ALL
+    # in a derived table so .seek/.limit + cursor pagination apply across the union, and
+    # totalCount counts only this parent's occupants.
+    occupantsConnection: [AddressOccupant!]! @asConnection(defaultFirstValue: 5)
 }
 
 # Track B3 union fixture: heterogeneous-table polymorphic child field. Each member's table

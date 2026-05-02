@@ -1750,4 +1750,104 @@ class TypeFetcherGeneratorTest {
         assertThat(TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS)
             .doesNotContainKeys(ChildField.InterfaceField.class, ChildField.UnionField.class);
     }
+
+    // ===== R36 Track B4c-1: child-case connection pagination on ChildField.InterfaceField / UnionField =====
+    //
+    // Combines B3's per-branch parent-FK WHERE with B4a/B4b's connection-mode emission. Each
+    // parent invocation runs its own polymorphic UNION ALL with .seek/.limit and a totalCount
+    // bound to the same pagesTable derived table; the count therefore returns only this
+    // parent's occupants. DataLoader-batched windowed CTE form is the B4c-2 follow-up.
+
+    private static ChildField.InterfaceField childInterfaceConnectionField(
+            String parentType, String name, int defaultPageSize) {
+        var wrapper = new FieldWrapper.Connection(false, defaultPageSize);
+        var returnType = new ReturnTypeRef.PolymorphicReturnType("FilmOrActor", wrapper);
+        var participants = List.<ParticipantRef>of(
+            new ParticipantRef.TableBound("Film", filmTableWithPk(), null),
+            new ParticipantRef.TableBound("Actor",
+                new TableRef("actor", "ACTOR", "Actor",
+                    List.of(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer"))),
+                null));
+        return new ChildField.InterfaceField(parentType, name, null,
+            returnType, participants, filmActorChildJoinPaths());
+    }
+
+    private static ChildField.UnionField childUnionConnectionField(
+            String parentType, String name, int defaultPageSize) {
+        var wrapper = new FieldWrapper.Connection(false, defaultPageSize);
+        var returnType = new ReturnTypeRef.PolymorphicReturnType("FilmOrActor", wrapper);
+        var participants = List.<ParticipantRef>of(
+            new ParticipantRef.TableBound("Film", filmTableWithPk(), null),
+            new ParticipantRef.TableBound("Actor",
+                new TableRef("actor", "ACTOR", "Actor",
+                    List.of(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer"))),
+                null));
+        return new ChildField.UnionField(parentType, name, null,
+            returnType, participants, filmActorChildJoinPaths());
+    }
+
+    @Test
+    void childInterfaceField_connection_emitsParentRecordReadFromEnvSource() {
+        // B4c-1: child connection fetcher reads parentRecord from env.getSource() so each
+        // stage-1 branch can scope its WHERE to the carrier parent's PK.
+        var field = childInterfaceConnectionField("FilmActor", "relatedConnection", 5);
+        var spec = TypeFetcherGenerator.generateTypeSpec("FilmActor",
+            new TableRef("film_actor", "FILM_ACTOR", "FilmActor", List.of()),
+            null, List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+        var body = method(spec, "relatedConnection").code().toString();
+        assertThat(body).contains("parentRecord = (org.jooq.Record) env.getSource()");
+    }
+
+    @Test
+    void childInterfaceField_connection_appliesParentFkWherePerBranch() {
+        // Each branch of the UNION ALL carries .where(<participant>.<fk> =
+        // parentRecord.get(DSL.name("<parent_pk>"), <Type>.class)). Both branches must scope
+        // independently — without per-branch WHERE the union would return cross-product noise.
+        var field = childInterfaceConnectionField("FilmActor", "relatedConnection", 5);
+        var spec = TypeFetcherGenerator.generateTypeSpec("FilmActor",
+            new TableRef("film_actor", "FILM_ACTOR", "FilmActor", List.of()),
+            null, List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+        var body = method(spec, "relatedConnection").code().toString();
+        assertThat(body)
+            .as("Film branch's WHERE references parentRecord film_id read")
+            .contains("stage1_Film.FILM_ID.eq(parentRecord.get(org.jooq.impl.DSL.name(\"film_id\"), java.lang.Integer.class))");
+        assertThat(body)
+            .as("Actor branch's WHERE references parentRecord actor_id read")
+            .contains("stage1_Actor.ACTOR_ID.eq(parentRecord.get(org.jooq.impl.DSL.name(\"actor_id\"), java.lang.Integer.class))");
+    }
+
+    @Test
+    void childInterfaceField_connection_inheritsConnectionScaffolding() {
+        // The child connection path reuses the B4a/B4b scaffolding: pagesTable derived table,
+        // ConnectionHelper.pageRequest, .seek/.limit, ConnectionResult carrier with the
+        // pagesTable and DSL.noCondition() so totalCount runs over the parent-scoped union.
+        var field = childInterfaceConnectionField("FilmActor", "relatedConnection", 5);
+        var spec = TypeFetcherGenerator.generateTypeSpec("FilmActor",
+            new TableRef("film_actor", "FILM_ACTOR", "FilmActor", List.of()),
+            null, List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+        var body = method(spec, "relatedConnection").code().toString();
+        assertThat(body)
+            .contains("ConnectionHelper.pageRequest(first, last, after, before, 5,")
+            .contains("Table<?> pagesTable")
+            .contains(".asTable(\"pages\")")
+            .contains(".from(pagesTable)")
+            .contains(".seek(page.seekFields())")
+            .contains(".limit(page.limit())")
+            .contains(".util.ConnectionResult(payload, page, pagesTable, org.jooq.impl.DSL.noCondition())");
+    }
+
+    @Test
+    void childUnionField_connection_emitsSameShapeAsChildInterface() {
+        // Union variant parity: same emitter, same body shape under the connection path.
+        var field = childUnionConnectionField("FilmActor", "relatedConnection", 5);
+        var spec = TypeFetcherGenerator.generateTypeSpec("FilmActor",
+            new TableRef("film_actor", "FILM_ACTOR", "FilmActor", List.of()),
+            null, List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+        var body = method(spec, "relatedConnection").code().toString();
+        assertThat(body)
+            .contains("parentRecord = (org.jooq.Record) env.getSource()")
+            .contains("stage1_Film.FILM_ID.eq(parentRecord.get(org.jooq.impl.DSL.name(\"film_id\"), java.lang.Integer.class))")
+            .contains(".asTable(\"pages\")")
+            .contains(".util.ConnectionResult(payload, page, pagesTable, org.jooq.impl.DSL.noCondition())");
+    }
 }
