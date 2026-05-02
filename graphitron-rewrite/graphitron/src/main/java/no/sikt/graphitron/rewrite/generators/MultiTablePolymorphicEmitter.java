@@ -702,12 +702,15 @@ public final class MultiTablePolymorphicEmitter {
             no.sikt.graphitron.rewrite.generators.util.ConnectionResultClassGenerator.CLASS_NAME);
         TypeName valueType = connectionResultClass;
 
+        // Single-column parent PK enforced upstream by
+        // GraphitronSchemaValidator.validateChildConnectionParentPk; reaching the emitter with
+        // multi-column parent PK is a validator bug. Defensive check stays as a tripwire.
         var pkCols = parentTable.primaryKeyColumns();
         if (pkCols.size() != 1) {
             throw new IllegalStateException(
-                "B4c-2 batched child connection requires a single-column parent PK; got arity "
-                + pkCols.size() + " for parent table '" + parentTable.tableName() + "'. "
-                + "Multi-column parent PK widens to RowN as a follow-up.");
+                "B4c-2 batched child connection reached emitter with parent PK arity " + pkCols.size()
+                + " for table '" + parentTable.tableName() + "'; "
+                + "validateChildConnectionParentPk should have rejected this");
         }
         ColumnRef parentPk0 = pkCols.get(0);
         ClassName parentPkClass = ClassName.bestGuess(parentPk0.columnClass());
