@@ -83,11 +83,16 @@ Three concrete consequences on trunk today:
 
 `InvalidSchema` is the smallest of the three: today the messages embed
 directive *names* as bare strings ("`@asConnection` on inline (non-`@splitQuery`)
-TableField is not supported"); the natural carriers are directive identifiers
-the schema author types into the SDL, lifted to the same `DirectiveRef` /
-`DirectiveName` value shape `BuildContext` uses internally for directive
-lookup. This is the lowest-leverage of the three lifts but is in scope because
-it falls out of the same sealed-hierarchy refactor.
+TableField is not supported"). A future lift could carry directive identifiers
+as a typed value type the same way `BuildContext` does internally for directive
+lookup, but that is heavy machinery for a minority arm with no current
+downstream consumer demanding typed identifiers; keeping the directive list as
+`List<String>` for now and lifting to a typed identifier in a follow-up if LSP
+fix-its or watch-mode tooling need it is the right cardinality. The structural
+benefit of `InvalidSchema` as a sealed sub-hierarchy still applies (typed
+`DirectiveConflict` vs `Structural` arms), it's just that the directive
+identifiers themselves stay as strings until there's a consumer for the typed
+shape.
 
 ### Relationship to R3 (classification-vocabulary follow-ups)
 
@@ -213,15 +218,20 @@ public sealed interface Rejection {
         /**
          * Two or more directives co-occur on the same declaration in a
          * combination the classifier rejects, or one directive is rejected
-         * because of where it appears. {@code directives} names the bare
-         * identifiers (not the prose forms); {@code reason} renders with
-         * the {@code @}-prefixed forms via {@link DirectiveName#toString}.
+         * because of where it appears. {@code directives} carries the bare
+         * directive names (no leading {@code @}) the rendered message
+         * re-prefixes; the names are stored as {@code String} for now,
+         * because no consumer downstream of this hierarchy distinguishes
+         * directive identifiers from arbitrary prose tokens. If LSP fix-its
+         * or watch-mode tooling later demand a typed directive identifier,
+         * the field type lifts to a value record in a follow-up; the arm's
+         * shape is otherwise stable.
          */
         record DirectiveConflict(
-            List<DirectiveName> directives,
+            List<String> directives,
             String reason
         ) implements InvalidSchema {
-            @Override public String message() { /* renders reason with @directive identifiers */ }
+            @Override public String message() { /* renders reason; directives carried for downstream tooling */ }
         }
 
         /** Structural-rule majority: ~20 sites; just prose. */
@@ -254,31 +264,32 @@ public sealed interface Rejection {
     }
 
     /**
-     * Stable identifier for a deferred-stub site. Either a variant class
-     * (the {@code NOT_IMPLEMENTED_REASONS} key form) or an inline-deferred
-     * site keyed by a SemanticKey naming the shape that triggered the defer
-     * (e.g. {@code SINGLE_CARDINALITY_MULTI_HOP_SPLIT}). Both forms surface
-     * with the same plan-slug rendering; the variant-class form stays
-     * compatible with today's validator gate.
+     * Stable identifier for a deferred-stub site. Two arms: a variant-class
+     * key (the {@code NOT_IMPLEMENTED_REASONS} key form, used when the
+     * generator stubs an entire variant class) and an emit-block key (a
+     * typed enum, used when a variant classifies cleanly but a particular
+     * shape inside the emitter doesn't yet emit). Both forms surface with
+     * the same plan-slug rendering; the variant-class form stays compatible
+     * with today's validator gate.
      */
     sealed interface StubKey {
         record VariantClass(Class<? extends GraphitronField> fieldClass) implements StubKey {}
-        record SemanticKey(String key) implements StubKey {}
+        record EmitBlock(EmitBlockReason reason) implements StubKey {}
     }
 
     /**
-     * A directive identifier as the schema author types it (with leading {@code @}
-     * stripped on storage). Sibling shape to the SDL-side identifiers
-     * {@code BuildContext} reads when it walks {@code field.getDirective(name)}.
-     * Stored as a value type rather than a {@code String} so consumers cannot
-     * confuse it with prose.
+     * Closed set of intra-emitter "this shape can't emit yet" reasons. One
+     * value per {@code SplitRowsMethodEmitter.unsupportedReason} arm today;
+     * a new value lands when a new emit-block predicate is introduced. Pure
+     * enum form rather than {@code String}-tagged record because the set is
+     * closed and small, and a typo on a new value should be a compile error,
+     * not a free-form string drifting from the rendered prose.
      */
-    record DirectiveName(String name) {
-        public DirectiveName {
-            if (name.startsWith("@")) throw new IllegalArgumentException(
-                "DirectiveName stores the bare identifier; strip the leading '@' at the call site");
-        }
-        @Override public String toString() { return "@" + name; }
+    enum EmitBlockReason {
+        SPLIT_TABLE_FIELD_CONDITION_JOIN_STEP,
+        SPLIT_LOOKUP_TABLE_FIELD_CONDITION_JOIN_STEP,
+        RECORD_TABLE_FIELD_CONDITION_JOIN_STEP,
+        RECORD_LOOKUP_TABLE_FIELD_CONDITION_JOIN_STEP
     }
 }
 ```
@@ -364,27 +375,33 @@ classifier's).
 
 ### Resolver-side `Resolved.Rejected` carries `Rejection`
 
-The eleven rejection-producing resolvers each declare a
-`Resolved.Rejected(RejectionKind kind, String message)` arm (or a `String message` arm
-projected to `AUTHOR_ERROR` at the boundary):
+Trunk has thirteen `*Resolver.java` files
+(`ls graphitron/.../*Resolver.java | wc -l`); ten produce rejection arms and
+three are total projections. Together with `FieldBuilder`'s internal
+`TableFieldComponents.Rejected`, that's eleven rejection-producing types in
+total. Each declares either a `Resolved.Rejected(RejectionKind kind, String message)`
+arm or a sibling result type with a rejection arm projected to `AUTHOR_ERROR`
+at the boundary:
 
 - `ServiceDirectiveResolver`, `TableMethodDirectiveResolver`,
   `ExternalFieldDirectiveResolver`, `LookupKeyDirectiveResolver`
-  (directive resolvers).
-- `OrderByResolver`, `EnumMappingResolver`, `ConditionResolver`,
-  `MutationInputResolver` (projection resolvers; `ConditionResolver`
-  has two sealed result types, both with their own Rejected arm).
+  (directive resolvers; each has a `Resolved.Rejected(RejectionKind, String)`).
+- `OrderByResolver`, `ConditionResolver`,
+  `MutationInputResolver` (projection resolvers; `ConditionResolver` has two
+  sealed result types, both with their own Rejected arm).
+- `EnumMappingResolver` (sibling shape: returns sealed `EnumValidation` with
+  arms `NotEnum` / `Valid` / `Mismatch`; the lift target is `Mismatch`, which
+  becomes `Mismatch(Rejection)` so the caller threads typed rejections out
+  rather than re-wrapping a prose string).
 - `BatchKeyLifterDirectiveResolver` (R1's resolver, sibling to the R6 set).
 - `NodeIdLeafResolver` (R40-introduced sibling, sealed `Resolved.Rejected(String message)`
   with six construction sites; the consumer in `FieldBuilder` projects it to
   `AUTHOR_ERROR` at the boundary).
 - `FieldBuilder`'s internal `TableFieldComponents.Rejected` (six sites
-  consume it).
+  consume it; not a resolver but the same boundary).
 
 `InputFieldResolver`, `LookupMappingResolver`, and `PaginationResolver` are total
-projections with no `Resolved.Rejected` arm and stay as-is. The thirteen-resolver
-roster on trunk (`ls graphitron/.../*Resolver.java | wc -l`) breaks down as eleven
-rejection-producing + three pure-success.
+projections with no rejection arm and stay as-is.
 
 Every consumer in `FieldBuilder` reads `r.kind()` and `r.message()` and
 rebuilds an `UnclassifiedField` with those two fields. The rebuild is
@@ -415,12 +432,15 @@ candidate list would survive only at sites where FieldBuilder constructs the
 rejection itself. With the lift, a candidate list constructed inside any
 resolver flows out through the same untyped channel.
 
-`MutationInputResolver`'s `DmlKindResult.Unknown(String typeName, String message)`
-is the same pattern with one extra component (the unknown raw `typeName`); its
-`message` field becomes a `Rejection.AuthorError.UnknownName` carrying
-`(typeName, dmlKindCandidates)` — the existing 8+ string-equality comparisons
-the R6 review-driven tightening lifted to a `DmlKind` enum already produce a
-clean candidate list, but it currently gets stringified.
+`MutationInputResolver`'s `DmlKindResult.Unknown(String raw)` (single
+component on trunk; `MutationInputResolver.java:110`) carries the raw
+`typeName` argument and lets the caller stamp the rejection prose. The lift
+extends the arm to `Unknown(String raw, List<String> candidates)` (or
+equivalent factory call producing the rejection at construction); the caller
+threads it into a `Rejection.AuthorError.UnknownName(summary, AttemptKind.DML_KIND,
+raw, candidates)`. The candidate list comes from the `DmlKind` enum the R6
+review-driven tightening introduced; it's already a clean closed set, but
+gets stringified at the call site today.
 
 ### Construction ergonomics
 
@@ -492,22 +512,38 @@ need no adaptation.
 
 ---
 
-## Phase A — Sealed `Rejection` plumbing, `UnclassifiedField` lift, drop `INTERNAL_INVARIANT`
+## Phase 0 — Drop `INTERNAL_INVARIANT` (prep PR, ~5-line diff)
 
-Single-PR scope. The `INTERNAL_INVARIANT` removal lands in this phase
-because there is exactly one site producing it today and keeping the enum
-value alive across phases creates a transitional state where the
-sealed-rejection switch can't be exhaustive against a value that no longer
-maps to any `Rejection` arm.
+Standalone, lands ahead of Phase A. The `INTERNAL_INVARIANT` removal is
+independent of the rest of the lift: one producer site (`FieldBuilder.java:482`),
+one enum value (`RejectionKind.INTERNAL_INVARIANT`), zero test references
+(verified by `grep -r internal-invariant graphitron-rewrite/graphitron/src/test`).
+Landing it as a tiny prep PR removes one moving piece from the Phase A
+migration without cost, and it self-documents as the small "this branch is
+unreachable, throw" change separate from the structural lift.
 
-- Add `Rejection.java` (top-level sealed + sub-sealed `AuthorError` and
-  `InvalidSchema` + `Deferred` + `DirectiveName` + `StubKey`).
 - Replace the single `INTERNAL_INVARIANT` site
   ([`FieldBuilder.java:482`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java))
   with an `AssertionError` (see "`INTERNAL_INVARIANT` site becomes an
   `AssertionError`" above).
 - Drop `INTERNAL_INVARIANT` from `RejectionKind` (the enum is now a closed
-  three-value projection of `Rejection`).
+  three-value set; the projection-from-`Rejection` form lands in Phase A).
+
+If the implementer prefers to keep the lift atomic, this work folds into
+Phase A unchanged — the rationale below for keeping it together still holds,
+the prep PR is just a smaller alternative.
+
+---
+
+## Phase A — Sealed `Rejection` plumbing, `UnclassifiedField` lift
+
+Single-PR scope. Builds on Phase 0's three-value `RejectionKind`; if Phase 0
+landed separately, the sealed-rejection switch is exhaustive on day one.
+If Phase 0 was folded into this phase, the bullet list adds the two prep
+items at the top.
+
+- Add `Rejection.java` (top-level sealed + sub-sealed `AuthorError` and
+  `InvalidSchema` + `Deferred` + `StubKey` + `EmitBlockReason`).
 - Migrate `UnclassifiedField` to carry `Rejection` instead of `(kind, reason)`.
 - Migrate every resolver's `Resolved.Rejected(RejectionKind, String)` to
   `Resolved.Rejected(Rejection)` — see "Resolver-side `Resolved.Rejected`
@@ -621,11 +657,14 @@ The lift:
 3. The `unsupportedReason` predicates on `SplitRowsMethodEmitter` (called from
    `validateVariantIsImplemented` for the four split / record-split variants)
    shift their return type from `Optional<String>` to
-   `Optional<Rejection.Deferred>`. The `SemanticKey` form of `StubKey` lands
-   here: each `unsupportedReason` arm produces a `Deferred` with a stable key
-   like `SPLIT_TABLE_FIELD_SINGLE_CARDINALITY_MULTI_HOP` so a downstream
-   consumer can distinguish "field is a stubbed leaf class" from "field is
-   an emittable leaf class but this particular shape doesn't emit".
+   `Optional<Rejection.Deferred>`. The `EmitBlock` form of `StubKey` lands
+   here: each `unsupportedReason` arm produces a `Deferred` keyed by an
+   `EmitBlockReason` enum value (one per arm today, all on the
+   condition-join-step shape) so a downstream consumer can distinguish
+   "field is a stubbed leaf class" from "field is an emittable leaf class
+   but this particular shape doesn't emit". The enum's closed value set
+   makes "add a new emit-block predicate" a typed addition rather than a
+   free-form string drift.
 
 Net effect: the validator has one path for "deferred", whether the source is
 the stubbed-variant map, the inline-deferred classifier site, or the
@@ -663,7 +702,6 @@ Cross-cutting checks (`validatePaginationRequiresOrdering`,
   invariant against a captured snapshot of trunk's prose).
 - `RejectionKindProjectionTest`: `RejectionKind.of(Rejection)` is total over
   the sealed permits.
-- `DirectiveNameTest`: `@`-stripping invariant + `toString()` re-prefixes.
 
 ### Adapted existing tests
 
@@ -771,15 +809,17 @@ Cross-cutting checks (`validatePaginationRequiresOrdering`,
 
 ## Phasing summary
 
-Default landing order is A → B → C, single PR per phase. A is the
-structural lift, the resolver-side `Resolved.Rejected` lift, and the
-`INTERNAL_INVARIANT` removal (kept together because they share the
-`RejectionKind` enum's value-set transition); B is the mechanical
-`UnclassifiedType` mirror; C is the `STUBBED_VARIANTS` rename and
+Default landing order is 0 → A → B → C, single PR per phase. Phase 0 is the
+~5-line `INTERNAL_INVARIANT` removal (independent of the rest, lands first
+to shrink Phase A's review surface). Phase A is the structural lift and the
+resolver-side `Resolved.Rejected` lift; Phase B is the mechanical
+`UnclassifiedType` mirror; Phase C is the `STUBBED_VARIANTS` rename and
 validator-gate consolidation. Each phase compiles cleanly on its own and
 leaves the validator's external contract unchanged.
 
-A and B can collapse into one PR if the diff size allows; A by itself is
+Phase 0 can fold into Phase A if the implementer prefers atomicity; the
+removal is independent of the rest of A, but bundling it costs nothing. A
+and B can collapse into one PR if the diff size allows; A by itself is
 roughly 76 + 70 = ~150 mechanical site updates plus the new types, and B
 adds another ~24, so the combined diff likely sits well over 1000 lines.
 Two PRs is the default. C warrants its own PR: it touches the generator's
