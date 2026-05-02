@@ -1195,12 +1195,9 @@ class FieldBuilder {
             }
         }
 
-        var paramShapes = new java.util.ArrayList<ErrorChannel.PayloadConstructorParam>(parameters.length);
         int errorsSlotIndex = -1;
         for (int i = 0; i < parameters.length; i++) {
-            var p = parameters[i];
-            boolean isErrorsSlot = isErrorsListSlot(p.getType(), genericParameterTypes[i], mappedErrorClasses);
-            if (isErrorsSlot) {
+            if (isErrorsListSlot(parameters[i].getType(), genericParameterTypes[i], mappedErrorClasses)) {
                 if (errorsSlotIndex >= 0) {
                     return new ErrorChannelResult.Reject(
                         "payload class '" + result.fqClassName()
@@ -1211,12 +1208,6 @@ class FieldBuilder {
                 }
                 errorsSlotIndex = i;
             }
-            String paramName = p.isNamePresent() ? p.getName() : ("arg" + i);
-            no.sikt.graphitron.javapoet.TypeName paramTypeName =
-                no.sikt.graphitron.javapoet.TypeName.get(genericParameterTypes[i]);
-            String defaultLiteral = isErrorsSlot ? null : defaultLiteralFor(p.getType());
-            paramShapes.add(new ErrorChannel.PayloadConstructorParam(
-                paramName, paramTypeName, isErrorsSlot, defaultLiteral));
         }
         if (errorsSlotIndex < 0) {
             return new ErrorChannelResult.Reject(
@@ -1226,10 +1217,12 @@ class FieldBuilder {
                     + "whose element type is a supertype of every @error class) is required");
         }
 
+        var defaultedSlots = collectDefaultedSlots(parameters, genericParameterTypes, errorsSlotIndex);
+
         var payloadClassName = ClassName.bestGuess(result.fqClassName());
         String mappingsConstantName = toScreamingSnake(payloadCls.getSimpleName());
         return new ErrorChannelResult.Channel(new ErrorChannel(
-            mappedErrorTypes, payloadClassName, paramShapes, mappingsConstantName));
+            mappedErrorTypes, payloadClassName, errorsSlotIndex, defaultedSlots, mappingsConstantName));
     }
 
     // ===== Carrier classifier: DML PayloadAssembly resolution (R12 DML chunk) =====
@@ -1270,9 +1263,8 @@ class FieldBuilder {
      * <p>Symmetric with {@link #resolveErrorChannel}: the two reflect on the same payload class
      * for the same kind of return type, but resolve different concerns. Both run from
      * {@link #buildDmlField} so a misconfigured payload surfaces on its own terms regardless of
-     * which side caught it first. The duplication of the per-parameter shape walk between the
-     * two methods is intentional; the two share the same {@link ErrorChannel.PayloadConstructorParam}
-     * type but each owns its copy of the list.
+     * which side caught it first. They share the {@link #collectDefaultedSlots} helper for
+     * capturing per-non-bound-slot defaults; each owns its bound-slot index resolution.
      */
     private DmlPayloadAssemblyResult resolveDmlPayloadAssembly(
             ReturnTypeRef returnType, String dmlTableSqlName, List<ErrorType> mappedErrorTypes) {
@@ -1330,13 +1322,11 @@ class FieldBuilder {
             }
         }
 
-        var paramShapes = new java.util.ArrayList<ErrorChannel.PayloadConstructorParam>(parameters.length);
         int rowSlotIndex = -1;
         for (int i = 0; i < parameters.length; i++) {
             var p = parameters[i];
             boolean isErrorsSlot = isErrorsListSlot(p.getType(), genericParameterTypes[i], mappedErrorClasses);
-            boolean isRowSlot = !isErrorsSlot && p.getType().equals(tableRecordClass);
-            if (isRowSlot) {
+            if (!isErrorsSlot && p.getType().equals(tableRecordClass)) {
                 if (rowSlotIndex >= 0) {
                     return new DmlPayloadAssemblyResult.Reject(
                         "payload class '" + result.fqClassName()
@@ -1346,12 +1336,6 @@ class FieldBuilder {
                 }
                 rowSlotIndex = i;
             }
-            String paramName = p.isNamePresent() ? p.getName() : ("arg" + i);
-            no.sikt.graphitron.javapoet.TypeName paramTypeName =
-                no.sikt.graphitron.javapoet.TypeName.get(genericParameterTypes[i]);
-            String defaultLiteral = isErrorsSlot ? null : defaultLiteralFor(p.getType());
-            paramShapes.add(new ErrorChannel.PayloadConstructorParam(
-                paramName, paramTypeName, isErrorsSlot, defaultLiteral));
         }
         if (rowSlotIndex < 0) {
             return new DmlPayloadAssemblyResult.Reject(
@@ -1361,9 +1345,11 @@ class FieldBuilder {
                     + "' requires exactly one row-slot parameter assignable from this record class");
         }
 
+        var defaultedSlots = collectDefaultedSlots(parameters, genericParameterTypes, rowSlotIndex);
         var payloadClassName = ClassName.bestGuess(result.fqClassName());
+        var rowSlotType = no.sikt.graphitron.javapoet.TypeName.get(genericParameterTypes[rowSlotIndex]);
         return new DmlPayloadAssemblyResult.Assembly(new PayloadAssembly(
-            payloadClassName, paramShapes, rowSlotIndex));
+            payloadClassName, rowSlotIndex, rowSlotType, defaultedSlots));
     }
 
     /**
@@ -1608,6 +1594,30 @@ class FieldBuilder {
             return pt.getRawType() instanceof Class<?> raw ? raw : null;
         }
         return null;
+    }
+
+    /**
+     * Builds the {@link no.sikt.graphitron.rewrite.model.DefaultedSlot} list for every
+     * constructor parameter except the bound slot at {@code boundSlotIndex}. Used by both
+     * {@link #resolveErrorChannel} (errors slot) and {@link #resolveDmlPayloadAssembly} (row
+     * slot) to capture per-non-bound-slot default literals from one reflection pass.
+     */
+    private static List<no.sikt.graphitron.rewrite.model.DefaultedSlot> collectDefaultedSlots(
+            java.lang.reflect.Parameter[] parameters,
+            java.lang.reflect.Type[] genericParameterTypes,
+            int boundSlotIndex) {
+        var slots = new java.util.ArrayList<no.sikt.graphitron.rewrite.model.DefaultedSlot>(
+            parameters.length - 1);
+        for (int i = 0; i < parameters.length; i++) {
+            if (i == boundSlotIndex) continue;
+            var p = parameters[i];
+            String paramName = p.isNamePresent() ? p.getName() : ("arg" + i);
+            no.sikt.graphitron.javapoet.TypeName paramTypeName =
+                no.sikt.graphitron.javapoet.TypeName.get(genericParameterTypes[i]);
+            slots.add(new no.sikt.graphitron.rewrite.model.DefaultedSlot(
+                i, paramName, paramTypeName, defaultLiteralFor(p.getType())));
+        }
+        return slots;
     }
 
     /** Language-default literal for a non-errors constructor parameter slot. */
