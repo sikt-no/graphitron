@@ -20,6 +20,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R3` | Classification vocabulary follow-ups | Spec | [plan](classification-vocabulary-followups.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
 | `R58` | Lift `UnclassifiedField` / `UnclassifiedType` onto sealed-result shape | Ready | [plan](lift-unclassified-field-onto-sealed-result.md) |
+| `R59` | Sharpen author-error messages with concrete remediations | In Review | [plan](sharpen-author-error-messages.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec | [plan](nestingfield-multiparent-tablefield.md) |
 | `R13` | Faceted search on `@asConnection` | Spec | [plan](faceted-search.md) |
 | `R12` | Error-handling parity: emit per-fetcher error channels from `@error` <sub>blocked by: [mutations](mutations.md)</sub> | In Progress | [plan](error-handling-parity.md) |
@@ -71,7 +72,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 ### Validation
 
 - `R39` [**Validate that list fields on tables without a PK require explicit ordering**](validate-list-fields-require-ordering.md): `FieldBuilder.resolveDefaultOrderSpec()` falls back to `OrderBySpec.Fixed([pk ASC])` when a list field has no `@defaultOrder` or `@orderBy` and the table has a PK. For tables without a PK, it returns `OrderBySpec.None` instead, which the generators faithfully emit as an empty `List.of()` — no `ORDER BY` clause. The result is a non-deterministic list every time the query runs.
-- `R59` [**Sharpen author-error messages with concrete remediations**](sharpen-author-error-messages.md): Several validator rejection messages name the offending construct accurately but stop short of telling the author how to fix it. Examples seen in the wild on a downstream subgraph:
 
 
 ---
@@ -131,7 +131,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R15` [**Sweep doc drift between rewrite docs and `model/` taxonomy**](fix-legacy-refs-in-rewrite-docs.md) — Spec, cleanup, blocked by [docs-site-asciidoc](docs-site-asciidoc.md)
 - `R3` [**Classification vocabulary follow-ups**](classification-vocabulary-followups.md) — Spec
-- `R59` [**Sharpen author-error messages with concrete remediations**](sharpen-author-error-messages.md) — Backlog, validation
+- `R59` [**Sharpen author-error messages with concrete remediations**](sharpen-author-error-messages.md) — In Review, validation
 - `R17` [**Annotated walkthrough of a generated file**](generated-output-walkthrough.md) — Backlog, cleanup, blocked by [docs-site-asciidoc](docs-site-asciidoc.md)
 - `R35` [**Class-level Javadoc and `package-info.java` sweep**](source-orientation-javadocs.md) — Backlog, cleanup
 - `R8` [**Docs as an index into classification tests**](docs-as-index-into-tests.md) — Ready
