@@ -829,6 +829,13 @@ class BuildContext {
      * <p>{@code expandingTypes} guards against circular plain-input nesting; callers start
      * with an empty set.
      */
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "nodeid-fk.direct-fk-keys-match",
+        reliesOn = "The @nodeId FK-target arms construct InputField.ColumnReferenceField /"
+            + " CompositeColumnReferenceField only on NodeIdLeafResolver.Resolved.FkTarget.DirectFk."
+            + " The TranslatedFk arm routes to InputFieldResolution.Unresolved with a deferred-emission"
+            + " hint so emitter consumers (walkInputFieldConditions → implicit body params) never see"
+            + " a JOIN-with-translation shape they cannot bind directly.")
     InputFieldResolution classifyInputField(
             GraphQLInputObjectField field, String parentTypeName, TableRef resolvedTable,
             Set<String> expandingTypes, List<String> errors) {
@@ -937,18 +944,21 @@ class BuildContext {
                         parentTypeName, name, locationOf(field), typeName, nonNull, /* list= */ true,
                         st.keyColumns(), cond, extraction));
                 }
-                case NodeIdLeafResolver.Resolved.FkTarget ft -> {
+                case NodeIdLeafResolver.Resolved.FkTarget.DirectFk direct -> {
                     Optional<ArgConditionRef> cond = buildInputFieldCondition(field, name, errors);
-                    var extraction = new no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement(ft.decodeMethod());
-                    if (ft.keyColumns().size() == 1) {
+                    var extraction = new no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement(direct.decodeMethod());
+                    if (direct.keyColumns().size() == 1) {
                         return new InputFieldResolution.Resolved(new InputField.ColumnReferenceField(
                             parentTypeName, name, locationOf(field), typeName, nonNull, list,
-                            ft.keyColumns().get(0), ft.joinPath(), cond, extraction));
+                            direct.keyColumns().get(0), direct.joinPath(), cond, extraction));
                     }
                     return new InputFieldResolution.Resolved(new InputField.CompositeColumnReferenceField(
                         parentTypeName, name, locationOf(field), typeName, nonNull, list,
-                        ft.keyColumns(), ft.joinPath(), cond, extraction));
+                        direct.keyColumns(), direct.joinPath(), cond, extraction));
                 }
+                case NodeIdLeafResolver.Resolved.FkTarget.TranslatedFk translated ->
+                    { return new InputFieldResolution.Unresolved(name, null,
+                        FieldBuilder.translatedFkRejectionReason(translated.refTypeName(), resolvedTable.tableName())); }
             }
         }
         if (field.hasAppliedDirective(DIR_REFERENCE)) {
