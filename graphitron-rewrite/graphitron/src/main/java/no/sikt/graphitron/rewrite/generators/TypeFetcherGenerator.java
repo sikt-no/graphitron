@@ -163,6 +163,7 @@ public class TypeFetcherGenerator {
         MutationField.MutationInsertTableField.class,
         MutationField.MutationUpdateTableField.class,
         MutationField.MutationDeleteTableField.class,
+        MutationField.MutationUpsertTableField.class,
         MutationField.MutationServiceTableField.class,
         MutationField.MutationServiceRecordField.class,
         ChildField.ServiceTableField.class,
@@ -241,10 +242,6 @@ public class TypeFetcherGenerator {
      */
     public static final Map<Class<? extends GraphitronField>, Rejection.Deferred> STUBBED_VARIANTS =
         Map.ofEntries(
-            // MutationField stubs — see graphitron-rewrite/roadmap/mutations.md
-            Map.entry(MutationField.MutationUpsertTableField.class,
-                deferredFor(MutationField.MutationUpsertTableField.class,
-                    "Mutation upsert not yet implemented", "mutations")),
             // ChildField stubs — TableTargetField sub-hierarchy
             // (ChildField.TableField and ChildField.LookupTableField are in PROJECTED_LEAVES —
             // inline emission via TypeClassGenerator.$fields; see G5 and argres Phase 2a)
@@ -400,7 +397,7 @@ public class TypeFetcherGenerator {
                 case MutationField.MutationInsertTableField f  -> builder.addMethod(buildMutationInsertFetcher(f, outputPackage, jooqPackage));
                 case MutationField.MutationUpdateTableField f  -> builder.addMethod(buildMutationUpdateFetcher(f, outputPackage, jooqPackage));
                 case MutationField.MutationDeleteTableField f  -> builder.addMethod(buildMutationDeleteFetcher(f, outputPackage, jooqPackage));
-                case MutationField.MutationUpsertTableField f  -> builder.addMethod(stub(f));
+                case MutationField.MutationUpsertTableField f  -> builder.addMethod(buildMutationUpsertFetcher(f, outputPackage, jooqPackage));
                 case MutationField.MutationServiceTableField f -> builder.addMethod(buildMutationServiceTableFetcher(f, outputPackage, jooqPackage));
                 case MutationField.MutationServiceRecordField f -> builder.addMethod(buildMutationServiceRecordFetcher(f, outputPackage));
                 case ChildField.ColumnReferenceField f          -> {
@@ -1495,6 +1492,103 @@ public class TypeFetcherGenerator {
     }
 
     /**
+     * Emits a fetcher for {@link MutationField.MutationUpsertTableField}: a synchronous static
+     * method that runs {@code dsl.insertInto(table, cols...).values(vals...).onConflict(<keys>)
+     * .doUpdate().set(col, val)... .returningResult(<keys or $fields>).fetchOne(...)}. See
+     * {@code graphitron-rewrite/roadmap/mutations.md} Phase 5.
+     *
+     * <p>Column/values lists are identical to INSERT (every {@code InputField.ColumnField} in
+     * declaration order, {@code @lookupKey} fields included so the user-supplied PK lands on the
+     * insert branch). Conflict keys come from {@code tia.fieldBindings()}. Conflict action: if
+     * any field is non-{@code @lookupKey}, emit {@code .doUpdate().set(...)} over those fields;
+     * otherwise emit {@code .doNothing()} (jOOQ rejects {@code .doUpdate()} with an empty SET).
+     *
+     * <p>PostgreSQL-only: {@code ON CONFLICT} is a Postgres extension.
+     */
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "dml-mutation-shape-guarantees",
+        reliesOn = "Pattern-matches f.returnExpression() with no instanceof / "
+            + "Optional.orElseThrow / payloadAssembly().isPresent() guard; casts "
+            + "env.getArgument(tia.name()) to Map<?,?> with no guard; walks tia.fields() "
+            + "as Direct-extracted ColumnField with a single cast (no extraction-arm dispatch). "
+            + "Invariant #3 guarantees fieldBindings is non-empty (the ON CONFLICT key).")
+    private static MethodSpec buildMutationUpsertFetcher(MutationField.MutationUpsertTableField f,
+                                                          String outputPackage, String jooqPackage) {
+        var tia = f.tableInputArg();
+        var tableRef = tia.inputTable();
+        var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef, jooqPackage);
+        String tableLocal = tablesOnly.tableLocalName();
+
+        var fields = tia.fields();
+        var lookupNames = tia.fieldBindings().stream()
+            .map(b -> b.fieldName())
+            .collect(java.util.stream.Collectors.toSet());
+
+        var colList = CodeBlock.builder();
+        var valList = CodeBlock.builder();
+        var setClause = CodeBlock.builder();
+        for (int i = 0; i < fields.size(); i++) {
+            var cf = (InputField.ColumnField) fields.get(i);
+            if (i > 0) {
+                colList.add(", ");
+                valList.add(",\n");
+            }
+            colList.add("$T.$L.$L",
+                tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName());
+            valList.add("$T.val(in.get($S), $T.$L.$L.getDataType())",
+                DSL, cf.name(),
+                tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName());
+            if (!lookupNames.contains(cf.name())) {
+                setClause.add(".set($T.$L.$L, $T.val(in.get($S), $T.$L.$L.getDataType()))\n",
+                    tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName(),
+                    DSL, cf.name(),
+                    tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName());
+            }
+        }
+
+        var conflictCols = CodeBlock.builder();
+        var bindings = tia.fieldBindings();
+        for (int i = 0; i < bindings.size(); i++) {
+            if (i > 0) conflictCols.add(", ");
+            conflictCols.add("$T.$L.$L",
+                tablesOnly.tablesClass(), tableRef.javaFieldName(),
+                bindings.get(i).targetColumn().javaName());
+        }
+
+        boolean hasNonLookupField = fields.size() > lookupNames.size();
+        var dmlChain = CodeBlock.builder()
+            .add(".insertInto($L, ", tableLocal).add(colList.build()).add(")\n")
+            .add(".values(\n").indent().add(valList.build()).add(")\n").unindent()
+            .add(".onConflict(").add(conflictCols.build()).add(")\n");
+        if (hasNonLookupField) {
+            dmlChain.add(".doUpdate()\n").add(setClause.build());
+        } else {
+            dmlChain.add(".doNothing()\n");
+        }
+
+        // jOOQ silently translates `.onConflict(...).doUpdate()` (and `.doNothing()`) to an
+        // Oracle `MERGE INTO ... WHEN MATCHED THEN UPDATE ... WHEN NOT MATCHED THEN INSERT`
+        // statement. Concurrency, conflict-key matching, and `RETURNING` semantics differ from
+        // PostgreSQL `ON CONFLICT`; jOOQ exposes no setting to disable the emulation. Reject at
+        // runtime on the Oracle dialect family rather than letting the silent translation ship.
+        // Name-prefix check (rather than `SQLDialect.ORACLE`) because the OSS jOOQ distribution
+        // omits commercial-only dialect enum values; the prefix covers ORACLE, ORACLE11G,
+        // ORACLE12C, ORACLE18C, ORACLE19C, ORACLE21C, ORACLE23AI.
+        var postDslGuard = CodeBlock.builder()
+            .beginControlFlow("if (dsl.dialect().name().startsWith($S))", "ORACLE")
+            .addStatement("throw new $T($S)", UnsupportedOperationException.class,
+                "@mutation(typeName: UPSERT) is not supported on Oracle: jOOQ would translate "
+                    + "INSERT ... ON CONFLICT to MERGE INTO, whose concurrency and RETURNING "
+                    + "semantics differ from PostgreSQL. Graphitron targets PostgreSQL.")
+            .endControlFlow()
+            .build();
+
+        return buildDmlFetcher(f.name(), f.returnExpression(), f.errorChannel(),
+            tia.name(), tableRef, tablesOnly, tableLocal,
+            outputPackage, dmlChain.build(), postDslGuard);
+    }
+
+    /**
      * Builds the WHERE clause from the TIA's {@code @lookupKey} {@code fieldBindings}, chaining
      * each binding's {@code .eq(DSL.val(...))} with {@code .and(...)}. Shared between DELETE,
      * UPDATE, and (eventually) UPSERT.
@@ -1536,6 +1630,27 @@ public class TypeFetcherGenerator {
             String tableLocal,
             String outputPackage,
             CodeBlock dmlChain) {
+        return buildDmlFetcher(fetcherName, rex, errorChannel, inputArgName, tableRef,
+            tablesOnly, tableLocal, outputPackage, dmlChain, /*postDslGuard=*/ CodeBlock.of(""));
+    }
+
+    /**
+     * Six-arg overload that admits an optional {@code postDslGuard} {@link CodeBlock} emitted
+     * immediately after the {@code dsl} local is bound. Used by UPSERT to gate the Oracle
+     * dialect (jOOQ silently translates {@code .onConflict(...)} to {@code MERGE INTO} on
+     * Oracle, with semantics drift; see Phase 5 in {@code roadmap/mutations.md}).
+     */
+    private static MethodSpec buildDmlFetcher(
+            String fetcherName,
+            no.sikt.graphitron.rewrite.model.DmlReturnExpression rex,
+            Optional<ErrorChannel> errorChannel,
+            String inputArgName,
+            TableRef tableRef,
+            GeneratorUtils.ResolvedTableNames tablesOnly,
+            String tableLocal,
+            String outputPackage,
+            CodeBlock dmlChain,
+            CodeBlock postDslGuard) {
         var dslContextClass = ClassName.get("org.jooq", "DSLContext");
         TypeName valueType = switch (rex) {
             case no.sikt.graphitron.rewrite.model.DmlReturnExpression.Payload p -> p.assembly().payloadClass();
@@ -1548,6 +1663,9 @@ public class TypeFetcherGenerator {
 
         builder.beginControlFlow("try");
         builder.addStatement("$T dsl = graphitronContext(env).getDslContext(env)", dslContextClass);
+        if (!postDslGuard.isEmpty()) {
+            builder.addCode(postDslGuard);
+        }
         builder.addStatement("$T<?, ?> in = ($T<?, ?>) env.getArgument($S)", MAP, MAP, inputArgName);
         builder.addStatement("$T $L = $T.$L",
             tablesOnly.jooqTableClass(), tableLocal,

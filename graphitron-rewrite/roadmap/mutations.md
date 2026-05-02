@@ -15,8 +15,7 @@ depends-on: []
 > `MutationServiceTableField`, `MutationServiceRecordField`.
 > Closes generator stub #4 — the highest-aggregate production rejection (131 combined).
 >
-> **Progress:** five of six landed (DELETE, INSERT, UPDATE, both service variants).
-> UPSERT remains.
+> **Progress:** all six landed. R22 closed.
 
 ---
 
@@ -51,7 +50,7 @@ The *Consolidation* item that previously called for an emitter-side `buildMutati
 | `MutationDeleteTableField` | **Landed** | `buildMutationDeleteFetcher` pattern-matches on `f.returnExpression()` (no `instanceof ScalarReturnType` / `wrapper().isList()` / `payloadAssembly().isPresent()` predicates). Per-arm bodies live in `emitDeleteEncoded` / `emitDeleteProjected` / `emitDeletePayload` helpers. |
 | `MutationInsertTableField` | **Landed** | `buildMutationInsertFetcher` shares the verb-neutral `buildDmlFetcher` skeleton + `emitDmlReturnExpression` projection terminator with DELETE. Column list and parallel values list both walk `tia.fields()` once; values use `DSL.val(in.get(name), Tables.T.COL.getDataType())` for converter-mediated coercion. Partition flipped to `IMPLEMENTED_LEAVES`. Validation test `VALID`. Execution-tier test `createFilm_insertsRowAndReturnsProjectedFilm` against PostgreSQL verifies the `RETURNING $fields` shape end-to-end (resolves DELETE's deferred verification). |
 | `MutationUpdateTableField` | **Landed** | `buildMutationUpdateFetcher` shares the verb-neutral `buildDmlFetcher` skeleton + `emitDmlReturnExpression` projection terminator with INSERT and DELETE. SET clause walks `tia.fields()` skipping `@lookupKey` names; WHERE clause reuses the shared `buildLookupWhere` helper. Partition flipped to `IMPLEMENTED_LEAVES`. Validation test `VALID`. Execution-tier test `updateFilm_updatesRowAndReturnsProjectedFilm` against PostgreSQL inserts a marker row, runs the mutation, asserts the SET clause wrote and the `RETURNING $fields` projection returned the new title with `languageId` carrying through unchanged. |
-| `MutationUpsertTableField` | **Ready (Phase 5)** | Record + classifier done. Lands `buildMutationUpsertFetcher` against the post-1B shape. |
+| `MutationUpsertTableField` | **Landed** | `buildMutationUpsertFetcher` shares the verb-neutral `buildDmlFetcher` skeleton + `emitDmlReturnExpression` projection terminator with INSERT, UPDATE, and DELETE. INSERT column/values lists walk `tia.fields()` once (every field, `@lookupKey` included so the user-supplied PK lands on the insert branch); SET clause walks the same field list and skips `@lookupKey` names; `.onConflict(<keys>)` reads from `tia.fieldBindings()`. If the SET clause would be empty, the chain emits `.doNothing()` instead of `.doUpdate()` (jOOQ rejects an empty `doUpdate`). Wears a runtime guard: throws `UnsupportedOperationException` on the Oracle dialect family because jOOQ silently translates `ON CONFLICT` to `MERGE INTO` with semantics drift. Partition flipped to `IMPLEMENTED_LEAVES`. Validation test `VALID`. Two execution-tier tests against PostgreSQL cover both branches: `upsertFilm_updateBranch_writesAndReturnsProjectedFilm` (pre-inserted PK; UPDATE branch fires, RETURNING projects) and `upsertFilm_insertBranch_writesAndReturnsProjectedFilm` (novel PK; INSERT branch fires, RETURNING projects). |
 | `MutationServiceTableField` | **Landed** | `buildMutationServiceTableFetcher` delegates to the shared `buildServiceFetcherCommon` helper, inheriting the R12 §3 try/catch wrapper, §5 Jakarta validation pre-step, and §2c `resultAssembly` success-arm assembly. Wears `@DependsOnClassifierCheck(key = "service-catalog-strict-service-return", ...)` for the strict-return guarantee. Validation test flipped from `STUBBED` to `VALID`. |
 | `MutationServiceRecordField` | **Landed** | Same shape as above for the non-table service variant; `buildMutationServiceRecordFetcher` mirrors `buildQueryServiceRecordFetcher` (handles `ResultReturnType` with `fqClassName`, `PojoResultType`, and `ScalarReturnType` via `computeMutationServiceRecordReturnType`). |
 
@@ -637,7 +636,38 @@ Pipeline: at minimum a UPDATE-with-no-non-`@lookupKey`-field rejection (Invarian
 
 ### Phase 5 — UPSERT emission
 
-**Status: After 1B.** Record + classifier already done; only the emitter and the partition flip remain.
+**Status: ✅ Landed.** `buildMutationUpsertFetcher` shares the verb-neutral `buildDmlFetcher` (try/catch envelope, `dsl` bind, payload bind, success/catch arms) and `emitDmlReturnExpression` (projection terminator) with the other DML verbs. Verb-specific portion:
+
+```java
+var dmlChain = CodeBlock.builder()
+    .add(".insertInto($L, ", tableLocal).add(colList).add(")\n")
+    .add(".values(\n").indent().add(valList).add(")\n").unindent()
+    .add(".onConflict(").add(conflictCols).add(")\n");
+if (hasNonLookupField) {
+    dmlChain.add(".doUpdate()\n").add(setClause);
+} else {
+    dmlChain.add(".doNothing()\n");
+}
+```
+
+#### Oracle dialect runtime guard
+
+jOOQ 3.20.x silently translates PostgreSQL `INSERT ... ON CONFLICT` to Oracle `MERGE INTO ... WHEN MATCHED ... WHEN NOT MATCHED ...` when the configured `SQLDialect` is Oracle. The translation is syntactically valid but the semantics drift: PostgreSQL's `ON CONFLICT` matches a specific named unique constraint, while Oracle's `MERGE` checks the `ON` predicate against any matching row; concurrency surface is different (PostgreSQL serialises ON CONFLICT via the index, Oracle's MERGE is subject to the wider locking story); and `RETURNING` on `MERGE` has incomplete jOOQ support (issues #17245, #12087). jOOQ exposes no `Settings` or `RenderEmulation` toggle to disable this emulation.
+
+The generated upsert fetcher therefore wears a runtime guard at the start of its body, immediately after the `dsl` local is bound:
+
+```java
+if (dsl.dialect().family() == SQLDialect.ORACLE) {
+    throw new UnsupportedOperationException(
+        "@mutation(typeName: UPSERT) is not supported on Oracle: jOOQ would translate " +
+        "INSERT ... ON CONFLICT to MERGE INTO, whose concurrency and RETURNING semantics " +
+        "differ from PostgreSQL. Graphitron targets PostgreSQL.");
+}
+```
+
+The exception propagates through the standard DML catch arm to the configured `ErrorChannel` (or the default `redact` arm), so the consumer sees an actionable error and the underlying message reaches logs. The check sits in the generated code rather than at codegen time because graphitron does not know the consumer's runtime dialect at generation time. The guard is implemented via a new `postDslGuard` parameter on `buildDmlFetcher`; INSERT / UPDATE / DELETE pass an empty `CodeBlock` and remain unchanged.
+
+A future plan could lift this restriction by hand-emitting an Oracle-native `MERGE` statement (rather than relying on jOOQ's emulation) when the dialect family is Oracle. Tracked in Non-goals.
 
 #### Emitter (`buildMutationUpsertFetcher`)
 
@@ -739,7 +769,12 @@ All three pieces this section originally listed have either shipped or have been
   is not added here; service variants already control their own transactions through the
   developer-supplied method.
 - **Non-PostgreSQL dialects**: `RETURNING` and `ON CONFLICT DO UPDATE` are PostgreSQL-specific.
-  The rewrite targets PostgreSQL; no cross-dialect abstraction is added.
+  The rewrite targets PostgreSQL; no cross-dialect abstraction is added. UPSERT additionally
+  carries a runtime guard that throws `UnsupportedOperationException` on the Oracle dialect
+  family because jOOQ silently translates `INSERT ... ON CONFLICT` to `MERGE INTO` with
+  semantics drift; see [Phase 5 — UPSERT emission](#phase-5--upsert-emission). A follow-up
+  plan could lift the guard by hand-emitting an Oracle-native `MERGE` only when the dialect
+  family is Oracle (rather than relying on jOOQ's emulation).
 - **`@mutation` + `@service` combination**: already rejected at classifier time by `classifyMutationField`'s mutual-exclusion guard.
 
 ---

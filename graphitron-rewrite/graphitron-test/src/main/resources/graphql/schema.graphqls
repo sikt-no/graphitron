@@ -745,6 +745,16 @@ input FilmUpdateInput @table(name: "film") {
     title:  String! @field(name: "title")
 }
 
+# R22 Phase 5 fixture: minimal UPSERT input. `filmId` is the ON CONFLICT key; `title` and
+# `languageId` carry through to both the INSERT branch (column list) and the UPDATE branch
+# (SET clause). UPSERT is exempt from Invariant #4's non-@lookupKey-required gate (an
+# upsert with no SET-clause fields is `INSERT ... ON CONFLICT DO NOTHING`, a legitimate shape).
+input FilmUpsertInput @table(name: "film") {
+    filmId:     Int!    @field(name: "film_id") @lookupKey
+    title:      String! @field(name: "title")
+    languageId: Int!    @field(name: "language_id")
+}
+
 type Mutation {
     # R22 Phase 2: INSERT emitter with TableBoundReturnType return. The fetcher emits
     # `dsl.insertInto(film, title, language_id).values(...).returningResult(<$fields>).fetchOne(r -> r)`.
@@ -752,4 +762,9 @@ type Mutation {
     # R22 Phase 4: UPDATE emitter with TableBoundReturnType return. The fetcher emits
     # `dsl.update(film).set(title, val).where(film_id.eq(val)).returningResult(<$fields>).fetchOne(r -> r)`.
     updateFilm(in: FilmUpdateInput!): Film @mutation(typeName: UPDATE)
+    # R22 Phase 5: UPSERT emitter with TableBoundReturnType return. The fetcher emits
+    # `dsl.insertInto(film, ...).values(...).onConflict(film_id).doUpdate().set(...)
+    #  .returningResult(<$fields>).fetchOne(r -> r)`. Generated method runtime-guards against
+    # the Oracle dialect (jOOQ silently translates ON CONFLICT to MERGE).
+    upsertFilm(in: FilmUpsertInput!): Film @mutation(typeName: UPSERT)
 }

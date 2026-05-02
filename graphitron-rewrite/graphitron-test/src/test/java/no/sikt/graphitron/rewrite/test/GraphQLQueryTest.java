@@ -3290,4 +3290,80 @@ class GraphQLQueryTest {
             dsl.deleteFrom(filmTable).where(filmIdCol.eq(filmId)).execute();
         }
     }
+
+    // ===== R22 Phase 5: UPSERT emitter (DML mutation, TableBoundReturnType) =====
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void upsertFilm_updateBranch_writesAndReturnsProjectedFilm() {
+        // UPSERT-on-existing-row: emitter runs `dsl.insertInto(film, ...).values(...)
+        // .onConflict(film_id).doUpdate().set(title, ...).set(language_id, ...)
+        // .returningResult($fields).fetchOne(r -> r)`. The pre-inserted row triggers the
+        // ON CONFLICT branch; verifies the SET clause writes and RETURNING projects.
+        String originalMarker = "R22-PHASE-5-UPSERT-" + java.util.UUID.randomUUID();
+        String upsertedMarker = "R22-PHASE-5-UPSERTED-" + java.util.UUID.randomUUID();
+        var filmTable = org.jooq.impl.DSL.table("film");
+        var filmIdCol = org.jooq.impl.DSL.field("film_id", Integer.class);
+        Integer filmId = dsl.insertInto(filmTable)
+            .set(org.jooq.impl.DSL.field("title"), originalMarker)
+            .set(org.jooq.impl.DSL.field("language_id"), (short) 1)
+            .returningResult(filmIdCol)
+            .fetchOne()
+            .value1();
+        try {
+            Map<String, Object> data = execute("""
+                mutation {
+                    upsertFilm(in: { filmId: %d, title: "%s", languageId: 1 }) {
+                        title
+                        languageId
+                    }
+                }
+                """.formatted(filmId, upsertedMarker));
+
+            Map<String, Object> upserted = (Map<String, Object>) data.get("upsertFilm");
+            assertThat(upserted).containsEntry("title", upsertedMarker);
+            assertThat(upserted).containsEntry("languageId", 1);
+
+            String dbTitle = dsl.select(org.jooq.impl.DSL.field("title", String.class))
+                .from(filmTable).where(filmIdCol.eq(filmId)).fetchOne().value1();
+            assertThat(dbTitle).isEqualTo(upsertedMarker);
+        } finally {
+            dsl.deleteFrom(filmTable).where(filmIdCol.eq(filmId)).execute();
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void upsertFilm_insertBranch_writesAndReturnsProjectedFilm() {
+        // UPSERT-on-novel-row: the supplied filmId does not exist, so the INSERT branch fires.
+        // Pick an id well above the Sakila max (~1000) to avoid collisions with other tests.
+        // We can't simply omit filmId because the schema marks it non-null; the INSERT branch
+        // therefore exercises the user-supplied-PK shape, which is the canonical UPSERT case.
+        int filmId = 999_001;
+        String marker = "R22-PHASE-5-INSERT-BRANCH-" + java.util.UUID.randomUUID();
+        var filmTable = org.jooq.impl.DSL.table("film");
+        var filmIdCol = org.jooq.impl.DSL.field("film_id", Integer.class);
+        // Pre-clean in case a prior failed run left the row behind.
+        dsl.deleteFrom(filmTable).where(filmIdCol.eq(filmId)).execute();
+        try {
+            Map<String, Object> data = execute("""
+                mutation {
+                    upsertFilm(in: { filmId: %d, title: "%s", languageId: 1 }) {
+                        title
+                        languageId
+                    }
+                }
+                """.formatted(filmId, marker));
+
+            Map<String, Object> upserted = (Map<String, Object>) data.get("upsertFilm");
+            assertThat(upserted).containsEntry("title", marker);
+            assertThat(upserted).containsEntry("languageId", 1);
+
+            String dbTitle = dsl.select(org.jooq.impl.DSL.field("title", String.class))
+                .from(filmTable).where(filmIdCol.eq(filmId)).fetchOne().value1();
+            assertThat(dbTitle).isEqualTo(marker);
+        } finally {
+            dsl.deleteFrom(filmTable).where(filmIdCol.eq(filmId)).execute();
+        }
+    }
 }
