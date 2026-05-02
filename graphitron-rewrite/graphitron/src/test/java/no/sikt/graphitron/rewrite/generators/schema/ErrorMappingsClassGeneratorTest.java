@@ -171,7 +171,10 @@ class ErrorMappingsClassGeneratorTest {
     }
 
     @Test
-    void initializer_emitsValidationMappingForValidationHandler() {
+    void initializer_skipsValidationHandler_emittingEmptyMappingArray() {
+        // §5: ValidationHandler entries produce no Mapping. The wrapper invokes
+        // jakarta.validation.Validator as a pre-execution step and routes the resulting
+        // GraphQLErrors directly into the errors slot, bypassing the dispatcher entirely.
         var ch = channel("FilmPayload", FILM_PAYLOAD_FQN, "FILM_PAYLOAD",
             List.of(errorType("FilmValidation", FILM_VALIDATION_FQN,
                 List.of(new ValidationHandler(Optional.empty())))));
@@ -179,8 +182,29 @@ class ErrorMappingsClassGeneratorTest {
             .generate(synthesizeSchema(List.of(ch)), OUTPUT_PACKAGE).get(0);
 
         var init = spec.fieldSpecs().get(0).initializer().toString();
-        assertThat(init).contains("ValidationMapping");
-        assertThat(init).doesNotContain("::new");
+        assertThat(init).doesNotContain("ValidationMapping");
+        assertThat(init).doesNotContain("ExceptionMapping");
+        assertThat(init).doesNotContain("SqlStateMapping");
+        assertThat(init).doesNotContain("VendorCodeMapping");
+    }
+
+    @Test
+    void initializer_skipsValidationHandler_keepingDispatchHandlers() {
+        // ValidationHandler interleaved with dispatch handlers: the dispatch handlers still
+        // emit Mappings; the ValidationHandler is silently dropped from the array.
+        var ch = channel("FilmPayload", FILM_PAYLOAD_FQN, "FILM_PAYLOAD",
+            List.of(
+                errorType("FilmValidation", FILM_VALIDATION_FQN,
+                    List.of(new ValidationHandler(Optional.empty()))),
+                errorType("FilmFkViolation", FILM_FK_FQN,
+                    List.of(new SqlStateHandler("23503", Optional.empty(), Optional.empty())))));
+        var spec = ErrorMappingsClassGenerator
+            .generate(synthesizeSchema(List.of(ch)), OUTPUT_PACKAGE).get(0);
+
+        var init = spec.fieldSpecs().get(0).initializer().toString();
+        assertThat(init).doesNotContain("ValidationMapping");
+        assertThat(init).contains("SqlStateMapping");
+        assertThat(init).contains("\"23503\"");
     }
 
     @Test

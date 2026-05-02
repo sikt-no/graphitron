@@ -224,30 +224,28 @@ wrapper + dispatch arm lands; phasing within is the implementer's call.
   `<outputPackage>.schema.ErrorRouter`; logs the original throw under a fresh UUID
   correlation ID and returns a `DataFetcherResult` carrying only the correlation ID.
 - `ErrorRouter.dispatch` arm + nested `Mapping` taxonomy (§3): `Mapping` interface
-  with `build(path, message)`, `match(throwable)`, `description()`; four concrete
-  implementations (`ExceptionMapping`, `SqlStateMapping`, `VendorCodeMapping`,
-  `ValidationMapping`) carrying the per-variant criteria and a
-  `BiFunction<List<String>, String, Object>` factory; `payloadFactory` on
-  `dispatch` is typed as `Function<List<?>, P>`. The dispatch method walks the
-  cause chain outermost-first per the `findFirst` contract and falls through to
-  `redact` on no match. Currently also carries a `ValidationViolationGraphQLException`
-  fan-out arm; that arm and the carrier exception both retire in the
-  source-direct + native-validation chunk below.
+  with `match(throwable)` and `description()`; three concrete implementations
+  (`ExceptionMapping`, `SqlStateMapping`, `VendorCodeMapping`) carrying the
+  per-variant criteria. `payloadFactory` on `dispatch` is typed as
+  `Function<List<?>, P>`. The dispatch method walks `mappings` in source order;
+  for each one, it walks the cause chain outermost-first and the first match
+  places the matched throwable directly into the errors list. Falls through to
+  `redact` on no match. (The legacy `ValidationViolationGraphQLException`
+  fan-out arm and `ValidationMapping` retired with the native Jakarta
+  validation chunk; validation now runs as a wrapper pre-execution step and
+  never reaches the dispatcher.)
 - `ErrorMappings` helper emitted via `ErrorMappingsClassGenerator` at
   `<outputPackage>.schema.ErrorMappings`: walks every classified `WithErrorChannel`
   field, groups by `ErrorChannel.mappingsConstantName`, and emits one
   `public static final ErrorRouter.Mapping[]` constant per distinct channel.
   Identical channels (same payload class + same flattened handler list) share a
-  constant; same-name channels with different handler lists throw an
-  `IllegalStateException` pointing at the §3 hash-suffix follow-up. `@error` types
-  whose `classFqn` is empty are silently skipped (no factory available); the
-  remaining handlers continue to emit. `FieldBuilder.resolveErrorChannel` wears
+  constant; the §3 hash-suffix dedup pass (`MappingsConstantNameDedup`) resolves
+  collisions at classify time so the emitter sees already-resolved names.
+  `ValidationHandler` entries produce no `Mapping` (validation runs as a
+  wrapper pre-execution step). `FieldBuilder.resolveErrorChannel` wears
   `@LoadBearingClassifierCheck(key = "error-channel.mappings-constant")`;
   `ErrorMappingsClassGenerator.generate` carries the matching
   `@DependsOnClassifierCheck`.
-- `ValidationViolationGraphQLException` emitted via
-  `ValidationViolationGraphQLExceptionGenerator`. Transitional state: retires
-  with the native-validation chunk below.
 - Per-fetcher try/catch wrapper now wires the catch arm through the channel: a
   present `ErrorChannel` emits `return ErrorRouter.dispatch(e, ErrorMappings.<CONST>,
   env, errors -> new <PayloadClass>(...))` with the synthesized payload-factory lambda
@@ -333,11 +331,13 @@ wrapper + dispatch arm lands; phasing within is the implementer's call.
     payload. The catch arm fills the errors slot via the dispatcher.
 
   *Native Jakarta validation* (§5):
-  - Drop `ValidationViolationGraphQLException`,
-    `ValidationViolationGraphQLExceptionGenerator`, and `RecordValidator`.
-  - Wire `jakarta.validation.Validator` directly. Default factory:
-    `Validation.buildDefaultValidatorFactory().getValidator()` lazily; consumer
-    can install a `Validator` via `Graphitron.Builder`.
+  - **Landed (subtractive piece)**: `ValidationViolationGraphQLException`,
+    `ValidationViolationGraphQLExceptionGenerator`, the dispatcher's validation
+    arm, `ValidationMapping`, and §1 reject rule 9 are all gone. Validation no
+    longer reaches the catch arm.
+  - **Remaining**: wire `jakarta.validation.Validator` directly. Default
+    factory: `Validation.buildDefaultValidatorFactory().getValidator()` lazily;
+    consumer can install a `Validator` via `Graphitron.Builder`.
   - The wrapper inserts a pre-execution validation step when the channel
     carries a `ValidationHandler`. If `validator.validate(input)` returns
     violations, the wrapper builds the payload's errors-arm directly with the
@@ -347,10 +347,6 @@ wrapper + dispatch arm lands; phasing within is the implementer's call.
     response path with the field path prefix and arg name; message → message;
     constraint annotation simple name → optional `extensions.constraint` when
     the SDL `@error` type declares an `extensions` field.
-  - The dispatcher's "Validation arm precedes channel matching" subsection in
-    §3 retires; validation never reaches the catch arm.
-  - §1 reject rule 9 retires (it policed `ValidationViolationGraphQLException`
-    shadowing, which no longer exists).
 
   *Test fixture updates*: `SakPayload`, `DeleteFilmPayload` errors slots become
   `List<Object>`. SDL fixtures stop using `@record` co-locations on `@error`
