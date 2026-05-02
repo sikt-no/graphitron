@@ -74,10 +74,10 @@ class InterfaceFieldValidationTest {
     }
 
     @Test
-    void rejects_connection_onCompositePkParent() {
-        // R36 Track B4c-2: the DataLoader-batched windowed CTE form types its key element as
-        // Row1<ParentPkClass>; multi-column parent PK widens to RowN as a follow-up. Validator
-        // surfaces this as a clean AUTHOR_ERROR instead of an IllegalStateException at codegen.
+    void wellFormed_connection_onCompositePkParent_noErrors() {
+        // R36 Track B4c-2 RowN widening: composite-PK parent is now supported (DataLoader key
+        // type widens from Row1<...> to RowN<...>). Predecessor of this test was the now-removed
+        // rejects_connection_onCompositePkParent which pinned the v1 single-PK constraint.
         var participants = List.<ParticipantRef>of(
             new ParticipantRef.TableBound("Customer", CUSTOMER, null),
             new ParticipantRef.TableBound("Staff", STAFF, null));
@@ -85,28 +85,41 @@ class InterfaceFieldValidationTest {
             new ReturnTypeRef.PolymorphicReturnType("AddressOccupant", new FieldWrapper.Connection(false, 5)),
             participants, Map.of("Customer", List.of(), "Staff", List.of()));
         var parentType = new GraphitronType.TableType("Bar", null, BAR);
-        var errors = validate(no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.schema(
-            parentType, field.name(), field));
+        var errors = validate(FieldValidationTestHelper.schema(parentType, field.name(), field));
+        assertThat(errors).isEmpty();
+    }
+
+    @Test
+    void rejects_connection_onPkLessParent() {
+        // Empty-PK parent has no key for the DataLoader VALUES table. Validator rejects with a
+        // clean AUTHOR_ERROR instead of letting codegen trip the emitter's defensive arity-0
+        // tripwire.
+        var participants = List.<ParticipantRef>of(
+            new ParticipantRef.TableBound("Customer", CUSTOMER, null),
+            new ParticipantRef.TableBound("Staff", STAFF, null));
+        var field = new InterfaceField("Kpis", "occupantsConnection", null,
+            new ReturnTypeRef.PolymorphicReturnType("AddressOccupant", new FieldWrapper.Connection(false, 5)),
+            participants, Map.of("Customer", List.of(), "Staff", List.of()));
+        var parentType = new GraphitronType.TableType("Kpis", null, NO_PK);
+        var errors = validate(FieldValidationTestHelper.schema(parentType, field.name(), field));
         assertHasKind(errors, RejectionKind.AUTHOR_ERROR,
-            "Field 'Bar.occupantsConnection': @asConnection on a multi-table interface/union "
-                + "child field whose parent type 'Bar' has a multi-column primary key (arity 2) is not supported");
+            "Field 'Kpis.occupantsConnection': @asConnection on a multi-table interface/union "
+                + "child field requires the parent type 'Kpis' to have a primary key");
     }
 
     @Test
     void wellFormed_connection_onSinglePkParent_noErrors() {
-        // Sibling of the rejection above: single-column parent PK is the supported v1 shape.
+        // Single-column parent PK was the v1 shape and remains supported under the widened RowN form.
         var participants = List.<ParticipantRef>of(
             new ParticipantRef.TableBound("Customer", CUSTOMER, null),
             new ParticipantRef.TableBound("Staff", STAFF, null));
         var field = new InterfaceField("Address", "occupantsConnection", null,
             new ReturnTypeRef.PolymorphicReturnType("AddressOccupant", new FieldWrapper.Connection(false, 5)),
             participants, Map.of("Customer", List.of(), "Staff", List.of()));
-        // Address-shaped parent with single-column PK.
         var addressTable = new TableRef("address", "ADDRESS", "Address",
             List.of(new ColumnRef("address_id", "ADDRESS_ID", "java.lang.Integer")));
         var parentType = new GraphitronType.TableType("Address", null, addressTable);
-        var errors = validate(no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.schema(
-            parentType, field.name(), field));
+        var errors = validate(FieldValidationTestHelper.schema(parentType, field.name(), field));
         assertThat(errors).isEmpty();
     }
 }

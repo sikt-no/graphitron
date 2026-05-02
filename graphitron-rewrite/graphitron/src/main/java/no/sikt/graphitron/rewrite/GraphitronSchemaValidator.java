@@ -361,9 +361,11 @@ public class GraphitronSchemaValidator {
     /**
      * R36 Track B4c-2 batched-child-connection guard: rejects {@code @asConnection} on a
      * child interface/union field whose enclosing parent type is backed by a table with a
-     * multi-column primary key. The DataLoader-batched windowed CTE form types its key element
-     * as {@code Row1<ParentPkClass>} (single-column parent PK); widening to {@code RowN} for
-     * composite-PK parents is a tracked follow-up.
+     * primary key arity above jOOQ's typed Row22 cap. The DataLoader-batched windowed CTE
+     * form types its key element as {@code RowN<...>} (parent PK arity 1..21 — the
+     * {@code parentInput VALUES} table widens to {@code Row<N+1>} including {@code idx},
+     * which tops out at 22). Empty PK is also rejected (multi-table interface/union
+     * connections need a parent key for the DataLoader VALUES table).
      *
      * <p>Surfaces the constraint as a clean validator rejection (build-time AUTHOR_ERROR with
      * file:line) instead of a codegen-time {@code IllegalStateException} thrown deep in
@@ -381,16 +383,26 @@ public class GraphitronSchemaValidator {
         var parentType = types.get(parentTypeName);
         if (!(parentType instanceof TableBackedType tbt)) return;
         var pkCols = tbt.table().primaryKeyColumns();
-        if (pkCols.size() <= 1) return;
-        errors.add(new ValidationError(RejectionKind.AUTHOR_ERROR,
-            qualifiedName,
-            "Field '" + qualifiedName + "': @asConnection on a multi-table interface/union child "
-                + "field whose parent type '" + parentTypeName + "' has a multi-column primary key "
-                + "(arity " + pkCols.size() + ") is not supported. The DataLoader-batched windowed "
-                + "CTE form types its key element as Row1<ParentPkClass>; multi-column parent PK "
-                + "widening to RowN is a tracked follow-up",
-            location
-        ));
+        if (pkCols.isEmpty()) {
+            errors.add(new ValidationError(RejectionKind.AUTHOR_ERROR,
+                qualifiedName,
+                "Field '" + qualifiedName + "': @asConnection on a multi-table interface/union child "
+                    + "field requires the parent type '" + parentTypeName + "' to have a primary key; "
+                    + "the DataLoader-batched windowed CTE form keys on the parent table's PK",
+                location
+            ));
+            return;
+        }
+        if (pkCols.size() > 21) {
+            errors.add(new ValidationError(RejectionKind.AUTHOR_ERROR,
+                qualifiedName,
+                "Field '" + qualifiedName + "': @asConnection on a multi-table interface/union child "
+                    + "field whose parent type '" + parentTypeName + "' has a primary key with "
+                    + pkCols.size() + " columns exceeds jOOQ's typed Row22 cap (parent PK + idx "
+                    + "must fit in Row<N+1>). Use a narrower parent key or split the parent type",
+                location
+            ));
+        }
     }
 
     // --- Field validators (stubs — filled in as test classes are added) ---
