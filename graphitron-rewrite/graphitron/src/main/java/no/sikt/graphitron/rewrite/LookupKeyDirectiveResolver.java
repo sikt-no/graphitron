@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
+import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 
 /**
@@ -46,7 +47,10 @@ final class LookupKeyDirectiveResolver {
      */
     sealed interface Resolved {
         record Ok(ReturnTypeRef.TableBoundReturnType returnType) implements Resolved {}
-        record Rejected(RejectionKind kind, String message) implements Resolved {}
+        record Rejected(Rejection rejection) implements Resolved {
+            public String message() { return rejection.message(); }
+            public RejectionKind kind() { return RejectionKind.of(rejection); }
+        }
     }
 
     LookupKeyDirectiveResolver() {}
@@ -58,8 +62,7 @@ final class LookupKeyDirectiveResolver {
      */
     Resolved resolveAtRoot(ReturnTypeRef returnType) {
         if (!(returnType instanceof ReturnTypeRef.TableBoundReturnType tb)) {
-            return new Resolved.Rejected(RejectionKind.AUTHOR_ERROR,
-                "@lookupKey requires a @table-annotated return type");
+            return new Resolved.Rejected(Rejection.structural("@lookupKey requires a @table-annotated return type"));
         }
         return new Resolved.Ok(tb);
     }
@@ -75,15 +78,13 @@ final class LookupKeyDirectiveResolver {
      */
     Resolved resolveAtChild(ReturnTypeRef.TableBoundReturnType returnType, boolean withSplitQuery) {
         if (returnType.wrapper() instanceof FieldWrapper.Connection) {
-            return new Resolved.Rejected(RejectionKind.INVALID_SCHEMA,
-                "@asConnection on @lookupKey fields is invalid: @lookupKey establishes a positional "
+            return new Resolved.Rejected(Rejection.invalidSchema("@asConnection on @lookupKey fields is invalid: @lookupKey establishes a positional "
                 + "correspondence between the input key list and the output list (one entry per key), "
-                + "which pagination would break. Drop @asConnection or drop @lookupKey.");
+                + "which pagination would break. Drop @asConnection or drop @lookupKey."));
         }
         if (returnType.wrapper() instanceof FieldWrapper.Single) {
             String prefix = withSplitQuery ? "Single-cardinality @splitQuery @lookupKey" : "Single-cardinality @lookupKey";
-            return new Resolved.Rejected(RejectionKind.INVALID_SCHEMA,
-                prefix + " is not supported; pass a list-returning field or drop @lookupKey");
+            return new Resolved.Rejected(Rejection.invalidSchema(prefix + " is not supported; pass a list-returning field or drop @lookupKey"));
         }
         return new Resolved.Ok(returnType);
     }

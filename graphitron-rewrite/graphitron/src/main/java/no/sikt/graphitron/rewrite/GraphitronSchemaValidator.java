@@ -877,9 +877,10 @@ public class GraphitronSchemaValidator {
     }
 
     private void validateUnclassifiedField(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField field, List<ValidationError> errors) {
-        errors.add(new ValidationError(field.kind(),
+        errors.add(new ValidationError(
+            RejectionKind.of(field.rejection()),
             field.qualifiedName(),
-            "Field '" + field.qualifiedName() + "': " + field.reason(),
+            "Field '" + field.qualifiedName() + "': " + field.rejection().message(),
             field.location()
         ));
     }

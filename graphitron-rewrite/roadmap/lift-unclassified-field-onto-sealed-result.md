@@ -526,89 +526,70 @@ site becomes an `AssertionError`" as the historical record of the change.
 
 ---
 
-## Phase A — Sealed `Rejection` plumbing, `UnclassifiedField` lift
+## Phase A — Sealed `Rejection` plumbing, `UnclassifiedField` lift — shipped
 
-Single-PR scope. Builds on Phase 0's three-value `RejectionKind`; if Phase 0
-landed separately, the sealed-rejection switch is exhaustive on day one.
-If Phase 0 was folded into this phase, the bullet list adds the two prep
-items at the top.
+`Rejection.java` landed (top-level sealed `AuthorError | InvalidSchema | Deferred`,
+sub-sealed `AuthorError.UnknownName / Structural` and `InvalidSchema.DirectiveConflict / Structural`,
+`StubKey.VariantClass | EmitBlock | None`, `EmitBlockReason` enum, plus factory statics
+and a self-contained `candidateHint` renderer mirroring `BuildContext.candidateHint`'s
+Levenshtein sort). `UnclassifiedField` now carries `Rejection rejection` instead of
+the `(RejectionKind kind, String reason)` pair, with `kind()` and `reason()` retained
+as convenience accessors that delegate through `RejectionKind.of` / `Rejection.message`.
 
-- Add `Rejection.java` (top-level sealed + sub-sealed `AuthorError` and
-  `InvalidSchema` + `Deferred` + `StubKey` + `EmitBlockReason`).
-- Migrate `UnclassifiedField` to carry `Rejection` instead of `(kind, reason)`.
-- Migrate every rejection-producing resolver's rejection arm to carry a
-  `Rejection`: most are `Resolved.Rejected(RejectionKind, String) →
-  Resolved.Rejected(Rejection)`; `NodeIdLeafResolver`'s
-  `Resolved.Rejected(String message)` widens the same way (the consumer
-  picked `AUTHOR_ERROR` at the boundary, so the `Rejection` it now carries
-  is an `AuthorError`); `EnumMappingResolver`'s `EnumValidation.Mismatch(String)`
-  becomes `Mismatch(Rejection)`. See "Resolver-side `Resolved.Rejected`
-  carries `Rejection`" above. The ten resolvers and their consumer sites in
-  `FieldBuilder` move together; piecewise migration would require a trivial
-  bridge constructor and isn't worth the churn.
-- Update every `UnclassifiedField` construction site in `FieldBuilder`,
-  `MutationInputResolver`, `LookupKeyDirectiveResolver`, `OrderByResolver`,
-  `ServiceDirectiveResolver`, `TableMethodDirectiveResolver`,
-  `ExternalFieldDirectiveResolver`, `EnumMappingResolver`,
-  `ConditionResolver`, `BatchKeyLifterDirectiveResolver`,
-  `NodeIdLeafResolver`, `CheckedExceptionMatcher`, and the input field /
-  errors-field paths in `FieldBuilder`. Concrete site list (sorted by file +
-  line, generated from
-  `grep -rn "new UnclassifiedField\|new .*\.Rejected\b" graphitron/src/main`):
-  ~76 `UnclassifiedField` sites (all in `FieldBuilder`) + ~70 sealed-`Rejected`
-  arm constructions across the resolvers (including `NodeIdLeafResolver`'s six
-  and `ConditionResolver`'s six split across `ArgConditionResult.Rejected`
-  and `FieldConditionResult.Rejected`). Each site picks the right `Rejection` sub-arm
-  based on the data it already has. `BuildContext.candidateHint`-using sites
-  pick `AuthorError.UnknownName`; the rest of the AUTHOR_ERROR sites pick
-  `AuthorError.Structural`.
-- Update
-  [`GraphitronSchemaValidator.validateUnclassifiedField`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/GraphitronSchemaValidator.java)
-  to project `field.rejection()` to a `RejectionKind` and surface the
-  arm-specific message via `Rejection.message()`. The validator's output bytes
-  stay identical (same kebab-case prefix, same prose tail) for every site;
-  this is the no-output-change refactor.
+Every rejection-producing resolver's rejection arm carries `Rejection`:
+`BatchKeyLifterDirectiveResolver`, `ServiceDirectiveResolver`, `TableMethodDirectiveResolver`,
+`LookupKeyDirectiveResolver`, `ExternalFieldDirectiveResolver` (their
+`Resolved.Rejected(RejectionKind, String)` widened), plus `NodeIdLeafResolver`,
+`OrderByResolver`, `MutationInputResolver`, `ConditionResolver` (twin
+`ArgConditionResult.Rejected` / `FieldConditionResult.Rejected` arms), and
+`EnumMappingResolver.EnumValidation.Mismatch` — all now carry `Rejection rejection`.
+`FieldBuilder.TableFieldComponents.Rejected` got the same lift. Every site in
+`FieldBuilder` that previously built a fresh `UnclassifiedField(..., r.kind(), r.message())`
+now passes `r.rejection()` straight through, threading typed rejections across the
+resolver / classifier boundary.
 
-The `AuthorError.candidates` list is the load-bearing addition: every
-`candidateHint(...)` call site (~19 across `BuildContext`, `FieldBuilder`,
-`TypeBuilder`, `ServiceCatalog`, `BatchKeyLifterDirectiveResolver`,
-`EnumMappingResolver`) constructs an `AuthorError` whose `candidates` list
-is the same data the helper already walked — the helper itself goes from
-"render to string" to "render + attach to rejection". Net new code is ~10
-lines; the helper's internals stay.
+`StubKey.None` was added beyond the original spec to accommodate inline-`Deferred`
+sites that don't have a clean variant-class anchor (Subscription rejection,
+`@record returning polymorphic`, and `@service on @record` parent — the last of
+which keeps its `service-record-field` slug via the new `Rejection.deferredAt`
+factory). The other inline `Deferred` sites that do map to a variant class
+(`Single-cardinality @splitQuery` → `ChildField.SplitTableField.class`) use the
+spec's original `Rejection.deferred(summary, fieldClass)` factory.
 
-### Renderings (zero log-output drift)
+`GraphitronSchemaValidator.validateUnclassifiedField` projects
+`field.rejection()` through `RejectionKind.of` for the kebab-case log prefix and
+calls `field.rejection().message()` for the prose tail. Pipeline tier is byte-stable.
 
-`Rejection.message()` is exact-byte-compatible with today's prose for every
-site that has a corresponding rendering test (every site in
-`UnclassifiedFieldValidationTest`,
-`UnclassifiedTypeValidationTest`, `ErrorChannelClassificationTest`,
-`CheckedExceptionClassificationTest`, the message column of every "bad SDL
-classifies as UnclassifiedField" pipeline test). Phase A's pipeline diff
-should be empty against trunk.
+`UnclassifiedFieldValidationTest` was adapted to construct a `Rejection.structural`
+rather than a `(RejectionKind.AUTHOR_ERROR, String)` pair; expected prose
+unchanged. New unit tests `RejectionRenderingTest` (10 cases, every arm) and
+`RejectionKindProjectionTest` (totality of `RejectionKind.of` over the sealed
+permits + `displayName` kebab-case) verify the lift's contract.
 
-If a site has prose that the new arm cannot reproduce verbatim, the lift
-adjusts the arm's renderer to match — the goal is no log churn during the lift.
-Cleanup of inconsistent prose belongs in a separate commit, not this one.
+The nested-rewrap site at
+[`FieldBuilder.classifyChildFieldOnTableType`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java)
+preserves the inner rejection's variant via a `switch` on `unc.rejection()` —
+deferred slugs and stub keys are threaded through the wrap; LSP-fix-it
+candidate-list threading remains out-of-scope per the existing call-out.
 
-### Validator gate paths
+### Phase A deviations from the original spec
 
-`validateUnclassifiedField` becomes:
-
-```java
-private void validateUnclassifiedField(UnclassifiedField field, List<ValidationError> errors) {
-    errors.add(new ValidationError(
-        RejectionKind.of(field.rejection()),
-        field.qualifiedName(),
-        "Field '" + field.qualifiedName() + "': " + field.rejection().message(),
-        field.location()
-    ));
-}
-```
-
-`validateUnclassifiedType` mirrors. The hardcoded
-`RejectionKind.AUTHOR_ERROR` at the type validator site is gone — the kind
-comes from the rejection.
+- `StubKey.None` arm added (not in the original sealed permits) for inline
+  `Deferred` sites with no variant-class anchor. Phase C can re-evaluate; for
+  now it makes the `switch (stubKey)` exhaustive without forcing every inline
+  site to invent a meaningless `VariantClass(...)` placeholder.
+- `Rejection`'s `candidateHint` renderer is inlined into `Rejection.java`
+  (private helpers) rather than calling `BuildContext.candidateHint`, because
+  `BuildContext` is package-private. Both helpers share the same sort algorithm
+  and "; did you mean: " prefix; convergence is enforced by
+  `RejectionRenderingTest.authorErrorUnknownNameWithCandidatesAppendsHint`.
+- The full typed `UnknownName` lift on every `candidateHint(...)`-using site
+  did not land in this phase: most call sites still construct an
+  `AuthorError.Structural` with the pre-rendered hint embedded into the prose,
+  preserving byte stability. The typed `UnknownName` arm and factories are in
+  place; opportunistic migration of individual `candidateHint` sites can land
+  as a follow-up. The structural lift the spec called load-bearing — typed
+  rejections flowing across the resolver / FieldBuilder boundary — did land.
 
 ---
 

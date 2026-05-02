@@ -12,6 +12,7 @@ import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.InputColumnBinding;
 import no.sikt.graphitron.rewrite.model.InputField;
+import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 
 import java.util.List;
@@ -70,7 +71,9 @@ final class MutationInputResolver {
      */
     sealed interface Resolved {
         record Ok(ArgumentRef.InputTypeArg.TableInputArg tia) implements Resolved {}
-        record Rejected(String message) implements Resolved {}
+        record Rejected(Rejection rejection) implements Resolved {
+            public String message() { return rejection.message(); }
+        }
     }
 
     /**
@@ -213,23 +216,22 @@ final class MutationInputResolver {
 
             var resolvedType = ctx.types.get(argTypeName);
             if (!(resolvedType instanceof GraphitronType.TableInputType tit)) {
-                return new Resolved.Rejected(
-                    "@mutation fields only accept @table input arguments; found '" + argName
-                        + "' of type '" + argTypeName + "'");
+                return new Resolved.Rejected(Rejection.structural("@mutation fields only accept @table input arguments; found '" + argName
+                        + "' of type '" + argTypeName + "'"));
             }
 
             var bindingErrors = new java.util.ArrayList<String>();
             List<InputColumnBinding.MapBinding> bindings =
                 enumMapping.buildLookupBindings(tit, arg, fieldDef, argName, bindingErrors);
             if (!bindingErrors.isEmpty()) {
-                return new Resolved.Rejected(String.join("; ", bindingErrors));
+                return new Resolved.Rejected(Rejection.structural(String.join("; ", bindingErrors)));
             }
             Optional<ArgConditionRef> argCondition;
             switch (conditionResolver.resolveArg(arg)) {
                 case ConditionResolver.ArgConditionResult.None n -> argCondition = Optional.empty();
                 case ConditionResolver.ArgConditionResult.Ok ok -> argCondition = Optional.of(ok.ref());
                 case ConditionResolver.ArgConditionResult.Rejected r ->
-                    { return new Resolved.Rejected(r.message()); }
+                    { return new Resolved.Rejected(Rejection.structural(r.message())); }
             }
             var tia = new ArgumentRef.InputTypeArg.TableInputArg(
                 argName, argTypeName, nonNull, list, tit.table(), bindings, argCondition, tit.inputFields());
@@ -241,22 +243,20 @@ final class MutationInputResolver {
             foundTia = tia;
         }
         if (multipleArgsError != null) {
-            return new Resolved.Rejected(multipleArgsError);
+            return new Resolved.Rejected(Rejection.structural(multipleArgsError));
         }
         if (foundTia == null) {
-            return new Resolved.Rejected("no @table input argument found on @mutation field");
+            return new Resolved.Rejected(Rejection.structural("no @table input argument found on @mutation field"));
         }
 
         if (foundTia.list()) {
-            return new Resolved.Rejected(
-                "listed @table input arguments on @mutation fields are not yet supported"
+            return new Resolved.Rejected(Rejection.structural("listed @table input arguments on @mutation fields are not yet supported"
                     + " — declare the argument as a single non-list @table input wrapper"
                     + " (e.g. 'argName: SomeInput' rather than 'argName: [SomeInput!]!') and"
-                    + " issue one mutation per row, or wait for bulk-mutation support to land");
+                    + " issue one mutation per row, or wait for bulk-mutation support to land"));
         }
         if (foundTia.argCondition().isPresent()) {
-            return new Resolved.Rejected(
-                "@condition on a @mutation field argument is not supported");
+            return new Resolved.Rejected(Rejection.structural("@condition on a @mutation field argument is not supported"));
         }
         for (var f : foundTia.fields()) {
             // ColumnField with Direct extraction is the canonical mutation-input shape.
@@ -274,13 +274,11 @@ final class MutationInputResolver {
                 case InputField.CompositeColumnReferenceField ccrf -> "CompositeColumnReferenceField in @mutation inputs is not yet supported";
                 case InputField.ColumnField cf -> "NodeId-decoded ColumnField (post-R50 successor of the retired NodeIdField) in @mutation inputs is not yet supported";
             };
-            return new Resolved.Rejected(
-                "@mutation input '" + foundTia.typeName() + "' field '" + f.name() + "': " + reason);
+            return new Resolved.Rejected(Rejection.structural("@mutation input '" + foundTia.typeName() + "' field '" + f.name() + "': " + reason));
         }
 
         if (kind.requiresLookupKey() && foundTia.fieldBindings().isEmpty()) {
-            return new Resolved.Rejected(
-                "@mutation(typeName: " + kind + ") requires at least one @lookupKey field in the input type");
+            return new Resolved.Rejected(Rejection.structural("@mutation(typeName: " + kind + ") requires at least one @lookupKey field in the input type"));
         }
 
         if (kind == DmlKind.UPDATE) {
@@ -291,8 +289,7 @@ final class MutationInputResolver {
                 .filter(f -> f instanceof InputField.ColumnField)
                 .anyMatch(f -> !lookupKeyNames.contains(f.name()));
             if (!hasNonLookupColumn) {
-                return new Resolved.Rejected(
-                    "@mutation(typeName: UPDATE) has no non-@lookupKey fields to set");
+                return new Resolved.Rejected(Rejection.structural("@mutation(typeName: UPDATE) has no non-@lookupKey fields to set"));
             }
         }
 
@@ -307,10 +304,9 @@ final class MutationInputResolver {
                     .filter(c -> !boundSqlNames.contains(c))
                     .toList();
                 if (!missing.isEmpty()) {
-                    return new Resolved.Rejected(
-                        "@mutation(typeName: " + kind
+                    return new Resolved.Rejected(Rejection.structural("@mutation(typeName: " + kind
                             + ") @lookupKey fields do not cover all PK column(s); missing: "
-                            + String.join(", ", missing));
+                            + String.join(", ", missing)));
                 }
             }
         }

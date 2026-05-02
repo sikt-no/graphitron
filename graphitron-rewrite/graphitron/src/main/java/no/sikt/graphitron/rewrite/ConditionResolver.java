@@ -6,6 +6,7 @@ import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ConditionFilter;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.ParamSource;
+import no.sikt.graphitron.rewrite.model.Rejection;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -62,7 +63,9 @@ final class ConditionResolver {
     sealed interface ArgConditionResult {
         record None() implements ArgConditionResult {}
         record Ok(ArgConditionRef ref) implements ArgConditionResult {}
-        record Rejected(String message) implements ArgConditionResult {}
+        record Rejected(Rejection rejection) implements ArgConditionResult {
+            public String message() { return rejection.message(); }
+        }
     }
 
     /**
@@ -73,7 +76,9 @@ final class ConditionResolver {
     sealed interface FieldConditionResult {
         record None() implements FieldConditionResult {}
         record Ok(ConditionFilter filter) implements FieldConditionResult {}
-        record Rejected(String message) implements FieldConditionResult {}
+        record Rejected(Rejection rejection) implements FieldConditionResult {
+            public String message() { return rejection.message(); }
+        }
     }
 
     private final BuildContext ctx;
@@ -98,20 +103,17 @@ final class ConditionResolver {
         if (cond == null) return new ArgConditionResult.None();
         var argName = arg.getName();
         if (cond.argMappingError() != null) {
-            return new ArgConditionResult.Rejected(
-                "argument '" + argName + "' @condition: " + cond.argMappingError());
+            return new ArgConditionResult.Rejected(Rejection.structural("argument '" + argName + "' @condition: " + cond.argMappingError()));
         }
         var bindingResult = ArgBindingMap.of(Set.of(argName), cond.argMapping());
         if (bindingResult instanceof ArgBindingMap.Result.UnknownArgRef u) {
-            return new ArgConditionResult.Rejected(
-                "argument '" + argName + "' @condition: " + u.message());
+            return new ArgConditionResult.Rejected(Rejection.structural("argument '" + argName + "' @condition: " + u.message()));
         }
         var argBindings = ((ArgBindingMap.Result.Ok) bindingResult).map();
         var result = svc.reflectTableMethod(cond.className(), cond.methodName(),
             argBindings, Set.copyOf(cond.contextArguments()), null);
         if (result.failed()) {
-            return new ArgConditionResult.Rejected(
-                "argument '" + argName + "' @condition: " + result.failureReason());
+            return new ArgConditionResult.Rejected(Rejection.structural("argument '" + argName + "' @condition: " + result.failureReason()));
         }
         var methodRef = result.ref();
         return new ArgConditionResult.Ok(new ArgConditionRef(
@@ -132,20 +134,17 @@ final class ConditionResolver {
         var cond = ctx.readConditionDirective(fieldDef);
         if (cond == null) return new FieldConditionResult.None();
         if (cond.argMappingError() != null) {
-            return new FieldConditionResult.Rejected(
-                "field '" + fieldDef.getName() + "' @condition: " + cond.argMappingError());
+            return new FieldConditionResult.Rejected(Rejection.structural("field '" + fieldDef.getName() + "' @condition: " + cond.argMappingError()));
         }
         var bindingResult = ArgBindingMap.of(FieldBuilder.fieldArgumentNames(fieldDef), cond.argMapping());
         if (bindingResult instanceof ArgBindingMap.Result.UnknownArgRef u) {
-            return new FieldConditionResult.Rejected(
-                "field '" + fieldDef.getName() + "' @condition: " + u.message());
+            return new FieldConditionResult.Rejected(Rejection.structural("field '" + fieldDef.getName() + "' @condition: " + u.message()));
         }
         var argBindings = ((ArgBindingMap.Result.Ok) bindingResult).map();
         var result = svc.reflectTableMethod(cond.className(), cond.methodName(),
             argBindings, Set.copyOf(cond.contextArguments()), null);
         if (result.failed()) {
-            return new FieldConditionResult.Rejected(
-                "field '" + fieldDef.getName() + "' @condition: " + result.failureReason());
+            return new FieldConditionResult.Rejected(Rejection.structural("field '" + fieldDef.getName() + "' @condition: " + result.failureReason()));
         }
         var methodRef = result.ref();
         return new FieldConditionResult.Ok(

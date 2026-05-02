@@ -1,9 +1,9 @@
 package no.sikt.graphitron.rewrite.validation;
 
-import no.sikt.graphitron.rewrite.RejectionKind;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
+import no.sikt.graphitron.rewrite.model.Rejection;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -19,7 +19,7 @@ class UnclassifiedFieldValidationTest {
     enum Case implements ValidatorCase {
 
         UNCLASSIFIED("field with no matching classification rule",
-            new UnclassifiedField("Query", "unknownField", null, null, RejectionKind.AUTHOR_ERROR, "no matching classification rule"),
+            new UnclassifiedField("Query", "unknownField", null, null, Rejection.structural("no matching classification rule")),
             List.of("Field 'Query.unknownField': no matching classification rule"));
 
         private final String description;
