@@ -1,7 +1,7 @@
 ---
 id: R40
 title: "Argument-level `@nodeId` support"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 2
 theme: nodeid
@@ -105,7 +105,7 @@ record NodeIdArgPlan(
 ) {}
 ```
 
-`classifyTableField` (or its R6-orchestrator successor) builds the plan via one walk over the field's args (top-level + nested input-field leaves under arg input-types), calling `nodeIdLeafResolver.resolve(...)` per `@nodeId`-decorated leaf. Cycle protection on nested input types follows the same `LinkedHashSet<String>` shape `walkInputTypeForSameTableNodeId` carries today; sharing `BuildContext.classifyInputField`'s `expandingTypes` set is fine if it falls out cleanly during the lift, but is not required.
+The R6 orchestrator (`FieldBuilder.classifyQueryField` and the sibling `classifyChildField*` paths that route through `resolveTableFieldComponents`) builds the plan via one walk over the field's args (top-level + nested input-field leaves under arg input-types), calling `nodeIdLeafResolver.resolve(...)` per `@nodeId`-decorated leaf. Cycle protection on nested input types follows the same `LinkedHashSet<String>` shape `walkInputTypeForSameTableNodeId` carries today; sharing `BuildContext.classifyInputField`'s `expandingTypes` set is fine if it falls out cleanly during the lift, but is not required.
 
 The plan threads through:
 
