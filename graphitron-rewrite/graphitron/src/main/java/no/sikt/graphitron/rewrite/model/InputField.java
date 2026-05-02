@@ -31,16 +31,11 @@ public sealed interface InputField extends GraphitronField
      * <p>If a field's column cannot be resolved at build time the entire containing
      * {@link GraphitronType.TableInputType} is replaced by a
      * {@link GraphitronType.UnclassifiedType}.
-     */
-    /**
-     * @param extraction how to translate the wire-format value to the column's typed Java
-     *     value at the call-site root. Today's classifier produces {@link CallSiteExtraction.Direct}
-     *     for the column-equality path. Post-R50, the slot also hosts
-     *     {@link CallSiteExtraction.NodeIdDecodeKeys} for arity-1 NodeId-encoded filter fields
-     *     (see R50 phase e); the body emitter pairs {@code Direct} with
-     *     {@link BodyParam.ColumnPredicate.Eq Eq} / {@link BodyParam.ColumnPredicate.In In} and
-     *     {@code NodeIdDecodeKeys.SkipMismatchedElement} with the same arms over decoded key
-     *     values.
+     *
+     * @param extraction translates the wire-format value to the column's typed Java value at
+     *     the call-site root. Restricted to {@link CallSiteExtraction.Direct} (column-equality
+     *     path) and arity-1 {@link CallSiteExtraction.NodeIdDecodeKeys} (NodeId-encoded filter);
+     *     arity &ge; 2 NodeId tuples route to {@link CompositeColumnField} instead.
      */
     record ColumnField(
         String parentTypeName,
@@ -64,13 +59,12 @@ public sealed interface InputField extends GraphitronField
      *
      * <p>When generating WHERE predicates (e.g. inside {@link WhereFilter.InputFilter}), the
      * generator must JOIN through {@code joinPath} before applying the column predicate.
-     */
-    /**
-     * @param extraction how to translate the wire-format value to the column's typed Java
-     *     value at the call-site root. Today's classifier produces
-     *     {@link CallSiteExtraction.Direct} for the {@code @reference}-resolved column-equality
-     *     path. Post-R50, the slot also hosts {@link CallSiteExtraction.NodeIdDecodeKeys} for
-     *     arity-1 {@code @nodeId(typeName: T)} input-side reference fields (see R50 phase e3).
+     *
+     * @param extraction translates the wire-format value to the column's typed Java value at the
+     *     call-site root. Restricted to {@link CallSiteExtraction.Direct} (the {@code @reference}-
+     *     resolved column-equality path) and arity-1 {@link CallSiteExtraction.NodeIdDecodeKeys}
+     *     (input-side {@code @nodeId(typeName: T)} reference); arity &ge; 2 routes to
+     *     {@link CompositeColumnReferenceField}.
      */
     record ColumnReferenceField(
         String parentTypeName,

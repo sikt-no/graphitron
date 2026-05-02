@@ -98,9 +98,8 @@ public final class SplitRowsMethodEmitter {
      * builders consume at their divergence points. Carries only what is re-derived in more than
      * one sibling; per-sibling locals (typed Row/Record/Table type names, the projection list,
      * etc.) stay in the sibling.
-     */
-    /**
-     * {@code joinOnCols} is the column list the rows-method's {@code JOIN parentInput ... ON ...}
+     *
+     * <p>{@code joinOnCols} is the column list the rows-method's {@code JOIN parentInput ... ON ...}
      * predicate matches against {@code firstAlias}: on the catalog-FK path, that's
      * {@link JoinStep.FkJoin#sourceColumns()} (FK-holder side, terminal for list cardinality); on
      * the lifter path, {@link JoinStep.LiftedHop#targetColumns()} (the DataLoader key tuple IS the
