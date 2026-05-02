@@ -514,26 +514,15 @@ need no adaptation.
 
 ---
 
-## Phase 0 — Drop `INTERNAL_INVARIANT` (prep PR, ~5-line diff)
+## Phase 0 — Drop `INTERNAL_INVARIANT` — shipped
 
-Standalone, lands ahead of Phase A. The `INTERNAL_INVARIANT` removal is
-independent of the rest of the lift: one producer site (`FieldBuilder.java:482`),
-one enum value (`RejectionKind.INTERNAL_INVARIANT`), zero test references
-(verified by `grep -r internal-invariant graphitron-rewrite/graphitron/src/test`).
-Landing it as a tiny prep PR removes one moving piece from the Phase A
-migration without cost, and it self-documents as the small "this branch is
-unreachable, throw" change separate from the structural lift.
-
-- Replace the single `INTERNAL_INVARIANT` site
-  ([`FieldBuilder.java:482`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java))
-  with an `AssertionError` (see "`INTERNAL_INVARIANT` site becomes an
-  `AssertionError`" above).
-- Drop `INTERNAL_INVARIANT` from `RejectionKind` (the enum is now a closed
-  three-value set; the projection-from-`Rejection` form lands in Phase A).
-
-If the implementer prefers to keep the lift atomic, this work folds into
-Phase A unchanged — the rationale below for keeping it together still holds,
-the prep PR is just a smaller alternative.
+The single producer site (`FieldBuilder.java:492` after R59 line drift)
+became an `AssertionError`; `RejectionKind.INTERNAL_INVARIANT` is gone
+and the enum is the closed three-value set. Net diff was ~10 lines split
+across `FieldBuilder.java` and `RejectionKind.java` (with Javadoc churn).
+The body of the original Phase 0 motivation lives in the "Surface" section
+above — keep the AssertionError discussion under "`INTERNAL_INVARIANT`
+site becomes an `AssertionError`" as the historical record of the change.
 
 ---
 
@@ -818,17 +807,14 @@ Cross-cutting checks (`validatePaginationRequiresOrdering`,
 
 ## Phasing summary
 
-Default landing order is 0 → A → B → C, single PR per phase. Phase 0 is the
-~5-line `INTERNAL_INVARIANT` removal (independent of the rest, lands first
-to shrink Phase A's review surface). Phase A is the structural lift and the
-resolver-side `Resolved.Rejected` lift; Phase B is the mechanical
+Default landing order is 0 → A → B → C, single PR per phase. Phase 0
+shipped (the `INTERNAL_INVARIANT` removal). Phase A is the structural lift
+and the resolver-side `Resolved.Rejected` lift; Phase B is the mechanical
 `UnclassifiedType` mirror; Phase C is the `STUBBED_VARIANTS` rename and
 validator-gate consolidation. Each phase compiles cleanly on its own and
 leaves the validator's external contract unchanged.
 
-Phase 0 can fold into Phase A if the implementer prefers atomicity; the
-removal is independent of the rest of A, but bundling it costs nothing. A
-and B can collapse into one PR if the diff size allows; A by itself is
+A and B can collapse into one PR if the diff size allows; A by itself is
 roughly 76 + 70 = ~150 mechanical site updates plus the new types, and B
 adds another ~24, so the combined diff likely sits well over 1000 lines.
 Two PRs is the default. C warrants its own PR: it touches the generator's

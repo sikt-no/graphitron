@@ -489,9 +489,13 @@ class FieldBuilder {
                 if (nested instanceof ChildField cf) {
                     nestedFields.add(cf);
                 } else {
-                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.INTERNAL_INVARIANT,
-                        "nested type '" + elementTypeName + "' field '" + nestedDef.getName()
-                        + "' classified as unexpected variant " + nested.getClass().getSimpleName());
+                    // Unreachable by construction: classifyChildFieldOnTableType only emits
+                    // ChildField or UnclassifiedField (the latter handled above). Surface a
+                    // generator bug at the site rather than fabricating a user-facing rejection.
+                    throw new AssertionError(
+                        "classifyChildFieldOnTableType returned " + nested.getClass().getSimpleName()
+                        + " for nested type '" + elementTypeName
+                        + "' field '" + nestedDef.getName() + "'");
                 }
             }
             return new NestingField(parentTypeName, name, location,

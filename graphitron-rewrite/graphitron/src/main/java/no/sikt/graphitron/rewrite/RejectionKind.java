@@ -16,19 +16,20 @@ package no.sikt.graphitron.rewrite;
  *       combination cannot work, period".</li>
  *   <li>{@link #DEFERRED} if the generator does not yet support the requested shape but plans
  *       to. Tracked on the rewrite roadmap.</li>
- *   <li>{@link #INTERNAL_INVARIANT} if a classifier-level contract was violated in a way that
- *       should not be reachable from any valid user schema. Surfaces as a compiler-bug-style
- *       message; treat as a generator bug, not a user-facing error.</li>
  * </ul>
  *
  * <p>When in doubt between {@link #AUTHOR_ERROR} and {@link #INVALID_SCHEMA}, prefer
  * {@code AUTHOR_ERROR}.
+ *
+ * <p>Generator-bug-style "unreachable branch" rejections do not have an enum value: they
+ * throw {@link AssertionError} at the producing site instead of routing through this
+ * channel. A user-facing message in the validator log is the wrong shape for "you can't
+ * fix this; file a generator bug".
  */
 public enum RejectionKind {
     INVALID_SCHEMA,
     AUTHOR_ERROR,
-    DEFERRED,
-    INTERNAL_INVARIANT;
+    DEFERRED;
 
     /**
      * Kebab-case form for the {@code [<kind>] <message>} log prefix emitted by
