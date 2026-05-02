@@ -29,12 +29,16 @@ class ErrorRouterClassGeneratorTest {
     }
 
     @Test
-    void emits_mappingNestedInterfaceWithBuildMatchAndDescription() {
+    void emits_mappingNestedInterfaceWithMatchAndDescription() {
+        // R12 source-direct dispatch: Mapping has match() + description() only. The legacy
+        // build(path, message) factory is gone; the matched source goes into the errors list
+        // directly and graphql-java's PropertyDataFetcher reads each declared @error field
+        // off the source.
         var router = generate();
         TypeSpec mapping = nested(router, "Mapping");
         assertThat(mapping.kind().name()).isEqualTo("INTERFACE");
         assertThat(mapping.methodSpecs()).extracting(MethodSpec::name)
-            .containsExactlyInAnyOrder("build", "match", "description");
+            .containsExactlyInAnyOrder("match", "description");
     }
 
     @Test
@@ -50,14 +54,15 @@ class ErrorRouterClassGeneratorTest {
     }
 
     @Test
-    void exceptionMapping_carriesClassMatchesDescriptionFactory_andOverridesMatchBuildDescription() {
+    void exceptionMapping_carriesClassMatchesDescription_andOverridesMatchAndDescription() {
         var router = generate();
         var em = nested(router, "ExceptionMapping");
         assertThat(em.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL);
         assertThat(em.fieldSpecs()).extracting(f -> f.name())
-            .containsExactly("exceptionClass", "matches", "description", "factory");
+            .containsExactly("exceptionClass", "matches", "description");
         assertThat(em.methodSpecs()).extracting(MethodSpec::name)
-            .contains("match", "build", "description");
+            .contains("match", "description")
+            .doesNotContain("build");
     }
 
     @Test

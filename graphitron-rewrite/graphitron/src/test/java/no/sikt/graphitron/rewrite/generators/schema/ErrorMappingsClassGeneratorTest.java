@@ -125,12 +125,14 @@ class ErrorMappingsClassGeneratorTest {
             .generate(synthesizeSchema(List.of(ch)), OUTPUT_PACKAGE).get(0);
 
         var init = spec.fieldSpecs().get(0).initializer().toString();
-        // ExceptionMapping(IllegalArgumentException.class, "not found", "Film not found", ::new)
+        // R12 source-direct: ExceptionMapping(IllegalArgumentException.class, matches, description).
+        // No per-mapping factory: the matched throwable goes into the errors list directly.
         assertThat(init).contains("ExceptionMapping");
         assertThat(init).contains("IllegalArgumentException.class");
         assertThat(init).contains("\"not found\"");
         assertThat(init).contains("\"Film not found\"");
-        assertThat(init).contains("FilmNotFoundException::new");
+        assertThat(init).doesNotContain("FilmNotFoundException::new");
+        assertThat(init).doesNotContain("::new");
     }
 
     @Test
@@ -144,7 +146,7 @@ class ErrorMappingsClassGeneratorTest {
         var init = spec.fieldSpecs().get(0).initializer().toString();
         assertThat(init).contains("SqlStateMapping");
         assertThat(init).contains("\"23503\"");
-        assertThat(init).contains("FilmFkViolation::new");
+        assertThat(init).doesNotContain("::new");
         // Optional matches/description that are absent render as bare null.
         assertThat(init).contains("null");
     }
@@ -160,6 +162,7 @@ class ErrorMappingsClassGeneratorTest {
         var init = spec.fieldSpecs().get(0).initializer().toString();
         assertThat(init).contains("VendorCodeMapping");
         assertThat(init).contains("\"1452\"");
+        assertThat(init).doesNotContain("::new");
     }
 
     @Test
@@ -172,7 +175,7 @@ class ErrorMappingsClassGeneratorTest {
 
         var init = spec.fieldSpecs().get(0).initializer().toString();
         assertThat(init).contains("ValidationMapping");
-        assertThat(init).contains("FilmValidation::new");
+        assertThat(init).doesNotContain("::new");
     }
 
     @Test
@@ -201,9 +204,11 @@ class ErrorMappingsClassGeneratorTest {
     }
 
     @Test
-    void skips_errorTypeMissingClassFqn() {
-        // An @error type without a backing class can't supply a (List<String>, String) factory.
-        // The emitter silently drops its handlers; the channel's other handlers continue to emit.
+    void emits_handlerForErrorTypeMissingClassFqn() {
+        // R12 source-direct dispatch: an @error type without a backing class still emits its
+        // handlers. Per §2c there is no developer-supplied @error data class: the matched
+        // exception itself goes into the errors list, so the absence of a Java class on the
+        // SDL @error side is no longer a reason to drop a Mapping.
         var withClass = errorType("FilmNotFoundException", FILM_NOT_FOUND_FQN,
             List.of(new ExceptionHandler("java.lang.RuntimeException",
                 Optional.empty(), Optional.empty())));
@@ -218,7 +223,7 @@ class ErrorMappingsClassGeneratorTest {
 
         var init = spec.fieldSpecs().get(0).initializer().toString();
         assertThat(init).contains("RuntimeException");
-        assertThat(init).doesNotContain("IllegalStateException");
+        assertThat(init).contains("IllegalStateException");
     }
 
     private static ErrorType errorType(String name, String classFqn, List<ErrorType.Handler> handlers) {
