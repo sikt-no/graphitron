@@ -132,11 +132,11 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
 
     /**
      * Stable identifier for a deferred-stub site. Two arms: a variant-class key
-     * (the {@code TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS} key form, used
+     * (the {@code TypeFetcherGenerator.STUBBED_VARIANTS} key form, used
      * when the generator stubs an entire variant class) and an emit-block key (a
      * typed enum, used when a variant classifies cleanly but a particular shape
-     * inside the emitter doesn't yet emit). Phase C of R58 wires the
-     * variant-class form into the validator's deferred gate.
+     * inside the emitter doesn't yet emit). R58 Phase C wires both forms into the
+     * validator's deferred gate via the shared {@link Deferred#message()} renderer.
      */
     sealed interface StubKey permits StubKey.VariantClass, StubKey.EmitBlock, StubKey.None {
         record VariantClass(Class<? extends GraphitronField> fieldClass) implements StubKey {}
@@ -157,8 +157,11 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
     /**
      * Closed set of intra-emitter "this shape can't emit yet" reasons. One value
      * per {@code SplitRowsMethodEmitter.unsupportedReason} arm today; a new value
-     * lands when a new emit-block predicate is introduced. Phase C of R58 wires
-     * these through the validator's deferred-gate path.
+     * lands when a new emit-block predicate is introduced. R58 Phase C wires these
+     * through the validator's deferred-gate path: each {@code unsupportedReason}
+     * arm builds a {@link Deferred} keyed by an {@link EmitBlock} of the matching
+     * value, and the validator projects it through the shared {@code Deferred.message()}
+     * renderer.
      */
     enum EmitBlockReason {
         SPLIT_TABLE_FIELD_CONDITION_JOIN_STEP,

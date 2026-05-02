@@ -12,6 +12,7 @@ import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.LookupMapping;
+import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import no.sikt.graphitron.rewrite.model.WhereFilter;
@@ -285,7 +286,7 @@ public final class SplitRowsMethodEmitter {
     private static MethodSpec buildForSplitTable(ChildField.SplitTableField stf, String outputPackage, String jooqPackage) {
         var stubReason = unsupportedReason(stf);
         if (stubReason.isPresent()) {
-            return buildRuntimeStub(stf.rowsMethodName(), stf.batchKey(), stf.returnType(), stubReason.get(), outputPackage);
+            return buildRuntimeStub(stf.rowsMethodName(), stf.batchKey(), stf.returnType(), stubReason.get().message(), outputPackage);
         }
         if (stf.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Single) {
             return buildSingleMethod(
@@ -310,14 +311,24 @@ public final class SplitRowsMethodEmitter {
      * {@code GraphitronSchemaValidator.validateVariantIsImplemented} (build-time error), so
      * the two stay in lock-step. Moving a branch from here to a real emitter body must
      * update this predicate in the same commit.
+     *
+     * <p>The returned {@link Rejection.Deferred} carries an
+     * {@link Rejection.StubKey.EmitBlock} key tagging the specific shape so downstream tooling
+     * (LSP fix-its, watch-mode formatter) can distinguish "intra-variant emit-block" from
+     * "stubbed leaf class" without parsing prose.
      */
-    public static java.util.Optional<String> unsupportedReason(ChildField.SplitTableField stf) {
+    public static java.util.Optional<Rejection.Deferred> unsupportedReason(ChildField.SplitTableField stf) {
         if (JoinPathEmitter.hasConditionJoin(stf.joinPath())) {
-            return java.util.Optional.of(
+            return java.util.Optional.of(emitBlock(
+                Rejection.EmitBlockReason.SPLIT_TABLE_FIELD_CONDITION_JOIN_STEP,
                 "@splitQuery '" + stf.qualifiedName() + "' with a condition-join step cannot be "
-                + "emitted until classification-vocabulary item 5 resolves condition-method target tables");
+                + "emitted until classification-vocabulary item 5 resolves condition-method target tables"));
         }
         return java.util.Optional.empty();
+    }
+
+    private static Rejection.Deferred emitBlock(Rejection.EmitBlockReason reason, String summary) {
+        return new Rejection.Deferred(summary, "", new Rejection.StubKey.EmitBlock(reason));
     }
 
     // -----------------------------------------------------------------------
@@ -327,7 +338,7 @@ public final class SplitRowsMethodEmitter {
     private static MethodSpec buildForSplitLookupTable(ChildField.SplitLookupTableField slf, String outputPackage, String jooqPackage) {
         var stubReason = unsupportedReason(slf);
         if (stubReason.isPresent()) {
-            return buildRuntimeStub(slf.rowsMethodName(), slf.batchKey(), slf.returnType(), stubReason.get(), outputPackage);
+            return buildRuntimeStub(slf.rowsMethodName(), slf.batchKey(), slf.returnType(), stubReason.get().message(), outputPackage);
         }
 
         return buildListMethod(
@@ -344,11 +355,12 @@ public final class SplitRowsMethodEmitter {
      * time ({@code FieldBuilder}'s {@code hasSplitQuery && hasLookupKey} arm), so this emitter
      * never sees a single-cardinality {@link ChildField.SplitLookupTableField}.
      */
-    public static java.util.Optional<String> unsupportedReason(ChildField.SplitLookupTableField slf) {
+    public static java.util.Optional<Rejection.Deferred> unsupportedReason(ChildField.SplitLookupTableField slf) {
         if (JoinPathEmitter.hasConditionJoin(slf.joinPath())) {
-            return java.util.Optional.of(
+            return java.util.Optional.of(emitBlock(
+                Rejection.EmitBlockReason.SPLIT_LOOKUP_TABLE_FIELD_CONDITION_JOIN_STEP,
                 "@splitQuery @lookupKey '" + slf.qualifiedName() + "' with a condition-join step cannot be "
-                + "emitted until classification-vocabulary item 5 resolves condition-method target tables");
+                + "emitted until classification-vocabulary item 5 resolves condition-method target tables"));
         }
         return java.util.Optional.empty();
     }
@@ -360,7 +372,7 @@ public final class SplitRowsMethodEmitter {
     private static MethodSpec buildForRecordTable(ChildField.RecordTableField rtf, String outputPackage, String jooqPackage) {
         var stubReason = unsupportedReason(rtf);
         if (stubReason.isPresent()) {
-            return buildRuntimeStub(rtf.rowsMethodName(), rtf.batchKey(), rtf.returnType(), stubReason.get(), outputPackage);
+            return buildRuntimeStub(rtf.rowsMethodName(), rtf.batchKey(), rtf.returnType(), stubReason.get().message(), outputPackage);
         }
         return buildListMethod(
             rtf.name(), rtf.rowsMethodName(), rtf.returnType(),
@@ -378,11 +390,12 @@ public final class SplitRowsMethodEmitter {
      * with a single-cardinality {@link ChildField.RecordTableField} is a classifier / validator
      * bug.
      */
-    public static java.util.Optional<String> unsupportedReason(ChildField.RecordTableField rtf) {
+    public static java.util.Optional<Rejection.Deferred> unsupportedReason(ChildField.RecordTableField rtf) {
         if (JoinPathEmitter.hasConditionJoin(rtf.joinPath())) {
-            return java.util.Optional.of(
+            return java.util.Optional.of(emitBlock(
+                Rejection.EmitBlockReason.RECORD_TABLE_FIELD_CONDITION_JOIN_STEP,
                 "RecordTableField '" + rtf.qualifiedName() + "' with a condition-join step cannot be "
-                + "emitted until classification-vocabulary item 5 resolves condition-method target tables");
+                + "emitted until classification-vocabulary item 5 resolves condition-method target tables"));
         }
         return java.util.Optional.empty();
     }
@@ -394,7 +407,7 @@ public final class SplitRowsMethodEmitter {
     private static MethodSpec buildForRecordLookupTable(ChildField.RecordLookupTableField rltf, String outputPackage, String jooqPackage) {
         var stubReason = unsupportedReason(rltf);
         if (stubReason.isPresent()) {
-            return buildRuntimeStub(rltf.rowsMethodName(), rltf.batchKey(), rltf.returnType(), stubReason.get(), outputPackage);
+            return buildRuntimeStub(rltf.rowsMethodName(), rltf.batchKey(), rltf.returnType(), stubReason.get().message(), outputPackage);
         }
         // Rows-method body is identical to SplitLookupTableField's — same BatchKey.RowKeyed +
         // LookupMapping shape, so buildListMethod handles both. The record-parent divergence
@@ -416,11 +429,12 @@ public final class SplitRowsMethodEmitter {
      * with a single-cardinality {@link ChildField.RecordLookupTableField} is a classifier /
      * validator bug.
      */
-    public static java.util.Optional<String> unsupportedReason(ChildField.RecordLookupTableField rltf) {
+    public static java.util.Optional<Rejection.Deferred> unsupportedReason(ChildField.RecordLookupTableField rltf) {
         if (JoinPathEmitter.hasConditionJoin(rltf.joinPath())) {
-            return java.util.Optional.of(
+            return java.util.Optional.of(emitBlock(
+                Rejection.EmitBlockReason.RECORD_LOOKUP_TABLE_FIELD_CONDITION_JOIN_STEP,
                 "RecordLookupTableField '" + rltf.qualifiedName() + "' with a condition-join step cannot be "
-                + "emitted until classification-vocabulary item 5 resolves condition-method target tables");
+                + "emitted until classification-vocabulary item 5 resolves condition-method target tables"));
         }
         return java.util.Optional.empty();
     }

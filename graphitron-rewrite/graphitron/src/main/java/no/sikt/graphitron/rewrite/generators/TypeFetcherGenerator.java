@@ -32,6 +32,7 @@ import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.QueryField;
+import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.SqlGeneratingField;
 import no.sikt.graphitron.rewrite.model.TableRef;
@@ -143,10 +144,10 @@ public class TypeFetcherGenerator {
 
     /**
      * Leaves with a real arm in {@link #generateTypeSpec}'s switch (no {@code stub(f)} call).
-     * Together with {@link #NOT_IMPLEMENTED_REASONS}{@code .keySet()} and {@link #NOT_DISPATCHED_LEAVES}
+     * Together with {@link #STUBBED_VARIANTS}{@code .keySet()} and {@link #NOT_DISPATCHED_LEAVES}
      * this forms an exhaustive, disjoint partition of every sealed leaf of {@link GraphitronField};
      * enforced by {@code GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus}.
-     * Moving an entry from {@link #NOT_IMPLEMENTED_REASONS} to this set is the expected review signal
+     * Moving an entry from {@link #STUBBED_VARIANTS} to this set is the expected review signal
      * when a stub becomes a real implementation.
      */
     public static final Set<Class<? extends GraphitronField>> IMPLEMENTED_LEAVES = Set.of(
@@ -201,7 +202,7 @@ public class TypeFetcherGenerator {
      * Leaves whose SELECT projection is emitted inline by {@link TypeClassGenerator}'s
      * {@code $fields} method — no per-field fetcher method is generated. Together with
      * {@link #IMPLEMENTED_LEAVES}, {@link #NOT_DISPATCHED_LEAVES}, and
-     * {@link #NOT_IMPLEMENTED_REASONS}{@code .keySet()}, this forms an exhaustive four-way
+     * {@link #STUBBED_VARIANTS}{@code .keySet()}, this forms an exhaustive four-way
      * disjoint partition of every {@link GraphitronField} sealed leaf; enforced by
      * {@code GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus}.
      */
@@ -212,11 +213,15 @@ public class TypeFetcherGenerator {
         ChildField.NestingField.class);
 
     /**
-     * Maps each unimplemented field variant class to the reason string that the generated stub
-     * includes in its {@link UnsupportedOperationException} message.
+     * Maps each unimplemented field variant class to the {@link Rejection.Deferred} that both the
+     * generated stub method ({@link #stub}) and {@code GraphitronSchemaValidator.validateVariantIsImplemented}
+     * project. The deferred value carries a {@code summary}, a roadmap {@code planSlug}, and a
+     * {@link Rejection.StubKey.VariantClass} naming the same variant class the map keys on; the
+     * uniform {@link Rejection.Deferred#message()} renderer produces the user-facing prose for both
+     * paths so the validator's deferred-gate output stays in lock-step with the runtime stub message.
      *
-     * <p>Consumed by {@code GraphitronSchemaValidator} (P2 #4) via
-     * {@code NOT_IMPLEMENTED_REASONS.keySet()} to produce a build-time error rather than a
+     * <p>Consumed by {@code GraphitronSchemaValidator.validateVariantIsImplemented} via
+     * {@code STUBBED_VARIANTS.get(field.getClass())} to produce a build-time error rather than a
      * runtime exception when a schema uses a variant that cannot yet be generated.
      *
      * <p>Invariants:
@@ -234,24 +239,37 @@ public class TypeFetcherGenerator {
      *       The partition test catches an orphan entry as soon as any other set references it.</li>
      * </ul>
      */
-    public static final Map<Class<? extends GraphitronField>, String> NOT_IMPLEMENTED_REASONS =
+    public static final Map<Class<? extends GraphitronField>, Rejection.Deferred> STUBBED_VARIANTS =
         Map.ofEntries(
             // MutationField stubs — see graphitron-rewrite/roadmap/mutations.md
             Map.entry(MutationField.MutationUpsertTableField.class,
-                "Mutation upsert not yet implemented — see graphitron-rewrite/roadmap/mutations.md"),
+                deferredFor(MutationField.MutationUpsertTableField.class,
+                    "Mutation upsert not yet implemented", "mutations")),
             // ChildField stubs — TableTargetField sub-hierarchy
             // (ChildField.TableField and ChildField.LookupTableField are in PROJECTED_LEAVES —
             // inline emission via TypeClassGenerator.$fields; see G5 and argres Phase 2a)
             // ChildField stubs — remaining direct permits
             Map.entry(ChildField.ColumnReferenceField.class,
-                "ColumnReferenceField not yet implemented — see graphitron-rewrite/roadmap/column-reference-on-scalar-field.md"),
+                deferredFor(ChildField.ColumnReferenceField.class,
+                    "ColumnReferenceField not yet implemented", "column-reference-on-scalar-field")),
             Map.entry(ChildField.CompositeColumnReferenceField.class,
-                "CompositeColumnReferenceField (rooted-at-parent NodeId reference) not yet implemented — JOIN-with-projection emission tracked in R24; rooted-at-parent fixture (parent_node + child_ref) is in nodeidfixture and ready to drive coverage. See graphitron-rewrite/roadmap/nodeidreferencefield-join-projection-form.md"),
+                deferredFor(ChildField.CompositeColumnReferenceField.class,
+                    "CompositeColumnReferenceField (rooted-at-parent NodeId reference) not yet implemented"
+                    + " — JOIN-with-projection emission tracked in R24; rooted-at-parent fixture"
+                    + " (parent_node + child_ref) is in nodeidfixture and ready to drive coverage",
+                    "nodeidreferencefield-join-projection-form")),
             Map.entry(ChildField.TableMethodField.class,
-                "TableMethodField not yet implemented — see graphitron-rewrite/roadmap/tablemethod-scalar-return.md"),
+                deferredFor(ChildField.TableMethodField.class,
+                    "TableMethodField not yet implemented", "tablemethod-scalar-return")),
             Map.entry(ChildField.MultitableReferenceField.class,
-                "MultitableReferenceField not yet implemented — see graphitron-rewrite/roadmap/multitable-reference-on-scalar.md")
+                deferredFor(ChildField.MultitableReferenceField.class,
+                    "MultitableReferenceField not yet implemented", "multitable-reference-on-scalar"))
         );
+
+    private static Rejection.Deferred deferredFor(
+            Class<? extends GraphitronField> fieldClass, String summary, String planSlug) {
+        return new Rejection.Deferred(summary, planSlug, new Rejection.StubKey.VariantClass(fieldClass));
+    }
 
     /**
      * Overload for tests and callers that don't need to specify a {@link GraphitronType.ResultType}.
@@ -353,7 +371,7 @@ public class TypeFetcherGenerator {
                 case QueryField.QueryTableMethodTableField f  -> builder.addMethod(buildQueryTableMethodFetcher(f, outputPackage, jooqPackage));
                 case QueryField.QueryServiceTableField f      -> builder.addMethod(buildQueryServiceTableFetcher(f, outputPackage, jooqPackage));
                 case QueryField.QueryServiceRecordField f     -> builder.addMethod(buildQueryServiceRecordFetcher(f, outputPackage));
-                // Stub variants — see NOT_IMPLEMENTED_REASONS
+                // Stub variants — see STUBBED_VARIANTS
                 case QueryField.QueryTableInterfaceField f    -> builder.addMethod(buildQueryTableInterfaceFieldFetcher(f, outputPackage, jooqPackage));
                 case QueryField.QueryInterfaceField f -> {
                     if (f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
@@ -2095,7 +2113,7 @@ public class TypeFetcherGenerator {
 
     /**
      * Generates a stub method that throws {@link UnsupportedOperationException} with the
-     * reason string from {@link #NOT_IMPLEMENTED_REASONS}. Fails fast with
+     * reason string rendered from {@link #STUBBED_VARIANTS}. Fails fast with
      * {@link AssertionError} if the class is not in the map, which means the switch arm
      * is missing a map entry.
      */
@@ -2136,9 +2154,9 @@ public class TypeFetcherGenerator {
 
     private static MethodSpec stub(GraphitronField field) {
         var reason = Objects.requireNonNull(
-            NOT_IMPLEMENTED_REASONS.get(field.getClass()),
+            STUBBED_VARIANTS.get(field.getClass()),
             () -> "No stub reason registered for " + field.getClass().getSimpleName()
-                  + " — either implement a real generator branch or add an entry to NOT_IMPLEMENTED_REASONS");
+                  + " — either implement a real generator branch or add an entry to STUBBED_VARIANTS").message();
         // Stubs are unreachable in practice: the validator rejects unimplemented variants at
         // build time. The throw is here only to make the gap loud if a stub ever does fire,
         // which would mean a validator gap. Routing through ErrorRouter.redact would mask that

@@ -64,9 +64,8 @@ public final class FieldValidationTestHelper {
     /**
      * Returns the expected "not yet implemented" error message that
      * {@code GraphitronSchemaValidator.validateVariantIsImplemented} produces for a stubbed
-     * variant. Reads from {@link TypeFetcherGenerator#NOT_IMPLEMENTED_REASONS} so the test
-     * stays in lock-step with production — updating the reason string in one place updates
-     * both sides.
+     * variant. Reads from {@link TypeFetcherGenerator#STUBBED_VARIANTS} so the test stays in
+     * lock-step with production — updating the reason in one place updates both sides.
      *
      * <p>Use in a per-variant test's expected-error list where that variant is stubbed:
      * <pre>
@@ -75,7 +74,7 @@ public final class FieldValidationTestHelper {
      */
     public static String stubbedError(String qualifiedName, Class<? extends GraphitronField> variant) {
         return "Field '" + qualifiedName + "': "
-            + TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS.get(variant);
+            + TypeFetcherGenerator.STUBBED_VARIANTS.get(variant).message();
     }
 
     /**

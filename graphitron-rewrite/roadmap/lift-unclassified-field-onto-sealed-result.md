@@ -1,7 +1,7 @@
 ---
 id: R58
 title: "Lift `UnclassifiedField` / `UnclassifiedType` onto sealed-result shape"
-status: Ready
+status: Done
 bucket: architecture
 priority: 5
 theme: structural-refactor
@@ -624,48 +624,72 @@ unchanged.
 
 ---
 
-## Phase C — Collapse `NOT_IMPLEMENTED_REASONS` onto the `Deferred` arm
+## Phase C — Collapse `NOT_IMPLEMENTED_REASONS` onto the `Deferred` arm — shipped
 
-`TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS` today is the validator's
-secondary "deferred" channel: a `Map<Class<? extends GraphitronField>, String>`
-naming variants that classify cleanly but emit a stub. The map's reason
-strings are hand-rolled at the same time as the inline `RejectionKind.DEFERRED`
-sites in `FieldBuilder`; they share the same shape (summary + roadmap path)
-without sharing a type.
+`TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS` was the validator's secondary "deferred"
+channel: a `Map<Class<? extends GraphitronField>, String>` naming variants that classify
+cleanly but emit a stub. The map's reason strings were hand-rolled at the same time as
+the inline `RejectionKind.DEFERRED` sites in `FieldBuilder`; they shared the same shape
+(summary + roadmap path) without sharing a type.
 
-The lift:
+The lift landed:
 
-1. Rename `NOT_IMPLEMENTED_REASONS` to `STUBBED_VARIANTS` and change its
-   value type from `String` to `Rejection.Deferred`. Each entry now carries
-   a `summary`, `planSlug`, and `StubKey.VariantClass` (the same key the
-   map already keys on, lifted into the value for shape uniformity with the
-   inline-`Deferred` sites).
-2. `validateVariantIsImplemented` looks up `STUBBED_VARIANTS` and, on hit,
-   produces a `ValidationError(DEFERRED, …, deferred.message(), …)` —
-   structurally identical to a classifier-time `Deferred` rejection projected
-   through the validator. The validator stops being the only path that knows
-   how to format a deferred-variant error; both paths share `Deferred.message()`.
-3. The `unsupportedReason` predicates on `SplitRowsMethodEmitter` (called from
-   `validateVariantIsImplemented` for the four split / record-split variants)
-   shift their return type from `Optional<String>` to
-   `Optional<Rejection.Deferred>`. The `EmitBlock` form of `StubKey` lands
-   here: each `unsupportedReason` arm produces a `Deferred` keyed by an
-   `EmitBlockReason` enum value (one per arm today, all on the
-   condition-join-step shape) so a downstream consumer can distinguish
-   "field is a stubbed leaf class" from "field is an emittable leaf class
-   but this particular shape doesn't emit". The enum's closed value set
-   makes "add a new emit-block predicate" a typed addition rather than a
-   free-form string drift.
+1. The map is renamed to `TypeFetcherGenerator.STUBBED_VARIANTS` and its value type
+   widens from `String` to `Rejection.Deferred`. Each entry carries a `summary`, a
+   `planSlug`, and a `StubKey.VariantClass` (the same key the map already keys on,
+   lifted into the value for shape uniformity with the inline-`Deferred` sites). A
+   private `deferredFor(fieldClass, summary, planSlug)` helper keeps the entry
+   declarations terse.
+2. `GraphitronSchemaValidator.validateVariantIsImplemented` looks up `STUBBED_VARIANTS`
+   and, on hit, threads the `Rejection.Deferred` through a shared `emitDeferredError`
+   helper that projects through `RejectionKind.of` for the kebab-case prefix and reads
+   the prose tail from `deferred.message()`. The validator no longer has its own
+   path for formatting a deferred-variant error; the same `emitDeferredError` helper
+   handles both the `STUBBED_VARIANTS` channel and the four
+   `SplitRowsMethodEmitter.unsupportedReason` channels.
+3. The four `SplitRowsMethodEmitter.unsupportedReason` overloads
+   (`SplitTableField`, `SplitLookupTableField`, `RecordTableField`,
+   `RecordLookupTableField`) lift from `Optional<String>` to `Optional<Rejection.Deferred>`.
+   Each overload now produces a `Deferred` keyed by the matching
+   `EmitBlockReason` enum value (one per arm — all four on the condition-join-step
+   shape today) via a shared private `emitBlock(reason, summary)` helper. The four
+   `buildFor*` callers strip the prose tail off via `stubReason.get().message()` to
+   pass into `buildRuntimeStub`, so the runtime stub's `UnsupportedOperationException`
+   message stays byte-stable.
+4. `TypeFetcherGenerator.stub(GraphitronField)` reads from `STUBBED_VARIANTS` and
+   threads the looked-up `Rejection.Deferred.message()` into the generated
+   `UnsupportedOperationException` constructor — the runtime stub message remains
+   byte-stable for every stubbed variant.
 
-Net effect: the validator has one path for "deferred", whether the source is
-the stubbed-variant map, the inline-deferred classifier site, or the
-intra-variant `SplitRowsMethodEmitter` predicate. All three produce
-`Rejection.Deferred` and project through `RejectionKind.of` identically.
+Net effect: the validator has one path for "deferred", whether the source is the
+stubbed-variant map, the inline-deferred classifier site, or the intra-variant
+`SplitRowsMethodEmitter` predicate. All three produce `Rejection.Deferred` and
+project through `RejectionKind.of` identically.
 
-The `IMPLEMENTED_LEAVES` / `NOT_DISPATCHED_LEAVES` / `STUBBED_VARIANTS`
-disjoint-partition test
-(`GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus`)
-adapts to the renamed constant; the partition itself does not change.
+`GeneratorCoverageTest`, `FieldValidationTestHelper.stubbedError`, the two
+`TypeFetcherGeneratorTest` membership-ratchet tests, and `StubbedVariantPipelineTest`
+all rename their `NOT_IMPLEMENTED_REASONS` references in lock-step; the
+`stubbedError(...)` helper appends `.message()` so its return form stays consistent.
+The `IMPLEMENTED_LEAVES` / `NOT_DISPATCHED_LEAVES` / `PROJECTED_LEAVES` /
+`STUBBED_VARIANTS` disjoint-partition test
+(`GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus`) adapts to
+the renamed constant; the partition itself is unchanged.
+
+### Phase C prose-drift audit
+
+The validator log surface is byte-stable for five of the six `STUBBED_VARIANTS`
+entries (`MutationUpdateTableField`, `MutationUpsertTableField`,
+`ColumnReferenceField`, `TableMethodField`, `MultitableReferenceField`) and for all
+four `SplitRowsMethodEmitter` arms. One entry drifts: the
+`ChildField.CompositeColumnReferenceField` message originally wove the roadmap path
+in via `". See graphitron-rewrite/roadmap/<slug>.md"`; the uniform
+`Rejection.Deferred.message()` renderer produces `" — see graphitron-rewrite/roadmap/<slug>.md"`
+instead. The drift is purely the separator between the body prose and the roadmap
+path (`". See"` → `" — see"`). No test asserts on the exact message string for this
+variant, and the drift brings the message into line with the renderer used by every
+other deferred site (inline classifier sites, `STUBBED_VARIANTS` siblings, and the
+intra-emitter `EmitBlock` arm), so the validator's log surface is now uniform across
+all three deferred channels.
 
 ---
 
@@ -800,23 +824,18 @@ Cross-cutting checks (`validatePaginationRequiresOrdering`,
 
 ## Phasing summary
 
-Default landing order is 0 → A → B → C, single PR per phase. Phase 0
-shipped (the `INTERNAL_INVARIANT` removal). Phase A shipped (the structural
-lift and the resolver-side `Resolved.Rejected` lift). Phase B shipped (the
-mechanical `UnclassifiedType` mirror). Phase C remains: the
-`STUBBED_VARIANTS` rename and validator-gate consolidation. Each phase
-compiles cleanly on its own and leaves the validator's external contract
-unchanged.
+The plan landed in four phases: 0 (the `INTERNAL_INVARIANT` removal), A (the
+structural lift and the resolver-side `Resolved.Rejected` lift), B (the mechanical
+`UnclassifiedType` mirror), and C (the `STUBBED_VARIANTS` rename and validator-gate
+consolidation). Each phase shipped as a single PR; each compiled cleanly on its
+own and left the validator's external contract unchanged.
 
-C warrants its own PR: it touches the generator's stub map and the
-validator's deferred-gate path together, and the prose-drift audit (see
-below) is a separate review concern from the structural lift.
-
-The whole plan is internal-refactor scoped: no user-visible directive,
-goal, or output format changes. The validator's log surface is byte-stable
-through Phase B; Phase C may slightly normalise prose for the few stubbed
-variants whose hand-rolled message diverges from the new uniform renderer
-(audit and document any drift in the Phase C commit message). The
-single `INTERNAL_INVARIANT` site shifts from a user-facing field rejection
-to an `AssertionError`; that's the only behavioural change in the entire
-plan, and it is invisible against any well-formed schema.
+The whole plan is internal-refactor scoped: no user-visible directive, goal, or
+output format changes. The validator's log surface stayed byte-stable through
+Phases 0, A, and B; Phase C drifted exactly one prose line for the
+`CompositeColumnReferenceField` stubbed variant (`". See"` → `" — see"`) by
+folding its hand-rolled message onto the uniform `Rejection.Deferred.message()`
+renderer — see Phase C's prose-drift audit. The single `INTERNAL_INVARIANT` site
+shifted from a user-facing field rejection to an `AssertionError`; that's the only
+behavioural change in the entire plan, and it is invisible against any well-formed
+schema.

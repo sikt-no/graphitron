@@ -14,7 +14,7 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
  * validator path, not only when fed a hand-constructed fixture (the per-variant
  * {@code *ValidationTest} classes). Complements
  * {@code GraphitronSchemaValidator.validateVariantIsImplemented} and the
- * {@link TypeFetcherGenerator#NOT_IMPLEMENTED_REASONS} map.
+ * {@link TypeFetcherGenerator#STUBBED_VARIANTS} map.
  */
 @PipelineTier
 class StubbedVariantPipelineTest {
@@ -33,7 +33,7 @@ class StubbedVariantPipelineTest {
 
         assertThat(messages(errors))
             .contains("Field 'Mutation.upsertFilm': "
-                + TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS.get(MutationField.MutationUpsertTableField.class));
+                + TypeFetcherGenerator.STUBBED_VARIANTS.get(MutationField.MutationUpsertTableField.class).message());
         // Ratchet: whole-variant stubs are DEFERRED (generator capability gap), not
         // INVALID_SCHEMA. UPSERT is the last remaining DML body (UPDATE landed in Phase 4).
         assertThat(errors).anyMatch(e -> e.kind() == RejectionKind.DEFERRED

@@ -138,48 +138,51 @@ public class GraphitronSchemaValidator {
      * first request hitting the variant; the principle in {@code graphitron-principles.md}
      * is that problems caught at build time are cheaper, so we surface it here.
      *
-     * <p>The {@link TypeFetcherGenerator#NOT_IMPLEMENTED_REASONS} map is the single source of
+     * <p>The {@link TypeFetcherGenerator#STUBBED_VARIANTS} map is the single source of
      * truth for "stubbed" status. Variants in {@code IMPLEMENTED_LEAVES} or
      * {@code NOT_DISPATCHED_LEAVES} return {@code null} from this lookup and are correctly
      * ignored — an invariant enforced by
      * {@code GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus}.
+     *
+     * <p>Both the stubbed-variant map lookup and the intra-variant
+     * {@code SplitRowsMethodEmitter.unsupportedReason} predicates produce a
+     * {@link no.sikt.graphitron.rewrite.model.Rejection.Deferred}; both project to a
+     * {@link ValidationError} via the shared {@link #emitDeferredError} path so the validator's
+     * deferred-gate output is uniform regardless of which channel the deferred arose from.
      */
     private void validateVariantIsImplemented(GraphitronField field, List<ValidationError> errors) {
-        String reason = TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS.get(field.getClass());
-        if (reason != null) {
-            errors.add(new ValidationError(RejectionKind.DEFERRED,
-                field.qualifiedName(),
-                "Field '" + field.qualifiedName() + "': " + reason,
-                field.location()
-            ));
+        var stubbed = TypeFetcherGenerator.STUBBED_VARIANTS.get(field.getClass());
+        if (stubbed != null) {
+            emitDeferredError(field, stubbed, errors);
             return;
         }
         // Intra-variant stubs: some SplitTableField / SplitLookupTableField shapes (single
         // cardinality, condition-join in FK path, empty FK path) compile but the emitted
-        // rows method throws at request time. NOT_IMPLEMENTED_REASONS is class-keyed so
+        // rows method throws at request time. STUBBED_VARIANTS is class-keyed so
         // cannot distinguish these from emittable shapes, delegate to the emitter's own
         // shape predicate so validator and emitter stay in lock-step.
         if (field instanceof no.sikt.graphitron.rewrite.model.ChildField.SplitTableField stf) {
             no.sikt.graphitron.rewrite.generators.SplitRowsMethodEmitter.unsupportedReason(stf)
-                .ifPresent(msg -> errors.add(new ValidationError(RejectionKind.DEFERRED,
-                    field.qualifiedName(),
-                    "Field '" + field.qualifiedName() + "': " + msg, field.location())));
+                .ifPresent(d -> emitDeferredError(field, d, errors));
         } else if (field instanceof no.sikt.graphitron.rewrite.model.ChildField.SplitLookupTableField slf) {
             no.sikt.graphitron.rewrite.generators.SplitRowsMethodEmitter.unsupportedReason(slf)
-                .ifPresent(msg -> errors.add(new ValidationError(RejectionKind.DEFERRED,
-                    field.qualifiedName(),
-                    "Field '" + field.qualifiedName() + "': " + msg, field.location())));
+                .ifPresent(d -> emitDeferredError(field, d, errors));
         } else if (field instanceof no.sikt.graphitron.rewrite.model.ChildField.RecordTableField rtf) {
             no.sikt.graphitron.rewrite.generators.SplitRowsMethodEmitter.unsupportedReason(rtf)
-                .ifPresent(msg -> errors.add(new ValidationError(RejectionKind.DEFERRED,
-                    field.qualifiedName(),
-                    "Field '" + field.qualifiedName() + "': " + msg, field.location())));
+                .ifPresent(d -> emitDeferredError(field, d, errors));
         } else if (field instanceof no.sikt.graphitron.rewrite.model.ChildField.RecordLookupTableField rltf) {
             no.sikt.graphitron.rewrite.generators.SplitRowsMethodEmitter.unsupportedReason(rltf)
-                .ifPresent(msg -> errors.add(new ValidationError(RejectionKind.DEFERRED,
-                    field.qualifiedName(),
-                    "Field '" + field.qualifiedName() + "': " + msg, field.location())));
+                .ifPresent(d -> emitDeferredError(field, d, errors));
         }
+    }
+
+    private static void emitDeferredError(GraphitronField field,
+            no.sikt.graphitron.rewrite.model.Rejection.Deferred deferred, List<ValidationError> errors) {
+        errors.add(new ValidationError(RejectionKind.of(deferred),
+            field.qualifiedName(),
+            "Field '" + field.qualifiedName() + "': " + deferred.message(),
+            field.location()
+        ));
     }
 
     // --- Type validators (stubs — filled in as test classes are added) ---
@@ -615,7 +618,7 @@ public class GraphitronSchemaValidator {
 
     private void validateVariantIsSupportedAtNestedDepth(GraphitronField field, List<ValidationError> errors) {
         // Stubbed variants already surfaced by validateVariantIsImplemented, don't double-report.
-        if (TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS.containsKey(field.getClass())) {
+        if (TypeFetcherGenerator.STUBBED_VARIANTS.containsKey(field.getClass())) {
             return;
         }
         if (!NESTED_WIREABLE_LEAVES.contains(field.getClass())) {
