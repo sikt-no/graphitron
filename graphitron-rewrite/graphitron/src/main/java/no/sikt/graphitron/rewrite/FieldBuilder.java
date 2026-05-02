@@ -1990,10 +1990,15 @@ class FieldBuilder {
             return new QueryField.QueryNodeField(parentTypeName, name, location, returnType);
         }
 
-        if (hasLookupKeyAnywhere(fieldDef)) {
-            String lookupTypeName = baseTypeName(fieldDef);
-            var returnType = ctx.resolveReturnType(lookupTypeName, buildWrapper(fieldDef));
-            return switch (lookupKeyResolver.resolveAtRoot(returnType)) {
+        // Resolve the field's backing table name early so the @nodeId-as-lookup gate can ask
+        // the resolver whether any @nodeId-decorated arg resolves to same-table (which implies
+        // @lookupKey). The bare hasLookupKeyAnywhere check covers explicit @lookupKey only.
+        String lookupTypeName = baseTypeName(fieldDef);
+        var lookupReturnType = ctx.resolveReturnType(lookupTypeName, buildWrapper(fieldDef));
+        if (hasLookupKeyAnywhere(fieldDef)
+                || (lookupReturnType instanceof ReturnTypeRef.TableBoundReturnType tableBound
+                    && hasSameTableNodeIdAnywhere(fieldDef, tableBound.table()))) {
+            return switch (lookupKeyResolver.resolveAtRoot(lookupReturnType)) {
                 case LookupKeyDirectiveResolver.Resolved.Rejected r ->
                     new UnclassifiedField(parentTypeName, name, location, fieldDef, r.kind(), r.message());
                 case LookupKeyDirectiveResolver.Resolved.Ok ok -> {
@@ -2162,6 +2167,34 @@ class FieldBuilder {
             String argTypeName = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(arg.getType())).getName();
             if (ctx.schema.getType(argTypeName) instanceof GraphQLInputObjectType inputType) {
                 if (inputTypeHasLookupKey(inputType, 0)) return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * R40: returns {@code true} when any direct argument of {@code fieldDef} carries
+     * {@code @nodeId} and the resolver classifies it as
+     * {@link NodeIdLeafResolver.Resolved.SameTable} against {@code containingTable}. Such an
+     * argument is a lookup-by-id (cardinality bounded by the input list, ordering reflects
+     * input membership) and must promote the field to {@code QueryLookupTableField} just like
+     * an explicit {@code @lookupKey} would.
+     *
+     * <p>FK-target {@code @nodeId} args do not trigger promotion: they are filters, not
+     * lookups, and stay on the regular {@code QueryTableField} path. Nested input-field
+     * leaves are not walked: input-field {@code @nodeId} same-table classifies into a
+     * {@code @table}-input filter which the lookup-promotion gate already handles via
+     * {@link #hasLookupKeyAnywhere} when {@code @lookupKey} accompanies it; bare
+     * input-field {@code @nodeId} stays a regular filter.
+     */
+    private boolean hasSameTableNodeIdAnywhere(GraphQLFieldDefinition fieldDef, TableRef containingTable) {
+        var resolver = ctx.nodeIdLeafResolver();
+        for (var arg : fieldDef.getArguments()) {
+            if (!arg.hasAppliedDirective(DIR_NODE_ID)) continue;
+            var unwrapped = GraphQLTypeUtil.unwrapAll(arg.getType());
+            if (!(unwrapped instanceof GraphQLNamedType named) || !"ID".equals(named.getName())) continue;
+            if (resolver.resolve(arg, arg.getName(), containingTable) instanceof NodeIdLeafResolver.Resolved.SameTable) {
+                return true;
             }
         }
         return false;
