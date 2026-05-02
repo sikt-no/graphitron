@@ -2671,6 +2671,102 @@ class GraphQLQueryTest {
         assertThat(conn.get("totalCount")).isEqualTo(8);
     }
 
+    // ===== Composite-PK participants in connection mode (R36 item 1) =====
+    //
+    // pagedItems wraps `interface PagedItem` (PagedA + PagedB, both composite (Integer, Integer)
+    // PK) in @asConnection. The polymorphic emitter projects DSL.jsonbArray(k1, k2) as the
+    // synthetic __sort__ column and types it as JSONB so PostgreSQL's lexicographic JSONB
+    // ordering reproduces the multi-column ordering across the union, and
+    // ConnectionHelper.encodeCursor / decodeCursor round-trip JSONB through JSONB.toString()
+    // and Convert.convert(String, JSONB.class).
+    //
+    // Seed (init.sql):
+    //   paged_a (k1, k2, name): (1,1,'A-1-1'), (1,2,'A-1-2'), (2,1,'A-2-1')
+    //   paged_b (k1, k2, name): (1,1,'B-1-1'), (1,3,'B-1-3'), (3,1,'B-3-1')
+    // JSONB lexicographic order is element-wise: [1,1] < [1,2] < [1,3] < [2,1] < [3,1]. With the
+    // (sort ASC, typename ASC) tiebreaker, the global order is:
+    //   PagedA[1,1], PagedB[1,1], PagedA[1,2], PagedB[1,3], PagedA[2,1], PagedB[3,1].
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void pagedItemsConnection_firstPage_returnsFirstThreeAcrossCompositePkParticipants() {
+        // first: 3 returns the 3 lowest sort keys: PagedA[1,1], PagedB[1,1] (typename tiebreaker
+        // resolves the [1,1] tie alphabetically: 'PagedA' < 'PagedB'), PagedA[1,2].
+        Map<String, Object> data = execute("""
+            { pagedItems(first: 3) {
+                nodes {
+                    __typename
+                    ... on PagedA { k1 k2 name }
+                    ... on PagedB { k1 k2 name }
+                }
+                pageInfo { hasNextPage hasPreviousPage }
+            } }
+            """);
+        var conn = (Map<String, Object>) data.get("pagedItems");
+        List<Map<String, Object>> nodes = (List<Map<String, Object>>) conn.get("nodes");
+        assertThat(nodes).hasSize(3);
+        assertThat(nodes).extracting(i -> i.get("__typename") + ":" + i.get("k1") + "," + i.get("k2"))
+            .containsExactly("PagedA:1,1", "PagedB:1,1", "PagedA:1,2");
+        var pageInfo = (Map<String, Object>) conn.get("pageInfo");
+        assertThat(pageInfo.get("hasNextPage")).isEqualTo(true);
+        assertThat(pageInfo.get("hasPreviousPage")).isEqualTo(false);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void pagedItemsConnection_afterCursor_returnsNextPage() {
+        // Page 1 (first: 3) + after endCursor → page 2 (first: 3) returns the next 3 by sort.
+        // The cursor encodes the JSONB sort value of the last row on page 1, base64-wrapped via
+        // ConnectionHelper.encodeCursor; decodeCursor parses it back as a JSONB Field for seek.
+        Map<String, Object> page1Data = execute("""
+            { pagedItems(first: 3) { pageInfo { endCursor } } }
+            """);
+        String endCursor = (String) ((Map<String, Object>) ((Map<String, Object>) page1Data.get("pagedItems")).get("pageInfo")).get("endCursor");
+        assertThat(endCursor).isNotNull();
+
+        Map<String, Object> page2Data = execute(
+            "{ pagedItems(first: 3, after: \"" + endCursor + "\") { "
+            + "nodes { __typename ... on PagedA { k1 k2 } ... on PagedB { k1 k2 } } "
+            + "pageInfo { hasNextPage } } }");
+        var conn2 = (Map<String, Object>) page2Data.get("pagedItems");
+        List<Map<String, Object>> nodes2 = (List<Map<String, Object>>) conn2.get("nodes");
+        assertThat(nodes2).hasSize(3);
+        assertThat(nodes2).extracting(i -> i.get("__typename") + ":" + i.get("k1") + "," + i.get("k2"))
+            .containsExactly("PagedB:1,3", "PagedA:2,1", "PagedB:3,1");
+        var pageInfo2 = (Map<String, Object>) conn2.get("pageInfo");
+        // 6 total - 3 (page1) - 3 (page2) = 0 remaining → hasNextPage false.
+        assertThat(pageInfo2.get("hasNextPage")).isEqualTo(false);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void pagedItemsConnection_lastPage_hasNextPageFalse() {
+        // first: 6 returns all 6 rows; over-fetch sees 6 rows (< pageSize+1 = 7) → hasNextPage false.
+        Map<String, Object> data = execute("""
+            { pagedItems(first: 6) {
+                nodes { __typename }
+                pageInfo { hasNextPage }
+            } }
+            """);
+        var conn = (Map<String, Object>) data.get("pagedItems");
+        List<Map<String, Object>> nodes = (List<Map<String, Object>>) conn.get("nodes");
+        assertThat(nodes).hasSize(6);
+        var pageInfo = (Map<String, Object>) conn.get("pageInfo");
+        assertThat(pageInfo.get("hasNextPage")).isEqualTo(false);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void pagedItemsConnection_totalCount_returnsTotalAcrossCompositePkParticipants() {
+        // totalCount runs SELECT count(*) FROM (UNION ALL paged_a + paged_b) AS pages,
+        // independent of the page window. 3 + 3 = 6.
+        Map<String, Object> data = execute("""
+            { pagedItems(first: 1) { totalCount } }
+            """);
+        var conn = (Map<String, Object>) data.get("pagedItems");
+        assertThat(conn.get("totalCount")).isEqualTo(6);
+    }
+
     // ===== ChildField.UnionField (Track B3) =====
     //
     // Address.occupants returns a union of Customer + Staff rows whose address_id matches

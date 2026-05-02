@@ -76,6 +76,7 @@ public final class MultiTablePolymorphicEmitter {
     private static final ClassName BATCH_LOADER_ENV    = ClassName.get("org.dataloader", "BatchLoaderEnvironment");
     private static final ClassName COMPLETABLE_FUTURE  = ClassName.get("java.util.concurrent", "CompletableFuture");
     private static final ClassName DATA_FETCHER_RESULT = ClassName.get("graphql.execution", "DataFetcherResult");
+    private static final ClassName JSONB                = ClassName.get("org.jooq", "JSONB");
     /** Stage-1 derived-table alias used by the connection-mode UNION-ALL wrapper. */
     private static final String CONNECTION_PAGES_ALIAS = "pages";
     /** Local variable name carrying the UNION-ALL derived table — referenced by both the page query and {@code ConnectionResult.table()} for {@code totalCount}. */
@@ -363,12 +364,21 @@ public final class MultiTablePolymorphicEmitter {
             return builder.build();
         }
 
-        // Sort-key Field<T>: typed by the first participant's first PK column. v1 (B4a) requires
-        // all participants to share the same PK column class (validator enforces); composite PKs
-        // rejected for the connection path because the composite jsonbArray cursor round-trip is
-        // not yet covered.
-        var firstPk = participants.get(0).table().primaryKeyColumns().get(0);
-        ClassName pkColumnClass = ClassName.bestGuess(firstPk.columnClass());
+        // Sort-key Field<T>: validator enforces uniform PK arity across participants.
+        // Single-PK participants project the PK column directly and the sort key is typed as the
+        // PK class. Composite-PK participants project {@code DSL.jsonbArray(pk0..pkN)} and the
+        // sort key is typed as JSONB; PostgreSQL's JSONB lexicographic ordering reproduces the
+        // multi-column ordering, and the cursor round-trips JSONB through
+        // {@code ConnectionHelper.encodeCursor / decodeCursor} via {@code JSONB.toString()} +
+        // {@code Convert.convert(String, JSONB.class)}.
+        int pkArity = participants.get(0).table().primaryKeyColumns().size();
+        ClassName pkColumnClass;
+        if (pkArity == 1) {
+            var firstPk = participants.get(0).table().primaryKeyColumns().get(0);
+            pkColumnClass = ClassName.bestGuess(firstPk.columnClass());
+        } else {
+            pkColumnClass = JSONB;
+        }
         var sortFieldType = ParameterizedTypeName.get(FIELD, pkColumnClass);
         var listOfSortField = ParameterizedTypeName.get(LIST, ParameterizedTypeName.get(SORT_FIELD,
             WildcardTypeName.subtypeOf(Object.class)));
@@ -399,10 +409,11 @@ public final class MultiTablePolymorphicEmitter {
             pageRequestClass, connectionHelperClass, defaultPageSize, LIST);
 
         // Stage 1: UNION ALL of branches as derived table; outer SELECT applies .orderBy/.seek/.limit.
-        builder.addCode(buildStage1ConnectionBlock(participants, jooqPackage, pkColumnClass));
+        builder.addCode(buildStage1ConnectionBlock(participants, jooqPackage));
 
-        // Stage 1.5: group stage-1 rows by __typename into (idx, pks) bindings.
-        // For B4a single-PK participants, the binding tuple has a single PK slot.
+        // Stage 1.5: group stage-1 rows by __typename into (idx, pks) bindings. Reads all
+        // {@code __pk0__..__pkN__} columns per row so the per-typename helper has the full PK
+        // tuple for ValuesJoinRowBuilder dispatch.
         builder.addStatement("Object[] result = new Object[stage1.size()]");
         var listOfObjArray = ParameterizedTypeName.get(LIST, ArrayTypeName.of(ClassName.get(Object.class)));
         var byTypeMap = ParameterizedTypeName.get(MAP, ClassName.get(String.class), listOfObjArray);
@@ -410,7 +421,13 @@ public final class MultiTablePolymorphicEmitter {
         builder.beginControlFlow("for (int i = 0; i < stage1.size(); i++)");
         builder.addStatement("$T r = stage1.get(i)", RECORD);
         builder.addStatement("String tn = r.get($S, String.class)", TYPENAME_COLUMN);
-        builder.addStatement("Object[] pks = new Object[]{r.get($S)}", PK_COLUMN_PREFIX + 0 + PK_COLUMN_SUFFIX);
+        var pksBuilder = CodeBlock.builder().add("new Object[]{");
+        for (int s = 0; s < pkArity; s++) {
+            if (s > 0) pksBuilder.add(", ");
+            pksBuilder.add("r.get($S)", PK_COLUMN_PREFIX + s + PK_COLUMN_SUFFIX);
+        }
+        pksBuilder.add("}");
+        builder.addStatement("Object[] pks = $L", pksBuilder.build());
         builder.addStatement("byType.computeIfAbsent(tn, k -> new $T<>()).add(new Object[]{i, pks})", ARRAY_LIST);
         builder.endControlFlow();
 
@@ -458,7 +475,7 @@ public final class MultiTablePolymorphicEmitter {
      */
     private static CodeBlock buildStage1ConnectionBlock(
             List<ParticipantRef.TableBound> participants,
-            String jooqPackage, ClassName pkColumnClass) {
+            String jooqPackage) {
         var b = CodeBlock.builder();
         var tablesClass = ClassName.get(jooqPackage, "Tables");
 
@@ -483,11 +500,21 @@ public final class MultiTablePolymorphicEmitter {
         }
         b.add("    .asTable($S);\n", CONNECTION_PAGES_ALIAS);
 
+        // PK columns: type each {@code __pk_i__} by the participant's PK column class. Validator
+        // enforces uniform PK arity across participants; we read PK column types from the first
+        // participant since uniform-PK-types-across-participants is implicit in the union (jOOQ's
+        // UNION ALL would fail to compile otherwise).
+        var firstParticipantPks = participants.get(0).table().primaryKeyColumns();
+        int pkArity = firstParticipantPks.size();
         var resultBound = ParameterizedTypeName.get(RESULT, WildcardTypeName.subtypeOf(RECORD));
         b.add("$T stage1 = dsl\n", resultBound);
         b.add("    .select(\n");
         b.add("        $T.field($T.name($S), $T.class),\n", DSL, DSL, TYPENAME_COLUMN, ClassName.get(String.class));
-        b.add("        $T.field($T.name($S), $T.class),\n", DSL, DSL, PK_COLUMN_PREFIX + 0 + PK_COLUMN_SUFFIX, pkColumnClass);
+        for (int s = 0; s < pkArity; s++) {
+            ClassName pkColClass = ClassName.bestGuess(firstParticipantPks.get(s).columnClass());
+            b.add("        $T.field($T.name($S), $T.class),\n", DSL, DSL,
+                PK_COLUMN_PREFIX + s + PK_COLUMN_SUFFIX, pkColClass);
+        }
         b.add("        sortField)\n");
         b.add("    .from($L)\n", CONNECTION_PAGES_LOCAL);
         b.add("    .orderBy(page.effectiveOrderBy())\n");
@@ -1078,14 +1105,24 @@ public final class MultiTablePolymorphicEmitter {
             arrayListOfField, arrayListOfField, typeClass, tableLocal);
         b.addStatement("fields.add($T.inline($S).as($S))", DSL, participant.typeName(), TYPENAME_COLUMN);
 
-        // Connection mode (R36 Track B4a): project the participant's PK column under the
-        // synthetic {@code __sort__} alias on each typed stage-2 Record so
-        // {@code ConnectionHelper.encodeCursor(record, [DSL.field("__sort__")])} can read it
-        // back when emitting per-edge cursors and pageInfo.start/endCursor. Single-PK only;
-        // composite-PK rejection lives in the validator.
+        // Connection mode (R36 Track B4a + item 1): project the synthetic {@code __sort__} alias
+        // on each typed stage-2 Record so {@code ConnectionHelper.encodeCursor(record,
+        // [DSL.field("__sort__")])} can read it back when emitting per-edge cursors and
+        // pageInfo.start/endCursor. Single-PK projects the PK column directly (typed by the PK
+        // column class); composite-PK projects {@code DSL.jsonbArray(pk0..pkN)} so the value
+        // round-trips through PostgreSQL's lexicographic JSONB ordering.
         if (includeSortKey) {
-            ColumnRef pkCol = participant.table().primaryKeyColumns().get(0);
-            b.addStatement("fields.add($L.$L.as($S))", tableLocal, pkCol.javaName(), SORT_COLUMN);
+            var pks = participant.table().primaryKeyColumns();
+            if (pks.size() == 1) {
+                b.addStatement("fields.add($L.$L.as($S))", tableLocal, pks.get(0).javaName(), SORT_COLUMN);
+            } else {
+                var jsonbArgs = CodeBlock.builder();
+                for (int i = 0; i < pks.size(); i++) {
+                    if (i > 0) jsonbArgs.add(", ");
+                    jsonbArgs.add("$L.$L", tableLocal, pks.get(i).javaName());
+                }
+                b.addStatement("fields.add($T.jsonbArray($L).as($S))", DSL, jsonbArgs.build(), SORT_COLUMN);
+            }
         }
 
         // idx column from the input derived table — needed both for the projection and the
