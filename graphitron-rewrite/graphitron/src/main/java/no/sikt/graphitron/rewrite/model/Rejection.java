@@ -226,6 +226,11 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
         return new AuthorError.UnknownName(summary, AttemptKind.COLUMN, attempt, candidates);
     }
 
+    /** {@link AuthorError.UnknownName} factory for table-name lookups. */
+    static Rejection unknownTable(String summary, String attempt, List<String> candidates) {
+        return new AuthorError.UnknownName(summary, AttemptKind.TABLE, attempt, candidates);
+    }
+
     /**
      * Produces the {@code "; did you mean: X, Y, Z"} suffix used by
      * {@link AuthorError.UnknownName#message()}. Mirrors {@code BuildContext.candidateHint}; kept

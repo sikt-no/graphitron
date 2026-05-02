@@ -20,6 +20,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.TableType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType;
 import no.sikt.graphitron.rewrite.model.KeyAlternative;
 import no.sikt.graphitron.rewrite.model.KeyAlternative.KeyShape;
+import no.sikt.graphitron.rewrite.model.Rejection;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -100,15 +101,15 @@ public final class EntityResolutionBuilder {
 
             // @key on a TableInterfaceType is rejected — see Non-goals on the federation plan.
             if (gType instanceof TableInterfaceType) {
-                types.put(typeName, new UnclassifiedType(typeName, gType.location(),
-                    "@key on TableInterfaceType is not supported; declare @key on the implementing types instead"));
+                types.put(typeName, new UnclassifiedType(typeName, gType.location(), Rejection.structural(
+                    "@key on TableInterfaceType is not supported; declare @key on the implementing types instead")));
                 continue;
             }
             // Federation entities require a backing table (the dispatcher SELECTs from it).
             if (!(gType instanceof TableType || gType instanceof NodeType)) {
-                types.put(typeName, new UnclassifiedType(typeName, gType.location(),
+                types.put(typeName, new UnclassifiedType(typeName, gType.location(), Rejection.structural(
                     "@key requires a @table-bound type; '" + typeName
-                    + "' has no @table directive"));
+                    + "' has no @table directive")));
                 continue;
             }
 
@@ -124,7 +125,7 @@ public final class EntityResolutionBuilder {
                 }
             }
             if (error != null) {
-                types.put(typeName, new UnclassifiedType(typeName, gType.location(), error));
+                types.put(typeName, new UnclassifiedType(typeName, gType.location(), Rejection.structural(error)));
                 continue;
             }
             // NodeTypes always get a NODE_ID alternative: it's the canonical SELECT path used
