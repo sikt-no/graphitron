@@ -20,9 +20,10 @@ depends-on: []
 > reach-around used by
 > [`GraphitronSchemaValidator.validateVariantIsImplemented`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/GraphitronSchemaValidator.java)
 > and the parallel direct-DEFERRED stamps from `FieldBuilder` onto a single shape.
-> Lifts `INTERNAL_INVARIANT` off the field hierarchy entirely — it is a generator
-> bug, not a field classification, and modelling it as a field rejection conflates
-> "your schema is invalid" with "the classifier is broken".
+> Drops `RejectionKind.INTERNAL_INVARIANT` outright: its single producer site is
+> a defensive `else` branch behind a sealed return type wider than the helper's
+> actual range, and the right shape for "the classifier reached an unreachable
+> branch" is an `AssertionError`, not a user-facing rejection.
 
 ---
 
@@ -52,13 +53,13 @@ Three concrete consequences on trunk today:
 
 2. **`DEFERRED` lives on two axes that don't talk to each other.** The
    classifier produces some `DEFERRED` rejections inline at the call site
-   (`FieldBuilder.java` lines 325, 2019, 2418, 2423, 2465, 2472, 2486 — every
+   (`FieldBuilder.java` lines 389, 2090, 2468, 2473, 2516, 2523, 2537 — every
    one of them constructs an `UnclassifiedField` with a hand-rolled message
    containing a roadmap-file path), and other `DEFERRED` rejections come out
    of the validator's
    `validateVariantIsImplemented` cross-check against
    `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS` (the entries at
-   `TypeFetcherGenerator.java:235-256`). The shape is the same in spirit — "this
+   `TypeFetcherGenerator.java:235`+). The shape is the same in spirit — "this
    variant is recognised but not yet emittable, see this roadmap item" — but
    the validator path keys on `field.getClass()` while the inline path keys on
    site identity, and the slug + reason are stamped twice in two different
@@ -66,18 +67,19 @@ Three concrete consequences on trunk today:
    `NOT_IMPLEMENTED_REASONS` map) was originally filed as a sub-item of R3 but
    never lifted; this is its umbrella.
 
-3. **`INTERNAL_INVARIANT` is shoehorned onto the field hierarchy.** A field
-   that carries `RejectionKind.INTERNAL_INVARIANT` is not really an
-   "unclassified field" at all — it is a classifier bug surfacing as a
-   `(GraphQLFieldDefinition, message)` pair routed through the field
-   validator. Today there is exactly one site
-   ([`FieldBuilder.java:417`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java))
-   where the classifier produces this kind, when a nested field's class
-   hierarchy doesn't hit any expected variant. Surfacing it through the
-   `UnclassifiedField` validator path means a build-time error ends up in the
-   same compiler-style log line as a typo, but the user can't fix it — the
-   correct response is "file a generator bug". Routing this through the same
-   channel as user errors leaks the abstraction.
+3. **`INTERNAL_INVARIANT` is a defensive `else` against a sealed return type
+   wider than its caller actually produces.** The single trunk site
+   ([`FieldBuilder.java:482`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java))
+   appears inside `classifyChildFieldOnTableType`'s nested-fields loop. The
+   recursive call returns `GraphitronField` (`permits RootField | ChildField |
+   InputField | UnclassifiedField`); the loop handles `UnclassifiedField` and
+   `ChildField` explicitly and falls through to `INTERNAL_INVARIANT` for the
+   two arms (`RootField`, `InputField`) the helper never produces by
+   construction. Surfacing that fallthrough through the `UnclassifiedField`
+   validator path puts a "you can't fix this; file a generator bug" message in
+   the same compiler-style log line as a typo. The honest fix is an
+   `AssertionError` at the unreachable branch, not a user-facing rejection
+   class — see Phase A.
 
 `InvalidSchema` is the smallest of the three: today the messages embed
 directive *names* as bare strings ("`@asConnection` on inline (non-`@splitQuery`)
@@ -171,11 +173,12 @@ public sealed interface Rejection {
          * message and for LSP fix-its.
          *
          * <p>Successor of {@link no.sikt.graphitron.rewrite.BuildContext#candidateHint}
-         * call sites (~25 across {@code BuildContext}, {@code FieldBuilder},
-         * {@code EnumMappingResolver}, {@code ServiceCatalog},
-         * {@code BatchKeyLifterDirectiveResolver}): the message renders the
-         * same "; did you mean: …" suffix the helper produces today, but the
-         * candidate list survives as a list for downstream tooling.
+         * call sites (~19 across {@code BuildContext}, {@code FieldBuilder},
+         * {@code TypeBuilder}, {@code ServiceCatalog},
+         * {@code BatchKeyLifterDirectiveResolver}, {@code EnumMappingResolver}):
+         * the message renders the same "; did you mean: …" suffix the helper
+         * produces today, but the candidate list survives as a list for
+         * downstream tooling.
          */
         record UnknownName(
             String summary,
@@ -283,8 +286,9 @@ public sealed interface Rejection {
 Top-level permits are exhaustive: `AuthorError`, `InvalidSchema`, `Deferred`.
 Each of `AuthorError` and `InvalidSchema` is itself sealed with two leaf
 arms (`UnknownName` / `Structural` and `DirectiveConflict` / `Structural`
-respectively). The `INTERNAL_INVARIANT` arm is **not** a permit — see
-"`ClassifierBug` channel" below for where it goes instead.
+respectively). There is no `INTERNAL_INVARIANT` arm: the single trunk site
+that produces today's `RejectionKind.INTERNAL_INVARIANT` is a defensive
+fallthrough that becomes an `AssertionError` (see Phase A).
 
 ### `UnclassifiedField` / `UnclassifiedType` carry a `Rejection` instead of a pair
 
@@ -372,7 +376,7 @@ projected to `AUTHOR_ERROR` at the boundary):
   has two sealed result types, both with their own Rejected arm).
 - `BatchKeyLifterDirectiveResolver` (R1's resolver, sibling to the R6 set).
 - `NodeIdLeafResolver` (R40-introduced sibling, sealed `Resolved.Rejected(String message)`
-  with eight construction sites; the consumer in `FieldBuilder` projects it to
+  with six construction sites; the consumer in `FieldBuilder` projects it to
   `AUTHOR_ERROR` at the boundary).
 - `FieldBuilder`'s internal `TableFieldComponents.Rejected` (six sites
   consume it).
@@ -448,59 +452,47 @@ read identically to today.
 The factories are small and live next to the arm definitions so the
 sub-arm shapes don't bleed into every call site.
 
-### `ClassifierBug` channel for what was `INTERNAL_INVARIANT`
+### `INTERNAL_INVARIANT` site becomes an `AssertionError`
 
-New file
-`graphitron/src/main/java/no/sikt/graphitron/rewrite/ClassifierBug.java`:
+The single trunk site at
+[`FieldBuilder.java:482`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java)
+sits inside `classifyChildFieldOnTableType`'s nested-fields loop:
 
 ```java
-package no.sikt.graphitron.rewrite;
-
-import graphql.language.SourceLocation;
-
-/**
- * A classifier-level invariant violation: a code path the classifier guarantees
- * is unreachable from any valid user schema was reached anyway. Treated as a
- * generator bug, not a user error.
- *
- * <p>Surfaces through {@link GraphitronSchema#classifierBugs()} (parallel to
- * {@code errors()} / {@code warnings()}); {@code ValidateMojo} formats them
- * with a clear "this is a Graphitron bug; please file an issue at …" preamble
- * and a non-zero exit code distinct from a user-error exit. They never become
- * {@link ValidationError}s.
- */
-public record ClassifierBug(String coordinate, String message, SourceLocation location) {}
+for (var nestedDef : graphQLObjectType.getFieldDefinitions()) {
+    var nested = classifyChildFieldOnTableType(...);
+    if (nested instanceof UnclassifiedField unc) { return rewrap(unc); }
+    if (nested instanceof ChildField cf) {
+        nestedFields.add(cf);
+    } else {
+        // INTERNAL_INVARIANT today — defensive fallthrough for RootField /
+        // InputField, which the recursive helper never produces.
+        return new UnclassifiedField(..., RejectionKind.INTERNAL_INVARIANT, ...);
+    }
+}
 ```
 
-The single trunk site
-([`FieldBuilder.java:417`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java))
-that produces `RejectionKind.INTERNAL_INVARIANT` today shifts to
-`ctx.addClassifierBug(new ClassifierBug(...))` and returns a sentinel
-`UnclassifiedField` arm whose `Rejection` is shaped as a `Deferred` with a
-`SemanticKey` of `"classifier-bug-fallback"`, so the field still flows through
-the validator (it isn't classified) but the user-facing message points at the
-bug channel rather than presenting itself as a fixable schema error.
+The `else` branch is unreachable by construction: `classifyChildFieldOnTableType`
+only emits `ChildField` and `UnclassifiedField`. The fix is to throw rather
+than fabricate a fake field rejection:
 
-`BuildContext` gains an `addClassifierBug(ClassifierBug)` method paralleling
-`addWarning(BuildWarning)`. `GraphitronSchema` gains a
-`List<ClassifierBug> classifierBugs()` accessor parallel to `warnings()`.
+```java
+} else {
+    throw new AssertionError(
+        "classifyChildFieldOnTableType returned "
+        + nested.getClass().getSimpleName()
+        + " for nested type '" + elementTypeName
+        + "' field '" + nestedDef.getName() + "'");
+}
+```
 
-`ValidateMojo` / `GenerateMojo` consume `classifierBugs()` and emit a
-separate "this is a Graphitron bug" log section before the `errors()`
-section, then non-zero exit with a distinct exit code (or a clear separate
-log preamble — the exit code split is the secondary mechanism, the log
-routing is the primary).
-
-The classifier-bug surface is intentionally narrow: only the
-`FieldBuilder.java:417` site exists today, and the goal is to keep it that
-way. New sites get added as generator bugs are caught, not as a routine
-error category. Tests that referenced `INTERNAL_INVARIANT` (e.g. variant
-tests with `"internal-invariant"` in the prose) shift to assertions over the
-`ClassifierBug` channel.
+Existing tests that referenced `"internal-invariant"` prose (none on trunk
+today; verified by `grep -r internal-invariant graphitron-rewrite/graphitron/src/test`)
+need no adaptation.
 
 ---
 
-## Phase A — Sealed `Rejection` plumbing, `UnclassifiedField` lift, `ClassifierBug` carve-out
+## Phase A — Sealed `Rejection` plumbing, `UnclassifiedField` lift, drop `INTERNAL_INVARIANT`
 
 Single-PR scope. The `INTERNAL_INVARIANT` removal lands in this phase
 because there is exactly one site producing it today and keeping the enum
@@ -510,12 +502,10 @@ maps to any `Rejection` arm.
 
 - Add `Rejection.java` (top-level sealed + sub-sealed `AuthorError` and
   `InvalidSchema` + `Deferred` + `DirectiveName` + `StubKey`).
-- Add `ClassifierBug.java` and `BuildContext.addClassifierBug` /
-  `GraphitronSchema.classifierBugs()` accessors.
-- Migrate the single `INTERNAL_INVARIANT` site
-  ([`FieldBuilder.java:417`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java))
-  to call `addClassifierBug` and return an `UnclassifiedField` whose rejection
-  is a `Deferred` with `StubKey.SemanticKey("classifier-bug-fallback")`.
+- Replace the single `INTERNAL_INVARIANT` site
+  ([`FieldBuilder.java:482`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java))
+  with an `AssertionError` (see "`INTERNAL_INVARIANT` site becomes an
+  `AssertionError`" above).
 - Drop `INTERNAL_INVARIANT` from `RejectionKind` (the enum is now a closed
   three-value projection of `Rejection`).
 - Migrate `UnclassifiedField` to carry `Rejection` instead of `(kind, reason)`.
@@ -532,9 +522,11 @@ maps to any `Rejection` arm.
   `NodeIdLeafResolver`, `CheckedExceptionMatcher`, and the input field /
   errors-field paths in `FieldBuilder`. Concrete site list (sorted by file +
   line, generated from
-  `grep -n "new UnclassifiedField\|new Resolved.Rejected" graphitron/src/main`):
-  ~50 `UnclassifiedField` sites + ~38 `Resolved.Rejected` sites (including
-  `NodeIdLeafResolver`'s eight). Each site picks the right `Rejection` sub-arm
+  `grep -rn "new UnclassifiedField\|new .*\.Rejected\b" graphitron/src/main`):
+  ~76 `UnclassifiedField` sites (all in `FieldBuilder`) + ~70 sealed-`Rejected`
+  arm constructions across the resolvers (including `NodeIdLeafResolver`'s six
+  and `ConditionResolver`'s six split across `ArgConditionResult.Rejected`
+  and `FieldConditionResult.Rejected`). Each site picks the right `Rejection` sub-arm
   based on the data it already has. `BuildContext.candidateHint`-using sites
   pick `AuthorError.UnknownName`; the rest of the AUTHOR_ERROR sites pick
   `AuthorError.Structural`.
@@ -546,12 +538,12 @@ maps to any `Rejection` arm.
   this is the no-output-change refactor.
 
 The `AuthorError.candidates` list is the load-bearing addition: every
-`candidateHint(...)` call site in `FieldBuilder`, `BuildContext`,
-`EnumMappingResolver`, `ServiceCatalog` (5 sites total) constructs an
-`AuthorError` whose `candidates` list is the same data the helper already
-walked — the helper itself goes from "render to string" to "render +
-attach to rejection". Net new code is ~10 lines; the helper's internals
-stay.
+`candidateHint(...)` call site (~19 across `BuildContext`, `FieldBuilder`,
+`TypeBuilder`, `ServiceCatalog`, `BatchKeyLifterDirectiveResolver`,
+`EnumMappingResolver`) constructs an `AuthorError` whose `candidates` list
+is the same data the helper already walked — the helper itself goes from
+"render to string" to "render + attach to rejection". Net new code is ~10
+lines; the helper's internals stay.
 
 ### Renderings (zero log-output drift)
 
@@ -591,8 +583,8 @@ comes from the rejection.
 ## Phase B — `UnclassifiedType` lift (mechanical)
 
 Same shape as Phase A, on
-`TypeBuilder`'s ~22 `new UnclassifiedType(...)` sites
-(`grep -n "new UnclassifiedType" graphitron/src/main`). Every site today
+the ~24 `new UnclassifiedType(...)` sites in `TypeBuilder` and friends
+(`grep -rn "new UnclassifiedType" graphitron/src/main`). Every site today
 produces an `AuthorError`-shaped string ("table 'X' could not be resolved in
 the jOOQ catalog", "no `@table` directive on '...'", participant resolution
 errors, NodeId key-column errors). A handful of these already have candidate
@@ -672,9 +664,6 @@ Cross-cutting checks (`validatePaginationRequiresOrdering`,
 - `RejectionKindProjectionTest`: `RejectionKind.of(Rejection)` is total over
   the sealed permits.
 - `DirectiveNameTest`: `@`-stripping invariant + `toString()` re-prefixes.
-- `ClassifierBugChannelTest`: `BuildContext.addClassifierBug` accumulates;
-  `GraphitronSchema.classifierBugs()` exposes the list; the field-fallthrough
-  site adds an entry instead of producing an `INTERNAL_INVARIANT`.
 
 ### Adapted existing tests
 
@@ -761,7 +750,7 @@ Cross-cutting checks (`validatePaginationRequiresOrdering`,
   same `Rejection` shape but don't have to. Re-evaluate after R58 lands; if the
   follow-up plan happens, walk both records together.
 - Threading nested rejection chains through the `nestedFields` rewrap site
-  in `FieldBuilder.classifyChildFieldOnTableType` (around line 411). Today
+  in `FieldBuilder.classifyChildFieldOnTableType` (around line 475). Today
   the inner `UnclassifiedField`'s reason is prefixed with
   `"nested type 'X' field 'Y': "` and re-stamped as a fresh outer
   `UnclassifiedField`, dropping the inner rejection's typed structure.
@@ -784,24 +773,25 @@ Cross-cutting checks (`validatePaginationRequiresOrdering`,
 
 Default landing order is A → B → C, single PR per phase. A is the
 structural lift, the resolver-side `Resolved.Rejected` lift, and the
-`ClassifierBug` carve-out (kept together because they share the
+`INTERNAL_INVARIANT` removal (kept together because they share the
 `RejectionKind` enum's value-set transition); B is the mechanical
 `UnclassifiedType` mirror; C is the `STUBBED_VARIANTS` rename and
 validator-gate consolidation. Each phase compiles cleanly on its own and
 leaves the validator's external contract unchanged.
 
 A and B can collapse into one PR if the diff size allows; A by itself is
-roughly 50 + 30 = ~80 mechanical site updates plus the new types, and B
-adds another ~22, so the combined diff likely sits around 1000 lines and
-is borderline for a single PR. The default is two PRs unless the second
-clearly shrinks. C warrants its own PR: it touches the generator's stub
-map and the validator's deferred-gate path together, and the prose-drift
-audit (see below) is a separate review concern from the structural lift.
+roughly 76 + 70 = ~150 mechanical site updates plus the new types, and B
+adds another ~24, so the combined diff likely sits well over 1000 lines.
+Two PRs is the default. C warrants its own PR: it touches the generator's
+stub map and the validator's deferred-gate path together, and the
+prose-drift audit (see below) is a separate review concern from the
+structural lift.
 
 The whole plan is internal-refactor scoped: no user-visible directive,
 goal, or output format changes. The validator's log surface is byte-stable
 through Phase B; Phase C may slightly normalise prose for the few stubbed
 variants whose hand-rolled message diverges from the new uniform renderer
-(audit and document any drift in the Phase C commit message). Phase A
-introduces a new "classifier bug" log preamble where today there is none,
-and that is the only user-visible change in the entire plan.
+(audit and document any drift in the Phase C commit message). The
+single `INTERNAL_INVARIANT` site shifts from a user-facing field rejection
+to an `AssertionError`; that's the only behavioural change in the entire
+plan, and it is invisible against any well-formed schema.
