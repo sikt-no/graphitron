@@ -214,8 +214,7 @@ class ErrorMappingsClassGeneratorTest {
                 Optional.empty(), Optional.empty())));
         var withoutClass = new ErrorType("Untyped", null,
             List.of(new ExceptionHandler("java.lang.IllegalStateException",
-                Optional.empty(), Optional.empty())),
-            Optional.empty());
+                Optional.empty(), Optional.empty())));
         var ch = channel("FilmPayload", FILM_PAYLOAD_FQN, "FILM_PAYLOAD",
             List.of(withClass, withoutClass));
         var spec = ErrorMappingsClassGenerator
@@ -227,7 +226,10 @@ class ErrorMappingsClassGeneratorTest {
     }
 
     private static ErrorType errorType(String name, String classFqn, List<ErrorType.Handler> handlers) {
-        return new ErrorType(name, null, handlers, Optional.of(classFqn));
+        // classFqn retained as a parameter for call-site signature stability while step-3 dust
+        // settles; under R12 source-direct dispatch the developer-supplied @error data class
+        // is gone and the value is ignored. Future cleanups can drop the param entirely.
+        return new ErrorType(name, null, handlers);
     }
 
     private static ErrorChannel channel(String payloadSimple, String payloadFqn, String constantName,

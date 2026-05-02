@@ -6,7 +6,6 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.Optional;
 
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -24,7 +23,7 @@ class ErrorTypeValidationTest {
 
     @Test
     void errorType_producesNoValidationErrors() {
-        GraphitronType type = new ErrorType("FilmNotFoundException", null, List.of(), Optional.empty());
+        GraphitronType type = new ErrorType("FilmNotFoundException", null, List.of());
 
         assertThat(validate(type))
             .extracting(ValidationError::message)
