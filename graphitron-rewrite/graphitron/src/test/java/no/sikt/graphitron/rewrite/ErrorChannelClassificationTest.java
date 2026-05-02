@@ -191,10 +191,12 @@ class ErrorChannelClassificationTest {
     }
 
     @Test
-    void rule9_validationShadowedByRuntimeException_rejectsCarrier() {
-        // VALIDATION coexisting with {handler: GENERIC, className: "java.lang.RuntimeException"}
-        // → the GENERIC handler matches any throwable including ValidationViolationGraphQLException,
-        // and runs after VALIDATION in dispatch order. Reject so the schema author splits.
+    void validationCoexistsWithBroadExceptionHandler_isAccepted() {
+        // §5 retire of rule 9: VALIDATION runs as a wrapper pre-execution step and never
+        // reaches the dispatcher, so a coexisting broad ExceptionHandler is no longer a
+        // shadowing risk. The runtime arms each have their own source path: validation
+        // violations come back from Validator.validate ahead of the body call, and any
+        // post-body throw flows through the dispatch arm matched by the GENERIC handler.
         var schema = build("""
             type ValidationErr @error(handlers: [{handler: VALIDATION}]) {
                 path: [String!]!
@@ -212,47 +214,17 @@ class ErrorChannelClassificationTest {
             type Query { sak: SakPayload %s }
             """.formatted(SAK_PAYLOAD_FQN, SERVICE_DECL));
 
-        var field = schema.field("Query", "sak");
-        assertThat(field).isInstanceOf(UnclassifiedField.class);
-        var u = (UnclassifiedField) field;
-        assertThat(u.reason())
-            .contains("VALIDATION")
-            .contains("shadow")
-            .contains("RuntimeErr")
-            .contains("java.lang.RuntimeException");
+        var f = (QueryField.QueryServiceRecordField) schema.field("Query", "sak");
+        assertThat(f.errorChannel()).isPresent();
+        assertThat(f.errorChannel().get().mappedErrorTypes())
+            .extracting(et -> et.name())
+            .containsExactly("ValidationErr", "RuntimeErr");
     }
 
     @Test
-    void rule9_validationShadowedByValidationViolationException_rejectsCarrier() {
-        // Direct match against the generated ValidationViolationGraphQLException FQN — the
-        // shadower check matches by simple name, so any output-package prefix fires the rule.
-        var schema = build("""
-            type ValidationErr @error(handlers: [{handler: VALIDATION}]) {
-                path: [String!]!
-                message: String!
-            }
-            type DirectShadow @error(handlers: [{handler: GENERIC, className: "no.sikt.graphitron.codereferences.dummyreferences.ValidationViolationGraphQLException"}]) {
-                path: [String!]!
-                message: String!
-            }
-            union SakError = ValidationErr | DirectShadow
-            type SakPayload @record(record: {className: "%s"}) {
-                data: String
-                errors: [SakError]
-            }
-            type Query { sak: SakPayload %s }
-            """.formatted(SAK_PAYLOAD_FQN, SERVICE_DECL));
-
-        var field = schema.field("Query", "sak");
-        assertThat(field).isInstanceOf(UnclassifiedField.class);
-        assertThat(((UnclassifiedField) field).reason())
-            .contains("ValidationViolationGraphQLException");
-    }
-
-    @Test
-    void rule9_validationCoexistsWithNarrowExceptionHandler_isAccepted() {
-        // VALIDATION + a narrow ExceptionHandler (one that doesn't shadow VVGQE) is fine.
-        // IllegalArgumentException is a sibling of AbortExecutionException, not a supertype.
+    void validationCoexistsWithNarrowExceptionHandler_isAccepted() {
+        // VALIDATION + a narrow ExceptionHandler is fine; both source paths are independent
+        // (wrapper pre-step for validation, dispatcher source-order match for IAE).
         var schema = build("""
             type ValidationErr @error(handlers: [{handler: VALIDATION}]) {
                 path: [String!]!

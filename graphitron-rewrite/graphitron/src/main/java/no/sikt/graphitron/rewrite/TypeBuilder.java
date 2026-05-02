@@ -902,7 +902,7 @@ class TypeBuilder {
                 if (!disallowed.isEmpty()) {
                     rejectReasons.add("@error handler {handler: VALIDATION} cannot carry "
                         + String.join(", ", disallowed)
-                        + " (the matched class is implicitly ValidationViolationGraphQLException; SQL discriminators do not apply)");
+                        + " (validation runs as a wrapper pre-execution step against jakarta.validation.Validator; SQL discriminators do not apply)");
                     return null;
                 }
                 return new ErrorType.ValidationHandler(descriptionOpt);

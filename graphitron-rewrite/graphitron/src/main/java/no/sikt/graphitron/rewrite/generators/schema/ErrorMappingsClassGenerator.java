@@ -114,15 +114,18 @@ public final class ErrorMappingsClassGenerator {
      * one {@link Handler} on the channel's flattened handler list (source order:
      * {@code @error} type declaration order, then {@code handlers} array order within each type).
      *
-     * <p>Under the R12 source-direct dispatch contract every handler emits a {@code Mapping}
-     * regardless of whether the {@code @error} type carries a backing class: the matched
-     * throwable itself goes into the errors list, so no per-mapping factory is needed.
+     * <p>Under the R12 source-direct dispatch contract every dispatch-capable handler emits a
+     * {@code Mapping}: the matched throwable itself goes into the errors list, so no
+     * per-mapping factory is needed. {@link ValidationHandler} entries produce no
+     * {@code Mapping} : §5's wrapper validator pre-step routes {@code GraphQLError} sources
+     * directly into the errors slot, bypassing the dispatcher entirely.
      */
     private static CodeBlock buildMappingArrayInitializer(ErrorChannel channel, ClassName errorRouter) {
         var arr = CodeBlock.builder().add("new $T[] {\n", errorRouter.nestedClass(ErrorRouterClassGenerator.MAPPING_INTERFACE));
         boolean first = true;
         for (var errType : channel.mappedErrorTypes()) {
             for (var handler : errType.handlers()) {
+                if (handler instanceof ValidationHandler) continue;
                 if (!first) arr.add(",\n");
                 arr.add("    ").add(buildMappingEntry(handler, errorRouter));
                 first = false;
@@ -136,7 +139,6 @@ public final class ErrorMappingsClassGenerator {
         var exceptionMapping = errorRouter.nestedClass(ErrorRouterClassGenerator.EXCEPTION_MAPPING);
         var sqlStateMapping = errorRouter.nestedClass(ErrorRouterClassGenerator.SQL_STATE_MAPPING);
         var vendorCodeMapping = errorRouter.nestedClass(ErrorRouterClassGenerator.VENDOR_CODE_MAPPING);
-        var validationMapping = errorRouter.nestedClass(ErrorRouterClassGenerator.VALIDATION_MAPPING);
 
         return switch (handler) {
             case ExceptionHandler eh -> {
@@ -159,10 +161,9 @@ public final class ErrorMappingsClassGenerator {
                     vh.vendorCode(),
                     literalOrNull(vh.matches().orElse(null)),
                     literalOrNull(vh.description().orElse(null)));
-            case ValidationHandler vh ->
-                CodeBlock.of("new $T($L)",
-                    validationMapping,
-                    literalOrNull(vh.description().orElse(null)));
+            case ValidationHandler vh -> throw new IllegalStateException(
+                "ValidationHandler should be skipped by buildMappingArrayInitializer; reached "
+                    + "buildMappingEntry with " + vh);
         };
     }
 

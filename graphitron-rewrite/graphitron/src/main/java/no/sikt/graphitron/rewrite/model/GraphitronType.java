@@ -257,9 +257,11 @@ public sealed interface GraphitronType
         ) implements Handler {}
 
         /**
-         * Catches {@code ValidationViolationGraphQLException} and fans the carried
-         * {@code GraphQLError}s out into typed {@code @error} instances at runtime.
-         * Lift target for {@code {handler: VALIDATION}}.
+         * Marks the channel for native Jakarta validation: the wrapper invokes
+         * {@code jakarta.validation.Validator.validate(input)} before the body runs and
+         * routes each {@code ConstraintViolation} into the payload's errors slot as a
+         * {@code GraphQLError}. Lift target for {@code {handler: VALIDATION}}. Carries no
+         * dispatch criteria; it is a wrapper-side flag, never reached by the dispatcher.
          */
         public record ValidationHandler(
             Optional<String> description
