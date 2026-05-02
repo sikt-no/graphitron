@@ -19,6 +19,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.LookupMapping;
 import no.sikt.graphitron.rewrite.model.MethodRef;
+import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.PaginationSpec;
 import no.sikt.graphitron.rewrite.model.ParamSource;
@@ -854,6 +855,172 @@ class TypeFetcherGeneratorTest {
         assertThat(body).contains("ErrorRouter.dispatch");
         assertThat(body).contains("ErrorMappings.SAK_PAYLOAD");
         assertThat(body).doesNotContain("ErrorRouter.redact");
+    }
+
+    // ===== MutationServiceTableField / MutationServiceRecordField =====
+    //
+    // Phase 6 of mutations.md: mutation services share buildServiceFetcherCommon with the query
+    // side, so the R12 §3 try/catch wrapper, §5 Jakarta validation pre-step, and §2c
+    // resultAssembly success-arm assembly all carry over for free. Tests below assert that
+    // the mutation switch arms reach the helper (rather than emitting a stub) and that the
+    // wrapper integration is observable on the emitted body.
+
+    @Test
+    void mutationServiceTableField_emittedFetcher_callsServiceMethod() {
+        // Pipeline-tier: the variant un-stubs and the body is the shared service-fetcher shape.
+        // Asserting on the body's reference to the service class catches a regression to stub(f)
+        // (which would emit `throw new UnsupportedOperationException(...)`), and asserts the
+        // service class is the call target.
+        var method = new MethodRef.Basic(
+            "com.example.Service", "createFilm",
+            ClassName.get("no.sikt.graphitron.rewrite.test.jooq.tables.records", "FilmRecord"),
+            List.of());
+        var field = new MutationField.MutationServiceTableField("Mutation", "createFilm", null,
+            tableBoundFilm(single()), method, Optional.empty(), Optional.empty());
+        var spec = TypeFetcherGenerator.generateTypeSpec("Mutation", null, null,
+            List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+
+        var emitted = method(spec, "createFilm");
+        assertThat(emitted.returnType().toString())
+            .isEqualTo("graphql.execution.DataFetcherResult<no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord>");
+        var body = emitted.code().toString();
+        assertThat(body).contains("com.example.Service.createFilm");
+        // Stub variants throw from a fresh body; the real emitter goes through the try block.
+        assertThat(body).doesNotContain("UnsupportedOperationException");
+        assertThat(body).contains("try");
+    }
+
+    @Test
+    void mutationServiceTableField_listReturn_declaresResultOfRecord() {
+        // Mirrors queryServiceTableField_listReturn_declaresResultOfRecord — the table-bound
+        // mutation service shape is identical.
+        var method = new MethodRef.Basic(
+            "com.example.Service", "createFilms",
+            ParameterizedTypeName.get(
+                ClassName.get("org.jooq", "Result"),
+                ClassName.get("no.sikt.graphitron.rewrite.test.jooq.tables.records", "FilmRecord")),
+            List.of());
+        var field = new MutationField.MutationServiceTableField("Mutation", "createFilms", null,
+            tableBoundFilm(nonNullList()), method, Optional.empty(), Optional.empty());
+        var spec = TypeFetcherGenerator.generateTypeSpec("Mutation", null, null,
+            List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+
+        assertThat(method(spec, "createFilms").returnType().toString())
+            .isEqualTo("graphql.execution.DataFetcherResult<org.jooq.Result<no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord>>");
+    }
+
+    @Test
+    void mutationServiceRecordField_emittedFetcher_callsServiceMethod() {
+        // Pipeline-tier: the non-table variant un-stubs and the body is the shared shape.
+        var method = new MethodRef.Basic(
+            "com.example.Service", "doThing", ClassName.get("java.lang", "Integer"), List.of());
+        var field = new MutationField.MutationServiceRecordField("Mutation", "doThing", null,
+            new ReturnTypeRef.ScalarReturnType("Int", single()), method,
+            Optional.empty(), Optional.empty());
+        var spec = TypeFetcherGenerator.generateTypeSpec("Mutation", null, null,
+            List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+
+        var emitted = method(spec, "doThing");
+        assertThat(emitted.returnType().toString())
+            .isEqualTo("graphql.execution.DataFetcherResult<java.lang.Integer>");
+        var body = emitted.code().toString();
+        assertThat(body).contains("com.example.Service.doThing");
+        assertThat(body).doesNotContain("UnsupportedOperationException");
+    }
+
+    @Test
+    void mutationServiceRecordField_resultReturnType_withFqClassName_declaresTypedReturn() {
+        // ResultReturnType with a non-null fqClassName produces a typed declaration on the
+        // fetcher's inner P slot — same policy as queryServiceRecord. Mirrors
+        // queryServiceRecordField_emittedFetcher_declaresTypedReturn.
+        var method = new MethodRef.Basic(
+            "com.example.Service", "createFilm",
+            ClassName.bestGuess("com.example.Film"), List.of());
+        var field = new MutationField.MutationServiceRecordField("Mutation", "createFilm", null,
+            new ReturnTypeRef.ResultReturnType("Film", single(), "com.example.Film"), method,
+            Optional.empty(), Optional.empty());
+        var spec = TypeFetcherGenerator.generateTypeSpec("Mutation", null, null,
+            List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+
+        assertThat(method(spec, "createFilm").returnType().toString())
+            .isEqualTo("graphql.execution.DataFetcherResult<com.example.Film>");
+    }
+
+    @Test
+    void mutationServiceTableField_withErrorChannel_catchArmDispatchesThroughErrorRouter() {
+        // R12 §3 wrapper integration on the mutation side: a present channel routes the catch
+        // arm through ErrorRouter.dispatch with the channel's mapping table and synthesized
+        // payload-factory lambda. Direct read-out of the un-stub: this contract previously only
+        // applied to query services because the mutation switch emitted a stub.
+        var method = new MethodRef.Basic(
+            "no.sikt.graphitron.rewrite.TestServiceStub", "createSak",
+            ClassName.bestGuess("com.example.SakPayload"), List.of());
+        var field = new MutationField.MutationServiceRecordField("Mutation", "createSak", null,
+            new ReturnTypeRef.ScalarReturnType("SakPayload", single()), method,
+            Optional.of(sakPayloadChannel()), Optional.empty());
+        var spec = TypeFetcherGenerator.generateTypeSpec("Mutation", null, null,
+            List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+
+        var body = method(spec, "createSak").code().toString();
+        assertThat(body).contains("ErrorRouter.dispatch");
+        assertThat(body).contains("ErrorMappings.SAK_PAYLOAD");
+        assertThat(body).contains("errors -> new com.example.SakPayload(null, errors)");
+        assertThat(body).doesNotContain("ErrorRouter.redact");
+    }
+
+    @Test
+    void mutationServiceTableField_withoutErrorChannel_catchArmRedacts() {
+        // Counter-test: an absent channel keeps the redact disposition on the mutation side
+        // too. Without this assertion, a regression that hard-wired dispatch in the mutation
+        // emitter (rather than going through the shared common helper's fork) would slip
+        // through.
+        var method = new MethodRef.Basic(
+            "com.example.Service", "doThing", ClassName.get("java.lang", "Integer"), List.of());
+        var field = new MutationField.MutationServiceRecordField("Mutation", "doThing", null,
+            new ReturnTypeRef.ScalarReturnType("Int", single()), method,
+            Optional.empty(), Optional.empty());
+        var spec = TypeFetcherGenerator.generateTypeSpec("Mutation", null, null,
+            List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+
+        var body = method(spec, "doThing").code().toString();
+        assertThat(body).contains("ErrorRouter.redact(e, env)");
+        assertThat(body).doesNotContain("ErrorRouter.dispatch");
+    }
+
+    @Test
+    void mutationServiceRecordField_withValidationHandler_emitsValidatorPreStep() {
+        // R12 §5 wrapper integration on the mutation side: when the channel carries any
+        // ValidationHandler, the shared helper inserts the pre-execution Jakarta validation
+        // block. The block is emitted ahead of the try, walks every Arg-sourced parameter, and
+        // short-circuits with the payload's errors-arm filled by the violations.
+        var method = new MethodRef.Basic(
+            "no.sikt.graphitron.rewrite.TestServiceStub", "createSak",
+            ClassName.bestGuess("com.example.SakPayload"),
+            List.of(new MethodRef.Param.Typed("input", "com.example.SakInput",
+                new ParamSource.Arg(new CallSiteExtraction.Direct(), "input"))));
+        var validationErr = new no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType(
+            "SakValidationErr",
+            null,
+            List.of(new no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ValidationHandler(Optional.empty())));
+        var channel = new ErrorChannel(
+            List.of(validationErr),
+            ClassName.bestGuess("com.example.SakPayload"),
+            1,
+            List.of(new no.sikt.graphitron.rewrite.model.DefaultedSlot(
+                0, "data", ClassName.get("java.lang", "String"), "null")),
+            "SAK_PAYLOAD");
+        var field = new MutationField.MutationServiceRecordField("Mutation", "createSak", null,
+            new ReturnTypeRef.ScalarReturnType("SakPayload", single()), method,
+            Optional.of(channel), Optional.empty());
+        var spec = TypeFetcherGenerator.generateTypeSpec("Mutation", null, null,
+            List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+
+        var body = method(spec, "createSak").code().toString();
+        // The validator pre-step appears ahead of the try; the order is asserted here by
+        // taking the first match of each marker.
+        assertThat(body).contains("graphitronContext(env).getValidator(env)");
+        assertThat(body).contains("ConstraintViolations.toGraphQLError");
+        assertThat(body.indexOf("getValidator(env)")).isLessThan(body.indexOf("try"));
     }
 
     // ===== QueryTableInterfaceField =====
