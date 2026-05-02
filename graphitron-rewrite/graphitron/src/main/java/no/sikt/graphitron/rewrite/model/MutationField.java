@@ -90,6 +90,11 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      *
      * <p>Parameter binding (including context arguments) is fully encoded in
      * {@link MethodRef#params()} via {@link ParamSource}.
+     *
+     * <p>{@code resultAssembly} carries the carrier-side success-arm wiring (R12 §2c, §5) when
+     * the service method's return type binds to a parameter of the SDL payload class's
+     * canonical constructor (the "service returns the domain object" shape). Empty when the
+     * service method returns the SDL payload class directly (legacy passthrough shape).
      */
     record MutationServiceTableField(
         String parentTypeName,
@@ -97,7 +102,8 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
         MethodRef method,
-        Optional<ErrorChannel> errorChannel
+        Optional<ErrorChannel> errorChannel,
+        Optional<ResultAssembly> resultAssembly
     ) implements MutationField, MethodBackedField {}
 
     /**
@@ -105,6 +111,11 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      *
      * <p>Parameter binding (including context arguments) is fully encoded in
      * {@link MethodRef#params()} via {@link ParamSource}.
+     *
+     * <p>{@code resultAssembly} carries the carrier-side success-arm wiring (R12 §2c, §5) when
+     * the service method's return type binds to a parameter of the SDL payload class's
+     * canonical constructor (the "service returns the domain object" shape). Empty when the
+     * service method returns the SDL payload class directly (legacy passthrough shape).
      */
     record MutationServiceRecordField(
         String parentTypeName,
@@ -112,6 +123,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         SourceLocation location,
         ReturnTypeRef returnType,
         MethodRef method,
-        Optional<ErrorChannel> errorChannel
+        Optional<ErrorChannel> errorChannel,
+        Optional<ResultAssembly> resultAssembly
     ) implements MutationField, MethodBackedField {}
 }

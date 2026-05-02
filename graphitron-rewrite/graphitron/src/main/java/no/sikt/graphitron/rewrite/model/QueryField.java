@@ -142,8 +142,11 @@ public sealed interface QueryField extends RootField
      * {@link MethodRef#params()} via {@link ParamSource}.
      *
      * <p>{@code errorChannel} carries the carrier-side typed-error wiring when this field's
-     * payload includes an {@code errors} field; populated by R12's C3 carrier classifier.
-     * Until that lands, call sites pass {@link Optional#empty()}.
+     * payload includes an {@code errors} field. {@code resultAssembly} carries the carrier-side
+     * success-arm wiring (R12 §2c, §5) when the service method's return type binds to a
+     * parameter of the SDL payload class's canonical constructor (the "service returns the
+     * domain object" shape); empty when the service returns the SDL payload class directly
+     * (legacy passthrough shape).
      */
     record QueryServiceTableField(
         String parentTypeName,
@@ -151,7 +154,8 @@ public sealed interface QueryField extends RootField
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
         MethodRef method,
-        Optional<ErrorChannel> errorChannel
+        Optional<ErrorChannel> errorChannel,
+        Optional<ResultAssembly> resultAssembly
     ) implements QueryField, MethodBackedField, WithErrorChannel {}
 
     /**
@@ -161,8 +165,11 @@ public sealed interface QueryField extends RootField
      * {@link MethodRef#params()} via {@link ParamSource}.
      *
      * <p>{@code errorChannel} carries the carrier-side typed-error wiring when this field's
-     * payload includes an {@code errors} field; populated by R12's C3 carrier classifier.
-     * Until that lands, call sites pass {@link Optional#empty()}.
+     * payload includes an {@code errors} field. {@code resultAssembly} carries the carrier-side
+     * success-arm wiring (R12 §2c, §5) when the service method's return type binds to a
+     * parameter of the SDL payload class's canonical constructor (the "service returns the
+     * domain object" shape); empty when the service returns the SDL payload class directly
+     * (legacy passthrough shape).
      */
     record QueryServiceRecordField(
         String parentTypeName,
@@ -170,6 +177,7 @@ public sealed interface QueryField extends RootField
         SourceLocation location,
         ReturnTypeRef returnType,
         MethodRef method,
-        Optional<ErrorChannel> errorChannel
+        Optional<ErrorChannel> errorChannel,
+        Optional<ResultAssembly> resultAssembly
     ) implements QueryField, MethodBackedField, WithErrorChannel {}
 }
