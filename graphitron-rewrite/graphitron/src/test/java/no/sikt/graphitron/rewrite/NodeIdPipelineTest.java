@@ -1103,6 +1103,58 @@ class NodeIdPipelineTest {
         tc.assertions.accept(TestSchemaHelper.buildSchema(tc.sdl, FIXTURE_CTX));
     }
 
+    /**
+     * Input-field-side FK-target {@code @nodeId} cases. R40 phase 1 lifts the
+     * positional-correspondence predicate (FK target columns vs NodeType key columns) into
+     * {@link no.sikt.graphitron.rewrite.NodeIdLeafResolver}; the resolver picks
+     * {@link no.sikt.graphitron.rewrite.NodeIdLeafResolver.Resolved.FkTarget.DirectFk DirectFk} or
+     * {@link no.sikt.graphitron.rewrite.NodeIdLeafResolver.Resolved.FkTarget.TranslatedFk TranslatedFk}
+     * once and both call sites consume the variant. Closes the asymmetric-gating gap where
+     * {@link FieldBuilder#classifyArgument} ran the predicate but
+     * {@link BuildContext#classifyInputField} did not, silently letting the pathological shape
+     * through.
+     */
+    enum InputFieldFkTargetNodeIdCase {
+        FK_TARGET_PATHOLOGICAL_KEY_MISMATCH_DEFERRED_INPUT(
+            "input-field `[ID!] @nodeId(typeName: ParentNode)` on a child_ref-bound input where the "
+                + "FK targets parent_node.alt_key but ParentNode's keyColumn is parent_node.pk_id "
+                + "(FK target ≠ NodeType key) → UnclassifiedType for the input (the input field "
+                + "surfaces the deferred-emission hint via its Unresolved reason), parallel to the "
+                + "arg-side ArgumentFkTargetNodeIdCase.FK_TARGET_PATHOLOGICAL_KEY_MISMATCH_DEFERRED",
+            """
+            type ParentNode implements Node @table(name: "parent_node") @node { id: ID! }
+            input ChildRefFilterInput @table(name: "child_ref") {
+                parentIds: [ID!] @nodeId(typeName: "ParentNode")
+            }
+            type Query { x: String }
+            """,
+            schema -> {
+                // The FK-target with pathological keys lands as Unresolved in classifyInputField,
+                // which surfaces as the input type being UnclassifiedType (the same shape
+                // SAME_TABLE_TARGET_NOT_NODE asserts on the same-table side).
+                var t = schema.type("ChildRefFilterInput");
+                assertThat(t).isInstanceOf(GraphitronType.UnclassifiedType.class);
+                var u = (GraphitronType.UnclassifiedType) t;
+                assertThat(u.reason())
+                    .contains("FK's target columns do not positionally match")
+                    .contains("deferred");
+            });
+
+        final String sdl;
+        final Consumer<GraphitronSchema> assertions;
+        InputFieldFkTargetNodeIdCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
+            this.sdl = sdl;
+            this.assertions = assertions;
+        }
+        @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(InputFieldFkTargetNodeIdCase.class)
+    void inputFieldFkTargetNodeIdClassification(InputFieldFkTargetNodeIdCase tc) {
+        tc.assertions.accept(TestSchemaHelper.buildSchema(tc.sdl, FIXTURE_CTX));
+    }
+
     // ===== R40 validator: @asConnection + same-table @nodeId leaf rejection =====
     //
     // Symmetric across argument-level (R40-introduced) and input-field (R50-shipped) leaves:
