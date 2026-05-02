@@ -24,12 +24,11 @@ import static no.sikt.graphitron.rewrite.BuildContext.DIR_MUTATION;
 
 /**
  * Resolves the DML {@code @mutation} concern: walks a mutation field's arguments to find the
- * single {@code @table} input that drives the statement, validates Phase 1 mutation invariants
- * on the input shape, validates the return-type constraints (Invariant #14), and reads the
- * {@code @mutation(typeName:)} discriminator. The sixth and last projection resolver under R6
- * (Phase 6e), sibling to {@link OrderByResolver} (Phase 5), {@link LookupMappingResolver}
- * (Phase 6a), {@link PaginationResolver} (Phase 6b), {@link ConditionResolver} (Phase 6c), and
- * {@link InputFieldResolver} (Phase 6d).
+ * single {@code @table} input that drives the statement, validates mutation invariants on the
+ * input shape, validates the return-type constraints (Invariant #14), and reads the
+ * {@code @mutation(typeName:)} discriminator. Sibling to {@link OrderByResolver},
+ * {@link LookupMappingResolver}, {@link PaginationResolver}, {@link ConditionResolver}, and
+ * {@link InputFieldResolver}.
  *
  * <p>Three responsibilities cluster here, all centred on {@code @mutation} field classification:
  *
@@ -172,12 +171,11 @@ final class MutationInputResolver {
                 yield null;
             }
             case ReturnTypeRef.ResultReturnType r -> {
-                // R12: DML accepts a @record payload return when the payload class exposes a
-                // canonical constructor with one row-slot parameter (typed as the DML's table
-                // record) plus optional defaulted slots and an optional errors slot. The
-                // shape check runs in FieldBuilder.resolveDmlPayloadAssembly during
-                // construction; this validator only screens for the wrapper shape (single,
-                // not list/connection).
+                // DML accepts a @record payload return when the payload class exposes a canonical
+                // constructor with one row-slot parameter (typed as the DML's table record) plus
+                // optional defaulted slots and an optional errors slot. The shape check runs in
+                // FieldBuilder.resolveDmlPayloadAssembly during construction; this validator only
+                // screens for the wrapper shape (single, not list/connection).
                 if (r.wrapper().isList()) {
                     yield "@mutation(typeName: " + kind + ") return type '"
                         + r.returnTypeName() + "' (list of @record) is not yet supported; "
@@ -259,10 +257,8 @@ final class MutationInputResolver {
             return new Resolved.Rejected(Rejection.structural("@condition on a @mutation field argument is not supported"));
         }
         for (var f : foundTia.fields()) {
-            // ColumnField with Direct extraction is the canonical mutation-input shape.
-            // ColumnField with NodeIdDecodeKeys is the post-R50 successor of the retired
-            // NodeIdField at the synthesis shim (and, post-e3, the @nodeId-typed paths) -- still
-            // not supported in @mutation inputs.
+            // ColumnField with Direct extraction is the canonical mutation-input shape;
+            // NodeIdDecodeKeys extraction is not yet supported in @mutation inputs.
             if (f instanceof InputField.ColumnField cf
                     && !(cf.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys)) {
                 continue;
@@ -272,7 +268,7 @@ final class MutationInputResolver {
                 case InputField.ColumnReferenceField crf -> "ColumnReferenceField in @mutation inputs is not yet supported";
                 case InputField.CompositeColumnField ccf -> "CompositeColumnField in @mutation inputs is not yet supported";
                 case InputField.CompositeColumnReferenceField ccrf -> "CompositeColumnReferenceField in @mutation inputs is not yet supported";
-                case InputField.ColumnField cf -> "NodeId-decoded ColumnField (post-R50 successor of the retired NodeIdField) in @mutation inputs is not yet supported";
+                case InputField.ColumnField cf -> "NodeId-decoded ColumnField in @mutation inputs is not yet supported";
             };
             return new Resolved.Rejected(Rejection.structural("@mutation input '" + foundTia.typeName() + "' field '" + f.name() + "': " + reason));
         }

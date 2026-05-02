@@ -4,18 +4,16 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Generation-ready mapping for a lookup field. After R50 phase (f-D), the only shape is
- * {@link ColumnMapping} — the standard VALUES + JOIN derived-table path. Legacy
- * {@code NodeIdMapping} retired alongside the {@code NodeIdEncoder.hasIds} /
- * {@code hasId} predicate; lookup-key NodeId args fold onto
+ * Generation-ready mapping for a lookup field. The only current shape is {@link ColumnMapping},
+ * the standard VALUES + JOIN derived-table path. Lookup-key NodeId args fold onto
  * {@link ColumnMapping.LookupArg.ScalarLookupArg} (single-key NodeType) or
- * {@link ColumnMapping.LookupArg.DecodedRecord} (composite-key NodeType, lands in phase g)
- * carrying a {@link CallSiteExtraction.NodeIdDecodeKeys} arm (Throw on synthesised lookup-key
- * paths, Skip on the same-table {@code @nodeId} filter path).
+ * {@link ColumnMapping.LookupArg.DecodedRecord} (composite-key NodeType) carrying a
+ * {@link CallSiteExtraction.NodeIdDecodeKeys} arm (Throw on synthesised lookup-key paths, Skip
+ * on the same-table {@code @nodeId} filter path).
  *
  * <p>The sealed interface is retained for shape-locality (every {@link LookupField} carries
- * a {@code LookupMapping}); a future "rooted at parent via correlated subquery" variant from
- * R24 would land as a sibling permit.
+ * a {@code LookupMapping}); a future "rooted at parent via correlated subquery" variant would
+ * land as a sibling permit.
  */
 public sealed interface LookupMapping permits LookupMapping.ColumnMapping {
 
@@ -100,7 +98,7 @@ public sealed interface LookupMapping permits LookupMapping.ColumnMapping {
              *
              * <p>{@code extraction} is {@link CallSiteExtraction.Direct} for non-NodeId args,
              * {@link CallSiteExtraction.JooqConvert} when the column type needs jOOQ Convert,
-             * or {@link CallSiteExtraction.NodeIdDecodeKeys.ThrowOnMismatch} for the post-R50
+             * or {@link CallSiteExtraction.NodeIdDecodeKeys.ThrowOnMismatch} for the
              * NodeId-as-lookup-key fold (single-key target).
              */
             record ScalarLookupArg(

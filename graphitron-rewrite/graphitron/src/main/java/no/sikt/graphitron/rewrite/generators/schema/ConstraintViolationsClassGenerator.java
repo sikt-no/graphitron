@@ -14,7 +14,7 @@ import java.util.List;
  * {@code <outputPackage>.schema.ConstraintViolations}, once per code-generation run.
  *
  * <p>Translates a single {@link jakarta.validation.ConstraintViolation} into a
- * {@link graphql.GraphQLError} for the wrapper's pre-execution validator step (R12 §5).
+ * {@link graphql.GraphQLError} for the wrapper's pre-execution validator step.
  * The translation walks the violation's bean property path and concatenates it with the
  * field's response path and the bound input argument name to produce a GraphQL error
  * whose {@code path} segments alternate field names, list indices, and argument keys
@@ -62,7 +62,7 @@ public final class ConstraintViolationsClassGenerator {
                 + "violation's localised message and a response-path prefix that splices the\n"
                 + "field's execution path, the bound argument name, and the violation's bean\n"
                 + "property path. The wrapper emits this call once per violation produced by\n"
-                + "the pre-execution validator step (R12 §5).\n", CONSTRAINT_VIOLATION, GRAPHQL_ERROR)
+                + "the pre-execution validator step.\n", CONSTRAINT_VIOLATION, GRAPHQL_ERROR)
             .addStatement("$T path = new $T<>(env.getExecutionStepInfo().getPath().toList())",
                 listOfObject, ARRAY_LIST)
             .addStatement("path.add(argName)")
@@ -93,7 +93,7 @@ public final class ConstraintViolationsClassGenerator {
                 + "Each {@link $T} produced by {@code Validator.validate(input)} fans into one\n"
                 + "{@link $T} placed directly into the payload's errors slot; graphql-java's\n"
                 + "{@code TypeResolver} routes each entry to the channel's VALIDATION-marked\n"
-                + "{@code @error} SDL type at serialisation time. See R12 §5.\n",
+                + "{@code @error} SDL type at serialisation time.\n",
                 CONSTRAINT_VIOLATION, GRAPHQL_ERROR)
             .addMethod(MethodSpec.constructorBuilder().addModifiers(Modifier.PRIVATE).build())
             .addMethod(toGraphQLError)

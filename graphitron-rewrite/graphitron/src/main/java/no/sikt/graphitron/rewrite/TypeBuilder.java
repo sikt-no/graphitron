@@ -572,13 +572,12 @@ class TypeBuilder {
     @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
         key = "error-type.path-message-fields",
         description = "Every @error type declares exactly path: [String!]! and message: String!; "
-            + "extras and structural mismatches are rejected as UnclassifiedType. Under the R12 "
-            + "source-direct dispatch contract (§2c \"@error is TypeResolver wiring\"), the "
-            + "matched throwable itself is placed into the payload's errors list and "
-            + "graphql-java's PropertyDataFetcher reads each declared SDL field directly from "
-            + "the source at serialisation time. The per-(channel, @error type, handler) "
-            + "source-class accessor reflection check (§2c) is the runtime-side guarantee; this "
-            + "schema-level rule is the SDL-side anchor.")
+            + "extras and structural mismatches are rejected as UnclassifiedType. The matched "
+            + "throwable itself is placed into the payload's errors list and graphql-java's "
+            + "PropertyDataFetcher reads each declared SDL field directly from the source at "
+            + "serialisation time. The per-(channel, @error type, handler) source-class accessor "
+            + "reflection check is the runtime-side guarantee; this schema-level rule is the "
+            + "SDL-side anchor.")
     private GraphitronType buildErrorType(GraphQLObjectType objType) {
         String name = objType.getName();
         SourceLocation location = locationOf(objType);
@@ -956,9 +955,9 @@ class TypeBuilder {
      *
      * <p>{@code @table}, {@code @record}, and {@code @error} are pairwise mutually exclusive.
      * {@code @table} resolves columns from jOOQ metadata; {@code @record} binds an SDL type
-     * to a developer-supplied Java class; {@code @error} declares an SDL-side error shape
-     * (the runtime source is the matched throwable itself per the R12 source-direct dispatch
-     * contract; there is no developer-supplied data class for an {@code @error} type).
+     * to a developer-supplied Java class; {@code @error} declares an SDL-side error shape (the
+     * runtime source is the matched throwable itself; there is no developer-supplied data class
+     * for an {@code @error} type).
      */
     private static String detectTypeDirectiveConflict(GraphQLObjectType objType) {
         boolean hasTable = objType.hasAppliedDirective(DIR_TABLE);
@@ -994,8 +993,7 @@ class TypeBuilder {
     /**
      * Walks {@code @enum} on the given enum type's directives and returns a rejection message
      * when its {@code enumReference} carries a non-blank {@code argMapping}, or {@code null}
-     * otherwise. {@code @enum} is currently a placeholder directive in the rewrite pipeline; this
-     * sweep is the only place that catches structurally-inert {@code argMapping} on it.
+     * otherwise.
      */
     private static String checkEnumArgMappingInert(graphql.schema.GraphQLEnumType enumType) {
         var dir = enumType.getAppliedDirective("enum");

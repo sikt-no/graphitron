@@ -14,7 +14,7 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * R12 §4 declared-checked-exception match rule. Walks a method's declared exception list
+ * Declared-checked-exception match rule. Walks a method's declared exception list
  * (as fully-qualified class names captured from {@link java.lang.reflect.Method#getExceptionTypes()})
  * and verifies each non-exempt checked exception is covered by at least one handler on the
  * surrounding field's {@link ErrorChannel}, per the spec's match rule:

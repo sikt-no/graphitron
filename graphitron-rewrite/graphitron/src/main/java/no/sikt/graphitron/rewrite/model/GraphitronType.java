@@ -61,10 +61,10 @@ public sealed interface GraphitronType
      * <p>{@code encodeMethod} / {@code decodeMethod} are pre-resolved structural references to the
      * per-type {@code encode<TypeName>} / {@code decode<TypeName>} helpers emitted by
      * {@link no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator}. They are the
-     * single source of truth for the helper references — emitters consume them through
-     * {@link HelperRef} rather than reconstructing class + method strings from the typeId. Per the
-     * R50 lift: every call site that wraps wire-format encode/decode reads from these slots so the
-     * encoder generator and the call-site emitters cannot drift on naming.
+     * single source of truth for the helper references; emitters consume them through
+     * {@link HelperRef} rather than reconstructing class + method strings from the typeId. Every
+     * call site that wraps wire-format encode/decode reads from these slots so the encoder
+     * generator and the call-site emitters cannot drift on naming.
      *
      * <p>A {@code @node} type with an unresolvable key column is classified as
      * {@link UnclassifiedType} instead.
@@ -196,8 +196,7 @@ public sealed interface GraphitronType
      * argument of the {@code @error} directive, lifted into the variant whose discriminator
      * the matcher keys off (exception class identity, SQL state, vendor code, validation kind).
      *
-     * <p>Per the R12 source-direct dispatch contract (spec §2c "@error is TypeResolver wiring"),
-     * an {@code @error} type has no developer-supplied Java backing class. The runtime source
+     * <p>An {@code @error} type has no developer-supplied Java backing class. The runtime source
      * for an entry in the payload's errors list is the matched object itself (the exception
      * for GENERIC/DATABASE handlers, the {@code GraphQLError} for VALIDATION); graphql-java's
      * {@code PropertyDataFetcher} reads each declared SDL field directly from that source.

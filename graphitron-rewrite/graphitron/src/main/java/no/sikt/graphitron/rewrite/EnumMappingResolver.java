@@ -31,10 +31,9 @@ import static no.sikt.graphitron.rewrite.BuildContext.candidateHint;
 /**
  * Resolves the enum-mapping axis: GraphQL enum values to Java/DB representations, plus the
  * {@link CallSiteExtraction} derivation and post-hoc method-extraction enrichment that depend
- * on it. The seventh and final projection resolver under R6 (Phase 7), sibling to
- * {@link OrderByResolver} (Phase 5), {@link LookupMappingResolver} (Phase 6a),
- * {@link PaginationResolver} (Phase 6b), {@link ConditionResolver} (Phase 6c),
- * {@link InputFieldResolver} (Phase 6d), and {@link MutationInputResolver} (Phase 6e).
+ * on it. Sibling to {@link OrderByResolver}, {@link LookupMappingResolver},
+ * {@link PaginationResolver}, {@link ConditionResolver}, {@link InputFieldResolver}, and
+ * {@link MutationInputResolver}.
  *
  * <p>Five methods cluster here, all touching the same axis: deriving how a GraphQL value
  * (especially an enum value) is converted before reaching jOOQ or a service method.

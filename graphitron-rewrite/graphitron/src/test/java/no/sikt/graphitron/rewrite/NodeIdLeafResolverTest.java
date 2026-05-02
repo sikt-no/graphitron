@@ -28,9 +28,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * (the parent_node + child_ref reproducer where the FK targets {@code parent_node.alt_key}
  * but the NodeType keyColumn is {@code parent_node.pk_id}).
  *
- * <p>First resolver-tier unit test for an R6 resolver — the other R6 resolvers
- * ({@link OrderByResolver}, {@link LookupMappingResolver}, etc.) are exercised end-to-end
- * through pipeline tests today. The coverage matters here because the variant choice
+ * <p>Resolver-tier unit test; the sibling resolvers ({@link OrderByResolver},
+ * {@link LookupMappingResolver}, etc.) are exercised end-to-end through pipeline tests. The
+ * coverage matters here because the variant choice
  * influences both call-site projections (the carrier shape on the argument and input-field
  * sides differs only in error vs. success arms, which is observable downstream); a
  * resolver-tier assertion locks the variant choice itself, independent of carrier

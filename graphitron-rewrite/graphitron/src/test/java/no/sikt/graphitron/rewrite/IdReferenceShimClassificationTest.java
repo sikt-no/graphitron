@@ -14,12 +14,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 
 /**
- * Classification tests for the FK-qualifier synthesis shim. Post-R50 the shim emits
- * the column-shaped successor of the retired {@code IdReferenceField}: arity-1 PK targets
- * land on {@link InputField.ColumnReferenceField} carrying
+ * Classification tests for the FK-qualifier synthesis shim. The shim routes arity-1 PK targets
+ * to {@link InputField.ColumnReferenceField} carrying
  * {@link no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement} plus the
  * resolved FK joinPath. Uses the {@code idreffixture} jOOQ catalog (studieprogram + studierett)
- * because the shim gate requires {@code nodeIdMetadata(targetTable)} to be present — the
+ * because the shim gate requires {@code nodeIdMetadata(targetTable)} to be present; the
  * standard Sakila catalog tables have no {@code __NODE_TYPE_ID} metadata.
  *
  * <p>The idreffixture schema provides:

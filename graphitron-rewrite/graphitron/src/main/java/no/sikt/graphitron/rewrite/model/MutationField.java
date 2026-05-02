@@ -22,15 +22,12 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      * Sealed common supertype of the four DML mutation variants. Carries the per-field data the
      * INSERT / UPDATE / DELETE / UPSERT emitters share: the {@code @table} input argument that
      * drives the DML statement and a pre-resolved {@link DmlReturnExpression} arm that captures
-     * the entire return-shape dispatch (encoded ID, projected {@code @table}, or R12 payload).
+     * the entire return-shape dispatch (encoded ID, projected {@code @table}, or {@code @record}
+     * payload).
      *
-     * <p>Phase 1B of {@code graphitron-rewrite/roadmap/mutations.md} replaced the broad
-     * {@code (returnType: ReturnTypeRef, encodeReturn: Optional<HelperRef.Encode>,
-     * payloadAssembly: Optional<PayloadAssembly>)} triple with a single
-     * {@link DmlReturnExpression} slot. The classifier picks the arm once; emitters
-     * pattern-match on {@link #returnExpression()} with no {@code instanceof ScalarReturnType},
-     * no {@code wrapper().isList()} lookup, no {@code Optional.orElseThrow()}, and no
-     * {@code payloadAssembly().isPresent()} predicate.
+     * <p>The classifier picks the {@link DmlReturnExpression} arm once; emitters pattern-match on
+     * {@link #returnExpression()} with no {@code instanceof ScalarReturnType}, no
+     * {@code wrapper().isList()} lookup, and no {@code Optional} unwrapping.
      */
     sealed interface DmlTableField extends MutationField
             permits MutationInsertTableField, MutationUpdateTableField,
@@ -82,10 +79,10 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      * <p>Parameter binding (including context arguments) is fully encoded in
      * {@link MethodRef#params()} via {@link ParamSource}.
      *
-     * <p>{@code resultAssembly} carries the carrier-side success-arm wiring (R12 §2c, §5) when
-     * the service method's return type binds to a parameter of the SDL payload class's
-     * canonical constructor (the "service returns the domain object" shape). Empty when the
-     * service method returns the SDL payload class directly (legacy passthrough shape).
+     * <p>{@code resultAssembly} carries the carrier-side success-arm wiring when the service
+     * method's return type binds to a parameter of the SDL payload class's canonical constructor
+     * (the "service returns the domain object" shape). Empty when the service method returns the
+     * SDL payload class directly (legacy passthrough shape).
      */
     record MutationServiceTableField(
         String parentTypeName,
@@ -103,10 +100,10 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      * <p>Parameter binding (including context arguments) is fully encoded in
      * {@link MethodRef#params()} via {@link ParamSource}.
      *
-     * <p>{@code resultAssembly} carries the carrier-side success-arm wiring (R12 §2c, §5) when
-     * the service method's return type binds to a parameter of the SDL payload class's
-     * canonical constructor (the "service returns the domain object" shape). Empty when the
-     * service method returns the SDL payload class directly (legacy passthrough shape).
+     * <p>{@code resultAssembly} carries the carrier-side success-arm wiring when the service
+     * method's return type binds to a parameter of the SDL payload class's canonical constructor
+     * (the "service returns the domain object" shape). Empty when the service method returns the
+     * SDL payload class directly (legacy passthrough shape).
      */
     record MutationServiceRecordField(
         String parentTypeName,

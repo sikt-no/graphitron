@@ -26,13 +26,13 @@ import java.util.Map;
  * {@code <outputPackage>.schema.ErrorMappings}, once per code-generation run.
  *
  * <p>One {@code public static final ErrorRouter.Mapping[]} constant per distinct
- * fetcher channel — the catch-arm wrapper that lands with the per-fetcher try/catch
- * (R12 §3) references the constant directly. Walks every {@link WithErrorChannel}
- * field with a resolved {@link ErrorChannel} and groups by
- * {@link ErrorChannel#mappingsConstantName}; identical mapping shapes share a constant.
+ * fetcher channel; the per-fetcher try/catch wrapper references the constant directly.
+ * Walks every {@link WithErrorChannel} field with a resolved {@link ErrorChannel} and
+ * groups by {@link ErrorChannel#mappingsConstantName}; identical mapping shapes share
+ * a constant.
  *
  * <p>Two channels with the same {@code mappingsConstantName} but different mapping
- * lists currently produce a hard error; the §3 hash-suffix dedup
+ * lists currently produce a hard error; the hash-suffix dedup
  * ({@code FILM_PAYLOAD_A1B2C3D4}) is a follow-up addition. No production fixture
  * exercises the collision today.
  *
@@ -114,11 +114,10 @@ public final class ErrorMappingsClassGenerator {
      * one {@link Handler} on the channel's flattened handler list (source order:
      * {@code @error} type declaration order, then {@code handlers} array order within each type).
      *
-     * <p>Under the R12 source-direct dispatch contract every dispatch-capable handler emits a
-     * {@code Mapping}: the matched throwable itself goes into the errors list, so no
-     * per-mapping factory is needed. {@link ValidationHandler} entries produce no
-     * {@code Mapping} : §5's wrapper validator pre-step routes {@code GraphQLError} sources
-     * directly into the errors slot, bypassing the dispatcher entirely.
+     * <p>Every dispatch-capable handler emits a {@code Mapping}: the matched throwable itself
+     * goes into the errors list, so no per-mapping factory is needed. {@link ValidationHandler}
+     * entries produce no {@code Mapping}: the wrapper's validator pre-step routes
+     * {@code GraphQLError} sources directly into the errors slot, bypassing the dispatcher.
      */
     private static CodeBlock buildMappingArrayInitializer(ErrorChannel channel, ClassName errorRouter) {
         var arr = CodeBlock.builder().add("new $T[] {\n", errorRouter.nestedClass(ErrorRouterClassGenerator.MAPPING_INTERFACE));

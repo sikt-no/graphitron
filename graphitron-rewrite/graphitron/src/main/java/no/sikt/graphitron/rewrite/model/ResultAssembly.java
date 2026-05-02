@@ -7,11 +7,11 @@ import java.util.List;
 
 /**
  * Carrier-side recipe for emitting a typed payload-class constructor call on the success arm of
- * a service-backed fetcher (R12 §2c, §5). Where {@link PayloadAssembly} captures the analogous
- * recipe for DML fetchers (binding the row record to the payload's row slot), this record
- * captures the success-arm wiring for service fetchers: the service method returns the
- * domain object the payload's <em>result slot</em> expects, and the wrapper assembles the
- * payload around that return value.
+ * a service-backed fetcher. Where {@link PayloadAssembly} captures the analogous recipe for DML
+ * fetchers (binding the row record to the payload's row slot), this record captures the
+ * success-arm wiring for service fetchers: the service method returns the domain object the
+ * payload's <em>result slot</em> expects, and the wrapper assembles the payload around that
+ * return value.
  *
  * <p>Populated by the carrier classifier when a service-backed field's payload class has a
  * canonical constructor exposing exactly one parameter assignable from the service method's
@@ -25,14 +25,13 @@ import java.util.List;
  * </ul>
  *
  * <p>Independent of {@link ErrorChannel}: a service-backed field whose payload has no errors
- * slot still carries a {@code ResultAssembly} (so the success arm constructs the payload
- * around the domain return), but no channel (so the catch arm falls back to
- * {@code ErrorRouter.redact}). When both are present they reference the same payload class;
- * the classifier verifies their slot indices are distinct (errors slot ≠ result slot).
+ * slot carries a {@code ResultAssembly} (so the success arm constructs the payload around the
+ * domain return) but no channel (so the catch arm falls back to {@code ErrorRouter.redact}).
+ * When both are present they reference the same payload class; the classifier verifies their
+ * slot indices are distinct (errors slot &ne; result slot).
  *
  * <p>Service-backed fields whose service method returns the SDL payload class directly do
- * not get a {@code ResultAssembly}; the emitter passes the service return through unchanged
- * (the legacy shape, before the §2c convergence).
+ * not get a {@code ResultAssembly}; the emitter passes the service return through unchanged.
  */
 public record ResultAssembly(
     ClassName payloadClass,

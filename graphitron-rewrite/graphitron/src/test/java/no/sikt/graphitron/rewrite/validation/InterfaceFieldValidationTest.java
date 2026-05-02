@@ -20,7 +20,7 @@ import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.va
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Validates {@link InterfaceField} (R36 Track B3's child case): same field-level PK-presence
+ * Validates {@link InterfaceField} (the multi-table polymorphic child case): same field-level PK-presence
  * and PK-arity rules as the root case, plus the joinPath component which is structurally
  * exercised here without enforcing path-shape (the classifier already rejects path failures
  * upstream, so the validator focuses on participant-set integrity).
@@ -75,9 +75,8 @@ class InterfaceFieldValidationTest {
 
     @Test
     void wellFormed_connection_onCompositePkParent_noErrors() {
-        // R36 Track B4c-2 RowN widening: composite-PK parent is now supported (DataLoader key
-        // type widens from Row1<...> to RowN<...>). Predecessor of this test was the now-removed
-        // rejects_connection_onCompositePkParent which pinned the v1 single-PK constraint.
+        // Composite-PK parent is supported: the DataLoader key type widens from Row1<...> to
+        // RowN<...>.
         var participants = List.<ParticipantRef>of(
             new ParticipantRef.TableBound("Customer", CUSTOMER, null),
             new ParticipantRef.TableBound("Staff", STAFF, null));

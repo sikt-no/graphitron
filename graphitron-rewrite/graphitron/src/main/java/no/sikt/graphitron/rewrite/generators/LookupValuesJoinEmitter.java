@@ -71,9 +71,9 @@ final class LookupValuesJoinEmitter {
      *
      * <p>{@code decodeBinding} is non-null only for {@link ColumnMapping.LookupArg.DecodedRecord}
      * slots; it carries the per-NodeType {@code decode<TypeName>} helper and the binding's
-     * positional index into the returned {@code Record<N>}. Per the R50 spec ("runs once per
-     * input row at the arg layer"), {@link #addRowBuildingCore} hoists the decode call to a
-     * per-row local shared across all bindings of the same arg.
+     * positional index into the returned {@code Record<N>}. The decode runs once per input row
+     * at the arg layer, so {@link #addRowBuildingCore} hoists the decode call to a per-row local
+     * shared across all bindings of the same arg.
      */
     private record Slot(
             String argName,
@@ -426,12 +426,12 @@ final class LookupValuesJoinEmitter {
     }
 
     /**
-     * Describes the top-level argument backing one or more {@link ColumnMapping.LookupColumn}s.
-     * All columns sharing a root arg share a single extracted local — critical for composite-key
-     * input types where several {@code @lookupKey} fields live on one argument.
+     * Describes the top-level argument backing one or more {@link Slot}s. All slots sharing a
+     * root arg share a single extracted local, which is critical for composite-key input types
+     * where several {@code @lookupKey} fields live on one argument.
      *
      * <p>{@code argName} is the GraphQL argument name. {@code list} reflects the outer argument's
-     * list cardinality — all columns rooted here inherit this listness. {@code localName} is the
+     * list cardinality; all slots rooted here inherit this listness. {@code localName} is the
      * Java local-variable name holding the extracted value: {@code toCamelCase(argName)} with a
      * {@code Keys} suffix when list-typed.
      */
@@ -456,8 +456,8 @@ final class LookupValuesJoinEmitter {
 
     /**
      * The value expression that reads one lookup column's raw value inside the row-building loop,
-     * given the root's extracted local. Branches on {@link ColumnMapping.LookupColumn#isComposite()}
-     * and list cardinality:
+     * given the root's extracted local. Branches on whether the slot is composite (carries an
+     * {@code inputField} drilldown) and on list cardinality:
      * <ul>
      *   <li>Scalar path, scalar root → {@code rootLocal}</li>
      *   <li>Scalar path, list root   → {@code rootLocal.get(i)}</li>

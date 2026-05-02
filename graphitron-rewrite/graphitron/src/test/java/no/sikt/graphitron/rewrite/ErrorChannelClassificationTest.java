@@ -14,7 +14,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R12 §2c carrier classifier: every fetcher-emitting field variant that implements
+ * Carrier classifier: every fetcher-emitting field variant that implements
  * {@link WithErrorChannel} carries an {@link ErrorChannel} when the payload type's field set
  * declares an {@code errors}-shaped field and the developer-supplied payload class exposes a
  * canonical constructor with exactly one errors-slot parameter.

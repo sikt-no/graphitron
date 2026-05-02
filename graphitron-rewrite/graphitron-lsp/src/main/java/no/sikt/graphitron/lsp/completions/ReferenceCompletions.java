@@ -29,9 +29,8 @@ import java.util.Set;
  * </ul>
  *
  * <p>Path-step refinement (narrowing later steps by where the previous
- * step landed) lands when the parser tracks list position; for now
- * every step suggests the same set of FK names from the enclosing
- * type's table.
+ * step landed) is not yet implemented; every step suggests the same set
+ * of FK names from the enclosing type's table.
  */
 public final class ReferenceCompletions {
 

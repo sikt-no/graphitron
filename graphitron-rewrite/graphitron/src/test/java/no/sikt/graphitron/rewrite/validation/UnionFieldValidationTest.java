@@ -19,7 +19,7 @@ import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.va
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Validates {@link UnionField} (R36 Track B3's child case for unions). Mirrors
+ * Validates {@link UnionField} (the multi-table polymorphic child case for unions). Mirrors
  * {@link InterfaceFieldValidationTest}; same PK-presence and PK-arity rules apply.
  */
 @UnitTier
@@ -61,8 +61,7 @@ class UnionFieldValidationTest {
     @Test
     void wellFormed_connection_onCompositePkParent_noErrors() {
         // Union variant of InterfaceFieldValidationTest's composite-parent acceptance test.
-        // R36 Track B4c-2 RowN widening lifted the previous v1 single-PK constraint; the
-        // predecessor of this test was the now-removed rejects_connection_onCompositePkParent.
+        // Composite-PK parents are supported via RowN widening on the DataLoader VALUES table.
         var participants = List.<ParticipantRef>of(
             new ParticipantRef.TableBound("Customer", CUSTOMER, null),
             new ParticipantRef.TableBound("Staff", STAFF, null));

@@ -23,15 +23,14 @@ import java.util.List;
  * </ul>
  *
  * <p>Independent of {@link ErrorChannel}: a DML payload return without an errors-shaped field
- * still carries a {@code PayloadAssembly} (so the success arm constructs the payload), but no
- * channel (so the catch arm falls back to {@code ErrorRouter.redact}). A DML payload return
- * with an errors-shaped field carries both: the same constructor signature is captured on each
- * record because the carrier classifier resolves them from one reflection pass.
+ * carries a {@code PayloadAssembly} (so the success arm constructs the payload) but no channel
+ * (so the catch arm falls back to {@code ErrorRouter.redact}). A DML payload return with an
+ * errors-shaped field carries both, both resolved by one carrier-classifier reflection pass.
  *
  * <p>Service-mutation and query-service fetchers do not carry a {@code PayloadAssembly}; the
  * developer-supplied service method returns the payload directly, so the emitter has no
- * constructor call to synthesize. (The uniform-payload-assembly chunk replaces this with an
- * analogous {@code ResultAssembly} per R12 §2c.)
+ * constructor call to synthesize. The analogous wiring for those fetchers lives in
+ * {@link ResultAssembly}.
  */
 public record PayloadAssembly(
     ClassName payloadClass,

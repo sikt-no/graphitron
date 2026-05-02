@@ -46,9 +46,8 @@ import static no.sikt.graphitron.rewrite.BuildContext.baseTypeName;
  * <p>Implementation note: the helpers this resolver calls back into ({@code parseExternalRef},
  * {@code fieldArgumentNames}, {@code parseContextArguments}, {@code buildWrapper},
  * {@code enrichArgExtractions}, {@code liftToErrorsField}) live as package-private members on
- * {@link FieldBuilder}. Subsequent R6 phases will share these with the other directive resolvers
- * ({@code @tableMethod}, {@code @externalField}, {@code @lookupKey}); when the second consumer
- * lands they can migrate to a common location.
+ * {@link FieldBuilder}, shared with the other directive resolvers ({@code @tableMethod},
+ * {@code @externalField}, {@code @lookupKey}).
  */
 final class ServiceDirectiveResolver {
 
@@ -226,14 +225,14 @@ final class ServiceDirectiveResolver {
                     : recordCls;
             }
             case ReturnTypeRef.ResultReturnType r -> {
-                // ResultReturnType with a backing class is the @record-payload shape. Under R12 §2c
-                // the service method may either return the SDL payload class directly (legacy
-                // passthrough shape) OR a domain object that fits one of the payload class's
-                // canonical-constructor parameters (the new "service returns the domain object"
-                // shape). The strict TypeName-equals check can't tell those apart; the
-                // ResultAssembly resolver in FieldBuilder does. Return null here so the strict
-                // check is skipped, and let the carrier classifier emit a precise reject when
-                // neither the SDL payload nor any ctor-param shape matches.
+                // ResultReturnType with a backing class is the @record-payload shape. The service
+                // method may either return the SDL payload class directly (legacy passthrough
+                // shape) OR a domain object that fits one of the payload class's canonical-
+                // constructor parameters (the "service returns the domain object" shape). The
+                // strict TypeName-equals check can't tell those apart; the ResultAssembly
+                // resolver in FieldBuilder does. Return null here so the strict check is skipped,
+                // and let the carrier classifier emit a precise reject when neither the SDL
+                // payload nor any ctor-param shape matches.
                 yield null;
             }
             case ReturnTypeRef.ScalarReturnType ignored -> null;

@@ -38,13 +38,12 @@ import static no.sikt.graphitron.rewrite.BuildContext.baseTypeName;
  * <p>Root vs child is signalled by {@code isRoot}: root sites pass {@code true} (Connection /
  * non-table-bound rejections fire, expected-return-class is always non-null); child sites pass
  * {@code false} (those rejections skip; expected-return-class is non-null only on table-bound
- * returns, matching the today-deferred shape of scalar/enum {@code TableMethodField}).
+ * returns, matching the deferred shape of scalar/enum {@code TableMethodField}).
  *
  * <p>Implementation note: like {@link ServiceDirectiveResolver}, the helpers this resolver
  * calls back into ({@code parseExternalRef}, {@code fieldArgumentNames},
  * {@code parseContextArguments}, {@code buildWrapper}, {@code enrichArgExtractions}) are
- * package-private members of {@link FieldBuilder}; subsequent R6 phases will share them with
- * the remaining directive resolvers.
+ * package-private members of {@link FieldBuilder}, shared with the other directive resolvers.
  */
 final class TableMethodDirectiveResolver {
 
@@ -124,8 +123,9 @@ final class TableMethodDirectiveResolver {
         // Invariants §3 (return-type strictness): the developer's @tableMethod must return the
         // generated jOOQ table class exactly, not a wider Table<R>. Always present at root (the
         // earlier instanceof check guarantees TableBoundReturnType); at child sites only when the
-        // resolved return type is table-bound. Today's child arm with a non-table-bound return is
-        // a deferred stub (TableMethodField with scalar/enum return) — see roadmap R43.
+        // resolved return type is table-bound. The child arm with a non-table-bound return is
+        // a deferred stub (TableMethodField with scalar/enum return); see
+        // graphitron-rewrite/roadmap/tablemethod-scalar-return.md.
         ClassName expectedReturnClass = returnType instanceof ReturnTypeRef.TableBoundReturnType tbr
             ? ClassName.get(ctx.ctx().jooqPackage() + ".tables", tbr.table().javaClassName())
             : null;
