@@ -593,22 +593,34 @@ candidate-list threading remains out-of-scope per the existing call-out.
 
 ---
 
-## Phase B — `UnclassifiedType` lift (mechanical)
+## Phase B — `UnclassifiedType` lift — shipped
 
-Same shape as Phase A, on
-the ~24 `new UnclassifiedType(...)` sites (21 in `TypeBuilder`, 3 in
-`schema/federation/EntityResolutionBuilder` for federation `@key`-on-non-table
-and TableInterfaceType rejections). Every site today
-produces an `AuthorError`-shaped string ("table 'X' could not be resolved in
-the jOOQ catalog", "no `@table` directive on '...'", participant resolution
-errors, NodeId key-column errors). A handful of these already have candidate
-lists handy (`catalog.allTableNames()`, `catalog.allForeignKeySqlNames()`) —
-those become `AuthorError.UnknownName` rejections with populated `candidates`;
-the rest are `AuthorError.Structural` rejections, matching the same
-UnknownName-vs-Structural split as Phase A.
+`GraphitronType.UnclassifiedType` now carries `Rejection rejection` instead of
+the free-form `String reason`. The 24 construction sites (21 in `TypeBuilder`,
+3 in `schema/federation/EntityResolutionBuilder`) all migrated: three
+table-resolution sites (`@table` on object types, single-table interfaces, and
+`@table` on input types) lift to `AuthorError.UnknownName` via the new
+`Rejection.unknownTable` factory, threading the catalog's
+`allTableSqlNames()` through as a typed `candidates` list; the remaining
+sites use `Rejection.structural`, matching the same UnknownName-vs-Structural
+split Phase A established.
 
-Phase A and Phase B can ship in the same PR if the diff stays under ~600
-lines; otherwise B follows A.
+The validator's `validateUnclassifiedType` switch now projects
+`type.rejection()` through `RejectionKind.of` for the kebab-case log prefix
+(parallel to `validateUnclassifiedField`'s post-Phase-A shape) and reads the
+prose tail from `rejection.message()`. The previously-hardcoded
+`RejectionKind.AUTHOR_ERROR` is gone; every site is `AuthorError`-shaped today
+so the kebab-case prefix is unchanged on the byte-stable log surface, and a
+later site that classifies as `InvalidSchema` or `Deferred` automatically
+projects through the same path.
+
+`UnclassifiedType.reason()` is retained as a convenience accessor that
+delegates to `rejection.message()`, so the ~50 test sites that read
+`((UnclassifiedType) t).reason()` (in `GraphitronSchemaBuilderTest`,
+`NodeIdPipelineTest`, `EntityResolutionBuilderTest`) need no adaptation.
+`UnclassifiedTypeValidationTest` constructs `Rejection.structural` cases
+instead of free-form `(name, location, String)` triples; expected prose
+unchanged.
 
 ---
 
@@ -789,19 +801,16 @@ Cross-cutting checks (`validatePaginationRequiresOrdering`,
 ## Phasing summary
 
 Default landing order is 0 → A → B → C, single PR per phase. Phase 0
-shipped (the `INTERNAL_INVARIANT` removal). Phase A is the structural lift
-and the resolver-side `Resolved.Rejected` lift; Phase B is the mechanical
-`UnclassifiedType` mirror; Phase C is the `STUBBED_VARIANTS` rename and
-validator-gate consolidation. Each phase compiles cleanly on its own and
-leaves the validator's external contract unchanged.
+shipped (the `INTERNAL_INVARIANT` removal). Phase A shipped (the structural
+lift and the resolver-side `Resolved.Rejected` lift). Phase B shipped (the
+mechanical `UnclassifiedType` mirror). Phase C remains: the
+`STUBBED_VARIANTS` rename and validator-gate consolidation. Each phase
+compiles cleanly on its own and leaves the validator's external contract
+unchanged.
 
-A and B can collapse into one PR if the diff size allows; A by itself is
-roughly 76 + 70 = ~150 mechanical site updates plus the new types, and B
-adds another ~24, so the combined diff likely sits well over 1000 lines.
-Two PRs is the default. C warrants its own PR: it touches the generator's
-stub map and the validator's deferred-gate path together, and the
-prose-drift audit (see below) is a separate review concern from the
-structural lift.
+C warrants its own PR: it touches the generator's stub map and the
+validator's deferred-gate path together, and the prose-drift audit (see
+below) is a separate review concern from the structural lift.
 
 The whole plan is internal-refactor scoped: no user-visible directive,
 goal, or output format changes. The validator's log surface is byte-stable

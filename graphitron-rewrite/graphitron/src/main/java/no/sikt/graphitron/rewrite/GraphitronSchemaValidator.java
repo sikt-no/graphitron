@@ -869,9 +869,10 @@ public class GraphitronSchemaValidator {
         // Nested field columns are resolved at classification time; no additional structural checks needed.
     }
     private void validateUnclassifiedType(no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType type, List<ValidationError> errors) {
-        errors.add(new ValidationError(RejectionKind.AUTHOR_ERROR,
+        errors.add(new ValidationError(
+            RejectionKind.of(type.rejection()),
             type.name(),
-            "Type '" + type.name() + "': " + type.reason(),
+            "Type '" + type.name() + "': " + type.rejection().message(),
             type.location()
         ));
     }

@@ -393,16 +393,25 @@ public sealed interface GraphitronType
     ) implements GraphitronType {}
 
     /**
-     * A type that could not be classified because mutually exclusive directives were found together.
+     * A type that could not be classified — examples include an unresolvable {@code @table}
+     * name, mutually exclusive directives co-occurring, malformed {@code @node} key columns,
+     * a participant-list error on an interface or union, and federation-side {@code @key}
+     * rejections from {@link no.sikt.graphitron.rewrite.schema.federation.EntityResolutionBuilder}.
      * A schema containing unclassified types is invalid — the
-     * {@link no.sikt.graphitron.rewrite.GraphitronSchemaValidator} reports an error with the
-     * {@code reason} explaining which directives conflict.
+     * {@link no.sikt.graphitron.rewrite.GraphitronSchemaValidator} reports a
+     * {@link no.sikt.graphitron.rewrite.ValidationError} whose kind is projected from the
+     * {@link Rejection} variant via {@link no.sikt.graphitron.rewrite.RejectionKind#of}.
+     *
+     * <p>{@link #reason()} is a convenience accessor that delegates to
+     * {@link Rejection#message()} for log formatters that don't need the structured data.
      */
     record UnclassifiedType(
         String name,
         SourceLocation location,
-        String reason
-    ) implements GraphitronType {}
+        Rejection rejection
+    ) implements GraphitronType {
+        public String reason() { return rejection.message(); }
+    }
 
     /**
      * A Relay connection object type — the outer wrapper whose fields are

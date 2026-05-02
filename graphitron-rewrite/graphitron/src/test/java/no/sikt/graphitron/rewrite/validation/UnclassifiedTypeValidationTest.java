@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.validation;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType;
+import no.sikt.graphitron.rewrite.model.Rejection;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -18,11 +19,11 @@ class UnclassifiedTypeValidationTest {
     enum Case implements TypeValidatorCase {
 
         CONFLICTING_DIRECTIVES("conflicting @table and @record directives",
-            new UnclassifiedType("Film", null, "conflicting directives @table and @record"),
+            new UnclassifiedType("Film", null, Rejection.structural("conflicting directives @table and @record")),
             List.of("Type 'Film': conflicting directives @table and @record")),
 
         UNKNOWN_TABLE("@table name cannot be resolved in the jOOQ catalog",
-            new UnclassifiedType("Actor", null, "table 'unknown_table' not found in jOOQ catalog"),
+            new UnclassifiedType("Actor", null, Rejection.structural("table 'unknown_table' not found in jOOQ catalog")),
             List.of("Type 'Actor': table 'unknown_table' not found in jOOQ catalog"));
 
         private final String description;

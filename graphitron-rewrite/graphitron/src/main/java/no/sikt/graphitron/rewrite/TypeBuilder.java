@@ -40,6 +40,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.UnionType;
 import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
+import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -167,8 +168,8 @@ class TypeBuilder {
             String others = String.join(", ", colliding);
             for (var nt : entry.getValue()) {
                 types.put(nt.name(), new UnclassifiedType(nt.name(), nt.location(),
-                    "typeId '" + typeId + "' is declared on multiple types (" + others
-                    + ") — Query.node dispatch would be nondeterministic; pick one via @node(typeId:)"));
+                    Rejection.structural("typeId '" + typeId + "' is declared on multiple types (" + others
+                    + ") — Query.node dispatch would be nondeterministic; pick one via @node(typeId:)")));
             }
         }
     }
@@ -176,7 +177,7 @@ class TypeBuilder {
     private GraphitronType enrichTableInterfaceType(TableInterfaceType type) {
         var participants = buildParticipantList(implementorNames(type.name()), false, type.table());
         if (participants.error() != null) {
-            return new UnclassifiedType(type.name(), type.location(), participants.error());
+            return new UnclassifiedType(type.name(), type.location(), Rejection.structural(participants.error()));
         }
         return new TableInterfaceType(type.name(), type.location(), type.discriminatorColumn(), type.table(), participants.list());
     }
@@ -184,7 +185,7 @@ class TypeBuilder {
     private GraphitronType enrichInterfaceType(InterfaceType type) {
         var participants = buildParticipantList(implementorNames(type.name()), true, null);
         if (participants.error() != null) {
-            return new UnclassifiedType(type.name(), type.location(), participants.error());
+            return new UnclassifiedType(type.name(), type.location(), Rejection.structural(participants.error()));
         }
         return new InterfaceType(type.name(), type.location(), participants.list());
     }
@@ -194,7 +195,7 @@ class TypeBuilder {
         var names = unionType.getTypes().stream().map(t -> t.getName()).toList();
         var participants = buildParticipantList(names, false, null);
         if (participants.error() != null) {
-            return new UnclassifiedType(type.name(), type.location(), participants.error());
+            return new UnclassifiedType(type.name(), type.location(), Rejection.structural(participants.error()));
         }
         return new UnionType(type.name(), type.location(), participants.list());
     }
@@ -298,7 +299,7 @@ class TypeBuilder {
         if (namedType instanceof graphql.schema.GraphQLEnumType enumType) {
             String inertness = checkEnumArgMappingInert(enumType);
             if (inertness != null) {
-                return new UnclassifiedType(enumType.getName(), locationOf(enumType), inertness);
+                return new UnclassifiedType(enumType.getName(), locationOf(enumType), Rejection.structural(inertness));
             }
             return new no.sikt.graphitron.rewrite.model.GraphitronType.EnumType(
                 enumType.getName(), locationOf(enumType), enumType);
@@ -324,7 +325,7 @@ class TypeBuilder {
             }
             String typeConflict = detectTypeDirectiveConflict(objType);
             if (typeConflict != null) {
-                return new UnclassifiedType(name, location, typeConflict);
+                return new UnclassifiedType(name, location, Rejection.structural(typeConflict));
             }
             if (objType.hasAppliedDirective(DIR_TABLE)) {
                 return buildTableType(objType);
@@ -357,8 +358,9 @@ class TypeBuilder {
         String tableName = argString(objType, DIR_TABLE, ARG_NAME).orElse(name.toLowerCase());
         Optional<TableRef> tableOpt = svc.resolveTable(tableName);
         if (tableOpt.isEmpty()) {
-            return new UnclassifiedType(name, location, "table '" + tableName + "' could not be resolved in the jOOQ catalog"
-                + candidateHint(tableName, ctx.catalog.allTableSqlNames()));
+            return new UnclassifiedType(name, location, Rejection.unknownTable(
+                "table '" + tableName + "' could not be resolved in the jOOQ catalog",
+                tableName, ctx.catalog.allTableSqlNames()));
         }
         TableRef tableRef = tableOpt.get();
 
@@ -370,9 +372,9 @@ class TypeBuilder {
         // types whose backing tables shared `__NODE_TYPE_ID`, with no SDL-side opt-out.
         Optional<String> metadataDiagnostic = ctx.catalog.nodeIdMetadataDiagnostic(tableRef.tableName());
         if (metadataDiagnostic.isPresent()) {
-            return new UnclassifiedType(name, location,
+            return new UnclassifiedType(name, location, Rejection.structural(
                 "KjerneJooqGenerator metadata on table '" + tableRef.tableName() + "' is malformed: "
-                + metadataDiagnostic.get());
+                + metadataDiagnostic.get()));
         }
         Optional<JooqCatalog.NodeIdMetadata> metadata = ctx.catalog.nodeIdMetadata(tableRef.tableName());
 
@@ -385,8 +387,8 @@ class TypeBuilder {
         // `implements Node` is a schema-level contract published to clients; we cannot promote
         // a type to NodeType without it.
         if (!implementsNode(objType)) {
-            return new UnclassifiedType(name, location,
-                "@node requires the type to implement the Relay Node interface — add 'implements Node' to the type declaration");
+            return new UnclassifiedType(name, location, Rejection.structural(
+                "@node requires the type to implement the Relay Node interface — add 'implements Node' to the type declaration"));
         }
 
         // Resolve SDL-declared values.
@@ -404,7 +406,7 @@ class TypeBuilder {
             }
         }
         if (!keyColumnErrors.isEmpty()) {
-            return new UnclassifiedType(name, location, String.join("; ", keyColumnErrors));
+            return new UnclassifiedType(name, location, Rejection.structural(String.join("; ", keyColumnErrors)));
         }
 
         if (metadata.isEmpty()) {
@@ -419,9 +421,9 @@ class TypeBuilder {
                     .map(e -> new ColumnRef(e.sqlName(), e.javaName(), e.columnClass()))
                     .toList();
                 if (pk.isEmpty()) {
-                    return new UnclassifiedType(name, location,
+                    return new UnclassifiedType(name, location, Rejection.structural(
                         "@node on " + name + " omits keyColumns but table '" + tableRef.tableName()
-                        + "' has no primary key — declare `keyColumns:` on @node or add a primary key");
+                        + "' has no primary key — declare `keyColumns:` on @node or add a primary key"));
                 }
                 resolvedKeyColumns = pk;
             }
@@ -443,11 +445,11 @@ class TypeBuilder {
             resolvedKeyColumns = List.copyOf(meta.keyColumns());
         } else {
             if (!columnSetsMatch(sdlKeyColumns, meta.keyColumns())) {
-                return new UnclassifiedType(name, location,
+                return new UnclassifiedType(name, location, Rejection.structural(
                     "@node(keyColumns: " + keyColumnsLiteral(sdlKeyColumns)
                     + ") on " + name + " disagrees with KjerneJooqGenerator metadata (keyColumns: "
                     + keyColumnsLiteral(meta.keyColumns())
-                    + ") — the column sets are different; one side is wrong about the schema");
+                    + ") — the column sets are different; one side is wrong about the schema"));
             }
             if (!columnListsMatch(sdlKeyColumns, meta.keyColumns())) {
                 LOGGER.warn("@node(keyColumns: {}) on {} pins an order different from KjerneJooqGenerator metadata ({}); SDL order wins",
@@ -518,7 +520,7 @@ class TypeBuilder {
         Map<String, Object> ref = asMap(recordArg.getValue());
         String inertness = checkArgMappingInert(ref, "record");
         if (inertness != null) {
-            return new UnclassifiedType(name, location, inertness);
+            return new UnclassifiedType(name, location, Rejection.structural(inertness));
         }
         String className = Optional.ofNullable(ref.get(ARG_CLASS_NAME)).map(Object::toString).orElse(null);
         if (className == null) {
@@ -538,8 +540,8 @@ class TypeBuilder {
             }
             return new GraphitronType.PojoResultType(name, location, className);
         } catch (ClassNotFoundException e) {
-            return new UnclassifiedType(name, location,
-                "record backing class '" + className + "' could not be loaded");
+            return new UnclassifiedType(name, location, Rejection.structural(
+                "record backing class '" + className + "' could not be loaded"));
         }
     }
 
@@ -549,8 +551,9 @@ class TypeBuilder {
         String tableName = argString(iface, DIR_TABLE, ARG_NAME).orElse(name.toLowerCase());
         Optional<TableRef> tableOpt = svc.resolveTable(tableName);
         if (tableOpt.isEmpty()) {
-            return new UnclassifiedType(name, location, "table '" + tableName + "' could not be resolved in the jOOQ catalog"
-                + candidateHint(tableName, ctx.catalog.allTableSqlNames()));
+            return new UnclassifiedType(name, location, Rejection.unknownTable(
+                "table '" + tableName + "' could not be resolved in the jOOQ catalog",
+                tableName, ctx.catalog.allTableSqlNames()));
         }
         String discriminatorRaw = argString(iface, DIR_DISCRIMINATE, ARG_ON).orElse(null);
         // Resolve to the SQL column name so generators can use DSL.name(col) with the correct
@@ -621,8 +624,8 @@ class TypeBuilder {
         }
 
         if (!rejectReasons.isEmpty()) {
-            return new UnclassifiedType(name, location,
-                "@error type rejected: " + String.join("; ", rejectReasons));
+            return new UnclassifiedType(name, location, Rejection.structural(
+                "@error type rejected: " + String.join("; ", rejectReasons)));
         }
         return new ErrorType(name, location, List.copyOf(handlers));
     }
@@ -657,8 +660,9 @@ class TypeBuilder {
             String tableName = argString(inputType, DIR_TABLE, ARG_NAME).orElse(name.toLowerCase());
             Optional<TableRef> tableOpt = svc.resolveTable(tableName);
             if (tableOpt.isEmpty()) {
-                return new UnclassifiedType(name, location, "table '" + tableName + "' could not be resolved in the jOOQ catalog"
-                    + candidateHint(tableName, ctx.catalog.allTableSqlNames()));
+                return new UnclassifiedType(name, location, Rejection.unknownTable(
+                    "table '" + tableName + "' could not be resolved in the jOOQ catalog",
+                    tableName, ctx.catalog.allTableSqlNames()));
             }
             return buildTableInputType(name, location, inputType.getFieldDefinitions(), tableOpt.get(), inputType);
         }
@@ -700,13 +704,13 @@ class TypeBuilder {
                 .findFirst()
                 .map(c -> candidateHint(c, ctx.catalog.columnJavaNamesOf(tableRef.tableName())))
                 .orElse("");
-            return new UnclassifiedType(name, location,
-                "mapped to table '" + tableRef.tableName() + "' — unresolvable fields: " + reasons + hint);
+            return new UnclassifiedType(name, location, Rejection.structural(
+                "mapped to table '" + tableRef.tableName() + "' — unresolvable fields: " + reasons + hint));
         }
         if (!conditionErrors.isEmpty()) {
-            return new UnclassifiedType(name, location,
+            return new UnclassifiedType(name, location, Rejection.structural(
                 "mapped to table '" + tableRef.tableName() + "' — bad @condition on fields: "
-                + String.join("; ", conditionErrors));
+                + String.join("; ", conditionErrors)));
         }
         return new TableInputType(name, location, tableRef, List.copyOf(resolvedFields), inputType);
     }
@@ -724,7 +728,7 @@ class TypeBuilder {
         Map<String, Object> ref = asMap(recordArg.getValue());
         String inertness = checkArgMappingInert(ref, "record");
         if (inertness != null) {
-            return new UnclassifiedType(name, location, inertness);
+            return new UnclassifiedType(name, location, Rejection.structural(inertness));
         }
         String className = Optional.ofNullable(ref.get(ARG_CLASS_NAME)).map(Object::toString).orElse(null);
         if (className == null) {
@@ -744,8 +748,8 @@ class TypeBuilder {
             }
             return new GraphitronType.PojoInputType(name, location, className, inputType);
         } catch (ClassNotFoundException e) {
-            return new UnclassifiedType(name, location,
-                "record backing class '" + className + "' could not be loaded");
+            return new UnclassifiedType(name, location, Rejection.structural(
+                "record backing class '" + className + "' could not be loaded"));
         }
     }
 
