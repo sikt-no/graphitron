@@ -14,8 +14,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Pipeline test for {@link ErrorRouterClassGenerator}: SDL-independent emission of the runtime
  * {@code ErrorRouter} class. Asserts the dispatch arm and sealed-style {@code Mapping} taxonomy
  * are present in the produced {@link TypeSpec}, that the catch-arm signature matches §3, and
- * that runtime invariants (no top-level handler, validation arm precedes source-order match)
- * are reachable through the generated method shapes.
+ * that runtime invariants (no top-level handler, source-order first-match dispatch) are
+ * reachable through the generated method shapes.
  */
 @UnitTier
 class ErrorRouterClassGeneratorTest {
@@ -42,15 +42,16 @@ class ErrorRouterClassGeneratorTest {
     }
 
     @Test
-    void emits_fourConcreteMappingClasses() {
+    void emits_threeConcreteMappingClasses() {
+        // ValidationMapping retired with §5: validation runs as a wrapper pre-execution step,
+        // not via the dispatcher, so its Mapping shape is no longer needed.
         var router = generate();
         var nestedNames = router.typeSpecs().stream().map(TypeSpec::name).toList();
         assertThat(nestedNames).containsExactlyInAnyOrder(
             "Mapping",
             "ExceptionMapping",
             "SqlStateMapping",
-            "VendorCodeMapping",
-            "ValidationMapping");
+            "VendorCodeMapping");
     }
 
     @Test
@@ -91,14 +92,6 @@ class ErrorRouterClassGeneratorTest {
     }
 
     @Test
-    void validationMapping_matchAlwaysReturnsFalse() {
-        var router = generate();
-        var vm = nested(router, "ValidationMapping");
-        var match = method(vm, "match");
-        assertThat(match.code().toString()).contains("return false");
-    }
-
-    @Test
     void dispatch_signature_matchesSpec() {
         var router = generate();
         var dispatch = method(router, "dispatch");
@@ -111,17 +104,14 @@ class ErrorRouterClassGeneratorTest {
     }
 
     @Test
-    void dispatch_validationArmPrecedesSourceOrderMatchLoop() {
+    void dispatch_hasNoValidationArm() {
+        // §5 retire: validation runs as a wrapper pre-execution step, not in the dispatcher.
         var router = generate();
         var dispatch = method(router, "dispatch");
         String body = dispatch.code().toString();
-        int validationArmIdx = body.indexOf("ValidationViolationGraphQLException");
-        int matchLoopIdx = body.indexOf("mapping.match(t)");
-        assertThat(validationArmIdx).isPositive();
-        assertThat(matchLoopIdx).isPositive();
-        assertThat(validationArmIdx)
-            .as("Validation arm must run ahead of MAPPINGS iteration (R12 §3)")
-            .isLessThan(matchLoopIdx);
+        assertThat(body).doesNotContain("ValidationViolationGraphQLException");
+        assertThat(body).doesNotContain("validationCause");
+        assertThat(body).contains("mapping.match(t)");
     }
 
     @Test
