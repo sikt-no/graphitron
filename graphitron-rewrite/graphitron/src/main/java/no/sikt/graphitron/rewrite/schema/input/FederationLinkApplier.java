@@ -3,12 +3,15 @@ package no.sikt.graphitron.rewrite.schema.input;
 import com.apollographql.federation.graphqljava.directives.LinkDirectiveProcessor;
 import com.apollographql.federation.graphqljava.exceptions.MultipleFederationLinksException;
 import graphql.language.Argument;
+import graphql.language.ArrayValue;
 import graphql.language.Directive;
+import graphql.language.ObjectValue;
 import graphql.language.StringValue;
 import graphql.language.Value;
 import graphql.schema.idl.TypeDefinitionRegistry;
 
 import java.util.ArrayList;
+import java.util.Objects;
 import java.util.stream.Stream;
 
 /**
@@ -68,7 +71,10 @@ public final class FederationLinkApplier {
             });
             return true;
         } catch (MultipleFederationLinksException e) {
-            throw new IllegalStateException(buildMultipleLinksMessage(registry), e);
+            // Drop the cause: its message is a raw Directive{...}Directive{...} dump that
+            // Maven appends to ours. buildMultipleLinksMessage produces a developer-friendly
+            // replacement that already names every offending @link, its url, and its imports.
+            throw new IllegalStateException(buildMultipleLinksMessage(registry));
         }
     }
 
@@ -76,10 +82,10 @@ public final class FederationLinkApplier {
      * Builds a developer-readable message replacing the federation library's raw
      * {@code Directive{...}Directive{...}} dump. Walks the schema definition and every schema
      * extension for {@code @link} directives whose {@code url} argument starts with
-     * {@link #FEDERATION_SPEC_PREFIX}, and lists each one with its source file and line so the
-     * developer can find and merge them. Falls back to the original message when no federation
-     * {@code @link}s are visible (defensive: should not happen if the federation library raised
-     * the exception).
+     * {@link #FEDERATION_SPEC_PREFIX}, and lists each one with its source file, line, url, and
+     * imports so the developer can see exactly what to merge. Falls back to a bare message when
+     * no federation {@code @link}s are visible (defensive: should not happen if the federation
+     * library raised the exception).
      */
     private static String buildMultipleLinksMessage(TypeDefinitionRegistry registry) {
         var entries = new ArrayList<String>();
@@ -92,11 +98,12 @@ public final class FederationLinkApplier {
                 .filter(FederationLinkApplier::isFederationLink)
                 .forEach(d -> entries.add(formatLinkLocation(d)));
 
-        var sb = new StringBuilder("Schema declares more than one federation @link. ");
-        sb.append("federation-graphql-java-support requires exactly one federation @link per schema; ");
-        sb.append("merge the imports into a single declaration on a single federation spec version.");
+        var sb = new StringBuilder("Your schema declares more than one federation @link, ");
+        sb.append("but federation-graphql-java-support allows only one. ");
+        sb.append("Merge the imports below into a single @link on a single federation spec version, ");
+        sb.append("and remove the others.");
         if (!entries.isEmpty()) {
-            sb.append("\nFederation @link declarations found:");
+            sb.append("\n\nFederation @link declarations found:");
             entries.forEach(line -> sb.append("\n  - ").append(line));
         }
         return sb.toString();
@@ -123,6 +130,43 @@ public final class FederationLinkApplier {
         String where = (loc != null && loc.getSourceName() != null)
                 ? loc.getSourceName() + ":" + loc.getLine()
                 : "(unknown location)";
-        return where + " (url: " + url + ")";
+        var sb = new StringBuilder(where);
+        sb.append("\n      url:    ").append(url);
+        String imports = formatImports(directive);
+        if (imports != null) {
+            sb.append("\n      import: ").append(imports);
+        }
+        return sb.toString();
+    }
+
+    private static String formatImports(Directive directive) {
+        Argument importArg = directive.getArgument("import");
+        if (importArg == null || !(importArg.getValue() instanceof ArrayValue arr)) {
+            return null;
+        }
+        var names = new ArrayList<String>();
+        for (Value<?> item : arr.getValues()) {
+            if (item instanceof StringValue sv) {
+                names.add(sv.getValue());
+            } else if (item instanceof ObjectValue ov) {
+                String name = objectFieldString(ov, "name");
+                String alias = objectFieldString(ov, "as");
+                if (name != null && alias != null) {
+                    names.add(name + " as " + alias);
+                } else if (name != null) {
+                    names.add(name);
+                }
+            }
+        }
+        return "[" + String.join(", ", names) + "]";
+    }
+
+    private static String objectFieldString(ObjectValue ov, String fieldName) {
+        return ov.getObjectFields().stream()
+                .filter(f -> fieldName.equals(f.getName()))
+                .map(f -> f.getValue() instanceof StringValue s ? s.getValue() : null)
+                .filter(Objects::nonNull)
+                .findFirst()
+                .orElse(null);
     }
 }

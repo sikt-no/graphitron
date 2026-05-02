@@ -113,7 +113,9 @@ class FederationLinkApplierTest {
                 .hasMessageContaining("first.graphqls:")
                 .hasMessageContaining("second.graphqls:")
                 .hasMessageContaining("federation/v2.6")
-                .hasMessageContaining("federation/v2.4");
+                .hasMessageContaining("federation/v2.4")
+                .hasMessageContaining("@key, @shareable")
+                .hasMessageContaining("@key, @override");
     }
 
     @Test
