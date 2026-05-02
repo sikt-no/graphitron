@@ -85,7 +85,29 @@ class FederationLinkApplierTest {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("'@external'")
                 .hasMessageContaining("Remove the manual")
-                .hasMessageContaining("directive definition from your schema SDL");
+                .hasMessageContaining("directive definition from your schema SDL")
+                .hasMessageContaining("schema.graphqls:4");
+    }
+
+    @Test
+    void manuallyDeclaredFederationTypeReportsTypeKindAndLocation() {
+        var registry = InMemoryRegistry.of(Map.of(
+            "schema.graphqls",
+            """
+            extend schema
+              @link(url: "https://specs.apollo.dev/federation/v2.10",
+                    import: ["@key"])
+            scalar link__Import
+            type Foo { id: ID! }
+            """
+        ));
+
+        assertThatThrownBy(() -> FederationLinkApplier.apply(registry))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("'link__Import'")
+                .hasMessageContaining("type is injected")
+                .hasMessageContaining("Remove the manual 'link__Import' type definition")
+                .hasMessageContaining("schema.graphqls:4");
     }
 
     @Test
