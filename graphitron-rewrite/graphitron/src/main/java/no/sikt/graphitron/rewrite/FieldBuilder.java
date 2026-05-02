@@ -2034,6 +2034,34 @@ class FieldBuilder {
         String name = fieldDef.getName();
         SourceLocation location = locationOf(fieldDef);
 
+        // @batchKeyLifter is owned by its dedicated resolver from this point onward: the resolver
+        // validates the parent shape, the directive payload, and the lifter's signature; non-table
+        // returns surface a directive-specific rejection here rather than being silently dropped
+        // by the PropertyField / RecordField branches below.
+        if (fieldDef.hasAppliedDirective(DIR_BATCH_KEY_LIFTER)) {
+            String rawTypeName = baseTypeName(fieldDef);
+            String elementTypeName = ctx.isConnectionType(rawTypeName) ? ctx.connectionElementTypeName(rawTypeName) : rawTypeName;
+            var lifterResult = batchKeyLifterResolver.resolve(parentTypeName, fieldDef, parentResultType, elementTypeName);
+            if (lifterResult instanceof BatchKeyLifterDirectiveResolver.Resolved.Rejected rj) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, rj.kind(), rj.message());
+            }
+            var ok = (BatchKeyLifterDirectiveResolver.Resolved.Ok) lifterResult;
+            var components = resolveTableFieldComponents(fieldDef, ok.targetTable(), elementTypeName);
+            if (components instanceof TableFieldComponents.Rejected rj) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, rj.message());
+            }
+            var tfc = (TableFieldComponents.Ok) components;
+            // joinPath publishes the same hop instance held by the BatchKey; the List wrap is the
+            // rows-method emitter's existing API surface.
+            List<JoinStep> joinPath = List.of(ok.liftedHop());
+            if (hasLookupKeyAnywhere(fieldDef)) {
+                return new RecordLookupTableField(parentTypeName, name, location, ok.tbReturnType(), joinPath,
+                    tfc.filters(), tfc.orderBy(), tfc.pagination(), ok.batchKey(), tfc.lookupMapping());
+            }
+            return new RecordTableField(parentTypeName, name, location, ok.tbReturnType(), joinPath,
+                tfc.filters(), tfc.orderBy(), tfc.pagination(), ok.batchKey());
+        }
+
         if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
             var resolved = serviceResolver.resolve(parentTypeName, fieldDef, List.of());
             if (resolved instanceof ServiceDirectiveResolver.Resolved.Rejected r) {
@@ -2097,30 +2125,6 @@ class FieldBuilder {
         }
         return switch (resolvedReturnType) {
             case ReturnTypeRef.TableBoundReturnType tb -> {
-                // @batchKeyLifter takes precedence over the catalog-FK path so directive-specific
-                // rejections surface before the generic missing-FK message.
-                if (fieldDef.hasAppliedDirective(DIR_BATCH_KEY_LIFTER)) {
-                    var lifterResult = batchKeyLifterResolver.resolve(parentTypeName, fieldDef, parentResultType, elementTypeName);
-                    if (lifterResult instanceof BatchKeyLifterDirectiveResolver.Resolved.Rejected rj) {
-                        yield new UnclassifiedField(parentTypeName, name, location, fieldDef, rj.kind(), rj.message());
-                    }
-                    var ok = (BatchKeyLifterDirectiveResolver.Resolved.Ok) lifterResult;
-                    var components = resolveTableFieldComponents(fieldDef, ok.targetTable(), elementTypeName);
-                    if (components instanceof TableFieldComponents.Rejected rj) {
-                        yield new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, rj.message());
-                    }
-                    var tfc = (TableFieldComponents.Ok) components;
-                    // joinPath publishes the same hop instance held by the BatchKey; the List wrap
-                    // is the rows-method emitter's existing API surface.
-                    List<JoinStep> joinPath = List.of(ok.liftedHop());
-                    if (hasLookupKeyAnywhere(fieldDef)) {
-                        yield new RecordLookupTableField(parentTypeName, name, location, ok.tbReturnType(), joinPath,
-                            tfc.filters(), tfc.orderBy(), tfc.pagination(), ok.batchKey(), tfc.lookupMapping());
-                    }
-                    yield new RecordTableField(parentTypeName, name, location, ok.tbReturnType(), joinPath,
-                        tfc.filters(), tfc.orderBy(), tfc.pagination(), ok.batchKey());
-                }
-
                 var components = resolveTableFieldComponents(fieldDef, tb.table(), elementTypeName);
                 if (components instanceof TableFieldComponents.Rejected rj) yield new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, rj.message());
                 var tfc = (TableFieldComponents.Ok) components;
