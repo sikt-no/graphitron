@@ -15,8 +15,8 @@ depends-on: []
 > `MutationServiceTableField`, `MutationServiceRecordField`.
 > Closes generator stub #4 — the highest-aggregate production rejection (131 combined).
 >
-> **Progress:** four of six landed (DELETE, INSERT, both service variants).
-> UPDATE and UPSERT remain.
+> **Progress:** five of six landed (DELETE, INSERT, UPDATE, both service variants).
+> UPSERT remains.
 
 ---
 
@@ -50,7 +50,7 @@ The *Consolidation* item that previously called for an emitter-side `buildMutati
 | Phase 1B (model alignment) | **Landed** | `DmlReturnExpression` sealed sub-variant carries the entire return-shape dispatch on `DmlTableField`. Five arms (`EncodedSingle`, `EncodedList`, `ProjectedSingle`, `ProjectedList`, `Payload`) — `Payload` absorbs the R12-introduced `Optional<PayloadAssembly>` slot so the broad `(returnType, encodeReturn, payloadAssembly)` triple collapses to one slot. Records went from 8 components to 6. `@LoadBearingClassifierCheck(key = "dml-mutation-shape-guarantees")` on `buildDmlField`; `@DependsOnClassifierCheck` on `buildMutationDeleteFetcher`. See [Phase 1B](#phase-1b--model-alignment). |
 | `MutationDeleteTableField` | **Landed** | `buildMutationDeleteFetcher` pattern-matches on `f.returnExpression()` (no `instanceof ScalarReturnType` / `wrapper().isList()` / `payloadAssembly().isPresent()` predicates). Per-arm bodies live in `emitDeleteEncoded` / `emitDeleteProjected` / `emitDeletePayload` helpers. |
 | `MutationInsertTableField` | **Landed** | `buildMutationInsertFetcher` shares the verb-neutral `buildDmlFetcher` skeleton + `emitDmlReturnExpression` projection terminator with DELETE. Column list and parallel values list both walk `tia.fields()` once; values use `DSL.val(in.get(name), Tables.T.COL.getDataType())` for converter-mediated coercion. Partition flipped to `IMPLEMENTED_LEAVES`. Validation test `VALID`. Execution-tier test `createFilm_insertsRowAndReturnsProjectedFilm` against PostgreSQL verifies the `RETURNING $fields` shape end-to-end (resolves DELETE's deferred verification). |
-| `MutationUpdateTableField` | **Ready (Phase 4)** | Record + classifier done. Lands `buildMutationUpdateFetcher` against the post-1B shape. |
+| `MutationUpdateTableField` | **Landed** | `buildMutationUpdateFetcher` shares the verb-neutral `buildDmlFetcher` skeleton + `emitDmlReturnExpression` projection terminator with INSERT and DELETE. SET clause walks `tia.fields()` skipping `@lookupKey` names; WHERE clause reuses the shared `buildLookupWhere` helper. Partition flipped to `IMPLEMENTED_LEAVES`. Validation test `VALID`. Execution-tier test `updateFilm_updatesRowAndReturnsProjectedFilm` against PostgreSQL inserts a marker row, runs the mutation, asserts the SET clause wrote and the `RETURNING $fields` projection returned the new title with `languageId` carrying through unchanged. |
 | `MutationUpsertTableField` | **Ready (Phase 5)** | Record + classifier done. Lands `buildMutationUpsertFetcher` against the post-1B shape. |
 | `MutationServiceTableField` | **Landed** | `buildMutationServiceTableFetcher` delegates to the shared `buildServiceFetcherCommon` helper, inheriting the R12 §3 try/catch wrapper, §5 Jakarta validation pre-step, and §2c `resultAssembly` success-arm assembly. Wears `@DependsOnClassifierCheck(key = "service-catalog-strict-service-return", ...)` for the strict-return guarantee. Validation test flipped from `STUBBED` to `VALID`. |
 | `MutationServiceRecordField` | **Landed** | Same shape as above for the non-table service variant; `buildMutationServiceRecordFetcher` mirrors `buildQueryServiceRecordFetcher` (handles `ResultReturnType` with `fqClassName`, `PojoResultType`, and `ScalarReturnType` via `computeMutationServiceRecordReturnType`). |
@@ -588,7 +588,17 @@ When the WHERE clause matches no row, `.fetchOne(...)` returns `null`. The emitt
 
 ### Phase 4 — UPDATE emission
 
-**Status: After 1B.** Record + classifier already done; only the emitter and the partition flip remain. UPDATE combines INSERT's value-binding pattern (the SET clause) with DELETE's WHERE-clause pattern.
+**Status: ✅ Landed.** `buildMutationUpdateFetcher` shares the verb-neutral `buildDmlFetcher` (try/catch envelope, table-local declaration, `dsl` chain, `payload` bind, `returnSyncSuccess` / `catchArm`) and `emitDmlReturnExpression` (projection terminator) with INSERT and DELETE. The verb-specific portion is the chain that goes between `dsl\n` and `.returningResult(...)`:
+
+```java
+var dmlChain = CodeBlock.builder()
+    .add(".update($L)\n", tableLocal)
+    .add(setClause.build())                      // .set(col, val) per non-@lookupKey field
+    .add(".where(").add(buildLookupWhere(...)).add(")\n")
+    .build();
+```
+
+UPSERT will land against the same skeleton with its own `dmlChain` shape (`.insertInto(...).values(...).onConflict(...).doUpdate().set(...)`).
 
 #### Emitter (`buildMutationUpdateFetcher`)
 

@@ -20,7 +20,7 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 class StubbedVariantPipelineTest {
 
     @Test
-    void mutationUpdateOnATableType_surfacesStubbedError() {
+    void mutationUpsertOnATableType_surfacesStubbedError() {
         var errors = validate("""
             type Film @table(name: "film") { title: String }
             input FilmInput @table(name: "film") {
@@ -28,16 +28,16 @@ class StubbedVariantPipelineTest {
                 title: String
             }
             type Query { x: String }
-            type Mutation { updateFilm(in: FilmInput!): Film @mutation(typeName: UPDATE) }
+            type Mutation { upsertFilm(in: FilmInput!): Film @mutation(typeName: UPSERT) }
             """);
 
         assertThat(messages(errors))
-            .contains("Field 'Mutation.updateFilm': "
-                + TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS.get(MutationField.MutationUpdateTableField.class));
+            .contains("Field 'Mutation.upsertFilm': "
+                + TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS.get(MutationField.MutationUpsertTableField.class));
         // Ratchet: whole-variant stubs are DEFERRED (generator capability gap), not
-        // INVALID_SCHEMA. Remaining DML bodies (UPDATE / UPSERT) will land via R22.
+        // INVALID_SCHEMA. UPSERT is the last remaining DML body (UPDATE landed in Phase 4).
         assertThat(errors).anyMatch(e -> e.kind() == RejectionKind.DEFERRED
-            && e.message().contains("Mutation.updateFilm"));
+            && e.message().contains("Mutation.upsertFilm"));
     }
 
     @Test
