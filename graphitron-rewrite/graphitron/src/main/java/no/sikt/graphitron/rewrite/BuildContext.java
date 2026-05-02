@@ -1249,6 +1249,13 @@ class BuildContext {
             String refTypeName, String targetTableName, String targetTypeId,
             List<ColumnRef> targetKeyColumns, List<JoinStep> joinPath,
             Optional<ArgConditionRef> cond) {
+        if (targetKeyColumns.isEmpty()) {
+            return new InputFieldResolution.Unresolved(name, null,
+                "@nodeId(typeName: '" + refTypeName + "') targets table '" + targetTableName
+                + "' which has no resolvable key columns (no NodeId metadata, no @node(keyColumns:),"
+                + " and no primary key) — declare key columns on the target type or surface the"
+                + " metadata via KjerneJooqGenerator");
+        }
         var decodeMethod = resolveDecodeHelperForTable(targetTableName, targetTypeId, targetKeyColumns);
         if (decodeMethod == null) {
             return new InputFieldResolution.Unresolved(name, null,
