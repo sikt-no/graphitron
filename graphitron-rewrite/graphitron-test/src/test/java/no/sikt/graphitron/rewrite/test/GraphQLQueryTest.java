@@ -3202,4 +3202,46 @@ class GraphQLQueryTest {
         assertThat(staffRow.get("staffId")).isNotNull();
         assertThat(staffRow.get("firstName")).isEqualTo("Mike");
     }
+
+    // ===== R22 Phase 2: INSERT emitter (DML mutation, TableBoundReturnType) =====
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void createFilm_insertsRowAndReturnsProjectedFilm() {
+        // INSERT mutation with @table return: emitter runs
+        // `dsl.insertInto(film, title, language_id).values(...).returningResult($fields).fetchOne(r -> r)`,
+        // and graphql-java walks the returned Record for the selected columns. This is the
+        // first execution-tier coverage for R22's RETURNING-with-multiset shape on PostgreSQL —
+        // DELETE shipped without one. The test cleans up its inserted row in a finally block
+        // so other tests' film-count assumptions are preserved.
+        String marker = "R22-PHASE-2-FILM-" + java.util.UUID.randomUUID();
+        int countBefore = dsl.fetchCount(org.jooq.impl.DSL.table("film"));
+        try {
+            Map<String, Object> data = execute("""
+                mutation {
+                    createFilm(in: { title: "%s", languageId: 1 }) {
+                        title
+                        languageId
+                        rentalRate
+                    }
+                }
+                """.formatted(marker));
+
+            Map<String, Object> created = (Map<String, Object>) data.get("createFilm");
+            assertThat(created).containsEntry("title", marker);
+            assertThat(created).containsEntry("languageId", 1);
+            // rental_rate has a DB-side default of 4.99 that flows back through the RETURNING
+            // projection, even though the input does not supply it.
+            assertThat(((Number) created.get("rentalRate")).doubleValue()).isEqualTo(4.99);
+
+            int countAfter = dsl.fetchCount(org.jooq.impl.DSL.table("film"));
+            assertThat(countAfter)
+                .as("createFilm inserted exactly one row")
+                .isEqualTo(countBefore + 1);
+        } finally {
+            dsl.deleteFrom(org.jooq.impl.DSL.table("film"))
+                .where(org.jooq.impl.DSL.field("title").eq(marker))
+                .execute();
+        }
+    }
 }

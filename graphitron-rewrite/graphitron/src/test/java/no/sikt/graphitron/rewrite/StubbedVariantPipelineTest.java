@@ -20,21 +20,24 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 class StubbedVariantPipelineTest {
 
     @Test
-    void mutationInsertOnATableType_surfacesStubbedError() {
+    void mutationUpdateOnATableType_surfacesStubbedError() {
         var errors = validate("""
             type Film @table(name: "film") { title: String }
-            input FilmInput @table(name: "film") { title: String }
+            input FilmInput @table(name: "film") {
+                filmId: Int! @field(name: "film_id") @lookupKey
+                title: String
+            }
             type Query { x: String }
-            type Mutation { createFilm(in: FilmInput!): Film @mutation(typeName: INSERT) }
+            type Mutation { updateFilm(in: FilmInput!): Film @mutation(typeName: UPDATE) }
             """);
 
         assertThat(messages(errors))
-            .contains("Field 'Mutation.createFilm': "
-                + TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS.get(MutationField.MutationInsertTableField.class));
+            .contains("Field 'Mutation.updateFilm': "
+                + TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS.get(MutationField.MutationUpdateTableField.class));
         // Ratchet: whole-variant stubs are DEFERRED (generator capability gap), not
-        // INVALID_SCHEMA. Mutation bodies will land via the dedicated roadmap item.
+        // INVALID_SCHEMA. Remaining DML bodies (UPDATE / UPSERT) will land via R22.
         assertThat(errors).anyMatch(e -> e.kind() == RejectionKind.DEFERRED
-            && e.message().contains("Mutation.createFilm"));
+            && e.message().contains("Mutation.updateFilm"));
     }
 
     @Test
