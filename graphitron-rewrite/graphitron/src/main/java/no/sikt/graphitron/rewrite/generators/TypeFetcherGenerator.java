@@ -1350,19 +1350,24 @@ public class TypeFetcherGenerator {
      * matches no row. graphql-java surfaces that as a GraphQL null on a nullable field, or a
      * non-null violation on {@code ID!}/{@code Type!}.
      */
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "dml-mutation-shape-guarantees",
+        reliesOn = "Pattern-matches f.returnExpression() with no instanceof / "
+            + "Optional.orElseThrow / payloadAssembly().isPresent() guard; casts "
+            + "env.getArgument(tia.name()) to Map<?,?> with no guard; walks tia.fields() "
+            + "without an extraction-arm dispatch.")
     private static MethodSpec buildMutationDeleteFetcher(MutationField.MutationDeleteTableField f,
                                                           String outputPackage, String jooqPackage) {
         var tia = f.tableInputArg();
         var tableRef = tia.inputTable();
-        var names = GeneratorUtils.ResolvedTableNames.of(tableRef, f.returnType().returnTypeName(), outputPackage, jooqPackage);
         var dslContextClass = ClassName.get("org.jooq", "DSLContext");
 
-        // The fetcher's value type is the developer-supplied payload class when a
-        // PayloadAssembly is present (R12 DML payload return); Object otherwise (the existing
-        // ID and @table paths).
-        TypeName valueType = f.payloadAssembly()
-            .map(pa -> (TypeName) pa.payloadClass())
-            .orElse(ClassName.OBJECT);
+        // The fetcher's value type is the developer-supplied payload class on the Payload arm,
+        // Object otherwise.
+        TypeName valueType = switch (f.returnExpression()) {
+            case no.sikt.graphitron.rewrite.model.DmlReturnExpression.Payload p -> p.assembly().payloadClass();
+            default -> ClassName.OBJECT;
+        };
         var builder = MethodSpec.methodBuilder(f.name())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(syncResultType(valueType))
@@ -1372,6 +1377,7 @@ public class TypeFetcherGenerator {
         builder.addStatement("$T dsl = graphitronContext(env).getDslContext(env)", dslContextClass);
         builder.addStatement("$T<?, ?> in = ($T<?, ?>) env.getArgument($S)", MAP, MAP, tia.name());
 
+        var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef, jooqPackage);
         // WHERE predicate: chain bindings with .and(...)
         var whereExpr = CodeBlock.builder();
         var bindings = tia.fieldBindings();
@@ -1379,91 +1385,138 @@ public class TypeFetcherGenerator {
             var binding = bindings.get(i);
             if (i > 0) whereExpr.add(".and(");
             whereExpr.add("$T.$L.eq($T.val(in.get($S), $T.$L.getDataType()))",
-                names.tablesClass(), tableRef.javaFieldName() + "." + binding.targetColumn().javaName(),
+                tablesOnly.tablesClass(), tableRef.javaFieldName() + "." + binding.targetColumn().javaName(),
                 DSL,
                 binding.fieldName(),
-                names.tablesClass(), tableRef.javaFieldName() + "." + binding.targetColumn().javaName());
+                tablesOnly.tablesClass(), tableRef.javaFieldName() + "." + binding.targetColumn().javaName());
             if (i > 0) whereExpr.add(")");
         }
 
-        boolean isList = f.returnType().wrapper().isList();
-        if (f.payloadAssembly().isPresent()) {
-            // ResultReturnType payload: capture the row record from .returning().fetchOne(),
-            // then construct the payload by walking constructor slots positionally (row local
-            // at rowSlotIndex, defaultLiteral at every defaultedSlot; the errors slot, if any,
-            // appears in defaultedSlots with a "null" literal). The payload-shape classifier
-            // guarantees one row slot exists and rejects list-payload returns at
-            // FieldBuilder.validateMutationReturnType, so .fetchOne() is the only shape here.
-            var assembly = f.payloadAssembly().get();
-            String tableLocal = names.tableLocalName();
-            var dml = CodeBlock.builder();
-            dml.add("$T $L = $T.$L;\n", names.jooqTableClass(), tableLocal, names.tablesClass(), tableRef.javaFieldName());
-            dml.add("$T row = dsl\n", assembly.rowSlotType()).indent()
-                .add(".deleteFrom($L)\n", tableLocal)
-                .add(".where(").add(whereExpr.build()).add(")\n")
-                .add(".returning()\n")
-                .add(".fetchOne();\n").unindent();
-            builder.addCode(dml.build());
-
-            var ctor = CodeBlock.builder().add("$T payload = new $T(", valueType, valueType);
-            int slotCount = 1 + assembly.defaultedSlots().size();
-            var defaultsByIndex = assembly.defaultedSlots().stream()
-                .collect(java.util.stream.Collectors.toMap(s -> s.index(), s -> s.defaultLiteral()));
-            for (int i = 0; i < slotCount; i++) {
-                if (i > 0) ctor.add(", ");
-                if (i == assembly.rowSlotIndex()) {
-                    ctor.add("row");
-                } else {
-                    ctor.add(defaultsByIndex.get(i));
-                }
-            }
-            ctor.add(");\n");
-            builder.addCode(ctor.build());
-        } else if (f.returnType() instanceof ReturnTypeRef.ScalarReturnType) {
-            // ID return: project the NodeType's key columns and call the per-type encoder helper
-            // resolved by the classifier (encode<TypeName>(v0, v1, ...)). The typeId is baked into
-            // the method name; no generic encode(typeId, ...) call is emitted from the rewrite.
-            var encode = f.encodeReturn().orElseThrow();
-            var keyCols = encode.paramSignature();
-            var body = CodeBlock.builder()
-                .add("$T payload = dsl\n", valueType).indent()
-                .add(".deleteFrom($T.$L)\n", names.tablesClass(), tableRef.javaFieldName())
-                .add(".where(").add(whereExpr.build()).add(")\n")
-                .add(".returningResult(");
-            for (int i = 0; i < keyCols.size(); i++) {
-                if (i > 0) body.add(", ");
-                body.add("$T.$L.$L", names.tablesClass(), tableRef.javaFieldName(), keyCols.get(i).javaName());
-            }
-            body.add(")\n");
-
-            var lambda = CodeBlock.builder().add("r -> $T.$L(", encode.encoderClass(), encode.methodName());
-            for (int i = 0; i < keyCols.size(); i++) {
-                if (i > 0) lambda.add(", ");
-                var col = keyCols.get(i);
-                lambda.add("r.get($T.$L.$L)", names.tablesClass(), tableRef.javaFieldName(), col.javaName());
-            }
-            lambda.add(")");
-            body.add(isList ? ".fetch(" : ".fetchOne(").add(lambda.build()).add(");\n").unindent();
-            builder.addCode(body.build());
-        } else {
-            // TableBoundReturnType: use Type.$fields(env.getSelectionSet(), table, env) and
-            // return the row record. graphql-java's column fetchers walk it.
-            String tableLocal = names.tableLocalName();
-            var body = CodeBlock.builder();
-            body.add("$T $L = $T.$L;\n", names.jooqTableClass(), tableLocal, names.tablesClass(), tableRef.javaFieldName());
-            body.add("$T payload = dsl\n", valueType).indent()
-                .add(".deleteFrom($L)\n", tableLocal)
-                .add(".where(").add(whereExpr.build()).add(")\n")
-                .add(".returningResult($T.$$fields(env.getSelectionSet(), $L, env))\n",
-                    names.typeClass(), tableLocal)
-                .add(isList ? ".fetch(r -> r);\n" : ".fetchOne(r -> r);\n").unindent();
-            builder.addCode(body.build());
-        }
+        builder.addCode(emitDeleteBody(f.returnExpression(), valueType, tableRef, tablesOnly,
+            outputPackage, jooqPackage, whereExpr.build()));
         builder.addCode(returnSyncSuccess(valueType, "payload"));
         builder.nextControlFlow("catch ($T e)", Exception.class);
         builder.addCode(catchArm(outputPackage, f.errorChannel()));
         builder.endControlFlow();
         return builder.build();
+    }
+
+    /**
+     * Emits the {@code .deleteFrom(...).where(...)} terminator and the {@code payload} local
+     * declaration, dispatched on the pre-resolved {@link
+     * no.sikt.graphitron.rewrite.model.DmlReturnExpression} arm. Each arm produces a
+     * {@code $T payload = ...;} statement; the caller then wraps it in {@code returnSyncSuccess}.
+     */
+    private static CodeBlock emitDeleteBody(
+            no.sikt.graphitron.rewrite.model.DmlReturnExpression rex,
+            TypeName valueType,
+            TableRef tableRef,
+            GeneratorUtils.ResolvedTableNames tablesOnly,
+            String outputPackage, String jooqPackage,
+            CodeBlock whereExpr) {
+        return switch (rex) {
+            case no.sikt.graphitron.rewrite.model.DmlReturnExpression.EncodedSingle es ->
+                emitDeleteEncoded(es.encode(), valueType, tableRef, tablesOnly, whereExpr, /*isList=*/ false);
+            case no.sikt.graphitron.rewrite.model.DmlReturnExpression.EncodedList el ->
+                emitDeleteEncoded(el.encode(), valueType, tableRef, tablesOnly, whereExpr, /*isList=*/ true);
+            case no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedSingle ps ->
+                emitDeleteProjected(ps.returnTypeName(), valueType, tableRef, tablesOnly,
+                    outputPackage, jooqPackage, whereExpr, /*isList=*/ false);
+            case no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedList pl ->
+                emitDeleteProjected(pl.returnTypeName(), valueType, tableRef, tablesOnly,
+                    outputPackage, jooqPackage, whereExpr, /*isList=*/ true);
+            case no.sikt.graphitron.rewrite.model.DmlReturnExpression.Payload p ->
+                emitDeletePayload(p.assembly(), valueType, tableRef, tablesOnly, whereExpr);
+        };
+    }
+
+    private static CodeBlock emitDeleteEncoded(
+            no.sikt.graphitron.rewrite.model.HelperRef.Encode encode,
+            TypeName valueType, TableRef tableRef,
+            GeneratorUtils.ResolvedTableNames tablesOnly,
+            CodeBlock whereExpr, boolean isList) {
+        // ID return: project the NodeType's key columns and call the per-type encoder helper
+        // resolved by the classifier (encode<TypeName>(v0, v1, ...)). The typeId is baked into
+        // the method name; no generic encode(typeId, ...) call is emitted from the rewrite.
+        var keyCols = encode.paramSignature();
+        var body = CodeBlock.builder()
+            .add("$T payload = dsl\n", valueType).indent()
+            .add(".deleteFrom($T.$L)\n", tablesOnly.tablesClass(), tableRef.javaFieldName())
+            .add(".where(").add(whereExpr).add(")\n")
+            .add(".returningResult(");
+        for (int i = 0; i < keyCols.size(); i++) {
+            if (i > 0) body.add(", ");
+            body.add("$T.$L.$L", tablesOnly.tablesClass(), tableRef.javaFieldName(), keyCols.get(i).javaName());
+        }
+        body.add(")\n");
+
+        var lambda = CodeBlock.builder().add("r -> $T.$L(", encode.encoderClass(), encode.methodName());
+        for (int i = 0; i < keyCols.size(); i++) {
+            if (i > 0) lambda.add(", ");
+            var col = keyCols.get(i);
+            lambda.add("r.get($T.$L.$L)", tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
+        }
+        lambda.add(")");
+        body.add(isList ? ".fetch(" : ".fetchOne(").add(lambda.build()).add(");\n").unindent();
+        return body.build();
+    }
+
+    private static CodeBlock emitDeleteProjected(
+            String returnTypeName, TypeName valueType, TableRef tableRef,
+            GeneratorUtils.ResolvedTableNames tablesOnly,
+            String outputPackage, String jooqPackage,
+            CodeBlock whereExpr, boolean isList) {
+        // TableBoundReturnType: use Type.$fields(env.getSelectionSet(), table, env) and
+        // return the row record. graphql-java's column fetchers walk it.
+        var typeClass = ClassName.get(outputPackage + ".types", returnTypeName);
+        String tableLocal = tablesOnly.tableLocalName();
+        var body = CodeBlock.builder();
+        body.add("$T $L = $T.$L;\n", tablesOnly.jooqTableClass(), tableLocal,
+            tablesOnly.tablesClass(), tableRef.javaFieldName());
+        body.add("$T payload = dsl\n", valueType).indent()
+            .add(".deleteFrom($L)\n", tableLocal)
+            .add(".where(").add(whereExpr).add(")\n")
+            .add(".returningResult($T.$$fields(env.getSelectionSet(), $L, env))\n",
+                typeClass, tableLocal)
+            .add(isList ? ".fetch(r -> r);\n" : ".fetchOne(r -> r);\n").unindent();
+        return body.build();
+    }
+
+    private static CodeBlock emitDeletePayload(
+            no.sikt.graphitron.rewrite.model.PayloadAssembly assembly,
+            TypeName valueType, TableRef tableRef,
+            GeneratorUtils.ResolvedTableNames tablesOnly,
+            CodeBlock whereExpr) {
+        // ResultReturnType payload: capture the row record from .returning().fetchOne(),
+        // then construct the payload by walking constructor slots positionally (row local at
+        // rowSlotIndex, defaultLiteral at every defaultedSlot; the errors slot, if any, appears
+        // in defaultedSlots with a "null" literal). The payload-shape classifier guarantees one
+        // row slot exists and rejects list-payload returns at validateReturnType, so
+        // .fetchOne() is the only shape here.
+        String tableLocal = tablesOnly.tableLocalName();
+        var dml = CodeBlock.builder();
+        dml.add("$T $L = $T.$L;\n", tablesOnly.jooqTableClass(), tableLocal,
+            tablesOnly.tablesClass(), tableRef.javaFieldName());
+        dml.add("$T row = dsl\n", assembly.rowSlotType()).indent()
+            .add(".deleteFrom($L)\n", tableLocal)
+            .add(".where(").add(whereExpr).add(")\n")
+            .add(".returning()\n")
+            .add(".fetchOne();\n").unindent();
+
+        var ctor = CodeBlock.builder().add("$T payload = new $T(", valueType, valueType);
+        int slotCount = 1 + assembly.defaultedSlots().size();
+        var defaultsByIndex = assembly.defaultedSlots().stream()
+            .collect(java.util.stream.Collectors.toMap(s -> s.index(), s -> s.defaultLiteral()));
+        for (int i = 0; i < slotCount; i++) {
+            if (i > 0) ctor.add(", ");
+            if (i == assembly.rowSlotIndex()) {
+                ctor.add("row");
+            } else {
+                ctor.add(defaultsByIndex.get(i));
+            }
+        }
+        ctor.add(");\n");
+        return dml.add(ctor.build()).build();
     }
 
     /**

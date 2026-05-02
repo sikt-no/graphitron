@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.rewrite.model.DmlReturnExpression;
 import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
 import no.sikt.graphitron.rewrite.model.MutationField;
 import org.junit.jupiter.api.Test;
@@ -41,10 +42,9 @@ class MutationDmlNodeIdClassificationTest {
             """, NODEID_CTX);
 
         var f = (MutationField.MutationInsertTableField) schema.field("Mutation", "createBar");
-        assertThat(f.encodeReturn()).isPresent();
-        var enc = f.encodeReturn().get();
-        assertThat(enc.methodName()).isEqualTo("encodeBar");
-        assertThat(enc.paramSignature())
+        var rex = (DmlReturnExpression.EncodedSingle) f.returnExpression();
+        assertThat(rex.encode().methodName()).isEqualTo("encodeBar");
+        assertThat(rex.encode().paramSignature())
             .extracting(ColumnRef::sqlName)
             .containsExactly("id_1", "id_2");
     }
@@ -113,6 +113,7 @@ class MutationDmlNodeIdClassificationTest {
             """, NODEID_CTX);
 
         var f = (MutationField.MutationInsertTableField) schema.field("Mutation", "createQux");
-        assertThat(f.encodeReturn()).isEmpty();
+        assertThat(f.returnExpression())
+            .isEqualTo(new DmlReturnExpression.ProjectedSingle("Qux"));
     }
 }

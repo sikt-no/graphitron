@@ -39,6 +39,7 @@ import no.sikt.graphitron.rewrite.model.ChildField.UnionField;
 import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.ErrorChannel;
+import no.sikt.graphitron.rewrite.model.DmlReturnExpression;
 import no.sikt.graphitron.rewrite.model.PayloadAssembly;
 import no.sikt.graphitron.rewrite.model.InputColumnBinding;
 import no.sikt.graphitron.rewrite.model.InputField;
@@ -2059,20 +2060,31 @@ class FieldBuilder {
     /**
      * Variant of {@link #buildWithChannel} used by {@code DmlTableField} construction sites:
      * resolves the {@link PayloadAssembly} (DML success-arm payload-construction recipe) and
-     * the {@link ErrorChannel} (catch-arm dispatch recipe) and forwards both to {@code builder}.
+     * the {@link ErrorChannel} (catch-arm dispatch recipe), folds the assembly into the
+     * pre-resolved {@link DmlReturnExpression} arm, and forwards both to {@code builder}.
      * A rejection on either side surfaces as {@code UnclassifiedField}; a {@code NoAssembly}
      * (the return type isn't a {@code @record} payload) or {@code NoChannel} (the payload has
-     * no errors-shaped field) yields {@link Optional#empty()} on the corresponding slot.
+     * no errors-shaped field) yields a non-{@code Payload} arm or an empty channel respectively.
      *
      * <p>The two resolutions are independent: a DML field can carry an assembly without a
      * channel (payload constructs on success, {@code redact} on catch) or a channel without an
      * assembly (impossible today since channel resolution requires {@code ResultReturnType}
      * and so does assembly resolution, but kept symmetric for the model's clarity).
      */
+    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
+        key = "dml-mutation-shape-guarantees",
+        description = "Resolves DmlReturnExpression to one of five arms (EncodedSingle / "
+            + "EncodedList / ProjectedSingle / ProjectedList / Payload), so DML emitters "
+            + "pattern-match a single sealed dispatch with no instanceof ScalarReturnType, no "
+            + "wrapper().isList() lookup, no Optional.orElseThrow() on the encode helper, and "
+            + "no payloadAssembly().isPresent() predicate. Combined with the input-shape "
+            + "invariants (Invariants #1 and #7-#13 in mutations.md), the entire DML emitter "
+            + "branch is total without defensive checks.")
     private GraphitronField buildDmlField(
             ReturnTypeRef returnType, String parentTypeName, String fieldName,
             SourceLocation location, GraphQLFieldDefinition fieldDef, String dmlTableSqlName,
-            java.util.function.BiFunction<Optional<PayloadAssembly>, Optional<ErrorChannel>, GraphitronField> builder) {
+            java.util.function.BiFunction<DmlReturnExpression, Optional<ErrorChannel>, GraphitronField> builder,
+            Optional<HelperRef.Encode> encodeReturn) {
         // Channel and DML payload assembly are independent under the R12 source-direct contract:
         // the row slot is identified by jOOQ table-record class equality, and the errors slot
         // (if present) by the SDL ErrorsField's declaration index in resolveErrorChannel. They
@@ -2095,7 +2107,41 @@ class FieldBuilder {
                     RejectionKind.AUTHOR_ERROR, r.reason());
             }
         }
-        return builder.apply(assembly, channel);
+        DmlReturnExpression returnExpression = buildDmlReturnExpression(returnType, encodeReturn, assembly);
+        return builder.apply(returnExpression, channel);
+    }
+
+    /**
+     * Folds the pre-validated {@code returnType}, {@code encodeReturn} (populated for ID returns
+     * that resolve to a {@code @node} type), and {@code payloadAssembly} (populated for
+     * R12 {@code @record} payload returns) into the single {@link DmlReturnExpression} arm the
+     * DML emitter pattern-matches on. Total over Invariant #14's admitted return-type set;
+     * unreachable on anything else (Invariant #14 already rejected it).
+     */
+    private static DmlReturnExpression buildDmlReturnExpression(
+            ReturnTypeRef returnType,
+            Optional<HelperRef.Encode> encodeReturn,
+            Optional<PayloadAssembly> payloadAssembly) {
+        boolean isList = returnType.wrapper().isList();
+        if (returnType instanceof ReturnTypeRef.ScalarReturnType s && "ID".equals(s.returnTypeName())) {
+            HelperRef.Encode enc = encodeReturn.orElseThrow(() -> new AssertionError(
+                "DML mutation with ID return type missing encode helper; classifier should have rejected this"));
+            return isList ? new DmlReturnExpression.EncodedList(enc) : new DmlReturnExpression.EncodedSingle(enc);
+        }
+        if (returnType instanceof ReturnTypeRef.TableBoundReturnType tb) {
+            return isList
+                ? new DmlReturnExpression.ProjectedList(tb.returnTypeName())
+                : new DmlReturnExpression.ProjectedSingle(tb.returnTypeName());
+        }
+        if (returnType instanceof ReturnTypeRef.ResultReturnType) {
+            PayloadAssembly assembly = payloadAssembly.orElseThrow(() -> new AssertionError(
+                "DML mutation with @record return type missing payload assembly; "
+                    + "classifier should have rejected this"));
+            return new DmlReturnExpression.Payload(assembly);
+        }
+        throw new AssertionError(
+            "DML mutation return type '" + returnType.returnTypeName()
+                + "' should have been rejected by Invariant #14 (validateReturnType)");
     }
 
     // ===== Root field classification (P5) =====
@@ -2317,13 +2363,17 @@ class FieldBuilder {
                 String dmlTableSqlName = tia.inputTable().tableName();
                 return switch (kind) {
                     case INSERT -> buildDmlField(returnType, parentTypeName, name, location, fieldDef, dmlTableSqlName,
-                        (pa, ch) -> new MutationField.MutationInsertTableField(parentTypeName, name, location, returnType, tia, enc, pa, ch));
+                        (rex, ch) -> new MutationField.MutationInsertTableField(parentTypeName, name, location, rex, tia, ch),
+                        enc);
                     case UPDATE -> buildDmlField(returnType, parentTypeName, name, location, fieldDef, dmlTableSqlName,
-                        (pa, ch) -> new MutationField.MutationUpdateTableField(parentTypeName, name, location, returnType, tia, enc, pa, ch));
+                        (rex, ch) -> new MutationField.MutationUpdateTableField(parentTypeName, name, location, rex, tia, ch),
+                        enc);
                     case DELETE -> buildDmlField(returnType, parentTypeName, name, location, fieldDef, dmlTableSqlName,
-                        (pa, ch) -> new MutationField.MutationDeleteTableField(parentTypeName, name, location, returnType, tia, enc, pa, ch));
+                        (rex, ch) -> new MutationField.MutationDeleteTableField(parentTypeName, name, location, rex, tia, ch),
+                        enc);
                     case UPSERT -> buildDmlField(returnType, parentTypeName, name, location, fieldDef, dmlTableSqlName,
-                        (pa, ch) -> new MutationField.MutationUpsertTableField(parentTypeName, name, location, returnType, tia, enc, pa, ch));
+                        (rex, ch) -> new MutationField.MutationUpsertTableField(parentTypeName, name, location, rex, tia, ch),
+                        enc);
                 };
             }
         }
