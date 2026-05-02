@@ -271,6 +271,43 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void filmsByNodeIdArg_malformedIdMixedWithWellFormed_returnsWellFormedSubset() {
+        // R40 phase 2: same-table @nodeId arg now uses SkipMismatchedElement — a malformed id
+        // drops silently from the VALUES set rather than throwing GraphqlErrorException. The
+        // emitter tracks an effective row count and trims rows[] when shorter than n, so the
+        // VALUES+JOIN runs against only the well-formed decoded ids and the result is the
+        // single matching row. Restores the originally-specified Skip semantics over the first
+        // pass's expedient Throw.
+        String id2 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 2);
+        Map<String, Object> data = execute(
+            "{ filmsByNodeIdArg(ids: [\"" + id2 + "\", \"not-a-valid-node-id\"]) { filmId title } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmsByNodeIdArg");
+        assertThat(films).extracting(f -> f.get("filmId")).containsExactly(2);
+    }
+
+    @Test
+    void filmsByNodeIdArg_allMalformedIds_returnsNoRows() {
+        // R40 phase 2: when every id is malformed, the per-row Skip drops every entry; the
+        // effective row count reaches 0 and the call site's `if (rows.length == 0) return
+        // dsl.newResult();` short-circuit handles the all-skipped case without further
+        // bookkeeping.
+        Map<String, Object> data = execute(
+            "{ filmsByNodeIdArg(ids: [\"garbage-1\", \"garbage-2\"]) { filmId title } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmsByNodeIdArg");
+        assertThat(films).isEmpty();
+    }
+
+    @Test
+    void filmsByNodeIdArg_emptyList_returnsNoRows() {
+        // R40 phase 2: empty input list — the input-rows helper's row-count computation
+        // (`int n = ids == null ? 0 : ids.size()`) yields 0, the rows array is length 0, and
+        // the call site short-circuits to `dsl.newResult()`. No SQL round-trip.
+        Map<String, Object> data = execute("{ filmsByNodeIdArg(ids: []) { filmId title } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmsByNodeIdArg");
+        assertThat(films).isEmpty();
+    }
+
+    @Test
     void films_filteredBySameTableNodeId_emptyListReturnsNoRows() {
         // R50 phase (e4b): the post-collapse successor of NodeIdInFilterField is a column-shaped
         // ColumnField with NodeIdDecodeKeys.SkipMismatchedElement, which lands on the same
