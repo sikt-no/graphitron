@@ -140,7 +140,7 @@ Then change the same-table arg arm in `FieldBuilder.classifyArgument` from `Thro
 **Pipeline-tier (`NodeIdPipelineTest`).**
 
 - `ArgumentSameTableNodeIdCase` cases keep their structure; flip the asserted `extraction` from `ThrowOnMismatch` to `SkipMismatchedElement`.
-- New case in `InputFieldFkTargetCase` (or a new `InputFieldFkTargetTranslatedRejectionCase`): an input-field `[ID!] @nodeId(typeName: T)` where T's keys differ from the FK targets currently builds silently; assert it now surfaces an `UnclassifiedField` whose reason mentions the FK-target-key-mismatch hint, parallel to the existing arg-side `FK_TARGET_PATHOLOGICAL_KEY_MISMATCH_DEFERRED` shape.
+- New `InputFieldFkTargetNodeIdCase` enum (sibling to the existing `ArgumentFkTargetNodeIdCase` and `InputSameTableNodeIdCase`; no input-field FK-target enum exists today): an input-field `[ID!] @nodeId(typeName: T)` where T's keys differ from the FK targets currently builds silently; assert the rework surfaces an `UnclassifiedField` whose reason mentions the FK-target-key-mismatch hint, parallel to the existing arg-side `FK_TARGET_PATHOLOGICAL_KEY_MISMATCH_DEFERRED` shape.
 - Resolver-tier coverage in a new `NodeIdLeafResolverTest` (first resolver-tier unit test for an R6 resolver; the other R6 resolvers are exercised end-to-end through pipeline tests today): assert the resolver produces `DirectFk` for the matching-keys case and `TranslatedFk` for the parent_node + child_ref reproducer, without going through carrier construction.
 
 **Execution-tier (`GraphQLQueryTest` under `graphitron-test`).** The R40 entry point is the existing `films_filteredByArgNodeId_returnsRowsMatchingDecodedIds` against the `filmsByNodeIdArg(ids: [ID!]! @nodeId(typeName: "Film"))` fixture; new cases sit beside it.
