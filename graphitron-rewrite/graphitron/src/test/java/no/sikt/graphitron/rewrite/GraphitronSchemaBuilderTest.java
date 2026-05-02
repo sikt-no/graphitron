@@ -1732,6 +1732,508 @@ class GraphitronSchemaBuilderTest {
         tc.assertions.accept(build(tc.sdl));
     }
 
+    // ===== @batchKeyLifter classifier matrix (R1 Phase 1f) =====
+
+    /**
+     * Classifier-level coverage for the {@code @batchKeyLifter} directive — the lifter path
+     * for {@code @record} parents whose backing class has no jOOQ FK metadata. Each case
+     * pins one of the resolver invariants in
+     * {@link no.sikt.graphitron.rewrite.BatchKeyLifterDirectiveResolver}: parent shape (Inv #1),
+     * lifter parameter assignability (Inv #2), lifter return type (Inv #3), arity / column-class
+     * match (Inv #4), target-column resolution (Inv #5), non-empty {@code targetColumns} (Inv #6),
+     * {@code @asConnection} reject (Inv #9). Single-cardinality (Inv #10) is gated by the
+     * validator (existing {@code SplitRowsMethodEmitter.unsupportedReason} arm) and tested
+     * separately under the validation tier.
+     *
+     * <p>Lifter fixture methods live in {@link TestLifterStub}.
+     */
+    enum BatchKeyLifterCase implements ClassificationCase {
+        POJO_PARENT_VALID_ROW1_LIST(
+            "Pojo parent + valid Row1<Integer> lifter, list return → RecordTableField with LifterRowKeyed",
+            """
+            type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+              inventories: [Inventory!]!
+                @batchKeyLifter(
+                  lifter: {className: "no.sikt.graphitron.rewrite.TestLifterStub", method: "dummyRow1Integer"},
+                  targetColumns: ["film_id"])
+            }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var f = (RecordTableField) schema.field("FilmDetails", "inventories");
+                assertThat(f.batchKey()).isInstanceOf(BatchKey.LifterRowKeyed.class);
+                var lrk = (BatchKey.LifterRowKeyed) f.batchKey();
+                assertThat(f.joinPath()).hasSize(1);
+                assertThat(f.joinPath().get(0)).isSameAs(lrk.hop());
+                assertThat(lrk.targetKeyColumns()).hasSize(1);
+                assertThat(lrk.targetKeyColumns().get(0).sqlName()).isEqualTo("film_id");
+                assertThat(lrk.lifter().declaringClass().reflectionName()).isEqualTo("no.sikt.graphitron.rewrite.TestLifterStub");
+                assertThat(lrk.lifter().methodName()).isEqualTo("dummyRow1Integer");
+                assertThat(lrk.hop().targetTable().tableName()).isEqualTo("inventory");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
+        },
+
+        POJO_PARENT_VALID_ROW2_COMPOSITE(
+            "Pojo parent + valid Row2<Integer,Integer> lifter (composite key), list return → RecordTableField with arity 2",
+            """
+            type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+              inventories: [Inventory!]!
+                @batchKeyLifter(
+                  lifter: {className: "no.sikt.graphitron.rewrite.TestLifterStub", method: "dummyRow2IntInt"},
+                  targetColumns: ["film_id", "store_id"])
+            }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var f = (RecordTableField) schema.field("FilmDetails", "inventories");
+                var lrk = (BatchKey.LifterRowKeyed) f.batchKey();
+                assertThat(lrk.targetKeyColumns()).hasSize(2);
+                assertThat(lrk.targetKeyColumns()).extracting(no.sikt.graphitron.rewrite.model.ColumnRef::sqlName)
+                    .containsExactly("film_id", "store_id");
+                // Single source of truth: hop.targetColumns() and batchKey.targetKeyColumns() are
+                // the same list instance — no second copy of the column tuple.
+                assertThat(lrk.hop().targetColumns()).isSameAs(lrk.targetKeyColumns());
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
+        },
+
+        POJO_PARENT_VALID_PLUS_LOOKUPKEY(
+            "Pojo parent + valid Row1 lifter + @lookupKey arg → RecordLookupTableField with LifterRowKeyed and lookupMapping populated",
+            """
+            type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+              inventories(inventory_id: [Int!]! @lookupKey): [Inventory!]!
+                @batchKeyLifter(
+                  lifter: {className: "no.sikt.graphitron.rewrite.TestLifterStub", method: "dummyRow1Integer"},
+                  targetColumns: ["film_id"])
+            }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var f = (RecordLookupTableField) schema.field("FilmDetails", "inventories");
+                assertThat(f.batchKey()).isInstanceOf(BatchKey.LifterRowKeyed.class);
+                assertThat(f.lookupMapping()).isNotNull();
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(RecordLookupTableField.class); }
+        },
+
+        NULL_FQ_CLASS_NAME(
+            "Pojo parent (null fqClassName) + lifter → UnclassifiedField AUTHOR_ERROR (Invariant #1: parent must declare backing class)",
+            """
+            type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
+            type FilmDetails @record {
+              inventories: [Inventory!]!
+                @batchKeyLifter(
+                  lifter: {className: "no.sikt.graphitron.rewrite.TestLifterStub", method: "dummyRow1Integer"},
+                  targetColumns: ["film_id"])
+            }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var unc = (UnclassifiedField) schema.field("FilmDetails", "inventories");
+                assertThat(unc.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
+                assertThat(unc.reason()).contains("@batchKeyLifter").contains("backing class");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
+        },
+
+        TABLE_PARENT_REJECT(
+            "@table parent + lifter → UnclassifiedField AUTHOR_ERROR (lifter is for @record parents)",
+            """
+            type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
+            type Film @table(name: "film") {
+              inventories: [Inventory!]!
+                @batchKeyLifter(
+                  lifter: {className: "no.sikt.graphitron.rewrite.TestLifterStub", method: "dummyRow1Integer"},
+                  targetColumns: ["film_id"])
+            }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var unc = (UnclassifiedField) schema.field("Film", "inventories");
+                assertThat(unc.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
+                assertThat(unc.reason()).contains("@batchKeyLifter").contains("@record").contains("@reference");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
+        },
+
+        JOOQ_TABLE_RECORD_PARENT_REJECT(
+            "JooqTableRecordType parent + lifter → UnclassifiedField AUTHOR_ERROR pointing at the catalog FK",
+            """
+            type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) {
+              inventories: [Inventory!]!
+                @batchKeyLifter(
+                  lifter: {className: "no.sikt.graphitron.rewrite.TestLifterStub", method: "dummyRow1Integer"},
+                  targetColumns: ["film_id"])
+            }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var unc = (UnclassifiedField) schema.field("FilmDetails", "inventories");
+                assertThat(unc.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
+                assertThat(unc.reason()).contains("@batchKeyLifter").contains("jOOQ-backed");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
+        },
+
+        JAVA_RECORD_PARENT_ADMIT(
+            "JavaRecordType parent (non-null fqClassName) + lifter → RecordTableField (admitted same as PojoResultType)",
+            """
+            type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.TestRecordDto"}) {
+              inventories: [Inventory!]!
+                @batchKeyLifter(
+                  lifter: {className: "no.sikt.graphitron.rewrite.TestLifterStub", method: "javaRecordRow1Integer"},
+                  targetColumns: ["film_id"])
+            }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var f = (RecordTableField) schema.field("FilmDetails", "inventories");
+                assertThat(f.batchKey()).isInstanceOf(BatchKey.LifterRowKeyed.class);
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
+        },
+
+        MISSING_LIFTER_CLASS(
+            "Lifter className that doesn't load → UnclassifiedField AUTHOR_ERROR with 'could not be loaded'",
+            """
+            type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+              inventories: [Inventory!]!
+                @batchKeyLifter(
+                  lifter: {className: "com.example.Nonexistent", method: "doesNotMatter"},
+                  targetColumns: ["film_id"])
+            }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var unc = (UnclassifiedField) schema.field("FilmDetails", "inventories");
+                assertThat(unc.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
+                assertThat(unc.reason()).contains("com.example.Nonexistent").contains("could not be loaded");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
+        },
+
+        MISSING_LIFTER_METHOD(
+            "Lifter method name not on the class → UnclassifiedField AUTHOR_ERROR with candidate hint",
+            """
+            type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+              inventories: [Inventory!]!
+                @batchKeyLifter(
+                  lifter: {className: "no.sikt.graphitron.rewrite.TestLifterStub", method: "dummiRow1Integer"},
+                  targetColumns: ["film_id"])
+            }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var unc = (UnclassifiedField) schema.field("FilmDetails", "inventories");
+                assertThat(unc.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
+                assertThat(unc.reason()).contains("dummiRow1Integer").contains("dummyRow1Integer");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
+        },
+
+        WRONG_RETURN_LONG(
+            "Lifter return type is Long (not Row<N>) → UnclassifiedField AUTHOR_ERROR (Invariant #3)",
+            """
+            type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+              inventories: [Inventory!]!
+                @batchKeyLifter(
+                  lifter: {className: "no.sikt.graphitron.rewrite.TestLifterStub", method: "wrongReturnLong"},
+                  targetColumns: ["film_id"])
+            }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var unc = (UnclassifiedField) schema.field("FilmDetails", "inventories");
+                assertThat(unc.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
+                assertThat(unc.reason()).contains("must return org.jooq.Row");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
+        },
+
+        WRONG_PARAM_TYPE(
+            "Lifter parameter type incompatible with parent backing class → UnclassifiedField AUTHOR_ERROR (Invariant #2)",
+            """
+            type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+              inventories: [Inventory!]!
+                @batchKeyLifter(
+                  lifter: {className: "no.sikt.graphitron.rewrite.TestLifterStub", method: "wrongParamType"},
+                  targetColumns: ["film_id"])
+            }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var unc = (UnclassifiedField) schema.field("FilmDetails", "inventories");
+                assertThat(unc.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
+                assertThat(unc.reason()).contains("not assignable from").contains("DummyRecord");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
+        },
+
+        ARITY_MISMATCH(
+            "Lifter Row arity 2, targetColumns size 1 → UnclassifiedField AUTHOR_ERROR (Invariant #4)",
+            """
+            type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+              inventories: [Inventory!]!
+                @batchKeyLifter(
+                  lifter: {className: "no.sikt.graphitron.rewrite.TestLifterStub", method: "dummyRow2IntInt"},
+                  targetColumns: ["film_id"])
+            }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var unc = (UnclassifiedField) schema.field("FilmDetails", "inventories");
+                assertThat(unc.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
+                assertThat(unc.reason()).contains("arity 2").contains("targetColumns size 1");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
+        },
+
+        COLUMN_CLASS_MISMATCH(
+            "Lifter Row1<String> with target column typed Integer → UnclassifiedField AUTHOR_ERROR (Invariant #4)",
+            """
+            type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+              inventories: [Inventory!]!
+                @batchKeyLifter(
+                  lifter: {className: "no.sikt.graphitron.rewrite.TestLifterStub", method: "dummyRow1String"},
+                  targetColumns: ["film_id"])
+            }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var unc = (UnclassifiedField) schema.field("FilmDetails", "inventories");
+                assertThat(unc.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
+                assertThat(unc.reason()).contains("does not match target column").contains("film_id");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
+        },
+
+        EMPTY_TARGET_COLUMNS(
+            "Empty targetColumns → UnclassifiedField AUTHOR_ERROR (Invariant #6)",
+            """
+            type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+              inventories: [Inventory!]!
+                @batchKeyLifter(
+                  lifter: {className: "no.sikt.graphitron.rewrite.TestLifterStub", method: "dummyRow1Integer"},
+                  targetColumns: [])
+            }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var unc = (UnclassifiedField) schema.field("FilmDetails", "inventories");
+                assertThat(unc.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
+                assertThat(unc.reason()).contains("at least one target column");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
+        },
+
+        UNKNOWN_TARGET_COLUMN(
+            "targetColumns references a non-existent column → UnclassifiedField AUTHOR_ERROR with candidate hint (Invariant #5)",
+            """
+            type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+              inventories: [Inventory!]!
+                @batchKeyLifter(
+                  lifter: {className: "no.sikt.graphitron.rewrite.TestLifterStub", method: "dummyRow1Integer"},
+                  targetColumns: ["film_idd"])
+            }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var unc = (UnclassifiedField) schema.field("FilmDetails", "inventories");
+                assertThat(unc.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
+                assertThat(unc.reason()).contains("'film_idd'").contains("not found").contains("inventory");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
+        },
+
+        AS_CONNECTION_REJECT(
+            "@batchKeyLifter on @asConnection field → UnclassifiedField AUTHOR_ERROR (Invariant #9)",
+            """
+            type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+              inventories: [Inventory!]!
+                @asConnection
+                @batchKeyLifter(
+                  lifter: {className: "no.sikt.graphitron.rewrite.TestLifterStub", method: "dummyRow1Integer"},
+                  targetColumns: ["film_id"])
+            }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var unc = (UnclassifiedField) schema.field("FilmDetails", "inventories");
+                assertThat(unc.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
+                assertThat(unc.reason()).contains("@asConnection");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
+        },
+
+        WITH_FIELD_NAME_NON_INTERACTION(
+            "Pojo parent + lifter + @field(name:) on the field → classifier ignores @field name; targetColumns resolves independently",
+            """
+            type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+              inventories: [Inventory!]!
+                @field(name: "irrelevant_for_lifter")
+                @batchKeyLifter(
+                  lifter: {className: "no.sikt.graphitron.rewrite.TestLifterStub", method: "dummyRow1Integer"},
+                  targetColumns: ["film_id"])
+            }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var f = (RecordTableField) schema.field("FilmDetails", "inventories");
+                var lrk = (BatchKey.LifterRowKeyed) f.batchKey();
+                assertThat(lrk.targetKeyColumns()).extracting(no.sikt.graphitron.rewrite.model.ColumnRef::sqlName)
+                    .containsExactly("film_id");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
+        },
+
+        WITH_FIELD_LEVEL_CONDITION(
+            "Pojo parent + lifter + @condition on the field → RecordTableField; tfc.filters() carries the resolved ConditionFilter",
+            """
+            type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+              inventories: [Inventory!]!
+                @batchKeyLifter(
+                  lifter: {className: "no.sikt.graphitron.rewrite.TestLifterStub", method: "dummyRow1Integer"},
+                  targetColumns: ["film_id"])
+                @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "lifterFieldCondition"})
+            }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var f = (RecordTableField) schema.field("FilmDetails", "inventories");
+                assertThat(f.batchKey()).isInstanceOf(BatchKey.LifterRowKeyed.class);
+                assertThat(f.filters())
+                    .filteredOn(filter -> filter instanceof ConditionFilter)
+                    .extracting(filter -> ((ConditionFilter) filter).methodName())
+                    .containsExactly("lifterFieldCondition");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
+        },
+
+        WITH_ORDER_BY_ARG(
+            "Pojo parent + lifter + @orderBy arg → RecordTableField; tfc.orderBy() carries the resolved OrderBySpec.Argument",
+            """
+            enum InventoryOrderField { ID @order(primaryKey: true) }
+            enum Direction { ASC DESC }
+            input InventoryOrder { sortField: InventoryOrderField! direction: Direction! }
+            type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+              inventories(order: InventoryOrder @orderBy): [Inventory!]!
+                @batchKeyLifter(
+                  lifter: {className: "no.sikt.graphitron.rewrite.TestLifterStub", method: "dummyRow1Integer"},
+                  targetColumns: ["film_id"])
+            }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var f = (RecordTableField) schema.field("FilmDetails", "inventories");
+                assertThat(f.batchKey()).isInstanceOf(BatchKey.LifterRowKeyed.class);
+                assertThat(f.orderBy()).isInstanceOf(OrderBySpec.Argument.class);
+                var orderBy = (OrderBySpec.Argument) f.orderBy();
+                assertThat(orderBy.typeName()).isEqualTo("InventoryOrder");
+                assertThat(orderBy.namedOrders()).hasSize(1);
+                assertThat(orderBy.namedOrders().get(0).name()).isEqualTo("ID");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
+        },
+
+        SCALAR_RETURN_REJECT(
+            "Pojo parent + @batchKeyLifter on a scalar-return field → UnclassifiedField AUTHOR_ERROR (directive applies only to @table-bound returns)",
+            """
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+              rating: String
+                @batchKeyLifter(
+                  lifter: {className: "no.sikt.graphitron.rewrite.TestLifterStub", method: "dummyRow1Integer"},
+                  targetColumns: ["film_id"])
+            }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var unc = (UnclassifiedField) schema.field("FilmDetails", "rating");
+                assertThat(unc.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
+                assertThat(unc.reason()).contains("@batchKeyLifter").contains("@table-bound");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
+        },
+
+        TARGET_COLUMN_SCOPED_TO_RETURN_TABLE(
+            "targetColumn whose SQL name exists on multiple tables (e.g. film_id on inventory + film_actor + rental) resolves on the field's @table return only",
+            """
+            type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+              inventories: [Inventory!]!
+                @batchKeyLifter(
+                  lifter: {className: "no.sikt.graphitron.rewrite.TestLifterStub", method: "dummyRow1Integer"},
+                  targetColumns: ["film_id"])
+            }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var f = (RecordTableField) schema.field("FilmDetails", "inventories");
+                var lrk = (BatchKey.LifterRowKeyed) f.batchKey();
+                // Resolution scopes to the field's @table return ('inventory'), not catalog-wide.
+                // film_id exists on multiple tables; the resolver picks the inventory column.
+                assertThat(lrk.hop().targetTable().tableName()).isEqualTo("inventory");
+                assertThat(lrk.targetKeyColumns().get(0).sqlName()).isEqualTo("film_id");
+                // Inventory.film_id is Integer; if catalog-wide resolution had picked another
+                // table's film_id (e.g. as a different type), the column class would diverge.
+                assertThat(lrk.targetKeyColumns().get(0).columnClass()).isEqualTo("java.lang.Integer");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
+        };
+
+        final String sdl;
+        final Consumer<GraphitronSchema> assertions;
+        BatchKeyLifterCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
+            this.sdl = sdl;
+            this.assertions = assertions;
+        }
+        @Override public Set<Class<?>> variants() { return Set.of(); }
+        @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(BatchKeyLifterCase.class)
+    void batchKeyLifterClassification(BatchKeyLifterCase tc) {
+        tc.assertions.accept(build(tc.sdl));
+    }
+
     // ===== ResultType backing-class classification =====
 
     enum ResultTypeCase implements ClassificationCase {
