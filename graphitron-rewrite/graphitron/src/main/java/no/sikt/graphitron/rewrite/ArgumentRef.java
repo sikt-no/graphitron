@@ -120,15 +120,17 @@ public sealed interface ArgumentRef {
          * column reachable through {@code joinPath}. Single-key (arity-1) target NodeType; the
          * arity ≥ 2 variant is {@link CompositeColumnReferenceArg}.
          *
-         * <p>Mirrors {@link no.sikt.graphitron.rewrite.model.InputField.ColumnReferenceField}
-         * shape-for-shape on the argument side. {@code column} is the target NodeType's key
-         * column; {@code joinPath} resolves the single-hop FK from the field's containing table
-         * to {@code T.table()}. The body emitter pairs the carrier with
+         * <p>Conceptually mirrors {@link no.sikt.graphitron.rewrite.model.InputField.ColumnReferenceField}
+         * on the argument side; {@code column} is the target NodeType's key column. Diverges on
+         * the join shape: the input-field carrier declares {@code List<JoinStep> joinPath}
+         * (single-hop today, broader type pre-dates R40); the arg-side carrier narrows to
+         * {@link JoinStep.FkJoin} directly because R40 only ships the simple direct-FK case
+         * (single-hop, FK targetColumns positionally match NodeType keyColumns) — the
+         * pathological case is rejected at classify time and the JOIN-with-translation shape
+         * is deferred to R57. The body emitter pairs the carrier with
          * {@link no.sikt.graphitron.rewrite.model.BodyParam.Eq} (scalar) or
-         * {@link no.sikt.graphitron.rewrite.model.BodyParam.In} (list) against the FK source
-         * columns when those columns positionally match the target's NodeType key columns
-         * (the simple direct-FK case); pathological cases where they differ are rejected at
-         * classify time with a deferred-emission hint per the R24 sibling.
+         * {@link no.sikt.graphitron.rewrite.model.BodyParam.In} (list) against
+         * {@code fkJoin.sourceColumns()} on the field's own containing table.
          *
          * <p>{@code extraction} narrows to {@link CallSiteExtraction.NodeIdDecodeKeys}: input
          * filters are not contract-violation surfaces, so the failure mode is
@@ -144,22 +146,24 @@ public sealed interface ArgumentRef {
             boolean nonNull,
             boolean list,
             ColumnRef column,
-            List<JoinStep> joinPath,
+            JoinStep.FkJoin fkJoin,
             CallSiteExtraction.NodeIdDecodeKeys extraction,
             Optional<ArgConditionRef> argCondition,
             boolean suppressedByFieldOverride
         ) implements ScalarArg {
 
             public ColumnReferenceArg {
-                joinPath = List.copyOf(joinPath);
+                requireNonNull(fkJoin, "fkJoin");
             }
         }
 
         /**
          * FK-target {@code @nodeId(typeName: T)} scalar arg whose target NodeType has multiple
-         * key columns. Mirrors {@link no.sikt.graphitron.rewrite.model.InputField.CompositeColumnReferenceField}
-         * shape-for-shape on the argument side. {@code columns.size()} must be ≥ 2; arity-1
-         * cases route to {@link ColumnReferenceArg}.
+         * key columns. Conceptual mirror of
+         * {@link no.sikt.graphitron.rewrite.model.InputField.CompositeColumnReferenceField} with
+         * the same join-shape narrowing as {@link ColumnReferenceArg}: {@code fkJoin} is the
+         * single-hop FK directly (not {@code List<JoinStep>}). {@code columns.size()} must be
+         * ≥ 2; arity-1 cases route to {@link ColumnReferenceArg}.
          *
          * <p>{@code extraction} narrows to {@link CallSiteExtraction.NodeIdDecodeKeys}: the
          * only arm producing a multi-column tuple. Failure mode is
@@ -172,7 +176,7 @@ public sealed interface ArgumentRef {
             boolean nonNull,
             boolean list,
             List<ColumnRef> columns,
-            List<JoinStep> joinPath,
+            JoinStep.FkJoin fkJoin,
             CallSiteExtraction.NodeIdDecodeKeys extraction,
             Optional<ArgConditionRef> argCondition,
             boolean suppressedByFieldOverride
@@ -180,12 +184,12 @@ public sealed interface ArgumentRef {
 
             public CompositeColumnReferenceArg {
                 requireNonNull(columns, "columns");
+                requireNonNull(fkJoin, "fkJoin");
                 if (columns.size() < 2) {
                     throw new IllegalArgumentException(
                         "CompositeColumnReferenceArg requires arity >= 2; arity-1 routes to ScalarArg.ColumnReferenceArg");
                 }
                 columns = List.copyOf(columns);
-                joinPath = List.copyOf(joinPath);
             }
         }
 

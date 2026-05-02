@@ -506,6 +506,14 @@ class FieldBuilder {
         return List.copyOf(refs);
     }
 
+    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
+        key = "r40.nodeid-fk-target.direct-fk",
+        description = "FK-target @nodeId arg arm rejects classification when the FK's "
+            + "targetColumns do not positionally match the resolved NodeType's keyColumns "
+            + "(sameColumnsBySqlName check). The accepted shape always has FK target = "
+            + "NodeType key, so projectFilters can bind BodyParam.In/Eq/RowIn/RowEq directly "
+            + "against fkJoin.sourceColumns() without a JOIN. JOIN-with-translation emission "
+            + "for the rejected pathological case is deferred to R57.")
     private ArgumentRef classifyArgument(GraphQLFieldDefinition fieldDef, GraphQLArgument arg,
                                          TableRef rt, boolean fieldOverride, List<String> errors) {
         String name = arg.getName();
@@ -638,11 +646,11 @@ class FieldBuilder {
                     var keys = ft.keyColumns();
                     if (keys.size() == 1) {
                         return new ArgumentRef.ScalarArg.ColumnReferenceArg(
-                            name, typeName, nonNull, list, keys.get(0), ft.joinPath(),
+                            name, typeName, nonNull, list, keys.get(0), fkJoin,
                             extraction, argCondition, fieldOverride);
                     }
                     return new ArgumentRef.ScalarArg.CompositeColumnReferenceArg(
-                        name, typeName, nonNull, list, keys, ft.joinPath(),
+                        name, typeName, nonNull, list, keys, fkJoin,
                         extraction, argCondition, fieldOverride);
                 }
             }
@@ -851,6 +859,14 @@ class FieldBuilder {
      * input fields are grouped into a single {@link GeneratedConditionFilter} entry. The condition
      * class is named {@code <returnTypeName>Conditions} and the method {@code <fieldName>Condition}.
      */
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "r40.nodeid-fk-target.direct-fk",
+        reliesOn = "ColumnReferenceArg / CompositeColumnReferenceArg arms bind BodyParam.In/Eq"
+            + "/RowIn/RowEq directly against fkJoin.sourceColumns() on the field's containing"
+            + " table, with no JOIN — the classifier guarantees FK targetColumns positionally"
+            + " match NodeType keyColumns, so the decoded keys feed the predicate against the"
+            + " FK source columns without translation. Relaxing the classifier check would"
+            + " break this binding silently at SQL-shape level.")
     private List<WhereFilter> projectFilters(List<ArgumentRef> refs, GraphQLFieldDefinition fieldDef,
                                              TableRef rt, String returnTypeName, List<String> errors) {
         var bodyParams = new ArrayList<BodyParam>();
@@ -926,23 +942,17 @@ class FieldBuilder {
                 }
                 case ArgumentRef.ScalarArg.ColumnReferenceArg cra -> {
                     // R40 FK-target arm. The carrier's column is the target NodeType's key
-                    // column; joinPath[0] holds the FK whose sourceColumns sit on the field's
-                    // own containing table. When the FK targetColumns positionally match the
-                    // NodeType key columns (the simple direct-FK case), emit the predicate
-                    // against the FK source columns directly — no JOIN needed, the decoded
-                    // keys feed BodyParam.Eq / In against table.<fkSourceColumn>.
-                    //
-                    // The pathological case (FK targetColumns ≠ NodeType keyColumns; e.g. the
-                    // R50 parent_node + child_ref fixture where the FK targets a non-PK unique
-                    // column) is rejected at classify time, so this arm only sees the simple
-                    // case. JOIN-with-translation emission for the pathological case is the
-                    // sibling Backlog item filed alongside R40, parallel to R24 on the output
-                    // side.
+                    // column; cra.fkJoin() is the single-hop FK whose sourceColumns sit on
+                    // the field's own containing table. The classifier already enforced the
+                    // direct-FK precondition (FK targetColumns positionally match NodeType
+                    // keyColumns); see the @LoadBearingClassifierCheck producer at
+                    // classifyArgument, which rejects the JOIN-with-translation case as
+                    // UnclassifiedArg. We can therefore bind the predicate against the FK
+                    // source columns directly — no JOIN needed.
                     boolean autoSuppressed = cra.suppressedByFieldOverride()
                         || (cra.argCondition().isPresent() && cra.argCondition().get().override());
                     if (!autoSuppressed) {
-                        var fkJoin = (JoinStep.FkJoin) cra.joinPath().get(0);
-                        ColumnRef fkSourceColumn = fkJoin.sourceColumns().get(0);
+                        ColumnRef fkSourceColumn = cra.fkJoin().sourceColumns().get(0);
                         String javaType = javaTypeFor(cra.extraction(), fkSourceColumn);
                         bodyParams.add(cra.list()
                             ? new BodyParam.In(cra.name(), fkSourceColumn, javaType, cra.nonNull(), cra.extraction())
@@ -953,12 +963,11 @@ class FieldBuilder {
                 case ArgumentRef.ScalarArg.CompositeColumnReferenceArg ccra -> {
                     // R40 FK-target composite arm. Analogous to ColumnReferenceArg but with a
                     // RowEq / RowIn predicate against the FK source-column tuple. Same
-                    // direct-FK precondition; pathological cases are rejected at classify time.
+                    // direct-FK precondition enforced at classifyArgument.
                     boolean autoSuppressed = ccra.suppressedByFieldOverride()
                         || (ccra.argCondition().isPresent() && ccra.argCondition().get().override());
                     if (!autoSuppressed) {
-                        var fkJoin = (JoinStep.FkJoin) ccra.joinPath().get(0);
-                        List<ColumnRef> fkSourceColumns = fkJoin.sourceColumns();
+                        List<ColumnRef> fkSourceColumns = ccra.fkJoin().sourceColumns();
                         String javaType = "org.jooq.RowN";
                         bodyParams.add(ccra.list()
                             ? new BodyParam.RowIn(ccra.name(), fkSourceColumns, javaType, ccra.nonNull(), ccra.extraction())

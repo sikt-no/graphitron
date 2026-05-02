@@ -880,7 +880,7 @@ class NodeIdPipelineTest {
     //     up identically to @lookupKey-synthesised carriers (extraction is ThrowOnMismatch to
     //     match the existing lookup-key dispatch contract).
     //   - FK-target (T.table() reachable via single-hop FK) — filter semantics; projects to
-    //     ColumnReferenceArg/CompositeColumnReferenceArg with the resolved joinPath. Today's
+    //     ColumnReferenceArg/CompositeColumnReferenceArg with the resolved fkJoin. Today's
     //     emitter shipping subset is the simple direct-FK case (FK targetColumns positionally
     //     equal NodeType keyColumns); pathological cases are rejected at classify time with a
     //     pointed deferred-emission hint, parallel to R24's output-side JOIN-with-projection.

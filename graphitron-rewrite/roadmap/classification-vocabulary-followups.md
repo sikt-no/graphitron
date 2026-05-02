@@ -194,6 +194,59 @@ decides this for condition joins; the same answer likely applies here.
 
 ---
 
+## 7. Same-table `@nodeId` discovery walks the SDL three times per field
+
+After R40 shipped, `FieldBuilder` resolves whether a field's argument set contains a same-table
+`@nodeId` leaf in three independent places:
+
+- `findSameTableNodeIdUnderAsConnection` (the `@asConnection` rejection walk in
+  `resolveTableFieldComponents`),
+- `hasSameTableNodeIdAnywhere` (the lookup-promotion gate that decides between
+  `QueryTableField` and `QueryLookupTableField`),
+- `classifyArgument` itself (the actual classification that produces the `Resolved.SameTable`
+  arm).
+
+All three call `NodeIdLeafResolver.resolve()` per leaf, which in turn does FK lookups and
+NodeType-metadata resolution against the catalog. The structural fact "this field has a
+same-table @nodeId arg" is now a derived predicate consulted in three places rather than a
+property classified once and read three times. The pre-classification walks also force
+`NodeIdLeafResolver` to be reentrant on the same leaf within one classification pass.
+
+**Change.** Either:
+- Memoise `NodeIdLeafResolver.resolve(leaf, name, table)` on `BuildContext` keyed by the leaf
+  identity, so repeated lookups during one schema build cost a single resolver invocation; or
+- Invert: classify the field's arguments first, then read the classified `ColumnArg.isLookupKey`
+  / `ScalarArg.SameTable`-shaped values for the lookup-promotion gate and the `@asConnection`
+  rejection. The `@asConnection` walk into nested input-field leaves still needs SDL traversal
+  (input-field classification happens later, on a different code path), but the top-level arg
+  side reads off the classified `ArgumentRef` list.
+
+**Impact.** Cleanup. No behaviour change — same shapes accepted/rejected.
+
+---
+
+## 8. Java-17-safe `Record<N>` decode emission duplicated across two emitters
+
+`ArgCallEmitter.buildScalarDecodeBlock` and `LookupValuesJoinEmitter.addRowBuildingCore` both
+emit the same Java-17-safe pattern for the `instanceof Record<N> _r` decode check: cast to
+`Object` first to make the pattern conditional, match raw `Record1`/`RecordN`, then cast
+`_r.value1()` to the column's Java class. Both sites carry a near-identical comment explaining
+the Java 17 vs Java 21 distinction.
+
+The duplication is what made the Java-17 bug latent until R40's execution-tier coverage hit it
+on both code paths simultaneously; any future tweak (switching to a `Conversions` helper,
+adopting a different no-match diagnostic, raising the generated-output baseline to Java 21)
+touches both.
+
+**Change.** Lift the scalar-decode `CodeBlock` into a small helper alongside `CallSiteExtraction`
+or under `generators/` (`NodeIdDecodeEmit.scalarValueOrThrow(...)` /
+`scalarValueOrNull(...)`). Both emitters call the helper. The arity > 1 (`valuesRow`) form is
+already shared-spirit; this completes the symmetry.
+
+**Impact.** Cleanup. No emitted-code change; eliminates the drift surface.
+
+---
+
 ## Out of scope
 
 - **Renaming `LookupTableField` / `SplitLookupTableField` etc.** No rename is implied by the
