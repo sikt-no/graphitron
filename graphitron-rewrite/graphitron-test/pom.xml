@@ -88,6 +88,22 @@
             <artifactId>logback-classic</artifactId>
             <scope>test</scope>
         </dependency>
+        <!--
+            jOOQ's Configuration exposes org.jooq.conf.Settings, a JAXB-generated class
+            annotated with @XmlElement / @XmlAccessorType / @XmlType / @XmlSchemaType.
+            jOOQ declares jakarta.xml.bind-api as <optional>, so it is not on the test
+            classpath transitively. Without it javac cannot resolve those annotation
+            methods while compiling tests that touch jOOQ types and floods the build
+            with "Cannot find annotation method 'defaultValue()' in type
+            'jakarta.xml.bind.annotation.XmlElement'" warnings. Pulling the API jar in
+            at test scope silences them; we never need JAXB at runtime.
+        -->
+        <dependency>
+            <groupId>jakarta.xml.bind</groupId>
+            <artifactId>jakarta.xml.bind-api</artifactId>
+            <version>4.0.2</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <profiles>
