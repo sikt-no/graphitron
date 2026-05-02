@@ -191,23 +191,23 @@ public final class ErrorMappingsClassGenerator {
         var keys = new java.util.ArrayList<HandlerKey>();
         for (var et : channel.mappedErrorTypes()) {
             for (var h : et.handlers()) {
-                keys.add(HandlerKey.of(et.classFqn().orElse(""), h));
+                keys.add(HandlerKey.of(et.name(), h));
             }
         }
         return keys;
     }
 
-    private record HandlerKey(String variant, String backingClass, String discriminator,
+    private record HandlerKey(String variant, String errorTypeName, String discriminator,
                               String matches, String description) {
-        static HandlerKey of(String backingClass, Handler h) {
+        static HandlerKey of(String errorTypeName, Handler h) {
             return switch (h) {
-                case ExceptionHandler eh -> new HandlerKey("E", backingClass,
+                case ExceptionHandler eh -> new HandlerKey("E", errorTypeName,
                     eh.exceptionClassName(), eh.matches().orElse(null), eh.description().orElse(null));
-                case SqlStateHandler sh -> new HandlerKey("S", backingClass,
+                case SqlStateHandler sh -> new HandlerKey("S", errorTypeName,
                     sh.sqlState(), sh.matches().orElse(null), sh.description().orElse(null));
-                case VendorCodeHandler vh -> new HandlerKey("V", backingClass,
+                case VendorCodeHandler vh -> new HandlerKey("V", errorTypeName,
                     vh.vendorCode(), vh.matches().orElse(null), vh.description().orElse(null));
-                case ValidationHandler vh -> new HandlerKey("L", backingClass,
+                case ValidationHandler vh -> new HandlerKey("L", errorTypeName,
                     "", null, vh.description().orElse(null));
             };
         }

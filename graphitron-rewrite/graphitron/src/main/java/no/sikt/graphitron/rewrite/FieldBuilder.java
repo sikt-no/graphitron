@@ -1305,13 +1305,14 @@ class FieldBuilder {
      * {@code ErrorsField}. The first matching field on the payload populates {@code mappedErrorTypes};
      * a second matching field is rejected at child classification time, not here.
      *
-     * <p>The errors slot is identified by channel-typed structural match: the unique
-     * constructor parameter whose type is {@link java.util.List} / {@link java.util.Collection}
-     * / {@link Iterable} (or a subtype) and whose element-type upper bound is a supertype of
-     * every channel {@code @error} class. {@code @error} types whose backing class did not
-     * resolve at classify time contribute no constraint to the match (the dispatch arm
-     * silently skips factory-less mappings); the channel-typed match parallels
-     * {@link #resolveDmlPayloadAssembly}'s row-slot match against the jOOQ table record class.
+     * <p>The errors slot is identified positionally per §2c: the SDL {@code ErrorsField}'s
+     * declaration index in the payload type maps directly to the canonical-constructor
+     * parameter at the same index. Records preserve declaration order; hand-rolled payload
+     * classes are expected to expose a canonical constructor matching SDL field order. The
+     * slot's element type is {@code Object} (sources mix matched throwables and
+     * {@code GraphQLError}s; the only universal supertype is {@code Object}); the only
+     * structural check on the parameter is that it is a List/Iterable so the catch arm's
+     * synthesized payload-factory lambda compiles.
      */
     @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
         key = "error-channel.mappings-constant",
@@ -1338,11 +1339,18 @@ class FieldBuilder {
             return NO_CHANNEL;
         }
 
+        // Walk the payload's SDL fields in declaration order to find the errors-shaped field.
+        // The SDL declaration index of that field is the canonical-constructor's errors-slot
+        // index per the §2c positional rule (records preserve declaration order; hand-rolled
+        // payload classes are expected to expose a canonical constructor matching SDL order).
         List<ErrorType> mappedErrorTypes = null;
-        for (var childFieldDef : payloadObj.getFieldDefinitions()) {
-            var detected = detectErrorsFieldShape(childFieldDef, result.returnTypeName());
+        int errorsFieldIndex = -1;
+        var sdlFields = payloadObj.getFieldDefinitions();
+        for (int i = 0; i < sdlFields.size(); i++) {
+            var detected = detectErrorsFieldShape(sdlFields.get(i), result.returnTypeName());
             if (detected != null) {
                 mappedErrorTypes = detected;
+                errorsFieldIndex = i;
                 break;
             }
         }
@@ -1389,44 +1397,27 @@ class FieldBuilder {
         var parameters = ctor.getParameters();
         var genericParameterTypes = ctor.getGenericParameterTypes();
 
-        // Resolve every channel @error type's backing class for the channel-typed slot match.
-        // ErrorTypes whose classFqn is empty contribute no constraint; the dispatch arm
-        // separately skips factory-less mappings at emission time.
-        var mappedErrorClasses = new java.util.ArrayList<Class<?>>();
-        for (var et : mappedErrorTypes) {
-            var fqnOpt = et.classFqn();
-            if (fqnOpt.isEmpty()) continue;
-            try {
-                mappedErrorClasses.add(Class.forName(fqnOpt.get()));
-            } catch (ClassNotFoundException e) {
-                // The @error type's classFqn was already validated by TypeBuilder's
-                // (List<String>, String) constructor check, which loaded the class. A
-                // ClassNotFound here would indicate a classpath drift between classify and
-                // channel-resolution phases; treat as no-constraint and let the channel
-                // resolution proceed.
-            }
-        }
-
-        int errorsSlotIndex = -1;
-        for (int i = 0; i < parameters.length; i++) {
-            if (isErrorsListSlot(parameters[i].getType(), genericParameterTypes[i], mappedErrorClasses)) {
-                if (errorsSlotIndex >= 0) {
-                    return new ErrorChannelResult.Reject(
-                        "payload class '" + result.fqClassName()
-                            + "' has multiple errors-slot parameters on its constructor; "
-                            + "exactly one parameter typed to receive the channel's @error "
-                            + "classes (a List/Iterable/Collection whose element type is a "
-                            + "supertype of every @error class) is required");
-                }
-                errorsSlotIndex = i;
-            }
-        }
-        if (errorsSlotIndex < 0) {
+        // §2c positional errors-slot rule: the SDL ErrorsField's declaration index
+        // (errorsFieldIndex) maps directly to the constructor parameter at the same index.
+        // Records preserve declaration order; hand-rolled payloads must expose a canonical
+        // constructor matching SDL field order. The slot's element type is Object; the only
+        // structural check left is that the parameter is a List/Iterable so the catch arm's
+        // synthesized payload-factory lambda (errors -> new Payload(..., errors, ...)) compiles.
+        if (errorsFieldIndex >= parameters.length) {
             return new ErrorChannelResult.Reject(
                 "payload class '" + result.fqClassName()
-                    + "' has no errors-slot parameter on its constructor; one parameter "
-                    + "typed to receive the channel's @error classes (a List/Iterable/Collection "
-                    + "whose element type is a supertype of every @error class) is required");
+                    + "' has fewer constructor parameters (" + parameters.length
+                    + ") than the SDL field declaration order requires; the errors-shaped SDL "
+                    + "field at index " + errorsFieldIndex + " has no matching ctor parameter");
+        }
+        int errorsSlotIndex = errorsFieldIndex;
+        if (!Iterable.class.isAssignableFrom(parameters[errorsSlotIndex].getType())) {
+            return new ErrorChannelResult.Reject(
+                "payload class '" + result.fqClassName()
+                    + "' parameter at index " + errorsSlotIndex + " is "
+                    + parameters[errorsSlotIndex].getType().getName()
+                    + "; the errors slot must be a List/Iterable so the catch arm's "
+                    + "synthesized payload-factory lambda compiles");
         }
 
         var defaultedSlots = collectDefaultedSlots(parameters, genericParameterTypes, errorsSlotIndex);
@@ -1479,7 +1470,7 @@ class FieldBuilder {
      * capturing per-non-bound-slot defaults; each owns its bound-slot index resolution.
      */
     private DmlPayloadAssemblyResult resolveDmlPayloadAssembly(
-            ReturnTypeRef returnType, String dmlTableSqlName, List<ErrorType> mappedErrorTypes) {
+            ReturnTypeRef returnType, String dmlTableSqlName) {
         if (!(returnType instanceof ReturnTypeRef.ResultReturnType result)) {
             return NO_ASSEMBLY;
         }
@@ -1517,28 +1508,13 @@ class FieldBuilder {
         var parameters = ctor.getParameters();
         var genericParameterTypes = ctor.getGenericParameterTypes();
 
-        // The errors slot in the DML payload (if any) is identified the same way as in
-        // resolveErrorChannel: channel-typed structural match against the channel's @error
-        // classes. mappedErrorTypes is the (possibly empty) list inherited from the channel
-        // resolver; an empty list means no @error types in scope and isErrorsListSlot returns
-        // true for every parameterised List/Iterable parameter (the row slot's class-equality
-        // check below disambiguates the row slot from any such parameter).
-        var mappedErrorClasses = new java.util.ArrayList<Class<?>>();
-        for (var et : mappedErrorTypes) {
-            var fqnOpt = et.classFqn();
-            if (fqnOpt.isEmpty()) continue;
-            try {
-                mappedErrorClasses.add(Class.forName(fqnOpt.get()));
-            } catch (ClassNotFoundException e) {
-                // Already validated upstream; treat classpath drift as no-constraint.
-            }
-        }
-
+        // The row slot is identified by class-equality against the jOOQ table record class.
+        // No errors-slot disambiguation needed: the errors-slot's element type is Object
+        // (R12 source-direct), so it can't accidentally match the typed jOOQ Record class.
         int rowSlotIndex = -1;
         for (int i = 0; i < parameters.length; i++) {
             var p = parameters[i];
-            boolean isErrorsSlot = isErrorsListSlot(p.getType(), genericParameterTypes[i], mappedErrorClasses);
-            if (!isErrorsSlot && p.getType().equals(tableRecordClass)) {
+            if (p.getType().equals(tableRecordClass)) {
                 if (rowSlotIndex >= 0) {
                     return new DmlPayloadAssemblyResult.Reject(
                         "payload class '" + result.fqClassName()
@@ -1755,60 +1731,6 @@ class FieldBuilder {
     }
 
     /**
-     * Detects whether a constructor parameter can receive the channel's errors list per the
-     * §2c contract: parameter type is {@link java.util.List}, {@link java.util.Collection},
-     * or {@link Iterable} (or any of their subtypes), and the actual type argument's upper
-     * bound is a {@link Class} that every channel {@code @error} class is assignable to.
-     *
-     * <p>{@code mappedErrorClasses} is the set of resolved Java classes for the channel's
-     * {@code @error} types: {@link no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType}
-     * entries whose {@code classFqn} resolved at classify time. {@code @error} types without
-     * a backing class contribute no constraint to the match (their absence is handled by the
-     * dispatch arm, which silently skips factory-less mappings); the parameter still has to
-     * be a parameterised list/iterable for the match to succeed.
-     *
-     * <p>The match parallels {@code resolveDmlPayloadAssembly}'s row-slot match against the
-     * jOOQ table record class (same producer/consumer pattern, different element type).
-     * Element types parameterised as wildcards ({@code List<?>}, {@code List<? extends X>})
-     * unwrap to their upper bound. A raw collection type or a non-resolvable element type
-     * returns {@code false}.
-     */
-    private static boolean isErrorsListSlot(
-            Class<?> rawType,
-            java.lang.reflect.Type genericType,
-            List<Class<?>> mappedErrorClasses) {
-        if (!Iterable.class.isAssignableFrom(rawType)) return false;
-        if (!(genericType instanceof java.lang.reflect.ParameterizedType pt)) return false;
-        var args = pt.getActualTypeArguments();
-        if (args.length != 1) return false;
-        var elementType = args[0];
-        Class<?> elementBound = resolveElementClass(elementType);
-        if (elementBound == null) return false;
-        for (var errorClass : mappedErrorClasses) {
-            if (!elementBound.isAssignableFrom(errorClass)) return false;
-        }
-        return true;
-    }
-
-    /**
-     * Walks a generic type to its concrete {@link Class} bound: a {@link Class} returns itself,
-     * a {@link java.lang.reflect.WildcardType} returns its upper bound's class, a
-     * {@link java.lang.reflect.ParameterizedType} returns its raw type. Returns {@code null}
-     * for type-variable bounds and other shapes that don't reduce to a class.
-     */
-    private static Class<?> resolveElementClass(java.lang.reflect.Type t) {
-        if (t instanceof Class<?> cls) return cls;
-        if (t instanceof java.lang.reflect.WildcardType wt) {
-            var upper = wt.getUpperBounds();
-            return upper.length == 1 ? resolveElementClass(upper[0]) : null;
-        }
-        if (t instanceof java.lang.reflect.ParameterizedType pt) {
-            return pt.getRawType() instanceof Class<?> raw ? raw : null;
-        }
-        return null;
-    }
-
-    /**
      * Builds the {@link no.sikt.graphitron.rewrite.model.DefaultedSlot} list for every
      * constructor parameter except the bound slot at {@code boundSlotIndex}. Used by both
      * {@link #resolveErrorChannel} (errors slot) and {@link #resolveDmlPayloadAssembly} (row
@@ -1903,29 +1825,21 @@ class FieldBuilder {
             ReturnTypeRef returnType, String parentTypeName, String fieldName,
             SourceLocation location, GraphQLFieldDefinition fieldDef, String dmlTableSqlName,
             java.util.function.BiFunction<Optional<PayloadAssembly>, Optional<ErrorChannel>, GraphitronField> builder) {
-        // Resolve the channel first so the DML resolver can borrow its mappedErrorTypes
-        // for the channel-typed errors-slot match. A NoChannel result yields an empty list,
-        // which makes the DML resolver's slot match trivially permissive (any parameterised
-        // List/Iterable parameter qualifies); the row-slot's class-equality check still picks
-        // out the row slot deterministically.
+        // Channel and DML payload assembly are independent under the R12 source-direct contract:
+        // the row slot is identified by jOOQ table-record class equality, and the errors slot
+        // (if present) by the SDL ErrorsField's declaration index in resolveErrorChannel. They
+        // share the payload class but resolve different concerns from one reflection pass each.
         Optional<ErrorChannel> channel;
-        List<ErrorType> mappedForDml;
         switch (resolveErrorChannel(returnType)) {
-            case ErrorChannelResult.NoChannel ignored -> {
-                channel = Optional.empty();
-                mappedForDml = List.of();
-            }
-            case ErrorChannelResult.Channel c -> {
-                channel = Optional.of(c.channel());
-                mappedForDml = c.channel().mappedErrorTypes();
-            }
+            case ErrorChannelResult.NoChannel ignored -> channel = Optional.empty();
+            case ErrorChannelResult.Channel c -> channel = Optional.of(c.channel());
             case ErrorChannelResult.Reject r -> {
                 return new UnclassifiedField(parentTypeName, fieldName, location, fieldDef,
                     RejectionKind.AUTHOR_ERROR, r.reason());
             }
         }
         Optional<PayloadAssembly> assembly;
-        switch (resolveDmlPayloadAssembly(returnType, dmlTableSqlName, mappedForDml)) {
+        switch (resolveDmlPayloadAssembly(returnType, dmlTableSqlName)) {
             case DmlPayloadAssemblyResult.NoAssembly ignored -> assembly = Optional.empty();
             case DmlPayloadAssemblyResult.Assembly a -> assembly = Optional.of(a.assembly());
             case DmlPayloadAssemblyResult.Reject r -> {

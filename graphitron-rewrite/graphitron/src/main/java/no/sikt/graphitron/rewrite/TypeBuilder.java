@@ -329,8 +329,6 @@ class TypeBuilder {
             if (objType.hasAppliedDirective(DIR_TABLE)) {
                 return buildTableType(objType);
             }
-            // @error wins over @record when both are co-located: the @record(record: {className: ...})
-            // names the @error type's developer-supplied backing class, which buildErrorType reads.
             if (objType.hasAppliedDirective(DIR_ERROR)) {
                 return buildErrorType(objType);
             }
@@ -571,17 +569,13 @@ class TypeBuilder {
     @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
         key = "error-type.path-message-fields",
         description = "Every @error type declares exactly path: [String!]! and message: String!; "
-            + "extras and structural mismatches are rejected as UnclassifiedType. The emitted "
-            + "ErrorRouter.Mapping.build call site (lands in C3g) constructs each developer-supplied "
-            + "@error class via its (List<String> path, String message) constructor, and the runtime "
-            + "fan-out for VALIDATION assumes the same shape. Relaxing this check breaks the generated "
-            + "factory call. When @record co-locates a className, the same arm reflects the backing "
-            + "class to verify the canonical constructor (validatePathMessageConstructor) and the "
-            + "path()/message() accessors graphql-java's PropertyDataFetcher reads at runtime "
-            + "(validatePathMessageAccessors). No marker interface is required; the channel-typed "
-            + "errors-slot match in FieldBuilder.resolveErrorChannel matches against the channel's "
-            + "@error classes structurally, and the runtime contract is enforced loudly at classify "
-            + "time by these accessor / constructor reflections.")
+            + "extras and structural mismatches are rejected as UnclassifiedType. Under the R12 "
+            + "source-direct dispatch contract (§2c \"@error is TypeResolver wiring\"), the "
+            + "matched throwable itself is placed into the payload's errors list and "
+            + "graphql-java's PropertyDataFetcher reads each declared SDL field directly from "
+            + "the source at serialisation time. The per-(channel, @error type, handler) "
+            + "source-class accessor reflection check (§2c) is the runtime-side guarantee; this "
+            + "schema-level rule is the SDL-side anchor.")
     private GraphitronType buildErrorType(GraphQLObjectType objType) {
         String name = objType.getName();
         SourceLocation location = locationOf(objType);
@@ -589,8 +583,8 @@ class TypeBuilder {
         // Structural field check (rule 6 + path/message contract):
         // every @error type declares exactly path: [String!]! and message: String!.
         // Producer side of the load-bearing classifier check
-        // "error-type.path-message-fields" — the consumer is the runtime payload-factory
-        // call site that lands in C3 (`new SomeError(path, msg)`).
+        // "error-type.path-message-fields"; the consumer is the per-(channel, @error type,
+        // handler) source-class accessor check that lands in step 5.
         List<String> rejectReasons = new ArrayList<>();
         var pathField = objType.getFieldDefinition("path");
         if (pathField == null) {
@@ -626,155 +620,11 @@ class TypeBuilder {
             if (h != null) handlers.add(h);
         }
 
-        // Co-located @record(record: {className: ...}) names the developer-supplied Java class
-        // that backs this @error type. Resolution mirrors @record on result types
-        // (see buildResultType): className is reflected on the classifier classpath, the class
-        // must declare a (List<String> path, String message) constructor, and a missing or
-        // wrong-shape class is reported as UnclassifiedType. The slot is Optional.empty() when
-        // no @record is co-located, leaving downstream consumers (the marker-interface check,
-        // the payload-factory call site) to handle the absent case.
-        Optional<String> classFqn = Optional.empty();
-        var recordDir = objType.getAppliedDirective(DIR_RECORD);
-        if (recordDir != null) {
-            var recordArg = recordDir.getArgument(ARG_RECORD);
-            if (recordArg != null && recordArg.getValue() != null) {
-                Map<String, Object> ref = asMap(recordArg.getValue());
-                String className = Optional.ofNullable(ref.get(ARG_CLASS_NAME))
-                    .map(Object::toString)
-                    .orElse(null);
-                if (className != null) {
-                    String ctorReason = validatePathMessageConstructor(className);
-                    if (ctorReason != null) {
-                        rejectReasons.add(ctorReason);
-                    } else {
-                        String accessorReason = validatePathMessageAccessors(className);
-                        if (accessorReason != null) {
-                            rejectReasons.add(accessorReason);
-                        } else {
-                            classFqn = Optional.of(className);
-                        }
-                    }
-                }
-            }
-        }
-
         if (!rejectReasons.isEmpty()) {
             return new UnclassifiedType(name, location,
                 "@error type rejected: " + String.join("; ", rejectReasons));
         }
-        return new ErrorType(name, location, List.copyOf(handlers), classFqn);
-    }
-
-    /**
-     * Reflects the developer-supplied {@code @error} backing class and verifies it exposes the
-     * canonical {@code (List<String> path, String message)} constructor that the
-     * {@code ErrorRouter.Mapping.build} call site (and the validation fan-out) invokes at
-     * runtime. Returns a non-null reason string when the class cannot be loaded or no matching
-     * constructor exists; returns {@code null} on success.
-     *
-     * <p>Mirrors the {@link Class#forName} reflection block in {@link #buildResultType} for
-     * {@code @record} on result types. The check is a producer-side guarantee for the
-     * load-bearing classifier check {@code error-type.path-message-fields}: schemas that ship
-     * past classification have a working constructor on every {@code @error} class, so the
-     * generated {@code new SomeError(path, msg)} call site is sound by construction.
-     */
-    private static String validatePathMessageConstructor(String className) {
-        Class<?> cls;
-        try {
-            cls = Class.forName(className);
-        } catch (ClassNotFoundException e) {
-            return "@error backing class '" + className + "' could not be loaded";
-        }
-        for (var ctor : cls.getDeclaredConstructors()) {
-            var paramTypes = ctor.getParameterTypes();
-            if (paramTypes.length != 2) continue;
-            if (paramTypes[0] != List.class) continue;
-            if (paramTypes[1] != String.class) continue;
-            var generic = ctor.getGenericParameterTypes();
-            if (generic[0] instanceof java.lang.reflect.ParameterizedType pt) {
-                var args = pt.getActualTypeArguments();
-                if (args.length != 1) continue;
-                Class<?> elemClass = elementClass(args[0]);
-                if (elemClass != String.class) continue;
-            } else {
-                // Raw List parameter — accept it; the runtime call site passes a
-                // List<String> and the type system erases to the same.
-            }
-            return null;
-        }
-        return "@error backing class '" + className
-            + "' must declare a (List<String> path, String message) constructor; "
-            + "the runtime payload-factory call site calls "
-            + "new " + cls.getSimpleName() + "(path, message) at dispatch time";
-    }
-
-    /**
-     * Reflects the developer-supplied {@code @error} backing class and verifies it exposes the
-     * runtime accessor contract graphql-java's {@code PropertyDataFetcher} reads when
-     * serialising the error into a response: a no-arg {@code path()} returning
-     * {@link java.util.List} (raw or parameterised; the runtime treats it as
-     * {@code List<String>}) and a no-arg {@code message()} returning {@link String}. Returns a
-     * non-null reason string when either accessor is missing or wrong-typed; returns
-     * {@code null} on success.
-     *
-     * <p>Surfaces the previously-implicit runtime contract at classify time: a class with the
-     * canonical constructor but missing accessors would compile, generate, and only fail at
-     * the first request when graphql-java tries to read {@code path}/{@code message} off the
-     * instance. The check is the structural successor to the dropped marker-interface
-     * requirement: instead of mandating an {@code implements GraphitronError} clause that
-     * pulled accessor presence in transitively, we discover the accessors directly on the
-     * developer's class.
-     *
-     * <p>The class is presumed to be loadable: this method is invoked after
-     * {@link #validatePathMessageConstructor} succeeded, so {@link Class#forName} will not
-     * throw here. If it somehow does (classloader race), the rejection reason mentions the
-     * load failure rather than the accessors.
-     */
-    private static String validatePathMessageAccessors(String className) {
-        Class<?> cls;
-        try {
-            cls = Class.forName(className);
-        } catch (ClassNotFoundException e) {
-            return "@error backing class '" + className + "' could not be loaded";
-        }
-        java.lang.reflect.Method pathAccessor;
-        java.lang.reflect.Method messageAccessor;
-        try {
-            pathAccessor = cls.getMethod("path");
-        } catch (NoSuchMethodException e) {
-            return "@error backing class '" + className + "' must declare a no-arg path() "
-                + "accessor returning List<String>; graphql-java's PropertyDataFetcher reads it "
-                + "at runtime to serialise the error";
-        }
-        try {
-            messageAccessor = cls.getMethod("message");
-        } catch (NoSuchMethodException e) {
-            return "@error backing class '" + className + "' must declare a no-arg message() "
-                + "accessor returning String; graphql-java's PropertyDataFetcher reads it at "
-                + "runtime to serialise the error";
-        }
-        if (!java.util.List.class.isAssignableFrom(pathAccessor.getReturnType())) {
-            return "@error backing class '" + className + "' has path() returning "
-                + pathAccessor.getReturnType().getName() + "; expected java.util.List "
-                + "(parameterised List<String> or raw List)";
-        }
-        if (messageAccessor.getReturnType() != String.class) {
-            return "@error backing class '" + className + "' has message() returning "
-                + messageAccessor.getReturnType().getName() + "; expected java.lang.String";
-        }
-        return null;
-    }
-
-    private static Class<?> elementClass(java.lang.reflect.Type t) {
-        if (t instanceof Class<?> c) return c;
-        if (t instanceof java.lang.reflect.WildcardType wt) {
-            var upper = wt.getUpperBounds();
-            return upper.length > 0 ? elementClass(upper[0]) : null;
-        }
-        if (t instanceof java.lang.reflect.ParameterizedType pt) {
-            return elementClass(pt.getRawType());
-        }
-        return null;
+        return new ErrorType(name, location, List.copyOf(handlers));
     }
 
     private static boolean isStringNonNull(GraphQLType type) {
@@ -1100,24 +950,23 @@ class TypeBuilder {
      * Returns a reason string when mutually exclusive type-classification directives appear
      * together on one OBJECT, or {@code null} when the combination is allowed.
      *
-     * <p>The pairs {@code @table + @record} and {@code @table + @error} remain mutually
-     * exclusive: a {@code @table}-bound object resolves columns from jOOQ metadata, which
-     * cannot coexist with the developer-supplied class binding the other two directives
-     * imply. {@code @record + @error} is intentionally permitted: an {@code @error} type's
-     * backing class is named through a co-located {@code @record(record: {className: ...})},
-     * so {@link #buildErrorType} can read the class FQN through the same parse path
-     * {@link #buildResultType} uses for result types.
+     * <p>{@code @table}, {@code @record}, and {@code @error} are pairwise mutually exclusive.
+     * {@code @table} resolves columns from jOOQ metadata; {@code @record} binds an SDL type
+     * to a developer-supplied Java class; {@code @error} declares an SDL-side error shape
+     * (the runtime source is the matched throwable itself per the R12 source-direct dispatch
+     * contract; there is no developer-supplied data class for an {@code @error} type).
      */
     private static String detectTypeDirectiveConflict(GraphQLObjectType objType) {
         boolean hasTable = objType.hasAppliedDirective(DIR_TABLE);
         boolean hasRecord = objType.hasAppliedDirective(DIR_RECORD);
         boolean hasError = objType.hasAppliedDirective(DIR_ERROR);
-        if (hasTable && (hasRecord || hasError)) {
-            var present = new java.util.ArrayList<String>();
-            present.add("@" + DIR_TABLE);
-            if (hasRecord) present.add("@" + DIR_RECORD);
-            if (hasError) present.add("@" + DIR_ERROR);
-            return String.join(", ", present) + " are mutually exclusive";
+        int present = (hasTable ? 1 : 0) + (hasRecord ? 1 : 0) + (hasError ? 1 : 0);
+        if (present > 1) {
+            var directives = new java.util.ArrayList<String>();
+            if (hasTable) directives.add("@" + DIR_TABLE);
+            if (hasRecord) directives.add("@" + DIR_RECORD);
+            if (hasError) directives.add("@" + DIR_ERROR);
+            return String.join(", ", directives) + " are mutually exclusive";
         }
         return null;
     }

@@ -3821,96 +3821,27 @@ class GraphitronSchemaBuilderTest {
                     .contains("Throwable");
             }),
 
-        // The @record-on-@error cases below cover the developer-supplied backing-class
-        // resolution: the class names a Java type with a (List<String> path, String message)
-        // canonical constructor that the runtime payload-factory call site invokes.
-
-        ERROR_WITHOUT_RECORD_LEAVES_CLASS_FQN_EMPTY(
-            "@error without co-located @record → ErrorType.classFqn is Optional.empty()",
-            """
-            type ValidationError @error(handlers: [{handler: VALIDATION}]) {
-                path: [String!]!
-                message: String!
-            }
-            type Query { x: String }
-            """,
-            schema -> {
-                var et = (ErrorType) schema.type("ValidationError");
-                assertThat(et.classFqn()).isEmpty();
-            }),
-
-        ERROR_WITH_RECORD_RESOLVES_BACKING_CLASS(
-            "@error with @record(record: {className: <valid>}) populates ErrorType.classFqn",
+        // R12 source-direct dispatch: @error has no developer-supplied data class. @record and
+        // @error are mutually exclusive — the matched throwable itself is the runtime source
+        // for fields declared on the @error type, so co-locating @record(record: {className})
+        // would name a Java class that classifier never instantiates and the runtime never reads.
+        REJECT_RECORD_PLUS_ERROR_MUTUALLY_EXCLUSIVE(
+            "@error co-located with @record → UnclassifiedType (mutually exclusive)",
             """
             type ValidationError
                 @error(handlers: [{handler: VALIDATION}])
-                @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.ValidErrorBackingFixture"}) {
+                @record(record: {className: "java.lang.Object"}) {
                 path: [String!]!
                 message: String!
             }
             type Query { x: String }
             """,
             schema -> {
-                var et = (ErrorType) schema.type("ValidationError");
-                assertThat(et.classFqn())
-                    .contains("no.sikt.graphitron.codereferences.dummyreferences.ValidErrorBackingFixture");
-            }),
-
-        REJECT_ERROR_WITH_RECORD_BUT_MISSING_CLASS(
-            "@error with @record className that cannot be loaded → UnclassifiedType",
-            """
-            type BadError
-                @error(handlers: [{handler: VALIDATION}])
-                @record(record: {className: "no.does.not.exist.MissingErrorClass"}) {
-                path: [String!]!
-                message: String!
-            }
-            type Query { x: String }
-            """,
-            schema -> {
-                var t = (UnclassifiedType) schema.type("BadError");
+                var t = (UnclassifiedType) schema.type("ValidationError");
                 assertThat(t.reason())
-                    .contains("@error backing class")
-                    .contains("no.does.not.exist.MissingErrorClass")
-                    .contains("could not be loaded");
-            }),
-
-        REJECT_ERROR_WITH_RECORD_BUT_WRONG_CONSTRUCTOR(
-            "@error with @record className that has no (List<String>, String) constructor → UnclassifiedType",
-            """
-            type BadError
-                @error(handlers: [{handler: VALIDATION}])
-                @record(record: {className: "java.lang.RuntimeException"}) {
-                path: [String!]!
-                message: String!
-            }
-            type Query { x: String }
-            """,
-            schema -> {
-                var t = (UnclassifiedType) schema.type("BadError");
-                assertThat(t.reason())
-                    .contains("@error backing class")
-                    .contains("java.lang.RuntimeException")
-                    .contains("(List<String> path, String message) constructor");
-            }),
-
-        REJECT_ERROR_WITH_RECORD_MISSING_ACCESSORS(
-            "@error with @record className that has the canonical constructor but no path()/message() accessors → UnclassifiedType",
-            """
-            type BadError
-                @error(handlers: [{handler: VALIDATION}])
-                @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.MissingAccessorErrorBackingFixture"}) {
-                path: [String!]!
-                message: String!
-            }
-            type Query { x: String }
-            """,
-            schema -> {
-                var t = (UnclassifiedType) schema.type("BadError");
-                assertThat(t.reason())
-                    .contains("@error backing class")
-                    .contains("MissingAccessorErrorBackingFixture")
-                    .contains("path() accessor");
+                    .contains("@record")
+                    .contains("@error")
+                    .contains("mutually exclusive");
             });
 
         final String sdl;
