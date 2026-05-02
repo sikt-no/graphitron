@@ -145,12 +145,24 @@ class BuildContext {
      */
     private final List<BuildWarning> warnings = new ArrayList<>();
     private final Map<String, List<String>> typeNamesByTableKey;
+    private final NodeIdLeafResolver nodeIdLeafResolver;
 
     BuildContext(GraphQLSchema schema, JooqCatalog catalog, RewriteContext ctx) {
         this.schema = schema;
         this.catalog = catalog;
         this.ctx = ctx;
         this.typeNamesByTableKey = buildTypeNamesByTableKey(schema);
+        this.nodeIdLeafResolver = new NodeIdLeafResolver(this);
+    }
+
+    /**
+     * Resolver for {@code @nodeId} leaf shape (same-table lookup vs FK-target filter). Constructed
+     * once per {@code BuildContext} and shared by both {@link #classifyInputField} (input-field
+     * leaves) and {@link FieldBuilder#classifyArgument} (top-level argument leaves) so the
+     * shape decision lives in one place.
+     */
+    NodeIdLeafResolver nodeIdLeafResolver() {
+        return nodeIdLeafResolver;
     }
 
     RewriteContext ctx() {
@@ -382,7 +394,7 @@ class BuildContext {
      * Returns a minimal {@code TableRef} (SQL name only, empty PK columns) when the catalog is
      * unavailable or the table cannot be found.
      */
-    private TableRef resolveTable(String sqlName) {
+    TableRef resolveTable(String sqlName) {
         return catalog.findTable(sqlName).map(e -> {
             var pk = e.table().getPrimaryKey();
             List<ColumnRef> pkColumns = pk == null ? List.of() : pk.getFields().stream()
@@ -487,7 +499,7 @@ class BuildContext {
      * {@code {key:}} branches in {@link #parsePathElement} may pass a resolved {@link MethodRef}
      * when the element carries a {@code condition:} sub-argument.
      */
-    private FkJoin synthesizeFkJoin(ForeignKey<?, ?> f, String sourceSqlName, String fieldName,
+    FkJoin synthesizeFkJoin(ForeignKey<?, ?> f, String sourceSqlName, String fieldName,
             int stepIndex, MethodRef whereFilter) {
         String fkSideTable  = f.getTable().getName();
         String keySideTable = f.getKey().getTable().getName();
@@ -901,157 +913,38 @@ class BuildContext {
                 targetKeyColumns, nodeRefPath.elements(), cond);
         }
         // IdReferenceField (canonical): [ID!] with @nodeId(typeName: T), optionally pinned by
-        // @reference(path: [{key: K}]). FK is inferred when unique; @reference disambiguates when
-        // not. Single-hop only; synthesized=false.
+        // @reference(path: [{key: K}]). Same-table → column-shaped successor (filter by own
+        // primary key); FK-target → reference shape with single-hop joinPath. R40 lifted this
+        // arm onto NodeIdLeafResolver so the same shape decision serves argument-level @nodeId
+        // leaves in FieldBuilder.classifyArgument.
         if ("ID".equals(typeName) && list && field.hasAppliedDirective(DIR_NODE_ID)) {
-            // Same inference rule as the scalar branch: bare @nodeId on [ID!] takes its typeName
-            // from the unique @table-annotated object type backing this input's resolved table.
-            var inferredTypeName = inferNodeIdTypeName(field, resolvedTable, name);
-            if (inferredTypeName.error() != null) return inferredTypeName.error();
-            String refTypeName = inferredTypeName.typeName();
-            var rawGqlType = schema.getType(refTypeName);
-            if (!(rawGqlType instanceof GraphQLObjectType targetObj)
-                    || !targetObj.hasAppliedDirective(DIR_TABLE)) {
-                return new InputFieldResolution.Unresolved(name, null,
-                    "@nodeId(typeName:) type '" + refTypeName + "' is not @table-annotated");
-            }
-            String targetTable = argString(targetObj, DIR_TABLE, ARG_NAME)
-                .orElse(refTypeName.toLowerCase());
-            // Same-table case: the referenced type maps to this filter's own table. Semantics
-            // are "filter by own primary key", not a FK join — produce a column-shaped successor
-            // (ColumnField for arity-1 PKs, CompositeColumnField for arity > 1) carrying
-            // NodeIdDecodeKeys.SkipMismatchedElement so the body emitter does the per-element
-            // decode + IN/RowIn predicate without walking through findUniqueFkToTable(t, t).
-            // Resolve typeId/keyColumns the same way as the bare-@nodeId reference branch:
-            // catalog metadata first, then post-first-pass ctx.types, then SDL-only @node.
-            if (targetTable.equalsIgnoreCase(resolvedTable.tableName())) {
-                String sameTableTypeId;
-                List<ColumnRef> sameTableKeyColumns;
-                var sameTableMeta = catalog.nodeIdMetadata(targetTable);
-                if (sameTableMeta.isPresent()) {
-                    sameTableTypeId = sameTableMeta.get().typeId();
-                    sameTableKeyColumns = sameTableMeta.get().keyColumns();
-                } else if (types != null && types.get(refTypeName) instanceof NodeType nt) {
-                    sameTableTypeId = nt.typeId();
-                    sameTableKeyColumns = nt.nodeKeyColumns();
-                } else if (targetObj.hasAppliedDirective(DIR_NODE)) {
-                    // First-pass / SDL-only @node: fall back to the catalog primary key. The
-                    // resolved NodeType in TypeBuilder uses the same fallback (TypeBuilder.java
-                    // around line 355) when @node omits keyColumns; matching it here keeps the
-                    // emitted IN-predicate columns consistent across passes.
-                    sameTableTypeId = argString(targetObj, DIR_NODE, ARG_TYPE_ID).orElse(refTypeName);
-                    sameTableKeyColumns = catalog.findPkColumns(targetTable).stream()
-                        .map(e -> new ColumnRef(e.sqlName(), e.javaName(), e.columnClass()))
-                        .toList();
-                    if (sameTableKeyColumns.isEmpty()) {
-                        return new InputFieldResolution.Unresolved(name, null,
-                            "@nodeId(typeName: '" + refTypeName + "') targets table '" + targetTable
-                            + "' which has @node but no resolvable key columns (no catalog metadata, "
-                            + "no @node(keyColumns:), no primary key)");
+            var resolved = nodeIdLeafResolver.resolve(field, name, resolvedTable);
+            switch (resolved) {
+                case NodeIdLeafResolver.Resolved.Rejected r ->
+                    { return new InputFieldResolution.Unresolved(name, null, r.message()); }
+                case NodeIdLeafResolver.Resolved.SameTable st -> {
+                    Optional<ArgConditionRef> cond = buildInputFieldCondition(field, name, errors);
+                    if (st.keyColumns().size() == 1) {
+                        return new InputFieldResolution.Resolved(new InputField.ColumnField(
+                            parentTypeName, name, locationOf(field), typeName, nonNull, /* list= */ true,
+                            st.keyColumns().get(0), cond, st.extraction()));
                     }
-                } else {
-                    return new InputFieldResolution.Unresolved(name, null,
-                        "@nodeId(typeName: '" + refTypeName + "') targets table '" + targetTable
-                        + "' which has no @node key metadata; cannot generate primary-key IN filter");
-                }
-                var decodeMethod = resolveDecodeHelperForTable(
-                    targetTable, sameTableTypeId, sameTableKeyColumns);
-                if (decodeMethod == null) {
-                    return new InputFieldResolution.Unresolved(name, null,
-                        "[ID!] @nodeId(typeName: '" + refTypeName + "') on input field '" + name
-                        + "': unable to resolve the NodeType backing table '" + targetTable
-                        + "' (zero or multiple GraphQL types map to it).");
-                }
-                Optional<ArgConditionRef> sameTableCond = buildInputFieldCondition(field, name, errors);
-                var sameTableExtraction =
-                    new no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement(decodeMethod);
-                if (sameTableKeyColumns.size() == 1) {
-                    return new InputFieldResolution.Resolved(new InputField.ColumnField(
+                    return new InputFieldResolution.Resolved(new InputField.CompositeColumnField(
                         parentTypeName, name, locationOf(field), typeName, nonNull, /* list= */ true,
-                        sameTableKeyColumns.get(0), sameTableCond, sameTableExtraction));
+                        st.keyColumns(), cond, st.extraction()));
                 }
-                return new InputFieldResolution.Resolved(new InputField.CompositeColumnField(
-                    parentTypeName, name, locationOf(field), typeName, nonNull, /* list= */ true,
-                    sameTableKeyColumns, sameTableCond, sameTableExtraction));
-            }
-            // Cross-table FK case: filter `local.fk = decoded(target.pk)`. Per the R50 spec, the
-            // post-collapse successor for IdReferenceField is ColumnReferenceField (arity-1 PK)
-            // or CompositeColumnReferenceField (arity > 1) carrying NodeIdDecodeKeys plus the
-            // resolved FK joinPath. The joinPath is single-hop (FK constraint name) and the
-            // target column / column-set is the target NodeType's keyColumns; the body emitter
-            // pairs it with ColumnPredicate.In / RowIn (list filter) through the wired e4a path.
-            String fkName;
-            if (field.hasAppliedDirective(DIR_REFERENCE)) {
-                var path = parsePath(field, name, resolvedTable.tableName(), targetTable);
-                if (path.hasError()) {
-                    return new InputFieldResolution.Unresolved(name, null, path.errorMessage());
-                }
-                if (path.elements().size() != 1) {
-                    return new InputFieldResolution.Unresolved(name, null,
-                        "@reference path on [ID!] @nodeId must be single-hop; "
-                        + "multi-hop FK filters are not supported");
-                }
-                if (!(path.elements().get(0) instanceof FkJoin fkStep)) {
-                    return new InputFieldResolution.Unresolved(name, null,
-                        "@reference path on [ID!] @nodeId must be a FK key, not a condition method");
-                }
-                fkName = fkStep.fkName();
-            } else {
-                var inferred = catalog.findUniqueFkToTable(resolvedTable.tableName(), targetTable);
-                if (inferred.isEmpty()) {
-                    return new InputFieldResolution.Unresolved(name, null,
-                        "no unique FK from '" + resolvedTable.tableName() + "' to '" + targetTable
-                        + "'; declare @reference(path: [{key: ...}]) to disambiguate");
-                }
-                fkName = inferred.get();
-            }
-            // Resolve the target's NodeType metadata. Only proceed onto the column-shaped
-            // successor when the target has real NodeType backing -- catalog metadata, a
-            // post-first-pass NodeType in `types`, or @node on the SDL. Otherwise the decode
-            // helper wouldn't exist and the generated code wouldn't compile, so we reject
-            // the field with a pointed reason (per *Validator mirrors classifier invariants*:
-            // a classifier decision the generator can't emit becomes a build-time error,
-            // not a silent classified-but-inert variant).
-            String fkTargetTypeId = null;
-            List<ColumnRef> fkTargetKeyColumns = null;
-            var fkTargetMeta = catalog.nodeIdMetadata(targetTable);
-            if (fkTargetMeta.isPresent()) {
-                fkTargetTypeId = fkTargetMeta.get().typeId();
-                fkTargetKeyColumns = fkTargetMeta.get().keyColumns();
-            } else if (types != null && types.get(refTypeName) instanceof NodeType nt) {
-                fkTargetTypeId = nt.typeId();
-                fkTargetKeyColumns = nt.nodeKeyColumns();
-            } else if (targetObj.hasAppliedDirective(DIR_NODE)) {
-                fkTargetTypeId = argString(targetObj, DIR_NODE, ARG_TYPE_ID).orElse(refTypeName);
-                fkTargetKeyColumns = catalog.findPkColumns(targetTable).stream()
-                    .map(e -> new ColumnRef(e.sqlName(), e.javaName(), e.columnClass()))
-                    .toList();
-                if (fkTargetKeyColumns.isEmpty()) {
-                    return new InputFieldResolution.Unresolved(name, null,
-                        "@nodeId(typeName: '" + refTypeName + "') targets table '" + targetTable
-                        + "' which has @node but no resolvable key columns (no catalog metadata, "
-                        + "no @node(keyColumns:), no primary key)");
+                case NodeIdLeafResolver.Resolved.FkTarget ft -> {
+                    Optional<ArgConditionRef> cond = buildInputFieldCondition(field, name, errors);
+                    if (ft.keyColumns().size() == 1) {
+                        return new InputFieldResolution.Resolved(new InputField.ColumnReferenceField(
+                            parentTypeName, name, locationOf(field), typeName, nonNull, list,
+                            ft.keyColumns().get(0), ft.joinPath(), cond, ft.extraction()));
+                    }
+                    return new InputFieldResolution.Resolved(new InputField.CompositeColumnReferenceField(
+                        parentTypeName, name, locationOf(field), typeName, nonNull, list,
+                        ft.keyColumns(), ft.joinPath(), cond, ft.extraction()));
                 }
             }
-            Optional<ArgConditionRef> fkCond = buildInputFieldCondition(field, name, errors);
-            var fkOpt = catalog.findForeignKey(fkName);
-            if (fkOpt.isEmpty()) {
-                return new InputFieldResolution.Unresolved(name, null,
-                    "FK '" + fkName + "' on table '" + resolvedTable.tableName() + "' not found in catalog");
-            }
-            var fkStep = synthesizeFkJoin(fkOpt.get(), resolvedTable.tableName(), name, 0, null);
-            List<JoinStep> fkJoinPath = List.of(fkStep);
-            TableRef fkTargetTable = resolveTable(targetTable);
-            if (fkTargetKeyColumns == null) {
-                return new InputFieldResolution.Unresolved(name, null,
-                    "@nodeId(typeName: '" + refTypeName + "') targets table '" + targetTable
-                    + "' which is not a @node type (no NodeId catalog metadata, no @node directive)"
-                    + " — annotate the target type with @node or surface the metadata via KjerneJooqGenerator");
-            }
-            return buildInputNodeIdReference(
-                parentTypeName, name, locationOf(field), typeName, nonNull, list,
-                fkTargetTable, refTypeName, targetTable, fkTargetTypeId,
-                fkTargetKeyColumns, fkJoinPath, fkCond);
         }
         if (field.hasAppliedDirective(DIR_REFERENCE)) {
             var path = parsePath(field, name, resolvedTable.tableName(), null);
