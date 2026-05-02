@@ -1,7 +1,7 @@
 ---
 id: R36
 title: "Stub #3: Interface / union fetchers"
-status: In Progress
+status: In Review
 bucket: stubs
 priority: 1
 theme: interface-union
@@ -9,6 +9,8 @@ depends-on: []
 ---
 
 # Stub #3: Interface / union fetchers
+
+> **In Review (2026-05-02).** Track A (same-table + cross-table) closed earlier; Track B sub-phases B1, B2a/b, B3, B4a, B4b, B4c-1 (superseded same-day by B4c-2), B4c-2 (DataLoader-batched windowed CTE), and the B4c-2 follow-ups (validator + multi-parent batching ratchet, then RowN widening for composite-PK parents) all shipped. Reviewer focus: the new B4c-2 emission path in [`MultiTablePolymorphicEmitter`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/MultiTablePolymorphicEmitter.java) (`buildBatchedConnectionFetcher`, `buildBatchedConnectionRowsMethod`, `batchedBranchProjection`, `batchedBranchJoinPredicate`); the dispatch wiring at [`TypeFetcherGenerator`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java) `ChildField.InterfaceField` / `ChildField.UnionField` arms; and validator additions in [`GraphitronSchemaValidator`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/GraphitronSchemaValidator.java) (`validateMultiTableConnectionConstraints`, `validateChildConnectionParentPk`). Known follow-ups deferred to separate items: composite-PK participant for connection mode (JSONB cursor round-trip), composite-PK parent execution test (sakila has no junction-as-parent fixture), and dead-code cleanup of the now-unreachable B4c-1 per-parent-inline `buildConnectionFetcher` path (kept as a fallback for the 6-arg overload's contract).
 
 Track A is **fully done** (same-table Phase 1 closed 2026-04-27, cross-table Phase 2 closed 2026-04-30). The remaining work is Track B: native multi-table polymorphism for plain `InterfaceType` and `UnionType`. Graphitron generates the SQL itself; no `@service` required. The design is two-stage (narrow UNION ALL of keys plus per-typename batched lookup) and reuses the post-R50 per-typeId VALUES-and-JOIN row-builder. Companion concern: `TypeResolver` wiring for non-`Node` `InterfaceType` / `UnionType`. Track A's `TableInterfaceType` already wires it; Track B closes the gap for the remaining cases.
 
