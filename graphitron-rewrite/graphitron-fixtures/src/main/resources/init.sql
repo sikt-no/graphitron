@@ -277,6 +277,28 @@ INSERT INTO content (content_type, title, length, short_description, film_id) VA
     ('SHORT', 'Sunrise',                       12, 'Dawn over a city',    NULL),
     ('SHORT', 'Interlude',                      8, 'Quiet jazz piece',    NULL);
 
+-- R36 item 1 fixture: composite-PK participants in @asConnection multi-table polymorphic.
+-- paged_a + paged_b share a (Integer, Integer) composite PK shape so the polymorphic emitter
+-- can project DSL.jsonbArray(k1, k2) as the synthetic __sort__ column and type it as JSONB;
+-- PostgreSQL's lexicographic JSONB ordering reproduces the multi-column ordering and the
+-- cursor encoder round-trips JSONB through JSONB.toString() + Convert.convert(String, JSONB.class).
+-- Six rows total (3 + 3) is enough to paginate with default first: 3.
+CREATE TABLE paged_a (
+    k1   integer     NOT NULL,
+    k2   integer     NOT NULL,
+    name varchar(50) NOT NULL,
+    PRIMARY KEY (k1, k2)
+);
+INSERT INTO paged_a (k1, k2, name) VALUES (1, 1, 'A-1-1'), (1, 2, 'A-1-2'), (2, 1, 'A-2-1');
+
+CREATE TABLE paged_b (
+    k1   integer     NOT NULL,
+    k2   integer     NOT NULL,
+    name varchar(50) NOT NULL,
+    PRIMARY KEY (k1, k2)
+);
+INSERT INTO paged_b (k1, k2, name) VALUES (1, 1, 'B-1-1'), (1, 3, 'B-1-3'), (3, 1, 'B-3-1');
+
 -- ===========================
 -- nodeidfixture schema
 -- ===========================

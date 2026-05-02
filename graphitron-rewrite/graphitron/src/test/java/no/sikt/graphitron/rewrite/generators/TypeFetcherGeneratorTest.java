@@ -1788,6 +1788,76 @@ class TypeFetcherGeneratorTest {
     }
 
     @Test
+    void queryInterfaceField_connection_compositePkParticipant_typesSortFieldAsJsonb() {
+        // R36 item 1: when any connection-mode participant has composite PK, the emitter types
+        // sortField as Field<JSONB> instead of Field<ParticipantPkClass>. The synthetic __sort__
+        // column is then projected as DSL.jsonbArray(...) per branch (see branchProjection +
+        // buildPerTypenameSelect) and PostgreSQL's lexicographic JSONB ordering reproduces the
+        // multi-column ordering across the union.
+        var compositeTable = new TableRef("paged_a", "PAGED_A", "PagedA",
+            List.of(
+                new ColumnRef("k1", "K1", "java.lang.Integer"),
+                new ColumnRef("k2", "K2", "java.lang.Integer")));
+        var participants = List.<ParticipantRef>of(
+            new ParticipantRef.TableBound("PagedA", compositeTable, null));
+        var field = queryInterfaceConnectionField("compositeConnection", participants, 5);
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
+            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+        var body = method(spec, "compositeConnection").code().toString();
+        assertThat(body)
+            .as("sortField is typed as Field<JSONB> for composite-PK participants")
+            .contains("org.jooq.Field<org.jooq.JSONB> sortField")
+            .contains("org.jooq.JSONB.class");
+    }
+
+    @Test
+    void queryInterfaceField_connection_compositePkParticipant_perTypenameHelperProjectsJsonbArraySortKey() {
+        // The per-typename stage-2 helper must project DSL.jsonbArray(pk0..pkN) under the
+        // __sort__ alias on each typed Record so ConnectionHelper.encodeCursor reads the same
+        // JSONB value the stage-1 sort key produced. Without this, page-2 cursors would decode
+        // back to a partial sort key and the seek predicate would skip or repeat rows.
+        var compositeTable = new TableRef("paged_a", "PAGED_A", "PagedA",
+            List.of(
+                new ColumnRef("k1", "K1", "java.lang.Integer"),
+                new ColumnRef("k2", "K2", "java.lang.Integer")));
+        var participants = List.<ParticipantRef>of(
+            new ParticipantRef.TableBound("PagedA", compositeTable, null));
+        var field = queryInterfaceConnectionField("compositeConnection", participants, 5);
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
+            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+        var perTypename = method(spec, "selectPagedAForCompositeConnection").code().toString();
+        assertThat(perTypename)
+            .as("per-typename helper projects jsonbArray(...) as __sort__ on each typed Record")
+            .contains("jsonbArray(")
+            .contains(".as(\"__sort__\")");
+    }
+
+    @Test
+    void queryInterfaceField_connection_compositePkParticipant_stage1ProjectsAllPkColumns() {
+        // Stage-1 outer SELECT projects every __pk_i__ column so the dispatch loop has the full
+        // PK tuple for ValuesJoinRowBuilder. With pkArity > 1, the loop emits an Object[] of all
+        // PK slots; with pkArity == 1, it stays at __pk0__.
+        var compositeTable = new TableRef("paged_a", "PAGED_A", "PagedA",
+            List.of(
+                new ColumnRef("k1", "K1", "java.lang.Integer"),
+                new ColumnRef("k2", "K2", "java.lang.Integer")));
+        var participants = List.<ParticipantRef>of(
+            new ParticipantRef.TableBound("PagedA", compositeTable, null));
+        var field = queryInterfaceConnectionField("compositeConnection", participants, 5);
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
+            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+        var body = method(spec, "compositeConnection").code().toString();
+        assertThat(body)
+            .as("stage-1 outer SELECT projects __pk0__ and __pk1__")
+            .contains("name(\"__pk0__\")")
+            .contains("name(\"__pk1__\")");
+        assertThat(body)
+            .as("dispatch loop reads all PK slots into Object[]")
+            .contains("r.get(\"__pk0__\")")
+            .contains("r.get(\"__pk1__\")");
+    }
+
+    @Test
     void queryUnionField_connection_emitsSameShapeAsInterfaceField() {
         // Union variant parity: same emitter, same body shape. Ratchet against drift between
         // QueryInterfaceField and QueryUnionField on the connection path the same way the
