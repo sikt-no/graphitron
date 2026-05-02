@@ -360,7 +360,8 @@ public class TypeFetcherGenerator {
                 case QueryField.QueryInterfaceField f -> {
                     if (f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
                         MultiTablePolymorphicEmitter
-                            .emitConnectionMethods(f.name(), f.participants(), conn.defaultPageSize(), outputPackage, jooqPackage)
+                            .emitConnectionMethods(f.name(), f.participants(), Map.of(),
+                                conn.defaultPageSize(), null, outputPackage, jooqPackage)
                             .forEach(builder::addMethod);
                     } else {
                         MultiTablePolymorphicEmitter
@@ -371,7 +372,8 @@ public class TypeFetcherGenerator {
                 case QueryField.QueryUnionField f -> {
                     if (f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
                         MultiTablePolymorphicEmitter
-                            .emitConnectionMethods(f.name(), f.participants(), conn.defaultPageSize(), outputPackage, jooqPackage)
+                            .emitConnectionMethods(f.name(), f.participants(), Map.of(),
+                                conn.defaultPageSize(), null, outputPackage, jooqPackage)
                             .forEach(builder::addMethod);
                     } else {
                         MultiTablePolymorphicEmitter
