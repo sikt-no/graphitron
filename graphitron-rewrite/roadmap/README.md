@@ -17,6 +17,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R36` | Stub #3: Interface / union fetchers | In Review | [plan](stub-interface-union-fetchers.md) |
 | `R49` | Stub: scalar/`@record`-returning `@service` child field (`ServiceRecordField`) <sub>blocked by: [service-rows-method-body](service-rows-method-body.md)</sub> | Spec | [plan](service-record-field.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
+| `R15` | Sweep doc drift between rewrite docs and `model/` taxonomy <sub>blocked by: [docs-site-asciidoc](docs-site-asciidoc.md)</sub> | Spec | [plan](fix-legacy-refs-in-rewrite-docs.md) |
 | `R3` | Classification vocabulary follow-ups | Spec | [plan](classification-vocabulary-followups.md) |
 | `R58` | Lift `UnclassifiedField` / `UnclassifiedType` onto sealed-result shape | Spec | [plan](lift-unclassified-field-onto-sealed-result.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
@@ -55,7 +56,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 - `R38` [**Unify `rowsMethodName()`**](unify-rowsmethodname.md): Lift the `"rows" + capitalize(name())` copy-paste from four `BatchKeyField` leaves to a default method on the interface.
 - `R4` [**Collapse `BatchKeyField` validator/emitter redundancy**](collapse-tabletargetfield-redundancy.md): Promote `unsupportedReason()` from four parallel static overloads on `SplitRowsMethodEmitter` to a default method on `BatchKeyField`, so the validator's four-arm chain at `GraphitronSchemaValidator.java:160-180` collapses to a single `instanceof BatchKeyField` check and the emitter/validator lock-step (currently convention-enforced) becomes compiler-enforced.
-- `R15` [**Sweep doc drift between rewrite docs and `model/` taxonomy**](fix-legacy-refs-in-rewrite-docs.md): The three reference docs under `graphitron-rewrite/docs/` (`code-generation-triggers.adoc`, `rewrite-design-principles.adoc`, `argument-resolution.adoc`) have fallen behind several recent landings in `model/`. None of the drift breaks the build; all of it costs a first-time reader credibility. Re-audited 2026-05-02 against trunk after the focused sweep below. _(blocked by [docs-site-asciidoc](docs-site-asciidoc.md))_
 - `R33` [**Shared interface for `QueryField` / `ChildField` table-bound parallels**](shared-interface-queryfield-childfield.md): Root variants drop `joinPath` but share `filters · orderBy · pagination`.
 - `R54` [**Rename @externalField (parallel-support, deprecation, migration)**](rename-externalfield-directive.md): `@externalField` lifted to `IMPLEMENTED_LEAVES` end-to-end in `computed-field-with-reference` (R48, shipped; see [`changelog.md`](changelog.md)). The directive's name is the surviving historical artefact: it predates the `ChildField.ComputedField` model variant and reads as "field resolved by external code" rather than the narrower behaviour the lift settled on (a `Field<X>` returned by a static method, inlined into the SELECT projection at the alias). A clearer name ships in this plan; the old name stays accepted for one consumer-migration window.
 - `R27` [**Retire `@nodeId` and `IdReferenceField` synthesis shims**](retire-synthesis-shims.md): Two parallel shims survive in the classifier so legacy SDL keeps building. Both should retire on the same gate (sis migration to canonical SDL); their wire shape is independent but the user-visible migration is one piece of work, so the two retirements ship together. _(blocked by [sis-rewrite-migration](sis-rewrite-migration.md))_
@@ -130,7 +130,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### docs
 
-- `R15` [**Sweep doc drift between rewrite docs and `model/` taxonomy**](fix-legacy-refs-in-rewrite-docs.md) — Backlog, cleanup, blocked by [docs-site-asciidoc](docs-site-asciidoc.md)
+- `R15` [**Sweep doc drift between rewrite docs and `model/` taxonomy**](fix-legacy-refs-in-rewrite-docs.md) — Spec, cleanup, blocked by [docs-site-asciidoc](docs-site-asciidoc.md)
 - `R3` [**Classification vocabulary follow-ups**](classification-vocabulary-followups.md) — Spec
 - `R17` [**Annotated walkthrough of a generated file**](generated-output-walkthrough.md) — Backlog, cleanup, blocked by [docs-site-asciidoc](docs-site-asciidoc.md)
 - `R35` [**Class-level Javadoc and `package-info.java` sweep**](source-orientation-javadocs.md) — Backlog, cleanup

@@ -1,7 +1,7 @@
 ---
 id: R15
 title: Sweep doc drift between rewrite docs and `model/` taxonomy
-status: Backlog
+status: Spec
 bucket: cleanup
 priority: 3
 theme: docs
@@ -14,6 +14,8 @@ The three reference docs under `graphitron-rewrite/docs/` (`code-generation-trig
 `rewrite-design-principles.adoc`, `argument-resolution.adoc`) have fallen behind several
 recent landings in `model/`. None of the drift breaks the build; all of it costs a first-time
 reader credibility. Re-audited 2026-05-02 against trunk after the focused sweep below.
+Re-audited again on the architecture-study pass (commit `96edb7a`); items 7-12 below
+were added in that pass.
 
 The original scope of this item was a pure legacy-ref grep ("`graphitron-common`" + module
 count). That scope is preserved at the bottom; the larger driver now is variant-taxonomy
@@ -80,15 +82,56 @@ One commit, one focused diff. Each row below is a single edit.
   `OrderByResultClassGenerator`, `QueryNodeFetcherClassGenerator`); root has
   `QueryConditionsGenerator` alongside `TypeConditionsGenerator`. Restructure the source
   map to acknowledge the schema-emission family rather than re-listing 22 entries.
+- **`argument-resolution.adoc` permits list is post-R50 stale.** Lines 11-13 enumerate
+  seven `ArgumentRef` variants (`ColumnArg`, `UnboundArg`, `TableInputArg`, `PlainInputArg`,
+  `OrderByArg`, `PaginationArgRef`, `UnclassifiedArg`). The model permits at minimum:
+  `ScalarArg.{ColumnArg | CompositeColumnArg | ColumnReferenceArg | CompositeColumnReferenceArg | UnboundArg}`,
+  `InputTypeArg.{TableInputArg | PlainInputArg}`, plus the three top-level
+  `OrderByArg` / `PaginationArgRef` / `UnclassifiedArg`. Three R50-introduced carriers
+  (`CompositeColumnArg`, `ColumnReferenceArg`, `CompositeColumnReferenceArg`) plus the two
+  intermediate sealed groupers (`ScalarArg`, `InputTypeArg`) are absent from the prose.
+
+## Principles-doc claims overtaken by structural changes
+
+Three claims in `rewrite-design-principles.adoc` whose name lists or counts no longer match
+the code. The principle's spirit is intact in each; only the cited evidence is stale.
+
+- **Reflection-permission roster is stale.** `rewrite-design-principles.adoc:27`:
+  "`ServiceCatalog.reflectServiceMethod()` and `ServiceCatalog.reflectTableMethod()` are the
+  only places that read the reflection `java.lang.reflect.Type` tree." Today three files
+  import `java.lang.reflect.Type`: `ServiceCatalog`, `BatchKeyLifterDirectiveResolver`
+  (R1, reflects on the developer-supplied lifter), and `FieldBuilder`. Update the roster.
+- **Raw-jOOQ-types permission roster is wrong.** `rewrite-design-principles.adoc:29`:
+  "`JooqCatalog`, `TypeBuilder`, `FieldBuilder`, and `ServiceCatalog` are the only classes
+  permitted to hold raw jOOQ types." Today only `BuildContext` and `JooqCatalog` import
+  raw jOOQ types directly; `TypeBuilder` / `FieldBuilder` / `ServiceCatalog` go through
+  `JooqCatalog`. Either fix the list to `BuildContext` + `JooqCatalog`, or rephrase the
+  principle as "the boundary lives at `JooqCatalog` (and `BuildContext` for graphql-java
+  schema-walking); classifier code consumes the classified output."
+- **`candidateHint` usage stats are stale.** `rewrite-design-principles.adoc:171`:
+  "Used in 14 places (5 in `FieldBuilder`, 5 in `TypeBuilder`, 2 in `BuildContext`,
+  2 in `ServiceCatalog`)." Today: at least six files reference it (those four plus
+  `BatchKeyLifterDirectiveResolver` and `EnumMappingResolver`), with shifted per-file
+  counts. Refresh the stats; the principle is healthier than the numbers suggest because
+  more sites adopted the helper.
 
 ## Legacy refs (original scope, preserved)
 
+- `code-generation-triggers.adoc:245` says "All source lives under
+  `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewrite/`." Pre-monorepo-restructure
+  relic; the actual layout is `graphitron-rewrite/graphitron/src/main/java/...`. The path
+  on disk doesn't exist as written. Single-line edit at the top of the Source Map.
 - `code-generation-triggers.adoc:295` still lists the directive SDL location as
   `graphitron-common/src/main/resources/directives.graphqls`. Per changelog entry
   `c31771d`, the rewrite ships its own copy at
   `graphitron-rewrite/graphitron/src/main/resources/directives.graphqls` and
   `RewriteSchemaLoader` auto-injects it. Update the link.
-- `rewrite-design-principles.adoc:119` says "builds the **five** rewrite modules" and lists
+- `code-generation-triggers.adoc:296` (the line right after) — companion directive
+  reference — points at
+  `https://github.com/sikt-no/graphitron/tree/main/graphitron-codegen-parent/graphitron-java-codegen/README.md`,
+  the legacy module's README. Either re-point at the rewrite-side doc or drop the link
+  if no rewrite-side equivalent exists yet. Paired edit with the line above.
+- `rewrite-design-principles.adoc:145` says "builds the **five** rewrite modules" and lists
   five. The aggregator now has eight (adds `graphitron-fixtures-codegen`, `graphitron-lsp`,
   `roadmap-tool`). Update count and list.
 - Anywhere "five rewrite modules" or `verify-standalone-build.sh`'s forbidden-coords list
