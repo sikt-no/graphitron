@@ -156,7 +156,7 @@ Then change the same-table arg arm in `FieldBuilder.classifyArgument` from `Thro
 - R6's resolver pattern with sealed `Resolved` outcomes. `NodeIdLeafResolver` exists.
 - R50's input-field `@nodeId` carriers (`InputField.{Column,CompositeColumn}{,Reference}Field`).
 - Argument-side carriers (`ArgumentRef.ScalarArg.{Column,CompositeColumn}{,Reference}Arg`).
-- `@LoadBearingClassifierCheck` / `@DependsOnClassifierCheck` annotations and the `LoadBearingGuaranteeAuditTest` audit are in place (one production consumer in `ErrorMappingsClassGenerator` for `error-channel.mappings-constant`, no producers yet); R40's `nodeid-fk.direct-fk-keys-match` will be the first `@LoadBearingClassifierCheck` producer in the codebase.
+- `@LoadBearingClassifierCheck` / `@DependsOnClassifierCheck` and `LoadBearingGuaranteeAuditTest` (existing producers in `ServiceCatalog`, `BatchKeyLifterDirectiveResolver`, `TypeBuilder`, `FieldBuilder`).
 - `@asConnection` validator rejection, lookup-promotion gate, full execution coverage. This pass changes how those wire, not what they do.
 
 ## Out of scope
