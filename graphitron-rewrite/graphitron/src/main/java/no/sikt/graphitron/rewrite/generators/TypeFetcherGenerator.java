@@ -160,6 +160,7 @@ public class TypeFetcherGenerator {
         QueryField.QueryServiceTableField.class,
         QueryField.QueryServiceRecordField.class,
         MutationField.MutationInsertTableField.class,
+        MutationField.MutationUpdateTableField.class,
         MutationField.MutationDeleteTableField.class,
         MutationField.MutationServiceTableField.class,
         MutationField.MutationServiceRecordField.class,
@@ -236,8 +237,6 @@ public class TypeFetcherGenerator {
     public static final Map<Class<? extends GraphitronField>, String> NOT_IMPLEMENTED_REASONS =
         Map.ofEntries(
             // MutationField stubs — see graphitron-rewrite/roadmap/mutations.md
-            Map.entry(MutationField.MutationUpdateTableField.class,
-                "Mutation update not yet implemented — see graphitron-rewrite/roadmap/mutations.md"),
             Map.entry(MutationField.MutationUpsertTableField.class,
                 "Mutation upsert not yet implemented — see graphitron-rewrite/roadmap/mutations.md"),
             // ChildField stubs — TableTargetField sub-hierarchy
@@ -381,7 +380,7 @@ public class TypeFetcherGenerator {
                     }
                 }
                 case MutationField.MutationInsertTableField f  -> builder.addMethod(buildMutationInsertFetcher(f, outputPackage, jooqPackage));
-                case MutationField.MutationUpdateTableField f  -> builder.addMethod(stub(f));
+                case MutationField.MutationUpdateTableField f  -> builder.addMethod(buildMutationUpdateFetcher(f, outputPackage, jooqPackage));
                 case MutationField.MutationDeleteTableField f  -> builder.addMethod(buildMutationDeleteFetcher(f, outputPackage, jooqPackage));
                 case MutationField.MutationUpsertTableField f  -> builder.addMethod(stub(f));
                 case MutationField.MutationServiceTableField f -> builder.addMethod(buildMutationServiceTableFetcher(f, outputPackage, jooqPackage));
@@ -1426,9 +1425,61 @@ public class TypeFetcherGenerator {
     }
 
     /**
+     * Emits a fetcher for {@link MutationField.MutationUpdateTableField}: a synchronous static
+     * method that runs {@code dsl.update(table).set(col, val)... .where(<lookupKey predicates>)
+     * .returningResult(<keys or $fields>).fetchOne(...)}. See
+     * {@code graphitron-rewrite/roadmap/mutations.md} Phase 4.
+     *
+     * <p>SET clause is every {@code InputField.ColumnField} in {@code tia.fields()} whose
+     * {@code name()} is not in {@code tia.fieldBindings()} (i.e. not a {@code @lookupKey}).
+     * Invariant #4 guarantees this set is non-empty. WHERE clause is the {@code @lookupKey}
+     * fieldBindings, chained with {@code .and(...)} via the shared
+     * {@link #buildLookupWhere} helper. Empty-match semantics: {@code .fetchOne(...)} returns
+     * {@code null} when the WHERE clause matches no row, same as DELETE.
+     */
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "dml-mutation-shape-guarantees",
+        reliesOn = "Pattern-matches f.returnExpression() with no instanceof / "
+            + "Optional.orElseThrow / payloadAssembly().isPresent() guard; casts "
+            + "env.getArgument(tia.name()) to Map<?,?> with no guard; walks tia.fields() "
+            + "as Direct-extracted ColumnField with a single cast (no extraction-arm dispatch). "
+            + "Invariant #4 guarantees at least one non-@lookupKey field for the SET clause.")
+    private static MethodSpec buildMutationUpdateFetcher(MutationField.MutationUpdateTableField f,
+                                                          String outputPackage, String jooqPackage) {
+        var tia = f.tableInputArg();
+        var tableRef = tia.inputTable();
+        var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef, jooqPackage);
+        String tableLocal = tablesOnly.tableLocalName();
+
+        var lookupNames = tia.fieldBindings().stream()
+            .map(b -> b.fieldName())
+            .collect(java.util.stream.Collectors.toSet());
+
+        var setClause = CodeBlock.builder();
+        for (var inputField : tia.fields()) {
+            var cf = (InputField.ColumnField) inputField;
+            if (lookupNames.contains(cf.name())) continue;
+            setClause.add(".set($T.$L.$L, $T.val(in.get($S), $T.$L.$L.getDataType()))\n",
+                tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName(),
+                DSL, cf.name(),
+                tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName());
+        }
+
+        var dmlChain = CodeBlock.builder()
+            .add(".update($L)\n", tableLocal)
+            .add(setClause.build())
+            .add(".where(").add(buildLookupWhere(tia, tablesOnly, tableRef)).add(")\n")
+            .build();
+
+        return buildDmlFetcher(f.name(), f.returnExpression(), f.errorChannel(),
+            tia.name(), tableRef, tablesOnly, tableLocal,
+            outputPackage, dmlChain);
+    }
+
+    /**
      * Builds the WHERE clause from the TIA's {@code @lookupKey} {@code fieldBindings}, chaining
-     * each binding's {@code .eq(DSL.val(...))} with {@code .and(...)}. Shared between DELETE
-     * and (eventually) UPDATE / UPSERT.
+     * each binding's {@code .eq(DSL.val(...))} with {@code .and(...)}. Shared between DELETE,
+     * UPDATE, and (eventually) UPSERT.
      */
     private static CodeBlock buildLookupWhere(
             no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg tia,
