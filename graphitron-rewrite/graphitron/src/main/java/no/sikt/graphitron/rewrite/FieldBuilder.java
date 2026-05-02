@@ -2529,15 +2529,15 @@ class FieldBuilder {
                 var batchKey = deriveBatchKeyForResultType(objectPath.elements(), parentResultType);
                 if (hasLookupKeyAnywhere(fieldDef)) {
                     if (batchKey == null) {
-                        yield new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.DEFERRED,
-                            "RecordLookupTableField requires a FK join path and a typed backing class for batch key extraction; for free-form DTO parents, supply @batchKeyLifter on the field");
+                        yield new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
+                            "RecordLookupTableField on a free-form DTO parent requires @batchKeyLifter to lift the batch key; the catalog has no FK metadata for the parent class. Add @batchKeyLifter(lifter: ..., targetColumns: [...]) on this field, or back the parent with a typed jOOQ TableRecord so the FK can be derived");
                     }
                     yield new RecordLookupTableField(parentTypeName, name, location, tb, objectPath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination(),
                         batchKey, tfc.lookupMapping());
                 }
                 if (batchKey == null) {
-                    yield new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.DEFERRED,
-                        "RecordTableField requires a FK join path and a typed backing class for batch key extraction; for free-form DTO parents, supply @batchKeyLifter on the field");
+                    yield new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR,
+                        "RecordTableField on a free-form DTO parent requires @batchKeyLifter to lift the batch key; the catalog has no FK metadata for the parent class. Add @batchKeyLifter(lifter: ..., targetColumns: [...]) on this field, or back the parent with a typed jOOQ TableRecord so the FK can be derived");
                 }
                 yield new RecordTableField(parentTypeName, name, location, tb, objectPath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination(), batchKey);
             }
