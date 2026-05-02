@@ -424,14 +424,32 @@ public class TypeFetcherGenerator {
                     }
                 }
                 case ChildField.TableMethodField f              -> builder.addMethod(stub(f));
-                case ChildField.InterfaceField f -> MultiTablePolymorphicEmitter
-                    .emitMethods(f.name(), f.participants(), f.participantJoinPaths(),
-                        f.returnType().wrapper().isList(), outputPackage, jooqPackage)
-                    .forEach(builder::addMethod);
-                case ChildField.UnionField f -> MultiTablePolymorphicEmitter
-                    .emitMethods(f.name(), f.participants(), f.participantJoinPaths(),
-                        f.returnType().wrapper().isList(), outputPackage, jooqPackage)
-                    .forEach(builder::addMethod);
+                case ChildField.InterfaceField f -> {
+                    if (f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
+                        MultiTablePolymorphicEmitter
+                            .emitConnectionMethods(f.name(), f.participants(), f.participantJoinPaths(),
+                                conn.defaultPageSize(), outputPackage, jooqPackage)
+                            .forEach(builder::addMethod);
+                    } else {
+                        MultiTablePolymorphicEmitter
+                            .emitMethods(f.name(), f.participants(), f.participantJoinPaths(),
+                                f.returnType().wrapper().isList(), outputPackage, jooqPackage)
+                            .forEach(builder::addMethod);
+                    }
+                }
+                case ChildField.UnionField f -> {
+                    if (f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
+                        MultiTablePolymorphicEmitter
+                            .emitConnectionMethods(f.name(), f.participants(), f.participantJoinPaths(),
+                                conn.defaultPageSize(), outputPackage, jooqPackage)
+                            .forEach(builder::addMethod);
+                    } else {
+                        MultiTablePolymorphicEmitter
+                            .emitMethods(f.name(), f.participants(), f.participantJoinPaths(),
+                                f.returnType().wrapper().isList(), outputPackage, jooqPackage)
+                            .forEach(builder::addMethod);
+                    }
+                }
                 case ChildField.NestingField ignored            -> { /* wired via FetcherRegistrationsEmitter: env -> env.getSource() */ }
                 case ChildField.ConstructorField ignored        -> { /* wired via FetcherRegistrationsEmitter: env -> env.getSource() */ }
                 // ServiceRecordField is dispatched alongside ServiceTableField above (shared
