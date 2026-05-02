@@ -15,7 +15,12 @@ The three reference docs under `graphitron-rewrite/docs/` (`code-generation-trig
 recent landings in `model/`. None of the drift breaks the build; all of it costs a first-time
 reader credibility. Re-audited 2026-05-02 against trunk after the focused sweep below.
 Re-audited again on the architecture-study pass (commit `96edb7a`); items 7-12 below
-were added in that pass.
+were added in that pass. Reviewer-pass refresh against `cb20a25` (post-R36 / R58 / R59):
+counts and rosters retightened; `NodeIdDecodeKeys` added to the `CallSiteExtraction` row
+because R58's new "Wire-format encoding is a boundary concern" section
+(`rewrite-design-principles.adoc:85`) names it as the worked example, leaving the source-map
+table at `code-generation-triggers.adoc:266` and the intro paragraph at
+`rewrite-design-principles.adoc:31` as the two laggards.
 
 The original scope of this item was a pure legacy-ref grep ("`graphitron-common`" + module
 count). That scope is preserved at the bottom; the larger driver now is variant-taxonomy
@@ -63,25 +68,39 @@ One commit, one focused diff. Each row below is a single edit.
   `model/GraphitronType.java` permits `PlainObjectType`, `EnumType`, `ConnectionType`,
   `EdgeType`, `PageInfoType` — the connection trio is core to the `@asConnection` path.
   Absent from `code-generation-triggers.adoc`'s Type Classification table.
-- **`CallSiteExtraction` shows 5 variants, has 6.** `rewrite-design-principles.adoc:29` and
+- **`CallSiteExtraction` shows 5 variants, has 7.** `rewrite-design-principles.adoc:31` and
   `code-generation-triggers.adoc:266` enumerate `Direct / EnumValueOf / TextMapLookup /
-  ContextArg / JooqConvert`. The 6th is `NestedInputField` (`model/CallSiteExtraction.java`),
-  used for `@condition` on `INPUT_FIELD_DEFINITION`. `argument-resolution.adoc` covers it
-  already — fix the two laggards to match.
+  ContextArg / JooqConvert`. The 6th is `NestedInputField` (used for `@condition` on
+  `INPUT_FIELD_DEFINITION`). The 7th is the sealed sub-grouper `NodeIdDecodeKeys`
+  (`SkipMismatchedElement` / `ThrowOnMismatch`) added in R50 (`model/CallSiteExtraction.java:30`).
+  `argument-resolution.adoc` covers `NestedInputField` already; the same doc and the new
+  `rewrite-design-principles.adoc:85` "Wire-format encoding is a boundary concern" section
+  both already name `NodeIdDecodeKeys` ; the laggards are the source-map table at
+  `code-generation-triggers.adoc:266` and the intro paragraph at
+  `rewrite-design-principles.adoc:31`. Fix both to enumerate all seven, or rephrase the intro
+  as "five extraction strategies plus two sealed sub-groupers covering nested-input traversal
+  and NodeId decode."
 - **`GraphitronSchema` schematic is wrong.** `code-generation-triggers.adoc:13-25` shows
   `Map<String, GraphitronField>`. Real shape at `GraphitronSchema.java:24-30` is five fields:
   `Map<String, GraphitronType> types`, `Map<FieldCoordinates, GraphitronField> fields`,
   `Map<String, List<GraphitronField>> fieldsByType`, `Map<String, EntityResolution>
   entitiesByType`, `List<BuildWarning> warnings`. Fix the diagram.
-- **Source map misses ~14 generators.** `code-generation-triggers.adoc`'s Generators table
-  lists 8. `generators/schema/` adds ten (`ObjectTypeGenerator`, `InputTypeGenerator`,
+- **Source map misses ~17 generators.** `code-generation-triggers.adoc`'s Generators table
+  lists 8. `generators/schema/` has 13 (`ObjectTypeGenerator`, `InputTypeGenerator`,
   `EnumTypeGenerator`, `GraphitronFacadeGenerator`, `GraphitronSchemaClassGenerator`,
   `FetcherRegistrationsEmitter`, `DirectiveDefinitionEmitter`, `AppliedDirectiveEmitter`,
-  `GraphQLValueEmitter`, `InputDirectiveInputTypes`); `generators/util/` adds four
-  (`GraphitronContextInterfaceGenerator`, `NodeIdEncoderClassGenerator`,
-  `OrderByResultClassGenerator`, `QueryNodeFetcherClassGenerator`); root has
-  `QueryConditionsGenerator` alongside `TypeConditionsGenerator`. Restructure the source
-  map to acknowledge the schema-emission family rather than re-listing 22 entries.
+  `GraphQLValueEmitter`, `InputDirectiveInputTypes`, plus an error-handling sub-family —
+  `ConstraintViolationsClassGenerator`, `ErrorMappingsClassGenerator`,
+  `ErrorRouterClassGenerator`); `generators/util/` has runtime-helper class generators
+  (`ColumnFetcherClassGenerator`, `EntityFetcherDispatchClassGenerator`,
+  `GraphitronContextInterfaceGenerator`, `NodeIdEncoderClassGenerator`,
+  `OrderByResultClassGenerator`, `QueryNodeFetcherClassGenerator`) alongside emitter helpers
+  that aren't generators (`HandleMethodBody`, `SelectMethodBody`, `ValuesJoinRowBuilder`,
+  `SchemaDirectiveRegistry`); root has `QueryConditionsGenerator` alongside
+  `TypeConditionsGenerator`. Restructure the source map to four families rather than
+  re-listing entries: fetcher emission, schema emission, error-handling emission, runtime
+  helpers ; that grouping makes the error-handling family visible at the table level instead
+  of buried in the schema/ folder.
 - **`argument-resolution.adoc` permits list is post-R50 stale.** Lines 11-13 enumerate
   seven `ArgumentRef` variants (`ColumnArg`, `UnboundArg`, `TableInputArg`, `PlainInputArg`,
   `OrderByArg`, `PaginationArgRef`, `UnclassifiedArg`). The model permits at minimum:
@@ -103,11 +122,14 @@ the code. The principle's spirit is intact in each; only the cited evidence is s
   (R1, reflects on the developer-supplied lifter), and `FieldBuilder`. Update the roster.
 - **Raw-jOOQ-types permission roster is wrong.** `rewrite-design-principles.adoc:29`:
   "`JooqCatalog`, `TypeBuilder`, `FieldBuilder`, and `ServiceCatalog` are the only classes
-  permitted to hold raw jOOQ types." Today only `BuildContext` and `JooqCatalog` import
-  raw jOOQ types directly; `TypeBuilder` / `FieldBuilder` / `ServiceCatalog` go through
-  `JooqCatalog`. Either fix the list to `BuildContext` + `JooqCatalog`, or rephrase the
-  principle as "the boundary lives at `JooqCatalog` (and `BuildContext` for graphql-java
-  schema-walking); classifier code consumes the classified output."
+  permitted to hold raw jOOQ types." Today three files import `org.jooq` raw types directly:
+  `JooqCatalog`, `BuildContext` (`ForeignKey` for `@reference` validation messages), and
+  `catalog/CatalogBuilder` (`ForeignKey` + `Table` for the LSP completion-data snapshot).
+  `TypeBuilder` / `FieldBuilder` / `ServiceCatalog` go through `JooqCatalog`. Either fix the
+  list to those three names, or rephrase the principle as "the boundary lives at
+  `JooqCatalog`; the only direct consumers of raw jOOQ types are `BuildContext` (for
+  validation-message FK enumeration) and the LSP-side `catalog/CatalogBuilder` snapshot;
+  classifier code consumes the classified output."
 - **`candidateHint` usage stats are stale.** `rewrite-design-principles.adoc:171`:
   "Used in 14 places (5 in `FieldBuilder`, 5 in `TypeBuilder`, 2 in `BuildContext`,
   2 in `ServiceCatalog`)." Today: at least six files reference it (those four plus
@@ -124,8 +146,8 @@ the code. The principle's spirit is intact in each; only the cited evidence is s
 - `code-generation-triggers.adoc:295` still lists the directive SDL location as
   `graphitron-common/src/main/resources/directives.graphqls`. Per changelog entry
   `c31771d`, the rewrite ships its own copy at
-  `graphitron-rewrite/graphitron/src/main/resources/directives.graphqls` and
-  `RewriteSchemaLoader` auto-injects it. Update the link.
+  `graphitron-rewrite/graphitron/src/main/resources/no/sikt/graphitron/rewrite/schema/directives.graphqls`
+  and `RewriteSchemaLoader` auto-injects it. Update the link to the actual nested path.
 - `code-generation-triggers.adoc:296` (the line right after) — companion directive
   reference — points at
   `https://github.com/sikt-no/graphitron/tree/main/graphitron-codegen-parent/graphitron-java-codegen/README.md`,
