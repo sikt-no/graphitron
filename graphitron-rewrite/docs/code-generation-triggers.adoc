@@ -159,10 +159,12 @@ Fields are classified separately for root types (Query/Mutation) and nested type
 
 | Schema Pattern | `ChildField` Variant | `*Fetchers` Generates |
 |---|---|---|
-| `@nodeId(typeName:)` | `NodeIdReferenceField` | Column method in `wiring()` |
-| `@nodeId` (no typeName) | `NodeIdField` | Column method in `wiring()` |
-| `@reference` on scalar | `ColumnReferenceField` | Column method in `wiring()` |
-| `@field(name:)` or matching column name | `ColumnField` | Column method in `wiring()` |
+| `@field(name:)` or matching column name | `ColumnField` (`compaction = Direct`) | Column method in `wiring()` |
+| `@reference` on scalar | `ColumnReferenceField` (`compaction = Direct`) | Column method in `wiring()` |
+| `@nodeId` (single-column PK), no typeName | `ColumnField` (`compaction = NodeIdEncodeKeys`) | Column method in `wiring()`; the projected column is wrapped in the per-Node `encode<TypeName>` helper |
+| `@nodeId(typeName:)`, single-column PK target | `ColumnReferenceField` (`compaction = NodeIdEncodeKeys`) | As above, against the FK-resolved target column |
+| `@nodeId` (composite PK), no typeName | `CompositeColumnField` | Column method in `wiring()`; projects `RowN<...>` of the parent's PK columns and wraps in `encode<TypeName>` |
+| `@nodeId(typeName:)`, composite PK target | `CompositeColumnReferenceField` | As above, against the FK-resolved target columns |
 
 ==== Object return type
 
@@ -182,7 +184,8 @@ Fields are classified separately for root types (Query/Mutation) and nested type
 | Return plain object (no `@table`) | `NestingField` | Field method stub (inherits parent table context) |
 | Constructor-mapped field | `ConstructorField` | Field method stub |
 | `@reference` to multi-table interface | `MultitableReferenceField` | Field method stub |
-| Conflicting directives or `@notGenerated` | `UnclassifiedField`** | Validation error; build fails |
+| Conflicting directives | `UnclassifiedField`** | Validation error; build fails |
+| `@notGenerated` | `UnclassifiedField`** | Validation error; the directive is no longer supported (`INVALID_SCHEMA` rejection). Remove it; fields must be fully described by the schema. |
 
 === Child Fields (on `@record` parent)
 
@@ -202,6 +205,8 @@ Fields are classified separately for root types (Query/Mutation) and nested type
 |---|---|---|
 | `@field(name:)` or matching column name | `InputField.ColumnField` | Maps input argument to a table column |
 | `@reference` on input scalar | `InputField.ColumnReferenceField` | Maps input argument to a FK column |
+| `@nodeId` on input scalar, composite PK | `InputField.CompositeColumnField` | Decodes a composite-PK NodeId into the input's PK columns (carries `NodeIdDecodeKeys` extraction) |
+| `@nodeId(typeName:)` on input scalar, composite PK | `InputField.CompositeColumnReferenceField` | Decodes a composite-PK NodeId into FK columns referencing the typeName target |
 | Return plain object (no `@table`) | `InputField.NestingField` | Expands nested input fields inline against parent table |
 
 `InputField` is a separate top-level sub-hierarchy of `GraphitronField`, alongside `RootField` and `ChildField`. It classifies fields on `TableInputType` for mutation input processing.
@@ -259,7 +264,7 @@ All source lives under `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewr
 | Ordering | `OrderBySpec.java` | `Fixed` / `Argument` / `None` |
 | Pagination | `PaginationSpec.java` | Relay cursor arguments |
 | Argument extraction | `CallSiteExtraction.java` | `Direct` / `EnumValueOf` / `TextMapLookup` / `ContextArg` / `JooqConvert` |
-| Input field hierarchy | `InputField.java` | Sealed interface ; `ColumnField` / `ColumnReferenceField` / `NestingField` for mutation inputs |
+| Input field hierarchy | `InputField.java` | Sealed interface ; `ColumnField` / `ColumnReferenceField` / `CompositeColumnField` / `CompositeColumnReferenceField` / `NestingField` for mutation inputs |
 | Condition params | `CallParam.java`, `BodyParam.java` | Call-site vs body-generation views |
 
 === Builders (root package)
@@ -289,18 +294,6 @@ All source lives under `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewr
 
 - *SDL definitions*: `graphitron-common/src/main/resources/directives.graphqls`
 - *Directive reference with examples*: link:https://github.com/sikt-no/graphitron/tree/main/graphitron-codegen-parent/graphitron-java-codegen/README.md[graphitron-java-codegen README]
-
-'''
-
-== Known Gaps
-
-=== `ConditionFilter` has no builder path
-
-`FieldBuilder` currently produces `GeneratedConditionFilter` entries for filterable arguments, but never produces `ConditionFilter` entries for `@condition` directives on fields. Field-level `@condition` annotations ; WHERE predicates applied to the field's own target table ; are not yet classified into the rewrite pipeline's filter list.
-
-*Note:* This gap is about the `@condition` directive on *fields* (WHERE predicate). It is distinct from condition joins in `@reference` paths ; `{condition: {className, method}}` in a `path:` element ; which are fully resolved by the builder into `ConditionJoin` steps.
-
-*Fix*: add `@condition` directive reading to `FieldBuilder.resolveFilters()`. `ConditionFilter` now implements `MethodRef` directly, so the builder constructs it with `(className, methodName, params)` and `callParams()` is derived automatically.
 
 '''
 
