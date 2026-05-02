@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.generators.util;
 
 import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.FieldSpec;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.javapoet.TypeVariableName;
@@ -26,8 +27,10 @@ public class GraphitronContextInterfaceGenerator {
 
     public static final String CLASS_NAME = "GraphitronContext";
 
-    private static final ClassName ENV         = ClassName.get("graphql.schema", "DataFetchingEnvironment");
-    private static final ClassName DSL_CONTEXT = ClassName.get("org.jooq", "DSLContext");
+    private static final ClassName ENV               = ClassName.get("graphql.schema", "DataFetchingEnvironment");
+    private static final ClassName DSL_CONTEXT       = ClassName.get("org.jooq", "DSLContext");
+    private static final ClassName VALIDATOR         = ClassName.get("jakarta.validation", "Validator");
+    private static final ClassName VALIDATION        = ClassName.get("jakarta.validation", "Validation");
 
     public static List<TypeSpec> generate() {
         var getDslContext = MethodSpec.methodBuilder("getDslContext")
@@ -66,15 +69,44 @@ public class GraphitronContextInterfaceGenerator {
                 + "{@code DSLContext} for the request.\n")
             .build();
 
+        // Lazy default validator: holder-class idiom guarantees one-time initialisation per JVM
+        // and avoids touching jakarta.validation classes at interface load time.
+        // Nested types on an interface are implicitly public + static; JavaPoet still requires
+        // both modifiers be set explicitly.
+        var defaultValidatorHolder = TypeSpec.classBuilder("DefaultValidatorHolder")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
+            .addJavadoc("Lazy holder for the default {@link $T} (one per JVM). Initialised on the\n"
+                + "first call to {@link GraphitronContext#getValidator}.\n", VALIDATOR)
+            .addField(FieldSpec.builder(VALIDATOR, "INSTANCE",
+                    Modifier.STATIC, Modifier.FINAL)
+                .initializer("$T.buildDefaultValidatorFactory().getValidator()", VALIDATION)
+                .build())
+            .addMethod(MethodSpec.constructorBuilder().addModifiers(Modifier.PRIVATE).build())
+            .build();
+
+        var getValidator = MethodSpec.methodBuilder("getValidator")
+            .addModifiers(Modifier.PUBLIC, Modifier.DEFAULT)
+            .returns(VALIDATOR)
+            .addParameter(ENV, "env")
+            .addStatement("return DefaultValidatorHolder.INSTANCE")
+            .addJavadoc("Returns the {@link $T} the wrapper's pre-execution validation step (R12 §5)\n"
+                + "should use for this fetch. Defaults to the JVM's default validator factory\n"
+                + "({@code Validation.buildDefaultValidatorFactory().getValidator()}); apps that\n"
+                + "want a custom factory (per-tenant message interpolators, alternative providers,\n"
+                + "etc.) override this method.\n", VALIDATOR)
+            .build();
+
         var spec = TypeSpec.interfaceBuilder(CLASS_NAME)
             .addModifiers(Modifier.PUBLIC)
             .addJavadoc("Per-request extension point that brokers runtime values (DSLContext, context\n"
-                + "arguments, tenant id) into generated fetchers. Apps supply an implementation per\n"
-                + "request via\n"
+                + "arguments, tenant id, validator) into generated fetchers. Apps supply an\n"
+                + "implementation per request via\n"
                 + "{@code ExecutionInput.newExecutionInput(...).graphQLContext(Map.of(GraphitronContext.class, impl))}.\n")
             .addMethod(getDslContext)
             .addMethod(getContextArgument)
             .addMethod(getTenantId)
+            .addMethod(getValidator)
+            .addType(defaultValidatorHolder)
             .build();
 
         return List.of(spec);

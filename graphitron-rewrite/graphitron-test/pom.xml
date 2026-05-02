@@ -48,6 +48,27 @@
             <groupId>com.graphql-java</groupId>
             <artifactId>graphql-java</artifactId>
         </dependency>
+        <!--
+            Compile scope: the generated ConstraintViolations helper and the per-fetcher
+            wrapper's validator pre-step reference jakarta.validation.* (Validator,
+            ConstraintViolation, Path), so the API jar must be on the main compile
+            classpath. Hibernate Validator supplies the runtime; pulled into test scope
+            because the generator stays vanilla and consumers wire their own provider.
+        -->
+        <dependency>
+            <groupId>jakarta.validation</groupId>
+            <artifactId>jakarta.validation-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.hibernate.validator</groupId>
+            <artifactId>hibernate-validator</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.glassfish.expressly</groupId>
+            <artifactId>expressly</artifactId>
+            <scope>test</scope>
+        </dependency>
 
         <!-- Test dependencies -->
         <dependency>

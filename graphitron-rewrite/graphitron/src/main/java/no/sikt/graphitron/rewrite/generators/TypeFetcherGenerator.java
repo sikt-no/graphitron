@@ -7,6 +7,7 @@ import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
+import no.sikt.graphitron.rewrite.generators.schema.ConstraintViolationsClassGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.ErrorMappingsClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ConnectionHelperClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ConnectionResultClassGenerator;
@@ -1086,6 +1087,12 @@ public class TypeFetcherGenerator {
      * {@link #buildQueryServiceRecordFetcher}: optional {@code dsl} local + direct
      * {@code return ServiceClass.method(<args>);}.
      *
+     * <p>When the channel carries any {@link no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ValidationHandler},
+     * the wrapper inserts a pre-execution Jakarta validation step ahead of the try block:
+     * walks every {@link ParamSource.Arg} parameter, validates each non-null arg via the
+     * {@code GraphitronContext}-supplied {@code Validator}, and short-circuits with the
+     * payload's errors-arm filled by the violations when any are produced (R12 §5).
+     *
      * <p>The catch arm forks on {@code errorChannel}: a present channel routes through
      * {@code ErrorRouter.dispatch} with the channel's mapping table and synthesized payload
      * factory; an absent channel routes through {@code ErrorRouter.redact}. R12 §3.
@@ -1106,6 +1113,13 @@ public class TypeFetcherGenerator {
             .returns(syncResultType(valueType))
             .addParameter(ENV, "env");
 
+        // R12 §5 pre-execution Jakarta validation. Emitted ahead of the try block so a
+        // Validator-side throw still propagates to the wrapper's catch arm uniformly with
+        // the body's exceptions; the body is never invoked when violations exist.
+        if (errorChannel.isPresent() && hasValidationHandler(errorChannel.get())) {
+            builder.addCode(validatorPreStep(method, errorChannel.get(), valueType, outputPackage));
+        }
+
         builder.beginControlFlow("try");
         if (needsDsl) {
             builder.addStatement("$T dsl = graphitronContext(env).getDslContext(env)", dslContextClass);
@@ -1121,6 +1135,94 @@ public class TypeFetcherGenerator {
         builder.endControlFlow();
 
         return builder.build();
+    }
+
+    /** Whether any flattened handler on the channel is a {@code ValidationHandler}. */
+    private static boolean hasValidationHandler(ErrorChannel channel) {
+        return channel.mappedErrorTypes().stream()
+            .flatMap(et -> et.handlers().stream())
+            .anyMatch(h -> h instanceof no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ValidationHandler);
+    }
+
+    /**
+     * Emits the wrapper's pre-execution Jakarta validation block (R12 §5). Walks every
+     * {@link ParamSource.Arg} parameter on the service method, validates each non-null arg via
+     * the {@code GraphitronContext}-supplied {@code Validator}, accumulates each violation as a
+     * {@code GraphQLError} via the generated {@code ConstraintViolations.toGraphQLError}, and
+     * short-circuits with the payload's errors-arm filled by the violations list when the
+     * accumulator is non-empty.
+     */
+    private static CodeBlock validatorPreStep(MethodRef method, ErrorChannel channel,
+                                              TypeName valueType, String outputPackage) {
+        var validator = ClassName.get("jakarta.validation", "Validator");
+        var constraintViolation = ClassName.get("jakarta.validation", "ConstraintViolation");
+        var graphQLError = ClassName.get("graphql", "GraphQLError");
+        var listOfErrors = ParameterizedTypeName.get(LIST, graphQLError);
+        var arrayList = ClassName.get("java.util", "ArrayList");
+        var constraintViolations = ClassName.get(outputPackage + ".schema",
+            ConstraintViolationsClassGenerator.CLASS_NAME);
+        var violationWildcard = ParameterizedTypeName.get(constraintViolation,
+            WildcardTypeName.subtypeOf(Object.class));
+
+        var b = CodeBlock.builder();
+        b.addStatement("$T __validator = graphitronContext(env).getValidator(env)", validator);
+        b.addStatement("$T __violations = new $T<>()", listOfErrors, arrayList);
+        for (var p : method.params()) {
+            if (!(p.source() instanceof ParamSource.Arg arg)) continue;
+            String argName = arg.graphqlArgName();
+            String local = "__arg_" + sanitizeIdent(argName);
+            b.addStatement("$T $L = env.getArgument($S)", Object.class, local, argName);
+            b.beginControlFlow("if ($L != null)", local);
+            b.beginControlFlow("for ($T __v : __validator.validate($L))", violationWildcard, local);
+            b.addStatement("__violations.add($T.toGraphQLError(__v, env, $S))",
+                constraintViolations, argName);
+            b.endControlFlow();
+            b.endControlFlow();
+        }
+        b.beginControlFlow("if (!__violations.isEmpty())");
+        b.add("return $T.<$T>newResult()\n", DATA_FETCHER_RESULT, boxed(valueType));
+        b.add("    .data(").add(newPayloadFromErrors(channel, "__violations")).add(")\n");
+        b.addStatement("    .build()");
+        b.endControlFlow();
+        return b.build();
+    }
+
+    /**
+     * Synthesizes a direct {@code new <PayloadClass>(...)} expression where the errors slot is
+     * bound to {@code errorsLocal} and every other slot prints its pre-resolved
+     * {@link no.sikt.graphitron.rewrite.model.DefaultedSlot#defaultLiteral()}. Mirrors the
+     * shape of {@link #payloadFactoryLambda} without wrapping in a lambda; used by the
+     * validator pre-step where the violations list is already in scope.
+     */
+    private static CodeBlock newPayloadFromErrors(ErrorChannel channel, String errorsLocal) {
+        var args = CodeBlock.builder();
+        int slotCount = 1 + channel.defaultedSlots().size();
+        var defaultsByIndex = channel.defaultedSlots().stream()
+            .collect(java.util.stream.Collectors.toMap(s -> s.index(), s -> s.defaultLiteral()));
+        for (int i = 0; i < slotCount; i++) {
+            if (i > 0) args.add(", ");
+            if (i == channel.errorsSlotIndex()) {
+                args.add(errorsLocal);
+            } else {
+                args.add(defaultsByIndex.get(i));
+            }
+        }
+        return CodeBlock.of("new $T($L)", channel.payloadClass(), args.build());
+    }
+
+    /**
+     * Sanitises a GraphQL argument name into a Java identifier suffix for use as a local
+     * variable name in the validator pre-step. Replaces every non-{@code [A-Za-z0-9_]}
+     * character with {@code _}; GraphQL arg names are already restricted to ASCII identifier
+     * characters today, so this is a future-proofing pass rather than a real normalisation.
+     */
+    private static String sanitizeIdent(String name) {
+        var sb = new StringBuilder(name.length());
+        for (int i = 0; i < name.length(); i++) {
+            char c = name.charAt(i);
+            sb.append((Character.isLetterOrDigit(c) || c == '_') ? c : '_');
+        }
+        return sb.toString();
     }
 
     /**
