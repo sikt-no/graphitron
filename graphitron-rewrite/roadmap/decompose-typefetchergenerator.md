@@ -5,7 +5,7 @@ status: Backlog
 bucket: architecture
 priority: 11
 theme: structural-refactor
-depends-on: [stub-interface-union-fetchers]
+depends-on: []
 ---
 
 # Decompose `TypeFetcherGenerator`
@@ -35,14 +35,6 @@ The question is which axis the file is actually long along: too many
 variants (decompose), or too many emit-detail helpers per variant
 (extract helpers, keep dispatcher). A 30-minute LOC profile per private
 method would settle it.
-
-## Blocked on
-
-Active item
-[`stub-interface-union-fetchers.md`](stub-interface-union-fetchers.md) is
-adding `buildTableInterfaceFieldFetcher` and the surrounding TypeResolver
-wiring. Decomposing while methods are landing is wasted work; pick this up
-after that plan moves to Done.
 
 ## Coordinates with
 

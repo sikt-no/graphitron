@@ -14,7 +14,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Plan |
 |---|---|---|---|
-| `R36` | Stub #3: Interface / union fetchers | In Review | [plan](stub-interface-union-fetchers.md) |
 | `R49` | Stub: scalar/`@record`-returning `@service` child field (`ServiceRecordField`) <sub>blocked by: [service-rows-method-body](service-rows-method-body.md)</sub> | Spec | [plan](service-record-field.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
 | `R15` | Sweep doc drift between rewrite docs and `model/` taxonomy <sub>blocked by: [docs-site-asciidoc](docs-site-asciidoc.md)</sub> | Spec | [plan](fix-legacy-refs-in-rewrite-docs.md) |
@@ -44,13 +43,13 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 - `R46` [**Multi-tenant fan-out for `@service`**](service-multi-tenant-fanout.md): A custom resolver in a downstream Sikt project (`megVedLarested`) bypasses `@service` and writes the resolver by hand because the directive can't express what it needs: for each tenant the logged-in user belongs to, open a tenant-scoped `DSLContext`, fan out in parallel on the executor, drop nulls, return the union. The service method itself is GraphQL-free Java; what doesn't fit `@service` is the `ConnectionManager` lookup, the per-tenant `DSLContext` plumbing, and the `executor.allOf().join()` shape. _(blocked by [typed-context-value-registry](typed-context-value-registry.md), [mutations](mutations.md))_
 - `R11` [**`DSLContext` on `@condition` / `@tableMethod` methods**](dslcontext-on-condition-tablemethod.md): Lift the `reflectTableMethod` gate. Requires `ArgCallEmitter` to walk `params()` instead of `callParams()` so the injected `DSLContext` lands at its declaration-index slot.
 - `R25` [**Rebalance test pyramid**](rebalance-test-pyramid.md): Shift new test investment from per-variant structural tests toward SDL-to-classification-to-emission pipeline tests keyed off `graphitron-fixtures`.
-- `R7` [**Decompose `TypeFetcherGenerator`**](decompose-typefetchergenerator.md): `TypeFetcherGenerator.java` is 1 646 lines, one public entry point (`generate(GraphitronSchema)`), and ~30 private methods that implement per-field-variant emitters plus shared helpers. It is the counterpart to the now-shipped `FieldBuilder` decomposition (R6, see [`changelog.md`](changelog.md)): a central generator that has accumulated coverage faster than its file shape can absorb. _(blocked by [stub-interface-union-fetchers](stub-interface-union-fetchers.md))_
+- `R7` [**Decompose `TypeFetcherGenerator`**](decompose-typefetchergenerator.md): `TypeFetcherGenerator.java` is 1 646 lines, one public entry point (`generate(GraphitronSchema)`), and ~30 private methods that implement per-field-variant emitters plus shared helpers. It is the counterpart to the now-shipped `FieldBuilder` decomposition (R6, see [`changelog.md`](changelog.md)): a central generator that has accumulated coverage faster than its file shape can absorb.
 
 ### Stubs
 
 - `R42` [**Stub: `@reference` on a scalar (FK column) field (`ColumnReferenceField`)**](column-reference-on-scalar-field.md): Lift `ChildField.ColumnReferenceField` out of `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS`. Today schemas using `@reference` on a scalar field (mapping the field to an FK column on the parent table) fail validation with `[deferred]`. Carved out of the original umbrella (R37) for independent prioritisation; not currently a blocker for any in-flight migration.
 - `R43` [**Stub: `@tableMethod` with scalar/enum return (`TableMethodField`)**](tablemethod-scalar-return.md): Lift `ChildField.TableMethodField` out of `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS`. Today schemas using `@tableMethod` to return a non-table type (scalar / enum) fail validation with `[deferred]`. Carved out of the original umbrella (R37) for independent prioritisation; not currently a blocker for any in-flight migration.
-- `R44` [**Stub: `@multitableReference` on a scalar field (`MultitableReferenceField`)**](multitable-reference-on-scalar.md): Lift `ChildField.MultitableReferenceField` out of `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS`. Today schemas using `@reference` on a scalar field whose target is a multi-table interface or union fail validation with `[deferred]`. Carved out of the original umbrella (R37) for independent prioritisation; not currently a blocker for any in-flight migration. _(blocked by [stub-interface-union-fetchers](stub-interface-union-fetchers.md))_
+- `R44` [**Stub: `@multitableReference` on a scalar field (`MultitableReferenceField`)**](multitable-reference-on-scalar.md): Lift `ChildField.MultitableReferenceField` out of `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS`. Today schemas using `@reference` on a scalar field whose target is a multi-table interface or union fail validation with `[deferred]`. Carved out of the original umbrella (R37) for independent prioritisation; not currently a blocker for any in-flight migration.
 
 ### Cleanup
 
@@ -82,8 +81,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### interface-union
 
-- `R36` [**Stub #3: Interface / union fetchers**](stub-interface-union-fetchers.md) — In Review, stubs
-- `R44` [**Stub: `@multitableReference` on a scalar field (`MultitableReferenceField`)**](multitable-reference-on-scalar.md) — Backlog, stubs, blocked by [stub-interface-union-fetchers](stub-interface-union-fetchers.md)
+- `R44` [**Stub: `@multitableReference` on a scalar field (`MultitableReferenceField`)**](multitable-reference-on-scalar.md) — Backlog, stubs
 
 ### nodeid
 
@@ -126,7 +124,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R56` [**Extract `ConnectionPromoter` from `GraphitronSchemaBuilder`**](extract-connection-promoter.md) — Backlog, architecture
 - `R33` [**Shared interface for `QueryField` / `ChildField` table-bound parallels**](shared-interface-queryfield-childfield.md) — Backlog, cleanup
 - `R58` [**Lift `UnclassifiedField` / `UnclassifiedType` onto sealed-result shape**](lift-unclassified-field-onto-sealed-result.md) — Spec, architecture
-- `R7` [**Decompose `TypeFetcherGenerator`**](decompose-typefetchergenerator.md) — Backlog, architecture, blocked by [stub-interface-union-fetchers](stub-interface-union-fetchers.md)
+- `R7` [**Decompose `TypeFetcherGenerator`**](decompose-typefetchergenerator.md) — Backlog, architecture
 
 ### docs
 
