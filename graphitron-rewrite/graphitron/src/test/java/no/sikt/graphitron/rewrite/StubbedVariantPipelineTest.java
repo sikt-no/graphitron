@@ -1,7 +1,5 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
-import no.sikt.graphitron.rewrite.model.MutationField;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -15,30 +13,16 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
  * {@code *ValidationTest} classes). Complements
  * {@code GraphitronSchemaValidator.validateVariantIsImplemented} and the
  * {@link TypeFetcherGenerator#STUBBED_VARIANTS} map.
+ *
+ * <p>R22 closed all six mutation-leaf stubs (DELETE, INSERT, UPDATE, UPSERT, plus both service
+ * variants). The previous {@code mutationUpsertOnATableType_surfacesStubbedError} (and its
+ * UPDATE / INSERT predecessors) is therefore retired: there is no DML stub left to ratchet
+ * through the pipeline. The negative-direction test below remains and continues to guard
+ * against regressions where an implemented variant accidentally emits a "not yet implemented"
+ * message.
  */
 @PipelineTier
 class StubbedVariantPipelineTest {
-
-    @Test
-    void mutationUpsertOnATableType_surfacesStubbedError() {
-        var errors = validate("""
-            type Film @table(name: "film") { title: String }
-            input FilmInput @table(name: "film") {
-                filmId: Int! @field(name: "film_id") @lookupKey
-                title: String
-            }
-            type Query { x: String }
-            type Mutation { upsertFilm(in: FilmInput!): Film @mutation(typeName: UPSERT) }
-            """);
-
-        assertThat(messages(errors))
-            .contains("Field 'Mutation.upsertFilm': "
-                + TypeFetcherGenerator.STUBBED_VARIANTS.get(MutationField.MutationUpsertTableField.class).message());
-        // Ratchet: whole-variant stubs are DEFERRED (generator capability gap), not
-        // INVALID_SCHEMA. UPSERT is the last remaining DML body (UPDATE landed in Phase 4).
-        assertThat(errors).anyMatch(e -> e.kind() == RejectionKind.DEFERRED
-            && e.message().contains("Mutation.upsertFilm"));
-    }
 
     @Test
     void implementedVariantOnly_producesNoStubbedError() {
