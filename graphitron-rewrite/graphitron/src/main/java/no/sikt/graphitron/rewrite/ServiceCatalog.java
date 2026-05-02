@@ -231,11 +231,22 @@ class ServiceCatalog {
                         // the user at the actual mismatch instead of an unrelated SOURCES-flavored
                         // hint (the lifter-directive roadmap doesn't help with arg-name typos).
                         if (parentPkColumns.isEmpty()) {
+                            String available = formatNameSet(argByJavaName.keySet());
+                            String suggestion = argByJavaName.size() == 1
+                                ? " — rename the parameter to " + available
+                                    + ", or add @argMapping(arg: " + available
+                                    + ", target: \"" + displayName + "\") on the @service directive"
+                                : argByJavaName.isEmpty()
+                                    ? " — this field has no GraphQL arguments; remove the parameter or accept it from a context key"
+                                    : " — rename the parameter to one of the available argument names,"
+                                        + " or add @argMapping(arg: \"<argName>\", target: \"" + displayName
+                                        + "\") on the @service directive to bind explicitly";
                             return new ServiceReflectionResult(null,
                                 "parameter '" + displayName + "' in method '" + methodName
                                 + "' does not match any GraphQL argument or context key on this field"
-                                + " — available GraphQL arguments: " + formatNameSet(argByJavaName.keySet())
-                                + "; available context keys: " + formatNameSet(ctxKeys));
+                                + " — available GraphQL arguments: " + available
+                                + "; available context keys: " + formatNameSet(ctxKeys)
+                                + suggestion);
                         }
                         String dtoReason = dtoSourcesRejectionReason(p.getParameterizedType());
                         if (dtoReason != null) {

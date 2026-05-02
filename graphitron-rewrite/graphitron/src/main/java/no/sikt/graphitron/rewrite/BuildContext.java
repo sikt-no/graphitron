@@ -527,12 +527,19 @@ class BuildContext {
     private String fkCountMessage(String source, String target, List<ForeignKey<?, ?>> fks, boolean directiveAbsent) {
         if (fks.isEmpty()) {
             String msg = "no foreign key found between tables '" + source + "' and '" + target + "'";
-            if (directiveAbsent) msg += "; add a @reference directive to specify the join path";
+            if (directiveAbsent) {
+                msg += "; add a @reference directive to specify the join path"
+                    + " (e.g. @reference(path: [{key: \"<fk-name>\"}]) for a single-hop FK,"
+                    + " or chain elements via @reference(path: [{key: \"...\"}, {key: \"...\"}]) for a multi-hop join)";
+            }
             return msg;
         }
         String msg = "multiple foreign keys found between tables '" + source + "' and '" + target + "'";
         if (directiveAbsent) {
-            msg += "; add a @reference directive to specify the join path";
+            String fkNames = fks.stream().map(ForeignKey::getName).collect(Collectors.joining(", "));
+            msg += "; add a @reference directive to specify the join path"
+                + " — candidates: " + fkNames
+                + " (e.g. @reference(path: [{key: \"" + fks.get(0).getName() + "\"}]))";
         } else {
             String fkNames = fks.stream().map(ForeignKey::getName).collect(Collectors.joining(", "));
             msg += " — use 'key' to specify which: " + fkNames;

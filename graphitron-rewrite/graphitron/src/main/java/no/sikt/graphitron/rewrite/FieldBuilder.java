@@ -292,6 +292,16 @@ class FieldBuilder {
         return null;
     }
 
+    private static String formatCtorSignatures(java.lang.reflect.Constructor<?>[] ctors) {
+        return java.util.Arrays.stream(ctors)
+            .map(c -> c.getDeclaringClass().getSimpleName() + "("
+                + java.util.Arrays.stream(c.getParameterTypes())
+                    .map(Class::getSimpleName)
+                    .collect(Collectors.joining(", "))
+                + ")")
+            .collect(Collectors.joining("; "));
+    }
+
     private static String formatAsConnectionSameTableRejection(
             NodeIdArgPlan.SameTableHit hit, String fieldName) {
         return "@nodeId(typeName: '" + hit.refTypeName() + "') on '" + hit.leafName() + "' resolves to '"
@@ -1472,7 +1482,10 @@ class FieldBuilder {
             return new ErrorChannelResult.Reject(
                 "payload class '" + result.fqClassName() + "' has " + ctors.length
                     + " declared constructors; the carrier requires a single canonical "
-                    + "(all-fields) constructor");
+                    + "(all-fields) constructor — found: " + formatCtorSignatures(ctors)
+                    + ". Convert the class to a Java record (which always declares one canonical"
+                    + " constructor), or remove the extra constructor(s) so only the all-fields"
+                    + " constructor remains");
         }
         var ctor = ctors[0];
         var parameters = ctor.getParameters();
@@ -1583,7 +1596,10 @@ class FieldBuilder {
             return new DmlPayloadAssemblyResult.Reject(
                 "payload class '" + result.fqClassName() + "' has " + ctors.length
                     + " declared constructors; the carrier requires a single canonical "
-                    + "(all-fields) constructor");
+                    + "(all-fields) constructor — found: " + formatCtorSignatures(ctors)
+                    + ". Convert the class to a Java record (which always declares one canonical"
+                    + " constructor), or remove the extra constructor(s) so only the all-fields"
+                    + " constructor remains");
         }
         var ctor = ctors[0];
         var parameters = ctor.getParameters();
