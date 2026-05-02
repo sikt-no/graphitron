@@ -385,8 +385,8 @@ public final class SplitRowsMethodEmitter {
      * non-empty reason → field cannot be emitted today; empty → emittable.
      *
      * <p>Single-cardinality is gated upstream by
-     * {@code GraphitronSchemaValidator.validateRecordParentSingleCardinalityRejected} (R1 Phase 2e
-     * Invariant #10), so this helper only reports the condition-join shape — reaching the emitter
+     * {@code GraphitronSchemaValidator.validateRecordParentSingleCardinalityRejected}
+     * (Invariant #10), so this helper only reports the condition-join shape; reaching the emitter
      * with a single-cardinality {@link ChildField.RecordTableField} is a classifier / validator
      * bug.
      */
@@ -424,8 +424,8 @@ public final class SplitRowsMethodEmitter {
      * non-empty reason → field cannot be emitted today; empty → emittable.
      *
      * <p>Single-cardinality is gated upstream by
-     * {@code GraphitronSchemaValidator.validateRecordParentSingleCardinalityRejected} (R1 Phase 2e
-     * Invariant #10), so this helper only reports the condition-join shape — reaching the emitter
+     * {@code GraphitronSchemaValidator.validateRecordParentSingleCardinalityRejected}
+     * (Invariant #10), so this helper only reports the condition-join shape; reaching the emitter
      * with a single-cardinality {@link ChildField.RecordLookupTableField} is a classifier /
      * validator bug.
      */

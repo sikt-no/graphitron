@@ -38,7 +38,7 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
  * <ul>
  *   <li>{@code bar} — composite-key NodeType; {@code __NODE_TYPE_ID = "Bar"},
  *       {@code __NODE_KEY_COLUMNS = { BAR.ID_1, BAR.ID_2 }}. FK {@code bar.id_1 -> baz.id}
- *       supports NodeIdReferenceField tests.</li>
+ *       supports composite-key reference tests.</li>
  *   <li>{@code baz} — single-key NodeType; reference target for {@code bar}.</li>
  *   <li>{@code qux} — plain table; no metadata. Negative-case fixture.</li>
  *   <li>{@code parent_node} — single-key NodeType keyed on {@code PK_ID}, with a separate
@@ -275,7 +275,7 @@ class NodeIdPipelineTest {
 
     enum InputCase {
         IMPLICIT_ID(
-            "input `id: ID!` on a composite-PK node-type table → CompositeColumnField with NodeIdDecodeKeys.SkipMismatchedElement (post-R50; synthesized route)",
+            "input `id: ID!` on a composite-PK node-type table → CompositeColumnField with NodeIdDecodeKeys.SkipMismatchedElement",
             """
             input Foo @table(name: "bar") { id: ID! }
             type Query { x: String }
@@ -306,7 +306,7 @@ class NodeIdPipelineTest {
             }),
 
         EXPLICIT_NODE_ID_DIRECTIVE(
-            "input `id: ID! @nodeId` on a @table input whose table is also backed by a composite-PK NodeType → CompositeColumnReferenceField with NodeIdDecodeKeys.SkipMismatchedElement (post-R50; arity > 1)",
+            "input `id: ID! @nodeId` on a @table input whose table is also backed by a composite-PK NodeType → CompositeColumnReferenceField with NodeIdDecodeKeys.SkipMismatchedElement",
             """
             type Bar @table(name: "bar") @node { id: ID! @nodeId }
             input Foo @table(name: "bar") { id: ID! @nodeId }
@@ -390,7 +390,7 @@ class NodeIdPipelineTest {
 
     enum InputReferenceCase {
         REFERENCE_TO_NODE_TYPE(
-            "input `relatedId: ID! @nodeId(typeName: 'Baz')` on bar table → ColumnReferenceField with NodeIdDecodeKeys.SkipMismatchedElement (post-R50; arity-1 single-PK target)",
+            "input `relatedId: ID! @nodeId(typeName: 'Baz')` on bar table → ColumnReferenceField with NodeIdDecodeKeys.SkipMismatchedElement",
             """
             type Baz @table(name: "baz") { id: ID! }
             input Foo @table(name: "bar") { relatedId: ID! @nodeId(typeName: "Baz") }
@@ -464,10 +464,10 @@ class NodeIdPipelineTest {
         tc.assertions.accept(TestSchemaHelper.buildSchema(tc.sdl, FIXTURE_CTX));
     }
 
-    // ===== FK-qualifier synthesis shim (post-R50 successor of IdReferenceField) =====
+    // ===== FK-qualifier synthesis shim =====
 
     /**
-     * Synthesis-shim cases that, post-R50, route the FK-qualifier hit onto
+     * Synthesis-shim cases that route the FK-qualifier hit onto
      * {@link InputField.ColumnReferenceField} (or
      * {@link InputField.CompositeColumnReferenceField} for composite-PK FK targets) carrying
      * {@link CallSiteExtraction.NodeIdDecodeKeys.SkipMismatchedElement} plus the resolved FK
@@ -531,7 +531,7 @@ class NodeIdPipelineTest {
             }),
 
         SHIM_BARE_ID_FALLS_THROUGH(
-            "bare id: ID on a KjerneJooqGenerator composite-PK table — qualifier map miss → falls through to CompositeColumnField with NodeIdDecodeKeys (post-R50)",
+            "bare id: ID on a KjerneJooqGenerator composite-PK table — qualifier map miss → falls through to CompositeColumnField with NodeIdDecodeKeys",
             """
             input Foo @table(name: "bar") {
               id: ID
@@ -564,10 +564,9 @@ class NodeIdPipelineTest {
      * Same-table {@code [ID!] @nodeId(typeName: T)} where T maps to the input's own table.
      * Semantics: filter rows whose composite primary key matches one of the decoded node IDs;
      * a primary-key IN predicate, not a FK join. The classifier short-circuits before
-     * {@code findUniqueFkToTable(t, t)} (which would always miss) and emits the post-R50
-     * column-shaped successor: {@link InputField.ColumnField} (arity-1) or
-     * {@link InputField.CompositeColumnField} (arity > 1) carrying
-     * {@link CallSiteExtraction.NodeIdDecodeKeys.SkipMismatchedElement}.
+     * {@code findUniqueFkToTable(t, t)} (which would always miss) and emits
+     * {@link InputField.ColumnField} (arity-1) or {@link InputField.CompositeColumnField}
+     * (arity &gt; 1) carrying {@link CallSiteExtraction.NodeIdDecodeKeys.SkipMismatchedElement}.
      */
     enum InputSameTableNodeIdCase {
         SAME_TABLE_COMPOSITE_PK(
@@ -762,7 +761,7 @@ class NodeIdPipelineTest {
         SCALAR_NODEID_LOOKUP_COMPOSITE_PK(
             "scalar `id: ID @lookupKey` arg on a composite-PK NodeType-backed lookup → "
                 + "CompositeColumnArg(ThrowOnMismatch) → projectForLookup lifts to DecodedRecord "
-                + "with positional RecordBindings over the composite key columns (R50 phase g)",
+                + "with positional RecordBindings over the composite key columns",
             """
             type Bar implements Node @table(name: "bar") @node { id: ID! @nodeId name: String }
             type Query { barById(id: ID @lookupKey): Bar }
@@ -804,7 +803,7 @@ class NodeIdPipelineTest {
 
         SCALAR_NODEID_NON_LOOKUP_COMPOSITE_PK_DEFERRED(
             "scalar `id: ID @nodeId` arg without `@lookupKey` on a composite-PK NodeType is not "
-                + "yet wired (mutation-key + top-level filter paths land in a later R50 slice); "
+                + "yet wired (mutation-key + top-level filter paths are not supported); "
                 + "surfaces as UnclassifiedField at the surrounding query field",
             """
             type Bar @table(name: "bar") { id: ID! @field(name: "ID_1") }
@@ -832,7 +831,7 @@ class NodeIdPipelineTest {
         tc.assertions.accept(TestSchemaHelper.buildSchema(tc.sdl, FIXTURE_CTX));
     }
 
-    // ===== R50 phase (g-B): rooted-at-parent single-hop reference =====
+    // ===== Rooted-at-parent single-hop reference =====
     //
     // child_ref.parent_alt_key references parent_node.alt_key (the *non-PK* unique column);
     // ParentNode's __NODE_KEY_COLUMNS pins the keyColumn to PK_ID. The FK target column does not
@@ -872,7 +871,7 @@ class NodeIdPipelineTest {
             .containsExactly("pk_id");
     }
 
-    // ===== R40: argument-level @nodeId =====
+    // ===== Argument-level @nodeId =====
     //
     // Top-level argument @nodeId leaves classify into one of two shapes per NodeIdLeafResolver:
     //   - Same-table (T.table() == field.backingTable()) — lookup-by-id semantics; projects to
@@ -1104,8 +1103,8 @@ class NodeIdPipelineTest {
     }
 
     /**
-     * Input-field-side FK-target {@code @nodeId} cases. R40 phase 1 lifts the
-     * positional-correspondence predicate (FK target columns vs NodeType key columns) into
+     * Input-field-side FK-target {@code @nodeId} cases. The positional-correspondence predicate
+     * (FK target columns vs NodeType key columns) is lifted into
      * {@link no.sikt.graphitron.rewrite.NodeIdLeafResolver}; the resolver picks
      * {@link no.sikt.graphitron.rewrite.NodeIdLeafResolver.Resolved.FkTarget.DirectFk DirectFk} or
      * {@link no.sikt.graphitron.rewrite.NodeIdLeafResolver.Resolved.FkTarget.TranslatedFk TranslatedFk}
@@ -1155,11 +1154,11 @@ class NodeIdPipelineTest {
         tc.assertions.accept(TestSchemaHelper.buildSchema(tc.sdl, FIXTURE_CTX));
     }
 
-    // ===== R40 validator: @asConnection + same-table @nodeId leaf rejection =====
+    // ===== Validator: @asConnection + same-table @nodeId leaf rejection =====
     //
-    // Symmetric across argument-level (R40-introduced) and input-field (R50-shipped) leaves:
-    // both produce a same-table SameTable shape that is a lookup, not a paginatable filter.
-    // FK-target leaves are legitimate filters; they compose with @asConnection.
+    // Symmetric across argument-level and input-field leaves: both produce a same-table SameTable
+    // shape that is a lookup, not a paginatable filter. FK-target leaves are legitimate filters;
+    // they compose with @asConnection.
 
     enum NodeIdConnectionRejectionCase {
         ASCONNECTION_PLUS_ARGUMENT_SAME_TABLE_NODEID_REJECTED(

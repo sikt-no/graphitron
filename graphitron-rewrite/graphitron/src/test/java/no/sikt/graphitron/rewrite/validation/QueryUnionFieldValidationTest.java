@@ -19,8 +19,8 @@ import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.va
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Validates {@link QueryUnionField} (R36 Track B's multi-table polymorphic root case for
- * unions). Mirrors {@link QueryInterfaceFieldValidationTest} since
+ * Validates {@link QueryUnionField} (the multi-table polymorphic root case for unions).
+ * Mirrors {@link QueryInterfaceFieldValidationTest} since
  * {@code GraphitronSchemaValidator.validateUnionType} shares the multi-table participant
  * checks with {@code validateInterfaceType}.
  */

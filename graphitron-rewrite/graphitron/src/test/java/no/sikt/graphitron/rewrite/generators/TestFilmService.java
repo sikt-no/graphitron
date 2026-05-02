@@ -5,7 +5,7 @@ import org.jooq.Row1;
 import java.util.List;
 
 /**
- * Minimal service stub used by {@link FieldsPipelineTest} to verify that the
+ * Minimal service stub used by {@link FetcherPipelineTest} to verify that the
  * {@code @service} DataLoader code path can be triggered via reflection.
  *
  * <p>The {@code languageKeys} parameter uses {@code Row1<Long>} matching the {@code language_id}

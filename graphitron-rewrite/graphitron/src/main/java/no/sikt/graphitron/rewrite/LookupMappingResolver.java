@@ -11,8 +11,7 @@ import java.util.List;
 
 /**
  * Projects {@code @lookupKey}-bearing scalar arguments and {@code @table}-input field bindings
- * into a {@link LookupMapping} for the target table. The second projection resolver under R6
- * (Phase 6a), sibling to {@link OrderByResolver} (Phase 5).
+ * into a {@link LookupMapping} for the target table. Sibling to {@link OrderByResolver}.
  *
  * <p>This resolver reads only the classified {@link ArgumentRef} variants — the classifier is the
  * single source of truth for which arguments contribute to a lookup mapping. The projection is

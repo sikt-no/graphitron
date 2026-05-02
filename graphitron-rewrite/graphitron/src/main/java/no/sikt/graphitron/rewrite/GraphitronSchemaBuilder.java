@@ -205,10 +205,10 @@ public class GraphitronSchemaBuilder {
             });
         var rewrites = promoteConnectionTypes(ctx);
         var rebuiltAssembled = rebuildAssembledForConnections(ctx.schema, ctx.types, rewrites);
-        // R12 §3 hash-suffix dedup: walk every WithErrorChannel field and apply the
-        // collision-suffix rule to ErrorChannel.mappingsConstantName so the resolved name lands
-        // on the carrier before the emitter runs. Pass-through for the common case (every
-        // payload class has at most one channel shape).
+        // Hash-suffix dedup: walk every WithErrorChannel field and apply the collision-suffix
+        // rule to ErrorChannel.mappingsConstantName so the resolved name lands on the carrier
+        // before the emitter runs. Pass-through for the common case (every payload class has at
+        // most one channel shape).
         var dedupedFields = MappingsConstantNameDedup.apply(fields);
         Map<String, EntityResolution> entitiesByType =
             EntityResolutionBuilder.build(ctx.types, dedupedFields, rebuiltAssembled, ctx::addWarning);

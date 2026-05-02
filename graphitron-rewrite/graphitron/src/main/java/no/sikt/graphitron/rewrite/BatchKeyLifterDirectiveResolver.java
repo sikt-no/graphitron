@@ -36,11 +36,10 @@ import static no.sikt.graphitron.rewrite.BuildContext.asMap;
  * {@link BatchKey.LifterRowKeyed} together with the {@link JoinStep.LiftedHop} the rows-method
  * emitter consumes.
  *
- * <p>Sibling of the ten directive / projection resolvers R6 lifted out of {@code FieldBuilder}
- * ({@link ServiceDirectiveResolver}, {@link LookupKeyDirectiveResolver},
- * {@link ExternalFieldDirectiveResolver}, etc.). Same shape: sealed {@link Resolved} result with
- * {@code Ok} and {@code Rejected} arms; constructor-injected dependencies; single
- * {@link #resolve} entry point.
+ * <p>Sibling of the directive / projection resolvers ({@link ServiceDirectiveResolver},
+ * {@link LookupKeyDirectiveResolver}, {@link ExternalFieldDirectiveResolver}, etc.). Same shape:
+ * sealed {@link Resolved} result with {@code Ok} and {@code Rejected} arms; constructor-injected
+ * dependencies; single {@link #resolve} entry point.
  *
  * <p>Two paired classifier checks the emitters depend on:
  *

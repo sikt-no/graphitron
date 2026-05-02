@@ -8,8 +8,7 @@ import java.util.List;
  * The carrier-side typed-error wiring for one fetcher. Resolved at classify time and attached
  * to fetcher-emitting field variants via {@link WithErrorChannel}; the emitter consumes it to
  * synthesize the per-fetcher try/catch wrapper that routes thrown exceptions into the
- * payload's {@code errors} field. See {@code error-handling-parity.md} (R12) for the full
- * contract.
+ * payload's {@code errors} field. See {@code error-handling-parity.md} for the full contract.
  *
  * <p>Carrier-side counterpart of the payload-side
  * {@link no.sikt.graphitron.rewrite.model.ChildField.ErrorsField}: where {@code ErrorsField}

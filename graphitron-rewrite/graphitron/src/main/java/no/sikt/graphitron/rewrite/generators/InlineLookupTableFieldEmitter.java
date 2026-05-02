@@ -51,8 +51,8 @@ public final class InlineLookupTableFieldEmitter {
      *
      * @param lf           the lookup-table field to emit
      * @param parentAlias  the local variable name for the parent alias in the generated code
-     *                     (currently always {@code "table"} — {@link TypeClassGenerator}'s
-     *                     {@code $fields} signature parameter)
+     *                     ({@link TypeClassGenerator}'s {@code $fields} signature parameter,
+     *                     the literal {@code "table"})
      * @param sfName       the caller-scope {@code SelectedField} variable name that is in
      *                     scope at the site where this body is emitted. Threaded through so
      *                     the emitter substitutes the caller's depth-specific variable rather

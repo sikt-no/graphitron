@@ -648,8 +648,7 @@ class BuildContext {
      * Result of {@link #resolveConditionRef}: exactly one of {@code ref} and {@code error} is
      * non-null. {@code error} carries an actionable message (parser failure, unknown argMapping
      * source, reflection failure); the path-step caller surfaces it directly. The "no class /
-     * no method" case maps to a generic resolution error so existing callers keep the same
-     * message shape they used before R53 wired in argMapping.
+     * no method" case maps to a generic resolution error.
      */
     private record ConditionResolution(MethodRef ref, String error) {}
 
@@ -661,7 +660,7 @@ class BuildContext {
      * <p>The deprecated {@code name:} form is resolved via {@link RewriteContext#namedReferences()},
      * exactly as in {@link FieldBuilder#parseExternalRef}.
      *
-     * <p>Path-step {@code @condition} (R53): no GraphQL arguments are in scope, so the slot set
+     * <p>For path-step {@code @condition}, no GraphQL arguments are in scope, so the slot set
      * is empty and any non-empty {@code argMapping} fails through {@link
      * ArgBindingMap.Result.UnknownArgRef}. Parse-time errors from {@code argMapping} itself also
      * surface, with the path-step site context wrapped around the message.
@@ -928,11 +927,11 @@ class BuildContext {
                 resolvedTable, refTypeName, targetTable.tableName(), targetTypeId,
                 targetKeyColumns, nodeRefPath.elements(), cond);
         }
-        // IdReferenceField (canonical): [ID!] with @nodeId(typeName: T), optionally pinned by
-        // @reference(path: [{key: K}]). Same-table → column-shaped successor (filter by own
-        // primary key); FK-target → reference shape with single-hop joinPath. R40 lifted this
-        // arm onto NodeIdLeafResolver so the same shape decision serves argument-level @nodeId
-        // leaves in FieldBuilder.classifyArgument.
+        // [ID!] with @nodeId(typeName: T), optionally pinned by @reference(path: [{key: K}]):
+        // same-table → ColumnField / CompositeColumnField (filter by own primary key);
+        // FK-target → ColumnReferenceField / CompositeColumnReferenceField with single-hop
+        // joinPath. The shape decision is delegated to NodeIdLeafResolver so it stays in lockstep
+        // with argument-level @nodeId leaves in FieldBuilder.classifyArgument.
         if ("ID".equals(typeName) && list && field.hasAppliedDirective(DIR_NODE_ID)) {
             var resolved = nodeIdLeafResolver.resolve(field, name, resolvedTable);
             switch (resolved) {
@@ -1022,13 +1021,13 @@ class BuildContext {
                 List.copyOf(resolvedFields), cond));
         }
         String tableName = resolvedTable.tableName();
-        // IdReferenceField synthesis shim: ID! or [ID!] on a @table input whose column name
-        // (from @field(name:) or the GraphQL field name) hits the qualifier map for the resolved
-        // table AND the target table has KjerneJooqGenerator node metadata. Runs before column
-        // lookup so @field(name: "X_ID") fields are intercepted before the case-insensitive
-        // column match would shadow the qualifier reverse-map. Retirement:
-        // retire-id-reference-synthesis-shim.md. Post-R50 the shim routes to the same
-        // column-shaped successors as the canonical [ID!] @nodeId(typeName: T) branch above.
+        // Synthesis shim: ID! or [ID!] on a @table input whose column name (from @field(name:) or
+        // the GraphQL field name) hits the qualifier map for the resolved table AND the target
+        // table has KjerneJooqGenerator node metadata. Runs before column lookup so
+        // @field(name: "X_ID") fields are intercepted before the case-insensitive column match
+        // would shadow the qualifier reverse-map. The shim routes to the same column-shaped
+        // carriers as the canonical [ID!] @nodeId(typeName: T) branch above. Retirement plan:
+        // graphitron-rewrite/roadmap/retire-synthesis-shims.md.
         if ("ID".equals(typeName)
                 && !field.hasAppliedDirective(DIR_NODE_ID)
                 && !field.hasAppliedDirective(DIR_REFERENCE)) {
@@ -1085,26 +1084,23 @@ class BuildContext {
                 new ColumnRef(e.sqlName(), e.javaName(), e.columnClass()), cond,
                 new no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct()));
         }
-        // NodeId migration shim: scalar ID field with no @nodeId directive whose backing table
+        // NodeId synthesis shim: scalar ID field with no @nodeId directive whose backing table
         // carries node-identity metadata (__NODE_TYPE_ID / __NODE_KEY_COLUMNS constants emitted
         // by KjerneJooqGenerator). Fires a per-site deprecation diagnostic; the canonical form is
-        // to declare @nodeId explicitly, which routes through the bare-@nodeId branch above and
-        // produces a column-shaped successor. Shim is retired at R7. See
-        // graphitron-rewrite/roadmap/retire-nodeid-synthesis-shim.md.
+        // to declare @nodeId explicitly, which routes through the bare-@nodeId branch above. See
+        // graphitron-rewrite/roadmap/retire-synthesis-shims.md.
         if ("ID".equals(typeName) && !list && !field.hasAppliedDirective(DIR_NODE_ID)) {
             Optional<JooqCatalog.NodeIdMetadata> nodeIdMeta = catalog.nodeIdMetadata(tableName);
             if (nodeIdMeta.isPresent()) {
                 NODE_ID_SHIM_LOGGER.warn("input field '{}.{}' synthesizes a NodeId-decoded column"
-                    + " without '@nodeId' — declare the directive explicitly; synthesis shim will be"
-                    + " removed in a future release. See graphitron-rewrite/roadmap/retire-nodeid-synthesis-shim.md",
+                    + " without '@nodeId'; declare the directive explicitly. The synthesis shim"
+                    + " will be removed in a future release."
+                    + " See graphitron-rewrite/roadmap/retire-synthesis-shims.md",
                     parentTypeName, name);
-                // Post-R50: route the synthesis shim onto column-shaped successors. Arity-1 lands
-                // on InputField.ColumnField with extraction = NodeIdDecodeKeys.SkipMismatchedElement;
-                // arity > 1 lands on InputField.CompositeColumnField with the same extraction
-                // (narrowed at the type level). HelperRef.Decode is read off the matching NodeType
-                // when one is available, falling back to inline construction (the only drift point
-                // is the helper-method name "decode<TypeName>", which both BuildContext and
-                // TypeBuilder compute identically).
+                // Arity-1 lands on InputField.ColumnField with extraction =
+                // NodeIdDecodeKeys.SkipMismatchedElement; arity > 1 lands on
+                // InputField.CompositeColumnField with the same extraction (narrowed at the type
+                // level). HelperRef.Decode is resolved off the matching NodeType.
                 var keyColumns = nodeIdMeta.get().keyColumns();
                 var decodeMethod = resolveDecodeHelperForTable(tableName, nodeIdMeta.get().typeId(), keyColumns);
                 if (decodeMethod == null) {
@@ -1133,9 +1129,8 @@ class BuildContext {
      * Returns the GraphQL type name for the given SQL table name, or empty when zero or multiple
      * {@code @table}-annotated object types claim that table name (case-insensitive). Used by the
      * id-reference synthesis shim to map the FK's target table back to a GraphQL type name; the
-     * shim then constructs the post-R50 column-shaped successor (single-column
-     * {@link InputField.ColumnReferenceField} or composite
-     * {@link InputField.CompositeColumnReferenceField}) carrying the resolved type's
+     * shim then builds an {@link InputField.ColumnReferenceField} or
+     * {@link InputField.CompositeColumnReferenceField} carrying the resolved type's
      * {@link no.sikt.graphitron.rewrite.GraphitronType.NodeType} key columns.
      */
     private Optional<String> findGraphQLTypeForTable(String sqlTableName) {
@@ -1144,21 +1139,21 @@ class BuildContext {
     }
 
     /**
-     * Builds the post-R50 column-shaped successor for {@code @nodeId(typeName: T)} input fields
-     * referencing another table. Used by both the scalar bare-{@code @nodeId} branch (originally
+     * Builds the column-shaped carrier for {@code @nodeId(typeName: T)} input fields referencing
+     * another table. Used by both the scalar bare-{@code @nodeId} branch (originally
      * {@code id: ID! @nodeId(typeName: T)}) and the {@code [ID!] @nodeId(typeName: T)} list filter
-     * branch (the post-R50 successor of the retired {@code IdReferenceField}).
+     * branch.
      *
      * <p>Routes by {@code targetKeyColumns.size()}: arity-1 to a single-column
      * {@link InputField.ColumnReferenceField} with extraction =
-     * {@link no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement}; arity > 1
+     * {@link no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement}; arity &gt; 1
      * to {@link InputField.CompositeColumnReferenceField} narrowed to the same extraction arm.
      * The {@code list} flag flows through to the carrier, which steers the body emitter onto
      * {@code ColumnPredicate.Eq} / {@code RowEq} (scalar) or {@code In} / {@code RowIn} (list).
      *
      * <p>Failure mode is Skip (not Throw) because {@code @nodeId} in input-object filter context
-     * surfaces a malformed id as "no row matches"; never throws. Per spec's "Failure-mode
-     * contract": "input filters are not contract-violation surfaces."
+     * surfaces a malformed id as "no row matches"; never throws. Input filters are not
+     * contract-violation surfaces.
      */
     private InputFieldResolution buildInputNodeIdReference(
             String parentTypeName, String name, graphql.language.SourceLocation location,
@@ -1222,9 +1217,9 @@ class BuildContext {
         // schemas where only an `input Foo @table(name: "bar")` exists). Fall back to the
         // metadata's typeId (the wire-format identifier) as the helper-method suffix; this
         // matches NodeType.encodeMethod / decodeMethod resolution in the default case where
-        // typeId equals the GraphQL type name. When typeId is customized via @node(typeId: ...)
-        // and no canonical NodeType backs the table, the synthesis shim is on borrowed time
-        // anyway -- R7 retires it.
+        // typeId equals the GraphQL type name. The customized-typeId / no-NodeType combination
+        // is only reachable through the synthesis shim, which is on a retirement track (see
+        // graphitron-rewrite/roadmap/retire-synthesis-shims.md).
         if (fallbackTypeNameOrTypeId == null || fallbackTypeNameOrTypeId.isBlank()) return null;
         return new no.sikt.graphitron.rewrite.model.HelperRef.Decode(
             encoderClass, "decode" + fallbackTypeNameOrTypeId, keyColumns);

@@ -13,7 +13,7 @@ import java.util.Set;
  * <p>Keys are Java parameter names; values are the GraphQL argument (or input-field) names that
  * should bind to them. Identity entries ({@code key.equals(value)}) cover the no-override case;
  * override entries ({@code key != value}) name a Java parameter that differs from the GraphQL
- * argument's own name (R53: {@code argMapping} on an {@code ExternalCodeReference}).
+ * argument's own name (i.e. {@code argMapping} on an {@code ExternalCodeReference}).
  *
  * <p>The single {@link #of} factory is axis-agnostic. It builds identity entries for every name
  * in {@code graphqlArgNames} and then applies {@code overrides} on top — replacing identity

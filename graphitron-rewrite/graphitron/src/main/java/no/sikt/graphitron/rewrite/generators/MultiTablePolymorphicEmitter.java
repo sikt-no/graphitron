@@ -23,19 +23,18 @@ import java.util.function.Function;
 import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.*;
 
 /**
- * Emits R36 Track B's two-stage fetcher methods for {@link QueryField.QueryInterfaceField}
- * and {@link QueryField.QueryUnionField} (multi-table polymorphism).
+ * Emits the two-stage fetcher methods for {@link QueryField.QueryInterfaceField} and
+ * {@link QueryField.QueryUnionField} (multi-table polymorphism).
  *
  * <p>Stage 1 is one SQL statement: a narrow UNION ALL across participant tables projecting
  * {@code (__typename, __pk0__, ..., __sortN__)} per branch. The database does ORDER BY in one
- * shot. Stage 2 dispatches per {@code __typename} using the post-R55 {@link ValuesJoinRowBuilder}
- * primitive (the same shape the federation {@code _entities} dispatcher uses): one
+ * shot. Stage 2 dispatches per {@code __typename} using {@link ValuesJoinRowBuilder} (the same
+ * shape the federation {@code _entities} dispatcher uses): one
  * {@code SELECT <Type>.$fields(...) FROM t JOIN VALUES(...) ON t.PK = input.PK ORDER BY idx} per
  * non-empty group. Result records carry the synthetic {@code __typename} column projected as a
  * literal so the schema-class TypeResolver routes each row to the correct concrete GraphQL type.
  *
- * <p><b>Join syntax: {@code .on(...)}, not {@code .using(...)}.</b> Inherits the dispatcher
- * constraint from R55's reviewer pivot: stage 2's projection includes
+ * <p><b>Join syntax: {@code .on(...)}, not {@code .using(...)}.</b> Stage 2's projection includes
  * {@code <TypeName>.$fields(env.getSelectionSet(), t, env)}, which references {@code t.<col>}
  * directly; USING would collapse the joined PK columns and risk colliding with $fields-emitted
  * projections. See {@link no.sikt.graphitron.rewrite.generators.util.SelectMethodBody}'s

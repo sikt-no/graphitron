@@ -33,9 +33,9 @@ import java.util.Optional;
  *   <li>{@link ScalarArg.CompositeColumnArg} — scalar arg bound to multiple jOOQ columns
  *       through a single per-row decode (composite-PK NodeId carrier; arity ≥ 2).</li>
  *   <li>{@link ScalarArg.ColumnReferenceArg} — FK-target {@code @nodeId(typeName: T)} scalar
- *       arg with a resolved single-hop {@code joinPath} (R40, single-key target NodeType).</li>
+ *       arg with a resolved single-hop {@code joinPath} (single-key target NodeType).</li>
  *   <li>{@link ScalarArg.CompositeColumnReferenceArg} — FK-target {@code @nodeId(typeName: T)}
- *       scalar arg whose target NodeType has multiple key columns (R40, arity ≥ 2).</li>
+ *       scalar arg whose target NodeType has multiple key columns (arity &ge; 2).</li>
  *   <li>{@link ScalarArg.UnboundArg} — scalar arg whose column could not be resolved;
  *       surfaced as a validation error.</li>
  *   <li>{@link InputTypeArg.TableInputArg} — {@code @table}-backed input type; carries per-field
@@ -128,7 +128,8 @@ public sealed interface ArgumentRef {
          * {@link no.sikt.graphitron.rewrite.model.BodyParam.In} (list) against the FK source
          * columns when those columns positionally match the target's NodeType key columns
          * (the simple direct-FK case); pathological cases where they differ are rejected at
-         * classify time with a deferred-emission hint per the R24 sibling.
+         * classify time with a deferred-emission hint (see
+         * graphitron-rewrite/roadmap/nodeid-fk-target-arg-join-translation.md).
          *
          * <p>{@code extraction} narrows to {@link CallSiteExtraction.NodeIdDecodeKeys}: input
          * filters are not contract-violation surfaces, so the failure mode is
@@ -208,7 +209,7 @@ public sealed interface ArgumentRef {
 
         /**
          * Input type with {@code @table}; fields resolve to columns on {@code inputTable}.
-         * Used by composite-key lookups and (eventually) by mutations.
+         * Used by composite-key lookups and by mutations.
          */
         record TableInputArg(
             String name,

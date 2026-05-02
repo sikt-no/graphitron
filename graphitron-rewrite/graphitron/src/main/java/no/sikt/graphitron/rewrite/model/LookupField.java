@@ -13,13 +13,11 @@ package no.sikt.graphitron.rewrite.model;
  * capability rather than on a per-variant {@code instanceof} chain. See
  * {@code graphitron-rewrite/docs/argument-resolution.adoc} for the design.
  *
- * <p>{@link #lookupMapping()} is always non-null for these variants — lookups are defined by the
+ * <p>{@link #lookupMapping()} is always non-null for these variants: lookups are defined by the
  * presence of {@code @lookupKey} args, which always resolve to a {@link LookupMapping.ColumnMapping}
- * with at least one arg (post-R50 phase (f-D); the legacy {@code NodeIdMapping} arm retired
- * with the lift, lookup-key NodeId folds onto {@code ColumnMapping} with
- * {@code NodeIdDecodeKeys.ThrowOnMismatch}).
- * Implementations declare the component directly (narrow-component-types principle) rather
- * than wrapping in {@code Optional}.
+ * with at least one arg. Lookup-key NodeId folds onto {@code ColumnMapping} with
+ * {@code NodeIdDecodeKeys.ThrowOnMismatch}. Implementations declare the component directly
+ * (narrow-component-types principle) rather than wrapping in {@code Optional}.
  */
 public sealed interface LookupField permits
     QueryField.QueryLookupTableField,

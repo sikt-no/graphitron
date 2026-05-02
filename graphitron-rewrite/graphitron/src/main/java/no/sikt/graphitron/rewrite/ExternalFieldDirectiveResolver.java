@@ -34,9 +34,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.baseTypeName;
  * <p>Implementation note: like {@link ServiceDirectiveResolver} and
  * {@link TableMethodDirectiveResolver}, the helpers this resolver calls back into
  * ({@code parseExternalRef}, {@code buildWrapper}) are package-private members of
- * {@link FieldBuilder}. With three consumers now sharing them, the still-shared helpers
- * ({@code parseExternalRef}, {@code fieldArgumentNames}) become candidates to migrate to a common
- * location in a later R6 mop-up phase.
+ * {@link FieldBuilder}.
  */
 final class ExternalFieldDirectiveResolver {
 

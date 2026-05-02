@@ -102,10 +102,9 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
      * roadmap file under {@code graphitron-rewrite/roadmap/} (no extension), or is
      * empty when the deferred message has no associated plan; {@code stubKey}
      * names the variant class or other anchor inside that plan. The render form
-     * embeds the plan path verbatim, separator-prefixed by an em-dash to match
-     * the trunk prose, so today's log surface is unchanged; LSP fix-its read the
-     * slug as a typed value and offer "open the roadmap item" instead of parsing
-     * the path back out.
+     * embeds the plan path verbatim, separator-prefixed by an em-dash; LSP
+     * fix-its read the slug as a typed value and offer "open the roadmap item"
+     * instead of parsing the path back out.
      */
     record Deferred(
         String summary,

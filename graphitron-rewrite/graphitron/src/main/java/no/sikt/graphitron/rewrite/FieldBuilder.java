@@ -811,14 +811,13 @@ class FieldBuilder {
             if (nodeIdMeta.isPresent()) {
                 boolean isLookupKey = arg.hasAppliedDirective(DIR_LOOKUP_KEY);
                 var keyColumns = nodeIdMeta.get().keyColumns();
-                // Composite-PK + non-list non-@lookupKey: today's classifier only wires the
-                // composite-PK path with @lookupKey (mutation-key and top-level filter paths land
-                // in a later R50 slice). Non-list arity-1 falls through to ColumnArg below.
+                // Composite-PK + non-list non-@lookupKey: only the @lookupKey path is wired;
+                // mutation-key and top-level filter paths are not yet supported. Non-list arity-1
+                // falls through to ColumnArg below.
                 if (keyColumns.size() > 1 && !isLookupKey) {
                     return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
                         "scalar @nodeId arg targeting a composite-PK NodeType is only wired for "
-                        + "@lookupKey today; mutation-key and top-level filter paths land in a "
-                        + "later R50 slice");
+                        + "@lookupKey; mutation-key and top-level filter paths are not yet supported");
                 }
                 // List + arity-1 without @lookupKey is not yet wired (would be a top-level
                 // filter use case); falls through to column-name resolution which fails cleanly.
@@ -1816,9 +1815,7 @@ class FieldBuilder {
      * list with the nullability shape §2b allows; returns {@code null} otherwise.
      *
      * <p>Mirrors the lift rules in {@link #liftToErrorsField}: every member of the polymorphic
-     * type must be {@code @error}, and the field itself must be a nullable list. A future
-     * widening to single-{@code @error} list shapes ({@code [SomeError]}) is part of §2b's
-     * remaining work; this helper picks up the same shapes the lift currently accepts.
+     * type must be {@code @error}, and the field itself must be a nullable list.
      */
     private List<ErrorType> detectErrorsFieldShape(GraphQLFieldDefinition fieldDef, String parentTypeName) {
         var returnType = ctx.resolveReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef));
@@ -2450,10 +2447,9 @@ class FieldBuilder {
      * Returns a reason string when mutually exclusive child-field classification directives appear
      * together, or {@code null} when at most one exclusive slot is occupied.
      *
-     * <p>Note: {@code @reference} is a path-annotation directive, not a classification directive —
-     * it may be combined with {@code @service}, {@code @externalField}, {@code @tableMethod}, and
-     * {@code @tableField} (as a FK reference path) or with {@code @nodeId} (producing
-     * {@link NodeIdReferenceField}). It is therefore not included in this check.
+     * <p>Note: {@code @reference} is a path-annotation directive, not a classification directive,
+     * so it may combine with {@code @service}, {@code @externalField}, {@code @tableMethod},
+     * {@code @tableField}, or {@code @nodeId}. It is therefore not included in this check.
      */
     private String detectChildFieldConflict(GraphQLFieldDefinition fieldDef) {
         boolean hasMultitable    = fieldDef.hasAppliedDirective(DIR_MULTITABLE_REFERENCE);
@@ -2859,18 +2855,17 @@ class FieldBuilder {
             String tableSqlName = tableType.table().tableName();
             boolean isList = GraphQLTypeUtil.unwrapNonNull(fieldDef.getType()) instanceof GraphQLList;
             String typeName = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(fieldDef.getType())).getName();
-            // Path 2 — migration-shim NodeIdField. `@nodeId`, `@reference`, and `@field` are
-            // already excluded above (`@nodeId` by the directive check, `@reference` by its own
-            // block, and `@field` via the exclusion here). Fires a per-site deprecation diagnostic
-            // — the canonical form is to declare `@nodeId` explicitly. Retired at R7. See plan:
-            // graphitron-rewrite/roadmap/retire-nodeid-synthesis-shim.md.
+            // Synthesis shim: a scalar ID field on a NodeType without `@nodeId`, `@reference`, or
+            // `@field` is treated as an implicit `@nodeId`. Fires a per-site deprecation diagnostic;
+            // the canonical form is to declare `@nodeId` explicitly. See plan:
+            // graphitron-rewrite/roadmap/retire-synthesis-shims.md.
             if (tableType instanceof NodeType nodeType
                     && "ID".equals(typeName)
                     && !isList
                     && !hasFieldDirective) {
-                LOG.warn("field '{}.{}' synthesizes NodeIdField without '@nodeId' — declare the"
-                    + " directive explicitly; synthesis shim will be removed in a future release."
-                    + " See graphitron-rewrite/roadmap/retire-nodeid-synthesis-shim.md",
+                LOG.warn("field '{}.{}' synthesizes an `@nodeId` carrier without the directive;"
+                    + " declare `@nodeId` explicitly. The synthesis shim will be removed in a"
+                    + " future release. See graphitron-rewrite/roadmap/retire-synthesis-shims.md",
                     parentTypeName, name);
                 return buildNodeIdOutputCarrier(parentTypeName, name, location, nodeType);
             }
@@ -2886,10 +2881,10 @@ class FieldBuilder {
     }
 
     /**
-     * Builds the post-R50 output carrier for an {@code @nodeId} (no {@code typeName:}) field.
+     * Builds the output carrier for an {@code @nodeId} (no {@code typeName:}) field.
      * Routes by {@code nodeType.nodeKeyColumns().size()}: arity-1 to a single-column
      * {@link ColumnField} carrying {@link no.sikt.graphitron.rewrite.model.CallSiteCompaction.NodeIdEncodeKeys},
-     * arity > 1 to a {@link ChildField.CompositeColumnField} narrowed to the same compaction arm.
+     * arity &gt; 1 to a {@link ChildField.CompositeColumnField} narrowed to the same compaction arm.
      * The {@link no.sikt.graphitron.rewrite.model.HelperRef.Encode} reference is read from
      * {@code nodeType.encodeMethod()} so encoder-class and helper-method names cannot drift.
      */
@@ -2906,8 +2901,7 @@ class FieldBuilder {
     }
 
     /**
-     * Builds the post-R50 output carrier for an {@code @nodeId(typeName: T)} reference field.
-     * Two shapes per "Variant-by-variant collapse → Single-hop emission, two shapes":
+     * Builds the output carrier for an {@code @nodeId(typeName: T)} reference field. Two shapes:
      * <ul>
      *   <li><b>Rooted at child (FK-mirror).</b> The single FK hop's source columns on the parent
      *       table positionally equal the target NodeType's {@code keyColumns}, so the parent
@@ -2916,10 +2910,9 @@ class FieldBuilder {
      *   <li><b>Rooted at parent (non-mirror, including multi-hop / condition-join).</b> The FK
      *       columns differ from the target's keyColumns, or the path has more than one step;
      *       emit through {@link ColumnReferenceField} / {@link ChildField.CompositeColumnReferenceField}
-     *       carrying the target's keyColumns plus the resolved {@code joinPath}. Single-hop
-     *       rooted-at-parent emission is the JOIN-with-projection capability R50 absorbs from
-     *       R24; multi-hop and condition-join paths surface as runtime stubs at the emitter
-     *       until the broader emission lift lands.</li>
+     *       carrying the target's keyColumns plus the resolved {@code joinPath}. Multi-hop and
+     *       condition-join paths surface as runtime stubs at the emitter; see
+     *       graphitron-rewrite/roadmap/nodeidreferencefield-join-projection-form.md.</li>
      * </ul>
      */
     private ChildField buildNodeIdReferenceCarrier(

@@ -57,8 +57,8 @@ public sealed interface InputField extends GraphitronField
      * terminal table that holds {@code column}. The path is produced by the same reference-path
      * parser as {@link ChildField.ColumnReferenceField}.
      *
-     * <p>When generating WHERE predicates (e.g. inside {@link WhereFilter.InputFilter}), the
-     * generator must JOIN through {@code joinPath} before applying the column predicate.
+     * <p>When generating WHERE predicates against this field, the generator must JOIN through
+     * {@code joinPath} before applying the column predicate.
      *
      * @param extraction translates the wire-format value to the column's typed Java value at the
      *     call-site root. Restricted to {@link CallSiteExtraction.Direct} (the {@code @reference}-
@@ -83,17 +83,14 @@ public sealed interface InputField extends GraphitronField
      * Composite-key input carrier on a {@code @table}-annotated input type. Carries
      * {@code columns} of arity &ge; 2 (arity-1 routes to {@link ColumnField} instead) plus
      * {@code extraction} narrowed at the type level to
-     * {@link CallSiteExtraction.NodeIdDecodeKeys} -- the only extraction shape that produces
+     * {@link CallSiteExtraction.NodeIdDecodeKeys}, which is the only extraction shape producing
      * a multi-column tuple (Direct, JooqConvert, EnumValueOf, TextMapLookup, ContextArg are
      * all single-scalar leaf shapes; NestedInputField is a Map-traversal arm that hosts an
-     * inner extraction rather than producing a tuple). Lands as the post-R50 successor for the
-     * arity > 1 cases of the retired wire-shape variants {@code NodeIdField} and
-     * {@code NodeIdInFilterField}.
+     * inner extraction rather than producing a tuple).
      *
      * <p>The body emitter pairs {@link CallSiteExtraction.NodeIdDecodeKeys.SkipMismatchedElement}
-     * with {@link BodyParam.RowEq RowEq} (for scalar same-table NodeId equality) or
-     * {@link BodyParam.RowIn RowIn} (for list filter, the post-R50 successor of the retired
-     * {@code NodeIdInFilterField}).
+     * with {@link BodyParam.RowEq RowEq} (scalar same-table NodeId equality) or
+     * {@link BodyParam.RowIn RowIn} (list filter).
      */
     record CompositeColumnField(
         String parentTypeName,
@@ -124,9 +121,7 @@ public sealed interface InputField extends GraphitronField
      * {@link CallSiteExtraction.NodeIdDecodeKeys} at the type level, same rationale as
      * {@link CompositeColumnField}.
      *
-     * <p>Post-R50 successor for the arity > 1 case of the retired wire-shape
-     * {@code NodeIdReferenceField}; the arity-1 case lands on the single-column
-     * {@link ColumnReferenceField}.
+     * <p>The arity-1 case lands on the single-column {@link ColumnReferenceField}.
      */
     record CompositeColumnReferenceField(
         String parentTypeName,
