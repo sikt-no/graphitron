@@ -17,7 +17,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static org.assertj.core.api.Assertions.as;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.InstanceOfAssertFactories.INTEGER;
+import static org.assertj.core.api.InstanceOfAssertFactories.LIST;
+import static org.assertj.core.api.InstanceOfAssertFactories.MAP;
+import static org.assertj.core.api.InstanceOfAssertFactories.STRING;
+import static org.assertj.core.api.InstanceOfAssertFactories.list;
+import static org.assertj.core.api.InstanceOfAssertFactories.map;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 
 /**
@@ -154,14 +161,13 @@ class GraphQLQueryTest {
                 films { title }
             }
             """);
-        List<Map<String, Object>> customers = (List<Map<String, Object>>) data.get("customers");
-        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("films");
 
-        assertThat(customers).hasSize(5);
-        assertThat(customers.get(0)).containsKey("firstName");
-
-        assertThat(films).hasSize(5);
-        assertThat(films.get(0)).containsKey("title");
+        assertThat(data).extractingByKey("customers", as(LIST))
+            .hasSize(5)
+            .first(as(MAP)).containsKey("firstName");
+        assertThat(data).extractingByKey("films", as(LIST))
+            .hasSize(5)
+            .first(as(MAP)).containsKey("title");
     }
 
     @Test
@@ -173,10 +179,9 @@ class GraphQLQueryTest {
                 films { title rating }
             }
             """);
-        List<Map<String, Object>> customers = (List<Map<String, Object>>) data.get("customers");
-        assertThat(customers).hasSize(5);
-        // Customers should have firstName and lastName, not title or rating
-        assertThat(customers.get(0).keySet()).containsExactlyInAnyOrder("firstName", "lastName");
+        assertThat(data).extractingByKey("customers", as(LIST))
+            .hasSize(5)
+            .first(as(MAP)).containsOnlyKeys("firstName", "lastName");
     }
 
     // ===== customers query =====
@@ -184,16 +189,15 @@ class GraphQLQueryTest {
     @Test
     void customers_returnsAllCustomers() {
         Map<String, Object> data = execute("{ customers { customerId firstName lastName } }");
-        List<Map<String, Object>> customers = (List<Map<String, Object>>) data.get("customers");
-        assertThat(customers).hasSize(5);
+        assertThat(data).extractingByKey("customers", as(LIST)).hasSize(5);
     }
 
     @Test
     void customers_filteredByActive() {
         Map<String, Object> data = execute("{ customers(active: true) { customerId firstName } }");
-        List<Map<String, Object>> customers = (List<Map<String, Object>>) data.get("customers");
-        assertThat(customers).hasSize(3);
-        assertThat(customers).extracting(c -> c.get("firstName"))
+        assertThat(data).extractingByKey("customers", as(list(Map.class)))
+            .hasSize(3)
+            .extracting(c -> c.get("firstName"))
             .containsExactlyInAnyOrder("Mary", "Patricia", "Linda");
     }
 
@@ -202,8 +206,7 @@ class GraphQLQueryTest {
     @Test
     void films_returnsAllFilms() {
         Map<String, Object> data = execute("{ films { filmId title } }");
-        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("films");
-        assertThat(films).hasSize(5);
+        assertThat(data).extractingByKey("films", as(LIST)).hasSize(5);
     }
 
     @Test
@@ -215,15 +218,15 @@ class GraphQLQueryTest {
         // titles. End-to-end verification that the Phase A plumbing (BatchKey, IMPLEMENTED_LEAVES,
         // shared emitters) works with Phase B's body emission against PostgreSQL.
         Map<String, Object> data = execute("{ films { title titleUppercase } }");
-        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("films");
-        assertThat(films).hasSize(5);
-        for (var f : films) {
-            String title = (String) f.get("title");
-            String titleUppercase = (String) f.get("titleUppercase");
-            assertThat(titleUppercase)
-                .as("titleUppercase must equal title.toUpperCase() for film '%s'", title)
-                .isEqualTo(title.toUpperCase());
-        }
+        assertThat(data).extractingByKey("films", as(list(Map.class)))
+            .hasSize(5)
+            .allSatisfy(f -> {
+                var title = (String) f.get("title");
+                var titleUppercase = (String) f.get("titleUppercase");
+                assertThat(titleUppercase)
+                    .as("titleUppercase must equal title.toUpperCase() for film '%s'", title)
+                    .isEqualTo(title.toUpperCase());
+            });
     }
 
     @Test
@@ -233,12 +236,9 @@ class GraphQLQueryTest {
         // ColumnFetcher reads the projected alias from the result Record at request time.
         // All seeded films have language_id=1, so the expression resolves to true for each.
         Map<String, Object> data = execute("{ films { title isEnglish } }");
-        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("films");
-        assertThat(films).hasSize(5);
-        assertThat(films).extracting(f -> f.get("isEnglish"))
-            .containsOnly(Boolean.TRUE);
-        assertThat(films).extracting(f -> f.get("title"))
-            .doesNotContainNull();
+        var films = assertThat(data).extractingByKey("films", as(list(Map.class))).hasSize(5);
+        films.extracting(f -> f.get("isEnglish")).containsOnly(Boolean.TRUE);
+        films.extracting(f -> f.get("title")).doesNotContainNull();
     }
 
     @Test
@@ -250,8 +250,8 @@ class GraphQLQueryTest {
         Map<String, Object> data = execute(
             "{ filmsBySameTableNodeId(filter: {filmIds: [\"" + id1 + "\", \"" + id3 + "\"]}) "
             + "{ filmId title } }");
-        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmsBySameTableNodeId");
-        assertThat(films).extracting(f -> f.get("filmId")).containsExactlyInAnyOrder(2, 4);
+        assertThat(data).extractingByKey("filmsBySameTableNodeId", as(list(Map.class)))
+            .extracting(f -> f.get("filmId")).containsExactlyInAnyOrder(2, 4);
     }
 
     @Test
@@ -280,8 +280,7 @@ class GraphQLQueryTest {
         // (empty → noCondition) is gone.
         Map<String, Object> data = execute(
             "{ filmsBySameTableNodeId(filter: {filmIds: []}) { filmId } }");
-        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmsBySameTableNodeId");
-        assertThat(films).isEmpty();
+        assertThat(data).extractingByKey("filmsBySameTableNodeId", as(LIST)).isEmpty();
     }
 
     @Test
@@ -289,8 +288,8 @@ class GraphQLQueryTest {
         // Test data: ACADEMY DINOSAUR=PG, ACE GOLDFINGER=G, ADAPTATION HOLES=NC_17,
         //            AFFAIR PREJUDICE=G, AGENT TRUMAN=PG
         Map<String, Object> data = execute("{ films(rating: G) { title } }");
-        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("films");
-        assertThat(films).extracting(f -> f.get("title"))
+        assertThat(data).extractingByKey("films", as(list(Map.class)))
+            .extracting(f -> f.get("title"))
             .containsExactlyInAnyOrder("ACE GOLDFINGER", "AFFAIR PREJUDICE");
     }
 
@@ -298,8 +297,8 @@ class GraphQLQueryTest {
     void films_filteredByTextRating() {
         // TextRating enum maps to varchar column via @field(name:) — NC_17 → "NC-17"
         Map<String, Object> data = execute("{ films(textRating: NC_17) { title } }");
-        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("films");
-        assertThat(films).extracting(f -> f.get("title"))
+        assertThat(data).extractingByKey("films", as(list(Map.class)))
+            .extracting(f -> f.get("title"))
             .containsExactly("ADAPTATION HOLES");
     }
 
@@ -307,16 +306,16 @@ class GraphQLQueryTest {
     void films_filteredByTextRating_simpleValue() {
         // G maps to "G" (no @field mapping needed)
         Map<String, Object> data = execute("{ films(textRating: G) { title } }");
-        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("films");
-        assertThat(films).extracting(f -> f.get("title"))
+        assertThat(data).extractingByKey("films", as(list(Map.class)))
+            .extracting(f -> f.get("title"))
             .containsExactlyInAnyOrder("ACE GOLDFINGER", "AFFAIR PREJUDICE");
     }
 
     @Test
     void films_orderedByFilmId() {
         Map<String, Object> data = execute("{ films { title } }");
-        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("films");
-        assertThat(films).extracting(f -> f.get("title"))
+        assertThat(data).extractingByKey("films", as(list(Map.class)))
+            .extracting(f -> f.get("title"))
             .containsExactly("ACADEMY DINOSAUR", "ACE GOLDFINGER", "ADAPTATION HOLES",
                 "AFFAIR PREJUDICE", "AGENT TRUMAN");
     }
@@ -325,9 +324,9 @@ class GraphQLQueryTest {
     void films_selectsOnlyRequestedFields() {
         // Only request 'title' — should still work even though filmId etc. are not selected
         Map<String, Object> data = execute("{ films { title } }");
-        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("films");
-        assertThat(films).isNotEmpty();
-        assertThat(films.get(0)).containsKey("title");
+        assertThat(data).extractingByKey("films", as(LIST))
+            .isNotEmpty()
+            .first(as(MAP)).containsKey("title");
     }
 
     // ===== filmById lookup query =====
@@ -335,11 +334,11 @@ class GraphQLQueryTest {
     @Test
     void filmById_returnsRequestedFilms() {
         Map<String, Object> data = execute("{ filmById(film_id: [\"1\", \"3\"]) { filmId title } }");
-        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmById");
-        assertThat(films).hasSize(2);
         // containsExactly (not InAnyOrder) — VALUES+JOIN preserves input order by joining on the
         // derived table's idx column. See docs/argument-resolution.md Phase 1.
-        assertThat(films).extracting(f -> f.get("title"))
+        assertThat(data).extractingByKey("filmById", as(list(Map.class)))
+            .hasSize(2)
+            .extracting(f -> f.get("title"))
             .containsExactly("ACADEMY DINOSAUR", "ADAPTATION HOLES");
     }
 
@@ -349,17 +348,17 @@ class GraphQLQueryTest {
         // matches input order. This is the one thing IN/EQ could not do, so it's the
         // behaviour-level proof that the emitter uses ordered VALUES+JOIN.
         Map<String, Object> data = execute("{ filmById(film_id: [\"3\", \"1\", \"2\"]) { filmId title } }");
-        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmById");
-        assertThat(films).extracting(f -> f.get("filmId"))
+        assertThat(data).extractingByKey("filmById", as(list(Map.class)))
+            .extracting(f -> f.get("filmId"))
             .containsExactly(3, 1, 2);
     }
 
     @Test
     void filmById_singleId_returnsOneFilm() {
         Map<String, Object> data = execute("{ filmById(film_id: [\"2\"]) { title } }");
-        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmById");
-        assertThat(films).hasSize(1);
-        assertThat(films.get(0).get("title")).isEqualTo("ACE GOLDFINGER");
+        assertThat(data).extractingByKey("filmById", as(LIST))
+            .hasSize(1)
+            .first(as(MAP)).containsEntry("title", "ACE GOLDFINGER");
     }
 
     // ===== languageByKey lookup query =====
@@ -367,18 +366,18 @@ class GraphQLQueryTest {
     @Test
     void languageByKey_returnsRequestedLanguages() {
         Map<String, Object> data = execute("{ languageByKey(language_id: [1, 2]) { languageId } }");
-        List<Map<String, Object>> langs = (List<Map<String, Object>>) data.get("languageByKey");
-        assertThat(langs).hasSize(2);
-        assertThat(langs).extracting(l -> l.get("languageId"))
+        assertThat(data).extractingByKey("languageByKey", as(list(Map.class)))
+            .hasSize(2)
+            .extracting(l -> l.get("languageId"))
             .containsExactlyInAnyOrder(1, 2);
     }
 
     @Test
     void languageByKey_singleId_returnsOneLanguage() {
         Map<String, Object> data = execute("{ languageByKey(language_id: [3]) { languageId } }");
-        List<Map<String, Object>> langs = (List<Map<String, Object>>) data.get("languageByKey");
-        assertThat(langs).hasSize(1);
-        assertThat(langs.get(0).get("languageId")).isEqualTo(3);
+        assertThat(data).extractingByKey("languageByKey", as(LIST))
+            .hasSize(1)
+            .first(as(MAP)).containsEntry("languageId", 3);
     }
 
     // ===== customerById lookup query =====
@@ -388,10 +387,10 @@ class GraphQLQueryTest {
         // Customers 1,2,4 are in store 1; 3,5 are in store 2
         Map<String, Object> data = execute(
             "{ customerById(customer_id: [\"1\", \"2\", \"4\", \"3\"], store_id: \"1\") { customerId } }");
-        List<Map<String, Object>> customers = (List<Map<String, Object>>) data.get("customerById");
         // Only IDs 1, 2, 4 are in store 1
-        assertThat(customers).hasSize(3);
-        assertThat(customers).extracting(c -> c.get("customerId"))
+        assertThat(data).extractingByKey("customerById", as(list(Map.class)))
+            .hasSize(3)
+            .extracting(c -> c.get("customerId"))
             .containsExactlyInAnyOrder(1, 2, 4);
     }
 
@@ -400,8 +399,7 @@ class GraphQLQueryTest {
         // Customer 3 is in store 2, requesting store 1 → no match
         Map<String, Object> data = execute(
             "{ customerById(customer_id: [\"3\"], store_id: \"1\") { customerId } }");
-        List<Map<String, Object>> customers = (List<Map<String, Object>>) data.get("customerById");
-        assertThat(customers).isEmpty();
+        assertThat(data).extractingByKey("customerById", as(LIST)).isEmpty();
     }
 
     // ===== filmsConnection — forward pagination =====
@@ -410,14 +408,14 @@ class GraphQLQueryTest {
     void filmsConnection_firstPage_returnsFirstNFilms() {
         Map<String, Object> data = execute(
             "{ filmsConnection(first: 2) { nodes { title } pageInfo { hasNextPage hasPreviousPage } } }");
-        var conn = (Map<String, Object>) data.get("filmsConnection");
-        List<Map<String, Object>> nodes = (List<Map<String, Object>>) conn.get("nodes");
-        assertThat(nodes).hasSize(2);
-        assertThat(nodes).extracting(n -> n.get("title"))
+        var conn = assertThat(data).extractingByKey("filmsConnection", as(MAP));
+        conn.extractingByKey("nodes", as(list(Map.class)))
+            .hasSize(2)
+            .extracting(n -> n.get("title"))
             .containsExactly("ACADEMY DINOSAUR", "ACE GOLDFINGER");
-        var pageInfo = (Map<String, Object>) conn.get("pageInfo");
-        assertThat(pageInfo.get("hasNextPage")).isEqualTo(true);
-        assertThat(pageInfo.get("hasPreviousPage")).isEqualTo(false);
+        conn.extractingByKey("pageInfo", as(MAP))
+            .containsEntry("hasNextPage", true)
+            .containsEntry("hasPreviousPage", false);
     }
 
     @Test
@@ -425,9 +423,8 @@ class GraphQLQueryTest {
         // Default page size is 100; test DB has 5 films, so all 5 are returned
         Map<String, Object> data = execute(
             "{ filmsConnection { nodes { filmId } } }");
-        var conn = (Map<String, Object>) data.get("filmsConnection");
-        List<Map<String, Object>> nodes = (List<Map<String, Object>>) conn.get("nodes");
-        assertThat(nodes).hasSize(5);
+        assertThat(data).extractingByKey("filmsConnection", as(MAP))
+            .extractingByKey("nodes", as(LIST)).hasSize(5);
     }
 
     @Test
@@ -435,30 +432,29 @@ class GraphQLQueryTest {
         // Get page 1 cursor, then use it to get page 2
         Map<String, Object> page1Data = execute(
             "{ filmsConnection(first: 2) { edges { cursor node { title } } pageInfo { endCursor } } }");
-        var conn1 = (Map<String, Object>) page1Data.get("filmsConnection");
-        var pageInfo1 = (Map<String, Object>) conn1.get("pageInfo");
-        String endCursor = (String) pageInfo1.get("endCursor");
-        assertThat(endCursor).isNotNull();
+        String endCursor = assertThat(page1Data).extractingByKey("filmsConnection", as(MAP))
+            .extractingByKey("pageInfo", as(MAP))
+            .extractingByKey("endCursor", as(STRING))
+            .isNotNull()
+            .actual();
 
         Map<String, Object> page2Data = execute(
             "{ filmsConnection(first: 2, after: \"" + endCursor + "\") { nodes { title } pageInfo { hasNextPage } } }");
-        var conn2 = (Map<String, Object>) page2Data.get("filmsConnection");
-        List<Map<String, Object>> nodes2 = (List<Map<String, Object>>) conn2.get("nodes");
-        assertThat(nodes2).extracting(n -> n.get("title"))
+        var conn2 = assertThat(page2Data).extractingByKey("filmsConnection", as(MAP));
+        conn2.extractingByKey("nodes", as(list(Map.class)))
+            .extracting(n -> n.get("title"))
             .containsExactly("ADAPTATION HOLES", "AFFAIR PREJUDICE");
-        var pageInfo2 = (Map<String, Object>) conn2.get("pageInfo");
-        assertThat(pageInfo2.get("hasNextPage")).isEqualTo(true);
+        conn2.extractingByKey("pageInfo", as(MAP))
+            .containsEntry("hasNextPage", true);
     }
 
     @Test
     void filmsConnection_lastPage_hasNextPageFalse() {
         Map<String, Object> data = execute(
             "{ filmsConnection(first: 5) { nodes { title } pageInfo { hasNextPage } } }");
-        var conn = (Map<String, Object>) data.get("filmsConnection");
-        List<Map<String, Object>> nodes = (List<Map<String, Object>>) conn.get("nodes");
-        assertThat(nodes).hasSize(5);
-        var pageInfo = (Map<String, Object>) conn.get("pageInfo");
-        assertThat(pageInfo.get("hasNextPage")).isEqualTo(false);
+        var conn = assertThat(data).extractingByKey("filmsConnection", as(MAP));
+        conn.extractingByKey("nodes", as(LIST)).hasSize(5);
+        conn.extractingByKey("pageInfo", as(MAP)).containsEntry("hasNextPage", false);
     }
 
     // ===== filmsConnection — backward pagination =====
@@ -483,15 +479,15 @@ class GraphQLQueryTest {
     void filmsConnection_backward_returnsLastNFilms() {
         Map<String, Object> data = execute(
             "{ filmsConnection(last: 2) { nodes { title } pageInfo { hasNextPage hasPreviousPage } } }");
-        var conn = (Map<String, Object>) data.get("filmsConnection");
-        List<Map<String, Object>> nodes = (List<Map<String, Object>>) conn.get("nodes");
-        assertThat(nodes).hasSize(2);
+        var conn = assertThat(data).extractingByKey("filmsConnection", as(MAP));
         // last 2 in ascending film_id order: AFFAIR PREJUDICE, AGENT TRUMAN
-        assertThat(nodes).extracting(n -> n.get("title"))
+        conn.extractingByKey("nodes", as(list(Map.class)))
+            .hasSize(2)
+            .extracting(n -> n.get("title"))
             .containsExactly("AFFAIR PREJUDICE", "AGENT TRUMAN");
-        var pageInfo = (Map<String, Object>) conn.get("pageInfo");
-        assertThat(pageInfo.get("hasPreviousPage")).isEqualTo(true);
-        assertThat(pageInfo.get("hasNextPage")).isEqualTo(false);
+        conn.extractingByKey("pageInfo", as(MAP))
+            .containsEntry("hasPreviousPage", true)
+            .containsEntry("hasNextPage", false);
     }
 
     @Test
@@ -499,19 +495,20 @@ class GraphQLQueryTest {
         // First get the last page to obtain a before cursor (startCursor of last page)
         Map<String, Object> lastPageData = execute(
             "{ filmsConnection(last: 2) { nodes { title } pageInfo { startCursor } } }");
-        var lastConn = (Map<String, Object>) lastPageData.get("filmsConnection");
-        var lastPageInfo = (Map<String, Object>) lastConn.get("pageInfo");
-        String startCursor = (String) lastPageInfo.get("startCursor");
-        assertThat(startCursor).isNotNull();
+        String startCursor = assertThat(lastPageData).extractingByKey("filmsConnection", as(MAP))
+            .extractingByKey("pageInfo", as(MAP))
+            .extractingByKey("startCursor", as(STRING))
+            .isNotNull()
+            .actual();
 
         // Paginate backwards before that cursor
         Map<String, Object> prevPageData = execute(
             "{ filmsConnection(last: 2, before: \"" + startCursor + "\") { nodes { title } } }");
-        var prevConn = (Map<String, Object>) prevPageData.get("filmsConnection");
-        List<Map<String, Object>> nodes = (List<Map<String, Object>>) prevConn.get("nodes");
         // last: 2 returns [AFFAIR PREJUDICE (4), AGENT TRUMAN (5)]; startCursor = cursor(4).
         // "2 items before cursor(4)" in ascending order = items 2, 3: ACE GOLDFINGER, ADAPTATION HOLES.
-        assertThat(nodes).extracting(n -> n.get("title"))
+        assertThat(prevPageData).extractingByKey("filmsConnection", as(MAP))
+            .extractingByKey("nodes", as(list(Map.class)))
+            .extracting(n -> n.get("title"))
             .containsExactly("ACE GOLDFINGER", "ADAPTATION HOLES");
     }
 
@@ -523,8 +520,8 @@ class GraphQLQueryTest {
         // onto ConnectionResult so ConnectionHelper.totalCount issues SELECT count(*) on demand.
         Map<String, Object> data = execute(
             "{ filmsConnection { totalCount } }");
-        var conn = (Map<String, Object>) data.get("filmsConnection");
-        assertThat(conn.get("totalCount")).isEqualTo(5);
+        assertThat(data).extractingByKey("filmsConnection", as(MAP))
+            .containsEntry("totalCount", 5);
     }
 
     @Test
@@ -533,10 +530,9 @@ class GraphQLQueryTest {
         // restricts the count to the 2 G-rated films in the seed data.
         Map<String, Object> data = execute(
             "{ filmsOrderedConnection(rating: G, first: 1) { totalCount nodes { title } } }");
-        var conn = (Map<String, Object>) data.get("filmsOrderedConnection");
-        assertThat(conn.get("totalCount")).isEqualTo(2);
-        var nodes = (List<Map<String, Object>>) conn.get("nodes");
-        assertThat(nodes).hasSize(1); // page-trimmed by first:1
+        var conn = assertThat(data).extractingByKey("filmsOrderedConnection", as(MAP));
+        conn.containsEntry("totalCount", 2);
+        conn.extractingByKey("nodes", as(LIST)).hasSize(1); // page-trimmed by first:1
     }
 
     @Test
@@ -545,8 +541,8 @@ class GraphQLQueryTest {
         // totalCount: Int. Two stores are seeded.
         Map<String, Object> data = execute(
             "{ stores { totalCount } }");
-        var conn = (Map<String, Object>) data.get("stores");
-        assertThat(conn.get("totalCount")).isEqualTo(2);
+        assertThat(data).extractingByKey("stores", as(MAP))
+            .containsEntry("totalCount", 2);
     }
 
     @Test
@@ -577,10 +573,10 @@ class GraphQLQueryTest {
     void filmsOrderedConnection_defaultOrder_paginatesById() {
         Map<String, Object> data = execute(
             "{ filmsOrderedConnection(first: 2) { nodes { filmId title } } }");
-        var conn = (Map<String, Object>) data.get("filmsOrderedConnection");
-        List<Map<String, Object>> nodes = (List<Map<String, Object>>) conn.get("nodes");
-        assertThat(nodes).hasSize(2);
-        assertThat(nodes).extracting(n -> n.get("title"))
+        assertThat(data).extractingByKey("filmsOrderedConnection", as(MAP))
+            .extractingByKey("nodes", as(list(Map.class)))
+            .hasSize(2)
+            .extracting(n -> n.get("title"))
             .containsExactly("ACADEMY DINOSAUR", "ACE GOLDFINGER");
     }
 
@@ -588,11 +584,11 @@ class GraphQLQueryTest {
     void filmsOrderedConnection_orderByTitle_paginatesAlphabetically() {
         Map<String, Object> data = execute(
             "{ filmsOrderedConnection(order: [{field: TITLE, direction: ASC}], first: 3) { nodes { title } } }");
-        var conn = (Map<String, Object>) data.get("filmsOrderedConnection");
-        List<Map<String, Object>> nodes = (List<Map<String, Object>>) conn.get("nodes");
-        assertThat(nodes).hasSize(3);
         // ACADEMY DINOSAUR < ACE GOLDFINGER < ADAPTATION HOLES alphabetically
-        assertThat(nodes).extracting(n -> n.get("title"))
+        assertThat(data).extractingByKey("filmsOrderedConnection", as(MAP))
+            .extractingByKey("nodes", as(list(Map.class)))
+            .hasSize(3)
+            .extracting(n -> n.get("title"))
             .containsExactly("ACADEMY DINOSAUR", "ACE GOLDFINGER", "ADAPTATION HOLES");
     }
 
@@ -603,11 +599,11 @@ class GraphQLQueryTest {
         Map<String, Object> data = execute(
             "{ filmsOrderedConnection(rating: G, order: [{field: TITLE, direction: ASC}], first: 1) { " +
             "nodes { title } pageInfo { hasNextPage } } }");
-        var conn = (Map<String, Object>) data.get("filmsOrderedConnection");
-        List<Map<String, Object>> nodes = (List<Map<String, Object>>) conn.get("nodes");
-        var pageInfo = (Map<String, Object>) conn.get("pageInfo");
-        assertThat(nodes).extracting(n -> n.get("title")).containsExactly("ACE GOLDFINGER");
-        assertThat(pageInfo.get("hasNextPage")).isEqualTo(true);
+        var conn = assertThat(data).extractingByKey("filmsOrderedConnection", as(MAP));
+        conn.extractingByKey("nodes", as(list(Map.class)))
+            .extracting(n -> n.get("title")).containsExactly("ACE GOLDFINGER");
+        conn.extractingByKey("pageInfo", as(MAP))
+            .containsEntry("hasNextPage", true);
     }
 
     @Test
@@ -616,18 +612,17 @@ class GraphQLQueryTest {
         Map<String, Object> page1Data = execute(
             "{ filmsOrderedConnection(order: [{field: TITLE, direction: ASC}], first: 2) { " +
             "nodes { title } pageInfo { endCursor hasNextPage } } }");
-        var conn1 = (Map<String, Object>) page1Data.get("filmsOrderedConnection");
-        var pageInfo1 = (Map<String, Object>) conn1.get("pageInfo");
-        String endCursor = (String) pageInfo1.get("endCursor");
-        assertThat(endCursor).isNotNull();
-        assertThat(pageInfo1.get("hasNextPage")).isEqualTo(true);
+        var pageInfo1 = assertThat(page1Data).extractingByKey("filmsOrderedConnection", as(MAP))
+            .extractingByKey("pageInfo", as(MAP));
+        String endCursor = pageInfo1.extractingByKey("endCursor", as(STRING)).isNotNull().actual();
+        pageInfo1.containsEntry("hasNextPage", true);
 
         Map<String, Object> page2Data = execute(
             "{ filmsOrderedConnection(order: [{field: TITLE, direction: ASC}], first: 2, after: \"" +
             endCursor + "\") { nodes { title } } }");
-        var conn2 = (Map<String, Object>) page2Data.get("filmsOrderedConnection");
-        List<Map<String, Object>> nodes2 = (List<Map<String, Object>>) conn2.get("nodes");
-        assertThat(nodes2).extracting(n -> n.get("title"))
+        assertThat(page2Data).extractingByKey("filmsOrderedConnection", as(MAP))
+            .extractingByKey("nodes", as(list(Map.class)))
+            .extracting(n -> n.get("title"))
             .containsExactly("ADAPTATION HOLES", "AFFAIR PREJUDICE");
     }
 
@@ -638,12 +633,12 @@ class GraphQLQueryTest {
         // Customer 1 is in store 1, with address_id=1 → '47 MySakila Drive'
         Map<String, Object> data = execute(
             "{ customerById(customer_id: [\"1\"], store_id: \"1\") { customerId address { addressId address } } }");
-        List<Map<String, Object>> customers = (List<Map<String, Object>>) data.get("customerById");
-        assertThat(customers).hasSize(1);
-        var address = (Map<String, Object>) customers.get(0).get("address");
-        assertThat(address).isNotNull();
-        assertThat(address.get("addressId")).isEqualTo(1);
-        assertThat(address.get("address")).isEqualTo("47 MySakila Drive");
+        assertThat(data).extractingByKey("customerById", as(LIST))
+            .hasSize(1)
+            .first(as(MAP)).extractingByKey("address", as(MAP))
+            .isNotNull()
+            .containsEntry("addressId", 1)
+            .containsEntry("address", "47 MySakila Drive");
     }
 
     // ===== G5 inline TableField — multi-hop FK =====
@@ -653,12 +648,12 @@ class GraphQLQueryTest {
         // customer 1, store 1, address 1 '47 MySakila Drive'; customer 2, store 1, address 2.
         Map<String, Object> data = execute(
             "{ customerById(customer_id: [\"1\", \"2\"], store_id: \"1\") { customerId storeAddress { address } } }");
-        List<Map<String, Object>> customers = (List<Map<String, Object>>) data.get("customerById");
-        assertThat(customers).hasSize(2);
-
-        var customer1 = customers.stream().filter(c -> ((Integer) c.get("customerId")) == 1).findFirst().orElseThrow();
-        assertThat(((Map<String, Object>) customer1.get("storeAddress")).get("address"))
-            .isEqualTo("47 MySakila Drive");
+        assertThat(data).extractingByKey("customerById", as(list(Map.class)))
+            .hasSize(2)
+            .filteredOn(c -> Integer.valueOf(1).equals(c.get("customerId")))
+            .singleElement(as(MAP))
+            .extractingByKey("storeAddress", as(MAP))
+            .containsEntry("address", "47 MySakila Drive");
     }
 
     // ===== G5 inline TableField — single-hop FK, list cardinality =====
@@ -668,11 +663,10 @@ class GraphQLQueryTest {
         // Store 1 holds customers 1, 2, 4. Store 2 holds 3, 5. Order by customer_id (PK).
         Map<String, Object> data = execute(
             "{ storeById(store_id: [1]) { storeId customers { customerId firstName } } }");
-        List<Map<String, Object>> stores = (List<Map<String, Object>>) data.get("storeById");
-        assertThat(stores).hasSize(1);
-
-        List<Map<String, Object>> customers = (List<Map<String, Object>>) stores.get(0).get("customers");
-        assertThat(customers).extracting(c -> c.get("customerId"))
+        assertThat(data).extractingByKey("storeById", as(LIST))
+            .hasSize(1)
+            .first(as(MAP)).extractingByKey("customers", as(list(Map.class)))
+            .extracting(c -> c.get("customerId"))
             .containsExactly(1, 2, 4);
     }
 
@@ -688,15 +682,14 @@ class GraphQLQueryTest {
         // "recursion terminates on client selection depth" invariant end-to-end.
         Map<String, Object> data = execute(
             "{ categoryById(category_id: [5]) { name parent { name parent { name } } } }");
-        List<Map<String, Object>> cats = (List<Map<String, Object>>) data.get("categoryById");
-        assertThat(cats).hasSize(1);
-        assertThat(cats.get(0).get("name")).isEqualTo("Thriller");
-
-        var parent = (Map<String, Object>) cats.get(0).get("parent");
-        assertThat(parent.get("name")).isEqualTo("Action");
-
-        var grandparent = (Map<String, Object>) parent.get("parent");
-        assertThat(grandparent.get("name")).isEqualTo("Genre");
+        var thriller = assertThat(data).extractingByKey("categoryById", as(LIST))
+            .hasSize(1)
+            .first(as(MAP));
+        thriller.containsEntry("name", "Thriller");
+        thriller.extractingByKey("parent", as(MAP))
+            .containsEntry("name", "Action")
+            .extractingByKey("parent", as(MAP))
+            .containsEntry("name", "Genre");
     }
 
     @Test
@@ -704,12 +697,12 @@ class GraphQLQueryTest {
         // Genre (id=1) has children: Action, Animation, Comedy (ids 2, 3, 4).
         Map<String, Object> data = execute(
             "{ categoryById(category_id: [1]) { name children { name } } }");
-        List<Map<String, Object>> cats = (List<Map<String, Object>>) data.get("categoryById");
-        assertThat(cats).hasSize(1);
-        assertThat(cats.get(0).get("name")).isEqualTo("Genre");
-
-        List<Map<String, Object>> children = (List<Map<String, Object>>) cats.get(0).get("children");
-        assertThat(children).extracting(c -> c.get("name"))
+        var genre = assertThat(data).extractingByKey("categoryById", as(LIST))
+            .hasSize(1)
+            .first(as(MAP));
+        genre.containsEntry("name", "Genre");
+        genre.extractingByKey("children", as(list(Map.class)))
+            .extracting(c -> c.get("name"))
             .containsExactly("Action", "Animation", "Comedy");
     }
 
@@ -718,9 +711,9 @@ class GraphQLQueryTest {
         // Thriller (id=5) is a leaf — children list is empty.
         Map<String, Object> data = execute(
             "{ categoryById(category_id: [5]) { name children { name } } }");
-        List<Map<String, Object>> cats = (List<Map<String, Object>>) data.get("categoryById");
-        List<Map<String, Object>> children = (List<Map<String, Object>>) cats.get(0).get("children");
-        assertThat(children).isEmpty();
+        assertThat(data).extractingByKey("categoryById", as(LIST))
+            .first(as(MAP))
+            .extractingByKey("children", as(LIST)).isEmpty();
     }
 
     @Test
@@ -728,8 +721,9 @@ class GraphQLQueryTest {
         // Genre (id=1) has no parent — parent is null.
         Map<String, Object> data = execute(
             "{ categoryById(category_id: [1]) { name parent { name } } }");
-        List<Map<String, Object>> cats = (List<Map<String, Object>>) data.get("categoryById");
-        assertThat(cats.get(0).get("parent")).isNull();
+        assertThat(data).extractingByKey("categoryById", as(LIST))
+            .first(as(MAP))
+            .extractingByKey("parent").isNull();
     }
 
     // ===== argres Phase 2a — inline LookupTableField (Film.actors via film_actor junction) =====
@@ -739,9 +733,9 @@ class GraphQLQueryTest {
         // Film 1 (ACADEMY DINOSAUR) cast: PENELOPE (id=1), NICK (id=2).
         Map<String, Object> data = execute(
             "{ filmById(film_id: [\"1\"]) { actors(actor_id: [1, 2]) { actorId firstName } } }");
-        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmById");
-        List<Map<String, Object>> actors = (List<Map<String, Object>>) films.get(0).get("actors");
-        assertThat(actors).extracting(a -> a.get("firstName"))
+        assertThat(data).extractingByKey("filmById", as(LIST))
+            .first(as(MAP)).extractingByKey("actors", as(list(Map.class)))
+            .extracting(a -> a.get("firstName"))
             .containsExactlyInAnyOrder("PENELOPE", "NICK");
     }
 
@@ -750,9 +744,9 @@ class GraphQLQueryTest {
         // Input [2, 1] should return NICK before PENELOPE.
         Map<String, Object> data = execute(
             "{ filmById(film_id: [\"1\"]) { actors(actor_id: [2, 1]) { firstName } } }");
-        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmById");
-        List<Map<String, Object>> actors = (List<Map<String, Object>>) films.get(0).get("actors");
-        assertThat(actors).extracting(a -> a.get("firstName"))
+        assertThat(data).extractingByKey("filmById", as(LIST))
+            .first(as(MAP)).extractingByKey("actors", as(list(Map.class)))
+            .extracting(a -> a.get("firstName"))
             .containsExactly("NICK", "PENELOPE");
     }
 
@@ -761,18 +755,17 @@ class GraphQLQueryTest {
         // Film 1 cast: actors 1, 2. Actor 3 (ED) is not in film 1 — the FK chain drops him.
         Map<String, Object> data = execute(
             "{ filmById(film_id: [\"1\"]) { actors(actor_id: [1, 3]) { firstName } } }");
-        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmById");
-        List<Map<String, Object>> actors = (List<Map<String, Object>>) films.get(0).get("actors");
-        assertThat(actors).extracting(a -> a.get("firstName")).containsExactly("PENELOPE");
+        assertThat(data).extractingByKey("filmById", as(LIST))
+            .first(as(MAP)).extractingByKey("actors", as(list(Map.class)))
+            .extracting(a -> a.get("firstName")).containsExactly("PENELOPE");
     }
 
     @Test
     void inlineLookupTableField_emptyInput_returnsEmpty() {
         Map<String, Object> data = execute(
             "{ filmById(film_id: [\"1\"]) { actors(actor_id: []) { firstName } } }");
-        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmById");
-        List<Map<String, Object>> actors = (List<Map<String, Object>>) films.get(0).get("actors");
-        assertThat(actors).isEmpty();
+        assertThat(data).extractingByKey("filmById", as(LIST))
+            .first(as(MAP)).extractingByKey("actors", as(LIST)).isEmpty();
     }
 
     @Test
@@ -780,9 +773,8 @@ class GraphQLQueryTest {
         // actor_id is optional; omitting it should short-circuit to an empty list (n=0 path).
         Map<String, Object> data = execute(
             "{ filmById(film_id: [\"1\"]) { actors { firstName } } }");
-        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmById");
-        List<Map<String, Object>> actors = (List<Map<String, Object>>) films.get(0).get("actors");
-        assertThat(actors).isEmpty();
+        assertThat(data).extractingByKey("filmById", as(LIST))
+            .first(as(MAP)).extractingByKey("actors", as(LIST)).isEmpty();
     }
 
     @Test
@@ -791,19 +783,16 @@ class GraphQLQueryTest {
         // Same input [1, 3] on both → film 2 has both; film 3 has only PENELOPE.
         Map<String, Object> data = execute(
             "{ filmById(film_id: [\"2\", \"3\"]) { filmId actors(actor_id: [1, 3]) { firstName } } }");
-        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmById");
-        assertThat(films).hasSize(2);
+        var films = assertThat(data).extractingByKey("filmById", as(list(Map.class))).hasSize(2);
 
-        var film2 = films.get(0);
-        assertThat(film2.get("filmId")).isEqualTo(2);
-        var film2Actors = (List<Map<String, Object>>) film2.get("actors");
-        assertThat(film2Actors).extracting(a -> a.get("firstName"))
+        var film2 = films.element(0, as(MAP)).containsEntry("filmId", 2);
+        film2.extractingByKey("actors", as(list(Map.class)))
+            .extracting(a -> a.get("firstName"))
             .containsExactlyInAnyOrder("PENELOPE", "ED");
 
-        var film3 = films.get(1);
-        assertThat(film3.get("filmId")).isEqualTo(3);
-        var film3Actors = (List<Map<String, Object>>) film3.get("actors");
-        assertThat(film3Actors).extracting(a -> a.get("firstName")).containsExactly("PENELOPE");
+        var film3 = films.element(1, as(MAP)).containsEntry("filmId", 3);
+        film3.extractingByKey("actors", as(list(Map.class)))
+            .extracting(a -> a.get("firstName")).containsExactly("PENELOPE");
     }
 
     // ===== argres Phase 2b: Split(Lookup)TableField DataLoader fan-out =====
@@ -813,10 +802,10 @@ class GraphQLQueryTest {
         // Language.films (SplitTableField) — language 1 has films 1-5 seeded.
         Map<String, Object> data = execute(
             "{ languageByKey(language_id: [1]) { languageId films { filmId } } }");
-        List<Map<String, Object>> langs = (List<Map<String, Object>>) data.get("languageByKey");
-        assertThat(langs).hasSize(1);
-        List<Map<String, Object>> films = (List<Map<String, Object>>) langs.get(0).get("films");
-        assertThat(films).extracting(f -> f.get("filmId"))
+        assertThat(data).extractingByKey("languageByKey", as(LIST))
+            .hasSize(1)
+            .first(as(MAP)).extractingByKey("films", as(list(Map.class)))
+            .extracting(f -> f.get("filmId"))
             .containsExactlyInAnyOrder(1, 2, 3, 4, 5);
     }
 
@@ -833,14 +822,16 @@ class GraphQLQueryTest {
         // DataLoader fan-in works — the value assertions below only prove scatter correctness.
         assertThat(QUERY_COUNT.get()).isEqualTo(2);
 
-        List<Map<String, Object>> langs = (List<Map<String, Object>>) data.get("languageByKey");
-        assertThat(langs).hasSize(3);
-
-        var byId = langs.stream().collect(java.util.stream.Collectors.toMap(
-            l -> (Integer) l.get("languageId"), l -> l));
-        assertThat((List<?>) byId.get(1).get("films")).hasSize(5);
-        assertThat((List<?>) byId.get(2).get("films")).isEmpty();
-        assertThat((List<?>) byId.get(3).get("films")).isEmpty();
+        var langs = assertThat(data).extractingByKey("languageByKey", as(list(Map.class))).hasSize(3);
+        langs.filteredOn(l -> Integer.valueOf(1).equals(l.get("languageId")))
+            .singleElement(as(MAP))
+            .extractingByKey("films", as(LIST)).hasSize(5);
+        langs.filteredOn(l -> Integer.valueOf(2).equals(l.get("languageId")))
+            .singleElement(as(MAP))
+            .extractingByKey("films", as(LIST)).isEmpty();
+        langs.filteredOn(l -> Integer.valueOf(3).equals(l.get("languageId")))
+            .singleElement(as(MAP))
+            .extractingByKey("films", as(LIST)).isEmpty();
     }
 
     @Test
@@ -852,13 +843,14 @@ class GraphQLQueryTest {
         // DataLoader.
         Map<String, Object> data = execute(
             "{ languageByKey(language_id: [3, 1, 2]) { languageId films { filmId } } }");
-        List<Map<String, Object>> langs = (List<Map<String, Object>>) data.get("languageByKey");
-        assertThat(langs).extracting(l -> l.get("languageId")).containsExactly(3, 1, 2);
-        assertThat((List<?>) langs.get(0).get("films")).isEmpty();
-        assertThat((List<?>) langs.get(1).get("films")).hasSize(5);
-        assertThat((List<?>) langs.get(2).get("films")).isEmpty();
+        var langs = assertThat(data).extractingByKey("languageByKey", as(list(Map.class)));
+        langs.extracting(l -> l.get("languageId")).containsExactly(3, 1, 2);
+        langs.element(0, as(MAP)).extractingByKey("films", as(LIST)).isEmpty();
+        langs.element(1, as(MAP)).extractingByKey("films", as(LIST)).hasSize(5);
+        langs.element(2, as(MAP)).extractingByKey("films", as(LIST)).isEmpty();
     }
 
+    @SuppressWarnings("unchecked")
     @Test
     void splitLookupTableField_filtersActorsPerFilm() {
         // Film 1 cast: PENELOPE (1), NICK (2). Film 2 cast: PENELOPE (1), ED (3).
@@ -879,6 +871,7 @@ class GraphQLQueryTest {
         assertThat(byId.get(3)).extracting(a -> a.get("actorId")).containsExactly(1);
     }
 
+    @SuppressWarnings("unchecked")
     @Test
     void splitLookupTableField_filterExcludesActorsNotInFilm() {
         // actor_id: [3] → only films 2 and 5 have actor 3. Films 1, 3, 4 return empty lists;
@@ -907,10 +900,8 @@ class GraphQLQueryTest {
         // Parent query only — the empty-input short-circuit returns emptyScatter without
         // touching DSL, so no child round-trip fires.
         assertThat(QUERY_COUNT.get()).isEqualTo(1);
-        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("films");
-
-        assertThat(films).allSatisfy(f ->
-            assertThat((List<?>) f.get("actorsBySplitLookup")).isEmpty());
+        assertThat(data).extractingByKey("films", as(list(Map.class)))
+            .allSatisfy(f -> assertThat(f.get("actorsBySplitLookup")).asInstanceOf(LIST).isEmpty());
     }
 
     @Test
@@ -922,14 +913,13 @@ class GraphQLQueryTest {
             "{ films { filmId actorsBySplitLookup { actorId } } }");
         // Same short-circuit as the empty-list case — parent query only.
         assertThat(QUERY_COUNT.get()).isEqualTo(1);
-        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("films");
-
-        assertThat(films).allSatisfy(f ->
-            assertThat((List<?>) f.get("actorsBySplitLookup")).isEmpty());
+        assertThat(data).extractingByKey("films", as(list(Map.class)))
+            .allSatisfy(f -> assertThat(f.get("actorsBySplitLookup")).asInstanceOf(LIST).isEmpty());
     }
 
     // ===== single-cardinality @splitQuery =====
 
+    @SuppressWarnings("unchecked")
     @Test
     void splitTableField_singleCardinality_returnsAddressPerCustomer() {
         // Customer.addressSplit (SplitTableField, single cardinality, parent-holds-FK):
@@ -948,6 +938,7 @@ class GraphQLQueryTest {
         assertThat(byId.get(5).get("addressId")).isEqualTo(2);  // shared with c2
     }
 
+    @SuppressWarnings("unchecked")
     @Test
     void splitTableField_singleCardinality_dedupesSharedFk_oneBatchRoundTrip() {
         // Five customers hit the addressSplit DataLoader; caching-enabled dedup collapses the
@@ -977,10 +968,11 @@ class GraphQLQueryTest {
             "{ storeById(store_id: [2]) { storeId manager { staffId } } }");
         // Parent query only — null-FK short-circuit eliminates the child round-trip entirely.
         assertThat(QUERY_COUNT.get()).isEqualTo(1);
-        List<Map<String, Object>> stores = (List<Map<String, Object>>) data.get("storeById");
-        assertThat(stores).hasSize(1);
-        assertThat(stores.get(0).get("storeId")).isEqualTo(2);
-        assertThat(stores.get(0).get("manager")).isNull();
+        assertThat(data).extractingByKey("storeById", as(LIST))
+            .hasSize(1)
+            .first(as(MAP))
+            .containsEntry("storeId", 2)
+            .containsEntry("manager", null);
     }
 
     @Test
@@ -989,14 +981,16 @@ class GraphQLQueryTest {
         // Store.manager alongside the null-FK test above.
         Map<String, Object> data = execute(
             "{ storeById(store_id: [1]) { storeId manager { staffId firstName } } }");
-        List<Map<String, Object>> stores = (List<Map<String, Object>>) data.get("storeById");
-        assertThat(stores).hasSize(1);
-        Map<String, Object> manager = (Map<String, Object>) stores.get(0).get("manager");
-        assertThat(manager).isNotNull();
-        assertThat(manager.get("staffId")).isEqualTo(1);
-        assertThat(manager.get("firstName")).isEqualTo("Mike");
+        assertThat(data).extractingByKey("storeById", as(LIST))
+            .hasSize(1)
+            .first(as(MAP))
+            .extractingByKey("manager", as(MAP))
+            .isNotNull()
+            .containsEntry("staffId", 1)
+            .containsEntry("firstName", "Mike");
     }
 
+    @SuppressWarnings("unchecked")
     @Test
     void splitTableField_singleCardinality_mixedNullAndNonNullFk_scatterAlignsByIdx() {
         // Both stores queried in one batch: store 1 (manager_staff_id=1), store 2 (NULL).
@@ -1022,9 +1016,9 @@ class GraphQLQueryTest {
         // film_id AND actor_id — query two existing pairs.
         Map<String, Object> data = execute(
             "{ filmActorsByKey(key: [{filmId: 1, actorId: 2}, {filmId: 2, actorId: 3}]) { filmId actorId } }");
-        List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("filmActorsByKey");
-        assertThat(rows).hasSize(2);
-        assertThat(rows).extracting(r -> r.get("filmId") + ":" + r.get("actorId"))
+        assertThat(data).extractingByKey("filmActorsByKey", as(list(Map.class)))
+            .hasSize(2)
+            .extracting(r -> r.get("filmId") + ":" + r.get("actorId"))
             .containsExactly("1:2", "2:3");
     }
 
@@ -1034,8 +1028,8 @@ class GraphQLQueryTest {
         // keys. Reverse the input to prove ordering is not coincidentally PK-sorted.
         Map<String, Object> data = execute(
             "{ filmActorsByKey(key: [{filmId: 3, actorId: 1}, {filmId: 1, actorId: 2}, {filmId: 2, actorId: 1}]) { filmId actorId } }");
-        List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("filmActorsByKey");
-        assertThat(rows).extracting(r -> r.get("filmId") + ":" + r.get("actorId"))
+        assertThat(data).extractingByKey("filmActorsByKey", as(list(Map.class)))
+            .extracting(r -> r.get("filmId") + ":" + r.get("actorId"))
             .containsExactly("3:1", "1:2", "2:1");
     }
 
@@ -1046,18 +1040,18 @@ class GraphQLQueryTest {
         // (film 1, actor 1) is a real pair → returned.
         Map<String, Object> data = execute(
             "{ filmActorsByKey(key: [{filmId: 4, actorId: 1}, {filmId: 1, actorId: 1}]) { filmId actorId } }");
-        List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("filmActorsByKey");
-        assertThat(rows).hasSize(1);
-        assertThat(rows.get(0).get("filmId")).isEqualTo(1);
-        assertThat(rows.get(0).get("actorId")).isEqualTo(1);
+        assertThat(data).extractingByKey("filmActorsByKey", as(LIST))
+            .hasSize(1)
+            .first(as(MAP))
+            .containsEntry("filmId", 1)
+            .containsEntry("actorId", 1);
     }
 
     @Test
     void compositeKeyLookup_emptyInput_returnsEmpty() {
         Map<String, Object> data = execute(
             "{ filmActorsByKey(key: []) { filmId actorId } }");
-        List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("filmActorsByKey");
-        assertThat(rows).isEmpty();
+        assertThat(data).extractingByKey("filmActorsByKey", as(LIST)).isEmpty();
     }
 
     // ===== R50 phase (g-C) — composite-PK NodeId @lookupKey via DecodedRecord =====
@@ -1080,16 +1074,15 @@ class GraphQLQueryTest {
         Map<String, Object> data = execute(
             "{ filmActorByNodeId(id: [\"" + id1 + "\", \"" + id2 + "\", \"" + id3 + "\"])"
             + " { filmId actorId } }");
-        List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("filmActorByNodeId");
-        assertThat(rows).extracting(r -> r.get("actorId") + ":" + r.get("filmId"))
+        assertThat(data).extractingByKey("filmActorByNodeId", as(list(Map.class)))
+            .extracting(r -> r.get("actorId") + ":" + r.get("filmId"))
             .containsExactly("2:1", "3:2", "2:4");
     }
 
     @Test
     void compositeNodeIdLookup_emptyInput_returnsEmpty() {
         Map<String, Object> data = execute("{ filmActorByNodeId(id: []) { filmId } }");
-        List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("filmActorByNodeId");
-        assertThat(rows).isEmpty();
+        assertThat(data).extractingByKey("filmActorByNodeId", as(LIST)).isEmpty();
     }
 
     @Test
@@ -1101,10 +1094,11 @@ class GraphQLQueryTest {
         String missing = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("FilmActor", 99, 99);
         Map<String, Object> data = execute(
             "{ filmActorByNodeId(id: [\"" + missing + "\", \"" + real + "\"]) { filmId actorId } }");
-        List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("filmActorByNodeId");
-        assertThat(rows).hasSize(1);
-        assertThat(rows.get(0).get("actorId")).isEqualTo(1);
-        assertThat(rows.get(0).get("filmId")).isEqualTo(1);
+        assertThat(data).extractingByKey("filmActorByNodeId", as(LIST))
+            .hasSize(1)
+            .first(as(MAP))
+            .containsEntry("actorId", 1)
+            .containsEntry("filmId", 1);
     }
 
     @Test
@@ -1129,13 +1123,16 @@ class GraphQLQueryTest {
         // filmDetails is a ConstructorField pass-through; language is a RecordTableField DataLoader.
         Map<String, Object> data = execute(
             "{ filmById(film_id: [\"1\"]) { languageId filmDetails { title language { name } } } }");
-        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmById");
-        assertThat(films).hasSize(1);
-        var details = (Map<String, Object>) films.get(0).get("filmDetails");
-        assertThat(details.get("title")).isEqualTo("ACADEMY DINOSAUR");
-        List<Map<String, Object>> langs = (List<Map<String, Object>>) details.get("language");
-        assertThat(langs).hasSize(1);
-        assertThat(langs.get(0).get("name").toString().trim()).isEqualTo("English");
+        var details = assertThat(data).extractingByKey("filmById", as(LIST))
+            .hasSize(1)
+            .first(as(MAP))
+            .extractingByKey("filmDetails", as(MAP));
+        details.containsEntry("title", "ACADEMY DINOSAUR");
+        String langName = details.extractingByKey("language", as(LIST))
+            .hasSize(1)
+            .first(as(MAP))
+            .extractingByKey("name", as(STRING)).actual();
+        assertThat(langName.trim()).isEqualTo("English");
     }
 
     @Test
@@ -1147,17 +1144,20 @@ class GraphQLQueryTest {
         Map<String, Object> data = execute(
             "{ films { languageId filmDetails { language { name } } } }");
         assertThat(QUERY_COUNT.get()).isEqualTo(2);
-        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("films");
-        assertThat(films).hasSize(5);
         // Every film maps to English (language_id=1 for all test-data films).
-        assertThat(films).allSatisfy(f -> {
-            var details = (Map<String, Object>) f.get("filmDetails");
-            List<Map<String, Object>> langs = (List<Map<String, Object>>) details.get("language");
-            assertThat(langs).hasSize(1);
-            assertThat(langs.get(0).get("name").toString().trim()).isEqualTo("English");
-        });
+        assertThat(data).extractingByKey("films", as(list(Map.class)))
+            .hasSize(5)
+            .allSatisfy(f -> {
+                String langName = assertThat(f.get("filmDetails")).asInstanceOf(MAP)
+                    .extractingByKey("language", as(LIST))
+                    .hasSize(1)
+                    .first(as(MAP))
+                    .extractingByKey("name", as(STRING)).actual();
+                assertThat(langName.trim()).isEqualTo("English");
+            });
     }
 
+    @SuppressWarnings("unchecked")
     @Test
     void recordTableField_propertyField_resolvedFromSameRecord() {
         // title is a PropertyField on FilmDetails; it uses ColumnFetcher(DSL.field("title"))
@@ -1181,10 +1181,11 @@ class GraphQLQueryTest {
         // Film 1 (ACADEMY DINOSAUR) cast: PENELOPE (1), NICK (2).
         Map<String, Object> data = execute(
             "{ filmById(film_id: [\"1\"]) { filmDetails { actorsByLookup(actor_id: [1, 2]) { actorId firstName } } } }");
-        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmById");
-        var details = (Map<String, Object>) films.get(0).get("filmDetails");
-        List<Map<String, Object>> actors = (List<Map<String, Object>>) details.get("actorsByLookup");
-        assertThat(actors).extracting(a -> a.get("firstName"))
+        assertThat(data).extractingByKey("filmById", as(LIST))
+            .first(as(MAP))
+            .extractingByKey("filmDetails", as(MAP))
+            .extractingByKey("actorsByLookup", as(list(Map.class)))
+            .extracting(a -> a.get("firstName"))
             .containsExactlyInAnyOrder("PENELOPE", "NICK");
     }
 
@@ -1193,12 +1194,14 @@ class GraphQLQueryTest {
         // actor_id: [1, 3] on Film 1 → actor 3 (ED) is not in film 1's cast; FK chain drops him.
         Map<String, Object> data = execute(
             "{ filmById(film_id: [\"1\"]) { filmDetails { actorsByLookup(actor_id: [1, 3]) { firstName } } } }");
-        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmById");
-        var details = (Map<String, Object>) films.get(0).get("filmDetails");
-        List<Map<String, Object>> actors = (List<Map<String, Object>>) details.get("actorsByLookup");
-        assertThat(actors).extracting(a -> a.get("firstName")).containsExactly("PENELOPE");
+        assertThat(data).extractingByKey("filmById", as(LIST))
+            .first(as(MAP))
+            .extractingByKey("filmDetails", as(MAP))
+            .extractingByKey("actorsByLookup", as(list(Map.class)))
+            .extracting(a -> a.get("firstName")).containsExactly("PENELOPE");
     }
 
+    @SuppressWarnings("unchecked")
     @Test
     void recordLookupTableField_multipleParents_batchesIntoOneRoundTrip() {
         // 5 films + 1 batched RecordLookup child = 2 round-trips. Unbatched: 1 + 5 = 6.
@@ -1227,12 +1230,9 @@ class GraphQLQueryTest {
         Map<String, Object> data = execute(
             "{ films { filmId filmDetails { actorsByLookup(actor_id: []) { actorId } } } }");
         assertThat(QUERY_COUNT.get()).isEqualTo(1);
-        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("films");
-
-        assertThat(films).allSatisfy(f -> {
-            var details = (Map<String, Object>) f.get("filmDetails");
-            assertThat((List<?>) details.get("actorsByLookup")).isEmpty();
-        });
+        assertThat(data).extractingByKey("films", as(list(Map.class))).allSatisfy(f ->
+            assertThat(f.get("filmDetails")).asInstanceOf(MAP)
+                .extractingByKey("actorsByLookup", as(LIST)).isEmpty());
     }
 
     @Test
@@ -1242,12 +1242,9 @@ class GraphQLQueryTest {
         Map<String, Object> data = execute(
             "{ films { filmId filmDetails { actorsByLookup { actorId } } } }");
         assertThat(QUERY_COUNT.get()).isEqualTo(1);
-        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("films");
-
-        assertThat(films).allSatisfy(f -> {
-            var details = (Map<String, Object>) f.get("filmDetails");
-            assertThat((List<?>) details.get("actorsByLookup")).isEmpty();
-        });
+        assertThat(data).extractingByKey("films", as(list(Map.class))).allSatisfy(f ->
+            assertThat(f.get("filmDetails")).asInstanceOf(MAP)
+                .extractingByKey("actorsByLookup", as(LIST)).isEmpty());
     }
 
     // ===== NestingField — plain-object nested types =====
@@ -1257,10 +1254,11 @@ class GraphQLQueryTest {
         // Film 1 (ACADEMY DINOSAUR) was seeded with release_year 2006.
         Map<String, Object> data = execute(
             "{ filmById(film_id: [\"1\"]) { summary { title releaseYear } } }");
-        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmById");
-        var summary = (Map<String, Object>) films.get(0).get("summary");
-        assertThat(summary).containsEntry("title", "ACADEMY DINOSAUR");
-        assertThat(summary).containsEntry("releaseYear", 2006);
+        assertThat(data).extractingByKey("filmById", as(LIST))
+            .first(as(MAP))
+            .extractingByKey("summary", as(MAP))
+            .containsEntry("title", "ACADEMY DINOSAUR")
+            .containsEntry("releaseYear", 2006);
     }
 
     @Test
@@ -1269,9 +1267,10 @@ class GraphQLQueryTest {
         // the distinct GraphQL field name. Locks the @field(name:) remap at nested depth.
         Map<String, Object> data = execute(
             "{ filmById(film_id: [\"1\"]) { summary { originalTitle } } }");
-        var films = (List<Map<String, Object>>) data.get("filmById");
-        var summary = (Map<String, Object>) films.get(0).get("summary");
-        assertThat(summary).containsEntry("originalTitle", "ACADEMY DINOSAUR");
+        assertThat(data).extractingByKey("filmById", as(LIST))
+            .first(as(MAP))
+            .extractingByKey("summary", as(MAP))
+            .containsEntry("originalTitle", "ACADEMY DINOSAUR");
     }
 
     @Test
@@ -1280,12 +1279,13 @@ class GraphQLQueryTest {
         // Film table. ACADEMY DINOSAUR / 86 minutes in the seed data.
         Map<String, Object> data = execute(
             "{ filmById(film_id: [\"1\"]) { info { releaseYear meta { title length } } } }");
-        var films = (List<Map<String, Object>>) data.get("filmById");
-        var info = (Map<String, Object>) films.get(0).get("info");
-        assertThat(info).containsEntry("releaseYear", 2006);
-        var meta = (Map<String, Object>) info.get("meta");
-        assertThat(meta).containsEntry("title", "ACADEMY DINOSAUR");
-        assertThat(meta).containsEntry("length", 86);
+        var info = assertThat(data).extractingByKey("filmById", as(LIST))
+            .first(as(MAP))
+            .extractingByKey("info", as(MAP));
+        info.containsEntry("releaseYear", 2006);
+        info.extractingByKey("meta", as(MAP))
+            .containsEntry("title", "ACADEMY DINOSAUR")
+            .containsEntry("length", 86);
     }
 
     @Test
@@ -1296,10 +1296,11 @@ class GraphQLQueryTest {
         Map<String, Object> data = execute(
             "{ filmById(film_id: [\"1\"]) { summary { title } } }");
         assertThat(QUERY_COUNT.get()).isEqualTo(1);
-        var films = (List<Map<String, Object>>) data.get("filmById");
-        var summary = (Map<String, Object>) films.get(0).get("summary");
-        assertThat(summary).containsOnlyKeys("title");
-        assertThat(summary).containsEntry("title", "ACADEMY DINOSAUR");
+        assertThat(data).extractingByKey("filmById", as(LIST))
+            .first(as(MAP))
+            .extractingByKey("summary", as(MAP))
+            .containsOnlyKeys("title")
+            .containsEntry("title", "ACADEMY DINOSAUR");
     }
 
     @Test
@@ -1307,13 +1308,11 @@ class GraphQLQueryTest {
         // Requesting summary across the films root list: each row carries its own
         // FilmSummary projection, including the per-row release_year.
         Map<String, Object> data = execute("{ films { filmId summary { releaseYear } } }");
-        var films = (List<Map<String, Object>>) data.get("films");
-        assertThat(films).allSatisfy(f -> {
-            var summary = (Map<String, Object>) f.get("summary");
-            assertThat(summary).containsKey("releaseYear");
+        assertThat(data).extractingByKey("films", as(list(Map.class))).allSatisfy(f ->
             // All seeded films carry release_year 2006
-            assertThat(summary).containsEntry("releaseYear", 2006);
-        });
+            assertThat(f.get("summary")).asInstanceOf(MAP)
+                .containsKey("releaseYear")
+                .containsEntry("releaseYear", 2006));
     }
 
     @Test
@@ -1322,11 +1321,12 @@ class GraphQLQueryTest {
         // fields; both must come back correctly on the same query.
         Map<String, Object> data = execute(
             "{ filmById(film_id: [\"1\"]) { filmId title summary { releaseYear } } }");
-        var films = (List<Map<String, Object>>) data.get("filmById");
-        assertThat(films.get(0)).containsEntry("filmId", 1);
-        assertThat(films.get(0)).containsEntry("title", "ACADEMY DINOSAUR");
-        var summary = (Map<String, Object>) films.get(0).get("summary");
-        assertThat(summary).containsEntry("releaseYear", 2006);
+        var film = assertThat(data).extractingByKey("filmById", as(LIST))
+            .first(as(MAP));
+        film.containsEntry("filmId", 1)
+            .containsEntry("title", "ACADEMY DINOSAUR");
+        film.extractingByKey("summary", as(MAP))
+            .containsEntry("releaseYear", 2006);
     }
 
     // ===== NestingField — nested inline TableField / LookupTableField (sfName threading) =====
@@ -1339,11 +1339,13 @@ class GraphQLQueryTest {
         // generated code would fail to compile (undefined sf at depth 1).
         Map<String, Object> data = execute(
             "{ filmById(film_id: [\"1\"]) { inlineBundle { language { languageId name } } } }");
-        var films = (List<Map<String, Object>>) data.get("filmById");
-        var bundle = (Map<String, Object>) films.get(0).get("inlineBundle");
-        var language = (Map<String, Object>) bundle.get("language");
-        assertThat(language.get("languageId")).isEqualTo(1);
-        assertThat(language.get("name").toString().trim()).isEqualTo("English");
+        var language = assertThat(data).extractingByKey("filmById", as(LIST))
+            .first(as(MAP))
+            .extractingByKey("inlineBundle", as(MAP))
+            .extractingByKey("language", as(MAP));
+        language.containsEntry("languageId", 1);
+        String name = language.extractingByKey("name", as(STRING)).actual();
+        assertThat(name.trim()).isEqualTo("English");
     }
 
     @Test
@@ -1353,10 +1355,11 @@ class GraphQLQueryTest {
         // (inputRows call, empty-input short-circuit, buildInnerSelect all use sfName).
         Map<String, Object> data = execute(
             "{ filmById(film_id: [\"1\"]) { inlineBundle { actorsByKey(actor_id: [1, 2]) { actorId firstName } } } }");
-        var films = (List<Map<String, Object>>) data.get("filmById");
-        var bundle = (Map<String, Object>) films.get(0).get("inlineBundle");
-        var actors = (List<Map<String, Object>>) bundle.get("actorsByKey");
-        assertThat(actors).extracting(a -> a.get("firstName"))
+        assertThat(data).extractingByKey("filmById", as(LIST))
+            .first(as(MAP))
+            .extractingByKey("inlineBundle", as(MAP))
+            .extractingByKey("actorsByKey", as(list(Map.class)))
+            .extracting(a -> a.get("firstName"))
             .containsExactlyInAnyOrder("PENELOPE", "NICK");
     }
 
@@ -1367,13 +1370,15 @@ class GraphQLQueryTest {
         // multiset. Parent row still carries the slot, populated as an empty list.
         Map<String, Object> data = execute(
             "{ filmById(film_id: [\"1\"]) { inlineBundle { actorsByKey(actor_id: []) { actorId } } } }");
-        var films = (List<Map<String, Object>>) data.get("filmById");
-        var bundle = (Map<String, Object>) films.get(0).get("inlineBundle");
-        assertThat((List<?>) bundle.get("actorsByKey")).isEmpty();
+        assertThat(data).extractingByKey("filmById", as(LIST))
+            .first(as(MAP))
+            .extractingByKey("inlineBundle", as(MAP))
+            .extractingByKey("actorsByKey", as(LIST)).isEmpty();
     }
 
     // ===== Film.actorsConnection — @splitQuery + @asConnection (plan-split-query-connection §1) =====
 
+    @SuppressWarnings("unchecked")
     @Test
     void splitQueryConnection_firstPagePerParent_batchesInOneRowsRoundTrip() {
         // film_actor seed: film 1 -> {1, 2}, film 2 -> {1, 3}. Two parent films request
@@ -1401,6 +1406,7 @@ class GraphQLQueryTest {
             .extracting("hasNextPage", "hasPreviousPage").containsExactly(true, false);
     }
 
+    @SuppressWarnings("unchecked")
     @Test
     void splitQueryConnection_withAfterCursor_pagesForwardPerParent() {
         // Page 1: actorsConnection(first: 1) → actor 1 for film 1, actor 1 for film 2.
@@ -1429,6 +1435,7 @@ class GraphQLQueryTest {
         assertThat(((Map<String, Object>) byId.get(1).get("pageInfo")).get("hasNextPage")).isEqualTo(false);
     }
 
+    @SuppressWarnings("unchecked")
     @Test
     void splitQueryConnection_dynamicOrderByArg_sortsEachPartitionByNamedField() {
         // plan-split-query-connection.md §2: @splitQuery + @asConnection with a dynamic @orderBy
@@ -1451,6 +1458,7 @@ class GraphQLQueryTest {
         assertThat(byId.get(2).get(0).get("lastName")).isEqualTo("GUINESS");
     }
 
+    @SuppressWarnings("unchecked")
     @Test
     void splitQueryConnection_backwardPagination_returnsLastNAscending() {
         // last: 1 with no cursor: the CTE inverts the ORDER BY (actor_id DESC) so ROW_NUMBER()
@@ -1473,6 +1481,7 @@ class GraphQLQueryTest {
     // ===== SplitTableField / SplitLookupTableField under NestingField
     // (plan-splittablefield-nestingfield) =====
 
+    @SuppressWarnings("unchecked")
     @Test
     void splitTableField_nestedUnderNestingField_batchesPerOuterParent() {
         // FilmInfo.cast is a @splitQuery inside a plain-object NestingField. The outer Film
@@ -1651,6 +1660,7 @@ class GraphQLQueryTest {
             .extracting(f -> f.get("filmId")).containsExactly(2);
     }
 
+    @SuppressWarnings("unchecked")
     @Test
     void splitLookupTableField_nestedUnderNestingField_batchesPerOuterParent() {
         // FilmInfo.castByKey exercises the SplitLookupTableField arm under NestingField:
@@ -1680,14 +1690,15 @@ class GraphQLQueryTest {
         // The test DB has 2 stores; request first:1 so hasNextPage is true.
         Map<String, Object> data = execute(
             "{ stores(first: 1) { edges { cursor node { storeId } } pageInfo { hasNextPage hasPreviousPage } } }");
-        var conn = (Map<String, Object>) data.get("stores");
-        List<Map<String, Object>> edges = (List<Map<String, Object>>) conn.get("edges");
-        assertThat(edges).hasSize(1);
-        assertThat(edges.get(0)).containsKey("cursor");
-        assertThat(((Map<String, Object>) edges.get(0).get("node")).get("storeId")).isNotNull();
-        var pageInfo = (Map<String, Object>) conn.get("pageInfo");
-        assertThat(pageInfo.get("hasNextPage")).isEqualTo(true);
-        assertThat(pageInfo.get("hasPreviousPage")).isEqualTo(false);
+        var conn = assertThat(data).extractingByKey("stores", as(MAP));
+        var firstEdge = conn.extractingByKey("edges", as(LIST))
+            .hasSize(1)
+            .first(as(MAP));
+        firstEdge.containsKey("cursor");
+        firstEdge.extractingByKey("node", as(MAP)).extractingByKey("storeId").isNotNull();
+        conn.extractingByKey("pageInfo", as(MAP))
+            .containsEntry("hasNextPage", true)
+            .containsEntry("hasPreviousPage", false);
     }
 
     // ===== Query.node — Relay Global Object Identification =====
@@ -1697,11 +1708,11 @@ class GraphQLQueryTest {
         String id = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 1);
         Map<String, Object> data = execute(
             "{ node(id: \"" + id + "\") { __typename ... on Customer { firstName lastName } } }");
-        var node = (Map<String, Object>) data.get("node");
-        assertThat(node).isNotNull();
-        assertThat(node.get("__typename")).isEqualTo("Customer");
-        assertThat(node.get("firstName")).isEqualTo("Mary");
-        assertThat(node.get("lastName")).isEqualTo("Smith");
+        assertThat(data).extractingByKey("node", as(MAP))
+            .isNotNull()
+            .containsEntry("__typename", "Customer")
+            .containsEntry("firstName", "Mary")
+            .containsEntry("lastName", "Smith");
     }
 
     @Test
@@ -1710,10 +1721,10 @@ class GraphQLQueryTest {
         String id = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 1);
         Map<String, Object> data = execute(
             "{ node(id: \"" + id + "\") { __typename ... on Film { title } } }");
-        var node = (Map<String, Object>) data.get("node");
-        assertThat(node).isNotNull();
-        assertThat(node.get("__typename")).isEqualTo("Film");
-        assertThat(node.get("title")).isEqualTo("ACADEMY DINOSAUR");
+        assertThat(data).extractingByKey("node", as(MAP))
+            .isNotNull()
+            .containsEntry("__typename", "Film")
+            .containsEntry("title", "ACADEMY DINOSAUR");
     }
 
     @Test
@@ -1741,18 +1752,19 @@ class GraphQLQueryTest {
         // during the projection.
         Map<String, Object> data = execute(
             "{ customers { customerId addressNodeId } }");
-        List<Map<String, Object>> customers = (List<Map<String, Object>>) data.get("customers");
-        assertThat(customers).isNotEmpty();
-        String addressNodeId = (String) customers.get(0).get("addressNodeId");
-        assertThat(addressNodeId).isNotNull();
+        String addressNodeId = assertThat(data).extractingByKey("customers", as(LIST))
+            .isNotEmpty()
+            .first(as(MAP))
+            .extractingByKey("addressNodeId", as(STRING))
+            .isNotNull()
+            .actual();
 
         Map<String, Object> nodeData = execute(
             "{ node(id: \"" + addressNodeId + "\") { __typename ... on Address { addressId district } } }");
-        var node = (Map<String, Object>) nodeData.get("node");
-        assertThat(node).isNotNull();
-        assertThat(node.get("__typename")).isEqualTo("Address");
-        assertThat(node.get("addressId")).isNotNull();
-        assertThat(node.get("district")).isNotNull();
+        var node = assertThat(nodeData).extractingByKey("node", as(MAP)).isNotNull();
+        node.containsEntry("__typename", "Address");
+        node.extractingByKey("addressId").isNotNull();
+        node.extractingByKey("district").isNotNull();
     }
 
     @Test
@@ -1782,11 +1794,11 @@ class GraphQLQueryTest {
 
         Map<String, Object> data = execute(
             "{ node(id: \"" + pinnedId + "\") { __typename ... on Customer { firstName lastName } } }");
-        var node = (Map<String, Object>) data.get("node");
-        assertThat(node).isNotNull();
-        assertThat(node.get("__typename")).isEqualTo("Customer");
-        assertThat(node.get("firstName")).isEqualTo("Mary");
-        assertThat(node.get("lastName")).isEqualTo("Smith");
+        assertThat(data).extractingByKey("node", as(MAP))
+            .isNotNull()
+            .containsEntry("__typename", "Customer")
+            .containsEntry("firstName", "Mary")
+            .containsEntry("lastName", "Smith");
     }
 
     @Test
@@ -1829,14 +1841,10 @@ class GraphQLQueryTest {
         Map<String, Object> data = execute(
             "{ nodes(ids: [\"" + c1 + "\", \"" + f1 + "\", \"" + c2 + "\"]) {"
             + " __typename ... on Customer { firstName } ... on Film { title } } }");
-        List<Map<String, Object>> nodes = (List<Map<String, Object>>) data.get("nodes");
-        assertThat(nodes).hasSize(3);
-        assertThat(nodes.get(0).get("__typename")).isEqualTo("Customer");
-        assertThat(nodes.get(0).get("firstName")).isEqualTo("Mary");
-        assertThat(nodes.get(1).get("__typename")).isEqualTo("Film");
-        assertThat(nodes.get(1).get("title")).isEqualTo("ACADEMY DINOSAUR");
-        assertThat(nodes.get(2).get("__typename")).isEqualTo("Customer");
-        assertThat(nodes.get(2).get("firstName")).isEqualTo("Patricia");
+        var nodes = assertThat(data).extractingByKey("nodes", as(LIST)).hasSize(3);
+        nodes.element(0, as(MAP)).containsEntry("__typename", "Customer").containsEntry("firstName", "Mary");
+        nodes.element(1, as(MAP)).containsEntry("__typename", "Film").containsEntry("title", "ACADEMY DINOSAUR");
+        nodes.element(2, as(MAP)).containsEntry("__typename", "Customer").containsEntry("firstName", "Patricia");
     }
 
     @Test
@@ -1846,10 +1854,9 @@ class GraphQLQueryTest {
         Map<String, Object> data = execute(
             "{ nodes(ids: [\"" + c1 + "\", \"not-a-valid-base64-id\"]) {"
             + " __typename ... on Customer { firstName } } }");
-        List<Map<String, Object>> nodes = (List<Map<String, Object>>) data.get("nodes");
-        assertThat(nodes).hasSize(2);
-        assertThat(nodes.get(0).get("firstName")).isEqualTo("Mary");
-        assertThat(nodes.get(1)).isNull();
+        var nodes = assertThat(data).extractingByKey("nodes", as(LIST)).hasSize(2);
+        nodes.element(0, as(MAP)).containsEntry("firstName", "Mary");
+        nodes.element(1).isNull();
     }
 
     @Test
@@ -1860,10 +1867,9 @@ class GraphQLQueryTest {
         Map<String, Object> data = execute(
             "{ nodes(ids: [\"" + unknown + "\", \"" + c1 + "\"]) {"
             + " __typename ... on Customer { firstName } } }");
-        List<Map<String, Object>> nodes = (List<Map<String, Object>>) data.get("nodes");
-        assertThat(nodes).hasSize(2);
-        assertThat(nodes.get(0)).isNull();
-        assertThat(nodes.get(1).get("firstName")).isEqualTo("Mary");
+        var nodes = assertThat(data).extractingByKey("nodes", as(LIST)).hasSize(2);
+        nodes.element(0).isNull();
+        nodes.element(1, as(MAP)).containsEntry("firstName", "Mary");
     }
 
     @Test
@@ -1874,10 +1880,9 @@ class GraphQLQueryTest {
         Map<String, Object> data = execute(
             "{ nodes(ids: [\"" + c1 + "\", \"" + missing + "\"]) {"
             + " __typename ... on Customer { firstName } } }");
-        List<Map<String, Object>> nodes = (List<Map<String, Object>>) data.get("nodes");
-        assertThat(nodes).hasSize(2);
-        assertThat(nodes.get(0).get("firstName")).isEqualTo("Mary");
-        assertThat(nodes.get(1)).isNull();
+        var nodes = assertThat(data).extractingByKey("nodes", as(LIST)).hasSize(2);
+        nodes.element(0, as(MAP)).containsEntry("firstName", "Mary");
+        nodes.element(1).isNull();
     }
 
     @Test
@@ -1923,16 +1928,19 @@ class GraphQLQueryTest {
         // longer holds.
         Map<String, Object> nodeData = execute(
             "{ node(id: \"" + padded + "\") { __typename ... on Customer { firstName } } }");
-        assertThat(((Map<String, Object>) nodeData.get("node")).get("firstName")).isEqualTo("Mary");
+        assertThat(nodeData).extractingByKey("node", as(MAP))
+            .containsEntry("firstName", "Mary");
 
         Map<String, Object> data = execute(
             "{ nodes(ids: [\"" + padded + "\"]) {"
             + " __typename ... on Customer { firstName } } }");
-        List<Map<String, Object>> nodes = (List<Map<String, Object>>) data.get("nodes");
-        assertThat(nodes).hasSize(1);
-        assertThat(nodes.get(0)).as("padded id must resolve under nodes(ids:)").isNotNull();
-        assertThat(nodes.get(0).get("__typename")).isEqualTo("Customer");
-        assertThat(nodes.get(0).get("firstName")).isEqualTo("Mary");
+        assertThat(data).extractingByKey("nodes", as(LIST))
+            .hasSize(1)
+            .first(as(MAP))
+            .as("padded id must resolve under nodes(ids:)")
+            .isNotNull()
+            .containsEntry("__typename", "Customer")
+            .containsEntry("firstName", "Mary");
     }
 
     @Test
@@ -1945,11 +1953,10 @@ class GraphQLQueryTest {
         Map<String, Object> data = execute(
             "{ nodes(ids: [\"" + c1 + "\", \"" + c2 + "\", \"" + c1 + "\"]) {"
             + " __typename ... on Customer { firstName lastName } } }");
-        List<Map<String, Object>> nodes = (List<Map<String, Object>>) data.get("nodes");
-        assertThat(nodes).hasSize(3);
-        assertThat(nodes.get(0).get("firstName")).isEqualTo("Mary");
-        assertThat(nodes.get(1).get("firstName")).isEqualTo("Patricia");
-        assertThat(nodes.get(2).get("firstName")).isEqualTo("Mary");
+        var nodes = assertThat(data).extractingByKey("nodes", as(LIST)).hasSize(3);
+        nodes.element(0, as(MAP)).containsEntry("firstName", "Mary");
+        nodes.element(1, as(MAP)).containsEntry("firstName", "Patricia");
+        nodes.element(2, as(MAP)).containsEntry("firstName", "Mary");
     }
 
     @Test
@@ -1964,12 +1971,13 @@ class GraphQLQueryTest {
         Map<String, Object> data = execute(
             "{ nodes(ids: [\"" + c1 + "\"]) {"
             + " __typename id ... on Customer { firstName customerId } } }");
-        List<Map<String, Object>> nodes = (List<Map<String, Object>>) data.get("nodes");
-        assertThat(nodes).hasSize(1);
-        assertThat(nodes.get(0).get("__typename")).isEqualTo("Customer");
-        assertThat(nodes.get(0).get("id")).isEqualTo(c1);
-        assertThat(nodes.get(0).get("firstName")).isEqualTo("Mary");
-        assertThat(nodes.get(0).get("customerId")).isEqualTo(1);
+        assertThat(data).extractingByKey("nodes", as(LIST))
+            .hasSize(1)
+            .first(as(MAP))
+            .containsEntry("__typename", "Customer")
+            .containsEntry("id", c1)
+            .containsEntry("firstName", "Mary")
+            .containsEntry("customerId", 1);
     }
 
     @Test
@@ -2026,16 +2034,17 @@ class GraphQLQueryTest {
         // Fetch page 1 cursor, use it for page 2, assert hasNextPage is false (2 stores total).
         Map<String, Object> page1 = execute(
             "{ stores(first: 1) { pageInfo { endCursor } } }");
-        String endCursor = (String) ((Map<String, Object>) ((Map<String, Object>) page1.get("stores")).get("pageInfo")).get("endCursor");
-        assertThat(endCursor).isNotNull();
+        String endCursor = assertThat(page1).extractingByKey("stores", as(MAP))
+            .extractingByKey("pageInfo", as(MAP))
+            .extractingByKey("endCursor", as(STRING))
+            .isNotNull()
+            .actual();
 
         Map<String, Object> page2 = execute(
             "{ stores(first: 1, after: \"" + endCursor + "\") { nodes { storeId } pageInfo { hasNextPage } } }");
-        var conn2 = (Map<String, Object>) page2.get("stores");
-        List<Map<String, Object>> nodes2 = (List<Map<String, Object>>) conn2.get("nodes");
-        assertThat(nodes2).hasSize(1);
-        var pageInfo2 = (Map<String, Object>) conn2.get("pageInfo");
-        assertThat(pageInfo2.get("hasNextPage")).isEqualTo(false);
+        var conn2 = assertThat(page2).extractingByKey("stores", as(MAP));
+        conn2.extractingByKey("nodes", as(LIST)).hasSize(1);
+        conn2.extractingByKey("pageInfo", as(MAP)).containsEntry("hasNextPage", false);
     }
 
     // ===== Service / tableMethod root fetchers =====
