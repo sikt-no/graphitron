@@ -191,6 +191,15 @@ class TestServiceStub {
         throw new UnsupportedOperationException();
     }
 
+    /**
+     * Returns the multi-ctor variant of the dummy payload. Used by the test that exercises
+     * canonical-constructor selection on hand-rolled {@code @record} POJOs that declare extra
+     * constructors alongside the canonical (all-fields) one.
+     */
+    public static no.sikt.graphitron.codereferences.dummyreferences.MultiCtorSakPayload runMultiCtorSak() {
+        throw new UnsupportedOperationException();
+    }
+
     // ===== R12 §4 declared-checked-exception fixtures =====
 
     /**

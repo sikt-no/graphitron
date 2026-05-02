@@ -452,6 +452,42 @@ class ErrorChannelClassificationTest {
         assertThat(f.errorChannel()).isEqualTo(Optional.<ErrorChannel>empty());
     }
 
+    @Test
+    void payloadWithMultipleConstructors_canonicalCtorIsSelectedByArity() {
+        // MultiCtorSakPayload declares two constructors: a no-arg one (defaulting fields) and the
+        // all-fields (String, List<?>) constructor that mirrors SakPayload's shape. The carrier
+        // classifier must pick the all-fields constructor by parameter count matching the SDL
+        // field count (2) rather than rejecting on the presence of multiple constructors.
+        String multiCtorPayloadFqn =
+            "no.sikt.graphitron.codereferences.dummyreferences.MultiCtorSakPayload";
+        String multiCtorServiceDecl =
+            "@service(service: {className: \"no.sikt.graphitron.rewrite.TestServiceStub\","
+                + " method: \"runMultiCtorSak\"})";
+        var schema = build("""
+            type ValidationErr @error(handlers: [{handler: VALIDATION}]) {
+                path: [String!]!
+                message: String!
+            }
+            type DbErr @error(handlers: [{handler: DATABASE, sqlState: "23503"}]) {
+                path: [String!]!
+                message: String!
+            }
+            union SakError = ValidationErr | DbErr
+            type SakPayload @record(record: {className: "%s"}) {
+                data: String
+                errors: [SakError]
+            }
+            type Query { sak: SakPayload %s }
+            """.formatted(multiCtorPayloadFqn, multiCtorServiceDecl));
+
+        var f = (QueryField.QueryServiceRecordField) schema.field("Query", "sak");
+        assertThat(f.errorChannel()).isPresent();
+        var ch = f.errorChannel().get();
+        assertThat(ch.errorsSlotIndex()).isEqualTo(1);
+        assertThat(ch.defaultedSlots()).hasSize(1);
+        assertThat(ch.defaultedSlots().get(0).name()).isEqualTo("data");
+    }
+
     private GraphitronSchema build(String schemaText) {
         return TestSchemaHelper.buildSchema(schemaText);
     }
