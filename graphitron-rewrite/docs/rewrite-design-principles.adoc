@@ -12,13 +12,15 @@ Signs a model type needs more pre-resolution:
 - A generator switches on a raw string, or recomputes a derived name from a field name.
 - The same multi-arm type switch recurs across multiple generators.
 - Generation and calling are conflated in the same model type.
-- A generator branches on a predicate over pre-resolved data (e.g. which side of a join holds the FK). The decision was not resolved, only its inputs were ; lift the fork into the model as a sealed sub-variant. Rule of thumb: if two generators branch on the same predicate over a model field, the branch belongs in the model.
+- A generator branches on a predicate over pre-resolved data (e.g. which side of a join holds the FK). The decision was not resolved, only its inputs were ; lift the fork into the model as a sealed sub-variant. Rule of thumb: if two consumers (generators, validators, resolvers, dispatchers) evaluate the same predicate over a model field, the branch belongs in the model. The same predicate evaluated by multiple consumers is a sign the resolver is under-specified, and an opportunity for one site to drift from another.
 
 == Sealed hierarchies over enums for typed information
 
 When different variants of a concept carry different data, use a sealed interface ; not an enum with a shared field set. An enum forces every variant to have the same shape; a sealed record hierarchy gives each variant exactly the fields it needs.
 
 `BatchKey` illustrates the pattern: `RowKeyed` / `RecordKeyed` / `MappedRowKeyed` / `MappedRecordKeyed` carry `parentKeyColumns: List<ColumnRef>`, while `LifterRowKeyed` carries a `JoinStep.LiftedHop` plus a `LifterRef`. The variants split across two sealed sub-interfaces (`ParentKeyed` for the catalog-PK arms, `RecordParentBatchKey` for the `@record`-parent arms) so side-aware accessors live exactly where they apply. None carry fields they don't use. The compiler enforces exhaustive switches ; when a new variant is added, every switch that doesn't handle it becomes a compile error.
+
+When variants split on independent axes (container × key-shape × backing-class for `BatchKey`; encode-direction for `HelperRef`'s `Encode` / `Decode`; etc.), use sealed sub-interfaces per axis rather than inventing a god accessor whose meaning depends on the variant. The R1 split removed `BatchKey.keyColumns()` ; a shared accessor whose semantics differed per arm ; in favour of `ParentKeyed.parentKeyColumns()` and `LifterRowKeyed.targetKeyColumns()` (via the contained `LiftedHop`). The smell to watch for: a single shared accessor that means "FK source columns" in one arm and "child target columns" in another. The split pushes the per-axis meaning into the type system.
 
 == Classification belongs at the parse boundary
 
@@ -54,6 +56,20 @@ When a builder step classifies inputs into many variants that project into *diff
 
 The key distinction from model-level sealed hierarchies: builder-internal hierarchies are ephemeral. They exist to structure a complex builder decision, not to carry information to generators. Generators never see `ArgumentRef` ; they see the projected results.
 
+== Builder-step results are sealed, not strings or out-params
+
+Every builder-step lift returns a sealed `Resolved` result; rejection is a variant, not a return-string-or-null. R6's lift of cross-cutting concerns out of `FieldBuilder` produced ten siblings on the same shape: `ServiceDirectiveResolver`, `TableMethodDirectiveResolver`, `ExternalFieldDirectiveResolver`, `LookupKeyDirectiveResolver`, `OrderByResolver`, `ConditionResolver`, `MutationInputResolver`, `EnumMappingResolver`, `BatchKeyLifterDirectiveResolver`, `NodeIdLeafResolver`. Each entry point returns a sealed `Resolved` (typically `{None | Ok | Rejected}`, or domain-specific arms like `ServiceDirectiveResolver.Resolved.{Success.{TableBound | Result | Scalar} | ErrorsLifted | Rejected}`), and the caller's switch is exhaustive across success and failure modes both.
+
+Anti-patterns this rule replaces:
+
+- A signature returning a nullable `MethodRef` plus a side-channel `errors.add(...)` call.
+- A bag record with six nullable components meaning "any combination of these may be set."
+- A tri-state `(null | empty-string | non-empty-string)` return where each value carries different meaning.
+
+When you find yourself reaching for any of those, the rule says lift the result onto a sealed `Resolved`. `EnumMappingResolver`'s reviewer-pass tightening replaced exactly such a tri-state with `EnumValidation.{NotEnum | Valid(fqcn) | Mismatch(message)}`; `MutationInputResolver` replaced eight string-equality comparisons across three sites with `DmlKindResult.{Absent | Kind | Unknown}` over a `DmlKind` enum.
+
+The principle generalises Principle 7 (builder-internal sealed hierarchies for multi-target classification): `ArgumentRef` is the canonical example of the *classification* axis, the `Resolved` siblings are the *result-of-a-step* axis. Both share the rule "rejection is a typed variant, not an out-of-band signal."
+
 == Model metadata over parallel type systems
 
 When the model already carries typed information, runtime data formats should derive from that metadata rather than inventing a parallel type system.
@@ -61,6 +77,16 @@ When the model already carries typed information, runtime data formats should de
 `OrderByResult` pairs `List<SortField<?>>` with `List<Field<?>>` ; each cursor column's `DataType` is already known. Cursor encode/decode should use `field.getDataType().convert()` for type-safe round-tripping, and `DSL.noField(field)` for the no-cursor seek case. This eliminates the need for a hand-rolled type-tag system (`i:`, `s:`, `l:`) in the cursor format ; the column metadata *is* the type information.
 
 The general principle: when the model has already classified and resolved type information at build time, that same information should drive any runtime format that needs types. A parallel type system in the runtime format is redundant and will diverge.
+
+== Wire-format encoding is a boundary concern, never a model concern
+
+Opaque wire formats (Relay NodeId base64 strings, Relay cursor strings, federation `_Any` representations) decode at the DataFetcher boundary into typed column tuples; everything downstream sees those tuples, not the wire shape. Conversely, the projection layer encodes column tuples back into wire format only at the same boundary. Variants representing the wire shape don't survive in the model.
+
+R50 is the worked example. The retired wire-shape carriers ; `InputField.NodeIdField` / `NodeIdReferenceField` / `NodeIdInFilterField` / `IdReferenceField`, `ChildField.NodeIdField` / `NodeIdReferenceField`, `BodyParam.NodeIdIn`, `LookupMapping.NodeIdMapping`, `ArgumentRef.ScalarArg.NodeIdArg` ; were each "the model says this is a NodeId" markers that forced downstream emitters to call `NodeIdEncoder.hasIds(...)` or similar wire-aware helpers across the boundary. The replacement: `CallSiteExtraction.NodeIdDecodeKeys.{SkipMismatchedElement | ThrowOnMismatch}` lives at the carrier slot where decode happens (input-fields, arg-level filters, lookup-key bindings); `CallSiteCompaction.NodeIdEncodeKeys(HelperRef.Encode)` lives at the projection slot where encode happens (column-shape carriers on output); `BodyParam.ColumnPredicate.{Eq | In | RowEq | RowIn}` carries the predicate shape over decoded column tuples without needing to know the predicate came from a wire-format input. Standard column predicates and lookup VALUES rows fall out for free.
+
+The pattern matches Connection-cursor encode/decode (which already lives at `ConnectionHelper.encodeCursor` / `decodeCursor` and never reached the model), and the federation `_Any` rep flow (which reads the rep at `EntityFetcherDispatch.resolveByReps` and walks alternatives over decoded values, never as opaque blobs).
+
+The general rule: for any opaque wire format, classify the failure mode (skip vs throw) and the direction (encode vs decode) at the boundary, never below it. A "this is a NodeId" or "this is a base64 cursor" marker spreading through the model is the same family of smell as a parallel runtime type system ; both are bypasses around classified information that the boundary already carries.
 
 == Validator mirrors classifier invariants
 
@@ -83,7 +109,7 @@ The remaining keys cover NodeId FK invariants (`nodeid-fk.direct-fk-keys-match`)
 
 Rule: if you relax a classifier check that an emitter relies on, audit every emitter site that consumes the corresponding shape, in the same commit. The compile-time failure of the generated `*Fetchers` source is the safety net; the audit is the cheap upstream version of the same signal.
 
-Enforcement: producers wear `@LoadBearingClassifierCheck(key = "...", description = "...")` and consumers wear `@DependsOnClassifierCheck(key = "...", reliesOn = "...")` (both under `no.sikt.graphitron.rewrite.model`). `LoadBearingGuaranteeAuditTest` walks the rewrite module's compiled output, groups by key, and fails on any consumer whose key has no producer (or any duplicate producer). When you add a new load-bearing classifier check, declare it with `@LoadBearingClassifierCheck` and tag every dependent emitter with `@DependsOnClassifierCheck`. The annotations also give you find-usages navigation between the two sides for free.
+Enforcement (the contractual form): producers wear `@LoadBearingClassifierCheck(key = "...", description = "...")` and consumers wear `@DependsOnClassifierCheck(key = "...", reliesOn = "...")` (both under `no.sikt.graphitron.rewrite.model`). `LoadBearingGuaranteeAuditTest` walks the rewrite module's compiled output, groups by key, and fails on any consumer whose key has no producer (or any duplicate producer). The annotation pair turns the discipline into a global review event: when you add a new load-bearing classifier check, declare it with `@LoadBearingClassifierCheck` and tag every dependent emitter with `@DependsOnClassifierCheck`; relaxing a producer surfaces as orphaned consumers across the codebase, not as a local edit. The annotations also give you find-usages navigation between the two sides for free. Producers without consumers are allowed: some classifier checks reject shapes for hygiene rather than because an emitter relies on them.
 
 == Pipeline tests are the primary behavioural tier
 

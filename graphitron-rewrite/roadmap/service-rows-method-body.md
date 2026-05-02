@@ -10,10 +10,11 @@ depends-on: []
 
 # Implement `@service` rows-method body
 
-`buildServiceRowsMethod` (`TypeFetcherGenerator.java:1501`) emits a stub that throws
-`UnsupportedOperationException`. Fill the body so `@service` batched fields actually
-invoke the user's service method and project results back into GraphQL. Three concerns
-in one emitter:
+First iteration shipped at `befc156` (alongside R49 Phase A close-out): `buildServiceRowsMethod` is no longer a stub. The body walks `MethodRef.params()` via `ArgCallEmitter.buildMethodBackedCallArgs` (`Sources → keys`, `DslContext → dsl` local, `Arg`/`Context` via the existing extraction path) and shapes as `[DSLContext dsl = ...; ] return ServiceClass.method(<args>);`. Both `ServiceTableField` and `ServiceRecordField` use the same parameterised emitter; the developer's method returns the loader's expected `Map`/`List` shape directly, so no per-record projection step is needed (graphql-java's downstream wiring resolves columns off whatever records the developer returns). End-to-end exercised by `GraphQLQueryTest.films_titleUppercase_resolvesViaServiceRecordFieldDataLoader` (parent `SELECT` + one batched DataLoader round-trip). R32 now tracks the four open follow-ups listed below; the original three-concern spec is preserved under "Original spec".
+
+## Original spec
+
+The spec described the body as three concerns in one emitter:
 
 1. **Argument assembly.** Walk `MethodRef.params()` and emit each parameter:
    `ParamSource.Context` via the existing `graphitronContext(env).getContextArgument(env, name)`
@@ -30,6 +31,8 @@ in one emitter:
 3. **Projection.** Call `<TargetType>.$fields(sel.getSelectionSet(), rec, env)` on each
    returned record so the response carries only selected columns. The `$fields` helper
    is already emitted on each generated `Type`.
+
+§1 shipped (the parameterised arg-assembly walk above). §3 turned out unnecessary: the developer's return value is handed back to graphql-java directly. §2 is the largest remaining piece of the original spec, captured under "Open follow-ups" below.
 
 ## Recovering element-shape
 
@@ -49,21 +52,6 @@ DataLoader keys stay `RowN` / `RecordN` regardless of element-shape: those are t
 tuples with cheap hashing/equality, while `TableRecord` carries dirty-flag state that's
 wrong for cache-key use. Element-shape is purely a conversion concern at the
 service-call boundary.
-
-## Status
-
-First iteration shipped at `befc156` (alongside R49 Phase B). The rows-method body now does:
-
-1. **Argument assembly walk** via `ArgCallEmitter.buildMethodBackedCallArgs` (`Sources` -> the
-   loader's `keys`, `DslContext` -> `dsl` local, `Arg` and `Context` via the existing extraction
-   path). Both `ServiceTableField` and `ServiceRecordField` use the same parameterised emitter.
-3. **Direct return.** Body shape is `[DSLContext dsl = ...; ] return ServiceClass.method(<args>);` —
-   the developer's method returns the loader's expected map / list shape directly, so no
-   per-record projection step is needed (graphql-java's downstream wiring resolves columns
-   off whatever records the developer returns).
-
-End-to-end exercised by `GraphQLQueryTest.films_titleUppercase_resolvesViaServiceRecordFieldDataLoader`:
-two SQL queries (parent SELECT + one batched DataLoader round-trip for all selected films).
 
 ## Open follow-ups
 
