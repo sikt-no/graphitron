@@ -357,14 +357,14 @@ public final class SplitRowsMethodEmitter {
     /**
      * Split* sibling of {@link #unsupportedReason(ChildField.SplitTableField)}. Same contract:
      * non-empty reason → field cannot be emitted today; empty → emittable.
+     *
+     * <p>Single-cardinality is gated upstream by
+     * {@code GraphitronSchemaValidator.validateRecordParentSingleCardinalityRejected} (R1 Phase 2e
+     * Invariant #10), so this helper only reports the condition-join shape — reaching the emitter
+     * with a single-cardinality {@link ChildField.RecordTableField} is a classifier / validator
+     * bug.
      */
     public static java.util.Optional<String> unsupportedReason(ChildField.RecordTableField rtf) {
-        boolean isList = rtf.returnType().wrapper().isList();
-        if (!isList) {
-            return java.util.Optional.of(
-                "Single-cardinality RecordTableField on '" + rtf.qualifiedName()
-                + "' not yet supported; list cardinality only.");
-        }
         if (JoinPathEmitter.hasConditionJoin(rtf.joinPath())) {
             return java.util.Optional.of(
                 "RecordTableField '" + rtf.qualifiedName() + "' with a condition-join step cannot be "
@@ -395,14 +395,14 @@ public final class SplitRowsMethodEmitter {
     /**
      * Split* sibling of {@link #unsupportedReason(ChildField.SplitTableField)}. Same contract:
      * non-empty reason → field cannot be emitted today; empty → emittable.
+     *
+     * <p>Single-cardinality is gated upstream by
+     * {@code GraphitronSchemaValidator.validateRecordParentSingleCardinalityRejected} (R1 Phase 2e
+     * Invariant #10), so this helper only reports the condition-join shape — reaching the emitter
+     * with a single-cardinality {@link ChildField.RecordLookupTableField} is a classifier /
+     * validator bug.
      */
     public static java.util.Optional<String> unsupportedReason(ChildField.RecordLookupTableField rltf) {
-        boolean isList = rltf.returnType().wrapper().isList();
-        if (!isList) {
-            return java.util.Optional.of(
-                "Single-cardinality RecordLookupTableField on '" + rltf.qualifiedName()
-                + "' not yet supported; list cardinality only.");
-        }
         if (JoinPathEmitter.hasConditionJoin(rltf.joinPath())) {
             return java.util.Optional.of(
                 "RecordLookupTableField '" + rltf.qualifiedName() + "' with a condition-join step cannot be "

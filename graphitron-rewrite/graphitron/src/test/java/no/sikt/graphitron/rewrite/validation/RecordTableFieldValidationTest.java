@@ -29,33 +29,37 @@ class RecordTableFieldValidationTest {
 
     private static final BatchKey.RecordParentBatchKey BATCH_KEY = new BatchKey.RowKeyed(List.of());
 
-    // Validator messages for the intra-variant runtime-stub branches of
-    // SplitRowsMethodEmitter.unsupportedReason(RecordTableField). Kept inline — a change to the
-    // production string breaks this test loudly and must be updated in the same commit.
-    private static final String SINGLE_CARDINALITY_STUB =
-        "Field 'FilmDetails.film': Single-cardinality RecordTableField on 'FilmDetails.film' "
-        + "not yet supported; list cardinality only.";
+    // Validator messages for RecordTableField. Kept inline — a change to the production string
+    // breaks this test loudly and must be updated in the same commit.
+    //
+    // SINGLE_CARDINALITY_GATE comes from the dedicated validator helper
+    // GraphitronSchemaValidator.validateRecordParentSingleCardinalityRejected (R1 Phase 2e
+    // Invariant #10), which surfaces as a build-time AUTHOR_ERROR. CONDITION_JOIN_STUB comes from
+    // the existing SplitRowsMethodEmitter.unsupportedReason runtime-stub delegation.
+    private static final String SINGLE_CARDINALITY_GATE =
+        "Field 'FilmDetails.film': RecordTableField returns a single-cardinality value; "
+        + "only list returns ('[T]') are supported in this release";
     private static final String CONDITION_JOIN_STUB =
         "Field 'FilmDetails.film': RecordTableField 'FilmDetails.film' with a condition-join step "
         + "cannot be emitted until classification-vocabulary item 5 resolves condition-method target tables";
 
     enum Case implements ValidatorCase {
 
-        SINGLE_NO_PATH("single cardinality, empty joinPath — single-cardinality stub fires first",
+        SINGLE_NO_PATH("single cardinality, empty joinPath — single-cardinality validator gate fires",
             new RecordTableField("FilmDetails", "film", null, filmReturn(new FieldWrapper.Single(true)), List.of(), List.of(), new OrderBySpec.None(), null, BATCH_KEY),
-            List.of(SINGLE_CARDINALITY_STUB)),
+            List.of(SINGLE_CARDINALITY_GATE)),
 
-        SINGLE_WITH_FK_PATH("single cardinality with FK path — single-cardinality stub surfaces as build error",
+        SINGLE_WITH_FK_PATH("single cardinality with FK path — single-cardinality validator gate fires",
             new RecordTableField("FilmDetails", "film", null, filmReturn(new FieldWrapper.Single(true)),
                 List.of(new JoinStep.FkJoin("language_film_id_fkey", "", null, List.of(), new TableRef("film", "", "", List.of()), List.of(), null, "")),
                 List.of(), new OrderBySpec.None(), null, BATCH_KEY),
-            List.of(SINGLE_CARDINALITY_STUB)),
+            List.of(SINGLE_CARDINALITY_GATE)),
 
-        SINGLE_WITH_CONDITION_ONLY("single cardinality with condition-only join step — single-cardinality stub fires first",
+        SINGLE_WITH_CONDITION_ONLY("single cardinality with condition-only join step — both gates fire",
             new RecordTableField("FilmDetails", "film", null, filmReturn(new FieldWrapper.Single(true)),
                 List.of(new JoinStep.ConditionJoin(new MethodRef.Basic("com.example.Conditions", "filmCondition", ClassName.get("org.jooq", "Condition"), List.of()), "")),
                 List.of(), new OrderBySpec.None(), null, BATCH_KEY),
-            List.of(SINGLE_CARDINALITY_STUB)),
+            List.of(SINGLE_CARDINALITY_GATE, CONDITION_JOIN_STUB)),
 
         LIST_WITH_CONDITION_ONLY("list cardinality with condition-only join step — condition-join stub surfaces as build error",
             new RecordTableField("FilmDetails", "film", null, filmReturn(new FieldWrapper.List(true, true)),
