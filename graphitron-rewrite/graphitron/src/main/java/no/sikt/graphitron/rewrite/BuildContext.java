@@ -871,11 +871,19 @@ class BuildContext {
                 targetTypeId = nt.typeId();
                 targetKeyColumns = nt.nodeKeyColumns();
             } else if (gqlObjType.hasAppliedDirective(DIR_NODE)) {
-                // @node declared without catalog metadata — no error, but empty keyColumns
-                // (caller must ensure table has real metadata or be aware of the empty list).
+                // First-pass / SDL-only @node: fall back to the catalog primary key, matching
+                // the same-table list branch and the cross-table FK branch below.
                 targetTypeId = argString(gqlObjType, DIR_NODE, ARG_TYPE_ID)
                     .orElse(refTypeName);
-                targetKeyColumns = List.of();
+                targetKeyColumns = catalog.findPkColumns(targetTableName).stream()
+                    .map(e -> new ColumnRef(e.sqlName(), e.javaName(), e.columnClass()))
+                    .toList();
+                if (targetKeyColumns.isEmpty()) {
+                    return new InputFieldResolution.Unresolved(name, null,
+                        "@nodeId(typeName: '" + refTypeName + "') targets table '" + targetTableName
+                        + "' which has @node but no resolvable key columns (no catalog metadata, "
+                        + "no @node(keyColumns:), no primary key)");
+                }
             } else {
                 return new InputFieldResolution.Unresolved(name, null,
                     "@nodeId(typeName:) type '" + refTypeName
