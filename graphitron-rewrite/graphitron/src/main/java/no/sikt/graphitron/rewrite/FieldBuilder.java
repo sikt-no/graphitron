@@ -1317,11 +1317,12 @@ class FieldBuilder {
     @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
         key = "error-channel.mappings-constant",
         description = "Every classified ErrorChannel carries a non-null mappingsConstantName "
-            + "derived from the payload class's simple name (toScreamingSnake). The "
-            + "ErrorMappingsClassGenerator groups channels by this name so identical channels "
-            + "share one Mapping[] constant; collisions on the same constant with different "
-            + "handler shapes are rejected at emission time. The §3 hash-suffix dedup is a "
-            + "follow-up addition.")
+            + "derived from the payload class's simple name (toScreamingSnake) at this point. "
+            + "The §3 cross-field hash-suffix dedup runs as a classifier-side pass "
+            + "(MappingsConstantNameDedup) on the full classified-fields map before the schema "
+            + "model is constructed, so two channels for the same payload class with different "
+            + "handler shapes receive distinct constant names; the ErrorMappingsClassGenerator "
+            + "consumes the resolved name directly.")
     private ErrorChannelResult resolveErrorChannel(ReturnTypeRef returnType) {
         // Channel detection runs against @record payloads; @table payloads can in principle
         // carry an errors field too, but synthesizing a payload-factory there requires shape

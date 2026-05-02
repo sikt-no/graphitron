@@ -360,10 +360,19 @@ wrapper + dispatch arm lands; phasing within is the implementer's call.
   `List<Object>`. SDL fixtures stop using `@record` co-locations on `@error`
   types. New fixtures cover the service-method-returns-domain-object shape and
   the validator integration.
-- **Resolve `mappingsConstantName` collision suffix at classify time.** Move
-  the dedup into the classifier so the resolved name lands on
-  `ErrorChannel.mappingsConstantName` before the emitter runs. Subsumes the
-  standalone "§3 hash-suffix dedup" follow-up. Independent of the chunk above.
+- Resolve `mappingsConstantName` collision suffix at classify time
+  (subsumes the standalone §3 hash-suffix dedup follow-up): **landed**.
+  The per-field classifier (`FieldBuilder.resolveErrorChannel`) stamps every
+  `ErrorChannel` with the bare `SCREAMING_SNAKE` payload-class name; the
+  classifier-side cross-field `MappingsConstantNameDedup` pass runs in
+  `GraphitronSchemaBuilder.buildSchema` immediately after the per-field loop
+  and before `GraphitronSchema` construction, so the resolved name lands on
+  `ErrorChannel.mappingsConstantName` before any emitter sees the schema.
+  Identical handler lists for the same payload share the bare name; distinct
+  shapes for the same payload get a deterministic 8-hex SHA-256-derived
+  suffix; different payload classes never share a constant. Direct unit
+  coverage in `MappingsConstantNameDedupTest`; emitter-tier integration in
+  `ErrorMappingsClassGeneratorTest`.
 - `@service` / `@tableMethod` declared checked exceptions checked against the
   field's `ErrorChannel` and routed through `ErrorRouter.dispatch` (§4).
 - [`checked-exceptions-typed-errors.md`](checked-exceptions-typed-errors.md) is
