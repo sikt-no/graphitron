@@ -1039,7 +1039,7 @@ public class TypeFetcherGenerator {
             ? ParameterizedTypeName.get(RESULT, recordClass)
             : recordClass;
         return buildServiceFetcherCommon(qstf.name(), qstf.method(), qstf.parentTypeName(),
-            returnType, qstf.errorChannel(), outputPackage);
+            returnType, qstf.errorChannel(), qstf.resultAssembly(), outputPackage);
     }
 
     /**
@@ -1061,7 +1061,7 @@ public class TypeFetcherGenerator {
                                                               String outputPackage) {
         TypeName returnType = computeServiceRecordReturnType(qsrf);
         return buildServiceFetcherCommon(qsrf.name(), qsrf.method(), qsrf.parentTypeName(),
-            returnType, qsrf.errorChannel(), outputPackage);
+            returnType, qsrf.errorChannel(), qsrf.resultAssembly(), outputPackage);
     }
 
     /**
@@ -1093,6 +1093,14 @@ public class TypeFetcherGenerator {
      * {@code GraphitronContext}-supplied {@code Validator}, and short-circuits with the
      * payload's errors-arm filled by the violations when any are produced (R12 §5).
      *
+     * <p>When {@code resultAssembly} is present, the success arm assembles the payload around
+     * the captured service-return local (R12 §2c "Slot resolution at classify time"): the
+     * service method returns the domain object the payload's result slot expects, and the
+     * emitter walks the constructor's slots positionally (result slot ← service return,
+     * errors slot ← {@code List.of()} when a channel is also present, every other slot ← its
+     * pre-resolved {@code defaultLiteral}). When absent, the emitter falls back to the
+     * legacy passthrough shape ({@code return service-value-as-payload}).
+     *
      * <p>The catch arm forks on {@code errorChannel}: a present channel routes through
      * {@code ErrorRouter.dispatch} with the channel's mapping table and synthesized payload
      * factory; an absent channel routes through {@code ErrorRouter.redact}. R12 §3.
@@ -1100,6 +1108,7 @@ public class TypeFetcherGenerator {
     private static MethodSpec buildServiceFetcherCommon(String fieldName, MethodRef method,
                                                         String parentTypeName, TypeName valueType,
                                                         Optional<ErrorChannel> errorChannel,
+                                                        Optional<no.sikt.graphitron.rewrite.model.ResultAssembly> resultAssembly,
                                                         String outputPackage) {
         var dslContextClass = ClassName.get("org.jooq", "DSLContext");
         var serviceClass = ClassName.bestGuess(method.className());
@@ -1124,17 +1133,64 @@ public class TypeFetcherGenerator {
         if (needsDsl) {
             builder.addStatement("$T dsl = graphitronContext(env).getDslContext(env)", dslContextClass);
         }
-        builder.addStatement("$T payload = $T.$L($L)",
-            valueType,
-            serviceClass,
-            method.methodName(),
-            ArgCallEmitter.buildMethodBackedCallArgs(method, null, conditionsClassName));
+        if (resultAssembly.isPresent()) {
+            // R12 §2c "service returns the domain object" shape: capture the service return in a
+            // typed local and assemble the payload around it via a positional constructor walk.
+            var ra = resultAssembly.get();
+            builder.addStatement("$T __row = $T.$L($L)",
+                ra.resultSlotType(),
+                serviceClass,
+                method.methodName(),
+                ArgCallEmitter.buildMethodBackedCallArgs(method, null, conditionsClassName));
+            builder.addCode(buildSuccessPayload(valueType, ra, errorChannel, "__row"));
+        } else {
+            // Legacy passthrough: service method returns the SDL payload class directly. The
+            // emitter forwards the return value into the DataFetcherResult without assembly.
+            builder.addStatement("$T payload = $T.$L($L)",
+                valueType,
+                serviceClass,
+                method.methodName(),
+                ArgCallEmitter.buildMethodBackedCallArgs(method, null, conditionsClassName));
+        }
         builder.addCode(returnSyncSuccess(valueType, "payload"));
         builder.nextControlFlow("catch ($T e)", Exception.class);
         builder.addCode(catchArm(outputPackage, errorChannel));
         builder.endControlFlow();
 
         return builder.build();
+    }
+
+    /**
+     * Emits the success-arm payload-construction block when a {@code ResultAssembly} is present
+     * on a service-backed fetcher (R12 §2c). Walks the constructor's slot indices
+     * {@code 0..N-1} (where {@code N == 1 + ra.defaultedSlots().size()}) and prints, per slot:
+     * the row local at {@code resultSlotIndex}, {@code List.of()} at the channel's
+     * {@code errorsSlotIndex} when a channel is also present, and the slot's pre-resolved
+     * {@code defaultLiteral} otherwise. The block declares a typed {@code payload} local that
+     * the caller's {@link #returnSyncSuccess} subsequently wraps in the {@link DataFetcherResult}.
+     */
+    private static CodeBlock buildSuccessPayload(TypeName valueType,
+                                                 no.sikt.graphitron.rewrite.model.ResultAssembly ra,
+                                                 Optional<ErrorChannel> errorChannel,
+                                                 String rowLocal) {
+        int slotCount = 1 + ra.defaultedSlots().size();
+        var defaultsByIndex = ra.defaultedSlots().stream()
+            .collect(java.util.stream.Collectors.toMap(s -> s.index(), s -> s.defaultLiteral()));
+        Integer errorsSlot = errorChannel.map(ErrorChannel::errorsSlotIndex).orElse(null);
+
+        var ctor = CodeBlock.builder().add("$T payload = new $T(", valueType, valueType);
+        for (int i = 0; i < slotCount; i++) {
+            if (i > 0) ctor.add(", ");
+            if (i == ra.resultSlotIndex()) {
+                ctor.add(rowLocal);
+            } else if (errorsSlot != null && i == errorsSlot) {
+                ctor.add("$T.of()", LIST);
+            } else {
+                ctor.add(defaultsByIndex.get(i));
+            }
+        }
+        ctor.add(");\n");
+        return ctor.build();
     }
 
     /** Whether any flattened handler on the channel is a {@code ValidationHandler}. */

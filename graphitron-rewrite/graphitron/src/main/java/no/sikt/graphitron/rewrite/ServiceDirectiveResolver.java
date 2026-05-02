@@ -227,11 +227,15 @@ final class ServiceDirectiveResolver {
                     : recordCls;
             }
             case ReturnTypeRef.ResultReturnType r -> {
-                if (r.fqClassName() == null) yield null;
-                ClassName resultCls = ClassName.bestGuess(r.fqClassName());
-                yield isList
-                    ? ParameterizedTypeName.get(ClassName.get("java.util", "List"), resultCls)
-                    : resultCls;
+                // ResultReturnType with a backing class is the @record-payload shape. Under R12 §2c
+                // the service method may either return the SDL payload class directly (legacy
+                // passthrough shape) OR a domain object that fits one of the payload class's
+                // canonical-constructor parameters (the new "service returns the domain object"
+                // shape). The strict TypeName-equals check can't tell those apart; the
+                // ResultAssembly resolver in FieldBuilder does. Return null here so the strict
+                // check is skipped, and let the carrier classifier emit a precise reject when
+                // neither the SDL payload nor any ctor-param shape matches.
+                yield null;
             }
             case ReturnTypeRef.ScalarReturnType ignored -> null;
             case ReturnTypeRef.PolymorphicReturnType ignored -> null;

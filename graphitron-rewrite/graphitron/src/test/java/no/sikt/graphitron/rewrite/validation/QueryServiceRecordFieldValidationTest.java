@@ -26,7 +26,7 @@ class QueryServiceRecordFieldValidationTest {
             new QueryServiceRecordField("Query", "externalData", null,
                 new ReturnTypeRef.ResultReturnType("Film", new FieldWrapper.Single(true), null),
                 new MethodRef.Basic("com.example.Service", "method", TypeName.VOID, List.of()),
-                Optional.empty()),
+                Optional.empty(), Optional.empty()),
             List.of());
 
         private final String description;

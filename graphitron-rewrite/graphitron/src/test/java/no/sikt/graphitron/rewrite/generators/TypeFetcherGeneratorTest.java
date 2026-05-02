@@ -678,7 +678,7 @@ class TypeFetcherGeneratorTest {
                 new MethodRef.Param.Typed("ids", "java.util.List<java.lang.Integer>",
                     new ParamSource.Arg(new CallSiteExtraction.Direct(), "ids"))));
         var field = new QueryField.QueryServiceTableField("Query", "filmsByService", null,
-            TestFixtures.tableBoundFilm(nonNullList()), method, Optional.empty());
+            TestFixtures.tableBoundFilm(nonNullList()), method, Optional.empty(), Optional.empty());
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
             List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
 
@@ -698,7 +698,7 @@ class TypeFetcherGeneratorTest {
             ClassName.get("java.lang", "Integer"),
             List.of(new MethodRef.Param.Typed("dsl", "org.jooq.DSLContext", new ParamSource.DslContext())));
         var field = new QueryField.QueryServiceRecordField("Query", "filmCount", null,
-            new ReturnTypeRef.ScalarReturnType("Int", single()), method, Optional.empty());
+            new ReturnTypeRef.ScalarReturnType("Int", single()), method, Optional.empty(), Optional.empty());
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
             List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
 
@@ -717,7 +717,7 @@ class TypeFetcherGeneratorTest {
         var method = new MethodRef.Basic(
             "com.example.Service", "filmCount", TypeName.INT, List.of());
         var field = new QueryField.QueryServiceRecordField("Query", "filmCount", null,
-            new ReturnTypeRef.ScalarReturnType("Int", single()), method, Optional.empty());
+            new ReturnTypeRef.ScalarReturnType("Int", single()), method, Optional.empty(), Optional.empty());
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
             List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
 
@@ -733,7 +733,7 @@ class TypeFetcherGeneratorTest {
             "com.example.Service", "tags",
             ArrayTypeName.of(ClassName.get("java.lang", "String")), List.of());
         var field = new QueryField.QueryServiceRecordField("Query", "tags", null,
-            new ReturnTypeRef.ScalarReturnType("Tags", single()), method, Optional.empty());
+            new ReturnTypeRef.ScalarReturnType("Tags", single()), method, Optional.empty(), Optional.empty());
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
             List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
 
@@ -752,7 +752,7 @@ class TypeFetcherGeneratorTest {
                 ClassName.get("java.lang", "String"),
                 ClassName.get("java.lang", "Integer")), List.of());
         var field = new QueryField.QueryServiceRecordField("Query", "stats", null,
-            new ReturnTypeRef.ScalarReturnType("Stats", single()), method, Optional.empty());
+            new ReturnTypeRef.ScalarReturnType("Stats", single()), method, Optional.empty(), Optional.empty());
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
             List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
 
@@ -770,7 +770,7 @@ class TypeFetcherGeneratorTest {
                 ClassName.get("java.util", "List"),
                 WildcardTypeName.subtypeOf(ClassName.get("java.lang", "Number"))), List.of());
         var field = new QueryField.QueryServiceRecordField("Query", "nums", null,
-            new ReturnTypeRef.ScalarReturnType("Nums", single()), method, Optional.empty());
+            new ReturnTypeRef.ScalarReturnType("Nums", single()), method, Optional.empty(), Optional.empty());
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
             List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
 
@@ -806,7 +806,7 @@ class TypeFetcherGeneratorTest {
             ClassName.bestGuess("com.example.SakPayload"), List.of());
         var field = new QueryField.QueryServiceRecordField("Query", "sak", null,
             new ReturnTypeRef.ScalarReturnType("SakPayload", single()), method,
-            Optional.of(sakPayloadChannel()));
+            Optional.of(sakPayloadChannel()), Optional.empty());
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
             List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
 
@@ -827,7 +827,7 @@ class TypeFetcherGeneratorTest {
         var method = new MethodRef.Basic(
             "com.example.Service", "filmCount", ClassName.get("java.lang", "Integer"), List.of());
         var field = new QueryField.QueryServiceRecordField("Query", "filmCount", null,
-            new ReturnTypeRef.ScalarReturnType("Int", single()), method, Optional.empty());
+            new ReturnTypeRef.ScalarReturnType("Int", single()), method, Optional.empty(), Optional.empty());
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
             List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
 
@@ -846,7 +846,7 @@ class TypeFetcherGeneratorTest {
             ClassName.get("no.sikt.graphitron.rewrite.test.jooq.tables.records", "FilmRecord"),
             List.of());
         var field = new QueryField.QueryServiceTableField("Query", "getFilm", null,
-            tableBoundFilm(single()), method, Optional.of(sakPayloadChannel()));
+            tableBoundFilm(single()), method, Optional.of(sakPayloadChannel()), Optional.empty());
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
             List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
 

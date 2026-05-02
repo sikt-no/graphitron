@@ -33,7 +33,7 @@ class MutationServiceTableFieldValidationTest {
             new MutationServiceTableField("Mutation", "externalMutation", null,
                 FILM_RETURN,
                 new MethodRef.Basic("com.example.Service", "method", TypeName.VOID, List.of()),
-                Optional.empty()),
+                Optional.empty(), Optional.empty()),
             List.of(stubbedError("Mutation.externalMutation", MutationServiceTableField.class)));
 
         private final String description;

@@ -32,7 +32,7 @@ class QueryServiceTableFieldValidationTest {
             new QueryServiceTableField("Query", "externalFilm", null,
                 FILM_RETURN,
                 new MethodRef.Basic("com.example.Service", "method", TypeName.VOID, List.of()),
-                Optional.empty()),
+                Optional.empty(), Optional.empty()),
             List.of());
 
         private final String description;
