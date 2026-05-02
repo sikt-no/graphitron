@@ -1786,68 +1786,156 @@ class TypeFetcherGeneratorTest {
             returnType, participants, filmActorChildJoinPaths());
     }
 
-    @Test
-    void childInterfaceField_connection_emitsParentRecordReadFromEnvSource() {
-        // B4c-1: child connection fetcher reads parentRecord from env.getSource() so each
-        // stage-1 branch can scope its WHERE to the carrier parent's PK.
-        var field = childInterfaceConnectionField("FilmActor", "relatedConnection", 5);
-        var spec = TypeFetcherGenerator.generateTypeSpec("FilmActor",
-            new TableRef("film_actor", "FILM_ACTOR", "FilmActor", List.of()),
-            null, List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
-        var body = method(spec, "relatedConnection").code().toString();
-        assertThat(body).contains("parentRecord = (org.jooq.Record) env.getSource()");
+    /**
+     * B4c-2 parent table fixture: synthetic single-column PK on film_actor so the unit tests
+     * can exercise the DataLoader-batched windowed CTE path. The actual sakila.film_actor PK is
+     * composite (film_id, actor_id), but the unit tests don't run real SQL; they only assert
+     * generator output. Picking a single-column PK keeps the v1 batched path engaged.
+     */
+    private static TableRef filmActorParentTableForBatched() {
+        return new TableRef("film_actor", "FILM_ACTOR", "FilmActor",
+            List.of(new ColumnRef("last_update", "LAST_UPDATE", "java.sql.Timestamp")));
     }
 
     @Test
-    void childInterfaceField_connection_appliesParentFkWherePerBranch() {
-        // Each branch of the UNION ALL carries .where(<participant>.<fk> =
-        // parentRecord.get(DSL.name("<parent_pk>"), <Type>.class)). Both branches must scope
-        // independently — without per-branch WHERE the union would return cross-product noise.
+    void childInterfaceField_connection_emitsDataLoaderRegisteringFetcher() {
+        // B4c-2: child connection fetcher registers a DataLoader keyed on the parent table's
+        // single-column PK (Row1<Timestamp> here) and delegates to a rows<Field>(keys, env)
+        // batch loader. This replaces B4c-1's per-parent-inline shape.
         var field = childInterfaceConnectionField("FilmActor", "relatedConnection", 5);
         var spec = TypeFetcherGenerator.generateTypeSpec("FilmActor",
-            new TableRef("film_actor", "FILM_ACTOR", "FilmActor", List.of()),
+            filmActorParentTableForBatched(),
             null, List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
         var body = method(spec, "relatedConnection").code().toString();
         assertThat(body)
-            .as("Film branch's WHERE references parentRecord film_id read")
-            .contains("stage1_Film.FILM_ID.eq(parentRecord.get(org.jooq.impl.DSL.name(\"film_id\"), java.lang.Integer.class))");
+            .as("DataLoader name: tenant-scoped path key")
+            .contains("graphitronContext(env).getTenantId(env)")
+            .contains("env.getExecutionStepInfo().getPath().getKeysOnly()");
         assertThat(body)
-            .as("Actor branch's WHERE references parentRecord actor_id read")
-            .contains("stage1_Actor.ACTOR_ID.eq(parentRecord.get(org.jooq.impl.DSL.name(\"actor_id\"), java.lang.Integer.class))");
+            .as("DataLoader<Row1<Timestamp>, ConnectionResult> registration")
+            .contains("org.jooq.Row1<java.sql.Timestamp>")
+            .contains("DataLoaderFactory.newDataLoader");
+        assertThat(body)
+            .as("Parent PK extraction from env.getSource() — single-column v1")
+            .contains("(org.jooq.Record) env.getSource()).get(no.sikt.graphitron.rewrite.test.jooq.Tables.FILM_ACTOR.LAST_UPDATE")
+            .contains("org.jooq.impl.DSL.row(fk0)");
+        assertThat(body)
+            .as("Async tail: thenApply lifts ConnectionResult into DataFetcherResult, exceptionally redacts")
+            .contains("loader.load(key, env)")
+            .contains(".thenApply(payload -> graphql.execution.DataFetcherResult.")
+            .contains(".exceptionally(t -> ");
     }
 
     @Test
-    void childInterfaceField_connection_inheritsConnectionScaffolding() {
-        // The child connection path reuses the B4a/B4b scaffolding: pagesTable derived table,
-        // ConnectionHelper.pageRequest, .seek/.limit, ConnectionResult carrier with the
-        // pagesTable and DSL.noCondition() so totalCount runs over the parent-scoped union.
+    void childInterfaceField_connection_emitsBatchedRowsMethod() {
+        // The rows method takes List<Row1<PK>> + env and returns List<ConnectionResult>; one
+        // ConnectionResult per parent in the batch.
         var field = childInterfaceConnectionField("FilmActor", "relatedConnection", 5);
         var spec = TypeFetcherGenerator.generateTypeSpec("FilmActor",
-            new TableRef("film_actor", "FILM_ACTOR", "FilmActor", List.of()),
+            filmActorParentTableForBatched(),
             null, List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
-        var body = method(spec, "relatedConnection").code().toString();
-        assertThat(body)
-            .contains("ConnectionHelper.pageRequest(first, last, after, before, 5,")
-            .contains("Table<?> pagesTable")
-            .contains(".asTable(\"pages\")")
-            .contains(".from(pagesTable)")
-            .contains(".seek(page.seekFields())")
-            .contains(".limit(page.limit())")
-            .contains(".util.ConnectionResult(payload, page, pagesTable, org.jooq.impl.DSL.noCondition())");
+        var rows = method(spec, "rowsRelatedConnection").code().toString();
+        assertThat(rows)
+            .as("empty-input short-circuit")
+            .contains("if (keys.isEmpty())")
+            .contains("return java.util.List.of();");
+        assertThat(rows)
+            .as("typed parentInput VALUES table")
+            .contains("org.jooq.Row2<java.lang.Integer, java.sql.Timestamp>[] parentRows")
+            .contains("org.jooq.impl.DSL.values(parentRows).as(\"parentInput\", \"idx\", \"last_update\")");
+        assertThat(rows)
+            .as("each parent row carries (DSL.inline(i), k.field1())")
+            .contains("org.jooq.impl.DSL.row(org.jooq.impl.DSL.inline(i), k.field1())");
+    }
+
+    @Test
+    void childInterfaceField_connection_appliesParentFkJoinPerBranch() {
+        // Each stage-1 branch JOINs parentInput on the participant FK column. Both branches
+        // must JOIN independently — without per-branch JOIN the union would return
+        // cross-product noise. Replaces B4c-1's per-branch parentRecord-WHERE shape.
+        var field = childInterfaceConnectionField("FilmActor", "relatedConnection", 5);
+        var spec = TypeFetcherGenerator.generateTypeSpec("FilmActor",
+            filmActorParentTableForBatched(),
+            null, List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+        var rows = method(spec, "rowsRelatedConnection").code().toString();
+        assertThat(rows)
+            .as("Film branch JOINs parentInput on FILM_ID")
+            .contains("stage1_Film.FILM_ID.eq(parentInput.field(\"last_update\", java.sql.Timestamp.class))");
+        assertThat(rows)
+            .as("Actor branch JOINs parentInput on ACTOR_ID")
+            .contains("stage1_Actor.ACTOR_ID.eq(parentInput.field(\"last_update\", java.sql.Timestamp.class))");
+        assertThat(rows)
+            .as("each branch projects parentInput.field(0) as __idx__")
+            .contains("parentInput.field(0, java.lang.Integer.class).as(\"__idx__\")");
+    }
+
+    @Test
+    void childInterfaceField_connection_emitsRankedCteWithRowNumber() {
+        // The windowed CTE wraps pagesTable in a ROW_NUMBER() OVER (PARTITION BY __idx__
+        // ORDER BY effectiveOrderBy) envelope; the outer SELECT filters __rn__ <= page.limit()
+        // for per-partition limit.
+        var field = childInterfaceConnectionField("FilmActor", "relatedConnection", 5);
+        var spec = TypeFetcherGenerator.generateTypeSpec("FilmActor",
+            filmActorParentTableForBatched(),
+            null, List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+        var rows = method(spec, "rowsRelatedConnection").code().toString();
+        assertThat(rows)
+            .as("pagesTable derived table")
+            .contains(".asTable(\"pages\")");
+        assertThat(rows)
+            .as("ranked CTE with ROW_NUMBER over PARTITION BY __idx__")
+            .contains("org.jooq.impl.DSL.rowNumber().over(org.jooq.impl.DSL.partitionBy(idxField).orderBy(page.effectiveOrderBy())).as(\"__rn__\")")
+            .contains(".asTable(\"ranked\")");
+        assertThat(rows)
+            .as("ranked CTE applies orderBy + seek BEFORE rn is computed")
+            .contains(".orderBy(page.effectiveOrderBy())")
+            .contains(".seek(page.seekFields())");
+        assertThat(rows)
+            .as("outer SELECT filters __rn__ <= page.limit()")
+            .contains("ranked.field(\"__rn__\", java.lang.Integer.class).le(org.jooq.impl.DSL.val(page.limit()))");
+    }
+
+    @Test
+    void childInterfaceField_connection_perParentConnectionResultsCarryIdxCondition() {
+        // The scatter loop wraps each per-parent bucket in ConnectionResult(bucket, page,
+        // pagesTable, idxField.eq(i)). totalCount per parent runs SELECT count(*) FROM pages
+        // WHERE __idx__ = :i.
+        var field = childInterfaceConnectionField("FilmActor", "relatedConnection", 5);
+        var spec = TypeFetcherGenerator.generateTypeSpec("FilmActor",
+            filmActorParentTableForBatched(),
+            null, List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+        var rows = method(spec, "rowsRelatedConnection").code().toString();
+        assertThat(rows)
+            .as("parallel parentIdxByOuter array populated from stage1's __idx__")
+            .contains("int[] parentIdxByOuter = new int[stage1.size()]")
+            .contains("parentIdxByOuter[outerIdx] = r.get(\"__idx__\", java.lang.Integer.class)");
+        assertThat(rows)
+            .as("scatter into per-parent buckets keyed by parentIdxByOuter")
+            .contains("buckets.get(parentIdxByOuter[outerIdx]).add(r)");
+        assertThat(rows)
+            .as("per-parent ConnectionResult carries shared pagesTable + idxField.eq(i)")
+            .contains(".util.ConnectionResult(buckets.get(i), page, pagesTable, idxField.eq(i))");
     }
 
     @Test
     void childUnionField_connection_emitsSameShapeAsChildInterface() {
-        // Union variant parity: same emitter, same body shape under the connection path.
+        // Union variant parity: same emitter, same body shape under the batched connection path.
         var field = childUnionConnectionField("FilmActor", "relatedConnection", 5);
         var spec = TypeFetcherGenerator.generateTypeSpec("FilmActor",
-            new TableRef("film_actor", "FILM_ACTOR", "FilmActor", List.of()),
+            filmActorParentTableForBatched(),
             null, List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
-        var body = method(spec, "relatedConnection").code().toString();
-        assertThat(body)
-            .contains("parentRecord = (org.jooq.Record) env.getSource()")
-            .contains("stage1_Film.FILM_ID.eq(parentRecord.get(org.jooq.impl.DSL.name(\"film_id\"), java.lang.Integer.class))")
-            .contains(".asTable(\"pages\")")
-            .contains(".util.ConnectionResult(payload, page, pagesTable, org.jooq.impl.DSL.noCondition())");
+        var fetcher = method(spec, "relatedConnection").code().toString();
+        var rows = method(spec, "rowsRelatedConnection").code().toString();
+        assertThat(fetcher)
+            .as("union variant: same DataLoader-registering main fetcher")
+            .contains("DataLoaderFactory.newDataLoader")
+            .contains("loader.load(key, env)");
+        assertThat(rows)
+            .as("union variant: same JOIN parentInput per branch")
+            .contains("stage1_Film.FILM_ID.eq(parentInput.field(\"last_update\", java.sql.Timestamp.class))")
+            .contains("stage1_Actor.ACTOR_ID.eq(parentInput.field(\"last_update\", java.sql.Timestamp.class))");
+        assertThat(rows)
+            .as("union variant: same per-parent ConnectionResult with idxField.eq(i)")
+            .contains(".util.ConnectionResult(buckets.get(i), page, pagesTable, idxField.eq(i))");
     }
 }

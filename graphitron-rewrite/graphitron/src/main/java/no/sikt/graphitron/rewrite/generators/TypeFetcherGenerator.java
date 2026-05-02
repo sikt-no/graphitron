@@ -428,7 +428,7 @@ public class TypeFetcherGenerator {
                     if (f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
                         MultiTablePolymorphicEmitter
                             .emitConnectionMethods(f.name(), f.participants(), f.participantJoinPaths(),
-                                conn.defaultPageSize(), outputPackage, jooqPackage)
+                                conn.defaultPageSize(), parentTable, outputPackage, jooqPackage)
                             .forEach(builder::addMethod);
                     } else {
                         MultiTablePolymorphicEmitter
@@ -441,7 +441,7 @@ public class TypeFetcherGenerator {
                     if (f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
                         MultiTablePolymorphicEmitter
                             .emitConnectionMethods(f.name(), f.participants(), f.participantJoinPaths(),
-                                conn.defaultPageSize(), outputPackage, jooqPackage)
+                                conn.defaultPageSize(), parentTable, outputPackage, jooqPackage)
                             .forEach(builder::addMethod);
                     } else {
                         MultiTablePolymorphicEmitter

@@ -12,6 +12,7 @@ import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.QueryField;
+import no.sikt.graphitron.rewrite.model.TableRef;
 
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
@@ -56,13 +57,21 @@ public final class MultiTablePolymorphicEmitter {
     /** Stage-1 PK projection alias suffix. */
     public static final String PK_COLUMN_SUFFIX = "__";
 
-    private static final ClassName ARRAY_LIST       = ClassName.get("java.util", "ArrayList");
-    private static final ClassName LINKED_HASH_MAP  = ClassName.get("java.util", "LinkedHashMap");
-    private static final ClassName MAP              = ClassName.get("java.util", "Map");
-    private static final ClassName FIELD            = ClassName.get("org.jooq", "Field");
-    private static final ClassName SORT_FIELD       = ClassName.get("org.jooq", "SortField");
-    private static final ClassName TABLE            = ClassName.get("org.jooq", "Table");
-    private static final ClassName DSL_CONTEXT      = ClassName.get("org.jooq", "DSLContext");
+    private static final ClassName ARRAY_LIST          = ClassName.get("java.util", "ArrayList");
+    private static final ClassName LINKED_HASH_MAP     = ClassName.get("java.util", "LinkedHashMap");
+    private static final ClassName MAP                 = ClassName.get("java.util", "Map");
+    private static final ClassName FIELD               = ClassName.get("org.jooq", "Field");
+    private static final ClassName SORT_FIELD          = ClassName.get("org.jooq", "SortField");
+    private static final ClassName TABLE               = ClassName.get("org.jooq", "Table");
+    private static final ClassName DSL_CONTEXT         = ClassName.get("org.jooq", "DSLContext");
+    private static final ClassName ROW1                = ClassName.get("org.jooq", "Row1");
+    private static final ClassName ROW2                = ClassName.get("org.jooq", "Row2");
+    private static final ClassName RECORD2             = ClassName.get("org.jooq", "Record2");
+    private static final ClassName DATA_LOADER         = ClassName.get("org.dataloader", "DataLoader");
+    private static final ClassName DATA_LOADER_FACTORY = ClassName.get("org.dataloader", "DataLoaderFactory");
+    private static final ClassName BATCH_LOADER_ENV    = ClassName.get("org.dataloader", "BatchLoaderEnvironment");
+    private static final ClassName COMPLETABLE_FUTURE  = ClassName.get("java.util.concurrent", "CompletableFuture");
+    private static final ClassName DATA_FETCHER_RESULT = ClassName.get("graphql.execution", "DataFetcherResult");
     /** Stage-1 derived-table alias used by the connection-mode UNION-ALL wrapper. */
     private static final String CONNECTION_PAGES_ALIAS = "pages";
     /** Local variable name carrying the UNION-ALL derived table — referenced by both the page query and {@code ConnectionResult.table()} for {@code totalCount}. */
@@ -145,23 +154,14 @@ public final class MultiTablePolymorphicEmitter {
             int defaultPageSize,
             String outputPackage, String jooqPackage) {
         return emitConnectionMethods(fieldName, participants, Map.of(), defaultPageSize,
-            outputPackage, jooqPackage);
+            null, outputPackage, jooqPackage);
     }
 
     /**
-     * Connection-fetcher overload for child interface/union fields (R36 Track B4c-1). Same shape
-     * as the root form but each stage-1 branch carries a parent-FK {@code WHERE} predicate
-     * derived from the participant's auto-discovered FK back to the parent table, mirroring
-     * B3's child case for the list path. The main fetcher reads {@code parentRecord} from
-     * {@code env.getSource()} when {@code participantJoinPaths} is non-empty.
-     *
-     * <p>Per-parent inline shape: each parent row triggers its own polymorphic UNION-ALL +
-     * pagination. DataLoader-batched windowed CTE form (one query per request) is the B4c-2
-     * follow-up; see {@code stub-interface-union-fetchers.md}.
-     *
-     * @param participantJoinPaths typename-keyed FK chain from the parent table to each
-     *                              {@link ParticipantRef.TableBound} participant. Empty for
-     *                              root-fetcher emission. v1 supports only single-hop FK chains.
+     * Backwards-compatible 6-arg overload: equivalent to the 7-arg form with
+     * {@code parentTable = null}. Tests that synthesise a child interface/union field without
+     * going through {@code generateTypeSpec} call this overload and stay on the per-parent
+     * inline (B4c-1) path.
      */
     public static List<MethodSpec> emitConnectionMethods(
             String fieldName,
@@ -169,13 +169,73 @@ public final class MultiTablePolymorphicEmitter {
             Map<String, List<JoinStep>> participantJoinPaths,
             int defaultPageSize,
             String outputPackage, String jooqPackage) {
+        return emitConnectionMethods(fieldName, participants, participantJoinPaths,
+            defaultPageSize, null, outputPackage, jooqPackage);
+    }
+
+    /**
+     * Connection-fetcher overload for child interface/union fields. Two forms switch on
+     * {@code parentTable}:
+     *
+     * <ul>
+     *   <li><b>{@code parentTable == null}</b> (B4c-1 per-parent inline) — the main fetcher
+     *       reads {@code parentRecord = (Record) env.getSource()} and each stage-1 branch
+     *       carries a {@code WHERE <participant>.<fk> = parentRecord.<parent_pk>} predicate.
+     *       One polymorphic UNION-ALL + pagination per parent invocation; N+1 across siblings
+     *       sharing the parent type.</li>
+     *   <li><b>{@code parentTable != null}</b> (B4c-2 DataLoader-batched windowed CTE) — emits
+     *       a {@code DataLoader}-registering main fetcher plus a {@code rows<Field>(List<Row1<PK>>, env)}
+     *       rows method. The rows method builds a typed {@code parentInput} {@code VALUES (idx, parent_pk)}
+     *       table, runs ONE polymorphic UNION-ALL with {@code JOIN parentInput} per branch, wraps
+     *       it in a {@code WITH ranked AS (... ROW_NUMBER() OVER (PARTITION BY __idx__ ORDER BY effectiveOrderBy))}
+     *       CTE, and filters {@code __rn__ <= page.limit()}. Stage 2 dispatches per typename
+     *       (reusing {@link #buildPerTypenameSelect}) and writes typed Records to
+     *       {@code result[outerIdx]}; the scatter loop uses a parallel
+     *       {@code int[] parentIdxByOuter} populated from each stage-1 row's {@code __idx__}
+     *       to bucket the typed Records into per-parent {@code List<Record>} payloads. Each
+     *       per-parent {@code ConnectionResult} reuses the shared {@code pagesTable} derived
+     *       table with a per-parent condition {@code __idx__.eq(i)} so {@code totalCount}
+     *       resolves to the parent's UNION-ALL row count via
+     *       {@code SELECT count(*) FROM pagesTable WHERE __idx__ = :i}. Eliminates B4c-1's
+     *       N+1 page-rows query at the cost of N totalCount queries when selected (vs. one
+     *       per parent invocation under B4c-1).</li>
+     * </ul>
+     *
+     * <p>v1 batched scope: single-column parent PK (the {@code parentInput} VALUES table is
+     * typed {@code Row2<Integer, ParentPkClass>}). Multi-column parent PK is a follow-up that
+     * widens to {@code RowN}. Single-hop FK paths only, single-column participant PK only
+     * (validator already enforces the latter for connection mode).
+     *
+     * @param participantJoinPaths typename-keyed FK chain from the parent table to each
+     *                              {@link ParticipantRef.TableBound} participant. Empty for
+     *                              root-fetcher emission. v1 supports only single-hop FK chains.
+     * @param parentTable           the enclosing parent type's {@link TableRef}; when non-null
+     *                              and {@code participantJoinPaths} is non-empty, dispatches to
+     *                              the B4c-2 DataLoader-batched form.
+     */
+    public static List<MethodSpec> emitConnectionMethods(
+            String fieldName,
+            List<ParticipantRef> participants,
+            Map<String, List<JoinStep>> participantJoinPaths,
+            int defaultPageSize,
+            TableRef parentTable,
+            String outputPackage, String jooqPackage) {
         var tableBoundParticipants = participants.stream()
             .filter(p -> p instanceof ParticipantRef.TableBound)
             .map(p -> (ParticipantRef.TableBound) p)
             .toList();
         var methods = new ArrayList<MethodSpec>();
-        methods.add(buildConnectionFetcher(fieldName, tableBoundParticipants,
-            participantJoinPaths, defaultPageSize, outputPackage, jooqPackage));
+        boolean batched = parentTable != null && !participantJoinPaths.isEmpty()
+            && !tableBoundParticipants.isEmpty();
+        if (batched) {
+            methods.add(buildBatchedConnectionFetcher(fieldName, parentTable,
+                outputPackage, jooqPackage));
+            methods.add(buildBatchedConnectionRowsMethod(fieldName, tableBoundParticipants,
+                participantJoinPaths, defaultPageSize, parentTable, outputPackage, jooqPackage));
+        } else {
+            methods.add(buildConnectionFetcher(fieldName, tableBoundParticipants,
+                participantJoinPaths, defaultPageSize, outputPackage, jooqPackage));
+        }
         for (var participant : tableBoundParticipants) {
             methods.add(buildPerTypenameSelect(fieldName, participant, true,
                 outputPackage, jooqPackage));
@@ -624,6 +684,359 @@ public final class MultiTablePolymorphicEmitter {
     }
 
     /**
+     * R36 Track B4c-2 main fetcher: registers a {@link org.dataloader.DataLoader} keyed on the
+     * parent table's PK and delegates to a {@code rows<Field>(List<Row1<PK>>, env)} batch loader.
+     * The body shape mirrors {@code TypeFetcherGenerator.buildSplitQueryDataFetcher}: build the
+     * tenant-scoped DataLoader name, {@code computeIfAbsent} the loader, extract the parent PK
+     * from {@code env.getSource()} as a typed {@code Row1<PK>}, then return
+     * {@code loader.load(key, env).thenApply(...).exceptionally(...)} — the same async-tail
+     * shape every other DataLoader-batched fetcher uses.
+     *
+     * <p>v1 supports single-column parent PK; multi-column widens to {@code RowN}.
+     */
+    private static MethodSpec buildBatchedConnectionFetcher(
+            String fieldName, TableRef parentTable,
+            String outputPackage, String jooqPackage) {
+
+        var connectionResultClass = ClassName.get(outputPackage + ".util",
+            no.sikt.graphitron.rewrite.generators.util.ConnectionResultClassGenerator.CLASS_NAME);
+        TypeName valueType = connectionResultClass;
+
+        var pkCols = parentTable.primaryKeyColumns();
+        if (pkCols.size() != 1) {
+            throw new IllegalStateException(
+                "B4c-2 batched child connection requires a single-column parent PK; got arity "
+                + pkCols.size() + " for parent table '" + parentTable.tableName() + "'. "
+                + "Multi-column parent PK widens to RowN as a follow-up.");
+        }
+        ColumnRef parentPk0 = pkCols.get(0);
+        ClassName parentPkClass = ClassName.bestGuess(parentPk0.columnClass());
+        TypeName keyType = ParameterizedTypeName.get(ROW1, parentPkClass);
+        TypeName loaderType = ParameterizedTypeName.get(DATA_LOADER, keyType, valueType);
+        TypeName lambdaKeysType = ParameterizedTypeName.get(LIST, keyType);
+        String rowsMethodName = "rows" + cap(fieldName);
+
+        var lambdaBlock = CodeBlock.builder()
+            .add("($T keys, $T batchEnv) -> {\n", lambdaKeysType, BATCH_LOADER_ENV)
+            .indent()
+            .addStatement("$T dfe = ($T) batchEnv.getKeyContextsList().get(0)", ENV, ENV)
+            .addStatement("return $T.completedFuture($L(keys, dfe))", COMPLETABLE_FUTURE, rowsMethodName)
+            .unindent()
+            .add("}")
+            .build();
+
+        var tablesClass = ClassName.get(jooqPackage, "Tables");
+
+        var builder = MethodSpec.methodBuilder(fieldName)
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(asyncResultType(valueType))
+            .addParameter(ENV, "env");
+
+        // DataLoader name: tenant + path. Inlined here (the helper lives on TypeFetcherGenerator
+        // and stays private there); the emitted bytes are identical so the batching scope is the
+        // same as Split* fetchers — graphql-java records aliases as path keys, so aliased uses
+        // get distinct DataLoaders.
+        builder.addStatement(
+            "$T name = graphitronContext(env).getTenantId(env) + $S + $T.join($S, env.getExecutionStepInfo().getPath().getKeysOnly())",
+            String.class, "/", String.class, "/");
+        builder.addCode(
+            "$T loader = env.getDataLoaderRegistry()\n"
+            + "    .computeIfAbsent(name, k -> $T.newDataLoader($L));\n",
+            loaderType, DATA_LOADER_FACTORY, lambdaBlock);
+
+        // Parent PK extraction — single-column v1.
+        builder.addStatement("$T fk0 = (($T) env.getSource()).get($T.$L.$L)",
+            parentPkClass, RECORD, tablesClass, parentTable.javaFieldName(), parentPk0.javaName());
+        builder.addStatement("$T key = $T.row(fk0)", keyType, DSL);
+
+        builder.addCode(CodeBlock.builder()
+            .add("return loader.load(key, env)\n")
+            .add("    ").add(asyncWrapTail(valueType, outputPackage)).add(";\n")
+            .build());
+
+        return builder.build();
+    }
+
+    /**
+     * R36 Track B4c-2 rows method: issues ONE SQL statement covering every parent in the
+     * DataLoader batch, scatters typed Records into a {@code List<ConnectionResult>} indexed
+     * 1:1 with the {@code keys} list.
+     *
+     * <p>Stage-1 shape:
+     * <pre>{@code
+     * Table<?> pagesTable =
+     *     dsl.select(<typename, pk0, sort, parentInput.idx>)
+     *        .from(stage1_Customer).join(parentInput).on(stage1_Customer.address_id = parentInput.address_id)
+     *     .unionAll(
+     *     dsl.select(<...>)
+     *        .from(stage1_Staff).join(parentInput).on(stage1_Staff.address_id = parentInput.address_id))
+     *     .asTable("pages");
+     * Table<?> ranked = dsl
+     *     .select(__typename, __pk0__, __sort__, __idx__,
+     *             ROW_NUMBER() OVER (PARTITION BY __idx__ ORDER BY page.effectiveOrderBy()) AS __rn__)
+     *     .from(pagesTable)
+     *     .orderBy(page.effectiveOrderBy())
+     *     .seek(page.seekFields())
+     *     .asTable("ranked");
+     * Result<? extends Record> stage1 = dsl.select().from(ranked)
+     *     .where(ranked.field("__rn__", Integer.class).le(DSL.val(page.limit())))
+     *     .fetch();
+     * }</pre>
+     *
+     * <p>Stage-2 dispatch (per typename) writes typed Records to {@code result[outerIdx]}; a
+     * parallel {@code int[] parentIdxByOuter} populated from each stage-1 row's {@code __idx__}
+     * scatters the typed Records into per-parent {@code List<Record>} buckets. Each
+     * per-parent {@code ConnectionResult} re-uses the SAME {@code pagesTable} reference but
+     * applies a per-parent condition {@code __idx__.eq(i)} so {@code totalCount} resolves to
+     * that parent's count via {@code SELECT count(*) FROM pagesTable WHERE __idx__ = :i} — N
+     * count queries when totalCount is selected (vs. one per page invocation under B4c-1's
+     * inline form), but the page-rows query is now batched.
+     *
+     * <p>Cursor semantics: graphql-java resolves field arguments once per field selection
+     * regardless of parent-fanout, so every key in the batch shares the same
+     * {@code first/last/after/before} values. The shared {@code PageRequest} produces
+     * {@code page.effectiveOrderBy()} and {@code page.seekFields()} which fold into both the
+     * {@code ROW_NUMBER() OVER (...)} clause and the seek-WHERE before {@code __rn__} is
+     * computed; per-partition limit is enforced by {@code __rn__ <= page.limit()} on the outer
+     * SELECT.
+     */
+    private static MethodSpec buildBatchedConnectionRowsMethod(
+            String fieldName, List<ParticipantRef.TableBound> participants,
+            Map<String, List<JoinStep>> participantJoinPaths,
+            int defaultPageSize, TableRef parentTable,
+            String outputPackage, String jooqPackage) {
+
+        var connectionResultClass = ClassName.get(outputPackage + ".util",
+            no.sikt.graphitron.rewrite.generators.util.ConnectionResultClassGenerator.CLASS_NAME);
+        var connectionHelperClass = ClassName.get(outputPackage + ".util",
+            no.sikt.graphitron.rewrite.generators.util.ConnectionHelperClassGenerator.CLASS_NAME);
+        var pageRequestClass = ClassName.get(outputPackage + ".util",
+            "ConnectionHelper", "PageRequest");
+        var integerClass = ClassName.get(Integer.class);
+        var stringClass = ClassName.get(String.class);
+
+        String rowsMethodName = "rows" + cap(fieldName);
+
+        // Parent PK (single column v1, enforced by buildBatchedConnectionFetcher).
+        ColumnRef parentPk0 = parentTable.primaryKeyColumns().get(0);
+        ClassName parentPkClass = ClassName.bestGuess(parentPk0.columnClass());
+        TypeName keyType = ParameterizedTypeName.get(ROW1, parentPkClass);
+        TypeName keysListType = ParameterizedTypeName.get(LIST, keyType);
+        TypeName listOfConnectionResult = ParameterizedTypeName.get(LIST, connectionResultClass);
+
+        // Participant PK (single column for connection mode — validator enforces).
+        ColumnRef firstParticipantPk = participants.get(0).table().primaryKeyColumns().get(0);
+        ClassName participantPkClass = ClassName.bestGuess(firstParticipantPk.columnClass());
+
+        var b = CodeBlock.builder();
+
+        // Empty-input short-circuit — before touching the DSL context.
+        b.beginControlFlow("if (keys.isEmpty())");
+        b.addStatement("return $T.of()", LIST);
+        b.endControlFlow();
+
+        b.addStatement("$T dsl = graphitronContext(env).getDslContext(env)", DSL_CONTEXT);
+
+        // Per-participant table aliases for stage 1.
+        var tablesClass = ClassName.get(jooqPackage, "Tables");
+        for (var participant : participants) {
+            var jooqTableClass = ClassName.get(jooqPackage + ".tables", participant.table().javaClassName());
+            String alias = "stage1_" + participant.typeName();
+            b.addStatement("$T $L = $T.$L", jooqTableClass, alias, tablesClass, participant.table().javaFieldName());
+        }
+
+        // VALUES (idx, parent_pk0) → typed Row2<Integer, ParentPkClass>.
+        TypeName parentRowType = ParameterizedTypeName.get(ROW2, integerClass, parentPkClass);
+        TypeName parentRecordType = ParameterizedTypeName.get(RECORD2, integerClass, parentPkClass);
+        TypeName parentInputTableType = ParameterizedTypeName.get(TABLE, parentRecordType);
+
+        b.add("@$T({$S, $S})\n", ClassName.get("java.lang", "SuppressWarnings"), "unchecked", "rawtypes");
+        b.addStatement("$T[] parentRows = ($T[]) new $T[keys.size()]",
+            parentRowType, parentRowType, ROW2);
+        b.beginControlFlow("for (int i = 0; i < keys.size(); i++)");
+        b.addStatement("$T k = keys.get(i)", keyType);
+        b.addStatement("parentRows[i] = $T.row($T.inline(i), k.field1())", DSL, DSL);
+        b.endControlFlow();
+
+        b.addStatement("$T parentInput = $T.values(parentRows).as($S, $S, $S)",
+            parentInputTableType, DSL, "parentInput", "idx", parentPk0.sqlName());
+
+        // Pagination args (shared across the batch — graphql-java resolves field args once per
+        // selection regardless of fanout).
+        b.addStatement("$T first = env.getArgument($S)", integerClass, "first");
+        b.addStatement("$T last = env.getArgument($S)", integerClass, "last");
+        b.addStatement("$T after = env.getArgument($S)", stringClass, "after");
+        b.addStatement("$T before = env.getArgument($S)", stringClass, "before");
+
+        // Sort fields — sortField is typed by the participant PK class (validator enforces
+        // single-column participant PK in connection mode); tieField gives deterministic
+        // ordering for cross-participant PK ties.
+        TypeName sortFieldType = ParameterizedTypeName.get(FIELD, participantPkClass);
+        b.addStatement("$T sortField = $T.field($T.name($S), $T.class)",
+            sortFieldType, DSL, DSL, SORT_COLUMN, participantPkClass);
+        TypeName fieldOfString = ParameterizedTypeName.get(FIELD, stringClass);
+        b.addStatement("$T tieField = $T.field($T.name($S), String.class)",
+            fieldOfString, DSL, DSL, TYPENAME_COLUMN);
+        TypeName listOfSortField = ParameterizedTypeName.get(LIST,
+            ParameterizedTypeName.get(SORT_FIELD, WildcardTypeName.subtypeOf(Object.class)));
+        TypeName fieldWildcard = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
+        TypeName listOfFieldWildcard = ParameterizedTypeName.get(LIST, fieldWildcard);
+        b.addStatement("$T orderBy = $T.of(sortField.asc(), tieField.asc())", listOfSortField, LIST);
+        b.addStatement("$T extraFields = new $T<>($T.<$T>of(sortField, tieField))",
+            listOfFieldWildcard, ARRAY_LIST, LIST, fieldWildcard);
+
+        b.addStatement("$T page = $T.pageRequest(first, last, after, before, $L,\n"
+            + "        orderBy, extraFields, $T.of())",
+            pageRequestClass, connectionHelperClass, defaultPageSize, LIST);
+
+        // Stage 1: per-branch UNION ALL projecting (typename, pk0, sort, idx) plus JOIN parentInput.
+        // Wrap as derived table "pages". The same pagesTable reference is shared across every
+        // per-parent ConnectionResult; per-parent totalCount filters with __idx__.eq(i).
+        TypeName tableWildcard = ParameterizedTypeName.get(TABLE, WildcardTypeName.subtypeOf(Object.class));
+        b.add("$T $L =\n", tableWildcard, CONNECTION_PAGES_LOCAL);
+        for (int p = 0; p < participants.size(); p++) {
+            var participant = participants.get(p);
+            String alias = "stage1_" + participant.typeName();
+            CodeBlock projection = batchedBranchProjection(participant, alias);
+            CodeBlock joinPredicate = batchedBranchJoinPredicate(participant, participantJoinPaths, parentPk0);
+            if (p == 0) {
+                b.add("    dsl.select($L)\n", projection);
+                b.add("        .from($L)\n", alias);
+                b.add("        .join(parentInput).on($L)\n", joinPredicate);
+            } else {
+                b.add("    .unionAll(dsl.select($L)\n", projection);
+                b.add("        .from($L)\n", alias);
+                b.add("        .join(parentInput).on($L))\n", joinPredicate);
+            }
+        }
+        b.add("    .asTable($S);\n", CONNECTION_PAGES_ALIAS);
+
+        // idxField: shared between the ranked CTE's PARTITION BY and per-parent ConnectionResult
+        // condition.
+        TypeName idxFieldType = ParameterizedTypeName.get(FIELD, integerClass);
+        b.addStatement("$T idxField = $T.field($T.name($S), $T.class)",
+            idxFieldType, DSL, DSL, "__idx__", integerClass);
+
+        // Ranked CTE: ROW_NUMBER() OVER (PARTITION BY __idx__ ORDER BY effectiveOrderBy).
+        // The .orderBy/.seek on this CTE filter rows BEFORE ROW_NUMBER is computed (the seek
+        // predicate is jOOQ-translated to WHERE), giving correct cursor-driven per-partition
+        // pagination.
+        b.add("$T<?> ranked = dsl\n", TABLE);
+        b.add("    .select(\n");
+        b.add("        $T.field($T.name($S), $T.class),\n", DSL, DSL, TYPENAME_COLUMN, stringClass);
+        b.add("        $T.field($T.name($S), $T.class),\n", DSL, DSL, PK_COLUMN_PREFIX + 0 + PK_COLUMN_SUFFIX, participantPkClass);
+        b.add("        sortField,\n");
+        b.add("        idxField,\n");
+        b.add("        $T.rowNumber().over($T.partitionBy(idxField).orderBy(page.effectiveOrderBy())).as($S))\n",
+            DSL, DSL, "__rn__");
+        b.add("    .from($L)\n", CONNECTION_PAGES_LOCAL);
+        b.add("    .orderBy(page.effectiveOrderBy())\n");
+        b.add("    .seek(page.seekFields())\n");
+        b.add("    .asTable($S);\n", "ranked");
+
+        // Outer SELECT: filter rn <= page.limit() — per-partition limit.
+        TypeName resultBound = ParameterizedTypeName.get(RESULT, WildcardTypeName.subtypeOf(RECORD));
+        b.add("$T stage1 = dsl\n", resultBound);
+        b.add("    .select()\n");
+        b.add("    .from(ranked)\n");
+        b.add("    .where(ranked.field($S, $T.class).le($T.val(page.limit())))\n",
+            "__rn__", integerClass, DSL);
+        b.add("    .fetch();\n");
+
+        // Bucketize: group by typename, populate parentIdxByOuter parallel array.
+        b.addStatement("Object[] result = new Object[stage1.size()]");
+        TypeName listOfObjArray = ParameterizedTypeName.get(LIST, ArrayTypeName.of(ClassName.get(Object.class)));
+        TypeName byTypeMap = ParameterizedTypeName.get(MAP, stringClass, listOfObjArray);
+        b.addStatement("$T byType = new $T<>()", byTypeMap, LINKED_HASH_MAP);
+        b.addStatement("int[] parentIdxByOuter = new int[stage1.size()]");
+        b.beginControlFlow("for (int outerIdx = 0; outerIdx < stage1.size(); outerIdx++)");
+        b.addStatement("$T r = stage1.get(outerIdx)", RECORD);
+        b.addStatement("parentIdxByOuter[outerIdx] = r.get($S, $T.class)", "__idx__", integerClass);
+        b.addStatement("String tn = r.get($S, String.class)", TYPENAME_COLUMN);
+        b.addStatement("Object[] pks = new Object[]{r.get($S)}", PK_COLUMN_PREFIX + 0 + PK_COLUMN_SUFFIX);
+        b.addStatement("byType.computeIfAbsent(tn, k -> new $T<>()).add(new Object[]{outerIdx, pks})", ARRAY_LIST);
+        b.endControlFlow();
+
+        // Stage 2: per-typename dispatch — writes typed Records to result[outerIdx].
+        for (var participant : participants) {
+            String typeName = participant.typeName();
+            b.beginControlFlow("if (byType.containsKey($S))", typeName);
+            b.addStatement("$L(byType.get($S), env, dsl, result)",
+                perTypenameMethodName(fieldName, typeName), typeName);
+            b.endControlFlow();
+        }
+
+        // Scatter: walk result[] in stage-1 order; each non-null Record's parent_idx routes
+        // it to the corresponding bucket. Order preserved within each parent's bucket because
+        // stage-1's outer .orderBy(effectiveOrderBy) globally sorts the ranked output and
+        // bucketing keeps relative order.
+        TypeName listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
+        TypeName listOfListOfRecord = ParameterizedTypeName.get(LIST, listOfRecord);
+        b.addStatement("$T buckets = new $T<>(keys.size())", listOfListOfRecord, ARRAY_LIST);
+        b.beginControlFlow("for (int i = 0; i < keys.size(); i++)");
+        b.addStatement("buckets.add(new $T<>())", ARRAY_LIST);
+        b.endControlFlow();
+        b.beginControlFlow("for (int outerIdx = 0; outerIdx < result.length; outerIdx++)");
+        b.beginControlFlow("if (result[outerIdx] instanceof $T r)", RECORD);
+        b.addStatement("buckets.get(parentIdxByOuter[outerIdx]).add(r)");
+        b.endControlFlow();
+        b.endControlFlow();
+
+        // Build per-parent ConnectionResults — share pagesTable for totalCount, per-parent
+        // condition __idx__ = i so COUNT(*) restricts to that parent's slice of the union.
+        b.addStatement("$T out = new $T<>(keys.size())", listOfConnectionResult, ARRAY_LIST);
+        b.beginControlFlow("for (int i = 0; i < keys.size(); i++)");
+        b.addStatement("out.add(new $T(buckets.get(i), page, $L, idxField.eq(i)))",
+            connectionResultClass, CONNECTION_PAGES_LOCAL);
+        b.endControlFlow();
+        b.addStatement("return out");
+
+        return MethodSpec.methodBuilder(rowsMethodName)
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(listOfConnectionResult)
+            .addParameter(keysListType, "keys")
+            .addParameter(ENV, "env")
+            .addCode(b.build())
+            .build();
+    }
+
+    /**
+     * B4c-2 per-branch projection: same shape as {@link #branchProjection} but additionally
+     * projects {@code parentInput.field(0).as("__idx__")} so the windowed CTE can partition by
+     * the parent index. Single-PK participants only (validator-enforced for connection mode);
+     * the {@code __sort__} alias is the participant PK directly.
+     */
+    private static CodeBlock batchedBranchProjection(ParticipantRef.TableBound participant, String tableAlias) {
+        var pks = participant.table().primaryKeyColumns();
+        var b = CodeBlock.builder();
+        b.add("$T.inline($S).as($S)", DSL, participant.typeName(), TYPENAME_COLUMN);
+        b.add(", $L.$L.as($S)", tableAlias, pks.get(0).javaName(), PK_COLUMN_PREFIX + 0 + PK_COLUMN_SUFFIX);
+        b.add(", $L.$L.as($S)", tableAlias, pks.get(0).javaName(), SORT_COLUMN);
+        b.add(", parentInput.field(0, $T.class).as($S)", ClassName.get(Integer.class), "__idx__");
+        return b.build();
+    }
+
+    /**
+     * B4c-2 per-branch JOIN predicate: {@code <participant>.<fkCol>.eq(parentInput.field(<parentPkSqlName>, <Type>.class))}.
+     * Single-hop FK only; FK direction inferred from {@link JoinStep.FkJoin#targetTable()}
+     * matching the participant table (parent-holds-FK case) or not (the standard child-holds-FK
+     * shape).
+     */
+    private static CodeBlock batchedBranchJoinPredicate(ParticipantRef.TableBound participant,
+            Map<String, List<JoinStep>> participantJoinPaths, ColumnRef parentPk0) {
+        var path = participantJoinPaths.get(participant.typeName());
+        var fkJoin = (JoinStep.FkJoin) path.get(0);
+        boolean parentHoldsFk = fkJoin.targetTable().tableName().equalsIgnoreCase(participant.table().tableName());
+        ColumnRef participantSide = parentHoldsFk
+            ? fkJoin.targetColumns().get(0)
+            : fkJoin.sourceColumns().get(0);
+        String tableAlias = "stage1_" + participant.typeName();
+        ClassName parentColClass = ClassName.bestGuess(parentPk0.columnClass());
+        return CodeBlock.of("$L.$L.eq(parentInput.field($S, $T.class))",
+            tableAlias, participantSide.javaName(), parentPk0.sqlName(), parentColClass);
+    }
+
+    /**
      * Stage-2 per-typename SELECT helper: takes the stage-1 binding tuples for one typename,
      * issues the {@code VALUES (idx, pk0, ..., pkN) JOIN <table> ON t.PK = input.pk0 ... ORDER BY idx}
      * SELECT, and scatters each typed Record back into {@code result[idx]}. Inherits the
@@ -750,5 +1163,31 @@ public final class MultiTablePolymorphicEmitter {
             outputPackage + ".schema",
             no.sikt.graphitron.rewrite.generators.schema.ErrorRouterClassGenerator.CLASS_NAME);
         return CodeBlock.of("return $T.redact(e, env);\n", errorRouter);
+    }
+
+    /** {@code CompletableFuture<DataFetcherResult<P>>}; primitives box. Mirror of TypeFetcherGenerator's helper. */
+    private static TypeName asyncResultType(TypeName valueType) {
+        return ParameterizedTypeName.get(COMPLETABLE_FUTURE, syncResultType(valueType));
+    }
+
+    /**
+     * Async tail for fetchers whose body ends with {@code loader.load(key, env)}: lifts the
+     * payload into a {@code DataFetcherResult<P>} via {@code .thenApply(...)} and routes any
+     * escape via {@code .exceptionally(t -> ErrorRouter.redact(...))}. Mirrors
+     * {@code TypeFetcherGenerator.asyncWrapTail} for the no-error-channel path
+     * ({@link no.sikt.graphitron.rewrite.model.ChildField.InterfaceField} /
+     * {@link no.sikt.graphitron.rewrite.model.ChildField.UnionField} do not implement
+     * {@code WithErrorChannel}).
+     */
+    private static CodeBlock asyncWrapTail(TypeName valueType, String outputPackage) {
+        var errorRouter = ClassName.get(
+            outputPackage + ".schema",
+            no.sikt.graphitron.rewrite.generators.schema.ErrorRouterClassGenerator.CLASS_NAME);
+        TypeName boxed = valueType.isPrimitive() ? valueType.box() : valueType;
+        return CodeBlock.builder()
+            .add(".thenApply(payload -> $T.<$T>newResult().data(payload).build())\n",
+                DATA_FETCHER_RESULT, boxed)
+            .add(".exceptionally(t -> $T.redact(t, env))", errorRouter)
+            .build();
     }
 }
