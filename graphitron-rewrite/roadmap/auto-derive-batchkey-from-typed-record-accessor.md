@@ -22,13 +22,13 @@ Splitting `LifterRowKeyed` and `AccessorRowKeyed` rather than overloading the fo
 `FieldBuilder.classifyChildFieldOnResultType` (the method around L2475 in today's tree; line drift expected, see References) handles `@record`-parent child fields with table-bound returns by:
 
 1. Parsing the `@reference` path against the parent's optional SQL anchor (only `JooqTableRecordType` provides one today).
-2. Calling `deriveBatchKeyForResultType(joinPath, parentResultType)` — this returns `BatchKey.RowKeyed(fkJoin.sourceColumns())` when the path's first hop is an `FkJoin` and the parent has a non-null backing class; otherwise `null`.
+2. Calling `deriveBatchKeyForResultType(joinPath, parentResultType)`, which returns `BatchKey.RowKeyed(fkJoin.sourceColumns())` when the path's first hop is an `FkJoin` and the parent has a non-null backing class; otherwise `null`.
 3. When `null`: emit `UnclassifiedField(AUTHOR_ERROR, "RecordTableField on a free-form DTO parent requires @batchKeyLifter to lift the batch key; the catalog has no FK metadata for the parent class. Add @batchKeyLifter(lifter: ..., targetColumns: [...]) on this field, or back the parent with a typed jOOQ TableRecord so the FK can be derived")`.
 
 The rejection fires for two distinct shapes that today share a single error:
 
 - **(a) Truly free-form DTOs** where neither the catalog nor the parent class can yield the key columns. `@batchKeyLifter` is the right answer.
-- **(b) Typed-accessor DTOs** where the parent class exposes a method whose return type is `List<X>` / `Set<X>` / `X` for some `X extends TableRecord`, and `X`'s mapped table is the field's `@table` return. The classifier has every input it needs to produce a key, but the FK metadata it queries (jOOQ's `Table.getReferences()`) doesn't see the relationship — the relationship lives in Java type information, not in SQL constraints.
+- **(b) Typed-accessor DTOs** where the parent class exposes a method whose return type is `List<X>` / `Set<X>` / `X` for some `X extends TableRecord`, and `X`'s mapped table is the field's `@table` return. The classifier has every input it needs to produce a key, but the FK metadata it queries (jOOQ's `Table.getReferences()`) doesn't see the relationship; the relationship lives in Java type information, not in SQL constraints.
 
 `BatchKey` (`graphitron/src/main/java/no/sikt/graphitron/rewrite/model/BatchKey.java`) is a sealed interface with two sub-hierarchies:
 
@@ -46,11 +46,11 @@ When the FK derivation returns null on a `@record`-typed parent and the field's 
 - Reflect on the parent class to find a public instance method whose:
   1. name matches the GraphQL field name (camel-case + `get`-prefixed variants, see Implementation §1.b for the exact resolution rule), and
   2. return type is `X`, `List<X>`, or `Set<X>` for some concrete `X extends TableRecord`, and
-  3. `X`'s mapped jOOQ table (read via `X.fields()[0].getTable()` or equivalent — see Implementation §1.c for the exact reflection step) is the same `TableRef` as the field's `@table` return.
+  3. `X`'s mapped jOOQ table (read via `X.fields()[0].getTable()` or equivalent; see Implementation §1.c for the exact reflection step) is the same `TableRef` as the field's `@table` return.
 
 If exactly one such accessor matches, build a `JoinStep.LiftedHop(targetTable = element table, targetColumns = element table PK, alias = fieldName + "_0")` and a `BatchKey.AccessorRowKeyed(hop, accessorRef)` and route into `RecordTableField` / `RecordLookupTableField` as today.
 
-`AccessorRowKeyed` is a new permit of `RecordParentBatchKey`. `buildRecordParentKeyExtraction`'s sealed switch grows a third arm. The DataLoader plumbing is the same column-keyed path used by `RowKeyed` and `LifterRowKeyed` for the **single-element** container case; the **list / set** container cases need a routing decision (see Implementation §3 — *Container-axis dispatch*) that this plan resolves explicitly rather than glossing over.
+`AccessorRowKeyed` is a new permit of `RecordParentBatchKey`. `buildRecordParentKeyExtraction`'s sealed switch grows a third arm. The DataLoader plumbing is the same column-keyed path used by `RowKeyed` and `LifterRowKeyed` for the **single-element** container case; the **list / set** container cases need a routing decision (see Implementation §3, *Container-axis dispatch*) that this plan resolves explicitly rather than glossing over.
 
 The `@batchKeyLifter` directive continues to work unchanged; nothing in this plan touches `BatchKeyLifterDirectiveResolver`. Authors who already wrote a lifter for shape (b) keep working code; the change only matters going forward, by removing the need to write one.
 
@@ -119,7 +119,7 @@ record AccessorRef(
 }
 ```
 
-`Container` is an enum (not a sealed hierarchy) because the three cases share the same data — only the codegen branches differ. Per *Sealed hierarchies over enums*, an enum is correct here: same shape, no per-variant data.
+`Container` is an enum (not a sealed hierarchy) because the three cases share the same data; only the codegen branches differ. Per *Sealed hierarchies over enums*, an enum is correct here: same shape, no per-variant data.
 
 ### 2. Extend the classifier with the auto-derivation step
 
@@ -172,7 +172,7 @@ b. **`deriveBatchKeyFromTypedAccessor` helper** (new, on `FieldBuilder`):
     - `Set<E>` similarly → `(Container.SET, E)`.
     - Bare `E` extending `TableRecord` → `(Container.SINGLE, E)`.
     - Otherwise reject (continue to next method).
-  - Compare element class's mapped table against `tb.table()`. The mapped table for a generated jOOQ `TableRecord` subtype is reachable as `((TableRecord) recordClass.getDeclaredConstructor().newInstance()).getTable()` — but invoking the constructor for matching is wasteful. Instead, look up by static field: jOOQ's generated `Tables.<TABLE_NAME>` is the canonical anchor, but the existing `BuildContext` already holds a `Map<Class<?>, TableRef>` keyed by `TableRecord` Class (used by other classifier sites). Confirm during implementation that this map is already accessible from `FieldBuilder`; if not, lift a small helper rather than reflecting on jOOQ internals here.
+  - Compare element class's mapped table against `tb.table()`. The mapped table for a generated jOOQ `TableRecord` subtype is reachable as `((TableRecord) recordClass.getDeclaredConstructor().newInstance()).getTable()`, but invoking the constructor for matching is wasteful. Instead, look up by static field: jOOQ's generated `Tables.<TABLE_NAME>` is the canonical anchor, but the existing `BuildContext` already holds a `Map<Class<?>, TableRef>` keyed by `TableRecord` Class (used by other classifier sites). Confirm during implementation that this map is already accessible from `FieldBuilder`; if not, lift a small helper rather than reflecting on jOOQ internals here.
   - On match: collect a candidate. Continue iterating to detect ambiguity.
 - After the loop:
   - 0 candidates → `AccessorDerivation.None`.
@@ -181,7 +181,7 @@ b. **`deriveBatchKeyFromTypedAccessor` helper** (new, on `FieldBuilder`):
 
 `AccessorDerivation` is a small sealed interface local to `FieldBuilder` (a builder-internal sealed hierarchy per the principles doc, §"Builder-step results are sealed") with `Ok` / `None` / `Ambiguous` arms.
 
-c. **Element-class → `TableRef` lookup.** During implementation, audit `ServiceCatalog` and `BuildContext` for an existing `Class<? extends TableRecord> → TableRef` resolution helper. If one exists (likely yes — service-classification crosses the same line), reuse it. If not, add one to `BuildContext` and route both call sites through it; do not duplicate the logic.
+c. **Element-class → `TableRef` lookup.** During implementation, audit `ServiceCatalog` and `BuildContext` for an existing `Class<? extends TableRecord> → TableRef` resolution helper. If one exists (likely yes; service-classification crosses the same line), reuse it. If not, add one to `BuildContext` and route both call sites through it; do not duplicate the logic.
 
 ### 3. Container-axis dispatch in `buildRecordParentKeyExtraction`
 
@@ -199,14 +199,14 @@ return switch (batchKey) {
 
 `buildAccessorRowKey` emits one of three shapes based on `ark.accessor().container()`:
 
-- **SINGLE** — emit a single key:
+- **SINGLE**: emit a single key:
   ```
   ElementRecord __elt = ((BackingClass) env.getSource()).<accessor>();
   RowN<...> key = DSL.row(__elt.<pk1>(), __elt.<pk2>());
   ```
-  Drives `loader.load(key, env)` (existing `buildRecordBasedDataFetcher` dispatch — no change).
+  Drives `loader.load(key, env)` (existing `buildRecordBasedDataFetcher` dispatch; no change).
 
-- **LIST / SET** — emit many keys:
+- **LIST / SET**: emit many keys:
   ```
   List<RowN<...>> keys = ((BackingClass) env.getSource()).<accessor>().stream()
       .map(__elt -> DSL.<RowN<...>>row(__elt.<pk1>(), __elt.<pk2>()))
@@ -220,8 +220,8 @@ Today: `loader.load(key, env)` returns `CompletableFuture<List<Record>>` (list f
 
 For accessor-derived **list / set** containers, *one parent contributes N keys*. Two routing options:
 
-- **Option A — `loadMany` per parent.** The DataFetcher emits `loader.loadMany(keys, env)` (where `keys` is the local `List<RowN<...>>` from §3.a's list/set arm) instead of `loader.load(key, env)`. Returns `CompletableFuture<List<Record>>` directly (one record per element key). This matches the existing list-field shape `valueType = List<Record>` without changing the rows-method's batching contract: each call to the rows-method still receives a `List<RowN>` (the union across parents), and `loadMany` re-disperses.
-- **Option B — synthesise a parent-id key.** The parent contributes one synthetic Row1 (e.g. `Row1<Integer>` of `System.identityHashCode(parent)`); the rows-method receives the list of synthetics and looks back up... this is a non-starter — the rows-method doesn't see the original parents. Not an option.
+- **Option A, `loadMany` per parent.** The DataFetcher emits `loader.loadMany(keys, env)` (where `keys` is the local `List<RowN<...>>` from §3.a's list/set arm) instead of `loader.load(key, env)`. Crucially, **`V` for the loader becomes `Record` (singular), not `List<Record>`**: each element-PK key maps to exactly one element record, and `loadMany` returns `CompletableFuture<List<V>>` = `CompletableFuture<List<Record>>` directly, which already matches the list-field shape. The existing `valueType = isList ? List<Record> : Record` shortcut in `buildRecordBasedDataFetcher` (which conflates field-cardinality with per-key cardinality, safe today because FK keying is one-per-parent) needs to fork on the new dispatch: for the `AccessorRowKeyed` LIST/SET arm, `valueType = Record` regardless of `isList`. The rows-method's batching contract is unchanged: it still receives a `List<RowN>` (the union across parents) and returns one record per key.
+- **Option B, synthesise a parent-id key.** The parent contributes one synthetic Row1 (e.g. `Row1<Integer>` of `System.identityHashCode(parent)`); the rows-method receives the list of synthetics and looks back up. This is a non-starter; the rows-method doesn't see the original parents. Not an option.
 
 **Decision: Option A.** The DataFetcher dispatch becomes:
 
@@ -234,7 +234,7 @@ String dispatchCall = usesLoadMany
     : "return loader.load(key, env)\n";
 ```
 
-The keying-statement variable name (`key` vs `keys`) is set by `buildRecordParentKeyExtraction`'s third arm; the dispatch reads the variable by name. `loader.loadMany` returns `CompletableFuture<List<V>>`; for list fields (`valueType = List<Record>`) the existing `asyncWrapTail` already produces the correct shape. **For single fields with a list/set accessor — that combination is nonsensical (a single child cannot come from a list of element keys) and the classifier rejects it earlier** (single child + list accessor = element-class match against `tb.table()` would still pass shape-check but the cardinality is wrong — call this out at the classifier step §2.b: only allow LIST / SET accessors when `field.returnType().wrapper().isList()`, only allow SINGLE accessor when not).
+The keying-statement variable name (`key` vs `keys`) is set by `buildRecordParentKeyExtraction`'s third arm; the dispatch reads the variable by name. `asyncWrapTail` already produces the right async wrap for both branches once `valueType` is set per the rule above. **For single fields with a list/set accessor: that combination is nonsensical (a single child cannot come from a list of element keys) and the classifier rejects it earlier** (single child + list accessor = element-class match against `tb.table()` would still pass shape-check but the cardinality is wrong; call this out at the classifier step §2.b: only allow LIST / SET accessors when `field.returnType().wrapper().isList()`, only allow SINGLE accessor when not).
 
 c. **Constraint summary** for the implementer: container-axis × field-cardinality is a 2×2; only two of the four combinations are legal:
 
@@ -266,23 +266,23 @@ Both messages (RecordTableField and RecordLookupTableField branches) get the thi
 - `AccessorRowKeyed.javaTypeName()` for one-column PK: `"java.util.List<org.jooq.Row1<java.lang.Long>>"`.
 - `AccessorRowKeyed.javaTypeName()` for two-column composite PK.
 - `AccessorRowKeyed.targetKeyColumns()` returns the same instance as `hop.targetColumns()` (single source of truth, mirrors `LifterRowKeyed`'s own contract).
-- The sealed switch over `RecordParentBatchKey` is exhaustive: a small test that switches on a `RecordParentBatchKey` value with `default -> fail()` must not fall through for any concrete instance — verifies the compiler's exhaustiveness check is the gate.
+- The sealed switch over `RecordParentBatchKey` is exhaustive: a small test that switches on a `RecordParentBatchKey` value with `default -> fail()` must not fall through for any concrete instance; verifies the compiler's exhaustiveness check is the gate.
 
 ### Pipeline tests
 
-**`GraphitronSchemaBuilderTest`** — three new cases covering the cross-product corners:
+**`GraphitronSchemaBuilderTest`**: five new cases covering the cross-product corners:
 
-1. `ACCESSOR_ROWKEYED_LIST_FIELD_LIST_ACCESSOR` — `[KvoteSporsmalSvar]` on a `@record` parent whose backing class has `getSvar(): List<SoknadKvotesporsmalSvarRecord>`. Expect `RecordTableField` with `batchKey instanceof AccessorRowKeyed ark && ark.accessor().container() == LIST`.
-2. `ACCESSOR_ROWKEYED_SINGLE_FIELD_SINGLE_ACCESSOR` — single child `Type` on a record parent with `getOwner(): UserRecord`. Expect `RecordTableField` with `AccessorRowKeyed.container == SINGLE`.
-3. `ACCESSOR_ROWKEYED_REJECTS_AMBIGUOUS` — record parent with two accessors both returning `List<XRecord>` for the same `@table` X. Expect `UnclassifiedField` with the ambiguity message naming both accessors.
-4. `ACCESSOR_ROWKEYED_REJECTS_CARDINALITY_MISMATCH` — list field with single accessor (and / or single field with list accessor). Expect AUTHOR_ERROR with the cardinality-mismatch text.
-5. `ACCESSOR_ROWKEYED_REJECTS_HETEROGENEOUS_ELEMENT` — accessor returns a `TableRecord` whose mapped table is *not* the field's `@table`. Expect AUTHOR_ERROR (falls through to the existing message with the third option appended).
+1. `ACCESSOR_ROWKEYED_LIST_FIELD_LIST_ACCESSOR`: `[KvoteSporsmalSvar]` on a `@record` parent whose backing class has `getSvar(): List<SoknadKvotesporsmalSvarRecord>`. Expect `RecordTableField` with `batchKey instanceof AccessorRowKeyed ark && ark.accessor().container() == LIST`.
+2. `ACCESSOR_ROWKEYED_SINGLE_FIELD_SINGLE_ACCESSOR`: single child `Type` on a record parent with `getOwner(): UserRecord`. Expect `RecordTableField` with `AccessorRowKeyed.container == SINGLE`.
+3. `ACCESSOR_ROWKEYED_REJECTS_AMBIGUOUS`: record parent with two accessors both returning `List<XRecord>` for the same `@table` X. Expect `UnclassifiedField` with the ambiguity message naming both accessors.
+4. `ACCESSOR_ROWKEYED_REJECTS_CARDINALITY_MISMATCH`: list field with single accessor (and / or single field with list accessor). Expect AUTHOR_ERROR with the cardinality-mismatch text.
+5. `ACCESSOR_ROWKEYED_REJECTS_HETEROGENEOUS_ELEMENT`: accessor returns a `TableRecord` whose mapped table is *not* the field's `@table`. Expect AUTHOR_ERROR (falls through to the existing message with the third option appended).
 
 Per the testing-tier rules in `rewrite-design-principles.adoc`, none of these assert on generated code strings; they assert on the classified `BatchKey` variant's identity and component values, plus the `UnclassifiedField` message text.
 
 ### Compilation tests
 
-**`GraphitronCompilationTest`** — extend the existing fixtures schema with the two accepting cases (list-list and single-single) and confirm the generated DataFetcher / rows-method compiles. The compilation tier validates that `buildRecordParentKeyExtraction`'s third arm and the `buildRecordBasedDataFetcher` `loadMany` branch produce well-typed code under `<release>17</release>`.
+**`GraphitronCompilationTest`**: extend the existing fixtures schema with the two accepting cases (list-list and single-single) and confirm the generated DataFetcher / rows-method compiles. The compilation tier validates that `buildRecordParentKeyExtraction`'s third arm and the `buildRecordBasedDataFetcher` `loadMany` branch produce well-typed code under `<release>17</release>`.
 
 ### Execution tests
 
@@ -311,7 +311,7 @@ The fixture lives in `graphitron-test/src/main/resources/graphql/schema.graphqls
 
 ## References
 
-Identifier-level references; line numbers drift (sibling plans have been bitten — the current description's `:2542-2545` already drifted to `:2585-L2596` since R60 was filed). Re-anchor by name during implementation:
+Identifier-level references; line numbers drift (sibling plans have been bitten; the current description's `:2542-2545` already drifted to `:2585-L2596` since R60 was filed). Re-anchor by name during implementation:
 
 - Classifier rejection site: `FieldBuilder.classifyChildFieldOnResultType`'s `TableBoundReturnType` arm, both the plain and lookup branches.
 - FK-derivation helper to extend with the accessor fallback: `FieldBuilder.deriveBatchKeyForResultType`.
