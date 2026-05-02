@@ -89,8 +89,8 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.ChildField.SplitLookupTableField f  -> validateSplitLookupTableField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.TableMethodField f        -> validateTableMethodField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.TableInterfaceField f     -> validateTableInterfaceField(f, errors);
-            case no.sikt.graphitron.rewrite.model.ChildField.InterfaceField f          -> validateInterfaceField(f, errors);
-            case no.sikt.graphitron.rewrite.model.ChildField.UnionField f              -> validateUnionField(f, errors);
+            case no.sikt.graphitron.rewrite.model.ChildField.InterfaceField f          -> validateInterfaceField(f, types, errors);
+            case no.sikt.graphitron.rewrite.model.ChildField.UnionField f              -> validateUnionField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.NestingField f            -> validateNestingField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.ConstructorField f        -> validateConstructorField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField f       -> validateServiceTableField(f, types, errors);
@@ -358,6 +358,41 @@ public class GraphitronSchemaValidator {
         }
     }
 
+    /**
+     * R36 Track B4c-2 batched-child-connection guard: rejects {@code @asConnection} on a
+     * child interface/union field whose enclosing parent type is backed by a table with a
+     * multi-column primary key. The DataLoader-batched windowed CTE form types its key element
+     * as {@code Row1<ParentPkClass>} (single-column parent PK); widening to {@code RowN} for
+     * composite-PK parents is a tracked follow-up.
+     *
+     * <p>Surfaces the constraint as a clean validator rejection (build-time AUTHOR_ERROR with
+     * file:line) instead of a codegen-time {@code IllegalStateException} thrown deep in
+     * {@code MultiTablePolymorphicEmitter.buildBatchedConnectionFetcher}.
+     *
+     * <p>No-op for non-connection wrappers (the list-mode child path supports composite parent
+     * PK fine via {@code parentRecord.get(...)}) and for non-table-backed parent types.
+     */
+    private void validateChildConnectionParentPk(String qualifiedName, SourceLocation location,
+            no.sikt.graphitron.rewrite.model.FieldWrapper wrapper,
+            String parentTypeName,
+            Map<String, GraphitronType> types,
+            List<ValidationError> errors) {
+        if (!(wrapper instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection)) return;
+        var parentType = types.get(parentTypeName);
+        if (!(parentType instanceof TableBackedType tbt)) return;
+        var pkCols = tbt.table().primaryKeyColumns();
+        if (pkCols.size() <= 1) return;
+        errors.add(new ValidationError(RejectionKind.AUTHOR_ERROR,
+            qualifiedName,
+            "Field '" + qualifiedName + "': @asConnection on a multi-table interface/union child "
+                + "field whose parent type '" + parentTypeName + "' has a multi-column primary key "
+                + "(arity " + pkCols.size() + ") is not supported. The DataLoader-batched windowed "
+                + "CTE form types its key element as Row1<ParentPkClass>; multi-column parent PK "
+                + "widening to RowN is a tracked follow-up",
+            location
+        ));
+    }
+
     // --- Field validators (stubs — filled in as test classes are added) ---
 
     private void validateQueryLookupTableField(no.sikt.graphitron.rewrite.model.QueryField.QueryLookupTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
@@ -553,17 +588,21 @@ public class GraphitronSchemaValidator {
         validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
         validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
     }
-    private void validateInterfaceField(no.sikt.graphitron.rewrite.model.ChildField.InterfaceField field, List<ValidationError> errors) {
+    private void validateInterfaceField(no.sikt.graphitron.rewrite.model.ChildField.InterfaceField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
         validateMultiTableParticipants(field.qualifiedName(), field.location(), field.participants(), errors);
         validateMultiTableConnectionConstraints(field.qualifiedName(), field.location(),
             field.returnType().wrapper(), field.participants(), errors);
+        validateChildConnectionParentPk(field.qualifiedName(), field.location(),
+            field.returnType().wrapper(), field.parentTypeName(), types, errors);
     }
-    private void validateUnionField(no.sikt.graphitron.rewrite.model.ChildField.UnionField field, List<ValidationError> errors) {
+    private void validateUnionField(no.sikt.graphitron.rewrite.model.ChildField.UnionField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
         validateMultiTableParticipants(field.qualifiedName(), field.location(), field.participants(), errors);
         validateMultiTableConnectionConstraints(field.qualifiedName(), field.location(),
             field.returnType().wrapper(), field.participants(), errors);
+        validateChildConnectionParentPk(field.qualifiedName(), field.location(),
+            field.returnType().wrapper(), field.parentTypeName(), types, errors);
     }
     private void validateNestingField(no.sikt.graphitron.rewrite.model.ChildField.NestingField field, List<ValidationError> errors) {
         // List cardinality has no source-passthrough semantic: one parent Record in, one list value out.

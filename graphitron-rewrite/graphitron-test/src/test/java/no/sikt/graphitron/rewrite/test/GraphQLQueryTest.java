@@ -2829,6 +2829,50 @@ class GraphQLQueryTest {
 
     @Test
     @SuppressWarnings("unchecked")
+    void addressOccupantsConnection_dataLoaderBatchesAcrossParents() {
+        // R36 Track B4c-2 batching ratchet: with N parents fetching occupantsConnection in
+        // one request, the DataLoader collapses the per-branch UNION-ALL page-rows query to
+        // ONE invocation regardless of N. The {@code as "parentInput"} VALUES table is unique
+        // to the rows-method (stage 2's per-typename helpers use {@code customerInput} /
+        // {@code staffInput} aliases), so a single occurrence in SQL_LOG = one batched query.
+        // Without B4c-2 (or under B4c-1's per-parent inline shape) this would fire one
+        // UNION-ALL per parent.
+        SQL_LOG.clear();
+        Map<String, Object> data = execute("""
+            { customers(active: true) {
+                customerId
+                address {
+                    addressId
+                    occupantsConnection(first: 1) {
+                        edges { node { __typename } }
+                    }
+                }
+            } }
+            """);
+        var customers = (List<Map<String, Object>>) data.get("customers");
+        assertThat(customers)
+            .as("customers list should be non-empty (sakila has 599 active customers)")
+            .isNotEmpty();
+        // Every customer carries an address with an occupantsConnection sublist.
+        assertThat(customers).allSatisfy(c -> {
+            var address = (Map<String, Object>) c.get("address");
+            assertThat(address.get("addressId")).isNotNull();
+            var conn = (Map<String, Object>) address.get("occupantsConnection");
+            assertThat(conn).isNotNull();
+        });
+        // The page-rows rows-method fires ONE UNION-ALL with parentInput VALUES regardless
+        // of how many parents we ask about — that is the whole point of the DataLoader
+        // promotion from B4c-1 (per-parent inline) to B4c-2 (batched).
+        var parentInputQueries = SQL_LOG.stream()
+            .filter(s -> s.contains("as \"parentinput\""))
+            .toList();
+        assertThat(parentInputQueries)
+            .as("rows-method fires once for the entire batch; SQL_LOG: " + parentInputQueries)
+            .hasSize(1);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     void addressOccupantsConnection_inlineFragmentResolvesPerType() {
         // Connection-path TypeResolver routing: inline fragments dispatch per concrete type so
         // Customer rows expose customerId+firstName and Staff rows expose staffId+firstName.
