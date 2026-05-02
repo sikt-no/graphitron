@@ -16,8 +16,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|
 | `R36` | Stub #3: Interface / union fetchers | In Progress | [plan](stub-interface-union-fetchers.md) |
 | `R1` | `BatchKey` lifter directive | In Progress | [plan](batchkey-lifter-directive.md) |
-| `R40` | Argument-level `@nodeId` support | Spec | [plan](argument-level-nodeid.md) |
 | `R49` | Stub: scalar/`@record`-returning `@service` child field (`ServiceRecordField`) <sub>blocked by: [service-rows-method-body](service-rows-method-body.md)</sub> | Spec | [plan](service-record-field.md) |
+| `R40` | Argument-level `@nodeId` support | Ready | [plan](argument-level-nodeid.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
 | `R3` | Classification vocabulary follow-ups | Spec | [plan](classification-vocabulary-followups.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
@@ -88,7 +88,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### nodeid
 
-- `R40` [**Argument-level `@nodeId` support**](argument-level-nodeid.md) — Spec, architecture
+- `R40` [**Argument-level `@nodeId` support**](argument-level-nodeid.md) — Ready, architecture
 - `R24` [**`NodeIdReferenceField` JOIN-projection form**](nodeidreferencefield-join-projection-form.md) — Backlog, cleanup
 
 ### service

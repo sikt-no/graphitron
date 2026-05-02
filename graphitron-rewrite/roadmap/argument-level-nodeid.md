@@ -1,7 +1,7 @@
 ---
 id: R40
 title: "Argument-level `@nodeId` support"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 2
 theme: nodeid
