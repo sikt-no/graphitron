@@ -56,4 +56,14 @@ class TestLifterStub {
     public static Row1<String> dummyRow1String(DummyRecord parent) {
         throw new UnsupportedOperationException();
     }
+
+    /**
+     * Lifter whose RowN type-arg is a wildcard ({@code Row1<? extends Number>}).
+     * Used to exercise the wildcard-rejection arm of Invariant #4: a wildcard
+     * defeats structural equality against the target column's concrete Java
+     * type and would force a runtime cast at the rows-method JOIN site.
+     */
+    public static Row1<? extends Number> dummyRow1WildcardNumber(DummyRecord parent) {
+        throw new UnsupportedOperationException();
+    }
 }

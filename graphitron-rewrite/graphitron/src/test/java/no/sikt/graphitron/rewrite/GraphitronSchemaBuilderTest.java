@@ -2031,6 +2031,27 @@ class GraphitronSchemaBuilderTest {
             @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
         },
 
+        WILDCARD_RETURN_REJECT(
+            "Lifter Row1<? extends Number> wildcard type-arg → UnclassifiedField AUTHOR_ERROR (Invariant #4 wildcard arm)",
+            """
+            type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+              inventories: [Inventory!]!
+                @batchKeyLifter(
+                  lifter: {className: "no.sikt.graphitron.rewrite.TestLifterStub", method: "dummyRow1WildcardNumber"},
+                  targetColumns: ["film_id"])
+            }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var unc = (UnclassifiedField) schema.field("FilmDetails", "inventories");
+                assertThat(unc.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
+                assertThat(unc.reason()).contains("wildcard").contains("film_id");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
+        },
+
         EMPTY_TARGET_COLUMNS(
             "Empty targetColumns → UnclassifiedField AUTHOR_ERROR (Invariant #6)",
             """
