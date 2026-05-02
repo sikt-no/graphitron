@@ -175,10 +175,10 @@ class TagApplierTest {
 
         TagApplier.apply(registry, inputs);
 
-        assertThat(registry.getType("Foo").orElseThrow().getDirectives()).isEmpty();
-        assertThat(registry.getType("Bar").orElseThrow().getDirectives()).isEmpty();
-        assertThat(registry.getType("Baz").orElseThrow().getDirectives()).isEmpty();
-        assertThat(registry.getType("Qux").orElseThrow().getDirectives()).isEmpty();
+        assertThat((java.util.List<?>) registry.getType("Foo").orElseThrow().getDirectives()).isEmpty();
+        assertThat((java.util.List<?>) registry.getType("Bar").orElseThrow().getDirectives()).isEmpty();
+        assertThat((java.util.List<?>) registry.getType("Baz").orElseThrow().getDirectives()).isEmpty();
+        assertThat((java.util.List<?>) registry.getType("Qux").orElseThrow().getDirectives()).isEmpty();
     }
 
     @Test
