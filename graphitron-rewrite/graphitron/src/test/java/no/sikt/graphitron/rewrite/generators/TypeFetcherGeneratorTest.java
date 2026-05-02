@@ -1938,4 +1938,134 @@ class TypeFetcherGeneratorTest {
             .as("union variant: same per-parent ConnectionResult with idxField.eq(i)")
             .contains(".util.ConnectionResult(buckets.get(i), page, pagesTable, idxField.eq(i))");
     }
+
+    // ===== B4c-2 follow-up: composite-PK parent (RowN widening) =====
+    //
+    // Synthetic fixture: parent type "Project" backed by table "project" with a 2-column PK
+    // (org_id, project_id). Two participants with FKs pointing back to that composite key,
+    // each with single-column PK so the connection-mode validator (single-PK participant)
+    // remains satisfied. Exercises Row1<...> → RowN<...> widening: DataLoader key element
+    // becomes Row2<Integer, Integer>; parentInput VALUES becomes Row3<Integer, Integer,
+    // Integer> (idx + parent PK arity 2); per-branch JOIN ON has an AND-chain across the
+    // composite FK.
+
+    private static TableRef compositePkParentTable() {
+        return new TableRef("project", "PROJECT", "Project",
+            List.of(
+                new ColumnRef("org_id", "ORG_ID", "java.lang.Integer"),
+                new ColumnRef("project_id", "PROJECT_ID", "java.lang.Integer")));
+    }
+
+    private static TableRef compositeFkParticipant(String tableName, String tableUpper, String typeName, String pkSqlName, String pkUpper) {
+        return new TableRef(tableName, tableUpper, typeName,
+            List.of(new ColumnRef(pkSqlName, pkUpper, "java.lang.Integer")));
+    }
+
+    private static java.util.Map<String, List<JoinStep>> compositePkParentJoinPaths() {
+        var parent = compositePkParentTable();
+        var note = new TableRef("project_note", "PROJECT_NOTE", "ProjectNote",
+            List.of(
+                new ColumnRef("note_id", "NOTE_ID", "java.lang.Integer"),
+                new ColumnRef("org_id", "ORG_ID", "java.lang.Integer"),
+                new ColumnRef("project_id", "PROJECT_ID", "java.lang.Integer")));
+        var event = new TableRef("project_event", "PROJECT_EVENT", "ProjectEvent",
+            List.of(
+                new ColumnRef("event_id", "EVENT_ID", "java.lang.Integer"),
+                new ColumnRef("org_id", "ORG_ID", "java.lang.Integer"),
+                new ColumnRef("project_id", "PROJECT_ID", "java.lang.Integer")));
+        // FK: ProjectNote.(org_id, project_id) -> Project.(org_id, project_id) — composite,
+        // position-aligned per the fkJoin.sourceColumns()/targetColumns() contract.
+        var noteFk = new JoinStep.FkJoin("project_note_project_fkey", "",
+            note,
+            List.of(new ColumnRef("org_id", "ORG_ID", "java.lang.Integer"),
+                    new ColumnRef("project_id", "PROJECT_ID", "java.lang.Integer")),
+            parent,
+            List.of(new ColumnRef("org_id", "ORG_ID", "java.lang.Integer"),
+                    new ColumnRef("project_id", "PROJECT_ID", "java.lang.Integer")),
+            null, "items_0");
+        var eventFk = new JoinStep.FkJoin("project_event_project_fkey", "",
+            event,
+            List.of(new ColumnRef("org_id", "ORG_ID", "java.lang.Integer"),
+                    new ColumnRef("project_id", "PROJECT_ID", "java.lang.Integer")),
+            parent,
+            List.of(new ColumnRef("org_id", "ORG_ID", "java.lang.Integer"),
+                    new ColumnRef("project_id", "PROJECT_ID", "java.lang.Integer")),
+            null, "items_1");
+        return java.util.Map.of(
+            "ProjectNote", List.<JoinStep>of(noteFk),
+            "ProjectEvent", List.<JoinStep>of(eventFk));
+    }
+
+    private static ChildField.InterfaceField compositePkChildInterfaceConnectionField() {
+        var wrapper = new FieldWrapper.Connection(false, 5);
+        var returnType = new ReturnTypeRef.PolymorphicReturnType("ProjectItem", wrapper);
+        var note = compositeFkParticipant("project_note", "PROJECT_NOTE", "ProjectNote", "note_id", "NOTE_ID");
+        var event = compositeFkParticipant("project_event", "PROJECT_EVENT", "ProjectEvent", "event_id", "EVENT_ID");
+        var participants = List.<ParticipantRef>of(
+            new ParticipantRef.TableBound("ProjectNote", note, null),
+            new ParticipantRef.TableBound("ProjectEvent", event, null));
+        return new ChildField.InterfaceField("Project", "itemsConnection", null,
+            returnType, participants, compositePkParentJoinPaths());
+    }
+
+    @Test
+    void childInterfaceField_connection_compositePkParent_widensKeyToRowN() {
+        // The DataLoader key element is Row2<Integer, Integer> (parent PK arity 2). The
+        // computeIfAbsent and load(key, env) shape is unchanged; only the type widens.
+        var field = compositePkChildInterfaceConnectionField();
+        var spec = TypeFetcherGenerator.generateTypeSpec("Project",
+            compositePkParentTable(),
+            null, List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+        var fetcher = method(spec, "itemsConnection").code().toString();
+        assertThat(fetcher)
+            .as("DataLoader<Row2<Integer, Integer>, ConnectionResult>")
+            .contains("org.dataloader.DataLoader<org.jooq.Row2<java.lang.Integer, java.lang.Integer>");
+        assertThat(fetcher)
+            .as("two typed parent-PK extractions from env.getSource()")
+            .contains("(org.jooq.Record) env.getSource()).get(no.sikt.graphitron.rewrite.test.jooq.Tables.PROJECT.ORG_ID")
+            .contains("(org.jooq.Record) env.getSource()).get(no.sikt.graphitron.rewrite.test.jooq.Tables.PROJECT.PROJECT_ID");
+        assertThat(fetcher)
+            .as("DSL.row(fk0, fk1) constructs the composite key")
+            .contains("org.jooq.impl.DSL.row(fk0, fk1)");
+    }
+
+    @Test
+    void childInterfaceField_connection_compositePkParent_widensParentInputToRowN() {
+        // parentInput VALUES table widens to Row3<Integer, Integer, Integer> (idx + parent PK
+        // arity 2) and aliases ("parentInput", "idx", "org_id", "project_id"). Each parent row
+        // is built via DSL.row(DSL.inline(i), k.field1(), k.field2()).
+        var field = compositePkChildInterfaceConnectionField();
+        var spec = TypeFetcherGenerator.generateTypeSpec("Project",
+            compositePkParentTable(),
+            null, List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+        var rows = method(spec, "rowsItemsConnection").code().toString();
+        assertThat(rows)
+            .as("Row3<Integer, Integer, Integer>[] parentRows for idx + 2 parent PK columns")
+            .contains("org.jooq.Row3<java.lang.Integer, java.lang.Integer, java.lang.Integer>[] parentRows");
+        assertThat(rows)
+            .as("DSL.row(DSL.inline(i), k.field1(), k.field2()) for each parent row")
+            .contains("org.jooq.impl.DSL.row(org.jooq.impl.DSL.inline(i), k.field1(), k.field2())");
+        assertThat(rows)
+            .as("parentInput.as carries both parent PK column SQL names")
+            .contains("org.jooq.impl.DSL.values(parentRows).as(\"parentInput\", \"idx\", \"org_id\", \"project_id\")");
+    }
+
+    @Test
+    void childInterfaceField_connection_compositePkParent_widensJoinPredicateToAndChain() {
+        // Per-branch JOIN ON predicate is an AND-chain across parent PK slots: each composite
+        // FK column on the participant equals its position-paired parentInput VALUES column.
+        var field = compositePkChildInterfaceConnectionField();
+        var spec = TypeFetcherGenerator.generateTypeSpec("Project",
+            compositePkParentTable(),
+            null, List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+        var rows = method(spec, "rowsItemsConnection").code().toString();
+        assertThat(rows)
+            .as("ProjectNote branch JOINs on (org_id AND project_id)")
+            .contains("stage1_ProjectNote.ORG_ID.eq(parentInput.field(\"org_id\", java.lang.Integer.class))"
+                + ".and(stage1_ProjectNote.PROJECT_ID.eq(parentInput.field(\"project_id\", java.lang.Integer.class)))");
+        assertThat(rows)
+            .as("ProjectEvent branch JOINs on (org_id AND project_id) — same AND-chain shape")
+            .contains("stage1_ProjectEvent.ORG_ID.eq(parentInput.field(\"org_id\", java.lang.Integer.class))"
+                + ".and(stage1_ProjectEvent.PROJECT_ID.eq(parentInput.field(\"project_id\", java.lang.Integer.class)))");
+    }
 }

@@ -67,6 +67,10 @@ public final class MultiTablePolymorphicEmitter {
     private static final ClassName ROW1                = ClassName.get("org.jooq", "Row1");
     private static final ClassName ROW2                = ClassName.get("org.jooq", "Row2");
     private static final ClassName RECORD2             = ClassName.get("org.jooq", "Record2");
+    /** Returns {@code org.jooq.RowN} for the given arity (1..22). jOOQ's typed Row tops out at Row22. */
+    private static ClassName rowClass(int arity) { return ClassName.get("org.jooq", "Row" + arity); }
+    /** Returns {@code org.jooq.RecordN} for the given arity (1..22). jOOQ's typed Record tops out at Record22. */
+    private static ClassName recordClass(int arity) { return ClassName.get("org.jooq", "Record" + arity); }
     private static final ClassName DATA_LOADER         = ClassName.get("org.dataloader", "DataLoader");
     private static final ClassName DATA_LOADER_FACTORY = ClassName.get("org.dataloader", "DataLoaderFactory");
     private static final ClassName BATCH_LOADER_ENV    = ClassName.get("org.dataloader", "BatchLoaderEnvironment");
@@ -685,14 +689,17 @@ public final class MultiTablePolymorphicEmitter {
 
     /**
      * R36 Track B4c-2 main fetcher: registers a {@link org.dataloader.DataLoader} keyed on the
-     * parent table's PK and delegates to a {@code rows<Field>(List<Row1<PK>>, env)} batch loader.
-     * The body shape mirrors {@code TypeFetcherGenerator.buildSplitQueryDataFetcher}: build the
-     * tenant-scoped DataLoader name, {@code computeIfAbsent} the loader, extract the parent PK
-     * from {@code env.getSource()} as a typed {@code Row1<PK>}, then return
+     * parent table's PK and delegates to a {@code rows<Field>(List<RowN<PK1...PKn>>, env)}
+     * batch loader. The body shape mirrors {@code TypeFetcherGenerator.buildSplitQueryDataFetcher}:
+     * build the tenant-scoped DataLoader name, {@code computeIfAbsent} the loader, extract the
+     * parent PK from {@code env.getSource()} as a typed {@code RowN<...>}, then return
      * {@code loader.load(key, env).thenApply(...).exceptionally(...)} — the same async-tail
      * shape every other DataLoader-batched fetcher uses.
      *
-     * <p>v1 supports single-column parent PK; multi-column widens to {@code RowN}.
+     * <p>Parent PK arity 1..22 supported (jOOQ's typed Row tops out at Row22 — see {@link #rowClass}).
+     * Empty-PK parent rejected at emit time as a defensive tripwire (the validator already
+     * rejects PK-less participants upstream; PK-less parent for a connection-mode child field
+     * would only get here through a validator bug).
      */
     private static MethodSpec buildBatchedConnectionFetcher(
             String fieldName, TableRef parentTable,
@@ -702,19 +709,26 @@ public final class MultiTablePolymorphicEmitter {
             no.sikt.graphitron.rewrite.generators.util.ConnectionResultClassGenerator.CLASS_NAME);
         TypeName valueType = connectionResultClass;
 
-        // Single-column parent PK enforced upstream by
-        // GraphitronSchemaValidator.validateChildConnectionParentPk; reaching the emitter with
-        // multi-column parent PK is a validator bug. Defensive check stays as a tripwire.
         var pkCols = parentTable.primaryKeyColumns();
-        if (pkCols.size() != 1) {
+        int parentKeyArity = pkCols.size();
+        if (parentKeyArity == 0) {
             throw new IllegalStateException(
-                "B4c-2 batched child connection reached emitter with parent PK arity " + pkCols.size()
-                + " for table '" + parentTable.tableName() + "'; "
-                + "validateChildConnectionParentPk should have rejected this");
+                "B4c-2 batched child connection requires a parent PK; got 0 columns "
+                + "for parent table '" + parentTable.tableName() + "'. "
+                + "Validator should have rejected upstream.");
         }
-        ColumnRef parentPk0 = pkCols.get(0);
-        ClassName parentPkClass = ClassName.bestGuess(parentPk0.columnClass());
-        TypeName keyType = ParameterizedTypeName.get(ROW1, parentPkClass);
+        if (parentKeyArity > 22) {
+            throw new IllegalStateException(
+                "B4c-2 batched child connection: parent PK arity " + parentKeyArity
+                + " for parent table '" + parentTable.tableName()
+                + "' exceeds jOOQ's typed Row22 limit. Widen via DSL.rowField composite-key "
+                + "alternative or split the parent type.");
+        }
+        TypeName[] parentPkClasses = new TypeName[parentKeyArity];
+        for (int i = 0; i < parentKeyArity; i++) {
+            parentPkClasses[i] = ClassName.bestGuess(pkCols.get(i).columnClass());
+        }
+        TypeName keyType = ParameterizedTypeName.get(rowClass(parentKeyArity), parentPkClasses);
         TypeName loaderType = ParameterizedTypeName.get(DATA_LOADER, keyType, valueType);
         TypeName lambdaKeysType = ParameterizedTypeName.get(LIST, keyType);
         String rowsMethodName = "rows" + cap(fieldName);
@@ -747,10 +761,17 @@ public final class MultiTablePolymorphicEmitter {
             + "    .computeIfAbsent(name, k -> $T.newDataLoader($L));\n",
             loaderType, DATA_LOADER_FACTORY, lambdaBlock);
 
-        // Parent PK extraction — single-column v1.
-        builder.addStatement("$T fk0 = (($T) env.getSource()).get($T.$L.$L)",
-            parentPkClass, RECORD, tablesClass, parentTable.javaFieldName(), parentPk0.javaName());
-        builder.addStatement("$T key = $T.row(fk0)", keyType, DSL);
+        // Parent PK extraction — N typed locals from the parent record, then DSL.row(...) into
+        // the typed RowN<...> key.
+        var keyArgs = CodeBlock.builder();
+        for (int i = 0; i < parentKeyArity; i++) {
+            ColumnRef pk = pkCols.get(i);
+            builder.addStatement("$T fk$L = (($T) env.getSource()).get($T.$L.$L)",
+                parentPkClasses[i], i, RECORD, tablesClass, parentTable.javaFieldName(), pk.javaName());
+            if (i > 0) keyArgs.add(", ");
+            keyArgs.add("fk$L", i);
+        }
+        builder.addStatement("$T key = $T.row($L)", keyType, DSL, keyArgs.build());
 
         builder.addCode(CodeBlock.builder()
             .add("return loader.load(key, env)\n")
@@ -820,10 +841,15 @@ public final class MultiTablePolymorphicEmitter {
 
         String rowsMethodName = "rows" + cap(fieldName);
 
-        // Parent PK (single column v1, enforced by buildBatchedConnectionFetcher).
-        ColumnRef parentPk0 = parentTable.primaryKeyColumns().get(0);
-        ClassName parentPkClass = ClassName.bestGuess(parentPk0.columnClass());
-        TypeName keyType = ParameterizedTypeName.get(ROW1, parentPkClass);
+        // Parent PK — arity 1..22 supported (validator + buildBatchedConnectionFetcher's
+        // emit-time tripwires gate empty PK and >22 arity upstream).
+        var parentPkCols = parentTable.primaryKeyColumns();
+        int parentKeyArity = parentPkCols.size();
+        TypeName[] parentPkClasses = new TypeName[parentKeyArity];
+        for (int i = 0; i < parentKeyArity; i++) {
+            parentPkClasses[i] = ClassName.bestGuess(parentPkCols.get(i).columnClass());
+        }
+        TypeName keyType = ParameterizedTypeName.get(rowClass(parentKeyArity), parentPkClasses);
         TypeName keysListType = ParameterizedTypeName.get(LIST, keyType);
         TypeName listOfConnectionResult = ParameterizedTypeName.get(LIST, connectionResultClass);
 
@@ -848,21 +874,41 @@ public final class MultiTablePolymorphicEmitter {
             b.addStatement("$T $L = $T.$L", jooqTableClass, alias, tablesClass, participant.table().javaFieldName());
         }
 
-        // VALUES (idx, parent_pk0) → typed Row2<Integer, ParentPkClass>.
-        TypeName parentRowType = ParameterizedTypeName.get(ROW2, integerClass, parentPkClass);
-        TypeName parentRecordType = ParameterizedTypeName.get(RECORD2, integerClass, parentPkClass);
+        // VALUES (idx, parent_pk0, ..., parent_pkN-1) → typed Row<N+1><Integer, T1...Tn>.
+        // Single-column parent PK collapses to Row2<Integer, ParentPkClass>; composite parent
+        // PK widens to Row<N+1>. Arity bounded at codegen by buildBatchedConnectionFetcher.
+        int parentRowArity = parentKeyArity + 1;
+        TypeName[] parentRowTypeArgs = new TypeName[parentRowArity];
+        parentRowTypeArgs[0] = integerClass;
+        for (int i = 0; i < parentKeyArity; i++) {
+            parentRowTypeArgs[i + 1] = parentPkClasses[i];
+        }
+        TypeName parentRowType = ParameterizedTypeName.get(rowClass(parentRowArity), parentRowTypeArgs);
+        TypeName parentRecordType = ParameterizedTypeName.get(recordClass(parentRowArity), parentRowTypeArgs);
         TypeName parentInputTableType = ParameterizedTypeName.get(TABLE, parentRecordType);
 
         b.add("@$T({$S, $S})\n", ClassName.get("java.lang", "SuppressWarnings"), "unchecked", "rawtypes");
         b.addStatement("$T[] parentRows = ($T[]) new $T[keys.size()]",
-            parentRowType, parentRowType, ROW2);
+            parentRowType, parentRowType, rowClass(parentRowArity));
         b.beginControlFlow("for (int i = 0; i < keys.size(); i++)");
         b.addStatement("$T k = keys.get(i)", keyType);
-        b.addStatement("parentRows[i] = $T.row($T.inline(i), k.field1())", DSL, DSL);
+        // parentRows[i] = DSL.row(DSL.inline(i), k.field1(), k.field2(), ..., k.fieldN()).
+        var parentRowArgs = CodeBlock.builder();
+        parentRowArgs.add("$T.inline(i)", DSL);
+        for (int i = 0; i < parentKeyArity; i++) {
+            parentRowArgs.add(", k.field$L()", i + 1);
+        }
+        b.addStatement("parentRows[i] = $T.row($L)", DSL, parentRowArgs.build());
         b.endControlFlow();
 
-        b.addStatement("$T parentInput = $T.values(parentRows).as($S, $S, $S)",
-            parentInputTableType, DSL, "parentInput", "idx", parentPk0.sqlName());
+        // VALUES alias: ("parentInput", "idx", pk_col_0_sqlName, ..., pk_col_N-1_sqlName).
+        var parentInputAliasArgs = CodeBlock.builder();
+        parentInputAliasArgs.add("$S, $S", "parentInput", "idx");
+        for (var col : parentPkCols) {
+            parentInputAliasArgs.add(", $S", col.sqlName());
+        }
+        b.addStatement("$T parentInput = $T.values(parentRows).as($L)",
+            parentInputTableType, DSL, parentInputAliasArgs.build());
 
         // Pagination args (shared across the batch — graphql-java resolves field args once per
         // selection regardless of fanout).
@@ -901,7 +947,7 @@ public final class MultiTablePolymorphicEmitter {
             var participant = participants.get(p);
             String alias = "stage1_" + participant.typeName();
             CodeBlock projection = batchedBranchProjection(participant, alias);
-            CodeBlock joinPredicate = batchedBranchJoinPredicate(participant, participantJoinPaths, parentPk0);
+            CodeBlock joinPredicate = batchedBranchJoinPredicate(participant, participantJoinPaths, parentPkCols);
             if (p == 0) {
                 b.add("    dsl.select($L)\n", projection);
                 b.add("        .from($L)\n", alias);
@@ -1020,23 +1066,40 @@ public final class MultiTablePolymorphicEmitter {
     }
 
     /**
-     * B4c-2 per-branch JOIN predicate: {@code <participant>.<fkCol>.eq(parentInput.field(<parentPkSqlName>, <Type>.class))}.
-     * Single-hop FK only; FK direction inferred from {@link JoinStep.FkJoin#targetTable()}
-     * matching the participant table (parent-holds-FK case) or not (the standard child-holds-FK
-     * shape).
+     * B4c-2 per-branch JOIN predicate: per-PK-slot equality AND-chain
+     * {@code <participant>.<fkCol_i>.eq(parentInput.field(<parentPkSqlName_i>, <Type_i>.class))}
+     * across {@code parentPkCols}. Single-hop FK only; FK direction inferred from
+     * {@link JoinStep.FkJoin#targetTable()} matching the participant table (parent-holds-FK
+     * case) or not (the standard child-holds-FK shape).
+     *
+     * <p>Composite-FK assumption: {@code fkJoin.sourceColumns()} and
+     * {@code fkJoin.targetColumns()} are position-aligned with the parent table's PK columns;
+     * slot {@code i} on each side maps to {@code parentPkCols.get(i)}. This is the same
+     * position-pairing convention {@code SplitRowsMethodEmitter} relies on for batched
+     * single-cardinality and connection-mode parent-input JOINs.
      */
     private static CodeBlock batchedBranchJoinPredicate(ParticipantRef.TableBound participant,
-            Map<String, List<JoinStep>> participantJoinPaths, ColumnRef parentPk0) {
+            Map<String, List<JoinStep>> participantJoinPaths, List<ColumnRef> parentPkCols) {
         var path = participantJoinPaths.get(participant.typeName());
         var fkJoin = (JoinStep.FkJoin) path.get(0);
         boolean parentHoldsFk = fkJoin.targetTable().tableName().equalsIgnoreCase(participant.table().tableName());
-        ColumnRef participantSide = parentHoldsFk
-            ? fkJoin.targetColumns().get(0)
-            : fkJoin.sourceColumns().get(0);
+        List<ColumnRef> participantCols = parentHoldsFk
+            ? fkJoin.targetColumns()
+            : fkJoin.sourceColumns();
         String tableAlias = "stage1_" + participant.typeName();
-        ClassName parentColClass = ClassName.bestGuess(parentPk0.columnClass());
-        return CodeBlock.of("$L.$L.eq(parentInput.field($S, $T.class))",
-            tableAlias, participantSide.javaName(), parentPk0.sqlName(), parentColClass);
+        var b = CodeBlock.builder();
+        for (int i = 0; i < parentPkCols.size(); i++) {
+            ColumnRef parentCol = parentPkCols.get(i);
+            ClassName parentColClass = ClassName.bestGuess(parentCol.columnClass());
+            if (i == 0) {
+                b.add("$L.$L.eq(parentInput.field($S, $T.class))",
+                    tableAlias, participantCols.get(i).javaName(), parentCol.sqlName(), parentColClass);
+            } else {
+                b.add(".and($L.$L.eq(parentInput.field($S, $T.class)))",
+                    tableAlias, participantCols.get(i).javaName(), parentCol.sqlName(), parentColClass);
+            }
+        }
+        return b.build();
     }
 
     /**
