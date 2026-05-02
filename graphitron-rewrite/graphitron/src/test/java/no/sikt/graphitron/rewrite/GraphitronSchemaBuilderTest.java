@@ -4693,7 +4693,8 @@ class GraphitronSchemaBuilderTest {
                 var f = (MutationField.MutationInsertTableField) schema.field("Mutation", "createFilm");
                 assertThat(f.tableInputArg().inputTable().tableName()).isEqualTo("film");
                 assertThat(f.tableInputArg().fieldBindings()).isEmpty();
-                assertThat(f.encodeReturn()).isEmpty();
+                assertThat(f.returnExpression())
+                    .isEqualTo(new no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedSingle("Film"));
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationInsertTableField.class); }
         },
@@ -4920,7 +4921,8 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (MutationField.MutationInsertTableField) schema.field("Mutation", "createFilm");
-                assertThat(f.encodeReturn()).isEmpty();
+                assertThat(f.returnExpression())
+                    .isEqualTo(new no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedSingle("Film"));
             }),
 
         DML_LIST_LOOKUP_KEY_FIELD_REJECTED(
@@ -4962,10 +4964,10 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (MutationField.MutationDeleteTableField) schema.field("Mutation", "deleteFilm");
-                assertThat(f.payloadAssembly()).isPresent();
-                assertThat(f.payloadAssembly().get().payloadClass().reflectionName())
+                var rex = (no.sikt.graphitron.rewrite.model.DmlReturnExpression.Payload) f.returnExpression();
+                assertThat(rex.assembly().payloadClass().reflectionName())
                     .isEqualTo("no.sikt.graphitron.codereferences.dummyreferences.DeleteFilmPayload");
-                assertThat(f.payloadAssembly().get().rowSlotIndex()).isEqualTo(0);
+                assertThat(rex.assembly().rowSlotIndex()).isEqualTo(0);
                 assertThat(f.errorChannel()).isPresent();
             }),
 
@@ -4982,8 +4984,8 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (MutationField.MutationDeleteTableField) schema.field("Mutation", "deleteFilm");
-                assertThat(f.payloadAssembly()).isPresent();
-                assertThat(f.payloadAssembly().get().rowSlotIndex()).isEqualTo(0);
+                var rex = (no.sikt.graphitron.rewrite.model.DmlReturnExpression.Payload) f.returnExpression();
+                assertThat(rex.assembly().rowSlotIndex()).isEqualTo(0);
                 assertThat(f.errorChannel()).isEmpty();
             }),
 

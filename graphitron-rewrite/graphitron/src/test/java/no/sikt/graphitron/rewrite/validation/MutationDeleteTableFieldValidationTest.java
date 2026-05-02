@@ -4,12 +4,13 @@ import no.sikt.graphitron.rewrite.ArgumentRef;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.rewrite.model.DmlReturnExpression;
+import no.sikt.graphitron.rewrite.model.HelperRef;
 import no.sikt.graphitron.rewrite.model.InputColumnBinding;
 import no.sikt.graphitron.rewrite.model.MutationField.MutationDeleteTableField;
-import no.sikt.graphitron.rewrite.model.FieldWrapper;
-import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.javapoet.ClassName;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -25,10 +26,14 @@ class MutationDeleteTableFieldValidationTest {
 
     enum Case implements ValidatorCase {
 
-        VALID("delete mutation field — well-formed, no validation errors",
+        VALID("delete mutation field, well-formed, no validation errors",
             new MutationDeleteTableField(
                 "Mutation", "deleteFilm", null,
-                new ReturnTypeRef.ScalarReturnType("ID", new FieldWrapper.Single(true)),
+                new DmlReturnExpression.EncodedSingle(
+                    new HelperRef.Encode(
+                        ClassName.get("fake.code.generated", "NodeIdEncoder"),
+                        "encodeFilm",
+                        List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Long")))),
                 new ArgumentRef.InputTypeArg.TableInputArg(
                     "in", "FilmKey", true, false,
                     new TableRef("film", "FILM", "Film", List.of()),
@@ -38,8 +43,6 @@ class MutationDeleteTableFieldValidationTest {
                         new CallSiteExtraction.Direct())),
                     Optional.empty(),
                     List.of()),
-                Optional.empty(),
-                Optional.empty(),
                 Optional.empty()),
             List.of());
 

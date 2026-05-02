@@ -30,7 +30,7 @@ R22's dependency on R50 (Lift NodeId out of the model) has cleared, and R50's cl
 
 What remains for R22:
 
-1. **Phase 1B — model alignment.** Lift the return-expression dispatch into the model as a sealed `DmlReturnExpression` sub-variant (per the *Generation-thinking* and *Narrow component types* principles), and tag the load-bearing classifier guarantees with `@LoadBearingClassifierCheck` / `@DependsOnClassifierCheck` (per the *Classifier guarantees shape emitter assumptions* principle). This is a pre-Phase-2 task: doing it first means INSERT/UPDATE/UPSERT land emitters that pattern-match on a pre-resolved variant rather than inlining the same `instanceof ScalarReturnType` / `wrapper().isList()` switch four times.
+1. ~~**Phase 1B — model alignment.**~~ Landed. `DmlReturnExpression` carries the entire return-shape dispatch as a five-arm sealed sub-variant on `DmlTableField`; the `Payload` arm absorbs the R12-introduced `Optional<PayloadAssembly>` slot so each DML record dropped from 8 components to 6. `buildDmlField` carries `@LoadBearingClassifierCheck(key = "dml-mutation-shape-guarantees")`; `buildMutationDeleteFetcher` carries the matching `@DependsOnClassifierCheck` and pattern-matches the variant with no defensive checks. INSERT / UPDATE / UPSERT can now land emitters that read a pre-resolved arm.
 2. **Phases 2 / 4 / 5 — DML emitters** (INSERT, UPDATE, UPSERT).
 3. ~~**Phase 6 — service emitters** (`MutationServiceTableField`, `MutationServiceRecordField`).~~ Landed: both emitters delegate to the shared `buildServiceFetcherCommon` helper, picking up R12's wrapper integration for free.
 
@@ -43,11 +43,11 @@ The *Consolidation* item that previously called for an emitter-side `buildMutati
 | Variant | Status | Notes |
 |---|---|---|
 | Phase 1A (initial model + classifier) | **Landed** | All four DML records carry the shared `(tableInputArg, returnType, encodeReturn, errorChannel)` shape via `DmlTableField`; shared `classifyMutationInput` enforces Invariants #1–#14. Both service variants populated by `classifyMutationField` via `resolveServiceField`. |
-| Phase 1B (model alignment) | **Next up** | Lift the return-expression dispatch into a `DmlReturnExpression` sealed sub-variant on `DmlTableField`, replacing the broad `(returnType, encodeReturn)` slots; add `@LoadBearingClassifierCheck` to `classifyMutationInput` and retrofit `buildMutationDeleteFetcher` with `@DependsOnClassifierCheck`. See [Phase 1B](#phase-1b--model-alignment). |
-| `MutationDeleteTableField` | **Landed (emitter); pending Phase 1B retrofit** | Commit `31c64a2` introduced `buildMutationDeleteFetcher`. Currently inlines `instanceof ScalarReturnType` and `wrapper().isList()` checks; Phase 1B migrates it to pattern-match on `f.returnExpression()` and adds the load-bearing annotation. |
-| `MutationInsertTableField` | **Ready (Phase 2, after 1B)** | Record + classifier done. Lands `buildMutationInsertFetcher` against the post-1B `returnExpression` shape and flips `IMPLEMENTED_LEAVES`. |
-| `MutationUpdateTableField` | **Ready (Phase 4, after 1B)** | Record + classifier done. Lands `buildMutationUpdateFetcher` against the post-1B shape. |
-| `MutationUpsertTableField` | **Ready (Phase 5, after 1B)** | Record + classifier done. Lands `buildMutationUpsertFetcher` against the post-1B shape. |
+| Phase 1B (model alignment) | **Landed** | `DmlReturnExpression` sealed sub-variant carries the entire return-shape dispatch on `DmlTableField`. Five arms (`EncodedSingle`, `EncodedList`, `ProjectedSingle`, `ProjectedList`, `Payload`) — `Payload` absorbs the R12-introduced `Optional<PayloadAssembly>` slot so the broad `(returnType, encodeReturn, payloadAssembly)` triple collapses to one slot. Records went from 8 components to 6. `@LoadBearingClassifierCheck(key = "dml-mutation-shape-guarantees")` on `buildDmlField`; `@DependsOnClassifierCheck` on `buildMutationDeleteFetcher`. See [Phase 1B](#phase-1b--model-alignment). |
+| `MutationDeleteTableField` | **Landed** | `buildMutationDeleteFetcher` pattern-matches on `f.returnExpression()` (no `instanceof ScalarReturnType` / `wrapper().isList()` / `payloadAssembly().isPresent()` predicates). Per-arm bodies live in `emitDeleteEncoded` / `emitDeleteProjected` / `emitDeletePayload` helpers. |
+| `MutationInsertTableField` | **Ready (Phase 2)** | Record + classifier done. Lands `buildMutationInsertFetcher` against the post-1B `returnExpression` shape and flips `IMPLEMENTED_LEAVES`. |
+| `MutationUpdateTableField` | **Ready (Phase 4)** | Record + classifier done. Lands `buildMutationUpdateFetcher` against the post-1B shape. |
+| `MutationUpsertTableField` | **Ready (Phase 5)** | Record + classifier done. Lands `buildMutationUpsertFetcher` against the post-1B shape. |
 | `MutationServiceTableField` | **Landed** | `buildMutationServiceTableFetcher` delegates to the shared `buildServiceFetcherCommon` helper, inheriting the R12 §3 try/catch wrapper, §5 Jakarta validation pre-step, and §2c `resultAssembly` success-arm assembly. Wears `@DependsOnClassifierCheck(key = "service-catalog-strict-service-return", ...)` for the strict-return guarantee. Validation test flipped from `STUBBED` to `VALID`. |
 | `MutationServiceRecordField` | **Landed** | Same shape as above for the non-table service variant; `buildMutationServiceRecordFetcher` mirrors `buildQueryServiceRecordFetcher` (handles `ResultReturnType` with `fqClassName`, `PojoResultType`, and `ScalarReturnType` via `computeMutationServiceRecordReturnType`). |
 
@@ -321,16 +321,14 @@ Target coverage table (`GraphitronSchemaBuilderTest.rootFieldClassification` —
 
 ### Phase 1B — Model alignment
 
-**Status: ▶ Next up.** Bring the model into line with the *Generation-thinking*, *Narrow component types*, and *Classifier guarantees shape emitter assumptions* principles before any new DML emitter lands. Two changes, both shippable in one commit:
+**Status: ✅ Landed.** The model is now aligned with the *Generation-thinking*, *Narrow component types*, and *Classifier guarantees shape emitter assumptions* principles. Two changes, shipped in one commit:
 
-1. Pre-resolve the return-expression dispatch into a sealed `DmlReturnExpression` sub-variant carried on `DmlTableField`, replacing the broad `(returnType, encodeReturn)` slots.
-2. Tag the load-bearing classifier guarantees that emitters lean on (`@LoadBearingClassifierCheck` on `classifyMutationInput`; `@DependsOnClassifierCheck` on `buildMutationDeleteFetcher`).
+1. The return-expression dispatch is pre-resolved into a sealed `DmlReturnExpression` sub-variant carried on `DmlTableField`, replacing the broad `(returnType, encodeReturn, payloadAssembly)` triple. Five arms cover the entire admitted return-type set: `EncodedSingle`, `EncodedList`, `ProjectedSingle`, `ProjectedList`, and `Payload`.
+2. Load-bearing classifier guarantees are tagged via `@LoadBearingClassifierCheck(key = "dml-mutation-shape-guarantees")` on `FieldBuilder.buildDmlField` and the matching `@DependsOnClassifierCheck` on `TypeFetcherGenerator.buildMutationDeleteFetcher`.
 
 #### 1B.a. `DmlReturnExpression` sub-variant
 
-The four DML emitters all dispatch on the same predicate over the same field: `f.returnType() instanceof ScalarReturnType("ID")` vs `TableBoundReturnType`, plus `f.returnType().wrapper().isList()`. By the *Generation-thinking* rule ("if two generators branch on the same predicate over a model field, the branch belongs in the model"), the fork belongs at classify time, not in each emitter.
-
-New sealed type, alongside the existing `MutationField` permits in `model/`:
+The four DML emitters all dispatched on the same predicates over the same field: `f.returnType() instanceof ScalarReturnType("ID")` vs `TableBoundReturnType`, `f.returnType().wrapper().isList()`, and (post-R12) `f.payloadAssembly().isPresent()`. By the *Generation-thinking* rule ("if two generators branch on the same predicate over a model field, the branch belongs in the model"), the fork lives in `model/DmlReturnExpression.java`:
 
 ```java
 public sealed interface DmlReturnExpression {
@@ -338,25 +336,28 @@ public sealed interface DmlReturnExpression {
     record EncodedList(HelperRef.Encode encode)   implements DmlReturnExpression {}
     record ProjectedSingle(String returnTypeName) implements DmlReturnExpression {}
     record ProjectedList(String returnTypeName)   implements DmlReturnExpression {}
+    record Payload(PayloadAssembly assembly)      implements DmlReturnExpression {}
 }
 ```
 
 - `Encoded*` arms cover `ScalarReturnType("ID")` returns. `HelperRef.Encode` already carries `(encoderClass, methodName, paramSignature)`; emitters resolve the projection columns from `paramSignature()` and the lambda from `encoderClass()` + `methodName()`.
 - `Projected*` arms cover `TableBoundReturnType` returns. The GraphQL return-type name is the only per-arm data the emitter needs; the jOOQ table reference is `tia.inputTable()` (already on the variant) and the `<TypeName>Type.$fields(...)` class is derived from `returnTypeName` + the output package.
+- `Payload` covers R12 `ResultReturnType` returns (single only; list payloads rejected at classify time per Invariant #14). Carries the `PayloadAssembly` recipe for the success-arm payload-class constructor call.
 - Single vs list is encoded in the variant choice, not in a separate `wrapper().isList()` field.
 
-`DmlTableField` shape changes from:
+`DmlTableField` shape went from (pre-1B):
 
 ```java
 sealed interface DmlTableField extends MutationField {
     ReturnTypeRef returnType();
     ArgumentRef.InputTypeArg.TableInputArg tableInputArg();
     Optional<HelperRef.Encode> encodeReturn();
+    Optional<PayloadAssembly> payloadAssembly();
     SourceLocation location();
 }
 ```
 
-to:
+to (post-1B):
 
 ```java
 sealed interface DmlTableField extends MutationField {
@@ -366,60 +367,69 @@ sealed interface DmlTableField extends MutationField {
 }
 ```
 
-The four DML records lose `(ReturnTypeRef returnType, Optional<HelperRef.Encode> encodeReturn)` and gain `DmlReturnExpression returnExpression`. Component count stays the same (six), the broad-`ReturnTypeRef` slot disappears, and `Optional` ceremony at every emitter site is gone.
+The four DML records dropped `(ReturnTypeRef returnType, Optional<HelperRef.Encode> encodeReturn, Optional<PayloadAssembly> payloadAssembly)` and gained `DmlReturnExpression returnExpression`. Component count went from 8 to 6, the broad-`ReturnTypeRef` slot disappeared, and the `Optional` / `isPresent()` ceremony at every emitter site is gone.
 
-> *Narrow component types:* the post-1B `returnExpression()` slot type is exactly what the classifier guarantees. The pre-1B `returnType: ReturnTypeRef` slot was broader than Invariant #14 (excluded `PolymorphicReturnType` / `ResultReturnType` from DML). Phase 1B closes that gap.
+> *Narrow component types:* the post-1B `returnExpression()` slot type is exactly what the classifier guarantees. The pre-1B `returnType: ReturnTypeRef` slot was broader than Invariant #14 (excluded `PolymorphicReturnType` and the list arm of `ResultReturnType`); the pre-1B `payloadAssembly` slot was a separate dispatch axis duplicating the return-type fork. Phase 1B closes both gaps.
 
 #### 1B.b. Classifier change
 
-`classifyMutationInput` already does the work — it inspects `returnType` shape, looks up `HelperRef.Encode` for ID returns, and rejects everything else via Invariant #14. Phase 1B folds the resulting decision into a `DmlReturnExpression`:
+`FieldBuilder.classifyMutationField` does the @node-type lookup for ID returns; `MutationInputResolver.validateReturnType` runs Invariant #14. `FieldBuilder.buildDmlField` now resolves the channel and the payload assembly, then calls a small private helper `buildDmlReturnExpression(returnType, encodeReturn, payloadAssembly)` that folds them into the `DmlReturnExpression` arm:
 
 ```java
-DmlReturnExpression returnExpression;
-boolean isList = returnType.wrapper().isList();
-if (returnType instanceof ReturnTypeRef.ScalarReturnType s && "ID".equals(s.returnTypeName())) {
-    HelperRef.Encode encode = /* existing @node-type lookup */;
-    returnExpression = isList ? new DmlReturnExpression.EncodedList(encode)
-                              : new DmlReturnExpression.EncodedSingle(encode);
-} else if (returnType instanceof ReturnTypeRef.TableBoundReturnType tb) {
-    returnExpression = isList ? new DmlReturnExpression.ProjectedList(tb.returnTypeName())
-                              : new DmlReturnExpression.ProjectedSingle(tb.returnTypeName());
-} else {
-    // Invariant #14 already rejected anything else; this arm is unreachable.
-    throw new IllegalStateException(...);
+private static DmlReturnExpression buildDmlReturnExpression(
+        ReturnTypeRef returnType,
+        Optional<HelperRef.Encode> encodeReturn,
+        Optional<PayloadAssembly> payloadAssembly) {
+    boolean isList = returnType.wrapper().isList();
+    if (returnType instanceof ReturnTypeRef.ScalarReturnType s && "ID".equals(s.returnTypeName())) {
+        HelperRef.Encode enc = encodeReturn.orElseThrow(...);
+        return isList ? new DmlReturnExpression.EncodedList(enc)
+                      : new DmlReturnExpression.EncodedSingle(enc);
+    }
+    if (returnType instanceof ReturnTypeRef.TableBoundReturnType tb) {
+        return isList ? new DmlReturnExpression.ProjectedList(tb.returnTypeName())
+                      : new DmlReturnExpression.ProjectedSingle(tb.returnTypeName());
+    }
+    if (returnType instanceof ReturnTypeRef.ResultReturnType) {
+        return new DmlReturnExpression.Payload(payloadAssembly.orElseThrow(...));
+    }
+    throw new AssertionError(/* Invariant #14 already rejected anything else */);
 }
 ```
 
-The mutation-arm switch passes `returnExpression` to the variant constructor instead of `(returnType, encodeReturn)`.
+The mutation-arm switch passes `returnExpression` to the variant constructor instead of `(returnType, encodeReturn, payloadAssembly)`.
 
 #### 1B.c. Load-bearing classifier annotations
 
-Per *Classifier guarantees shape emitter assumptions*, `classifyMutationInput` produces three guarantees emitters consume without defensive checks:
+Per *Classifier guarantees shape emitter assumptions*, the DML classifier produces three guarantees emitters consume without defensive checks:
 
-1. **`returnExpression` matches the SDL return type.** `Encoded*` ⇒ `ScalarReturnType("ID")` and a populated `HelperRef.Encode`; `Projected*` ⇒ `TableBoundReturnType`. Emitters pattern-match without `instanceof` or `Optional.orElseThrow()`.
+1. **`returnExpression` matches the SDL return type.** `Encoded*` ⇒ `ScalarReturnType("ID")` and a populated `HelperRef.Encode`; `Projected*` ⇒ `TableBoundReturnType`; `Payload` ⇒ `ResultReturnType` and a populated `PayloadAssembly`. Emitters pattern-match without `instanceof`, `Optional.orElseThrow()`, or `payloadAssembly().isPresent()`.
 2. **Input arg is a `TableInputType`.** Lets emitters cast `env.getArgument(tia.name())` to `Map<?, ?>` without an `instanceof` guard.
 3. **Every input field is a `Direct`-extracted `ColumnField`.** Lets the column-list emission walk `tia.fields()` without dispatching on `extraction` or on input-field variants.
 
-Annotate `classifyMutationInput`:
+The producer annotation lands on `FieldBuilder.buildDmlField` (the site that resolves channel + assembly and calls `buildDmlReturnExpression`):
 
 ```java
 @LoadBearingClassifierCheck(
     key = "dml-mutation-shape-guarantees",
-    description = "Resolves returnExpression to one of four arms (EncodedSingle/EncodedList/"
-        + "ProjectedSingle/ProjectedList), guarantees the input arg is a TableInputType, and "
-        + "guarantees every input field is a Direct-extracted ColumnField. DML emitters lean "
-        + "on all three: pattern-match the variant without instanceof, cast env.getArgument to "
-        + "Map without a guard, walk tia.fields() without an extraction switch.")
-private MutationInputResult classifyMutationInput(...)
+    description = "Resolves DmlReturnExpression to one of five arms (EncodedSingle / "
+        + "EncodedList / ProjectedSingle / ProjectedList / Payload), so DML emitters "
+        + "pattern-match a single sealed dispatch with no instanceof ScalarReturnType, no "
+        + "wrapper().isList() lookup, no Optional.orElseThrow() on the encode helper, and "
+        + "no payloadAssembly().isPresent() predicate. Combined with the input-shape "
+        + "invariants (Invariants #1 and #7-#13 in mutations.md), the entire DML emitter "
+        + "branch is total without defensive checks.")
+private GraphitronField buildDmlField(...)
 ```
 
-Annotate `buildMutationDeleteFetcher` (and every future DML emitter) with the matching consumer tag:
+`buildMutationDeleteFetcher` carries the matching consumer tag:
 
 ```java
 @DependsOnClassifierCheck(
     key = "dml-mutation-shape-guarantees",
-    reliesOn = "Pattern-matches f.returnExpression() with no instanceof / Optional.orElseThrow; "
-        + "casts env.getArgument(tia.name()) to Map<?,?> with no guard; walks tia.fields() "
+    reliesOn = "Pattern-matches f.returnExpression() with no instanceof / "
+        + "Optional.orElseThrow / payloadAssembly().isPresent() guard; casts "
+        + "env.getArgument(tia.name()) to Map<?,?> with no guard; walks tia.fields() "
         + "without an extraction-arm dispatch.")
 private static MethodSpec buildMutationDeleteFetcher(...)
 ```
@@ -428,37 +438,41 @@ private static MethodSpec buildMutationDeleteFetcher(...)
 
 #### 1B.d. DELETE emitter migration
 
-`buildMutationDeleteFetcher` today inlines the `instanceof ScalarReturnType` / `wrapper().isList()` switch (`TypeFetcherGenerator.java` `:1049-1086`). Phase 1B replaces the switch with a pattern-match on `f.returnExpression()`:
+`buildMutationDeleteFetcher` now pattern-matches on `f.returnExpression()`. The per-shape bodies live in three private helpers:
 
 ```java
-switch (f.returnExpression()) {
+return switch (rex) {
     case DmlReturnExpression.EncodedSingle es ->
-        emitEncodedProjection(body, names, tableRef, es.encode(), /*isList=*/ false);
-    case DmlReturnExpression.EncodedList   el ->
-        emitEncodedProjection(body, names, tableRef, el.encode(), /*isList=*/ true);
+        emitDeleteEncoded(es.encode(), valueType, tableRef, tablesOnly, whereExpr, /*isList=*/ false);
+    case DmlReturnExpression.EncodedList el ->
+        emitDeleteEncoded(el.encode(), valueType, tableRef, tablesOnly, whereExpr, /*isList=*/ true);
     case DmlReturnExpression.ProjectedSingle ps ->
-        emitMultisetProjection(body, names, tableRef, /*isList=*/ false);
-    case DmlReturnExpression.ProjectedList   pl ->
-        emitMultisetProjection(body, names, tableRef, /*isList=*/ true);
-}
+        emitDeleteProjected(ps.returnTypeName(), valueType, tableRef, tablesOnly,
+            outputPackage, jooqPackage, whereExpr, /*isList=*/ false);
+    case DmlReturnExpression.ProjectedList pl ->
+        emitDeleteProjected(pl.returnTypeName(), valueType, tableRef, tablesOnly,
+            outputPackage, jooqPackage, whereExpr, /*isList=*/ true);
+    case DmlReturnExpression.Payload p ->
+        emitDeletePayload(p.assembly(), valueType, tableRef, tablesOnly, whereExpr);
+};
 ```
 
-(Single vs list is still a parameter to the per-shape helper because only the terminal `.fetchOne` / `.fetch` differs.)
-
-Same commit: add `@DependsOnClassifierCheck(key = "dml-mutation-shape-guarantees", ...)` to `buildMutationDeleteFetcher`.
+Single vs list is a parameter to the per-shape helper because only the terminal `.fetchOne` / `.fetch` differs.
 
 #### 1B.e. Implementation sites
 
-- New file `model/DmlReturnExpression.java` declaring the sealed interface and four records.
-- `MutationField.java`: drop `returnType` + `encodeReturn` from each DML record and from the `DmlTableField` interface; add `returnExpression`.
-- `FieldBuilder.classifyMutationInput`: build the `DmlReturnExpression` once and pass it through the verb switch. Add `@LoadBearingClassifierCheck`.
-- `TypeFetcherGenerator.buildMutationDeleteFetcher`: pattern-match on `f.returnExpression()`. Add `@DependsOnClassifierCheck`.
-- `GraphitronSchemaBuilderTest.rootFieldClassification`: the existing `DELETE_MUTATION_FIELD` / `INSERT_MUTATION_FIELD` / etc. cases should grow assertions on `f.returnExpression()` matching the expected arm.
-- No validation-test changes (`MutationDeleteTableFieldValidationTest` already runs against the variant interface, not its components).
+- New file `model/DmlReturnExpression.java` declaring the sealed interface and the five records.
+- `MutationField.java`: dropped `returnType`, `encodeReturn`, and `payloadAssembly` from each DML record and from the `DmlTableField` interface; added `returnExpression`.
+- `FieldBuilder`: `buildDmlField` resolves channel + assembly, then folds them into a `DmlReturnExpression` via the new private helper `buildDmlReturnExpression`. Wears `@LoadBearingClassifierCheck(key = "dml-mutation-shape-guarantees")`.
+- `TypeFetcherGenerator.buildMutationDeleteFetcher`: pattern-matches on `f.returnExpression()` via the three `emitDelete*` helpers. Wears `@DependsOnClassifierCheck`.
+- `MappingsConstantNameDedup.withResolvedChannel`: each DML arm rebuilt with the new component list (returnExpression, tableInputArg, channel).
+- `GraphitronSchemaBuilderTest.rootFieldClassification`: assertions on `f.returnExpression()` matching the expected arm (`ProjectedSingle("Film")`, `Payload(assembly)`, etc.).
+- `MutationDmlNodeIdClassificationTest`: `EncodedSingle` arm assertions against `__NODE_KEY_COLUMNS` metadata.
+- The four `Mutation*TableFieldValidationTest` cases construct DML records with the new shape (using `DmlReturnExpression.ProjectedSingle("Film")` / `EncodedSingle(encode)`).
 
 #### 1B.f. Tests
 
-This phase is a model refactor, not a behaviour change. The pipeline tests that pass today should pass after, with assertions on `returnExpression` rather than `(returnType, encodeReturn)`. The compile-tier check (`mvn compile -pl :graphitron-test -Plocal-db`) catches any emitter-side mismatch the pattern-match would surface. `LoadBearingGuaranteeAuditTest` enforces the new annotation pairing.
+This phase is a model refactor, not a behaviour change. All pipeline / validation / generator tests pass against the new shape. `LoadBearingGuaranteeAuditTest` enforces the new annotation pairing.
 
 ---
 
@@ -526,9 +540,7 @@ If INSERT's pipeline test stays compile-only (no execution path against PostgreS
 
 ### Phase 3 — DELETE emission
 
-**Status: ✅ Landed; pending Phase 1B retrofit.** Initial emitter shipped in commit `31c64a2`; rebased onto the post-R50 `(tableInputArg, encodeReturn)` shape during the R50 cleanup pass. `buildMutationDeleteFetcher` emits `dsl.deleteFrom(table).where(<chained .eq().and()>).returningResult(<keys or $fields>).fetchOne(r -> …)`, reading from `f.tableInputArg().fieldBindings()` and `f.encodeReturn().orElseThrow().paramSignature()`.
-
-> Phase 1B migrates this emitter to pattern-match on `f.returnExpression()` and adds the `@DependsOnClassifierCheck(key = "dml-mutation-shape-guarantees", ...)` annotation. The shape of emitted code does not change; the emitter source loses its `instanceof ScalarReturnType` guard and `f.returnType().wrapper().isList()` lookup.
+**Status: ✅ Landed (Phase 1B retrofit complete).** Initial emitter shipped in commit `31c64a2`. Phase 1B migrated it to pattern-match on `f.returnExpression()`; the per-shape bodies live in `emitDeleteEncoded` / `emitDeleteProjected` / `emitDeletePayload`. The emitter source carries `@DependsOnClassifierCheck(key = "dml-mutation-shape-guarantees", ...)` and reads no `instanceof ScalarReturnType` / `wrapper().isList()` / `payloadAssembly().isPresent()` predicate. The shape of emitted code is unchanged from pre-1B.
 
 #### Shape of emitted method
 
