@@ -152,13 +152,13 @@ public final class MappingsConstantNameDedup {
                 f.parentTypeName(), f.name(), f.location(), f.returnType(), f.tableInputArg(),
                 f.encodeReturn(), f.payloadAssembly(), present);
             case MutationField.MutationServiceTableField f -> new MutationField.MutationServiceTableField(
-                f.parentTypeName(), f.name(), f.location(), f.returnType(), f.method(), present);
+                f.parentTypeName(), f.name(), f.location(), f.returnType(), f.method(), present, f.resultAssembly());
             case MutationField.MutationServiceRecordField f -> new MutationField.MutationServiceRecordField(
-                f.parentTypeName(), f.name(), f.location(), f.returnType(), f.method(), present);
+                f.parentTypeName(), f.name(), f.location(), f.returnType(), f.method(), present, f.resultAssembly());
             case QueryField.QueryServiceTableField f -> new QueryField.QueryServiceTableField(
-                f.parentTypeName(), f.name(), f.location(), f.returnType(), f.method(), present);
+                f.parentTypeName(), f.name(), f.location(), f.returnType(), f.method(), present, f.resultAssembly());
             case QueryField.QueryServiceRecordField f -> new QueryField.QueryServiceRecordField(
-                f.parentTypeName(), f.name(), f.location(), f.returnType(), f.method(), present);
+                f.parentTypeName(), f.name(), f.location(), f.returnType(), f.method(), present, f.resultAssembly());
             default -> throw new IllegalStateException(
                 "MappingsConstantNameDedup: unhandled WithErrorChannel variant "
                     + field.getClass().getName()

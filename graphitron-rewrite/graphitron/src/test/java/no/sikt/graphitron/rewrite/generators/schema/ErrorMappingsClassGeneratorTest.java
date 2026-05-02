@@ -288,7 +288,8 @@ class ErrorMappingsClassGeneratorTest {
                 returnType,
                 new MethodRef.Basic("com.example.SvcStub", "doStuff",
                     ClassName.get(Object.class), List.of()),
-                Optional.of(channels.get(i)));
+                Optional.of(channels.get(i)),
+                Optional.empty());
             fields.put(FieldCoordinates.coordinates("Mutation", fieldName), field);
         }
         return new GraphitronSchema(types, fields);

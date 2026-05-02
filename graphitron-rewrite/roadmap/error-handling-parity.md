@@ -286,13 +286,33 @@ wrapper + dispatch arm lands; phasing within is the implementer's call.
   `String`. Transitional state: the developer-supplied data class is retired in
   the source-direct unwind below.
 
+- `ResultAssembly` carrier (R12 §2c, §5) — service-side counterpart of
+  `PayloadAssembly`. The classifier reflects the developer-supplied payload
+  class's canonical constructor and looks for a parameter whose
+  {@code TypeName} matches the service method's reflected return type; that
+  parameter is the result slot. `Optional<ResultAssembly> resultAssembly()` is
+  attached to all four service field variants (`MutationServiceTableField`,
+  `MutationServiceRecordField`, `QueryServiceTableField`,
+  `QueryServiceRecordField`). The strict-return check on `ResultReturnType`
+  payloads is loosened to accept either "service returns the SDL payload type"
+  (legacy passthrough, `NoAssembly`) or "service returns a domain object
+  matching one constructor parameter" (`Assembly`); a service that returns
+  neither rejects with a `must return ...` reason. The service-fetcher emitter
+  forks on the slot: `Assembly` captures the service return into a typed
+  `__row` local and walks the constructor positionally
+  (result slot ← `__row`, errors slot ← `List.of()` when a channel is also
+  present, every other slot ← its `defaultLiteral`); `NoAssembly` keeps the
+  legacy passthrough shape. Multi-constructor payload classes (e.g. jOOQ
+  table records) can't carry a domain-object shape and are restricted to the
+  legacy passthrough shape.
+
 **Remaining work:**
 
-- **Source-direct dispatch + native Jakarta validation + uniform payload
-  assembly (one chunk).** This is the architectural close-out: the wrapper
-  becomes the only place where validation, payload assembly, and exception
-  dispatch happen. Service methods return the domain object; DML bodies
-  return the row record. Both go through one wrapper shape.
+- **Source-direct dispatch (the @error-data-class retire).** This is the
+  architectural close-out for §2c's "@error is TypeResolver wiring" subsection
+  (the data-class retire piece). Service methods now return the domain object
+  uniformly with DML bodies returning the row record (the §5 + ResultAssembly
+  pieces above); what remains is the source-direct dispatch path.
 
   *Source-direct dispatch* (§2c, §3):
   - Delete `TypeBuilder.validatePathMessageConstructor`,

@@ -27,7 +27,7 @@ class MutationServiceRecordFieldValidationTest {
             new MutationServiceRecordField("Mutation", "externalMutation", null,
                 new ReturnTypeRef.ResultReturnType("Film", new FieldWrapper.Single(true), null),
                 new MethodRef.Basic("com.example.Service", "method", TypeName.VOID, List.of()),
-                Optional.empty()),
+                Optional.empty(), Optional.empty()),
             List.of(stubbedError("Mutation.externalMutation", MutationServiceRecordField.class)));
 
         private final String description;
