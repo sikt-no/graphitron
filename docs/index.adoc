@@ -17,10 +17,15 @@
 
 Graphitron generates the wiring between a GraphQL schema and a jOOQ-modelled database, so resolvers, fetchers, and SQL come out of the schema rather than being maintained by hand.
 
+// Decorative hero illustrations: emitted as HTML passthroughs so they carry
+// aria-hidden="true". AsciiDoctor's image: macro does not support arbitrary
+// HTML attributes, and alt="" alone is not enough; VoiceOver and a few other
+// screen readers fall back to reading the file path when an empty-alt image
+// has no aria-hidden, which is the failure mode being fixed here.
 [.featurerow,cols="1a,1a,1a",frame=none,grid=none]
 |===
 |
-image:Person2.svg[alt="",role=decorative]
++++<img class="decorative" src="images/Person2.svg" alt="" aria-hidden="true">+++
 
 [.feature]
 == Database-first
@@ -30,7 +35,7 @@ A well-designed database outlives every application built on top of it. Graphitr
 xref:graphitron-principles.adoc[Read the principles]
 
 |
-image:Person3.svg[alt="",role=decorative]
++++<img class="decorative" src="images/Person3.svg" alt="" aria-hidden="true">+++
 
 [.feature]
 == Built on jOOQ and graphql-java
@@ -40,7 +45,7 @@ jOOQ provides the typed table classes that Graphitron uses to build SQL the comp
 xref:dependencies.adoc[Why these dependencies]
 
 |
-image:Personer.svg[alt="",role=decorative]
++++<img class="decorative" src="images/Personer.svg" alt="" aria-hidden="true">+++
 
 [.feature]
 == Authorization stays in the database
