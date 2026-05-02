@@ -11,9 +11,8 @@ import static no.sikt.graphitron.rewrite.BuildContext.ARG_DEFAULT_FIRST_VALUE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_AS_CONNECTION;
 
 /**
- * Resolves the pagination concern for a list/connection field. The third projection resolver
- * under R6 (Phase 6b), sibling to {@link OrderByResolver} (Phase 5) and
- * {@link LookupMappingResolver} (Phase 6a).
+ * Resolves the pagination concern for a list/connection field. Sibling to
+ * {@link OrderByResolver} and {@link LookupMappingResolver}.
  *
  * <p>Three responsibilities cluster here, all pure pagination semantics:
  *

@@ -28,11 +28,10 @@ import java.util.Set;
  *       state).</li>
  * </ul>
  *
- * <p>Source storage is plain {@code byte[]} for now; tree-sitter's API is
- * byte-offset based, so this keeps slicing zero-copy. A rope (ropey-like)
- * is a future optimisation if profiling shows large-file edits dominate;
- * graphitron schema files are typically small enough that array splicing
- * is faster than rope traversal until file size exceeds a few hundred KB.
+ * <p>Source storage is plain {@code byte[]}; tree-sitter's API is byte-offset
+ * based, so this keeps slicing zero-copy. graphitron schema files are
+ * typically small enough that array splicing is faster than rope traversal
+ * until file size exceeds a few hundred KB.
  */
 public final class WorkspaceFile {
 

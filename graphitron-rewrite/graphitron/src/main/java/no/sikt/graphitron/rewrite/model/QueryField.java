@@ -102,9 +102,9 @@ public sealed interface QueryField extends RootField
 
     /**
      * A root query field returning a multi-table {@link GraphitronType.InterfaceType}.
-     * Carries the resolved participants list so the fetcher emitter can drive R36 Track B's
-     * two-stage SQL: a narrow UNION ALL projecting {@code (__typename, __pk0__, ...)} per branch
-     * and a per-typename batched lookup using {@code <Type>.$fields}.
+     * Carries the resolved participants list so the multi-table polymorphic fetcher emitter can
+     * drive its two-stage SQL: a narrow UNION ALL projecting {@code (__typename, __pk0__, ...)}
+     * per branch and a per-typename batched lookup using {@code <Type>.$fields}.
      */
     record QueryInterfaceField(
         String parentTypeName,
@@ -143,10 +143,9 @@ public sealed interface QueryField extends RootField
      *
      * <p>{@code errorChannel} carries the carrier-side typed-error wiring when this field's
      * payload includes an {@code errors} field. {@code resultAssembly} carries the carrier-side
-     * success-arm wiring (R12 §2c, §5) when the service method's return type binds to a
-     * parameter of the SDL payload class's canonical constructor (the "service returns the
-     * domain object" shape); empty when the service returns the SDL payload class directly
-     * (legacy passthrough shape).
+     * success-arm wiring when the service method's return type binds to a parameter of the SDL
+     * payload class's canonical constructor (the "service returns the domain object" shape);
+     * empty when the service returns the SDL payload class directly (legacy passthrough shape).
      */
     record QueryServiceTableField(
         String parentTypeName,
@@ -166,10 +165,9 @@ public sealed interface QueryField extends RootField
      *
      * <p>{@code errorChannel} carries the carrier-side typed-error wiring when this field's
      * payload includes an {@code errors} field. {@code resultAssembly} carries the carrier-side
-     * success-arm wiring (R12 §2c, §5) when the service method's return type binds to a
-     * parameter of the SDL payload class's canonical constructor (the "service returns the
-     * domain object" shape); empty when the service returns the SDL payload class directly
-     * (legacy passthrough shape).
+     * success-arm wiring when the service method's return type binds to a parameter of the SDL
+     * payload class's canonical constructor (the "service returns the domain object" shape);
+     * empty when the service returns the SDL payload class directly (legacy passthrough shape).
      */
     record QueryServiceRecordField(
         String parentTypeName,

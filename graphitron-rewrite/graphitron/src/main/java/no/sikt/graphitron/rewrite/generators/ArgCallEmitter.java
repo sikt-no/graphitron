@@ -87,9 +87,9 @@ public final class ArgCallEmitter {
     /**
      * Variant that accepts a {@code sourcesExpression} — the {@link CodeBlock} to emit at the
      * {@link ParamSource.Sources} slot. Use this when emitting a child {@code @service} rows-
-     * method body where the {@code keys} parameter (or a converted form of it; see R32 element-
-     * shape recovery) is the value supplied at the Sources slot. When {@code null}, Sources is
-     * rejected as in the legacy two-arg overload.
+     * method body where the {@code keys} parameter (or a converted form of it) is the value
+     * supplied at the Sources slot. When {@code null}, Sources is rejected as in the legacy
+     * two-arg overload.
      */
     public static CodeBlock buildMethodBackedCallArgs(MethodRef method, CodeBlock tableExpression,
             CodeBlock sourcesExpression, String conditionsClassName) {

@@ -134,7 +134,7 @@ public final class GraphitronSchemaClassGenerator {
             });
 
         // Plain InterfaceType / UnionType TypeResolvers — read the synthetic __typename column
-        // projected by R36 Track B's stage-1 narrow-union emitter. The Node interface is
+        // projected by the multi-table polymorphic emitter's stage-1 narrow union. The Node interface is
         // registered separately via QueryNodeFetcher.registerTypeResolver above; skip it here
         // so we don't double-register. Federation's _Entity union is injected by
         // Federation.transform() after schemaBuilder.build(), so it does not appear in
@@ -158,8 +158,8 @@ public final class GraphitronSchemaClassGenerator {
                 body.add(cb.build());
             });
 
-        // @error-only union/interface TypeResolvers: source-class-instanceof dispatch
-        // (R12 §2c). The runtime source for each entry in a payload's errors list is the
+        // @error-only union/interface TypeResolvers: source-class-instanceof dispatch.
+        // The runtime source for each entry in a payload's errors list is the
         // matched object itself (Throwable for GENERIC/DATABASE handlers, GraphQLError for
         // VALIDATION); no developer-supplied data class. Each such union or interface gets a
         // resolver that walks every (participant @error type, handler) pair in source order
@@ -172,7 +172,7 @@ public final class GraphitronSchemaClassGenerator {
             .sorted(Map.Entry.comparingByKey())
             .forEach(e -> body.add(buildErrorPolymorphicResolver(e.getKey(), e.getValue(), schema)));
 
-        // Per-@error-type path/message DataFetchers (R12 §2c). The SDL grammar restricts
+        // Per-@error-type path/message DataFetchers. The SDL grammar restricts
         // @error types to {path: [String!]!, message: String!}; the @error type's source
         // class can be a Throwable (no getPath()) or a GraphQLError (has getPath()/getMessage()).
         // Synthesize the path field from the GraphQL execution context for non-GraphQLError
@@ -308,7 +308,7 @@ public final class GraphitronSchemaClassGenerator {
      * True for a {@link UnionType} or {@link InterfaceType} whose participants are all classified
      * as {@link ErrorType}. Used to fork the TypeResolver emission: jOOQ-record-backed
      * polymorphic types read a {@code __typename} column; @error-only polymorphic types
-     * dispatch by runtime source class (Throwable / GraphQLError) per R12 §2c.
+     * dispatch by runtime source class (Throwable / GraphQLError).
      *
      * <p>A polymorphic type with mixed @error and non-@error participants does not occur in
      * practice: the carrier classifier only lifts a payload's errors-shaped field to
@@ -332,8 +332,8 @@ public final class GraphitronSchemaClassGenerator {
     /**
      * Emits the {@code codeRegistry.typeResolver(...)} call for an @error-only union or
      * interface. Walks every (@error-typed participant, handler) pair in source order; the
-     * resulting {@code if} ladder mirrors the dispatcher's source-order-first-match semantics
-     * (R12 §3 dispatch order). The first {@code instanceof} predicate that satisfies returns
+     * resulting {@code if} ladder mirrors the dispatcher's source-order-first-match semantics.
+     * The first {@code instanceof} predicate that satisfies returns
      * the corresponding @error SDL type; falls through to {@code null} when no predicate
      * matches (unreachable in practice; the dispatcher's match step has already filtered).
      */
@@ -408,7 +408,7 @@ public final class GraphitronSchemaClassGenerator {
 
     /**
      * Emits {@code codeRegistry.dataFetcher(...)} calls for the {@code path} and {@code message}
-     * fields of one @error type (R12 §2c). The SDL grammar restricts @error types to exactly
+     * fields of one @error type. The SDL grammar restricts @error types to exactly
      * these two fields; both are always {@code [String!]!} / {@code String!} so a missing or
      * null value would violate the schema's non-null contract.
      *

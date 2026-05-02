@@ -8,13 +8,13 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R12 §4 classifier integration: a {@code @service} method that declares a non-exempt checked
- * exception with no covering {@code @error} handler on the field's payload classifies as
+ * Checked-exception classifier integration: a {@code @service} method that declares a non-exempt
+ * checked exception with no covering {@code @error} handler on the field's payload classifies as
  * {@link UnclassifiedField}; an exempt declaration ({@code IOException},
  * {@code InterruptedException}) classifies cleanly. Each test wires an SDL fragment through
  * {@link TestSchemaHelper#buildSchema} and asserts the resulting field variant + reason.
  *
- * <p>Service-method fixtures live in {@link TestServiceStub}; the §4 check sits inside
+ * <p>Service-method fixtures live in {@link TestServiceStub}; the check sits inside
  * {@link FieldBuilder#buildServiceField} (and parallel sites for child {@code @service} and
  * root/child {@code @tableMethod}). The match-rule unit tests live in
  * {@link CheckedExceptionMatcherTest}; this class covers the wiring path end-to-end.

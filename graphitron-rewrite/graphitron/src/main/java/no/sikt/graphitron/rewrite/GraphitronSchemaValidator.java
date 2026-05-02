@@ -200,15 +200,15 @@ public class GraphitronSchemaValidator {
     }
     private void validateInterfaceType(no.sikt.graphitron.rewrite.model.GraphitronType.InterfaceType type, List<ValidationError> errors) {
         validateParticipants(type.name(), type.participants(), errors);
-        // R36 Track B's PK-presence and PK-arity constraints are scoped to fields that actually
-        // emit the multi-table polymorphic fetcher (validateQueryInterfaceField /
-        // validateQueryUnionField). Interfaces dispatched via other paths — notably the Node
-        // interface's QueryNodeFetcher — bypass those constraints.
+        // PK-presence and PK-arity constraints are scoped to fields that actually emit the
+        // multi-table polymorphic fetcher (validateQueryInterfaceField / validateQueryUnionField).
+        // Interfaces dispatched via other paths, notably the Node interface's QueryNodeFetcher,
+        // bypass those constraints.
     }
     private void validateUnionType(no.sikt.graphitron.rewrite.model.GraphitronType.UnionType type, List<ValidationError> errors) {
         validateParticipants(type.name(), type.participants(), errors);
         // Same scoping as validateInterfaceType: see validateQueryUnionField for the PK-presence
-        // and PK-arity checks that R36 Track B's emitter requires.
+        // and PK-arity checks that the multi-table polymorphic emitter requires.
     }
 
     /**
@@ -253,7 +253,7 @@ public class GraphitronSchemaValidator {
     }
 
     /**
-     * R36 Track B: validates a {@link no.sikt.graphitron.rewrite.model.QueryField.QueryInterfaceField}
+     * Validates a {@link no.sikt.graphitron.rewrite.model.QueryField.QueryInterfaceField}
      * or {@link no.sikt.graphitron.rewrite.model.QueryField.QueryUnionField}'s participant set
      * against the constraints of the two-stage native fetcher emission:
      *
@@ -322,13 +322,12 @@ public class GraphitronSchemaValidator {
     }
 
     /**
-     * R36 Track B4c-2 batched-child-connection guard: rejects {@code @asConnection} on a
-     * child interface/union field whose enclosing parent type is backed by a table with a
-     * primary key arity above jOOQ's typed Row22 cap. The DataLoader-batched windowed CTE
-     * form types its key element as {@code RowN<...>} (parent PK arity 1..21 — the
-     * {@code parentInput VALUES} table widens to {@code Row<N+1>} including {@code idx},
-     * which tops out at 22). Empty PK is also rejected (multi-table interface/union
-     * connections need a parent key for the DataLoader VALUES table).
+     * Batched-child-connection guard: rejects {@code @asConnection} on a child interface/union
+     * field whose enclosing parent type is backed by a table with a primary key arity above
+     * jOOQ's typed Row22 cap. The DataLoader-batched windowed CTE form types its key element as
+     * {@code RowN<...>} (parent PK arity 1..21; the {@code parentInput VALUES} table widens to
+     * {@code Row<N+1>} including {@code idx}, which tops out at 22). Empty PK is also rejected
+     * (multi-table interface/union connections need a parent key for the DataLoader VALUES table).
      *
      * <p>Surfaces the constraint as a clean validator rejection (build-time AUTHOR_ERROR with
      * file:line) instead of a codegen-time {@code IllegalStateException} thrown deep in
@@ -819,7 +818,7 @@ public class GraphitronSchemaValidator {
     }
 
     /**
-     * Invariant #10 (R1 Phase 2e): {@link no.sikt.graphitron.rewrite.model.ChildField.RecordTableField}
+     * Invariant #10: {@link no.sikt.graphitron.rewrite.model.ChildField.RecordTableField}
      * and {@link no.sikt.graphitron.rewrite.model.ChildField.RecordLookupTableField} reject
      * single-cardinality returns at build time. The rows-method emitter has no arm for the single
      * shape on these variants, so a classifier acceptance must be promoted to an

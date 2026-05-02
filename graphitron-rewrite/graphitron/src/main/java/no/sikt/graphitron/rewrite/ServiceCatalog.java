@@ -276,8 +276,8 @@ class ServiceCatalog {
 
     /**
      * Captures the developer method's declared exception classes as FQNs, in source order.
-     * Feeds {@link MethodRef.Basic#declaredExceptions()} so the classifier's R12 §4 match rule
-     * can verify each declared exception is covered by an {@code @error} handler on the field's
+     * Feeds {@link MethodRef.Basic#declaredExceptions()} so the classifier's match rule can
+     * verify each declared exception is covered by an {@code @error} handler on the field's
      * channel. Returns the empty list when the method has no {@code throws} clause.
      */
     private static List<String> declaredExceptionFqns(java.lang.reflect.Method m) {

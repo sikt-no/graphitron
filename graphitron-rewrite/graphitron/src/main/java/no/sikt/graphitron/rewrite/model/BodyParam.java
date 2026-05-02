@@ -53,17 +53,14 @@ public sealed interface BodyParam permits BodyParam.ColumnPredicate {
      * record. Each arm carries exactly the columns it needs:
      *
      * <ul>
-     *   <li>{@link Eq} — single-column scalar equality. Body emits {@code table.col.eq(arg)}.
-     *       Subsumes the legacy {@code ColumnEq} with {@code list == false}.</li>
-     *   <li>{@link In} — single-column IN. Body emits {@code table.col.in(arg)}. Subsumes the
-     *       legacy {@code ColumnEq} with {@code list == true}.</li>
+     *   <li>{@link Eq} — single-column scalar equality. Body emits {@code table.col.eq(arg)}.</li>
+     *   <li>{@link In} — single-column IN. Body emits {@code table.col.in(arg)}.</li>
      *   <li>{@link RowEq} — composite-key single-tuple comparison. Body emits
-     *       {@code DSL.row(c1, ..., cN).eq(DSL.row(v1, ..., vN))}. New shape for composite-PK
-     *       NodeId equality, see R50.</li>
+     *       {@code DSL.row(c1, ..., cN).eq(DSL.row(v1, ..., vN))}. Used for composite-PK NodeId
+     *       equality.</li>
      *   <li>{@link RowIn} — composite-key row-IN. Body emits
-     *       {@code DSL.row(c1, ..., cN).in(rows)}. New shape; absorbs the retired
-     *       {@code NodeIdIn}'s row-IN body now that per-Node {@code decode<TypeName>} helpers
-     *       feed typed key tuples instead of base64 strings.</li>
+     *       {@code DSL.row(c1, ..., cN).in(rows)}. Used by composite-PK row-IN filters where
+     *       per-Node {@code decode<TypeName>} helpers feed typed key tuples.</li>
      * </ul>
      *
      * <p>The body emitter switches exhaustively on these four arms: no

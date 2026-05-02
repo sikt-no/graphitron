@@ -261,8 +261,8 @@ public sealed interface ChildField extends GraphitronField
      * A child field on a {@link GraphitronType.TableBackedType} parent returning a multi-table
      * {@link GraphitronType.InterfaceType}. Carries the resolved participants list plus the
      * per-participant {@code joinPath} (one auto-discovered FK chain from the parent table to
-     * each participant's table) so R36 Track B3's emitter can emit a per-branch WHERE in the
-     * stage-1 narrow UNION ALL.
+     * each participant's table) so the multi-table polymorphic emitter can emit a per-branch
+     * WHERE in the stage-1 narrow UNION ALL.
      *
      * <p>{@code participantJoinPaths} is keyed by participant typename — exactly one entry per
      * {@link ParticipantRef.TableBound} participant. {@link ParticipantRef.Unbound} participants

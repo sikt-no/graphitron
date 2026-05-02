@@ -16,9 +16,8 @@ import java.util.Set;
  * Resolves the {@code @condition} concern: builds {@link ConditionFilter} / {@link ArgConditionRef}
  * from {@code @condition} directives applied to either a GraphQL field or an individual argument,
  * and rewraps a {@link ConditionFilter} so its {@link ParamSource.Arg} params extract from a
- * nested position inside an outer input-argument {@code Map}. The fourth projection resolver
- * under R6 (Phase 6c), sibling to {@link OrderByResolver} (Phase 5),
- * {@link LookupMappingResolver} (Phase 6a), and {@link PaginationResolver} (Phase 6b).
+ * nested position inside an outer input-argument {@code Map}. Sibling to {@link OrderByResolver},
+ * {@link LookupMappingResolver}, and {@link PaginationResolver}.
  *
  * <p>Three responsibilities cluster here, all centred on the {@code @condition} directive's
  * reflection contract:
@@ -37,16 +36,7 @@ import java.util.Set;
  *
  * <p>Both resolvers return a sealed three-arm result ({@link ArgConditionResult} /
  * {@link FieldConditionResult}) carrying {@code None} (no directive present), {@code Ok}
- * (resolved successfully), or {@code Rejected} (reflection or argMapping failed). This replaces
- * the prior dual-signal pattern (nullable return + errors-list mutation) per R6's pivot to
- * sealed-result resolvers.
- *
- * <p>The enum-related helpers in {@link FieldBuilder} ({@code buildTextEnumMapping},
- * {@code validateEnumFilter}) were grouped with this resolver in the original R6 plan as
- * "enum sub-helpers" but are not lifted here: they serve broader argument-classification needs
- * (called from {@code classifyArgument}, {@code deriveExtraction}, {@code buildLookupBindings},
- * {@code enrichArgExtractions}) rather than {@code @condition} resolution specifically. They
- * stay in {@link FieldBuilder} until a future enum-mapping axis lift in the final mop-up phase.
+ * (resolved successfully), or {@code Rejected} (reflection or argMapping failed).
  */
 final class ConditionResolver {
 
@@ -94,7 +84,7 @@ final class ConditionResolver {
      * argument. Reflects the condition method via {@link ServiceCatalog#reflectTableMethod},
      * binding the argument to its same-named Java parameter by default and applying any
      * {@code argMapping} overrides on the {@code @condition} directive's
-     * {@code ExternalCodeReference} (R53). Declared {@code contextArguments} go in
+     * {@code ExternalCodeReference}. Declared {@code contextArguments} go in
      * {@code ctxKeys}. {@code @field(name:)} on the argument is the column-binding axis for the
      * auto-equality path; the two axes coexist on the same slot.
      */
@@ -126,7 +116,7 @@ final class ConditionResolver {
      * field definition. Reflects via {@link ServiceCatalog#reflectTableMethod}, binding every
      * field argument to its same-named Java parameter by default and applying any
      * {@code argMapping} overrides on the {@code @condition} directive's
-     * {@code ExternalCodeReference} (R53). Declared {@code contextArguments} go in
+     * {@code ExternalCodeReference}. Declared {@code contextArguments} go in
      * {@code ctxKeys}. {@code @field(name:)} on filter arguments is the column-binding axis;
      * the two axes coexist on the same slot.
      */

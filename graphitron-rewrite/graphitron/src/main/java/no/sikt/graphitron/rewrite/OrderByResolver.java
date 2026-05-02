@@ -33,11 +33,9 @@ import static no.sikt.graphitron.rewrite.BuildContext.baseTypeName;
 
 /**
  * Resolves the OrderBy concern for a table-bound list/connection field into a sealed
- * {@link Resolved} the caller switches on. The first projection resolver under R6 (Phase 5),
- * sibling to the four directive resolvers ({@link ServiceDirectiveResolver},
- * {@link TableMethodDirectiveResolver}, {@link ExternalFieldDirectiveResolver},
- * {@link LookupKeyDirectiveResolver}) and the largest single concern in the bundled-monolith
- * state today (~150 lines across five tightly coupled helpers in {@link FieldBuilder}).
+ * {@link Resolved} the caller switches on. Sibling to the directive resolvers
+ * ({@link ServiceDirectiveResolver}, {@link TableMethodDirectiveResolver},
+ * {@link ExternalFieldDirectiveResolver}, {@link LookupKeyDirectiveResolver}).
  *
  * <p>Three concrete result shapes ride under {@link Resolved.Ok}:
  *

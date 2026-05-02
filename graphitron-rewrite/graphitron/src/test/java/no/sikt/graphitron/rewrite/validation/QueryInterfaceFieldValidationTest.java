@@ -22,7 +22,7 @@ import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.va
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Validates {@link QueryInterfaceField} (R36 Track B's multi-table polymorphic root case).
+ * Validates {@link QueryInterfaceField} (the multi-table polymorphic root case).
  * Tests cover the well-formed path plus the validator rejections in
  * {@code GraphitronSchemaValidator.validateInterfaceType}: PK-less participants and PK-arity
  * mismatches across participants.
@@ -74,9 +74,9 @@ class QueryInterfaceFieldValidationTest {
 
     @Test
     void rejects_participantWithoutPrimaryKey() {
-        // R36 Track B: PK validation lives at the field level so the Node interface
-        // (heterogeneous PK arities, dispatched via QueryNodeFetcher) does not trip a
-        // false rejection. The error pins to the field qualified name.
+        // PK validation lives at the field level so the Node interface (heterogeneous PK
+        // arities, dispatched via QueryNodeFetcher) does not trip a false rejection. The error
+        // pins to the field qualified name.
         var participants = List.<ParticipantRef>of(
             new ParticipantRef.TableBound("Film", FILM, null),
             new ParticipantRef.TableBound("Kpis", NO_PK, null));

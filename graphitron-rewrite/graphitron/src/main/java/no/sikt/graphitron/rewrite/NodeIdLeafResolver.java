@@ -24,9 +24,9 @@ import static no.sikt.graphitron.rewrite.BuildContext.DIR_TABLE;
 import static no.sikt.graphitron.rewrite.BuildContext.argString;
 
 /**
- * Resolves the {@code @nodeId} leaf shape against a containing table. Eleventh resolver under R6's
- * pattern, sibling to {@link InputFieldResolver} / {@link LookupMappingResolver} /
- * {@link ConditionResolver} / {@link OrderByResolver} et al.
+ * Resolves the {@code @nodeId} leaf shape against a containing table. Sibling to
+ * {@link InputFieldResolver} / {@link LookupMappingResolver} / {@link ConditionResolver} /
+ * {@link OrderByResolver} et al.
  *
  * <p>Two semantically distinct shapes fall out of {@code @nodeId(typeName: T)} (or bare
  * {@code @nodeId}, where {@code T} is inferred from the unique {@code @table}-annotated object
@@ -117,9 +117,9 @@ final class NodeIdLeafResolver {
          *       projection arm emits today.</li>
          *   <li>{@link TranslatedFk} — FK target columns differ from {@code T}'s key columns
          *       (e.g. parent_node + child_ref where the FK targets parent.alt_key but the
-         *       NodeType key is parent.pk_id). Emission requires JOIN-with-translation;
-         *       deferred to the sibling Backlog item filed alongside R40, parallel to R24's
-         *       output-side JOIN-with-projection arm.</li>
+         *       NodeType key is parent.pk_id). Emission requires JOIN-with-translation; deferred
+         *       (see graphitron-rewrite/roadmap/nodeid-fk-target-arg-join-translation.md and
+         *       nodeidreferencefield-join-projection-form.md).</li>
          * </ul>
          */
         sealed interface FkTarget extends Resolved {
@@ -346,7 +346,7 @@ final class NodeIdLeafResolver {
     /**
      * Resolves the single-hop FK join path from {@code containingTable} to {@code targetTableName}.
      * Honours an explicit {@code @reference(path: [{key: ...}])} when present (single-hop only;
-     * multi-hop FK targets are out of scope for R40). Falls back to FK auto-discovery via
+     * multi-hop FK targets are not supported). Falls back to FK auto-discovery via
      * {@link JooqCatalog#findUniqueFkToTable} when {@code @reference} is absent.
      */
     private JoinPathResult resolveFkJoinPath(GraphQLDirectiveContainer leaf, String leafName,

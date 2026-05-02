@@ -9,10 +9,9 @@ package no.sikt.graphitron.rewrite.model;
  * the wire-to-typed translation runs once at the arg layer via
  * {@link CallSiteExtraction.NodeIdDecodeKeys}).
  *
- * <p>Used today by {@code ArgumentRef.TableInputArg.fieldBindings} (narrowed to
- * {@code List<MapBinding>} since every existing call site produces Map-keyed bindings) and,
- * post-R50 phase (f), by the {@code MapInput} / {@code DecodedRecord} arms of
- * {@code LookupMapping.ColumnMapping.LookupArg}.
+ * <p>Used by {@code ArgumentRef.TableInputArg.fieldBindings} (narrowed to
+ * {@code List<MapBinding>} since every existing call site produces Map-keyed bindings) and by
+ * the {@code MapInput} / {@code DecodedRecord} arms of {@code LookupMapping.ColumnMapping.LookupArg}.
  *
  * <p>{@link RecordBinding} carries no {@code extraction} slot per <em>Narrow component types
  * over broad interfaces</em>: for the composite-PK NodeId case the wire-to-typed translation

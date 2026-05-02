@@ -54,20 +54,18 @@ class VariantCoverageTest {
             "Composite-key NodeId reference (rooted-at-parent or non-FK-mirror): the only schema "
             + "shape that produces it is a child table whose FK references a parent NodeType "
             + "with multiple key columns AND the FK's target columns differ from those keys. The "
-            + "standard sakila catalog has no such shape; the rooted-at-parent fixture lands in "
-            + "phase (g) of R50. Add a GraphitronSchemaBuilderTest case when that fixture exists.",
+            + "standard sakila catalog has no such shape; add a GraphitronSchemaBuilderTest case "
+            + "when a composite-PK rooted-at-parent fixture exists.",
         InputField.CompositeColumnField.class,
-            "Covered by NodeIdPipelineTest.InputCase (composite-PK same-table NodeId filter -- "
-            + "the post-R50 successor of the retired NodeIdInFilterField for arity > 1) and the "
-            + "synthesized-shim composite path. Lives in NodeIdPipelineTest because the standard "
-            + "sakila catalog has no composite-PK NodeType.",
+            "Covered by NodeIdPipelineTest.InputCase (composite-PK same-table NodeId filter, "
+            + "arity > 1) and the synthesized-shim composite path. Lives in NodeIdPipelineTest "
+            + "because the standard sakila catalog has no composite-PK NodeType.",
         InputField.CompositeColumnReferenceField.class,
-            "Composite-key input reference (post-R50 successor for arity > 1 of the retired "
-            + "wire-shape NodeIdReferenceField). The canonical and synthesis-shim cases land "
-            + "via the same buildInputNodeIdReference helper for the [ID!] @nodeId(typeName: T) "
-            + "branch, but no test fixture exercises an arity > 1 FK target yet (the fixtures "
-            + "use `bar` (composite PK) only for same-table NodeId paths). Add a "
-            + "NodeIdPipelineTest case when a composite-PK FK target is added in phase (g)."
+            "Composite-key input reference (arity > 1 FK target). The canonical and synthesis-"
+            + "shim cases land via the same buildInputNodeIdReference helper for the "
+            + "[ID!] @nodeId(typeName: T) branch, but no test fixture exercises an arity > 1 FK "
+            + "target yet (the fixtures use `bar` (composite PK) only for same-table NodeId "
+            + "paths). Add a NodeIdPipelineTest case when a composite-PK FK target lands."
     );
 
     private static final List<Class<?>> ROOTS = List.of(

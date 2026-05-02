@@ -41,10 +41,9 @@ public interface MethodRef {
      * (i.e. {@link java.lang.reflect.Method#getExceptionTypes()}). Empty when the method has no
      * {@code throws} clause or when this {@link MethodRef} variant doesn't reflect a Java method
      * (e.g. {@code @condition} expressions). Populated by the catalog at reflection time
-     * ({@code ServiceCatalog.reflectServiceMethod} / {@code reflectTableMethod}); consumed by the
-     * classifier's R12 §4 declared-exception match check
-     * ({@code FieldBuilder.checkDeclaredCheckedExceptions}) so a developer method that throws
-     * a checked exception with no covering {@code @error} handler is rejected at classify time
+     * ({@code ServiceCatalog.reflectServiceMethod} / {@code reflectTableMethod}); consumed by
+     * {@code FieldBuilder.checkDeclaredCheckedExceptions} so a developer method that throws a
+     * checked exception with no covering {@code @error} handler is rejected at classify time
      * rather than silently flowing through {@code ErrorRouter.redact} at runtime.
      */
     default List<String> declaredExceptions() { return List.of(); }

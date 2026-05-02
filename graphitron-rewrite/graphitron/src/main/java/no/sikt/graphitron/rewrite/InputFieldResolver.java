@@ -10,9 +10,8 @@ import java.util.List;
 
 /**
  * Classifies the fields of a plain (non-{@code @table}) input type at the call site against a
- * resolving table. The fifth projection resolver under R6 (Phase 6d), sibling to
- * {@link OrderByResolver} (Phase 5), {@link LookupMappingResolver} (Phase 6a),
- * {@link PaginationResolver} (Phase 6b), and {@link ConditionResolver} (Phase 6c).
+ * resolving table. Sibling to {@link OrderByResolver}, {@link LookupMappingResolver},
+ * {@link PaginationResolver}, and {@link ConditionResolver}.
  *
  * <p>Used to populate {@link ArgumentRef.InputTypeArg.PlainInputArg#fields()} when
  * {@link FieldBuilder#classifyArgument} routes a {@code GraphitronType.InputType} or

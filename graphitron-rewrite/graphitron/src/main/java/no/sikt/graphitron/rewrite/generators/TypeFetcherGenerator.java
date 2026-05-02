@@ -747,7 +747,7 @@ public class TypeFetcherGenerator {
         var dslContextClass = ClassName.get("org.jooq", "DSLContext");
         builder.addStatement("$T dsl = graphitronContext(env).getDslContext(env)", dslContextClass);
 
-        // Build join-path condition. Only single-hop FkJoin is supported for now; multi-hop and
+        // Build join-path condition. Only single-hop FkJoin is supported; multi-hop and
         // ConditionJoin paths are caught at classification time.
         builder.addCode(buildJoinPathCondition(tif.joinPath(), tableRef.tableName()));
         builder.addCode(buildDiscriminatorFilter(tif.discriminatorColumn(), tif.knownDiscriminatorValues()));
@@ -1100,7 +1100,7 @@ public class TypeFetcherGenerator {
      * shape to {@link #buildQueryServiceTableFetcher}. Root mutation fields have no parent table
      * and no parent-batching context, so the emission delegates to the shared
      * {@link #buildServiceFetcherCommon} helper without alteration. The shared helper handles
-     * the R12 §5 pre-execution Jakarta validation pre-step, the §3 try/catch wrapper, and the
+     * the pre-execution Jakarta validation pre-step, the try/catch wrapper, and the
      * §2c {@code resultAssembly} success-arm payload assembly uniformly across query and
      * mutation services. Phase 6 of mutations.md.
      */
@@ -1163,19 +1163,19 @@ public class TypeFetcherGenerator {
      * the wrapper inserts a pre-execution Jakarta validation step ahead of the try block:
      * walks every {@link ParamSource.Arg} parameter, validates each non-null arg via the
      * {@code GraphitronContext}-supplied {@code Validator}, and short-circuits with the
-     * payload's errors-arm filled by the violations when any are produced (R12 §5).
+     * payload's errors-arm filled by the violations when any are produced.
      *
      * <p>When {@code resultAssembly} is present, the success arm assembles the payload around
-     * the captured service-return local (R12 §2c "Slot resolution at classify time"): the
-     * service method returns the domain object the payload's result slot expects, and the
-     * emitter walks the constructor's slots positionally (result slot ← service return,
-     * errors slot ← {@code List.of()} when a channel is also present, every other slot ← its
-     * pre-resolved {@code defaultLiteral}). When absent, the emitter falls back to the
-     * legacy passthrough shape ({@code return service-value-as-payload}).
+     * the captured service-return local: the service method returns the domain object the
+     * payload's result slot expects, and the emitter walks the constructor's slots positionally
+     * (result slot &larr; service return, errors slot &larr; {@code List.of()} when a channel is
+     * also present, every other slot &larr; its pre-resolved {@code defaultLiteral}). When
+     * absent, the emitter falls back to the legacy passthrough shape
+     * ({@code return service-value-as-payload}).
      *
      * <p>The catch arm forks on {@code errorChannel}: a present channel routes through
      * {@code ErrorRouter.dispatch} with the channel's mapping table and synthesized payload
-     * factory; an absent channel routes through {@code ErrorRouter.redact}. R12 §3.
+     * factory; an absent channel routes through {@code ErrorRouter.redact}.
      */
     private static MethodSpec buildServiceFetcherCommon(String fieldName, MethodRef method,
                                                         String parentTypeName, TypeName valueType,
@@ -1194,9 +1194,9 @@ public class TypeFetcherGenerator {
             .returns(syncResultType(valueType))
             .addParameter(ENV, "env");
 
-        // R12 §5 pre-execution Jakarta validation. Emitted ahead of the try block so a
-        // Validator-side throw still propagates to the wrapper's catch arm uniformly with
-        // the body's exceptions; the body is never invoked when violations exist.
+        // Pre-execution Jakarta validation. Emitted ahead of the try block so a Validator-side
+        // throw still propagates to the wrapper's catch arm uniformly with the body's
+        // exceptions; the body is never invoked when violations exist.
         if (errorChannel.isPresent() && hasValidationHandler(errorChannel.get())) {
             builder.addCode(validatorPreStep(method, errorChannel.get(), valueType, outputPackage));
         }
@@ -1206,8 +1206,8 @@ public class TypeFetcherGenerator {
             builder.addStatement("$T dsl = graphitronContext(env).getDslContext(env)", dslContextClass);
         }
         if (resultAssembly.isPresent()) {
-            // R12 §2c "service returns the domain object" shape: capture the service return in a
-            // typed local and assemble the payload around it via a positional constructor walk.
+            // "Service returns the domain object" shape: capture the service return in a typed
+            // local and assemble the payload around it via a positional constructor walk.
             var ra = resultAssembly.get();
             builder.addStatement("$T __row = $T.$L($L)",
                 ra.resultSlotType(),
@@ -1234,7 +1234,7 @@ public class TypeFetcherGenerator {
 
     /**
      * Emits the success-arm payload-construction block when a {@code ResultAssembly} is present
-     * on a service-backed fetcher (R12 §2c). Walks the constructor's slot indices
+     * on a service-backed fetcher. Walks the constructor's slot indices
      * {@code 0..N-1} (where {@code N == 1 + ra.defaultedSlots().size()}) and prints, per slot:
      * the row local at {@code resultSlotIndex}, {@code List.of()} at the channel's
      * {@code errorsSlotIndex} when a channel is also present, and the slot's pre-resolved
@@ -1273,7 +1273,7 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * Emits the wrapper's pre-execution Jakarta validation block (R12 §5). Walks every
+     * Emits the wrapper's pre-execution Jakarta validation block. Walks every
      * {@link ParamSource.Arg} parameter on the service method, validates each non-null arg via
      * the {@code GraphitronContext}-supplied {@code Validator}, accumulates each violation as a
      * {@code GraphQLError} via the generated {@code ConstraintViolations.toGraphQLError}, and
@@ -1590,8 +1590,8 @@ public class TypeFetcherGenerator {
 
     /**
      * Builds the WHERE clause from the TIA's {@code @lookupKey} {@code fieldBindings}, chaining
-     * each binding's {@code .eq(DSL.val(...))} with {@code .and(...)}. Shared between DELETE,
-     * UPDATE, and (eventually) UPSERT.
+     * each binding's {@code .eq(DSL.val(...))} with {@code .and(...)}. Shared between DELETE
+     * and UPDATE.
      */
     private static CodeBlock buildLookupWhere(
             no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg tia,
@@ -1612,8 +1612,7 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * Common DML fetcher skeleton shared by the four DML verbs (currently DELETE and INSERT;
-     * UPDATE and UPSERT will land against the same shape). Wraps the verb-specific
+     * Common DML fetcher skeleton shared across the DML verbs. Wraps the verb-specific
      * {@code dmlChain} (e.g. {@code .deleteFrom(...).where(...)} or
      * {@code .insertInto(...).values(...)}) in the standard try/catch + {@code returnSyncSuccess}
      * envelope, then dispatches the {@link no.sikt.graphitron.rewrite.model.DmlReturnExpression}
@@ -2419,12 +2418,12 @@ public class TypeFetcherGenerator {
         if (needsDsl) {
             builder.addStatement("$T dsl = graphitronContext(env).getDslContext(env)", dslContextClass);
         }
-        // Sources param passes through `keys` directly. Element-shape conversion (RowN -> TableRecord
-        // when the developer's signature takes Set<TableRecord>/List<TableRecord>) is deferred —
-        // the classifier accepts both shapes today, but the conversion path is a separate emitter
-        // concern (R32 §2). Until that lands, signatures using TableRecord as the Sources element
-        // type compile against `keys` only when the lambda key type matches; mismatches surface
-        // as javac errors at the call site.
+        // Sources param passes through `keys` directly. Element-shape conversion (RowN ->
+        // TableRecord when the developer's signature takes Set<TableRecord>/List<TableRecord>)
+        // is deferred; the classifier accepts both shapes, but the conversion path is a
+        // separate emitter concern. Signatures using TableRecord as the Sources element type
+        // compile against `keys` only when the lambda key type matches; mismatches surface as
+        // javac errors at the call site.
         builder.addStatement("return $T.$L($L)",
             serviceClass,
             method.methodName(),
@@ -2616,7 +2615,7 @@ public class TypeFetcherGenerator {
     }
 
     // -----------------------------------------------------------------------
-    // R12 §3 fetcher try/catch wrap helpers.
+    // Fetcher try/catch wrap helpers.
     //
     // Every emitted fetcher returns DataFetcherResult<P> (sync) or
     // CompletableFuture<DataFetcherResult<P>> (async). The success arm wraps the
@@ -2664,7 +2663,7 @@ public class TypeFetcherGenerator {
      *
      * <p>Used by every sync fetcher builder backing a {@link no.sikt.graphitron.rewrite.model.WithErrorChannel}
      * field after emitting the success-path
-     * {@code return DataFetcherResult.<P>newResult().data(payload).build()}. Spec: R12 §3.
+     * {@code return DataFetcherResult.<P>newResult().data(payload).build()}.
      */
     private static CodeBlock catchArm(String outputPackage, Optional<ErrorChannel> errorChannel) {
         return errorChannel

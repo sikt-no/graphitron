@@ -106,8 +106,7 @@ public sealed interface CallSiteExtraction
      *       for a {@code ColumnField.filmId} inside a {@code NestingField.where}.</li>
      *   <li>{@code outerArgName="filter"}, {@code path=["filmIds"]},
      *       {@code leaf=NodeIdDecodeKeys.SkipMismatchedElement} for a
-     *       {@code [ID!] @nodeId(typeName: "Film")} input filter (post-R50 successor of
-     *       {@code NodeIdInFilterField}).</li>
+     *       {@code [ID!] @nodeId(typeName: "Film")} input filter.</li>
      * </ul>
      */
     record NestedInputField(String outerArgName, List<String> path, CallSiteExtraction leaf)
@@ -147,8 +146,8 @@ public sealed interface CallSiteExtraction
      * </ul>
      *
      * <p>The third failure mode (NullOnMismatch) is dispatcher-driven (Query.node, Query.nodes,
-     * federated _entities) and does not appear here as a carrier arm — see the R50 spec's
-     * "Failure-mode contract" section.
+     * federated _entities) and does not appear here as a carrier arm; see
+     * {@code EntityFetcherDispatchClassGenerator}.
      *
      * <p>Each arm carries the pre-resolved {@link HelperRef.Decode} for the target NodeType, so
      * the call-site emitter reaches the per-Node {@code decode<TypeName>} helper through a typed

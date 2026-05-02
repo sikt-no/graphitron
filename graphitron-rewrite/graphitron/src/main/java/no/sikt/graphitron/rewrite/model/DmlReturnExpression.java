@@ -14,13 +14,13 @@ package no.sikt.graphitron.rewrite.model;
  *   <li>{@code ScalarReturnType("ID")}, list — {@link EncodedList}</li>
  *   <li>{@code TableBoundReturnType}, single — {@link ProjectedSingle}</li>
  *   <li>{@code TableBoundReturnType}, list — {@link ProjectedList}</li>
- *   <li>{@code ResultReturnType} (single, R12 {@code @record} payload) — {@link Payload}</li>
+ *   <li>{@code ResultReturnType} (single, {@code @record} payload) — {@link Payload}</li>
  * </ul>
  *
  * <p>Single-vs-list is encoded in the variant choice, not in a separate {@code isList} flag, so
  * the per-shape projection ({@code Encoded}, {@code Projected}) and the terminal cardinality
  * ({@code .fetchOne} / {@code .fetch}) read from one switch. The Payload arm is single-only;
- * list payloads are rejected at classify time per Invariant #14 (R12).
+ * list payloads are rejected at classify time per Invariant #14.
  *
  * <p>{@link Payload} carries the {@link PayloadAssembly} that captures the success-arm
  * payload-class constructor recipe; emitters walk its constructor slots positionally without
@@ -41,9 +41,9 @@ public sealed interface DmlReturnExpression {
     record ProjectedList(String returnTypeName) implements DmlReturnExpression {}
 
     /**
-     * R12 {@code @record} payload return. Single-cardinality only; list payloads are rejected
-     * at classify time. The {@link PayloadAssembly} captures the payload class, the row-slot
-     * index that the SQL row record binds to, and the defaulted slots for everything else.
+     * {@code @record} payload return. Single-cardinality only; list payloads are rejected at
+     * classify time. The {@link PayloadAssembly} captures the payload class, the row-slot index
+     * that the SQL row record binds to, and the defaulted slots for everything else.
      */
     record Payload(PayloadAssembly assembly) implements DmlReturnExpression {}
 }
