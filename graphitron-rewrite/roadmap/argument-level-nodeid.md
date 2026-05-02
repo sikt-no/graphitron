@@ -1,316 +1,156 @@
 ---
 id: R40
 title: "Argument-level `@nodeId` support"
-status: Ready
+status: Spec
 bucket: architecture
 priority: 2
 theme: nodeid
 depends-on: []
 ---
 
-# Argument-level `@nodeId` support
+# Argument-level `@nodeId` support: architectural tightenings
 
-## Recap of what landed in the first pass
+## Why
 
-The first implementation pass (commits `337dccb`, `303ee97`, `7951493`, `85b7e30`) shipped the spec's core scope:
+The argument-level `@nodeId` machinery (resolver, classifier arms, validator rejection, execution-tier coverage) is in place and shipping correct user-visible behaviour. A design review against the technical principles surfaced three structural seams that don't reflect best shape. None are user-visible bugs; all are drift the principles flag explicitly.
 
-- **`NodeIdLeafResolver`** lifted (`337dccb`) as the eleventh R6-shaped resolver; consumed by both `BuildContext.classifyInputField` and `FieldBuilder.classifyArgument`. Returns `Resolved.{SameTable, FkTarget, Rejected}` with `decodeMethod` exposed directly so each caller picks its own failure mode.
-- **Argument-side classification + projection** (`303ee97`). Same-table → `ColumnArg` / `CompositeColumnArg` with `isLookupKey: true`; FK-target → new `ColumnReferenceArg` / `CompositeColumnReferenceArg` carriers; `@asConnection` + same-table `@nodeId` rejected symmetrically across argument and input-field leaves.
-- **Lookup-promotion gate + pipeline coverage** (`7951493`). `FieldBuilder.hasSameTableNodeIdAnywhere` promotes fields with same-table `@nodeId` args to `QueryLookupTableField`; 14 new pipeline cases under `ArgumentSameTableNodeIdCase` (8), `ArgumentFkTargetNodeIdCase` (3), `NodeIdConnectionRejectionCase` (3).
-- **Java 17 emitter fix + execution coverage** (`85b7e30`). `LookupValuesJoinEmitter` / `ArgCallEmitter` now emit `(Object) decode(_s) instanceof Record1 _r ? (T) _r.value1() : null` so the generated source compiles under `<release>17</release>`. `films_filteredByArgNodeId_returnsRowsMatchingDecodedIds` round-trips through real PostgreSQL.
-- **Follow-on filed**: `R57` for the pathological FK-target case (FK target columns ≠ NodeType keyColumns).
+- *Generation-thinking*: when a generator branches on a predicate over pre-resolved data, the fork belongs in the model as a sealed sub-variant. The same predicate evaluated by multiple consumers is a sign the resolver is under-specified, and an opportunity for one site to drift from another.
+- *Classifier guarantees shape emitter assumptions*: the producer/consumer pair wears `@LoadBearingClassifierCheck` / `@DependsOnClassifierCheck` so the audit test catches drift. A guarantee that's load-bearing in practice but unannotated is the failure mode the pattern exists to prevent.
+- *Classifier picks the principled value, emitter conforms*: the failure mode (`Skip` vs `Throw`) is a semantic choice that belongs at the classify boundary. Picking the value the existing emitter happens to support is the inversion.
 
-Two deviations from the original spec landed deliberately:
+## Resolver: split `Resolved.FkTarget` into `DirectFk` / `TranslatedFk`
 
-- Same-table arg `@nodeId` ships with `ThrowOnMismatch` rather than the spec's `SkipMismatchedElement`, because `LookupValuesJoinEmitter.addRowBuildingCore`'s per-row decode is hardcoded to throw on null. See *Review feedback* item 3.
-- `LookupKeyCase.SCALAR_NODEID_NON_LOOKUP_COMPOSITE_PK_DEFERRED` did not flip; its SDL does not carry `@nodeId` (it exercises the legacy implicit scalar-`ID` arm, which stays untouched per scope). The spec's claim that R40 flips it was inaccurate.
+`NodeIdLeafResolver.Resolved.FkTarget` collapses two distinct emission shapes into one arm:
 
-## Review feedback to address in the next pass
+- **DirectFk**: FK target columns positionally match the NodeType's key columns. The body emitter binds decoded keys directly against `joinPath[0].sourceColumns()` on the field's own table. No JOIN, no translation. This is the only shape any projection arm emits today.
+- **TranslatedFk**: FK target columns differ from the NodeType key columns (the parent_node + child_ref shape, R57). Emission requires JOIN-with-translation; deferred to R57.
 
-A second-pass review against the technical principles surfaced six architectural improvements. Pick them up in the order listed; (1)-(2) are the highest leverage and the rest fall out cleanly once those land.
+The argument-side projection at `FieldBuilder.classifyArgument` recomputes the predicate via `sameColumnsBySqlName(...)` and rejects on miss. The input-field-side at `BuildContext.classifyInputField:920-953` does *not* check: `InputField.ColumnReferenceField` / `CompositeColumnReferenceField` carriers can silently hold the pathological shape. Two consumers, asymmetric gates, same predicate computed locally each time.
 
-### 1. Split `Resolved.FkTarget` into `DirectFk` / `TranslatedFk` sub-variants
+**Replace** the `FkTarget` record with a sealed sub-hierarchy:
 
-**Principle.** *Generation-thinking* (a generator branches on a predicate over pre-resolved data, lift the fork into the model as a sealed sub-variant) and *Sub-taxonomies for resolution outcomes*.
-
-**Smell.** `Resolved.FkTarget` collapses two distinct emission shapes into one arm. The "FK target columns positionally match NodeType key columns" predicate is recomputed in the argument projection via `FieldBuilder.sameColumnsBySqlName(...)`. The input-field consumer in `BuildContext.classifyInputField` does **not** apply the same gate, so `InputField.ColumnReferenceField` / `CompositeColumnReferenceField` carriers can silently hold the pathological shape today: an asymmetry the validator-mirror principle should catch.
-
-**Fix.** In `NodeIdLeafResolver`, replace `Resolved.FkTarget` with two arms:
-
-```
+```java
 sealed interface FkTarget extends Resolved {
     record DirectFk(String refTypeName,
                     TableRef targetTable,
                     HelperRef.Decode decodeMethod,
                     List<ColumnRef> keyColumns,
-                    List<ColumnRef> fkSourceColumns,   // pre-resolved bind columns
+                    List<ColumnRef> fkSourceColumns,
                     List<JoinStep> joinPath)
         implements FkTarget {}
-    record TranslatedFk(...same shape..., List<JoinStep> joinPath)
+    record TranslatedFk(String refTypeName,
+                        TableRef targetTable,
+                        HelperRef.Decode decodeMethod,
+                        List<ColumnRef> keyColumns,
+                        List<JoinStep> joinPath)
         implements FkTarget {}
 }
 ```
 
-Both call sites then exhaustively switch on `DirectFk` vs `TranslatedFk`:
-- Argument side: `DirectFk` projects to `BodyParam.In/Eq/RowIn/RowEq` against `fkSourceColumns`; `TranslatedFk` returns `UnclassifiedArg` with the R57 deferred-emission hint.
-- Input-field side: `DirectFk` builds `InputField.{Column,CompositeColumn}ReferenceField` as today; `TranslatedFk` returns `InputFieldResolution.Unresolved` with the same R57 hint, closing the silent-pathological-shape asymmetry.
+The resolver computes the positional-match predicate once and picks the variant. Both call sites then exhaustively switch:
 
-`FieldBuilder.sameColumnsBySqlName` deletes; the predicate moves into the resolver where both consumers see the same answer.
+- **Argument side** (`FieldBuilder.classifyArgument`): `DirectFk` projects to `ColumnReferenceArg` / `CompositeColumnReferenceArg`; `TranslatedFk` returns `UnclassifiedArg` with the R57 hint. The inline `sameColumnsBySqlName` check deletes.
+- **Input-field side** (`BuildContext.classifyInputField`): `DirectFk` builds `InputField.{Column,CompositeColumn}ReferenceField`; `TranslatedFk` returns `InputFieldResolution.Unresolved` with the same R57 hint. Closes the silent-pathological-shape gap.
 
-### 2. Pre-resolve `@nodeId` args once per field into a `NodeIdArgPlan`
+`FieldBuilder.sameColumnsBySqlName` deletes; the predicate moves to its single home in the resolver.
 
-**Principle.** *Generation-thinking* (the same multi-arm type switch recurs across multiple generators).
+### Load-bearing guarantee on `DirectFk`
 
-**Smell.** Three sites walk the same field's args asking variants of "is this a same-table `@nodeId`?":
+`DirectFk` *is* the load-bearing shape: the projection arms read `fkSourceColumns` straight into `BodyParam.{Eq,In,RowEq,RowIn}` and assume positional correspondence with the decoded NodeType keys. Relax the producer's gate and the emitted SQL silently mistargets, exactly the fragility `@LoadBearingClassifierCheck` is for.
+
+Annotate the resolver branch that produces `DirectFk` with:
+
+```java
+@LoadBearingClassifierCheck(
+    key = "nodeid-fk.direct-fk-keys-match",
+    description = "FK target columns positionally match NodeType key columns;"
+                + " emission can bind decoded keys directly against fkSourceColumns")
+```
+
+Annotate consumers with `@DependsOnClassifierCheck(key = "nodeid-fk.direct-fk-keys-match", reliesOn = ...)`:
+
+- `FieldBuilder.projectFilters` arms for `ColumnReferenceArg` / `CompositeColumnReferenceArg`.
+- `BuildContext.classifyInputField` arms for `InputField.{Column,CompositeColumn}ReferenceField` (and the matching body emitter consumers).
+
+`LoadBearingGuaranteeAuditTest` enforces the producer/consumer pairing automatically once the annotations land.
+
+## Per-field summary: `NodeIdArgPlan`
+
+Three sites walk a field's args today, each calling `nodeIdLeafResolver.resolve(...)` fresh:
+
 - `FieldBuilder.findSameTableNodeIdUnderAsConnection` (validator rejection in `resolveTableFieldComponents`),
 - `FieldBuilder.hasSameTableNodeIdAnywhere` (lookup-promotion gate in `classifyQueryField`),
-- per-arg `nodeIdLeafResolver.resolve(...)` inside `classifyArgument`.
+- per-arg in `FieldBuilder.classifyArgument`.
 
-Each runs the resolver fresh against the same args; a directive-syntax change between the second and third walk could silently classify inconsistently.
+The bespoke `walkInputTypeForSameTableNodeId` re-traverses arg input-type subtrees with its own `LinkedHashSet<String>` cycle guard, when `BuildContext.classifyInputField` already walks that tree once during normal classification. Any directive-syntax change between two walks could classify inconsistently.
 
-**Fix.** Resolve `@nodeId` args once per field into a small per-field summary:
+**Pre-resolve once** per field into a small per-field summary:
 
-```
+```java
 record NodeIdArgPlan(
     Map<String, NodeIdLeafResolver.Resolved> byArgName,
-    boolean anySameTable,
-    boolean anyArgSameTable,        // top-level args only (gates lookup-promotion)
-    boolean anyNestedSameTable      // input-field leaves (gates @asConnection rejection
-                                    //  alongside R50's existing input-field path)
+    boolean anyArgSameTable,        // top-level args (gates lookup-promotion)
+    boolean anyNestedSameTable      // input-field leaves under arg input-types
+                                    //   (gates @asConnection rejection alongside
+                                    //    R50's existing input-field path)
 ) {}
 ```
 
-`classifyTableField` (or its R6-orchestrator successor) builds the plan once and threads it through the `@asConnection` rejection step, the lookup-promotion gate, and `classifyArgument`. The bespoke `findSameTableNodeIdUnderAsConnection` / `walkInputTypeForSameTableNodeId` / `hasSameTableNodeIdAnywhere` walkers all collapse into reads of the plan. (Item 5 falls out as a side effect.)
+`classifyTableField` (or its R6-orchestrator successor) builds the plan once and threads it through:
 
-### 3. Lift the `Throw` vs `Skip` decision out of the emitter
+- The `@asConnection` rejection step (consumes `anyArgSameTable || anyNestedSameTable`).
+- The lookup-promotion gate (consumes `anyArgSameTable`).
+- `classifyArgument` (reads each arg's pre-resolved `Resolved` from `byArgName`).
 
-**Principle.** *Classifier guarantees shape emitter assumptions*; *Classification belongs at the parse boundary*.
+`findSameTableNodeIdUnderAsConnection`, `walkInputTypeForSameTableNodeId`, and `hasSameTableNodeIdAnywhere` collapse into reads of the plan and delete.
 
-**Smell.** Same-table arg `@nodeId` semantically wants `SkipMismatchedElement` (a malformed encoded id should produce no row match, not a 500 to the user). The first pass picked `ThrowOnMismatch` because `LookupValuesJoinEmitter.addRowBuildingCore`'s per-row decode is hardcoded to throw on null. Classification is conforming to the emitter rather than the emitter conforming to a classifier-pinned guarantee.
+## Emitter: per-row skip in `addRowBuildingCore`
 
-**Fix.** Either:
-- (preferred) Adapt `addRowBuildingCore` to handle `SkipMismatchedElement` (drop the row from the VALUES set when the per-element decode returns null), let classification pick `Skip` per the spec, and update the corresponding pipeline / execution case to assert the user-facing behaviour, or
-- (fallback) Have the classifier reject same-table arg `@nodeId` until the emitter catches up, with an explicit "not yet implemented" hint.
+`LookupValuesJoinEmitter.addRowBuildingCore:282-287` hardcodes a throw when a per-row decode returns null:
 
-Today's outcome silently downgrades the user-facing semantics with only a roadmap note.
-
-### 4. Annotate the FK-direct-match guarantee as load-bearing
-
-**Principle.** *Classifier guarantees shape emitter assumptions* ("producers wear `@LoadBearingClassifierCheck`, consumers wear `@DependsOnClassifierCheck`").
-
-**Smell.** Once item (1) lands, the `DirectFk` sub-variant *is* the load-bearing shape; the projection arm reads `fkSourceColumns` straight into `BodyParam.In/Eq` and assumes positional correspondence with the decoded NodeType keys. Relax the producer's gate and the emitted SQL silently mistargets, exactly the fragility the annotation pattern guards against.
-
-**Fix.** Annotate the resolver branch that produces `DirectFk` with `@LoadBearingClassifierCheck(key = "nodeid-fk.direct-fk-keys-match", description = "...")` and the projection arm in `FieldBuilder.projectFilters` (and the matching `InputField.{Column,CompositeColumn}ReferenceField` consumer in the body emitter) with `@DependsOnClassifierCheck(key = "nodeid-fk.direct-fk-keys-match", reliesOn = "...")`. `LoadBearingGuaranteeAuditTest` then enforces the pairing.
-
-### 5. Replace `walkInputTypeForSameTableNodeId` with the shared classification result
-
-**Principle.** *Generation-thinking* (avoid the same multi-arm type switch recurring).
-
-**Smell.** `FieldBuilder.walkInputTypeForSameTableNodeId` re-walks the field's input-type subtree with a bespoke `LinkedHashSet<String>` cycle guard. `BuildContext.classifyInputField` already walks the same tree once during normal classification.
-
-**Fix.** Once item (2)'s `NodeIdArgPlan` exists, the connection-rejection check becomes `plan.anySameTable()` and the bespoke walker disappears. If item (2) is taken in a separate sub-step, fold this in with it.
-
-### 6. Stale commit hashes
-
-**Principle.** *Documentation names only live tests/code*.
-
-**Smell.** Earlier "Implementation notes" referenced commit hashes (`ebbdbfa`, `fbbe418`, `c9722e0`, `14af235`) that don't exist in the branch's current history; a rebase rewrote the SHAs. Fixed in this revision (`337dccb`, `303ee97`, `7951493`, `85b7e30`).
-
-**Fix.** Done in the *Recap* section above. Re-verify after the next pass before the second In Review.
-
-### Out of scope for this pass
-
-- The two `Record1` raw-cast workarounds in `ArgCallEmitter.java:248` and `LookupValuesJoinEmitter.java:436-450` are correct generated-Java-17 fixes but live as two near-identical templates. If a third nodeId-decode site lands, factor a shared helper before it gets a third copy. Not blocking.
-
----
-
-`@nodeId` is declared on `ARGUMENT_DEFINITION` in [`directives.graphqls`](../graphitron/src/main/resources/no/sikt/graphitron/rewrite/schema/directives.graphqls) but `FieldBuilder.classifyArgument` never inspects it. Args with `@nodeId(typeName: T)` fall through to non-nodeid arms; a scalar `ID @nodeId(typeName: T)` silently routes through the implicit scalar-`ID` arm (directive ignored, even when `T` is wrong), and `[ID!] @nodeId(typeName: T)` surfaces as `column 'ider' could not be resolved in table '...'` from the column-binding path.
-
-`@nodeId(typeName: T)` on an argument has two semantically distinct shapes, depending on `T`'s table relative to the field's backing table:
-
-- **Same-table** (`T.table() == field.backingTable()`). The argument supplies encoded ids of the field's own rows. This is a *lookup by definition*: cardinality is bounded by the input list, ordering reflects input membership, and there is no result set to seek through. Implies `@lookupKey`.
-- **FK-target** (`T.table()` reachable from the field's backing table via FK). The argument supplies encoded ids of a related table; the predicate is "row's FK column ∈ decoded keys". This is a *filter*. Composes with `@asConnection`.
-
-`@asConnection` composes with the FK-target shape but is incoherent with same-table — you cannot seek-paginate a result whose membership is dictated by a caller-supplied id list. The opptak reproducer `kompetanseregelverkGittIdV2(ider: [ID!]! @nodeId(typeName: "Kompetanseregelverk")): [Kompetanseregelverk!] @asConnection` is the same-table-under-connection case and must be rejected at validate time.
-
-## Foundation in place
-
-R50 shipped, in addition to `CallSiteExtraction.NodeIdDecodeKeys` (sealed into `SkipMismatchedElement` / `ThrowOnMismatch`), `BodyParam.ColumnPredicate` (`Eq` / `In` / `RowEq` / `RowIn`), and per-NodeType `decode<TypeName>` helpers as `HelperRef.Decode`, the *complete input-field side* of `@nodeId` resolution at [`BuildContext.classifyInputField:916-1043`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/BuildContext.java):
-
-- **Same-table** (lines 916-965) → `InputField.ColumnField` (arity-1) or `InputField.CompositeColumnField` (arity ≥ 2), with `decodeMethod` and `extraction = NodeIdDecodeKeys.SkipMismatchedElement`.
-- **FK-target** (lines 972-1043) → `InputField.ColumnReferenceField` (arity-1) or `InputField.CompositeColumnReferenceField` (arity ≥ 2), with the same decode/extraction *plus* a resolved `joinPath: List<JoinStep>` (single-hop FK auto-discovered or pinned by `@reference(path:)`).
-
-The `TypeConditionsGenerator` body emitter handles all four `ColumnPredicate` arms; the input-side filter projection threads `joinPath` through the surrounding query context for FK-target leaves.
-
-R6 also shipped: ten cross-cutting concerns lifted out of `FieldBuilder` into standalone resolvers returning sealed `Resolved` results (`InputFieldResolver`, `LookupMappingResolver`, `ConditionResolver`, `OrderByResolver`, ...) sibling to `ArgumentRef`'s sealed-variant precedent. R40 lands as an eleventh resolver in this pattern: a new `NodeIdLeafResolver` consumed by both `InputFieldResolver` (replacing the inline body at `classifyInputField:916-1043`) and `FieldBuilder.classifyArgument`. The `BuildContext.resolveDecodeHelperForTable` helper colocates with the resolver since both call sites converge on it (only callers today are `classifyInputField:946`, `:1181`, `:1241` and the existing scalar-`ID` arm at `FieldBuilder:533`; once the resolver owns them, `BuildContext` keeps only the lower-level decode-helper construction).
-
-R40 plugs `classifyArgument` into the new resolver, mirrors the carrier shape on the arg side via new sealed `ArgumentRef.ScalarArg` variants for the FK-target case, and adds the symmetric `@asConnection` validator rejection that closes a latent R50 gap (input-field same-table `@nodeId` under `@asConnection` builds today and produces incoherent runtime semantics).
-
-## Scope
-
-Both same-table (lookup) and FK-target (filter) arms ship together, for both scalar and list arities, plus the symmetric `@asConnection` validator rule.
-
-**Same-table arm.** `ID @nodeId(typeName: T)` / `[ID!] @nodeId(typeName: T)` where `T.table() == field.backingTable()`. Implies `@lookupKey`: routes through R50's existing `LookupMapping`-over-PK collapse without a separate filter projection. Single-PK and composite-PK both handled by R50.
-
-**FK-target arm.** `ID @nodeId(typeName: T)` / `[ID!] @nodeId(typeName: T)` where `T.table()` is reachable from the field's backing table via single-hop FK (auto-discovered or pinned by `@reference(path:)`). Mirrors the input-field FK-target carrier on the arg side via two new sealed variants (`ColumnReferenceArg`, `CompositeColumnReferenceArg`) and feeds the same input-side filter projection that `InputField.ColumnReferenceField` / `CompositeColumnReferenceField` use today. Composes with `@asConnection`.
-
-**Implementation note (shipped subset).** The FK-target arm ships in this iteration only for the simple direct-FK case where the FK's target columns positionally match the resolved NodeType key columns (so the predicate can fire against `joinPath[0].sourceColumns()` on the field's own table without a JOIN). Pathological cases where the FK target columns differ from the NodeType key columns (e.g. R50's `parent_node` + `child_ref` fixture: FK targets `parent.alt_key`, NodeType key is `parent.pk_id`) are rejected at classify time with a deferred-emission hint. JOIN-with-translation emission for the pathological case lands in R57, parallel to R24's output-side JOIN-with-projection arm.
-
-**Bare `@nodeId`** (no `typeName:`) defaults to the field's backing-table NodeType via the same inference rule R50's `BARE_LIST_NODE_ID_INFERS_TYPE_NAME` case applies on input fields (rejecting on ambiguity / no-match).
-
-**Out of scope.** Multi-hop FK-target / condition-join FK-target (parallel to R24's multi-hop arm on the output side; sibling Backlog item). FK-target where FK target columns ≠ NodeType keyColumns (R57). Mutation-key `@nodeId` args (separate `classifyMutationArguments` path; `NodeIdLeafResolver`'s signature is the natural extension point — the follow-on adds a `FailureMode` parameter selecting `ThrowOnMismatch` vs `SkipMismatchedElement` rather than re-resolving from scratch, but the carrier-side wiring on the mutation path is genuinely different per R50's `MutationField.DmlTableField.nodeIdMeta` shape).
-
-The existing implicit scalar-`ID` arm in `classifyArgument` (no `@nodeId` declared, parent table is a NodeType) stays untouched: it covers synthesised paths that `buildLookupBindings` and the `id`-arg shorthand rely on. R40's new arm fires only when `arg.hasAppliedDirective(DIR_NODE_ID)`.
-
-## Classification
-
-### Step 1: Extract `NodeIdLeafResolver`
-
-Extract the body of `BuildContext.classifyInputField:916-1043` into a new `NodeIdLeafResolver` standalone class, sibling to `InputFieldResolver` / `LookupMappingResolver` / `ConditionResolver` / etc. (R6 pattern: each resolver is its own file with its own focused test surface; sealed `Resolved` over enums per *Sealed hierarchies over enums for typed information*). `BuildContext.resolveDecodeHelperForTable` moves into the new resolver in the same commit since the resolver is the only consumer post-lift.
-
-```
-public final class NodeIdLeafResolver {
-    public sealed interface Resolved {
-        record SameTable(HelperRef.Decode decodeMethod,
-                         List<ColumnRef> keyColumns,
-                         CallSiteExtraction.NodeIdDecodeKeys extraction)
-            implements Resolved {}
-        record FkTarget(HelperRef.Decode decodeMethod,
-                        List<ColumnRef> keyColumns,
-                        List<JoinStep> joinPath,
-                        CallSiteExtraction.NodeIdDecodeKeys extraction)
-            implements Resolved {}
-        record Rejected(String message) implements Resolved {}
-    }
-
-    Resolved resolve(String leafName,
-                     GraphQLType leafType,
-                     List<AppliedDirective> directives,
-                     TableRef containingTable);
-}
+```java
+builder.addStatement("$T $L = ($L instanceof $T _s) ? $T.$L(_s) : null", ...);
+builder.beginControlFlow("if ($L == null)", recLocal);
+builder.addStatement("throw $T.newErrorException().message($S).build()", ...);
+builder.endControlFlow();
 ```
 
-The signature consumes raw `GraphQLType` + `List<AppliedDirective>` (pre-carrier) deliberately: both call sites (`InputFieldResolver` for input-field leaves, `FieldBuilder.classifyArgument` for arg leaves) need the resolver *during* carrier construction, not over an already-classified shape. This is the inverse of R6's `cea16e0` tightening that flipped `OrderByResolver` to consume `ArgumentRef.OrderByArg` directly; the asymmetric reason is that `OrderByResolver` had one downstream consumer, where `NodeIdLeafResolver` has two and feeds carrier construction on both sides.
+This forces every consumer to be `ThrowOnMismatch`. Same-table arg `@nodeId` semantically wants `SkipMismatchedElement` (a malformed encoded id should produce no row match, not a 500 to the user). The classifier currently picks `ThrowOnMismatch` only because the emitter wouldn't accommodate `Skip`.
 
-`InputFieldResolver`'s body is rewritten to call `NodeIdLeafResolver.resolve` and exhaustively switch on the result, wrapping into `InputField.ColumnField` / `CompositeColumnField` / `ColumnReferenceField` / `CompositeColumnReferenceField` exactly as today; the bare-`@nodeId` typeName inference ([`NodeIdPipelineTest.java:616` `BARE_LIST_NODE_ID_INFERS_TYPE_NAME`](../graphitron/src/test/java/no/sikt/graphitron/rewrite/NodeIdPipelineTest.java)) lifts with the body. This refactor lands first in its own commit; the existing `InputSameTableNodeIdCase` and FK-target test cases at [`NodeIdPipelineTest.java:558-677`](../graphitron/src/test/java/no/sikt/graphitron/rewrite/NodeIdPipelineTest.java) act as the behaviour gate. A focused `NodeIdLeafResolverTest` parallel to other resolver tests lands alongside, exercising the resolver against synthesised `GraphQLArgument` / `GraphQLInputObjectField` shapes directly.
+**Branch on the `CallSiteExtraction.NodeIdDecodeKeys` arm** at the per-row decode site:
 
-### Step 2: Plug `classifyArgument` into the resolver
+- `ThrowOnMismatch` (existing `@lookupKey` dispatch path; wrong-type id is a contract violation): keep the throw.
+- `SkipMismatchedElement` (same-table arg `@nodeId`; new): emit a `continue` that drops the row from the VALUES set, shrinking `rows[]` accordingly. The `RowN` slot machinery downstream needs to handle a smaller-than-`n` rows array; check whether the existing `rows.length == 0` short-circuit at the call site already covers the empty case or whether the emitter needs to track an effective row count separately.
 
-New arm in `FieldBuilder.classifyArgument` ([FieldBuilder.java:438-584](../graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java)), fires when `arg.getType()` unwraps to `ID` and `arg.hasAppliedDirective(DIR_NODE_ID)`. Sits *before* the existing implicit scalar-`ID` arm at lines 514-549 (which stays untouched per Scope). The arm calls `nodeIdLeafResolver.resolve(arg.getName(), arg.getType(), arg.getAppliedDirectives(), fieldReturnTable)` and switches on the result:
-
-- `SameTable` → arity-1 `ArgumentRef.ScalarArg.ColumnArg(name, "ID", nonNull, list, keyColumns.get(0), extraction, argCondition, suppressedByFieldOverride, isLookupKey: true)`; arity ≥ 2 `CompositeColumnArg(..., isLookupKey: true)`. The classifier *synthesises* `isLookupKey = true` because same-table `@nodeId` is a lookup by definition. `argCondition` consumes `ConditionResolver.ArgConditionResult.Ok`'s `ArgConditionRef` payload; `Rejected` propagates as `UnclassifiedArg`. `suppressedByFieldOverride` carries field-level `@field` override status from the existing classify-arg pipeline (per `ColumnArg`'s "four-state projection table" javadoc).
-- `FkTarget` → arity-1 `ArgumentRef.ScalarArg.ColumnReferenceArg(name, "ID", nonNull, list, keyColumns.get(0), joinPath, extraction, argCondition, suppressedByFieldOverride)`; arity ≥ 2 `CompositeColumnReferenceArg(..., joinPath, ...)`. These are *new sealed variants* added to `ArgumentRef.ScalarArg`, mirroring `InputField.ColumnReferenceField` / `CompositeColumnReferenceField` shape-for-shape (sealed-split per *Sealed hierarchies over enums for typed information*). No `isLookupKey` slot: FK-target is a filter, not a lookup.
-- `Rejected(message)` → `UnclassifiedArg(message)`.
-
-Composition rejections issued by `NodeIdLeafResolver.resolve`:
-
-- `@nodeId @lookupKey` → `Rejected("@nodeId implies @lookupKey for same-table; the explicit directive is redundant")`.
-- `@nodeId @field(name:)` → `Rejected("@nodeId arg cannot also carry @field(name:); the directives target different binding axes")`.
-- Bare `@nodeId` with ambiguous `@table` mapping → `Rejected("Bare @nodeId is ambiguous: multiple @table-bound types match '<rt.tableName()>'; specify @nodeId(typeName: …) explicitly")`.
-- `T` not in schema / not a NodeType / table not reachable via single-hop FK → `Rejected` with the corresponding hint, including the multi-hop follow-on item name when reachability fails past one hop.
-
-## Projection
-
-**Same-table arm.** `isLookupKey: true` routes the `ColumnArg` / `CompositeColumnArg` through `LookupMappingResolver.projectForLookup` ([LookupMappingResolver.java:62-79](../graphitron/src/main/java/no/sikt/graphitron/rewrite/LookupMappingResolver.java)) which already pattern-matches `ColumnArg when ca.isLookupKey()` → `ScalarLookupArg` and `CompositeColumnArg when cca.isLookupKey()` → `DecodedRecord`. The resolver does not read the SDL `@lookupKey` directive; it consumes the classifier-synthesised `isLookupKey` boolean. R40 needs zero extension to `LookupMappingResolver` — `@nodeId`-synthesised `isLookupKey: true` carriers are picked up identically to `@lookupKey`-synthesised ones. The `projectFilters` arms for these carriers skip when `isLookupKey == true` (existing comment at [FieldBuilder.java:762-767](../graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java) on `CompositeColumnArg` stays accurate). No projection change.
-
-The `LookupMapping` projection consumes `extraction = NodeIdDecodeKeys.SkipMismatchedElement` and the `decodeMethod` directly; the per-element decode at the call site produces the typed key (single-PK) or `RowN` (composite-PK) that the lookup dispatcher consumes. Same as the input-field same-table path today.
-
-**FK-target arm.** Two new arms in `projectFilters` for the new sealed variants `ColumnReferenceArg` and `CompositeColumnReferenceArg`. They mirror the input-field FK-target projection at the corresponding `compositeImplicitBodyParam`-equivalent for input-field FK leaves: emit `BodyParam.In` / `BodyParam.RowIn` (list) or `BodyParam.Eq` / `BodyParam.RowEq` (scalar) against the FK columns reachable through `joinPath`, threading `joinPath` into the surrounding query-context emitter so the JOIN materialises in the generated SQL.
-
-This is the only genuinely-new emitter-adjacent code in R40. It mirrors the input-field FK-target projection line-for-line; if a shared projection helper falls out naturally during implementation, take it.
-
-Call-site extraction for both arms: top-level `NodeIdDecodeKeys.SkipMismatchedElement` is read directly into `CallParam.extraction` (no `NestedInputField` wrapping; that's input-field-leaf-only). The condition method receives a typed `List<KeyType>` (arity-1) or `List<RowN>` (arity ≥ 2); the malformed-element skip happens in the per-element decode at the call site, before the list reaches the condition method.
-
-## Composition with other directives
-
-- **`@asConnection` + same-table.** Rejected at validate time (see Validator section). The opptak reproducer ships as a rejection-tier case.
-- **`@asConnection` + FK-target.** Composes. Filter narrows, seek paginates within the filtered set. `GraphitronSchemaBuilder.rewriteCarrierField` runs after `classifyArguments`; user-declared FK-target filter args survive the carrier rewrite via `transform`'s builder-copy.
-- **`@lookupKey`.** Rejected at classify time alongside `@nodeId` for both arms. Reasoning: `@nodeId` same-table *implies* `@lookupKey` (redundant); `@nodeId` FK-target is a filter, not a lookup (meaningless). R50's `ID @lookupKey` shorthand without `@nodeId` is untouched.
-- **`@condition`.** Composes via `ConditionResolver.resolveArg` ([ConditionResolver.java:96-118](../graphitron/src/main/java/no/sikt/graphitron/rewrite/ConditionResolver.java)) returning `ArgConditionResult.{None, Ok, Rejected}`; `Ok.ref()` projects to the carrier's `argCondition: Optional<ArgConditionRef>` slot exactly as `ColumnArg` / `CompositeColumnArg` consume it today. `Rejected` propagates as `UnclassifiedArg`. Field-level override (`suppressedByFieldOverride`) carries over from the `ColumnArg` / `CompositeColumnArg` arms to the new `ColumnReferenceArg` / `CompositeColumnReferenceArg` arms identically.
-- **`@field(name:)`.** Rejected at classify time. Key columns come from `nodeType.nodeKeyColumns()`, not from the directive; the two target different binding axes.
-- **`@reference(path:)`.** Composes with the FK-target arm to pin the FK chain explicitly when auto-discovery is ambiguous (mirrors input-field FK-target behaviour at `BuildContext.classifyInputField:972-1043`). Combination with same-table is rejected (no FK to pin).
-
-## Validator and load-bearing guarantees
-
-**New rejection: `@asConnection` + same-table `@nodeId` leaf.** Placed as a small validation step in the post-`classifyArguments` pipeline (R6 framing: `classifyField` is "a thin orchestrator that calls a fixed pipeline of resolvers"; this rejection consumes `NodeIdLeafResolver`'s output uniformly across both arg leaves and input-field leaves rather than re-walking the schema inline). The step runs only when the field carries `@asConnection` (cheap early-out next to the existing `@asConnection on inline TableField` wrapper at [FieldBuilder.java:390-392](../graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java)) and walks the field's argument set — top-level args *and* nested input-field leaves under arg-input-types — calling `nodeIdLeafResolver.resolve` for each `@nodeId`-decorated leaf. If any resolves to `Resolved.SameTable`, return `UnclassifiedField` with `RejectionKind.INVALID_SCHEMA` and the hint:
-
-> "@nodeId(typeName: '<T>') resolves to '<field-backing-table>', the field's own backing table, which makes this argument a lookup key. Lookups don't compose with @asConnection (the result cardinality is bounded by the input list, not paginatable). Drop @asConnection, or use a filter argument that resolves to a different table via FK."
-
-This rejection is *symmetric*: it catches both R40-introduced argument-level same-table `@nodeId` AND R50-shipped input-field same-table `@nodeId`, closing a latent R50 gap where the combination silently builds and produces incoherent runtime semantics. FK-target leaves do not trigger the rejection — they are legitimate filter args.
-
-**No new `@LoadBearingClassifierCheck` key.** `NodeIdLeafResolver` does not introduce new emitter-coupling invariants beyond what R50's input-field path already implies (matching PK arity, real FK chain, `decode<T>` helper exists). Lifting the resolver out doesn't relax those guarantees. Explicit annotation pairs are a sibling cleanup if wanted later.
-
-**Existing test update.** `NodeIdPipelineTest.LookupKeyCase.SCALAR_NODEID_NON_LOOKUP_COMPOSITE_PK_DEFERRED` ([NodeIdPipelineTest.java:791](../graphitron/src/test/java/no/sikt/graphitron/rewrite/NodeIdPipelineTest.java)) currently pins the deferred-rejection behaviour for scalar `@nodeId` on composite-PK NodeType without `@lookupKey`. R40 flips it: the case now classifies as `CompositeColumnArg` with `isLookupKey: true` (lookup) rather than rejecting.
+Then change the same-table arg arm in `FieldBuilder.classifyArgument` from `ThrowOnMismatch` to `SkipMismatchedElement`. The comment block at `FieldBuilder.java:601-605` explaining the deviation also deletes.
 
 ## Tests
 
-Pipeline-tier in `NodeIdPipelineTest`. Two new case classes parallel to `InputSameTableNodeIdCase` ([NodeIdPipelineTest.java:558-677](../graphitron/src/test/java/no/sikt/graphitron/rewrite/NodeIdPipelineTest.java)):
+**Pipeline-tier (`NodeIdPipelineTest`).**
 
-**`ArgumentSameTableNodeIdCase`:**
+- `ArgumentSameTableNodeIdCase` cases keep their structure; flip the asserted `extraction` from `ThrowOnMismatch` to `SkipMismatchedElement`.
+- New case in `InputFieldFkTargetCase` (or a new `InputFieldFkTargetTranslatedRejectionCase`): an input-field `[ID!] @nodeId(typeName: T)` where T's keys differ from the FK targets currently builds silently; assert it now classifies as `InputFieldResolution.Unresolved` with the R57 hint.
+- New case asserting the resolver produces `DirectFk` vs `TranslatedFk` directly, exercising the resolver-tier without going through carriers.
 
-- `SAME_TABLE_SCALAR_SINGLE_PK` — `bazById(id: ID! @nodeId(typeName: "Baz"))` → `ColumnArg`, `isLookupKey: true`, `extraction = SkipMismatchedElement`, `column = baz.id`.
-- `SAME_TABLE_LIST_SINGLE_PK` — `bazByIds(ids: [ID!]! @nodeId(typeName: "Baz"))` → `ColumnArg`, `list: true`, `isLookupKey: true`.
-- `SAME_TABLE_SCALAR_COMPOSITE_PK` — `barById(id: ID! @nodeId(typeName: "Bar"))` → `CompositeColumnArg`, `keyColumns = [bar.id_1, bar.id_2]`, `isLookupKey: true`.
-- `SAME_TABLE_LIST_COMPOSITE_PK` — `barByIds(ids: [ID!]! @nodeId(typeName: "Bar"))` → `CompositeColumnArg`, `list: true`, `isLookupKey: true`.
-- `BARE_NODEID_DEFAULTS_TO_BACKING_TABLE` — `bazByIds(ids: [ID!]! @nodeId)` → typeName-omitted resolves to `Baz` via the same inference as input-field's `BARE_LIST_NODE_ID_INFERS_TYPE_NAME`.
-- `BARE_NODEID_AMBIGUOUS_REJECTED` — multiple `@table` types map to the backing table → `UnclassifiedArg` with ambiguity hint.
-- `T_NOT_IN_SCHEMA` — `@nodeId(typeName: "DoesNotExist")` → `UnclassifiedArg`.
-- `T_NOT_NODE` — point at a non-`@node` `@table` type → `UnclassifiedArg`.
-- `LOOKUP_KEY_REDUNDANT_REJECTED` — `@nodeId @lookupKey` → `UnclassifiedArg("redundant")`.
-- `FIELD_DIRECTIVE_REJECTED` — `@nodeId @field(name:)` → `UnclassifiedArg`.
+**Execution-tier (`NodeIdQueryTest`).**
 
-**`ArgumentFkTargetNodeIdCase`** (uses R50 phase g-B's `parent_node` + `child_ref` fixture):
+- Flip `bazByIds_malformedIdSkipped` from "throws" to "drops malformed ids, returns rows for the well-formed subset, no exception".
+- Add `bazByIds_allMalformedIdsSkipped_returnsNoRows` to cover the all-skipped → empty-rows edge of the emitter change.
+- `bazByIds_emptyList_returnsNoRows` already covers the empty-input edge; verify it still passes after the emitter rework.
 
-- `FK_TARGET_LIST_SINGLE_PK` — child arg with `@nodeId(typeName: ParentNodeType)` where `ParentNodeType` is FK-reachable. Produces `ColumnReferenceArg` with `joinPath` of length 1.
-- `FK_TARGET_SCALAR_SINGLE_PK` — scalar variant.
-- `FK_TARGET_LIST_COMPOSITE_PK` — composite-PK FK-target → `CompositeColumnReferenceArg`.
-- `FK_TARGET_REFERENCE_PATH_PINS_FK` — `@nodeId(typeName: T) @reference(path: "...")` confirms explicit pinning works.
-- `FK_TARGET_AMBIGUOUS_REJECTED` — two FKs to T's table → `UnclassifiedArg` requiring `@reference(path:)`.
+**Audit (`LoadBearingGuaranteeAuditTest`).** Picks up `nodeid-fk.direct-fk-keys-match` automatically once the producer and consumer annotations land. No new test code; the existing audit fails if the pairing is incomplete.
 
-**Validator-rejection cases** (in a new `NodeIdConnectionRejectionCase` or extending `LookupKeyCase`):
+## Foundation in place
 
-- `ASCONNECTION_PLUS_SAME_TABLE_ARG_NODEID_REJECTED` — opptak reproducer shape. Field-level `UnclassifiedField` with the new hint.
-- `ASCONNECTION_PLUS_INPUT_FIELD_SAME_TABLE_NODEID_REJECTED` — symmetric R50 input-field case (closes the latent gap). Same rejection.
-- `ASCONNECTION_PLUS_FK_TARGET_ARG_NODEID_ALLOWED` — confirms FK-target composes (NOT rejected).
-- `ASCONNECTION_PLUS_FK_TARGET_INPUT_FIELD_NODEID_ALLOWED` — symmetric input-field FK-target case.
+- R6's resolver pattern with sealed `Resolved` outcomes. `NodeIdLeafResolver` exists.
+- R50's input-field `@nodeId` carriers (`InputField.{Column,CompositeColumn}{,Reference}Field`).
+- Argument-side carriers (`ArgumentRef.ScalarArg.{Column,CompositeColumn}{,Reference}Arg`).
+- `@LoadBearingClassifierCheck` / `@DependsOnClassifierCheck` and `LoadBearingGuaranteeAuditTest` (existing producers in `ServiceCatalog`, `BatchKeyLifterDirectiveResolver`, `TypeBuilder`, `FieldBuilder`).
+- `@asConnection` validator rejection, lookup-promotion gate, full execution coverage. This pass changes how those wire, not what they do.
 
-**Existing fixture sweep.** Walk `InputSameTableNodeIdCase` and any `nodeidfixture`-driven SDL for cases that pair `@asConnection` with same-table `@nodeId` on the input-field side. Each becomes a rejection-test fixture or has the `@asConnection` removed. The implementer should pin in the commit which files were touched and why.
+## Out of scope
 
-**Update.** `LookupKeyCase.SCALAR_NODEID_NON_LOOKUP_COMPOSITE_PK_DEFERRED` flips from rejection to classified-as-lookup (see Validator section).
-
-**Compilation-tier:** `mvn -f graphitron-rewrite/pom.xml install -Plocal-db` against the new query fields confirms generated `*Conditions` and `*Fetchers` compile against real jOOQ for both shapes.
-
-**Execution-tier in `NodeIdQueryTest` against PostgreSQL via `-Plocal-db`:**
-
-- `bazByIds_lookupSemantics_returnsRowsForSuppliedIds` — bulk lookup, single SELECT with IN predicate, rows correspond to input ids.
-- `bazById_scalarLookup_returnsSingleRow` — scalar lookup variant.
-- `barByIds_compositeLookup_returnsRowsForSuppliedIds` — composite-PK row IN.
-- `bazByIds_malformedIdSkipped` — `SkipMismatchedElement` drops malformed entries; well-formed subset returned, no exception.
-- `bazByIds_emptyList_returnsNoRows` — empty input list → empty result (lookup semantics, *not* "returns all rows" filter semantics).
-- `fkTargetFilter_listOfParentIds_filtersChildren` — FK-target filter case; supplies parent IDs via `@nodeId(typeName: Parent)`, expects children whose FK matches.
-- `fkTargetFilter_composesWithAsConnection` — FK-target filter + `first`/`after` pagination; opptak-shape but with FK-reachable typeName.
-- `asConnectionPlusSameTableNodeId_buildFails` — `mvn install -Plocal-db` itself fails with the new validator hint visible in the build output.
-
-`nodeidfixture` covers same-table shapes (`baz` single-PK, `bar` composite-PK) and FK-target shapes (`parent_node` + `child_ref` from R50 phase g-B). New schema fields land on `graphitron-test/src/main/resources/graphql/nodeid-schema.graphqls` (pin the file in the implementation commit).
-
-## Coordination with R24
-
-R40 and R24 ([`nodeidreferencefield-join-projection-form.md`](nodeidreferencefield-join-projection-form.md)) are `theme: nodeid` siblings operating on opposite directions of the same FK navigation:
-
-- **R24** — output-side encode emitter. Brings parent table into scope via JOIN (rooted-at-parent shapes) or correlated subquery (multi-hop / condition-join), projects `encode<TypeName>(parent.k1, ..., parent.kN)`. Carriers: `ChildField.ColumnReferenceField` / `CompositeColumnReferenceField` with `compaction = NodeIdEncodeKeys`, plus `joinPath`.
-- **R40** — input-side decode + filter projection. Decodes argument-supplied keys via `NodeIdDecodeKeys.SkipMismatchedElement`, predicates against FK columns reachable through `joinPath`. Carriers (this spec): `ArgumentRef.ScalarArg.ColumnReferenceArg` / `CompositeColumnReferenceArg`, plus the existing `InputField.ColumnReferenceField` / `CompositeColumnReferenceField`.
-
-Both rely on the `joinPath: List<JoinStep>` shape from R50 phase g-B. Both share the `parent_node` + `child_ref` fixture for execution coverage. They do *not* share emitter code (encode vs decode are different code paths). R40 does not block on R24, and vice versa.
-
-When R24 lands the JOIN-with-projection emitter, the input-side filter projection won't gain any encode-side helpers, but the `joinPath` threading helper R24 introduces may be reusable from the input side; revisit at R24 implementation time. Multi-hop FK-target on the input side is a sibling Backlog item to file alongside R40, parallel to R24's multi-hop arm.
-
-## Out of scope and follow-on items
-
-- **Multi-hop FK-target args** (input side). Parallel to R24's multi-hop arm. Same `joinPath` model applies but needs correlated-subquery emission analogous to R24. File as sibling Backlog item when R40 lands.
-- **Condition-join FK-target args** (input side). Same justification.
-- **Mutation-key `@nodeId` args.** Mutation arguments classify through `classifyMutationArguments` (separate from `classifyArguments`). Filed separately if/when needed; `NodeIdLeafResolver` is the seam.
-- **Explicit `@LoadBearingClassifierCheck` annotation pairs.** Mentioned for visibility only; the existing exhaustive switches cover the contract.
-
-## Implementer latitude
-
-Per the R6 review-tightening precedent (`cea16e0`, "five contained shape fixes surfaced by reviewing the lifts"): the resolver lift will surface adjacent shape questions in `BuildContext` and the surrounding classify-arg pipeline. Take such fixes in the same commit train rather than filing them as follow-ons, provided each is contained and motivated by what the lift made visible. Examples likely to surface: `BuildContext.resolveDecodeHelperForTable`'s remaining call-site count after the lift (one or zero?), whether the existing scalar-`ID` arm at `FieldBuilder:514-549` still needs its own decode path or can route through the resolver too, the exact public surface of `NodeIdLeafResolver` (does the `@asConnection` validator reach for the same `resolve` method or a narrower variant?). Out-of-scope for this latitude: anything that drags in mutation-key args or multi-hop reachability (those are filed separately).
+- **R57** (FK-target columns ≠ NodeType keys). The new `TranslatedFk` arm rejects pointing at R57; the JOIN-with-translation emitter lands there.
+- **Multi-hop FK-target** (input side). Sibling Backlog item, parallel to R24's multi-hop arm.
+- **Mutation-key `@nodeId` args.** Separate `classifyMutationArguments` path; `NodeIdLeafResolver` is the seam when it's needed.
+- **`Record1` raw-cast templates** at `ArgCallEmitter.java:248` and `LookupValuesJoinEmitter.java:436-450` are correct generated-Java-17 fixes living as two near-identical templates. If a third `@nodeId`-decode site lands, factor a shared helper before the third copy. Not blocking.
