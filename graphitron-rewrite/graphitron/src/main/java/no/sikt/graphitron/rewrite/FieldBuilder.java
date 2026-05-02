@@ -185,84 +185,147 @@ class FieldBuilder {
     }
 
     /**
+     * Per-field summary of every {@code @nodeId}-decorated leaf reachable from a table-bound
+     * field's argument set. Pre-resolved once by {@link #buildNodeIdArgPlan} so the
+     * lookup-promotion gate, the {@code @asConnection} rejection, and {@link #classifyArgument}
+     * read the same classification rather than each calling
+     * {@link NodeIdLeafResolver#resolve} fresh on the same leaf. Replaces
+     * {@code findSameTableNodeIdUnderAsConnection}, {@code walkInputTypeForSameTableNodeId},
+     * and {@code hasSameTableNodeIdAnywhere}.
+     *
+     * @param byArgName       resolved outcome keyed by top-level argument name; covers every
+     *                        top-level argument carrying {@code @nodeId} (any arity, any arm).
+     *                        Non-{@code @nodeId} args are absent.
+     * @param anyArgSameTable {@code true} iff any top-level argument resolves to
+     *                        {@link NodeIdLeafResolver.Resolved.SameTable}. Gates the
+     *                        lookup-promotion path in {@link #classifyQueryField} and the
+     *                        argument-side {@code @asConnection} rejection.
+     * @param anyNestedSameTable {@code true} iff any input-field leaf nested under an arg
+     *                           input-type resolves to {@link NodeIdLeafResolver.Resolved.SameTable}
+     *                           against the field's containing table. Gates the input-field-side
+     *                           {@code @asConnection} rejection alongside R50's existing
+     *                           input-field path.
+     * @param sameTableHit    when either {@code anyArgSameTable} or {@code anyNestedSameTable}
+     *                        is {@code true}, the leafName/refTypeName/containingTable that
+     *                        triggered the first hit, used to build the rejection message.
+     */
+    record NodeIdArgPlan(
+            Map<String, NodeIdLeafResolver.Resolved> byArgName,
+            boolean anyArgSameTable,
+            boolean anyNestedSameTable,
+            SameTableHit sameTableHit) {
+
+        /** Empty plan for non-table-bound fields and fields with no {@code @nodeId} leaves. */
+        static final NodeIdArgPlan EMPTY = new NodeIdArgPlan(Map.of(), false, false, null);
+
+        record SameTableHit(String leafName, String refTypeName, String containingTableName) {}
+    }
+
+    /**
+     * Walks {@code fieldDef}'s argument set once: every {@code @nodeId}-decorated top-level
+     * argument resolves into {@code byArgName}; every same-table hit anywhere (top-level or
+     * nested under arg input-types) flips the matching boolean and seeds the first
+     * {@link NodeIdArgPlan.SameTableHit} for the rejection message. Cycle protection on nested
+     * input types follows the same {@code LinkedHashSet<String>} shape the previous walks
+     * carried.
+     */
+    private NodeIdArgPlan buildNodeIdArgPlan(GraphQLFieldDefinition fieldDef, TableRef containingTable) {
+        var resolver = ctx.nodeIdLeafResolver();
+        var byArgName = new java.util.LinkedHashMap<String, NodeIdLeafResolver.Resolved>();
+        boolean anyArgSameTable = false;
+        boolean anyNestedSameTable = false;
+        NodeIdArgPlan.SameTableHit sameTableHit = null;
+        for (var arg : fieldDef.getArguments()) {
+            if (arg.hasAppliedDirective(DIR_NODE_ID)) {
+                var unwrapped = GraphQLTypeUtil.unwrapAll(arg.getType());
+                if (unwrapped instanceof GraphQLNamedType named && "ID".equals(named.getName())) {
+                    var resolved = resolver.resolve(arg, arg.getName(), containingTable);
+                    byArgName.put(arg.getName(), resolved);
+                    if (resolved instanceof NodeIdLeafResolver.Resolved.SameTable st) {
+                        if (!anyArgSameTable) {
+                            sameTableHit = new NodeIdArgPlan.SameTableHit(
+                                arg.getName(), st.refTypeName(), containingTable.tableName());
+                        }
+                        anyArgSameTable = true;
+                    }
+                }
+            }
+            var argType = GraphQLTypeUtil.unwrapAll(arg.getType());
+            if (argType instanceof GraphQLInputObjectType iot) {
+                var nestedHit = walkInputTypeForSameTableNodeId(
+                    resolver, iot, containingTable, new java.util.LinkedHashSet<>());
+                if (nestedHit != null) {
+                    if (!anyNestedSameTable && sameTableHit == null) {
+                        sameTableHit = nestedHit;
+                    }
+                    anyNestedSameTable = true;
+                }
+            }
+        }
+        if (byArgName.isEmpty() && !anyNestedSameTable) {
+            return NodeIdArgPlan.EMPTY;
+        }
+        return new NodeIdArgPlan(Map.copyOf(byArgName), anyArgSameTable, anyNestedSameTable, sameTableHit);
+    }
+
+    private NodeIdArgPlan.SameTableHit walkInputTypeForSameTableNodeId(
+            NodeIdLeafResolver resolver, GraphQLInputObjectType iot, TableRef containingTable,
+            java.util.LinkedHashSet<String> visited) {
+        if (!visited.add(iot.getName())) return null;
+        for (var inputField : iot.getFieldDefinitions()) {
+            if (inputField.hasAppliedDirective(DIR_NODE_ID)) {
+                var unwrapped = GraphQLTypeUtil.unwrapAll(inputField.getType());
+                if (unwrapped instanceof GraphQLNamedType named && "ID".equals(named.getName())) {
+                    var resolved = resolver.resolve(inputField, inputField.getName(), containingTable);
+                    if (resolved instanceof NodeIdLeafResolver.Resolved.SameTable st) {
+                        return new NodeIdArgPlan.SameTableHit(
+                            inputField.getName(), st.refTypeName(), containingTable.tableName());
+                    }
+                }
+            }
+            var nestedType = GraphQLTypeUtil.unwrapAll(inputField.getType());
+            if (nestedType instanceof GraphQLInputObjectType nestedIot) {
+                var nestedHit = walkInputTypeForSameTableNodeId(resolver, nestedIot, containingTable, visited);
+                if (nestedHit != null) return nestedHit;
+            }
+        }
+        return null;
+    }
+
+    private static String formatAsConnectionSameTableRejection(
+            NodeIdArgPlan.SameTableHit hit, String fieldName) {
+        return "@nodeId(typeName: '" + hit.refTypeName() + "') on '" + hit.leafName() + "' resolves to '"
+            + hit.containingTableName() + "', the field's own backing table, which makes this"
+            + " argument a lookup key. Lookups don't compose with @asConnection (the result"
+            + " cardinality is bounded by the input list, not paginatable). Drop @asConnection"
+            + " from '" + fieldName + "', or use a filter argument that resolves to a different"
+            + " table via FK.";
+    }
+
+    /**
      * Resolves the filter, order-by, and pagination components for a table-bound list field.
      * Returns a non-null {@code error} when any component fails to resolve.
      *
      * @param returnTypeName the GraphQL return type name (e.g. {@code "Film"}), used to derive
      *                       the {@code *Conditions} class name for any generated filter method
      */
-    private TableFieldComponents resolveTableFieldComponents(GraphQLFieldDefinition fieldDef, TableRef table, String returnTypeName) {
+    private TableFieldComponents resolveTableFieldComponents(
+            GraphQLFieldDefinition fieldDef, TableRef table, String returnTypeName, NodeIdArgPlan plan) {
         // R40: @asConnection + same-table @nodeId leaf is incoherent at runtime — the result
         // cardinality is bounded by the input id list (lookup semantics), not paginatable.
         // Reject before classification so the structural conflict surfaces with a pointed hint
         // instead of building a degenerate connection. Symmetric across argument-level and
         // input-field leaves: closes the latent R50 gap where the input-field same-table case
         // was already a silent runtime mismatch.
-        if (fieldDef.hasAppliedDirective(DIR_AS_CONNECTION)) {
-            String rejection = findSameTableNodeIdUnderAsConnection(fieldDef, table);
-            if (rejection != null) {
-                return new TableFieldComponents.Rejected(rejection);
-            }
+        if (fieldDef.hasAppliedDirective(DIR_AS_CONNECTION)
+                && (plan.anyArgSameTable() || plan.anyNestedSameTable())
+                && plan.sameTableHit() != null) {
+            return new TableFieldComponents.Rejected(
+                formatAsConnectionSameTableRejection(plan.sameTableHit(), fieldDef.getName()));
         }
         var errors = new ArrayList<String>();
-        var refs = classifyArguments(fieldDef, table, errors);
+        var refs = classifyArguments(fieldDef, table, plan, errors);
         return projectForFilter(refs, fieldDef, table, returnTypeName, errors);
-    }
-
-    /**
-     * Walks {@code fieldDef}'s argument set looking for any {@code @nodeId}-decorated leaf —
-     * top-level arguments and nested input-field leaves under {@code @table}-input or plain
-     * input arguments — that resolves to {@link NodeIdLeafResolver.Resolved.SameTable} against
-     * {@code containingTable}. Returns a fully formatted rejection message when one is found,
-     * or {@code null} when the field's argument set is consistent with {@code @asConnection}.
-     *
-     * <p>The walk reuses {@link NodeIdLeafResolver#resolve} so the shape decision (same-table
-     * vs FK-target) lives in one place. FK-target leaves do not trigger the rejection — they
-     * are legitimate filter args that compose with seek pagination.
-     */
-    private String findSameTableNodeIdUnderAsConnection(GraphQLFieldDefinition fieldDef, TableRef containingTable) {
-        var resolver = ctx.nodeIdLeafResolver();
-        for (var arg : fieldDef.getArguments()) {
-            String hit = checkLeafForSameTableNodeId(resolver, arg, arg.getName(), containingTable, fieldDef.getName());
-            if (hit != null) return hit;
-            var argType = GraphQLTypeUtil.unwrapAll(arg.getType());
-            if (argType instanceof GraphQLInputObjectType iot) {
-                String nestedHit = walkInputTypeForSameTableNodeId(resolver, iot, containingTable, fieldDef.getName(), new java.util.LinkedHashSet<>());
-                if (nestedHit != null) return nestedHit;
-            }
-        }
-        return null;
-    }
-
-    private String walkInputTypeForSameTableNodeId(NodeIdLeafResolver resolver, GraphQLInputObjectType iot,
-                                                   TableRef containingTable, String fieldName,
-                                                   java.util.LinkedHashSet<String> visited) {
-        if (!visited.add(iot.getName())) return null;
-        for (var inputField : iot.getFieldDefinitions()) {
-            String hit = checkLeafForSameTableNodeId(resolver, inputField, inputField.getName(), containingTable, fieldName);
-            if (hit != null) return hit;
-            var nestedType = GraphQLTypeUtil.unwrapAll(inputField.getType());
-            if (nestedType instanceof GraphQLInputObjectType nestedIot) {
-                String nestedHit = walkInputTypeForSameTableNodeId(resolver, nestedIot, containingTable, fieldName, visited);
-                if (nestedHit != null) return nestedHit;
-            }
-        }
-        return null;
-    }
-
-    private String checkLeafForSameTableNodeId(NodeIdLeafResolver resolver, graphql.schema.GraphQLDirectiveContainer leaf,
-                                               String leafName, TableRef containingTable, String fieldName) {
-        if (!leaf.hasAppliedDirective(DIR_NODE_ID)) return null;
-        var resolved = resolver.resolve(leaf, leafName, containingTable);
-        if (resolved instanceof NodeIdLeafResolver.Resolved.SameTable st) {
-            return "@nodeId(typeName: '" + st.refTypeName() + "') on '" + leafName + "' resolves to '"
-                + containingTable.tableName() + "', the field's own backing table, which makes this"
-                + " argument a lookup key. Lookups don't compose with @asConnection (the result"
-                + " cardinality is bounded by the input list, not paginatable). Drop @asConnection"
-                + " from '" + fieldName + "', or use a filter argument that resolves to a different"
-                + " table via FK.";
-        }
-        return null;
     }
 
     // ===== Object-return child field classification =====
@@ -294,7 +357,8 @@ class FieldBuilder {
             if (referencePath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, referencePath.errorMessage());
             }
-            var components = resolveTableFieldComponents(fieldDef, returnType.table(), elementTypeName);
+            var components = resolveTableFieldComponents(fieldDef, returnType.table(), elementTypeName,
+                buildNodeIdArgPlan(fieldDef, returnType.table()));
             if (components instanceof TableFieldComponents.Rejected rj) return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, rj.message());
             var tfc = (TableFieldComponents.Ok) components;
             boolean hasSplitQuery = fieldDef.hasAppliedDirective(DIR_SPLIT_QUERY);
@@ -343,7 +407,8 @@ class FieldBuilder {
             if (referencePath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, referencePath.errorMessage());
             }
-            var components = resolveTableFieldComponents(fieldDef, tableInterfaceType.table(), elementTypeName);
+            var components = resolveTableFieldComponents(fieldDef, tableInterfaceType.table(), elementTypeName,
+                buildNodeIdArgPlan(fieldDef, tableInterfaceType.table()));
             if (components instanceof TableFieldComponents.Rejected rj) return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, rj.message());
             var tfc = (TableFieldComponents.Ok) components;
             var joinPathError = validateSingleHopFkJoin(referencePath.elements(), name);
@@ -496,18 +561,19 @@ class FieldBuilder {
      * current caller passes the field's resolved table, so this method does not accept
      * {@code null}.
      */
-    List<ArgumentRef> classifyArguments(GraphQLFieldDefinition fieldDef, TableRef rt, List<String> errors) {
+    List<ArgumentRef> classifyArguments(GraphQLFieldDefinition fieldDef, TableRef rt, NodeIdArgPlan plan, List<String> errors) {
         var fieldCondition = ctx.readConditionDirective(fieldDef);
         boolean fieldOverride = fieldCondition != null && fieldCondition.override();
         var refs = new ArrayList<ArgumentRef>();
         for (var arg : fieldDef.getArguments()) {
-            refs.add(classifyArgument(fieldDef, arg, rt, fieldOverride, errors));
+            refs.add(classifyArgument(fieldDef, arg, rt, fieldOverride, plan, errors));
         }
         return List.copyOf(refs);
     }
 
     private ArgumentRef classifyArgument(GraphQLFieldDefinition fieldDef, GraphQLArgument arg,
-                                         TableRef rt, boolean fieldOverride, List<String> errors) {
+                                         TableRef rt, boolean fieldOverride,
+                                         NodeIdArgPlan plan, List<String> errors) {
         String name = arg.getName();
         GraphQLType type = arg.getType();
         boolean nonNull = type instanceof GraphQLNonNull;
@@ -593,7 +659,10 @@ class FieldBuilder {
                     + " binding axes (key columns come from the resolved NodeType, not the"
                     + " @field directive)");
             }
-            var resolved = ctx.nodeIdLeafResolver().resolve(arg, name, rt);
+            var resolved = plan.byArgName().get(name);
+            if (resolved == null) {
+                resolved = ctx.nodeIdLeafResolver().resolve(arg, name, rt);
+            }
             switch (resolved) {
                 case NodeIdLeafResolver.Resolved.Rejected r ->
                     { return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list, r.message()); }
@@ -2068,15 +2137,19 @@ class FieldBuilder {
         // @lookupKey). The bare hasLookupKeyAnywhere check covers explicit @lookupKey only.
         String lookupTypeName = baseTypeName(fieldDef);
         var lookupReturnType = ctx.resolveReturnType(lookupTypeName, buildWrapper(fieldDef));
-        if (hasLookupKeyAnywhere(fieldDef)
-                || (lookupReturnType instanceof ReturnTypeRef.TableBoundReturnType tableBound
-                    && hasSameTableNodeIdAnywhere(fieldDef, tableBound.table()))) {
+        NodeIdArgPlan lookupPlan = lookupReturnType instanceof ReturnTypeRef.TableBoundReturnType tableBound
+            ? buildNodeIdArgPlan(fieldDef, tableBound.table())
+            : NodeIdArgPlan.EMPTY;
+        if (hasLookupKeyAnywhere(fieldDef) || lookupPlan.anyArgSameTable()) {
             return switch (lookupKeyResolver.resolveAtRoot(lookupReturnType)) {
                 case LookupKeyDirectiveResolver.Resolved.Rejected r ->
                     new UnclassifiedField(parentTypeName, name, location, fieldDef, r.kind(), r.message());
                 case LookupKeyDirectiveResolver.Resolved.Ok ok -> {
                     var tb = ok.returnType();
-                    var components = resolveTableFieldComponents(fieldDef, tb.table(), lookupTypeName);
+                    // The plan was built against `lookupReturnType.table()` which equals `tb.table()`
+                    // for the lookup-promotion path (resolveAtRoot.Ok preserves the table); reuse
+                    // it rather than rebuilding.
+                    var components = resolveTableFieldComponents(fieldDef, tb.table(), lookupTypeName, lookupPlan);
                     yield switch (components) {
                         case TableFieldComponents.Rejected rj ->
                             new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, rj.message());
@@ -2116,14 +2189,16 @@ class FieldBuilder {
         if (elementType instanceof TableBackedType tbt && !(elementType instanceof TableInterfaceType)) {
             var wrapper = buildWrapper(fieldDef);
             var returnType = (ReturnTypeRef.TableBoundReturnType) ctx.resolveReturnType(elementTypeName, wrapper);
-            var components = resolveTableFieldComponents(fieldDef, returnType.table(), elementTypeName);
+            var components = resolveTableFieldComponents(fieldDef, returnType.table(), elementTypeName,
+                buildNodeIdArgPlan(fieldDef, returnType.table()));
             if (components instanceof TableFieldComponents.Rejected rj) return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, rj.message());
             var tfc = (TableFieldComponents.Ok) components;
             return new QueryField.QueryTableField(parentTypeName, name, location, returnType, tfc.filters(), tfc.orderBy(), tfc.pagination());
         }
         if (elementType instanceof TableInterfaceType tableInterfaceType) {
             var wrapper = buildWrapper(fieldDef);
-            var components = resolveTableFieldComponents(fieldDef, tableInterfaceType.table(), elementTypeName);
+            var components = resolveTableFieldComponents(fieldDef, tableInterfaceType.table(), elementTypeName,
+                buildNodeIdArgPlan(fieldDef, tableInterfaceType.table()));
             if (components instanceof TableFieldComponents.Rejected rj) return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, rj.message());
             var tfc = (TableFieldComponents.Ok) components;
             var knownValues = knownDiscriminatorValues(tableInterfaceType);
@@ -2253,34 +2328,6 @@ class FieldBuilder {
         return false;
     }
 
-    /**
-     * R40: returns {@code true} when any direct argument of {@code fieldDef} carries
-     * {@code @nodeId} and the resolver classifies it as
-     * {@link NodeIdLeafResolver.Resolved.SameTable} against {@code containingTable}. Such an
-     * argument is a lookup-by-id (cardinality bounded by the input list, ordering reflects
-     * input membership) and must promote the field to {@code QueryLookupTableField} just like
-     * an explicit {@code @lookupKey} would.
-     *
-     * <p>FK-target {@code @nodeId} args do not trigger promotion: they are filters, not
-     * lookups, and stay on the regular {@code QueryTableField} path. Nested input-field
-     * leaves are not walked: input-field {@code @nodeId} same-table classifies into a
-     * {@code @table}-input filter which the lookup-promotion gate already handles via
-     * {@link #hasLookupKeyAnywhere} when {@code @lookupKey} accompanies it; bare
-     * input-field {@code @nodeId} stays a regular filter.
-     */
-    private boolean hasSameTableNodeIdAnywhere(GraphQLFieldDefinition fieldDef, TableRef containingTable) {
-        var resolver = ctx.nodeIdLeafResolver();
-        for (var arg : fieldDef.getArguments()) {
-            if (!arg.hasAppliedDirective(DIR_NODE_ID)) continue;
-            var unwrapped = GraphQLTypeUtil.unwrapAll(arg.getType());
-            if (!(unwrapped instanceof GraphQLNamedType named) || !"ID".equals(named.getName())) continue;
-            if (resolver.resolve(arg, arg.getName(), containingTable) instanceof NodeIdLeafResolver.Resolved.SameTable) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     private boolean inputTypeHasLookupKey(GraphQLInputObjectType inputType, int depth) {
         if (depth > 10) return false; // guard against pathological nesting
         for (var field : inputType.getFieldDefinitions()) {
@@ -2372,7 +2419,8 @@ class FieldBuilder {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, rj.kind(), rj.message());
             }
             var ok = (BatchKeyLifterDirectiveResolver.Resolved.Ok) lifterResult;
-            var components = resolveTableFieldComponents(fieldDef, ok.targetTable(), elementTypeName);
+            var components = resolveTableFieldComponents(fieldDef, ok.targetTable(), elementTypeName,
+                buildNodeIdArgPlan(fieldDef, ok.targetTable()));
             if (components instanceof TableFieldComponents.Rejected rj) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, rj.message());
             }
@@ -2458,7 +2506,8 @@ class FieldBuilder {
         }
         return switch (resolvedReturnType) {
             case ReturnTypeRef.TableBoundReturnType tb -> {
-                var components = resolveTableFieldComponents(fieldDef, tb.table(), elementTypeName);
+                var components = resolveTableFieldComponents(fieldDef, tb.table(), elementTypeName,
+                    buildNodeIdArgPlan(fieldDef, tb.table()));
                 if (components instanceof TableFieldComponents.Rejected rj) yield new UnclassifiedField(parentTypeName, name, location, fieldDef, RejectionKind.AUTHOR_ERROR, rj.message());
                 var tfc = (TableFieldComponents.Ok) components;
                 var batchKey = deriveBatchKeyForResultType(objectPath.elements(), parentResultType);
