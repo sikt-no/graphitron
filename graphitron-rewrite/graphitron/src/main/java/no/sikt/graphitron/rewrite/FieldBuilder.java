@@ -192,9 +192,77 @@ class FieldBuilder {
      *                       the {@code *Conditions} class name for any generated filter method
      */
     private TableFieldComponents resolveTableFieldComponents(GraphQLFieldDefinition fieldDef, TableRef table, String returnTypeName) {
+        // R40: @asConnection + same-table @nodeId leaf is incoherent at runtime — the result
+        // cardinality is bounded by the input id list (lookup semantics), not paginatable.
+        // Reject before classification so the structural conflict surfaces with a pointed hint
+        // instead of building a degenerate connection. Symmetric across argument-level and
+        // input-field leaves: closes the latent R50 gap where the input-field same-table case
+        // was already a silent runtime mismatch.
+        if (fieldDef.hasAppliedDirective(DIR_AS_CONNECTION)) {
+            String rejection = findSameTableNodeIdUnderAsConnection(fieldDef, table);
+            if (rejection != null) {
+                return new TableFieldComponents.Rejected(rejection);
+            }
+        }
         var errors = new ArrayList<String>();
         var refs = classifyArguments(fieldDef, table, errors);
         return projectForFilter(refs, fieldDef, table, returnTypeName, errors);
+    }
+
+    /**
+     * Walks {@code fieldDef}'s argument set looking for any {@code @nodeId}-decorated leaf —
+     * top-level arguments and nested input-field leaves under {@code @table}-input or plain
+     * input arguments — that resolves to {@link NodeIdLeafResolver.Resolved.SameTable} against
+     * {@code containingTable}. Returns a fully formatted rejection message when one is found,
+     * or {@code null} when the field's argument set is consistent with {@code @asConnection}.
+     *
+     * <p>The walk reuses {@link NodeIdLeafResolver#resolve} so the shape decision (same-table
+     * vs FK-target) lives in one place. FK-target leaves do not trigger the rejection — they
+     * are legitimate filter args that compose with seek pagination.
+     */
+    private String findSameTableNodeIdUnderAsConnection(GraphQLFieldDefinition fieldDef, TableRef containingTable) {
+        var resolver = ctx.nodeIdLeafResolver();
+        for (var arg : fieldDef.getArguments()) {
+            String hit = checkLeafForSameTableNodeId(resolver, arg, arg.getName(), containingTable, fieldDef.getName());
+            if (hit != null) return hit;
+            var argType = GraphQLTypeUtil.unwrapAll(arg.getType());
+            if (argType instanceof GraphQLInputObjectType iot) {
+                String nestedHit = walkInputTypeForSameTableNodeId(resolver, iot, containingTable, fieldDef.getName(), new java.util.LinkedHashSet<>());
+                if (nestedHit != null) return nestedHit;
+            }
+        }
+        return null;
+    }
+
+    private String walkInputTypeForSameTableNodeId(NodeIdLeafResolver resolver, GraphQLInputObjectType iot,
+                                                   TableRef containingTable, String fieldName,
+                                                   java.util.LinkedHashSet<String> visited) {
+        if (!visited.add(iot.getName())) return null;
+        for (var inputField : iot.getFieldDefinitions()) {
+            String hit = checkLeafForSameTableNodeId(resolver, inputField, inputField.getName(), containingTable, fieldName);
+            if (hit != null) return hit;
+            var nestedType = GraphQLTypeUtil.unwrapAll(inputField.getType());
+            if (nestedType instanceof GraphQLInputObjectType nestedIot) {
+                String nestedHit = walkInputTypeForSameTableNodeId(resolver, nestedIot, containingTable, fieldName, visited);
+                if (nestedHit != null) return nestedHit;
+            }
+        }
+        return null;
+    }
+
+    private String checkLeafForSameTableNodeId(NodeIdLeafResolver resolver, graphql.schema.GraphQLDirectiveContainer leaf,
+                                               String leafName, TableRef containingTable, String fieldName) {
+        if (!leaf.hasAppliedDirective(DIR_NODE_ID)) return null;
+        var resolved = resolver.resolve(leaf, leafName, containingTable);
+        if (resolved instanceof NodeIdLeafResolver.Resolved.SameTable st) {
+            return "@nodeId(typeName: '" + st.refTypeName() + "') on '" + leafName + "' resolves to '"
+                + containingTable.tableName() + "', the field's own backing table, which makes this"
+                + " argument a lookup key. Lookups don't compose with @asConnection (the result"
+                + " cardinality is bounded by the input list, not paginatable). Drop @asConnection"
+                + " from '" + fieldName + "', or use a filter argument that resolves to a different"
+                + " table via FK.";
+        }
+        return null;
     }
 
     // ===== Object-return child field classification =====
@@ -504,6 +572,82 @@ class FieldBuilder {
                 name, typeName, nonNull, list, argCondition, plainFields);
         }
 
+        // R40: @nodeId-decorated ID arg routes through NodeIdLeafResolver to pick same-table
+        // (lookup) vs FK-target (filter) shape. Sits before the legacy implicit scalar-ID arm
+        // below, which keeps owning synthesised paths (no @nodeId declared, parent table has
+        // nodeId metadata) per scope.
+        if ("ID".equals(typeName) && arg.hasAppliedDirective(DIR_NODE_ID)) {
+            // Composition rejections: @nodeId is incompatible with @lookupKey (redundant for
+            // same-table since @nodeId implies it; meaningless for FK-target since FK is a
+            // filter, not a lookup) and with @field(name:) (the two target different binding
+            // axes — key columns come from the resolved NodeType, not the directive).
+            if (arg.hasAppliedDirective(DIR_LOOKUP_KEY)) {
+                return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
+                    "@nodeId already implies @lookupKey for same-table; the explicit directive is"
+                    + " redundant (and FK-target @nodeId is a filter, not a lookup, where"
+                    + " @lookupKey is meaningless)");
+            }
+            if (arg.hasAppliedDirective(DIR_FIELD)) {
+                return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
+                    "@nodeId arg cannot also carry @field(name:); the directives target different"
+                    + " binding axes (key columns come from the resolved NodeType, not the"
+                    + " @field directive)");
+            }
+            var resolved = ctx.nodeIdLeafResolver().resolve(arg, name, rt);
+            switch (resolved) {
+                case NodeIdLeafResolver.Resolved.Rejected r ->
+                    { return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list, r.message()); }
+                case NodeIdLeafResolver.Resolved.SameTable st -> {
+                    // Same-table @nodeId arg = lookup-by-id semantics. The existing @lookupKey
+                    // dispatch path (LookupValuesJoinEmitter) requires ThrowOnMismatch — the
+                    // per-row decode in addRowBuildingCore throws on null. Reusing that path
+                    // gives R40 lookup semantics for free; failure-mode parity (Skip vs Throw)
+                    // for the arg side is a deferred shape question, not blocking R40.
+                    var extraction = new CallSiteExtraction.ThrowOnMismatch(st.decodeMethod());
+                    var keys = st.keyColumns();
+                    if (keys.size() == 1) {
+                        return new ArgumentRef.ScalarArg.ColumnArg(
+                            name, typeName, nonNull, list, keys.get(0), extraction,
+                            argCondition, fieldOverride, /* isLookupKey= */ true);
+                    }
+                    return new ArgumentRef.ScalarArg.CompositeColumnArg(
+                        name, typeName, nonNull, list, keys, extraction,
+                        argCondition, fieldOverride, /* isLookupKey= */ true);
+                }
+                case NodeIdLeafResolver.Resolved.FkTarget ft -> {
+                    // FK-target @nodeId arg = filter semantics. Skip extraction (malformed ids
+                    // drop silently to "no match"). projectFilters emits BodyParam.In/Eq/RowIn
+                    // /RowEq using FK source columns from joinPath — direct, no JOIN — but
+                    // only when the FK's targetColumns positionally match the NodeType key
+                    // columns (the simple direct-FK case where FK target = NodeType key).
+                    // Pathological cases where they differ (e.g. R50 parent_node + child_ref
+                    // fixture: FK targets parent.alt_key, NodeType key is parent.pk_id) need
+                    // JOIN-with-translation emission and are filed as a sibling follow-on
+                    // parallel to R24's output-side JOIN-with-projection arm.
+                    var fkJoin = (JoinStep.FkJoin) ft.joinPath().get(0);
+                    if (!sameColumnsBySqlName(fkJoin.targetColumns(), ft.keyColumns())) {
+                        return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
+                            "@nodeId(typeName: '" + ft.refTypeName() + "') FK-target arg on table '"
+                            + rt.tableName() + "': the FK's target columns do not positionally"
+                            + " match NodeType '" + ft.refTypeName() + "''s key columns,"
+                            + " so emission requires JOIN-with-translation."
+                            + " This pathological case is deferred to a sibling follow-on parallel"
+                            + " to R24's output-side JOIN-with-projection emission.");
+                    }
+                    var extraction = new CallSiteExtraction.SkipMismatchedElement(ft.decodeMethod());
+                    var keys = ft.keyColumns();
+                    if (keys.size() == 1) {
+                        return new ArgumentRef.ScalarArg.ColumnReferenceArg(
+                            name, typeName, nonNull, list, keys.get(0), ft.joinPath(),
+                            extraction, argCondition, fieldOverride);
+                    }
+                    return new ArgumentRef.ScalarArg.CompositeColumnReferenceArg(
+                        name, typeName, nonNull, list, keys, ft.joinPath(),
+                        extraction, argCondition, fieldOverride);
+                }
+            }
+        }
+
         // R50 phase (f-D1)/(g-A): scalar ID arg on a node-type table folds onto a column-shaped
         // carrier with NodeIdDecodeKeys.ThrowOnMismatch. Arity-1 → ColumnArg (single key column);
         // arity ≥ 2 → CompositeColumnArg (per-row decode produces a Record<N>; bindings index
@@ -762,12 +906,65 @@ class FieldBuilder {
                     ca.argCondition().ifPresent(ac -> argConditions.add(ac.filter()));
                 }
                 case ArgumentRef.ScalarArg.CompositeColumnArg cca -> {
-                    // R50 phase (g-A): composite-PK NodeId scalar args only ship with @lookupKey
-                    // today (consumed by LookupMappingResolver → DecodedRecord). The classifier rejects
-                    // non-lookup-key composite-PK args as UnclassifiedArg, so they never reach
-                    // this branch with isLookupKey == false. Lookup-key args are routed away
-                    // from bodyParams the same way ColumnArg's @lookupKey path is.
+                    boolean autoSuppressed = cca.suppressedByFieldOverride()
+                        || (cca.argCondition().isPresent() && cca.argCondition().get().override());
+                    // R40: composite-PK NodeId scalar args now reach this branch with
+                    // isLookupKey == false when @nodeId(typeName: T) targets the field's own
+                    // table without an explicit @lookupKey (the same-table arm synthesises
+                    // isLookupKey: true via classifyArgument; non-lookup-key composite-PK args
+                    // are top-level filter args under @condition / @field paths). Project to
+                    // BodyParam.RowEq (scalar) / RowIn (list) using the carrier's column tuple
+                    // and NodeIdDecodeKeys extraction; LookupMappingResolver consumes the
+                    // isLookupKey branch separately.
+                    if (!autoSuppressed && !cca.isLookupKey()) {
+                        String javaType = "org.jooq.RowN";
+                        bodyParams.add(cca.list()
+                            ? new BodyParam.RowIn(cca.name(), cca.columns(), javaType, cca.nonNull(), cca.extraction())
+                            : new BodyParam.RowEq(cca.name(), cca.columns(), javaType, cca.nonNull(), cca.extraction()));
+                    }
                     cca.argCondition().ifPresent(ac -> argConditions.add(ac.filter()));
+                }
+                case ArgumentRef.ScalarArg.ColumnReferenceArg cra -> {
+                    // R40 FK-target arm. The carrier's column is the target NodeType's key
+                    // column; joinPath[0] holds the FK whose sourceColumns sit on the field's
+                    // own containing table. When the FK targetColumns positionally match the
+                    // NodeType key columns (the simple direct-FK case), emit the predicate
+                    // against the FK source columns directly — no JOIN needed, the decoded
+                    // keys feed BodyParam.Eq / In against table.<fkSourceColumn>.
+                    //
+                    // The pathological case (FK targetColumns ≠ NodeType keyColumns; e.g. the
+                    // R50 parent_node + child_ref fixture where the FK targets a non-PK unique
+                    // column) is rejected at classify time, so this arm only sees the simple
+                    // case. JOIN-with-translation emission for the pathological case is the
+                    // sibling Backlog item filed alongside R40, parallel to R24 on the output
+                    // side.
+                    boolean autoSuppressed = cra.suppressedByFieldOverride()
+                        || (cra.argCondition().isPresent() && cra.argCondition().get().override());
+                    if (!autoSuppressed) {
+                        var fkJoin = (JoinStep.FkJoin) cra.joinPath().get(0);
+                        ColumnRef fkSourceColumn = fkJoin.sourceColumns().get(0);
+                        String javaType = javaTypeFor(cra.extraction(), fkSourceColumn);
+                        bodyParams.add(cra.list()
+                            ? new BodyParam.In(cra.name(), fkSourceColumn, javaType, cra.nonNull(), cra.extraction())
+                            : new BodyParam.Eq(cra.name(), fkSourceColumn, javaType, cra.nonNull(), cra.extraction()));
+                    }
+                    cra.argCondition().ifPresent(ac -> argConditions.add(ac.filter()));
+                }
+                case ArgumentRef.ScalarArg.CompositeColumnReferenceArg ccra -> {
+                    // R40 FK-target composite arm. Analogous to ColumnReferenceArg but with a
+                    // RowEq / RowIn predicate against the FK source-column tuple. Same
+                    // direct-FK precondition; pathological cases are rejected at classify time.
+                    boolean autoSuppressed = ccra.suppressedByFieldOverride()
+                        || (ccra.argCondition().isPresent() && ccra.argCondition().get().override());
+                    if (!autoSuppressed) {
+                        var fkJoin = (JoinStep.FkJoin) ccra.joinPath().get(0);
+                        List<ColumnRef> fkSourceColumns = fkJoin.sourceColumns();
+                        String javaType = "org.jooq.RowN";
+                        bodyParams.add(ccra.list()
+                            ? new BodyParam.RowIn(ccra.name(), fkSourceColumns, javaType, ccra.nonNull(), ccra.extraction())
+                            : new BodyParam.RowEq(ccra.name(), fkSourceColumns, javaType, ccra.nonNull(), ccra.extraction()));
+                    }
+                    ccra.argCondition().ifPresent(ac -> argConditions.add(ac.filter()));
                 }
             }
         }
@@ -878,6 +1075,21 @@ class FieldBuilder {
                 }
             }
         }
+    }
+
+    /**
+     * Returns {@code true} when {@code a} and {@code b} have the same length and each pair of
+     * positionally aligned columns has the same SQL name (case-insensitive). Used by R40's
+     * FK-target arm to gate the simple direct-FK emission (FK target columns ≡ NodeType key
+     * columns); pathological cases where they differ require JOIN-with-translation emission
+     * and are deferred to a sibling follow-on parallel to R24.
+     */
+    private static boolean sameColumnsBySqlName(List<ColumnRef> a, List<ColumnRef> b) {
+        if (a.size() != b.size()) return false;
+        for (int i = 0; i < a.size(); i++) {
+            if (!a.get(i).sqlName().equalsIgnoreCase(b.get(i).sqlName())) return false;
+        }
+        return true;
     }
 
     /**
