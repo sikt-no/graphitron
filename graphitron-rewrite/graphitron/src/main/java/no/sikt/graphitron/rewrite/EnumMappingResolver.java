@@ -13,6 +13,7 @@ import no.sikt.graphitron.rewrite.model.InputColumnBinding;
 import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.ParamSource;
+import no.sikt.graphitron.rewrite.model.Rejection;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -93,7 +94,9 @@ final class EnumMappingResolver {
     sealed interface EnumValidation {
         record NotEnum() implements EnumValidation {}
         record Valid(String fqcn) implements EnumValidation {}
-        record Mismatch(String message) implements EnumValidation {}
+        record Mismatch(Rejection rejection) implements EnumValidation {
+            public String message() { return rejection.message(); }
+        }
     }
 
     private static final EnumValidation NOT_ENUM = new EnumValidation.NotEnum();
@@ -140,8 +143,8 @@ final class EnumMappingResolver {
         }
         var schemaType = ctx.schema.getType(graphqlTypeName);
         if (!(schemaType instanceof GraphQLEnumType graphqlEnum)) {
-            return new EnumValidation.Mismatch("column '" + column.sqlName() + "' is a jOOQ enum ("
-                + colClass.getSimpleName() + ") but GraphQL type '" + graphqlTypeName + "' is not an enum");
+            return new EnumValidation.Mismatch(Rejection.structural("column '" + column.sqlName() + "' is a jOOQ enum ("
+                + colClass.getSimpleName() + ") but GraphQL type '" + graphqlTypeName + "' is not an enum"));
         }
         var javaConstants = Arrays.stream(colClass.getEnumConstants())
             .map(c -> ((Enum<?>) c).name())
@@ -155,9 +158,9 @@ final class EnumMappingResolver {
             }
         }
         if (!mismatches.isEmpty()) {
-            return new EnumValidation.Mismatch("GraphQL enum '" + graphqlTypeName
+            return new EnumValidation.Mismatch(Rejection.structural("GraphQL enum '" + graphqlTypeName
                 + "' has values that don't match jOOQ enum " + colClass.getSimpleName() + ": "
-                + String.join("; ", mismatches));
+                + String.join("; ", mismatches)));
         }
         return new EnumValidation.Valid(colClass.getName());
     }

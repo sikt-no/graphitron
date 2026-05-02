@@ -4,6 +4,7 @@ import graphql.schema.GraphQLFieldDefinition;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.MethodRef;
+import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 
 import java.util.HashSet;
@@ -65,7 +66,10 @@ final class TableMethodDirectiveResolver {
     sealed interface Resolved {
         record TableBound(ReturnTypeRef.TableBoundReturnType returnType, MethodRef method) implements Resolved {}
         record NonTableBound(ReturnTypeRef returnType, MethodRef method) implements Resolved {}
-        record Rejected(RejectionKind kind, String message) implements Resolved {}
+        record Rejected(Rejection rejection) implements Resolved {
+            public String message() { return rejection.message(); }
+            public RejectionKind kind() { return RejectionKind.of(rejection); }
+        }
     }
 
     private final BuildContext ctx;
@@ -94,30 +98,25 @@ final class TableMethodDirectiveResolver {
 
         if (isRoot) {
             if (!(returnType instanceof ReturnTypeRef.TableBoundReturnType)) {
-                return new Resolved.Rejected(RejectionKind.AUTHOR_ERROR,
-                    "@tableMethod requires a @table-annotated return type");
+                return new Resolved.Rejected(Rejection.structural("@tableMethod requires a @table-annotated return type"));
             }
             // Invariants §1: Connection wrapper not supported on @tableMethod at root.
             if (returnType.wrapper() instanceof FieldWrapper.Connection) {
-                return new Resolved.Rejected(RejectionKind.INVALID_SCHEMA,
-                    "@tableMethod at the root does not support Connection return types — use [T] or T instead");
+                return new Resolved.Rejected(Rejection.invalidSchema("@tableMethod at the root does not support Connection return types — use [T] or T instead"));
             }
         }
 
         FieldBuilder.ExternalRef ref = fb.parseExternalRef(parentTypeName, fieldDef, DIR_TABLE_METHOD, ARG_TABLE_METHOD_REF);
         if (ref != null && ref.lookupError() != null) {
-            return new Resolved.Rejected(RejectionKind.AUTHOR_ERROR,
-                "table method could not be resolved — " + ref.lookupError());
+            return new Resolved.Rejected(Rejection.structural("table method could not be resolved — " + ref.lookupError()));
         }
         if (ref != null && ref.argMappingError() != null) {
-            return new Resolved.Rejected(RejectionKind.AUTHOR_ERROR,
-                "table method could not be resolved — @tableMethod " + ref.argMappingError());
+            return new Resolved.Rejected(Rejection.structural("table method could not be resolved — @tableMethod " + ref.argMappingError()));
         }
         var argMapping = ref != null ? ref.argMapping() : Map.<String, String>of();
         var argBindingsResult = ArgBindingMap.of(FieldBuilder.fieldArgumentNames(fieldDef), argMapping);
         if (argBindingsResult instanceof ArgBindingMap.Result.UnknownArgRef u) {
-            return new Resolved.Rejected(RejectionKind.AUTHOR_ERROR,
-                "table method could not be resolved — @tableMethod " + u.message());
+            return new Resolved.Rejected(Rejection.structural("table method could not be resolved — @tableMethod " + u.message()));
         }
         var argBindings = ((ArgBindingMap.Result.Ok) argBindingsResult).map();
         List<String> contextArgs = fb.parseContextArguments(fieldDef, DIR_TABLE_METHOD);
@@ -137,8 +136,7 @@ final class TableMethodDirectiveResolver {
             argBindings, new HashSet<>(contextArgs),
             expectedReturnClass);
         if (result.failed()) {
-            return new Resolved.Rejected(RejectionKind.AUTHOR_ERROR,
-                "table method could not be resolved — " + result.failureReason());
+            return new Resolved.Rejected(Rejection.structural("table method could not be resolved — " + result.failureReason()));
         }
         MethodRef method = enumMapping.enrichArgExtractions(result.ref(), fieldDef);
         return returnType instanceof ReturnTypeRef.TableBoundReturnType tb

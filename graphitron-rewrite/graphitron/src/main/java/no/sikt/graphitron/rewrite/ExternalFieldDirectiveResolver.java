@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite;
 import graphql.schema.GraphQLFieldDefinition;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.model.MethodRef;
+import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
 
@@ -52,7 +53,10 @@ final class ExternalFieldDirectiveResolver {
      */
     sealed interface Resolved {
         record Success(ReturnTypeRef returnType, MethodRef method) implements Resolved {}
-        record Rejected(RejectionKind kind, String message) implements Resolved {}
+        record Rejected(Rejection rejection) implements Resolved {
+            public String message() { return rejection.message(); }
+            public RejectionKind kind() { return RejectionKind.of(rejection); }
+        }
     }
 
     private final BuildContext ctx;
@@ -78,26 +82,23 @@ final class ExternalFieldDirectiveResolver {
         // with a real SQL column on the parent @table, the alias shadows it and ColumnFetcher
         // resolves to the wrong value.
         if (ctx.catalog.findColumn(parentTable.tableName(), name).isPresent()) {
-            return new Resolved.Rejected(RejectionKind.AUTHOR_ERROR,
-                "@externalField name '" + name + "' collides with column '" + name
+            return new Resolved.Rejected(Rejection.structural("@externalField name '" + name + "' collides with column '" + name
                     + "' on table '" + parentTable.tableName()
-                    + "'; rename the GraphQL field or use @field(name: ...) to disambiguate");
+                    + "'; rename the GraphQL field or use @field(name: ...) to disambiguate"));
         }
 
         FieldBuilder.ExternalRef extRef = fb.parseExternalRef(parentTypeName, fieldDef, DIR_EXTERNAL_FIELD, ARG_EXTERNAL_FIELD_REF);
         if (extRef != null && extRef.lookupError() != null) {
-            return new Resolved.Rejected(RejectionKind.AUTHOR_ERROR,
-                "external field reference could not be resolved — " + extRef.lookupError());
+            return new Resolved.Rejected(Rejection.structural("external field reference could not be resolved — " + extRef.lookupError()));
         }
         if (extRef != null && extRef.argMappingError() != null) {
-            return new Resolved.Rejected(RejectionKind.AUTHOR_ERROR, extRef.argMappingError());
+            return new Resolved.Rejected(Rejection.structural(extRef.argMappingError()));
         }
         // `className` is the only required schema-level input; surface a targeted error here
         // so reflectExternalField below can require non-null className/methodName.
         String extClassName = extRef != null ? extRef.className() : null;
         if (extClassName == null) {
-            return new Resolved.Rejected(RejectionKind.AUTHOR_ERROR,
-                "external field reference could not be resolved — missing className");
+            return new Resolved.Rejected(Rejection.structural("external field reference could not be resolved — missing className"));
         }
         // When `method` is omitted from the @externalField reference, default to the GraphQL
         // field name. The static-method-name-equals-field-name convention is the common case;
@@ -107,8 +108,7 @@ final class ExternalFieldDirectiveResolver {
             ctx.ctx().jooqPackage() + ".tables", parentTable.javaClassName());
         var extResult = svc.reflectExternalField(extClassName, resolvedMethodName, parentTableClass);
         if (extResult.failed()) {
-            return new Resolved.Rejected(RejectionKind.AUTHOR_ERROR,
-                "external field reference could not be resolved — " + extResult.failureReason());
+            return new Resolved.Rejected(Rejection.structural("external field reference could not be resolved — " + extResult.failureReason()));
         }
 
         ReturnTypeRef returnType = ctx.resolveReturnType(baseTypeName(fieldDef), fb.buildWrapper(fieldDef));

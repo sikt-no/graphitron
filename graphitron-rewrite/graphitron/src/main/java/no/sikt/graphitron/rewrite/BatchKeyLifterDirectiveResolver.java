@@ -7,6 +7,7 @@ import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.LifterRef;
+import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
 
@@ -93,7 +94,10 @@ final class BatchKeyLifterDirectiveResolver {
             }
         }
 
-        record Rejected(RejectionKind kind, String message) implements Resolved {}
+        record Rejected(Rejection rejection) implements Resolved {
+            public String message() { return rejection.message(); }
+            public RejectionKind kind() { return RejectionKind.of(rejection); }
+        }
     }
 
     private final BuildContext ctx;
@@ -127,25 +131,22 @@ final class BatchKeyLifterDirectiveResolver {
         // Connection<T> and routes through pagination helpers that don't share the rows-method
         // DataLoader path.
         if (fieldDef.hasAppliedDirective(DIR_AS_CONNECTION)) {
-            return new Resolved.Rejected(RejectionKind.AUTHOR_ERROR,
-                "@batchKeyLifter is not supported on @asConnection fields");
+            return new Resolved.Rejected(Rejection.structural("@batchKeyLifter is not supported on @asConnection fields"));
         }
 
         // 1. Parent shape: must be PojoResultType or JavaRecordType, both with non-null fqClassName.
         String parentFqClassName = parentBackingClass(parentResultType);
         if (parentFqClassName == null) {
-            return new Resolved.Rejected(RejectionKind.AUTHOR_ERROR,
-                rejectByParentShape(parentResultType, parentTypeName, fieldName));
+            return new Resolved.Rejected(Rejection.structural(rejectByParentShape(parentResultType, parentTypeName, fieldName)));
         }
 
         // 2. Resolve the field's @table return type. The directive only applies to table-bound
         //    returns; non-table returns are rejected with a directive-specific message.
         GraphitronType target = ctx.types.get(elementTypeName);
         if (!(target instanceof GraphitronType.TableBackedType tbt)) {
-            return new Resolved.Rejected(RejectionKind.AUTHOR_ERROR,
-                "@batchKeyLifter on '" + parentTypeName + "." + fieldName
+            return new Resolved.Rejected(Rejection.structural("@batchKeyLifter on '" + parentTypeName + "." + fieldName
                 + "' applies only to fields whose return type is @table-bound; got '"
-                + elementTypeName + "'");
+                + elementTypeName + "'"));
         }
         TableRef targetTable = tbt.table();
         var tbReturnType = new ReturnTypeRef.TableBoundReturnType(
@@ -165,9 +166,8 @@ final class BatchKeyLifterDirectiveResolver {
             .map(a -> (List<String>) a.getValue())
             .orElse(List.of());
         if (targetColumnNames.isEmpty()) {
-            return new Resolved.Rejected(RejectionKind.AUTHOR_ERROR,
-                "@batchKeyLifter on '" + parentTypeName + "." + fieldName
-                + "' must declare at least one target column");
+            return new Resolved.Rejected(Rejection.structural("@batchKeyLifter on '" + parentTypeName + "." + fieldName
+                + "' must declare at least one target column"));
         }
 
         // 4. Resolve each targetColumn against the field's @table return.
@@ -177,11 +177,10 @@ final class BatchKeyLifterDirectiveResolver {
             if (columnEntry.isEmpty()) {
                 List<String> candidates = ctx.catalog.allColumnsOf(targetTable.tableName())
                     .stream().map(JooqCatalog.ColumnEntry::sqlName).toList();
-                return new Resolved.Rejected(RejectionKind.AUTHOR_ERROR,
-                    "@batchKeyLifter on '" + parentTypeName + "." + fieldName
+                return new Resolved.Rejected(Rejection.structural("@batchKeyLifter on '" + parentTypeName + "." + fieldName
                     + "': target column '" + columnName + "' not found on table '"
                     + targetTable.tableName() + "'"
-                    + BuildContext.candidateHint(columnName, candidates));
+                    + BuildContext.candidateHint(columnName, candidates)));
             }
             var ce = columnEntry.get();
             targetColumns.add(new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass()));
@@ -190,9 +189,8 @@ final class BatchKeyLifterDirectiveResolver {
         // 5. Reflect the lifter method.
         var lifterArg = dir.getArgument(ARG_LIFTER);
         if (lifterArg == null) {
-            return new Resolved.Rejected(RejectionKind.AUTHOR_ERROR,
-                "@batchKeyLifter on '" + parentTypeName + "." + fieldName
-                + "' is missing the 'lifter' argument");
+            return new Resolved.Rejected(Rejection.structural("@batchKeyLifter on '" + parentTypeName + "." + fieldName
+                + "' is missing the 'lifter' argument"));
         }
         Map<String, Object> lifterRefMap = asMap(lifterArg.getValue());
         String lifterClassName = Optional.ofNullable(lifterRefMap.get(ARG_CLASS_NAME))
@@ -200,32 +198,28 @@ final class BatchKeyLifterDirectiveResolver {
         String lifterMethodName = Optional.ofNullable(lifterRefMap.get(ARG_METHOD))
             .map(Object::toString).orElse(null);
         if (lifterClassName == null) {
-            return new Resolved.Rejected(RejectionKind.AUTHOR_ERROR,
-                "@batchKeyLifter on '" + parentTypeName + "." + fieldName
-                + "': lifter reference is missing 'className'");
+            return new Resolved.Rejected(Rejection.structural("@batchKeyLifter on '" + parentTypeName + "." + fieldName
+                + "': lifter reference is missing 'className'"));
         }
         if (lifterMethodName == null) {
-            return new Resolved.Rejected(RejectionKind.AUTHOR_ERROR,
-                "@batchKeyLifter on '" + parentTypeName + "." + fieldName
-                + "': lifter reference is missing 'method'");
+            return new Resolved.Rejected(Rejection.structural("@batchKeyLifter on '" + parentTypeName + "." + fieldName
+                + "': lifter reference is missing 'method'"));
         }
 
         Class<?> lifterClass;
         try {
             lifterClass = Class.forName(lifterClassName);
         } catch (ClassNotFoundException e) {
-            return new Resolved.Rejected(RejectionKind.AUTHOR_ERROR,
-                "@batchKeyLifter on '" + parentTypeName + "." + fieldName
-                + "': lifter class '" + lifterClassName + "' could not be loaded");
+            return new Resolved.Rejected(Rejection.structural("@batchKeyLifter on '" + parentTypeName + "." + fieldName
+                + "': lifter class '" + lifterClassName + "' could not be loaded"));
         }
 
         Class<?> parentClass;
         try {
             parentClass = Class.forName(parentFqClassName);
         } catch (ClassNotFoundException e) {
-            return new Resolved.Rejected(RejectionKind.AUTHOR_ERROR,
-                "@batchKeyLifter on '" + parentTypeName + "." + fieldName
-                + "': parent backing class '" + parentFqClassName + "' could not be loaded");
+            return new Resolved.Rejected(Rejection.structural("@batchKeyLifter on '" + parentTypeName + "." + fieldName
+                + "': parent backing class '" + parentFqClassName + "' could not be loaded"));
         }
 
         List<Method> namedMethods = new ArrayList<>();
@@ -241,34 +235,30 @@ final class BatchKeyLifterDirectiveResolver {
                     candidates.add(m.getName());
                 }
             }
-            return new Resolved.Rejected(RejectionKind.AUTHOR_ERROR,
-                "@batchKeyLifter on '" + parentTypeName + "." + fieldName
+            return new Resolved.Rejected(Rejection.structural("@batchKeyLifter on '" + parentTypeName + "." + fieldName
                 + "': no static method named '" + lifterMethodName + "' on class '"
                 + lifterClassName + "'"
-                + BuildContext.candidateHint(lifterMethodName, candidates));
+                + BuildContext.candidateHint(lifterMethodName, candidates)));
         }
         if (namedMethods.size() > 1) {
-            return new Resolved.Rejected(RejectionKind.AUTHOR_ERROR,
-                "@batchKeyLifter on '" + parentTypeName + "." + fieldName
+            return new Resolved.Rejected(Rejection.structural("@batchKeyLifter on '" + parentTypeName + "." + fieldName
                 + "': multiple static methods named '" + lifterMethodName + "' on class '"
-                + lifterClassName + "'; the lifter must be uniquely identifiable by name");
+                + lifterClassName + "'; the lifter must be uniquely identifiable by name"));
         }
         Method lifterMethod = namedMethods.get(0);
 
         // 5a. Single parameter, assignable from parent's backing class.
         if (lifterMethod.getParameterCount() != 1) {
-            return new Resolved.Rejected(RejectionKind.AUTHOR_ERROR,
-                "@batchKeyLifter on '" + parentTypeName + "." + fieldName
+            return new Resolved.Rejected(Rejection.structural("@batchKeyLifter on '" + parentTypeName + "." + fieldName
                 + "': lifter method '" + lifterMethodName + "' must take exactly one parameter; got "
-                + lifterMethod.getParameterCount());
+                + lifterMethod.getParameterCount()));
         }
         Class<?> liftedParam = lifterMethod.getParameterTypes()[0];
         if (!liftedParam.isAssignableFrom(parentClass)) {
-            return new Resolved.Rejected(RejectionKind.AUTHOR_ERROR,
-                "@batchKeyLifter on '" + parentTypeName + "." + fieldName
+            return new Resolved.Rejected(Rejection.structural("@batchKeyLifter on '" + parentTypeName + "." + fieldName
                 + "': lifter method '" + lifterMethodName + "' parameter type '"
                 + liftedParam.getName() + "' is not assignable from the parent's backing class '"
-                + parentFqClassName + "'");
+                + parentFqClassName + "'"));
         }
 
         // 5b. Return type must be org.jooq.Row1..Row22.
@@ -276,37 +266,33 @@ final class BatchKeyLifterDirectiveResolver {
         if (!(genericReturn instanceof ParameterizedType pt)
                 || !(pt.getRawType() instanceof Class<?> rawReturn)
                 || !rawReturn.getName().startsWith("org.jooq.Row")) {
-            return new Resolved.Rejected(RejectionKind.AUTHOR_ERROR,
-                "@batchKeyLifter on '" + parentTypeName + "." + fieldName
+            return new Resolved.Rejected(Rejection.structural("@batchKeyLifter on '" + parentTypeName + "." + fieldName
                 + "': lifter method '" + lifterMethodName
                 + "' must return org.jooq.Row1..Row" + ROWN_CEILING + "; got '"
-                + genericReturn.getTypeName() + "'");
+                + genericReturn.getTypeName() + "'"));
         }
         String suffix = rawReturn.getName().substring("org.jooq.Row".length());
         int rowArity;
         try {
             rowArity = Integer.parseInt(suffix);
         } catch (NumberFormatException e) {
-            return new Resolved.Rejected(RejectionKind.AUTHOR_ERROR,
-                "@batchKeyLifter on '" + parentTypeName + "." + fieldName
+            return new Resolved.Rejected(Rejection.structural("@batchKeyLifter on '" + parentTypeName + "." + fieldName
                 + "': lifter method '" + lifterMethodName
                 + "' must return org.jooq.Row1..Row" + ROWN_CEILING + "; got '"
-                + rawReturn.getName() + "'");
+                + rawReturn.getName() + "'"));
         }
         if (rowArity < 1 || rowArity > ROWN_CEILING) {
-            return new Resolved.Rejected(RejectionKind.AUTHOR_ERROR,
-                "@batchKeyLifter on '" + parentTypeName + "." + fieldName
+            return new Resolved.Rejected(Rejection.structural("@batchKeyLifter on '" + parentTypeName + "." + fieldName
                 + "': lifter method '" + lifterMethodName
                 + "' return arity " + rowArity + " is outside the supported range Row1..Row"
-                + ROWN_CEILING);
+                + ROWN_CEILING));
         }
 
         // 5c. Arity must match targetColumns.size().
         if (rowArity != targetColumns.size()) {
-            return new Resolved.Rejected(RejectionKind.AUTHOR_ERROR,
-                "@batchKeyLifter on '" + parentTypeName + "." + fieldName
+            return new Resolved.Rejected(Rejection.structural("@batchKeyLifter on '" + parentTypeName + "." + fieldName
                 + "': lifter '" + lifterMethodName + "' Row<N> arity " + rowArity
-                + " does not match targetColumns size " + targetColumns.size());
+                + " does not match targetColumns size " + targetColumns.size()));
         }
 
         // 5d. Each RowN type argument must equal the corresponding target column's Java type
@@ -315,30 +301,27 @@ final class BatchKeyLifterDirectiveResolver {
         for (int i = 0; i < rowTypeArgs.length; i++) {
             Type arg = rowTypeArgs[i];
             if (arg instanceof WildcardType) {
-                return new Resolved.Rejected(RejectionKind.AUTHOR_ERROR,
-                    "@batchKeyLifter on '" + parentTypeName + "." + fieldName
+                return new Resolved.Rejected(Rejection.structural("@batchKeyLifter on '" + parentTypeName + "." + fieldName
                     + "': lifter '" + lifterMethodName + "' RowN type at position " + i
                     + " is a wildcard '" + arg.getTypeName()
                     + "'; declare a concrete type matching target column '"
                     + targetColumns.get(i).sqlName() + "' (Java type '"
-                    + targetColumns.get(i).columnClass() + "')");
+                    + targetColumns.get(i).columnClass() + "')"));
             }
             if (!(arg instanceof Class<?> argClass)) {
-                return new Resolved.Rejected(RejectionKind.AUTHOR_ERROR,
-                    "@batchKeyLifter on '" + parentTypeName + "." + fieldName
+                return new Resolved.Rejected(Rejection.structural("@batchKeyLifter on '" + parentTypeName + "." + fieldName
                     + "': lifter '" + lifterMethodName + "' RowN type at position " + i
                     + " has unsupported shape '" + arg.getTypeName()
                     + "'; declare a concrete class matching target column '"
                     + targetColumns.get(i).sqlName() + "' (Java type '"
-                    + targetColumns.get(i).columnClass() + "')");
+                    + targetColumns.get(i).columnClass() + "')"));
             }
             String expected = targetColumns.get(i).columnClass();
             if (!argClass.getName().equals(expected)) {
-                return new Resolved.Rejected(RejectionKind.AUTHOR_ERROR,
-                    "@batchKeyLifter on '" + parentTypeName + "." + fieldName
+                return new Resolved.Rejected(Rejection.structural("@batchKeyLifter on '" + parentTypeName + "." + fieldName
                     + "': lifter '" + lifterMethodName + "' RowN type at position " + i
                     + " ('" + argClass.getName() + "') does not match target column '"
-                    + targetColumns.get(i).sqlName() + "' Java type ('" + expected + "')");
+                    + targetColumns.get(i).sqlName() + "' Java type ('" + expected + "')"));
             }
         }
 

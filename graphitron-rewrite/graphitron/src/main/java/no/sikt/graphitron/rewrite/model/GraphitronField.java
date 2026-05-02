@@ -33,21 +33,24 @@ public sealed interface GraphitronField
      * {@code null} when the field is constructed outside the schema-building pipeline (e.g. in
      * tests).
      *
-     * <p>{@code reason} describes why classification failed: either the directives required to
-     * classify the field are absent, or two mutually exclusive directives were found together.
-     * The {@link no.sikt.graphitron.rewrite.GraphitronSchemaValidator} includes the reason in its
-     * error message so the user knows exactly what to fix.
-     *
-     * <p>{@code kind} categorises the rejection so downstream tooling and log formatters can
-     * distinguish author-correctable mistakes from invalid-schema combinations from
-     * generator-deferred features. See {@link RejectionKind}.
+     * <p>{@code rejection} is the sealed-variant explanation of why classification failed:
+     * an {@link Rejection.AuthorError}, an {@link Rejection.InvalidSchema}, or a
+     * {@link Rejection.Deferred}. The validator projects it to a {@link RejectionKind} for the
+     * {@code [<kind>] <message>} log prefix and surfaces the variant's
+     * {@link Rejection#message()} as the prose tail.
      */
     record UnclassifiedField(
         String parentTypeName,
         String name,
         SourceLocation location,
         GraphQLFieldDefinition definition,
-        RejectionKind kind,
-        String reason
-    ) implements GraphitronField {}
+        Rejection rejection
+    ) implements GraphitronField {
+
+        /** Convenience for log formatters that don't need the structured data. */
+        public String reason() { return rejection.message(); }
+
+        /** Convenience for log formatters that need just the kebab-case kind. */
+        public RejectionKind kind() { return RejectionKind.of(rejection); }
+    }
 }

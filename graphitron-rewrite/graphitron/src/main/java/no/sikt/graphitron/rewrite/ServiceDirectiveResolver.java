@@ -9,6 +9,7 @@ import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.ParamSource;
+import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 
 import java.util.HashSet;
@@ -77,7 +78,10 @@ final class ServiceDirectiveResolver {
         /** Polymorphic return type lifted to an {@code ErrorsField} (or rejected by lift rules). */
         record ErrorsLifted(GraphitronField field) implements Resolved {}
         /** Any failed resolution path; caller surfaces as {@code UnclassifiedField}. */
-        record Rejected(RejectionKind kind, String message) implements Resolved {}
+        record Rejected(Rejection rejection) implements Resolved {
+            public String message() { return rejection.message(); }
+            public RejectionKind kind() { return RejectionKind.of(rejection); }
+        }
     }
 
     private final BuildContext ctx;
@@ -113,12 +117,10 @@ final class ServiceDirectiveResolver {
 
         FieldBuilder.ExternalRef serviceRef = fb.parseExternalRef(parentTypeName, fieldDef, DIR_SERVICE, ARG_SERVICE_REF);
         if (serviceRef != null && serviceRef.lookupError() != null) {
-            return new Resolved.Rejected(RejectionKind.AUTHOR_ERROR,
-                "service method could not be resolved — " + serviceRef.lookupError());
+            return new Resolved.Rejected(Rejection.structural("service method could not be resolved — " + serviceRef.lookupError()));
         }
         if (serviceRef != null && serviceRef.argMappingError() != null) {
-            return new Resolved.Rejected(RejectionKind.AUTHOR_ERROR,
-                "service method could not be resolved — @service " + serviceRef.argMappingError());
+            return new Resolved.Rejected(Rejection.structural("service method could not be resolved — @service " + serviceRef.argMappingError()));
         }
 
         List<String> contextArgs = fb.parseContextArguments(fieldDef, DIR_SERVICE);
@@ -126,8 +128,7 @@ final class ServiceDirectiveResolver {
         var argMapping = serviceRef != null ? serviceRef.argMapping() : Map.<String, String>of();
         var argBindingsResult = ArgBindingMap.of(graphqlArgNames, argMapping);
         if (argBindingsResult instanceof ArgBindingMap.Result.UnknownArgRef u) {
-            return new Resolved.Rejected(RejectionKind.AUTHOR_ERROR,
-                "service method could not be resolved — @service " + u.message());
+            return new Resolved.Rejected(Rejection.structural("service method could not be resolved — @service " + u.message()));
         }
         var argBindings = ((ArgBindingMap.Result.Ok) argBindingsResult).map();
 
@@ -141,15 +142,14 @@ final class ServiceDirectiveResolver {
         var result = svc.reflectServiceMethod(serviceRef.className(), serviceRef.methodName(),
             argBindings, new HashSet<>(contextArgs), parentPkColumns, expectedReturnType);
         if (result.failed()) {
-            return new Resolved.Rejected(RejectionKind.AUTHOR_ERROR,
-                "service method could not be resolved — " + result.failureReason());
+            return new Resolved.Rejected(Rejection.structural("service method could not be resolved — " + result.failureReason()));
         }
         MethodRef method = enumMapping.enrichArgExtractions(result.ref(), fieldDef);
 
         if (isRoot) {
             String invariant = validateRootInvariants(returnType, method);
             if (invariant != null) {
-                return new Resolved.Rejected(RejectionKind.INVALID_SCHEMA, invariant);
+                return new Resolved.Rejected(Rejection.invalidSchema(invariant));
             }
         }
 
@@ -166,8 +166,7 @@ final class ServiceDirectiveResolver {
                 GraphitronField lifted = fb.liftToErrorsField(fieldDef, parentTypeName, p);
                 yield lifted != null
                     ? new Resolved.ErrorsLifted(lifted)
-                    : new Resolved.Rejected(RejectionKind.DEFERRED,
-                        "@service returning a polymorphic type is not yet supported");
+                    : new Resolved.Rejected(Rejection.deferred("@service returning a polymorphic type is not yet supported"));
             }
         };
     }
