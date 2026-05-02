@@ -306,6 +306,70 @@ class FieldBuilder {
             .collect(Collectors.joining("; "));
     }
 
+    /**
+     * Outcome of canonical-constructor resolution for a {@code @record} payload class.
+     * {@code Found} carries the chosen constructor; {@code Reject} carries a human-readable
+     * reason suitable for surfacing on an {@code UnclassifiedField}.
+     */
+    private sealed interface CanonicalCtorResult {
+        record Found(java.lang.reflect.Constructor<?> ctor) implements CanonicalCtorResult {}
+        record Reject(String reason) implements CanonicalCtorResult {}
+    }
+
+    /**
+     * Picks the canonical (all-fields) constructor on a payload class. Records always declare
+     * exactly one canonical constructor and take that path trivially; hand-rolled POJOs with
+     * multiple constructors (e.g. an extra no-arg constructor alongside the all-fields one) are
+     * disambiguated structurally: the canonical constructor is the unique one whose parameter
+     * count matches the payload type's SDL field count.
+     *
+     * <p>Zero matches or more than one match is genuinely ambiguous and surfaces as a reject
+     * with the same "convert to a record" guidance as before. The single-ctor case skips the
+     * arity check so it works regardless of how the SDL field count was resolved.
+     */
+    private static CanonicalCtorResult findCanonicalCtor(Class<?> payloadCls, int sdlFieldCount) {
+        var ctors = payloadCls.getDeclaredConstructors();
+        if (ctors.length == 0) {
+            return new CanonicalCtorResult.Reject(
+                "payload class '" + payloadCls.getName() + "' has no declared constructors");
+        }
+        if (ctors.length == 1) {
+            return new CanonicalCtorResult.Found(ctors[0]);
+        }
+        var matches = java.util.Arrays.stream(ctors)
+            .filter(c -> c.getParameterCount() == sdlFieldCount)
+            .toList();
+        if (matches.size() == 1) {
+            return new CanonicalCtorResult.Found(matches.get(0));
+        }
+        String prefix = "payload class '" + payloadCls.getName() + "' has " + ctors.length
+            + " declared constructors";
+        String guidance = ". Convert the class to a Java record (which always declares one"
+            + " canonical constructor), or remove the extra constructor(s) so only the all-fields"
+            + " constructor remains";
+        if (matches.isEmpty()) {
+            return new CanonicalCtorResult.Reject(prefix
+                + " but none has parameter count " + sdlFieldCount
+                + " matching the SDL field count; the carrier requires a canonical (all-fields)"
+                + " constructor — found: " + formatCtorSignatures(ctors) + guidance);
+        }
+        return new CanonicalCtorResult.Reject(prefix
+            + " with parameter count " + sdlFieldCount + " matching the SDL field count;"
+            + " the canonical (all-fields) constructor is ambiguous — found: "
+            + formatCtorSignatures(ctors) + guidance);
+    }
+
+    /**
+     * SDL field count for the named GraphQL object type, or {@code -1} when the schema doesn't
+     * resolve to an object type. Used by canonical-ctor selection to disambiguate hand-rolled
+     * payload classes with multiple constructors.
+     */
+    private int sdlFieldCount(String returnTypeName) {
+        return ctx.schema.getType(returnTypeName) instanceof GraphQLObjectType obj
+            ? obj.getFieldDefinitions().size()
+            : -1;
+    }
+
     private static String formatAsConnectionSameTableRejection(
             NodeIdArgPlan.SameTableHit hit, String fieldName) {
         return "@nodeId(typeName: '" + hit.refTypeName() + "') on '" + hit.leafName() + "' resolves to '"
@@ -1470,24 +1534,14 @@ class FieldBuilder {
                 "payload class '" + result.fqClassName() + "' could not be loaded");
         }
 
-        var ctors = payloadCls.getDeclaredConstructors();
-        if (ctors.length == 0) {
-            return new ErrorChannelResult.Reject(
-                "payload class '" + result.fqClassName() + "' has no declared constructors");
+        // Records always declare a single canonical constructor; hand-rolled @record POJOs may
+        // declare extras (e.g. a no-arg constructor alongside the all-fields one). The helper
+        // disambiguates by matching parameter count to the SDL field count.
+        var ctorResult = findCanonicalCtor(payloadCls, sdlFields.size());
+        if (ctorResult instanceof CanonicalCtorResult.Reject r) {
+            return new ErrorChannelResult.Reject(r.reason());
         }
-        // Records always declare a single canonical constructor; hand-rolled @record POJOs are
-        // expected to expose one matching the SDL field order. Multiple constructors → reject;
-        // the implementer collapses to one or annotates the canonical one in a future extension.
-        if (ctors.length > 1) {
-            return new ErrorChannelResult.Reject(
-                "payload class '" + result.fqClassName() + "' has " + ctors.length
-                    + " declared constructors; the carrier requires a single canonical "
-                    + "(all-fields) constructor — found: " + formatCtorSignatures(ctors)
-                    + ". Convert the class to a Java record (which always declares one canonical"
-                    + " constructor), or remove the extra constructor(s) so only the all-fields"
-                    + " constructor remains");
-        }
-        var ctor = ctors[0];
+        var ctor = ((CanonicalCtorResult.Found) ctorResult).ctor();
         var parameters = ctor.getParameters();
         var genericParameterTypes = ctor.getGenericParameterTypes();
 
@@ -1587,21 +1641,12 @@ class FieldBuilder {
                 "payload class '" + result.fqClassName() + "' could not be loaded");
         }
 
-        var ctors = payloadCls.getDeclaredConstructors();
-        if (ctors.length == 0) {
-            return new DmlPayloadAssemblyResult.Reject(
-                "payload class '" + result.fqClassName() + "' has no declared constructors");
+        int sdlFieldCount = sdlFieldCount(result.returnTypeName());
+        var ctorResult = findCanonicalCtor(payloadCls, sdlFieldCount);
+        if (ctorResult instanceof CanonicalCtorResult.Reject r) {
+            return new DmlPayloadAssemblyResult.Reject(r.reason());
         }
-        if (ctors.length > 1) {
-            return new DmlPayloadAssemblyResult.Reject(
-                "payload class '" + result.fqClassName() + "' has " + ctors.length
-                    + " declared constructors; the carrier requires a single canonical "
-                    + "(all-fields) constructor — found: " + formatCtorSignatures(ctors)
-                    + ". Convert the class to a Java record (which always declares one canonical"
-                    + " constructor), or remove the extra constructor(s) so only the all-fields"
-                    + " constructor remains");
-        }
-        var ctor = ctors[0];
+        var ctor = ((CanonicalCtorResult.Found) ctorResult).ctor();
         var parameters = ctor.getParameters();
         var genericParameterTypes = ctor.getGenericParameterTypes();
 
@@ -1716,19 +1761,22 @@ class FieldBuilder {
                 "payload class '" + result.fqClassName() + "' could not be loaded");
         }
 
-        var ctors = payloadCls.getDeclaredConstructors();
-        // ResultAssembly requires a single canonical constructor to identify the result-slot
-        // index. Multi-ctor classes (jOOQ table records, hand-rolled POJOs with builders, etc.)
-        // can't carry a domain-object shape, so require the legacy passthrough shape instead :
-        // service must return the SDL payload class directly. The error message contains "must
-        // return" so existing fixture tests assert against the legacy wording uniformly.
-        if (ctors.length != 1) {
+        // ResultAssembly identifies the result slot on the canonical (all-fields) constructor.
+        // Records always declare exactly one; hand-rolled POJOs may declare extras (e.g. a
+        // no-arg constructor) and are disambiguated by parameter count vs. SDL field count.
+        // When no canonical constructor can be identified, the only remaining valid shape is
+        // legacy passthrough (service returns the SDL payload class directly), and we already
+        // ruled that out above; surface the legacy "must return" wording so existing fixture
+        // tests keep asserting on a single message.
+        int sdlFieldCount = sdlFieldCount(result.returnTypeName());
+        var ctorResult = findCanonicalCtor(payloadCls, sdlFieldCount);
+        if (ctorResult instanceof CanonicalCtorResult.Reject) {
             return new ResultAssemblyResult.Reject(
                 "@service method '" + method.className() + "." + method.methodName()
                     + "' must return '" + sdlPayloadTypeName + "' to match the field's "
                     + "declared payload type — got '" + method.returnType() + "'");
         }
-        var ctor = ctors[0];
+        var ctor = ((CanonicalCtorResult.Found) ctorResult).ctor();
         var parameters = ctor.getParameters();
         var genericParameterTypes = ctor.getGenericParameterTypes();
 
