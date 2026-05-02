@@ -232,15 +232,20 @@ class ServiceCatalog {
                         // hint (the lifter-directive roadmap doesn't help with arg-name typos).
                         if (parentPkColumns.isEmpty()) {
                             String available = formatNameSet(argByJavaName.keySet());
-                            String suggestion = argByJavaName.size() == 1
-                                ? " — rename the parameter to " + available
-                                    + ", or add @argMapping(arg: " + available
-                                    + ", target: \"" + displayName + "\") on the @service directive"
-                                : argByJavaName.isEmpty()
-                                    ? " — this field has no GraphQL arguments; remove the parameter or accept it from a context key"
-                                    : " — rename the parameter to one of the available argument names,"
-                                        + " or add @argMapping(arg: \"<argName>\", target: \"" + displayName
-                                        + "\") on the @service directive to bind explicitly";
+                            String suggestion;
+                            if (argByJavaName.isEmpty()) {
+                                suggestion = " — this field declares no GraphQL arguments;"
+                                    + " remove the Java parameter, add a matching GraphQL argument to the field,"
+                                    + " or register a context key that supplies it";
+                            } else {
+                                String soleArg = argByJavaName.size() == 1
+                                    ? argByJavaName.keySet().iterator().next()
+                                    : "<argName>";
+                                suggestion = " — either rename the Java parameter to match one of the available argument names, or bind explicitly via the @service directive's argMapping field"
+                                    + " (e.g. argMapping: \"" + displayName + ": " + soleArg + "\""
+                                    + ", which reads as \"the Java parameter named '" + displayName
+                                    + "' binds to the GraphQL argument named '" + soleArg + "'\")";
+                            }
                             return new ServiceReflectionResult(null,
                                 "parameter '" + displayName + "' in method '" + methodName
                                 + "' does not match any GraphQL argument or context key on this field"
