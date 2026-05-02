@@ -12,7 +12,7 @@ depends-on: []
 
 ## Why
 
-The argument-level `@nodeId` machinery (resolver, classifier arms, validator rejection, execution-tier coverage) is in place and shipping correct user-visible behaviour. A design review against the technical principles surfaced three structural seams that don't reflect best shape. None are user-visible bugs; all are drift the principles flag explicitly.
+The argument-level `@nodeId` machinery (resolver, classifier arms, validator rejection, execution-tier coverage) is in place and shipping correct user-visible behaviour. A design review against the technical principles surfaced three structural seams that don't reflect best shape. Two are pure refactorings; the third (Skip vs Throw) does change observable behaviour on malformed-id inputs (today: 500, after this pass: partial result), which restores the originally-specified `Skip` semantics over the first pass's expedient `Throw`.
 
 - *Generation-thinking*: when a generator branches on a predicate over pre-resolved data, the fork belongs in the model as a sealed sub-variant. The same predicate evaluated by multiple consumers is a sign the resolver is under-specified, and an opportunity for one site to drift from another.
 - *Classifier guarantees shape emitter assumptions*: the producer/consumer pair wears `@LoadBearingClassifierCheck` / `@DependsOnClassifierCheck` so the audit test catches drift. A guarantee that's load-bearing in practice but unannotated is the failure mode the pattern exists to prevent.
@@ -27,30 +27,39 @@ The argument-level `@nodeId` machinery (resolver, classifier arms, validator rej
 
 The argument-side projection at `FieldBuilder.classifyArgument` recomputes the predicate via `sameColumnsBySqlName(...)` and rejects on miss. The input-field-side at `BuildContext.classifyInputField:920-953` does *not* check: `InputField.ColumnReferenceField` / `CompositeColumnReferenceField` carriers can silently hold the pathological shape. Two consumers, asymmetric gates, same predicate computed locally each time.
 
-**Replace** the `FkTarget` record with a sealed sub-hierarchy:
+**Replace** the `FkTarget` record with a sealed sub-hierarchy. The outer `Resolved` now permits `SameTable`, `FkTarget`, `Rejected`; `FkTarget` permits `DirectFk`, `TranslatedFk`. Callers exhaustively switch on `case SameTable`, `case FkTarget.DirectFk`, `case FkTarget.TranslatedFk`, `case Rejected`.
 
 ```java
-sealed interface FkTarget extends Resolved {
-    record DirectFk(String refTypeName,
-                    TableRef targetTable,
-                    HelperRef.Decode decodeMethod,
-                    List<ColumnRef> keyColumns,
-                    List<ColumnRef> fkSourceColumns,
-                    List<JoinStep> joinPath)
-        implements FkTarget {}
-    record TranslatedFk(String refTypeName,
+public sealed interface Resolved {
+    record SameTable(String refTypeName,
+                     HelperRef.Decode decodeMethod,
+                     List<ColumnRef> keyColumns)
+        implements Resolved {}
+    sealed interface FkTarget extends Resolved {
+        record DirectFk(String refTypeName,
                         TableRef targetTable,
                         HelperRef.Decode decodeMethod,
                         List<ColumnRef> keyColumns,
+                        List<ColumnRef> fkSourceColumns,
                         List<JoinStep> joinPath)
-        implements FkTarget {}
+            implements FkTarget {}
+        record TranslatedFk(String refTypeName,
+                            TableRef targetTable,
+                            HelperRef.Decode decodeMethod,
+                            List<ColumnRef> keyColumns,
+                            List<JoinStep> joinPath)
+            implements FkTarget {}
+    }
+    record Rejected(String message) implements Resolved {}
 }
 ```
 
-The resolver computes the positional-match predicate once and picks the variant. Both call sites then exhaustively switch:
+The resolver computes the positional-match predicate once and picks the variant. Both call sites then handle the arms:
 
 - **Argument side** (`FieldBuilder.classifyArgument`): `DirectFk` projects to `ColumnReferenceArg` / `CompositeColumnReferenceArg`; `TranslatedFk` returns `UnclassifiedArg` with the R57 hint. The inline `sameColumnsBySqlName` check deletes.
-- **Input-field side** (`BuildContext.classifyInputField`): `DirectFk` builds `InputField.{Column,CompositeColumn}ReferenceField`; `TranslatedFk` returns `InputFieldResolution.Unresolved` with the same R57 hint. Closes the silent-pathological-shape gap.
+- **Input-field side** (`BuildContext.classifyInputField`): `DirectFk` builds `InputField.{Column,CompositeColumn}ReferenceField`; `TranslatedFk` returns `InputFieldResolution.Unresolved` with a parallel R57 hint. Closes the silent-pathological-shape gap.
+
+The R57 hint message is a caller-side concern, not a resolver-side one: `TranslatedFk` is a structurally valid resolution, and the rejection only stands until R57's emitter lands. The current arg-side wording at `FieldBuilder.java:629-635` moves to the arg-side caller; the input-field side adds a parallel formatter. The existing test `ArgumentFkTargetNodeIdCase.FK_TARGET_PATHOLOGICAL_KEY_MISMATCH_DEFERRED` asserts on substrings (`"FK's target columns do not positionally match"`, `"deferred"`), so wording shifts are tolerable.
 
 `FieldBuilder.sameColumnsBySqlName` deletes; the predicate moves to its single home in the resolver.
 
@@ -96,7 +105,9 @@ record NodeIdArgPlan(
 ) {}
 ```
 
-`classifyTableField` (or its R6-orchestrator successor) builds the plan once and threads it through:
+`classifyTableField` (or its R6-orchestrator successor) builds the plan via one walk over the field's args (top-level + nested input-field leaves under arg input-types), calling `nodeIdLeafResolver.resolve(...)` per `@nodeId`-decorated leaf. Cycle protection on nested input types follows the same `LinkedHashSet<String>` shape `walkInputTypeForSameTableNodeId` carries today; sharing `BuildContext.classifyInputField`'s `expandingTypes` set is fine if it falls out cleanly during the lift, but is not required.
+
+The plan threads through:
 
 - The `@asConnection` rejection step (consumes `anyArgSameTable || anyNestedSameTable`).
 - The lookup-promotion gate (consumes `anyArgSameTable`).
@@ -129,8 +140,8 @@ Then change the same-table arg arm in `FieldBuilder.classifyArgument` from `Thro
 **Pipeline-tier (`NodeIdPipelineTest`).**
 
 - `ArgumentSameTableNodeIdCase` cases keep their structure; flip the asserted `extraction` from `ThrowOnMismatch` to `SkipMismatchedElement`.
-- New case in `InputFieldFkTargetCase` (or a new `InputFieldFkTargetTranslatedRejectionCase`): an input-field `[ID!] @nodeId(typeName: T)` where T's keys differ from the FK targets currently builds silently; assert it now classifies as `InputFieldResolution.Unresolved` with the R57 hint.
-- New case asserting the resolver produces `DirectFk` vs `TranslatedFk` directly, exercising the resolver-tier without going through carriers.
+- New case in `InputFieldFkTargetCase` (or a new `InputFieldFkTargetTranslatedRejectionCase`): an input-field `[ID!] @nodeId(typeName: T)` where T's keys differ from the FK targets currently builds silently; assert it now surfaces an `UnclassifiedField` whose reason mentions the FK-target-key-mismatch hint, parallel to the existing arg-side `FK_TARGET_PATHOLOGICAL_KEY_MISMATCH_DEFERRED` shape.
+- Resolver-tier coverage in `NodeIdLeafResolverTest` (sibling to the other R6 resolver tests): assert the resolver produces `DirectFk` for the matching-keys case and `TranslatedFk` for the parent_node + child_ref reproducer, without going through carrier construction.
 
 **Execution-tier (`NodeIdQueryTest`).**
 
