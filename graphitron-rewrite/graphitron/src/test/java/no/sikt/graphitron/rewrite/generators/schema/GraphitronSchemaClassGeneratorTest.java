@@ -398,6 +398,94 @@ class GraphitronSchemaClassGeneratorTest {
         assertThat(zebraIdx).as("typeResolvers before .query()").isLessThan(queryIdx);
     }
 
+    // ===== @error-only union/interface TypeResolver emission (R12 §2c) =====
+
+    private static final String SAK_PAYLOAD_FQN =
+        "no.sikt.graphitron.codereferences.dummyreferences.SakPayload";
+
+    private static final String ERROR_UNION_SDL = """
+        type ValidationErr @error(handlers: [{handler: VALIDATION}]) {
+            path: [String!]!
+            message: String!
+        }
+        type DbErr @error(handlers: [{handler: DATABASE, sqlState: "23503"}]) {
+            path: [String!]!
+            message: String!
+        }
+        union SakError = ValidationErr | DbErr
+        type SakPayload @record(record: {className: "%s"}) {
+            data: String
+            errors: [SakError]
+        }
+        type Query { sak: SakPayload @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runSak"}) }
+        """.formatted(SAK_PAYLOAD_FQN);
+
+    @Test
+    void build_emitsErrorTypeResolver_forUnionOfErrorTypes() {
+        // Per R12 §2c, an @error-only union gets a TypeResolver that dispatches by source-class
+        // instanceof; the runtime sources are throwables (GENERIC/DATABASE) or GraphQLErrors
+        // (VALIDATION), never jOOQ records. The TypeResolver must therefore NOT emit the
+        // jOOQ-record __typename probe used for table-backed unions.
+        var body = buildBody(ERROR_UNION_SDL);
+        assertThat(body).contains("codeRegistry.typeResolver(\"SakError\"");
+        // Source-class dispatch references graphql.GraphQLError and java.sql.SQLException.
+        assertThat(body).contains("graphql.GraphQLError");
+        assertThat(body).contains("java.sql.SQLException");
+        assertThat(body).contains("\"23503\".equals(sqlEx.getSQLState())");
+        // Routes each source to the right SDL @error type.
+        assertThat(body).contains("env.getSchema().getObjectType(\"ValidationErr\")");
+        assertThat(body).contains("env.getSchema().getObjectType(\"DbErr\")");
+    }
+
+    @Test
+    void build_errorTypeResolver_doesNotEmitJooqRecordProbe() {
+        // Belt-and-braces: the @error TypeResolver path must skip the
+        // (org.jooq.Record) cast + DSL.field("__typename") probe used by table-backed unions.
+        // A SakError TypeResolver that did the cast would CCE at runtime since the source is
+        // a GraphQLError or Throwable.
+        var body = buildBody(ERROR_UNION_SDL);
+        int sakErrorBlockStart = body.indexOf("codeRegistry.typeResolver(\"SakError\"");
+        assertThat(sakErrorBlockStart).isGreaterThanOrEqualTo(0);
+        int sakErrorBlockEnd = body.indexOf("});", sakErrorBlockStart);
+        String block = body.substring(sakErrorBlockStart, sakErrorBlockEnd);
+        assertThat(block).doesNotContain("org.jooq.Record");
+        assertThat(block).doesNotContain("__typename");
+    }
+
+    @Test
+    void build_emitsErrorTypeFieldFetchers_forPathAndMessage() {
+        // Per R12 §2c, every @error type gets path/message DataFetchers; path is synthesized
+        // from the GraphQL execution context for non-GraphQLError sources (Throwable has no
+        // getPath()) so the schema's [String!]! contract holds for GENERIC/DATABASE handlers.
+        var body = buildBody(ERROR_UNION_SDL);
+        assertThat(body).contains("FieldCoordinates.coordinates(\"ValidationErr\", \"path\")");
+        assertThat(body).contains("FieldCoordinates.coordinates(\"ValidationErr\", \"message\")");
+        assertThat(body).contains("FieldCoordinates.coordinates(\"DbErr\", \"path\")");
+        assertThat(body).contains("FieldCoordinates.coordinates(\"DbErr\", \"message\")");
+    }
+
+    @Test
+    void build_errorTypeFieldFetchers_pathSynthesisRoutesGraphQLErrorThroughGetPath() {
+        // GraphQLError sources route through GraphQLError.getPath() (preserving per-violation
+        // paths recorded by ConstraintViolations.toGraphQLError). Throwable sources fall back
+        // to env.getExecutionStepInfo().getPath().toList() so the SDL field's [String!]!
+        // non-null contract holds.
+        var body = buildBody(ERROR_UNION_SDL);
+        assertThat(body).contains("ge.getPath()");
+        assertThat(body).contains("env.getExecutionStepInfo().getPath().toList()");
+    }
+
+    @Test
+    void build_errorTypeResolversAlphabeticallyOrdered_beforeSchemaBuilder() {
+        // The @error TypeResolver loop preserves the existing ordering invariant: registrations
+        // happen alphabetically and before .query()/.codeRegistry() seal the schema.
+        var body = buildBody(ERROR_UNION_SDL);
+        int sakErrorIdx = body.indexOf("codeRegistry.typeResolver(\"SakError\"");
+        int queryIdx = body.indexOf(".query(");
+        assertThat(sakErrorIdx).isGreaterThanOrEqualTo(0);
+        assertThat(sakErrorIdx).as("typeResolvers before .query()").isLessThan(queryIdx);
+    }
+
     // ===== federation overload =====
 
     @Test

@@ -280,11 +280,20 @@ wrapper + dispatch arm lands; phasing within is the implementer's call.
   route the catch arm through `catchArm(outputPackage, errorChannel)` so dispatch
   fires when the channel is populated. Insert/update/upsert remain stubs; they
   inherit the slot and the emit machinery once they un-stub.
-- Accessor reflection check on `@error` backing classes:
-  `TypeBuilder.validatePathMessageAccessors` verifies the developer-supplied
-  class exposes a no-arg `path()` returning `List` and `message()` returning
-  `String`. Transitional state: the developer-supplied data class is retired in
-  the source-direct unwind below.
+- Source-direct dispatch (R12 §2c "@error is TypeResolver wiring"): **landed**.
+  `ErrorType` carries no `classFqn` slot; the `Mapping` interface has no `build`
+  factory; `ErrorRouter.dispatch` places the matched throwable directly into the
+  errors list. `GraphitronSchemaClassGenerator` emits one `TypeResolver` per
+  @error-only union/interface that dispatches each runtime source by
+  source-class instanceof + handler discriminator (mirroring the dispatcher's
+  source-order semantics). Per-@error-type `path` and `message` `DataFetcher`s
+  are registered in the same pass: `path` routes through `GraphQLError.getPath()`
+  for VALIDATION-derived sources and synthesises from
+  `env.getExecutionStepInfo().getPath().toList()` for `Throwable` sources;
+  `message` routes through `getMessage()` (universal on both `GraphQLError` and
+  `Throwable`). The synthesized `path` fetcher means the SDL's `path: [String!]!`
+  contract holds for GENERIC/DATABASE handlers whose source class lacks a
+  `getPath()` accessor.
 
 - `ResultAssembly` carrier (R12 §2c, §5) — service-side counterpart of
   `PayloadAssembly`. The classifier reflects the developer-supplied payload
@@ -308,47 +317,16 @@ wrapper + dispatch arm lands; phasing within is the implementer's call.
 
 **Remaining work:**
 
-- **Source-direct dispatch (the @error-data-class retire).** This is the
-  architectural close-out for §2c's "@error is TypeResolver wiring" subsection
-  (the data-class retire piece). Service methods now return the domain object
-  uniformly with DML bodies returning the row record (the §5 + ResultAssembly
-  pieces above); what remains is the source-direct dispatch path.
-
-  *Source-direct dispatch* (§2c, §3):
-  - Delete `TypeBuilder.validatePathMessageConstructor`,
-    `validatePathMessageAccessors`, `ErrorType.classFqn`, the `@record + @error`
-    co-location tie-break, `detectTypeDirectiveConflict`'s `@record + @error`
-    relaxation, and the related test fixtures
-    (`MissingAccessorErrorBackingFixture`, `ValidErrorBackingFixture`,
-    `REJECT_ERROR_WITH_RECORD_*`).
-  - Replace the channel-typed slot match with the positional errors-slot rule
-    from §2c: the SDL `ErrorsField`'s declaration index = the constructor's
-    errors-slot index. Slot type is `Object`. Classifier records
-    `errorsSlotIndex` plus per-other-slot `defaultLiteral`.
-  - Add the per-(channel, `@error` type, handler) source-class accessor
-    reflection check (§2c). Source class is the handler's `className` for
-    GENERIC, `SQLException` for DATABASE, `GraphQLError` for VALIDATION; every
-    declared SDL field on the `@error` type has a matching accessor on the
-    source class.
-  - Generate one `TypeResolver` per `@error` union/interface, walking the
-    channel's handler predicates by `instanceof SourceClass [&& criteria]`.
-  - Rewrite `ErrorRouter.dispatch`: `Mapping.build` factory and the
-    `payloadFactory` parameter vanish. The dispatcher places source objects
-    directly into the errors slot. `Mapping` carries
-    `(matchCriteria, errorTypeName, description)` only.
-
-  *Uniform payload assembly across service-backed and DML fetchers* (§2c, §3):
-  - Service methods change shape: from "service returns the SDL payload type"
-    to "service returns the domain object the payload's success slot expects".
-    `MutationServiceTableField`, `MutationServiceRecordField`,
-    `QueryServiceTableField`, `QueryServiceRecordField` all converge on this.
-  - The classifier resolves a `resultSlotIndex` for service-backed fetchers
-    (the constructor parameter typed as the service method's return type),
-    parallel to the existing DML `rowSlotIndex`. Same `RowAssembly`-style
-    carrier (renamed if useful, e.g. `ResultAssembly`).
-  - The wrapper's success arm becomes uniform: call body/service → bind the
-    return value to the result/row slot → default everything else → emit
-    payload. The catch arm fills the errors slot via the dispatcher.
+- **Per-(channel, @error type, handler) source-class accessor reflection check
+  (§2c).** The SDL grammar currently restricts `@error` types to exactly
+  `path: [String!]!` and `message: String!`, both populated by the synthesized
+  per-@error-type `DataFetcher`s landed alongside the TypeResolver wiring; no
+  source-class accessor is consulted for these fields. The check becomes
+  meaningful when the path/message restriction is relaxed to allow extras
+  (e.g. `code: String!`, `extensions: ErrorExtensions`); those would route
+  through `PropertyDataFetcher`, and the classifier needs to verify the source
+  class has the matching accessor at build time. Tracked here as the gating
+  step for that future SDL surface expansion.
 
   *Native Jakarta validation* (§5):
   - **Landed**: `ValidationViolationGraphQLException`,

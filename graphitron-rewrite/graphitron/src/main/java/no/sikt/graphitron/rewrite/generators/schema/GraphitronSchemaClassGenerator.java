@@ -8,6 +8,12 @@ import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.generators.util.QueryNodeFetcherClassGenerator;
+import no.sikt.graphitron.rewrite.model.GraphitronType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ExceptionHandler;
+import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.SqlStateHandler;
+import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ValidationHandler;
+import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.VendorCodeHandler;
 import no.sikt.graphitron.rewrite.model.GraphitronType.InterfaceType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.NodeType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.RootType;
@@ -132,10 +138,13 @@ public final class GraphitronSchemaClassGenerator {
         // registered separately via QueryNodeFetcher.registerTypeResolver above; skip it here
         // so we don't double-register. Federation's _Entity union is injected by
         // Federation.transform() after schemaBuilder.build(), so it does not appear in
-        // schema.types() and needs no explicit skip.
+        // schema.types() and needs no explicit skip. @error-only unions/interfaces are
+        // registered separately below: their runtime sources are throwables and
+        // GraphQLErrors, never jOOQ records, so they can't read a __typename column.
         schema.types().entrySet().stream()
             .filter(e -> e.getValue() instanceof InterfaceType || e.getValue() instanceof UnionType)
             .filter(e -> !"Node".equals(e.getKey()))
+            .filter(e -> !isErrorOnlyPolymorphic(e.getValue(), schema))
             .sorted(Map.Entry.comparingByKey())
             .forEach(e -> {
                 var cb = CodeBlock.builder();
@@ -148,6 +157,31 @@ public final class GraphitronSchemaClassGenerator {
                 cb.unindent().add("});\n");
                 body.add(cb.build());
             });
+
+        // @error-only union/interface TypeResolvers: source-class-instanceof dispatch
+        // (R12 §2c). The runtime source for each entry in a payload's errors list is the
+        // matched object itself (Throwable for GENERIC/DATABASE handlers, GraphQLError for
+        // VALIDATION); no developer-supplied data class. Each such union or interface gets a
+        // resolver that walks every (participant @error type, handler) pair in source order
+        // (declaration order, then the handler array's order within each @error type) and
+        // dispatches each runtime source to the @error type whose handler discriminator
+        // matches. Mirrors the dispatcher's source-order-first-match semantics.
+        schema.types().entrySet().stream()
+            .filter(e -> e.getValue() instanceof InterfaceType || e.getValue() instanceof UnionType)
+            .filter(e -> isErrorOnlyPolymorphic(e.getValue(), schema))
+            .sorted(Map.Entry.comparingByKey())
+            .forEach(e -> body.add(buildErrorPolymorphicResolver(e.getKey(), e.getValue(), schema)));
+
+        // Per-@error-type path/message DataFetchers (R12 §2c). The SDL grammar restricts
+        // @error types to {path: [String!]!, message: String!}; the @error type's source
+        // class can be a Throwable (no getPath()) or a GraphQLError (has getPath()/getMessage()).
+        // Synthesize the path field from the GraphQL execution context for non-GraphQLError
+        // sources so the schema's non-null contract holds regardless of handler kind. Message
+        // routes universally through getMessage(), defined on both Throwable and GraphQLError.
+        schema.types().entrySet().stream()
+            .filter(e -> e.getValue() instanceof ErrorType)
+            .sorted(Map.Entry.comparingByKey())
+            .forEach(e -> body.add(buildErrorTypeFieldFetchers(e.getKey())));
 
         body.add("$T schemaBuilder = $T.newSchema()", SCHEMA_BUILDER, GRAPHQL_SCHEMA).indent();
 
@@ -268,6 +302,157 @@ public final class GraphitronSchemaClassGenerator {
     public static List<TypeSpec> generate(GraphitronSchema schema, GraphQLSchema assembled,
                                           Set<String> typesWithFetchers, String outputPackage) {
         return generate(schema, assembled, typesWithFetchers, outputPackage, false);
+    }
+
+    /**
+     * True for a {@link UnionType} or {@link InterfaceType} whose participants are all classified
+     * as {@link ErrorType}. Used to fork the TypeResolver emission: jOOQ-record-backed
+     * polymorphic types read a {@code __typename} column; @error-only polymorphic types
+     * dispatch by runtime source class (Throwable / GraphQLError) per R12 §2c.
+     *
+     * <p>A polymorphic type with mixed @error and non-@error participants does not occur in
+     * practice: the carrier classifier only lifts a payload's errors-shaped field to
+     * {@code ErrorsField} when every member is @error (see {@code FieldBuilder.liftToErrorsField}),
+     * and the SDL grammar disallows polymorphic types whose members can't be jOOQ-record-backed
+     * either. This helper returns false for the empty-participant case (degenerate types).
+     */
+    private static boolean isErrorOnlyPolymorphic(GraphitronType type, GraphitronSchema schema) {
+        List<ParticipantRef> participants = switch (type) {
+            case UnionType u -> u.participants();
+            case InterfaceType i -> i.participants();
+            default -> List.of();
+        };
+        if (participants.isEmpty()) return false;
+        for (var p : participants) {
+            if (!(schema.type(p.typeName()) instanceof ErrorType)) return false;
+        }
+        return true;
+    }
+
+    /**
+     * Emits the {@code codeRegistry.typeResolver(...)} call for an @error-only union or
+     * interface. Walks every (@error-typed participant, handler) pair in source order; the
+     * resulting {@code if} ladder mirrors the dispatcher's source-order-first-match semantics
+     * (R12 §3 dispatch order). The first {@code instanceof} predicate that satisfies returns
+     * the corresponding @error SDL type; falls through to {@code null} when no predicate
+     * matches (unreachable in practice; the dispatcher's match step has already filtered).
+     */
+    private static CodeBlock buildErrorPolymorphicResolver(String typeName, GraphitronType type,
+                                                           GraphitronSchema schema) {
+        var participants = switch (type) {
+            case UnionType u -> u.participants();
+            case InterfaceType i -> i.participants();
+            default -> List.<ParticipantRef>of();
+        };
+
+        var GRAPHQL_ERROR = ClassName.get("graphql", "GraphQLError");
+        var SQL_EXCEPTION = ClassName.get("java.sql", "SQLException");
+        var STRING_CN     = ClassName.get(String.class);
+
+        var cb = CodeBlock.builder();
+        cb.add("codeRegistry.typeResolver($S, env -> {\n", typeName).indent();
+        cb.addStatement("Object src = env.getObject()");
+        for (var p : participants) {
+            var et = (ErrorType) schema.type(p.typeName());
+            for (var handler : et.handlers()) {
+                String et_name = et.name();
+                if (handler instanceof ValidationHandler) {
+                    cb.beginControlFlow("if (src instanceof $T)", GRAPHQL_ERROR);
+                    cb.addStatement("return env.getSchema().getObjectType($S)", et_name);
+                    cb.endControlFlow();
+                } else if (handler instanceof ExceptionHandler eh) {
+                    var excClass = ClassName.bestGuess(eh.exceptionClassName());
+                    if (eh.matches().isPresent()) {
+                        cb.beginControlFlow("if (src instanceof $T thr)", excClass);
+                        cb.addStatement("$T msg = thr.getMessage()", STRING_CN);
+                        cb.beginControlFlow("if (msg != null && msg.contains($S))", eh.matches().get());
+                        cb.addStatement("return env.getSchema().getObjectType($S)", et_name);
+                        cb.endControlFlow();
+                        cb.endControlFlow();
+                    } else {
+                        cb.beginControlFlow("if (src instanceof $T)", excClass);
+                        cb.addStatement("return env.getSchema().getObjectType($S)", et_name);
+                        cb.endControlFlow();
+                    }
+                } else if (handler instanceof SqlStateHandler sh) {
+                    cb.beginControlFlow("if (src instanceof $T sqlEx && $S.equals(sqlEx.getSQLState()))",
+                        SQL_EXCEPTION, sh.sqlState());
+                    if (sh.matches().isPresent()) {
+                        cb.addStatement("$T msg = sqlEx.getMessage()", STRING_CN);
+                        cb.beginControlFlow("if (msg != null && msg.contains($S))", sh.matches().get());
+                        cb.addStatement("return env.getSchema().getObjectType($S)", et_name);
+                        cb.endControlFlow();
+                    } else {
+                        cb.addStatement("return env.getSchema().getObjectType($S)", et_name);
+                    }
+                    cb.endControlFlow();
+                } else if (handler instanceof VendorCodeHandler vh) {
+                    cb.beginControlFlow("if (src instanceof $T sqlEx && $S.equals($T.valueOf(sqlEx.getErrorCode())))",
+                        SQL_EXCEPTION, vh.vendorCode(), STRING_CN);
+                    if (vh.matches().isPresent()) {
+                        cb.addStatement("$T msg = sqlEx.getMessage()", STRING_CN);
+                        cb.beginControlFlow("if (msg != null && msg.contains($S))", vh.matches().get());
+                        cb.addStatement("return env.getSchema().getObjectType($S)", et_name);
+                        cb.endControlFlow();
+                    } else {
+                        cb.addStatement("return env.getSchema().getObjectType($S)", et_name);
+                    }
+                    cb.endControlFlow();
+                }
+            }
+        }
+        cb.addStatement("return null");
+        cb.unindent().add("});\n");
+        return cb.build();
+    }
+
+    /**
+     * Emits {@code codeRegistry.dataFetcher(...)} calls for the {@code path} and {@code message}
+     * fields of one @error type (R12 §2c). The SDL grammar restricts @error types to exactly
+     * these two fields; both are always {@code [String!]!} / {@code String!} so a missing or
+     * null value would violate the schema's non-null contract.
+     *
+     * <ul>
+     *   <li>{@code message} routes through {@code getMessage()} on the source: defined on
+     *       both {@code Throwable} (for GENERIC/DATABASE handlers' matched exceptions) and
+     *       {@code GraphQLError} (for VALIDATION-derived sources).</li>
+     *   <li>{@code path} synthesises the value from the GraphQL execution context's path
+     *       (the SDL field path where the error fired) for non-{@code GraphQLError} sources.
+     *       VALIDATION sources route through {@code GraphQLError.getPath()} so the per-element
+     *       paths recorded by {@code ConstraintViolations.toGraphQLError} survive intact.</li>
+     * </ul>
+     */
+    private static CodeBlock buildErrorTypeFieldFetchers(String typeName) {
+        var FIELD_COORDINATES = ClassName.get("graphql.schema", "FieldCoordinates");
+        var GRAPHQL_ERROR     = ClassName.get("graphql", "GraphQLError");
+        var THROWABLE         = ClassName.get(Throwable.class);
+        var STRING_CN         = ClassName.get(String.class);
+
+        var cb = CodeBlock.builder();
+        // path
+        cb.add("codeRegistry.dataFetcher($T.coordinates($S, $S), env -> {\n",
+            FIELD_COORDINATES, typeName, "path").indent();
+        cb.addStatement("Object src = env.getObject()");
+        cb.beginControlFlow("if (src instanceof $T ge)", GRAPHQL_ERROR);
+        cb.addStatement("return ge.getPath() == null ? java.util.List.of() : "
+            + "ge.getPath().stream().map($T::valueOf).toList()", STRING_CN);
+        cb.endControlFlow();
+        cb.addStatement("return env.getExecutionStepInfo().getPath().toList().stream()"
+            + ".map($T::valueOf).toList()", STRING_CN);
+        cb.unindent().add("});\n");
+        // message
+        cb.add("codeRegistry.dataFetcher($T.coordinates($S, $S), env -> {\n",
+            FIELD_COORDINATES, typeName, "message").indent();
+        cb.addStatement("Object src = env.getObject()");
+        cb.beginControlFlow("if (src instanceof $T ge)", GRAPHQL_ERROR);
+        cb.addStatement("return ge.getMessage()");
+        cb.endControlFlow();
+        cb.beginControlFlow("if (src instanceof $T thr)", THROWABLE);
+        cb.addStatement("return thr.getMessage()");
+        cb.endControlFlow();
+        cb.addStatement("return null");
+        cb.unindent().add("});\n");
+        return cb.build();
     }
 
     record Plan(
