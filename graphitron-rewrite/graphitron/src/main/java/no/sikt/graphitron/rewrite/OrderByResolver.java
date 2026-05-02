@@ -13,6 +13,7 @@ import graphql.schema.GraphQLType;
 import graphql.schema.GraphQLTypeUtil;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
+import no.sikt.graphitron.rewrite.model.Rejection;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -78,7 +79,9 @@ final class OrderByResolver {
      */
     sealed interface Resolved {
         record Ok(OrderBySpec spec) implements Resolved {}
-        record Rejected(String message) implements Resolved {}
+        record Rejected(Rejection rejection) implements Resolved {
+            public String message() { return rejection.message(); }
+        }
     }
 
     private final BuildContext ctx;
@@ -123,8 +126,7 @@ final class OrderByResolver {
         if (fieldDef.hasAppliedDirective(DIR_DEFAULT_ORDER)) {
             var fixed = resolveColumnOrderSpec(fieldDef, tableSqlName);
             if (fixed == null) {
-                return new Resolved.Rejected(
-                    "could not resolve @defaultOrder columns in table '" + tableSqlName + "'");
+                return new Resolved.Rejected(Rejection.structural("could not resolve @defaultOrder columns in table '" + tableSqlName + "'"));
             }
             return new Resolved.Ok(fixed);
         }
@@ -277,7 +279,7 @@ final class OrderByResolver {
         for (var value : sortEnum.getValues()) {
             if (!value.hasAppliedDirective("order") && !value.hasAppliedDirective("index")) continue;
             OrderBySpec.Fixed order = resolveEnumValueOrderSpec(value, tableSqlName, errors);
-            if (order == null) return new Resolved.Rejected(errors.get(errors.size() - 1));
+            if (order == null) return new Resolved.Rejected(Rejection.structural(errors.get(errors.size() - 1)));
             namedOrders.add(new OrderBySpec.NamedOrder(value.getName(), order));
         }
         var baseResolved = resolveDefaultOrderSpec(fieldDef, tableSqlName);

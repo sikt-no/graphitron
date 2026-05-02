@@ -8,6 +8,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.NodeType;
 import no.sikt.graphitron.rewrite.model.HelperRef;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.JoinStep.FkJoin;
+import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.TableRef;
 
 import java.util.List;
@@ -178,7 +179,9 @@ final class NodeIdLeafResolver {
          * formatted message ready for the caller's accumulating errors list or
          * {@code Unresolved} / {@code UnclassifiedArg} carrier.
          */
-        record Rejected(String message) implements Resolved {}
+        record Rejected(Rejection rejection) implements Resolved {
+            public String message() { return rejection.message(); }
+        }
     }
 
     private final BuildContext ctx;
@@ -208,33 +211,30 @@ final class NodeIdLeafResolver {
     Resolved resolve(GraphQLDirectiveContainer leaf, String leafName, TableRef containingTable) {
         var typeNameInference = inferTypeName(leaf, containingTable);
         if (typeNameInference.error() != null) {
-            return new Resolved.Rejected(typeNameInference.error());
+            return new Resolved.Rejected(Rejection.structural(typeNameInference.error()));
         }
         String refTypeName = typeNameInference.typeName();
         var rawGqlType = ctx.schema.getType(refTypeName);
         if (rawGqlType == null) {
-            return new Resolved.Rejected(
-                "@nodeId(typeName:) type '" + refTypeName + "' does not exist in the schema");
+            return new Resolved.Rejected(Rejection.structural("@nodeId(typeName:) type '" + refTypeName + "' does not exist in the schema"));
         }
         if (!(rawGqlType instanceof GraphQLObjectType targetObj)
                 || !targetObj.hasAppliedDirective(DIR_TABLE)) {
-            return new Resolved.Rejected(
-                "@nodeId(typeName:) type '" + refTypeName + "' is not @table-annotated");
+            return new Resolved.Rejected(Rejection.structural("@nodeId(typeName:) type '" + refTypeName + "' is not @table-annotated"));
         }
         String targetTableName = argString(targetObj, DIR_TABLE, ARG_NAME)
             .orElse(refTypeName.toLowerCase());
 
         var keys = resolveTargetKeys(targetObj, refTypeName, targetTableName);
         if (keys.error() != null) {
-            return new Resolved.Rejected(keys.error());
+            return new Resolved.Rejected(Rejection.structural(keys.error()));
         }
         var decodeMethod = ctx.resolveDecodeHelperForTable(
             targetTableName, keys.typeId(), keys.keyColumns());
         if (decodeMethod == null) {
-            return new Resolved.Rejected(
-                "@nodeId(typeName: '" + refTypeName + "') on leaf '" + leafName
+            return new Resolved.Rejected(Rejection.structural("@nodeId(typeName: '" + refTypeName + "') on leaf '" + leafName
                 + "': unable to resolve the NodeType backing table '" + targetTableName
-                + "' (zero or multiple GraphQL types map to it).");
+                + "' (zero or multiple GraphQL types map to it)."));
         }
 
         if (targetTableName.equalsIgnoreCase(containingTable.tableName())) {
@@ -243,7 +243,7 @@ final class NodeIdLeafResolver {
 
         var joinPath = resolveFkJoinPath(leaf, leafName, containingTable, targetTableName);
         if (joinPath.error() != null) {
-            return new Resolved.Rejected(joinPath.error());
+            return new Resolved.Rejected(Rejection.structural(joinPath.error()));
         }
         TableRef targetTable = ctx.resolveTable(targetTableName);
         var fkJoin = (FkJoin) joinPath.path().get(0);

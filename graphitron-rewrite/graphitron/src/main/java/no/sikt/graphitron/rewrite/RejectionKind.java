@@ -1,9 +1,14 @@
 package no.sikt.graphitron.rewrite;
 
+import no.sikt.graphitron.rewrite.model.Rejection;
+
 /**
  * Machine-readable category for classifier rejections and validator errors. Carried by
- * {@link no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField} and
  * {@link ValidationError}; surfaces in build-time logs as a kebab-case prefix on the message.
+ *
+ * <p>The classifier itself produces a {@link Rejection} sealed-variant, not a {@link RejectionKind};
+ * this enum is the projection layer the validator and log formatter use to produce the
+ * {@code [<kind>] <message>} prefix. {@link #of(Rejection)} is the total projection.
  *
  * <p>Categorisation rule of thumb:
  *
@@ -30,6 +35,19 @@ public enum RejectionKind {
     INVALID_SCHEMA,
     AUTHOR_ERROR,
     DEFERRED;
+
+    /**
+     * Total projection from a sealed {@link Rejection} variant to its {@link RejectionKind}.
+     * Exhaustive at the top-level {@code permits}; sub-arms of {@link Rejection.AuthorError}
+     * and {@link Rejection.InvalidSchema} project transparently to the same kind.
+     */
+    public static RejectionKind of(Rejection rejection) {
+        return switch (rejection) {
+            case Rejection.AuthorError ignored   -> AUTHOR_ERROR;
+            case Rejection.InvalidSchema ignored -> INVALID_SCHEMA;
+            case Rejection.Deferred ignored      -> DEFERRED;
+        };
+    }
 
     /**
      * Kebab-case form for the {@code [<kind>] <message>} log prefix emitted by
