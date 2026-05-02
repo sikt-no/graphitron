@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
 import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.rewrite.model.ErrorChannel.PayloadConstructorParam;
+import no.sikt.graphitron.javapoet.TypeName;
 
 import java.util.List;
 
@@ -10,16 +10,16 @@ import java.util.List;
  * a DML mutation fetcher. Where {@link ErrorChannel} captures the catch-arm wiring (which
  * {@code @error} types route here, which constant on {@code ErrorMappings} holds the dispatch
  * table), this record captures the success-arm wiring: which payload class to instantiate, the
- * ordered constructor signature, and the index of the slot the SQL row record binds to.
+ * row-slot index the SQL row record binds to, and the defaulted slots for everything else.
  *
  * <p>Populated by the carrier classifier when a DML mutation field returns a {@code @record}
  * payload type whose all-fields constructor exposes one parameter assignable from the DML's
- * table record. The emitter walks {@code params} and prints, per slot:
+ * table record. The emitter walks the constructor's parameter indices {@code 0..N-1} (where
+ * {@code N == 1 + defaultedSlots.size()}) and prints, per slot:
  * <ul>
- *   <li>the row record local variable when the slot index equals {@code rowSlotIndex},</li>
- *   <li>{@code null} when the slot is the errors slot ({@code isErrorsSlot}; success-arm has
- *       no errors to attach),</li>
- *   <li>the slot's pre-resolved {@code defaultLiteral} otherwise.</li>
+ *   <li>the row record local variable when the slot index equals {@code rowSlotIndex}</li>
+ *   <li>the slot's pre-resolved {@link DefaultedSlot#defaultLiteral()} otherwise (this covers
+ *       any errors slot too; on the success arm the errors list is {@code null})</li>
  * </ul>
  *
  * <p>Independent of {@link ErrorChannel}: a DML payload return without an errors-shaped field
@@ -30,26 +30,27 @@ import java.util.List;
  *
  * <p>Service-mutation and query-service fetchers do not carry a {@code PayloadAssembly}; the
  * developer-supplied service method returns the payload directly, so the emitter has no
- * constructor call to synthesize.
+ * constructor call to synthesize. (The uniform-payload-assembly chunk replaces this with an
+ * analogous {@code ResultAssembly} per R12 §2c.)
  */
 public record PayloadAssembly(
     ClassName payloadClass,
-    List<PayloadConstructorParam> params,
-    int rowSlotIndex
+    int rowSlotIndex,
+    TypeName rowSlotType,
+    List<DefaultedSlot> defaultedSlots
 ) {
     public PayloadAssembly {
-        params = List.copyOf(params);
-        if (rowSlotIndex < 0 || rowSlotIndex >= params.size()) {
+        defaultedSlots = List.copyOf(defaultedSlots);
+        if (rowSlotIndex < 0) {
             throw new IllegalArgumentException(
-                "PayloadAssembly: rowSlotIndex " + rowSlotIndex
-                    + " is out of bounds for params list of size " + params.size());
+                "PayloadAssembly: rowSlotIndex must be non-negative; got " + rowSlotIndex);
         }
-        var rowSlot = params.get(rowSlotIndex);
-        if (rowSlot.isErrorsSlot()) {
-            throw new IllegalArgumentException(
-                "PayloadAssembly: row slot at index " + rowSlotIndex
-                    + " (parameter '" + rowSlot.name() + "') is also marked as the errors slot; "
-                    + "a single parameter cannot serve both roles");
+        for (var slot : defaultedSlots) {
+            if (slot.index() == rowSlotIndex) {
+                throw new IllegalArgumentException(
+                    "PayloadAssembly: defaultedSlots must not include the row slot at index "
+                        + rowSlotIndex + "; got slot for parameter '" + slot.name() + "'");
+            }
         }
     }
 }

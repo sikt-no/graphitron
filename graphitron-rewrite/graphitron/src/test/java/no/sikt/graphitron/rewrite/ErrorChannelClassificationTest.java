@@ -83,24 +83,23 @@ class ErrorChannelClassificationTest {
     }
 
     @Test
-    void payloadConstructor_recordsErrorsSlotAndDefaultLiterals() {
-        // Verifies the per-parameter shape: the errors slot has isErrorsSlot=true and a null
-        // defaultLiteral; every other slot has the appropriate language default. SakPayload is
-        // (String data, List<?> errors), so two params: data → "null",
-        // errors → no defaultLiteral and isErrorsSlot=true.
+    void payloadConstructor_recordsErrorsSlotIndexAndDefaultLiterals() {
+        // Verifies the slot resolution: errorsSlotIndex points at the errors-typed parameter;
+        // defaultedSlots covers every other slot with its language-default literal. SakPayload
+        // is (String data, List<?> errors), so errorsSlotIndex=1 and defaultedSlots holds one
+        // entry for "data" → "null".
         var schema = build(UNION_ERROR_PAYLOAD_SDL + """
             type Query { sak: SakPayload %s }
             """.formatted(SERVICE_DECL));
 
         var f = (QueryField.QueryServiceRecordField) schema.field("Query", "sak");
-        var params = f.errorChannel().orElseThrow().payloadCtorParams();
-        assertThat(params).hasSize(2);
-        assertThat(params.get(0).name()).isEqualTo("data");
-        assertThat(params.get(0).isErrorsSlot()).isFalse();
-        assertThat(params.get(0).defaultLiteral()).isEqualTo("null");
-        assertThat(params.get(1).name()).isEqualTo("errors");
-        assertThat(params.get(1).isErrorsSlot()).isTrue();
-        assertThat(params.get(1).defaultLiteral()).isNull();
+        var ch = f.errorChannel().orElseThrow();
+        assertThat(ch.errorsSlotIndex()).isEqualTo(1);
+        assertThat(ch.defaultedSlots()).hasSize(1);
+        var dataSlot = ch.defaultedSlots().get(0);
+        assertThat(dataSlot.index()).isEqualTo(0);
+        assertThat(dataSlot.name()).isEqualTo("data");
+        assertThat(dataSlot.defaultLiteral()).isEqualTo("null");
     }
 
     @Test

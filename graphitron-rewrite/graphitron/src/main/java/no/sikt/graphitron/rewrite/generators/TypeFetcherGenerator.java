@@ -1154,16 +1154,16 @@ public class TypeFetcherGenerator {
         boolean isList = f.returnType().wrapper().isList();
         if (f.payloadAssembly().isPresent()) {
             // ResultReturnType payload: capture the row record from .returning().fetchOne(),
-            // then construct the payload by walking the assembly's params (row local at the
-            // row slot, null at the errors slot, defaultLiteral elsewhere). The payload-shape
-            // classifier guarantees one row slot exists and rejects list-payload returns at
+            // then construct the payload by walking constructor slots positionally (row local
+            // at rowSlotIndex, defaultLiteral at every defaultedSlot; the errors slot, if any,
+            // appears in defaultedSlots with a "null" literal). The payload-shape classifier
+            // guarantees one row slot exists and rejects list-payload returns at
             // FieldBuilder.validateMutationReturnType, so .fetchOne() is the only shape here.
             var assembly = f.payloadAssembly().get();
-            TypeName rowType = assembly.params().get(assembly.rowSlotIndex()).type();
             String tableLocal = names.tableLocalName();
             var dml = CodeBlock.builder();
             dml.add("$T $L = $T.$L;\n", names.jooqTableClass(), tableLocal, names.tablesClass(), tableRef.javaFieldName());
-            dml.add("$T row = dsl\n", rowType).indent()
+            dml.add("$T row = dsl\n", assembly.rowSlotType()).indent()
                 .add(".deleteFrom($L)\n", tableLocal)
                 .add(".where(").add(whereExpr.build()).add(")\n")
                 .add(".returning()\n")
@@ -1171,16 +1171,15 @@ public class TypeFetcherGenerator {
             builder.addCode(dml.build());
 
             var ctor = CodeBlock.builder().add("$T payload = new $T(", valueType, valueType);
-            var params = assembly.params();
-            for (int i = 0; i < params.size(); i++) {
+            int slotCount = 1 + assembly.defaultedSlots().size();
+            var defaultsByIndex = assembly.defaultedSlots().stream()
+                .collect(java.util.stream.Collectors.toMap(s -> s.index(), s -> s.defaultLiteral()));
+            for (int i = 0; i < slotCount; i++) {
                 if (i > 0) ctor.add(", ");
-                var p = params.get(i);
                 if (i == assembly.rowSlotIndex()) {
                     ctor.add("row");
-                } else if (p.isErrorsSlot()) {
-                    ctor.add("null");
                 } else {
-                    ctor.add(p.defaultLiteral());
+                    ctor.add(defaultsByIndex.get(i));
                 }
             }
             ctor.add(");\n");
@@ -2125,7 +2124,7 @@ public class TypeFetcherGenerator {
     /**
      * Builds the channel-aware catch arm: routes the throw through {@code ErrorRouter.dispatch}
      * with this channel's mapping-table constant and a synthesized payload factory lambda
-     * that binds the errors slot per {@link ErrorChannel#payloadCtorParams}.
+     * that binds the errors slot at {@link ErrorChannel#errorsSlotIndex()}.
      */
     private static CodeBlock dispatchCatchArm(String outputPackage, ErrorChannel channel) {
         return CodeBlock.builder()
@@ -2138,23 +2137,23 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * Synthesizes the {@code (errors) -> new <PayloadClass>(...)} factory lambda from
-     * {@link ErrorChannel#payloadCtorParams()}: the errors slot binds the lambda parameter;
-     * every other slot prints its pre-resolved
-     * {@link ErrorChannel.PayloadConstructorParam#defaultLiteral()}. Per the channel's
-     * invariant, exactly one parameter is the errors slot.
+     * Synthesizes the {@code (errors) -> new <PayloadClass>(...)} factory lambda. Walks the
+     * constructor's parameter indices {@code 0..N-1} (where {@code N == 1 + defaultedSlots.size()}):
+     * at {@link ErrorChannel#errorsSlotIndex()} prints the lambda parameter, at every other
+     * slot prints the pre-resolved {@link no.sikt.graphitron.rewrite.model.DefaultedSlot#defaultLiteral()}.
      */
     private static CodeBlock payloadFactoryLambda(ErrorChannel channel) {
         var args = CodeBlock.builder();
-        boolean first = true;
-        for (var param : channel.payloadCtorParams()) {
-            if (!first) args.add(", ");
-            if (param.isErrorsSlot()) {
+        int slotCount = 1 + channel.defaultedSlots().size();
+        var defaultsByIndex = channel.defaultedSlots().stream()
+            .collect(java.util.stream.Collectors.toMap(s -> s.index(), s -> s.defaultLiteral()));
+        for (int i = 0; i < slotCount; i++) {
+            if (i > 0) args.add(", ");
+            if (i == channel.errorsSlotIndex()) {
                 args.add("errors");
             } else {
-                args.add(param.defaultLiteral());
+                args.add(defaultsByIndex.get(i));
             }
-            first = false;
         }
         return CodeBlock.of("errors -> new $T($L)", channel.payloadClass(), args.build());
     }

@@ -1,7 +1,6 @@
 package no.sikt.graphitron.rewrite.model;
 
 import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.javapoet.TypeName;
 
 import java.util.List;
 
@@ -27,11 +26,19 @@ import java.util.List;
  *       multi-element list for unions and interfaces of {@code @error} types.</li>
  *   <li>{@code payloadClass} : the developer-supplied payload class (e.g.
  *       {@code com.example.FilmPayload}). The emitter constructs {@code new FilmPayload(...)}
- *       at the catch site by walking {@code payloadCtorParams}.</li>
- *   <li>{@code payloadCtorParams} : the ordered all-fields constructor signature for
- *       {@code payloadClass}, with the errors slot identified and the literal expression for
- *       every other slot pre-resolved. The emitter walks this list to print the synthesized
- *       payload-factory lambda.</li>
+ *       at the catch site by walking the constructor's slots positionally: at
+ *       {@code errorsSlotIndex} it prints the lambda parameter; at every other slot it looks
+ *       up the slot's pre-resolved {@link DefaultedSlot#defaultLiteral()}.</li>
+ *   <li>{@code errorsSlotIndex} : the index of the errors-list slot in the payload class's
+ *       canonical constructor's parameter list. Identified positionally: the SDL field that
+ *       classifies as {@link no.sikt.graphitron.rewrite.model.ChildField.ErrorsField} has an
+ *       index in the payload type's field declaration order, and the canonical constructor's
+ *       parameters follow that order. (Records preserve declaration order; hand-rolled POJOs
+ *       are expected to expose a canonical constructor matching SDL order.)</li>
+ *   <li>{@code defaultedSlots} : every constructor parameter except the errors slot, paired
+ *       with its pre-resolved language default literal. Together with {@code errorsSlotIndex}
+ *       they cover the constructor's full parameter list; the indices form a partition of
+ *       {@code 0..ctor.parameterCount-1}.</li>
  *   <li>{@code mappingsConstantName} : the name of the {@code Mapping[]} constant on the
  *       per-package {@code ErrorMappings} helper that holds this channel's dispatch table
  *       (e.g. {@code "FILM_PAYLOAD"}). Distinct channels with identical mappings dedup to
@@ -42,58 +49,23 @@ import java.util.List;
 public record ErrorChannel(
     List<GraphitronType.ErrorType> mappedErrorTypes,
     ClassName payloadClass,
-    List<PayloadConstructorParam> payloadCtorParams,
+    int errorsSlotIndex,
+    List<DefaultedSlot> defaultedSlots,
     String mappingsConstantName
 ) {
 
     public ErrorChannel {
         mappedErrorTypes = List.copyOf(mappedErrorTypes);
-        payloadCtorParams = List.copyOf(payloadCtorParams);
-    }
-
-    /**
-     * One parameter on the developer-supplied payload class's all-fields constructor. The
-     * classifier records every parameter so the emitter can print a full constructor call at
-     * the catch site, defaulting non-error parameters and binding the errors list to the
-     * lambda parameter.
-     *
-     * <ul>
-     *   <li>{@code name} : declared parameter name (recorded for diagnostics; matching is
-     *       by type assignability, not by name).</li>
-     *   <li>{@code type} : the parameter's resolved {@link TypeName}, e.g. a {@code ClassName}
-     *       for {@code com.example.Film}, a primitive for {@code long}, or a parameterised
-     *       list type for the errors slot.</li>
-     *   <li>{@code isErrorsSlot} : exactly one parameter has this set; it is the slot the
-     *       lambda parameter binds to. Identified at classify time by channel-typed
-     *       structural match: the parameter is a {@code List}/{@code Iterable}/{@code
-     *       Collection} (or subtype) whose element-type upper bound is a supertype of every
-     *       channel {@code @error} class.</li>
-     *   <li>{@code defaultLiteral} : the literal expression to print at this slot when the
-     *       lambda is constructed, for non-errors slots only ({@code "null"} for reference
-     *       types, {@code "0"} / {@code "0L"} / {@code "0.0"} / {@code "false"} /
-     *       {@code "'\\0'"} for primitives). {@code null} when {@code isErrorsSlot} is
-     *       {@code true} (the lambda parameter binds there). The classifier resolves the
-     *       literal once; the emitter prints it directly without re-deriving from
-     *       {@code type}.</li>
-     * </ul>
-     */
-    public record PayloadConstructorParam(
-        String name,
-        TypeName type,
-        boolean isErrorsSlot,
-        String defaultLiteral
-    ) {
-        public PayloadConstructorParam {
-            if (isErrorsSlot && defaultLiteral != null) {
+        defaultedSlots = List.copyOf(defaultedSlots);
+        if (errorsSlotIndex < 0) {
+            throw new IllegalArgumentException(
+                "ErrorChannel: errorsSlotIndex must be non-negative; got " + errorsSlotIndex);
+        }
+        for (var slot : defaultedSlots) {
+            if (slot.index() == errorsSlotIndex) {
                 throw new IllegalArgumentException(
-                    "PayloadConstructorParam: errors slot must not carry a defaultLiteral "
-                        + "(the lambda parameter binds there); got '" + defaultLiteral
-                        + "' for parameter '" + name + "'");
-            }
-            if (!isErrorsSlot && defaultLiteral == null) {
-                throw new IllegalArgumentException(
-                    "PayloadConstructorParam: non-errors slot '" + name
-                        + "' must carry a defaultLiteral");
+                    "ErrorChannel: defaultedSlots must not include the errors slot at index "
+                        + errorsSlotIndex + "; got slot for parameter '" + slot.name() + "'");
             }
         }
     }
