@@ -1,7 +1,7 @@
 ---
 id: R40
 title: "Argument-level `@nodeId` support"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 2
 theme: nodeid
@@ -9,6 +9,25 @@ depends-on: []
 ---
 
 # Argument-level `@nodeId` support
+
+## Implementation notes (in review)
+
+Shipped scope and deviations from the original spec, captured for the reviewer:
+
+- **`NodeIdLeafResolver`** lifted (Step 1, commit `ebbdbfa`). Returns `Resolved.{SameTable, FkTarget, Rejected}`; the `decodeMethod` is exposed directly rather than pre-wrapped in a `CallSiteExtraction` arm so callers pick the failure mode (input-field side wraps in `SkipMismatchedElement`; argument side picks `ThrowOnMismatch` for lookups, `SkipMismatchedElement` for FK-target filters). This deviates from the spec's "extraction inside the Resolved arm" signature but matches the actual call-site asymmetry.
+- **Argument-side classification + projection** (Step 2, commit `fbbe418`). Same-table arg `@nodeId` produces `ColumnArg` / `CompositeColumnArg` with `isLookupKey: true` and `extraction: ThrowOnMismatch` — matching the existing `@lookupKey` dispatch contract rather than the spec's `SkipMismatchedElement`. Reason: `LookupValuesJoinEmitter`'s per-row decode loop in `addRowBuildingCore` is hardcoded to throw on null. Adapting it to skip is a separate emitter change; deferred.
+- **FK-target arg arm** (Step 2). Ships only for the simple direct-FK case (FK target columns positionally match NodeType key columns, so `BodyParam.In` / `Eq` / `RowIn` / `RowEq` can fire against `joinPath[0].sourceColumns()` directly). Pathological cases (`parent_node` + `child_ref` shape) reject at classify time with a deferred-emission hint pointing at R57.
+- **Validator rejection** (Step 3, commit `fbbe418`). `@asConnection` + same-table `@nodeId` rejected symmetrically across argument-level and input-field leaves. Closes the latent R50 gap.
+- **Lookup-promotion gate** (commit `c9722e0`). Added `FieldBuilder.hasSameTableNodeIdAnywhere` so query fields with same-table `@nodeId` args promote to `QueryLookupTableField` parallel to `@lookupKey`. Without this gate the carrier classifies as `ColumnArg` with `isLookupKey: true` but the field stays a regular `QueryTableField`, leaving the `LookupMapping` unused.
+- **Java 17 emitter fix** (commit `14af235`). Surfaced an R50-era latent bug in `LookupValuesJoinEmitter` and `ArgCallEmitter`: parameterised `instanceof Record1<Integer> _r` patterns require Java 21+; cast to `Object` first to make the pattern conditional and emit raw `Record1` then cast `value1()` to the column type.
+- **Pipeline-tier coverage**: 14 new cases under `ArgumentSameTableNodeIdCase` (8), `ArgumentFkTargetNodeIdCase` (3), `NodeIdConnectionRejectionCase` (3); see `NodeIdPipelineTest`.
+- **Execution-tier coverage**: `films_filteredByArgNodeId_returnsRowsMatchingDecodedIds` round-trips a real PostgreSQL query.
+- **Spec test flip not landed**: `LookupKeyCase.SCALAR_NODEID_NON_LOOKUP_COMPOSITE_PK_DEFERRED` stays unflipped because its SDL doesn't carry `@nodeId` (the case exercises the legacy implicit scalar-`ID` arm, which "stays untouched per scope"). The spec's claim that R40 flips it was inaccurate.
+- **Follow-on items filed**: `R57 nodeid-fk-target-arg-join-translation` for the pathological FK-target case.
+
+The original design-and-rationale text below is preserved as historical context. Reviewer should focus on whether the shipped subset is coherent (it does the spec's two-arm shape decision and validator rejection symmetrically) and whether the deferred subset is filed cleanly.
+
+---
 
 `@nodeId` is declared on `ARGUMENT_DEFINITION` in [`directives.graphqls`](../graphitron/src/main/resources/no/sikt/graphitron/rewrite/schema/directives.graphqls) but `FieldBuilder.classifyArgument` never inspects it. Args with `@nodeId(typeName: T)` fall through to non-nodeid arms; a scalar `ID @nodeId(typeName: T)` silently routes through the implicit scalar-`ID` arm (directive ignored, even when `T` is wrong), and `[ID!] @nodeId(typeName: T)` surfaces as `column 'ider' could not be resolved in table '...'` from the column-binding path.
 
@@ -40,9 +59,11 @@ Both same-table (lookup) and FK-target (filter) arms ship together, for both sca
 
 **FK-target arm.** `ID @nodeId(typeName: T)` / `[ID!] @nodeId(typeName: T)` where `T.table()` is reachable from the field's backing table via single-hop FK (auto-discovered or pinned by `@reference(path:)`). Mirrors the input-field FK-target carrier on the arg side via two new sealed variants (`ColumnReferenceArg`, `CompositeColumnReferenceArg`) and feeds the same input-side filter projection that `InputField.ColumnReferenceField` / `CompositeColumnReferenceField` use today. Composes with `@asConnection`.
 
+**Implementation note (shipped subset).** The FK-target arm ships in this iteration only for the simple direct-FK case where the FK's target columns positionally match the resolved NodeType key columns (so the predicate can fire against `joinPath[0].sourceColumns()` on the field's own table without a JOIN). Pathological cases where the FK target columns differ from the NodeType key columns (e.g. R50's `parent_node` + `child_ref` fixture: FK targets `parent.alt_key`, NodeType key is `parent.pk_id`) are rejected at classify time with a deferred-emission hint. JOIN-with-translation emission for the pathological case lands in R57, parallel to R24's output-side JOIN-with-projection arm.
+
 **Bare `@nodeId`** (no `typeName:`) defaults to the field's backing-table NodeType via the same inference rule R50's `BARE_LIST_NODE_ID_INFERS_TYPE_NAME` case applies on input fields (rejecting on ambiguity / no-match).
 
-**Out of scope.** Multi-hop FK-target / condition-join FK-target (parallel to R24's multi-hop arm on the output side; sibling Backlog item). Mutation-key `@nodeId` args (separate `classifyMutationArguments` path; `NodeIdLeafResolver`'s signature is the natural extension point — the follow-on adds a `FailureMode` parameter selecting `ThrowOnMismatch` vs `SkipMismatchedElement` rather than re-resolving from scratch, but the carrier-side wiring on the mutation path is genuinely different per R50's `MutationField.DmlTableField.nodeIdMeta` shape).
+**Out of scope.** Multi-hop FK-target / condition-join FK-target (parallel to R24's multi-hop arm on the output side; sibling Backlog item). FK-target where FK target columns ≠ NodeType keyColumns (R57). Mutation-key `@nodeId` args (separate `classifyMutationArguments` path; `NodeIdLeafResolver`'s signature is the natural extension point — the follow-on adds a `FailureMode` parameter selecting `ThrowOnMismatch` vs `SkipMismatchedElement` rather than re-resolving from scratch, but the carrier-side wiring on the mutation path is genuinely different per R50's `MutationField.DmlTableField.nodeIdMeta` shape).
 
 The existing implicit scalar-`ID` arm in `classifyArgument` (no `@nodeId` declared, parent table is a NodeType) stays untouched: it covers synthesised paths that `buildLookupBindings` and the `id`-arg shorthand rely on. R40's new arm fires only when `arg.hasAppliedDirective(DIR_NODE_ID)`.
 

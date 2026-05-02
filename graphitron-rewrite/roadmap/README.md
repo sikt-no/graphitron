@@ -18,7 +18,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R1` | `BatchKey` lifter directive | In Progress | [plan](batchkey-lifter-directive.md) |
 | `R49` | Stub: scalar/`@record`-returning `@service` child field (`ServiceRecordField`) <sub>blocked by: [service-rows-method-body](service-rows-method-body.md)</sub> | Spec | [plan](service-record-field.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
-| `R40` | Argument-level `@nodeId` support | In Progress | [plan](argument-level-nodeid.md) |
+| `R40` | Argument-level `@nodeId` support | In Review | [plan](argument-level-nodeid.md) |
 | `R3` | Classification vocabulary follow-ups | Spec | [plan](classification-vocabulary-followups.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec | [plan](nestingfield-multiparent-tablefield.md) |
@@ -38,6 +38,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 - `R56` [**Extract `ConnectionPromoter` from `GraphitronSchemaBuilder`**](extract-connection-promoter.md): `GraphitronSchemaBuilder.java` (622 lines) is mostly orchestration glue, but it bundles ~150 lines of one cohesive sub-concern: turning `@asConnection` carrier fields into proper Connection-typed fields and synthesising the supporting Connection / Edge / PageInfo types. The pieces are spread across `promoteConnectionTypes`, `rewriteCarrierField`, `buildSynthesisedPageInfo`, `resolveDefaultFirstValue`, `resolveConnectionName`, plus the small `baseTypeName` / `capitalize` helpers. Lifting this into a `ConnectionPromoter` class gives the concern its own file and its own focused test surface (today's coverage is shaped around the schema-build pipeline, not the promotion logic). This is a smaller-scale instance of R6's "state 2" pattern (a cohesive concern factored as private methods rather than its own type), filed separately because the motivation here is testability and scope clarity, not the cross-arm duplication that drives R6. Not blocking anything; pick up if and when someone is in `GraphitronSchemaBuilder` for an unrelated reason.
 - `R5` [**Composite-key `@lookupKey` on list-of-input-object arguments**](composite-key-lookupkey.md): Add `ArgumentRef.CompositeLookupArg` carrying `(input-field-name, target-column)` pairs resolved from `@field(name:)` directives; `buildInputRowsMethod` already handles arbitrary-arity VALUES + JOIN.
+- `R57` [**FK-target argument @nodeId, JOIN-with-translation emission**](nodeid-fk-target-arg-join-translation.md): R40 shipped the simple direct-FK case for argument-level FK-target `@nodeId`: when the FK source columns positionally match the target NodeType's keyColumns, projectFilters emits `BodyParam.In` / `Eq` / `RowIn` / `RowEq` against `joinPath[0].sourceColumns()` directly, no JOIN required.
 - `R52` [**Lift lookup-vs-query operation taxonomy into the model**](lift-operation-taxonomy.md): R50 named the lookup-vs-query split as a documentation-level distinction without lifting it into the model. The distinction is real and structurally consequential: lookups carry a derived VALUES table with an `idx` column to preserve per-input-row identity, queries fold predicates into a WHERE with no input-row identity to track. Today the split is encoded only by variant identity (`LookupMapping` vs everything else) and routing decisions taken in individual generators.
 - `R32` [**Implement `@service` rows-method body**](service-rows-method-body.md): `buildServiceRowsMethod` (`TypeFetcherGenerator.java:1501`) emits a stub that throws `UnsupportedOperationException`. Fill the body so `@service` batched fields actually invoke the user's service method and project results back into GraphQL. Three concerns in one emitter:
 - `R46` [**Multi-tenant fan-out for `@service`**](service-multi-tenant-fanout.md): A custom resolver in a downstream Sikt project (`megVedLarested`) bypasses `@service` and writes the resolver by hand because the directive can't express what it needs: for each tenant the logged-in user belongs to, open a tenant-scoped `DSLContext`, fan out in parallel on the executor, drop nulls, return the union. The service method itself is GraphQL-free Java; what doesn't fit `@service` is the `ConnectionManager` lookup, the per-tenant `DSLContext` plumbing, and the `executor.allOf().join()` shape. _(blocked by [typed-context-value-registry](typed-context-value-registry.md), [mutations](mutations.md))_
@@ -88,7 +89,8 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### nodeid
 
-- `R40` [**Argument-level `@nodeId` support**](argument-level-nodeid.md) — In Progress, architecture
+- `R40` [**Argument-level `@nodeId` support**](argument-level-nodeid.md) — In Review, architecture
+- `R57` [**FK-target argument @nodeId, JOIN-with-translation emission**](nodeid-fk-target-arg-join-translation.md) — Backlog, architecture
 - `R24` [**`NodeIdReferenceField` JOIN-projection form**](nodeidreferencefield-join-projection-form.md) — Backlog, cleanup
 
 ### service
