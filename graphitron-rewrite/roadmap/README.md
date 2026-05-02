@@ -20,6 +20,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
 | `R40` | Argument-level `@nodeId` support | In Progress | [plan](argument-level-nodeid.md) |
 | `R3` | Classification vocabulary follow-ups | Spec | [plan](classification-vocabulary-followups.md) |
+| `R58` | Lift `UnclassifiedField` / `UnclassifiedType` onto sealed-result shape | Spec | [plan](lift-unclassified-field-onto-sealed-result.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec | [plan](nestingfield-multiparent-tablefield.md) |
 | `R13` | Faceted search on `@asConnection` | Spec | [plan](faceted-search.md) |
@@ -128,6 +129,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R56` [**Extract `ConnectionPromoter` from `GraphitronSchemaBuilder`**](extract-connection-promoter.md) — Backlog, architecture
 - `R33` [**Shared interface for `QueryField` / `ChildField` table-bound parallels**](shared-interface-queryfield-childfield.md) — Backlog, cleanup
+- `R58` [**Lift `UnclassifiedField` / `UnclassifiedType` onto sealed-result shape**](lift-unclassified-field-onto-sealed-result.md) — Spec, architecture
 - `R7` [**Decompose `TypeFetcherGenerator`**](decompose-typefetchergenerator.md) — Backlog, architecture, blocked by [stub-interface-union-fetchers](stub-interface-union-fetchers.md)
 
 ### docs
