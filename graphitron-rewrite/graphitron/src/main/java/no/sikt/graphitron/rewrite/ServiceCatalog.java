@@ -250,11 +250,24 @@ class ServiceCatalog {
                 }
             }
             return new ServiceReflectionResult(
-                new MethodRef.Basic(className, methodName, actualReturnType, List.copyOf(params)),
+                new MethodRef.Basic(className, methodName, actualReturnType, List.copyOf(params),
+                    declaredExceptionFqns(javaMethod)),
                 null);
         } catch (ClassNotFoundException e) {
             return new ServiceReflectionResult(null, "class '" + className + "' could not be loaded");
         }
+    }
+
+    /**
+     * Captures the developer method's declared exception classes as FQNs, in source order.
+     * Feeds {@link MethodRef.Basic#declaredExceptions()} so the classifier's R12 §4 match rule
+     * can verify each declared exception is covered by an {@code @error} handler on the field's
+     * channel. Returns the empty list when the method has no {@code throws} clause.
+     */
+    private static List<String> declaredExceptionFqns(java.lang.reflect.Method m) {
+        return Arrays.stream(m.getExceptionTypes())
+            .map(Class::getName)
+            .toList();
     }
 
     /**
@@ -395,7 +408,9 @@ class ServiceCatalog {
                     + "' has no Table<?> parameter — @tableMethod requires exactly one Table<?> parameter");
             }
             return new ServiceReflectionResult(
-                new MethodRef.Basic(className, methodName, ClassName.get(javaMethod.getReturnType()), List.copyOf(params)),
+                new MethodRef.Basic(className, methodName,
+                    ClassName.get(javaMethod.getReturnType()), List.copyOf(params),
+                    declaredExceptionFqns(javaMethod)),
                 null);
         } catch (ClassNotFoundException e) {
             return new ServiceReflectionResult(null, "class '" + className + "' could not be loaded");

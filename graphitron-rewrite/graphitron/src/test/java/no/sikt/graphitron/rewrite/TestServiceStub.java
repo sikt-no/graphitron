@@ -190,4 +190,34 @@ class TestServiceStub {
     public static no.sikt.graphitron.codereferences.dummyreferences.SakPayload runSak() {
         throw new UnsupportedOperationException();
     }
+
+    // ===== R12 §4 declared-checked-exception fixtures =====
+
+    /**
+     * Declares {@code throws java.sql.SQLException}. Used by classifier tests verifying that
+     * {@link ServiceCatalog#reflectServiceMethod} captures declared exceptions onto
+     * {@link MethodRef.Basic#declaredExceptions()} and that the §4 match check rejects the
+     * field when no covering {@code @error} handler is present on its channel.
+     */
+    public static String getThrowingSqlException() throws java.sql.SQLException {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Declares {@code throws java.io.IOException} — exempt under §4's "Special cases"
+     * subsection, so a field whose service method has only this throws clause classifies
+     * cleanly even without a covering channel handler.
+     */
+    public static String getThrowingIoException() throws java.io.IOException {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Declares both {@code SQLException} (non-exempt, requires a handler) and
+     * {@code InterruptedException} (exempt). Used to assert that exemption applies per-class
+     * and that the unmatched list contains only the non-exempt entries.
+     */
+    public static String getThrowingSqlAndInterrupted() throws java.sql.SQLException, InterruptedException {
+        throw new UnsupportedOperationException();
+    }
 }
