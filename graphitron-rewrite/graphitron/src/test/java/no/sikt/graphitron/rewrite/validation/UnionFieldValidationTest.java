@@ -4,6 +4,7 @@ import no.sikt.graphitron.rewrite.RejectionKind;
 import no.sikt.graphitron.rewrite.model.ChildField.UnionField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
+import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
@@ -29,6 +30,10 @@ class UnionFieldValidationTest {
     private static final TableRef STAFF = new TableRef("staff", "STAFF", "Staff",
         List.of(new ColumnRef("staff_id", "STAFF_ID", "java.lang.Integer")));
     private static final TableRef NO_PK = new TableRef("kpis", "KPIS", "Kpis", List.of());
+    private static final TableRef BAR = new TableRef("bar", "BAR", "Bar",
+        List.of(
+            new ColumnRef("id_1", "ID_1", "java.lang.Integer"),
+            new ColumnRef("id_2", "ID_2", "java.lang.Integer")));
 
     @Test
     void wellFormed_twoSameArityParticipants_noErrors() {
@@ -51,5 +56,23 @@ class UnionFieldValidationTest {
             participants, Map.of("Customer", List.of(), "Kpis", List.of()));
         assertHasKind(validate(field), RejectionKind.AUTHOR_ERROR,
             "Field 'Address.activities': participant 'Kpis' has no primary key");
+    }
+
+    @Test
+    void rejects_connection_onCompositePkParent() {
+        // R36 Track B4c-2: union variant of the parent-PK arity guard. Same constraint as
+        // InterfaceFieldValidationTest.rejects_connection_onCompositePkParent — the
+        // DataLoader-batched windowed CTE form types its key element as Row1<ParentPkClass>.
+        var participants = List.<ParticipantRef>of(
+            new ParticipantRef.TableBound("Customer", CUSTOMER, null),
+            new ParticipantRef.TableBound("Staff", STAFF, null));
+        var field = new UnionField("Bar", "activitiesConnection", null,
+            new ReturnTypeRef.PolymorphicReturnType("AddressActivity", new FieldWrapper.Connection(false, 5)),
+            participants, Map.of("Customer", List.of(), "Staff", List.of()));
+        var parentType = new GraphitronType.TableType("Bar", null, BAR);
+        var errors = validate(FieldValidationTestHelper.schema(parentType, field.name(), field));
+        assertHasKind(errors, RejectionKind.AUTHOR_ERROR,
+            "Field 'Bar.activitiesConnection': @asConnection on a multi-table interface/union "
+                + "child field whose parent type 'Bar' has a multi-column primary key (arity 2) is not supported");
     }
 }

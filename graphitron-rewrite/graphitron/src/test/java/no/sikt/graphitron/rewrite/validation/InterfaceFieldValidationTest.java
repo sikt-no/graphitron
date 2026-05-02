@@ -72,4 +72,41 @@ class InterfaceFieldValidationTest {
         assertHasKind(validate(field), RejectionKind.AUTHOR_ERROR,
             "Field 'Address.occupants': primary-key arity mismatch");
     }
+
+    @Test
+    void rejects_connection_onCompositePkParent() {
+        // R36 Track B4c-2: the DataLoader-batched windowed CTE form types its key element as
+        // Row1<ParentPkClass>; multi-column parent PK widens to RowN as a follow-up. Validator
+        // surfaces this as a clean AUTHOR_ERROR instead of an IllegalStateException at codegen.
+        var participants = List.<ParticipantRef>of(
+            new ParticipantRef.TableBound("Customer", CUSTOMER, null),
+            new ParticipantRef.TableBound("Staff", STAFF, null));
+        var field = new InterfaceField("Bar", "occupantsConnection", null,
+            new ReturnTypeRef.PolymorphicReturnType("AddressOccupant", new FieldWrapper.Connection(false, 5)),
+            participants, Map.of("Customer", List.of(), "Staff", List.of()));
+        var parentType = new GraphitronType.TableType("Bar", null, BAR);
+        var errors = validate(no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.schema(
+            parentType, field.name(), field));
+        assertHasKind(errors, RejectionKind.AUTHOR_ERROR,
+            "Field 'Bar.occupantsConnection': @asConnection on a multi-table interface/union "
+                + "child field whose parent type 'Bar' has a multi-column primary key (arity 2) is not supported");
+    }
+
+    @Test
+    void wellFormed_connection_onSinglePkParent_noErrors() {
+        // Sibling of the rejection above: single-column parent PK is the supported v1 shape.
+        var participants = List.<ParticipantRef>of(
+            new ParticipantRef.TableBound("Customer", CUSTOMER, null),
+            new ParticipantRef.TableBound("Staff", STAFF, null));
+        var field = new InterfaceField("Address", "occupantsConnection", null,
+            new ReturnTypeRef.PolymorphicReturnType("AddressOccupant", new FieldWrapper.Connection(false, 5)),
+            participants, Map.of("Customer", List.of(), "Staff", List.of()));
+        // Address-shaped parent with single-column PK.
+        var addressTable = new TableRef("address", "ADDRESS", "Address",
+            List.of(new ColumnRef("address_id", "ADDRESS_ID", "java.lang.Integer")));
+        var parentType = new GraphitronType.TableType("Address", null, addressTable);
+        var errors = validate(no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.schema(
+            parentType, field.name(), field));
+        assertThat(errors).isEmpty();
+    }
 }
