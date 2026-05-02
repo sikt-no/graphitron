@@ -317,18 +317,54 @@ wrapper + dispatch arm lands; phasing within is the implementer's call.
 
 **Remaining work:**
 
-- **Per-(channel, @error type, handler) source-class accessor reflection check
-  (§2c).** *Gated on SDL grammar relaxation.* The SDL grammar currently
-  restricts `@error` types to exactly `path: [String!]!` and `message: String!`,
-  both populated by the synthesized per-@error-type `DataFetcher`s landed
-  alongside the TypeResolver wiring; no source-class accessor is consulted for
-  these fields. The check becomes meaningful when the path/message restriction
-  is relaxed to allow extras (e.g. `code: String!`,
-  `extensions: ErrorExtensions`); those would route through `PropertyDataFetcher`,
-  and the classifier needs to verify the source class has the matching accessor
-  at build time. Tracked here as the gating step for that future SDL surface
-  expansion. The §5 `extensions.constraint` follow-up below rides on the same
-  signal.
+All five bullets below are R12 scope. The first three form a dependency chain
+(each enables the next); the last two are independent.
+
+*Dependency chain (relaxation → accessor check → extensions wiring):*
+
+- **Relax `TypeBuilder.buildErrorType` rule 6 to admit fields beyond
+  `path` and `message`.** *Not gated; precondition for the next two bullets.*
+  Today rule 6 of §1's "Reject" table (the `path` / `message` structural
+  contract enforced in `TypeBuilder.buildErrorType`) rejects any `@error` type
+  that declares a field other than `path: [String!]!` or `message: String!`. The
+  rewrite emits a synthesized per-@error-type `DataFetcher` for each of those
+  two fields (landed alongside the TypeResolver wiring); extras would route
+  through graphql-java's `PropertyDataFetcher`, reading directly from the
+  matched source object. Loosening the rule entails: (a) keep `path` and
+  `message` mandatory and shape-checked (every legacy and rewrite fixture
+  declares both, and the synthesized fetchers depend on the contract);
+  (b) admit any scalar/enum-shaped declared field beyond those two, matching
+  what `classifyChildFieldOnErrorType` already permits at the field level;
+  (c) drop the explicit "extra-field" reject branch in
+  `TypeBuilder.buildErrorType`. Until the accessor reflection check below
+  lands, an extra field that the source class can't populate would surface
+  only as a runtime `null` on serialisation, so this bullet ships paired with
+  the next rather than ahead of it.
+
+- **Per-(channel, @error type, handler) source-class accessor reflection
+  check (§2c).** *Gated on the rule-6 relaxation above.* Per §2c "Classifier
+  check: source class can populate every declared SDL field": for each
+  `(channel, @error type, handler)` triple, walk every field declared on the
+  `@error` SDL type; for each field, verify the handler's source class
+  (`handlers[i].className` for GENERIC, `java.sql.SQLException` for DATABASE,
+  `graphql.GraphQLError` for VALIDATION) exposes a PropertyDataFetcher-visible
+  accessor (`fieldName()` / `getFieldName()` / public field of that name)
+  whose return type is compatible with the SDL field's type. Mismatch
+  surfaces as `UnclassifiedField` on the carrier with a reason naming the
+  missing or wrong-typed accessor. The two synthesized-fetcher fields
+  (`path`, `message`) are exempt from the per-field check on the same
+  triple: they are populated by the rewrite's own per-@error-type
+  `DataFetcher`s, not by the source class.
+
+- **§5 `extensions.constraint` field population.** *Gated on the accessor
+  check above.* When the SDL `@error` type for a VALIDATION-handled channel
+  declares an `extensions` field, the source-class accessor reflection check
+  detects the SDL signal automatically and the runtime populates
+  `extensions.constraint` from the violation's constraint descriptor
+  (`getAnnotation().annotationType().getSimpleName()`, per the §5
+  `ConstraintViolations` helper).
+
+*Independent:*
 
 - **Lift `errorChannel` onto child `@service` and `@tableMethod` variants.**
   *Not gated; surfaces today.* `ServiceTableField` / `ServiceRecordField`
@@ -339,10 +375,10 @@ wrapper + dispatch arm lands; phasing within is the implementer's call.
   declared checked exception on those variants. Until the lift lands, schema
   authors of those fields must keep service method signatures clean of
   non-exempt checked exceptions, which is friction the §4 design already
-  contemplates as temporary. The lift is also the natural collapse of those six
-  `Optional.empty()` literals into a single `MethodBackedField`-capability
-  validation pass (the same shape `MappingsConstantNameDedup` already runs as a
-  cross-field post-classify pass).
+  contemplates as temporary. The lift is also the natural collapse of those
+  six `Optional.empty()` literals into a single `MethodBackedField`-capability
+  validation pass (the same shape `MappingsConstantNameDedup` already runs as
+  a cross-field post-classify pass).
 
 - **Test fixture updates for source-direct dispatch.** *Not gated.*
   `SakPayload` and `DeleteFilmPayload` errors slots become `List<Object>`
@@ -353,12 +389,6 @@ wrapper + dispatch arm lands; phasing within is the implementer's call.
   service-method-returns-domain-object shape (`ResultAssembly.Assembly` arm)
   and the validator integration (`ValidationHandler` channel + Jakarta
   pre-step).
-
-- **§5 `extensions.constraint` field population.** *Gated on the §2c
-  source-class accessor check above.* When the SDL `@error` type declares an
-  `extensions` field, the source-class accessor reflection check from §2c
-  detects the SDL signal automatically and populates `extensions.constraint`
-  from the violation's constraint metadata.
 - Resolve `mappingsConstantName` collision suffix at classify time
   (subsumes the standalone §3 hash-suffix dedup follow-up): **landed**.
   The per-field classifier (`FieldBuilder.resolveErrorChannel`) stamps every
