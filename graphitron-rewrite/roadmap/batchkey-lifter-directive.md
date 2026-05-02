@@ -1,7 +1,7 @@
 ---
 id: R1
 title: "`BatchKey` lifter directive"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 1
 theme: service
