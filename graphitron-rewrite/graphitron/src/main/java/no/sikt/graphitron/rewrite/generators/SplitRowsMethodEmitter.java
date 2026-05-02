@@ -557,11 +557,13 @@ public final class SplitRowsMethodEmitter {
             sel.add(".join(lookupInput).on($L)\n", lookupOnCond.build());
         }
 
-        // WHERE: per-hop whereFilters + field-level filters.
+        // WHERE: per-hop whereFilters + field-level filters. Only FkJoin hops carry a
+        // whereFilter; LiftedHop (lifter path) holds the target table + key columns and has no
+        // FK-side filter to apply, so the loop skips it.
         var where = CodeBlock.builder();
         where.add("$T.noCondition()", DSL);
         for (int i = 0; i < path.size(); i++) {
-            JoinStep.FkJoin hop = (JoinStep.FkJoin) path.get(i);
+            if (!(path.get(i) instanceof JoinStep.FkJoin hop)) continue;
             if (hop.whereFilter() != null) {
                 String srcAlias = i == 0 ? firstAlias : aliases.get(i - 1);
                 String tgtAlias = aliases.get(i);
