@@ -4,6 +4,7 @@ import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.InputColumnBinding;
 import no.sikt.graphitron.rewrite.model.InputField;
+import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.TableRef;
 
 import static java.util.Objects.requireNonNull;
@@ -31,6 +32,10 @@ import java.util.Optional;
  *   <li>{@link ScalarArg.ColumnArg} — scalar arg bound to a jOOQ column.</li>
  *   <li>{@link ScalarArg.CompositeColumnArg} — scalar arg bound to multiple jOOQ columns
  *       through a single per-row decode (composite-PK NodeId carrier; arity ≥ 2).</li>
+ *   <li>{@link ScalarArg.ColumnReferenceArg} — FK-target {@code @nodeId(typeName: T)} scalar
+ *       arg with a resolved single-hop {@code joinPath} (R40, single-key target NodeType).</li>
+ *   <li>{@link ScalarArg.CompositeColumnReferenceArg} — FK-target {@code @nodeId(typeName: T)}
+ *       scalar arg whose target NodeType has multiple key columns (R40, arity ≥ 2).</li>
  *   <li>{@link ScalarArg.UnboundArg} — scalar arg whose column could not be resolved;
  *       surfaced as a validation error.</li>
  *   <li>{@link InputTypeArg.TableInputArg} — {@code @table}-backed input type; carries per-field
@@ -106,6 +111,81 @@ public sealed interface ArgumentRef {
                         "CompositeColumnArg requires arity >= 2; arity-1 routes to ScalarArg.ColumnArg");
                 }
                 columns = List.copyOf(columns);
+            }
+        }
+
+        /**
+         * FK-target {@code @nodeId(typeName: T)} scalar arg: the target's encoded ids decode into
+         * keys of the related NodeType {@code T}, and the predicate filters rows on the FK source
+         * column reachable through {@code joinPath}. Single-key (arity-1) target NodeType; the
+         * arity ≥ 2 variant is {@link CompositeColumnReferenceArg}.
+         *
+         * <p>Mirrors {@link no.sikt.graphitron.rewrite.model.InputField.ColumnReferenceField}
+         * shape-for-shape on the argument side. {@code column} is the target NodeType's key
+         * column; {@code joinPath} resolves the single-hop FK from the field's containing table
+         * to {@code T.table()}. The body emitter pairs the carrier with
+         * {@link no.sikt.graphitron.rewrite.model.BodyParam.Eq} (scalar) or
+         * {@link no.sikt.graphitron.rewrite.model.BodyParam.In} (list) against the FK source
+         * columns when those columns positionally match the target's NodeType key columns
+         * (the simple direct-FK case); pathological cases where they differ are rejected at
+         * classify time with a deferred-emission hint per the R24 sibling.
+         *
+         * <p>{@code extraction} narrows to {@link CallSiteExtraction.NodeIdDecodeKeys}: input
+         * filters are not contract-violation surfaces, so the failure mode is
+         * {@code SkipMismatchedElement} (malformed ids drop silently to "no row matches").
+         *
+         * <p>No {@code isLookupKey} slot: FK-target is a filter, not a lookup. The carrier flows
+         * through {@code projectFilters} into the standard {@code GeneratedConditionFilter}
+         * pipeline, not {@code LookupMappingResolver}.
+         */
+        record ColumnReferenceArg(
+            String name,
+            String typeName,
+            boolean nonNull,
+            boolean list,
+            ColumnRef column,
+            List<JoinStep> joinPath,
+            CallSiteExtraction.NodeIdDecodeKeys extraction,
+            Optional<ArgConditionRef> argCondition,
+            boolean suppressedByFieldOverride
+        ) implements ScalarArg {
+
+            public ColumnReferenceArg {
+                joinPath = List.copyOf(joinPath);
+            }
+        }
+
+        /**
+         * FK-target {@code @nodeId(typeName: T)} scalar arg whose target NodeType has multiple
+         * key columns. Mirrors {@link no.sikt.graphitron.rewrite.model.InputField.CompositeColumnReferenceField}
+         * shape-for-shape on the argument side. {@code columns.size()} must be ≥ 2; arity-1
+         * cases route to {@link ColumnReferenceArg}.
+         *
+         * <p>{@code extraction} narrows to {@link CallSiteExtraction.NodeIdDecodeKeys}: the
+         * only arm producing a multi-column tuple. Failure mode is
+         * {@link CallSiteExtraction.NodeIdDecodeKeys.SkipMismatchedElement} for the same reason
+         * documented on {@link ColumnReferenceArg}.
+         */
+        record CompositeColumnReferenceArg(
+            String name,
+            String typeName,
+            boolean nonNull,
+            boolean list,
+            List<ColumnRef> columns,
+            List<JoinStep> joinPath,
+            CallSiteExtraction.NodeIdDecodeKeys extraction,
+            Optional<ArgConditionRef> argCondition,
+            boolean suppressedByFieldOverride
+        ) implements ScalarArg {
+
+            public CompositeColumnReferenceArg {
+                requireNonNull(columns, "columns");
+                if (columns.size() < 2) {
+                    throw new IllegalArgumentException(
+                        "CompositeColumnReferenceArg requires arity >= 2; arity-1 routes to ScalarArg.ColumnReferenceArg");
+                }
+                columns = List.copyOf(columns);
+                joinPath = List.copyOf(joinPath);
             }
         }
 
