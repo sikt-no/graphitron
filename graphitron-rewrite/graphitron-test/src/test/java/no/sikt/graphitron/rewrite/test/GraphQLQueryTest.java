@@ -2708,4 +2708,134 @@ class GraphQLQueryTest {
             .as("address 3 occupants are mixed (Customer Linda + Staff Mike)")
             .containsExactlyInAnyOrder("Linda", "Mike");
     }
+
+    // ===== ChildField.UnionField + @asConnection (Track B4c-1) =====
+    //
+    // Address.occupantsConnection wraps the same union as Address.occupants but in connection
+    // mode. Per-branch parent-FK WHERE (B3) lives inside each UNION ALL branch; the outer
+    // pagesTable derived table feeds .seek/.limit and ConnectionResult.table() so totalCount
+    // counts only this parent's occupants. Per-parent inline shape — DataLoader-batched
+    // windowed CTE form is the B4c-2 follow-up.
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void addressOccupantsConnection_returnsParentScopedRows() {
+        // Address(3) has Linda (Customer) + Mike (Staff). The connection returns both nodes;
+        // hasNextPage is false because pageSize 5 over-fetches and only 2 rows exist.
+        Map<String, Object> data = execute("""
+            { customerById(customer_id: ["3"], store_id: "2") {
+                address {
+                    addressId
+                    occupantsConnection {
+                        nodes { __typename ... on Customer { firstName } ... on Staff { firstName } }
+                        pageInfo { hasNextPage hasPreviousPage }
+                    }
+                }
+            } }
+            """);
+        var customers = (List<Map<String, Object>>) data.get("customerById");
+        var address = (Map<String, Object>) customers.get(0).get("address");
+        assertThat(address.get("addressId")).isEqualTo(3);
+        var conn = (Map<String, Object>) address.get("occupantsConnection");
+        var nodes = (List<Map<String, Object>>) conn.get("nodes");
+        assertThat(nodes).hasSize(2);
+        assertThat(nodes).extracting(n -> n.get("firstName"))
+            .containsExactlyInAnyOrder("Linda", "Mike");
+        var pageInfo = (Map<String, Object>) conn.get("pageInfo");
+        assertThat(pageInfo.get("hasNextPage")).isEqualTo(false);
+        assertThat(pageInfo.get("hasPreviousPage")).isEqualTo(false);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void addressOccupantsConnection_totalCount_isParentScoped() {
+        // The per-branch parentRecord-FK WHERE inside each UNION ALL branch is what makes
+        // totalCount count only this parent's occupants. Address(2) has 2 customers
+        // (Patricia, Elizabeth) + 1 staff (Jon) = 3; Address(3) has 1 customer (Linda) +
+        // 1 staff (Mike) = 2. If the WHERE were dropped the count would collapse to the
+        // global occupant total.
+        Map<String, Object> data = execute("""
+            { customerById(customer_id: ["2"], store_id: "1") {
+                address { addressId occupantsConnection { totalCount } }
+            } }
+            """);
+        var customers = (List<Map<String, Object>>) data.get("customerById");
+        var address = (Map<String, Object>) customers.get(0).get("address");
+        assertThat(address.get("addressId")).isEqualTo(2);
+        var conn = (Map<String, Object>) address.get("occupantsConnection");
+        assertThat(conn.get("totalCount")).isEqualTo(3);
+
+        Map<String, Object> data3 = execute("""
+            { customerById(customer_id: ["3"], store_id: "2") {
+                address { addressId occupantsConnection { totalCount } }
+            } }
+            """);
+        var address3 = (Map<String, Object>) ((List<Map<String, Object>>) data3.get("customerById"))
+            .get(0).get("address");
+        assertThat(((Map<String, Object>) address3.get("occupantsConnection")).get("totalCount"))
+            .isEqualTo(2);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void addressOccupantsConnection_paginationWithAfterCursor() {
+        // Address(2) has 3 occupants. Sort keys: Customer 2 (Patricia), Customer 5 (Elizabeth),
+        // Staff 2 (Jon). Tie order with __typename ASC at sort=2 places Customer before Staff.
+        // first: 2 returns the first 2 by sort key; after-cursor advances to the third.
+        Map<String, Object> page1Data = execute("""
+            { customerById(customer_id: ["2"], store_id: "1") {
+                address { occupantsConnection(first: 2) {
+                    edges { cursor node { __typename ... on Customer { firstName } ... on Staff { firstName } } }
+                    pageInfo { endCursor hasNextPage }
+                } }
+            } }
+            """);
+        var page1Conn = (Map<String, Object>) ((Map<String, Object>) ((List<Map<String, Object>>) page1Data
+            .get("customerById")).get(0).get("address")).get("occupantsConnection");
+        var edges1 = (List<Map<String, Object>>) page1Conn.get("edges");
+        assertThat(edges1).hasSize(2);
+        var pageInfo1 = (Map<String, Object>) page1Conn.get("pageInfo");
+        assertThat(pageInfo1.get("hasNextPage")).isEqualTo(true);
+        String endCursor = (String) pageInfo1.get("endCursor");
+        assertThat(endCursor).isNotNull();
+
+        Map<String, Object> page2Data = execute(
+            "{ customerById(customer_id: [\"2\"], store_id: \"1\") { "
+            + "address { occupantsConnection(first: 2, after: \"" + endCursor + "\") { "
+            + "nodes { __typename ... on Customer { firstName } ... on Staff { firstName } } "
+            + "pageInfo { hasNextPage } } } } }");
+        var page2Conn = (Map<String, Object>) ((Map<String, Object>) ((List<Map<String, Object>>) page2Data
+            .get("customerById")).get(0).get("address")).get("occupantsConnection");
+        var nodes2 = (List<Map<String, Object>>) page2Conn.get("nodes");
+        assertThat(nodes2).hasSize(1);
+        assertThat(((Map<String, Object>) page2Conn.get("pageInfo")).get("hasNextPage")).isEqualTo(false);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void addressOccupantsConnection_inlineFragmentResolvesPerType() {
+        // Connection-path TypeResolver routing: inline fragments dispatch per concrete type so
+        // Customer rows expose customerId+firstName and Staff rows expose staffId+firstName.
+        Map<String, Object> data = execute("""
+            { customerById(customer_id: ["3"], store_id: "2") {
+                address { occupantsConnection {
+                    nodes {
+                        __typename
+                        ... on Customer { customerId firstName }
+                        ... on Staff { staffId firstName }
+                    }
+                } }
+            } }
+            """);
+        var address = (Map<String, Object>) ((List<Map<String, Object>>) data.get("customerById"))
+            .get(0).get("address");
+        var conn = (Map<String, Object>) address.get("occupantsConnection");
+        var nodes = (List<Map<String, Object>>) conn.get("nodes");
+        var customerRow = nodes.stream().filter(n -> "Customer".equals(n.get("__typename"))).findFirst().orElseThrow();
+        var staffRow = nodes.stream().filter(n -> "Staff".equals(n.get("__typename"))).findFirst().orElseThrow();
+        assertThat(customerRow.get("customerId")).isNotNull();
+        assertThat(customerRow.get("firstName")).isEqualTo("Linda");
+        assertThat(staffRow.get("staffId")).isNotNull();
+        assertThat(staffRow.get("firstName")).isEqualTo("Mike");
+    }
 }
