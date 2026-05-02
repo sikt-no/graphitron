@@ -24,8 +24,9 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * Post-classification rewrite that resolves the final {@link ErrorChannel#mappingsConstantName}
- * for every classified {@link WithErrorChannel} field, applying the §3 hash-suffix dedup rule:
+ * Classifier-side cross-field pass that resolves the final
+ * {@link ErrorChannel#mappingsConstantName} for every classified {@link WithErrorChannel}
+ * field, applying the §3 hash-suffix dedup rule:
  *
  * <ul>
  *   <li>Two fetchers returning the same payload class with identical channel declarations
@@ -40,12 +41,14 @@ import java.util.Optional;
  *       would be misleading.</li>
  * </ul>
  *
- * <p>Spec: {@code error-handling-parity.md} §3 ({@code ErrorMappings} subsection) and the
- * "Resolve {@code mappingsConstantName} collision suffix at classify time" Remaining-work bullet.
- * The classifier ran first and stamped every {@link ErrorChannel} with the bare payload-class
- * name; this pass walks the classified fields, computes hashes, applies suffixes where needed,
- * and rewrites each {@link WithErrorChannel} carrier so the emitter consumes the resolved name
- * directly.
+ * <p>Spec: {@code error-handling-parity.md} §3 ({@code ErrorMappings} subsection). The per-field
+ * classifier runs first and stamps every {@link ErrorChannel} with the bare payload-class name;
+ * this pass runs immediately after the per-field loop and before {@link GraphitronSchema}
+ * construction, walking the classified fields to compute hashes, apply suffixes where needed,
+ * and rewrite each {@link WithErrorChannel} carrier so the resolved name lands on
+ * {@code ErrorChannel.mappingsConstantName} before any emitter sees the schema. Conceptually
+ * part of the classifier surface; physically a separate utility because the per-field
+ * classifier can't observe collisions until every field has been seen.
  */
 public final class MappingsConstantNameDedup {
 
