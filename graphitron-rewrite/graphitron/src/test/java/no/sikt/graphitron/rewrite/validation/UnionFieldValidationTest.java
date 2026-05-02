@@ -59,10 +59,10 @@ class UnionFieldValidationTest {
     }
 
     @Test
-    void rejects_connection_onCompositePkParent() {
-        // R36 Track B4c-2: union variant of the parent-PK arity guard. Same constraint as
-        // InterfaceFieldValidationTest.rejects_connection_onCompositePkParent — the
-        // DataLoader-batched windowed CTE form types its key element as Row1<ParentPkClass>.
+    void wellFormed_connection_onCompositePkParent_noErrors() {
+        // Union variant of InterfaceFieldValidationTest's composite-parent acceptance test.
+        // R36 Track B4c-2 RowN widening lifted the previous v1 single-PK constraint; the
+        // predecessor of this test was the now-removed rejects_connection_onCompositePkParent.
         var participants = List.<ParticipantRef>of(
             new ParticipantRef.TableBound("Customer", CUSTOMER, null),
             new ParticipantRef.TableBound("Staff", STAFF, null));
@@ -71,8 +71,6 @@ class UnionFieldValidationTest {
             participants, Map.of("Customer", List.of(), "Staff", List.of()));
         var parentType = new GraphitronType.TableType("Bar", null, BAR);
         var errors = validate(FieldValidationTestHelper.schema(parentType, field.name(), field));
-        assertHasKind(errors, RejectionKind.AUTHOR_ERROR,
-            "Field 'Bar.activitiesConnection': @asConnection on a multi-table interface/union "
-                + "child field whose parent type 'Bar' has a multi-column primary key (arity 2) is not supported");
+        assertThat(errors).isEmpty();
     }
 }
