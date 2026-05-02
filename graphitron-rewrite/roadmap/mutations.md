@@ -9,7 +9,7 @@ depends-on: []
 
 # Mutation bodies
 
-> Lift all six mutation leaves out of `TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS`:
+> Lift all six mutation leaves out of `TypeFetcherGenerator.STUBBED_VARIANTS`:
 > `MutationField.MutationInsertTableField`, `MutationUpdateTableField`,
 > `MutationDeleteTableField`, `MutationUpsertTableField`,
 > `MutationServiceTableField`, `MutationServiceRecordField`.
@@ -89,7 +89,7 @@ Phase 1B folds the encode-helper lookup and the `ScalarReturnType("ID")` / `Tabl
 
 ### Generator stubs
 
-`TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS` has entries for the three not-yet-emitted DML variants (INSERT, UPDATE, UPSERT); `generateTypeSpec` routes each to `stub(f)`. DELETE plus both service-mutation variants are in `IMPLEMENTED_LEAVES` and route to `buildMutationDeleteFetcher` / `buildMutationServiceTableFetcher` / `buildMutationServiceRecordFetcher`.
+`TypeFetcherGenerator.STUBBED_VARIANTS` has entries for the three not-yet-emitted DML variants (INSERT, UPDATE, UPSERT); `generateTypeSpec` routes each to `stub(f)`. DELETE plus both service-mutation variants are in `IMPLEMENTED_LEAVES` and route to `buildMutationDeleteFetcher` / `buildMutationServiceTableFetcher` / `buildMutationServiceRecordFetcher`.
 
 ### Neighbouring references
 
@@ -539,7 +539,7 @@ If INSERT's pipeline test stays compile-only (no execution path against PostgreS
 #### Implementation sites (landed)
 
 - `buildMutationInsertFetcher(MutationField.MutationInsertTableField, String outputPackage, String jooqPackage)` in `TypeFetcherGenerator.java`. Switch arm dispatches to it.
-- `MutationInsertTableField.class` is in `IMPLEMENTED_LEAVES` (removed from `NOT_IMPLEMENTED_REASONS`).
+- `MutationInsertTableField.class` is in `IMPLEMENTED_LEAVES` (removed from `STUBBED_VARIANTS`).
 - `MutationInsertTableFieldValidationTest` flipped from `STUBBED` to `VALID` (mirror of `MutationDeleteTableFieldValidationTest`).
 - `StubbedVariantPipelineTest`'s `mutationInsertOnATableType_surfacesStubbedError` was repurposed to UPDATE (still stubbed) — INSERT no longer surfaces a stub error.
 - `needsGraphitronContextHelper` widened from `MutationDeleteTableField` to `DmlTableField` so INSERT (and future UPDATE / UPSERT) get the helper too.
@@ -625,7 +625,7 @@ public static Object updateFilm(DataFetchingEnvironment env) {
 #### Implementation sites
 
 - Add `buildMutationUpdateFetcher(MutationField.MutationUpdateTableField, String outputPackage, String jooqPackage)` in `TypeFetcherGenerator.java`. Update the switch arm from `stub(f)` to the new call.
-- Move `MutationUpdateTableField.class` from `NOT_IMPLEMENTED_REASONS` to `IMPLEMENTED_LEAVES`.
+- Move `MutationUpdateTableField.class` from `STUBBED_VARIANTS` to `IMPLEMENTED_LEAVES`.
 - Flip `MutationUpdateTableFieldValidationTest` from `STUBBED` to `VALID`.
 - Optionally tighten `UPDATE_MUTATION_FIELD` in `GraphitronSchemaBuilderTest.rootFieldClassification`.
 

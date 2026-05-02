@@ -1636,12 +1636,12 @@ class TypeFetcherGeneratorTest {
     @Test
     void queryInterfaceField_isImplementedLeaf_notInNotImplementedReasons() {
         // R36 Track B2 lifts QueryInterfaceField and QueryUnionField from
-        // NOT_IMPLEMENTED_REASONS to IMPLEMENTED_LEAVES; the partition test guards the
+        // STUBBED_VARIANTS to IMPLEMENTED_LEAVES; the partition test guards the
         // disjoint partition invariant, this asserts membership directly so a regression in
         // the lift surfaces here too.
         assertThat(TypeFetcherGenerator.IMPLEMENTED_LEAVES)
             .contains(QueryField.QueryInterfaceField.class, QueryField.QueryUnionField.class);
-        assertThat(TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS)
+        assertThat(TypeFetcherGenerator.STUBBED_VARIANTS)
             .doesNotContainKeys(QueryField.QueryInterfaceField.class, QueryField.QueryUnionField.class);
     }
 
@@ -1981,10 +1981,10 @@ class TypeFetcherGeneratorTest {
     @Test
     void childInterfaceField_isImplementedLeaf_notInNotImplementedReasons() {
         // R36 Track B3 lifts ChildField.InterfaceField and ChildField.UnionField from
-        // NOT_IMPLEMENTED_REASONS into IMPLEMENTED_LEAVES.
+        // STUBBED_VARIANTS into IMPLEMENTED_LEAVES.
         assertThat(TypeFetcherGenerator.IMPLEMENTED_LEAVES)
             .contains(ChildField.InterfaceField.class, ChildField.UnionField.class);
-        assertThat(TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS)
+        assertThat(TypeFetcherGenerator.STUBBED_VARIANTS)
             .doesNotContainKeys(ChildField.InterfaceField.class, ChildField.UnionField.class);
     }
 

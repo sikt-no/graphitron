@@ -57,7 +57,7 @@ no way to discover it was a no-op.
 warnings flow through `BuildContext.addWarning(BuildWarning)` and surface via
 `GraphitronSchema.warnings()` to `GraphQLRewriteGenerator` / `ValidateMojo`. This item
 adds a second caller on the same channel. It will also serve P2 #3 ("validator asks
-can-this-generate") if we want `NOT_IMPLEMENTED_REASONS` hits to be warnings rather than
+can-this-generate") if we want `STUBBED_VARIANTS` hits to be warnings rather than
 errors in some configurations.
 
 ---
