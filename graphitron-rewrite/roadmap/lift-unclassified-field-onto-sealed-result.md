@@ -148,9 +148,11 @@ import java.util.List;
  * downstream consumer (LSP fix-its, watch-mode formatter) switch on the variant
  * rather than parsing prose.
  *
- * <p>{@code message()} is a default method that renders the variant's data
- * as a single human-readable sentence, for the build-time log surface that
+ * <p>{@code message()} renders the variant's data as a single human-readable
+ * sentence, for the build-time log surface that
  * {@link no.sikt.graphitron.rewrite.GraphitronSchemaValidator} writes today.
+ * Each leaf record overrides it; the interface itself only declares the
+ * contract.
  */
 public sealed interface Rejection {
 
@@ -624,14 +626,16 @@ comes from the rejection.
 ## Phase B — `UnclassifiedType` lift (mechanical)
 
 Same shape as Phase A, on
-the ~24 `new UnclassifiedType(...)` sites in `TypeBuilder` and friends
-(`grep -rn "new UnclassifiedType" graphitron/src/main`). Every site today
+the ~24 `new UnclassifiedType(...)` sites (21 in `TypeBuilder`, 3 in
+`schema/federation/EntityResolutionBuilder` for federation `@key`-on-non-table
+and TableInterfaceType rejections). Every site today
 produces an `AuthorError`-shaped string ("table 'X' could not be resolved in
 the jOOQ catalog", "no `@table` directive on '...'", participant resolution
 errors, NodeId key-column errors). A handful of these already have candidate
 lists handy (`catalog.allTableNames()`, `catalog.allForeignKeySqlNames()`) —
-those become first-class `AuthorError` rejections with populated `candidates`;
-the rest carry empty `candidates`.
+those become `AuthorError.UnknownName` rejections with populated `candidates`;
+the rest are `AuthorError.Structural` rejections, matching the same
+UnknownName-vs-Structural split as Phase A.
 
 Phase A and Phase B can ship in the same PR if the diff stays under ~600
 lines; otherwise B follows A.
