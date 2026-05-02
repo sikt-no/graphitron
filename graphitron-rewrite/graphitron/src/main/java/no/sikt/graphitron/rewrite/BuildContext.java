@@ -528,20 +528,22 @@ class BuildContext {
         if (fks.isEmpty()) {
             String msg = "no foreign key found between tables '" + source + "' and '" + target + "'";
             if (directiveAbsent) {
-                msg += "; add a @reference directive to specify the join path"
-                    + " (e.g. @reference(path: [{key: \"<fk-name>\"}]) for a single-hop FK,"
-                    + " or chain elements via @reference(path: [{key: \"...\"}, {key: \"...\"}]) for a multi-hop join)";
+                msg += "; add a @reference directive to specify the join path."
+                    + " The catalog has no FK directly connecting these two tables, so a single-hop"
+                    + " '@reference(path: [{key: \"<fk-name>\"}])' will not resolve. Either chain"
+                    + " through an intermediate table that has FKs to both"
+                    + " ('@reference(path: [{key: \"<fk-to-intermediate>\"}, {key: \"<fk-from-intermediate>\"}])'),"
+                    + " or join on a non-FK predicate via '@reference(path: [{condition: {...}}])'";
             }
             return msg;
         }
         String msg = "multiple foreign keys found between tables '" + source + "' and '" + target + "'";
+        String fkNames = fks.stream().map(ForeignKey::getName).collect(Collectors.joining(", "));
         if (directiveAbsent) {
-            String fkNames = fks.stream().map(ForeignKey::getName).collect(Collectors.joining(", "));
-            msg += "; add a @reference directive to specify the join path"
+            msg += "; add a @reference directive to specify which one"
                 + " — candidates: " + fkNames
-                + " (e.g. @reference(path: [{key: \"" + fks.get(0).getName() + "\"}]))";
+                + " (e.g. '@reference(path: [{key: \"" + fks.get(0).getName() + "\"}])')";
         } else {
-            String fkNames = fks.stream().map(ForeignKey::getName).collect(Collectors.joining(", "));
             msg += " — use 'key' to specify which: " + fkNames;
         }
         return msg;
