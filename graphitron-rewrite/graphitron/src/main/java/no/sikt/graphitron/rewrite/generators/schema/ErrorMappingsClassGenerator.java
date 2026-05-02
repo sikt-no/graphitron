@@ -109,22 +109,17 @@ public final class ErrorMappingsClassGenerator {
      * one {@link Handler} on the channel's flattened handler list (source order:
      * {@code @error} type declaration order, then {@code handlers} array order within each type).
      *
-     * <p>Handlers carried on an {@link ErrorType} whose {@code classFqn} is empty are skipped
-     * silently: the {@code (List<String>, String) -> Object} factory needs a backing class to
-     * instantiate. The fallthrough produces an empty {@code Mapping[]} for channels whose every
-     * mapped {@code @error} type lacks a backing class; the dispatch arm then routes through
-     * the unmatched/redact arm, which is the safe disposition until R12's class-resolution
-     * lift lands.
+     * <p>Under the R12 source-direct dispatch contract every handler emits a {@code Mapping}
+     * regardless of whether the {@code @error} type carries a backing class: the matched
+     * throwable itself goes into the errors list, so no per-mapping factory is needed.
      */
     private static CodeBlock buildMappingArrayInitializer(ErrorChannel channel, ClassName errorRouter) {
         var arr = CodeBlock.builder().add("new $T[] {\n", errorRouter.nestedClass(ErrorRouterClassGenerator.MAPPING_INTERFACE));
         boolean first = true;
         for (var errType : channel.mappedErrorTypes()) {
-            if (errType.classFqn().isEmpty()) continue;
-            var errClass = ClassName.bestGuess(errType.classFqn().get());
             for (var handler : errType.handlers()) {
                 if (!first) arr.add(",\n");
-                arr.add("    ").add(buildMappingEntry(handler, errClass, errorRouter));
+                arr.add("    ").add(buildMappingEntry(handler, errorRouter));
                 first = false;
             }
         }
@@ -132,7 +127,7 @@ public final class ErrorMappingsClassGenerator {
         return arr.build();
     }
 
-    private static CodeBlock buildMappingEntry(Handler handler, ClassName errClass, ClassName errorRouter) {
+    private static CodeBlock buildMappingEntry(Handler handler, ClassName errorRouter) {
         var exceptionMapping = errorRouter.nestedClass(ErrorRouterClassGenerator.EXCEPTION_MAPPING);
         var sqlStateMapping = errorRouter.nestedClass(ErrorRouterClassGenerator.SQL_STATE_MAPPING);
         var vendorCodeMapping = errorRouter.nestedClass(ErrorRouterClassGenerator.VENDOR_CODE_MAPPING);
@@ -141,32 +136,28 @@ public final class ErrorMappingsClassGenerator {
         return switch (handler) {
             case ExceptionHandler eh -> {
                 var excClass = bestGuessOrObject(eh.exceptionClassName());
-                yield CodeBlock.of("new $T($T.class, $L, $L, $T::new)",
+                yield CodeBlock.of("new $T($T.class, $L, $L)",
                     exceptionMapping,
                     excClass,
                     literalOrNull(eh.matches().orElse(null)),
-                    literalOrNull(eh.description().orElse(null)),
-                    errClass);
+                    literalOrNull(eh.description().orElse(null)));
             }
             case SqlStateHandler sh ->
-                CodeBlock.of("new $T($S, $L, $L, $T::new)",
+                CodeBlock.of("new $T($S, $L, $L)",
                     sqlStateMapping,
                     sh.sqlState(),
                     literalOrNull(sh.matches().orElse(null)),
-                    literalOrNull(sh.description().orElse(null)),
-                    errClass);
+                    literalOrNull(sh.description().orElse(null)));
             case VendorCodeHandler vh ->
-                CodeBlock.of("new $T($S, $L, $L, $T::new)",
+                CodeBlock.of("new $T($S, $L, $L)",
                     vendorCodeMapping,
                     vh.vendorCode(),
                     literalOrNull(vh.matches().orElse(null)),
-                    literalOrNull(vh.description().orElse(null)),
-                    errClass);
+                    literalOrNull(vh.description().orElse(null)));
             case ValidationHandler vh ->
-                CodeBlock.of("new $T($L, $T::new)",
+                CodeBlock.of("new $T($L)",
                     validationMapping,
-                    literalOrNull(vh.description().orElse(null)),
-                    errClass);
+                    literalOrNull(vh.description().orElse(null)));
         };
     }
 
