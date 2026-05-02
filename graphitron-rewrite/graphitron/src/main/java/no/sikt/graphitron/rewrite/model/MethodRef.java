@@ -37,6 +37,19 @@ public interface MethodRef {
     List<Param> params();
 
     /**
+     * Fully qualified names of the checked exceptions the underlying Java method declares
+     * (i.e. {@link java.lang.reflect.Method#getExceptionTypes()}). Empty when the method has no
+     * {@code throws} clause or when this {@link MethodRef} variant doesn't reflect a Java method
+     * (e.g. {@code @condition} expressions). Populated by the catalog at reflection time
+     * ({@code ServiceCatalog.reflectServiceMethod} / {@code reflectTableMethod}); consumed by the
+     * classifier's R12 §4 declared-exception match check
+     * ({@code FieldBuilder.checkDeclaredCheckedExceptions}) so a developer method that throws
+     * a checked exception with no covering {@code @error} handler is rejected at classify time
+     * rather than silently flowing through {@code ErrorRouter.redact} at runtime.
+     */
+    default List<String> declaredExceptions() { return List.of(); }
+
+    /**
      * Returns the single {@link Param.Sourced} parameter — the DataLoader batch-key parameter
      * whose value comes from the DataLoader {@code keys} list.
      *
@@ -115,8 +128,25 @@ public interface MethodRef {
         String className,
         String methodName,
         TypeName returnType,
-        List<Param> params
-    ) implements MethodRef {}
+        List<Param> params,
+        List<String> declaredExceptions
+    ) implements MethodRef {
+
+        public Basic {
+            declaredExceptions = List.copyOf(declaredExceptions);
+        }
+
+        /**
+         * Backward-compatible 4-arg constructor for call sites that don't (yet) populate
+         * declared exceptions: defaults to an empty list. {@code ServiceCatalog} reflection
+         * sites use the 5-arg form to capture {@code Method.getExceptionTypes()}; tests and
+         * non-reflection sites that don't care about the §4 match rule continue to use this
+         * 4-arg form.
+         */
+        public Basic(String className, String methodName, TypeName returnType, List<Param> params) {
+            this(className, methodName, returnType, params, List.of());
+        }
+    }
 
     /**
      * Reflection data for one parameter of a resolved method.

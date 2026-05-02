@@ -374,9 +374,42 @@ wrapper + dispatch arm lands; phasing within is the implementer's call.
   coverage in `MappingsConstantNameDedupTest`; emitter-tier integration in
   `ErrorMappingsClassGeneratorTest`.
 - `@service` / `@tableMethod` declared checked exceptions checked against the
-  field's `ErrorChannel` and routed through `ErrorRouter.dispatch` (§4).
-- [`checked-exceptions-typed-errors.md`](checked-exceptions-typed-errors.md) is
-  deleted when this lands.
+  field's `ErrorChannel` (§4): **landed**. `ServiceCatalog.reflectServiceMethod`
+  and `reflectTableMethod` capture each method's
+  `Method.getExceptionTypes()` onto `MethodRef.Basic.declaredExceptions()`;
+  `EnumMappingResolver.enrichArgExtractions` carries the slot through its
+  rebuild pass. The classifier-side `CheckedExceptionMatcher.unmatched`
+  walks each declared checked exception against the channel's flattened
+  handler list using the §4 match rule (`ExceptionHandler` covers an exception
+  assignable to its class; `SqlStateHandler` / `VendorCodeHandler` cover any
+  `SQLException`; `ValidationHandler` covers nothing in dispatch);
+  `InterruptedException` / `IOException` are exempt per the "Special cases"
+  subsection. `FieldBuilder.checkDeclaredCheckedExceptions` is wired into the
+  four root `@service` paths (via `buildServiceField`), the two child
+  `@service` paths, and the root + child `@tableMethod` paths; unmatched
+  declared exceptions surface as `UnclassifiedField` with a reason naming the
+  offending FQNs and the two fixes (declare an `@error` that covers each, or
+  remove the throws). The runtime path is unchanged: the existing
+  per-fetcher `catch (Exception e)` arm routes through `ErrorRouter.dispatch`
+  (channel present) or `ErrorRouter.redact` (channel absent), so no second
+  runtime mechanism is introduced. `buildServiceField` wears
+  `@LoadBearingClassifierCheck(key = "service-method.declared-exceptions-covered")`.
+  Direct unit coverage in `CheckedExceptionMatcherTest`; classifier
+  integration coverage in `CheckedExceptionClassificationTest` and the new
+  declared-exception capture cases in `ServiceCatalogTest`.
+
+  *Tablemethod / child @service follow-up*: those variant records don't
+  currently carry an `errorChannel` slot, so the §4 check runs with
+  `Optional.empty()` channel for them and rejects any non-exempt declared
+  checked exception. Lifting `errorChannel` onto the tablemethod variants
+  (and onto child `ServiceTableField` / `ServiceRecordField`) is a separate
+  enhancement; until then, schema authors of those fields must keep service
+  method signatures clean of non-exempt checked exceptions.
+
+  *R2 retirement*: the
+  [`checked-exceptions-typed-errors.md`](checked-exceptions-typed-errors.md)
+  Backlog item (R2) is now subsumed by §4 and can be retired when its
+  status moves to Done.
 
 ---
 
