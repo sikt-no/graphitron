@@ -729,3 +729,17 @@ type Project @table(name: "project") {
     name:      String! @field(name: "NAME")
     items:     [ProjectItem!]! @asConnection(defaultFirstValue: 5)
 }
+
+# R22 Phase 2 fixture: minimal INSERT input. Sakila's `film` table has two NOT-NULL columns
+# without defaults (`title`, `language_id`); everything else can be omitted and defaulted at
+# the DB. The classifier admits @lookupKey-free INSERT inputs (Invariant #5).
+input FilmCreateInput @table(name: "film") {
+    title:      String! @field(name: "title")
+    languageId: Int!    @field(name: "language_id")
+}
+
+type Mutation {
+    # R22 Phase 2: INSERT emitter with TableBoundReturnType return. The fetcher emits
+    # `dsl.insertInto(film, title, language_id).values(...).returningResult(<$fields>).fetchOne(r -> r)`.
+    createFilm(in: FilmCreateInput!): Film @mutation(typeName: INSERT)
+}
