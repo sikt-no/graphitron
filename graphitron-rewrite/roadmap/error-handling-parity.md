@@ -344,12 +344,17 @@ wrapper + dispatch arm lands; phasing within is the implementer's call.
     any `ValidationHandler`: walks every `Arg`-sourced parameter, validates each
     non-null arg, accumulates violations as `GraphQLError`s, and short-circuits
     with the payload's errors-arm filled by the violations list.
+  - Mutation-side wrapper integration: **landed**. Phase 6 of `mutations.md`
+    un-stubbed `MutationServiceTableField` and `MutationServiceRecordField` by
+    delegating to the shared `buildServiceFetcherCommon` helper, so the §3
+    try/catch dispatch arm, §5 Jakarta validation pre-step, and §2c
+    `resultAssembly` success-arm assembly all carry over for free on the
+    mutation side. (DML-on-jOOQ-table wrapper integration for the remaining
+    INSERT/UPDATE/UPSERT stubs is tracked in `mutations.md` Phases 2/4/5.)
   - **Remaining**:
     - Optional `extensions.constraint` field population when the SDL `@error`
       type declares an `extensions` field (the source-class accessor reflection
       check from §2c will detect the SDL signal automatically).
-    - DML-side wrapper integration once the `MutationServiceTableField` /
-      `MutationServiceRecordField` emitters un-stub.
 
   *Test fixture updates*: `SakPayload`, `DeleteFilmPayload` errors slots become
   `List<Object>`. SDL fixtures stop using `@record` co-locations on `@error`

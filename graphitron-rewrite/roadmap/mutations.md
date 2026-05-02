@@ -32,7 +32,7 @@ What remains for R22:
 
 1. **Phase 1B — model alignment.** Lift the return-expression dispatch into the model as a sealed `DmlReturnExpression` sub-variant (per the *Generation-thinking* and *Narrow component types* principles), and tag the load-bearing classifier guarantees with `@LoadBearingClassifierCheck` / `@DependsOnClassifierCheck` (per the *Classifier guarantees shape emitter assumptions* principle). This is a pre-Phase-2 task: doing it first means INSERT/UPDATE/UPSERT land emitters that pattern-match on a pre-resolved variant rather than inlining the same `instanceof ScalarReturnType` / `wrapper().isList()` switch four times.
 2. **Phases 2 / 4 / 5 — DML emitters** (INSERT, UPDATE, UPSERT).
-3. **Phase 6 — service emitters** (`MutationServiceTableField`, `MutationServiceRecordField`).
+3. ~~**Phase 6 — service emitters** (`MutationServiceTableField`, `MutationServiceRecordField`).~~ Landed: both emitters delegate to the shared `buildServiceFetcherCommon` helper, picking up R12's wrapper integration for free.
 
 The *Consolidation* item that previously called for an emitter-side `buildMutationReturnExpression` helper is replaced by Phase 1B's model lift.
 
@@ -48,8 +48,8 @@ The *Consolidation* item that previously called for an emitter-side `buildMutati
 | `MutationInsertTableField` | **Ready (Phase 2, after 1B)** | Record + classifier done. Lands `buildMutationInsertFetcher` against the post-1B `returnExpression` shape and flips `IMPLEMENTED_LEAVES`. |
 | `MutationUpdateTableField` | **Ready (Phase 4, after 1B)** | Record + classifier done. Lands `buildMutationUpdateFetcher` against the post-1B shape. |
 | `MutationUpsertTableField` | **Ready (Phase 5, after 1B)** | Record + classifier done. Lands `buildMutationUpsertFetcher` against the post-1B shape. |
-| `MutationServiceTableField` | **Ready (Phase 6)** | Record + classifier done; `validateRootServiceInvariants` and `resolveServiceField` already wire it. Phase 6 lands `buildMutationServiceTableFetcher` (delegates to the shared service-fetcher helper) and adds `@DependsOnClassifierCheck` for the strict-return guarantee. |
-| `MutationServiceRecordField` | **Ready (Phase 6)** | Same as above for the non-table service variant. |
+| `MutationServiceTableField` | **Landed** | `buildMutationServiceTableFetcher` delegates to the shared `buildServiceFetcherCommon` helper, inheriting the R12 §3 try/catch wrapper, §5 Jakarta validation pre-step, and §2c `resultAssembly` success-arm assembly. Wears `@DependsOnClassifierCheck(key = "service-catalog-strict-service-return", ...)` for the strict-return guarantee. Validation test flipped from `STUBBED` to `VALID`. |
+| `MutationServiceRecordField` | **Landed** | Same shape as above for the non-table service variant; `buildMutationServiceRecordFetcher` mirrors `buildQueryServiceRecordFetcher` (handles `ResultReturnType` with `fqClassName`, `PojoResultType`, and `ScalarReturnType` via `computeMutationServiceRecordReturnType`). |
 
 **Landing rule (post-Phase-1B).** All four DML records share `(tableInputArg, returnExpression, errorChannel)` via `DmlTableField`. Emitters read from `f.tableInputArg().{name(), inputTable(), fieldBindings(), fields()}` and pattern-match on `f.returnExpression()`. No emitter inlines an `instanceof ScalarReturnType` check or reads `f.returnType().wrapper().isList()`; the dispatch lives once, in the classifier.
 
@@ -85,7 +85,7 @@ Phase 1B folds the encode-helper lookup and the `ScalarReturnType("ID")` / `Tabl
 
 ### Generator stubs
 
-`TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS` has entries for the five not-yet-emitted variants (INSERT, UPDATE, UPSERT, MutationServiceTableField, MutationServiceRecordField); `generateTypeSpec` routes each to `stub(f)`. DELETE is in `IMPLEMENTED_LEAVES` and routed to `buildMutationDeleteFetcher`.
+`TypeFetcherGenerator.NOT_IMPLEMENTED_REASONS` has entries for the three not-yet-emitted DML variants (INSERT, UPDATE, UPSERT); `generateTypeSpec` routes each to `stub(f)`. DELETE plus both service-mutation variants are in `IMPLEMENTED_LEAVES` and route to `buildMutationDeleteFetcher` / `buildMutationServiceTableFetcher` / `buildMutationServiceRecordFetcher`.
 
 ### Neighbouring references
 
@@ -639,13 +639,9 @@ Pipeline: at minimum the all-`@lookupKey` case (`doNothing()` path) and a partia
 
 ### Phase 6 — Service mutations
 
-**Status: Ready (independent of 1B).** Records + classifier already done. `classifyMutationField`'s `@service` arm runs `resolveServiceField`, `validateRootServiceInvariants` (§1 Connection rejection, §2 no `Sources` parameter at root), and the strict-return check, then emits the appropriate variant carrying the resolved `MethodRef`. Only the two emitters and the partition flip remain. Service variants don't carry `DmlReturnExpression` (their return shape comes from the developer method's reflected return type, not from a four-arm DML dispatch), so Phase 6 can land before, alongside, or after Phase 1B.
+**Status: Landed.** Both `MutationServiceTableField` and `MutationServiceRecordField` un-stubbed by delegating to the shared `buildServiceFetcherCommon` helper that already handles `QueryServiceTableField` / `QueryServiceRecordField`. The R12 §3 try/catch wrapper, §5 Jakarta validation pre-step, and §2c `resultAssembly` success-arm assembly all carry over for free on the mutation side; the un-stub doubled as the R12 "DML-side wrapper integration" follow-up. Both emitters wear `@DependsOnClassifierCheck(key = "service-catalog-strict-service-return", ...)`. Both variants moved from `NOT_IMPLEMENTED_REASONS` to `IMPLEMENTED_LEAVES`; the corresponding `MutationServiceTableFieldValidationTest` / `MutationServiceRecordFieldValidationTest` flipped from `STUBBED` to `VALID`. New unit tests in `TypeFetcherGeneratorTest` cover: emission shape, `Result<Record>` declaration for list-cardinality table returns, typed-`fqClassName` declaration on the record variant, dispatch-arm wiring under a present `ErrorChannel`, redact-arm fallback under an absent channel, and the validator pre-step under a `ValidationHandler`. (Service variants don't carry `DmlReturnExpression`; their return shape comes from the developer method's reflected return type. Phase 6 was therefore independent of Phase 1B.)
 
-**Synchronous, no DataLoader.** Both service-mutation variants emit synchronous methods — same as root service queries. Root mutation fields have no parent-batching context; per-request concurrency is irrelevant, and the developer-supplied method owns any transaction scope.
-
-#### `MutationServiceTableField`
-
-Same shape as `QueryServiceTableField`. The developer method returns a `Result<Record>` (list) or `Record` (single). The generator emits a synchronous method identical to `buildQueryServiceTableFetcher` — there is no special write semantics because the service owns all SQL, including any transactions:
+**Reference shape (table variant).**
 
 ```java
 public static Result<Record> activeRentals(DataFetchingEnvironment env) {
@@ -657,24 +653,7 @@ public static Result<Record> activeRentals(DataFetchingEnvironment env) {
 }
 ```
 
-Implementation: add `buildMutationServiceTableFetcher(MutationField.MutationServiceTableField, ...)` in `TypeFetcherGenerator`. Call `buildServiceFetcherCommon` directly (the same shared helper that `buildQueryServiceTableFetcher` delegates to) rather than going through the query-flavoured wrapper; the two variants have identical record shapes and the common helper already handles both.
-
-#### `MutationServiceRecordField`
-
-The classifier maps this variant to two distinct `ReturnTypeRef` shapes (see `classifyMutationField`'s `case ResultReturnType` and `case ScalarReturnType` arms), both of which this emitter must handle:
-
-- **`ReturnTypeRef.ScalarReturnType`** — scalar (e.g. `Int`, `String`, `Boolean`), plain DTO, or any non-table non-record Java type. Emitted body: `return SomeService.method(...);` with return type `Object`. graphql-java coerces to the declared SDL type.
-- **`ReturnTypeRef.ResultReturnType`** — a `@record`-annotated GraphQL type backed by a jOOQ `Record` subclass. The service returns the record directly; graphql-java's registered property/record fetchers walk its fields. No projection.
-
-Both shapes share the same argument-list emission (`ArgCallEmitter.buildMethodBackedCallArgs` over `method().params()`, with `DslContext` / `Arg` / `Context` expressions) and both compile against `Object` as the method signature. Add `buildMutationServiceRecordFetcher(MutationField.MutationServiceRecordField, ...)` with an internal switch on the `ReturnTypeRef` variant only if emission actually diverges (it currently doesn't — the only observable difference is in graphql-java's coercion path, not the generator output).
-
-Both service variants: remove from `NOT_IMPLEMENTED_REASONS` and add to `IMPLEMENTED_LEAVES` in the same commit (`GeneratorCoverageTest` enforces the disjoint partition). Both use the shared `buildMethodBackedCallArgs` helper. Pass `null` for `tableExpression` — root mutation fields have no parent table context, so no `ParamSource.Table` slot will be present in the method's param list. The emitter already handles `null` there for root service queries.
-
-Both emitters land wearing `@DependsOnClassifierCheck(key = "service-catalog-strict-service-return", reliesOn = "...")` to declare their dependency on `ServiceCatalog.reflectServiceMethod`'s strict-return guarantee — the same producer key the existing `buildQueryServiceTableFetcher` consumer uses, since the service-mutation emitter inherits the typed return shape.
-
-#### Tests
-
-Pipeline: one case per variant asserting the emitted method calls the service method and does not emit `$fields`. Flip the corresponding `MutationServiceTableFieldValidationTest` / `MutationServiceRecordFieldValidationTest` from `STUBBED` to `VALID`. Execution: a fixture service method on the mutation type; assert the returned value flows through graphql-java's registered fetchers.
+Root mutation fields have no parent-batching context, so the helper's pass-`null`-for-`tableExpression` path applies (already exercised by the query-side service emitters).
 
 ---
 
