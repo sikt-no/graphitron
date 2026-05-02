@@ -255,6 +255,22 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void films_filteredByArgNodeId_returnsRowsMatchingDecodedIds() {
+        // R40: argument-level same-table @nodeId — `filmsByNodeIdArg(ids: [ID!]! @nodeId(typeName: "Film"))`
+        // routes through the @lookupKey dispatch path (same-table @nodeId implies isLookupKey
+        // at classify time; the field promotes to a QueryLookupTableField). Each opaque ID
+        // decodes once at the per-row decode loop in addRowBuildingCore and feeds the VALUES+
+        // JOIN against film.film_id, so the result rows correspond exactly to the supplied ids
+        // (ordering is restored by ConnectionHelper-style index column).
+        String id2 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 2);
+        String id4 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 4);
+        Map<String, Object> data = execute(
+            "{ filmsByNodeIdArg(ids: [\"" + id2 + "\", \"" + id4 + "\"]) { filmId title } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmsByNodeIdArg");
+        assertThat(films).extracting(f -> f.get("filmId")).containsExactlyInAnyOrder(2, 4);
+    }
+
+    @Test
     void films_filteredBySameTableNodeId_emptyListReturnsNoRows() {
         // R50 phase (e4b): the post-collapse successor of NodeIdInFilterField is a column-shaped
         // ColumnField with NodeIdDecodeKeys.SkipMismatchedElement, which lands on the same
