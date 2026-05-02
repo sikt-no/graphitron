@@ -244,17 +244,23 @@ public final class ArgCallEmitter {
         // expression form, but inverting through a helper static is cleaner. Generated code
         // calls NodeIdEncoder.decode<TypeName>(_s) and wraps via a guard.
         if (arity == 1) {
+            // Java 17 compatibility: pattern matching with parameterised types is Java 21+.
+            // Cast to Object first so the {@code instanceof Record1 _r} pattern is conditional
+            // (raw {@code Record1} is a strict subtype of {@code Object}); without the cast,
+            // {@code instanceof Record1<X> _r} is an unconditional pattern requiring Java 21+.
+            ClassName recordRaw = ClassName.get("org.jooq", "Record1");
+            ClassName valueClass = ClassName.bestGuess(decode.outputColumnShape().get(0).columnClass());
             if (throwOnMismatch) {
                 return CodeBlock.of(
-                    "($L) instanceof String _s ? ($T.$L(_s) instanceof $T _r ? _r.value1() : "
+                    "($L) instanceof String _s ? (((Object) $T.$L(_s)) instanceof $T _r ? ($T) _r.value1() : "
                     + "(($T<?>) () -> { throw new $T($S); }).get()) : null",
-                    wireExpr, encoderClass, methodName, decode.returnType(),
+                    wireExpr, encoderClass, methodName, recordRaw, valueClass,
                     ClassName.get("java.util.function", "Supplier"),
                     ClassName.get("graphql", "GraphqlErrorException"),
                     "Decoded NodeId did not match the expected type for this argument");
             }
-            return CodeBlock.of("($L) instanceof String _s && $T.$L(_s) instanceof $T _r ? _r.value1() : null",
-                wireExpr, encoderClass, methodName, decode.returnType());
+            return CodeBlock.of("($L) instanceof String _s && ((Object) $T.$L(_s)) instanceof $T _r ? ($T) _r.value1() : null",
+                wireExpr, encoderClass, methodName, recordRaw, valueClass);
         }
         // arity > 1: project decoded Record into RowN via valuesRow().
         ClassName recordCls = ClassName.get("org.jooq", "Record");

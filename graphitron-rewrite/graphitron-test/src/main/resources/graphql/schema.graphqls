@@ -91,6 +91,12 @@ type Query {
     # own table → primary-key IN predicate via NodeIdInFilterField. Each opaque ID decodes
     # once at the carrier and feeds a (film_id) IN (...) jOOQ predicate.
     filmsBySameTableNodeId(filter: FilmSameTableNodeIdInput): [Film!]!
+    # R40: argument-level same-table @nodeId — same lookup-by-id semantics as the input-field
+    # variant above, but with the encoded ids supplied as a top-level GraphQL arg rather than
+    # nested under a @table input filter. Each opaque ID decodes once and feeds a primary-key
+    # IN lookup via the @lookupKey dispatch path; same-table @nodeId implies @lookupKey at
+    # classify time so no explicit directive is needed (and one would be redundant).
+    filmsByNodeIdArg(ids: [ID!]! @nodeId(typeName: "Film")): [Film!]!
     filmsWithImplicitInput(filter: FilmImplicitInput): [Film!]!
     # implicit-input-conditions plan: outer @condition(override: true) on a field whose
     # @table input has no explicit @condition on its fields. The enclosingOverride flag
