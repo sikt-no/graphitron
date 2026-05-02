@@ -871,4 +871,316 @@ class NodeIdPipelineTest {
             .extracting(ColumnRef::sqlName)
             .containsExactly("pk_id");
     }
+
+    // ===== R40: argument-level @nodeId =====
+    //
+    // Top-level argument @nodeId leaves classify into one of two shapes per NodeIdLeafResolver:
+    //   - Same-table (T.table() == field.backingTable()) — lookup-by-id semantics; projects to
+    //     ColumnArg/CompositeColumnArg with isLookupKey=true so LookupMappingResolver picks it
+    //     up identically to @lookupKey-synthesised carriers (extraction is ThrowOnMismatch to
+    //     match the existing lookup-key dispatch contract).
+    //   - FK-target (T.table() reachable via single-hop FK) — filter semantics; projects to
+    //     ColumnReferenceArg/CompositeColumnReferenceArg with the resolved joinPath. Today's
+    //     emitter shipping subset is the simple direct-FK case (FK targetColumns positionally
+    //     equal NodeType keyColumns); pathological cases are rejected at classify time with a
+    //     pointed deferred-emission hint, parallel to R24's output-side JOIN-with-projection.
+
+    enum ArgumentSameTableNodeIdCase {
+        SAME_TABLE_SCALAR_SINGLE_PK(
+            "scalar `id: ID! @nodeId(typeName: \"Baz\")` arg on a Baz-returning field → "
+                + "QueryLookupTableField with ScalarLookupArg over baz.id",
+            """
+            type Baz implements Node @table(name: "baz") @node { id: ID! }
+            type Query { bazById(id: ID! @nodeId(typeName: "Baz")): Baz }
+            """,
+            schema -> {
+                var f = (no.sikt.graphitron.rewrite.model.QueryField.QueryLookupTableField)
+                    schema.field("Query", "bazById");
+                var cm = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) f.lookupMapping();
+                var arg = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping.LookupArg.ScalarLookupArg)
+                    cm.args().get(0);
+                assertThat(arg.list()).isFalse();
+                assertThat(arg.targetColumn().sqlName()).isEqualTo("id");
+                assertThat(arg.extraction()).isInstanceOf(CallSiteExtraction.ThrowOnMismatch.class);
+            }),
+
+        SAME_TABLE_LIST_SINGLE_PK(
+            "list `ids: [ID!]! @nodeId(typeName: \"Baz\")` arg → "
+                + "QueryLookupTableField with ScalarLookupArg list:true",
+            """
+            type Baz implements Node @table(name: "baz") @node { id: ID! }
+            type Query { bazByIds(ids: [ID!]! @nodeId(typeName: "Baz")): [Baz!]! }
+            """,
+            schema -> {
+                var f = (no.sikt.graphitron.rewrite.model.QueryField.QueryLookupTableField)
+                    schema.field("Query", "bazByIds");
+                var cm = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) f.lookupMapping();
+                var arg = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping.LookupArg.ScalarLookupArg)
+                    cm.args().get(0);
+                assertThat(arg.list()).isTrue();
+                assertThat(arg.targetColumn().sqlName()).isEqualTo("id");
+            }),
+
+        SAME_TABLE_LIST_COMPOSITE_PK(
+            "list `ids: [ID!]! @nodeId(typeName: \"Bar\")` over composite-PK NodeType → "
+                + "QueryLookupTableField with DecodedRecord (per-row decode + positional bindings)",
+            """
+            type Bar implements Node @table(name: "bar") @node { id: ID! }
+            type Query { barByIds(ids: [ID!]! @nodeId(typeName: "Bar")): [Bar!]! }
+            """,
+            schema -> {
+                var f = (no.sikt.graphitron.rewrite.model.QueryField.QueryLookupTableField)
+                    schema.field("Query", "barByIds");
+                var cm = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) f.lookupMapping();
+                var arg = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping.LookupArg.DecodedRecord)
+                    cm.args().get(0);
+                assertThat(arg.list()).isTrue();
+                assertThat(arg.bindings()).hasSize(2);
+                assertThat(arg.decodeMethod().methodName()).isEqualTo("decodeBar");
+            }),
+
+        BARE_NODEID_DEFAULTS_TO_BACKING_TABLE(
+            "bare `ids: [ID!]! @nodeId` infers typeName from the unique @table-matching object "
+                + "type backing the field's resolved table → DecodedRecord identical to the "
+                + "explicit-typeName case",
+            """
+            type Bar implements Node @table(name: "bar") @node { id: ID! }
+            type Query { barByIds(ids: [ID!]! @nodeId): [Bar!]! }
+            """,
+            schema -> {
+                var f = (no.sikt.graphitron.rewrite.model.QueryField.QueryLookupTableField)
+                    schema.field("Query", "barByIds");
+                var cm = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) f.lookupMapping();
+                var arg = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping.LookupArg.DecodedRecord)
+                    cm.args().get(0);
+                assertThat(arg.decodeMethod().methodName()).isEqualTo("decodeBar");
+            }),
+
+        T_NOT_IN_SCHEMA(
+            "@nodeId(typeName: \"DoesNotExist\") → UnclassifiedField (target type not in schema)",
+            """
+            type Baz implements Node @table(name: "baz") @node { id: ID! }
+            type Query { bazById(id: ID @nodeId(typeName: "DoesNotExist")): Baz }
+            """,
+            schema -> {
+                var f = (GraphitronField.UnclassifiedField) schema.field("Query", "bazById");
+                assertThat(f.reason()).contains("@nodeId(typeName:) type 'DoesNotExist'");
+            }),
+
+        T_NOT_TABLE_ANNOTATED(
+            "@nodeId(typeName: T) where T is not @table-annotated → UnclassifiedField",
+            """
+            type Baz implements Node @table(name: "baz") @node { id: ID! }
+            type Plain { name: String }
+            type Query { bazById(id: ID @nodeId(typeName: "Plain")): Baz }
+            """,
+            schema -> {
+                var f = (GraphitronField.UnclassifiedField) schema.field("Query", "bazById");
+                assertThat(f.reason()).contains("not @table-annotated");
+            }),
+
+        LOOKUP_KEY_REDUNDANT_REJECTED(
+            "@nodeId @lookupKey on the same arg → UnclassifiedField (the directives are redundant "
+                + "for same-table; @lookupKey is meaningless for FK-target — both are rejected)",
+            """
+            type Baz implements Node @table(name: "baz") @node { id: ID! }
+            type Query { bazByIds(ids: [ID!]! @nodeId(typeName: "Baz") @lookupKey): [Baz!]! }
+            """,
+            schema -> {
+                var f = (GraphitronField.UnclassifiedField) schema.field("Query", "bazByIds");
+                assertThat(f.reason())
+                    .contains("@nodeId already implies @lookupKey")
+                    .contains("redundant");
+            }),
+
+        FIELD_DIRECTIVE_REJECTED(
+            "@nodeId @field(name:) on the same arg → UnclassifiedField (the directives target "
+                + "different binding axes — key columns come from the resolved NodeType)",
+            """
+            type Baz implements Node @table(name: "baz") @node { id: ID! }
+            type Query { bazById(id: ID @nodeId(typeName: "Baz") @field(name: "id")): Baz }
+            """,
+            schema -> {
+                var f = (GraphitronField.UnclassifiedField) schema.field("Query", "bazById");
+                assertThat(f.reason())
+                    .contains("@nodeId arg cannot also carry @field");
+            });
+
+        final String sdl;
+        final Consumer<GraphitronSchema> assertions;
+        ArgumentSameTableNodeIdCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
+            this.sdl = sdl;
+            this.assertions = assertions;
+        }
+        @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(ArgumentSameTableNodeIdCase.class)
+    void argumentSameTableNodeIdClassification(ArgumentSameTableNodeIdCase tc) {
+        tc.assertions.accept(TestSchemaHelper.buildSchema(tc.sdl, FIXTURE_CTX));
+    }
+
+    enum ArgumentFkTargetNodeIdCase {
+        FK_TARGET_LIST_SINGLE_PK(
+            "list `bazIds: [ID!]! @nodeId(typeName: \"Baz\")` on a Bar-returning field where "
+                + "bar.id_1 → baz.id is a unique FK → ColumnReferenceArg projects to BodyParam.In "
+                + "against bar.id_1 (the FK source column on the field's own table)",
+            """
+            type Bar implements Node @table(name: "bar") @node { id: ID! }
+            type Baz implements Node @table(name: "baz") @node { id: ID! }
+            type Query { barsByBaz(bazIds: [ID!]! @nodeId(typeName: "Baz")): [Bar!]! }
+            """,
+            schema -> {
+                var f = (no.sikt.graphitron.rewrite.model.QueryField.QueryTableField)
+                    schema.field("Query", "barsByBaz");
+                var gcf = (no.sikt.graphitron.rewrite.model.GeneratedConditionFilter)
+                    f.filters().stream()
+                        .filter(no.sikt.graphitron.rewrite.model.GeneratedConditionFilter.class::isInstance)
+                        .findFirst().orElseThrow();
+                var bp = (no.sikt.graphitron.rewrite.model.BodyParam.In) gcf.bodyParams().stream()
+                    .filter(no.sikt.graphitron.rewrite.model.BodyParam.In.class::isInstance)
+                    .findFirst().orElseThrow();
+                assertThat(bp.column().sqlName()).isEqualTo("id_1");
+                assertThat(bp.extraction()).isInstanceOf(CallSiteExtraction.SkipMismatchedElement.class);
+                var skip = (CallSiteExtraction.SkipMismatchedElement) bp.extraction();
+                assertThat(skip.decodeMethod().methodName()).isEqualTo("decodeBaz");
+            }),
+
+        FK_TARGET_SCALAR_SINGLE_PK(
+            "scalar `bazId: ID! @nodeId(typeName: \"Baz\")` → BodyParam.Eq against bar.id_1",
+            """
+            type Bar implements Node @table(name: "bar") @node { id: ID! }
+            type Baz implements Node @table(name: "baz") @node { id: ID! }
+            type Query { barByBaz(bazId: ID! @nodeId(typeName: "Baz")): Bar }
+            """,
+            schema -> {
+                var f = (no.sikt.graphitron.rewrite.model.QueryField.QueryTableField)
+                    schema.field("Query", "barByBaz");
+                var gcf = (no.sikt.graphitron.rewrite.model.GeneratedConditionFilter)
+                    f.filters().stream()
+                        .filter(no.sikt.graphitron.rewrite.model.GeneratedConditionFilter.class::isInstance)
+                        .findFirst().orElseThrow();
+                var bp = (no.sikt.graphitron.rewrite.model.BodyParam.Eq) gcf.bodyParams().stream()
+                    .filter(no.sikt.graphitron.rewrite.model.BodyParam.Eq.class::isInstance)
+                    .findFirst().orElseThrow();
+                assertThat(bp.column().sqlName()).isEqualTo("id_1");
+            }),
+
+        FK_TARGET_PATHOLOGICAL_KEY_MISMATCH_DEFERRED(
+            "@nodeId(typeName: ParentNode) on a child_ref-returning field where the FK targets "
+                + "parent_node.alt_key but ParentNode's keyColumn is parent_node.pk_id (FK target ≠ "
+                + "NodeType key) → UnclassifiedField with deferred-emission hint, parallel to R24",
+            """
+            type ParentNode implements Node @table(name: "parent_node") @node { id: ID! }
+            type ChildRef @table(name: "child_ref") {
+                childId: String! @field(name: "child_id")
+            }
+            type Query {
+                childRefsByParent(parentIds: [ID!]! @nodeId(typeName: "ParentNode")): [ChildRef!]!
+            }
+            """,
+            schema -> {
+                var f = (GraphitronField.UnclassifiedField) schema.field("Query", "childRefsByParent");
+                assertThat(f.reason())
+                    .contains("FK's target columns do not positionally match")
+                    .contains("deferred");
+            });
+
+        final String sdl;
+        final Consumer<GraphitronSchema> assertions;
+        ArgumentFkTargetNodeIdCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
+            this.sdl = sdl;
+            this.assertions = assertions;
+        }
+        @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(ArgumentFkTargetNodeIdCase.class)
+    void argumentFkTargetNodeIdClassification(ArgumentFkTargetNodeIdCase tc) {
+        tc.assertions.accept(TestSchemaHelper.buildSchema(tc.sdl, FIXTURE_CTX));
+    }
+
+    // ===== R40 validator: @asConnection + same-table @nodeId leaf rejection =====
+    //
+    // Symmetric across argument-level (R40-introduced) and input-field (R50-shipped) leaves:
+    // both produce a same-table SameTable shape that is a lookup, not a paginatable filter.
+    // FK-target leaves are legitimate filters; they compose with @asConnection.
+
+    enum NodeIdConnectionRejectionCase {
+        ASCONNECTION_PLUS_ARGUMENT_SAME_TABLE_NODEID_REJECTED(
+            "@asConnection field with a top-level same-table @nodeId arg → UnclassifiedField "
+                + "(the result cardinality is bounded by the input list, not paginatable)",
+            """
+            type Baz implements Node @table(name: "baz") @node { id: ID! }
+            type BazConnection { edges: [BazEdge!]! pageInfo: PageInfo! }
+            type BazEdge { node: Baz! cursor: String! }
+            type PageInfo { hasNextPage: Boolean! hasPreviousPage: Boolean! startCursor: String endCursor: String }
+            type Query {
+                bazByIds(ids: [ID!]! @nodeId(typeName: "Baz")): BazConnection @asConnection
+            }
+            """,
+            schema -> {
+                var f = (GraphitronField.UnclassifiedField) schema.field("Query", "bazByIds");
+                assertThat(f.reason())
+                    .contains("Lookups don't compose with @asConnection")
+                    .contains("baz");
+            }),
+
+        ASCONNECTION_PLUS_INPUT_FIELD_SAME_TABLE_NODEID_REJECTED(
+            "@asConnection field whose @table input arg carries a same-table [ID!] @nodeId leaf "
+                + "→ UnclassifiedField (closes the latent R50 gap where this combination "
+                + "silently built and produced incoherent runtime semantics)",
+            """
+            type Baz implements Node @table(name: "baz") @node { id: ID! }
+            type BazConnection { edges: [BazEdge!]! pageInfo: PageInfo! }
+            type BazEdge { node: Baz! cursor: String! }
+            type PageInfo { hasNextPage: Boolean! hasPreviousPage: Boolean! startCursor: String endCursor: String }
+            input BazFilter @table(name: "baz") {
+                ids: [ID!] @nodeId(typeName: "Baz")
+            }
+            type Query {
+                bazes(filter: BazFilter): BazConnection @asConnection
+            }
+            """,
+            schema -> {
+                var f = (GraphitronField.UnclassifiedField) schema.field("Query", "bazes");
+                assertThat(f.reason())
+                    .contains("Lookups don't compose with @asConnection");
+            }),
+
+        ASCONNECTION_PLUS_FK_TARGET_ARG_NODEID_ALLOWED(
+            "@asConnection field with a top-level FK-target @nodeId arg → classifies normally "
+                + "(filter narrows the result; seek paginates within the filtered set)",
+            """
+            type Bar implements Node @table(name: "bar") @node { id: ID! }
+            type Baz implements Node @table(name: "baz") @node { id: ID! }
+            type BarConnection { edges: [BarEdge!]! pageInfo: PageInfo! }
+            type BarEdge { node: Bar! cursor: String! }
+            type PageInfo { hasNextPage: Boolean! hasPreviousPage: Boolean! startCursor: String endCursor: String }
+            type Query {
+                barsByBaz(bazIds: [ID!]! @nodeId(typeName: "Baz")): BarConnection @asConnection
+            }
+            """,
+            schema -> {
+                // The field classifies as a connection-wrapped table field, not UnclassifiedField.
+                var f = schema.field("Query", "barsByBaz");
+                assertThat(f).isNotInstanceOf(GraphitronField.UnclassifiedField.class);
+            });
+
+        final String sdl;
+        final Consumer<GraphitronSchema> assertions;
+        NodeIdConnectionRejectionCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
+            this.sdl = sdl;
+            this.assertions = assertions;
+        }
+        @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(NodeIdConnectionRejectionCase.class)
+    void asConnectionPlusSameTableNodeIdRejection(NodeIdConnectionRejectionCase tc) {
+        tc.assertions.accept(TestSchemaHelper.buildSchema(tc.sdl, FIXTURE_CTX));
+    }
 }
