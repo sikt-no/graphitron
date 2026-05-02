@@ -472,4 +472,37 @@ class ServiceCatalogTest {
         // Captured return is the wider Table<?> raw class; the model still records it faithfully.
         assertThat(((TypeName) result.ref().returnType()).toString()).isEqualTo("org.jooq.Table");
     }
+
+    // ===== R12 §4 declared-exception capture =====
+
+    @Test
+    void reflectServiceMethod_capturesDeclaredCheckedExceptions() {
+        // ServiceCatalog reads Method.getExceptionTypes() and stores the FQNs on
+        // MethodRef.Basic.declaredExceptions(); the classifier's §4 match check consumes them.
+        var result = newCatalog().reflectServiceMethod(
+            STUB_CLASS, "getThrowingSqlException", bindings(Map.of()), Set.of(), List.of(), null);
+
+        assertThat(result.failed()).isFalse();
+        assertThat(((MethodRef.Basic) result.ref()).declaredExceptions())
+            .containsExactly("java.sql.SQLException");
+    }
+
+    @Test
+    void reflectServiceMethod_capturesMultipleDeclaredExceptions_inSourceOrder() {
+        var result = newCatalog().reflectServiceMethod(
+            STUB_CLASS, "getThrowingSqlAndInterrupted", bindings(Map.of()), Set.of(), List.of(), null);
+
+        assertThat(result.failed()).isFalse();
+        assertThat(((MethodRef.Basic) result.ref()).declaredExceptions())
+            .containsExactly("java.sql.SQLException", "java.lang.InterruptedException");
+    }
+
+    @Test
+    void reflectServiceMethod_methodWithoutThrows_emptyDeclaredExceptions() {
+        var result = newCatalog().reflectServiceMethod(
+            STUB_CLASS, "get", bindings(Map.of()), Set.of(), List.of(), null);
+
+        assertThat(result.failed()).isFalse();
+        assertThat(((MethodRef.Basic) result.ref()).declaredExceptions()).isEmpty();
+    }
 }
