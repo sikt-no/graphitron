@@ -18,7 +18,7 @@ The fix: emit `Record1<T>` (or, more generally, `RecordN<...>`) keys regardless 
 
 Concretely, this likely involves:
 
-- `GeneratorUtils.keyElementType` collapsing the row-vs-record axis at emission time so it returns `RecordN<...>` for all four `ParentKeyed` permits with `>=1` columns.
+- `BatchKey.keyElementType()` (the `default` accessor on the sealed root, lifted off `GeneratorUtils` under R32 iteration 3) collapsing the row-vs-record axis at emission time so the five `RowN`-emitting arms (`RowKeyed`, `MappedRowKeyed`, `LifterRowKeyed`, `AccessorRowKeyedSingle`, `AccessorRowKeyedMany`) return `RecordN<...>` like the two record-keyed arms already do. The arms span `ParentKeyed` and `RecordParentBatchKey`; both sub-hierarchies need to flip together.
 - `buildKeyExtraction` switch (currently emits `DSL.row(...)` for the row-keyed arms and `record.into(...)` for the record-keyed arms) reusing the `into(...)` form for the row-keyed arms too, since that already produces a `RecordN`.
 - Re-running the existing `serviceField_*` and `splitQuery_*` test cases under the new emission to check shape changes.
 - Element-shape conversion (R32's deferred follow-up) gets simpler once keys are uniformly `RecordN`: developer's signature `Set<TableRecord>` becomes a thin `keys.stream().map(k -> Tables.FILM.newRecord(k.value1(), ...)).collect(...)` step.
