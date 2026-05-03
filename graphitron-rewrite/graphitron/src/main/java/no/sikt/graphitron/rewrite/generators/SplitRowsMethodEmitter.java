@@ -129,12 +129,13 @@ public final class SplitRowsMethodEmitter {
      */
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "lifter-classifies-as-record-table-field",
-        reliesOn = "The BatchKey side-aware switch admits exactly RowKeyed and LifterRowKeyed; "
-            + "the JOIN-on side-aware switch admits exactly FkJoin and LiftedHop. "
-            + "BatchKeyLifterDirectiveResolver guarantees a @batchKeyLifter field classifies as "
-            + "RecordTableField or RecordLookupTableField (carrying RecordParentBatchKey + a "
-            + "single-hop joinPath whose first step is LiftedHop), so the prelude can read target "
-            + "accessors uniformly via WithTarget without per-accessor identity checks.")
+        reliesOn = "The BatchKey side-aware switch admits RowKeyed, LifterRowKeyed, "
+            + "AccessorRowKeyedSingle, and AccessorRowKeyedMany; the JOIN-on side-aware switch "
+            + "admits exactly FkJoin and LiftedHop. BatchKeyLifterDirectiveResolver and "
+            + "FieldBuilder.deriveBatchKeyFromTypedAccessor both guarantee the field classifies "
+            + "as RecordTableField or RecordLookupTableField with a single-hop joinPath whose "
+            + "first step is LiftedHop, so the prelude can read target accessors uniformly via "
+            + "WithTarget without per-accessor identity checks.")
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "lifter-batchkey-is-lifterrowkeyed",
         reliesOn = "The BatchKey switch's LifterRowKeyed arm reads targetKeyColumns() to produce "
@@ -153,12 +154,16 @@ public final class SplitRowsMethodEmitter {
         ClassName tablesClass = ClassName.get(jooqPackage, "Tables");
 
         // Side-aware column list: parent-side columns on the catalog-FK path, target-side
-        // columns on the lifter path. Both produce RowN<...> of the same Java types — that's
-        // the lifter contract enforced by BatchKeyLifterDirectiveResolver. Limited to the two
-        // permits that ever reach the prelude; the @service-only ParentKeyed permits never do.
+        // columns on the lifter / accessor paths. All four permits produce RowN<...> of the
+        // same Java types as the JOIN target columns — for LifterRowKeyed that is the lifter
+        // contract; for the accessor permits it is the element table's PK by construction.
+        // Limited to the four RecordParentBatchKey permits that ever reach the prelude; the
+        // @service-only ParentKeyed permits never do.
         List<ColumnRef> pkCols = switch (batchKey) {
-            case BatchKey.RowKeyed rk        -> rk.parentKeyColumns();
-            case BatchKey.LifterRowKeyed lrk -> lrk.targetKeyColumns();
+            case BatchKey.RowKeyed rk                -> rk.parentKeyColumns();
+            case BatchKey.LifterRowKeyed lrk         -> lrk.targetKeyColumns();
+            case BatchKey.AccessorRowKeyedSingle ars -> ars.targetKeyColumns();
+            case BatchKey.AccessorRowKeyedMany arm   -> arm.targetKeyColumns();
             default -> throw new IllegalStateException(
                 "SplitRowsMethodEmitter prelude reached with unsupported BatchKey: "
                 + batchKey.getClass().getSimpleName());
