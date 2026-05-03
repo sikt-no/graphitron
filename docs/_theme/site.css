@@ -459,11 +459,48 @@ table.tableblock thead th {
  * hero band padding, and feature-image margin are already responsive via
  * --sds-space-padding-* tokens, so they don't appear here. What remains:
  *   - the featurerow's 3 columns collapse to single-column block flow,
+ *   - the manual landing's 2x2 quadrant grid collapses similarly,
  *   - the nav-header reflows so brand + GitHub share row 1 and links wrap
  *     to row 2,
  *   - the 3.2rem hero title scales down (typography tokens not used here
  *     because the design system's editorial-headline-* sizes are far larger
  *     than what fits on a phone). */
+/* ---------- manual quadrants (manual/index.adoc) ------------------------- */
+
+/* Diataxis four-quadrant landing. Same parsed-AsciiDoc-cell pattern as the
+ * homepage's featurerow: `[.quadrants,cols="1,1",...]` produces a 2x2 grid
+ * with a bold link as the cell title and a short paragraph beneath. */
+table.quadrants,
+table.quadrants > colgroup,
+table.quadrants > * > tr > th,
+table.quadrants > * > tr > td {
+    border: none;
+}
+table.quadrants {
+    width: 100%;
+    margin: var(--sds-space-gap-large) 0;
+    border-spacing: var(--sds-space-gap-medium);
+    table-layout: fixed;
+}
+table.quadrants > * > tr > td {
+    vertical-align: top;
+    padding: var(--sds-space-padding-medium);
+    background: var(--sds-color-layout-background-neutral, #fafbfc);
+    border-radius: var(--sds-space-border-radius-small);
+}
+.quadrant-title {
+    font-size: 1.25rem;
+    display: block;
+    margin-bottom: var(--sds-space-gap-small);
+}
+.quadrant-title a {
+    color: var(--sds-color-brand-primary-strong, #5b3d99);
+    text-decoration: none;
+}
+.quadrant-title a:hover {
+    text-decoration: underline;
+}
+
 @media (max-width: 45rem) {
     table.featurerow {
         display: block;
@@ -489,6 +526,29 @@ table.tableblock thead th {
     }
     .feature img {
         max-width: 160px;
+    }
+
+    /* The 2x2 quadrant grid uses the same collapse-to-single-column pattern
+     * as the homepage featurerow. */
+    table.quadrants {
+        display: block;
+        border-spacing: 0;
+        margin: var(--sds-space-gap-medium) 0;
+    }
+    table.quadrants > colgroup {
+        display: none;
+    }
+    table.quadrants > tbody,
+    table.quadrants > tbody > tr {
+        display: block;
+    }
+    table.quadrants > tbody > tr > td {
+        display: block;
+        width: 100%;
+        margin: 0 0 var(--sds-space-gap-medium);
+    }
+    table.quadrants > tbody > tr > td:last-child {
+        margin-bottom: 0;
     }
 
     .nav-header-inner {

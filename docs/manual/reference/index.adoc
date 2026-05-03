@@ -1,0 +1,72 @@
+= Reference
+:description: Authoritative descriptions of every directive, plugin parameter, and runtime API entry point.
+:!toc:
+
+Authoritative descriptions of every directive, every Maven plugin parameter, every runtime API entry point, and every diagnostic code Graphitron emits.
+
+== Status: directive index draft
+
+Per-directive pages, the Mojo parameter reference, the runtime API reference, and the diagnostics glossary are authored in R68 Phase 2 and Phase 4. Until they land, this page lists the directive surface so readers can see the shape; descriptions live in the legacy https://github.com/sikt-no/graphitron/tree/main/graphitron-codegen-parent/graphitron-java-codegen/README.md[`graphitron-java-codegen` README]. The directive list below mirrors the rewrite's `directives.graphqls` and is therefore correct for the current branch even when individual descriptions still live in the legacy file.
+
+[cols="1,1",frame=none,grid=none]
+|===
+a|
+=== Alphabetical
+
+* `@asConnection`
+* `@batchKeyLifter`
+* `@condition`
+* `@defaultOrder`
+* `@discriminate`
+* `@discriminator`
+* `@enum`
+* `@error`
+* `@experimental_constructType`
+* `@externalField`
+* `@field`
+* `@index` (deprecated; use `@order(index:)`)
+* `@lookupKey`
+* `@multitableReference`
+* `@mutation`
+* `@node`
+* `@nodeId`
+* `@notGenerated` (rejected; remove from the schema)
+* `@order`
+* `@orderBy`
+* `@record`
+* `@reference`
+* `@service`
+* `@splitQuery`
+* `@table`
+* `@tableMethod`
+
+a|
+=== By category
+
+*Mapping* +
+`@table`, `@field`, `@enum`, `@record`
+
+*Joining* +
+`@reference`, `@multitableReference`, `@batchKeyLifter`
+
+*Querying* +
+`@asConnection`, `@condition`, `@lookupKey`, `@splitQuery`, `@externalField`, `@tableMethod`, `@experimental_constructType`
+
+*Mutating* +
+`@mutation`, `@service`
+
+*Sorting* +
+`@orderBy`, `@order`, `@defaultOrder`, `@index` (deprecated)
+
+*Error handling* +
+`@error`
+
+*Polymorphism* +
+`@discriminate`, `@discriminator`
+
+*Global ID* +
+`@node`, `@nodeId`
+
+|===
+
+xref:../index.adoc[← Back to the manual landing]

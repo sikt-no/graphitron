@@ -1,0 +1,16 @@
+= Explanation
+:description: Background on the design decisions, the batching model, and how the pipeline fits together.
+:!toc:
+
+Background and rationale: how the pipeline fits together, why Graphitron is database-first, the batching/DataLoader model, and the design decisions that surface in user-visible behaviour (why `@condition` methods take a table; why `@lookupKey` forbids two-layer lists; why mutations require `@table` on the input type).
+
+== Status: placeholder
+
+Explanation chapters are authored in R68 Phase 4. Until they land, the closest user-facing material lives in:
+
+* xref:../../graphitron-principles.adoc[Graphitron principles] — the design philosophy in plain prose.
+* xref:../../vision-and-goal.adoc[Vision and goal] — what problem Graphitron solves and how it approaches the solution.
+* xref:../../dependencies.adoc[Dependencies] — why jOOQ and graphql-java are foundational, and what that means for users.
+* xref:../../security.adoc[Security] — why authorization stays in the database.
+
+xref:../index.adoc[← Back to the manual landing]
