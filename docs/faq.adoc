@@ -45,14 +45,14 @@ Yes. Graphitron was initially built for the https://studieadministrasjon.sikt.no
 
 Beyond this site:
 
-* https://github.com/sikt-no/graphitron[Source repository] on GitHub.
+* https://github.com/sikt-no/graphitron/tree/claude/graphitron-rewrite[Source repository] on GitHub.
 * xref:architecture/getting-started.adoc[Getting Started] for the rewrite-side build flow (hello world, custom scalars, federation).
 * xref:architecture/index.adoc[Architecture] for contributors working on the generator itself.
 
 == How can I contribute?
 
-Contributions are welcome. Open an issue or PR at https://github.com/sikt-no/graphitron[github.com/sikt-no/graphitron]. The xref:roadmap/index.adoc[Roadmap] shows what's in flight and where new work fits.
+Contributions are welcome. Open an issue or PR at https://github.com/sikt-no/graphitron/tree/claude/graphitron-rewrite[github.com/sikt-no/graphitron]. The xref:roadmap/index.adoc[Roadmap] shows what's in flight and where new work fits.
 
 == Where can I get support?
 
-Open an issue at https://github.com/sikt-no/graphitron[github.com/sikt-no/graphitron].
+Open an issue at https://github.com/sikt-no/graphitron/tree/claude/graphitron-rewrite[github.com/sikt-no/graphitron].

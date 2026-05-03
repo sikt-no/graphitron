@@ -293,7 +293,7 @@ All source lives under `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewr
 === Directives
 
 - *SDL definitions*: `graphitron-common/src/main/resources/directives.graphqls`
-- *Directive reference with examples*: link:https://github.com/sikt-no/graphitron/tree/main/graphitron-codegen-parent/graphitron-java-codegen/README.md[graphitron-java-codegen README]
+- *Directive reference with examples*: link:https://github.com/sikt-no/graphitron/tree/claude/graphitron-rewrite/graphitron-codegen-parent/graphitron-java-codegen/README.md[graphitron-java-codegen README]
 
 '''
 

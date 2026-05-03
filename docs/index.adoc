@@ -10,7 +10,7 @@
   <p class="hero-tagline">A code generator for GraphQL APIs backed by jOOQ.</p>
   <div class="cta-row">
     <a class="cta-button" href="quick-start.html">Quick start</a>
-    <a class="cta-button" href="https://github.com/sikt-no/graphitron" rel="noopener">GitHub</a>
+    <a class="cta-button" href="https://github.com/sikt-no/graphitron/tree/claude/graphitron-rewrite" rel="noopener">GitHub</a>
   </div>
 </section>
 ++++
