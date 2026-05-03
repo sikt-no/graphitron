@@ -323,9 +323,9 @@ class TypeBuilder {
             if (ROOT_TYPE_NAMES.contains(name)) {
                 return new RootType(name, location);
             }
-            String typeConflict = detectTypeDirectiveConflict(objType);
+            var typeConflict = detectTypeDirectiveConflict(objType);
             if (typeConflict != null) {
-                return new UnclassifiedType(name, location, Rejection.structural(typeConflict));
+                return new UnclassifiedType(name, location, typeConflict);
             }
             if (objType.hasAppliedDirective(DIR_TABLE)) {
                 return buildTableType(objType);
@@ -959,17 +959,19 @@ class TypeBuilder {
      * runtime source is the matched throwable itself; there is no developer-supplied data class
      * for an {@code @error} type).
      */
-    private static String detectTypeDirectiveConflict(GraphQLObjectType objType) {
+    private static Rejection.InvalidSchema.DirectiveConflict detectTypeDirectiveConflict(GraphQLObjectType objType) {
         boolean hasTable = objType.hasAppliedDirective(DIR_TABLE);
         boolean hasRecord = objType.hasAppliedDirective(DIR_RECORD);
         boolean hasError = objType.hasAppliedDirective(DIR_ERROR);
         int present = (hasTable ? 1 : 0) + (hasRecord ? 1 : 0) + (hasError ? 1 : 0);
         if (present > 1) {
-            var directives = new java.util.ArrayList<String>();
-            if (hasTable) directives.add("@" + DIR_TABLE);
-            if (hasRecord) directives.add("@" + DIR_RECORD);
-            if (hasError) directives.add("@" + DIR_ERROR);
-            return String.join(", ", directives) + " are mutually exclusive";
+            var bareNames = new java.util.ArrayList<String>();
+            var atNames = new java.util.ArrayList<String>();
+            if (hasTable)  { bareNames.add(DIR_TABLE);  atNames.add("@" + DIR_TABLE); }
+            if (hasRecord) { bareNames.add(DIR_RECORD); atNames.add("@" + DIR_RECORD); }
+            if (hasError)  { bareNames.add(DIR_ERROR);  atNames.add("@" + DIR_ERROR); }
+            return new Rejection.InvalidSchema.DirectiveConflict(
+                bareNames, String.join(", ", atNames) + " are mutually exclusive");
         }
         return null;
     }

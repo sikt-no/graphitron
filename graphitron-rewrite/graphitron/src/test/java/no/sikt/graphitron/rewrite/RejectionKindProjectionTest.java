@@ -40,13 +40,13 @@ class RejectionKindProjectionTest {
 
     @Test
     void deferredProjectsToDeferred() {
-        var r = Rejection.deferred("x");
+        var r = Rejection.deferred("x", "");
         assertThat(RejectionKind.of(r)).isEqualTo(RejectionKind.DEFERRED);
     }
 
     @Test
-    void deferredAtProjectsToDeferred() {
-        var r = Rejection.deferredAt("x", "slug");
+    void deferredWithSlugProjectsToDeferred() {
+        var r = Rejection.deferred("x", "slug");
         assertThat(RejectionKind.of(r)).isEqualTo(RejectionKind.DEFERRED);
     }
 

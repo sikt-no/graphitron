@@ -70,10 +70,10 @@ public final class TagLinkSynthesiser {
                         ? loc.getSourceName() + ":" + loc.getLine()
                         : "(unknown location)";
                 throw new ValidationFailedException(List.of(new ValidationError(
-                        RejectionKind.INVALID_SCHEMA,
                         null,
-                        "<schemaInput tag> is configured but '@tag' is not in the @link import list"
-                        + " at " + locDesc + ". Add \"@tag\" to the import array.",
+                        no.sikt.graphitron.rewrite.model.Rejection.invalidSchema(
+                            "<schemaInput tag> is configured but '@tag' is not in the @link import list"
+                            + " at " + locDesc + ". Add \"@tag\" to the import array."),
                         loc)));
             }
             // @tag is imported; no synthesis needed.

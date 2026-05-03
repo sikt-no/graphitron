@@ -56,13 +56,13 @@ class RejectionRenderingTest {
 
     @Test
     void deferredWithoutSlugReturnsSummaryVerbatim() {
-        var r = Rejection.deferred("fields on 'Subscription' (Subscription is not supported)");
+        var r = Rejection.deferred("fields on 'Subscription' (Subscription is not supported)", "");
         assertThat(r.message()).isEqualTo("fields on 'Subscription' (Subscription is not supported)");
     }
 
     @Test
     void deferredWithSlugAppendsRoadmapPath() {
-        var r = Rejection.deferredAt(
+        var r = Rejection.deferred(
             "@service on a @record-typed parent is not yet supported",
             "service-record-field");
         assertThat(r.message()).isEqualTo(
@@ -71,7 +71,7 @@ class RejectionRenderingTest {
 
     @Test
     void deferredKeyedByVariantClassRendersWithoutSlugSuffix() {
-        var r = Rejection.deferred("Single-cardinality requires single-hop", ChildField.SplitTableField.class);
+        var r = Rejection.deferred("Single-cardinality requires single-hop", "", ChildField.SplitTableField.class);
         assertThat(r.message()).isEqualTo("Single-cardinality requires single-hop");
     }
 
@@ -153,7 +153,7 @@ class RejectionRenderingTest {
 
     @Test
     void prefixedWithPreservesDeferredStubKey() {
-        var inner = (Rejection.Deferred) Rejection.deferred("X is not yet supported", ChildField.SplitTableField.class);
+        var inner = (Rejection.Deferred) Rejection.deferred("X is not yet supported", "", ChildField.SplitTableField.class);
         var prefixed = (Rejection.Deferred) inner.prefixedWith("on Foo.bar: ");
         assertThat(prefixed.summary()).isEqualTo("on Foo.bar: X is not yet supported");
         assertThat(prefixed.stubKey()).isEqualTo(new Rejection.StubKey.VariantClass(ChildField.SplitTableField.class));

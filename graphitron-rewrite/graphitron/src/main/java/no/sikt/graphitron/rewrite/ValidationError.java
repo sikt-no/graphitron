@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
 import graphql.language.SourceLocation;
+import no.sikt.graphitron.rewrite.model.Rejection;
 
 /**
  * A schema validation error produced by {@link GraphitronSchemaValidator}.
@@ -17,11 +18,16 @@ import graphql.language.SourceLocation;
  * {@code (file, coordinate, kind, message)} so unrelated line shifts do not flag every error
  * as new.
  *
- * <p>{@code kind} categorises the error so downstream tooling and log formatters can
- * distinguish author-correctable mistakes from invalid-schema combinations from
- * generator-deferred features. See {@link RejectionKind}. When wrapping an
- * {@link no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField}, propagate the
- * classifier-supplied kind rather than re-deriving it.
+ * <p>{@code rejection} is the typed sealed-variant explanation of why classification or
+ * validation failed. R58 Phase I lifted this from a flat {@code (RejectionKind kind, String
+ * message)} pair onto the {@link Rejection} hierarchy so the validator's near-miss checks have
+ * an on-ramp to typed {@link Rejection.AuthorError.UnknownName} (with candidate lists), typed
+ * {@link Rejection.InvalidSchema.DirectiveConflict} (with conflicting-directive lists), and
+ * typed {@link Rejection.Deferred} (with planSlug + stubKey) without re-parsing prose.
+ * The {@link #kind()} and {@link #message()} accessors project the variant for the byte-stable
+ * validator log surface.
  */
-public record ValidationError(RejectionKind kind, String coordinate, String message, SourceLocation location) {
+public record ValidationError(String coordinate, Rejection rejection, SourceLocation location) {
+    public RejectionKind kind() { return RejectionKind.of(rejection); }
+    public String message() { return rejection.message(); }
 }
