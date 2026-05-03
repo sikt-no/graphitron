@@ -10,7 +10,7 @@ depends-on: []
 
 # Implement `@service` rows-method body
 
-Two iterations have shipped:
+Three iterations have shipped:
 
 1. **Body emission.** `buildServiceRowsMethod` walks `MethodRef.params()` via
    `ArgCallEmitter.buildMethodBackedCallArgs` (`Sources → keys`, `DslContext → dsl` local,
@@ -28,22 +28,22 @@ Two iterations have shipped:
    `List<List<V>>` / `List<V>` per the `(returnType, batchKey)` cross-product). Mirrors the
    existing root-only `ServiceCatalog.reflectServiceMethod` strict check; carries the
    `service-directive-resolver-strict-child-service-return` `@LoadBearingClassifierCheck`
-   key, with the corresponding `@DependsOnClassifierCheck` on `buildServiceRowsMethod`. Per-
-   key `V` derives from `ReturnTypeRef`: raw `org.jooq.Record` for `TableBoundReturnType`,
-   the backing class for `ResultReturnType` with non-null `fqClassName`, and the standard
-   Java type for the five standard GraphQL scalars (`String` / `Boolean` / `Int` / `Float` /
-   `ID`); other cases (custom scalars, enums, `PolymorphicReturnType`,
-   `ResultReturnType` with no backing class) skip the strict check.
-
-The contractual pairing is held by an explicit `@LoadBearingClassifierCheck` /
-`@DependsOnClassifierCheck` key on `validateChildServiceReturnType` and
-`buildServiceRowsMethod`. `GeneratorUtils.keyElementType` was bumped to `public` so the
-two sites share the per-position keys-element-type derivation, but the surrounding
-`(isMapped, isList)` outer-shape cross-product is still reconstructed independently in
-each site, the per-key `V` derivation also lives a third time on
-`ChildField.ServiceRecordField.elementType()` with deliberately-divergent fallbacks, and
-the classifier-tier validator now imports from the generators package. Captured as a
-follow-up below ("Lift the resolved rows-method outer type onto the model").
+   key, with the corresponding `@DependsOnClassifierCheck` on `buildServiceRowsMethod`.
+3. **Lifted the resolved rows-method shape onto the model.** The validator and the emitter
+   each used to reconstruct `Map<K, V> / List<List<V>> / List<V>` from `(returnType, batchKey)`
+   independently, the per-key `V` derivation lived a third time on
+   `ChildField.ServiceRecordField.elementType()` with a deliberately-divergent fallback, and
+   `GeneratorUtils.keyElementType` had been bumped to `public` so the classifier-tier
+   validator could import from the generators package. The shared form lives in two new
+   model-package surfaces: `BatchKey.keyElementType()` (a `default` accessor on the sealed
+   root, replacing the static helper in `GeneratorUtils`) and `RowsMethodShape.{strictPerKeyType,
+   outerRowsReturnType,standardScalarJavaType}` (the per-key `V` decision and the
+   `(isMapped, isList)` outer-shape construction). Validator and emitter now both call
+   `RowsMethodShape.outerRowsReturnType(perKey, returnType, batchKey)`; only the `perKey`
+   input differs (validator: `RowsMethodShape.strictPerKeyType` and skip on null; emitter:
+   the field-known `V` from the literal `RECORD` constant or `srf.elementType()`). The
+   `LoadBearingClassifierCheck` / `DependsOnClassifierCheck` pair still holds the contract
+   at audit time, but the construction can no longer drift across sites.
 
 ## Original spec
 
@@ -88,29 +88,6 @@ service-call boundary.
 
 ## Open follow-ups
 
-- **Lift the resolved rows-method outer type onto the model.** Today the
-  `(ReturnTypeRef, BatchKey) → Map<K, V> / List<List<V>> / List<V>` decision is reconstructed
-  in two places: `ServiceDirectiveResolver.computeExpectedChildServiceReturnType` builds it
-  for the validator's strict equality check, and `TypeFetcherGenerator.buildServiceRowsMethod`
-  builds it again for the emitter's `.returns(...)` declaration. The per-key `V` derivation
-  lives a third time on `ChildField.ServiceRecordField.elementType()` with a deliberately-
-  divergent fallback (the validator returns `null` to skip the strict check; `elementType()`
-  falls back to `method.returnType()` so the loader has *some* static type for
-  `DataLoader<K, V>`). The principle "Generation-thinking" calls this out: two consumers
-  evaluating the same predicate over a model field is a sign the resolver is under-specified.
-  Resolve the expected outer type once at classify time — on
-  `ServiceDirectiveResolver.Resolved.Success.{TableBound | Result | Scalar}`, or on the
-  eventual `BatchKeyField` projection — so the validator does `method.returnType().equals(expected)`
-  and the emitter declares `.returns(expected)` directly. As a side-effect,
-  `GeneratorUtils.keyElementType` (and the `buildRowKeyType` / `buildRecordNKeyType` helpers
-  it composes) can move back to the model package adjacent to `BatchKey`, restoring the
-  model←generators dependency direction the R32 commit inverted when it bumped those
-  helpers to `public` to satisfy a classifier-tier import. The contractual
-  `@LoadBearingClassifierCheck` / `@DependsOnClassifierCheck` pair holds the producer/
-  consumer relationship together at audit time but cannot prevent the two reconstruction
-  sites drifting on a future variant (e.g. when `@asConnection` becomes legal on a child
-  `@service`, or when the `Float → Double` mapping is revisited). Track as a separate
-  roadmap item.
 - **Element-shape conversion (R32 §2 in the original spec).** The `keys` parameter passes
   through directly today. When the developer's signature uses `Set<TableRecord>` /
   `List<TableRecord>` (which classifies as the same `Mapped/RowKeyed` BatchKey variant as
@@ -128,21 +105,16 @@ service-call boundary.
 
 ## Tests
 
-- `GraphitronSchemaBuilderTest.ServiceFieldCase.STRICT_CHILD_RETURN_ROWKEYED_SINGLE_MATCHES`
-  pins a positive child case (`@service` on `Film @table` returning `Language`,
-  `List<Row1<Integer>>` Sources param, declared return `List<Record>`). The classifier accepts.
 - `GraphitronSchemaBuilderTest.UnclassifiedFieldCase.CHILD_SERVICE_TABLE_BOUND_WRONG_RETURN_REJECTED`
   pins the `TableBoundReturnType` rejection arm (declared `LanguageRecord` instead of
   `List<Record>`).
 - `GraphitronSchemaBuilderTest.UnclassifiedFieldCase.CHILD_SERVICE_SCALAR_WRONG_VALUE_TYPE_REJECTED`
   pins the `ScalarReturnType` rejection arm (declared `Map<Record1<Integer>, Integer>` for
   a `String`-valued field).
-- The four-`BatchKey`-variant × cardinality cross-product is structurally exhaustive over the
-  same single helper; one positive + two negative cells (one `TableBoundReturnType`, one
-  `ScalarReturnType`, one positional, one mapped) cover the helper's branches without
-  enumerating cells that exercise the same code path. Drift between the validator's
-  "expected" and what `buildServiceRowsMethod` actually emits is caught by the strict-return
-  test itself.
+- The two negative cells (one `TableBoundReturnType` × positional, one `ScalarReturnType` ×
+  mapped) cover the helper's branches; the validator and the emitter share a single
+  `RowsMethodShape.outerRowsReturnType` call so structural drift between them is no longer
+  reachable, which is what the dropped positive cell would have pinned.
 - Execution-tier coverage:
   `GraphQLQueryTest.films_titleUppercase_resolvesViaServiceRecordFieldDataLoader` continues to
   exercise the end-to-end positive path against PostgreSQL (`Set<Record1<Integer>>` /

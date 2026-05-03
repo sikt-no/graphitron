@@ -378,45 +378,25 @@ public sealed interface ChildField extends GraphitronField
         /**
          * Returns the per-key Java element type this field's loader resolves to (the {@code V}
          * before any list-cardinality wrapping), derived from {@link #returnType()}. Used by
-         * the Generator to type {@code DataLoader<K, V>} and by the Builder for strict-return-
-         * type validation (Phase B / R32).
+         * the Generator to type {@code DataLoader<K, V>}.
          *
-         * <ul>
-         *   <li>{@link ReturnTypeRef.ResultReturnType} with non-null {@code fqClassName}: that
-         *       backing class.</li>
-         *   <li>{@link ReturnTypeRef.ScalarReturnType}: the standard GraphQL scalar's Java type
-         *       ({@code String}, {@code Boolean}, {@code Integer}, {@code Double},
-         *       {@code String} for {@code ID}). Custom scalars and enums fall back to
-         *       {@code String} until the consumer-provided scalar registry surfaces a typed
-         *       Java class (Phase B's responsibility).</li>
-         *   <li>All other cases (including {@link ReturnTypeRef.ResultReturnType} with no
-         *       backing class): the reflected outer return type on {@link MethodRef#returnType()}.
-         *       Phase B unwraps the V from the outer Map/List shape; Phase A shapes the loader
-         *       around the outer type, which throws at request time.</li>
-         * </ul>
+         * <p>Defers to {@link RowsMethodShape#strictPerKeyType} for the schema-determined
+         * answer (raw {@code org.jooq.Record} for {@code TableBoundReturnType}, the backing
+         * class for {@code ResultReturnType} with non-null {@code fqClassName}, the standard
+         * Java type for the five standard GraphQL scalars). When the helper returns
+         * {@code null}: custom scalars and enums fall back to {@code String} (Phase A
+         * approximation, replaced when the consumer-provided scalar registry lands);
+         * everything else falls back to the reflected outer return type on
+         * {@link MethodRef#returnType()} (which throws at request time when wrong, surfacing
+         * the case to revisit).
          */
         public no.sikt.graphitron.javapoet.TypeName elementType() {
-            if (returnType() instanceof ReturnTypeRef.ResultReturnType r && r.fqClassName() != null) {
-                return no.sikt.graphitron.javapoet.ClassName.bestGuess(r.fqClassName());
-            }
-            if (returnType() instanceof ReturnTypeRef.ScalarReturnType s) {
-                return scalarJavaType(s.returnTypeName());
+            no.sikt.graphitron.javapoet.TypeName strict = RowsMethodShape.strictPerKeyType(returnType());
+            if (strict != null) return strict;
+            if (returnType() instanceof ReturnTypeRef.ScalarReturnType) {
+                return no.sikt.graphitron.javapoet.ClassName.get(String.class);
             }
             return method().returnType();
-        }
-
-        private static no.sikt.graphitron.javapoet.TypeName scalarJavaType(String graphqlScalarName) {
-            return switch (graphqlScalarName) {
-                case "String", "ID" -> no.sikt.graphitron.javapoet.ClassName.get(String.class);
-                case "Boolean"      -> no.sikt.graphitron.javapoet.ClassName.get(Boolean.class);
-                case "Int"          -> no.sikt.graphitron.javapoet.ClassName.get(Integer.class);
-                case "Float"        -> no.sikt.graphitron.javapoet.ClassName.get(Double.class);
-                // Custom scalars (e.g. Date, BigDecimal) and enums fall back to String. Phase B's
-                // consumer scalar registry will replace this; until then the loader signature is
-                // shaped correctly for the four standard scalars (which cover the bulk of in-flight
-                // schemas) and falls back to String for the rest.
-                default             -> no.sikt.graphitron.javapoet.ClassName.get(String.class);
-            };
         }
     }
 

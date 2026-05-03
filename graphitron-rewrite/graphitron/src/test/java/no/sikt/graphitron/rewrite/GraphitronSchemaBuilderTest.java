@@ -1258,22 +1258,6 @@ class GraphitronSchemaBuilderTest {
             @Override public Set<Class<?>> variants() { return Set.of(ServiceTableField.class); }
         },
 
-        STRICT_CHILD_RETURN_ROWKEYED_SINGLE_MATCHES(
-            "child @service with List<Row1<Integer>> Sources + single @table return → ServiceTableField (strict-return matches List<Record>)",
-            """
-            type Language @table(name: "language") { name: String }
-            type Film @table(name: "film") {
-                language: Language @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "childServiceRowKeyedCorrectReturn"})
-            }
-            type Query { film: Film }
-            """,
-            schema -> {
-                var f = (ServiceTableField) schema.field("Film", "language");
-                assertThat(f.batchKey()).isInstanceOf(no.sikt.graphitron.rewrite.model.BatchKey.RowKeyed.class);
-            }) {
-            @Override public Set<Class<?>> variants() { return Set.of(ServiceTableField.class); }
-        },
-
         NULL_SOURCE_KEY_PATH_ORIGIN_DEFAULTS_TO_FK_SIDE(
             "@service field with @reference {key:} (null parent SQL source) defaults FkJoin originTable to the FK-side table",
             """

@@ -2324,7 +2324,7 @@ public class TypeFetcherGenerator {
         var batchKey = (BatchKey.ParentKeyed) bkf.batchKey();
         boolean isMapped = batchKey instanceof BatchKey.MappedRowKeyed
                         || batchKey instanceof BatchKey.MappedRecordKeyed;
-        TypeName keyType = GeneratorUtils.keyElementType(batchKey);
+        TypeName keyType = batchKey.keyElementType();
         var loaderType = ParameterizedTypeName.get(DATA_LOADER, keyType, valueType);
         String rowsMethodName = bkf.rowsMethodName();
 
@@ -2398,17 +2398,12 @@ public class TypeFetcherGenerator {
             String parentTypeName,
             String outputPackage) {
 
-        boolean isList = schemaReturnType.wrapper().isList();
-        boolean isMapped = bkf.batchKey() instanceof BatchKey.MappedRowKeyed
-                        || bkf.batchKey() instanceof BatchKey.MappedRecordKeyed;
-        TypeName keysElementType = GeneratorUtils.keyElementType(bkf.batchKey());
-
-        TypeName keysContainerType = ParameterizedTypeName.get(isMapped ? SET : LIST, keysElementType);
-
-        TypeName valuePerKey = isList ? ParameterizedTypeName.get(LIST, perKeyType) : perKeyType;
-        TypeName returnType = isMapped
-            ? ParameterizedTypeName.get(MAP, keysElementType, valuePerKey)
-            : (isList ? ParameterizedTypeName.get(LIST, ParameterizedTypeName.get(LIST, perKeyType)) : ParameterizedTypeName.get(LIST, perKeyType));
+        var batchKey = (BatchKey.ParentKeyed) bkf.batchKey();
+        boolean isMapped = batchKey instanceof BatchKey.MappedRowKeyed
+                        || batchKey instanceof BatchKey.MappedRecordKeyed;
+        TypeName keysContainerType = ParameterizedTypeName.get(isMapped ? SET : LIST, batchKey.keyElementType());
+        TypeName returnType = no.sikt.graphitron.rewrite.model.RowsMethodShape
+            .outerRowsReturnType(perKeyType, schemaReturnType, batchKey);
 
         var dslContextClass = ClassName.get("org.jooq", "DSLContext");
         var serviceClass = ClassName.bestGuess(method.className());
@@ -2481,7 +2476,7 @@ public class TypeFetcherGenerator {
         var returnType = ParameterizedTypeName.get(COMPLETABLE_FUTURE, valueType);
 
         var batchKey = (BatchKey.ParentKeyed) bkf.batchKey();
-        TypeName keyType = GeneratorUtils.keyElementType(batchKey);
+        TypeName keyType = batchKey.keyElementType();
         var loaderType = ParameterizedTypeName.get(DATA_LOADER, keyType, valueType);
         String rowsMethodName = bkf.rowsMethodName();
         String fieldName = bkfFieldName(bkf);
@@ -2583,7 +2578,7 @@ public class TypeFetcherGenerator {
         // The fetcher's overall result follows the field's cardinality regardless of dispatch.
         TypeName resultValueType = isList ? ParameterizedTypeName.get(LIST, RECORD) : RECORD;
 
-        TypeName keyType = GeneratorUtils.keyElementType(batchKey);
+        TypeName keyType = batchKey.keyElementType();
         var loaderType = ParameterizedTypeName.get(DATA_LOADER, keyType, valueType);
         String rowsMethodName = field.rowsMethodName();
 
