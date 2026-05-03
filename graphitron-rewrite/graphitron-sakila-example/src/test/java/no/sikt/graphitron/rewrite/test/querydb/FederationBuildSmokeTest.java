@@ -1,4 +1,4 @@
-package no.sikt.graphitron.rewrite.test;
+package no.sikt.graphitron.rewrite.test.querydb;
 
 import graphql.ExecutionInput;
 import graphql.GraphQL;

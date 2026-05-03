@@ -1,5 +1,7 @@
-package no.sikt.graphitron.rewrite;
+package no.sikt.graphitron.rewrite.test.internal;
 
+import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
+import no.sikt.graphitron.rewrite.RewriteContext;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;

@@ -1,0 +1,23 @@
+{
+  "films" : [ {
+    "filmId" : 1,
+    "title" : "ACADEMY DINOSAUR",
+    "rating" : "PG"
+  }, {
+    "filmId" : 2,
+    "title" : "ACE GOLDFINGER",
+    "rating" : "G"
+  }, {
+    "filmId" : 3,
+    "title" : "ADAPTATION HOLES",
+    "rating" : "NC_17"
+  }, {
+    "filmId" : 4,
+    "title" : "AFFAIR PREJUDICE",
+    "rating" : "G"
+  }, {
+    "filmId" : 5,
+    "title" : "AGENT TRUMAN",
+    "rating" : "PG"
+  } ]
+}

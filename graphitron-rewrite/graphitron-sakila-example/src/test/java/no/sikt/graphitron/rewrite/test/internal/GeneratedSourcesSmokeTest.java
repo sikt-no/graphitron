@@ -1,4 +1,4 @@
-package no.sikt.graphitron.rewrite.test;
+package no.sikt.graphitron.rewrite.test.internal;
 
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;

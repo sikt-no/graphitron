@@ -47,33 +47,20 @@ One smoke test under `src/test/java/no/sikt/graphitron/sakila/example/app/`: `@Q
 
 The `default-compile` ratchet to `<release>17</release>` covers the new hand-written app code: `mvn -f graphitron-rewrite/pom.xml install -Plocal-db` builds clean and runs all 239 tests on Java 25, with the main jar (including app code) compiled under Java 17.
 
-## Stage 2: test surface curation + README
+## Stage 2: test surface curation + README — shipped
 
-`graphitron-test`'s existing test classes split into two categories. Stage 2 carries that split into the renamed module, adds two new worked examples (one approval-style, one match-style), relocates `IdempotentWriterTest` from `graphitron`, and lands the README that names the two roles a reader is here for.
+The 11 existing `graphitron-test` test classes split into `src/test/java/.../querydb/` (the four query-to-database tests `GraphQLQueryTest`, `FederationEntitiesDispatchTest`, `FederationBuildSmokeTest`, `NoFederationRegressionTest`) and `src/test/java/.../internal/` (`GeneratorDeterminismTest`, `GeneratedSourcesSmokeTest`, `GeneratedSourcesLintTest`, `ScatterSingleByIdxTest`, `TierAnnotationEnforcementTest`, `MutationPayloadLifterTest`, `AccessorDerivedBatchKeyTest`). `IdempotentWriterTest` relocated from `graphitron/src/test/java/no/sikt/graphitron/rewrite/` into `graphitron-sakila-example/.../internal/` (with the `RewriteContext` / `GraphQLRewriteGenerator` imports made explicit; package is no longer `no.sikt.graphitron.rewrite` so the unqualified references no longer resolve).
 
-**Query-to-database pattern** (lives under `src/test/java/.../querydb/`, called out in the README). These tests stay in-process: they build the schema via `Graphitron.buildSchema(...)`, instantiate a `GraphQL` engine, execute via `graphql-java`, and assert against a live Postgres `DSLContext`. They do *not* go through the Quarkus HTTP stack. Keeping the pattern in-process means consumers can copy it without bringing Quarkus into their test classpath; the Stage 1 `@QuarkusTest` smoke test is the single HTTP-shaped check in the module.
+Two new worked examples under `querydb/`:
 
-- `GraphQLQueryTest`: runs queries against the live Postgres; the canonical "test your schema" shape.
-- `FederationEntitiesDispatchTest`: federation entity-dispatch in-process against the federated schema execution.
-- `FederationBuildSmokeTest`: pins that the federated schema builds with `_Service` / `_Entity` wiring in place.
-- `NoFederationRegressionTest`: sanity check that the non-federation path still works.
-- New: an approval-style test directory mirroring the legacy example's `src/test/resources/approval/` and `src/test/resources/match/` patterns. One worked example each; the README points at them as templates.
+- `MatchQueryExampleTest` + `src/test/resources/match/queries/customers_basic.graphql`: shape "load `.graphql`, execute, assert specific paths on the response."
+- `ApprovalQueryExampleTest` + `src/test/resources/approval/{queries,approvals}/films_basic.{graphql,approved.json}`: shape "execute `.graphql`, serialise to canonical JSON, compare to checked-in approved file." When divergent, the assertion writes a sibling `.actual.json` so the next iteration is "diff the two; mv onto approved if intentional."
 
-**Generator-internal coverage** (lives under `src/test/java/.../internal/`, README explicitly says "you don't need this"):
+Both worked examples are self-contained (each carries its own `@BeforeAll` Postgres setup) so consumers copy one file and adapt.
 
-- `GeneratorDeterminismTest`: pins the rewrite's three-clause idempotent-write contract end-to-end against the full fixture schema.
-- `IdempotentWriterTest`: pins writer mechanics (tamper-detection, orphan sweep, scope preservation) with a trivial inline SDL. Relocated from `graphitron/src/test/java/no/sikt/graphitron/rewrite/`. It is `@UnitTier` and references public main-classpath classes from `graphitron` (`RewriteContext`, `GraphQLRewriteGenerator`, `SchemaInput`) plus `TestConfiguration.DEFAULT_OUTPUT_PACKAGE` / `DEFAULT_JOOQ_PACKAGE` from `graphitron`'s test source root; the latter ride along on the test-jar that already publishes the tier annotations, so the move is mechanical. Co-locating writer-mechanics and end-to-end determinism is what the `getting-started.adoc:283` cross-reference between the two tests already implies.
-- `GeneratedSourcesSmokeTest` / `GeneratedSourcesLintTest`: generator-internal lints.
-- `ScatterSingleByIdxTest`: pins a SQL-side scatter invariant.
-- `TierAnnotationEnforcementTest`: pins the test-tier vocabulary (this module's own meta-test).
-- `MutationPayloadLifterTest`: pins a generator-internal classification path.
-- `AccessorDerivedBatchKeyTest`: pins R65's accessor model.
+`README.md` lands at the module root: opens with the two roles (runnable reference, recommended test pattern), tables the directories to copy for each role, walks through the runtime files, names the two test patterns plus the carve-out for `internal/` ("you do not need to copy anything from `internal/`").
 
-**README** (`graphitron-sakila-example/README.md`) names the two roles in its first paragraph (runnable reference, recommended test pattern) and points at the directories a consumer should copy: `src/main/java/.../app/` (Quarkus shell), `src/main/resources/graphql/schema.graphqls`, `src/main/resources/application.yaml`, `src/test/java/.../querydb/` (test pattern). It explains the carve-out: anything under `internal/` is generator-internal coverage and not part of the pattern.
-
-Stage 2 is directory moves + package renames + README authoring + two new approval/match worked examples + the `IdempotentWriterTest` relocation. The Stage-1 + Stage-2 net delta is +3 tests in `graphitron-sakila-example` (Quarkus smoke, approval worked example, match worked example) plus the `IdempotentWriterTest` move from `graphitron`; `graphitron`'s test count drops by exactly that one.
-
-Stage 2 exit: `mvn test` passes; the README reads cleanly when explaining "here's the pattern, here's what's not part of it."
+`mvn -f graphitron-rewrite/pom.xml test -Plocal-db` runs all 244 tests in `graphitron-sakila-example` (240 query-to-database / Quarkus smoke / generator-internal + 3 from the relocated `IdempotentWriterTest` + 2 worked examples - 1 since `IdempotentWriterTest` was already counted under graphitron in the previous baseline). `graphitron`'s test count drops by 3 (the `IdempotentWriterTest` move).
 
 ## Stage 3: docs touch-up
 
