@@ -129,45 +129,28 @@ public final class SplitRowsMethodEmitter {
      */
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "lifter-classifies-as-record-table-field",
-        reliesOn = "The BatchKey side-aware switch admits RowKeyed, LifterRowKeyed, "
-            + "AccessorRowKeyedSingle, and AccessorRowKeyedMany; the JOIN-on side-aware switch "
-            + "admits exactly FkJoin and LiftedHop. BatchKeyLifterDirectiveResolver and "
-            + "FieldBuilder.deriveBatchKeyFromTypedAccessor both guarantee the field classifies "
-            + "as RecordTableField or RecordLookupTableField with a single-hop joinPath whose "
-            + "first step is LiftedHop, so the prelude can read target accessors uniformly via "
-            + "WithTarget without per-accessor identity checks.")
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "lifter-batchkey-is-lifterrowkeyed",
-        reliesOn = "The BatchKey switch's LifterRowKeyed arm reads targetKeyColumns() to produce "
-            + "the parent-input VALUES column types. BatchKeyLifterDirectiveResolver guarantees "
-            + "the lifter path's BatchKey is LifterRowKeyed (never RowKeyed), so this arm is the "
-            + "sole route for that path; the RowKeyed arm covers only the catalog-FK record-parent "
-            + "case and reads parentKeyColumns() instead.")
+        reliesOn = "The JOIN-on side-aware switch admits exactly FkJoin and LiftedHop. "
+            + "BatchKeyLifterDirectiveResolver and FieldBuilder.deriveBatchKeyFromTypedAccessor "
+            + "both guarantee the field classifies as RecordTableField or RecordLookupTableField "
+            + "with a single-hop joinPath whose first step is LiftedHop, so the prelude can read "
+            + "target accessors uniformly via WithTarget without per-accessor identity checks.")
     private static PreludeBindings emitParentInputAndFkChain(
             CodeBlock.Builder body,
             String fieldName,
-            BatchKey batchKey,
+            BatchKey.RecordParentBatchKey batchKey,
             ReturnTypeRef.TableBoundReturnType returnType,
             List<JoinStep> joinPath,
             String jooqPackage) {
         TableRef terminalTable = returnType.table();
         ClassName tablesClass = ClassName.get(jooqPackage, "Tables");
 
-        // Side-aware column list: parent-side columns on the catalog-FK path, target-side
-        // columns on the lifter / accessor paths. All four permits produce RowN<...> of the
-        // same Java types as the JOIN target columns — for LifterRowKeyed that is the lifter
-        // contract; for the accessor permits it is the element table's PK by construction.
-        // Limited to the four RecordParentBatchKey permits that ever reach the prelude; the
-        // @service-only ParentKeyed permits never do.
-        List<ColumnRef> pkCols = switch (batchKey) {
-            case BatchKey.RowKeyed rk                -> rk.parentKeyColumns();
-            case BatchKey.LifterRowKeyed lrk         -> lrk.targetKeyColumns();
-            case BatchKey.AccessorRowKeyedSingle ars -> ars.targetKeyColumns();
-            case BatchKey.AccessorRowKeyedMany arm   -> arm.targetKeyColumns();
-            default -> throw new IllegalStateException(
-                "SplitRowsMethodEmitter prelude reached with unsupported BatchKey: "
-                + batchKey.getClass().getSimpleName());
-        };
+        // Side-aware column list, polymorphically: RowKeyed's preludeKeyColumns delegates to
+        // parentKeyColumns (catalog-FK side); LifterRowKeyed / AccessorRowKeyedSingle /
+        // AccessorRowKeyedMany delegate to targetKeyColumns (target side via the LiftedHop). All
+        // four produce RowN<...> of the same Java types as the JOIN target columns. The parameter
+        // type RecordParentBatchKey makes "only the four prelude-reachable permits reach this
+        // site" a compile-time guarantee instead of a switch with a default-throw arm.
+        List<ColumnRef> pkCols = batchKey.preludeKeyColumns();
         TypeName keyElement = batchKey.keyElementType();
 
         int parentRowArity = pkCols.size() + 1;
@@ -379,12 +362,14 @@ public final class SplitRowsMethodEmitter {
         if (stubReason.isPresent()) {
             return buildRuntimeStub(rtf.rowsMethodName(), rtf.batchKey(), rtf.returnType(), stubReason.get().message(), outputPackage);
         }
-        // AccessorRowKeyedMany routes to the single-record-per-key body: each key (one per
-        // accessor element) maps to exactly one terminal record. The DataFetcher above this
-        // emits loader.loadMany dispatch with loader value type Record, so the rows-method
-        // must return List<Record> (1:1 with keys), not List<List<Record>>. The flat join +
-        // scatterSingleByIdx shape that buildSingleMethod emits is exactly that.
-        if (rtf.batchKey() instanceof BatchKey.AccessorRowKeyedMany) {
+        // RecordTableField fields whose rows-method emits 1 record per key (today, only
+        // AccessorRowKeyedMany: each accessor-derived element-PK key maps to exactly one
+        // terminal record) route through buildSingleMethod, which produces the flat join +
+        // scatterSingleByIdx shape required by the loader.loadMany dispatch (loader value
+        // type Record, returning List<Record> 1:1 with keys, not List<List<Record>>). The
+        // capability fold here matches TypeFetcherGenerator's scatterSingleByIdx helper-emission
+        // gate; both ask the same uniform question of multiple variants.
+        if (rtf.emitsSingleRecordPerKey()) {
             return buildSingleMethod(
                 rtf.name(), rtf.rowsMethodName(), rtf.returnType(),
                 rtf.joinPath(), rtf.filters(), rtf.batchKey(),
@@ -467,7 +452,7 @@ public final class SplitRowsMethodEmitter {
             ReturnTypeRef.TableBoundReturnType returnType,
             List<JoinStep> joinPath,
             List<WhereFilter> filters,
-            BatchKey batchKey,
+            BatchKey.RecordParentBatchKey batchKey,
             LookupMapping lookupMapping,
             String outputPackage,
             String jooqPackage) {
@@ -658,7 +643,7 @@ public final class SplitRowsMethodEmitter {
             ReturnTypeRef.TableBoundReturnType returnType,
             List<JoinStep> joinPath,
             List<WhereFilter> filters,
-            BatchKey batchKey,
+            BatchKey.RecordParentBatchKey batchKey,
             String outputPackage,
             String jooqPackage) {
         ClassName typeClass = ClassName.get(
@@ -776,7 +761,7 @@ public final class SplitRowsMethodEmitter {
             ReturnTypeRef.TableBoundReturnType returnType,
             List<JoinStep> joinPath,
             List<WhereFilter> filters,
-            BatchKey batchKey,
+            BatchKey.RecordParentBatchKey batchKey,
             no.sikt.graphitron.rewrite.model.OrderBySpec orderBy,
             no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn,
             String outputPackage,

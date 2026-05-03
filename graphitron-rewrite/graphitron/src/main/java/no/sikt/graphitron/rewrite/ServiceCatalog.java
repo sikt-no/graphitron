@@ -597,19 +597,12 @@ class ServiceCatalog {
      */
     static Optional<BatchKey.ParentKeyed> classifySourcesType(java.lang.reflect.Type paramType,
             List<ColumnRef> parentPkColumns) {
-        if (!(paramType instanceof java.lang.reflect.ParameterizedType pt)) {
+        var split = peelContainer(paramType, java.util.EnumSet.of(ContainerKind.LIST, ContainerKind.SET));
+        if (split.isEmpty()) {
             return Optional.empty();
         }
-        boolean isList = pt.getRawType() == java.util.List.class;
-        boolean isSet = pt.getRawType() == java.util.Set.class;
-        if (!isList && !isSet) {
-            return Optional.empty();
-        }
-        java.lang.reflect.Type[] typeArgs = pt.getActualTypeArguments();
-        if (typeArgs.length != 1) {
-            return Optional.empty();
-        }
-        java.lang.reflect.Type elementType = typeArgs[0];
+        boolean isSet = split.get().container() == ContainerKind.SET;
+        java.lang.reflect.Type elementType = split.get().elementType();
 
         if (elementType instanceof java.lang.reflect.ParameterizedType ept
                 && ept.getRawType() instanceof Class<?> rawClass) {
@@ -637,6 +630,60 @@ class ServiceCatalog {
                 : new BatchKey.RowKeyed(parentPkColumns));
         }
 
+        return Optional.empty();
+    }
+
+    /**
+     * Container axis recognised by {@link #peelContainer}. {@code SINGLE} means the type is a
+     * bare class without a {@code List} / {@code Set} wrapper; the accessor-side classifier
+     * accepts this, the SOURCES classifier does not.
+     */
+    enum ContainerKind { SINGLE, LIST, SET }
+
+    /**
+     * Result of {@link #peelContainer}: the recognised container axis and the inner element
+     * {@link java.lang.reflect.Type}. Element classification (jOOQ {@code TableRecord} subtype,
+     * {@code RowN} / {@code RecordN} parameterised raw, etc.) is left to the caller; this helper
+     * only handles the container shape.
+     */
+    record ContainerSplit(ContainerKind container, java.lang.reflect.Type elementType) {}
+
+    /**
+     * Peels the container layer off a {@link java.lang.reflect.Type}. Recognises {@code List<X>}
+     * and {@code Set<X>} (returns {@code LIST} / {@code SET} with the inner type as
+     * {@code elementType}), and a bare {@link Class} (returns {@code SINGLE} with the class as
+     * {@code elementType}). Empty for anything else (raw types, wildcards, type variables,
+     * unrecognised parameterised containers, or {@code List<X, Y>}-style ill-typed shapes).
+     *
+     * <p>Shared between {@link #classifySourcesType} (the SOURCES classifier in {@code @service}
+     * parameter reflection; SINGLE is filtered out via {@code accept}) and
+     * {@code FieldBuilder.classifyAccessorReturn} (the accessor-side classifier on
+     * {@code @record} parents; all three kinds are accepted). Both call sites remain inside
+     * parse-boundary classes per the {@code rewrite-design-principles.adoc} rule on holding
+     * raw reflection types only inside {@code JooqCatalog} / {@code TypeBuilder} /
+     * {@code FieldBuilder} / {@code ServiceCatalog}; the helper itself lives here to honour
+     * the more-general SOURCES classifier as the natural home.
+     *
+     * @param type the type to peel
+     * @param accept the container kinds the caller wants to accept; types whose container axis
+     *               is not in this set return {@link Optional#empty()}
+     */
+    static Optional<ContainerSplit> peelContainer(java.lang.reflect.Type type,
+                                                  java.util.Set<ContainerKind> accept) {
+        if (type instanceof java.lang.reflect.ParameterizedType pt
+                && pt.getRawType() instanceof Class<?> rawCls) {
+            ContainerKind kind;
+            if (rawCls == java.util.List.class) kind = ContainerKind.LIST;
+            else if (rawCls == java.util.Set.class) kind = ContainerKind.SET;
+            else return Optional.empty();
+            if (!accept.contains(kind)) return Optional.empty();
+            java.lang.reflect.Type[] typeArgs = pt.getActualTypeArguments();
+            if (typeArgs.length != 1) return Optional.empty();
+            return Optional.of(new ContainerSplit(kind, typeArgs[0]));
+        }
+        if (type instanceof Class<?> cls && accept.contains(ContainerKind.SINGLE)) {
+            return Optional.of(new ContainerSplit(ContainerKind.SINGLE, cls));
+        }
         return Optional.empty();
     }
 

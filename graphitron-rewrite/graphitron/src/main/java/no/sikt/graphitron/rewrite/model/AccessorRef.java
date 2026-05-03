@@ -32,11 +32,12 @@ import no.sikt.graphitron.javapoet.ClassName;
  * has typed access to the element record without redoing reflection.
  *
  * <p>{@code AccessorRef} does not carry the container axis ({@code SINGLE} / {@code LIST} /
- * {@code SET}): that information lives on the variant identity ({@link BatchKey.AccessorRowKeyedSingle}
- * vs {@link BatchKey.AccessorRowKeyedMany}) plus the {@link BatchKey.AccessorRowKeyedMany#container()}
- * slot on {@code Many}. Per the {@code rewrite-design-principles.adoc} rule on narrow component
- * types, an {@code AccessorRef} flowing through {@code Single} cannot be misread as carrying a
- * list / set marker.
+ * {@code SET}): the single / list-or-set split lives on the variant identity
+ * ({@link BatchKey.AccessorRowKeyedSingle} vs {@link BatchKey.AccessorRowKeyedMany}); the
+ * {@code List<X>} vs {@code Set<X>} split inside {@code Many} is not preserved on the model
+ * because the emitter iterates any {@code Iterable}. Per the {@code rewrite-design-principles.adoc}
+ * rule on narrow component types, an {@code AccessorRef} flowing through {@code Single} cannot
+ * be misread as carrying a list / set marker.
  */
 public record AccessorRef(
     ClassName parentBackingClass,

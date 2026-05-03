@@ -168,12 +168,14 @@ class GeneratorUtils {
      * }</pre>
      *
      * <p>{@link BatchKey.AccessorRowKeyedMany} arm reads a {@code List<X>} or {@code Set<X>}
-     * from the typed accessor and projects each element to a {@code RowN<...>} key, collecting
-     * the per-parent key list with the terminal collector chosen by the variant's
-     * {@link BatchKey.AccessorRowKeyedMany.Container} slot: <pre>{@code
-     *   List<RowN<...>> keys = ((BackingClass) env.getSource()).<accessor>().stream()
-     *       .map(__elt -> DSL.<RowN<...>>row(__elt.<pk1>(), __elt.<pk2>()))
-     *       .toList();   // .collect(Collectors.toSet()) for SET
+     * from the typed accessor and projects each element to a {@code RowN<...>} key via a typed
+     * for-loop over {@code Iterable} (uniform across the {@code List} and {@code Set} declarations
+     * the parent class may carry): <pre>{@code
+     *   List<RowN<...>> keys = new ArrayList<>();
+     *   for (ElementRecord __elt : ((BackingClass) env.getSource()).<accessor>()) {
+     *       RowN<...> __k = DSL.row(__elt.<pk1>(), __elt.<pk2>());
+     *       keys.add(__k);
+     *   }
      * }</pre>
      */
     static CodeBlock buildRecordParentKeyExtraction(
@@ -221,7 +223,7 @@ class GeneratorUtils {
 
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "lifter-batchkey-is-lifterrowkeyed",
-        reliesOn = "The two-arm sealed switch in buildRecordParentKeyExtraction routes "
+        reliesOn = "The four-arm sealed switch in buildRecordParentKeyExtraction routes "
             + "BatchKey.LifterRowKeyed here. BatchKeyLifterDirectiveResolver guarantees this arm "
             + "is reached only when the parent is PojoResultType or JavaRecordType with a non-null "
             + "fqClassName, so backingClassOf and the (BackingClass) env.getSource() coercion below "
@@ -289,8 +291,8 @@ class GeneratorUtils {
         // For-loop over Iterable, not stream + .toList(): jOOQ's overloaded DSL.row(...) confuses
         // lambda return-type inference (the Object... varargs overload competes with the typed
         // RowN overload), and a typed local in a for-loop pins the inference cheaply. Iterating
-        // works uniformly for the LIST and SET container variants of AccessorRowKeyedMany; the
-        // output is always a List<RowN<...>> because DataLoader.loadMany takes a List.
+        // works uniformly for the List<X> and Set<X> declarations the parent class may carry;
+        // the output is always a List<RowN<...>> because DataLoader.loadMany takes a List.
         var b = CodeBlock.builder()
             .addStatement("$T keys = new $T<>()", keysListType, arrayList)
             .beginControlFlow("for ($T __elt : (($T) env.getSource()).$L())",
