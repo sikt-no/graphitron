@@ -4,7 +4,7 @@ Contributor-facing documentation for the Graphitron generator: how the pipeline 
 
 == Modules
 
-`graphitron-rewrite/` is a nested monorepo with its own parent pom (`graphitron-rewrite-parent`, `10-SNAPSHOT`). Eight modules cover the generator, its inputs, its consumers, and the tooling that wraps both ends:
+`graphitron-rewrite/` is a nested monorepo with its own parent pom (`graphitron-rewrite-parent`, `10-SNAPSHOT`). Nine modules cover the generator, its inputs, its consumers, and the tooling that wraps both ends:
 
 [cols="1,3"]
 |===
@@ -19,14 +19,17 @@ Contributor-facing documentation for the Graphitron generator: how the pipeline 
 | `graphitron-fixtures-codegen`
 | Builds the test database and runs jOOQ codegen against it.
 
-| `graphitron-fixtures`
-| Packages those generated jOOQ classes as a jar that downstream tests depend on.
+| `graphitron-sakila-db`
+| Packages those generated jOOQ classes (Sakila-inspired catalog plus the `nodeidfixture` and `idreffixture` sub-schemas) as a jar that downstream tests depend on.
+
+| `graphitron-sakila-service`
+| `@service` / `@externalField` / `@condition` implementations referenced from the example schemas (`FilmService`, `SampleQueryService`, `CategoryConditions`, ...). Compile-scope dep on `graphitron-sakila-db` for the jOOQ tables.
 
 | `graphitron-maven`
 | Maven plugin: `generate`, `validate`, and `dev` Mojos (the dev mojo provides the watch loop).
 
-| `graphitron-test`
-| End-to-end consumer: compiles emitted Java against a real jOOQ catalog and executes it against Postgres.
+| `graphitron-sakila-example`
+| End-to-end consumer: compiles emitted Java against a real jOOQ catalog, executes it against Postgres, and serves a runnable Quarkus + JAX-RS reference application from the same module.
 
 | `graphitron-lsp`
 | Editor LSP server for `.graphqls` authoring.
@@ -60,7 +63,7 @@ Generators                 ← TypeFetcherGenerator, TypeClassGenerator,
 JavaFile.writeToPath       ← idempotent file writes; orphans in owned
                              sub-packages are swept on every run
    ↓
-consumer compile           ← graphitron-test compiles the emitted output
+consumer compile           ← graphitron-sakila-example compiles the emitted output
                              (verifies Java type correctness) and runs it
                              against Postgres (verifies behaviour)
 ----

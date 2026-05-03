@@ -43,7 +43,7 @@ import no.sikt.graphitron.rewrite.test.tier.UnitTier;
  * Unit tests for {@link TypeFetcherGenerator}. Tests verify structural properties of the
  * generated TypeSpec (method names, return types, parameter signatures) — not the generated code
  * body. Code correctness is verified by compiling and executing the generated output in the
- * {@code graphitron-test} module.
+ * {@code graphitron-sakila-example} module.
  */
 @UnitTier
 class TypeFetcherGeneratorTest {
@@ -207,7 +207,7 @@ class TypeFetcherGeneratorTest {
 
     // Dropped queryLookupField_dataFetcher_delegatesToRowsMethod: asserted that filmById's body
     // references lookupFilmById. A dangling helper reference would fail compile on
-    // graphitron-test; a wrong helper reference would fail execution. The sibling
+    // graphitron-sakila-example; a wrong helper reference would fail execution. The sibling
     // test queryLookupField_hasLookupRowsMethod asserts the helper method exists.
 
     @Test
@@ -575,7 +575,7 @@ class TypeFetcherGeneratorTest {
 
     // Dropped connectionField_usesPaginationArgNamesFromModel: Pattern 5 — the default
     // pagination arg names (first/after/last/before) are exercised end-to-end by the 18+
-    // filmsConnection cases in graphitron-test's GraphQLQueryTest.
+    // filmsConnection cases in graphitron-sakila-example's GraphQLQueryTest.
 
     @Test
     void connectionField_withOrderByArg_emitsHelperMethod() {
@@ -609,7 +609,7 @@ class TypeFetcherGeneratorTest {
     // (commit 1900453) moved reverseOrderBy emission into ConnectionHelper.pageRequest, so
     // the TypeFetcherGenerator no longer emits a reverseOrderBy helper on the fetcher class.
     // The underlying behaviour is exercised by the filmsConnection_backward_* execution tests
-    // in graphitron-test.
+    // in graphitron-sakila-example.
 
     // Dropped connectionField_usesSingleExpressionSeek and connectionField_columnDrivenCursorDecode:
     // Pattern 5 — cursor decode + seek semantics exercised end-to-end by
