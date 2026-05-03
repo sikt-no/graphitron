@@ -1,0 +1,14 @@
+= How-to guides
+:description: Recipes for the day-to-day patterns Graphitron's directives unlock.
+:!toc:
+
+Task-indexed recipes for the day-to-day patterns Graphitron's directives unlock: mapping types to tables, joining via references, batch lookups, custom conditions, services, mutations, pagination and sorting, polymorphic types, error handling, global node identification, computed fields, Apollo federation, custom scalars, tenant scoping, and the recommended consumer test pattern.
+
+== Status: placeholder
+
+Recipe pages are authored in R68 Phase 3. Until they land, the closest material lives in:
+
+* xref:../../architecture/getting-started.adoc[Getting started with the rewrite runtime] — federation, custom scalars, tenant scoping, hello world.
+* The worked examples in the legacy https://github.com/sikt-no/graphitron/tree/main/graphitron-codegen-parent/graphitron-java-codegen/README.md[`graphitron-java-codegen` README] — the pre-rewrite reference for `@condition`, `@service`, `@reference`, `@lookupKey`, and friends. The rewrite is directive-compatible with this material; the recipes will be reframed and cross-linked into source-of-truth tests when they land.
+
+xref:../index.adoc[← Back to the manual landing]

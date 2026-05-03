@@ -1,0 +1,42 @@
+= Graphitron user manual
+:description: A Diataxis-shaped manual covering Graphitron's directives, runtime, and design.
+:keywords: graphitron, documentation, tutorial, reference, how-to
+:!toc:
+
+This manual covers Graphitron from four angles. Pick the one that matches what you are trying to do right now.
+
+[.quadrants,cols="1,1",frame=none,grid=none]
+|===
+a|
+[.quadrant-title]*xref:tutorial/index.adoc[Tutorial]*
+
+I'm new and want to learn by doing.
+
+A page-by-page walk-through that takes a fresh checkout to a working GraphQL query against the Sakila example.
+
+a|
+[.quadrant-title]*xref:how-to/index.adoc[How-to guides]*
+
+I have a specific task and want a recipe.
+
+Task-indexed instructions for the day-to-day patterns: joining tables, custom conditions, mutations, services, pagination, errors, federation, the recommended consumer test pattern.
+
+a|
+[.quadrant-title]*xref:reference/index.adoc[Reference]*
+
+I know what I am looking for and want the facts.
+
+Authoritative descriptions of every directive, every Maven plugin parameter, every runtime API entry point, and every diagnostic code Graphitron emits.
+
+a|
+[.quadrant-title]*xref:explanation/index.adoc[Explanation]*
+
+I want to understand why Graphitron works the way it does.
+
+Background on the design decisions, the batching model, the database-first stance, and how the pipeline fits together.
+
+|===
+
+== Manual under construction
+
+The manual is being authored across phases (item `R68` in xref:../roadmap/index.adoc[the roadmap]). This Phase 1a slice ships the information architecture so the four-quadrant shape can be reviewed before the prose lands. Each quadrant's index page names its current state and points readers at the closest existing material until the new prose arrives.
