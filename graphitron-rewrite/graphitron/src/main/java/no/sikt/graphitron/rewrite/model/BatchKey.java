@@ -144,7 +144,57 @@ public sealed interface BatchKey
      * than a runtime {@code IllegalStateException}.
      */
     sealed interface RecordParentBatchKey extends BatchKey
-            permits RowKeyed, LifterRowKeyed, AccessorRowKeyedSingle, AccessorRowKeyedMany {}
+            permits RowKeyed, LifterRowKeyed, AccessorRowKeyedSingle, AccessorRowKeyedMany {
+
+        /**
+         * Side-aware key columns for the rows-method prelude's parent-input VALUES table:
+         * parent-side PK/FK columns on the catalog-FK arm ({@link RowKeyed}), target-side
+         * columns on the lifter / accessor arms ({@link LifterRowKeyed},
+         * {@link AccessorRowKeyedSingle}, {@link AccessorRowKeyedMany}). All four produce
+         * {@code RowN<...>} of the same Java types as the JOIN target columns: for
+         * {@link LifterRowKeyed} that is the lifter contract; for the accessor permits it is
+         * the element table's PK by construction.
+         *
+         * <p>This capability lives on {@code RecordParentBatchKey} rather than on
+         * {@link BatchKey} because the {@code @service}-only permits ({@link RecordKeyed},
+         * {@link MappedRowKeyed}, {@link MappedRecordKeyed}) never reach the prelude:
+         * {@code SplitRowsMethodEmitter} only handles {@code @splitQuery} and
+         * {@code @record}-parent paths, which carry {@link RowKeyed} or
+         * {@link RecordParentBatchKey} respectively. The four prelude-reachable variants are
+         * exactly the {@code RecordParentBatchKey} permit list, so this method is a typed
+         * accessor instead of a switch with a {@code default -> throw} arm.
+         */
+        List<ColumnRef> preludeKeyColumns();
+
+        /**
+         * The DataLoader dispatch shape this variant produces:
+         * {@link LoaderDispatch#LOAD_ONE} for the three single-key arms ({@link RowKeyed},
+         * {@link LifterRowKeyed}, {@link AccessorRowKeyedSingle}) — emit
+         * {@code loader.load(key, env)} with loader value type {@code Record} or
+         * {@code List<Record>} depending on field cardinality;
+         * {@link LoaderDispatch#LOAD_MANY} for {@link AccessorRowKeyedMany} — emit
+         * {@code loader.loadMany(keys, env)} with loader value type {@code Record} (one record
+         * per element-PK key, regardless of the field's GraphQL cardinality).
+         *
+         * <p>The two emit sites that fork on this projection are
+         * {@code TypeFetcherGenerator.buildRecordBasedDataFetcher} (loader value type and
+         * dispatch call shape) and {@code GeneratorUtils.buildRecordParentKeyExtraction} (the
+         * emitted key local's name: {@code key} for single, {@code keys} for many).
+         */
+        LoaderDispatch dispatch();
+    }
+
+    /**
+     * The DataLoader dispatch a {@link RecordParentBatchKey} variant produces. Used by the two
+     * emit sites that fork on whether the batched loader call is {@code loader.load(key, env)}
+     * (one key, one value per key) or {@code loader.loadMany(keys, env)} (multiple keys per
+     * parent, one record value per key).
+     *
+     * <p>An enum is appropriate here rather than a sealed hierarchy because the two arms carry
+     * no per-arm data: the dispatch is a pure binary classification and consumers fork on
+     * identity, not on captured fields.
+     */
+    enum LoaderDispatch { LOAD_ONE, LOAD_MANY }
 
     /**
      * Column-based batch key using {@code DSL.row()} key construction with a positional
@@ -158,6 +208,14 @@ public sealed interface BatchKey
         @Override
         public String javaTypeName() {
             return containerType("List", "Row", parentKeyColumns);
+        }
+        @Override
+        public List<ColumnRef> preludeKeyColumns() {
+            return parentKeyColumns;
+        }
+        @Override
+        public LoaderDispatch dispatch() {
+            return LoaderDispatch.LOAD_ONE;
         }
     }
 
@@ -230,6 +288,16 @@ public sealed interface BatchKey
         public String javaTypeName() {
             return containerType("List", "Row", hop.targetColumns());
         }
+
+        @Override
+        public List<ColumnRef> preludeKeyColumns() {
+            return hop.targetColumns();
+        }
+
+        @Override
+        public LoaderDispatch dispatch() {
+            return LoaderDispatch.LOAD_ONE;
+        }
     }
 
     /**
@@ -266,6 +334,16 @@ public sealed interface BatchKey
         public String javaTypeName() {
             return containerType("List", "Row", hop.targetColumns());
         }
+
+        @Override
+        public List<ColumnRef> preludeKeyColumns() {
+            return hop.targetColumns();
+        }
+
+        @Override
+        public LoaderDispatch dispatch() {
+            return LoaderDispatch.LOAD_ONE;
+        }
     }
 
     /**
@@ -278,12 +356,11 @@ public sealed interface BatchKey
      * from the single-key sibling: it receives a {@code List<RowN>} (the union across parents)
      * and returns one record per key.
      *
-     * <p>{@link Container} disambiguates the terminal collector the emitter uses to materialise
-     * the per-parent key list ({@code .toList()} for {@code LIST}, {@code .collect(toSet())}
-     * for {@code SET}); the dispatch and rows-method shape are identical across the two cases.
-     * Per the {@code rewrite-design-principles.adoc} rule on sealed hierarchies vs enums, an
-     * enum is appropriate here because data shapes coincide and only one localised emit-time
-     * branch differs.
+     * <p>The {@code List<X>} vs {@code Set<X>} split the parent class declares is not preserved
+     * on the variant: {@code GeneratorUtils.buildAccessorRowKeyMany} iterates any {@code Iterable}
+     * via a typed for-loop and the loader dispatch is the same regardless. Should a future feature
+     * fork emission on the container (preserving order, dedupe, parallel iteration), introduce
+     * the split at that point with a real emit divergence behind it.
      *
      * <p>Auto-derived by {@code FieldBuilder.classifyChildFieldOnResultType} when no FK is
      * available in the catalog but the parent class's list / set accessor matches the field's
@@ -292,7 +369,7 @@ public sealed interface BatchKey
      * it produces (paired {@link no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck}
      * key {@code accessor-rowkey-cardinality-matches-field}).
      */
-    record AccessorRowKeyedMany(JoinStep.LiftedHop hop, AccessorRef accessor, Container container)
+    record AccessorRowKeyedMany(JoinStep.LiftedHop hop, AccessorRef accessor)
             implements RecordParentBatchKey {
 
         /**
@@ -309,8 +386,15 @@ public sealed interface BatchKey
             return containerType("List", "Row", hop.targetColumns());
         }
 
-        /** The container the parent's accessor returns: positional {@code List} or unordered {@code Set}. */
-        public enum Container { LIST, SET }
+        @Override
+        public List<ColumnRef> preludeKeyColumns() {
+            return hop.targetColumns();
+        }
+
+        @Override
+        public LoaderDispatch dispatch() {
+            return LoaderDispatch.LOAD_MANY;
+        }
     }
 
     private static String containerType(String container, String shape, List<ColumnRef> cols) {

@@ -289,10 +289,10 @@ public class TypeClassGenerator {
 
     private static java.util.stream.Stream<ColumnRef> collectBatchKeyColumns(List<? extends GraphitronField> fields) {
         return fields.stream().flatMap(f -> {
-            if (f instanceof ChildField.SplitTableField stf && stf.batchKey() instanceof BatchKey.RowKeyed rk)
-                return rk.parentKeyColumns().stream();
-            if (f instanceof ChildField.SplitLookupTableField slf && slf.batchKey() instanceof BatchKey.RowKeyed rk)
-                return rk.parentKeyColumns().stream();
+            if (f instanceof ChildField.SplitTableField stf)
+                return stf.batchKey().parentKeyColumns().stream();
+            if (f instanceof ChildField.SplitLookupTableField slf)
+                return slf.batchKey().parentKeyColumns().stream();
             if (f instanceof ChildField.NestingField nf)
                 return collectBatchKeyColumns(nf.nestedFields());
             return java.util.stream.Stream.empty();
