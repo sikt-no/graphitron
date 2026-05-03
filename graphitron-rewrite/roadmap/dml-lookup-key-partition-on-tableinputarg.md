@@ -46,37 +46,48 @@ same name-set partition is exactly that smell.
 
 ## Design
 
-Add two projections to `ArgumentRef.InputTypeArg.TableInputArg`:
+Add two projections to `ArgumentRef.InputTypeArg.TableInputArg`. The existing
+record (current shape: `name, typeName, nonNull, list, inputTable,
+fieldBindings, argCondition, fields`) gains two components; nothing existing is
+removed:
 
 ```java
 public record TableInputArg(
         String name,
+        String typeName,
+        boolean nonNull,
+        boolean list,
         TableRef inputTable,
         List<InputColumnBinding.MapBinding> fieldBindings,
-        List<InputField> fields,
-        List<InputField.ColumnField> lookupKeyFields,
-        List<InputField.ColumnField> setFields,
         Optional<ArgConditionRef> argCondition,
-        boolean list)
+        List<InputField> fields,
+        // new:
+        List<InputField.ColumnField> lookupKeyFields,
+        List<InputField.ColumnField> setFields)
     implements InputTypeArg {}
 ```
 
 - `lookupKeyFields()`: the subset of `fields()` whose `name()` matches some
   `fieldBindings().fieldName()`. The narrower element type
   (`InputField.ColumnField`, not `InputField`) is what the classifier already
-  guarantees on the mutation arm via Invariant #10 (only `Direct`-extracted
-  `ColumnField` is admitted in DML inputs); query-side TIAs that may carry
-  other input-field arms simply contribute zero `ColumnField` entries to the
-  lookup-key projection because `@lookupKey` only ever lands on a
-  `ColumnField`. The narrow type expresses the classifier's guarantee, per
-  *Narrow component types*.
+  guarantees on the mutation arm via the structural rejection in
+  `MutationInputResolver.resolveInput` (`MutationInputResolver.java:259-275`),
+  which restricts DML mutation inputs to `Direct`-extracted `ColumnField`.
+  Query-side TIAs that may carry other input-field arms simply contribute zero
+  `ColumnField` entries to the lookup-key projection because `@lookupKey` only
+  ever lands on a `ColumnField`. The narrow type expresses the classifier's
+  guarantee, per *Narrow component types*.
 - `setFields()`: the subset of `fields()` whose `name()` is **not** in any
   `fieldBindings()` entry, restricted to the `ColumnField` arm (same
   rationale as above).
 
 Both projections are real components on the record, not derived accessors, and
-populated at construction. The classifier (`buildLookupBindings` + the per-verb
-classifier path) is the single producer; the records are immutable.
+populated at construction. To keep the model the single producer, expose a
+static factory `TableInputArg.of(name, typeName, nonNull, list, inputTable,
+fieldBindings, argCondition, fields)` that derives the two projections from
+`fields` + `fieldBindings`; both construction sites (see *Implementation
+sites* below) call `of(...)` rather than the canonical constructor. The
+records remain immutable.
 
 ## Consumer rewrites
 
@@ -162,9 +173,11 @@ Pure model refactor, not a behaviour change. Acceptance gates:
   `upsertFilm_updateBranch_writesAndReturnsProjectedFilm`,
   `upsertFilm_insertBranch_writesAndReturnsProjectedFilm`). Emitted SQL is
   byte-identical; only the model and emitter shape change.
-- `MutationInputResolverTest` Invariant #4 case still rejects with the same
-  message wording (the rejection site moves from "predicate at classify time"
-  to "structural projection of the model"; wording stays).
+- `GraphitronSchemaBuilderTest.UPDATE_ALL_FIELDS_LOOKUP_KEY_REJECTED`
+  (the Invariant #4 case at `GraphitronSchemaBuilderTest.java:4887`) still
+  rejects with the same message wording (the rejection site moves from
+  "predicate at classify time" to "structural projection of the model";
+  wording stays).
 - Pipeline assertion: a happy-path UPDATE classification produces a
   `tia.setFields()` containing the expected `ColumnField` entries (in
   declaration order), and `tia.lookupKeyFields()` containing the
@@ -176,13 +189,15 @@ Pure model refactor, not a behaviour change. Acceptance gates:
 
 ## Implementation sites
 
-- `model/ArgumentRef.java` (or wherever `TableInputArg` lives): two new
-  components, constructor adjustment, accessors.
-- `FieldBuilder.buildLookupBindings` (or `classifyMutationInput` /
-  `classifyArgument` depending on which path constructs the `TableInputArg`):
-  populate the two projections from the same data that builds
-  `fieldBindings`.
-- `MutationInputResolver.resolveInput`: Invariant #4 check rewrite.
+- `ArgumentRef.java` (`graphitron/src/main/java/no/sikt/graphitron/rewrite/`):
+  two new components, static factory `TableInputArg.of(...)`, accessors.
+- `FieldBuilder.classifyArgument` (`FieldBuilder.java:698`): switch the
+  `new TableInputArg(...)` call to `TableInputArg.of(...)`. The bindings still
+  come from `enumMappingResolver.buildLookupBindings(...)` at line 697.
+- `MutationInputResolver.resolveInput` (`MutationInputResolver.java:234`): the
+  second `TableInputArg` construction site (the synthetic re-build for the
+  mutation gate) switches to `TableInputArg.of(...)`. Invariant #4 check at
+  line 281 reads `setFields().isEmpty()`.
 - `TypeFetcherGenerator.buildMutationUpdateFetcher`: SET-clause walk
   rewrite.
 - `TypeFetcherGenerator.buildMutationUpsertFetcher`: SET-clause walk +
