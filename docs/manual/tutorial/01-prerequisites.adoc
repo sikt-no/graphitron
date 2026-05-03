@@ -2,7 +2,7 @@
 :description: Tools, repository checkout, PostgreSQL with the example data, and the running Quarkus app.
 :!toc:
 
-By the end of this page you have the rewrite checked out, a PostgreSQL database loaded with example data, and a Quarkus dev server serving GraphQL on `http://localhost:8088/graphql`. The next five pages send queries to that server.
+By the end of this page you have the rewrite checked out, a PostgreSQL database loaded with example data, and a Quarkus dev server serving GraphQL on `http://localhost:8080/graphql`. The next five pages send queries to that server.
 
 == Tools you need
 
@@ -66,13 +66,13 @@ cd graphitron-rewrite/graphitron-sakila-example
 mvn quarkus:dev
 ----
 
-Quarkus boots in a few seconds and prints a banner ending with `Listening on: http://0.0.0.0:8088`. Leave this terminal running; every subsequent page sends queries to that endpoint from a second terminal.
+Quarkus boots in a few seconds and prints a banner ending with `Listening on: http://0.0.0.0:8080`. Leave this terminal running; every subsequent page sends queries to that endpoint from a second terminal.
 
 To verify the server is up, try a tiny query against the schema's introspection endpoint:
 
 [source,bash]
 ----
-curl -s -X POST http://localhost:8088/graphql \
+curl -s -X POST http://localhost:8080/graphql \
   -H 'Content-Type: application/json' \
   -d '{"query":"{ __typename }"}'
 ----

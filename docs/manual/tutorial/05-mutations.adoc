@@ -30,7 +30,7 @@ Three pieces are doing the work:
 
 [source,bash]
 ----
-curl -s -X POST http://localhost:8088/graphql \
+curl -s -X POST http://localhost:8080/graphql \
   -H 'Content-Type: application/json' \
   -d '{"query":"mutation { createFilm(in: { title: \"MY FIRST FILM\", languageId: 1 }) { filmId title } }"}'
 ----
@@ -92,7 +92,7 @@ The `@lookupKey` on `filmId` tells the generator "this field identifies the row,
 
 [source,bash]
 ----
-curl -s -X POST http://localhost:8088/graphql \
+curl -s -X POST http://localhost:8080/graphql \
   -H 'Content-Type: application/json' \
   -d '{"query":"mutation { updateFilm(in: { filmId: 6, title: \"RENAMED FILM\" }) { filmId title } }"}'
 ----
