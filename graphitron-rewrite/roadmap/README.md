@@ -21,11 +21,12 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R3` | Classification vocabulary follow-ups | Spec | [plan](classification-vocabulary-followups.md) |
 | `R58` | Make the typed `Rejection` hierarchy load-bearing across producers | Spec | [plan](lift-unclassified-field-onto-sealed-result.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
+| `R62` | Lift @lookupKey partition onto TableInputArg | Spec | [plan](dml-lookup-key-partition-on-tableinputarg.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec | [plan](nestingfield-multiparent-tablefield.md) |
 | `R32` | Implement `@service` rows-method body | Ready | [plan](service-rows-method-body.md) |
 | `R13` | Faceted search on `@asConnection` | Spec | [plan](faceted-search.md) |
-| `R12` | Error-handling parity: emit per-fetcher error channels from `@error` <sub>blocked by: [mutations](mutations.md)</sub> | In Progress | [plan](error-handling-parity.md) |
-| `R22` | Mutation bodies | Spec | [plan](mutations.md) |
+| `R63` | Type UPSERT dialect requirement on the model | Spec | [plan](dml-dialect-requirement-on-model.md) |
+| `R12` | Error-handling parity: emit per-fetcher error channels from `@error` | In Progress | [plan](error-handling-parity.md) |
 | `R8` | Docs as an index into classification tests | Ready (deferred) | [plan](docs-as-index-into-tests.md) |
 | `R26` | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` <sub>blocked by: [graphitron-lsp](graphitron-lsp.md)</sub> | In Progress | [plan](retire-maven-plugin.md) |
 | `R18` | Java LSP rewrite + introspect retirement + `dev` goal | Ready | [plan](graphitron-lsp.md) |
@@ -41,7 +42,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 - `R5` [**Composite-key `@lookupKey` on list-of-input-object arguments**](composite-key-lookupkey.md): Add `ArgumentRef.CompositeLookupArg` carrying `(input-field-name, target-column)` pairs resolved from `@field(name:)` directives; `buildInputRowsMethod` already handles arbitrary-arity VALUES + JOIN.
 - `R57` [**FK-target argument @nodeId, JOIN-with-translation emission**](nodeid-fk-target-arg-join-translation.md): R40 shipped the simple direct-FK case for argument-level FK-target `@nodeId`: when the FK source columns positionally match the target NodeType's keyColumns, projectFilters emits `BodyParam.In` / `Eq` / `RowIn` / `RowEq` against `joinPath[0].sourceColumns()` directly, no JOIN required.
 - `R52` [**Lift lookup-vs-query operation taxonomy into the model**](lift-operation-taxonomy.md): R50 named the lookup-vs-query split as a documentation-level distinction without lifting it into the model. The distinction is real and structurally consequential: lookups carry a derived VALUES table with an `idx` column to preserve per-input-row identity, queries fold predicates into a WHERE with no input-row identity to track. Today the split is encoded only by variant identity (`LookupMapping` vs everything else) and routing decisions taken in individual generators.
-- `R46` [**Multi-tenant fan-out for `@service`**](service-multi-tenant-fanout.md): A custom resolver in a downstream Sikt project (`megVedLarested`) bypasses `@service` and writes the resolver by hand because the directive can't express what it needs: for each tenant the logged-in user belongs to, open a tenant-scoped `DSLContext`, fan out in parallel on the executor, drop nulls, return the union. The service method itself is GraphQL-free Java; what doesn't fit `@service` is the `ConnectionManager` lookup, the per-tenant `DSLContext` plumbing, and the `executor.allOf().join()` shape. _(blocked by [typed-context-value-registry](typed-context-value-registry.md), [mutations](mutations.md))_
+- `R46` [**Multi-tenant fan-out for `@service`**](service-multi-tenant-fanout.md): A custom resolver in a downstream Sikt project (`megVedLarested`) bypasses `@service` and writes the resolver by hand because the directive can't express what it needs: for each tenant the logged-in user belongs to, open a tenant-scoped `DSLContext`, fan out in parallel on the executor, drop nulls, return the union. The service method itself is GraphQL-free Java; what doesn't fit `@service` is the `ConnectionManager` lookup, the per-tenant `DSLContext` plumbing, and the `executor.allOf().join()` shape. _(blocked by [typed-context-value-registry](typed-context-value-registry.md))_
 - `R11` [**`DSLContext` on `@condition` / `@tableMethod` methods**](dslcontext-on-condition-tablemethod.md): Lift the `reflectTableMethod` gate. Requires `ArgCallEmitter` to walk `params()` instead of `callParams()` so the injected `DSLContext` lands at its declaration-index slot.
 - `R61` [**Emit Record1<T> instead of Row1<T> for single-column DataLoader keys**](emit-record1-keys-instead-of-row1.md): Split out from R32's open follow-ups. The framework currently emits `Row1<T>` keys for the `RowKeyed` and `MappedRowKeyed` `BatchKey` variants (single-column key from a `Sources` parameter typed as `Set<TableRecord>` / `List<TableRecord>` / `Set<Row1<T>>` / `List<Row1<T>>`). `Row1<T>` is jOOQ's SQL-expression type for tuple-IN comparisons against the database; it has no value accessor. A developer who signs `Set<Row1<Integer>> keys` cannot read each key's column value at the application side.
 - `R25` [**Rebalance test pyramid**](rebalance-test-pyramid.md): Shift new test investment from per-variant structural tests toward SDL-to-classification-to-emission pipeline tests keyed off `graphitron-fixtures`.
@@ -66,6 +67,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 - `R30` [**Selection parser audit**](selection-parser-audit.md): `selection/` hand-rolls ~500 LOC; audit whether re-parsing is needed given what graphql-java already provides.
 - `R47` [**Short class-name resolution for `@service` and `@externalField` (legacy parity)**](service-short-classname-resolution.md): `ServiceCatalog.reflectServiceMethod` currently calls `Class.forName(className)` directly, forcing an FQN. Existing schemas carry short class names like `className: "PersonService"` and rely on the legacy Mojo's `externalReferenceImports` list to find them. Without short-name resolution, every legacy schema has to be migrated to FQNs at the same time as it migrates to the rewrite, which is unnecessary friction.
 - `R35` [**Class-level Javadoc and `package-info.java` sweep**](source-orientation-javadocs.md): A reader landing on `FieldBuilder.java` (2 172 lines) or `TypeFetcherGenerator.java` (1 646 lines) gets minimal in-file orientation; they have to bounce to the docs to learn what the class is for. The rewrite tree also has zero `package-info.java` files, which is the IDE-native place for "what is in this package" blurbs.
+- `R64` [**buildRuntimeStub accepts Rejection.Deferred directly**](runtime-stub-takes-deferred-rejection.md): `SplitRowsMethodEmitter.unsupportedReason` returns `Optional<Rejection.Deferred>` (per R58 Phase C, commit `68a062c`). Each of the four `buildFor*` callers immediately calls `.message()` on the result to feed the `String reason` parameter of `buildRuntimeStub`, discarding the typed `EmitBlockReason` the sealed `Deferred` arm carries:
 - `R10` [**Drop the assembled-schema rebuild in favour of per-variant graphql-java forms**](drop-assembled-schema-rebuild.md): Phase 5 of [firstclass-connection-types](firstclass-connection-types.md) rebuilds the assembled `GraphQLSchema` via `SchemaTransformer` so directive-driven `@asConnection` carriers carry their rewritten return type and pagination args. The rebuild only runs at generate time and is never seen by the runtime (which reconstructs its schema from emitted `<TypeName>Type.type()` calls in `GraphitronSchema.build()`).
 - `R24` [**`NodeIdReferenceField` JOIN-projection form**](nodeidreferencefield-join-projection-form.md): R50 shipped two of the three rooted shapes named in *Variant-by-variant collapse → Single-hop emission, two shapes*: rooted-at-child emission (FK-mirror, no JOIN, parent's FK columns encode directly) and the classifier-side resolution for rooted-at-parent (phase g-B produces `ChildField.ColumnReferenceField` / `CompositeColumnReferenceField` with `compaction = NodeIdEncodeKeys` and a resolved `joinPath`). What did *not* ship is the matching emitter: `FetcherEmitter#dataFetcherValue` carries runtime `UnsupportedOperationException` stubs for both arms (lines 140-162), so a schema that reaches one of the rooted-at-parent shapes builds without a validator-side rejection but throws at runtime.
 - `R34` [**sis-graphql-spec migration to graphitron-rewrite**](sis-rewrite-migration.md): Track the consumer-side schema work needed to bring `sis-graphql-spec` cleanly onto graphitron-rewrite. This plan exists because sis is the canonical large-scale consumer; closing it out validates the rewrite's classification contracts end-to-end and lets us close courtesy windows on shims (notably [`retire-synthesis-shims`](retire-synthesis-shims.md), which gates on this work).
@@ -97,14 +99,15 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R54` [**Rename @externalField (parallel-support, deprecation, migration)**](rename-externalfield-directive.md) — Backlog, cleanup
 - `R45` [**Typed context-value registry for `@service`**](typed-context-value-registry.md) — Spec, architecture
 - `R32` [**Implement `@service` rows-method body**](service-rows-method-body.md) — Ready, architecture
-- `R46` [**Multi-tenant fan-out for `@service`**](service-multi-tenant-fanout.md) — Backlog, architecture, blocked by [typed-context-value-registry](typed-context-value-registry.md), [mutations](mutations.md)
+- `R46` [**Multi-tenant fan-out for `@service`**](service-multi-tenant-fanout.md) — Backlog, architecture, blocked by [typed-context-value-registry](typed-context-value-registry.md)
 - `R11` [**`DSLContext` on `@condition` / `@tableMethod` methods**](dslcontext-on-condition-tablemethod.md) — Backlog, architecture
 - `R61` [**Emit Record1<T> instead of Row1<T> for single-column DataLoader keys**](emit-record1-keys-instead-of-row1.md) — Backlog, architecture
 
 ### mutations-errors
 
-- `R12` [**Error-handling parity: emit per-fetcher error channels from `@error`**](error-handling-parity.md) — In Progress, architecture, blocked by [mutations](mutations.md)
-- `R22` [**Mutation bodies**](mutations.md) — Spec
+- `R62` [**Lift @lookupKey partition onto TableInputArg**](dml-lookup-key-partition-on-tableinputarg.md) — Spec, architecture
+- `R12` [**Error-handling parity: emit per-fetcher error channels from `@error`**](error-handling-parity.md) — In Progress, architecture
+- `R63` [**Type UPSERT dialect requirement on the model**](dml-dialect-requirement-on-model.md) — Spec, architecture
 
 ### pagination
 
@@ -122,6 +125,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R16` [**`FkJoin` model cleanup: `JoinConditionRef` wrapper**](fkjoin-model-cleanup.md) — Backlog, cleanup
 - `R23` [**Multi-parent `NestingField` sharing: `TableField` arm**](nestingfield-multiparent-tablefield.md) — Spec
 - `R30` [**Selection parser audit**](selection-parser-audit.md) — Backlog, cleanup
+- `R64` [**buildRuntimeStub accepts Rejection.Deferred directly**](runtime-stub-takes-deferred-rejection.md) — Backlog, cleanup
 
 ### structural-refactor
 

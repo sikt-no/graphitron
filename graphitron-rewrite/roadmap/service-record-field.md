@@ -230,7 +230,7 @@ The fixture compiles and is reachable from the schema; Phase B fills the body.
 
 - **Rows-method body** (Phase B): folded into [`service-rows-method-body.md`](service-rows-method-body.md) (R32). For `ServiceRecordField` the body shape is "call the developer's method, return the values directly" with no projection step, simpler than the `ServiceTableField` body. Both shapes share infrastructure (DSLContext local, arg-call emission via `ArgCallEmitter.buildMethodBackedCallArgs`, scatter-result-into-Map for positional variants), so they ship together.
 - **`@record`-typed parents.** Site 1 in `FieldBuilder` returns `DEFERRED` for the scalar/record-return arms. The blocker is "what's the batch key when the parent is a `@record`?". The `@record` parent might itself be reachable via a `@table`-rooted chain whose terminal node has a derivable PK, but that's a separate design problem.
-- **`MutationServiceRecordField`.** Tracked under [`mutations.md`](mutations.md), unaffected by this track.
+- **`MutationServiceRecordField`.** Shipped under R22 (see [`changelog.md`](changelog.md)), unaffected by this track.
 - **Non-empty `joinPath`.** `DEFERRED` rejection on the validator surface; re-promote when a real schema needs the lift form.
 
 ## Open questions
