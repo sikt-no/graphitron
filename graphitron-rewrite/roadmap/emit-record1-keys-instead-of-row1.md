@@ -1,7 +1,7 @@
 ---
 id: R61
 title: "Emit Record1<T> instead of Row1<T> for single-column DataLoader keys"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 7
 theme: service
