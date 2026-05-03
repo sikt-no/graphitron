@@ -6,7 +6,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 **First time contributing?** Read in this order: [Workflow](../docs/workflow.adoc), [Rewrite Design Principles](../docs/rewrite-design-principles.adoc), [Code Generation Triggers](../docs/code-generation-triggers.adoc). Then read an Active plan to see the shape, and pick a Backlog item or take a Ready item from Active.
 
-**Front-matter dimensions.** Each item carries `id:` (monotonic `R<n>`, never reused), `status:`, `bucket:`, `priority:`, `theme:` (cross-cutting tag, see the *By theme* index), `depends-on:` (slugs of items that must ship first), `deferred:` (boolean; moves the item to the **Deferred** sub-section of Backlog so the active list stays actionable), and `notes:` (short inline annotation, shown on deferred items as the parking reason). When a dep ships, the dep file is deleted; the author closing it is responsible for removing the slug from any dependents' `depends-on:` list. The validator fails the build on a stale slug.
+**Front-matter dimensions.** Each item carries `id:` (monotonic `R<n>`, never reused), `status:`, `bucket:`, `priority:`, `theme:` (cross-cutting tag, see the *By theme* index), and `depends-on:` (slugs of items that must ship first). When a dep ships, the dep file is deleted; the author closing it is responsible for removing the slug from any dependents' `depends-on:` list. The validator fails the build on a stale slug.
 
 ---
 
