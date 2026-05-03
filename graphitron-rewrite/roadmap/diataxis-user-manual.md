@@ -5,7 +5,7 @@ status: Spec
 bucket: architecture
 priority: 15
 theme: docs
-depends-on: [docs-site-asciidoc]
+depends-on: [docs-site-asciidoc, rewrite-example-quarkus-jaxrs]
 ---
 
 # Diataxis user manual: absorb legacy README into the docs site
@@ -40,6 +40,16 @@ legacy doc is weak on (orientation, learning path, cross-links, drift
 prevention), and becomes the canonical home for every directive and every
 Mojo configuration option. Once it lands, the legacy README's content is
 fully covered on the site and that file becomes a stub redirect.
+
+This plan composes with `R67` (`rewrite-example-quarkus-jaxrs`), which
+promotes the rewrite's `graphitron-test` module into a public
+`graphitron-sakila-example` with a Quarkus runtime and a documented
+consumer test pattern (`src/test/java/.../querydb/`). R67 is the *runnable
+artifact* a reader copies; R68 is the *manual* that teaches them to. The
+tutorial chapter walks through R67's example commit by commit; the
+how-to recipes cross-link "verified by" pointers into R67's `querydb/`
+tests rather than into a test-internal module name. The two plans are
+deliberately split: R67 is the artifact, R68 is the docs.
 
 ## What Diataxis is, in two paragraphs
 
@@ -90,9 +100,17 @@ buried in edge cases.
 - `/graphitron-codegen-parent/graphitron-java-codegen/README.md`. The legacy
   master reference. Out of edit scope for AI work, but in scope to *read*
   and *port* on this plan.
-- `/graphitron-example/README.md`. Sets up a working Sakila-backed app.
-  Already linked from `/docs/quick-start.adoc`; the new tutorial chapter
-  uses it as its anchor project.
+- `/graphitron-example/README.md`. Legacy Sakila-backed app on the
+  `graphitron-servlet` runtime. After R67 ships this is "courtesy
+  reference for in-flight migrators only" and `quick-start.adoc` no longer
+  points at it; the new tutorial chapter does *not* anchor on this module.
+- *Post-R67* `graphitron-rewrite/graphitron-sakila-example/`. The
+  rewrite-flavoured public example with a Quarkus runtime, an
+  `application.yaml`, and a documented test pattern under
+  `src/test/java/.../querydb/`. This is the tutorial's anchor project and
+  the cross-link target for "verified by" pointers in the how-to recipes.
+  R67 is in scope for *consuming* on this plan, not authoring; R68 simply
+  picks up the artifact R67 ships.
 
 ## Target information architecture
 
@@ -127,7 +145,8 @@ exactly mirroring the Diataxis quadrants plus an introduction:
 │   │   ├── computed-fields.adoc
 │   │   ├── apollo-federation.adoc
 │   │   ├── custom-scalars.adoc
-│   │   └── tenant-scoping.adoc
+│   │   ├── tenant-scoping.adoc
+│   │   └── test-your-schema.adoc      # post-R67: the documented querydb/ pattern
 │   ├── reference/
 │   │   ├── index.adoc            # alphabetical directive index, Mojo index
 │   │   ├── directives/
@@ -212,7 +231,13 @@ That structure has known weaknesses; the new manual addresses each:
 . *No cross-links into source-of-truth tests*. Each how-to ends with a
   "verified by" pointer into the rewrite test suite (the same pattern R8 is
   building for the classification doc). A reader who wants to be sure the
-  example actually compiles runs the named test.
+  example actually compiles runs the named test. Post-R67, the test
+  surface a how-to links to is *public-facing*: it lives under
+  `graphitron-sakila-example/src/test/java/.../querydb/`, with a README
+  that explicitly names it as the recommended consumer test pattern. The
+  legacy README has nothing comparable to point at: its examples cite no
+  test at all, and the tests that do exercise them sit in legacy modules
+  with no narrative explaining "this is the pattern, copy it."
 . *No diagnostics glossary*. When a build fails with `AUTHOR_ERROR:
   REFERENCE_PATH_NOT_FOUND`, the legacy README has nothing to say. The
   manual ships `reference/diagnostics-glossary.adoc`, an alphabetical list
@@ -244,21 +269,35 @@ Create `/docs/manual/` with:
 
 - `index.adoc` describing the four quadrants and how to navigate them. Use
   the four-up grid pattern from `/docs/index.adoc`.
-- `tutorial/` chapter, six pages, anchored to the existing
-  `/graphitron-example/` Sakila project. The tutorial's goal is "a reader
-  who has only run `mvn -version` finishes with a query like
-  `customers { firstName email address { addressLine1 } }` returning real
-  data". Each page ends with a "you have just learned" line and a
-  "next" link to the following page.
-- An updated `/docs/index.adoc` and `/docs/quick-start.adoc`. Quick Start
-  becomes a true *orientation* page (~one screen) and links into the
-  tutorial; the index's "Documentation" table grows a "User manual" row
-  with the four quadrant sub-rows.
+- `tutorial/` chapter, six pages, anchored to the
+  `graphitron-rewrite/graphitron-sakila-example/` project R67 ships. The
+  tutorial's goal is "a reader who has only run `mvn -version` finishes
+  with a query like `customers { firstName email address { addressLine1 } }`
+  returning real data, served over HTTP via `mvn quarkus:dev`." Each page
+  ends with a "you have just learned" line and a "next" link to the
+  following page. Page-by-page: prerequisites and `mvn quarkus:dev`; the
+  three-table starter schema with directives; running the first query in
+  the Quarkus dev UI; adding `@reference` to traverse to a joined table;
+  one mutation via `@mutation`; and a "going further" page that points at
+  the four how-to recipes most relevant to the worked example
+  (`add-custom-conditions`, `pagination-and-sorting`, `error-handling`,
+  `test-your-schema`).
+- An updated `/docs/index.adoc` and `/docs/quick-start.adoc`. R67's
+  Stage 3 has already repointed `quick-start.adoc:21,64` from the legacy
+  example to `graphitron-sakila-example` and added a one-paragraph
+  mention of the test-pattern role. R68 Phase 1 picks the page up from
+  there: it stays a true *orientation* page (~one screen) and grows a
+  "Tutorial" link as the recommended first stop after Quick Start. The
+  index's "Documentation" table grows a "User manual" row with the four
+  quadrant sub-rows. R68 does not undo R67's link change; the two plans
+  edit `quick-start.adoc` in sequence, not in parallel.
 
-Phase 1 ships as soon as a beginner can complete the tutorial against the
-example project on a clean checkout. No rewrite of legacy content yet; the
-tutorial is new prose because the legacy README has nothing tutorial-shaped
-to lift.
+Phase 1 ships as soon as a beginner can complete the tutorial against
+`graphitron-sakila-example` on a clean checkout: `mvn install -Plocal-db`
+once, then `mvn quarkus:dev` from the example module, then follow the
+six pages to a working query. No rewrite of legacy content yet; the
+tutorial is new prose because the legacy README has nothing
+tutorial-shaped to lift.
 
 ### Phase 2: Reference (directives) absorbs the legacy README
 
@@ -323,13 +362,26 @@ specific stretch of the legacy README plus, where relevant, the
   section, lifted forward and expanded
 - `custom-scalars.adoc` ← rewrite `getting-started.adoc` scalar section
 - `tenant-scoping.adoc` ← rewrite `getting-started.adoc` tenant section
+- `test-your-schema.adoc` ← *new prose*: the recommended consumer test
+  pattern. Anchored on R67's `graphitron-sakila-example/src/test/java/.../querydb/`,
+  this recipe walks a reader through (1) wiring a `Graphitron`-built
+  schema into a JUnit test, (2) executing GraphQL via `graphql-java`
+  in-process, (3) asserting against rows pulled from the live `DSLContext`,
+  and (4) approval-style snapshots for queries that return more than a
+  handful of rows. The legacy README has no equivalent; this is one of
+  R68's net-new contributions, made possible by R67's documented surface.
 
 Each how-to is recipe-shaped (problem → solution → variations → caveats →
 links) and stays under ~300 lines. The "verified by" pointer at the foot of
-each page links to the test (`graphitron-test/`,
-`graphitron-fixtures/...`) that exercises the recipe end-to-end. R8's
-work on classification-test cross-links is a useful precedent; this phase
-extends that pattern from contributor docs to user docs.
+each page links to the test that exercises the recipe end-to-end. The
+preferred target is a test in `graphitron-sakila-example/src/test/java/.../querydb/`
+because that directory is the public test surface a reader would copy;
+fall back to `graphitron-sakila-service/` (services + conditions
+fixtures) or `graphitron-sakila-db/` (catalog + DDL) when the recipe
+exercises generator-internal mechanics that don't have a public-facing
+test. R8's work on classification-test cross-links is a useful
+precedent; this phase extends that pattern from contributor docs to user
+docs.
 
 This phase ships per-page; the whole set is not one big-bang commit.
 
@@ -389,8 +441,9 @@ and correct.
 The drift-protection seams are the tests:
 
 . *Directive coverage* (Phase 2). New `DirectiveDocCoverageTest` (in the
-  docs-verifier module if we build one, otherwise in `graphitron-test`)
-  asserts every directive in `directives.graphqls` has a matching
+  docs-verifier module if we build one, otherwise in
+  `graphitron-sakila-example` per R67's renaming) asserts every directive
+  in `directives.graphqls` has a matching
   `reference/directives/<name>.adoc` and vice versa. Failure prints the
   missing pages or stale files.
 . *Mojo parameter coverage* (Phase 4). `MojoDocCoverageTest` asserts every
@@ -404,10 +457,16 @@ The drift-protection seams are the tests:
   CI, which R9 already covers.
 . *Tutorial smoke test*. A `tutorial-smoke-test` module copies the tutorial
   chapter's commands into a shell script and runs them against a clean
-  checkout in CI. If a tutorial step references `mvn` flags or a directive
-  that no longer exists, the smoke test breaks before the docs ship. This
-  is the heaviest-weight test and is deferred to Phase 1 finishing first;
-  the test is added in Phase 1's last commit.
+  checkout in CI. The script's shape mirrors the tutorial pages
+  one-for-one: `mvn -f graphitron-rewrite/pom.xml install -Plocal-db`,
+  then a `mvn quarkus:dev` invocation backgrounded against the
+  `graphitron-sakila-example` module, then a `curl -X POST` of the
+  tutorial's first query against `localhost:8080/graphql`, then a kill of
+  the dev server. If a tutorial step references `mvn` flags, an HTTP
+  endpoint shape, or a directive that no longer exists, the smoke test
+  breaks before the docs ship. This is the heaviest-weight test and is
+  deferred to Phase 1 finishing first; the test is added in Phase 1's
+  last commit.
 
 These tests do not duplicate the existing classification, validation, or
 codegen tests; they only cross-check that documented surface = code
@@ -422,6 +481,19 @@ This plan is `R68`. Related items:
 - `R9` (`docs-site-asciidoc`, In Progress): provides the AsciiDoc build
   and the deployment to GitHub Pages. R68 lives inside R9's site; R9 must
   ship before R68's Phase 1 ships.
+- `R67` (`rewrite-example-quarkus-jaxrs`, Spec): renames `graphitron-test`
+  → `graphitron-sakila-example`, splits `graphitron-fixtures` into
+  `graphitron-sakila-db` + `graphitron-sakila-service`, and adds a Quarkus
+  runtime plus a documented `querydb/` consumer test pattern to the
+  example module. R68's tutorial chapter anchors on the post-R67 example;
+  R68's how-to recipes use post-R67 module names and cross-link into
+  `querydb/`. Because R67 also repoints `quick-start.adoc:21,64`, R68
+  Phase 1's Quick Start rework picks up the post-R67 page rather than
+  competing with R67 on the same lines. *Hard dependency for Phase 1
+  (tutorial) and Phase 3 (how-tos)*; Phase 2 (directive reference) and
+  Phase 5 (diagnostics) can author in parallel with R67 because they do
+  not anchor on the example module. If Phase 2 finishes before R67 lands,
+  it ships under the manual top-nav as soon as R67 unblocks Phase 1.
 - `R8` (`docs-as-index-into-tests`, Ready, deferred): the cross-link-to-
   tests pattern R68 reuses. R68 generalises R8's "doc points into tests"
   to the user-manual surface.
@@ -510,13 +582,14 @@ authored.
 Phase 1 (scaffold + tutorial): ~3 days for a single author, mostly prose.
 Phase 2 (directive reference + verifier): ~5 days; 25 directives × ~30
 min each plus verifier wiring.
-Phase 3 (how-to recipes): ~5 days; 13 recipes × ~half-day each, mostly
-porting and reshaping legacy README prose.
+Phase 3 (how-to recipes): ~5–6 days; 14 recipes × ~half-day each, mostly
+porting and reshaping legacy README prose. The 14th recipe
+(`test-your-schema.adoc`) is new prose against R67's `querydb/` pattern.
 Phase 4 (explanation + Mojo/runtime): ~3 days.
 Phase 5 (diagnostics glossary + deprecations index): ~1 day if the
 generators land cheaply, ~2 days if the validator exposure needs work.
 Phase 6 (cutover): ~half a day; mostly link-flipping.
 
-Total: ~17–18 days author-time, spread across multiple cycles. Phases 1
+Total: ~17–19 days author-time, spread across multiple cycles. Phases 1
 and 2 are the user-visible cliff; Phases 3–6 ship continuously after
 that.
