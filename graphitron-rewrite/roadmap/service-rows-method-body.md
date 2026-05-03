@@ -35,9 +35,15 @@ Two iterations have shipped:
    `ID`); other cases (custom scalars, enums, `PolymorphicReturnType`,
    `ResultReturnType` with no backing class) skip the strict check.
 
-`GeneratorUtils.keyElementType` was bumped to `public` so the validator and the emitter
-share one source for the keys-element-type derivation, keeping the validator's "expected"
-in lockstep with what `buildServiceRowsMethod` actually emits.
+The contractual pairing is held by an explicit `@LoadBearingClassifierCheck` /
+`@DependsOnClassifierCheck` key on `validateChildServiceReturnType` and
+`buildServiceRowsMethod`. `GeneratorUtils.keyElementType` was bumped to `public` so the
+two sites share the per-position keys-element-type derivation, but the surrounding
+`(isMapped, isList)` outer-shape cross-product is still reconstructed independently in
+each site, the per-key `V` derivation also lives a third time on
+`ChildField.ServiceRecordField.elementType()` with deliberately-divergent fallbacks, and
+the classifier-tier validator now imports from the generators package. Captured as a
+follow-up below ("Lift the resolved rows-method outer type onto the model").
 
 ## Original spec
 
@@ -82,6 +88,29 @@ service-call boundary.
 
 ## Open follow-ups
 
+- **Lift the resolved rows-method outer type onto the model.** Today the
+  `(ReturnTypeRef, BatchKey) → Map<K, V> / List<List<V>> / List<V>` decision is reconstructed
+  in two places: `ServiceDirectiveResolver.computeExpectedChildServiceReturnType` builds it
+  for the validator's strict equality check, and `TypeFetcherGenerator.buildServiceRowsMethod`
+  builds it again for the emitter's `.returns(...)` declaration. The per-key `V` derivation
+  lives a third time on `ChildField.ServiceRecordField.elementType()` with a deliberately-
+  divergent fallback (the validator returns `null` to skip the strict check; `elementType()`
+  falls back to `method.returnType()` so the loader has *some* static type for
+  `DataLoader<K, V>`). The principle "Generation-thinking" calls this out: two consumers
+  evaluating the same predicate over a model field is a sign the resolver is under-specified.
+  Resolve the expected outer type once at classify time — on
+  `ServiceDirectiveResolver.Resolved.Success.{TableBound | Result | Scalar}`, or on the
+  eventual `BatchKeyField` projection — so the validator does `method.returnType().equals(expected)`
+  and the emitter declares `.returns(expected)` directly. As a side-effect,
+  `GeneratorUtils.keyElementType` (and the `buildRowKeyType` / `buildRecordNKeyType` helpers
+  it composes) can move back to the model package adjacent to `BatchKey`, restoring the
+  model←generators dependency direction the R32 commit inverted when it bumped those
+  helpers to `public` to satisfy a classifier-tier import. The contractual
+  `@LoadBearingClassifierCheck` / `@DependsOnClassifierCheck` pair holds the producer/
+  consumer relationship together at audit time but cannot prevent the two reconstruction
+  sites drifting on a future variant (e.g. when `@asConnection` becomes legal on a child
+  `@service`, or when the `Float → Double` mapping is revisited). Track as a separate
+  roadmap item.
 - **Element-shape conversion (R32 §2 in the original spec).** The `keys` parameter passes
   through directly today. When the developer's signature uses `Set<TableRecord>` /
   `List<TableRecord>` (which classifies as the same `Mapped/RowKeyed` BatchKey variant as
