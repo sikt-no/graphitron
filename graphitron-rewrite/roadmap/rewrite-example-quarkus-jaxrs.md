@@ -48,11 +48,11 @@ Dependents to update in the same commit:
 
 - `graphitron-rewrite/graphitron-lsp/pom.xml` (test scope): repoint at `graphitron-sakila-db`.
 - `graphitron-rewrite/graphitron-maven/src/it/basic-generate/pom.xml` (invoker IT, codegen-classpath): repoint at `graphitron-sakila-db`.
-- `graphitron-rewrite/graphitron/pom.xml`: repoint the test-scope catalog dep at `graphitron-sakila-db` (consumed by `JooqCatalogNodeIdMetadataTest`, `NodeIdLeafResolverTest`, `JooqCatalogIdRefTest` for the `nodeidfixture` / `idreffixture` catalogs); add the `maven-jar-plugin` `test-jar` goal so other modules can consume tier annotations.
+- `graphitron-rewrite/graphitron/pom.xml`: repoint the test-scope `graphitron-fixtures` dep at `graphitron-sakila-service`. Pipeline / generator tests (`FetcherPipelineTest`, `TypeFetcherGeneratorTest`, `ServiceFieldValidationTest`, `ErrorMappingsClassGeneratorTest`, `MappingsConstantNameDedupTest`) reference service-fixture classes (`FilmService`, `CreateFilmPayload`, ...) that Stage 0 moves into `-service`; that single dep transitively brings `-db` onto the test classpath (since `-service` declares `-db` at compile scope), which is what the catalog tests `JooqCatalogNodeIdMetadataTest`, `NodeIdLeafResolverTest`, `JooqCatalogIdRefTest` need for the `nodeidfixture` / `idreffixture` catalogs. Also add the `maven-jar-plugin` `test-jar` goal here so other modules can consume tier annotations.
 - `graphitron-rewrite/graphitron-sakila-example/pom.xml`: replace the (former) `graphitron-fixtures` compile-scope dep with two narrower deps: `graphitron-sakila-db` (jOOQ catalog), `graphitron-sakila-service` (services on the codegen plugin classpath); add `<type>test-jar</type><classifier>tests</classifier><scope>test</scope>` to the existing `graphitron` test-scope dep so tier annotations resolve.
 - `graphitron-rewrite/pom.xml`: `<modules>` list now names `graphitron-sakila-db`, `graphitron-sakila-service`, `graphitron-sakila-example`.
 
-Stage 0 exit: `mvn -f graphitron-rewrite/pom.xml install -Plocal-db` builds clean against the new names; no behaviour change; commit subject reads `R67 Stage 0: split graphitron-fixtures into Sakila-named modules; rename graphitron-test`.
+Stage 0 exit: `mvn -f graphitron-rewrite/pom.xml install -Plocal-db` builds clean against the new names; no behaviour change; commit subject reads `R67 Stage 0: split graphitron-fixtures into graphitron-sakila-{db,service}; rename graphitron-test to graphitron-sakila-example`.
 
 ## Stage 1: Quarkus runtime
 
@@ -73,7 +73,7 @@ Stage 1 exit: `mvn quarkus:dev` from `graphitron-sakila-example/` serves a worki
 
 ## Stage 2: test surface curation + README
 
-`graphitron-test`'s existing test classes split into two categories. Stage 2 carries that split into the renamed module, adds two new approval-style worked examples, relocates `IdempotentWriterTest` from `graphitron`, and lands the README that names the two roles a reader is here for.
+`graphitron-test`'s existing test classes split into two categories. Stage 2 carries that split into the renamed module, adds two new worked examples (one approval-style, one match-style), relocates `IdempotentWriterTest` from `graphitron`, and lands the README that names the two roles a reader is here for.
 
 **Query-to-database pattern** (lives under `src/test/java/.../querydb/`, called out in the README). These tests stay in-process: they build the schema via `Graphitron.buildSchema(...)`, instantiate a `GraphQL` engine, execute via `graphql-java`, and assert against a live Postgres `DSLContext`. They do *not* go through the Quarkus HTTP stack. Keeping the pattern in-process means consumers can copy it without bringing Quarkus into their test classpath; the Stage 1 `@QuarkusTest` smoke test is the single HTTP-shaped check in the module.
 
@@ -121,7 +121,7 @@ Test tier annotations (`@UnitTier`, `@PipelineTier`, `@CompilationTier`, `@Execu
 - *Test-pattern variants beyond approval + match*. Two patterns is the recommended-pattern surface; richer test taxonomies (snapshot, property-based) are out.
 - *HTTP-shaped query-to-database tests*. The pattern stays in-process via `graphql-java`. The Stage 1 `@QuarkusTest` is the only HTTP-shaped check in the module; rewriting the existing query-to-database tests on top of REST-Assured is a separate undertaking.
 - *Schema simplification for pedagogy*. The existing test schema stays comprehensive; the example artifact serves the "I want to see this running" audience, not the gentle on-ramp. The on-ramp lives in `getting-started.adoc`.
-- *Multi-module restructuring beyond the three-name rename*. `graphitron-fixtures-codegen` keeps its current name; the catalog stays a single module (`graphitron-sakila-db`) carrying all three of `init.sql`'s schemas. Splitting any further is unrelated to the consumer-facing direction this plan locks in.
+- *Multi-module restructuring beyond the Stage 0 split-and-rename*. `graphitron-fixtures-codegen` keeps its current name; the catalog stays a single module (`graphitron-sakila-db`) carrying all three of `init.sql`'s schemas. Splitting any further is unrelated to the consumer-facing direction this plan locks in.
 
 ## Roadmap integration
 
