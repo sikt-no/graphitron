@@ -1,7 +1,7 @@
 = Quick Start
 :description: Set up Graphitron in your project: prerequisites, jOOQ generation, GraphQL schema with directives, build wiring.
 
-This page is a high-level orientation. For the rewrite-side workflow with worked examples (custom scalars, Apollo Federation, the dev loop), see xref:architecture/getting-started.adoc[Getting Started].
+This page is a high-level orientation. If you want to type commands yourself and see real responses, the xref:manual/tutorial/index.adoc[Tutorial] takes a fresh checkout to a working query against the Sakila example. For the rewrite-side workflow with worked examples (custom scalars, Apollo Federation, the dev loop), see xref:architecture/getting-started.adoc[Getting Started].
 
 == Requirements
 
@@ -67,6 +67,7 @@ The same module also doubles as the recommended **consumer test pattern**: the i
 
 == Where to next
 
+* xref:manual/tutorial/index.adoc[Tutorial]: a six-page walk-through from a fresh checkout to a working GraphQL query.
 * xref:architecture/getting-started.adoc[Getting Started]: hello world, custom scalars, federation, dev loop.
 * xref:vision-and-goal.adoc[Vision and Goal]: what problem Graphitron solves.
 * xref:graphitron-principles.adoc[Graphitron Principles]: design philosophy.

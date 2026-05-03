@@ -1,0 +1,40 @@
+= Page 6: Going further
+:description: Four how-to recipes most relevant after the tutorial, plus the reference and explanation chapters.
+:!toc:
+
+You started with a fresh checkout, set up PostgreSQL with example data, ran the example app under `mvn quarkus:dev`, queried `customers` directly, traversed a `@reference` to `Address`, and ran `INSERT` and `UPDATE` mutations against `film`. The directives you used (`@table`, `@field`, `@reference`, `@lookupKey`, `@mutation`) cover the common case; everything else builds on the same idea: GraphQL types map to PostgreSQL tables, and directives pick the SQL shape.
+
+This page lists the four how-to recipes most worth reading next, then points at the rest of the manual.
+
+== Recipes most relevant after this tutorial
+
+The four recipes below are the ones to read next. All four are authored under R68 Phase 3; until they land, the xref:../how-to/index.adoc[how-to landing] points at substitute material.
+
+Add custom conditions::
+The `active` filter you used on page 3 is the simplest case of an argument-driven `WHERE`. The `@condition` directive lets you wire arbitrary jOOQ predicates onto fields and arguments: `WHERE rental_rate < ?`, `WHERE title ILIKE ?`, conjunctive filters across multiple input fields, override semantics, anything jOOQ can express. This is the most-used directive after `@table` and `@field`.
+
+Pagination and sorting::
+The `customers` query you ran returns all five rows. Real schemas paginate: Graphitron supports both Relay-style cursor pagination (`@asConnection`, `first`/`after`) and dynamic ordering (`@orderBy`, `@order`). The recipe walks through turning a list field into a connection, declaring sort enums, and wiring `@defaultOrder`.
+
+Error handling::
+The mutations on page 5 happily commit anything that PostgreSQL accepts. Real mutations need to surface validation errors (constraint violations, business-rule failures) as typed GraphQL errors, not opaque exceptions. The `@error` directive and the `Error` interface are how Graphitron makes that ergonomic: every mutation can return either its payload or a typed error, and the generator threads the error channel through to the response.
+
+Test your schema::
+The example module's own tests under `src/test/java/.../querydb/` are the recommended pattern for pinning your schema's behaviour against a real PostgreSQL. The recipe walks through copying that pattern into your own project: how to build a `GraphQL` engine in a JUnit test, how to assert on response shapes (match style and approval style), and how to keep the suite fast despite using a real database.
+
+== Where the rest of the manual sits
+
+xref:../how-to/index.adoc[How-to guides]::
+The full task-indexed list. Beyond the four recipes above, the chapter covers `@service` for hand-written fetchers, `@lookupKey` for batched key lookups, `@splitQuery` for opt-in DataLoader batching, polymorphic types via `@discriminate` and unions, Apollo Federation, custom scalars, tenant scoping, and global node identification.
+
+xref:../reference/index.adoc[Reference]::
+Authoritative descriptions of every directive, every Maven plugin parameter, and every diagnostic the validator emits. Use this when you know the directive name and want the parameter list and constraints; use the how-to chapter when you know the task and want a recipe.
+
+xref:../explanation/index.adoc[Explanation]::
+The design decisions behind Graphitron: why the database catalog is the source of truth, why `@condition` methods take a table parameter, why authorization stays in PostgreSQL row-level security, how the batching model works. Read this chapter when "why does it work this way" matters more than "how do I use it".
+
+== You have finished
+
+The tutorial is over. The example you built against is the same one the rest of the manual references in its `verified by` pointers; if a how-to or reference page mentions a query, you can paste it into the same `curl` shape from xref:03-first-query.adoc[page 3] and run it against your local server.
+
+xref:index.adoc[← Tutorial overview]

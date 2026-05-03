@@ -2,10 +2,23 @@
 :description: A page-by-page walk-through from a fresh checkout to a working GraphQL query.
 :!toc:
 
-A step-by-step path from a fresh checkout to a working GraphQL query against the example schema. Each page builds on the last; reach the end with a query like `customers { firstName email address { addressLine1 } }` returning real Sakila rows over HTTP.
+A step-by-step path from a fresh checkout to a working GraphQL query against the example schema. Each page builds on the last; reach the end with a query like `customers { firstName address { address district } }` returning real Sakila rows over HTTP.
 
-== Status: placeholder
+The tutorial anchors on https://github.com/sikt-no/graphitron/tree/claude/graphitron-rewrite/graphitron-rewrite/graphitron-sakila-example[`graphitron-sakila-example`], the rewrite's runnable reference application. You do not write a new project from scratch; you build, run, and query the example, then read the schema to see how each query was made possible by a directive.
 
-Tutorial pages are authored in R68 Phase 1b, the next slice after this Phase 1a scaffold. Until they land, start with the xref:../../quick-start.adoc[Quick start] page; it covers the same ground at a higher level and points at the runnable `graphitron-sakila-example` module the tutorial chapter is built around.
+== Pages
+
+. xref:01-prerequisites.adoc[Prerequisites]: tools, repository checkout, PostgreSQL with the example data, and starting the Quarkus dev server.
+. xref:02-first-schema.adoc[The starter schema]: how `@table` and `@field` map a GraphQL type to a PostgreSQL table.
+. xref:03-first-query.adoc[Running your first query]: send a GraphQL query and see PostgreSQL rows in the response.
+. xref:04-joining-tables.adoc[Joining tables with `@reference`]: add a related `Address` to each `Customer` with a foreign-key path.
+. xref:05-mutations.adoc[A first mutation]: insert a new row with `@mutation`, and read back the columns the GraphQL response asks for.
+. xref:06-going-further.adoc[Going further]: four how-to recipes most relevant after this tutorial, plus the reference and explanation chapters.
+
+Time budget: about an hour, mostly waiting for the first Maven build to finish.
+
+== Before you start
+
+If you are evaluating Graphitron rather than learning it, the xref:../../quick-start.adoc[Quick start] page covers the same ground in one screen. The tutorial is for the case where you want to type the commands yourself, see real responses, and build up the directive vocabulary one page at a time.
 
 xref:../index.adoc[← Back to the manual landing]

@@ -1,0 +1,90 @@
+= Page 1: Prerequisites
+:description: Tools, repository checkout, PostgreSQL with the example data, and the running Quarkus app.
+:!toc:
+
+By the end of this page you have the rewrite checked out, a PostgreSQL database loaded with example data, and a Quarkus dev server serving GraphQL on `http://localhost:8088/graphql`. The next five pages send queries to that server.
+
+== Tools you need
+
+* *JDK 25.* The generator runs on Java 25 (`graphitron-rewrite/pom.xml` sets `<release>25</release>` and the parent's `requireJavaVersion` enforcer fails the build on anything older). Run `java -version` to confirm.
+* *Maven 3.9 or later.* Run `mvn -version` to confirm.
+* *Docker.* The simplest way to get a PostgreSQL with the example schema. If you already run PostgreSQL natively, see the alternative below.
+* *git.* For checking out the repository.
+
+== Check out the repository
+
+[source,bash]
+----
+git clone https://github.com/sikt-no/graphitron.git
+cd graphitron
+----
+
+The example you build against lives at `graphitron-rewrite/graphitron-sakila-example/`. Everything in this tutorial happens from the repository root unless stated otherwise.
+
+== Start PostgreSQL with the example data
+
+The example reads from a database named `rewrite_test` on `localhost:5432` with `postgres` / `postgres` credentials. The DDL and seed data live in `graphitron-rewrite/graphitron-sakila-db/src/main/resources/init.sql`; load that file into a fresh database and you are done.
+
+With Docker:
+
+[source,bash]
+----
+docker run -d --name graphitron-pg \
+  -e POSTGRES_PASSWORD=postgres \
+  -e POSTGRES_DB=rewrite_test \
+  -p 5432:5432 \
+  -v "$PWD/graphitron-rewrite/graphitron-sakila-db/src/main/resources/init.sql:/docker-entrypoint-initdb.d/init.sql:ro" \
+  postgres:16
+----
+
+The `init.sql` mount runs once on first start, so the database comes up with `customer`, `address`, `store`, `film`, and the rest of the Sakila schema already populated.
+
+If you already run PostgreSQL natively: create the database, then load `init.sql`.
+
+[source,bash]
+----
+createdb rewrite_test
+psql -d rewrite_test -f graphitron-rewrite/graphitron-sakila-db/src/main/resources/init.sql
+----
+
+== Build the rewrite
+
+[source,bash]
+----
+mvn -f graphitron-rewrite/pom.xml install -Plocal-db
+----
+
+The first build pulls jOOQ, graphql-java, Quarkus, and a few hundred other artifacts; expect a couple of minutes on a warm Maven repository, longer on a cold one. The `-Plocal-db` profile points the jOOQ code generator at the database you just started instead of spinning up a Testcontainer.
+
+You will see the rewrite's modules build in order: javapoet, the generator, the Sakila catalog and service modules, the Maven plugin, and finally the example. When it ends with `BUILD SUCCESS` the example's generated resolvers, runtime app, and test suite are all in place.
+
+== Start the app
+
+[source,bash]
+----
+cd graphitron-rewrite/graphitron-sakila-example
+mvn quarkus:dev
+----
+
+Quarkus boots in a few seconds and prints a banner ending with `Listening on: http://0.0.0.0:8088`. Leave this terminal running; every subsequent page sends queries to that endpoint from a second terminal.
+
+To verify the server is up, try a tiny query against the schema's introspection endpoint:
+
+[source,bash]
+----
+curl -s -X POST http://localhost:8088/graphql \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"{ __typename }"}'
+----
+
+A response of `{"data":{"__typename":"Query"}}` means the GraphQL engine is wired up and ready.
+
+== You have just learned
+
+How the rewrite organises itself into the generator, the Sakila catalog, the example module, and the Quarkus runtime; how to load the example data into PostgreSQL; and how to build and run the example.
+
+== Next
+
+xref:02-first-schema.adoc[Page 2: The starter schema] introduces the directives that turn GraphQL types into PostgreSQL queries.
+
+xref:index.adoc[← Tutorial overview]

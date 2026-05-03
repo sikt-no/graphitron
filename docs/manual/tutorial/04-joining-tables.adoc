@@ -1,0 +1,105 @@
+= Page 4: Joining tables with @reference
+:description: Add a related Address to each Customer with a foreign-key path.
+:!toc:
+
+`Customer` and `Address` are joined in the database by `customer.address_id` referencing `address.address_id`. The schema declares that join as a `@reference` on the `address` field of `Customer`, which means a query that selects `customer { address { ... } }` produces a SQL JOIN automatically.
+
+== Send the joined query
+
+[source,bash]
+----
+curl -s -X POST http://localhost:8088/graphql \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"{ customers { firstName address { address district } } }"}'
+----
+
+[source,json]
+----
+{
+  "data": {
+    "customers": [
+      {"firstName":"Mary","address":{"address":"47 MySakila Drive","district":"Alberta"}},
+      {"firstName":"Patricia","address":{"address":"28 MySQL Boulevard","district":"Lazio"}},
+      {"firstName":"Linda","address":{"address":"23 Workhaven Lane","district":"Alberta"}},
+      {"firstName":"Barbara","address":{"address":"47 MySakila Drive","district":"Alberta"}},
+      {"firstName":"Elizabeth","address":{"address":"28 MySQL Boulevard","district":"Lazio"}}
+    ]
+  }
+}
+----
+
+One HTTP request, one SQL query, five customers each with their joined address row.
+
+== How @reference produced the JOIN
+
+The directive on `Customer.address`:
+
+[source,graphql]
+----
+address: Address @reference(path: [{key: "customer_address_id_fkey"}])
+----
+
+`customer_address_id_fkey` is the name of the foreign-key constraint on the `customer` table, the one declared as `address_id int NOT NULL REFERENCES address(address_id)` in `init.sql`. Graphitron looks the constraint up in jOOQ's catalog at code-generation time, reads off the source and target columns, and uses them to build a `JOIN` clause whenever your query selects through `Customer.address`.
+
+The shape of the SQL emitted for the joined query above is roughly:
+
+[source,sql]
+----
+SELECT customer.first_name AS "firstName",
+       address.address     AS "address",
+       address.district    AS "district"
+  FROM customer
+  LEFT JOIN address ON customer.address_id = address.address_id
+----
+
+Two things to notice:
+
+. *The JOIN is not added unconditionally.* If your query selects only `firstName`, the generated resolver omits the `JOIN` entirely. Graphitron narrows both the column projection and the join graph based on the request's selection set, so unused tables are not touched.
+
+. *The path is declared by name, not by columns.* `customer_address_id_fkey` is the constraint name; the columns on either side come from the catalog. If a future migration changes which columns participate in the constraint, the GraphQL schema does not have to change. (Renaming the constraint, of course, would mean updating the directive.)
+
+== Multi-hop references
+
+`@reference` can chain. Look further down `Customer` in the schema:
+
+[source,graphql]
+----
+storeAddress: Address @reference(path: [
+    {key: "customer_store_id_fkey"},
+    {key: "store_address_id_fkey"}
+])
+----
+
+`storeAddress` resolves through `customer.store_id → store.store_id → store.address_id → address.address_id`, two foreign-key hops. The same projection-narrowing applies: select `storeAddress` and you get a two-`JOIN` chain; omit it and the chain disappears.
+
+[source,bash]
+----
+curl -s -X POST http://localhost:8088/graphql \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"{ customers { firstName storeAddress { address district } } }"}'
+----
+
+The first three customers belong to store 1 (address `47 MySakila Drive`); the other two belong to store 2 (address `28 MySQL Boulevard`).
+
+== When references are inferred
+
+If exactly one foreign key exists between two tables, Graphitron can infer the path without an explicit `@reference`. The schema's `Store.customers` field uses that:
+
+[source,graphql]
+----
+type Store @table(name: "store") {
+    customers: [Customer!]! @defaultOrder(primaryKey: true)
+}
+----
+
+There is no `@reference` here, but the catalog has exactly one FK between `customer` and `store` (`customer.store_id`), so the generator picks it. Multiple-FK cases (like `customer` to `address` and `store` to `address`) require the explicit declaration, because the generator will not guess.
+
+== You have just learned
+
+How `@reference(path: ...)` declares a foreign-key join by constraint name; how single-hop and multi-hop references both produce projection-narrowed SQL; and how implicit references work when the FK relationship is unambiguous.
+
+== Next
+
+xref:05-mutations.adoc[Page 5: A first mutation] turns from reading data to writing it: a single directive flips a query into an `INSERT`.
+
+xref:index.adoc[← Tutorial overview]

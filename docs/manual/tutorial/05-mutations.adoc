@@ -1,0 +1,108 @@
+= Page 5: A first mutation
+:description: Insert a new row with @mutation, and read back the columns the GraphQL response asks for.
+:!toc:
+
+The example schema declares one mutation field for inserting a new film. This page sends that mutation and walks through the directives that turn a GraphQL operation into a SQL `INSERT`.
+
+== The mutation in the schema
+
+From `schema.graphqls`:
+
+[source,graphql]
+----
+input FilmCreateInput @table(name: "film") {
+    title:      String! @field(name: "title")
+    languageId: Int!    @field(name: "language_id")
+}
+
+type Mutation {
+    createFilm(in: FilmCreateInput!): Film @mutation(typeName: INSERT)
+}
+----
+
+Three pieces are doing the work:
+
+* `@table(name: "film")` on the input type. This binds `FilmCreateInput`'s fields to columns on the `film` table; without it, the generator would not know which table to insert into.
+* `@field(name: "...")` on each input field. Same role as on a query type: map the GraphQL field name to a database column.
+* `@mutation(typeName: INSERT)` on the mutation field. This is the directive that flips the resolver from "build a SELECT" to "build an INSERT", and tells it to use `RETURNING` to populate the response.
+
+== Send the mutation
+
+[source,bash]
+----
+curl -s -X POST http://localhost:8088/graphql \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"mutation { createFilm(in: { title: \"MY FIRST FILM\", languageId: 1 }) { filmId title } }"}'
+----
+
+[source,json]
+----
+{
+  "data": {
+    "createFilm": {
+      "filmId": 6,
+      "title": "MY FIRST FILM"
+    }
+  }
+}
+----
+
+Run it again and you get `filmId: 7`, then `8`, and so on; the `film_id` column is a `serial`, so PostgreSQL hands out the next id on each insert.
+
+== What just happened
+
+The generated resolver for `Mutation.createFilm` produced this shape of SQL:
+
+[source,sql]
+----
+INSERT INTO film (title, language_id)
+     VALUES (?, ?)
+  RETURNING film.film_id AS "filmId",
+            film.title   AS "title"
+----
+
+The `RETURNING` clause is what makes mutations cheap in Graphitron: PostgreSQL hands the inserted row back in the same statement, with the columns the GraphQL selection set asked for. There is no follow-up `SELECT` to fetch what was just written.
+
+If your mutation selects more fields, the `RETURNING` projection grows. If your mutation also selects through a `@reference`, the resolver wraps the `INSERT` in a `WITH` clause and joins from the inserted row outwards, keeping the round trip count to one.
+
+== Other mutation shapes
+
+The example schema also has `updateFilm` and `upsertFilm`:
+
+[source,graphql]
+----
+type Mutation {
+    createFilm(in: FilmCreateInput!): Film @mutation(typeName: INSERT)
+    updateFilm(in: FilmUpdateInput!): Film @mutation(typeName: UPDATE)
+    upsertFilm(in: FilmUpsertInput!): Film @mutation(typeName: UPSERT)
+}
+----
+
+`UPDATE` requires an input field marked with `@lookupKey` to identify the row to update; `UPSERT` adds an `ON CONFLICT` clause. Both follow the same pattern as `INSERT`: the directive picks the SQL shape, the input's `@table` binds the target, and the `RETURNING` projection narrows to the response selection set. Sample `FilmUpdateInput`:
+
+[source,graphql]
+----
+input FilmUpdateInput @table(name: "film") {
+    filmId: Int!    @field(name: "film_id") @lookupKey
+    title:  String! @field(name: "title")
+}
+----
+
+The `@lookupKey` on `filmId` tells the generator "this field identifies the row, not a value to set". Try the update against the film you just inserted:
+
+[source,bash]
+----
+curl -s -X POST http://localhost:8088/graphql \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"mutation { updateFilm(in: { filmId: 6, title: \"RENAMED FILM\" }) { filmId title } }"}'
+----
+
+== You have just learned
+
+How `@mutation(typeName: ...)` flips a resolver into an `INSERT`, `UPDATE`, or `UPSERT`; how `@table` and `@field` on an input type wire the operation to a target table and its columns; and how `RETURNING` keeps the round-trip count to one, even when the response asks for more than the inserted row provides.
+
+== Next
+
+xref:06-going-further.adoc[Page 6: Going further] points at the four how-to recipes most worth reading after this tutorial.
+
+xref:index.adoc[← Tutorial overview]
