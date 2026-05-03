@@ -1,7 +1,7 @@
 ---
 id: R65
 title: "Tighten accessor-derived BatchKey model and emitter coordination"
-status: Backlog
+status: Ready
 bucket: architecture
 priority: 5
 theme: model-cleanup
@@ -30,7 +30,7 @@ The `Container { LIST, SET }` enum on `BatchKey.AccessorRowKeyedMany` was kept a
 
 ## 2. `hasSingleSplitField` predicate is a boolean OR over two unrelated reasons
 
-`TypeFetcherGenerator.java:537-543` (the `fields.stream().anyMatch` predicate gating `scatterSingleByIdx` emission) now reads:
+`TypeFetcherGenerator.java:542-546` (the `fields.stream().anyMatch` predicate gating `scatterSingleByIdx` emission) now reads:
 
 ```java
 boolean hasSingleSplitField = fields.stream().anyMatch(f ->
@@ -44,7 +44,7 @@ boolean hasSingleSplitField = fields.stream().anyMatch(f ->
 
 **Change.** Add a capability `BatchKeyField#emitsSingleRecordPerKey()` (or a sub-interface like `SingleRecordPerKey extends BatchKeyField`) — `true` iff the rows-method shape is "1 record per key." `SplitTableField` returns `!returnType().wrapper().isList()`; `RecordTableField` returns `batchKey() instanceof BatchKey.AccessorRowKeyedMany`; future variants implement once. The site collapses to `fields.stream().anyMatch(BatchKeyField::emitsSingleRecordPerKey)`.
 
-**Notes.** The same fork lives in `SplitRowsMethodEmitter.buildForRecordTable` (the routing decision into `buildSingleMethod` vs `buildListMethod`). The capability lifts both calls onto one answer.
+**Notes.** A related predicate lives in `SplitRowsMethodEmitter.buildForRecordTable` (lines 387-392): `rtf.batchKey() instanceof BatchKey.AccessorRowKeyedMany` routes into `buildSingleMethod` vs `buildListMethod`. It answers the narrower "is this `RecordTableField` 1-record-per-key?" question rather than the wider "do any siblings need `scatterSingleByIdx`?" question. The same capability covers both: the routing site reads `rtf.emitsSingleRecordPerKey()`, the helper-emission site reads `fields.stream().anyMatch(BatchKeyField::emitsSingleRecordPerKey)`.
 
 ---
 
@@ -56,13 +56,13 @@ boolean hasSingleSplitField = fields.stream().anyMatch(f ->
 
 **Change.** Add `BatchKey#preludeKeyColumns()` — implemented by the four prelude-reachable variants (`RowKeyed`, `LifterRowKeyed`, `AccessorRowKeyedSingle`, `AccessorRowKeyedMany`) and **not** implemented by the `@service`-only ones. Or introduce a `HasPreludeKeyColumns` interface with the same shape. The prelude reads `bk.preludeKeyColumns()`; the catch-all throw goes away; new prelude-reachable variants implement the capability or fail to compile.
 
-**Notes.** Same shape as the existing `ParentKeyed#parentKeyColumns()` and `LifterRowKeyed#targetKeyColumns()` accessors. The capability subsumes both: each delegates to its own column source. The `@LoadBearingClassifierCheck` annotation on the prelude can shrink to just the routing claim ("only RecordParentBatchKey or RowKeyed reach this site"), since the columns themselves come from a typed accessor instead of an `instanceof` chain.
+**Notes.** Same shape as the existing `ParentKeyed#parentKeyColumns()` and `LifterRowKeyed#targetKeyColumns()` accessors. The capability subsumes both: each delegates to its own column source. The two `@DependsOnClassifierCheck` annotations on the prelude (`lifter-classifies-as-record-table-field`, `lifter-batchkey-is-lifterrowkeyed`) can shrink to just the routing claim ("only RecordParentBatchKey or RowKeyed reach this site"), since the columns themselves come from a typed accessor instead of an `instanceof` chain.
 
 ---
 
 ## 4. Two classifier sites independently walk `Class<?> → (container, element)`
 
-`FieldBuilder.classifyAccessorReturn` (new in R60, lines ~285-304) and `ServiceCatalog.classifySourcesType` (existing) both walk a `java.lang.reflect.Type` and classify it as `(container × element)` for a `TableRecord`-extending element class. The new helper's javadoc explicitly notes: "Mirrors `ServiceCatalog.classifySourcesType`'s container-and-element walk."
+`FieldBuilder.classifyAccessorReturn` (new in R60, lines ~2940-2959) and `ServiceCatalog.classifySourcesType` (existing) both walk a `java.lang.reflect.Type` and classify it as `(container × element)` for a `TableRecord`-extending element class. The new helper's javadoc explicitly notes: "Mirrors `ServiceCatalog.classifySourcesType`'s container-and-element walk."
 
 **Why it's weaker.** Two reflection-walking classifiers now answer overlapping questions. Both are correctly placed inside parse-boundary classes (FieldBuilder / ServiceCatalog are both permitted to hold raw reflection types), so the *boundary discipline* holds — but the *shape walk* duplicates. Any future tightening (e.g. `Optional<X>`, primitive arrays, records-of-records) lands in two places. Per the generation-thinking rule of thumb ("the same multi-arm switch recurs across multiple generators"), two consumers evaluating the same predicate over a `Class<?>` is a smell.
 
@@ -86,7 +86,7 @@ boolean hasSingleSplitField = fields.stream().anyMatch(f ->
 
 ## 6. Drop `AccessorPayloads.ListAccessorOnSingleField` (unused fixture kept "for symmetry")
 
-`AccessorPayloads.java:78-80` declares a `ListAccessorOnSingleField` test fixture whose javadoc explicitly says: "this case is not used by the cross-product test; it exists for symmetry should additional matrix coverage be added."
+`AccessorPayloads.java:74` declares a `ListAccessorOnSingleField` test fixture whose javadoc explicitly says: "this case is not used by the cross-product test; it exists for symmetry should additional matrix coverage be added."
 
 **Why it's weaker.** Test fixtures kept "for symmetry" rot the same way speculative production code does. Either the matrix needs the case (add the test), or it doesn't (remove the fixture). Per the project's "don't introduce abstractions beyond what the task requires" rule.
 
