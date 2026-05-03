@@ -18,7 +18,7 @@ import java.util.List;
  * can import them via {@code import static GeneratorUtils.*}. Having one definition prevents
  * drift between generators that target the same runtime types.
  */
-public class GeneratorUtils {
+class GeneratorUtils {
 
     // -----------------------------------------------------------------------
     // Shared ClassName constants (package-private — imported via static import)
@@ -137,47 +137,6 @@ public class GeneratorUtils {
     // -----------------------------------------------------------------------
 
     /**
-     * Returns the JavaPoet {@link TypeName} for the DataLoader key element type
-     * corresponding to the given {@link BatchKey}. The key element type is shape-determined
-     * (Row vs Record); the container axis (positional vs mapped) is decided at the lambda /
-     * rows-method site, not here.
-     *
-     * <ul>
-     *   <li>{@link BatchKey.RowKeyed} / {@link BatchKey.MappedRowKeyed} → {@code RowN<A, B, ...>}</li>
-     *   <li>{@link BatchKey.RecordKeyed} / {@link BatchKey.MappedRecordKeyed} → {@code RecordN<A, B, ...>}</li>
-     * </ul>
-     */
-    public static TypeName keyElementType(BatchKey batchKey) {
-        return switch (batchKey) {
-            case BatchKey.RowKeyed rk                 -> buildRowKeyType(rk.parentKeyColumns());
-            case BatchKey.MappedRowKeyed mrk          -> buildRowKeyType(mrk.parentKeyColumns());
-            case BatchKey.LifterRowKeyed lrk          -> buildRowKeyType(lrk.targetKeyColumns());
-            case BatchKey.AccessorRowKeyedSingle ars  -> buildRowKeyType(ars.targetKeyColumns());
-            case BatchKey.AccessorRowKeyedMany arm    -> buildRowKeyType(arm.targetKeyColumns());
-            case BatchKey.RecordKeyed rk              -> buildRecordNKeyType(rk.parentKeyColumns());
-            case BatchKey.MappedRecordKeyed mrk       -> buildRecordNKeyType(mrk.parentKeyColumns());
-        };
-    }
-
-    private static TypeName buildRowKeyType(List<ColumnRef> keyColumns) {
-        if (keyColumns.isEmpty()) return ROW;
-        ClassName rowNClass = ClassName.get("org.jooq", "Row" + keyColumns.size());
-        TypeName[] typeArgs = keyColumns.stream()
-            .map(c -> (TypeName) ClassName.bestGuess(c.columnClass()))
-            .toArray(TypeName[]::new);
-        return ParameterizedTypeName.get(rowNClass, typeArgs);
-    }
-
-    private static TypeName buildRecordNKeyType(List<ColumnRef> keyColumns) {
-        if (keyColumns.isEmpty()) return RECORD;
-        ClassName recordNClass = ClassName.get("org.jooq", "Record" + keyColumns.size());
-        TypeName[] typeArgs = keyColumns.stream()
-            .map(c -> (TypeName) ClassName.bestGuess(c.columnClass()))
-            .toArray(TypeName[]::new);
-        return ParameterizedTypeName.get(recordNClass, typeArgs);
-    }
-
-    /**
      * Emits the {@code RowN<...> key = ...} (or {@code List<RowN<...>> keys = ...}) statement
      * for a {@link ChildField.RecordTableField} DataFetcher, extracting the batch-key value(s)
      * from the {@code @record} parent.
@@ -221,7 +180,7 @@ public class GeneratorUtils {
             BatchKey.RecordParentBatchKey batchKey,
             GraphitronType.ResultType resultType,
             String jooqPackage) {
-        TypeName keyType = keyElementType(batchKey);
+        TypeName keyType = batchKey.keyElementType();
         return switch (batchKey) {
             case BatchKey.RowKeyed rk                -> buildFkRowKey(rk, keyType, resultType, jooqPackage);
             case BatchKey.LifterRowKeyed lrk         -> buildLifterRowKey(lrk, keyType, resultType);
@@ -385,7 +344,7 @@ public class GeneratorUtils {
         var tablesClass = ResolvedTableNames.ofTable(parentTable, jooqPackage).tablesClass();
         String tableField = parentTable.javaFieldName();
         List<ColumnRef> pkCols = rk.parentKeyColumns();
-        TypeName keyType = keyElementType(batchKey);
+        TypeName keyType = batchKey.keyElementType();
         var out = CodeBlock.builder();
         var rowArgs = CodeBlock.builder();
         var nullCheck = CodeBlock.builder();
@@ -418,7 +377,7 @@ public class GeneratorUtils {
      * defensive {@code IllegalStateException} arm.
      */
     static CodeBlock buildKeyExtraction(BatchKey.ParentKeyed batchKey, TableRef parentTable, String jooqPackage) {
-        TypeName keyType = keyElementType(batchKey);
+        TypeName keyType = batchKey.keyElementType();
         var tablesClass = ResolvedTableNames.ofTable(parentTable, jooqPackage).tablesClass();
         String tableField = parentTable.javaFieldName();
         List<ColumnRef> pkCols = batchKey.parentKeyColumns();
