@@ -4,9 +4,12 @@ import graphql.schema.GraphQLFieldDefinition;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
+import no.sikt.graphitron.rewrite.generators.GeneratorUtils;
+import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.Rejection;
@@ -150,6 +153,11 @@ final class ServiceDirectiveResolver {
             if (invariant != null) {
                 return new Resolved.Rejected(Rejection.invalidSchema(invariant));
             }
+        } else {
+            String mismatch = validateChildServiceReturnType(returnType, method);
+            if (mismatch != null) {
+                return new Resolved.Rejected(Rejection.structural(mismatch));
+            }
         }
 
         return projectReturnType(returnType, method, fieldDef, parentTypeName);
@@ -237,6 +245,120 @@ final class ServiceDirectiveResolver {
             }
             case ReturnTypeRef.ScalarReturnType ignored -> null;
             case ReturnTypeRef.PolymorphicReturnType ignored -> null;
+        };
+    }
+
+    /**
+     * Strict return-type validation for child {@code @service} fields. Mirrors the structural
+     * shape {@code TypeFetcherGenerator.buildServiceRowsMethod} produces for the rows method:
+     * {@code Map<KeyType, V>} or {@code Map<KeyType, List<V>>} for mapped variants,
+     * {@code List<V>} or {@code List<List<V>>} for positional variants. The developer's method
+     * return type must equal that expected outer type exactly (per {@link TypeName#equals}); a
+     * mismatch is rejected at classify time rather than left to surface as a {@code javac} error
+     * on the generated {@code return ServiceClass.method(...)} line.
+     *
+     * <p>Returns a {@code null} message when the check is skipped: when the per-key element type
+     * cannot be derived from the schema ({@link ReturnTypeRef.ResultReturnType} with no backing
+     * class, custom scalars / enums until the typed-context-value-registry lands,
+     * {@link ReturnTypeRef.PolymorphicReturnType} which is rejected separately), or when no
+     * {@link MethodRef.Param.Sourced} parameter is present (validator surfaces that absence).
+     */
+    @LoadBearingClassifierCheck(
+        key = "service-directive-resolver-strict-child-service-return",
+        description = "The strict TypeName.equals arm rejects child @service developer methods "
+            + "whose declared return type doesn't structurally match the rows-method's "
+            + "Map<K, V>/List<List<V>>/List<V> shape derived from (returnType, batchKey). Lets "
+            + "buildServiceRowsMethod emit `return ServiceClass.method(...)` without a defensive "
+            + "cast or wildcard, and surfaces author errors at classify time rather than as "
+            + "javac errors on the generated source.")
+    private static String validateChildServiceReturnType(ReturnTypeRef returnType, MethodRef method) {
+        BatchKey.ParentKeyed batchKey = method.params().stream()
+            .filter(p -> p instanceof MethodRef.Param.Sourced)
+            .map(p -> ((MethodRef.Param.Sourced) p).batchKey())
+            .findFirst()
+            .orElse(null);
+        if (batchKey == null) return null;
+
+        TypeName expected = computeExpectedChildServiceReturnType(returnType, batchKey);
+        if (expected == null) return null;
+        if (method.returnType().equals(expected)) return null;
+
+        return "method '" + method.methodName() + "' in class '" + method.className()
+            + "' must return '" + expected
+            + "' to match the field's declared return type — got '" + method.returnType() + "'";
+    }
+
+    /**
+     * Constructs the structurally-expected outer return type for a child {@code @service}
+     * developer method, mirroring {@code TypeFetcherGenerator.buildServiceRowsMethod}'s declared
+     * return shape per {@code (returnType, batchKey)}. Returns {@code null} when the per-key
+     * element type can't be determined from the schema (caller skips the strict check).
+     */
+    private static TypeName computeExpectedChildServiceReturnType(ReturnTypeRef returnType,
+                                                                  BatchKey.ParentKeyed batchKey) {
+        TypeName perKey = perKeyType(returnType);
+        if (perKey == null) return null;
+
+        boolean isMapped = batchKey instanceof BatchKey.MappedRowKeyed
+                        || batchKey instanceof BatchKey.MappedRecordKeyed;
+        boolean isList = returnType.wrapper().isList();
+        TypeName keysElementType = GeneratorUtils.keyElementType(batchKey);
+        ClassName listCls = ClassName.get("java.util", "List");
+
+        TypeName valuePerKey = isList ? ParameterizedTypeName.get(listCls, perKey) : perKey;
+        if (isMapped) {
+            return ParameterizedTypeName.get(ClassName.get("java.util", "Map"),
+                keysElementType, valuePerKey);
+        }
+        return isList
+            ? ParameterizedTypeName.get(listCls, ParameterizedTypeName.get(listCls, perKey))
+            : ParameterizedTypeName.get(listCls, perKey);
+    }
+
+    /**
+     * Per-key element type {@code V} the rows method's {@code Map<KeyType, V>} or
+     * {@code List<V>} resolves to, derived from the field's {@link ReturnTypeRef}. Returns
+     * {@code null} when the type can't be determined statically — the caller skips the strict
+     * check rather than rejecting on incomplete information.
+     *
+     * <p>Mirrors {@code ChildField.ServiceRecordField#elementType()}'s arms but with stricter
+     * fallback: {@code elementType()} falls back to {@code method.returnType()} so the loader
+     * has a (possibly wrong) static type for {@code DataLoader<K, V>}, while this returns null
+     * to skip the strict check entirely.
+     *
+     * <ul>
+     *   <li>{@link ReturnTypeRef.TableBoundReturnType} → raw {@code org.jooq.Record} (matches
+     *       the {@code RECORD} constant {@code TypeFetcherGenerator} passes for
+     *       {@code ServiceTableField}'s rows method).</li>
+     *   <li>{@link ReturnTypeRef.ResultReturnType} with non-null {@code fqClassName} → the
+     *       backing class.</li>
+     *   <li>{@link ReturnTypeRef.ScalarReturnType} for one of the standard GraphQL scalars
+     *       ({@code String} / {@code Boolean} / {@code Int} / {@code Float} / {@code ID}) →
+     *       the corresponding Java class.</li>
+     *   <li>Everything else ({@code ResultReturnType} with no backing class, custom scalars,
+     *       enums, {@link ReturnTypeRef.PolymorphicReturnType}) → {@code null}.</li>
+     * </ul>
+     */
+    private static TypeName perKeyType(ReturnTypeRef returnType) {
+        return switch (returnType) {
+            case ReturnTypeRef.TableBoundReturnType ignored -> ClassName.get("org.jooq", "Record");
+            case ReturnTypeRef.ResultReturnType r -> r.fqClassName() != null
+                ? ClassName.bestGuess(r.fqClassName())
+                : null;
+            case ReturnTypeRef.ScalarReturnType s -> standardScalarJavaType(s.returnTypeName());
+            case ReturnTypeRef.PolymorphicReturnType ignored -> null;
+        };
+    }
+
+    private static TypeName standardScalarJavaType(String graphqlScalarName) {
+        return switch (graphqlScalarName) {
+            case "String", "ID" -> ClassName.get(String.class);
+            case "Boolean"      -> ClassName.get(Boolean.class);
+            case "Int"          -> ClassName.get(Integer.class);
+            case "Float"        -> ClassName.get(Double.class);
+            // Custom scalars and enums: skip strict check until typed-context-value-registry
+            // surfaces a typed Java class (tracked under typed-context-value-registry.md).
+            default             -> null;
         };
     }
 }

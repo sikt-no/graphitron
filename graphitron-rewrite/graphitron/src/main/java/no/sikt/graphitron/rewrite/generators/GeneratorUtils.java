@@ -18,7 +18,7 @@ import java.util.List;
  * can import them via {@code import static GeneratorUtils.*}. Having one definition prevents
  * drift between generators that target the same runtime types.
  */
-class GeneratorUtils {
+public class GeneratorUtils {
 
     // -----------------------------------------------------------------------
     // Shared ClassName constants (package-private — imported via static import)
@@ -147,7 +147,7 @@ class GeneratorUtils {
      *   <li>{@link BatchKey.RecordKeyed} / {@link BatchKey.MappedRecordKeyed} → {@code RecordN<A, B, ...>}</li>
      * </ul>
      */
-    static TypeName keyElementType(BatchKey batchKey) {
+    public static TypeName keyElementType(BatchKey batchKey) {
         return switch (batchKey) {
             case BatchKey.RowKeyed rk                 -> buildRowKeyType(rk.parentKeyColumns());
             case BatchKey.MappedRowKeyed mrk          -> buildRowKeyType(mrk.parentKeyColumns());
