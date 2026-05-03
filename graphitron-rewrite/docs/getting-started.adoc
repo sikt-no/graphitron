@@ -60,6 +60,11 @@ var result = engine.execute(input);
 The context key is the generated `GraphitronContext.class`; every emitted
 fetcher looks it up with that typed key.
 
+For a complete app and the recommended test setup, see the
+https://github.com/sikt-no/graphitron/tree/claude/graphitron-rewrite/graphitron-rewrite/graphitron-sakila-example[`graphitron-sakila-example`]
+module: a Quarkus + JAX-RS shell over a generated schema, plus in-process
+query-to-database tests with match-style and approval-style worked examples.
+
 == Custom scalar
 
 Register scalars through the customizer:
