@@ -1,7 +1,7 @@
 ---
 id: R67
 title: "Promote graphitron-test to graphitron-sakila-example (rename, Quarkus runtime, consumer test pattern)"
-status: Spec
+status: Ready
 bucket: architecture
 theme: legacy-migration
 depends-on: []
