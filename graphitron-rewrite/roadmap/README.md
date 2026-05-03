@@ -75,6 +75,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 ### Other
 
 - `R69` [**Implement @experimental_constructType**](experimental-construct-type.md): The `@experimental_constructType(selection: "...")` directive is declared in `directives.graphqls` and stripped from the emitted schema by `SchemaDirectiveRegistry`, but no classifier, model carrier, or emitter exists for it yet.
+- `R70` [**Support TableRecord-keyed Map returns on @service rows methods**](service-rows-tablerecord-key-shape.md): A child `@service` whose SOURCES parameter is `Set<X>` (X a jOOQ `TableRecord`) classifies as `MappedRowKeyed` today, mirroring the docstring on `BatchKey.MappedRowKeyed` ("both `Set<RowN<...>>` and `Set<TableRecord>` classify here"). The classifier-side coverage is symmetrical only on the parameter, however: `RowsMethodShape.outerRowsReturnType` always builds `Map<RowN<...>, V>` from `BatchKey.keyElementType()`, so the strict `TypeName.equals` check in `ServiceDirectiveResolver.validateChildServiceReturnType` rejects the natural symmetric shape `Map<X, V>` (where the developer reused the same `TableRecord` across the parameter and the map key). Real-world example surfaced from the `regelverk_exp.graphqls` schema:
 
 
 ---
@@ -95,6 +96,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### service
 
 - `R54` [**Rename @externalField (parallel-support, deprecation, migration)**](rename-externalfield-directive.md) — Backlog, cleanup
+- `R70` [**Support TableRecord-keyed Map returns on @service rows methods**](service-rows-tablerecord-key-shape.md) — Backlog, feature
 - `R45` [**Typed context-value registry for `@service`**](typed-context-value-registry.md) — Spec, architecture
 - `R46` [**Multi-tenant fan-out for `@service`**](service-multi-tenant-fanout.md) — Backlog, architecture, blocked by [typed-context-value-registry](typed-context-value-registry.md)
 - `R11` [**`DSLContext` on `@condition` / `@tableMethod` methods**](dslcontext-on-condition-tablemethod.md) — Backlog, architecture
