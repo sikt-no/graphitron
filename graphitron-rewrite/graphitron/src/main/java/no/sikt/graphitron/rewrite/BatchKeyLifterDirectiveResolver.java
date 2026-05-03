@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite;
 
 import graphql.schema.GraphQLFieldDefinition;
 import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
@@ -10,6 +11,7 @@ import no.sikt.graphitron.rewrite.model.LifterRef;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.rewrite.model.TypeNames;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
@@ -270,7 +272,7 @@ final class BatchKeyLifterDirectiveResolver {
             return new Resolved.Rejected(Rejection.structural("@batchKeyLifter on '" + parentTypeName + "." + fieldName
                 + "': lifter method '" + lifterMethodName
                 + "' must return org.jooq.Row1..Row" + ROWN_CEILING + "; got '"
-                + genericReturn.getTypeName() + "'"));
+                + TypeNames.simple(TypeName.get(genericReturn)) + "'"));
         }
         String suffix = rawReturn.getName().substring("org.jooq.Row".length());
         int rowArity;
@@ -280,7 +282,7 @@ final class BatchKeyLifterDirectiveResolver {
             return new Resolved.Rejected(Rejection.structural("@batchKeyLifter on '" + parentTypeName + "." + fieldName
                 + "': lifter method '" + lifterMethodName
                 + "' must return org.jooq.Row1..Row" + ROWN_CEILING + "; got '"
-                + rawReturn.getName() + "'"));
+                + rawReturn.getSimpleName() + "'"));
         }
         if (rowArity < 1 || rowArity > ROWN_CEILING) {
             return new Resolved.Rejected(Rejection.structural("@batchKeyLifter on '" + parentTypeName + "." + fieldName

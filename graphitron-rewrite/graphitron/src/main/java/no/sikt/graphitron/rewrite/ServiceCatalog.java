@@ -12,6 +12,7 @@ import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.rewrite.model.TypeNames;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -192,8 +193,8 @@ class ServiceCatalog {
                     && !actualReturnType.equals(expectedReturnType)) {
                 return new ServiceReflectionResult(null,
                     Rejection.structural("method '" + methodName + "' in class '" + className
-                    + "' must return '" + expectedReturnType
-                    + "' to match the field's declared return type — got '" + actualReturnType + "'"));
+                    + "' must return '" + TypeNames.simple(expectedReturnType)
+                    + "' to match the field's declared return type — got '" + TypeNames.simple(actualReturnType) + "'"));
             }
             if (Arrays.stream(javaMethod.getParameters()).anyMatch(p -> !p.isNamePresent())) {
                 emitParametersWarning();
@@ -381,9 +382,9 @@ class ServiceCatalog {
                     && !actualReturnClass.equals(expectedReturnClass)) {
                 return new ServiceReflectionResult(null,
                     Rejection.structural("method '" + methodName + "' in class '" + className
-                    + "' must return the generated jOOQ table class '" + expectedReturnClass
+                    + "' must return the generated jOOQ table class '" + TypeNames.simple(expectedReturnClass)
                     + "' for @tableMethod with a @table-bound return type — got '"
-                    + actualReturnClass + "'"));
+                    + TypeNames.simple(actualReturnClass) + "'"));
             }
             if (Arrays.stream(javaMethod.getParameters()).anyMatch(p -> !p.isNamePresent())) {
                 emitParametersWarning();
@@ -490,13 +491,13 @@ class ServiceCatalog {
                 return new ServiceReflectionResult(null,
                     Rejection.structural("method '" + methodName + "' in class '" + className
                     + "' parameter must be a jOOQ Table<?> subtype — got '"
-                    + p.getType().getName() + "'"));
+                    + p.getType().getSimpleName() + "'"));
             }
             if (!org.jooq.Field.class.equals(javaMethod.getReturnType())) {
                 return new ServiceReflectionResult(null,
                     Rejection.structural("method '" + methodName + "' in class '" + className
                     + "' must return org.jooq.Field<X> — got '"
-                    + javaMethod.getReturnType().getName() + "'"));
+                    + javaMethod.getReturnType().getSimpleName() + "'"));
             }
             var genericReturn = javaMethod.getGenericReturnType();
             if (!(genericReturn instanceof java.lang.reflect.ParameterizedType)) {
