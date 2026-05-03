@@ -31,8 +31,8 @@ prose pages. The rewrite-internal docs at `graphitron-rewrite/docs/` are
 contributor-facing (architecture, classification, design principles, runtime
 extension points, dev loop). There is no user manual: nothing that takes a
 beginner from zero to a working query, no structured how-to recipes for the
-ten-or-so day-to-day tasks the directives unlock, and no reference page that
-enumerates every directive without leaving the site.
+dozen-plus day-to-day tasks the directives unlock, and no reference page
+that enumerates every directive without leaving the site.
 
 This plan establishes a Diataxis-shaped user manual on the deployed site
 that absorbs the legacy README in full, exceeds it on the dimensions the
@@ -46,7 +46,8 @@ promotes the rewrite's `graphitron-test` module into a public
 `graphitron-sakila-example` with a Quarkus runtime and a documented
 consumer test pattern (`src/test/java/.../querydb/`). R67 is the *runnable
 artifact* a reader copies; R68 is the *manual* that teaches them to. The
-tutorial chapter walks through R67's example commit by commit; the
+tutorial chapter rebuilds R67's example incrementally on a clean
+checkout (page 1: prerequisites; page 2: the starter schema; ...); the
 how-to recipes cross-link "verified by" pointers into R67's `querydb/`
 tests rather than into a test-internal module name. The two plans are
 deliberately split: R67 is the artifact, R68 is the docs.
@@ -179,7 +180,8 @@ exactly mirroring the Diataxis quadrants plus an introduction:
 │   │   ├── mojo-configuration.adoc      # full Maven plugin parameter reference
 │   │   ├── runtime-api.adoc             # Graphitron, GraphitronContext, NodeIdStrategy
 │   │   ├── special-interfaces.adoc      # Node, Error
-│   │   └── diagnostics-glossary.adoc    # AUTHOR_ERROR codes, common failure messages
+│   │   ├── diagnostics-glossary.adoc    # AUTHOR_ERROR codes, common failure messages
+│   │   └── deprecations.adoc            # generated from @Deprecated on the model
 │   └── explanation/
 │       ├── index.adoc
 │       ├── why-database-first.adoc      # cross-link to graphitron-principles
@@ -195,7 +197,7 @@ exactly mirroring the Diataxis quadrants plus an introduction:
 
 The shape is intentionally mechanical: one directive, one reference page;
 one task, one how-to. Long pages encourage drift; the legacy README's
-current "scroll for 1 900 lines" UX is exactly what we are leaving behind.
+current "scroll for 1900 lines" UX is exactly what we are leaving behind.
 
 The four-quadrant split is exposed in the top nav: a new "Manual" item
 sits between "Quick Start" and "Architecture", and its landing page is a
@@ -206,14 +208,14 @@ guided experience.
 
 ## How this exceeds the legacy README
 
-The legacy README is a single 1 900-line file with a doctoc-generated TOC.
+The legacy README is a single 1900-line file with a doctoc-generated TOC.
 That structure has known weaknesses; the new manual addresses each:
 
 . *No learning path*. Legacy starts at "Features" then jumps to a
   configuration section; a true beginner has nowhere to begin. The manual's
   tutorial chapter takes a reader from "git clone" to "I have a query
-  resolving". The example project is the spine; the tutorial walks through
-  it commit by commit.
+  resolving". The example project is the spine; the tutorial rebuilds
+  it incrementally, one directive per page.
 . *Worked examples interleave with parameter lists*. Legacy `@condition`
   alone has 12 worked examples woven into the parameter description. The
   manual splits them: `reference/directives/condition.adoc` has parameters
@@ -224,10 +226,10 @@ That structure has known weaknesses; the new manual addresses each:
 . *No machine-checked drift protection*. Legacy directive examples have
   rotted (some now mention deprecated `RowN` keys, the `@nodeId service
   unsupported` note is stale, etc.). The manual's reference pages are
-  generated, in part, from the rewrite's own classifier output (see
-  Implementation §3) so a directive added to the model lands in the
-  reference automatically; an unused directive surfaces in CI as an empty
-  reference page that fails the build.
+  pinned to the rewrite's own directive registry by a build-time coverage
+  check (see Phase 2) so a directive added to the model fails the build
+  until its reference page lands, and an `<name>.adoc` for a removed
+  directive fails the build until it is deleted.
 . *No cross-links into source-of-truth tests*. Each how-to ends with a
   "verified by" pointer into the rewrite test suite (the same pattern R8 is
   building for the classification doc). A reader who wants to be sure the
@@ -319,11 +321,15 @@ shape:
 
 The directive list to port comes from the rewrite's `directives.graphqls`
 (the canonical file the loader auto-injects). A new build-time check
-generates `reference/directives/index.adoc` from that file plus the
-classifier's directive registry; the check fails if a directive exists in
-the schema but has no `<name>.adoc` page, or if a `<name>.adoc` exists for
-a directive not in the schema. This is the drift-protection seam: a future
-PR that adds a directive cannot land green without adding the doc page.
+asserts coverage between that file (plus the classifier's directive
+registry) and the contents of `reference/directives/`; the check fails if
+a directive exists in the schema but has no `<name>.adoc` page, or if a
+`<name>.adoc` exists for a directive not in the schema. This is the
+drift-protection seam: a future PR that adds a directive cannot land
+green without adding the doc page. `reference/directives/index.adoc`
+itself is hand-curated (its categorical view is editorial; see the
+first-client-check section) and Phase 1 ships its first draft for the
+read-simply test before any directive page is authored.
 
 The check belongs in the docs build (the `asciidoctor-maven-plugin`
 execution defined by R9) so doc breakage fails the same `mvn install` that
@@ -403,10 +409,15 @@ Two parallel deliverables:
   every Maven plugin parameter (legacy "General settings", "Validation",
   "Query generation", "Code references" plus the rewrite-mojo additions
   R18 lands). `reference/runtime-api.adoc` covers the generated
-  `Graphitron`, `GraphitronContext`, and `NodeIdStrategy` surface. Both
-  pages are partly generated: the Mojo parameter list reads from the
-  Mojo's own `@Parameter` annotations (verified at build), the runtime API
-  pulls method signatures from `graphitron-rewrite/runtime/`.
+  `Graphitron`, `GraphitronContext`, and `NodeIdStrategy` surface. The
+  Mojo parameter list is verified at build time against the Mojo's own
+  `@Parameter`-annotated fields (see Tests). The runtime-API page has no
+  comparable verifier: the runtime classes are emitted into consumer
+  generated-sources by `GraphitronContextInterfaceGenerator` and the
+  schema generators, and there is no "runtime module" to read from. The
+  page is hand-written prose; if drift becomes a real problem, a
+  follow-up can lift signatures from `graphitron-sakila-example`'s
+  generated `Graphitron.java` via an AsciiDoc include.
 
 ### Phase 5: Diagnostics glossary and deprecation index
 
@@ -427,14 +438,15 @@ honest because the source of truth is code.
 
 ### Phase 6: Cutover and stub
 
-When Phase 2 lands, `/docs/quick-start.adoc`'s pointer to the legacy README
-flips to the new manual reference. The legacy README itself is out of
-scope for AI edits, but the user (a Sikt maintainer) can update it in a
-companion legacy-modules commit to a one-paragraph "this directive
-reference has moved to graphitron.sikt.no/manual/reference/" stub. That
-companion commit lives outside this plan; this plan is responsible for
-making the migration possible by ensuring the new reference is complete
-and correct.
+Gated on Phase 2 only; can land before Phases 3-5 complete. When Phase 2
+ships, `/docs/quick-start.adoc`'s pointer to the legacy README on GitHub
+(line 15: "the directive reference is in the source repository...") flips
+to the new manual reference. The legacy README itself is out of scope for
+AI edits, but the user (a Sikt maintainer) can update it in a companion
+legacy-modules commit to a one-paragraph "this directive reference has
+moved to graphitron.sikt.no/manual/reference/" stub. That companion
+commit lives outside this plan; this plan is responsible for making the
+migration possible by ensuring the new reference is complete and correct.
 
 ## Tests
 
