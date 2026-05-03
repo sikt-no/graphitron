@@ -25,7 +25,7 @@ class MutationUpsertTableFieldValidationTest {
             new MutationUpsertTableField(
                 "Mutation", "upsertFilm", null,
                 new DmlReturnExpression.ProjectedSingle("Film"),
-                new ArgumentRef.InputTypeArg.TableInputArg(
+                ArgumentRef.InputTypeArg.TableInputArg.of(
                     "in", "FilmInput", true, false,
                     new TableRef("film", "FILM", "Film", List.of()),
                     List.of(),

@@ -1448,20 +1448,20 @@ public class TypeFetcherGenerator {
      * .returningResult(<keys or $fields>).fetchOne(...)}. See
      * {@code graphitron-rewrite/roadmap/mutations.md} Phase 4.
      *
-     * <p>SET clause is every {@code InputField.ColumnField} in {@code tia.fields()} whose
-     * {@code name()} is not in {@code tia.fieldBindings()} (i.e. not a {@code @lookupKey}).
-     * Invariant #4 guarantees this set is non-empty. WHERE clause is the {@code @lookupKey}
-     * fieldBindings, chained with {@code .and(...)} via the shared
-     * {@link #buildLookupWhere} helper. Empty-match semantics: {@code .fetchOne(...)} returns
-     * {@code null} when the WHERE clause matches no row, same as DELETE.
+     * <p>SET clause is {@code tia.setFields()} (the typed non-{@code @lookupKey}
+     * {@code ColumnField} projection on {@code TableInputArg}). Invariant #4 guarantees this
+     * projection is non-empty. WHERE clause is the {@code @lookupKey} fieldBindings, chained
+     * with {@code .and(...)} via the shared {@link #buildLookupWhere} helper. Empty-match
+     * semantics: {@code .fetchOne(...)} returns {@code null} when the WHERE clause matches no
+     * row, same as DELETE.
      */
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "dml-mutation-shape-guarantees",
         reliesOn = "Pattern-matches f.returnExpression() with no instanceof / "
             + "Optional.orElseThrow / payloadAssembly().isPresent() guard; casts "
-            + "env.getArgument(tia.name()) to Map<?,?> with no guard; walks tia.fields() "
-            + "as Direct-extracted ColumnField with a single cast (no extraction-arm dispatch). "
-            + "Invariant #4 guarantees at least one non-@lookupKey field for the SET clause.")
+            + "env.getArgument(tia.name()) to Map<?,?> with no guard; walks tia.setFields() "
+            + "as the typed non-@lookupKey ColumnField projection (no cast, no skip-during-walk). "
+            + "Invariant #4 guarantees setFields() is non-empty for the SET clause.")
     private static MethodSpec buildMutationUpdateFetcher(MutationField.MutationUpdateTableField f,
                                                           String outputPackage, String jooqPackage) {
         var tia = f.tableInputArg();
@@ -1469,14 +1469,8 @@ public class TypeFetcherGenerator {
         var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef, jooqPackage);
         String tableLocal = tablesOnly.tableLocalName();
 
-        var lookupNames = tia.fieldBindings().stream()
-            .map(b -> b.fieldName())
-            .collect(java.util.stream.Collectors.toSet());
-
         var setClause = CodeBlock.builder();
-        for (var inputField : tia.fields()) {
-            var cf = (InputField.ColumnField) inputField;
-            if (lookupNames.contains(cf.name())) continue;
+        for (var cf : tia.setFields()) {
             setClause.add(".set($T.$L.$L, $T.val(in.get($S), $T.$L.$L.getDataType()))\n",
                 tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName(),
                 DSL, cf.name(),
@@ -1502,8 +1496,8 @@ public class TypeFetcherGenerator {
      *
      * <p>Column/values lists are identical to INSERT (every {@code InputField.ColumnField} in
      * declaration order, {@code @lookupKey} fields included so the user-supplied PK lands on the
-     * insert branch). Conflict keys come from {@code tia.fieldBindings()}. Conflict action: if
-     * any field is non-{@code @lookupKey}, emit {@code .doUpdate().set(...)} over those fields;
+     * insert branch). Conflict keys come from {@code tia.fieldBindings()}. Conflict action: when
+     * {@code tia.setFields()} is non-empty, emit {@code .doUpdate().set(...)} over those fields;
      * otherwise emit {@code .doNothing()} (jOOQ rejects {@code .doUpdate()} with an empty SET).
      *
      * <p>PostgreSQL-only: {@code ON CONFLICT} is a Postgres extension.
@@ -1513,8 +1507,10 @@ public class TypeFetcherGenerator {
         reliesOn = "Pattern-matches f.returnExpression() with no instanceof / "
             + "Optional.orElseThrow / payloadAssembly().isPresent() guard; casts "
             + "env.getArgument(tia.name()) to Map<?,?> with no guard; walks tia.fields() "
-            + "as Direct-extracted ColumnField with a single cast (no extraction-arm dispatch). "
-            + "Invariant #3 guarantees fieldBindings is non-empty (the ON CONFLICT key).")
+            + "as Direct-extracted ColumnField with a single cast for the col/val lists, "
+            + "and tia.setFields() (typed non-@lookupKey ColumnField projection) for the SET "
+            + "clause and the .doUpdate()/.doNothing() dispatch. Invariant #3 guarantees "
+            + "fieldBindings is non-empty (the ON CONFLICT key).")
     private static MethodSpec buildMutationUpsertFetcher(MutationField.MutationUpsertTableField f,
                                                           String outputPackage, String jooqPackage) {
         var tia = f.tableInputArg();
@@ -1523,13 +1519,8 @@ public class TypeFetcherGenerator {
         String tableLocal = tablesOnly.tableLocalName();
 
         var fields = tia.fields();
-        var lookupNames = tia.fieldBindings().stream()
-            .map(b -> b.fieldName())
-            .collect(java.util.stream.Collectors.toSet());
-
         var colList = CodeBlock.builder();
         var valList = CodeBlock.builder();
-        var setClause = CodeBlock.builder();
         for (int i = 0; i < fields.size(); i++) {
             var cf = (InputField.ColumnField) fields.get(i);
             if (i > 0) {
@@ -1541,12 +1532,14 @@ public class TypeFetcherGenerator {
             valList.add("$T.val(in.get($S), $T.$L.$L.getDataType())",
                 DSL, cf.name(),
                 tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName());
-            if (!lookupNames.contains(cf.name())) {
-                setClause.add(".set($T.$L.$L, $T.val(in.get($S), $T.$L.$L.getDataType()))\n",
-                    tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName(),
-                    DSL, cf.name(),
-                    tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName());
-            }
+        }
+
+        var setClause = CodeBlock.builder();
+        for (var cf : tia.setFields()) {
+            setClause.add(".set($T.$L.$L, $T.val(in.get($S), $T.$L.$L.getDataType()))\n",
+                tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName(),
+                DSL, cf.name(),
+                tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName());
         }
 
         var conflictCols = CodeBlock.builder();
@@ -1558,12 +1551,11 @@ public class TypeFetcherGenerator {
                 bindings.get(i).targetColumn().javaName());
         }
 
-        boolean hasNonLookupField = fields.size() > lookupNames.size();
         var dmlChain = CodeBlock.builder()
             .add(".insertInto($L, ", tableLocal).add(colList.build()).add(")\n")
             .add(".values(\n").indent().add(valList.build()).add(")\n").unindent()
             .add(".onConflict(").add(conflictCols.build()).add(")\n");
-        if (hasNonLookupField) {
+        if (!tia.setFields().isEmpty()) {
             dmlChain.add(".doUpdate()\n").add(setClause.build());
         } else {
             dmlChain.add(".doNothing()\n");

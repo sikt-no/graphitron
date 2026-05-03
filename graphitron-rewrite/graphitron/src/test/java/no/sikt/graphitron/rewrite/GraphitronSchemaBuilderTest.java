@@ -4986,6 +4986,46 @@ class GraphitronSchemaBuilderTest {
                 assertThat(f.tableInputArg().fieldBindings()).hasSize(1);
             }),
 
+        UPDATE_TIA_PARTITIONS_FIELDS_INTO_LOOKUP_AND_SET(
+            "UPDATE TableInputArg projects fields into typed lookupKeyFields / setFields in declaration order",
+            """
+            type Film @table(name: "film") { title: String }
+            input FilmInput @table(name: "film") {
+                filmId: Int! @field(name: "film_id") @lookupKey
+                title: String
+                description: String
+            }
+            type Query { x: String }
+            type Mutation { updateFilm(in: FilmInput!): Film @mutation(typeName: UPDATE) }
+            """,
+            schema -> {
+                var tia = ((MutationField.MutationUpdateTableField) schema.field("Mutation", "updateFilm")).tableInputArg();
+                assertThat(tia.lookupKeyFields()).extracting("name").containsExactly("filmId");
+                assertThat(tia.setFields()).extracting("name").containsExactly("title", "description");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationUpdateTableField.class); }
+        },
+
+        UPSERT_TIA_PARTITIONS_FIELDS_INTO_LOOKUP_AND_SET(
+            "UPSERT TableInputArg projects fields into typed lookupKeyFields / setFields in declaration order",
+            """
+            type Film @table(name: "film") { title: String }
+            input FilmInput @table(name: "film") {
+                filmId: Int! @field(name: "film_id") @lookupKey
+                title: String
+                description: String
+            }
+            type Query { x: String }
+            type Mutation { upsertFilm(in: FilmInput!): Film @mutation(typeName: UPSERT) }
+            """,
+            schema -> {
+                var tia = ((MutationField.MutationUpsertTableField) schema.field("Mutation", "upsertFilm")).tableInputArg();
+                assertThat(tia.lookupKeyFields()).extracting("name").containsExactly("filmId");
+                assertThat(tia.setFields()).extracting("name").containsExactly("title", "description");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationUpsertTableField.class); }
+        },
+
         DML_NESTING_FIELD_DEFERRED(
             "DML mutation with NestingField in input → UnclassifiedField (Invariant #7)",
             """

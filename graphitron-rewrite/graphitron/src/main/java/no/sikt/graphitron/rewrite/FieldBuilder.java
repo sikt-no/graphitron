@@ -695,7 +695,7 @@ class FieldBuilder {
         var resolvedType = ctx.types.get(typeName);
         if (resolvedType instanceof GraphitronType.TableInputType tit) {
             List<InputColumnBinding.MapBinding> bindings = enumMappingResolver.buildLookupBindings(tit, arg, fieldDef, name, errors);
-            return new ArgumentRef.InputTypeArg.TableInputArg(
+            return ArgumentRef.InputTypeArg.TableInputArg.of(
                 name, typeName, nonNull, list, tit.table(), bindings, argCondition, tit.inputFields());
         }
         boolean isInputLike = resolvedType instanceof GraphitronType.InputType
