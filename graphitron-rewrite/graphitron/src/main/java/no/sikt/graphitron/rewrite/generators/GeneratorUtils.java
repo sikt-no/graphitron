@@ -296,7 +296,7 @@ class GeneratorUtils {
         var pkCols = ars.targetKeyColumns();
         for (int i = 0; i < pkCols.size(); i++) {
             if (i > 0) rowArgs.add(", ");
-            rowArgs.add("__elt.$L()", toCamelCase(pkCols.get(i).sqlName()));
+            rowArgs.add("__elt.$L()", recordGetter(pkCols.get(i).sqlName()));
         }
         return CodeBlock.builder()
             .addStatement("$T __elt = (($T) env.getSource()).$L()",
@@ -320,22 +320,37 @@ class GeneratorUtils {
         ClassName backingClass = accessor.parentBackingClass();
         ClassName elementClass = accessor.elementClass();
         TypeName keysListType = ParameterizedTypeName.get(LIST, keyType);
+        ClassName arrayList = ClassName.get("java.util", "ArrayList");
         var rowArgs = CodeBlock.builder();
         var pkCols = arm.targetKeyColumns();
         for (int i = 0; i < pkCols.size(); i++) {
             if (i > 0) rowArgs.add(", ");
-            rowArgs.add("__elt.$L()", toCamelCase(pkCols.get(i).sqlName()));
+            rowArgs.add("__elt.$L()", recordGetter(pkCols.get(i).sqlName()));
         }
-        var terminal = arm.container() == BatchKey.AccessorRowKeyedMany.Container.SET
-            ? CodeBlock.of(".collect($T.toSet())", ClassName.get("java.util.stream", "Collectors"))
-            : CodeBlock.of(".toList()");
-        return CodeBlock.builder()
-            .add("$T keys = (($T) env.getSource()).$L().stream()\n",
-                keysListType, backingClass, accessor.methodName())
-            .add("    .map(($T __elt) -> $T.<$T>row($L))\n",
-                elementClass, DSL, keyType, rowArgs.build())
-            .add("    ").add(terminal).add(";\n")
-            .build();
+        // For-loop over Iterable, not stream + .toList(): jOOQ's overloaded DSL.row(...) confuses
+        // lambda return-type inference (the Object... varargs overload competes with the typed
+        // RowN overload), and a typed local in a for-loop pins the inference cheaply. Iterating
+        // works uniformly for the LIST and SET container variants of AccessorRowKeyedMany; the
+        // output is always a List<RowN<...>> because DataLoader.loadMany takes a List.
+        var b = CodeBlock.builder()
+            .addStatement("$T keys = new $T<>()", keysListType, arrayList)
+            .beginControlFlow("for ($T __elt : (($T) env.getSource()).$L())",
+                elementClass, backingClass, accessor.methodName())
+            .addStatement("$T __k = $T.row($L)", keyType, DSL, rowArgs.build())
+            .addStatement("keys.add(__k)")
+            .endControlFlow();
+        return b.build();
+    }
+
+    /**
+     * Returns the JavaBean-style getter name for a jOOQ {@code TableRecord} column with the
+     * given SQL name. Mirrors the pattern used by {@code buildFkRowKey}'s {@code PojoResultType}
+     * arm: SQL {@code film_id} → {@code getFilmId}. The jOOQ codegen emits these getters on
+     * every {@code TableRecord} subtype.
+     */
+    private static String recordGetter(String sqlName) {
+        var camel = toCamelCase(sqlName);
+        return "get" + Character.toUpperCase(camel.charAt(0)) + camel.substring(1);
     }
 
     private static ClassName backingClassOf(GraphitronType.ResultType resultType) {

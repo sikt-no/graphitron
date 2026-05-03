@@ -196,6 +196,20 @@ type Query {
             className: "no.sikt.graphitron.rewrite.test.services.CreateFilmPayloadService",
             method: "recentlyCreatedFilms"
         })
+
+    # R60 fixture: accessor-derived BatchKey, list-cardinality (Many) variant. The service
+    # hand-rolls two CreateFilmsPayload rows whose `films` accessor returns
+    # List<FilmRecord>; the classifier auto-derives AccessorRowKeyedMany from the accessor
+    # alone, and the generator emits loader.loadMany dispatch for the chained film fetch.
+    # Single-cardinality coverage (AccessorRowKeyedSingle) lives at the pipeline tier; the
+    # validator's Invariant #10 rejects single-cardinality RecordTableField returns until the
+    # rows-method's single-arm ships (tracked as a separate emitter arm), so an end-to-end
+    # fixture can't exercise it yet.
+    recentlyCreatedFilmsBatched: [CreateFilmsPayload!]!
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.CreateFilmsPayloadService",
+            method: "recentlyCreatedFilmsBatched"
+        })
 }
 
 # R1 Phase 2f fixture: free-form (non-table-backed) @record payload. The backing class is a
@@ -216,6 +230,15 @@ type CreateFilmPayload @record(record: {className: "no.sikt.graphitron.rewrite.t
             },
             targetColumns: ["language_id"]
         )
+}
+
+# R60 fixture: free-form @record with a typed List<FilmRecord> accessor. No batching directive
+# on `films` — the classifier auto-derives BatchKey.AccessorRowKeyedMany from the canonical
+# record-component accessor, and the generator emits loader.loadMany dispatch.
+type CreateFilmsPayload @record(record: {className: "no.sikt.graphitron.rewrite.test.services.CreateFilmsPayload"}) {
+    # AccessorRowKeyedMany(LIST). Each parent contributes N keys (one per FilmRecord); loadMany
+    # supplies one record per element-PK key, returned as List<Record> matching the field shape.
+    films: [Film!]!
 }
 
 type Customer implements Node @table(name: "customer") @node {

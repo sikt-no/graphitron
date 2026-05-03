@@ -379,6 +379,17 @@ public final class SplitRowsMethodEmitter {
         if (stubReason.isPresent()) {
             return buildRuntimeStub(rtf.rowsMethodName(), rtf.batchKey(), rtf.returnType(), stubReason.get().message(), outputPackage);
         }
+        // AccessorRowKeyedMany routes to the single-record-per-key body: each key (one per
+        // accessor element) maps to exactly one terminal record. The DataFetcher above this
+        // emits loader.loadMany dispatch with loader value type Record, so the rows-method
+        // must return List<Record> (1:1 with keys), not List<List<Record>>. The flat join +
+        // scatterSingleByIdx shape that buildSingleMethod emits is exactly that.
+        if (rtf.batchKey() instanceof BatchKey.AccessorRowKeyedMany) {
+            return buildSingleMethod(
+                rtf.name(), rtf.rowsMethodName(), rtf.returnType(),
+                rtf.joinPath(), rtf.filters(), rtf.batchKey(),
+                outputPackage, jooqPackage);
+        }
         return buildListMethod(
             rtf.name(), rtf.rowsMethodName(), rtf.returnType(),
             rtf.joinPath(), rtf.filters(), rtf.batchKey(),
@@ -657,15 +668,18 @@ public final class SplitRowsMethodEmitter {
         TypeName listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
 
         var body = CodeBlock.builder();
-        // Classifier guarantees single-hop (§1c rejects multi-hop single-cardinality), so the
-        // shared prelude's FK-chain loop emits exactly one declaration.
+        // Classifier guarantees single-hop (§1c rejects multi-hop single-cardinality, the lifter
+        // path is single-hop by type construction, and the accessor-derived path builds a
+        // [LiftedHop] joinPath in FieldBuilder), so the shared prelude's FK-chain loop emits
+        // exactly one declaration.
         PreludeBindings p = emitParentInputAndFkChain(
             body, fieldName, batchKey, returnType, joinPath, jooqPackage);
         String firstAlias = p.firstAlias();
-        // Single-cardinality only reaches the @table-parent SplitTableField path (Invariant #10
-        // rejects single-cardinality record-parent fields at validate time), so the first hop is
-        // always an FkJoin here. The lifter path is list-only by classifier construction.
-        JoinStep.FkJoin firstHop = (JoinStep.FkJoin) joinPath.get(0);
+        // Two routes reach this method: SplitTableField single-cardinality (FkJoin first hop,
+        // parent-holds-FK) and RecordTableField with AccessorRowKeyedMany (LiftedHop first hop,
+        // key-equals-target-PK). Both implement WithTarget; the column-reference reads
+        // uniformly. The whereFilter slot is FkJoin-only and is conditional below.
+        JoinStep.WithTarget firstHop = (JoinStep.WithTarget) joinPath.get(0);
         TypeName keyElement = p.keyElement();
         TypeName keysListType = ParameterizedTypeName.get(LIST, keyElement);
         List<ColumnRef> pkCols = p.pkCols();
@@ -677,9 +691,11 @@ public final class SplitRowsMethodEmitter {
         body.addStatement("selectFields.add(parentInput.field(0, $T.class).as($S))",
             Integer.class, IDX_COLUMN);
 
-        // JOIN: terminal.<target_col> = parentInput.<fk_value>.
-        // Single-cardinality: sourceColumns sit on the parent (not addressable via firstAlias);
-        // targetColumns sit on the terminal and are the right reference.
+        // JOIN: terminal.<target_col> = parentInput.<value>.
+        // Both FkJoin and LiftedHop expose the terminal-side columns through targetColumns():
+        // for FkJoin this is the parent's FK target on the terminal (single-cardinality
+        // SplitTableField); for LiftedHop this is the element table's PK (loadMany contract for
+        // AccessorRowKeyedMany). Same column-class invariant either way.
         var onCond = CodeBlock.builder();
         for (int i = 0; i < firstHop.targetColumns().size(); i++) {
             if (i > 0) onCond.add(".and(");
@@ -701,9 +717,10 @@ public final class SplitRowsMethodEmitter {
 
         var where = CodeBlock.builder();
         where.add("$T.noCondition()", DSL);
-        if (firstHop.whereFilter() != null) {
+        // whereFilter is FkJoin-only (the accessor / lifter paths carry no per-step WHERE).
+        if (firstHop instanceof JoinStep.FkJoin fk && fk.whereFilter() != null) {
             where.add(".and($L)",
-                JoinPathEmitter.emitTwoArgMethodCall(firstHop.whereFilter(), firstAlias, firstAlias));
+                JoinPathEmitter.emitTwoArgMethodCall(fk.whereFilter(), firstAlias, firstAlias));
         }
         for (WhereFilter f : filters) {
             where.add(".and($T.$L($L))",
