@@ -5,7 +5,7 @@ status: Spec
 bucket: architecture
 priority: 15
 theme: docs
-depends-on: [docs-site-asciidoc, rewrite-example-quarkus-jaxrs]
+depends-on: [docs-site-asciidoc]
 ---
 
 # Diataxis user manual: absorb legacy README into the docs site
