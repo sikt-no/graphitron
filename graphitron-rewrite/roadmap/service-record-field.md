@@ -1,7 +1,7 @@
 ---
 id: R49
 title: "Stub: scalar/`@record`-returning `@service` child field (`ServiceRecordField`)"
-status: In Progress
+status: In Review
 bucket: stubs
 priority: 2
 theme: service
