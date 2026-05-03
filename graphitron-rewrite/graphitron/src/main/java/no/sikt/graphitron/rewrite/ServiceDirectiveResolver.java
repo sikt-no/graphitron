@@ -144,7 +144,7 @@ final class ServiceDirectiveResolver {
         var result = svc.reflectServiceMethod(serviceRef.className(), serviceRef.methodName(),
             argBindings, new HashSet<>(contextArgs), parentPkColumns, expectedReturnType);
         if (result.failed()) {
-            return new Resolved.Rejected(Rejection.structural("service method could not be resolved — " + result.failureReason()));
+            return new Resolved.Rejected(result.rejection().prefixedWith("service method could not be resolved — "));
         }
         MethodRef method = enumMapping.enrichArgExtractions(result.ref(), fieldDef);
 

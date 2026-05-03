@@ -81,6 +81,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -2354,7 +2355,11 @@ class FieldBuilder {
                 case MutationInputResolver.DmlKindResult.Absent a -> kind = null;
                 case MutationInputResolver.DmlKindResult.Kind k -> kind = k.kind();
                 case MutationInputResolver.DmlKindResult.Unknown u -> {
-                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural("unknown @mutation(typeName:) value '" + u.raw() + "'"));
+                    List<String> dmlCandidates = Arrays.stream(MutationInputResolver.DmlKind.values())
+                        .map(Enum::name).toList();
+                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.unknownDmlKind(
+                        "unknown @mutation(typeName:) value '" + u.raw() + "'",
+                        u.raw(), dmlCandidates));
                 }
             }
             if (kind != null) {
@@ -3061,8 +3066,9 @@ class FieldBuilder {
                 ReturnTypeRef targetType = ctx.resolveReturnType(typeName.get(), new FieldWrapper.Single(true));
                 var targetGType = ctx.types.get(typeName.get());
                 if (targetGType == null) {
-                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural("@nodeId(typeName:) type '" + typeName.get() + "' does not exist in the schema"
-                        + candidateHint(typeName.get(), new ArrayList<>(ctx.types.keySet()))));
+                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.unknownTypeName(
+                        "@nodeId(typeName:) type '" + typeName.get() + "' does not exist in the schema",
+                        typeName.get(), new ArrayList<>(ctx.types.keySet())));
                 }
                 if (!(targetGType instanceof NodeType targetNodeType)) {
                     return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural("@nodeId(typeName:) type '" + typeName.get() + "' does not have @node"));
@@ -3105,8 +3111,12 @@ class FieldBuilder {
             Optional<ColumnRef> column = svc.resolveColumnForReference(columnName, refPath.elements(), tableType);
             if (column.isEmpty()) {
                 String terminalTable = svc.terminalTableSqlNameForReference(refPath.elements(), tableType);
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural("column '" + columnName + "' could not be resolved in the jOOQ table"
-                    + (terminalTable != null ? candidateHint(columnName, ctx.catalog.columnJavaNamesOf(terminalTable)) : "")));
+                List<String> candidates = terminalTable != null
+                    ? ctx.catalog.columnJavaNamesOf(terminalTable)
+                    : List.of();
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.unknownColumn(
+                    "column '" + columnName + "' could not be resolved in the jOOQ table",
+                    columnName, candidates));
             }
             if (!columnName.equals(column.get().javaName())) {
                 LOG.warn("@field(name: '{}') on field '{}.{}' resolved via SQL name; prefer Java field name '{}'",
@@ -3135,8 +3145,9 @@ class FieldBuilder {
                     parentTypeName, name);
                 return buildNodeIdOutputCarrier(parentTypeName, name, location, nodeType);
             }
-            return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural("column '" + columnName + "' could not be resolved in the jOOQ table"
-                + candidateHint(columnName, ctx.catalog.columnJavaNamesOf(tableSqlName))));
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.unknownColumn(
+                "column '" + columnName + "' could not be resolved in the jOOQ table",
+                columnName, ctx.catalog.columnJavaNamesOf(tableSqlName)));
         }
         if (!columnName.equals(column.get().javaName())) {
             LOG.warn("@field(name: '{}') on field '{}.{}' resolved via SQL name; prefer Java field name '{}'",

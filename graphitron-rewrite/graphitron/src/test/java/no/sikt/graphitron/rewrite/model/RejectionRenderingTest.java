@@ -90,4 +90,72 @@ class RejectionRenderingTest {
             List.of("service", "mutation"), "...");
         assertThat(r.directives()).containsExactly("service", "mutation");
     }
+
+    @Test
+    void unknownTypeNameFactoryTagsAttemptKindTypeName() {
+        var r = (Rejection.AuthorError.UnknownName) Rejection.unknownTypeName(
+            "@nodeId(typeName:) type 'Studieprogam' does not exist in the schema",
+            "Studieprogam", List.of("Studieprogram", "Student"));
+        assertThat(r.attemptKind()).isEqualTo(Rejection.AttemptKind.TYPE_NAME);
+        assertThat(r.attempt()).isEqualTo("Studieprogam");
+        assertThat(r.candidates()).containsExactly("Studieprogram", "Student");
+    }
+
+    @Test
+    void unknownEnumConstantFactoryTagsAttemptKindEnumConstant() {
+        var r = (Rejection.AuthorError.UnknownName) Rejection.unknownEnumConstant(
+            "constant 'GREEM' not found", "GREEM", List.of("GREEN", "RED"));
+        assertThat(r.attemptKind()).isEqualTo(Rejection.AttemptKind.ENUM_CONSTANT);
+    }
+
+    @Test
+    void unknownNodeIdKeyColumnFactoryTagsAttemptKindNodeIdKeyColumn() {
+        var r = (Rejection.AuthorError.UnknownName) Rejection.unknownNodeIdKeyColumn(
+            "key column 'id_3' could not be resolved", "id_3", List.of("id_1", "id_2"));
+        assertThat(r.attemptKind()).isEqualTo(Rejection.AttemptKind.NODEID_KEY_COLUMN);
+    }
+
+    @Test
+    void unknownDmlKindFactoryTagsAttemptKindDmlKind() {
+        var r = (Rejection.AuthorError.UnknownName) Rejection.unknownDmlKind(
+            "unknown @mutation(typeName:) value 'BOGUS'",
+            "BOGUS", List.of("INSERT", "UPDATE", "DELETE"));
+        assertThat(r.attemptKind()).isEqualTo(Rejection.AttemptKind.DML_KIND);
+        assertThat(r.candidates()).containsExactly("INSERT", "UPDATE", "DELETE");
+    }
+
+    @Test
+    void prefixedWithPreservesUnknownNameTypedFields() {
+        var inner = (Rejection.AuthorError.UnknownName) Rejection.unknownServiceMethod(
+            "method 'getActor' not found in class 'A'", "getActor", List.of("getActors", "getFilms"));
+        var prefixed = (Rejection.AuthorError.UnknownName) inner.prefixedWith("service method could not be resolved — ");
+        assertThat(prefixed.attempt()).isEqualTo("getActor");
+        assertThat(prefixed.candidates()).containsExactly("getActors", "getFilms");
+        assertThat(prefixed.attemptKind()).isEqualTo(Rejection.AttemptKind.SERVICE_METHOD);
+        assertThat(prefixed.message()).startsWith("service method could not be resolved — method 'getActor' not found");
+    }
+
+    @Test
+    void prefixedWithPreservesAuthorErrorStructural() {
+        var inner = (Rejection.AuthorError.Structural) Rejection.structural("inner reason");
+        var prefixed = (Rejection.AuthorError.Structural) inner.prefixedWith("ctx: ");
+        assertThat(prefixed.reason()).isEqualTo("ctx: inner reason");
+    }
+
+    @Test
+    void prefixedWithPreservesDirectiveConflictDirectives() {
+        var inner = (Rejection.InvalidSchema.DirectiveConflict) Rejection.directiveConflict(
+            List.of("service", "mutation"), "@service, @mutation are mutually exclusive");
+        var prefixed = (Rejection.InvalidSchema.DirectiveConflict) inner.prefixedWith("on field 'X.y': ");
+        assertThat(prefixed.directives()).containsExactly("service", "mutation");
+        assertThat(prefixed.reason()).isEqualTo("on field 'X.y': @service, @mutation are mutually exclusive");
+    }
+
+    @Test
+    void prefixedWithPreservesDeferredStubKey() {
+        var inner = (Rejection.Deferred) Rejection.deferred("X is not yet supported", ChildField.SplitTableField.class);
+        var prefixed = (Rejection.Deferred) inner.prefixedWith("on Foo.bar: ");
+        assertThat(prefixed.summary()).isEqualTo("on Foo.bar: X is not yet supported");
+        assertThat(prefixed.stubKey()).isEqualTo(new Rejection.StubKey.VariantClass(ChildField.SplitTableField.class));
+    }
 }
