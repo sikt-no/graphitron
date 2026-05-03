@@ -1,0 +1,74 @@
+= Page 2: The starter schema
+:description: How @table and @field map a GraphQL type to a PostgreSQL table and its columns.
+:!toc:
+
+The example's GraphQL schema lives at `graphitron-rewrite/graphitron-sakila-example/src/main/resources/graphql/schema.graphqls`. Open that file in an editor; this page walks you through three types and the directives that wire them to PostgreSQL.
+
+The full schema covers most of Graphitron's directive surface, so it is large. For this tutorial, focus on the three types that back the queries on the next pages: `Query`, `Customer`, and `Address`.
+
+== Query
+
+[source,graphql]
+----
+type Query {
+    customers(active: Boolean @field(name: "ACTIVEBOOL")): [Customer!]!
+    ...
+}
+----
+
+`Query.customers` is the entry point for the first query. The `active` argument is optional; when present, Graphitron emits a `WHERE customer.activebool = ?` clause. The `@field(name: "ACTIVEBOOL")` directive tells the generator which column the argument maps to, since the GraphQL name (`active`) and the database column name (`activebool`) differ.
+
+== Customer
+
+[source,graphql]
+----
+type Customer implements Node @table(name: "customer") @node {
+    id:         ID!      @nodeId
+    customerId: Int!     @field(name: "CUSTOMER_ID")
+    firstName:  String!  @field(name: "FIRST_NAME")
+    lastName:   String!  @field(name: "LAST_NAME")
+    email:      String   @field(name: "EMAIL")
+    activebool: Boolean! @field(name: "ACTIVEBOOL")
+    address:    Address  @reference(path: [{key: "customer_address_id_fkey"}])
+    ...
+}
+----
+
+Two directive families do the work here:
+
+`@table(name: "customer")` binds the GraphQL `Customer` type to the `customer` table in jOOQ's catalog. The generator looks up the matching jOOQ `Table` class at code-generation time, fails the build if it cannot find one, and uses it everywhere `Customer` appears in a query.
+
+`@field(name: "FIRST_NAME")` on each scalar field tells the generator which column to project. When the GraphQL name and the column name match (case-insensitively), the directive is unnecessary; here every field carries it because the schema is explicit. A query selecting `firstName` produces `SELECT customer.first_name AS firstName`; a query selecting both `firstName` and `lastName` produces `SELECT customer.first_name AS firstName, customer.last_name AS lastName`.
+
+The `@reference` directive on `address` is a foreign-key join. You will use it on xref:04-joining-tables.adoc[page 4]; ignore it for now.
+
+`@nodeId` and `@node` are the Relay Global Object Identification machinery. They are out of scope for this tutorial; the xref:../how-to/global-node-identification.adoc[corresponding how-to] covers them.
+
+== Address
+
+[source,graphql]
+----
+type Address implements Node @table(name: "address") @node {
+    id:         ID!     @nodeId
+    addressId:  Int!    @field(name: "ADDRESS_ID")
+    address:    String! @field(name: "ADDRESS")
+    district:   String! @field(name: "DISTRICT")
+    ...
+}
+----
+
+Same pattern: `@table` binds the type to the `address` table, `@field` maps each scalar to its column. Note that the GraphQL field `address` and the column `ADDRESS` collide on name; the directive is still required here because the schema enables a strict mode where every column-backed field has to declare its column explicitly.
+
+== Reading the generator output
+
+If you are curious what Graphitron produced for these types, the generated sources live under `graphitron-rewrite/graphitron-sakila-example/target/generated-sources/graphitron/`. The interesting files for `Customer` are `CustomerType.java` (the GraphQL type wrapper) and `QueryCustomersFetcher.java` (the resolver for `Query.customers`). You do not need to read them to follow the rest of the tutorial; they are there when you want to see what the directives translated into.
+
+== You have just learned
+
+How `@table` binds a GraphQL type to a jOOQ-modelled PostgreSQL table, and how `@field` maps a scalar field to a specific column.
+
+== Next
+
+xref:03-first-query.adoc[Page 3: Running your first query] sends a real GraphQL query to the running server and gets `customer` rows back.
+
+xref:index.adoc[← Tutorial overview]
