@@ -4,11 +4,11 @@ Rules and constraints for working in this repo. **Scope: [`graphitron-rewrite/`]
 
 ## What graphitron-rewrite is
 
-The next-generation Graphitron generator: a Maven-based code generator that turns GraphQL schemas + jOOQ-generated database models into Java resolvers. Lives as a nested monorepo under `graphitron-rewrite/` with its own parent pom (`graphitron-rewrite-parent`, `10-SNAPSHOT`). Modules: `graphitron-javapoet`, `graphitron`, `graphitron-fixtures-codegen`, `graphitron-fixtures`, `graphitron-maven`, `graphitron-test`, `graphitron-lsp`, `roadmap-tool`. Developed by Sikt.
+The next-generation Graphitron generator: a Maven-based code generator that turns GraphQL schemas + jOOQ-generated database models into Java resolvers. Lives as a nested monorepo under `graphitron-rewrite/` with its own parent pom (`graphitron-rewrite-parent`, `10-SNAPSHOT`). Modules: `graphitron-javapoet`, `graphitron`, `graphitron-fixtures-codegen`, `graphitron-sakila-db`, `graphitron-sakila-service`, `graphitron-maven`, `graphitron-sakila-example`, `graphitron-lsp`, `roadmap-tool`. Developed by Sikt.
 
 ## Technology constraints
 
-- **Java 25** for generator code (`<release>25</release>` in `graphitron-rewrite/pom.xml` and most child modules); **Java 17** for generated output (`graphitron-test` compiles with `<release>17</release>` to verify this). Generator implementation may use Java 25 features freely. Generated source files must target Java 17, consumers may still be on 17, and we control what syntax appears in those files. The parent pom's `requireJavaVersion` enforcer rule fails the build with a clear message when run on a JDK older than 25.
+- **Java 25** for generator code (`<release>25</release>` in `graphitron-rewrite/pom.xml` and most child modules); **Java 17** for generated output (`graphitron-sakila-example` compiles with `<release>17</release>` to verify this). Generator implementation may use Java 25 features freely. Generated source files must target Java 17, consumers may still be on 17, and we control what syntax appears in those files. The parent pom's `requireJavaVersion` enforcer rule fails the build with a clear message when run on a JDK older than 25.
 - **jOOQ 3.20.11**, **GraphQL-Java 25.0**, **JUnit 6.0.3 + AssertJ 3.27.7**, **PostgreSQL 42.7.10** (Testcontainers 2.0.4). Versions are pinned in `graphitron-rewrite/pom.xml` properties; don't add dependencies without checking that pom first.
 
 ## Environment (agent sessions)
@@ -49,7 +49,7 @@ The full install is fast; prefer it over targeted `-pl` builds. If you do need `
 
 Full pipeline (build-fixtures → test → compile-spec → execute-spec): [`.claude/web-environment.md`](.claude/web-environment.md). Test-tier conventions (no code-string assertions on generated bodies; unit vs pipeline vs compilation vs execution): [`graphitron-rewrite/docs/rewrite-design-principles.adoc`](graphitron-rewrite/docs/rewrite-design-principles.adoc). Architectural orientation (sealed variant hierarchy, classification taxonomy, runtime extension points): [`graphitron-rewrite/docs/README.adoc`](graphitron-rewrite/docs/README.adoc).
 
-**Footgun: fixtures-jar clobber.** Any `mvn install` that builds `graphitron-fixtures` without `-Plocal-db` silently re-emits the jar with an empty jOOQ catalog, cascading into `UnclassifiedType`, `NoSuchElement`, or "table … could not be resolved" failures across pipeline tests. Always include `-Plocal-db`. Recovery: rerun the full install command above. Full symptom list and rationale: [`.claude/web-environment.md`](.claude/web-environment.md).
+**Footgun: catalog-jar clobber.** Any `mvn install` that builds `graphitron-sakila-db` without `-Plocal-db` silently re-emits the jar with an empty jOOQ catalog, cascading into `UnclassifiedType`, `NoSuchElement`, or "table … could not be resolved" failures across pipeline tests. Always include `-Plocal-db`. Recovery: rerun the full install command above. Full symptom list and rationale: [`.claude/web-environment.md`](.claude/web-environment.md).
 
 ## Writing style
 

@@ -23,7 +23,7 @@ import no.sikt.graphitron.rewrite.test.tier.UnitTier;
  * files outside owned sub-packages. Runs against a trivial two-type SDL
  * because the writer mechanics don't depend on emitter breadth. The
  * cross-cutting determinism and mtime-preservation ratchets live in
- * {@code graphitron-test/GeneratorDeterminismTest} against the
+ * {@code graphitron-sakila-example/GeneratorDeterminismTest} against the
  * full fixture schema.
  */
 @UnitTier

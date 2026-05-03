@@ -39,7 +39,7 @@
 
         <dependency>
             <groupId>${project.groupId}</groupId>
-            <artifactId>graphitron-fixtures</artifactId>
+            <artifactId>graphitron-sakila-service</artifactId>
             <version>${project.version}</version>
             <scope>test</scope>
         </dependency>
@@ -74,6 +74,23 @@
                     <release>25</release>
                     <parameters>true</parameters>
                 </configuration>
+            </plugin>
+            <!-- Republish compiled tests as a test-jar so other modules
+                 (graphitron-sakila-example) can consume the tier-annotation
+                 vocabulary (@UnitTier / @PipelineTier / @CompilationTier /
+                 @ExecutionTier) without putting it on this module's main
+                 classpath. The annotations live under
+                 src/test/java/no/sikt/graphitron/rewrite/test/tier/. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>test-jar</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>

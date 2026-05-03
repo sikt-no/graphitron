@@ -33,7 +33,7 @@ pg_ctlcluster 16 main start
 sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'postgres';"
 sudo -u postgres psql -c "CREATE DATABASE rewrite_test;"
 sudo -u postgres psql -d rewrite_test \
-  -f graphitron-rewrite/graphitron-fixtures/src/main/resources/init.sql
+  -f graphitron-rewrite/graphitron-sakila-db/src/main/resources/init.sql
 ```
 
 The `ALTER USER` step is required because JDBC connects via 127.0.0.1 using scram-sha-256
@@ -48,18 +48,18 @@ legacy module (`graphitron-common`, `graphitron-java-codegen`,
 local repo first. Run commands from the repository root:
 
 ```bash
-# 1. Build the full rewrite aggregator (javapoet, rewrite, fixtures, maven, test).
-#    -Plocal-db switches jooq codegen in fixtures from TestContainers to native Postgres.
+# 1. Build the full rewrite aggregator (javapoet, rewrite, sakila-db, sakila-service, maven, sakila-example, ...).
+#    -Plocal-db switches jooq codegen in graphitron-sakila-db from TestContainers to native Postgres.
 mvn install -f graphitron-rewrite/pom.xml -Plocal-db
 
 # 2. Unit and structural tests for graphitron (no DB needed)
 mvn test -f graphitron-rewrite/pom.xml -pl :graphitron
 
 # 3. Compilation test: generated code compiles against real jOOQ classes
-mvn compile -f graphitron-rewrite/pom.xml -pl :graphitron-test -Plocal-db
+mvn compile -f graphitron-rewrite/pom.xml -pl :graphitron-sakila-example -Plocal-db
 
 # 4. Execution tests: generated code runs against native PostgreSQL
-mvn test -f graphitron-rewrite/pom.xml -pl :graphitron-test -Plocal-db
+mvn test -f graphitron-rewrite/pom.xml -pl :graphitron-sakila-example -Plocal-db
 ```
 
 For what each tier asserts, where its files live, and the `@UnitTier` / `@PipelineTier` / `@CompilationTier` / `@ExecutionTier` meta-annotations, see [`graphitron-rewrite/docs/testing.adoc`](../graphitron-rewrite/docs/testing.adoc).
@@ -79,7 +79,7 @@ rewrite version (10-SNAPSHOT), distinct from the legacy 9-SNAPSHOT coord.
 
 ### Notes
 
-- The `local-db` profile is defined in `graphitron-fixtures/pom.xml`
+- The `local-db` profile is defined in `graphitron-sakila-db/pom.xml`
   and switches jOOQ codegen from `ContainerDatabaseDriver` to
   `org.postgresql.Driver` at `localhost:5432/rewrite_test`.
 - Maven is at `/opt/maven/bin/mvn`; Java 25 is the default JVM. Both are
@@ -93,19 +93,19 @@ rewrite version (10-SNAPSHOT), distinct from the legacy 9-SNAPSHOT coord.
   builds the rewrite tree (dropped from the root reactor as part of the
   aggregator-standalone work).
 
-## Fixtures-jar clobber — symptoms and recovery
+## Catalog-jar clobber — symptoms and recovery
 
 A cascade of `*PipelineTest` / `GraphitronSchemaBuilderTest` failures with `UnclassifiedType`,
 `NoSuchElement`, or `table … could not be resolved in the jOOQ catalog` means the
-`graphitron-fixtures` jar in `~/.m2` is missing `DefaultCatalog` — it was installed
+`graphitron-sakila-db` jar in `~/.m2` is missing `DefaultCatalog` — it was installed
 before the database was up, or re-installed without `-Plocal-db`. Don't bisect trunk; it's your
 local repo. Recover with:
 
 ```bash
-mvn install -pl :graphitron-fixtures -Plocal-db
+mvn install -pl :graphitron-sakila-db -Plocal-db
 ```
 
-**Footgun:** any later `mvn install` that hits `graphitron-fixtures` without
-`-Plocal-db` — e.g. `mvn install -pl X -am` that transitively rebuilds fixtures, or a full-tree
+**Footgun:** any later `mvn install` that hits `graphitron-sakila-db` without
+`-Plocal-db` — e.g. `mvn install -pl X -am` that transitively rebuilds the catalog, or a full-tree
 install — silently re-emits the jar with an empty jOOQ catalog and re-triggers the cascade. After
-any broad install, re-run the `-Plocal-db` fixtures install as a final step before testing.
+any broad install, re-run the `-Plocal-db` install for the catalog as a final step before testing.

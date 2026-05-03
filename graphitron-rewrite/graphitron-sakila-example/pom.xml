@@ -10,7 +10,7 @@
         <version>10-SNAPSHOT</version>
     </parent>
 
-    <artifactId>graphitron-test</artifactId>
+    <artifactId>graphitron-sakila-example</artifactId>
     <name>${project.groupId}:${project.artifactId}</name>
 
     <properties>
@@ -18,9 +18,21 @@
     </properties>
 
     <dependencies>
+        <!-- Sakila jOOQ catalog. Carries init.sql onto the test classpath via main resources,
+             which Testcontainers loads with .withInitScript("init.sql") in the query-to-database
+             tests. -->
         <dependency>
             <groupId>no.sikt</groupId>
-            <artifactId>graphitron-fixtures</artifactId>
+            <artifactId>graphitron-sakila-db</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- Sakila services (FilmService, SampleQueryService, ...) referenced by the schema's
+             @service / @externalField directives. Compile scope so the generated fetchers can
+             call them at runtime; -service's compile dep on -db transitively brings the jOOQ
+             catalog onto the plugin classpath via the single <plugin><dependency> below. -->
+        <dependency>
+            <groupId>no.sikt</groupId>
+            <artifactId>graphitron-sakila-service</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>
@@ -36,6 +48,16 @@
             <groupId>no.sikt</groupId>
             <artifactId>graphitron</artifactId>
             <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- Tier annotations (@UnitTier / @PipelineTier / @CompilationTier / @ExecutionTier)
+             live in graphitron's test source root and are republished as a test-jar. -->
+        <dependency>
+            <groupId>no.sikt</groupId>
+            <artifactId>graphitron</artifactId>
+            <version>${project.version}</version>
+            <type>test-jar</type>
+            <classifier>tests</classifier>
             <scope>test</scope>
         </dependency>
         <!-- Compile scope: the federation-enabled generated GraphitronSchema.build()
@@ -221,9 +243,13 @@
                     </execution>
                 </executions>
                 <dependencies>
+                    <!-- Single entry: -service brings the catalog (-db) transitively via its
+                         compile-scope dep, so ServiceCatalog.reflectServiceMethod can
+                         Class.forName(...) the service classes and the jOOQ catalog is also
+                         visible to the generator at codegen time. -->
                     <dependency>
                         <groupId>no.sikt</groupId>
-                        <artifactId>graphitron-fixtures</artifactId>
+                        <artifactId>graphitron-sakila-service</artifactId>
                         <version>${project.version}</version>
                     </dependency>
                 </dependencies>
