@@ -3,8 +3,6 @@ package no.sikt.graphitron.sakila.example.app;
 import graphql.ExecutionInput;
 import graphql.ExecutionResult;
 import io.agroal.api.AgroalDataSource;
-import io.quarkus.qute.Template;
-import io.quarkus.qute.TemplateInstance;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
@@ -17,15 +15,16 @@ import jakarta.ws.rs.core.Response;
 import no.sikt.graphitron.generated.schema.GraphitronContext;
 import org.dataloader.DataLoaderRegistry;
 
+import java.net.URI;
 import java.util.Map;
 
 /**
  * GraphQL-over-HTTP endpoint per the
  * <a href="https://graphql.github.io/graphql-over-http/">graphql-over-http</a> spec: POST
  * accepts {@code application/json} and returns {@code application/graphql-response+json};
- * GET accepts {@code ?query=&operationName=} for query-only requests, and a browser-style
- * {@code Accept: text/html} on GET serves the GraphiQL playground (bundled at build time
- * by quarkus-web-bundler from the mvnpm graphiql / react / react-dom artifacts).
+ * GET accepts {@code ?query=&operationName=} for query-only requests. A browser hitting
+ * {@code GET /graphql} (no query, {@code Accept: text/html}) is redirected to the
+ * pre-built GraphiQL playground at {@code /graphiql/}.
  *
  * <p>Each request builds a fresh {@link DataLoaderRegistry} (graphql-java requires one even
  * when no DataLoader is used; Split-fetchers rely on it for batching) and threads a
@@ -39,7 +38,6 @@ public class GraphqlResource {
 
     @Inject GraphqlEngine engine;
     @Inject AgroalDataSource dataSource;
-    @Inject Template graphiql;
 
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
@@ -57,8 +55,8 @@ public class GraphqlResource {
 
     @GET
     @Produces(MediaType.TEXT_HTML)
-    public TemplateInstance graphiqlPlayground() {
-        return graphiql.instance();
+    public Response graphiqlRedirect() {
+        return Response.seeOther(URI.create("/graphiql/")).build();
     }
 
     private Response execute(String query, Map<String, Object> variables, String operationName) {

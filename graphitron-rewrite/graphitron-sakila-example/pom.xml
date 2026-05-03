@@ -29,36 +29,6 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
-            <!-- mvnpm uses npm-style version ranges, so transitive resolution can fail when
-                 two graphiql 5 chains disagree (e.g. @graphiql/react wants clsx [1.2.1,2)
-                 and @graphiql/plugin-doc-explorer's @react-aria chain wants [2.0.0,3)). clsx 2
-                 is API-compatible with 1, so pin a single version here. -->
-            <dependency>
-                <groupId>org.mvnpm</groupId>
-                <artifactId>clsx</artifactId>
-                <version>2.1.1</version>
-            </dependency>
-            <!-- @graphiql/toolkit's createGraphiQLFetcher imports graphql-ws lazily for
-                 subscription support. graphql-ws 6.x added Node-native server-side deps
-                 (uWebSockets.js, bufferutil, utf-8-validate, node-gyp-build) that aren't on
-                 Maven Central. Maven resolves version ranges before applying exclusions, so
-                 a plain <exclusion> doesn't help; pinning to 5.16.0 (which only depends on
-                 graphql) drops the whole subtree. The example schema has no subscriptions
-                 anyway. -->
-            <dependency>
-                <groupId>org.mvnpm</groupId>
-                <artifactId>graphql-ws</artifactId>
-                <version>5.16.0</version>
-            </dependency>
-            <!-- @graphiql/react peer-depends on react-compiler-runtime 19.1.0-rc.1 (a React
-                 19 RC), which mvnpm hasn't mirrored. The only mvnpm-published version is
-                 a 1.0.0 stub. esbuild only inlines the runtime helpers @graphiql/react
-                 actually uses, so the stub is sufficient. -->
-            <dependency>
-                <groupId>org.mvnpm</groupId>
-                <artifactId>react-compiler-runtime</artifactId>
-                <version>1.0.0</version>
-            </dependency>
         </dependencies>
     </dependencyManagement>
 
@@ -152,51 +122,6 @@
         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-hibernate-validator</artifactId>
-        </dependency>
-
-        <!-- GraphiQL playground served at GET /graphql (when Accept: text/html). The
-             web-bundler extension uses esbuild (no node toolchain) to bundle the graphiql
-             5 ESM tree into a single JS+CSS pair; mvnpm packages let us declare npm deps
-             as Maven artifacts. The Qute template at templates/graphiql.html renders the
-             {#bundle /} tag which injects hashed asset references at runtime. -->
-        <dependency>
-            <groupId>io.quarkiverse.web-bundler</groupId>
-            <artifactId>quarkus-web-bundler</artifactId>
-            <version>2.3.1</version>
-        </dependency>
-        <dependency>
-            <groupId>io.quarkus</groupId>
-            <artifactId>quarkus-rest-qute</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.mvnpm</groupId>
-            <artifactId>graphiql</artifactId>
-            <version>5.2.1</version>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.mvnpm.at.graphiql</groupId>
-            <artifactId>toolkit</artifactId>
-            <version>0.11.3</version>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.mvnpm</groupId>
-            <artifactId>react</artifactId>
-            <version>18.3.1</version>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.mvnpm</groupId>
-            <artifactId>react-dom</artifactId>
-            <version>18.3.1</version>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.mvnpm</groupId>
-            <artifactId>graphql</artifactId>
-            <version>16.11.0</version>
-            <scope>provided</scope>
         </dependency>
 
         <!-- Test dependencies -->
