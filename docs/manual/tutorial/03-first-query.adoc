@@ -1,0 +1,81 @@
+= Page 3: Running your first query
+:description: Send a GraphQL query to the running Quarkus app and see PostgreSQL rows in the response.
+:!toc:
+
+With the server from xref:01-prerequisites.adoc[page 1] still running on `http://localhost:8088`, open a second terminal and send a query.
+
+== Send the query
+
+[source,bash]
+----
+curl -s -X POST http://localhost:8088/graphql \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"{ customers { firstName lastName email } }"}'
+----
+
+The response is JSON containing the five rows the example seed loaded into the `customer` table:
+
+[source,json]
+----
+{
+  "data": {
+    "customers": [
+      {"firstName": "Mary", "lastName": "Smith", "email": "mary.smith@example.com"},
+      {"firstName": "Patricia", "lastName": "Johnson", "email": "patricia.johnson@example.com"},
+      {"firstName": "Linda", "lastName": "Williams", "email": "linda.williams@example.com"},
+      {"firstName": "Barbara", "lastName": "Jones", "email": "barbara.jones@example.com"},
+      {"firstName": "Elizabeth", "lastName": "Brown", "email": "elizabeth.brown@example.com"}
+    ]
+  }
+}
+----
+
+== What just happened
+
+Graphitron's generated resolver for `Query.customers` produced a single SQL statement against PostgreSQL, projected only the columns your query asked for, and returned the rows as a GraphQL response.
+
+Roughly, it ran:
+
+[source,sql]
+----
+SELECT customer.first_name AS "firstName",
+       customer.last_name  AS "lastName",
+       customer.email      AS "email"
+  FROM customer
+----
+
+If you are running with `quarkus.log.level=DEBUG` (or want to inspect the executed SQL), Quarkus's dev mode prints jOOQ's SQL log to the terminal where `mvn quarkus:dev` is running. The actual statement uses parameter placeholders and quoted identifiers, but the shape is the one above.
+
+The selection set drives the projection: a query that asks only for `firstName` produces a SELECT with only `customer.first_name`. Add `lastName` to the query and the SELECT grows to two columns. Graphitron does this projection-narrowing for every query, every time, because each generated resolver inspects the request's selection set and threads the chosen fields through to jOOQ.
+
+== Filter with the active argument
+
+The `active` argument from xref:02-first-schema.adoc[page 2] filters by the `activebool` column. The seed data has three active customers and two inactive:
+
+[source,bash]
+----
+curl -s -X POST http://localhost:8088/graphql \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"{ customers(active: true) { firstName } }"}'
+----
+
+[source,json]
+----
+{"data":{"customers":[
+  {"firstName":"Mary"},
+  {"firstName":"Patricia"},
+  {"firstName":"Linda"}
+]}}
+----
+
+The `@field(name: "ACTIVEBOOL")` on the `active` argument is what wired this filter to the `activebool` column. Without it, the generator would have used the GraphQL name (`active`) to look up a column called `active`, found one (the `customer` table happens to have an unused integer column named `active` too), and wired the filter to the wrong place. Argument-level `@field` is how you steer the column choice when names collide.
+
+== You have just learned
+
+How a generated resolver translates a GraphQL selection set into a column-narrowed `SELECT`, and how an argument-level `@field` directive maps a query argument to a specific column.
+
+== Next
+
+xref:04-joining-tables.adoc[Page 4: Joining tables] adds the `address` field and shows how `@reference` produces a `JOIN`.
+
+xref:index.adoc[← Tutorial overview]
