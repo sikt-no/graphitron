@@ -186,7 +186,7 @@ public sealed interface ChildField extends GraphitronField
         OrderBySpec orderBy,
         PaginationSpec pagination,
         BatchKey.RowKeyed batchKey
-    ) implements TableTargetField, BatchKeyField {
+    ) implements TableTargetField, BatchKeyField, ConditionJoinReportable {
         @Override
         public String rowsMethodName() {
             return "rows" + Character.toUpperCase(name().charAt(0)) + name().substring(1);
@@ -195,6 +195,10 @@ public sealed interface ChildField extends GraphitronField
         public boolean emitsSingleRecordPerKey() {
             return !returnType().wrapper().isList();
         }
+        @Override public Rejection.EmitBlockReason emitBlockReason() {
+            return Rejection.EmitBlockReason.SPLIT_TABLE_FIELD_CONDITION_JOIN_STEP;
+        }
+        @Override public String displayLabel() { return "@splitQuery"; }
     }
 
     record LookupTableField(
@@ -220,11 +224,15 @@ public sealed interface ChildField extends GraphitronField
         PaginationSpec pagination,
         BatchKey.RowKeyed batchKey,
         LookupMapping lookupMapping
-    ) implements TableTargetField, BatchKeyField, LookupField {
+    ) implements TableTargetField, BatchKeyField, LookupField, ConditionJoinReportable {
         @Override
         public String rowsMethodName() {
             return "rows" + Character.toUpperCase(name().charAt(0)) + name().substring(1);
         }
+        @Override public Rejection.EmitBlockReason emitBlockReason() {
+            return Rejection.EmitBlockReason.SPLIT_LOOKUP_TABLE_FIELD_CONDITION_JOIN_STEP;
+        }
+        @Override public String displayLabel() { return "@splitQuery @lookupKey"; }
     }
 
     /**
@@ -414,7 +422,7 @@ public sealed interface ChildField extends GraphitronField
         OrderBySpec orderBy,
         PaginationSpec pagination,
         BatchKey.RecordParentBatchKey batchKey
-    ) implements TableTargetField, BatchKeyField {
+    ) implements TableTargetField, BatchKeyField, ConditionJoinReportable {
         @Override
         public String rowsMethodName() {
             return "rows" + Character.toUpperCase(name().charAt(0)) + name().substring(1);
@@ -423,6 +431,10 @@ public sealed interface ChildField extends GraphitronField
         public boolean emitsSingleRecordPerKey() {
             return batchKey() instanceof BatchKey.AccessorRowKeyedMany;
         }
+        @Override public Rejection.EmitBlockReason emitBlockReason() {
+            return Rejection.EmitBlockReason.RECORD_TABLE_FIELD_CONDITION_JOIN_STEP;
+        }
+        @Override public String displayLabel() { return "RecordTableField"; }
     }
 
     record RecordLookupTableField(
@@ -436,11 +448,15 @@ public sealed interface ChildField extends GraphitronField
         PaginationSpec pagination,
         BatchKey.RecordParentBatchKey batchKey,
         LookupMapping lookupMapping
-    ) implements TableTargetField, BatchKeyField, LookupField {
+    ) implements TableTargetField, BatchKeyField, LookupField, ConditionJoinReportable {
         @Override
         public String rowsMethodName() {
             return "rows" + Character.toUpperCase(name().charAt(0)) + name().substring(1);
         }
+        @Override public Rejection.EmitBlockReason emitBlockReason() {
+            return Rejection.EmitBlockReason.RECORD_LOOKUP_TABLE_FIELD_CONDITION_JOIN_STEP;
+        }
+        @Override public String displayLabel() { return "RecordLookupTableField"; }
     }
 
     /**

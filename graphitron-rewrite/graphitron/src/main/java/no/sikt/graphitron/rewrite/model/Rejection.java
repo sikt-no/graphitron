@@ -161,26 +161,24 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
 
     /**
      * Stable identifier for a deferred-stub site. Two arms: a variant-class key
-     * (the {@code TypeFetcherGenerator.STUBBED_VARIANTS} key form, used
-     * when the generator stubs an entire variant class) and an emit-block key (a
-     * typed enum, used when a variant classifies cleanly but a particular shape
-     * inside the emitter doesn't yet emit). R58 Phase C wires both forms into the
-     * validator's deferred gate via the shared {@link Deferred#message()} renderer.
+     * (the {@code TypeFetcherGenerator.STUBBED_VARIANTS} key form, used when the generator stubs
+     * an entire variant class — or a feature-shape inline-defer with no leaf anchor, signalled by
+     * a null {@link VariantClass#fieldClass}) and an emit-block key (a typed enum, used when a
+     * variant classifies cleanly but a particular shape inside the emitter doesn't yet emit).
+     * R58 Phase C wires both forms into the validator's deferred gate via the shared
+     * {@link Deferred#message()} renderer; R58 Phase H collapsed the prior {@code None} arm into
+     * a nullable {@link VariantClass#fieldClass} since validator and emitter consumers treated
+     * {@code None} the same as {@code VariantClass} for log output.
      */
-    sealed interface StubKey permits StubKey.VariantClass, StubKey.EmitBlock, StubKey.None {
+    sealed interface StubKey permits StubKey.VariantClass, StubKey.EmitBlock {
+        /**
+         * Variant-class key. {@code fieldClass} may be {@code null} for inline-defer sites whose
+         * rejection names a feature shape ("@service returning a polymorphic type") rather than a
+         * stubbed leaf class; downstream tooling that wants to jump to a leaf class checks for
+         * non-null first.
+         */
         record VariantClass(Class<? extends GraphitronField> fieldClass) implements StubKey {}
         record EmitBlock(EmitBlockReason reason) implements StubKey {}
-        /**
-         * Inline-deferred site with no variant-class or emit-block anchor: the rejection
-         * names a feature shape ("@service returning a polymorphic type") rather than a
-         * stubbed leaf class. Validator paths that switch on {@link StubKey} treat
-         * {@link None} the same as {@link VariantClass} for log output; the typed
-         * distinction matters only to LSP-fix-its / watch-mode tooling that wants to
-         * jump to the roadmap entry.
-         */
-        record None() implements StubKey {
-            public static final None INSTANCE = new None();
-        }
     }
 
     /**
@@ -220,37 +218,26 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
     }
 
     /**
-     * {@link Deferred} factory keyed on a stubbed variant class, with no roadmap
-     * slug attached. Use when the deferred message is self-contained prose.
-     */
-    static Rejection deferred(String summary, Class<? extends GraphitronField> fieldClass) {
-        return new Deferred(summary, "", new StubKey.VariantClass(fieldClass));
-    }
-
-    /**
-     * {@link Deferred} factory for inline-deferred sites with no specific variant-class
-     * anchor: the prose names a feature shape rather than a stubbed leaf class. Use when
-     * neither a variant class nor an emit-block reason fits.
-     */
-    static Rejection deferred(String summary) {
-        return new Deferred(summary, "", StubKey.None.INSTANCE);
-    }
-
-    /**
-     * {@link Deferred} factory for inline-deferred sites with a roadmap slug but no
-     * specific variant-class anchor.
-     */
-    static Rejection deferredAt(String summary, String planSlug) {
-        return new Deferred(summary, planSlug, StubKey.None.INSTANCE);
-    }
-
-    /**
-     * {@link Deferred} factory keyed on a stubbed variant class with a roadmap
-     * slug. {@code planSlug} is the file basename under
-     * {@code graphitron-rewrite/roadmap/}, no extension.
+     * {@link Deferred} factory keyed on a stubbed variant class, with optional roadmap slug and
+     * optional variant-class anchor. {@code planSlug} is the file basename under
+     * {@code graphitron-rewrite/roadmap/} (no extension) or empty when the deferred message has
+     * no associated plan; {@code fieldClass} is {@code null} when the rejection names a feature
+     * shape rather than a stubbed leaf class. R58 Phase H collapsed four factories
+     * ({@code deferred(summary)}, {@code deferred(summary, fieldClass)},
+     * {@code deferred(summary, planSlug, fieldClass)}, {@code deferredAt(summary, planSlug)})
+     * into this and the planSlug-only sibling below.
      */
     static Rejection deferred(String summary, String planSlug, Class<? extends GraphitronField> fieldClass) {
         return new Deferred(summary, planSlug, new StubKey.VariantClass(fieldClass));
+    }
+
+    /**
+     * {@link Deferred} factory for sites with a roadmap slug but no specific variant-class
+     * anchor. Equivalent to {@link #deferred(String, String, Class)} with {@code fieldClass} =
+     * {@code null}.
+     */
+    static Rejection deferred(String summary, String planSlug) {
+        return new Deferred(summary, planSlug, new StubKey.VariantClass(null));
     }
 
     /** {@link AuthorError.UnknownName} factory for column-name lookups. */

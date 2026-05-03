@@ -7,6 +7,7 @@ import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
+import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.SqlGeneratingField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
@@ -122,10 +123,10 @@ public class GraphitronSchemaValidator {
         if (field instanceof SqlGeneratingField sgf
                 && sgf.pagination() != null
                 && sgf.orderBy() instanceof OrderBySpec.None) {
-            errors.add(new ValidationError(RejectionKind.AUTHOR_ERROR,
+            errors.add(new ValidationError(
                 field.qualifiedName(),
-                "Field '" + field.qualifiedName() + "': paginated fields must have ordering "
-                    + "(add @defaultOrder or @orderBy)",
+            Rejection.structural("Field '" + field.qualifiedName() + "': paginated fields must have ordering "
+                    + "(add @defaultOrder or @orderBy)"),
                 field.location()
             ));
         }
@@ -156,31 +157,20 @@ public class GraphitronSchemaValidator {
             emitDeferredError(field, stubbed, errors);
             return;
         }
-        // Intra-variant stubs: some SplitTableField / SplitLookupTableField shapes (single
-        // cardinality, condition-join in FK path, empty FK path) compile but the emitted
-        // rows method throws at request time. STUBBED_VARIANTS is class-keyed so
-        // cannot distinguish these from emittable shapes, delegate to the emitter's own
-        // shape predicate so validator and emitter stay in lock-step.
-        if (field instanceof no.sikt.graphitron.rewrite.model.ChildField.SplitTableField stf) {
-            no.sikt.graphitron.rewrite.generators.SplitRowsMethodEmitter.unsupportedReason(stf)
-                .ifPresent(d -> emitDeferredError(field, d, errors));
-        } else if (field instanceof no.sikt.graphitron.rewrite.model.ChildField.SplitLookupTableField slf) {
-            no.sikt.graphitron.rewrite.generators.SplitRowsMethodEmitter.unsupportedReason(slf)
-                .ifPresent(d -> emitDeferredError(field, d, errors));
-        } else if (field instanceof no.sikt.graphitron.rewrite.model.ChildField.RecordTableField rtf) {
-            no.sikt.graphitron.rewrite.generators.SplitRowsMethodEmitter.unsupportedReason(rtf)
-                .ifPresent(d -> emitDeferredError(field, d, errors));
-        } else if (field instanceof no.sikt.graphitron.rewrite.model.ChildField.RecordLookupTableField rltf) {
-            no.sikt.graphitron.rewrite.generators.SplitRowsMethodEmitter.unsupportedReason(rltf)
-                .ifPresent(d -> emitDeferredError(field, d, errors));
-        }
+        // Intra-variant stubs: the four ChildField variants that share the condition-join
+        // predicate ({@link ConditionJoinReportable}) all dispatch through the emitter's
+        // single capability-keyed unsupportedReason; STUBBED_VARIANTS is class-keyed so
+        // cannot distinguish "fully stubbed" from "intra-variant emit-block", and the
+        // capability dispatch keeps validator and emitter in lock-step.
+        no.sikt.graphitron.rewrite.generators.SplitRowsMethodEmitter.unsupportedReason(field)
+            .ifPresent(d -> emitDeferredError(field, d, errors));
     }
 
     private static void emitDeferredError(GraphitronField field,
             no.sikt.graphitron.rewrite.model.Rejection.Deferred deferred, List<ValidationError> errors) {
-        errors.add(new ValidationError(RejectionKind.of(deferred),
+        errors.add(new ValidationError(
             field.qualifiedName(),
-            "Field '" + field.qualifiedName() + "': " + deferred.message(),
+            deferred.prefixedWith("Field '" + field.qualifiedName() + "': "),
             field.location()
         ));
     }
@@ -231,10 +221,10 @@ public class GraphitronSchemaValidator {
             var location = def != null && def.getSourceLocation() != null
                 ? def.getSourceLocation()
                 : type.location();
-            errors.add(new ValidationError(RejectionKind.INVALID_SCHEMA,
+            errors.add(new ValidationError(
                 type.name() + ".totalCount",
-                "Field '" + type.name() + ".totalCount' must be of type 'Int' (got '"
-                    + graphql.schema.GraphQLTypeUtil.simplePrint(fd.getType()) + "')",
+            Rejection.invalidSchema("Field '" + type.name() + ".totalCount' must be of type 'Int' (got '"
+                    + graphql.schema.GraphQLTypeUtil.simplePrint(fd.getType()) + "')"),
                 location
             ));
         }
@@ -287,11 +277,11 @@ public class GraphitronSchemaValidator {
 
         for (var tb : tableBound) {
             if (!tb.table().hasPrimaryKey()) {
-                errors.add(new ValidationError(RejectionKind.AUTHOR_ERROR,
+                errors.add(new ValidationError(
                     qualifiedName,
-                    "Field '" + qualifiedName + "': participant '" + tb.typeName()
+            Rejection.structural("Field '" + qualifiedName + "': participant '" + tb.typeName()
                         + "' has no primary key on table '" + tb.table().tableName()
-                        + "'; multi-table interface/union fetchers require a primary key on every participant",
+                        + "'; multi-table interface/union fetchers require a primary key on every participant"),
                     location
                 ));
             }
@@ -308,12 +298,12 @@ public class GraphitronSchemaValidator {
         for (var tb : pkBearing.subList(1, pkBearing.size())) {
             int actual = tb.table().primaryKeyColumns().size();
             if (actual != expected) {
-                errors.add(new ValidationError(RejectionKind.AUTHOR_ERROR,
+                errors.add(new ValidationError(
                     qualifiedName,
-                    "Field '" + qualifiedName + "': primary-key arity mismatch — '" + pkBearing.get(0).typeName()
+            Rejection.structural("Field '" + qualifiedName + "': primary-key arity mismatch — '" + pkBearing.get(0).typeName()
                         + "' has " + expected + " PK column" + (expected == 1 ? "" : "s")
                         + " but '" + tb.typeName() + "' has " + actual
-                        + "; v1 multi-table interface/union fetchers require uniform PK arity across participants",
+                        + "; v1 multi-table interface/union fetchers require uniform PK arity across participants"),
                     location
                 ));
                 return; // one mismatch is enough; subsequent ones are noise
@@ -346,22 +336,22 @@ public class GraphitronSchemaValidator {
         if (!(parentType instanceof TableBackedType tbt)) return;
         var pkCols = tbt.table().primaryKeyColumns();
         if (pkCols.isEmpty()) {
-            errors.add(new ValidationError(RejectionKind.AUTHOR_ERROR,
+            errors.add(new ValidationError(
                 qualifiedName,
-                "Field '" + qualifiedName + "': @asConnection on a multi-table interface/union child "
+            Rejection.structural("Field '" + qualifiedName + "': @asConnection on a multi-table interface/union child "
                     + "field requires the parent type '" + parentTypeName + "' to have a primary key; "
-                    + "the DataLoader-batched windowed CTE form keys on the parent table's PK",
+                    + "the DataLoader-batched windowed CTE form keys on the parent table's PK"),
                 location
             ));
             return;
         }
         if (pkCols.size() > 21) {
-            errors.add(new ValidationError(RejectionKind.AUTHOR_ERROR,
+            errors.add(new ValidationError(
                 qualifiedName,
-                "Field '" + qualifiedName + "': @asConnection on a multi-table interface/union child "
+            Rejection.structural("Field '" + qualifiedName + "': @asConnection on a multi-table interface/union child "
                     + "field whose parent type '" + parentTypeName + "' has a primary key with "
                     + pkCols.size() + " columns exceeds jOOQ's typed Row22 cap (parent PK + idx "
-                    + "must fit in Row<N+1>). Use a narrower parent key or split the parent type",
+                    + "must fit in Row<N+1>). Use a narrower parent key or split the parent type"),
                 location
             ));
         }
@@ -371,9 +361,9 @@ public class GraphitronSchemaValidator {
 
     private void validateQueryLookupTableField(no.sikt.graphitron.rewrite.model.QueryField.QueryLookupTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         if (field.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection) {
-            errors.add(new ValidationError(RejectionKind.INVALID_SCHEMA,
+            errors.add(new ValidationError(
                 field.qualifiedName(),
-                "Field '" + field.qualifiedName() + "': lookup fields must not return a connection",
+            Rejection.invalidSchema("Field '" + field.qualifiedName() + "': lookup fields must not return a connection"),
                 field.location()
             ));
         } else {
@@ -391,17 +381,17 @@ public class GraphitronSchemaValidator {
                 });
             boolean returnIsList = field.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.List;
             if (anyKeyIsList != returnIsList) {
-                errors.add(new ValidationError(RejectionKind.INVALID_SCHEMA,
+                errors.add(new ValidationError(
                     field.qualifiedName(),
-                    "Field '" + field.qualifiedName() + "': result type does not match input cardinality",
+            Rejection.invalidSchema("Field '" + field.qualifiedName() + "': result type does not match input cardinality"),
                     field.location()
                 ));
             }
         }
         if (field.orderBy() instanceof OrderBySpec.Argument) {
-            errors.add(new ValidationError(RejectionKind.INVALID_SCHEMA,
+            errors.add(new ValidationError(
                 field.qualifiedName(),
-                "Field '" + field.qualifiedName() + "': @orderBy is not valid on a lookup field",
+            Rejection.invalidSchema("Field '" + field.qualifiedName() + "': @orderBy is not valid on a lookup field"),
                 field.location()
             ));
         }
@@ -440,18 +430,18 @@ public class GraphitronSchemaValidator {
     private void validateMutationServiceRecordField(no.sikt.graphitron.rewrite.model.MutationField.MutationServiceRecordField field, List<ValidationError> errors) {}
     private void validateColumnField(no.sikt.graphitron.rewrite.model.ChildField.ColumnField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         if (!(types.get(field.parentTypeName()) instanceof GraphitronType.TableBackedType)) {
-            errors.add(new ValidationError(RejectionKind.INVALID_SCHEMA,
+            errors.add(new ValidationError(
                 field.qualifiedName(),
-                "Field '" + field.qualifiedName() + "': @column is not valid on a non-table-backed type",
+            Rejection.invalidSchema("Field '" + field.qualifiedName() + "': @column is not valid on a non-table-backed type"),
                 field.location()
             ));
         }
     }
     private void validateColumnReferenceField(no.sikt.graphitron.rewrite.model.ChildField.ColumnReferenceField field, List<ValidationError> errors) {
         if (field.joinPath().isEmpty()) {
-            errors.add(new ValidationError(RejectionKind.AUTHOR_ERROR,
+            errors.add(new ValidationError(
                 field.qualifiedName(),
-                "Field '" + field.qualifiedName() + "': @reference path is required",
+            Rejection.structural("Field '" + field.qualifiedName() + "': @reference path is required"),
                 field.location()
             ));
         } else {
@@ -463,10 +453,10 @@ public class GraphitronSchemaValidator {
         // The record's compact constructor enforces the lower bound; the upper bound matches the
         // RecordN / RowN ceiling (jOOQ's 22-slot cap). Any breach indicates a classifier bug.
         if (field.columns().size() > 22) {
-            errors.add(new ValidationError(RejectionKind.AUTHOR_ERROR,
+            errors.add(new ValidationError(
                 field.qualifiedName(),
-                "Field '" + field.qualifiedName() + "': composite NodeId carrier has "
-                    + field.columns().size() + " columns, exceeding the 22-slot RecordN cap",
+            Rejection.structural("Field '" + field.qualifiedName() + "': composite NodeId carrier has "
+                    + field.columns().size() + " columns, exceeding the 22-slot RecordN cap"),
                 field.location()
             ));
         }
@@ -475,10 +465,10 @@ public class GraphitronSchemaValidator {
         // Arity invariant matches CompositeColumnField — record's compact constructor handles
         // the lower bound; we cap at the RecordN 22-slot ceiling.
         if (field.columns().size() > 22) {
-            errors.add(new ValidationError(RejectionKind.AUTHOR_ERROR,
+            errors.add(new ValidationError(
                 field.qualifiedName(),
-                "Field '" + field.qualifiedName() + "': composite NodeId reference carrier has "
-                    + field.columns().size() + " columns, exceeding the 22-slot RecordN cap",
+            Rejection.structural("Field '" + field.qualifiedName() + "': composite NodeId reference carrier has "
+                    + field.columns().size() + " columns, exceeding the 22-slot RecordN cap"),
                 field.location()
             ));
         }
@@ -496,9 +486,9 @@ public class GraphitronSchemaValidator {
         // target table and is skipped per the existing convention.
         if (lastStep instanceof JoinStep.WithTarget wt) {
             if (!wt.targetTable().tableName().equalsIgnoreCase(targetTable.tableName())) {
-                errors.add(new ValidationError(RejectionKind.AUTHOR_ERROR,
+                errors.add(new ValidationError(
                     fieldName,
-                    "Field '" + fieldName + "': @reference path does not lead to the table of type '" + typeName + "'",
+            Rejection.structural("Field '" + fieldName + "': @reference path does not lead to the table of type '" + typeName + "'"),
                     location
                 ));
             }
@@ -519,10 +509,10 @@ public class GraphitronSchemaValidator {
             boolean empty = orderBy instanceof no.sikt.graphitron.rewrite.model.OrderBySpec.None
                 || (orderBy instanceof no.sikt.graphitron.rewrite.model.OrderBySpec.Fixed f && f.columns().isEmpty());
             if (empty) {
-                errors.add(new ValidationError(RejectionKind.AUTHOR_ERROR,
+                errors.add(new ValidationError(
                     field.qualifiedName(),
-                    "Field '" + field.qualifiedName() + "': @splitQuery connections require a non-empty ORDER BY "
-                        + "(add @defaultOrder, @orderBy, or a primary key on the target table)",
+            Rejection.structural("Field '" + field.qualifiedName() + "': @splitQuery connections require a non-empty ORDER BY "
+                        + "(add @defaultOrder, @orderBy, or a primary key on the target table)"),
                     field.location()
                 ));
             }
@@ -531,9 +521,9 @@ public class GraphitronSchemaValidator {
     private void validateLookupTableField(no.sikt.graphitron.rewrite.model.ChildField.LookupTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
         if (field.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection) {
-            errors.add(new ValidationError(RejectionKind.INVALID_SCHEMA,
+            errors.add(new ValidationError(
                 field.qualifiedName(),
-                "Field '" + field.qualifiedName() + "': lookup fields must not return a connection",
+            Rejection.invalidSchema("Field '" + field.qualifiedName() + "': lookup fields must not return a connection"),
                 field.location()
             ));
         }
@@ -542,9 +532,9 @@ public class GraphitronSchemaValidator {
     private void validateSplitLookupTableField(no.sikt.graphitron.rewrite.model.ChildField.SplitLookupTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
         if (field.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection) {
-            errors.add(new ValidationError(RejectionKind.INVALID_SCHEMA,
+            errors.add(new ValidationError(
                 field.qualifiedName(),
-                "Field '" + field.qualifiedName() + "': lookup fields must not return a connection",
+            Rejection.invalidSchema("Field '" + field.qualifiedName() + "': lookup fields must not return a connection"),
                 field.location()
             ));
         }
@@ -573,9 +563,9 @@ public class GraphitronSchemaValidator {
     private void validateNestingField(no.sikt.graphitron.rewrite.model.ChildField.NestingField field, List<ValidationError> errors) {
         // List cardinality has no source-passthrough semantic: one parent Record in, one list value out.
         if (field.returnType().wrapper() instanceof FieldWrapper.List) {
-            errors.add(new ValidationError(RejectionKind.INVALID_SCHEMA,
+            errors.add(new ValidationError(
                 field.qualifiedName(),
-                "Field '" + field.qualifiedName() + "': list cardinality on a plain-object nesting field is not supported",
+            Rejection.invalidSchema("Field '" + field.qualifiedName() + "': list cardinality on a plain-object nesting field is not supported"),
                 field.location()
             ));
         }
@@ -621,10 +611,10 @@ public class GraphitronSchemaValidator {
             return;
         }
         if (!NESTED_WIREABLE_LEAVES.contains(field.getClass())) {
-            errors.add(new ValidationError(RejectionKind.DEFERRED,
+            errors.add(new ValidationError(
                 field.qualifiedName(),
-                "Field '" + field.qualifiedName() + "': " + field.getClass().getSimpleName()
-                    + " is not yet supported under NestingField",
+            Rejection.deferred("Field '" + field.qualifiedName() + "': " + field.getClass().getSimpleName()
+                    + " is not yet supported under NestingField", ""),
                 field.location()
             ));
         }
@@ -682,43 +672,43 @@ public class GraphitronSchemaValidator {
             var of = otherByName.get(name);
             String coord = otherParent + "." + other.name();
             if (of == null) {
-                errors.add(new ValidationError(RejectionKind.AUTHOR_ERROR,
+                errors.add(new ValidationError(
                     coord,
-                    "Nested type '" + nestedTypeName + "' shared across '" + repParent
+            Rejection.structural("Nested type '" + nestedTypeName + "' shared across '" + repParent
                         + "' and '" + otherParent + "': field '" + name
-                        + "' exists on the first but not the second",
+                        + "' exists on the first but not the second"),
                     other.location()
                 ));
                 continue;
             }
             if (!rf.getClass().equals(of.getClass())) {
-                errors.add(new ValidationError(RejectionKind.AUTHOR_ERROR,
+                errors.add(new ValidationError(
                     coord,
-                    "Nested type '" + nestedTypeName + "' shared across '" + repParent
+            Rejection.structural("Nested type '" + nestedTypeName + "' shared across '" + repParent
                         + "' and '" + otherParent + "': field '" + name
                         + "' classifies as " + rf.getClass().getSimpleName() + " on the first but "
-                        + of.getClass().getSimpleName() + " on the second",
+                        + of.getClass().getSimpleName() + " on the second"),
                     other.location()
                 ));
                 continue;
             }
             if (rf instanceof ChildField.ColumnField rcf && of instanceof ChildField.ColumnField ocf) {
                 if (!rcf.column().sqlName().equals(ocf.column().sqlName())) {
-                    errors.add(new ValidationError(RejectionKind.AUTHOR_ERROR,
+                    errors.add(new ValidationError(
                         coord,
-                        "Nested type '" + nestedTypeName + "' shared across '" + repParent
+            Rejection.structural("Nested type '" + nestedTypeName + "' shared across '" + repParent
                             + "' and '" + otherParent + "': field '" + name
                             + "' resolves to column '" + rcf.column().sqlName() + "' on the first but '"
-                            + ocf.column().sqlName() + "' on the second",
+                            + ocf.column().sqlName() + "' on the second"),
                         other.location()
                     ));
                 } else if (!rcf.column().columnClass().equals(ocf.column().columnClass())) {
-                    errors.add(new ValidationError(RejectionKind.AUTHOR_ERROR,
+                    errors.add(new ValidationError(
                         coord,
-                        "Nested type '" + nestedTypeName + "' shared across '" + repParent
+            Rejection.structural("Nested type '" + nestedTypeName + "' shared across '" + repParent
                             + "' and '" + otherParent + "': field '" + name
                             + "' has Java type '" + rcf.column().columnClass() + "' on the first but '"
-                            + ocf.column().columnClass() + "' on the second",
+                            + ocf.column().columnClass() + "' on the second"),
                         other.location()
                     ));
                 }
@@ -731,12 +721,12 @@ public class GraphitronSchemaValidator {
                 // Non-column, non-nesting leaves are not yet supported as multi-parent shared nested
                 // fields, their resolution depends on per-parent metadata that this shape check
                 // doesn't inspect. Lands with the corresponding roadmap #8 arm.
-                errors.add(new ValidationError(RejectionKind.DEFERRED,
+                errors.add(new ValidationError(
                     coord,
-                    "Nested type '" + nestedTypeName + "' shared across '" + repParent
+            Rejection.deferred("Nested type '" + nestedTypeName + "' shared across '" + repParent
                         + "' and '" + otherParent + "': field '" + name
                         + "' classifies as " + rf.getClass().getSimpleName()
-                        + " which is not yet supported across multiple parents",
+                        + " which is not yet supported across multiple parents", ""),
                     other.location()
                 ));
             }
@@ -745,11 +735,11 @@ public class GraphitronSchemaValidator {
         String coord = otherParent + "." + other.name();
         for (var name : otherByName.keySet()) {
             if (!repByName.containsKey(name)) {
-                errors.add(new ValidationError(RejectionKind.AUTHOR_ERROR,
+                errors.add(new ValidationError(
                     coord,
-                    "Nested type '" + nestedTypeName + "' shared across '" + repParent
+            Rejection.structural("Nested type '" + nestedTypeName + "' shared across '" + repParent
                         + "' and '" + otherParent + "': field '" + name
-                        + "' exists on the second but not the first",
+                        + "' exists on the second but not the first"),
                     other.location()
                 ));
             }
@@ -764,9 +754,9 @@ public class GraphitronSchemaValidator {
         // A table-bound service field requires at least one Sources parameter for DataLoader batching.
         boolean hasSources = smr.params().stream().anyMatch(p -> p instanceof MethodRef.Param.Sourced);
         if (!hasSources) {
-            errors.add(new ValidationError(RejectionKind.AUTHOR_ERROR,
+            errors.add(new ValidationError(
                 field.qualifiedName(),
-                "Field '" + field.qualifiedName() + "': @service on a table-bound return type requires a Sources parameter for DataLoader batching",
+            Rejection.structural("Field '" + field.qualifiedName() + "': @service on a table-bound return type requires a Sources parameter for DataLoader batching"),
                 field.location()
             ));
             return;
@@ -778,20 +768,20 @@ public class GraphitronSchemaValidator {
         }
         TableRef parentTable = tbt.table();
         if (!parentTable.hasPrimaryKey()) {
-            errors.add(new ValidationError(RejectionKind.AUTHOR_ERROR,
+            errors.add(new ValidationError(
                 field.qualifiedName(),
-                "Field '" + field.qualifiedName() + "': @service on a table-bound return type requires the parent table '" + parentTable.tableName() + "' to have a primary key",
+            Rejection.structural("Field '" + field.qualifiedName() + "': @service on a table-bound return type requires the parent table '" + parentTable.tableName() + "' to have a primary key"),
                 field.location()
             ));
         }
     }
     private void validateServiceRecordField(no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         if (!field.joinPath().isEmpty()) {
-            errors.add(new ValidationError(RejectionKind.DEFERRED,
+            errors.add(new ValidationError(
                 field.qualifiedName(),
-                "Field '" + field.qualifiedName() + "': @service with a @reference path "
+            Rejection.deferred("Field '" + field.qualifiedName() + "': @service with a @reference path "
                     + "(condition-join lift form) is not yet supported — see "
-                    + "graphitron-rewrite/roadmap/service-record-field.md",
+                    + "graphitron-rewrite/roadmap/service-record-field.md", ""),
                 field.location()));
             return;
         }
@@ -806,9 +796,9 @@ public class GraphitronSchemaValidator {
     private void validateRecordLookupTableField(no.sikt.graphitron.rewrite.model.ChildField.RecordLookupTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
         if (field.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection) {
-            errors.add(new ValidationError(RejectionKind.INVALID_SCHEMA,
+            errors.add(new ValidationError(
                 field.qualifiedName(),
-                "Field '" + field.qualifiedName() + "': lookup fields must not return a connection",
+            Rejection.invalidSchema("Field '" + field.qualifiedName() + "': lookup fields must not return a connection"),
                 field.location()
             ));
         }
@@ -832,10 +822,10 @@ public class GraphitronSchemaValidator {
             no.sikt.graphitron.rewrite.model.FieldWrapper wrapper, String variantName,
             List<ValidationError> errors) {
         if (wrapper instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Single) {
-            errors.add(new ValidationError(RejectionKind.AUTHOR_ERROR,
+            errors.add(new ValidationError(
                 fieldName,
-                "Field '" + fieldName + "': " + variantName + " returns a single-cardinality value; "
-                    + "only list returns ('[T]') are supported in this release",
+            Rejection.structural("Field '" + fieldName + "': " + variantName + " returns a single-cardinality value; "
+                    + "only list returns ('[T]') are supported in this release"),
                 location));
         }
     }
@@ -843,11 +833,11 @@ public class GraphitronSchemaValidator {
 
     private void validateComputedField(no.sikt.graphitron.rewrite.model.ChildField.ComputedField field, List<ValidationError> errors) {
         if (!field.joinPath().isEmpty()) {
-            errors.add(new ValidationError(RejectionKind.DEFERRED,
+            errors.add(new ValidationError(
                 field.qualifiedName(),
-                "Field '" + field.qualifiedName() + "': @externalField with a @reference path "
+            Rejection.deferred("Field '" + field.qualifiedName() + "': @externalField with a @reference path "
                     + "(condition-join lift form) is not yet supported — see "
-                    + "graphitron-rewrite/roadmap/computed-field-with-reference.md",
+                    + "graphitron-rewrite/roadmap/computed-field-with-reference.md", ""),
                 field.location()));
             return;
         }
@@ -855,9 +845,9 @@ public class GraphitronSchemaValidator {
     }
     private void validatePropertyField(no.sikt.graphitron.rewrite.model.ChildField.PropertyField field, List<ValidationError> errors) {}
     private void validateMultitableReferenceField(no.sikt.graphitron.rewrite.model.ChildField.MultitableReferenceField field, List<ValidationError> errors) {
-        errors.add(new ValidationError(RejectionKind.INVALID_SCHEMA,
+        errors.add(new ValidationError(
             field.qualifiedName(),
-            "Field '" + field.qualifiedName() + "': @multitableReference is not supported in record-based output",
+            Rejection.invalidSchema("Field '" + field.qualifiedName() + "': @multitableReference is not supported in record-based output"),
             field.location()
         ));
     }
@@ -872,18 +862,16 @@ public class GraphitronSchemaValidator {
     }
     private void validateUnclassifiedType(no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType type, List<ValidationError> errors) {
         errors.add(new ValidationError(
-            RejectionKind.of(type.rejection()),
             type.name(),
-            "Type '" + type.name() + "': " + type.rejection().message(),
+            type.rejection().prefixedWith("Type '" + type.name() + "': "),
             type.location()
         ));
     }
 
     private void validateUnclassifiedField(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField field, List<ValidationError> errors) {
         errors.add(new ValidationError(
-            RejectionKind.of(field.rejection()),
             field.qualifiedName(),
-            "Field '" + field.qualifiedName() + "': " + field.rejection().message(),
+            field.rejection().prefixedWith("Field '" + field.qualifiedName() + "': "),
             field.location()
         ));
     }

@@ -293,26 +293,33 @@ public final class SplitRowsMethodEmitter {
     }
 
     /**
-     * Returns the reason why this {@link ChildField.SplitTableField} cannot be emitted as a
-     * working DataLoader rows method today — or empty if it is emittable. Shared between
-     * {@link #buildForSplitTable} (runtime stub) and
-     * {@code GraphitronSchemaValidator.validateVariantIsImplemented} (build-time error), so
-     * the two stay in lock-step. Moving a branch from here to a real emitter body must
-     * update this predicate in the same commit.
+     * Returns the reason why {@code field} cannot be emitted as a working DataLoader rows method
+     * today — or empty if it is emittable. Shared between this emitter (runtime stub) and
+     * {@code GraphitronSchemaValidator.validateVariantIsImplemented} (build-time error), so the
+     * two stay in lock-step. Moving a branch from here to a real emitter body must update this
+     * predicate in the same commit.
      *
-     * <p>The returned {@link Rejection.Deferred} carries an
-     * {@link Rejection.StubKey.EmitBlock} key tagging the specific shape so downstream tooling
+     * <p>Dispatches via the {@link no.sikt.graphitron.rewrite.model.ConditionJoinReportable}
+     * capability: the four ChildField variants that share the condition-join predicate
+     * ({@link ChildField.SplitTableField}, {@link ChildField.SplitLookupTableField},
+     * {@link ChildField.RecordTableField}, {@link ChildField.RecordLookupTableField}) all
+     * implement it; non-implementing variants fall through to {@code Optional.empty()}. The
+     * returned {@link Rejection.Deferred} carries an {@link Rejection.StubKey.EmitBlock} key
+     * tagging the per-variant {@link Rejection.EmitBlockReason} value so downstream tooling
      * (LSP fix-its, watch-mode formatter) can distinguish "intra-variant emit-block" from
      * "stubbed leaf class" without parsing prose.
      */
-    public static java.util.Optional<Rejection.Deferred> unsupportedReason(ChildField.SplitTableField stf) {
-        if (JoinPathEmitter.hasConditionJoin(stf.joinPath())) {
-            return java.util.Optional.of(emitBlock(
-                Rejection.EmitBlockReason.SPLIT_TABLE_FIELD_CONDITION_JOIN_STEP,
-                "@splitQuery '" + stf.qualifiedName() + "' with a condition-join step cannot be "
-                + "emitted until classification-vocabulary item 5 resolves condition-method target tables"));
+    public static java.util.Optional<Rejection.Deferred> unsupportedReason(no.sikt.graphitron.rewrite.model.GraphitronField field) {
+        if (!(field instanceof no.sikt.graphitron.rewrite.model.ConditionJoinReportable cjr)) {
+            return java.util.Optional.empty();
         }
-        return java.util.Optional.empty();
+        if (!JoinPathEmitter.hasConditionJoin(cjr.joinPath())) {
+            return java.util.Optional.empty();
+        }
+        return java.util.Optional.of(emitBlock(
+            cjr.emitBlockReason(),
+            cjr.displayLabel() + " '" + field.qualifiedName() + "' with a condition-join step cannot be "
+            + "emitted until classification-vocabulary item 5 resolves condition-method target tables"));
     }
 
     private static Rejection.Deferred emitBlock(Rejection.EmitBlockReason reason, String summary) {
@@ -333,24 +340,6 @@ public final class SplitRowsMethodEmitter {
             slf.name(), slf.rowsMethodName(), slf.returnType(),
             slf.joinPath(), slf.filters(), slf.batchKey(),
             slf.lookupMapping(), outputPackage, jooqPackage);
-    }
-
-    /**
-     * Split* sibling of {@link #unsupportedReason(ChildField.SplitTableField)}. Same contract:
-     * non-empty reason → field cannot be emitted today; empty → emittable.
-     *
-     * <p>Single-cardinality {@code @splitQuery @lookupKey} is rejected upstream at classifier
-     * time ({@code FieldBuilder}'s {@code hasSplitQuery && hasLookupKey} arm), so this emitter
-     * never sees a single-cardinality {@link ChildField.SplitLookupTableField}.
-     */
-    public static java.util.Optional<Rejection.Deferred> unsupportedReason(ChildField.SplitLookupTableField slf) {
-        if (JoinPathEmitter.hasConditionJoin(slf.joinPath())) {
-            return java.util.Optional.of(emitBlock(
-                Rejection.EmitBlockReason.SPLIT_LOOKUP_TABLE_FIELD_CONDITION_JOIN_STEP,
-                "@splitQuery @lookupKey '" + slf.qualifiedName() + "' with a condition-join step cannot be "
-                + "emitted until classification-vocabulary item 5 resolves condition-method target tables"));
-        }
-        return java.util.Optional.empty();
     }
 
     // -----------------------------------------------------------------------
@@ -381,26 +370,6 @@ public final class SplitRowsMethodEmitter {
             /* lookupMapping */ null, outputPackage, jooqPackage);
     }
 
-    /**
-     * Split* sibling of {@link #unsupportedReason(ChildField.SplitTableField)}. Same contract:
-     * non-empty reason → field cannot be emitted today; empty → emittable.
-     *
-     * <p>Single-cardinality is gated upstream by
-     * {@code GraphitronSchemaValidator.validateRecordParentSingleCardinalityRejected}
-     * (Invariant #10), so this helper only reports the condition-join shape; reaching the emitter
-     * with a single-cardinality {@link ChildField.RecordTableField} is a classifier / validator
-     * bug.
-     */
-    public static java.util.Optional<Rejection.Deferred> unsupportedReason(ChildField.RecordTableField rtf) {
-        if (JoinPathEmitter.hasConditionJoin(rtf.joinPath())) {
-            return java.util.Optional.of(emitBlock(
-                Rejection.EmitBlockReason.RECORD_TABLE_FIELD_CONDITION_JOIN_STEP,
-                "RecordTableField '" + rtf.qualifiedName() + "' with a condition-join step cannot be "
-                + "emitted until classification-vocabulary item 5 resolves condition-method target tables"));
-        }
-        return java.util.Optional.empty();
-    }
-
     // -----------------------------------------------------------------------
     // RecordLookupTableField
     // -----------------------------------------------------------------------
@@ -420,25 +389,6 @@ public final class SplitRowsMethodEmitter {
             rltf.lookupMapping(), outputPackage, jooqPackage);
     }
 
-    /**
-     * Split* sibling of {@link #unsupportedReason(ChildField.SplitTableField)}. Same contract:
-     * non-empty reason → field cannot be emitted today; empty → emittable.
-     *
-     * <p>Single-cardinality is gated upstream by
-     * {@code GraphitronSchemaValidator.validateRecordParentSingleCardinalityRejected}
-     * (Invariant #10), so this helper only reports the condition-join shape; reaching the emitter
-     * with a single-cardinality {@link ChildField.RecordLookupTableField} is a classifier /
-     * validator bug.
-     */
-    public static java.util.Optional<Rejection.Deferred> unsupportedReason(ChildField.RecordLookupTableField rltf) {
-        if (JoinPathEmitter.hasConditionJoin(rltf.joinPath())) {
-            return java.util.Optional.of(emitBlock(
-                Rejection.EmitBlockReason.RECORD_LOOKUP_TABLE_FIELD_CONDITION_JOIN_STEP,
-                "RecordLookupTableField '" + rltf.qualifiedName() + "' with a condition-join step cannot be "
-                + "emitted until classification-vocabulary item 5 resolves condition-method target tables"));
-        }
-        return java.util.Optional.empty();
-    }
 
     /**
      * Shared body emitter for list-cardinality Split* rows methods. For

@@ -469,13 +469,15 @@ class FieldBuilder {
                         Rejection.deferred(
                             "Single-cardinality @splitQuery requires a single-hop parent-holds-FK reference path; "
                             + "multi-hop paths are not yet supported on single cardinality",
-                            ChildField.SplitTableField.class));
+                            "", ChildField.SplitTableField.class));
                 }
                 return new no.sikt.graphitron.rewrite.model.ChildField.SplitTableField(
                     parentTypeName, name, location, returnType, referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination(), parentBatchKey);
             }
             if (returnType.wrapper() instanceof FieldWrapper.Connection) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.invalidSchema("@asConnection on inline (non-@splitQuery) TableField is not supported; add @splitQuery for batched connection semantics"));
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.directiveConflict(
+                    List.of("asConnection", "splitQuery"),
+                    "@asConnection on inline (non-@splitQuery) TableField is not supported; add @splitQuery for batched connection semantics"));
             }
             return new TableField(parentTypeName, name, location,
                 returnType, referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination());
@@ -550,13 +552,8 @@ class FieldBuilder {
             for (var nestedDef : graphQLObjectType.getFieldDefinitions()) {
                 var nested = classifyChildFieldOnTableType(nestedDef, elementTypeName, parentTableType, newExpanding);
                 if (nested instanceof UnclassifiedField unc) {
-                    String prefixed = "nested type '" + elementTypeName + "' field '" + nestedDef.getName() + "': " + unc.reason();
-                    Rejection rewrapped = switch (unc.rejection()) {
-                        case Rejection.AuthorError ignored   -> Rejection.structural(prefixed);
-                        case Rejection.InvalidSchema ignored -> Rejection.invalidSchema(prefixed);
-                        case Rejection.Deferred d            -> new Rejection.Deferred(prefixed, d.planSlug(), d.stubKey());
-                    };
-                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, rewrapped);
+                    String prefix = "nested type '" + elementTypeName + "' field '" + nestedDef.getName() + "': ";
+                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, unc.rejection().prefixedWith(prefix));
                 }
                 if (nested instanceof ChildField cf) {
                     nestedFields.add(cf);
@@ -1310,16 +1307,18 @@ class FieldBuilder {
         // so the user sees the no-longer-supported reason rather than a misleading "conflict with
         // @service" message when both directives are present.
         if (fieldDef.hasAppliedDirective(DIR_NOT_GENERATED)) {
-            return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.invalidSchema("@notGenerated is no longer supported. Remove the directive; fields must be fully described by the schema."));
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.directiveConflict(
+                List.of(DIR_NOT_GENERATED),
+                "@notGenerated is no longer supported. Remove the directive; fields must be fully described by the schema."));
         }
 
         // Detect conflicts among the child-field exclusive directives before the
         // @multitableReference early-return; that return would otherwise silently mask a
         // conflicting directive on the same field.
         if (!(parentType instanceof RootType)) {
-            String conflict = detectChildFieldConflict(fieldDef);
+            var conflict = detectChildFieldConflict(fieldDef);
             if (conflict != null) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.invalidSchema(conflict));
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, conflict);
             }
         }
 
@@ -2190,16 +2189,16 @@ class FieldBuilder {
             return classifyQueryField(fieldDef, parentTypeName);
         }
         return new UnclassifiedField(parentTypeName, fieldDef.getName(), locationOf(fieldDef), fieldDef,
-            Rejection.deferred("fields on '" + parentTypeName + "' (Subscription is not supported)"));
+            Rejection.deferred("fields on '" + parentTypeName + "' (Subscription is not supported)", ""));
     }
 
     private GraphitronField classifyQueryField(GraphQLFieldDefinition fieldDef, String parentTypeName) {
         String name = fieldDef.getName();
         SourceLocation location = locationOf(fieldDef);
 
-        String conflict = detectQueryFieldConflict(fieldDef);
+        var conflict = detectQueryFieldConflict(fieldDef);
         if (conflict != null) {
-            return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.invalidSchema(conflict));
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef, conflict);
         }
 
         if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
@@ -2329,7 +2328,9 @@ class FieldBuilder {
         SourceLocation location = locationOf(fieldDef);
 
         if (fieldDef.hasAppliedDirective(DIR_SERVICE) && fieldDef.hasAppliedDirective(DIR_MUTATION)) {
-            return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.invalidSchema("@" + DIR_SERVICE + ", @" + DIR_MUTATION + " are mutually exclusive"));
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.directiveConflict(
+                List.of(DIR_SERVICE, DIR_MUTATION),
+                "@" + DIR_SERVICE + ", @" + DIR_MUTATION + " are mutually exclusive"));
         }
 
         if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
@@ -2457,7 +2458,7 @@ class FieldBuilder {
      * so it may combine with {@code @service}, {@code @externalField}, {@code @tableMethod},
      * {@code @tableField}, or {@code @nodeId}. It is therefore not included in this check.
      */
-    private String detectChildFieldConflict(GraphQLFieldDefinition fieldDef) {
+    private Rejection.InvalidSchema.DirectiveConflict detectChildFieldConflict(GraphQLFieldDefinition fieldDef) {
         boolean hasMultitable    = fieldDef.hasAppliedDirective(DIR_MULTITABLE_REFERENCE);
         boolean hasService       = fieldDef.hasAppliedDirective(DIR_SERVICE);
         boolean hasExternalField = fieldDef.hasAppliedDirective(DIR_EXTERNAL_FIELD);
@@ -2472,20 +2473,23 @@ class FieldBuilder {
 
         if (slots <= 1) return null;
 
-        var names = new ArrayList<String>();
-        if (hasMultitable)    names.add("@" + DIR_MULTITABLE_REFERENCE);
-        if (hasService)       names.add("@" + DIR_SERVICE);
-        if (hasExternalField) names.add("@" + DIR_EXTERNAL_FIELD);
-        if (hasTableMethod)   names.add("@" + DIR_TABLE_METHOD);
-        if (hasNodeId)        names.add("@" + DIR_NODE_ID);
-        return String.join(", ", names) + " are mutually exclusive";
+        var bareNames = new ArrayList<String>();
+        var atNames = new ArrayList<String>();
+        if (hasMultitable)    { bareNames.add(DIR_MULTITABLE_REFERENCE); atNames.add("@" + DIR_MULTITABLE_REFERENCE); }
+        if (hasService)       { bareNames.add(DIR_SERVICE);              atNames.add("@" + DIR_SERVICE); }
+        if (hasExternalField) { bareNames.add(DIR_EXTERNAL_FIELD);       atNames.add("@" + DIR_EXTERNAL_FIELD); }
+        if (hasTableMethod)   { bareNames.add(DIR_TABLE_METHOD);         atNames.add("@" + DIR_TABLE_METHOD); }
+        if (hasNodeId)        { bareNames.add(DIR_NODE_ID);              atNames.add("@" + DIR_NODE_ID); }
+        return new Rejection.InvalidSchema.DirectiveConflict(
+            bareNames, String.join(", ", atNames) + " are mutually exclusive");
     }
 
     /**
-     * Returns a reason string when mutually exclusive query-field directives appear together
-     * ({@code @service}, {@code @lookupKey} on arguments, {@code @tableMethod}), or {@code null}.
+     * Returns a typed {@link Rejection.InvalidSchema.DirectiveConflict} when mutually exclusive
+     * query-field directives appear together ({@code @service}, {@code @lookupKey} on arguments,
+     * {@code @tableMethod}), or {@code null}.
      */
-    private String detectQueryFieldConflict(GraphQLFieldDefinition fieldDef) {
+    private Rejection.InvalidSchema.DirectiveConflict detectQueryFieldConflict(GraphQLFieldDefinition fieldDef) {
         boolean hasService     = fieldDef.hasAppliedDirective(DIR_SERVICE);
         boolean hasLookupKey   = hasLookupKeyAnywhere(fieldDef);
         boolean hasTableMethod = fieldDef.hasAppliedDirective(DIR_TABLE_METHOD);
@@ -2496,11 +2500,13 @@ class FieldBuilder {
 
         if (slots <= 1) return null;
 
-        var names = new ArrayList<String>();
-        if (hasService)     names.add("@" + DIR_SERVICE);
-        if (hasLookupKey)   names.add("@" + DIR_LOOKUP_KEY);
-        if (hasTableMethod) names.add("@" + DIR_TABLE_METHOD);
-        return String.join(", ", names) + " are mutually exclusive";
+        var bareNames = new ArrayList<String>();
+        var atNames = new ArrayList<String>();
+        if (hasService)     { bareNames.add(DIR_SERVICE);     atNames.add("@" + DIR_SERVICE); }
+        if (hasLookupKey)   { bareNames.add(DIR_LOOKUP_KEY);  atNames.add("@" + DIR_LOOKUP_KEY); }
+        if (hasTableMethod) { bareNames.add(DIR_TABLE_METHOD); atNames.add("@" + DIR_TABLE_METHOD); }
+        return new Rejection.InvalidSchema.DirectiveConflict(
+            bareNames, String.join(", ", atNames) + " are mutually exclusive");
     }
 
     private GraphitronField classifyChildFieldOnResultType(GraphQLFieldDefinition fieldDef, String parentTypeName,
@@ -2567,13 +2573,13 @@ class FieldBuilder {
                 // problem (parallel to interface-union dispatch).
                 case ServiceDirectiveResolver.Resolved.Result r ->
                     new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                        Rejection.deferredAt(
+                        Rejection.deferred(
                             "@service on a @record-typed parent is not yet supported; the batch key "
                             + "must be lifted through the parent chain to the rooted @table",
                             "service-record-field"));
                 case ServiceDirectiveResolver.Resolved.Scalar s ->
                     new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                        Rejection.deferredAt(
+                        Rejection.deferred(
                             "@service on a @record-typed parent is not yet supported; the batch key "
                             + "must be lifted through the parent chain to the rooted @table",
                             "service-record-field"));
@@ -2638,7 +2644,7 @@ class FieldBuilder {
                 var lift = liftToErrorsField(fieldDef, parentTypeName, p);
                 yield lift != null ? lift
                     : new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                        Rejection.deferred("@record type returning a polymorphic type is not yet supported"));
+                        Rejection.deferred("@record type returning a polymorphic type is not yet supported", ""));
             }
         };
     }
