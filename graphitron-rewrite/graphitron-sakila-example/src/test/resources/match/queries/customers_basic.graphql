@@ -1,0 +1,6 @@
+# All customers seeded by init.sql, with their first name. Every customer must surface.
+{
+    customers {
+        firstName
+    }
+}
