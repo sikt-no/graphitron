@@ -5,7 +5,7 @@ status: In Progress
 bucket: architecture
 priority: 7
 theme: mutations-errors
-depends-on: [mutations]
+depends-on: []
 ---
 
 # Error-handling parity: emit per-fetcher error channels from `@error`
@@ -27,9 +27,9 @@ This item ships as one piece: the model refactor, the classifier lift that unblo
 payload-shaped `errors` fields, the emission of per-package `ErrorRouter` and `ErrorMappings`
 helpers, the per-fetcher try/catch wrapper, and the override-retirement migration. Subsumes
 [`checked-exceptions-typed-errors.md`](checked-exceptions-typed-errors.md) (Backlog) per §4
-below. Independent of [`mutations.md`](mutations.md): the `Optional<ErrorChannel>` slot
-attaches to whatever field variants exist when this lands; new variants from `mutations.md`
-inherit the slot as they're added.
+below. Independent of the R22 mutation work (now shipped, see
+[`changelog.md`](changelog.md)): the `Optional<ErrorChannel>` slot attaches to whatever field
+variants exist when this lands; new variants inherit the slot as they're added.
 
 ---
 
@@ -806,7 +806,7 @@ in the runtime contract that would justify deferring queries.
    the top-level path (§3).
 3. The detection ignores the field's name; legacy convention is `errors:` but the rewrite keys
    off the structural relationship to `@error` types, not a hardcoded field name. This matches
-   how `mutations.md` keys off return-type shape rather than directive presence.
+   how the R22 mutation work keyed off return-type shape rather than directive presence.
 4. A payload with two `ErrorsField` children is rejected (`UnclassifiedField` on the second
    one): the runtime contract assumes one channel per fetcher body. The legacy fixture set
    has been audited and contains no payload with two error fields; the canonical
@@ -1584,10 +1584,10 @@ exception/violation class actually showed up.
 
 ## Relationship to neighbouring items
 
-- **[`mutations.md`](mutations.md)** (Spec, priority 9): no scheduling dependency in either
-  direction. The `Optional<ErrorChannel>` slot attaches to existing field variants when this
-  item lands; new variants from `mutations.md` (the `DmlTableField` family) inherit the slot
-  when they're added. Either order works.
+- **R22 mutation work** (now shipped, see [`changelog.md`](changelog.md)): no scheduling
+  dependency in either direction. The `Optional<ErrorChannel>` slot attaches to existing field
+  variants when this item lands; the `DmlTableField` family inherits the slot from the start.
+  Either order would have worked.
 - **[`checked-exceptions-typed-errors.md`](checked-exceptions-typed-errors.md)** (Backlog,
   priority 8) is subsumed by §4. Retire it when this plan moves to In Review.
 
@@ -1659,8 +1659,7 @@ in-scope / out-of-scope, so the spec phase has a concrete checklist.
 
 The pipeline-test set in `graphitron-test` covers each row above with one execution-test
 asserting the actual on-the-wire error shape; the per-row fixtures live in `graphitron-test`'s
-SDL alongside the mutation fixtures (the mutation-bodies fixture-gap closure in
-[`mutations.md`](mutations.md)).
+SDL alongside the mutation fixtures shipped under R22.
 
 ### New `graphitron-test` fixtures (to introduce with this item)
 
@@ -1997,8 +1996,9 @@ respective subsections, not here.)
 - **Generation-efficiency: matcher dedup.** Resolved via the per-package `ErrorMappings` class
   in §3. Each distinct channel gets one named `Mapping[]` constant; per-fetcher `MAPPINGS`
   fields reference it.
-- **Phase ordering with `mutations.md`.** Resolved by collapsing the phasing: this item ships
-  as a single change; `mutations.md` is independent. See "Implementation outline" near the top.
+- **Phase ordering with R22 (mutation work).** Resolved by collapsing the phasing: this item
+  ships as a single change; R22 was independent and shipped on its own track. See "Implementation
+  outline" near the top.
 - **Mixed unions.** Resolved as `UnclassifiedField` rejection ("not supported and not
   planned"); see §2b.
 - **`@error` Java class generation.** Resolved as developer-supplied (matches `@record` and

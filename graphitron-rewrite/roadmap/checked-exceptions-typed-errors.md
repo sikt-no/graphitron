@@ -5,7 +5,7 @@ status: Done
 bucket: architecture
 priority: 8
 theme: mutations-errors
-depends-on: [error-handling-parity, mutations]
+depends-on: [error-handling-parity]
 ---
 
 # Checked exceptions on `@service` / `@tableMethod` for typed GraphQL errors
