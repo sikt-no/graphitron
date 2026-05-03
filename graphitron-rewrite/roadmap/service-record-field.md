@@ -5,19 +5,19 @@ status: Spec
 bucket: stubs
 priority: 2
 theme: service
-depends-on: [service-rows-method-body]
+depends-on: []
 ---
 
 # Stub: scalar/`@record`-returning `@service` child field (`ServiceRecordField`)
 
-Phase A (variant lift, classification, `BatchKey` carrier, DataLoader registration, lambda + key-extraction emission, rows-method stub) shipped at `b9a6900` + `87a827d` + `f9bf585` + `85974ac` + Phase A close-out. The variant is in `IMPLEMENTED_LEAVES` and the schema validates cleanly; first-iteration rows-method body shipped under R32 at `befc156`, so end-to-end resolution against PostgreSQL works today (`GraphQLQueryTest.films_titleUppercase_resolvesViaServiceRecordFieldDataLoader`). R49 stays open as the umbrella for Phase B's remaining follow-ups (strict return-type validation lifted to Builder; element-shape conversion when the dev signs `Set<TableRecord>`; etc.), all of which are tracked under [`service-rows-method-body.md`](service-rows-method-body.md) (R32). The sections below preserve the original Phase A spec for historical context.
+Phase A (variant lift, classification, `BatchKey` carrier, DataLoader registration, lambda + key-extraction emission, rows-method stub) shipped at `b9a6900` + `87a827d` + `f9bf585` + `85974ac` + Phase A close-out. The variant is in `IMPLEMENTED_LEAVES` and the schema validates cleanly; first-iteration rows-method body shipped under R32 at `befc156`, so end-to-end resolution against PostgreSQL works today (`GraphQLQueryTest.films_titleUppercase_resolvesViaServiceRecordFieldDataLoader`). R49 stays open as the umbrella for Phase B's remaining follow-ups (strict return-type validation lifted to Builder; element-shape conversion when the dev signs `Set<TableRecord>`; etc.), all of which are tracked under R32 (shipped, see [`changelog.md`](changelog.md)). The sections below preserve the original Phase A spec for historical context.
 
 `ServiceRecordField` is structurally identical to `ServiceTableField` going in: same `BatchKey` machinery (List/Set container axis cross Row/Record key-shape axis), same `Sources` parameter shape on the developer's service method, same DataLoader plumbing (`newDataLoader` for positional, `newMappedDataLoader` for mapped). It diverges going out: `ServiceTableField` lifts the resulting `Record` into a Graphitron-projected query via `$fields()`, while `ServiceRecordField` returns the developer's value directly to graphql-java, which dispatches subfield resolution through normal wiring (default `PropertyDataFetcher` on backing-class accessors, or registered fetchers for further `@service` / `@table` chains).
 
 The track shipped in two phases:
 
 - **Phase A (shipped)**: classification, `BatchKey` on the variant, DataLoader registration, lambda + key-extraction emission, rows-method stub. The fetcher compiles and the schema validates; the rows method threw `UnsupportedOperationException` at request time until Phase B's first iteration landed.
-- **Phase B (first iteration shipped under R32)**: fill the rows-method body for both `ServiceTableField` and `ServiceRecordField`. Tracked under [`service-rows-method-body.md`](service-rows-method-body.md) (R32). The "call the developer's service and return the value" form for `ServiceRecordField` is the simpler of the two (no projection step), so it slotted cleanly into that follow-up. Open follow-ups in R32 cover the remaining edge shapes.
+- **Phase B (first iteration shipped under R32)**: fill the rows-method body for both `ServiceTableField` and `ServiceRecordField`. Tracked under R32 (shipped, see [`changelog.md`](changelog.md)). The "call the developer's service and return the value" form for `ServiceRecordField` is the simpler of the two (no projection step), so it slotted cleanly into that follow-up. Open follow-ups in R32 cover the remaining edge shapes.
 
 Scope guards: `@record`-typed parents (Site 1 in `FieldBuilder.classifyChildFieldOnResultType`) and non-empty `joinPath` are rejected with `DEFERRED` for now.
 
@@ -228,7 +228,7 @@ The fixture compiles and is reachable from the schema; Phase B fills the body.
 
 ## Out of scope
 
-- **Rows-method body** (Phase B): folded into [`service-rows-method-body.md`](service-rows-method-body.md) (R32). For `ServiceRecordField` the body shape is "call the developer's method, return the values directly" with no projection step, simpler than the `ServiceTableField` body. Both shapes share infrastructure (DSLContext local, arg-call emission via `ArgCallEmitter.buildMethodBackedCallArgs`, scatter-result-into-Map for positional variants), so they ship together.
+- **Rows-method body** (Phase B): folded into R32 (shipped, see [`changelog.md`](changelog.md)). For `ServiceRecordField` the body shape is "call the developer's method, return the values directly" with no projection step, simpler than the `ServiceTableField` body. Both shapes share infrastructure (DSLContext local, arg-call emission via `ArgCallEmitter.buildMethodBackedCallArgs`, scatter-result-into-Map for positional variants), so they ship together.
 - **`@record`-typed parents.** Site 1 in `FieldBuilder` returns `DEFERRED` for the scalar/record-return arms. The blocker is "what's the batch key when the parent is a `@record`?". The `@record` parent might itself be reachable via a `@table`-rooted chain whose terminal node has a derivable PK, but that's a separate design problem.
 - **`MutationServiceRecordField`.** Shipped under R22 (see [`changelog.md`](changelog.md)), unaffected by this track.
 - **Non-empty `joinPath`.** `DEFERRED` rejection on the validator surface; re-promote when a real schema needs the lift form.
