@@ -33,20 +33,23 @@ Stage 0 lands as the plan's first commit and is a rename + dependency rewire. Th
 
 | Today | Target |
 |---|---|
-| `graphitron-fixtures` (full module: `init.sql` covering `public`/`nodeidfixture`/`idreffixture`, three jOOQ codegen executions, tier annotations) | **`graphitron-sakila-db`** |
+| `graphitron-fixtures` (full module: `init.sql` covering `public`/`nodeidfixture`/`idreffixture`, three jOOQ codegen executions) | **`graphitron-sakila-db`** |
 | `graphitron-fixtures` (services + conditions + extensions: `FilmService`, `CategoryConditions`, `FilmExtensions`, `SampleQueryService`, ...) | **`graphitron-sakila-service`** |
 | `graphitron-test` (schema + query-to-database test coverage) | **`graphitron-sakila-example`** |
 | `graphitron-fixtures-codegen` | unchanged |
 
-The catalog module is named for its Sakila-flavored headline content; the two fixture sub-schemas (`nodeidfixture`, `idreffixture`) ride along inside `init.sql` and the jOOQ build emits all three from one Postgres instance. Tier annotations (`UnitTier` / `PipelineTier` / `CompilationTier` / `ExecutionTier`) are cross-cutting test infra; they live in `graphitron-sakila-db` because every consumer that needs tiers (`graphitron`, `graphitron-lsp`, the example itself) already depends on the catalog module. No separate tier-annotations artifact and no slim residual `graphitron-fixtures`. The `no.sikt.graphitron.rewrite.test.tier` package path stays the same, so import statements at consumer sites do not change.
+The catalog module is named for its Sakila-flavored headline content; the two fixture sub-schemas (`nodeidfixture`, `idreffixture`) ride along inside `init.sql` and the jOOQ build emits all three from one Postgres instance. No separate tier-annotations artifact and no slim residual `graphitron-fixtures`.
+
+Tier annotations (`UnitTier` / `PipelineTier` / `CompilationTier` / `ExecutionTier`) move from `graphitron-fixtures/src/main/java/.../test/tier/` to `graphitron/src/test/java/.../test/tier/`, and `graphitron`'s pom configures a test-jar (`maven-jar-plugin`'s `test-jar` goal). Today the only consumers are `graphitron` itself and `graphitron-test`; after the move `graphitron` uses them directly from its own test source root, and `graphitron-sakila-example` consumes them via `<type>test-jar</type><classifier>tests</classifier><scope>test</scope>` on its `graphitron` dep. The package path stays `no.sikt.graphitron.rewrite.test.tier`, so consumer import statements do not change. This keeps test-only annotations off the database catalog module's main classpath, which is what reading `graphitron-sakila-db`'s description out loud should suggest.
 
 `graphitron-sakila-service` depends on `graphitron-sakila-db` (services reference the generated jOOQ tables). `graphitron-sakila-example` depends on both, plus pulls `graphitron-sakila-service` onto the `graphitron-maven` plugin's codegen classpath via `<plugin><dependencies>` so `ServiceCatalog.reflectServiceMethod` can `Class.forName(...)` the service classes at generate-time (same wiring `graphitron-test` uses today).
 
-Dependents to update in the same commit (Maven `<dependency>` entries pointing at the old artifactIds):
+Dependents to update in the same commit:
 
 - `graphitron-rewrite/graphitron-lsp/pom.xml` (test scope): repoint at `graphitron-sakila-db`.
 - `graphitron-rewrite/graphitron-maven/src/it/basic-generate/pom.xml` (invoker IT, codegen-classpath): repoint at `graphitron-sakila-db`.
-- `graphitron-rewrite/graphitron/pom.xml` (test scope, consumed by `JooqCatalogNodeIdMetadataTest`, `NodeIdLeafResolverTest`, `JooqCatalogIdRefTest` for the `nodeidfixture` / `idreffixture` catalogs): repoint at `graphitron-sakila-db`.
+- `graphitron-rewrite/graphitron/pom.xml`: repoint the test-scope catalog dep at `graphitron-sakila-db` (consumed by `JooqCatalogNodeIdMetadataTest`, `NodeIdLeafResolverTest`, `JooqCatalogIdRefTest` for the `nodeidfixture` / `idreffixture` catalogs); add the `maven-jar-plugin` `test-jar` goal so other modules can consume tier annotations.
+- `graphitron-rewrite/graphitron-sakila-example/pom.xml`: replace the (former) `graphitron-fixtures` compile-scope dep with two narrower deps: `graphitron-sakila-db` (jOOQ catalog), `graphitron-sakila-service` (services on the codegen plugin classpath); add `<type>test-jar</type><classifier>tests</classifier><scope>test</scope>` to the existing `graphitron` test-scope dep so tier annotations resolve.
 - `graphitron-rewrite/pom.xml`: `<modules>` list now names `graphitron-sakila-db`, `graphitron-sakila-service`, `graphitron-sakila-example`.
 
 Stage 0 exit: `mvn -f graphitron-rewrite/pom.xml install -Plocal-db` builds clean against the new names; no behaviour change; commit subject reads `R67 Stage 0: split graphitron-fixtures into Sakila-named modules; rename graphitron-test`.
@@ -108,7 +111,7 @@ Stage 3 exit: docs land; `docs-site-asciidoc` build still passes; CI on `.adoc` 
 
 After the plan lands `graphitron-sakila-example` carries every test today's `graphitron-test` carries, plus three additions (Quarkus smoke, one approval worked example, one match worked example), plus `IdempotentWriterTest` relocated from `graphitron`. The two categories named in Stage 2 (query-to-database vs generator-internal) are the new contract: every future test addition picks a side, and the README explains the rule.
 
-Test tier annotations (`@UnitTier`, `@PipelineTier`, `@CompilationTier`, `@ExecutionTier`) carry through unchanged. The package path (`no.sikt.graphitron.rewrite.test.tier`) does not move with the rename, so no consumer's import statements change. The four-tier taxonomy in `testing.adoc` is unchanged; it already covers the case where execution-tier tests double as documentation.
+Test tier annotations (`@UnitTier`, `@PipelineTier`, `@CompilationTier`, `@ExecutionTier`) carry through unchanged at the source level. They relocate from `graphitron-fixtures`'s main source root to `graphitron`'s test source root (Stage 0 detail above); the package path stays `no.sikt.graphitron.rewrite.test.tier` so import statements do not change. The four-tier taxonomy in `testing.adoc` is unchanged; it already covers the case where execution-tier tests double as documentation.
 
 ## Out of scope
 
