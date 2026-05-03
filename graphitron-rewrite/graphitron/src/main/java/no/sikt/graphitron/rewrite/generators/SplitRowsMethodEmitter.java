@@ -168,7 +168,7 @@ public final class SplitRowsMethodEmitter {
                 "SplitRowsMethodEmitter prelude reached with unsupported BatchKey: "
                 + batchKey.getClass().getSimpleName());
         };
-        TypeName keyElement = GeneratorUtils.keyElementType(batchKey);
+        TypeName keyElement = batchKey.keyElementType();
 
         int parentRowArity = pkCols.size() + 1;
         if (parentRowArity > 22) {
@@ -954,7 +954,7 @@ public final class SplitRowsMethodEmitter {
      */
     private static MethodSpec buildRuntimeStub(String methodName, BatchKey batchKey,
             ReturnTypeRef.TableBoundReturnType returnType, String reason, String outputPackage) {
-        TypeName keyElement = GeneratorUtils.keyElementType(batchKey);
+        TypeName keyElement = batchKey.keyElementType();
         TypeName keysListType = ParameterizedTypeName.get(LIST, keyElement);
         TypeName valueType;
         if (returnType.wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection) {

@@ -1,5 +1,9 @@
 package no.sikt.graphitron.rewrite.model;
 
+import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.ParameterizedTypeName;
+import no.sikt.graphitron.javapoet.TypeName;
+
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -71,6 +75,48 @@ public sealed interface BatchKey
      * </ul>
      */
     String javaTypeName();
+
+    /**
+     * The JavaPoet {@link TypeName} for the DataLoader key element type corresponding to this
+     * variant. Pure function over the variant's column shape; the container axis (positional
+     * {@code List} vs. mapped {@code Set}) lives at each call site, not here.
+     *
+     * <ul>
+     *   <li>{@link RowKeyed} / {@link MappedRowKeyed} / {@link LifterRowKeyed} /
+     *       {@link AccessorRowKeyedSingle} / {@link AccessorRowKeyedMany} →
+     *       {@code RowN<A, B, ...>}</li>
+     *   <li>{@link RecordKeyed} / {@link MappedRecordKeyed} → {@code RecordN<A, B, ...>}</li>
+     * </ul>
+     */
+    default TypeName keyElementType() {
+        return switch (this) {
+            case RowKeyed rk                -> rowNType(rk.parentKeyColumns());
+            case MappedRowKeyed mrk         -> rowNType(mrk.parentKeyColumns());
+            case LifterRowKeyed lrk         -> rowNType(lrk.targetKeyColumns());
+            case AccessorRowKeyedSingle ars -> rowNType(ars.targetKeyColumns());
+            case AccessorRowKeyedMany arm   -> rowNType(arm.targetKeyColumns());
+            case RecordKeyed rk             -> recordNType(rk.parentKeyColumns());
+            case MappedRecordKeyed mrk      -> recordNType(mrk.parentKeyColumns());
+        };
+    }
+
+    private static TypeName rowNType(List<ColumnRef> keyColumns) {
+        if (keyColumns.isEmpty()) return ClassName.get("org.jooq", "Row");
+        ClassName rowNClass = ClassName.get("org.jooq", "Row" + keyColumns.size());
+        TypeName[] typeArgs = keyColumns.stream()
+            .map(c -> (TypeName) ClassName.bestGuess(c.columnClass()))
+            .toArray(TypeName[]::new);
+        return ParameterizedTypeName.get(rowNClass, typeArgs);
+    }
+
+    private static TypeName recordNType(List<ColumnRef> keyColumns) {
+        if (keyColumns.isEmpty()) return ClassName.get("org.jooq", "Record");
+        ClassName recordNClass = ClassName.get("org.jooq", "Record" + keyColumns.size());
+        TypeName[] typeArgs = keyColumns.stream()
+            .map(c -> (TypeName) ClassName.bestGuess(c.columnClass()))
+            .toArray(TypeName[]::new);
+        return ParameterizedTypeName.get(recordNClass, typeArgs);
+    }
 
     /**
      * Sub-hierarchy: keys whose columns name the parent-side PK/FK. The four catalog-resolvable

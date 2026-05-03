@@ -203,21 +203,11 @@ class TestServiceStub {
     // ===== R32 child-@service strict-return-type fixtures =====
 
     /**
-     * Child {@code @service} fixture exercising the positive arm of
+     * Child {@code @service} fixture exercising the rejection arm of
      * {@code ServiceDirectiveResolver.validateChildServiceReturnType}: a {@code @table}-bound
      * child field with a {@code List<Row1<Integer>>} Sources param + single cardinality
-     * structurally requires {@code List<org.jooq.Record>} per the rows-method shape. The
-     * declared return matches; classification proceeds.
-     */
-    public static java.util.List<org.jooq.Record> childServiceRowKeyedCorrectReturn(java.util.List<org.jooq.Row1<Integer>> keys) {
-        throw new UnsupportedOperationException();
-    }
-
-    /**
-     * Child {@code @service} fixture exercising the rejection arm of
-     * {@code ServiceDirectiveResolver.validateChildServiceReturnType}: same param shape as
-     * {@link #childServiceRowKeyedCorrectReturn} but declares {@code LanguageRecord} instead
-     * of the structurally-required {@code List<Record>}, so classification rejects.
+     * structurally requires {@code List<org.jooq.Record>} per the rows-method shape. This
+     * stub declares {@code LanguageRecord} instead, so classification rejects.
      */
     public static no.sikt.graphitron.rewrite.test.jooq.tables.records.LanguageRecord childServiceRowKeyedWrongReturn(java.util.List<org.jooq.Row1<Integer>> keys) {
         throw new UnsupportedOperationException();
