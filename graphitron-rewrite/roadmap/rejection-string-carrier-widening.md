@@ -37,8 +37,8 @@ this plan adds the carrier widenings so the typed values reach consumers.
    `BuildContext.java:1015-1016` (column-in-path-leg → `unknownColumn`).
 
 3. **`ArgumentRef.ScalarArg.UnboundArg.reason: String`** — single producer at
-   `FieldBuilder.java:849-852` (column on filter table). Called out as out of scope in R58 Phase
-   D. Widening to `rejection: Rejection` unlocks the `unknownColumn` migration.
+   `FieldBuilder.java:849-852` (column on filter table). Called out as out of scope in
+   R58 Phase D. Widening to `rejection: Rejection` unlocks the `unknownColumn` migration.
 
 4. **`EnumMappingResolver.EnumValidation.Mismatch(Rejection rejection)`** — the carrier already
    holds a `Rejection`, but the producer at `EnumMappingResolver.java:159-162` joins per-constant
