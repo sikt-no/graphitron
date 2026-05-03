@@ -1,7 +1,7 @@
 ---
 id: R67
 title: "Promote graphitron-test to graphitron-sakila-example (rename, Quarkus runtime, consumer test pattern)"
-status: In Progress
+status: In Review
 bucket: architecture
 theme: legacy-migration
 depends-on: []
@@ -62,13 +62,9 @@ Both worked examples are self-contained (each carries its own `@BeforeAll` Postg
 
 `mvn -f graphitron-rewrite/pom.xml test -Plocal-db` runs all 244 tests in `graphitron-sakila-example` (240 query-to-database / Quarkus smoke / generator-internal + 3 from the relocated `IdempotentWriterTest` + 2 worked examples - 1 since `IdempotentWriterTest` was already counted under graphitron in the previous baseline). `graphitron`'s test count drops by 3 (the `IdempotentWriterTest` move).
 
-## Stage 3: docs touch-up
+## Stage 3: docs touch-up — shipped
 
-- `docs/quick-start.adoc:21` and `:64` swap legacy-`graphitron-example` links for `graphitron-sakila-example`.
-- `docs/quick-start.adoc` adds one-paragraph mention that the example doubles as a consumer test pattern (with link to the example's README).
-- `graphitron-rewrite/docs/getting-started.adoc` adds a one-line "for a complete app and the recommended test setup, see the example module" pointer in the "Hello world" section.
-
-Stage 3 exit: docs land; `docs-site-asciidoc` build still passes; CI on `.adoc` paths green.
+`docs/quick-start.adoc` lines 21 and 64 repointed at `graphitron-sakila-example`; the "Working example" section grew a one-paragraph mention that the same module doubles as the recommended consumer test pattern, with a link to its README. `graphitron-rewrite/docs/getting-started.adoc` "Hello world" section gained a one-line pointer at the example module after the per-request-context worked example. `mvn -f graphitron-rewrite/pom.xml install -Plocal-db` (with the default `docs` profile on) renders both pages cleanly.
 
 ## Tests
 

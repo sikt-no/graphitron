@@ -18,7 +18,7 @@ This page is a high-level orientation. For the rewrite-side workflow with worked
 
 == Sample directive-annotated schema
 
-The https://github.com/sikt-no/graphitron/tree/main/graphitron-example[example project] uses the https://www.jooq.org/sakila[Sakila] database. A trimmed view:
+The https://github.com/sikt-no/graphitron/tree/claude/graphitron-rewrite/graphitron-rewrite/graphitron-sakila-example[example project] uses the https://www.jooq.org/sakila[Sakila] database. A trimmed view:
 
 [source,graphql]
 ----
@@ -61,7 +61,9 @@ After the build, you have generated DataFetchers, TypeResolvers, and supporting 
 
 == Working example
 
-https://github.com/sikt-no/graphitron/tree/main/graphitron-example[graphitron-example] is a complete working project: Sakila schema, GraphQL schema with directives, generated resolvers, and a Quarkus server that runs them.
+https://github.com/sikt-no/graphitron/tree/claude/graphitron-rewrite/graphitron-rewrite/graphitron-sakila-example[graphitron-sakila-example] is a complete working project: Sakila schema, GraphQL schema with directives, generated resolvers, and a Quarkus + JAX-RS server that runs them.
+
+The same module also doubles as the recommended **consumer test pattern**: the in-process query-to-database tests under `src/test/java/.../querydb/` build the schema via `Graphitron.buildSchema(...)`, instantiate a `GraphQL` engine, execute via graphql-java, and assert against a live PostgreSQL `DSLContext`. Two worked examples (one match-style, one approval-style) are templates you can copy. See the module's https://github.com/sikt-no/graphitron/tree/claude/graphitron-rewrite/graphitron-rewrite/graphitron-sakila-example/README.md[README] for which directories to copy and what each role looks like.
 
 == Where to next
 
