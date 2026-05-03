@@ -231,7 +231,7 @@ final class MutationInputResolver {
                 case ConditionResolver.ArgConditionResult.Rejected r ->
                     { return new Resolved.Rejected(Rejection.structural(r.message())); }
             }
-            var tia = new ArgumentRef.InputTypeArg.TableInputArg(
+            var tia = ArgumentRef.InputTypeArg.TableInputArg.of(
                 argName, argTypeName, nonNull, list, tit.table(), bindings, argCondition, tit.inputFields());
 
             if (foundTia != null) {
@@ -277,16 +277,8 @@ final class MutationInputResolver {
             return new Resolved.Rejected(Rejection.structural("@mutation(typeName: " + kind + ") requires at least one @lookupKey field in the input type"));
         }
 
-        if (kind == DmlKind.UPDATE) {
-            var lookupKeyNames = foundTia.fieldBindings().stream()
-                .map(InputColumnBinding.MapBinding::fieldName)
-                .collect(Collectors.toSet());
-            boolean hasNonLookupColumn = foundTia.fields().stream()
-                .filter(f -> f instanceof InputField.ColumnField)
-                .anyMatch(f -> !lookupKeyNames.contains(f.name()));
-            if (!hasNonLookupColumn) {
-                return new Resolved.Rejected(Rejection.structural("@mutation(typeName: UPDATE) has no non-@lookupKey fields to set"));
-            }
+        if (kind == DmlKind.UPDATE && foundTia.setFields().isEmpty()) {
+            return new Resolved.Rejected(Rejection.structural("@mutation(typeName: UPDATE) has no non-@lookupKey fields to set"));
         }
 
         if (kind.requiresPkCoverage()) {

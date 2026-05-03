@@ -210,6 +210,14 @@ public sealed interface ArgumentRef {
         /**
          * Input type with {@code @table}; fields resolve to columns on {@code inputTable}.
          * Used by composite-key lookups and by mutations.
+         *
+         * <p>{@code lookupKeyFields} / {@code setFields} are the typed partition of {@code fields}
+         * around {@code fieldBindings}: lookup-key-bound {@code ColumnField}s go in the first list,
+         * non-lookup-key {@code ColumnField}s in the second. The narrow element type expresses the
+         * mutation-arm guarantee (DML inputs admit only {@code Direct}-extracted {@code ColumnField};
+         * see {@code MutationInputResolver.resolveInput}); query-side TIAs simply contribute zero
+         * entries because {@code @lookupKey} only ever lands on a {@code ColumnField}. Construct
+         * via {@link #of} so the partition has a single derivation path.
          */
         record TableInputArg(
             String name,
@@ -219,8 +227,51 @@ public sealed interface ArgumentRef {
             TableRef inputTable,
             List<InputColumnBinding.MapBinding> fieldBindings,
             Optional<ArgConditionRef> argCondition,
-            List<InputField> fields
-        ) implements InputTypeArg {}
+            List<InputField> fields,
+            List<InputField.ColumnField> lookupKeyFields,
+            List<InputField.ColumnField> setFields
+        ) implements InputTypeArg {
+
+            public TableInputArg {
+                fieldBindings = List.copyOf(fieldBindings);
+                fields = List.copyOf(fields);
+                lookupKeyFields = List.copyOf(lookupKeyFields);
+                setFields = List.copyOf(setFields);
+            }
+
+            /**
+             * Factory: derives {@code lookupKeyFields} and {@code setFields} from {@code fields}
+             * and {@code fieldBindings}. Use this rather than the canonical constructor so the
+             * partition is computed once, in the model.
+             */
+            public static TableInputArg of(
+                String name,
+                String typeName,
+                boolean nonNull,
+                boolean list,
+                TableRef inputTable,
+                List<InputColumnBinding.MapBinding> fieldBindings,
+                Optional<ArgConditionRef> argCondition,
+                List<InputField> fields
+            ) {
+                var lookupNames = fieldBindings.stream()
+                    .map(InputColumnBinding.MapBinding::fieldName)
+                    .collect(java.util.stream.Collectors.toSet());
+                var lookupKeyFields = fields.stream()
+                    .filter(f -> f instanceof InputField.ColumnField)
+                    .map(f -> (InputField.ColumnField) f)
+                    .filter(cf -> lookupNames.contains(cf.name()))
+                    .toList();
+                var setFields = fields.stream()
+                    .filter(f -> f instanceof InputField.ColumnField)
+                    .map(f -> (InputField.ColumnField) f)
+                    .filter(cf -> !lookupNames.contains(cf.name()))
+                    .toList();
+                return new TableInputArg(
+                    name, typeName, nonNull, list, inputTable, fieldBindings,
+                    argCondition, fields, lookupKeyFields, setFields);
+            }
+        }
 
         /**
          * Input type without {@code @table}. Currently silently skipped unless paired with

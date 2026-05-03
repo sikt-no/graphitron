@@ -34,7 +34,7 @@ class MutationDeleteTableFieldValidationTest {
                         ClassName.get("fake.code.generated", "NodeIdEncoder"),
                         "encodeFilm",
                         List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Long")))),
-                new ArgumentRef.InputTypeArg.TableInputArg(
+                ArgumentRef.InputTypeArg.TableInputArg.of(
                     "in", "FilmKey", true, false,
                     new TableRef("film", "FILM", "Film", List.of()),
                     List.of(new InputColumnBinding.MapBinding(
