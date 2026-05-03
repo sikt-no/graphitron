@@ -124,9 +124,16 @@ Producers to migrate (each carries `(attempt, candidates)` typed at the construc
 - `BatchKeyLifterDirectiveResolver:179` (target column not on table) → `Rejection.unknownColumn`.
 - `BatchKeyLifterDirectiveResolver:237` (lifter method not on class) → `Rejection.unknownLifterMethod`.
 - `ServiceCatalog:185, 373, 469` (service method not on class) → `Rejection.unknownServiceMethod`.
+  These three sites build `ServiceReflectionResult(null, String)` today; the carrier
+  itself flattens the typed shape and gets re-wrapped into `Rejection.structural` at
+  three callers (`ServiceDirectiveResolver:144`, `TableMethodDirectiveResolver`,
+  `ConditionResolver`). Phase D widens `ServiceReflectionResult.failureReason` from
+  `String` to `Rejection` (or replaces the carrier with a sealed `Resolved`-shape) so
+  the typed `(attempt, candidates)` survives to the call sites that wrap it; each
+  caller's `Rejection.structural(...)` collapses to passing the rejection through.
 - `FieldBuilder:853` (column on filter table) → `Rejection.unknownColumn`.
-- `FieldBuilder:2799` (typename in `@nodeId`) → new `Rejection.unknownTypeName` factory.
-- `FieldBuilder:2843, 2873` (column on FK-resolved table) → `Rejection.unknownColumn`.
+- `FieldBuilder:3064` (typename in `@nodeId`) → new `Rejection.unknownTypeName` factory.
+- `FieldBuilder:3108, 3138` (column on FK-resolved table) → `Rejection.unknownColumn`.
 - `EnumMappingResolver:156` (enum constant not on Java class) → new
   `Rejection.unknownEnumConstant` factory.
 - `BuildContext:584` (FK SQL name) → `Rejection.unknownForeignKey`.
@@ -192,6 +199,12 @@ reason)`, threading the conflicting directive names as a typed `List<String>`. P
   structural-against-presence, not against another directive).
 - `FieldBuilder:476` (`@asConnection` on inline non-`@splitQuery` TableField) →
   `directiveConflict(List.of("asConnection", "splitQuery"), …)`.
+- `TypeBuilder:326` (`@table` / `@record` / `@error` pairwise mutually exclusive on the
+  same type, via `detectTypeDirectiveConflict` at `TypeBuilder:962`) →
+  `directiveConflict(present, …)` where `present` is the subset of `{"table", "record", "error"}`
+  the conflict-detector enumerated. Lift the helper's return type from `String` to
+  `Optional<Rejection.InvalidSchema.DirectiveConflict>` so the typed list reaches the call
+  site without a re-parse.
 
 After Phase F, audit remaining `Rejection.invalidSchema(prose)` call sites: any whose prose names
 two or more directives is a candidate to migrate. If the audit turns up no producer for
@@ -268,8 +281,9 @@ regardless: `deferred(summary, planSlug, fieldClass)` and `deferred(summary, pla
 
 ### Phase I — extend the lift to validator-side `ValidationError` construction
 
-~30 sites in `GraphitronSchemaValidator` and one site in `GraphitronSchemaBuilder.buildRecipeErrors`
-build `ValidationError(RejectionKind, ...)` directly. Lift them onto `Rejection`:
+~33 sites in `GraphitronSchemaValidator` and two sites in
+`GraphitronSchemaBuilder.buildRecipeErrors` (lines 594, 597) build
+`ValidationError(RejectionKind, ...)` directly. Lift them onto `Rejection`:
 
 ```java
 // Today
@@ -291,8 +305,8 @@ list, by writing `Rejection.unknownColumn(…)` instead of constructing the pros
 validator has no on-ramp to do this.
 
 The federation-recipe rewrap in `GraphitronSchemaBuilder.buildRecipeErrors` (`SchemaProblem` rewrap
-into `ValidationError`) follows the same pattern (`Rejection.invalidSchema(rewrapped)`) and migrates
-in the same phase.
+into `ValidationError`; both branches at lines 594 and 597) follows the same pattern
+(`Rejection.invalidSchema(rewrapped)`) and migrates in the same phase.
 
 ---
 
