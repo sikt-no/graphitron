@@ -1,0 +1,9 @@
+# All films, ordered by primary key (default order). The seed data is five rows with
+# stable titles; the approved JSON next to this file pins the exact expected response.
+{
+    films {
+        filmId
+        title
+        rating
+    }
+}

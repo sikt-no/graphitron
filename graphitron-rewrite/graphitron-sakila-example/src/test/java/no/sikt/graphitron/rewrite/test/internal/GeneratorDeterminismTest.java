@@ -1,4 +1,4 @@
-package no.sikt.graphitron.rewrite.test;
+package no.sikt.graphitron.rewrite.test.internal;
 
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.rewrite.RewriteContext;
