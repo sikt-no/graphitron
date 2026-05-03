@@ -2255,6 +2255,159 @@ class GraphitronSchemaBuilderTest {
         tc.assertions.accept(build(tc.sdl));
     }
 
+    // ===== Accessor-derived BatchKey classifier matrix (R60) =====
+
+    /**
+     * Classifier-level coverage for the auto-derivation that runs on {@code @record} parents
+     * whose backing class exposes a typed zero-arg accessor returning a concrete jOOQ
+     * {@code TableRecord} subtype. Pins the
+     * {@link no.sikt.graphitron.rewrite.FieldBuilder#deriveBatchKeyFromTypedAccessor} match
+     * rule across the cross-product corners: list-field × list / set accessor, single-field ×
+     * single accessor, ambiguous candidates, cardinality mismatches, and heterogeneous element
+     * types that fall through to the rewritten three-option AUTHOR_ERROR.
+     *
+     * <p>Backing-class fixtures live in
+     * {@link no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads}.
+     */
+    enum AccessorDerivedBatchKeyCase implements ClassificationCase {
+        ACCESSOR_ROWKEYED_MANY_LIST_FIELD_LIST_ACCESSOR(
+            "List field + list-of-TableRecord accessor → RecordTableField with AccessorRowKeyedMany(LIST)",
+            """
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Payload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads$ListPayload"}) {
+              films: [Film!]!
+            }
+            type Query { payload: Payload }
+            """,
+            schema -> {
+                var f = (RecordTableField) schema.field("Payload", "films");
+                assertThat(f.batchKey()).isInstanceOf(BatchKey.AccessorRowKeyedMany.class);
+                var arm = (BatchKey.AccessorRowKeyedMany) f.batchKey();
+                assertThat(arm.container()).isEqualTo(BatchKey.AccessorRowKeyedMany.Container.LIST);
+                assertThat(arm.accessor().methodName()).isEqualTo("films");
+                assertThat(arm.targetKeyColumns()).hasSize(1);
+                assertThat(arm.targetKeyColumns().get(0).sqlName()).isEqualTo("film_id");
+                assertThat(f.joinPath()).hasSize(1);
+                assertThat(f.joinPath().get(0)).isSameAs(arm.hop());
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
+        },
+
+        ACCESSOR_ROWKEYED_MANY_LIST_FIELD_SET_ACCESSOR(
+            "List field + set-of-TableRecord accessor → RecordTableField with AccessorRowKeyedMany(SET)",
+            """
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Payload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads$SetPayload"}) {
+              films: [Film!]!
+            }
+            type Query { payload: Payload }
+            """,
+            schema -> {
+                var f = (RecordTableField) schema.field("Payload", "films");
+                assertThat(f.batchKey()).isInstanceOf(BatchKey.AccessorRowKeyedMany.class);
+                var arm = (BatchKey.AccessorRowKeyedMany) f.batchKey();
+                assertThat(arm.container()).isEqualTo(BatchKey.AccessorRowKeyedMany.Container.SET);
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
+        },
+
+        ACCESSOR_ROWKEYED_SINGLE_SINGLE_FIELD_SINGLE_ACCESSOR(
+            "Single field + single-TableRecord accessor → RecordTableField with AccessorRowKeyedSingle",
+            """
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Payload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads$SinglePayload"}) {
+              film: Film
+            }
+            type Query { payload: Payload }
+            """,
+            schema -> {
+                var f = (RecordTableField) schema.field("Payload", "film");
+                assertThat(f.batchKey()).isInstanceOf(BatchKey.AccessorRowKeyedSingle.class);
+                var ars = (BatchKey.AccessorRowKeyedSingle) f.batchKey();
+                assertThat(ars.accessor().methodName()).isEqualTo("film");
+                assertThat(ars.targetKeyColumns()).hasSize(1);
+                assertThat(ars.targetKeyColumns().get(0).sqlName()).isEqualTo("film_id");
+                assertThat(f.joinPath()).hasSize(1);
+                assertThat(f.joinPath().get(0)).isSameAs(ars.hop());
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
+        },
+
+        ACCESSOR_ROWKEYED_REJECTS_AMBIGUOUS(
+            "Two accessors returning List<FilmRecord> for the same @table → UnclassifiedField (ambiguous)",
+            """
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Payload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads$AmbiguousListPayload"}) {
+              films: [Film!]!
+            }
+            type Query { payload: Payload }
+            """,
+            schema -> {
+                var unc = (UnclassifiedField) schema.field("Payload", "films");
+                assertThat(unc.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
+                assertThat(unc.reason()).contains("more than one typed accessor");
+                assertThat(unc.reason()).contains("films");
+                assertThat(unc.reason()).contains("getFilms");
+                assertThat(unc.reason()).contains("@batchKeyLifter");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
+        },
+
+        ACCESSOR_ROWKEYED_REJECTS_CARDINALITY_LIST_FIELD_SINGLE_ACCESSOR(
+            "List field + single-record accessor → UnclassifiedField (cardinality mismatch)",
+            """
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Payload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads$SingleAccessorOnListField"}) {
+              films: [Film!]!
+            }
+            type Query { payload: Payload }
+            """,
+            schema -> {
+                var unc = (UnclassifiedField) schema.field("Payload", "films");
+                assertThat(unc.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
+                assertThat(unc.reason()).contains("list field 'films'");
+                assertThat(unc.reason()).contains("returning a single record");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
+        },
+
+        ACCESSOR_ROWKEYED_REJECTS_HETEROGENEOUS_ELEMENT(
+            "Accessor element TableRecord doesn't match field's @table → falls through to three-option AUTHOR_ERROR",
+            """
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Payload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads$HeterogeneousElementPayload"}) {
+              films: Film
+            }
+            type Query { payload: Payload }
+            """,
+            schema -> {
+                var unc = (UnclassifiedField) schema.field("Payload", "films");
+                assertThat(unc.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
+                // Falls through to the rewritten three-option message; the typed-accessor and
+                // @batchKeyLifter and @table TableRecord options should all be named.
+                assertThat(unc.reason()).contains("typed accessor");
+                assertThat(unc.reason()).contains("@batchKeyLifter");
+                assertThat(unc.reason()).contains("typed jOOQ TableRecord");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
+        };
+
+        final String sdl;
+        final Consumer<GraphitronSchema> assertions;
+        AccessorDerivedBatchKeyCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
+            this.sdl = sdl;
+            this.assertions = assertions;
+        }
+        @Override public Set<Class<?>> variants() { return Set.of(); }
+        @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(AccessorDerivedBatchKeyCase.class)
+    void accessorDerivedBatchKeyClassification(AccessorDerivedBatchKeyCase tc) {
+        tc.assertions.accept(build(tc.sdl));
+    }
+
     // ===== ResultType backing-class classification =====
 
     enum ResultTypeCase implements ClassificationCase {
