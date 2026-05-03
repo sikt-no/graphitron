@@ -31,7 +31,10 @@ import java.util.List;
  *
  * <p>The federation grammar does not allow aliases, arguments, variables, dotted names,
  * hash-comments, or string/numeric values; this parser treats those as illegal characters or
- * unexpected tokens.
+ * unexpected tokens. Reusing
+ * {@link no.sikt.graphitron.rewrite.selection.GraphQLSelectionParser} would force defensive
+ * re-rejection of each constructs and couple us to whatever the selection parser grows in the
+ * future.
  */
 public final class FederationKeyFieldsParser {
 

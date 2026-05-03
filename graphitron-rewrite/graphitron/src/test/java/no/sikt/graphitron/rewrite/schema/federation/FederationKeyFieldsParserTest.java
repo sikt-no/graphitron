@@ -123,7 +123,8 @@ class FederationKeyFieldsParserTest {
 
     @Test
     void dottedFieldName_throws() {
-        // Federation grammar disallows dotted names.
+        // Federation grammar disallows dotted names; the existing GraphQLSelectionParser allows
+        // them and this is one of the reasons we don't reuse it.
         assertThatThrownBy(() -> FederationKeyFieldsParser.parse("owner.id"))
             .isInstanceOf(FederationKeyFieldsParser.ParseException.class)
             .hasMessageContaining("unexpected character")
