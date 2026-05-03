@@ -5,7 +5,7 @@ status: Spec
 bucket: architecture
 priority: 15
 theme: docs
-depends-on: [docs-site-asciidoc]
+depends-on: []
 ---
 
 # Diataxis user manual: absorb legacy README into the docs site
@@ -491,8 +491,12 @@ they run on string sets, not generated code.
 This plan is `R68`. Related items:
 
 - `R9` (`docs-site-asciidoc`, In Progress): provides the AsciiDoc build
-  and the deployment to GitHub Pages. R68 lives inside R9's site; R9 must
-  ship before R68's Phase 1 ships.
+  and the deployment to GitHub Pages. R9's content phases (1-4) have
+  shipped (`a4675bf`, `c38ea0f`, `562e732`, `aa3511e`); the deployed
+  site at `sikt-no.github.io/graphitron/` is the host R68 writes into.
+  R9's remaining phases (5a DNS cutover, 5b old-infra decommission) are
+  Sikt platform work and do not gate R68 — moving to a custom domain
+  doesn't change what we author. Hence `depends-on: []`, not R9.
 - `R67` (`rewrite-example-quarkus-jaxrs`, Spec): renames `graphitron-test`
   → `graphitron-sakila-example`, splits `graphitron-fixtures` into
   `graphitron-sakila-db` + `graphitron-sakila-service`, and adds a Quarkus
