@@ -164,10 +164,10 @@ class FetcherPipelineTest {
 
     // ===== @record parent — RecordLookupTableField =====
     //
-    // Backing class is the real jOOQ FilmRecord from graphitron-fixtures — a TableRecord
+    // Backing class is the real jOOQ FilmRecord from graphitron-sakila-db — a TableRecord
     // bound to "film", classifying the parent as JooqTableRecordType. This lets parsePath anchor on
     // the parent table and resolve the two-hop film → film_actor → actor path, matching the shape
-    // the execution tests exercise in graphitron-test.
+    // the execution tests exercise in graphitron-sakila-example.
 
     private static final String RECORD_LOOKUP_TABLE_SDL = """
             type Actor @table(name: "actor") { actorId: Int @field(name: "actor_id") }

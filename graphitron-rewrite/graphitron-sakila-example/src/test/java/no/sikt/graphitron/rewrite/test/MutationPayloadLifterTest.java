@@ -23,7 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * R1 Phase 2f: end-to-end execution test for the {@code @batchKeyLifter} directive.
  *
- * <p>The fixture shape lives in {@code graphitron-fixtures}: a Java-record payload
+ * <p>The fixture shape lives in {@code graphitron-sakila-service}: a Java-record payload
  * ({@code CreateFilmPayload(Integer languageId)}), a static lifter
  * ({@code CreateFilmPayloadLifter.liftLanguageId}), and a hand-rolled service that returns
  * three deterministic payloads with {@code languageId}s {@code [1, 2, 1]}. The schema wires

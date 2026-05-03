@@ -20,9 +20,9 @@ import java.util.List;
  *   <li>{@link #filmCount} — returns a scalar for {@code @service} with a non-table return.</li>
  * </ul>
  *
- * <p>Lives in {@code graphitron-fixtures} (not {@code graphitron-test}) because
- * the rewrite generator runs during {@code generate-sources} of the test module and needs
- * this class on its classpath; fixtures compile first.
+ * <p>Lives in {@code graphitron-sakila-service} (not {@code graphitron-sakila-example}) because
+ * the rewrite generator runs during {@code generate-sources} of the example module and needs
+ * this class on its classpath; the service module compiles first.
  */
 public final class SampleQueryService {
 

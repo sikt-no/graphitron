@@ -19,7 +19,7 @@ import no.sikt.graphitron.rewrite.test.tier.UnitTier;
  * Unit tests for {@link TypeClassGenerator}. Tests verify structural properties of the generated
  * TypeSpec (method names, return types, parameter signatures) — not the generated code body.
  * Code correctness is verified by compiling the generated output against real jOOQ classes in
- * the {@code graphitron-test} module.
+ * the {@code graphitron-sakila-example} module.
  */
 @UnitTier
 class TypeClassGeneratorTest {

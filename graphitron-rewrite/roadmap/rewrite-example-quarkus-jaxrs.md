@@ -1,7 +1,7 @@
 ---
 id: R67
 title: "Promote graphitron-test to graphitron-sakila-example (rename, Quarkus runtime, consumer test pattern)"
-status: Ready
+status: In Progress
 bucket: architecture
 theme: legacy-migration
 depends-on: []
@@ -27,32 +27,9 @@ Ship `graphitron-rewrite/graphitron-sakila-example/` as a Quarkus app that:
 
 End state: `docs/quick-start.adoc:21,64` repoint at `graphitron-sakila-example`, the legacy `graphitron-example/` becomes purely a courtesy reference for in-flight migrators, and the rewrite has a public answer to the "how do I test my schema" question.
 
-## Module restructure (Stage 0)
+## Module restructure (Stage 0) — shipped
 
-Stage 0 lands as the plan's first commit and is a rename + dependency rewire. The reactor still has one database, one `init.sql`, and one jOOQ codegen module (with the same three executions covering `public`, `nodeidfixture`, `idreffixture`); none of those are split. After Stage 0 the modules build identically; their names just say what they are.
-
-| Today | Target |
-|---|---|
-| `graphitron-fixtures` (full module: `init.sql` covering `public`/`nodeidfixture`/`idreffixture`, three jOOQ codegen executions) | **`graphitron-sakila-db`** |
-| `graphitron-fixtures` (services + conditions + extensions: `FilmService`, `CategoryConditions`, `FilmExtensions`, `SampleQueryService`, ...) | **`graphitron-sakila-service`** |
-| `graphitron-test` (schema + query-to-database test coverage) | **`graphitron-sakila-example`** |
-| `graphitron-fixtures-codegen` | unchanged |
-
-The catalog module is named for its Sakila-flavored headline content; the two fixture sub-schemas (`nodeidfixture`, `idreffixture`) ride along inside `init.sql` and the jOOQ build emits all three from one Postgres instance. No separate tier-annotations artifact and no slim residual `graphitron-fixtures`.
-
-Tier annotations (`UnitTier` / `PipelineTier` / `CompilationTier` / `ExecutionTier`) move from `graphitron-fixtures/src/main/java/.../test/tier/` to `graphitron/src/test/java/.../test/tier/`, and `graphitron`'s pom configures a test-jar (`maven-jar-plugin`'s `test-jar` goal). Today the only consumers are `graphitron` itself and `graphitron-test`; after the move `graphitron` uses them directly from its own test source root, and `graphitron-sakila-example` consumes them via `<type>test-jar</type><classifier>tests</classifier><scope>test</scope>` on its `graphitron` dep. The package path stays `no.sikt.graphitron.rewrite.test.tier`, so consumer import statements do not change. This keeps test-only annotations off the database catalog module's main classpath, which is what reading `graphitron-sakila-db`'s description out loud should suggest.
-
-`graphitron-sakila-service` depends on `graphitron-sakila-db` (services reference the generated jOOQ tables). `graphitron-sakila-example` depends on both, plus pulls `graphitron-sakila-service` onto the `graphitron-maven` plugin's codegen classpath via `<plugin><dependencies>` so `ServiceCatalog.reflectServiceMethod` can `Class.forName(...)` the service classes at generate-time (same wiring `graphitron-test` uses today). `-service`'s compile dep on `-db` carries the jOOQ catalog onto the plugin classpath transitively, so a single `<plugin><dependency>` on `-service` is enough; no separate `-db` entry needed there.
-
-Dependents to update in the same commit:
-
-- `graphitron-rewrite/graphitron-lsp/pom.xml` (test scope): repoint at `graphitron-sakila-db`.
-- `graphitron-rewrite/graphitron-maven/src/it/basic-generate/pom.xml` (invoker IT, codegen-classpath): repoint at `graphitron-sakila-db`.
-- `graphitron-rewrite/graphitron/pom.xml`: repoint the test-scope `graphitron-fixtures` dep at `graphitron-sakila-service`. Pipeline / generator tests (`FetcherPipelineTest`, `TypeFetcherGeneratorTest`, `ServiceFieldValidationTest`, `ErrorMappingsClassGeneratorTest`, `MappingsConstantNameDedupTest`) reference service-fixture classes (`FilmService`, `CreateFilmPayload`, ...) that Stage 0 moves into `-service`; that single dep transitively brings `-db` onto the test classpath (since `-service` declares `-db` at compile scope), which is what the catalog tests `JooqCatalogNodeIdMetadataTest`, `NodeIdLeafResolverTest`, `JooqCatalogIdRefTest` need for the `nodeidfixture` / `idreffixture` catalogs. Also add the `maven-jar-plugin` `test-jar` goal here so other modules can consume tier annotations.
-- `graphitron-rewrite/graphitron-sakila-example/pom.xml`: replace the (former) `graphitron-fixtures` compile-scope dep with two narrower deps: `graphitron-sakila-db` (jOOQ catalog), `graphitron-sakila-service` (services on the codegen plugin classpath); add `<type>test-jar</type><classifier>tests</classifier><scope>test</scope>` to the existing `graphitron` test-scope dep so tier annotations resolve.
-- `graphitron-rewrite/pom.xml`: `<modules>` list now names `graphitron-sakila-db`, `graphitron-sakila-service`, `graphitron-sakila-example`.
-
-Stage 0 exit: `mvn -f graphitron-rewrite/pom.xml install -Plocal-db` builds clean against the new names; no behaviour change; commit subject reads `R67 Stage 0: split graphitron-fixtures into graphitron-sakila-{db,service}; rename graphitron-test to graphitron-sakila-example`.
+Shipped as the plan's first implementation commit. The reactor went from `graphitron-fixtures` + `graphitron-test` to `graphitron-sakila-db` + `graphitron-sakila-service` + `graphitron-sakila-example`; tier annotations relocated to `graphitron`'s test source root and republished as a `tests` test-jar. The full reactor (`mvn -f graphitron-rewrite/pom.xml install -Plocal-db`) builds clean against the new names; the 238 tests in `graphitron-sakila-example` pass unchanged. In-repo references (`CLAUDE.md`, `.claude/web-environment.md`, `graphitron-rewrite/docs/{README,testing,rewrite-design-principles}.adoc`, six javadoc/code comments under `graphitron/src/test/`, `SampleQueryService` and `MutationPayloadLifterTest` javadoc) updated to the new names in the same commit.
 
 ## Stage 1: Quarkus runtime
 

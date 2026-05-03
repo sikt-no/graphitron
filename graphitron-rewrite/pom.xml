@@ -15,9 +15,10 @@
         <module>graphitron-javapoet</module>
         <module>graphitron</module>
         <module>graphitron-fixtures-codegen</module>
-        <module>graphitron-fixtures</module>
+        <module>graphitron-sakila-db</module>
+        <module>graphitron-sakila-service</module>
         <module>graphitron-maven</module>
-        <module>graphitron-test</module>
+        <module>graphitron-sakila-example</module>
         <module>graphitron-lsp</module>
         <module>roadmap-tool</module>
         <module>../docs</module>

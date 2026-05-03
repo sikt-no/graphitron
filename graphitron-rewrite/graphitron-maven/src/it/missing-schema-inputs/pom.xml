@@ -36,7 +36,7 @@
         <dependencies>
           <dependency>
             <groupId>no.sikt</groupId>
-            <artifactId>graphitron-fixtures</artifactId>
+            <artifactId>graphitron-sakila-db</artifactId>
             <version>@project.version@</version>
           </dependency>
         </dependencies>
