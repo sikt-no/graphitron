@@ -149,11 +149,13 @@ class GeneratorUtils {
      */
     static TypeName keyElementType(BatchKey batchKey) {
         return switch (batchKey) {
-            case BatchKey.RowKeyed rk           -> buildRowKeyType(rk.parentKeyColumns());
-            case BatchKey.MappedRowKeyed mrk    -> buildRowKeyType(mrk.parentKeyColumns());
-            case BatchKey.LifterRowKeyed lrk    -> buildRowKeyType(lrk.targetKeyColumns());
-            case BatchKey.RecordKeyed rk        -> buildRecordNKeyType(rk.parentKeyColumns());
-            case BatchKey.MappedRecordKeyed mrk -> buildRecordNKeyType(mrk.parentKeyColumns());
+            case BatchKey.RowKeyed rk                 -> buildRowKeyType(rk.parentKeyColumns());
+            case BatchKey.MappedRowKeyed mrk          -> buildRowKeyType(mrk.parentKeyColumns());
+            case BatchKey.LifterRowKeyed lrk          -> buildRowKeyType(lrk.targetKeyColumns());
+            case BatchKey.AccessorRowKeyedSingle ars  -> buildRowKeyType(ars.targetKeyColumns());
+            case BatchKey.AccessorRowKeyedMany arm    -> buildRowKeyType(arm.targetKeyColumns());
+            case BatchKey.RecordKeyed rk              -> buildRecordNKeyType(rk.parentKeyColumns());
+            case BatchKey.MappedRecordKeyed mrk       -> buildRecordNKeyType(mrk.parentKeyColumns());
         };
     }
 
@@ -176,13 +178,16 @@ class GeneratorUtils {
     }
 
     /**
-     * Emits the {@code RowN<...> key = ...} statement for a {@link ChildField.RecordTableField}
-     * DataFetcher, extracting the batch-key value(s) from the {@code @record} parent.
+     * Emits the {@code RowN<...> key = ...} (or {@code List<RowN<...>> keys = ...}) statement
+     * for a {@link ChildField.RecordTableField} DataFetcher, extracting the batch-key value(s)
+     * from the {@code @record} parent.
      *
      * <p>The narrowed parameter type is exhaustive over {@link BatchKey.RecordParentBatchKey}
-     * — the two permits ({@link BatchKey.RowKeyed} and {@link BatchKey.LifterRowKeyed}) are the
-     * only routes here. Mis-routing a {@code @service}-only permit ({@link BatchKey.RecordKeyed}
-     * et al.) is a compile error, not a runtime {@code IllegalStateException}.
+     * — the four permits ({@link BatchKey.RowKeyed}, {@link BatchKey.LifterRowKeyed},
+     * {@link BatchKey.AccessorRowKeyedSingle}, {@link BatchKey.AccessorRowKeyedMany}) are the
+     * only routes here. Mis-routing a {@code @service}-only permit
+     * ({@link BatchKey.RecordKeyed} et al.) is a compile error, not a runtime
+     * {@code IllegalStateException}.
      *
      * <p>{@link BatchKey.RowKeyed} arm reads from the parent's backing Java object via the
      * accessor per {@link GraphitronType.ResultType} variant:
@@ -195,6 +200,22 @@ class GeneratorUtils {
      *
      * <p>{@link BatchKey.LifterRowKeyed} arm calls the developer-supplied static lifter on the
      * parent's backing class: {@code Row1<Long> key = Lifters.method((BackingClass) env.getSource())}.
+     *
+     * <p>{@link BatchKey.AccessorRowKeyedSingle} arm reads a single concrete {@code TableRecord}
+     * from a typed instance accessor on the parent's backing class and projects it to the
+     * element table's PK columns: <pre>{@code
+     *   ElementRecord __elt = ((BackingClass) env.getSource()).<accessor>();
+     *   RowN<...> key = DSL.row(__elt.<pk1>(), __elt.<pk2>());
+     * }</pre>
+     *
+     * <p>{@link BatchKey.AccessorRowKeyedMany} arm reads a {@code List<X>} or {@code Set<X>}
+     * from the typed accessor and projects each element to a {@code RowN<...>} key, collecting
+     * the per-parent key list with the terminal collector chosen by the variant's
+     * {@link BatchKey.AccessorRowKeyedMany.Container} slot: <pre>{@code
+     *   List<RowN<...>> keys = ((BackingClass) env.getSource()).<accessor>().stream()
+     *       .map(__elt -> DSL.<RowN<...>>row(__elt.<pk1>(), __elt.<pk2>()))
+     *       .toList();   // .collect(Collectors.toSet()) for SET
+     * }</pre>
      */
     static CodeBlock buildRecordParentKeyExtraction(
             BatchKey.RecordParentBatchKey batchKey,
@@ -202,8 +223,10 @@ class GeneratorUtils {
             String jooqPackage) {
         TypeName keyType = keyElementType(batchKey);
         return switch (batchKey) {
-            case BatchKey.RowKeyed rk        -> buildFkRowKey(rk, keyType, resultType, jooqPackage);
-            case BatchKey.LifterRowKeyed lrk -> buildLifterRowKey(lrk, keyType, resultType);
+            case BatchKey.RowKeyed rk                -> buildFkRowKey(rk, keyType, resultType, jooqPackage);
+            case BatchKey.LifterRowKeyed lrk         -> buildLifterRowKey(lrk, keyType, resultType);
+            case BatchKey.AccessorRowKeyedSingle ars -> buildAccessorRowKeySingle(ars, keyType);
+            case BatchKey.AccessorRowKeyedMany arm   -> buildAccessorRowKeyMany(arm, keyType);
         };
     }
 
@@ -252,6 +275,66 @@ class GeneratorUtils {
         return CodeBlock.builder()
             .addStatement("$T key = $T.$L(($T) env.getSource())",
                 keyType, lifter.declaringClass(), lifter.methodName(), backingClass)
+            .build();
+    }
+
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "accessor-rowkey-shape-resolved",
+        reliesOn = "FieldBuilder.deriveBatchKeyFromTypedAccessor produces AccessorRowKeyedSingle "
+            + "only after reflection has confirmed the parent backing class, the accessor "
+            + "(name, zero-arg, non-bridge, non-synthetic, non-static), and the element class "
+            + "(extends TableRecord, mapped table identical to the field's @table return). The "
+            + "emitted body casts env.getSource() to the resolved backing class and invokes the "
+            + "accessor by name without instanceof guards or null checks; PK projection reads "
+            + "the column accessors on the element record by the catalog's javaName().")
+    private static CodeBlock buildAccessorRowKeySingle(
+            BatchKey.AccessorRowKeyedSingle ars, TypeName keyType) {
+        var accessor = ars.accessor();
+        ClassName backingClass = accessor.parentBackingClass();
+        ClassName elementClass = accessor.elementClass();
+        var rowArgs = CodeBlock.builder();
+        var pkCols = ars.targetKeyColumns();
+        for (int i = 0; i < pkCols.size(); i++) {
+            if (i > 0) rowArgs.add(", ");
+            rowArgs.add("__elt.$L()", toCamelCase(pkCols.get(i).sqlName()));
+        }
+        return CodeBlock.builder()
+            .addStatement("$T __elt = (($T) env.getSource()).$L()",
+                elementClass, backingClass, accessor.methodName())
+            .addStatement("$T key = $T.row($L)", keyType, DSL, rowArgs.build())
+            .build();
+    }
+
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "accessor-rowkey-shape-resolved",
+        reliesOn = "FieldBuilder.deriveBatchKeyFromTypedAccessor produces AccessorRowKeyedMany "
+            + "only after reflection has confirmed the parent backing class, the accessor "
+            + "(name, zero-arg, non-bridge, non-synthetic, non-static), and the element class "
+            + "(extends TableRecord, mapped table identical to the field's @table return). The "
+            + "emitted stream casts env.getSource() to the resolved backing class, invokes the "
+            + "accessor by name without instanceof guards or null checks, and projects each "
+            + "element to a RowN<...> via the catalog's javaName() accessors.")
+    private static CodeBlock buildAccessorRowKeyMany(
+            BatchKey.AccessorRowKeyedMany arm, TypeName keyType) {
+        var accessor = arm.accessor();
+        ClassName backingClass = accessor.parentBackingClass();
+        ClassName elementClass = accessor.elementClass();
+        TypeName keysListType = ParameterizedTypeName.get(LIST, keyType);
+        var rowArgs = CodeBlock.builder();
+        var pkCols = arm.targetKeyColumns();
+        for (int i = 0; i < pkCols.size(); i++) {
+            if (i > 0) rowArgs.add(", ");
+            rowArgs.add("__elt.$L()", toCamelCase(pkCols.get(i).sqlName()));
+        }
+        var terminal = arm.container() == BatchKey.AccessorRowKeyedMany.Container.SET
+            ? CodeBlock.of(".collect($T.toSet())", ClassName.get("java.util.stream", "Collectors"))
+            : CodeBlock.of(".toList()");
+        return CodeBlock.builder()
+            .add("$T keys = (($T) env.getSource()).$L().stream()\n",
+                keysListType, backingClass, accessor.methodName())
+            .add("    .map(($T __elt) -> $T.<$T>row($L))\n",
+                elementClass, DSL, keyType, rowArgs.build())
+            .add("    ").add(terminal).add(";\n")
             .build();
     }
 

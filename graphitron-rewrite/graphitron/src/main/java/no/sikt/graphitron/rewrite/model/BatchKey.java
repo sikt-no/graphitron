@@ -6,7 +6,7 @@ import java.util.stream.Collectors;
 /**
  * The batch-key strategy for a DataLoader SOURCES parameter.
  *
- * <p>Five permits across two axis sub-hierarchies:
+ * <p>Seven permits across two axis sub-hierarchies:
  *
  * <ul>
  *   <li>{@link ParentKeyed} (catalog-resolvable): {@link RowKeyed}, {@link RecordKeyed},
@@ -15,20 +15,24 @@ import java.util.stream.Collectors;
  *       shape ({@code RowN<...>} via {@code DSL.row(...)} vs. {@code RecordN<...>} via
  *       {@code record.into(...)}). Each variant exposes
  *       {@link ParentKeyed#parentKeyColumns()}: PK/FK columns on the parent side.</li>
- *   <li>{@link RecordParentBatchKey} ({@code @record}-parent permits): {@link RowKeyed} and
- *       {@link LifterRowKeyed}. Used as the parameter type for
- *       {@code GeneratorUtils.buildRecordParentKeyExtraction}; mis-routing a {@code @service}-only
- *       permit there is a compile error rather than a runtime
- *       {@code IllegalStateException}.</li>
+ *   <li>{@link RecordParentBatchKey} ({@code @record}-parent permits): {@link RowKeyed},
+ *       {@link LifterRowKeyed}, {@link AccessorRowKeyedSingle}, {@link AccessorRowKeyedMany}.
+ *       Used as the parameter type for {@code GeneratorUtils.buildRecordParentKeyExtraction};
+ *       mis-routing a {@code @service}-only permit there is a compile error rather than a
+ *       runtime {@code IllegalStateException}.</li>
  * </ul>
  *
  * <p>{@link RowKeyed} and {@link RecordKeyed} drive
  * {@code DataLoaderFactory.newDataLoader(BatchLoaderWithContext)};
  * {@link MappedRowKeyed} and {@link MappedRecordKeyed} drive
  * {@code DataLoaderFactory.newMappedDataLoader(MappedBatchLoaderWithContext)}.
- * {@link LifterRowKeyed} drives the same column-keyed DataLoader path as {@link RowKeyed}; only
- * the key-extraction call site (developer-supplied lifter) and the join-path identity
+ * {@link LifterRowKeyed} and {@link AccessorRowKeyedSingle} drive the same column-keyed
+ * DataLoader path as {@link RowKeyed}; the key-extraction call site (developer-supplied lifter
+ * vs. typed accessor on the parent backing class) and the join-path identity
  * ({@link JoinStep.LiftedHop} instead of {@link JoinStep.FkJoin}) differ.
+ * {@link AccessorRowKeyedMany} drives {@code loader.loadMany(keys, env)} with loader value type
+ * {@code Record} (one record per element-PK key); each parent contributes N keys via the
+ * accessor's {@code List<X>} / {@code Set<X>} return.
  *
  * <p>Side-aware accessors live on the sub-interfaces: {@link ParentKeyed#parentKeyColumns()}
  * for the four catalog variants; {@link LifterRowKeyed#targetKeyColumns()} for the lifter
@@ -85,14 +89,16 @@ public sealed interface BatchKey
 
     /**
      * Sub-hierarchy: keys produced for {@code @record} (non-table) parents. Permits
-     * {@link RowKeyed} (catalog FK on a record parent) and {@link LifterRowKeyed}
-     * (developer-supplied lifter). This is the input type for
-     * {@code GeneratorUtils.buildRecordParentKeyExtraction}; any future caller routing a
-     * {@link RecordKeyed} or mapped variant here is a compile error rather than a runtime
-     * {@code IllegalStateException}.
+     * {@link RowKeyed} (catalog FK on a record parent), {@link LifterRowKeyed}
+     * (developer-supplied lifter), {@link AccessorRowKeyedSingle} (auto-derived from a
+     * single-cardinality typed accessor on the parent backing class), and
+     * {@link AccessorRowKeyedMany} (auto-derived from a list / set typed accessor). This is
+     * the input type for {@code GeneratorUtils.buildRecordParentKeyExtraction}; any future
+     * caller routing a {@link RecordKeyed} or mapped variant here is a compile error rather
+     * than a runtime {@code IllegalStateException}.
      */
     sealed interface RecordParentBatchKey extends BatchKey
-            permits RowKeyed, LifterRowKeyed {}
+            permits RowKeyed, LifterRowKeyed, AccessorRowKeyedSingle, AccessorRowKeyedMany {}
 
     /**
      * Column-based batch key using {@code DSL.row()} key construction with a positional
@@ -178,6 +184,87 @@ public sealed interface BatchKey
         public String javaTypeName() {
             return containerType("List", "Row", hop.targetColumns());
         }
+    }
+
+    /**
+     * Column-based batch key for a single-cardinality child field on a {@code @record} parent
+     * whose backing class exposes a typed zero-arg instance accessor returning a single concrete
+     * jOOQ {@code TableRecord}. Auto-derived by
+     * {@code FieldBuilder.classifyChildFieldOnResultType} when no FK is available in the catalog
+     * but the parent class's accessor matches the field's {@code @table} return.
+     *
+     * <p>Drives {@code loader.load(key, env)}; loader value type is {@code Record}, identical
+     * to the single-field {@link RowKeyed} / {@link LifterRowKeyed} dispatch. Single-key
+     * variant; the join-path identity is {@link JoinStep.LiftedHop} (not {@link JoinStep.FkJoin}),
+     * so the rows-method prelude reads {@code targetTable} and {@code targetColumns}
+     * polymorphically through {@link JoinStep.WithTarget}.
+     *
+     * <p>Sibling of {@link AccessorRowKeyedMany} (list / set accessor) and {@link LifterRowKeyed}
+     * (developer-supplied static lifter producing a {@code RowN<...>}). The cardinality split
+     * between {@code Single} and {@code Many} is in the type system rather than a stored enum so
+     * the dispatch in {@code TypeFetcherGenerator.buildRecordBasedDataFetcher} reads variant
+     * identity, not a discriminator field.
+     */
+    record AccessorRowKeyedSingle(JoinStep.LiftedHop hop, AccessorRef accessor) implements RecordParentBatchKey {
+
+        /**
+         * Target-side key columns: the element table's PK. Delegates to
+         * {@code hop.targetColumns()}; the {@link JoinStep.LiftedHop} is the single source of
+         * truth so the DataLoader-key column tuple cannot diverge from the JOIN target columns.
+         */
+        public List<ColumnRef> targetKeyColumns() {
+            return hop.targetColumns();
+        }
+
+        @Override
+        public String javaTypeName() {
+            return containerType("List", "Row", hop.targetColumns());
+        }
+    }
+
+    /**
+     * Column-based batch key for a list-cardinality child field on a {@code @record} parent
+     * whose backing class exposes a typed zero-arg instance accessor returning {@code List<X>}
+     * or {@code Set<X>} for some concrete {@code X extends TableRecord}. Each parent contributes
+     * N keys (one per element); drives {@code loader.loadMany(keys, env)} with loader value type
+     * {@code Record}, so {@code loadMany} returns {@code CompletableFuture<List<Record>>} that
+     * already matches the list-field shape. The rows-method's batching contract is unchanged
+     * from the single-key sibling: it receives a {@code List<RowN>} (the union across parents)
+     * and returns one record per key.
+     *
+     * <p>{@link Container} disambiguates the terminal collector the emitter uses to materialise
+     * the per-parent key list ({@code .toList()} for {@code LIST}, {@code .collect(toSet())}
+     * for {@code SET}); the dispatch and rows-method shape are identical across the two cases.
+     * Per the {@code rewrite-design-principles.adoc} rule on sealed hierarchies vs enums, an
+     * enum is appropriate here because data shapes coincide and only one localised emit-time
+     * branch differs.
+     *
+     * <p>Auto-derived by {@code FieldBuilder.classifyChildFieldOnResultType} when no FK is
+     * available in the catalog but the parent class's list / set accessor matches the field's
+     * {@code @table} return. The classifier guarantees
+     * {@code field.returnType().wrapper().isList() == true} for every {@code AccessorRowKeyedMany}
+     * it produces (paired {@link no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck}
+     * key {@code accessor-rowkey-cardinality-matches-field}).
+     */
+    record AccessorRowKeyedMany(JoinStep.LiftedHop hop, AccessorRef accessor, Container container)
+            implements RecordParentBatchKey {
+
+        /**
+         * Target-side key columns: the element table's PK. Delegates to
+         * {@code hop.targetColumns()}; the {@link JoinStep.LiftedHop} is the single source of
+         * truth so the DataLoader-key column tuple cannot diverge from the JOIN target columns.
+         */
+        public List<ColumnRef> targetKeyColumns() {
+            return hop.targetColumns();
+        }
+
+        @Override
+        public String javaTypeName() {
+            return containerType("List", "Row", hop.targetColumns());
+        }
+
+        /** The container the parent's accessor returns: positional {@code List} or unordered {@code Set}. */
+        public enum Container { LIST, SET }
     }
 
     private static String containerType(String container, String shape, List<ColumnRef> cols) {
