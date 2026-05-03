@@ -26,7 +26,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R8` | Docs as an index into classification tests | Ready (deferred) | [plan](docs-as-index-into-tests.md) |
 | `R26` | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` <sub>blocked by: [graphitron-lsp](graphitron-lsp.md)</sub> | In Progress | [plan](retire-maven-plugin.md) |
 | `R18` | Java LSP rewrite + introspect retirement + `dev` goal | Ready | [plan](graphitron-lsp.md) |
-| `R68` | Diataxis user manual: absorb legacy README into the docs site <sub>blocked by: [docs-site-asciidoc](docs-site-asciidoc.md)</sub> | Spec | [plan](diataxis-user-manual.md) |
+| `R68` | Diataxis user manual: absorb legacy README into the docs site | Spec | [plan](diataxis-user-manual.md) |
 | `R9` | Fold graphitron.sikt.no into the Maven build (AsciiDoc + GitHub Pages) | In Progress | [plan](docs-site-asciidoc.md) |
 
 ---
@@ -136,7 +136,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R17` [**Annotated walkthrough of a generated file**](generated-output-walkthrough.md) — Backlog, cleanup, blocked by [docs-site-asciidoc](docs-site-asciidoc.md)
 - `R35` [**Class-level Javadoc and `package-info.java` sweep**](source-orientation-javadocs.md) — Backlog, cleanup
 - `R8` [**Docs as an index into classification tests**](docs-as-index-into-tests.md) — Ready
-- `R68` [**Diataxis user manual: absorb legacy README into the docs site**](diataxis-user-manual.md) — Spec, architecture, blocked by [docs-site-asciidoc](docs-site-asciidoc.md)
+- `R68` [**Diataxis user manual: absorb legacy README into the docs site**](diataxis-user-manual.md) — Spec, architecture
 - `R9` [**Fold graphitron.sikt.no into the Maven build (AsciiDoc + GitHub Pages)**](docs-site-asciidoc.md) — In Progress, architecture
 
 ### testing
