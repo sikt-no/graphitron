@@ -14,7 +14,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Plan |
 |---|---|---|---|
-| `R60` | Auto-derive BatchKey from typed TableRecord accessor on @record parents | In Review | [plan](auto-derive-batchkey-from-typed-record-accessor.md) |
 | `R49` | Stub: scalar/`@record`-returning `@service` child field (`ServiceRecordField`) <sub>blocked by: [service-rows-method-body](service-rows-method-body.md)</sub> | Spec | [plan](service-record-field.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
 | `R15` | Sweep doc drift between rewrite docs and `model/` taxonomy <sub>blocked by: [docs-site-asciidoc](docs-site-asciidoc.md)</sub> | Spec | [plan](fix-legacy-refs-in-rewrite-docs.md) |
@@ -41,6 +40,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 - `R5` [**Composite-key `@lookupKey` on list-of-input-object arguments**](composite-key-lookupkey.md): Add `ArgumentRef.CompositeLookupArg` carrying `(input-field-name, target-column)` pairs resolved from `@field(name:)` directives; `buildInputRowsMethod` already handles arbitrary-arity VALUES + JOIN.
 - `R57` [**FK-target argument @nodeId, JOIN-with-translation emission**](nodeid-fk-target-arg-join-translation.md): R40 shipped the simple direct-FK case for argument-level FK-target `@nodeId`: when the FK source columns positionally match the target NodeType's keyColumns, projectFilters emits `BodyParam.In` / `Eq` / `RowIn` / `RowEq` against `joinPath[0].sourceColumns()` directly, no JOIN required.
 - `R52` [**Lift lookup-vs-query operation taxonomy into the model**](lift-operation-taxonomy.md): R50 named the lookup-vs-query split as a documentation-level distinction without lifting it into the model. The distinction is real and structurally consequential: lookups carry a derived VALUES table with an `idx` column to preserve per-input-row identity, queries fold predicates into a WHERE with no input-row identity to track. Today the split is encoded only by variant identity (`LookupMapping` vs everything else) and routing decisions taken in individual generators.
+- `R65` [**Tighten accessor-derived BatchKey model and emitter coordination**](accessor-batchkey-emitter-tightening.md): > Six independent architectural cleanups surfaced during the R60 reviewer pass on `claude/r60-progress-1uXXe`. R60 shipped functionally correct: classifier auto-derivation, two new `BatchKey.RecordParentBatchKey` permits, paired load-bearing keys, end-to-end execution-tier coverage. These follow-ups tighten the model/emitter coordination so the new permits read with the same generation-thinking discipline as the existing four. Any of them can land independently; none is a release blocker.
 - `R46` [**Multi-tenant fan-out for `@service`**](service-multi-tenant-fanout.md): A custom resolver in a downstream Sikt project (`megVedLarested`) bypasses `@service` and writes the resolver by hand because the directive can't express what it needs: for each tenant the logged-in user belongs to, open a tenant-scoped `DSLContext`, fan out in parallel on the executor, drop nulls, return the union. The service method itself is GraphQL-free Java; what doesn't fit `@service` is the `ConnectionManager` lookup, the per-tenant `DSLContext` plumbing, and the `executor.allOf().join()` shape. _(blocked by [typed-context-value-registry](typed-context-value-registry.md))_
 - `R11` [**`DSLContext` on `@condition` / `@tableMethod` methods**](dslcontext-on-condition-tablemethod.md): Lift the `reflectTableMethod` gate. Requires `ArgCallEmitter` to walk `params()` instead of `callParams()` so the injected `DSLContext` lands at its declaration-index slot.
 - `R61` [**Emit Record1<T> instead of Row1<T> for single-column DataLoader keys**](emit-record1-keys-instead-of-row1.md): Split out from R32's open follow-ups. The framework currently emits `Row1<T>` keys for the `RowKeyed` and `MappedRowKeyed` `BatchKey` variants (single-column key from a `Sources` parameter typed as `Set<TableRecord>` / `List<TableRecord>` / `Set<Row1<T>>` / `List<Row1<T>>`). `Row1<T>` is jOOQ's SQL-expression type for tuple-IN comparisons against the database; it has no value accessor. A developer who signs `Set<Row1<Integer>> keys` cannot read each key's column value at the application side.
@@ -93,7 +93,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### service
 
-- `R60` [**Auto-derive BatchKey from typed TableRecord accessor on @record parents**](auto-derive-batchkey-from-typed-record-accessor.md) — In Review
 - `R49` [**Stub: scalar/`@record`-returning `@service` child field (`ServiceRecordField`)**](service-record-field.md) — Spec, stubs, blocked by [service-rows-method-body](service-rows-method-body.md)
 - `R54` [**Rename @externalField (parallel-support, deprecation, migration)**](rename-externalfield-directive.md) — Backlog, cleanup
 - `R45` [**Typed context-value registry for `@service`**](typed-context-value-registry.md) — Spec, architecture
@@ -120,6 +119,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R5` [**Composite-key `@lookupKey` on list-of-input-object arguments**](composite-key-lookupkey.md) — Backlog, architecture
 - `R42` [**Stub: `@reference` on a scalar (FK column) field (`ColumnReferenceField`)**](column-reference-on-scalar-field.md) — Backlog, stubs
 - `R43` [**Stub: `@tableMethod` with scalar/enum return (`TableMethodField`)**](tablemethod-scalar-return.md) — Backlog, stubs
+- `R65` [**Tighten accessor-derived BatchKey model and emitter coordination**](accessor-batchkey-emitter-tightening.md) — Backlog, architecture
 - `R16` [**`FkJoin` model cleanup: `JoinConditionRef` wrapper**](fkjoin-model-cleanup.md) — Backlog, cleanup
 - `R23` [**Multi-parent `NestingField` sharing: `TableField` arm**](nestingfield-multiparent-tablefield.md) — Spec
 - `R30` [**Selection parser audit**](selection-parser-audit.md) — Backlog, cleanup
