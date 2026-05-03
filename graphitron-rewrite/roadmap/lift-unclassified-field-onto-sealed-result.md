@@ -1,7 +1,7 @@
 ---
 id: R58
 title: "Make the typed `Rejection` hierarchy load-bearing across producers"
-status: Ready
+status: In Review
 bucket: architecture
 priority: 5
 theme: structural-refactor
@@ -10,23 +10,24 @@ depends-on: []
 
 # Make the typed `Rejection` hierarchy load-bearing across producers
 
-> R58 Phases 0–C (shipped) replaced the flat `(RejectionKind, String)` pair on
+> R58 Phases 0–D (shipped) replaced the flat `(RejectionKind, String)` pair on
 > [`UnclassifiedField`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/model/GraphitronField.java) /
 > [`UnclassifiedType`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/model/GraphitronType.java)
 > with a sealed
 > [`Rejection`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/model/Rejection.java)
-> hierarchy and threaded the typed shape through every resolver's `Resolved.Rejected` arm. The
-> structural seam is in place; what is missing is producer-side discipline. Most rejection sites
-> still construct `Rejection.structural(prose)` even when the typed shape is present at the call
-> site, and a parallel taxonomy in the validator bypasses `Rejection` entirely. This plan tracks
-> the walk through the producer set so the typed value is actually typed at the call site, not
-> flattened back into prose.
+> hierarchy, threaded the typed shape through every resolver's `Resolved.Rejected` arm, and
+> walked the direct candidate-hint producer set onto typed `AuthorError.UnknownName` factories.
+> What remains: (1) the deeper carrier widenings whose producers Phase D could not migrate without
+> changing intermediate carriers (`ParsedPath.errorMessage`, `InputFieldResolution.Unresolved.reason`,
+> `ArgumentRef.UnboundArg.reason`, the joined-string aggregation patterns in
+> `EnumMappingResolver` and `TypeBuilder`); (2) the directive-conflict, capability, stub-key, and
+> validator-side lifts (Phases E–I).
 
 ---
 
 ## Where we are
 
-R58 Phases 0–C landed:
+R58 Phases 0–D landed:
 
 - **Phase 0** (commit `7c10226b`): dropped `RejectionKind.INTERNAL_INVARIANT`; the single producer
   site at `FieldBuilder.classifyChildFieldOnTableType`'s nested-fields fallthrough became an
@@ -48,41 +49,46 @@ R58 Phases 0–C landed:
   `SplitRowsMethodEmitter.unsupportedReason` overloads lifted from `Optional<String>` to
   `Optional<Rejection.Deferred>` keyed by `EmitBlockReason`. Validator gate has one path for
   "deferred" regardless of channel.
+- **Phase D** (this commit): walked the direct candidate-hint producers onto typed
+  `AuthorError.UnknownName` factories. Added factories `unknownTypeName`, `unknownEnumConstant`,
+  `unknownNodeIdKeyColumn`, `unknownDmlKind` and the leaf-arm `prefixedWith(String)` instance
+  method. Widened `ServiceCatalog.ServiceReflectionResult` from `(MethodRef, String failureReason)`
+  to `(MethodRef, Rejection rejection)`; the four wrapper callers
+  (`ServiceDirectiveResolver`, `TableMethodDirectiveResolver`, `ConditionResolver`,
+  `ExternalFieldDirectiveResolver`) project the typed shape through `prefixedWith` so
+  `UnknownName.candidates` survives the caller-specific prose prefix. Migrated direct producers:
+  `BatchKeyLifterDirectiveResolver` (target column → `unknownColumn`; lifter method →
+  `unknownLifterMethod`), `FieldBuilder` (column on FK-resolved table → `unknownColumn`; column on
+  scalar field → `unknownColumn`; `@nodeId(typeName:)` → `unknownTypeName`;
+  `DmlKindResult.Unknown` → `unknownDmlKind`), `ServiceCatalog` (three method-not-found sites →
+  `unknownServiceMethod`). Audited `AttemptKind`: dropped `TABLE_METHOD`, `ARGUMENT_NAME`,
+  `FIELD_NAME` (no producers post-migration). New tests: `R58TypedRejectionPipelineTest`
+  exercises three migrated producers end-to-end (asserts typed `UnknownName` with non-empty
+  `candidates()` survives), `RejectionRenderingTest` extended with eight cases for new factories
+  + `prefixedWith` preservation across all four leaves.
 
 ## Where we should go
 
-A post-Phase-C audit found six places where the typed shape exists but the producer doesn't
-construct it, or where the typed shape over-promises. The diagnostic
+A post-Phase-D audit leaves five remaining items: the nested-rewrap loss (Phase E), the four
+secondary lifts in the original audit (Phases F–I), and a Phase D-bis follow-up for the
+candidate-hint producers whose carrier widening Phase D could not authorize. The diagnostic
 ([*Sub-taxonomies for resolution outcomes*](../docs/rewrite-design-principles.adoc)): a typed shape
 that isn't constructed at the call site is a sub-taxonomy on paper only; the load-bearing value
 lives at the producer end.
 
-1. **Most "unknown name" rejections still ship prose.** `AttemptKind` declares twelve values; the
-   `Rejection.unknownColumn` / `unknownServiceMethod` / `unknownLifterMethod` factories exist; only
-   `unknownTable` has multiple producers. Every other near-miss site
-   ([`BatchKeyLifterDirectiveResolver`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/BatchKeyLifterDirectiveResolver.java),
-   [`ServiceCatalog`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/ServiceCatalog.java),
-   [`FieldBuilder`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java),
-   [`EnumMappingResolver`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/EnumMappingResolver.java),
-   [`BuildContext`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/BuildContext.java),
-   [`TypeBuilder`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/TypeBuilder.java)) calls
-   `BuildContext.candidateHint(...)`, bakes the `"; did you mean: …"` suffix into a string, then
-   wraps as `Rejection.structural(prose)`. Downstream consumers cannot read `attempt` /
-   `candidates` because the producers re-stringify upstream.
-
-2. **The nested-rewrap site collapses `UnknownName` to `Structural`.** When
+1. **The nested-rewrap site collapses `UnknownName` to `Structural`.** When
    `FieldBuilder.classifyChildFieldOnTableType` rewraps a nested `UnclassifiedField`, the switch on
    the inner rejection matches the broad `Rejection.AuthorError` arm and discards `attempt` /
    `candidates` / `attemptKind`. Nesting is exactly when an LSP fix-it would still want the typed
    suggestions.
 
-3. **`InvalidSchema.DirectiveConflict` has zero producers.** The arm exists with `directives:
+2. **`InvalidSchema.DirectiveConflict` has zero producers.** The arm exists with `directives:
    List<String>` and a factory; no production site constructs one. Genuine directive-conflict sites
    (`@service` + `@mutation` mutually exclusive, `detectChildFieldConflict` /
    `detectQueryFieldConflict` results, `@asConnection` on inline TableField, `@notGenerated`
    removed) all use `Rejection.invalidSchema(prose)`.
 
-4. **`validateVariantIsImplemented` runs a 4-arm `instanceof` chain mirroring a per-variant
+3. **`validateVariantIsImplemented` runs a 4-arm `instanceof` chain mirroring a per-variant
    predicate.** `SplitRowsMethodEmitter.unsupportedReason` has four near-identical overloads, each
    running `JoinPathEmitter.hasConditionJoin(joinPath())` and returning a `Rejection.Deferred` keyed
    by an `EmitBlockReason` value matching variant identity. The variant *is* the discriminant;
@@ -90,7 +96,7 @@ lives at the producer end.
    "the same multi-arm switch recurs across multiple consumers" is a sign the resolver is
    under-specified.)
 
-5. **`StubKey.None` is a typed distinction with no consumer.** The arm's javadoc concedes that
+4. **`StubKey.None` is a typed distinction with no consumer.** The arm's javadoc concedes that
    validator paths treat `None` and `VariantClass` identically; `None` exists only for hypothetical
    LSP-fix-its that want to jump to the roadmap entry, and no such consumer exists today. Plus four
    overloaded `Rejection.deferred(...)` factories produce a 2x2 matrix where only three combinations
@@ -98,11 +104,41 @@ lives at the producer end.
    "audit at milestone boundaries which sub-taxonomies could collapse now that their forcing
    functions are visible.")
 
-6. **Validator-side `ValidationError` construction bypasses `Rejection`.** ~30 sites in
+5. **Validator-side `ValidationError` construction bypasses `Rejection`.** 33 sites in
    [`GraphitronSchemaValidator`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/GraphitronSchemaValidator.java)
-   and one site in `GraphitronSchemaBuilder.buildRecipeErrors` build `ValidationError(RejectionKind,
+   and two sites in `GraphitronSchemaBuilder.buildRecipeErrors` build `ValidationError(RejectionKind,
    ...)` directly. Two parallel taxonomies for the same concept; a near-miss check the validator
    adds tomorrow has no on-ramp to typed `UnknownName`.
+
+6. **Phase D-bis: candidate-hint producers behind String-carrier intermediates.** Phase D migrated
+   the producer sites whose immediate carrier is `Rejection`-bearing (or whose carrier the spec
+   authorized widening, namely `ServiceReflectionResult`). The remaining candidate-hint sites
+   produce *into* String-carrier intermediates that flatten the typed shape before it reaches a
+   `Rejection` consumer:
+   - [`BuildContext`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/BuildContext.java)`:584`
+     (FK SQL name) flows through `parsePathElement`'s `List<String> errors` accumulator into
+     `ParsedPath.errorMessage: String`. Migrating to `unknownForeignKey` requires widening
+     `ParsedPath.errorMessage` to `Rejection` and updating every `parsePath().hasError()` consumer.
+   - `BuildContext:877, 1013` (typename in `@nodeId`, column in path leg) flow through
+     `InputFieldResolution.Unresolved.reason: String`. Migrating to `unknownTypeName` /
+     `unknownColumn` requires widening that field to `Rejection`.
+   - [`FieldBuilder`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java)`:853`
+     (column on filter table) flows through `ArgumentRef.ScalarArg.UnboundArg.reason: String`.
+     Already called out as out of scope for Phase D in the original spec; surfaces here as part of
+     the same widening pattern.
+   - [`EnumMappingResolver`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/EnumMappingResolver.java)`:145, 156`
+     joins multiple per-constant misses into a single `Mismatch` with prose. Migrating to
+     `unknownEnumConstant` per miss requires widening `EnumValidation.Mismatch` to carry a
+     `List<Rejection>` (or splitting the carrier shape).
+   - [`TypeBuilder`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/TypeBuilder.java)`:403, 704`
+     accumulate per-key-column / per-input-field misses into `List<String>` then collapse to a
+     single `Structural`. Migrating to `unknownNodeIdKeyColumn` / `unknownColumn` per miss requires
+     the same shape-widening as the EnumMappingResolver case.
+
+   The Phase D factories (`unknownForeignKey`, `unknownTypeName`, `unknownEnumConstant`,
+   `unknownNodeIdKeyColumn`, `unknownColumn`) are already in place; Phase D-bis lifts the carriers
+   so the typed values reach a `Rejection` consumer. Each carrier widening is independently
+   shippable; pick whichever lights up the next downstream consumer first.
 
 The shape of the work: where R58 Phases A/B lifted *the carrier*, this plan lifts *the producers*.
 Each phase below is independently shippable; the byte-stable validator log surface holds at every
@@ -114,71 +150,36 @@ boundary.
 
 ### Phase D — lift the candidate-hint producers onto `UnknownName`
 
-Move every `BuildContext.candidateHint(attempt, candidates)`-using producer onto a typed
-`AuthorError.UnknownName` factory. The Levenshtein sort and `"; did you mean: …"` formatting
-already live on `Rejection`'s private renderer (mirrored from `BuildContext.candidateHint` for
-byte-stability); the migration replaces the prose-with-baked-in-suffix call with a factory call.
-
-Producers to migrate (each carries `(attempt, candidates)` typed at the construction site today):
-
-- `BatchKeyLifterDirectiveResolver:179` (target column not on table) → `Rejection.unknownColumn`.
-- `BatchKeyLifterDirectiveResolver:237` (lifter method not on class) → `Rejection.unknownLifterMethod`.
-- `ServiceCatalog:185, 373, 469` (service method not on class) → `Rejection.unknownServiceMethod`.
-  These three sites build `ServiceReflectionResult(null, String)` today; the carrier
-  itself flattens the typed shape and gets re-wrapped into `Rejection.structural` at
-  three callers (`ServiceDirectiveResolver:144`, `TableMethodDirectiveResolver`,
-  `ConditionResolver`). Phase D widens `ServiceReflectionResult.failureReason` from
-  `String` to `Rejection` (or replaces the carrier with a sealed `Resolved`-shape) so
-  the typed `(attempt, candidates)` survives to the call sites that wrap it; each
-  caller's `Rejection.structural(...)` collapses to passing the rejection through.
-- `FieldBuilder:853` (column on filter table) → `Rejection.unknownColumn`.
-- `FieldBuilder:3064` (typename in `@nodeId`) → new `Rejection.unknownTypeName` factory.
-- `FieldBuilder:3108, 3138` (column on FK-resolved table) → `Rejection.unknownColumn`.
-- `EnumMappingResolver:156` (enum constant not on Java class) → new
-  `Rejection.unknownEnumConstant` factory.
-- `BuildContext:584` (FK SQL name) → `Rejection.unknownForeignKey`.
-- `BuildContext:877` (typename in `@nodeId`) → `Rejection.unknownTypeName`.
-- `BuildContext:1013` (column in path leg) → `Rejection.unknownColumn`.
-- `TypeBuilder:403` (key column in `@node`) → new `Rejection.unknownNodeIdKeyColumn` factory.
-- `TypeBuilder:704` (input field column) → `Rejection.unknownColumn`.
-- `MutationInputResolver.DmlKindResult.Unknown` (raw `@mutation(typeName:)` value) → new
-  `Rejection.unknownDmlKind` factory; the candidate set is the `DmlKind` enum's values.
-
-`BuildContext:594` (path source-table name resolved against a 2-element list) is technically a
-`candidateHint` site but the candidate set is hand-rolled, not cataloged; treat as `Structural`,
-not `UnknownName`. Document the exception as a comment at the call site.
-
-Add factories: `unknownTypeName`, `unknownEnumConstant`, `unknownNodeIdKeyColumn`, `unknownDmlKind`.
-After migration, audit `AttemptKind`: drop values without a producer. Today's unused candidates
-are `TABLE_METHOD`, `ARGUMENT_NAME`, `FIELD_NAME` unless a producer surfaces during migration; the
-post-migration enum is the closed set of lookup spaces the catalog actually serves.
-
-The point of Phase D is not the rendered prose (byte-stable by construction) but threading typed
-candidate lists out of the producer site. Phase D unlocks the LSP fix-it shape R18 plans to consume
-without R18 having to re-derive candidates by re-running the classifier.
+Shipped (this commit). Migrated the producer sites whose immediate carrier accepts a `Rejection`
+or whose carrier widening Phase D authorized: `BatchKeyLifterDirectiveResolver:179, 237`,
+`ServiceCatalog:185, 373, 469` (via widening `ServiceReflectionResult.failureReason: String` →
+`rejection: Rejection`), `FieldBuilder:3064, 3108, 3138, 2357`. Added factories
+`unknownTypeName`, `unknownEnumConstant`, `unknownNodeIdKeyColumn`, `unknownDmlKind` and the
+leaf-arm `prefixedWith(String)` instance method on `Rejection` (used by the four wrapper sites
+that thread caller-specific prose onto `ServiceReflectionResult.rejection`). Audited
+`AttemptKind`; dropped `TABLE_METHOD`, `ARGUMENT_NAME`, `FIELD_NAME`. The remaining
+candidate-hint producers (`BuildContext:584, 877, 1013`, `FieldBuilder:853`,
+`EnumMappingResolver:145, 156`, `TypeBuilder:403, 704`) all funnel into String-carrier
+intermediates whose widening was not in Phase D's scope; they are tracked as Phase D-bis above.
 
 ### Phase E — preserve `UnknownName` through the nested-rewrap site
 
 `FieldBuilder.classifyChildFieldOnTableType` rewraps a nested `UnclassifiedField` by switching on
 the broad sub-arm. On `AuthorError`, the rewrap collapses to `Rejection.structural(prefixed)` and
-drops any inner `UnknownName.{attempt, candidates, attemptKind}`. Lift the rewrap to the leaf-arm
-switch:
+drops any inner `UnknownName.{attempt, candidates, attemptKind}`. Phase D added a leaf-arm
+`prefixedWith(String)` instance method on `Rejection` that preserves typed components by
+construction; Phase E rewrites the rewrap to use it. The current site builds a
+`prefixed` summary as `parentPrefix + ": " + unc.reason()` (where the parent prefix names the
+parent type plus nesting depth); after Phase E the same prefix prepends through `prefixedWith`:
 
 ```java
-Rejection rewrapped = switch (unc.rejection()) {
-    case Rejection.AuthorError.UnknownName u ->
-        new Rejection.AuthorError.UnknownName(prefixed, u.attemptKind(), u.attempt(), u.candidates());
-    case Rejection.AuthorError.Structural ignored      -> Rejection.structural(prefixed);
-    case Rejection.InvalidSchema.DirectiveConflict d   ->
-        new Rejection.InvalidSchema.DirectiveConflict(d.directives(), prefixed);
-    case Rejection.InvalidSchema.Structural ignored    -> Rejection.invalidSchema(prefixed);
-    case Rejection.Deferred d -> new Rejection.Deferred(prefixed, d.planSlug(), d.stubKey());
-};
+String parentPrefix = "in nested type '" + tableType.name() + "': ";
+Rejection rewrapped = unc.rejection().prefixedWith(parentPrefix);
 ```
 
 The rewrap preserves the inner variant's typed components and re-projects the user-facing prose
-under the prefixed summary. Same shape as Phase A's existing handling for `Deferred` (planSlug +
-stubKey already preserved); Phase E generalises that pattern to the other two top-level arms.
+under the prefixed summary. The five-arm `switch` in the original spec compiles down to this
+single line because `prefixedWith` already implements the leaf-arm projection.
 
 Pipeline-tier coverage: a nested-field unknown-column rejection asserts the rewrapped
 `UnclassifiedField`'s rejection still pattern-matches `Rejection.AuthorError.UnknownName` and the
@@ -319,9 +320,12 @@ scope.
 
 New per-phase coverage:
 
-- **Phase D.** A pipeline test per migrated factory class asserts that an unknown-name rejection
-  on a representative SDL site carries `Rejection.AuthorError.UnknownName` with a non-empty
-  `candidates()` list, not just the rendered hint in prose.
+- **Phase D.** Shipped: `R58TypedRejectionPipelineTest` covers `unknownColumn` (FieldBuilder),
+  `unknownTypeName` (FieldBuilder `@nodeId(typeName:)`), and `unknownServiceMethod` (the four-wrapper
+  prefix-prose path through `prefixedWith`); each asserts the rejection pattern-matches
+  `Rejection.AuthorError.UnknownName` with a non-empty `candidates()` list. `RejectionRenderingTest`
+  extended with eight model-tier cases for the new factories and `prefixedWith` preservation across
+  every leaf.
 - **Phase E.** A nested-field unknown-column case (a column miss inside a `NestingField`'s inner
   classification) asserts the rewrapped rejection still pattern-matches `UnknownName` and the
   candidate list survives.

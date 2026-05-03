@@ -176,10 +176,11 @@ final class BatchKeyLifterDirectiveResolver {
             if (columnEntry.isEmpty()) {
                 List<String> candidates = ctx.catalog.allColumnsOf(targetTable.tableName())
                     .stream().map(JooqCatalog.ColumnEntry::sqlName).toList();
-                return new Resolved.Rejected(Rejection.structural("@batchKeyLifter on '" + parentTypeName + "." + fieldName
+                return new Resolved.Rejected(Rejection.unknownColumn(
+                    "@batchKeyLifter on '" + parentTypeName + "." + fieldName
                     + "': target column '" + columnName + "' not found on table '"
-                    + targetTable.tableName() + "'"
-                    + BuildContext.candidateHint(columnName, candidates)));
+                    + targetTable.tableName() + "'",
+                    columnName, candidates));
             }
             var ce = columnEntry.get();
             targetColumns.add(new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass()));
@@ -234,10 +235,11 @@ final class BatchKeyLifterDirectiveResolver {
                     candidates.add(m.getName());
                 }
             }
-            return new Resolved.Rejected(Rejection.structural("@batchKeyLifter on '" + parentTypeName + "." + fieldName
+            return new Resolved.Rejected(Rejection.unknownLifterMethod(
+                "@batchKeyLifter on '" + parentTypeName + "." + fieldName
                 + "': no static method named '" + lifterMethodName + "' on class '"
-                + lifterClassName + "'"
-                + BuildContext.candidateHint(lifterMethodName, candidates)));
+                + lifterClassName + "'",
+                lifterMethodName, candidates));
         }
         if (namedMethods.size() > 1) {
             return new Resolved.Rejected(Rejection.structural("@batchKeyLifter on '" + parentTypeName + "." + fieldName

@@ -19,7 +19,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R15` | Sweep doc drift between rewrite docs and `model/` taxonomy <sub>blocked by: [docs-site-asciidoc](docs-site-asciidoc.md)</sub> | Spec | [plan](fix-legacy-refs-in-rewrite-docs.md) |
 | `R3` | Classification vocabulary follow-ups | Spec | [plan](classification-vocabulary-followups.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
-| `R58` | Make the typed `Rejection` hierarchy load-bearing across producers | Ready | [plan](lift-unclassified-field-onto-sealed-result.md) |
+| `R58` | Make the typed `Rejection` hierarchy load-bearing across producers | In Review | [plan](lift-unclassified-field-onto-sealed-result.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec | [plan](nestingfield-multiparent-tablefield.md) |
 | `R32` | Implement `@service` rows-method body | In Review | [plan](service-rows-method-body.md) |
 | `R13` | Faceted search on `@asConnection` | Spec | [plan](faceted-search.md) |
@@ -129,7 +129,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R56` [**Extract `ConnectionPromoter` from `GraphitronSchemaBuilder`**](extract-connection-promoter.md) — Backlog, architecture
 - `R33` [**Shared interface for `QueryField` / `ChildField` table-bound parallels**](shared-interface-queryfield-childfield.md) — Backlog, cleanup
-- `R58` [**Make the typed `Rejection` hierarchy load-bearing across producers**](lift-unclassified-field-onto-sealed-result.md) — Ready, architecture
+- `R58` [**Make the typed `Rejection` hierarchy load-bearing across producers**](lift-unclassified-field-onto-sealed-result.md) — In Review, architecture
 - `R7` [**Decompose `TypeFetcherGenerator`**](decompose-typefetchergenerator.md) — Backlog, architecture
 
 ### docs

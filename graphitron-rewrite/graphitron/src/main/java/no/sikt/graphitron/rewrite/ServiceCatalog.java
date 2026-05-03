@@ -10,6 +10,7 @@ import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.JoinStep.FkJoin;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.ParamSource;
+import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -168,7 +169,7 @@ class ServiceCatalog {
             TypeName expectedReturnType) {
         var argByJavaName = argBindings.byJavaName();
         if (className == null || methodName == null) {
-            return new ServiceReflectionResult(null, "service reference is incomplete");
+            return new ServiceReflectionResult(null, Rejection.structural("service reference is incomplete"));
         }
         try {
             Class<?> cls = Class.forName(className);
@@ -181,24 +182,25 @@ class ServiceCatalog {
                     .distinct()
                     .toList();
                 return new ServiceReflectionResult(null,
-                    "method '" + methodName + "' not found in class '" + className + "'"
-                    + BuildContext.candidateHint(methodName, declaredMethodNames));
+                    Rejection.unknownServiceMethod(
+                        "method '" + methodName + "' not found in class '" + className + "'",
+                        methodName, declaredMethodNames));
             }
             var javaMethod = methods.get(0);
             TypeName actualReturnType = TypeName.get(javaMethod.getGenericReturnType());
             if (expectedReturnType != null
                     && !actualReturnType.equals(expectedReturnType)) {
                 return new ServiceReflectionResult(null,
-                    "method '" + methodName + "' in class '" + className
+                    Rejection.structural("method '" + methodName + "' in class '" + className
                     + "' must return '" + expectedReturnType
-                    + "' to match the field's declared return type — got '" + actualReturnType + "'");
+                    + "' to match the field's declared return type — got '" + actualReturnType + "'"));
             }
             if (Arrays.stream(javaMethod.getParameters()).anyMatch(p -> !p.isNamePresent())) {
                 emitParametersWarning();
             }
             String typoGuard = checkOverrideTargets(argByJavaName, javaMethod, methodName, className);
             if (typoGuard != null) {
-                return new ServiceReflectionResult(null, typoGuard);
+                return new ServiceReflectionResult(null, Rejection.structural(typoGuard));
             }
             var params = new ArrayList<MethodRef.Param>();
             for (var p : javaMethod.getParameters()) {
@@ -222,8 +224,8 @@ class ServiceCatalog {
                     if (batchKey.isEmpty()) {
                         if (pName == null) {
                             return new ServiceReflectionResult(null,
-                                "parameter names not available for method '" + methodName + "' in class '" + className
-                                + "' — compile with -parameters flag (see warning above for instructions)");
+                                Rejection.structural("parameter names not available for method '" + methodName + "' in class '" + className
+                                + "' — compile with -parameters flag (see warning above for instructions)"));
                         }
                         // SOURCES batching is only meaningful when there is a parent table to batch
                         // against. On root operation fields and DTO-parent children (parentPkColumns
@@ -247,20 +249,20 @@ class ServiceCatalog {
                                     + "' binds to the GraphQL argument named '" + soleArg + "'\")";
                             }
                             return new ServiceReflectionResult(null,
-                                "parameter '" + displayName + "' in method '" + methodName
+                                Rejection.structural("parameter '" + displayName + "' in method '" + methodName
                                 + "' does not match any GraphQL argument or context key on this field"
                                 + " — available GraphQL arguments: " + available
                                 + "; available context keys: " + formatNameSet(ctxKeys)
-                                + suggestion);
+                                + suggestion));
                         }
                         String dtoReason = dtoSourcesRejectionReason(p.getParameterizedType());
                         if (dtoReason != null) {
                             return new ServiceReflectionResult(null,
-                                "parameter '" + displayName + "' in method '" + methodName + "': " + dtoReason);
+                                Rejection.structural("parameter '" + displayName + "' in method '" + methodName + "': " + dtoReason));
                         }
                         return new ServiceReflectionResult(null,
-                            "parameter '" + displayName + "' in method '" + methodName
-                            + "' has an unrecognized sources type: '" + typeName + "'");
+                            Rejection.structural("parameter '" + displayName + "' in method '" + methodName
+                            + "' has an unrecognized sources type: '" + typeName + "'"));
                     }
                     params.add(new MethodRef.Param.Sourced(displayName, batchKey.get()));
                 }
@@ -270,7 +272,7 @@ class ServiceCatalog {
                     declaredExceptionFqns(javaMethod)),
                 null);
         } catch (ClassNotFoundException e) {
-            return new ServiceReflectionResult(null, "class '" + className + "' could not be loaded");
+            return new ServiceReflectionResult(null, Rejection.structural("class '" + className + "' could not be loaded"));
         }
     }
 
@@ -356,7 +358,7 @@ class ServiceCatalog {
             ArgBindingMap argBindings, Set<String> ctxKeys, ClassName expectedReturnClass) {
         var argByJavaName = argBindings.byJavaName();
         if (className == null || methodName == null) {
-            return new ServiceReflectionResult(null, "table method reference is incomplete");
+            return new ServiceReflectionResult(null, Rejection.structural("table method reference is incomplete"));
         }
         try {
             Class<?> cls = Class.forName(className);
@@ -369,25 +371,26 @@ class ServiceCatalog {
                     .distinct()
                     .toList();
                 return new ServiceReflectionResult(null,
-                    "method '" + methodName + "' not found in class '" + className + "'"
-                    + BuildContext.candidateHint(methodName, declaredMethodNames));
+                    Rejection.unknownServiceMethod(
+                        "method '" + methodName + "' not found in class '" + className + "'",
+                        methodName, declaredMethodNames));
             }
             var javaMethod = methods.get(0);
             ClassName actualReturnClass = ClassName.get(javaMethod.getReturnType());
             if (expectedReturnClass != null
                     && !actualReturnClass.equals(expectedReturnClass)) {
                 return new ServiceReflectionResult(null,
-                    "method '" + methodName + "' in class '" + className
+                    Rejection.structural("method '" + methodName + "' in class '" + className
                     + "' must return the generated jOOQ table class '" + expectedReturnClass
                     + "' for @tableMethod with a @table-bound return type — got '"
-                    + actualReturnClass + "'");
+                    + actualReturnClass + "'"));
             }
             if (Arrays.stream(javaMethod.getParameters()).anyMatch(p -> !p.isNamePresent())) {
                 emitParametersWarning();
             }
             String tableTypoGuard = checkTableMethodOverrideTargets(argByJavaName, javaMethod, methodName, className);
             if (tableTypoGuard != null) {
-                return new ServiceReflectionResult(null, tableTypoGuard);
+                return new ServiceReflectionResult(null, Rejection.structural(tableTypoGuard));
             }
             var params = new ArrayList<MethodRef.Param>();
             boolean foundTable = false;
@@ -402,8 +405,8 @@ class ServiceCatalog {
                 String pName = p.isNamePresent() ? p.getName() : null;
                 if (pName == null) {
                     return new ServiceReflectionResult(null,
-                        "parameter names not available for method '" + methodName + "' in class '" + className
-                        + "' — compile with -parameters flag (see warning above for instructions)");
+                        Rejection.structural("parameter names not available for method '" + methodName + "' in class '" + className
+                        + "' — compile with -parameters flag (see warning above for instructions)"));
                 }
                 String typeName = p.getParameterizedType().getTypeName();
                 String resolvedArgName = argByJavaName.get(pName);
@@ -414,14 +417,14 @@ class ServiceCatalog {
                     params.add(new MethodRef.Param.Typed(pName, typeName, new ParamSource.Context()));
                 } else {
                     return new ServiceReflectionResult(null,
-                        "parameter '" + pName + "' in method '" + methodName
-                        + "' is not a Table<?> parameter, not a GraphQL argument, and not a context key");
+                        Rejection.structural("parameter '" + pName + "' in method '" + methodName
+                        + "' is not a Table<?> parameter, not a GraphQL argument, and not a context key"));
                 }
             }
             if (!foundTable) {
                 return new ServiceReflectionResult(null,
-                    "method '" + methodName + "' in class '" + className
-                    + "' has no Table<?> parameter — @tableMethod requires exactly one Table<?> parameter");
+                    Rejection.structural("method '" + methodName + "' in class '" + className
+                    + "' has no Table<?> parameter — @tableMethod requires exactly one Table<?> parameter"));
             }
             return new ServiceReflectionResult(
                 new MethodRef.Basic(className, methodName,
@@ -429,7 +432,7 @@ class ServiceCatalog {
                     declaredExceptionFqns(javaMethod)),
                 null);
         } catch (ClassNotFoundException e) {
-            return new ServiceReflectionResult(null, "class '" + className + "' could not be loaded");
+            return new ServiceReflectionResult(null, Rejection.structural("class '" + className + "' could not be loaded"));
         }
     }
 
@@ -465,40 +468,41 @@ class ServiceCatalog {
                     .distinct()
                     .toList();
                 return new ServiceReflectionResult(null,
-                    "method '" + methodName + "' not found in class '" + className + "'"
-                    + BuildContext.candidateHint(methodName, declaredMethodNames));
+                    Rejection.unknownServiceMethod(
+                        "method '" + methodName + "' not found in class '" + className + "'",
+                        methodName, declaredMethodNames));
             }
             var javaMethod = methods.get(0);
             int mods = javaMethod.getModifiers();
             if (!java.lang.reflect.Modifier.isStatic(mods) || !java.lang.reflect.Modifier.isPublic(mods)) {
                 return new ServiceReflectionResult(null,
-                    "method '" + methodName + "' in class '" + className
-                    + "' must be public static");
+                    Rejection.structural("method '" + methodName + "' in class '" + className
+                    + "' must be public static"));
             }
             if (javaMethod.getParameterCount() != 1) {
                 return new ServiceReflectionResult(null,
-                    "method '" + methodName + "' in class '" + className
+                    Rejection.structural("method '" + methodName + "' in class '" + className
                     + "' must take exactly one Table<?> parameter — got "
-                    + javaMethod.getParameterCount() + " parameter(s)");
+                    + javaMethod.getParameterCount() + " parameter(s)"));
             }
             var p = javaMethod.getParameters()[0];
             if (!org.jooq.Table.class.isAssignableFrom(p.getType())) {
                 return new ServiceReflectionResult(null,
-                    "method '" + methodName + "' in class '" + className
+                    Rejection.structural("method '" + methodName + "' in class '" + className
                     + "' parameter must be a jOOQ Table<?> subtype — got '"
-                    + p.getType().getName() + "'");
+                    + p.getType().getName() + "'"));
             }
             if (!org.jooq.Field.class.equals(javaMethod.getReturnType())) {
                 return new ServiceReflectionResult(null,
-                    "method '" + methodName + "' in class '" + className
+                    Rejection.structural("method '" + methodName + "' in class '" + className
                     + "' must return org.jooq.Field<X> — got '"
-                    + javaMethod.getReturnType().getName() + "'");
+                    + javaMethod.getReturnType().getName() + "'"));
             }
             var genericReturn = javaMethod.getGenericReturnType();
             if (!(genericReturn instanceof java.lang.reflect.ParameterizedType)) {
                 return new ServiceReflectionResult(null,
-                    "method '" + methodName + "' in class '" + className
-                    + "' must return parameterized Field<X>, not raw Field");
+                    Rejection.structural("method '" + methodName + "' in class '" + className
+                    + "' must return parameterized Field<X>, not raw Field"));
             }
             if (!p.isNamePresent()) {
                 emitParametersWarning();
@@ -511,7 +515,7 @@ class ServiceCatalog {
                 new MethodRef.Basic(className, methodName, returnTypeName, params),
                 null);
         } catch (ClassNotFoundException e) {
-            return new ServiceReflectionResult(null, "class '" + className + "' could not be loaded");
+            return new ServiceReflectionResult(null, Rejection.structural("class '" + className + "' could not be loaded"));
         }
     }
 
@@ -680,9 +684,11 @@ class ServiceCatalog {
 
     /**
      * Carries the result of {@link #reflectServiceMethod}: either a successfully resolved
-     * {@link MethodRef} or a failure reason string.
+     * {@link MethodRef} or a typed {@link Rejection} carrying the failure shape (so consumers
+     * that wrap with caller-specific prose can preserve {@link Rejection.AuthorError.UnknownName}
+     * fields rather than collapsing back to {@link Rejection.AuthorError.Structural}).
      */
-    record ServiceReflectionResult(MethodRef ref, String failureReason) {
-        boolean failed() { return failureReason != null; }
+    record ServiceReflectionResult(MethodRef ref, Rejection rejection) {
+        boolean failed() { return rejection != null; }
     }
 }
