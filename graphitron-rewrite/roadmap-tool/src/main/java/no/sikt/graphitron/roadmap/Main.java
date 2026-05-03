@@ -346,8 +346,11 @@ public final class Main {
         if (backlog.isEmpty()) {
             sb.append("_(none)_\n\n");
         } else {
+            List<Item> activeBacklog = backlog.stream().filter(i -> !i.deferred()).toList();
+            List<Item> deferredBacklog = backlog.stream().filter(Item::deferred).toList();
+
             for (String bucket : BACKLOG_BUCKETS) {
-                List<Item> b = backlog.stream()
+                List<Item> b = activeBacklog.stream()
                     .filter(i -> bucket.equals(i.bucket()))
                     .sorted(Comparator
                         .comparingInt((Item i) -> i.priority() == null ? Integer.MAX_VALUE : i.priority())
@@ -358,13 +361,34 @@ public final class Main {
                 for (Item i : b) appendBacklogAdocLine(sb, i);
                 sb.append("\n");
             }
-            List<Item> orphans = backlog.stream()
+            List<Item> orphans = activeBacklog.stream()
                 .filter(i -> i.bucket() == null || !BACKLOG_BUCKETS.contains(i.bucket()))
                 .sorted(Comparator.comparing(Item::title))
                 .toList();
             if (!orphans.isEmpty()) {
                 sb.append("=== Other\n\n");
                 for (Item i : orphans) appendBacklogAdocLine(sb, i);
+                sb.append("\n");
+            }
+            if (!deferredBacklog.isEmpty()) {
+                sb.append("=== Deferred\n\n");
+                sb.append("Items parked until a blocking concern is resolved or re-prioritised. ");
+                sb.append("Set `deferred: false` (or remove the field) to return an item to the active backlog.\n\n");
+                deferredBacklog.stream()
+                    .sorted(Comparator
+                        .comparingInt((Item i) -> i.priority() == null ? Integer.MAX_VALUE : i.priority())
+                        .thenComparing(Item::title))
+                    .forEach(i -> {
+                        sb.append("* `").append(i.id()).append("` xref:plans/")
+                          .append(i.slug()).append(".adoc[").append(escapeAdocCell(i.title())).append("]");
+                        if (i.notes() != null && !i.notes().isBlank()) {
+                            sb.append(": _").append(i.notes().strip()).append("_");
+                        }
+                        if (!i.dependsOn().isEmpty()) {
+                            sb.append(" _(blocked by ").append(linkAdocSlugs(i.dependsOn())).append(")_");
+                        }
+                        sb.append("\n");
+                    });
                 sb.append("\n");
             }
         }
@@ -815,8 +839,11 @@ public final class Main {
 
         sb.append("**Front-matter dimensions.** Each item carries `id:` (monotonic `R<n>`, never "
             + "reused), `status:`, `bucket:`, `priority:`, ");
-        sb.append("`theme:` (cross-cutting tag, see the *By theme* index), and `depends-on:` ");
-        sb.append("(slugs of items that must ship first). When a dep ships, the dep file is deleted; ");
+        sb.append("`theme:` (cross-cutting tag, see the *By theme* index), `depends-on:` ");
+        sb.append("(slugs of items that must ship first), `deferred:` (boolean; moves the item to ");
+        sb.append("the **Deferred** sub-section of Backlog so the active list stays actionable), ");
+        sb.append("and `notes:` (short inline annotation, shown on deferred items as the parking reason). ");
+        sb.append("When a dep ships, the dep file is deleted; ");
         sb.append("the author closing it is responsible for removing the slug from any dependents' ");
         sb.append("`depends-on:` list. The validator fails the build on a stale slug.\n\n");
 
@@ -872,8 +899,11 @@ public final class Main {
             sb.append("_(none)_\n");
             return;
         }
+        List<Item> active = backlog.stream().filter(i -> !i.deferred()).toList();
+        List<Item> deferred = backlog.stream().filter(Item::deferred).toList();
+
         for (String bucket : BACKLOG_BUCKETS) {
-            List<Item> b = backlog.stream()
+            List<Item> b = active.stream()
                 .filter(i -> bucket.equals(i.bucket()))
                 .sorted(Comparator
                     .comparingInt((Item i) -> i.priority() == null ? Integer.MAX_VALUE : i.priority())
@@ -889,7 +919,7 @@ public final class Main {
             sb.append("\n");
         }
 
-        List<Item> orphans = backlog.stream()
+        List<Item> orphans = active.stream()
             .filter(i -> i.bucket() == null || !BACKLOG_BUCKETS.contains(i.bucket()))
             .sorted(Comparator.comparing(Item::title))
             .toList();
@@ -898,6 +928,18 @@ public final class Main {
             for (Item i : orphans) {
                 appendBacklogLine(sb, i);
             }
+            sb.append("\n");
+        }
+
+        if (!deferred.isEmpty()) {
+            sb.append("### Deferred\n\n");
+            sb.append("_Items parked until a blocking concern is resolved or re-prioritised. ");
+            sb.append("Set `deferred: false` (or remove the field) to return an item to the active backlog._\n\n");
+            deferred.stream()
+                .sorted(Comparator
+                    .comparingInt((Item i) -> i.priority() == null ? Integer.MAX_VALUE : i.priority())
+                    .thenComparing(Item::title))
+                .forEach(i -> appendDeferredLine(sb, i));
             sb.append("\n");
         }
     }
@@ -974,6 +1016,18 @@ public final class Main {
         String description = firstNonHeadingParagraph(i.body());
         if (!description.isEmpty()) {
             sb.append(": ").append(description);
+        }
+        if (!i.dependsOn().isEmpty()) {
+            sb.append(" _(blocked by ").append(linkSlugs(i.dependsOn())).append(")_");
+        }
+        sb.append("\n");
+    }
+
+    private static void appendDeferredLine(StringBuilder sb, Item i) {
+        sb.append("- `").append(i.id()).append("` [**").append(i.title()).append("**](")
+          .append(i.slug()).append(".md)");
+        if (i.notes() != null && !i.notes().isBlank()) {
+            sb.append(" — _").append(i.notes().strip()).append("_");
         }
         if (!i.dependsOn().isEmpty()) {
             sb.append(" _(blocked by ").append(linkSlugs(i.dependsOn())).append(")_");
