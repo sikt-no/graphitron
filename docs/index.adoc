@@ -65,6 +65,9 @@ xref:security.adoc[Security model]
 | xref:quick-start.adoc[Quick Start]
 | Prerequisites, jOOQ generation, GraphQL schema with directives, build wiring. Start here if you want to use Graphitron in a project.
 
+| xref:manual/index.adoc[User Manual]
+| Tutorial, how-to recipes, directive reference, and explanation of the design. Diataxis-shaped; pick the quadrant that matches what you are trying to do. Currently scaffold-only while pages are authored under roadmap item `R68`.
+
 | xref:faq.adoc[FAQ]
 | Purpose, how it works, licensing, production use, and where to ask for help.
 

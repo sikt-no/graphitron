@@ -83,6 +83,7 @@
                                         <include>*.adoc</include>
                                         <include>images/**</include>
                                         <include>_includes/**</include>
+                                        <include>manual/**/*.adoc</include>
                                     </includes>
                                 </resource>
                             </resources>
@@ -160,6 +161,21 @@
                                 <copy todir="${project.build.directory}/staging/roadmap/plans/css" overwrite="true" failonerror="false">
                                     <fileset dir="${project.build.directory}/staging/css"/>
                                 </copy>
+                                <copy todir="${project.build.directory}/staging/manual/css" overwrite="true" failonerror="false">
+                                    <fileset dir="${project.build.directory}/staging/css"/>
+                                </copy>
+                                <copy todir="${project.build.directory}/staging/manual/tutorial/css" overwrite="true" failonerror="false">
+                                    <fileset dir="${project.build.directory}/staging/css"/>
+                                </copy>
+                                <copy todir="${project.build.directory}/staging/manual/how-to/css" overwrite="true" failonerror="false">
+                                    <fileset dir="${project.build.directory}/staging/css"/>
+                                </copy>
+                                <copy todir="${project.build.directory}/staging/manual/reference/css" overwrite="true" failonerror="false">
+                                    <fileset dir="${project.build.directory}/staging/css"/>
+                                </copy>
+                                <copy todir="${project.build.directory}/staging/manual/explanation/css" overwrite="true" failonerror="false">
+                                    <fileset dir="${project.build.directory}/staging/css"/>
+                                </copy>
                                 <!-- Docinfo files (top nav header + dark footer) staged into every
                                      source directory so :docinfo: shared picks them up regardless
                                      of which page asciidoctor is rendering. -->
@@ -182,6 +198,36 @@
                                     </fileset>
                                 </copy>
                                 <copy todir="${project.build.directory}/staging/roadmap/plans" overwrite="true" failonerror="false">
+                                    <fileset dir="${project.basedir}/_theme">
+                                        <include name="docinfo-header.html"/>
+                                        <include name="docinfo-footer.html"/>
+                                    </fileset>
+                                </copy>
+                                <copy todir="${project.build.directory}/staging/manual" overwrite="true" failonerror="false">
+                                    <fileset dir="${project.basedir}/_theme">
+                                        <include name="docinfo-header.html"/>
+                                        <include name="docinfo-footer.html"/>
+                                    </fileset>
+                                </copy>
+                                <copy todir="${project.build.directory}/staging/manual/tutorial" overwrite="true" failonerror="false">
+                                    <fileset dir="${project.basedir}/_theme">
+                                        <include name="docinfo-header.html"/>
+                                        <include name="docinfo-footer.html"/>
+                                    </fileset>
+                                </copy>
+                                <copy todir="${project.build.directory}/staging/manual/how-to" overwrite="true" failonerror="false">
+                                    <fileset dir="${project.basedir}/_theme">
+                                        <include name="docinfo-header.html"/>
+                                        <include name="docinfo-footer.html"/>
+                                    </fileset>
+                                </copy>
+                                <copy todir="${project.build.directory}/staging/manual/reference" overwrite="true" failonerror="false">
+                                    <fileset dir="${project.basedir}/_theme">
+                                        <include name="docinfo-header.html"/>
+                                        <include name="docinfo-footer.html"/>
+                                    </fileset>
+                                </copy>
+                                <copy todir="${project.build.directory}/staging/manual/explanation" overwrite="true" failonerror="false">
                                     <fileset dir="${project.basedir}/_theme">
                                         <include name="docinfo-header.html"/>
                                         <include name="docinfo-footer.html"/>

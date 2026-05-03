@@ -1,0 +1,11 @@
+= Tutorial
+:description: A page-by-page walk-through from a fresh checkout to a working GraphQL query.
+:!toc:
+
+A step-by-step path from a fresh checkout to a working GraphQL query against the example schema. Each page builds on the last; reach the end with a query like `customers { firstName email address { addressLine1 } }` returning real Sakila rows over HTTP.
+
+== Status: placeholder
+
+Tutorial pages are authored in R68 Phase 1b, the next slice after this Phase 1a scaffold. Until they land, start with the xref:../../quick-start.adoc[Quick start] page; it covers the same ground at a higher level and points at the runnable `graphitron-sakila-example` module the tutorial chapter is built around.
+
+xref:../index.adoc[← Back to the manual landing]
