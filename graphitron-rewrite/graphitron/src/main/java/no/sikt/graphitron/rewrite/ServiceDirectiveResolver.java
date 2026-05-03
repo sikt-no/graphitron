@@ -14,6 +14,7 @@ import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.RowsMethodShape;
+import no.sikt.graphitron.rewrite.model.TypeNames;
 
 import java.util.HashSet;
 import java.util.List;
@@ -288,7 +289,7 @@ final class ServiceDirectiveResolver {
         if (method.returnType().equals(expected)) return null;
 
         return "method '" + method.methodName() + "' in class '" + method.className()
-            + "' must return '" + expected
-            + "' to match the field's declared return type — got '" + method.returnType() + "'";
+            + "' must return '" + TypeNames.simple(expected)
+            + "' to match the field's declared return type — got '" + TypeNames.simple(method.returnType()) + "'";
     }
 }
