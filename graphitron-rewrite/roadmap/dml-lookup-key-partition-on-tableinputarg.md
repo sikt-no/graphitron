@@ -1,7 +1,7 @@
 ---
 id: R62
 title: "Lift @lookupKey partition onto TableInputArg"
-status: Spec
+status: In Review
 bucket: architecture
 priority: 6
 theme: mutations-errors
