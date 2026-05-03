@@ -14,7 +14,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Plan |
 |---|---|---|---|
-| `R60` | Auto-derive BatchKey from typed TableRecord accessor on @record parents | In Progress | [plan](auto-derive-batchkey-from-typed-record-accessor.md) |
+| `R60` | Auto-derive BatchKey from typed TableRecord accessor on @record parents | In Review | [plan](auto-derive-batchkey-from-typed-record-accessor.md) |
 | `R49` | Stub: scalar/`@record`-returning `@service` child field (`ServiceRecordField`) <sub>blocked by: [service-rows-method-body](service-rows-method-body.md)</sub> | Spec | [plan](service-record-field.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
 | `R15` | Sweep doc drift between rewrite docs and `model/` taxonomy <sub>blocked by: [docs-site-asciidoc](docs-site-asciidoc.md)</sub> | Spec | [plan](fix-legacy-refs-in-rewrite-docs.md) |
@@ -94,7 +94,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### service
 
-- `R60` [**Auto-derive BatchKey from typed TableRecord accessor on @record parents**](auto-derive-batchkey-from-typed-record-accessor.md) — In Progress
+- `R60` [**Auto-derive BatchKey from typed TableRecord accessor on @record parents**](auto-derive-batchkey-from-typed-record-accessor.md) — In Review
 - `R49` [**Stub: scalar/`@record`-returning `@service` child field (`ServiceRecordField`)**](service-record-field.md) — Spec, stubs, blocked by [service-rows-method-body](service-rows-method-body.md)
 - `R54` [**Rename @externalField (parallel-support, deprecation, migration)**](rename-externalfield-directive.md) — Backlog, cleanup
 - `R45` [**Typed context-value registry for `@service`**](typed-context-value-registry.md) — Spec, architecture
