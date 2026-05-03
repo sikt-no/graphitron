@@ -1,9 +1,0 @@
-quarkus:
-  http:
-    port: ${HTTP_PORT:8088}
-  datasource:
-    db-kind: postgresql
-    username: ${DB_USERNAME:postgres}
-    password: ${DB_PASSWORD:postgres}
-    jdbc:
-      url: ${DB_URL:jdbc:postgresql://localhost:5432/rewrite_test}

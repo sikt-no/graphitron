@@ -8,7 +8,7 @@ If you're picking up Graphitron for a new project, this module is the answer to 
 
 | If you're | Copy |
 |---|---|
-| Standing up a Quarkus app over a Graphitron schema | [`src/main/java/.../app/`](src/main/java/no/sikt/graphitron/sakila/example/app/), [`src/main/resources/graphql/schema.graphqls`](src/main/resources/graphql/), [`src/main/resources/application.yaml`](src/main/resources/application.yaml) |
+| Standing up a Quarkus app over a Graphitron schema | [`src/main/java/.../app/`](src/main/java/no/sikt/graphitron/sakila/example/app/), [`src/main/resources/graphql/schema.graphqls`](src/main/resources/graphql/), [`src/main/resources/application.properties`](src/main/resources/application.properties) |
 | Pinning your schema's behaviour against PostgreSQL | [`src/test/java/.../querydb/`](src/test/java/no/sikt/graphitron/rewrite/test/querydb/) |
 
 The `pom.xml` shows the shape you need (Quarkus BOM, the rewrite's `graphitron-maven` plugin, jOOQ codegen). Adjust dependencies and packages, drop in your schema, you're done.
@@ -33,7 +33,7 @@ cd graphitron-rewrite/graphitron-sakila-example
 mvn quarkus:dev
 ```
 
-`application.yaml` reads `${DB_URL:jdbc:postgresql://localhost:5432/rewrite_test}` (and matching `DB_USERNAME` / `DB_PASSWORD`); the defaults match the `local-db` profile, so `mvn quarkus:dev` works out of the box if you have the example's Postgres up. The app does not own the database; bring your own (with `init.sql` from `graphitron-sakila-db` already loaded for the example's data).
+`application.properties` reads `${DB_URL:jdbc:postgresql://localhost:5432/rewrite_test}` (and matching `DB_USERNAME` / `DB_PASSWORD`); the defaults match the `local-db` profile, so `mvn quarkus:dev` works out of the box if you have the example's Postgres up. The app does not own the database; bring your own (with `init.sql` from `graphitron-sakila-db` already loaded for the example's data).
 
 ## Recommended test pattern (the tests)
 

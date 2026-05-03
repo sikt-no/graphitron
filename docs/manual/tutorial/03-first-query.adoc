@@ -2,13 +2,13 @@
 :description: Send a GraphQL query to the running Quarkus app and see PostgreSQL rows in the response.
 :!toc:
 
-With the server from xref:01-prerequisites.adoc[page 1] still running on `http://localhost:8088`, open a second terminal and send a query.
+With the server from xref:01-prerequisites.adoc[page 1] still running on `http://localhost:8080`, open a second terminal and send a query.
 
 == Send the query
 
 [source,bash]
 ----
-curl -s -X POST http://localhost:8088/graphql \
+curl -s -X POST http://localhost:8080/graphql \
   -H 'Content-Type: application/json' \
   -d '{"query":"{ customers { firstName lastName email } }"}'
 ----
@@ -54,7 +54,7 @@ The `active` argument from xref:02-first-schema.adoc[page 2] filters by the `act
 
 [source,bash]
 ----
-curl -s -X POST http://localhost:8088/graphql \
+curl -s -X POST http://localhost:8080/graphql \
   -H 'Content-Type: application/json' \
   -d '{"query":"{ customers(active: true) { firstName } }"}'
 ----
