@@ -1,7 +1,7 @@
 ---
 id: R32
 title: "Implement `@service` rows-method body"
-status: Ready
+status: In Review
 bucket: architecture
 priority: 6
 theme: service
@@ -10,7 +10,34 @@ depends-on: []
 
 # Implement `@service` rows-method body
 
-First iteration shipped at `befc156` (alongside R49 Phase A close-out): `buildServiceRowsMethod` is no longer a stub. The body walks `MethodRef.params()` via `ArgCallEmitter.buildMethodBackedCallArgs` (`Sources → keys`, `DslContext → dsl` local, `Arg`/`Context` via the existing extraction path) and shapes as `[DSLContext dsl = ...; ] return ServiceClass.method(<args>);`. Both `ServiceTableField` and `ServiceRecordField` use the same parameterised emitter; the developer's method returns the loader's expected `Map`/`List` shape directly, so no per-record projection step is needed (graphql-java's downstream wiring resolves columns off whatever records the developer returns). End-to-end exercised by `GraphQLQueryTest.films_titleUppercase_resolvesViaServiceRecordFieldDataLoader` (parent `SELECT` + one batched DataLoader round-trip). R32's remaining in-scope work is the strict return-type validation described under "Plan" below; the other three original-spec follow-ups are tracked elsewhere (R61 for the `Row1` → `Record1` switch, [`typed-context-value-registry.md`](typed-context-value-registry.md) for `ParamSource.Context` validation) or deferred (element-shape conversion until a real schema needs it). The original three-concern spec is preserved under "Original spec".
+Two iterations have shipped:
+
+1. **Body emission.** `buildServiceRowsMethod` walks `MethodRef.params()` via
+   `ArgCallEmitter.buildMethodBackedCallArgs` (`Sources → keys`, `DslContext → dsl` local,
+   `Arg`/`Context` via the existing extraction path) and shapes the body as
+   `[DSLContext dsl = ...; ] return ServiceClass.method(<args>);`. Both `ServiceTableField`
+   and `ServiceRecordField` use the same parameterised emitter; the developer's method
+   returns the loader's expected `Map`/`List` shape directly, so no per-record projection
+   step is needed (graphql-java's downstream wiring resolves columns off whatever records
+   the developer returns). End-to-end exercised by
+   `GraphQLQueryTest.films_titleUppercase_resolvesViaServiceRecordFieldDataLoader` (parent
+   `SELECT` + one batched DataLoader round-trip).
+2. **Strict child-service return-type validation.**
+   `ServiceDirectiveResolver.validateChildServiceReturnType` rejects developer methods whose
+   declared return type doesn't match the rows-method's outer shape (`Map<K, V>` /
+   `List<List<V>>` / `List<V>` per the `(returnType, batchKey)` cross-product). Mirrors the
+   existing root-only `ServiceCatalog.reflectServiceMethod` strict check; carries the
+   `service-directive-resolver-strict-child-service-return` `@LoadBearingClassifierCheck`
+   key, with the corresponding `@DependsOnClassifierCheck` on `buildServiceRowsMethod`. Per-
+   key `V` derives from `ReturnTypeRef`: raw `org.jooq.Record` for `TableBoundReturnType`,
+   the backing class for `ResultReturnType` with non-null `fqClassName`, and the standard
+   Java type for the five standard GraphQL scalars (`String` / `Boolean` / `Int` / `Float` /
+   `ID`); other cases (custom scalars, enums, `PolymorphicReturnType`,
+   `ResultReturnType` with no backing class) skip the strict check.
+
+`GeneratorUtils.keyElementType` was bumped to `public` so the validator and the emitter
+share one source for the keys-element-type derivation, keeping the validator's "expected"
+in lockstep with what `buildServiceRowsMethod` actually emits.
 
 ## Original spec
 
@@ -32,14 +59,14 @@ The spec described the body as three concerns in one emitter:
    returned record so the response carries only selected columns. The `$fields` helper
    is already emitted on each generated `Type`.
 
-§1 shipped (the parameterised arg-assembly walk above). §3 turned out unnecessary: the developer's return value is handed back to graphql-java directly. §2 is the largest remaining piece of the original spec, captured under "Open follow-ups" below.
+§1 shipped (the parameterised arg-assembly walk above). §3 turned out unnecessary: the
+developer's return value is handed back to graphql-java directly. §2 is the largest
+remaining piece of the original spec, captured under "Open follow-ups" below.
 
 ## Recovering element-shape
 
 `BatchKey` carries container × key-shape but not element-shape (`RowN` vs `TableRecord`
-vs `RecordN`); see the rationale note in
-[`set-parent-keys-on-service.md`](set-parent-keys-on-service.md). Two options at
-implementation time:
+vs `RecordN`). Two options at implementation time:
 
 - **Re-reflect** via `Class.forName(MethodRef.className()).getMethod(MethodRef.methodName(), ...)`
   and inspect the SOURCES param's `getParameterizedType()`. Cheap, matches what the
@@ -66,76 +93,36 @@ service-call boundary.
   emission of `Row1<T>` keys for the `RowKeyed` / `MappedRowKeyed` variants leaves a developer
   signing `Set<Row1<Integer>>` with no value accessor at the application side. R61 tracks the
   emit-`Record1`-everywhere fix; R32's element-shape conversion (above) builds on top of it.
-- **Strict return-type validation against `field.elementType()`** (this item's remaining
-  in-scope work; see "Plan" below). The structural unwrapping (V from `Map<KeyType, V>` /
-  `List<V>` per `BatchKey` + cardinality) lives in `buildServiceRowsMethod` today and could
-  surface mismatches at classify time as `UnclassifiedField` rather than as javac errors on
-  the generated `return ServiceClass.method(...)` line.
 - **`ParamSource.Context`'s typed registry.** The emitter consumes `getContextArgument(env,
   name)` with `<T>` inference. Generate-time validation (unknown name, type mismatch)
   lands separately under [`typed-context-value-registry.md`](typed-context-value-registry.md).
 
-## Plan
+## Tests
 
-Strict return-type validation for child `@service`. Mirrors the existing root-only check that
-`ServiceCatalog.reflectServiceMethod` runs against `ServiceDirectiveResolver.computeExpectedServiceReturnType`.
-
-**Implementation.** In `ServiceDirectiveResolver.resolve`, after `enrichArgExtractions` returns
-the resolved `MethodRef`, run a child-only post-reflection check:
-
-1. Extract the `BatchKey.ParentKeyed` from the method's `Param.Sourced` (one helper, mirrors
-   `FieldBuilder.extractBatchKey`).
-2. Compute the expected outer return type from `(returnType, batchKey)` symmetrically with how
-   `TypeFetcherGenerator.buildServiceRowsMethod` constructs the rows-method's declared return
-   type today:
-   - `keysElementType = GeneratorUtils.keyElementType(batchKey)`
-   - `isMapped = batchKey instanceof MappedRowKeyed || MappedRecordKeyed`
-   - `isList = returnType.wrapper().isList()`
-   - `V = perKeyType` per arm:
-     - `TableBoundReturnType` → raw `org.jooq.Record` (matches `RECORD` constant the emitter
-       passes for `ServiceTableField`).
-     - `ResultReturnType` with non-null `fqClassName` → `ClassName.bestGuess(fqClassName)`
-       (matches `ServiceRecordField.elementType()`'s record arm).
-     - `ScalarReturnType` with a standard scalar (`String`/`Boolean`/`Int`/`Float`/`ID`) →
-       the standard Java type (matches `elementType()`'s scalar arm).
-     - `ResultReturnType` with null `fqClassName`, non-standard scalar (custom or enum), or
-       `PolymorphicReturnType` → null. Skip the strict check (same shape as the root path's
-       null-fqClassName escape).
-   - `valuePerKey = isList ? List<V> : V`
-   - `expected = isMapped ? Map<KeyType, valuePerKey> : (isList ? List<List<V>> : List<V>)`
-3. If `expected != null && !method.returnType().equals(expected)`, return
-   `Resolved.Rejected(Rejection.structural("..."))` with the same message shape as the root
-   check (names class.method, expected vs actual).
-
-**Refactor.** Move the perKeyType computation into a single helper used by both
-`buildServiceRowsMethod` (today) and the new validator (tomorrow), so the structural shape
-is named in one place. Candidate location: a static method on `ChildField` or a small
-package-private helper on `ServiceDirectiveResolver`. The expected-outer-type construction
-itself (the four-arm switch on isMapped/isList) is small enough to inline at both sites if
-factoring it adds cost.
-
-**Tests.**
-
-- `ServiceCatalogTest` already covers the root strict-return check. Add a small parallel
-  resolver-tier test that constructs a child `@service` field with each of the four
-  `BatchKey` variants × the cardinality cross-product, and asserts the resolver rejects on
-  a deliberate mismatch (e.g. `Map<Record1<Integer>, Integer>` declared, schema expects
-  `Map<Record1<Integer>, String>`).
-- `GraphitronSchemaBuilderTest`: one positive case (existing `FilmService.titleUppercase`
-  fixture continues to validate) and one negative case (a fixture with a mismatched
-  declared return). Lift the negative-case fixture under `graphitron-fixtures-codegen` if
-  reflection needs a real class.
-
-**Out of scope.**
-
-- Element-shape conversion (`Set<TableRecord>` developer signatures): tracked above, deferred.
-- The `Row1` → `Record1` shift: tracked under R61.
-- `ParamSource.Context` typed registry: tracked under
-  [`typed-context-value-registry.md`](typed-context-value-registry.md).
+- `GraphitronSchemaBuilderTest.ServiceFieldCase.STRICT_CHILD_RETURN_ROWKEYED_SINGLE_MATCHES`
+  pins a positive child case (`@service` on `Film @table` returning `Language`,
+  `List<Row1<Integer>>` Sources param, declared return `List<Record>`). The classifier accepts.
+- `GraphitronSchemaBuilderTest.UnclassifiedFieldCase.CHILD_SERVICE_TABLE_BOUND_WRONG_RETURN_REJECTED`
+  pins the `TableBoundReturnType` rejection arm (declared `LanguageRecord` instead of
+  `List<Record>`).
+- `GraphitronSchemaBuilderTest.UnclassifiedFieldCase.CHILD_SERVICE_SCALAR_WRONG_VALUE_TYPE_REJECTED`
+  pins the `ScalarReturnType` rejection arm (declared `Map<Record1<Integer>, Integer>` for
+  a `String`-valued field).
+- The four-`BatchKey`-variant × cardinality cross-product is structurally exhaustive over the
+  same single helper; one positive + two negative cells (one `TableBoundReturnType`, one
+  `ScalarReturnType`, one positional, one mapped) cover the helper's branches without
+  enumerating cells that exercise the same code path. Drift between the validator's
+  "expected" and what `buildServiceRowsMethod` actually emits is caught by the strict-return
+  test itself.
+- Execution-tier coverage:
+  `GraphQLQueryTest.films_titleUppercase_resolvesViaServiceRecordFieldDataLoader` continues to
+  exercise the end-to-end positive path against PostgreSQL (`Set<Record1<Integer>>` /
+  `Map<Record1<Integer>, String>`, `MappedRecordKeyed` × scalar single).
 
 ## Dependencies
 
-- Built on the four-variant `BatchKey` model shipped under `set-parent-keys-on-service`
-  (changelog SHA `eebf881`); the emitter switches on those variants.
+- Built on the four-variant `BatchKey` model (`RowKeyed` / `RecordKeyed` /
+  `MappedRowKeyed` / `MappedRecordKeyed`); the emitter and the validator both switch on those
+  variants.
 - Coordinates with [`typed-context-value-registry.md`](typed-context-value-registry.md): no
   hard dependency, just generate-time-validation polish on top of the working emission.

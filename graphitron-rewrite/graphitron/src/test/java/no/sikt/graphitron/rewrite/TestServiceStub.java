@@ -200,6 +200,40 @@ class TestServiceStub {
         throw new UnsupportedOperationException();
     }
 
+    // ===== R32 child-@service strict-return-type fixtures =====
+
+    /**
+     * Child {@code @service} fixture exercising the positive arm of
+     * {@code ServiceDirectiveResolver.validateChildServiceReturnType}: a {@code @table}-bound
+     * child field with a {@code List<Row1<Integer>>} Sources param + single cardinality
+     * structurally requires {@code List<org.jooq.Record>} per the rows-method shape. The
+     * declared return matches; classification proceeds.
+     */
+    public static java.util.List<org.jooq.Record> childServiceRowKeyedCorrectReturn(java.util.List<org.jooq.Row1<Integer>> keys) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Child {@code @service} fixture exercising the rejection arm of
+     * {@code ServiceDirectiveResolver.validateChildServiceReturnType}: same param shape as
+     * {@link #childServiceRowKeyedCorrectReturn} but declares {@code LanguageRecord} instead
+     * of the structurally-required {@code List<Record>}, so classification rejects.
+     */
+    public static no.sikt.graphitron.rewrite.test.jooq.tables.records.LanguageRecord childServiceRowKeyedWrongReturn(java.util.List<org.jooq.Row1<Integer>> keys) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Child {@code @service} fixture exercising the strict-return rejection on the scalar
+     * branch: a {@code String}-returning child field with a {@code Set<Record1<Integer>>}
+     * Sources param structurally requires {@code Map<Record1<Integer>, String>} per the
+     * mapped rows-method shape. This stub declares {@code Map<Record1<Integer>, Integer>}
+     * to deliberately mismatch the per-key element type.
+     */
+    public static java.util.Map<org.jooq.Record1<Integer>, Integer> childServiceMappedRecordKeyedWrongScalarValue(java.util.Set<org.jooq.Record1<Integer>> keys) {
+        throw new UnsupportedOperationException();
+    }
+
     // ===== R12 §4 declared-checked-exception fixtures =====
 
     /**
