@@ -1,7 +1,7 @@
 ---
 id: R58
 title: "Make the typed `Rejection` hierarchy load-bearing across producers"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 5
 theme: structural-refactor
