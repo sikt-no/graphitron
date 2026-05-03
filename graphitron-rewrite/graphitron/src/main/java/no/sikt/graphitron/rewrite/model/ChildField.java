@@ -185,11 +185,15 @@ public sealed interface ChildField extends GraphitronField
         List<WhereFilter> filters,
         OrderBySpec orderBy,
         PaginationSpec pagination,
-        BatchKey.ParentKeyed batchKey
+        BatchKey.RowKeyed batchKey
     ) implements TableTargetField, BatchKeyField {
         @Override
         public String rowsMethodName() {
             return "rows" + Character.toUpperCase(name().charAt(0)) + name().substring(1);
+        }
+        @Override
+        public boolean emitsSingleRecordPerKey() {
+            return !returnType().wrapper().isList();
         }
     }
 
@@ -214,7 +218,7 @@ public sealed interface ChildField extends GraphitronField
         List<WhereFilter> filters,
         OrderBySpec orderBy,
         PaginationSpec pagination,
-        BatchKey.ParentKeyed batchKey,
+        BatchKey.RowKeyed batchKey,
         LookupMapping lookupMapping
     ) implements TableTargetField, BatchKeyField, LookupField {
         @Override
@@ -414,6 +418,10 @@ public sealed interface ChildField extends GraphitronField
         @Override
         public String rowsMethodName() {
             return "rows" + Character.toUpperCase(name().charAt(0)) + name().substring(1);
+        }
+        @Override
+        public boolean emitsSingleRecordPerKey() {
+            return batchKey() instanceof BatchKey.AccessorRowKeyedMany;
         }
     }
 

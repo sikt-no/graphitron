@@ -20,4 +20,26 @@ package no.sikt.graphitron.rewrite.model;
 public interface BatchKeyField {
     BatchKey batchKey();
     String rowsMethodName();
+
+    /**
+     * Whether this field's rows-method emits exactly one record per DataLoader key.
+     *
+     * <p>True iff the field is single-cardinality
+     * ({@link ChildField.SplitTableField} with {@code !returnType().wrapper().isList()}) or
+     * carries {@link BatchKey.AccessorRowKeyedMany} (the {@code loader.loadMany} contract: one
+     * record per element-PK key, regardless of the field's GraphQL cardinality). False for
+     * list-cardinality {@code SplitTableField} / {@code SplitLookupTableField} /
+     * {@code RecordLookupTableField}, single-key {@code RecordTableField}
+     * ({@code RowKeyed} / {@code LifterRowKeyed} / {@code AccessorRowKeyedSingle}, which return
+     * a {@code List<Record>} per key).
+     *
+     * <p>The two consumer sites are
+     * {@code TypeFetcherGenerator}'s {@code scatterSingleByIdx} helper-emission gate and
+     * {@code SplitRowsMethodEmitter.buildForRecordTable}'s {@code buildSingleMethod} routing
+     * decision; both ask the same uniform question of multiple variants and so collapse onto
+     * this capability rather than each repeating the disjunction.
+     */
+    default boolean emitsSingleRecordPerKey() {
+        return false;
+    }
 }

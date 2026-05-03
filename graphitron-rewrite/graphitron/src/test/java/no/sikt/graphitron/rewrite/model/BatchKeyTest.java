@@ -51,8 +51,7 @@ class BatchKeyTest {
         var compositeTable = new TableRef("composite", "COMPOSITE", "Composite",
             List.of(compositePkA, compositePkB));
         var hop = new JoinStep.LiftedHop(compositeTable, compositeTable.primaryKeyColumns(), "items_0");
-        var bk = new BatchKey.AccessorRowKeyedMany(hop, MANY_ACCESSOR,
-            BatchKey.AccessorRowKeyedMany.Container.LIST);
+        var bk = new BatchKey.AccessorRowKeyedMany(hop, MANY_ACCESSOR);
         assertThat(bk.javaTypeName())
             .isEqualTo("java.util.List<org.jooq.Row2<java.lang.Long, java.lang.Integer>>");
     }
@@ -70,8 +69,7 @@ class BatchKeyTest {
     @Test
     void accessorRowKeyedManyTargetKeyColumnsDelegatesToHop() {
         var hop = new JoinStep.LiftedHop(FILM_TABLE, List.of(FILM_ID), "films_0");
-        var bk = new BatchKey.AccessorRowKeyedMany(hop, MANY_ACCESSOR,
-            BatchKey.AccessorRowKeyedMany.Container.SET);
+        var bk = new BatchKey.AccessorRowKeyedMany(hop, MANY_ACCESSOR);
         assertThat(bk.targetKeyColumns()).isSameAs(hop.targetColumns());
     }
 
@@ -94,7 +92,7 @@ class BatchKeyTest {
             SINGLE_ACCESSOR);
         BatchKey.RecordParentBatchKey accMany = new BatchKey.AccessorRowKeyedMany(
             new JoinStep.LiftedHop(FILM_TABLE, List.of(FILM_ID), "films_0"),
-            MANY_ACCESSOR, BatchKey.AccessorRowKeyedMany.Container.LIST);
+            MANY_ACCESSOR);
 
         for (var bk : List.of(row, lifter, accSingle, accMany)) {
             String label = switch (bk) {

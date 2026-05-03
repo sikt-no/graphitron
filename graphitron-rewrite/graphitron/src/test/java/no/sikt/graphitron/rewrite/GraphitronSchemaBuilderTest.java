@@ -2271,7 +2271,7 @@ class GraphitronSchemaBuilderTest {
      */
     enum AccessorDerivedBatchKeyCase implements ClassificationCase {
         ACCESSOR_ROWKEYED_MANY_LIST_FIELD_LIST_ACCESSOR(
-            "List field + list-of-TableRecord accessor → RecordTableField with AccessorRowKeyedMany(LIST)",
+            "List field + list-of-TableRecord accessor → RecordTableField with AccessorRowKeyedMany",
             """
             type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
             type Payload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads$ListPayload"}) {
@@ -2283,7 +2283,6 @@ class GraphitronSchemaBuilderTest {
                 var f = (RecordTableField) schema.field("Payload", "films");
                 assertThat(f.batchKey()).isInstanceOf(BatchKey.AccessorRowKeyedMany.class);
                 var arm = (BatchKey.AccessorRowKeyedMany) f.batchKey();
-                assertThat(arm.container()).isEqualTo(BatchKey.AccessorRowKeyedMany.Container.LIST);
                 assertThat(arm.accessor().methodName()).isEqualTo("films");
                 assertThat(arm.targetKeyColumns()).hasSize(1);
                 assertThat(arm.targetKeyColumns().get(0).sqlName()).isEqualTo("film_id");
@@ -2294,7 +2293,7 @@ class GraphitronSchemaBuilderTest {
         },
 
         ACCESSOR_ROWKEYED_MANY_LIST_FIELD_SET_ACCESSOR(
-            "List field + set-of-TableRecord accessor → RecordTableField with AccessorRowKeyedMany(SET)",
+            "List field + set-of-TableRecord accessor → RecordTableField with AccessorRowKeyedMany",
             """
             type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
             type Payload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads$SetPayload"}) {
@@ -2305,8 +2304,8 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var f = (RecordTableField) schema.field("Payload", "films");
                 assertThat(f.batchKey()).isInstanceOf(BatchKey.AccessorRowKeyedMany.class);
-                var arm = (BatchKey.AccessorRowKeyedMany) f.batchKey();
-                assertThat(arm.container()).isEqualTo(BatchKey.AccessorRowKeyedMany.Container.SET);
+                // The Set<X> vs List<X> split inside Many is not preserved on the variant; emit
+                // is uniform via Iterable. The fixture still exercises the Set classifier path.
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
         },

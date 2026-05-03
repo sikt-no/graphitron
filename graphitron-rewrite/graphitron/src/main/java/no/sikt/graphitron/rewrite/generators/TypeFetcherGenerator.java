@@ -536,15 +536,14 @@ public class TypeFetcherGenerator {
         }
 
         // Single-cardinality sibling: scatterSingleByIdx returns List<Record> (one slot per key,
-        // null where no match) rather than List<List<Record>>. Gated on any single-cardinality
-        // Split* field, or any RecordTableField whose batchKey is AccessorRowKeyedMany (the
-        // loadMany contract: one record per key, regardless of the field's GraphQL cardinality).
-        boolean hasSingleSplitField = fields.stream().anyMatch(f ->
-            (f instanceof ChildField.SplitTableField stf
-                && !stf.returnType().wrapper().isList())
-            || (f instanceof ChildField.RecordTableField rtf
-                && rtf.batchKey() instanceof BatchKey.AccessorRowKeyedMany));
-        if (hasSingleSplitField) {
+        // null where no match) rather than List<List<Record>>. Gated on the BatchKeyField
+        // capability emitsSingleRecordPerKey, which folds two structurally unrelated triggers
+        // (single-cardinality Split* fields, RecordTableField with AccessorRowKeyedMany) onto
+        // one uniform answer. A future variant whose rows-method emits 1 record per key
+        // implements the capability and reaches this gate without a third disjunct here.
+        boolean hasSingleRecordPerKeyField = fields.stream()
+            .anyMatch(f -> f instanceof BatchKeyField bkf && bkf.emitsSingleRecordPerKey());
+        if (hasSingleRecordPerKeyField) {
             builder.addMethod(SplitRowsMethodEmitter.buildScatterSingleByIdxHelper());
         }
 
@@ -2558,7 +2557,9 @@ public class TypeFetcherGenerator {
         key = "accessor-rowkey-cardinality-matches-field",
         reliesOn = "FieldBuilder.deriveBatchKeyFromTypedAccessor produces AccessorRowKeyedMany "
             + "only on list fields and AccessorRowKeyedSingle only on single fields. The "
-            + "(usesLoadMany ⇔ valueType = Record) rule below depends on this: an "
+            + "valueType rule below ((dispatch == LOAD_MANY || !isList) → Record) folds the "
+            + "two cases that emit a per-key value of Record (LOAD_MANY's loadMany contract; "
+            + "single-cardinality LOAD_ONE) and otherwise emits List<Record>. An "
             + "AccessorRowKeyedMany on a non-list field would emit code expecting List<Record> "
             + "from a loadMany that supplies Record, miscompiling generated *Fetchers.")
     private static <T extends ChildField.TableTargetField & BatchKeyField> MethodSpec
@@ -2566,13 +2567,17 @@ public class TypeFetcherGenerator {
                     GraphitronType.ResultType resultType, String jooqPackage, String outputPackage) {
 
         boolean isList = field.returnType().wrapper().isList();
-        boolean usesLoadMany = batchKey instanceof BatchKey.AccessorRowKeyedMany;
+        BatchKey.LoaderDispatch dispatch = batchKey.dispatch();
 
-        // For loadMany, the loader's per-key value is a single Record (each element-PK key maps
-        // to exactly one element record); loadMany returns CompletableFuture<List<Record>> which
-        // already matches the list-field shape. For load, the value follows the field's
-        // cardinality directly.
-        TypeName valueType = (usesLoadMany || !isList)
+        // For LOAD_MANY, the loader's per-key value is a single Record (each element-PK key
+        // maps to exactly one element record); loadMany returns CompletableFuture<List<Record>>
+        // which already matches the list-field shape. For LOAD_ONE, the value follows the
+        // field's cardinality directly. The pairing of dispatch and field cardinality is the
+        // contract: a LOAD_MANY on a non-list field would emit code expecting List<Record> from
+        // a loadMany that supplies Record. The classifier upholds this contract by producing
+        // AccessorRowKeyedMany (LOAD_MANY) only on list fields; the typed dispatch projection
+        // makes that contract a property of the model, not a string-name convention.
+        TypeName valueType = (dispatch == BatchKey.LoaderDispatch.LOAD_MANY || !isList)
             ? RECORD
             : ParameterizedTypeName.get(LIST, RECORD);
         // The fetcher's overall result follows the field's cardinality regardless of dispatch.
@@ -2592,18 +2597,19 @@ public class TypeFetcherGenerator {
             .add("}")
             .build();
 
-        // The keying-statement variable name is set by buildRecordParentKeyExtraction's arm:
-        // load-arm permits emit `key`; the loadMany arm emits `keys`. The dispatch reads the
-        // matching local by name.
+        // Dispatch: LOAD_ONE emits load(key, env); LOAD_MANY emits loadMany(keys, ...). The
+        // matching key local is emitted by buildRecordParentKeyExtraction (which also reads
+        // the dispatch projection so the local name and the dispatch shape agree).
         //
         // DataLoader.loadMany overload that takes key contexts requires a List<Object> of the
         // same arity as the keys list; the batch loader only ever reads keyContexts[0] (see
-        // buildRecordBasedDataFetcher's lambda above), so duplicating env across all positions
-        // is the cheapest way to wire the env through. load(key, env) takes a single Object
-        // keyContext directly, no list-wrapping needed.
-        String dispatchCall = usesLoadMany
-            ? "return loader.loadMany(keys, java.util.Collections.nCopies(keys.size(), env))\n"
-            : "return loader.load(key, env)\n";
+        // the lambda above), so duplicating env across all positions is the cheapest way to
+        // wire the env through. load(key, env) takes a single Object keyContext directly, no
+        // list-wrapping needed.
+        String dispatchCall = switch (dispatch) {
+            case LOAD_ONE  -> "return loader.load(key, env)\n";
+            case LOAD_MANY -> "return loader.loadMany(keys, java.util.Collections.nCopies(keys.size(), env))\n";
+        };
 
         return MethodSpec.methodBuilder(field.name())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)

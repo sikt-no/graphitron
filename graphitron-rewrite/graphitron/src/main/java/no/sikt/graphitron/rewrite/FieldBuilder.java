@@ -2674,7 +2674,7 @@ class FieldBuilder {
      * unconditionally uses {@code fk.sourceColumns()} because record parents never batch by
      * parent PK.
      */
-    private static BatchKey.ParentKeyed deriveSplitQueryBatchKey(TableRef parentTable, List<JoinStep> path, boolean isList) {
+    private static BatchKey.RowKeyed deriveSplitQueryBatchKey(TableRef parentTable, List<JoinStep> path, boolean isList) {
         if (!isList && !path.isEmpty() && path.get(0) instanceof JoinStep.FkJoin fk) {
             return new BatchKey.RowKeyed(fk.sourceColumns());
         }
@@ -2783,8 +2783,7 @@ class FieldBuilder {
      */
     private sealed interface AccessorMatch {
         record Single(java.lang.reflect.Method method, Class<?> elementClass) implements AccessorMatch {}
-        record Many(java.lang.reflect.Method method, Class<?> elementClass,
-                    BatchKey.AccessorRowKeyedMany.Container container) implements AccessorMatch {}
+        record Many(java.lang.reflect.Method method, Class<?> elementClass) implements AccessorMatch {}
         record CardinalityMismatch(String message) implements AccessorMatch {}
     }
 
@@ -2860,11 +2859,9 @@ class FieldBuilder {
 
             // Cardinality alignment.
             if (fieldIsList) {
-                if (axis.container() == ReturnContainer.LIST || axis.container() == ReturnContainer.SET) {
-                    var c = axis.container() == ReturnContainer.LIST
-                        ? BatchKey.AccessorRowKeyedMany.Container.LIST
-                        : BatchKey.AccessorRowKeyedMany.Container.SET;
-                    matches.add(new AccessorMatch.Many(m, axis.elementClass(), c));
+                if (axis.container() == ServiceCatalog.ContainerKind.LIST
+                        || axis.container() == ServiceCatalog.ContainerKind.SET) {
+                    matches.add(new AccessorMatch.Many(m, axis.elementClass()));
                 } else {
                     matches.add(new AccessorMatch.CardinalityMismatch(
                         "list field '" + fieldName + "' has accessor '" + mName
@@ -2872,10 +2869,10 @@ class FieldBuilder {
                         + "> or Set<" + axis.elementClass().getSimpleName() + ">"));
                 }
             } else {
-                if (axis.container() == ReturnContainer.SINGLE) {
+                if (axis.container() == ServiceCatalog.ContainerKind.SINGLE) {
                     matches.add(new AccessorMatch.Single(m, axis.elementClass()));
                 } else {
-                    String containerLabel = axis.container() == ReturnContainer.LIST ? "a list" : "a set";
+                    String containerLabel = axis.container() == ServiceCatalog.ContainerKind.LIST ? "a list" : "a set";
                     matches.add(new AccessorMatch.CardinalityMismatch(
                         "single field '" + fieldName + "' has accessor '" + mName
                         + "' returning " + containerLabel + "; expected a single record"));
@@ -2926,39 +2923,26 @@ class FieldBuilder {
             ClassName.bestGuess(parentFqClassName),
             mm.method().getName(),
             ClassName.bestGuess(mm.elementClass().getName()));
-        return new AccessorDerivation.Ok(new BatchKey.AccessorRowKeyedMany(hop, ref, mm.container()));
+        return new AccessorDerivation.Ok(new BatchKey.AccessorRowKeyedMany(hop, ref));
     }
 
-    private enum ReturnContainer { SINGLE, LIST, SET }
-
-    private record ReturnAxis(ReturnContainer container, Class<?> elementClass) {}
+    private record ReturnAxis(ServiceCatalog.ContainerKind container, Class<?> elementClass) {}
 
     /**
      * Classifies an accessor's generic return type into a {@link ReturnAxis} when the shape is
      * one of {@code X}, {@code List<X>}, {@code Set<X>} for some concrete {@code X} extending
      * {@link org.jooq.TableRecord}; returns {@code null} for any other shape (raw types,
-     * wildcards, unrelated containers, non-{@code TableRecord} elements). Mirrors
-     * {@code ServiceCatalog.classifySourcesType}'s container-and-element walk for the
-     * accessor side; the SOURCES classifier targets {@code RowN}/{@code RecordN} elements
-     * additionally, which the accessor path does not.
+     * wildcards, unrelated containers, non-{@code TableRecord} elements). Delegates the
+     * container-axis walk to {@link ServiceCatalog#peelContainer}, the shared helper that also
+     * powers the SOURCES classifier; the SOURCES classifier targets {@code RowN}/{@code RecordN}
+     * elements additionally, which the accessor path does not.
      */
     private static ReturnAxis classifyAccessorReturn(java.lang.reflect.Type returnType) {
-        if (returnType instanceof Class<?> cls
-                && org.jooq.TableRecord.class.isAssignableFrom(cls)) {
-            return new ReturnAxis(ReturnContainer.SINGLE, cls);
-        }
-        if (returnType instanceof java.lang.reflect.ParameterizedType pt
-                && pt.getRawType() instanceof Class<?> rawCls) {
-            ReturnContainer container;
-            if (rawCls == java.util.List.class) container = ReturnContainer.LIST;
-            else if (rawCls == java.util.Set.class) container = ReturnContainer.SET;
-            else return null;
-            java.lang.reflect.Type[] typeArgs = pt.getActualTypeArguments();
-            if (typeArgs.length != 1) return null;
-            if (typeArgs[0] instanceof Class<?> elementClass
-                    && org.jooq.TableRecord.class.isAssignableFrom(elementClass)) {
-                return new ReturnAxis(container, elementClass);
-            }
+        var split = ServiceCatalog.peelContainer(returnType, java.util.EnumSet.allOf(ServiceCatalog.ContainerKind.class));
+        if (split.isEmpty()) return null;
+        if (split.get().elementType() instanceof Class<?> elementClass
+                && org.jooq.TableRecord.class.isAssignableFrom(elementClass)) {
+            return new ReturnAxis(split.get().container(), elementClass);
         }
         return null;
     }

@@ -1,6 +1,5 @@
 package no.sikt.graphitron.codereferences.dummyreferences;
 
-import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmActorRecord;
 import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord;
 import no.sikt.graphitron.rewrite.test.jooq.tables.records.LanguageRecord;
 
@@ -62,14 +61,4 @@ public final class AccessorPayloads {
      * {@code AccessorDerivation.CardinalityMismatch} arm.
      */
     public record SingleAccessorOnListField(FilmRecord films) {}
-
-    /**
-     * Cardinality-mismatch case: the field is single ({@code Film}) but the accessor returns a
-     * {@code List<FilmActorRecord>}. The field shape is single-cardinality so a list / set
-     * accessor mismatches; the element type uses {@link FilmActorRecord} so the column-class
-     * column lookups in the classifier route into a different table to also check the
-     * separate-element-table direction. Note: this case is not used by the cross-product test;
-     * it exists for symmetry should additional matrix coverage be added.
-     */
-    public record ListAccessorOnSingleField(List<FilmActorRecord> film) {}
 }
