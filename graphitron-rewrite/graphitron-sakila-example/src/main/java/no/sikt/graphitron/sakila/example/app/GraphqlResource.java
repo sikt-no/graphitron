@@ -3,6 +3,8 @@ package no.sikt.graphitron.sakila.example.app;
 import graphql.ExecutionInput;
 import graphql.ExecutionResult;
 import io.agroal.api.AgroalDataSource;
+import io.quarkus.qute.Template;
+import io.quarkus.qute.TemplateInstance;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
@@ -21,7 +23,9 @@ import java.util.Map;
  * GraphQL-over-HTTP endpoint per the
  * <a href="https://graphql.github.io/graphql-over-http/">graphql-over-http</a> spec: POST
  * accepts {@code application/json} and returns {@code application/graphql-response+json};
- * GET accepts {@code ?query=&operationName=} for query-only requests.
+ * GET accepts {@code ?query=&operationName=} for query-only requests, and a browser-style
+ * {@code Accept: text/html} on GET serves the GraphiQL playground (bundled at build time
+ * by quarkus-web-bundler from the mvnpm graphiql / react / react-dom artifacts).
  *
  * <p>Each request builds a fresh {@link DataLoaderRegistry} (graphql-java requires one even
  * when no DataLoader is used; Split-fetchers rely on it for batching) and threads a
@@ -35,6 +39,7 @@ public class GraphqlResource {
 
     @Inject GraphqlEngine engine;
     @Inject AgroalDataSource dataSource;
+    @Inject Template graphiql;
 
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
@@ -48,6 +53,12 @@ public class GraphqlResource {
     public Response graphqlGet(@QueryParam("query") String query,
                                @QueryParam("operationName") String operationName) {
         return execute(query, null, operationName);
+    }
+
+    @GET
+    @Produces(MediaType.TEXT_HTML)
+    public TemplateInstance graphiqlPlayground() {
+        return graphiql.instance();
     }
 
     private Response execute(String query, Map<String, Object> variables, String operationName) {

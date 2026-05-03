@@ -9,6 +9,7 @@ If you're picking up Graphitron for a new project, this module is the answer to 
 | If you're | Copy |
 |---|---|
 | Standing up a Quarkus app over a Graphitron schema | [`src/main/java/.../app/`](src/main/java/no/sikt/graphitron/sakila/example/app/), [`src/main/resources/graphql/schema.graphqls`](src/main/resources/graphql/), [`src/main/resources/application.properties`](src/main/resources/application.properties) |
+| Wiring a GraphiQL playground onto your `/graphql` endpoint | [`src/main/resources/web/app/main.jsx`](src/main/resources/web/app/main.jsx), [`src/main/resources/templates/graphiql.html`](src/main/resources/templates/graphiql.html), the `quarkus-web-bundler` + mvnpm `graphiql` / `react` / `react-dom` block in [`pom.xml`](pom.xml) |
 | Pinning your schema's behaviour against PostgreSQL | [`src/test/java/.../querydb/`](src/test/java/no/sikt/graphitron/rewrite/test/querydb/) |
 
 The `pom.xml` shows the shape you need (Quarkus BOM, the rewrite's `graphitron-maven` plugin, jOOQ codegen). Adjust dependencies and packages, drop in your schema, you're done.
@@ -18,7 +19,7 @@ The `pom.xml` shows the shape you need (Quarkus BOM, the rewrite's `graphitron-m
 Three files cover the runtime under [`src/main/java/no/sikt/graphitron/sakila/example/app/`](src/main/java/no/sikt/graphitron/sakila/example/app/):
 
 - [`GraphqlEngine`](src/main/java/no/sikt/graphitron/sakila/example/app/GraphqlEngine.java) (`@ApplicationScoped`): builds the `GraphQLSchema` once at startup via `Graphitron.buildSchema(b -> {})` and exposes a single `GraphQL` engine. graphql-java engines are immutable and thread-safe; one instance handles every request.
-- [`GraphqlResource`](src/main/java/no/sikt/graphitron/sakila/example/app/GraphqlResource.java) (`@Path("/graphql")`): a JAX-RS resource implementing the [GraphQL-over-HTTP spec](https://graphql.github.io/graphql-over-http/). POST accepts `application/json`, GET takes `?query=&operationName=`, both negotiate to `application/graphql-response+json`. Each request gets a fresh `DataLoaderRegistry` (graphql-java requires one even when no DataLoader is used) and a per-request `AppContext` stashed on the `ExecutionInput`.
+- [`GraphqlResource`](src/main/java/no/sikt/graphitron/sakila/example/app/GraphqlResource.java) (`@Path("/graphql")`): a JAX-RS resource implementing the [GraphQL-over-HTTP spec](https://graphql.github.io/graphql-over-http/). POST accepts `application/json`, GET takes `?query=&operationName=`, both negotiate to `application/graphql-response+json`. A third method, `@GET @Produces(text/html)`, returns the GraphiQL Qute template, so a browser visiting `http://localhost:8080/graphql` lands on the playground while curl/POST traffic routes to the engine. Each request gets a fresh `DataLoaderRegistry` (graphql-java requires one even when no DataLoader is used) and a per-request `AppContext` stashed on the `ExecutionInput`.
 - [`AppContext`](src/main/java/no/sikt/graphitron/sakila/example/app/AppContext.java) (`implements GraphitronContext`): per-request `DSLContext` derived from the Quarkus-managed `AgroalDataSource`, plus a context-values map fed into `getContextArgument` lookups. Wire JWT-claim extraction or any other request-scoped state through that map.
 
 Why plain JAX-RS rather than `quarkus-smallrye-graphql`: SmallRye GraphQL ships its own engine and would collide with the `Graphitron`-built `GraphQL`. A single `/graphql` resource is the minimal correct shape.
@@ -34,6 +35,12 @@ mvn quarkus:dev
 ```
 
 `application.properties` reads `${DB_URL:jdbc:postgresql://localhost:5432/rewrite_test}` (and matching `DB_USERNAME` / `DB_PASSWORD`); the defaults match the `local-db` profile, so `mvn quarkus:dev` works out of the box if you have the example's Postgres up. The app does not own the database; bring your own (with `init.sql` from `graphitron-sakila-db` already loaded for the example's data).
+
+### GraphiQL playground
+
+A browser opening `http://localhost:8080/graphql` lands on a self-hosted [GraphiQL 5](https://github.com/graphql/graphiql/tree/main/packages/graphiql) IDE. The bundle is built at `mvn install` time by [quarkus-web-bundler](https://github.com/quarkiverse/quarkus-web-bundler), which ships esbuild as a Java native image (no Node toolchain on the build machine). The npm packages come in as Maven dependencies via [mvnpm](https://mvnpm.org/): `graphiql`, `react`, `react-dom`, `graphql`, and `@graphiql/toolkit` are declared at `<scope>provided</scope>` in `pom.xml`, esbuild bundles whatever the entrypoint at `src/main/resources/web/app/main.jsx` actually imports, and the result is served from `/static/bundle/` and injected into the `templates/graphiql.html` Qute template by the `{#bundle /}` tag.
+
+The runtime classpath stays Java-only; nothing is fetched from a CDN at runtime. Three pins in `<dependencyManagement>` keep mvnpm's transitive resolution honest (graphql-ws to drop a Node-native subtree, clsx to reconcile two graphiql 5 chains, react-compiler-runtime because its real version isn't mirrored); the `pom.xml` comments explain why each one is needed.
 
 ## Recommended test pattern (the tests)
 
