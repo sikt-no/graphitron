@@ -591,11 +591,11 @@ public class GraphitronSchemaBuilder {
             var loc = (locs != null && !locs.isEmpty()) ? locs.get(0) : null;
             if (m.find() && FederationDirectiveNamesHolder.NAMES.contains(m.group(1))) {
                 anyFed = true;
-                result.add(new ValidationError(RejectionKind.INVALID_SCHEMA, null,
-                        buildRecipeMessage(m.group(1)), loc));
+                result.add(new ValidationError(null,
+                        no.sikt.graphitron.rewrite.model.Rejection.invalidSchema(buildRecipeMessage(m.group(1))), loc));
             } else {
-                result.add(new ValidationError(RejectionKind.INVALID_SCHEMA, null,
-                        err.getMessage(), loc));
+                result.add(new ValidationError(null,
+                        no.sikt.graphitron.rewrite.model.Rejection.invalidSchema(err.getMessage()), loc));
             }
         }
         return anyFed ? result : null;

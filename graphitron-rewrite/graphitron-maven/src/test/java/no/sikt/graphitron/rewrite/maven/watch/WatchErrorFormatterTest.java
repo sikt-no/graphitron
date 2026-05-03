@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.maven.watch;
 import graphql.language.SourceLocation;
 import no.sikt.graphitron.rewrite.RejectionKind;
 import no.sikt.graphitron.rewrite.ValidationError;
+import no.sikt.graphitron.rewrite.model.Rejection;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -63,8 +64,8 @@ class WatchErrorFormatterTest {
     void schemaLevelErrorsRenderInOwnBlock() {
         var errors = List.of(
             // null coordinate => schema-level
-            new ValidationError(RejectionKind.AUTHOR_ERROR, null,
-                "schema-wide: duplicate type Order across two files",
+            new ValidationError(null,
+                Rejection.structural("schema-wide: duplicate type Order across two files"),
                 new SourceLocation(1, 1, "schema/main.graphqls")),
             error(RejectionKind.AUTHOR_ERROR, "User.orders",
                 "Field 'User.orders': bad", "schema/main.graphqls", 5, 1)
@@ -124,6 +125,11 @@ class WatchErrorFormatterTest {
 
     private static ValidationError error(RejectionKind kind, String coord, String message,
                                          String file, int line, int col) {
-        return new ValidationError(kind, coord, message, new SourceLocation(line, col, file));
+        Rejection rejection = switch (kind) {
+            case AUTHOR_ERROR  -> Rejection.structural(message);
+            case INVALID_SCHEMA -> Rejection.invalidSchema(message);
+            case DEFERRED      -> Rejection.deferred(message, "");
+        };
+        return new ValidationError(coord, rejection, new SourceLocation(line, col, file));
     }
 }

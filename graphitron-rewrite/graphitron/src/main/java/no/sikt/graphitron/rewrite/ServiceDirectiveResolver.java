@@ -173,7 +173,7 @@ final class ServiceDirectiveResolver {
                 GraphitronField lifted = fb.liftToErrorsField(fieldDef, parentTypeName, p);
                 yield lifted != null
                     ? new Resolved.ErrorsLifted(lifted)
-                    : new Resolved.Rejected(Rejection.deferred("@service returning a polymorphic type is not yet supported"));
+                    : new Resolved.Rejected(Rejection.deferred("@service returning a polymorphic type is not yet supported", ""));
             }
         };
     }

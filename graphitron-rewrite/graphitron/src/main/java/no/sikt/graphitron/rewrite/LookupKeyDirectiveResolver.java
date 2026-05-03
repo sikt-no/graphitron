@@ -4,6 +4,8 @@ import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 
+import java.util.List;
+
 /**
  * Resolves the directive-level invariants of {@code @lookupKey} into a sealed {@link Resolved} the
  * caller switches on, absorbing the structural rejections previously inlined at three classify
@@ -78,7 +80,9 @@ final class LookupKeyDirectiveResolver {
      */
     Resolved resolveAtChild(ReturnTypeRef.TableBoundReturnType returnType, boolean withSplitQuery) {
         if (returnType.wrapper() instanceof FieldWrapper.Connection) {
-            return new Resolved.Rejected(Rejection.invalidSchema("@asConnection on @lookupKey fields is invalid: @lookupKey establishes a positional "
+            return new Resolved.Rejected(Rejection.directiveConflict(
+                List.of("asConnection", "lookupKey"),
+                "@asConnection on @lookupKey fields is invalid: @lookupKey establishes a positional "
                 + "correspondence between the input key list and the output list (one entry per key), "
                 + "which pagination would break. Drop @asConnection or drop @lookupKey."));
         }
