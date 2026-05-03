@@ -5371,7 +5371,7 @@ class GraphitronSchemaBuilderTest {
                 var f = schema.field("Query", "wrongReturn");
                 assertThat(f).isInstanceOf(UnclassifiedField.class);
                 assertThat(((UnclassifiedField) f).reason())
-                    .contains("must return 'no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord'");
+                    .contains("must return 'FilmRecord'");
             }),
 
         CHILD_SERVICE_TABLE_BOUND_WRONG_RETURN_REJECTED(
@@ -5387,7 +5387,7 @@ class GraphitronSchemaBuilderTest {
                 var f = schema.field("Film", "language");
                 assertThat(f).isInstanceOf(UnclassifiedField.class);
                 assertThat(((UnclassifiedField) f).reason())
-                    .contains("must return 'java.util.List<org.jooq.Record>'");
+                    .contains("must return 'List<Record>'");
             }),
 
         CHILD_SERVICE_SCALAR_WRONG_VALUE_TYPE_REJECTED(
@@ -5402,7 +5402,7 @@ class GraphitronSchemaBuilderTest {
                 var f = schema.field("Film", "titleUppercase");
                 assertThat(f).isInstanceOf(UnclassifiedField.class);
                 assertThat(((UnclassifiedField) f).reason())
-                    .contains("must return 'java.util.Map<org.jooq.Record1<java.lang.Integer>, java.lang.String>'");
+                    .contains("must return 'Map<Record1<Integer>, String>'");
             }),
 
         MUTATION_SERVICE_WITH_CONNECTION_RETURN_REJECTED(
@@ -5522,7 +5522,7 @@ class GraphitronSchemaBuilderTest {
                 var f = schema.field("Mutation", "wrongReturnMutation");
                 assertThat(f).isInstanceOf(UnclassifiedField.class);
                 assertThat(((UnclassifiedField) f).reason())
-                    .contains("must return 'no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord'");
+                    .contains("must return 'FilmRecord'");
             }),
 
         NOT_GENERATED_DIRECTIVE_REJECTED(
