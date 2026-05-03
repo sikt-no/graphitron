@@ -2810,8 +2810,8 @@ class FieldBuilder {
             + "field.returnType().wrapper().isList() is false; returns AccessorRowKeyedMany only "
             + "when it is true; mismatched cells become AccessorDerivation.CardinalityMismatch "
             + "rejections. TypeFetcherGenerator.buildRecordBasedDataFetcher's "
-            + "(usesLoadMany ⇔ valueType = Record) rule depends on this; an "
-            + "AccessorRowKeyedMany on a non-list field would emit code expecting List<Record> "
+            + "((dispatch == LOAD_MANY || !isList) → valueType = Record) rule depends on this; "
+            + "an AccessorRowKeyedMany on a non-list field would emit code expecting List<Record> "
             + "from a loadMany that supplies Record, miscompiling generated *Fetchers.")
     private AccessorDerivation deriveBatchKeyFromTypedAccessor(
             String fieldName, ReturnTypeRef.TableBoundReturnType tb,
