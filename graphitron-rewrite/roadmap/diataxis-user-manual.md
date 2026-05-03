@@ -265,7 +265,7 @@ The implementation is multi-phase because each phase ships independently
 useful artifacts and has different drift-protection seams. The phases are
 not sub-PRs; each is one or more commits depending on what bundles cleanly.
 
-### Phase 1a: Scaffold (IA-only) — shipped at `9e8feb3`
+### Phase 1a: Scaffold (IA-only) — shipped at `3afc278`
 
 Five `.adoc` files under `/docs/manual/` plus wiring: four-quadrant
 landing (`.quadrants` 2x2 table) at `/docs/manual/index.adoc`,
