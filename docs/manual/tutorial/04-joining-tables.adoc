@@ -8,7 +8,7 @@
 
 [source,bash]
 ----
-curl -s -X POST http://localhost:8088/graphql \
+curl -s -X POST http://localhost:8080/graphql \
   -H 'Content-Type: application/json' \
   -d '{"query":"{ customers { firstName address { address district } } }"}'
 ----
@@ -74,7 +74,7 @@ storeAddress: Address @reference(path: [
 
 [source,bash]
 ----
-curl -s -X POST http://localhost:8088/graphql \
+curl -s -X POST http://localhost:8080/graphql \
   -H 'Content-Type: application/json' \
   -d '{"query":"{ customers { firstName storeAddress { address district } } }"}'
 ----

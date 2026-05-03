@@ -98,7 +98,7 @@
             <artifactId>jakarta.validation-api</artifactId>
         </dependency>
 
-        <!-- Quarkus runtime: HTTP + JAX-RS, YAML config, Postgres datasource, JSON
+        <!-- Quarkus runtime: HTTP + JAX-RS, Postgres datasource, JSON
              serialization for the GraphQL endpoint, and Hibernate Validator (replaces the
              previous test-scope hibernate-validator + expressly deps). The runtime boots
              only the non-federated Graphitron via GraphqlEngine; the federated codegen
@@ -110,10 +110,6 @@
         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-rest-jackson</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>io.quarkus</groupId>
-            <artifactId>quarkus-config-yaml</artifactId>
         </dependency>
         <dependency>
             <groupId>io.quarkus</groupId>
