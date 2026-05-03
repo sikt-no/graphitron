@@ -1,0 +1,22 @@
+{
+  "name": "graphitron-sakila-graphiql-build",
+  "version": "0.0.0",
+  "private": true,
+  "description": "One-shot Vite build for the GraphiQL playground served by graphitron-sakila-example. Run `npm run build` to refresh ../../src/main/resources/META-INF/resources/graphiql/. Not part of the Maven build.",
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@graphiql/toolkit": "^0.11.3",
+    "graphiql": "^5.2.1",
+    "graphql": "^16.11.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.4.1",
+    "vite": "^6.3.5"
+  }
+}
