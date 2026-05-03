@@ -2551,12 +2551,29 @@ public class TypeFetcherGenerator {
      *            (for {@code returnType()} and {@code name()}) and {@link BatchKeyField} (for
      *            {@code batchKey()} and {@code rowsMethodName()}).
      */
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "accessor-rowkey-cardinality-matches-field",
+        reliesOn = "FieldBuilder.deriveBatchKeyFromTypedAccessor produces AccessorRowKeyedMany "
+            + "only on list fields and AccessorRowKeyedSingle only on single fields. The "
+            + "(usesLoadMany ⇔ valueType = Record) rule below depends on this: an "
+            + "AccessorRowKeyedMany on a non-list field would emit code expecting List<Record> "
+            + "from a loadMany that supplies Record, miscompiling generated *Fetchers.")
     private static <T extends ChildField.TableTargetField & BatchKeyField> MethodSpec
             buildRecordBasedDataFetcher(T field, BatchKey.RecordParentBatchKey batchKey,
                     GraphitronType.ResultType resultType, String jooqPackage, String outputPackage) {
 
         boolean isList = field.returnType().wrapper().isList();
-        TypeName valueType = isList ? ParameterizedTypeName.get(LIST, RECORD) : RECORD;
+        boolean usesLoadMany = batchKey instanceof BatchKey.AccessorRowKeyedMany;
+
+        // For loadMany, the loader's per-key value is a single Record (each element-PK key maps
+        // to exactly one element record); loadMany returns CompletableFuture<List<Record>> which
+        // already matches the list-field shape. For load, the value follows the field's
+        // cardinality directly.
+        TypeName valueType = (usesLoadMany || !isList)
+            ? RECORD
+            : ParameterizedTypeName.get(LIST, RECORD);
+        // The fetcher's overall result follows the field's cardinality regardless of dispatch.
+        TypeName resultValueType = isList ? ParameterizedTypeName.get(LIST, RECORD) : RECORD;
 
         TypeName keyType = GeneratorUtils.keyElementType(batchKey);
         var loaderType = ParameterizedTypeName.get(DATA_LOADER, keyType, valueType);
@@ -2572,9 +2589,16 @@ public class TypeFetcherGenerator {
             .add("}")
             .build();
 
+        // The keying-statement variable name is set by buildRecordParentKeyExtraction's arm:
+        // load-arm permits emit `key`; the loadMany arm emits `keys`. The dispatch reads the
+        // matching local by name.
+        String dispatchCall = usesLoadMany
+            ? "return loader.loadMany(keys, env)\n"
+            : "return loader.load(key, env)\n";
+
         return MethodSpec.methodBuilder(field.name())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(asyncResultType(valueType))
+            .returns(asyncResultType(resultValueType))
             .addParameter(ENV, "env")
             .addCode(buildDataLoaderName())
             .addCode(
@@ -2583,8 +2607,8 @@ public class TypeFetcherGenerator {
                 loaderType, DATA_LOADER_FACTORY, lambdaBlock)
             .addCode(GeneratorUtils.buildRecordParentKeyExtraction(batchKey, resultType, jooqPackage))
             .addCode(CodeBlock.builder()
-                .add("return loader.load(key, env)\n")
-                .add("    ").add(asyncWrapTail(valueType, outputPackage, Optional.empty())).add(";\n")
+                .add(dispatchCall)
+                .add("    ").add(asyncWrapTail(resultValueType, outputPackage, Optional.empty())).add(";\n")
                 .build())
             .build();
     }
