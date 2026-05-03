@@ -1,7 +1,7 @@
 ---
 id: R68
 title: "Diataxis user manual: absorb legacy README into the docs site"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 15
 theme: docs
@@ -265,41 +265,75 @@ The implementation is multi-phase because each phase ships independently
 useful artifacts and has different drift-protection seams. The phases are
 not sub-PRs; each is one or more commits depending on what bundles cleanly.
 
-### Phase 1: Scaffold and tutorial
+### Phase 1a: Scaffold (IA-only, no prose authored yet)
 
-Create `/docs/manual/` with:
+Create the manual section's skeleton on the deployed site so the
+information architecture can be validated cheaply, before any tutorial
+or how-to prose is written. Files:
 
-- `index.adoc` describing the four quadrants and how to navigate them. Use
-  the four-up grid pattern from `/docs/index.adoc`.
-- `tutorial/` chapter, six pages, anchored to the
-  `graphitron-rewrite/graphitron-sakila-example/` project R67 ships. The
-  tutorial's goal is "a reader who has only run `mvn -version` finishes
-  with a query like `customers { firstName email address { addressLine1 } }`
-  returning real data, served over HTTP via `mvn quarkus:dev`." Each page
-  ends with a "you have just learned" line and a "next" link to the
-  following page. Page-by-page: prerequisites and `mvn quarkus:dev`; the
-  three-table starter schema with directives; running the first query in
-  the Quarkus dev UI; adding `@reference` to traverse to a joined table;
-  one mutation via `@mutation`; and a "going further" page that points at
-  the four how-to recipes most relevant to the worked example
-  (`add-custom-conditions`, `pagination-and-sorting`, `error-handling`,
-  `test-your-schema`).
-- An updated `/docs/index.adoc` and `/docs/quick-start.adoc`. R67's
-  Stage 3 has already repointed `quick-start.adoc:21,64` from the legacy
-  example to `graphitron-sakila-example` and added a one-paragraph
-  mention of the test-pattern role. R68 Phase 1 picks the page up from
-  there: it stays a true *orientation* page (~one screen) and grows a
-  "Tutorial" link as the recommended first stop after Quick Start. The
-  index's "Documentation" table grows a "User manual" row with the four
-  quadrant sub-rows. R68 does not undo R67's link change; the two plans
-  edit `quick-start.adoc` in sequence, not in parallel.
+- `/docs/manual/index.adoc`: the four-quadrant landing page, drafted
+  per the read-simply sketch in [User documentation](#user-documentation-first-client-check).
+  This is the artifact the read-simply test is run against.
+- `/docs/manual/tutorial/index.adoc`,
+  `/docs/manual/how-to/index.adoc`,
+  `/docs/manual/reference/index.adoc`,
+  `/docs/manual/explanation/index.adoc`: one paragraph each, naming
+  what the section will contain and pointing readers at the existing
+  Quick Start (for tutorial), `getting-started.adoc` (for how-to), and
+  the legacy README on GitHub (for reference) until later phases
+  replace those pointers. The four `xref:` links from the landing page
+  must resolve cleanly so the build stays green.
+- `/docs/index.adoc`: a "Manual" row added to the Documentation table,
+  positioned between Quick Start and Architecture. Keep
+  `/docs/quick-start.adoc` unchanged at this slice; the link rework
+  happens in Phase 1b once the tutorial exists to point at.
 
-Phase 1 ships as soon as a beginner can complete the tutorial against
-`graphitron-sakila-example` on a clean checkout: `mvn install -Plocal-db`
-once, then `mvn quarkus:dev` from the example module, then follow the
-six pages to a working query. No rewrite of legacy content yet; the
-tutorial is new prose because the legacy README has nothing
-tutorial-shaped to lift.
+Phase 1a ships when the four-quadrant page passes the read-simply
+test on the deployed `sikt-no.github.io/graphitron/` site: a reader
+landing cold can self-route to the right quadrant in three seconds. If
+the test fails, revise the IA in 1a, do not start 1b. The
+[directive index draft](#user-documentation-first-client-check) is
+the second read-simply check; it lands as part of `reference/index.adoc`
+in 1a, before any directive page is authored in Phase 2.
+
+This slice is deliberately small (five short `.adoc` files plus one
+table-row edit) so the IA review is the gating cost, not the prose.
+
+### Phase 1b: Tutorial prose and Quick Start rework
+
+Author the tutorial chapter once Phase 1a's IA has cleared the
+read-simply test. Files:
+
+- `/docs/manual/tutorial/` six pages, anchored to
+  `graphitron-rewrite/graphitron-sakila-example/`. The tutorial's goal
+  is "a reader who has only run `mvn -version` finishes with a query
+  like `customers { firstName email address { addressLine1 } }`
+  returning real data, served over HTTP via `mvn quarkus:dev`." Each
+  page ends with a "you have just learned" line and a "next" link to
+  the following page. Page-by-page: prerequisites and `mvn quarkus:dev`;
+  the three-table starter schema with directives; running the first
+  query in the Quarkus dev UI; adding `@reference` to traverse to a
+  joined table; one mutation via `@mutation`; and a "going further"
+  page that points at the four how-to recipes most relevant to the
+  worked example (`add-custom-conditions`, `pagination-and-sorting`,
+  `error-handling`, `test-your-schema`).
+- `/docs/quick-start.adoc`: surface a "Tutorial" link as the
+  recommended first stop after Quick Start. R67's Stage 3 already
+  repointed `quick-start.adoc:21,64` from the legacy example to
+  `graphitron-sakila-example`; Phase 1b picks the page up from there
+  and keeps it a true *orientation* page (~one screen).
+- `/docs/manual/tutorial/index.adoc`: replace the placeholder
+  paragraph from 1a with a real path overview.
+- The tutorial smoke test from [Tests](#tests) lands in 1b's last
+  commit, so the smoke test is real before the manual claims a
+  working tutorial.
+
+Phase 1b ships when a beginner can complete the tutorial against
+`graphitron-sakila-example` on a clean checkout: `mvn install
+-Plocal-db` once, then `mvn quarkus:dev` from the example module,
+then follow the six pages to a working query. No rewrite of legacy
+content yet; the tutorial is new prose because the legacy README has
+nothing tutorial-shaped to lift.
 
 ### Phase 2: Reference (directives) absorbs the legacy README
 
@@ -328,8 +362,8 @@ a directive exists in the schema but has no `<name>.adoc` page, or if a
 drift-protection seam: a future PR that adds a directive cannot land
 green without adding the doc page. `reference/directives/index.adoc`
 itself is hand-curated (its categorical view is editorial; see the
-first-client-check section) and Phase 1 ships its first draft for the
-read-simply test before any directive page is authored.
+first-client-check section) and Phase 1a ships its first draft for the
+read-simply test before any directive page is authored in Phase 2.
 
 The check belongs in the docs build (the `asciidoctor-maven-plugin`
 execution defined by R9) so doc breakage fails the same `mvn install` that
@@ -477,8 +511,8 @@ The drift-protection seams are the tests:
   the dev server. If a tutorial step references `mvn` flags, an HTTP
   endpoint shape, or a directive that no longer exists, the smoke test
   breaks before the docs ship. This is the heaviest-weight test and is
-  deferred to Phase 1 finishing first; the test is added in Phase 1's
-  last commit.
+  deferred to Phase 1b (after the tutorial prose exists to test
+  against); the test is added in Phase 1b's last commit.
 
 These tests do not duplicate the existing classification, validation, or
 codegen tests; they only cross-check that documented surface = code
@@ -504,12 +538,11 @@ This plan is `R68`. Related items:
   example module. R68's tutorial chapter anchors on the post-R67 example;
   R68's how-to recipes use post-R67 module names and cross-link into
   `querydb/`. Because R67 also repoints `quick-start.adoc:21,64`, R68
-  Phase 1's Quick Start rework picks up the post-R67 page rather than
-  competing with R67 on the same lines. *Hard dependency for Phase 1
-  (tutorial) and Phase 3 (how-tos)*; Phase 2 (directive reference) and
-  Phase 5 (diagnostics) can author in parallel with R67 because they do
-  not anchor on the example module. If Phase 2 finishes before R67 lands,
-  it ships under the manual top-nav as soon as R67 unblocks Phase 1.
+  Phase 1b's Quick Start rework picks up the post-R67 page rather than
+  competing with R67 on the same lines. R67 has shipped, so this
+  dependency is satisfied. Phase 1a (IA scaffold) does not anchor on
+  the example module either way; Phase 1b (tutorial prose) and Phase 3
+  (how-to recipes) do.
 - `R8` (`docs-as-index-into-tests`, Ready, deferred): the cross-link-to-
   tests pattern R68 reuses. R68 generalises R8's "doc points into tests"
   to the user-manual surface.
@@ -563,7 +596,8 @@ specific drafts that need to read simply for the design to be sound:
    ```
 
    If a reviewer cannot self-route from this page in three seconds, the
-   IA is wrong and Phase 1's index has to change before Phase 2 starts.
+   IA is wrong and Phase 1a's index has to change before Phase 1b
+   (tutorial prose) or Phase 2 (directive reference) starts.
 
 . The directive reference index (`reference/directives/index.adoc`) must
   surface the alphabetical list and a "by category" view (mapping,
@@ -572,9 +606,9 @@ specific drafts that need to read simply for the design to be sound:
   failure mode: alphabetical or categorical, never both, and 80 entries
   deep. The new index uses two compact tables side by side.
 
-Both drafts land in Phase 1 alongside the tutorial; if either one fails
-the read-simply test, the IA changes before any directive page is
-authored.
+Both drafts land in Phase 1a, before any tutorial prose or directive
+page is authored. If either one fails the read-simply test, the IA
+changes inside Phase 1a; Phase 1b does not start until both pass.
 
 ## Out of scope
 
@@ -595,7 +629,11 @@ authored.
 
 ## Estimate
 
-Phase 1 (scaffold + tutorial): ~3 days for a single author, mostly prose.
+Phase 1a (IA scaffold + read-simply checks): ~half a day; five short
+files plus one nav-row edit. Cheap by design so the IA review is the
+gating cost.
+Phase 1b (tutorial prose + smoke test): ~2.5 days for a single author,
+mostly prose plus the smoke-test wiring.
 Phase 2 (directive reference + verifier): ~5 days; 25 directives × ~30
 min each plus verifier wiring.
 Phase 3 (how-to recipes): ~5–6 days; 14 recipes × ~half-day each, mostly
@@ -606,6 +644,7 @@ Phase 5 (diagnostics glossary + deprecations index): ~1 day if the
 generators land cheaply, ~2 days if the validator exposure needs work.
 Phase 6 (cutover): ~half a day; mostly link-flipping.
 
-Total: ~17–19 days author-time, spread across multiple cycles. Phases 1
-and 2 are the user-visible cliff; Phases 3–6 ship continuously after
-that.
+Total: ~17–19 days author-time, spread across multiple cycles. Phase
+1a is the immediate next slice (IA validation, half a day). Phases 1b
+and 2 are the user-visible cliff that follows; Phases 3–6 ship
+continuously after that.
