@@ -265,39 +265,24 @@ The implementation is multi-phase because each phase ships independently
 useful artifacts and has different drift-protection seams. The phases are
 not sub-PRs; each is one or more commits depending on what bundles cleanly.
 
-### Phase 1a: Scaffold (IA-only, no prose authored yet)
+### Phase 1a: Scaffold (IA-only) — shipped at `9e8feb3`
 
-Create the manual section's skeleton on the deployed site so the
-information architecture can be validated cheaply, before any tutorial
-or how-to prose is written. Files:
+Five `.adoc` files under `/docs/manual/` plus wiring: four-quadrant
+landing (`.quadrants` 2x2 table) at `/docs/manual/index.adoc`,
+placeholder index pages in each of `tutorial/`, `how-to/`, `reference/`,
+`explanation/`. The `reference/` index doubles as the directive-index
+read-simply check (alphabetical + by-category, two compact lists side
+by side). `/docs/index.adoc` grew a Manual row in the Documentation
+table; `/docs/_theme/docinfo-header.html` grew a Manual nav link
+between Quick start and FAQ; `/docs/_theme/site.css` added
+`.quadrants`/`.quadrant-title` styles plus the responsive collapse.
+`/docs/pom.xml` extended `stage-adoc` to include `manual/**/*.adoc`
+and the antrun task to fan CSS + docinfo into each new subdirectory.
 
-- `/docs/manual/index.adoc`: the four-quadrant landing page, drafted
-  per the read-simply sketch in [User documentation](#user-documentation-first-client-check).
-  This is the artifact the read-simply test is run against.
-- `/docs/manual/tutorial/index.adoc`,
-  `/docs/manual/how-to/index.adoc`,
-  `/docs/manual/reference/index.adoc`,
-  `/docs/manual/explanation/index.adoc`: one paragraph each, naming
-  what the section will contain and pointing readers at the existing
-  Quick Start (for tutorial), `getting-started.adoc` (for how-to), and
-  the legacy README on GitHub (for reference) until later phases
-  replace those pointers. The four `xref:` links from the landing page
-  must resolve cleanly so the build stays green.
-- `/docs/index.adoc`: a "Manual" row added to the Documentation table,
-  positioned between Quick Start and Architecture. Keep
-  `/docs/quick-start.adoc` unchanged at this slice; the link rework
-  happens in Phase 1b once the tutorial exists to point at.
-
-Phase 1a ships when the four-quadrant page passes the read-simply
-test on the deployed `sikt-no.github.io/graphitron/` site: a reader
-landing cold can self-route to the right quadrant in three seconds. If
-the test fails, revise the IA in 1a, do not start 1b. The
-[directive index draft](#user-documentation-first-client-check) is
-the second read-simply check; it lands as part of `reference/index.adoc`
-in 1a, before any directive page is authored in Phase 2.
-
-This slice is deliberately small (five short `.adoc` files plus one
-table-row edit) so the IA review is the gating cost, not the prose.
+Read-simply test runs on the deployed
+`https://sikt-no.github.io/graphitron/manual/` once the next deploy
+lands. If the four-quadrant page or the directive index fails the
+test, revise here in 1a; do not start 1b until both pass.
 
 ### Phase 1b: Tutorial prose and Quick Start rework
 
