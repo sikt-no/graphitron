@@ -1,13 +1,41 @@
 ---
 id: R60
 title: "Auto-derive BatchKey from typed TableRecord accessor on @record parents"
-status: In Progress
+status: In Review
 priority: 1
 theme: service
 depends-on: []
 ---
 
 # Auto-derive BatchKey from typed TableRecord accessor on @record parents
+
+## Shipped
+
+Implementation landed across three commits on `claude/graphitron-rewrite`:
+
+- `14889c1` — classifier auto-derivation, two new `BatchKey.RecordParentBatchKey` permits, four-arm switch in `buildRecordParentKeyExtraction`, paired load-bearing keys, three-option AUTHOR_ERROR rewrite. Build green; all 1236 pre-existing tests pass.
+- `aabd7ea` — unit tier (`BatchKeyTest`, 5 cases) and pipeline tier (`AccessorDerivedBatchKeyCase`, 6 cases) covering accept / reject / cardinality / ambiguous / heterogeneous-element corners. 1247 tests passing.
+- `b2ae55d` — fixtures (`CreateFilmsPayload` + service), schema entries, execution-tier test (`AccessorDerivedBatchKeyTest`), plus rows-method routing for the loadMany contract. Full `mvn install -Plocal-db` green including execution tier.
+
+### Deviations from the spec body below
+
+1. **Single-accessor execution test dropped.** `GraphitronSchemaValidator.validateRecordParentSingleCardinalityRejected` (Invariant #10) still rejects single-cardinality `RecordTableField` returns until the rows-method's single arm ships, so the `AccessorRowKeyedSingle` permit can't be exercised end-to-end yet. The classifier produces it correctly (covered at the pipeline tier; see `ACCESSOR_ROWKEYED_SINGLE_SINGLE_FIELD_SINGLE_ACCESSOR`); the execution tier only covers `Many`. The `Single` permit is fully wired through the emitter (`buildAccessorRowKeySingle` in `GeneratorUtils`), waiting for the validator gate to lift in a future change. Re-enabling the execution-tier coverage is a one-line schema addition + a couple of test methods at that point.
+
+2. **Rows-method routing for `Many`: routes through `buildSingleMethod`, not a new method.** The `DataLoader.loadMany` contract returns `CompletableFuture<List<V>>` where each key maps to exactly one Record (1:1 with the keys list). The existing `buildSingleMethod` already emits that shape (`List<Record>` via `scatterSingleByIdx`), so the `AccessorRowKeyedMany` arm of `buildForRecordTable` reuses it. `buildSingleMethod` was refactored from a `(JoinStep.FkJoin) firstHop` cast to a `(JoinStep.WithTarget) firstHop` cast with a conditional `whereFilter` lift; column-reference reads are uniform across both routes. `TypeFetcherGenerator.hasSingleSplitField` widened to also emit `scatterSingleByIdx` when any `RecordTableField` carries `AccessorRowKeyedMany`.
+
+3. **`Container` axis on `AccessorRowKeyedMany` is preserved on the model but absorbed by emit-time iteration.** The spec emit had `.toList()` for `LIST` and `.collect(Collectors.toSet())` for `SET`; the actual emit is a typed for-loop iterating any `Iterable` and building `List<RowN<...>>` because `DataLoader.loadMany(List<K>)` requires List regardless. The `Container` enum on the BatchKey is left intact (it documents what the parent's accessor returns, which is honest for find-usages), but the codegen no longer forks on it. If a future emit needs the distinction (e.g. preserving order semantics, deduplication), the slot is there.
+
+4. **`DataLoader.loadMany` signature.** The spec emit was `loader.loadMany(keys, env)`. `DataLoader.loadMany` only has `(List<K>)` and `(List<K>, List<Object>)` overloads — no single-Object key-context. The emit passes `Collections.nCopies(keys.size(), env)` so the lambda's `batchEnv.getKeyContextsList().get(0)` lookup still wires through; the batch loader only reads index 0 so the duplication is cheap.
+
+5. **TableRecord accessor name.** The spec showed `__elt.<pk1>()`. jOOQ's generated `TableRecord` exposes `get<UpperFirst>(camelCase)` (e.g. `getFilmId()`), not the fluent style. `buildAccessorRowKey*` uses the `recordGetter(sqlName)` helper to mirror `buildFkRowKey`'s `PojoResultType` arm.
+
+6. **`SplitRowsMethodEmitter.emitParentInputAndFkChain` switch.** The spec called out only `buildRecordParentKeyExtraction`'s four-arm switch and `buildRecordBasedDataFetcher`'s dispatch. The prelude's `pkCols` switch in `SplitRowsMethodEmitter` also needed extension — both new permits read `targetKeyColumns()` (delegated to `hop.targetColumns()`) the same way `LifterRowKeyed` does. Caught by an existing pipeline test failure on first compile, fixed in `14889c1`.
+
+7. **`AccessorDerivation` sealed interface lives on `FieldBuilder` as a private nested type.** Spec proposed it as a builder-internal sealed result. Implemented as expected; sibling private nested type `AccessorMatch` carries the per-method match outcome (Single / Many / CardinalityMismatch), with reduction to `AccessorDerivation` Ok / None / Ambiguous / CardinalityMismatch happening once per call rather than per method.
+
+The two new `@LoadBearingClassifierCheck` keys (`accessor-rowkey-shape-resolved`, `accessor-rowkey-cardinality-matches-field`) are paired against consumer annotations in `GeneratorUtils.buildAccessorRowKey*` and `TypeFetcherGenerator.buildRecordBasedDataFetcher`. `LoadBearingGuaranteeAuditTest` passes; no orphans.
+
+Original spec follows below as the reviewer's reference.
 
 ## Overview
 
