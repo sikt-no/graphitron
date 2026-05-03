@@ -28,7 +28,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R26` | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` <sub>blocked by: [graphitron-lsp](graphitron-lsp.md)</sub> | In Progress | [plan](retire-maven-plugin.md) |
 | `R18` | Java LSP rewrite + introspect retirement + `dev` goal | Ready | [plan](graphitron-lsp.md) |
 | `R9` | Fold graphitron.sikt.no into the Maven build (AsciiDoc + GitHub Pages) | In Progress | [plan](docs-site-asciidoc.md) |
-| `R67` | Rewrite-flavoured graphitron-example: Quarkus + JAX-RS | Spec | [plan](rewrite-example-quarkus-jaxrs.md) |
+| `R67` | Promote graphitron-test to graphitron-sakila-example (rename, Quarkus runtime, consumer test pattern) | Spec | [plan](rewrite-example-quarkus-jaxrs.md) |
 
 ---
 
@@ -152,7 +152,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R26` [**Retire `graphitron-maven-plugin` + `graphitron-schema-transform`**](retire-maven-plugin.md) — In Progress, blocked by [graphitron-lsp](graphitron-lsp.md)
 - `R18` [**Java LSP rewrite + introspect retirement + `dev` goal**](graphitron-lsp.md) — Ready
 - `R34` [**sis-graphql-spec migration to graphitron-rewrite**](sis-rewrite-migration.md) — Backlog, cleanup
-- `R67` [**Rewrite-flavoured graphitron-example: Quarkus + JAX-RS**](rewrite-example-quarkus-jaxrs.md) — Spec, architecture
+- `R67` [**Promote graphitron-test to graphitron-sakila-example (rename, Quarkus runtime, consumer test pattern)**](rewrite-example-quarkus-jaxrs.md) — Spec, architecture
 
 ### (untagged)
 

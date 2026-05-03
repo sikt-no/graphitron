@@ -1,140 +1,115 @@
 ---
 id: R67
-title: "Rewrite-flavoured graphitron-example: Quarkus + JAX-RS"
+title: "Promote graphitron-test to graphitron-sakila-example (rename, Quarkus runtime, consumer test pattern)"
 status: Spec
 bucket: architecture
 theme: legacy-migration
 depends-on: []
 ---
 
-# Rewrite-flavoured graphitron-example: Quarkus + JAX-RS
+# Promote graphitron-test to graphitron-sakila-example
 
-The public docs (`docs/quick-start.adoc:21,64`) point new users at `graphitron-example/` at the repo root, but that project wires the *legacy* `graphitron-maven-plugin` and the legacy `graphitron-servlet` runtime. Anyone following those links gets an example that targets the stack R26 retires. We need a sibling example under `graphitron-rewrite/` that wires `graphitron-maven` (the rewrite plugin) and the runtime contract documented in `graphitron-rewrite/docs/getting-started.adoc`, so the docs have something honest to point at and so consumers migrating off the legacy stack have a worked-out reference for the new shape.
+Two gaps close with the same artifact:
 
-The example also unblocks the closing step in [`retire-maven-plugin.md`](retire-maven-plugin.md) (R26), which lists `graphitron-example` among the directories deleted at legacy retirement: once this rewrite-side example exists and the docs point at it, deleting the legacy one stops being a docs-breaking change.
+1. **The public docs point at the wrong example.** `docs/quick-start.adoc:21,64` link to root-level `graphitron-example/`, which wires the *legacy* `graphitron-maven-plugin` and the legacy `graphitron-servlet` runtime. Anyone following those links lands on the stack R26 retires.
+2. **The rewrite ships no public answer to "how do I test my schema?"** Internally, `graphitron-test` runs end-to-end coverage against a real Postgres with `@QuarkusTest`-shaped fixtures, approval-style queries, and federation entity dispatch tests. That pattern is exactly what consumers need when they sit down to pin their own schema's behaviour, but today it lives behind a test-internal name (`graphitron-test`) with no documentation surface that says "copy this."
+
+Promoting `graphitron-test` into a consumer-facing artifact closes both: the docs get something honest to point at, and the recommended consumer test pattern becomes a thing you can read and copy from a documented module. The runtime side is small (Quarkus shell + JAX-RS resource); the substantive shift is reframing the artifact's role from "rewrite e2e test" to "runnable reference application that also doubles as our e2e coverage."
 
 ## Goal
 
-Ship a complete, runnable Quarkus app under `graphitron-rewrite/graphitron-example/` that:
+Ship `graphitron-rewrite/graphitron-sakila-example/` as a Quarkus app that:
 
-- Generates resolvers via `graphitron-maven:generate` against a Sakila-backed jOOQ catalog.
-- Serves GraphQL over HTTP via JAX-RS (`quarkus-rest`) per the [GraphQL-over-HTTP spec](https://graphql.github.io/graphql-over-http/) (POST + GET, content-negotiated `application/json` and `application/graphql-response+json`).
-- Demonstrates the runtime extension points documented in `getting-started.adoc`: `GraphitronContext`, the customizer surface on `Graphitron.buildSchema(...)`, `@service` / `@condition` wiring, custom scalars, federation, and per-request `DSLContext`.
-- Carries an approval-style integration test suite that boots the Quarkus server and exercises the resolvers against a real Postgres.
+- Builds on the schema and jOOQ catalog `graphitron-test` already exercises (Sakila-inspired domain).
+- Boots via `mvn quarkus:dev` and serves GraphQL over HTTP via JAX-RS (`quarkus-rest`) per the [GraphQL-over-HTTP spec](https://graphql.github.io/graphql-over-http/) (POST + GET, content-negotiated `application/json` and `application/graphql-response+json`).
+- Runs `mvn test` for the existing end-to-end coverage plus a curated consumer-test-pattern subset.
+- Carries a README that names the two roles explicitly (runnable reference, recommended test pattern) and tells a reader which directories to copy.
 
-End state: `docs/quick-start.adoc` "Working example" link points at `graphitron-rewrite/graphitron-example/`, and the legacy `graphitron-example/` is the only remaining root-level reason `R26`'s "delete legacy + unnest" step has not closed.
+End state: `docs/quick-start.adoc:21,64` repoint at `graphitron-sakila-example`, the legacy `graphitron-example/` becomes purely a courtesy reference for in-flight migrators, and the rewrite has a public answer to the "how do I test my schema" question.
 
-## Module shape
+## Module restructure (Stage 0)
 
-Three Maven modules under `graphitron-rewrite/graphitron-example/`. The split is forced by the rewrite plugin's `ServiceCatalog` reflecting `Class.forName(...)` on `@service(class:)` targets at `generate-sources` time: service classes have to be compiled before the plugin runs, which a same-module `src/main/java` cannot satisfy without an awkward early-`compile` phase binding. jOOQ codegen has the same constraint for the catalog package.
+Stage 0 lands as the plan's first commit and is purely a rename. After Stage 0 the modules build identically; their names just say what they are.
 
-```
-graphitron-rewrite/graphitron-example/
-├── pom.xml                       # aggregator
-├── graphitron-example-db/        # jOOQ codegen against Sakila
-├── graphitron-example-services/  # @service / @condition / custom-scalar classes
-└── graphitron-example/           # Quarkus app: schema + plugin + JAX-RS resource
-```
+| Today | Target |
+|---|---|
+| `graphitron-fixtures` (Sakila-shaped `public` schema + jOOQ codegen execution) | **`graphitron-sakila-db`** |
+| `graphitron-fixtures` (services + conditions + extensions: `FilmService`, `CategoryConditions`, `FilmExtensions`, ...) | **`graphitron-sakila-service`** |
+| `graphitron-test` (schema + e2e test coverage) | **`graphitron-sakila-example`** |
+| `graphitron-fixtures` (residual: `nodeidfixture` + `idreffixture` schemas, only consumed by `graphitron`'s own unit tests) | stays in a slim `graphitron-fixtures` |
+| `graphitron-fixtures-codegen` | unchanged |
 
-`graphitron-example-db` and `graphitron-example-services` stand alone (DB module is a static jOOQ catalog jar; services module is plain Java classes referenceable by FQN), and the app module depends on both.
+Dependents to update in the same commit (Maven `<dependency>` entries pointing at the old artifactIds):
 
-The application module inlines the schema and plugin invocation rather than carrying a separate `graphitron-example-spec` module. The schema isn't reused outside the app, and Quarkus's source watcher picks up regenerated sources under the app's own `target/generated-sources/graphitron` automatically — splitting the schema into a sibling module would block that dev-loop with a cross-module rebuild.
+- `graphitron-rewrite/graphitron-lsp/pom.xml` — test scope, currently consumes `graphitron-fixtures`'s catalog.
+- `graphitron-rewrite/graphitron-maven/src/it/basic-generate/pom.xml` — invoker IT, currently consumes the catalog as a codegen-classpath dependency.
+- `graphitron-rewrite/graphitron/pom.xml` — test scope, currently consumes the residual `graphitron-fixtures` for `nodeidfixture` / `idreffixture` (no change to its dependency line; the residual module keeps the old name).
+- `graphitron-rewrite/pom.xml` — `<modules>` list reflects the rename and the new module.
 
-### `graphitron-example-db`
+Stage 0 exit: `mvn -f graphitron-rewrite/pom.xml install -Plocal-db` builds clean against the new names; no behaviour change; commit subject reads `R67 Stage 0: rename Sakila fixtures and graphitron-test`.
 
-- `docker-compose.yml` for the Sakila Postgres image (`sakiladb/postgres:15`).
-- `init/init-script.sql` (Sakila schema bootstrap; same source as the legacy module).
-- `jooq-configuration.xml` driving the `org.jooq:jooq-codegen-maven` plugin.
-- A `generate-jooq` profile so the codegen only runs when the consumer asks for it; baseline build consumes the checked-in generated sources under `src/main/java/no/sikt/graphitron/example/generated/jooq/`.
-- Any custom jOOQ converters the example needs.
+## Stage 1: Quarkus runtime
 
-### `graphitron-example-services`
+Layer the runtime shell onto `graphitron-sakila-example`:
 
-- `@service` Java classes (e.g., `HelloWorldService`, `CustomerService` with the JWT-claim demo from `getting-started.adoc`).
-- `@condition` classes (e.g., `StaffConditions`, `CustomerConditions`).
-- Custom-scalar provider class for the customizer demo.
-- Java records for `@record`-typed payloads.
-- Compiled with `-parameters` so the rewrite plugin's `ServiceCatalog` can read parameter names without warnings.
+- `pom.xml` adds `quarkus-bom` import, `quarkus-rest`, `quarkus-config-yaml`, `quarkus-jdbc-postgresql`, `quarkus-agroal`, plus the `quarkus-maven-plugin` execution.
+- `src/main/resources/application.yaml` configures the HTTP port and a Quarkus dev-services PostgreSQL (auto-applied init script for the Sakila-inspired schema; same `init.sql` already used by `graphitron-sakila-db` for codegen).
+- `GraphqlEngine` `@ApplicationScoped` bean builds the `GraphQLSchema` once via `Graphitron.buildSchema(b -> ...)` (using the customizer surface the `getting-started.adoc` "Customizer safe surface" section names) and exposes a `GraphQL` engine.
+- `GraphqlResource` JAX-RS `@Path("/graphql")`: `POST` accepts `application/json`, returns `application/graphql-response+json`; `GET` for query-only requests; content negotiation per the GraphQL-over-HTTP spec.
+- `AppContext implements GraphitronContext` carries per-request `DSLContext` derived from the Quarkus `AgroalDataSource`; `getContextArgument` reads JWT-claim style values per the `getting-started.adoc` worked example.
+- One smoke test (`@QuarkusTest`) hits `/graphql` with a basic query and asserts a non-empty response.
 
-### `graphitron-example` (the application module)
+Stage 1 exit: `mvn quarkus:dev` from `graphitron-sakila-example/` serves a working `/graphql` against the live Postgres; `docs/quick-start.adoc:21,64` *could* be repointed (but that lands in Stage 3 alongside the README that names the test pattern).
 
-- `src/main/resources/graphql/*.graphqls` — the schema. One `schema.graphqls` plus one `.graphql` per feature demoed (mutations, services, conditions, federation), so a reader can scan the schema slice that belongs to each feature without a 1000-line file.
-- `src/main/resources/application.yaml` — Quarkus config (HTTP port, datasource via dev services, log levels).
-- `pom.xml` carries the `graphitron-maven:generate` execution and the `quarkus-maven-plugin`. The plugin block adds `graphitron-example-db` and `graphitron-example-services` as `<dependencies>` of the plugin execution so they're on the codegen classpath.
-- `GraphqlResource` — JAX-RS `@Path("/graphql")` resource implementing the GraphQL-over-HTTP transport.
-- `AppContext implements GraphitronContext` — the per-request context binding `DSLContext` and JWT-claim arguments per `getting-started.adoc`'s "Hello world" / "Context arguments from a JWT claim" sections.
-- `GraphqlEngine` — `@ApplicationScoped` bean that builds the `GraphQLSchema` once via `Graphitron.buildSchema(b -> ...)` and exposes a per-request `GraphQL` engine.
-- An integration test suite (`@QuarkusTest`) running approval-style and match-style tests against the live server, mirroring the legacy example's `match/` and `approval/` directories.
+## Stage 2: test surface curation
 
-## Phases
+`graphitron-test`'s existing test classes split into two categories. Stage 2 carries that split into the renamed module so a reader copying the test pattern knows what's pattern and what's generator-internal.
 
-Single plan, multi-phase, multi-commit. **Review after all phases land**: status stays `In Progress` through phases A-D and flips to `In Review` only when the suite is complete.
+**Consumer-facing pattern** (lives under `src/test/java/.../consumer/` or similar, called out in the README):
 
-### Phase A: minimal end-to-end
+- `GraphQLQueryTest` — runs queries against the live Postgres; the canonical "test your schema" shape.
+- `FederationEntitiesDispatchTest` — federation entity-dispatch end-to-end against the running server.
+- `NoFederationRegressionTest` — sanity check for the non-federation path.
+- New: an approval-style test directory mirroring the legacy example's `src/test/resources/approval/` and `src/test/resources/match/` patterns. One worked example each; the README points at them as templates.
 
-The slice that lets us repoint the docs.
+**Generator-internal coverage** (lives under `src/test/java/.../internal/`, README explicitly says "you don't need this"):
 
-- Three-module skeleton wired up; aggregator pom; build green.
-- Sakila checked-in jOOQ output under `graphitron-example-db` (one-shot regeneration off a running Sakila container; thereafter the generated sources are committed source artefacts so the example builds without Docker).
-- `schema.graphqls` covering the Customer / Address / Store / Film core: simple object types, two queries (single-fetch + connection), one mutation (create or update a Customer).
-- Plugin execution generates resolvers under `target/generated-sources/graphitron`.
-- `GraphqlResource` POST `/graphql` returning `application/graphql-response+json` per the GraphQL-over-HTTP spec; GET `/graphql` for query-only requests; per-request `AppContext` carrying a `DSLContext` derived from the Quarkus `AgroalDataSource`.
-- Quarkus dev-services starts a Sakila Postgres container on `mvn quarkus:dev`.
-- One smoke test (`@QuarkusTest`) hits the endpoint with a basic query and asserts a non-empty response.
+- `GeneratorDeterminismTest` — pins the rewrite's three-clause idempotent-write contract.
+- `GeneratedSourcesSmokeTest` / `GeneratedSourcesLintTest` — generator-internal lints.
+- `ScatterSingleByIdxTest` — pins a SQL-side scatter invariant.
+- `TierAnnotationEnforcementTest` — pins the test-tier vocabulary (this module's own meta-test).
+- `MutationPayloadLifterTest` — pins a generator-internal classification path.
+- `AccessorDerivedBatchKeyTest` — pins R65's accessor model.
 
-Phase A exit: `mvn install` from `graphitron-rewrite/graphitron-example/` builds clean, `mvn quarkus:dev` serves a working `/graphql`, and `docs/quick-start.adoc:21,64` can be repointed at the new module without lying.
+Stage 2 is mostly directory moves + package renames + README authoring. No new behaviour; no test count change.
 
-### Phase B: services, conditions, custom scalars
+Stage 2 exit: `mvn test` passes; the README reads cleanly when explaining "here's the pattern, here's what's not part of it."
 
-Layer on the runtime extension points the `getting-started.adoc` "safe surface" section describes.
+## Stage 3: docs touch-up
 
-- `@service` walkthrough: a `HelloWorldService` for the simplest case, a `CustomerService` reading a JWT claim from `GraphitronContext.getContextArgument`.
-- `@condition` walkthrough: `StaffConditions` and `CustomerConditions`, with a query argument that drives the predicate.
-- Custom-scalar walkthrough: a `Date` scalar registered via the `Graphitron.buildSchema(b -> b.additionalType(...))` customizer, used on a Sakila timestamp column.
-- One approval-style test per walkthrough.
+- `docs/quick-start.adoc:21` and `:64` swap legacy-`graphitron-example` links for `graphitron-sakila-example`.
+- `docs/quick-start.adoc` adds one-paragraph mention that the example doubles as a consumer test pattern (with link to the example's README).
+- `graphitron-rewrite/docs/getting-started.adoc` adds a one-line "for a complete app and the recommended test setup, see the example module" pointer in the "Hello world" section.
 
-### Phase C: Apollo Federation
-
-The rewrite ships entity dispatch (R31, federation-via-federation-jvm). Demonstrate it.
-
-- A second `.graphqls` file declaring the `@link(url: "...federation/v2.10")` opt-in and `@key` on Customer.
-- One federation test exercising `_entities` end-to-end against the running server, modelled on `FederationEntitiesDispatchTest` from `graphitron-test`.
-
-### Phase D: error handling
-
-Gated on R12 (`error-handling-parity`). Lift the legacy example's error-handling demos onto the rewrite's per-fetcher error-channel emission once R12 lands. Until then this phase stays a stub in the plan; if R12 ships before Phase A-C, this phase joins Phase B's slot. If R12 doesn't ship before this plan otherwise completes, Phase D defers and this plan closes without it (a follow-up roadmap item picks it up; the example ships error-handling-free in the meantime).
+Stage 3 exit: docs land; `docs-site-asciidoc` build still passes; CI on `.adoc` paths green.
 
 ## Tests
 
-Every phase that adds a feature also adds the test that exercises it through the live Quarkus server. Two test shapes, both running under `@QuarkusTest`:
+The artifact's test count after the plan lands ≥ today's `graphitron-test` count (Stage 2 only relocates; Stage 1 adds one smoke test). The two categories named in Stage 2 are the new contract: every future test addition picks a side, and the README explains the rule.
 
-- **Approval tests** — query goes in, response JSON is asserted byte-equal against a checked-in `*.approved.json`. Same shape as the legacy example's `src/test/resources/approval/`.
-- **Match tests** — query goes in, response is asserted via Hamcrest / AssertJ matchers (used when JSON byte equality is too brittle, e.g. timestamp fields). Same shape as the legacy example's `src/test/resources/match/`.
-
-Tests live under `graphitron-example/src/test/`. The Quarkus dev-services Postgres container serves both `mvn quarkus:dev` and `mvn test`.
-
-No `pipeline` / `compilation` / `execution` tier annotations; this module is consumer-tier integration, not generator-tier coverage. The four-tier taxonomy in `testing.adoc` is for the generator's own test suites under `graphitron/` and `graphitron-test/`.
-
-## Documentation touch-up
-
-When Phase A lands:
-
-- `docs/quick-start.adoc:21` — replace the legacy link with `https://github.com/sikt-no/graphitron/tree/claude/graphitron-rewrite/graphitron-rewrite/graphitron-example`.
-- `docs/quick-start.adoc:64` — same swap on the "Working example" section.
-- `graphitron-rewrite/docs/getting-started.adoc` — add a one-line "for a complete app, see the example module" pointer at the top of "Hello world".
-
-No new doc page. The example *is* the documentation for "what does a real wiring look like"; `getting-started.adoc` already covers the snippets. A long-form tutorial is a separate roadmap item if it's ever wanted.
+Test tier annotations (`@UnitTier`, `@PipelineTier`, `@CompilationTier`, `@ExecutionTier`) carry through unchanged from `graphitron-test`. The four-tier taxonomy in `testing.adoc` is unchanged; it already covers the case where execution-tier tests double as documentation.
 
 ## Out of scope
 
-- *Subscriptions*. The rewrite generator doesn't emit subscription resolvers today.
-- *GraphiQL UI*. The legacy example bundles GraphiQL under `META-INF/resources/graphiql/`; we can ship the same bundle if it's cheap, but it isn't a Phase-A blocker. File as a follow-up if a consumer asks.
-- *`mise` task wrapping*. The legacy example uses `mise r build` / `mise r start` shorthands. Reproduce only if it materially shortens the README; otherwise stop at `mvn install` / `mvn quarkus:dev`.
-- *Schema feature filter*. Legacy-only schema-rewrite pass; the rewrite generator has no equivalent and it doesn't belong in a fresh example.
-- *Validating dev-loop interactions* (Quarkus auto-reload picking up schema edits via `graphitron:dev`). The dev loop is documented in `getting-started.adoc`; the example consumes it implicitly via Quarkus's source watcher. A standalone test that asserts hot-reload semantics would be over-spec for this plan.
+- *Deleting legacy `graphitron-example/`*. R26 owns that step; it closes when every legacy consumer has migrated. This plan only repoints docs.
+- *Subscriptions*. The rewrite generator doesn't emit subscription resolvers.
+- *GraphiQL UI bundling*. The legacy example shipped a vendored GraphiQL under `META-INF/resources/`; the rewrite example skips this unless a consumer asks. Reachable via Quarkus dev UI in `quarkus:dev`.
+- *Test-pattern variants beyond approval + match*. Two patterns is the recommended-pattern surface; richer test taxonomies (snapshot, property-based) are out.
+- *Schema simplification for pedagogy*. The existing test schema stays comprehensive; the example artifact serves the "I want to see this running" audience, not the gentle on-ramp. The on-ramp lives in `getting-started.adoc`.
+- *Multi-module restructuring beyond the four-name rename*. `graphitron-fixtures-codegen` and the slim residual `graphitron-fixtures` keep their current names; renaming them is unrelated to the consumer-facing direction this plan locks in.
 
 ## Roadmap integration
 
-This plan unblocks the docs-pointing side of [`retire-maven-plugin.md`](retire-maven-plugin.md). It does *not* by itself enable the legacy-example deletion: that closes when every legacy consumer has migrated (cadence dictated by per-consumer feature work, per R26's body). Once Phase A lands and the docs repoint, the legacy `graphitron-example/` is purely a courtesy reference for in-flight migrators; its eventual deletion is R26's call.
+This plan unblocks the docs-pointing side of [`retire-maven-plugin.md`](retire-maven-plugin.md) (R26): once Stage 3 ships, `quick-start.adoc` no longer relies on the legacy example's continued existence. R26's "delete legacy + unnest" step still gates on every consumer's migration cadence; this plan does not change that timeline.
 
-When this plan closes, the entry in `changelog.md` records the landing commit(s) and the test location, and the file deletes per the delete-on-Done rule.
+When Stage 3 lands the plan closes. The `changelog.md` entry records the four landing commits (Stages 0-3) and the test location; the plan file deletes per the delete-on-Done rule. If Stages 0-2 land cleanly but Stage 3 is delayed (e.g., docs PR review queue), the plan stays `In Progress` rather than `In Review` — Stage 3 is small and skipping it would leave the docs lying.
