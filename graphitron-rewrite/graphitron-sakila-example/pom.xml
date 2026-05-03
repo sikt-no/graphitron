@@ -15,7 +15,22 @@
 
     <properties>
         <outputPackage>no.sikt.graphitron.generated</outputPackage>
+        <quarkus.platform.version>3.34.5</quarkus.platform.version>
+        <quarkus.platform.artifact-id>quarkus-bom</quarkus.platform.artifact-id>
+        <quarkus.platform.group-id>io.quarkus</quarkus.platform.group-id>
     </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>${quarkus.platform.group-id}</groupId>
+                <artifactId>${quarkus.platform.artifact-id}</artifactId>
+                <version>${quarkus.platform.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <dependencies>
         <!-- Sakila jOOQ catalog. Carries init.sql onto the test classpath via main resources,
@@ -74,25 +89,56 @@
             Compile scope: the generated ConstraintViolations helper and the per-fetcher
             wrapper's validator pre-step reference jakarta.validation.* (Validator,
             ConstraintViolation, Path), so the API jar must be on the main compile
-            classpath. Hibernate Validator supplies the runtime; pulled into test scope
-            because the generator stays vanilla and consumers wire their own provider.
+            classpath. The Quarkus runtime supplies the Hibernate Validator implementation
+            (and an EL impl) below, so consumers see one validation provider on the runtime
+            classpath without separate hibernate-validator + expressly deps.
         -->
         <dependency>
             <groupId>jakarta.validation</groupId>
             <artifactId>jakarta.validation-api</artifactId>
         </dependency>
+
+        <!-- Quarkus runtime: HTTP + JAX-RS, YAML config, Postgres datasource, JSON
+             serialization for the GraphQL endpoint, and Hibernate Validator (replaces the
+             previous test-scope hibernate-validator + expressly deps). The runtime boots
+             only the non-federated Graphitron via GraphqlEngine; the federated codegen
+             execution stays test-only. -->
         <dependency>
-            <groupId>org.hibernate.validator</groupId>
-            <artifactId>hibernate-validator</artifactId>
-            <scope>test</scope>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-rest</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.glassfish.expressly</groupId>
-            <artifactId>expressly</artifactId>
-            <scope>test</scope>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-rest-jackson</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-config-yaml</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-jdbc-postgresql</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-agroal</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-hibernate-validator</artifactId>
         </dependency>
 
         <!-- Test dependencies -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-junit5</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.rest-assured</groupId>
+            <artifactId>rest-assured</artifactId>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter-engine</artifactId>
@@ -174,6 +220,21 @@
 
     <build>
         <plugins>
+            <plugin>
+                <groupId>io.quarkus</groupId>
+                <artifactId>quarkus-maven-plugin</artifactId>
+                <version>${quarkus.platform.version}</version>
+                <extensions>true</extensions>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>build</goal>
+                            <goal>generate-code</goal>
+                            <goal>generate-code-tests</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
             <!--
                 Java-17 output ratchet. Generated source files emitted into
                 target/generated-sources by graphitron-maven must compile under Java 17
