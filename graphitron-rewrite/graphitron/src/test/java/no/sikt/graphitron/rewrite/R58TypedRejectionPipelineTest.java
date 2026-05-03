@@ -19,7 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * populated candidate list. This pins the typed-shape contract that R18 (LSP fix-its) and other
  * downstream consumers consume.
  *
- * <p>Out of scope: producer sites whose carrier widening is deferred to a Phase D follow-up
+ * <p>Out of scope: producer sites whose carrier widening is tracked under R66
  * ({@code ArgumentRef.ScalarArg.UnboundArg.reason}, {@code ParsedPath.errorMessage},
  * {@code InputFieldResolution.Unresolved.reason}, {@code EnumValidation.Mismatch} message-list,
  * {@code keyColumnErrors} list); those still flatten to {@link Rejection.AuthorError.Structural}.
