@@ -20,6 +20,17 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
     String message();
 
     /**
+     * Returns a new {@link Rejection} of the same variant with {@code prefix} prepended to the
+     * leaf's user-facing prose ({@code summary} for {@link AuthorError.UnknownName} and
+     * {@link Deferred}, {@code reason} otherwise). Used at wrap sites that thread caller-specific
+     * context onto a producer's typed rejection ({@code "service method could not be resolved — "},
+     * etc.) without collapsing typed components like {@link AuthorError.UnknownName#candidates} back
+     * into prose. Mirrors the leaf-arm switch shape that R58 Phase E generalises onto the
+     * nested-rewrap site.
+     */
+    Rejection prefixedWith(String prefix);
+
+    /**
      * Author-correctable. Two sub-arms because the data shapes diverge: most
      * AUTHOR_ERROR sites today are structural rule violations carrying just prose;
      * a minority resolve a name against a closed set and carry the lookup attempt
@@ -50,6 +61,10 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
             @Override public String message() {
                 return summary + candidateHint(attempt, candidates);
             }
+
+            @Override public Rejection prefixedWith(String prefix) {
+                return new UnknownName(prefix + summary, attemptKind, attempt, candidates);
+            }
         }
 
         /**
@@ -58,6 +73,10 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
          */
         record Structural(String reason) implements AuthorError {
             @Override public String message() { return reason; }
+
+            @Override public Rejection prefixedWith(String prefix) {
+                return new Structural(prefix + reason);
+            }
         }
     }
 
@@ -88,11 +107,19 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
             }
 
             @Override public String message() { return reason; }
+
+            @Override public Rejection prefixedWith(String prefix) {
+                return new DirectiveConflict(directives, prefix + reason);
+            }
         }
 
         /** Structural-rule majority: just prose. */
         record Structural(String reason) implements InvalidSchema {
             @Override public String message() { return reason; }
+
+            @Override public Rejection prefixedWith(String prefix) {
+                return new Structural(prefix + reason);
+            }
         }
     }
 
@@ -116,6 +143,10 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
                 ? summary
                 : summary + " — see graphitron-rewrite/roadmap/" + planSlug + ".md";
         }
+
+        @Override public Rejection prefixedWith(String prefix) {
+            return new Deferred(prefix + summary, planSlug, stubKey);
+        }
     }
 
     /**
@@ -124,9 +155,8 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
      * tag for downstream tooling rather than an arm split.
      */
     enum AttemptKind {
-        COLUMN, TABLE, FOREIGN_KEY, SERVICE_METHOD, TABLE_METHOD, LIFTER_METHOD,
-        ENUM_CONSTANT, TYPE_NAME, NODEID_KEY_COLUMN, ARGUMENT_NAME, FIELD_NAME,
-        DML_KIND
+        COLUMN, TABLE, FOREIGN_KEY, SERVICE_METHOD, LIFTER_METHOD,
+        ENUM_CONSTANT, TYPE_NAME, NODEID_KEY_COLUMN, DML_KIND
     }
 
     /**
@@ -278,5 +308,25 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
     /** {@link AuthorError.UnknownName} factory for lifter-method lookups. */
     static Rejection unknownLifterMethod(String summary, String attempt, List<String> candidates) {
         return new AuthorError.UnknownName(summary, AttemptKind.LIFTER_METHOD, attempt, candidates);
+    }
+
+    /** {@link AuthorError.UnknownName} factory for type-name lookups (typename in {@code @nodeId}, refType lookups). */
+    static Rejection unknownTypeName(String summary, String attempt, List<String> candidates) {
+        return new AuthorError.UnknownName(summary, AttemptKind.TYPE_NAME, attempt, candidates);
+    }
+
+    /** {@link AuthorError.UnknownName} factory for enum-constant lookups against a Java enum class. */
+    static Rejection unknownEnumConstant(String summary, String attempt, List<String> candidates) {
+        return new AuthorError.UnknownName(summary, AttemptKind.ENUM_CONSTANT, attempt, candidates);
+    }
+
+    /** {@link AuthorError.UnknownName} factory for {@code @node} key-column lookups. */
+    static Rejection unknownNodeIdKeyColumn(String summary, String attempt, List<String> candidates) {
+        return new AuthorError.UnknownName(summary, AttemptKind.NODEID_KEY_COLUMN, attempt, candidates);
+    }
+
+    /** {@link AuthorError.UnknownName} factory for {@code @mutation(typeName:)} DML-kind lookups. */
+    static Rejection unknownDmlKind(String summary, String attempt, List<String> candidates) {
+        return new AuthorError.UnknownName(summary, AttemptKind.DML_KIND, attempt, candidates);
     }
 }

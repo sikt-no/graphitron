@@ -96,7 +96,7 @@ class ServiceCatalogTest {
             STUB_CLASS, "getWithUnknown", bindings(Map.of()), Set.of(), filmPk, null);
 
         assertThat(result.failed()).isTrue();
-        assertThat(result.failureReason()).contains("unrecognized sources type");
+        assertThat(result.rejection().message()).contains("unrecognized sources type");
     }
 
     @Test
@@ -108,7 +108,7 @@ class ServiceCatalogTest {
             STUB_CLASS, "getWithUnknown", bindings(Map.of()), Set.of(), List.of(), null);
 
         assertThat(result.failed()).isTrue();
-        assertThat(result.failureReason())
+        assertThat(result.rejection().message())
             .contains("does not match any GraphQL argument or context key")
             .contains("available GraphQL arguments: (none)")
             .contains("available context keys: (none)")
@@ -140,7 +140,7 @@ class ServiceCatalogTest {
             STUB_CLASS, "getFilmsWithDtoSources", bindings(Map.of()), Set.of(), filmPk, null);
 
         assertThat(result.failed()).isTrue();
-        assertThat(result.failureReason())
+        assertThat(result.rejection().message())
             .contains("not backed by a jOOQ TableRecord")
             .contains("@batchKeyLifter");
     }
@@ -155,7 +155,7 @@ class ServiceCatalogTest {
             STUB_CLASS, "getFilmsWithDtoSources", bindings(Map.of("inputs", "inputs")), Set.of(), List.of(), null);
 
         assertThat(result.failed()).isTrue();
-        assertThat(result.failureReason())
+        assertThat(result.rejection().message())
             .contains("parameter 'keys'")
             .contains("does not match any GraphQL argument or context key")
             .contains("available GraphQL arguments: [inputs]")
@@ -187,7 +187,7 @@ class ServiceCatalogTest {
             bindings(Map.of("inputs", "inputs", "filter", "filter")), Set.of("tenantId", "locale"), List.of(), null);
 
         assertThat(result.failed()).isTrue();
-        assertThat(result.failureReason())
+        assertThat(result.rejection().message())
             .contains("available GraphQL arguments: [filter, inputs]")
             .contains("available context keys: [locale, tenantId]");
     }
@@ -262,7 +262,7 @@ class ServiceCatalogTest {
             STUB_CLASS, "getFilmsWithSetOfDtoSources", bindings(Map.of()), Set.of(), filmPk, null);
 
         assertThat(result.failed()).isTrue();
-        assertThat(result.failureReason())
+        assertThat(result.rejection().message())
             .contains("not backed by a jOOQ TableRecord")
             .doesNotContain("unrecognized sources type");
     }
@@ -299,7 +299,7 @@ class ServiceCatalogTest {
             STUB_CLASS, "get", bindings(Map.of()), Set.of(), List.of(), FILM_RECORD);
 
         assertThat(result.failed()).isTrue();
-        assertThat(result.failureReason())
+        assertThat(result.rejection().message())
             .contains("must return")
             .contains("FilmRecord")
             .contains("String");
@@ -315,7 +315,7 @@ class ServiceCatalogTest {
             STUB_CLASS, "getLanguages", bindings(Map.of()), Set.of(), List.of(), expected);
 
         assertThat(result.failed()).isTrue();
-        assertThat(result.failureReason())
+        assertThat(result.rejection().message())
             .contains("FilmRecord")
             .contains("LanguageRecord");
     }
@@ -328,7 +328,7 @@ class ServiceCatalogTest {
             STUB_CLASS, "getFilms", bindings(Map.of()), Set.of(), List.of(), FILM_RECORD);
 
         assertThat(result.failed()).isTrue();
-        assertThat(result.failureReason())
+        assertThat(result.rejection().message())
             .contains("must return")
             .contains("FilmRecord")
             .contains("Result");
@@ -352,7 +352,7 @@ class ServiceCatalogTest {
             TABLE_METHOD_STUB_CLASS, "getFilm", bindings(Map.of()), Set.of(), LANGUAGE_TABLE_CLASS);
 
         assertThat(result.failed()).isTrue();
-        assertThat(result.failureReason())
+        assertThat(result.rejection().message())
             .contains("must return the generated jOOQ table class")
             .contains("Language")
             .contains("Film");
@@ -367,7 +367,7 @@ class ServiceCatalogTest {
             TABLE_METHOD_STUB_CLASS, "get", bindings(Map.of()), Set.of(), FILM_TABLE_CLASS);
 
         assertThat(result.failed()).isTrue();
-        assertThat(result.failureReason())
+        assertThat(result.rejection().message())
             .contains("must return the generated jOOQ table class")
             .contains("Film");
     }
@@ -421,7 +421,7 @@ class ServiceCatalogTest {
             STUB_CLASS, "runWithRenamedInputs", argByJavaName, Set.of(), List.of(), null);
 
         assertThat(result.failed()).isTrue();
-        assertThat(result.failureReason())
+        assertThat(result.rejection().message())
             .contains("argMapping entry 'missing: input'")
             .contains("references Java parameter 'missing'")
             .contains("inputs")
@@ -455,7 +455,7 @@ class ServiceCatalogTest {
             TABLE_METHOD_STUB_CLASS, "getFilmWithContext", argByJavaName, Set.of(), FILM_TABLE_CLASS);
 
         assertThat(result.failed()).isTrue();
-        assertThat(result.failureReason())
+        assertThat(result.rejection().message())
             .contains("argMapping entry 'table: input'")
             .contains("Table<?>");
     }

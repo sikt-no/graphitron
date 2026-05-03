@@ -776,7 +776,7 @@ class BuildContext {
         var result = svc.reflectTableMethod(cond.className(), cond.methodName(),
             argBindings, Set.copyOf(cond.contextArguments()), null);
         if (result.failed()) {
-            errors.add("input field '" + inputFieldName + "' @condition: " + result.failureReason());
+            errors.add("input field '" + inputFieldName + "' @condition: " + result.rejection().message());
             return Optional.empty();
         }
         var methodRef = result.ref();

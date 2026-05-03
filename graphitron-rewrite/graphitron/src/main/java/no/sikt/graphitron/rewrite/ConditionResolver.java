@@ -103,7 +103,7 @@ final class ConditionResolver {
         var result = svc.reflectTableMethod(cond.className(), cond.methodName(),
             argBindings, Set.copyOf(cond.contextArguments()), null);
         if (result.failed()) {
-            return new ArgConditionResult.Rejected(Rejection.structural("argument '" + argName + "' @condition: " + result.failureReason()));
+            return new ArgConditionResult.Rejected(result.rejection().prefixedWith("argument '" + argName + "' @condition: "));
         }
         var methodRef = result.ref();
         return new ArgConditionResult.Ok(new ArgConditionRef(
@@ -134,7 +134,7 @@ final class ConditionResolver {
         var result = svc.reflectTableMethod(cond.className(), cond.methodName(),
             argBindings, Set.copyOf(cond.contextArguments()), null);
         if (result.failed()) {
-            return new FieldConditionResult.Rejected(Rejection.structural("field '" + fieldDef.getName() + "' @condition: " + result.failureReason()));
+            return new FieldConditionResult.Rejected(result.rejection().prefixedWith("field '" + fieldDef.getName() + "' @condition: "));
         }
         var methodRef = result.ref();
         return new FieldConditionResult.Ok(

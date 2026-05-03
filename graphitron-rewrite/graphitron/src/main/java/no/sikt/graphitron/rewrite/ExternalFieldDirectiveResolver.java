@@ -106,7 +106,7 @@ final class ExternalFieldDirectiveResolver {
             ctx.ctx().jooqPackage() + ".tables", parentTable.javaClassName());
         var extResult = svc.reflectExternalField(extClassName, resolvedMethodName, parentTableClass);
         if (extResult.failed()) {
-            return new Resolved.Rejected(Rejection.structural("external field reference could not be resolved — " + extResult.failureReason()));
+            return new Resolved.Rejected(extResult.rejection().prefixedWith("external field reference could not be resolved — "));
         }
 
         ReturnTypeRef returnType = ctx.resolveReturnType(baseTypeName(fieldDef), fb.buildWrapper(fieldDef));
