@@ -274,12 +274,13 @@ final class ServiceDirectiveResolver {
             + "cast or wildcard, and surfaces author errors at classify time rather than as "
             + "javac errors on the generated source.")
     private static String validateChildServiceReturnType(ReturnTypeRef returnType, MethodRef method) {
-        BatchKey.ParentKeyed batchKey = method.params().stream()
-            .filter(p -> p instanceof MethodRef.Param.Sourced)
-            .map(p -> ((MethodRef.Param.Sourced) p).batchKey())
+        MethodRef.Param.Sourced sourced = method.params().stream()
+            .filter(MethodRef.Param.Sourced.class::isInstance)
+            .map(MethodRef.Param.Sourced.class::cast)
             .findFirst()
             .orElse(null);
-        if (batchKey == null) return null;
+        if (sourced == null) return null;
+        BatchKey.ParentKeyed batchKey = sourced.batchKey();
 
         TypeName perKey = RowsMethodShape.strictPerKeyType(returnType);
         if (perKey == null) return null;
