@@ -1,7 +1,7 @@
 ---
 id: R60
 title: "Auto-derive BatchKey from typed TableRecord accessor on @record parents"
-status: Ready
+status: In Progress
 priority: 1
 theme: service
 depends-on: []
