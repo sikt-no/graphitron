@@ -1258,6 +1258,22 @@ class GraphitronSchemaBuilderTest {
             @Override public Set<Class<?>> variants() { return Set.of(ServiceTableField.class); }
         },
 
+        STRICT_CHILD_RETURN_ROWKEYED_SINGLE_MATCHES(
+            "child @service with List<Row1<Integer>> Sources + single @table return → ServiceTableField (strict-return matches List<Record>)",
+            """
+            type Language @table(name: "language") { name: String }
+            type Film @table(name: "film") {
+                language: Language @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "childServiceRowKeyedCorrectReturn"})
+            }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var f = (ServiceTableField) schema.field("Film", "language");
+                assertThat(f.batchKey()).isInstanceOf(no.sikt.graphitron.rewrite.model.BatchKey.RowKeyed.class);
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(ServiceTableField.class); }
+        },
+
         NULL_SOURCE_KEY_PATH_ORIGIN_DEFAULTS_TO_FK_SIDE(
             "@service field with @reference {key:} (null parent SQL source) defaults FkJoin originTable to the FK-side table",
             """
@@ -5333,6 +5349,37 @@ class GraphitronSchemaBuilderTest {
                 assertThat(f).isInstanceOf(UnclassifiedField.class);
                 assertThat(((UnclassifiedField) f).reason())
                     .contains("must return 'no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord'");
+            }),
+
+        CHILD_SERVICE_TABLE_BOUND_WRONG_RETURN_REJECTED(
+            "child @service on @table parent whose declared return doesn't match the rows-method outer shape → UnclassifiedField",
+            """
+            type Language @table(name: "language") { name: String }
+            type Film @table(name: "film") {
+                language: Language @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "childServiceRowKeyedWrongReturn"})
+            }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var f = schema.field("Film", "language");
+                assertThat(f).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) f).reason())
+                    .contains("must return 'java.util.List<org.jooq.Record>'");
+            }),
+
+        CHILD_SERVICE_SCALAR_WRONG_VALUE_TYPE_REJECTED(
+            "child @service on @table parent declaring Map<K, Integer> for a String-valued field → UnclassifiedField",
+            """
+            type Film @table(name: "film") {
+                titleUppercase: String @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "childServiceMappedRecordKeyedWrongScalarValue"})
+            }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var f = schema.field("Film", "titleUppercase");
+                assertThat(f).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) f).reason())
+                    .contains("must return 'java.util.Map<org.jooq.Record1<java.lang.Integer>, java.lang.String>'");
             }),
 
         MUTATION_SERVICE_WITH_CONNECTION_RETURN_REJECTED(

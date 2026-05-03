@@ -23,7 +23,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
 | `R62` | Lift @lookupKey partition onto TableInputArg | Spec | [plan](dml-lookup-key-partition-on-tableinputarg.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec | [plan](nestingfield-multiparent-tablefield.md) |
-| `R32` | Implement `@service` rows-method body | Ready | [plan](service-rows-method-body.md) |
+| `R32` | Implement `@service` rows-method body | In Review | [plan](service-rows-method-body.md) |
 | `R13` | Faceted search on `@asConnection` | Spec | [plan](faceted-search.md) |
 | `R63` | Type UPSERT dialect requirement on the model | Spec | [plan](dml-dialect-requirement-on-model.md) |
 | `R12` | Error-handling parity: emit per-fetcher error channels from `@error` | In Progress | [plan](error-handling-parity.md) |
@@ -98,7 +98,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R49` [**Stub: scalar/`@record`-returning `@service` child field (`ServiceRecordField`)**](service-record-field.md) — Spec, stubs, blocked by [service-rows-method-body](service-rows-method-body.md)
 - `R54` [**Rename @externalField (parallel-support, deprecation, migration)**](rename-externalfield-directive.md) — Backlog, cleanup
 - `R45` [**Typed context-value registry for `@service`**](typed-context-value-registry.md) — Spec, architecture
-- `R32` [**Implement `@service` rows-method body**](service-rows-method-body.md) — Ready, architecture
+- `R32` [**Implement `@service` rows-method body**](service-rows-method-body.md) — In Review, architecture
 - `R46` [**Multi-tenant fan-out for `@service`**](service-multi-tenant-fanout.md) — Backlog, architecture, blocked by [typed-context-value-registry](typed-context-value-registry.md)
 - `R11` [**`DSLContext` on `@condition` / `@tableMethod` methods**](dslcontext-on-condition-tablemethod.md) — Backlog, architecture
 - `R61` [**Emit Record1<T> instead of Row1<T> for single-column DataLoader keys**](emit-record1-keys-instead-of-row1.md) — Backlog, architecture

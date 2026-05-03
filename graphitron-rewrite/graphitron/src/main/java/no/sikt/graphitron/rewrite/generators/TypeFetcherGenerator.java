@@ -2367,24 +2367,37 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * Generates a stub rows method for a {@link ChildField.ServiceTableField}.
-     *
-     * <p>Currently a stub — throws {@link UnsupportedOperationException}. The signature
-     * ({@code keys, env, sel}) is correct and matches the DataLoader lambda that calls it.
-     * The body will be filled in when service field execution is implemented; it will call
-     * the service method and then {@code Type.$fields(sel.getSelectionSet(), table, env)}
-     * for projection.
+     * Emits the rows method backing a {@code ServiceTableField} or {@code ServiceRecordField}
+     * DataLoader. The body shapes as {@code [DSLContext dsl = ...; ] return ServiceClass.method(<args>);}
+     * — argument assembly walks {@link MethodRef#params()} via
+     * {@link ArgCallEmitter#buildMethodBackedCallArgs}, with {@code Sources → keys},
+     * {@code DslContext → dsl} local, {@code Arg}/{@code Context} via the existing extraction
+     * path. The developer's method returns the loader's expected {@code Map}/{@code List}
+     * shape directly; graphql-java resolves columns off whatever records or values the developer
+     * returns, so no per-record projection step is needed.
      *
      * <p>Signature follows the batch-loader contract:
      * <ul>
      *   <li>{@link BatchKey.RowKeyed}/{@link BatchKey.RecordKeyed}: {@code keys} is
-     *       {@code List<KeyType>}; return is {@code List<List<Record>>} (list field) or
-     *       {@code List<Record>} (single).</li>
+     *       {@code List<KeyType>}; return is {@code List<List<V>>} (list field) or
+     *       {@code List<V>} (single).</li>
      *   <li>{@link BatchKey.MappedRowKeyed}/{@link BatchKey.MappedRecordKeyed}: {@code keys}
-     *       is {@code Set<KeyType>}; return is {@code Map<KeyType, List<Record>>} (list field)
-     *       or {@code Map<KeyType, Record>} (single).</li>
+     *       is {@code Set<KeyType>}; return is {@code Map<KeyType, List<V>>} (list field) or
+     *       {@code Map<KeyType, V>} (single).</li>
      * </ul>
+     *
+     * <p>{@code V} is {@code org.jooq.Record} for {@code ServiceTableField} (caller passes
+     * {@code RECORD}) and the per-key element type for {@code ServiceRecordField} (caller
+     * passes {@code srf.elementType()}).
      */
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "service-directive-resolver-strict-child-service-return",
+        reliesOn = "Emits `return ServiceClass.method(<args>);` against a structurally-typed "
+            + "rows-method return (Map<K, V>/List<List<V>>/List<V>) without a defensive cast or "
+            + "wildcard local. ServiceDirectiveResolver's child-only strict-return check "
+            + "rejects developer methods whose declared return type doesn't match this exact "
+            + "outer shape, so any mismatch surfaces at classify time rather than as a javac "
+            + "error on the generated source.")
     private static MethodSpec buildServiceRowsMethod(
             BatchKeyField bkf,
             MethodRef method,
