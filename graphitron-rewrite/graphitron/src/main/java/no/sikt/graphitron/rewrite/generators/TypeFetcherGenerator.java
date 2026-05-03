@@ -537,10 +537,13 @@ public class TypeFetcherGenerator {
 
         // Single-cardinality sibling: scatterSingleByIdx returns List<Record> (one slot per key,
         // null where no match) rather than List<List<Record>>. Gated on any single-cardinality
-        // Split* field in the class.
+        // Split* field, or any RecordTableField whose batchKey is AccessorRowKeyedMany (the
+        // loadMany contract: one record per key, regardless of the field's GraphQL cardinality).
         boolean hasSingleSplitField = fields.stream().anyMatch(f ->
-            f instanceof ChildField.SplitTableField stf
-                && !stf.returnType().wrapper().isList());
+            (f instanceof ChildField.SplitTableField stf
+                && !stf.returnType().wrapper().isList())
+            || (f instanceof ChildField.RecordTableField rtf
+                && rtf.batchKey() instanceof BatchKey.AccessorRowKeyedMany));
         if (hasSingleSplitField) {
             builder.addMethod(SplitRowsMethodEmitter.buildScatterSingleByIdxHelper());
         }
@@ -2592,8 +2595,14 @@ public class TypeFetcherGenerator {
         // The keying-statement variable name is set by buildRecordParentKeyExtraction's arm:
         // load-arm permits emit `key`; the loadMany arm emits `keys`. The dispatch reads the
         // matching local by name.
+        //
+        // DataLoader.loadMany overload that takes key contexts requires a List<Object> of the
+        // same arity as the keys list; the batch loader only ever reads keyContexts[0] (see
+        // buildRecordBasedDataFetcher's lambda above), so duplicating env across all positions
+        // is the cheapest way to wire the env through. load(key, env) takes a single Object
+        // keyContext directly, no list-wrapping needed.
         String dispatchCall = usesLoadMany
-            ? "return loader.loadMany(keys, env)\n"
+            ? "return loader.loadMany(keys, java.util.Collections.nCopies(keys.size(), env))\n"
             : "return loader.load(key, env)\n";
 
         return MethodSpec.methodBuilder(field.name())
