@@ -23,7 +23,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R58` | Make the typed `Rejection` hierarchy load-bearing across producers | Ready | [plan](lift-unclassified-field-onto-sealed-result.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec | [plan](nestingfield-multiparent-tablefield.md) |
 | `R32` | Implement `@service` rows-method body | In Review | [plan](service-rows-method-body.md) |
-| `R62` | Lift @lookupKey partition onto TableInputArg | In Review | [plan](dml-lookup-key-partition-on-tableinputarg.md) |
 | `R13` | Faceted search on `@asConnection` | Spec | [plan](faceted-search.md) |
 | `R63` | Type UPSERT dialect requirement on the model | Spec | [plan](dml-dialect-requirement-on-model.md) |
 | `R12` | Error-handling parity: emit per-fetcher error channels from `@error` | In Progress | [plan](error-handling-parity.md) |
@@ -105,7 +104,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### mutations-errors
 
-- `R62` [**Lift @lookupKey partition onto TableInputArg**](dml-lookup-key-partition-on-tableinputarg.md) — In Review, architecture
 - `R12` [**Error-handling parity: emit per-fetcher error channels from `@error`**](error-handling-parity.md) — In Progress, architecture
 - `R63` [**Type UPSERT dialect requirement on the model**](dml-dialect-requirement-on-model.md) — Spec, architecture
 
