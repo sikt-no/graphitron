@@ -14,7 +14,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Plan |
 |---|---|---|---|
-| `R49` | Stub: scalar/`@record`-returning `@service` child field (`ServiceRecordField`) <sub>blocked by: [service-rows-method-body](service-rows-method-body.md)</sub> | Spec | [plan](service-record-field.md) |
+| `R49` | Stub: scalar/`@record`-returning `@service` child field (`ServiceRecordField`) | Spec | [plan](service-record-field.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
 | `R15` | Sweep doc drift between rewrite docs and `model/` taxonomy <sub>blocked by: [docs-site-asciidoc](docs-site-asciidoc.md)</sub> | Spec | [plan](fix-legacy-refs-in-rewrite-docs.md) |
 | `R3` | Classification vocabulary follow-ups | Spec | [plan](classification-vocabulary-followups.md) |
@@ -22,7 +22,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R65` | Tighten accessor-derived BatchKey model and emitter coordination | Ready | [plan](accessor-batchkey-emitter-tightening.md) |
 | `R58` | Make the typed `Rejection` hierarchy load-bearing across producers | In Review | [plan](lift-unclassified-field-onto-sealed-result.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec | [plan](nestingfield-multiparent-tablefield.md) |
-| `R32` | Implement `@service` rows-method body | In Review | [plan](service-rows-method-body.md) |
 | `R13` | Faceted search on `@asConnection` | Spec | [plan](faceted-search.md) |
 | `R63` | Type UPSERT dialect requirement on the model | Spec | [plan](dml-dialect-requirement-on-model.md) |
 | `R12` | Error-handling parity: emit per-fetcher error channels from `@error` | In Progress | [plan](error-handling-parity.md) |
@@ -93,10 +92,9 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### service
 
-- `R49` [**Stub: scalar/`@record`-returning `@service` child field (`ServiceRecordField`)**](service-record-field.md) — Spec, stubs, blocked by [service-rows-method-body](service-rows-method-body.md)
+- `R49` [**Stub: scalar/`@record`-returning `@service` child field (`ServiceRecordField`)**](service-record-field.md) — Spec, stubs
 - `R54` [**Rename @externalField (parallel-support, deprecation, migration)**](rename-externalfield-directive.md) — Backlog, cleanup
 - `R45` [**Typed context-value registry for `@service`**](typed-context-value-registry.md) — Spec, architecture
-- `R32` [**Implement `@service` rows-method body**](service-rows-method-body.md) — In Review, architecture
 - `R46` [**Multi-tenant fan-out for `@service`**](service-multi-tenant-fanout.md) — Backlog, architecture, blocked by [typed-context-value-registry](typed-context-value-registry.md)
 - `R11` [**`DSLContext` on `@condition` / `@tableMethod` methods**](dslcontext-on-condition-tablemethod.md) — Backlog, architecture
 - `R61` [**Emit Record1<T> instead of Row1<T> for single-column DataLoader keys**](emit-record1-keys-instead-of-row1.md) — Backlog, architecture
