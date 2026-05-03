@@ -17,4 +17,7 @@ export default defineConfig({
     sourcemap: false,
     minify: 'esbuild',
   },
+  // monaco-graphql's worker uses dynamic imports (code-splitting), which Vite's default
+  // IIFE worker output can't handle. ES modules support code-splitting natively.
+  worker: { format: 'es' },
 });
