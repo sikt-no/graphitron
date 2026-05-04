@@ -42,9 +42,15 @@ only the input-side cardinality is new.
 
 The bulk-input + single-return combination resolves to "return the last row
 in the affected set" by jOOQ default; we should reject it at classify time
-(Invariant #15: `tia.list()` requires `EncodedList` / `ProjectedList` /
-list-`Payload`) so authors don't accidentally write `[FilmInput] → Film`
+(Invariant #15: `tia.list()` requires a list return — `EncodedList` or
+`ProjectedList`) so authors don't accidentally write `[FilmInput] → Film`
 and lose data silently.
+
+Invariant #15 covers the structural rule. The `Payload` arm is
+list-`@record`-payload territory and stays single-cardinality at this
+stage as a *deferred* rejection (separate category from #15: not a
+hard structural rule, just "not yet supported"). List-payload assembly
+is upstream R75 (Backlog) and lands as a follow-up.
 
 ### Model
 
@@ -71,19 +77,34 @@ projection terminator):
   `for (var row : in) step = step.values(DSL.val(row.get("c1"), ...), ...)`.
   Single statement, single round trip; jOOQ renders multi-row VALUES.
   Returning is unchanged.
-- **DELETE** — `dsl.deleteFrom(t).where(DSL.row(k1, k2).in(in.stream()
-  .map(r -> DSL.row(DSL.val(r.get("k1"), ...), ...)).toList()))`. Composite
-  `ROW IN (...)` keyed on `tia.lookupKeyFields()`. One statement.
+- **DELETE** — keyed on `tia.fieldBindings()` (same primitive
+  `buildLookupWhere` walks for the single-row path: each binding pairs
+  the input-field name with the target column, so the LHS gets the
+  target columns and the RHS reads `r.get(binding.fieldName())`). With
+  N ≥ 2 lookup-key columns:
+  `dsl.deleteFrom(t).where(DSL.row(<targetCols>).in(in.stream()
+  .map(r -> DSL.row(DSL.val(r.get(<inputName>), <colDataType>)...))
+  .toList()))`. Degenerate single-key case (the common one): emit
+  `<targetCol>.in(<vals>)` instead of `DSL.row(k).in(DSL.row(v)...)` —
+  same SQL, simpler emitted Java. One statement either way.
 - **UPDATE** — emits a PostgreSQL-flavoured `UPDATE t SET c = v.c FROM
   (VALUES (...), (...)) AS v(k, c1, c2, ...) WHERE t.k = v.k` via
-  `dsl.update(t).set(c, DSL.field("v.c")).from(values).where(...)`. One
-  statement; carries the same `DialectRequirement.RequiresFamily(POSTGRES,
-  ...)` lift from R63 (UPDATE...FROM is Postgres-flavoured even though
-  jOOQ exposes it cross-dialect).
+  `dsl.update(t).set(c, vTable.field(...)).from(vTable).where(...)`,
+  where `vTable` is `DSL.values(rows...).asTable("v", "k", "c1", ...)`
+  (typed derived table; columns referenced through it rather than via
+  raw-string `DSL.field("v.c")`). One statement. Carries an inline
+  Oracle-dialect runtime guard analogous to UPSERT's: jOOQ silently
+  emulates `UPDATE...FROM` on non-Postgres dialects with semantics
+  drift, and the OSS distribution omits commercial-only dialect enum
+  values, so a name-prefix check on `dsl.dialect().name()` matches
+  today's UPSERT pattern. The guard threads through the existing 9-arg
+  `buildDmlFetcher(... postDslGuard)` overload. R63 will lift UPDATE's
+  guard onto the typed `DialectRequirement` slot alongside UPSERT's
+  when it ships; until then both arms carry their inline guards.
 - **UPSERT** — multi-row INSERT with `ON CONFLICT (keys) DO UPDATE SET
   c = EXCLUDED.c`. Same `.values(...)` loop as INSERT plus the existing
-  conflict-key chain; `.doNothing()` branch unchanged. Inherits R63's
-  PostgreSQL dialect guard.
+  conflict-key chain; `.doNothing()` branch unchanged. Existing inline
+  Oracle-dialect runtime guard preserved verbatim; R63 lifts it later.
 
 ### Input parsing
 
@@ -104,26 +125,36 @@ when `tia.list()`. Per-row field access (`row.get("col")`) replaces
 dispatches once on `tia.list()` and threads the chosen `in` shape
 through `dmlChain`.
 
+The single-row path (`tia.list() == false`) is unchanged: same
+`Map<?,?>` cast, same one-shot `.values(...)` / `.set(...)` chain,
+same emitted bytes for any schema that compiled before R77. The bulk
+arm is purely additive.
+
 ### Empty-list contract
 
-Define `in.isEmpty()` as a no-op short-circuit: the fetcher returns the
-empty list (for `*List` returns) or `null` (for `*Single`, though that
-combo is rejected per Invariant #15) without round-tripping to the
-database. Emit the guard immediately after `in` is bound. Avoids jOOQ's
-empty-`VALUES` rejection and matches the GraphQL contract of
-"applied no rows, returned no rows".
+Define `in.isEmpty()` as a no-op short-circuit: the fetcher returns
+the empty list without round-tripping to the database (the only
+admitted return shapes for bulk are `*List` per Invariant #15). Emit
+the guard immediately after `in` is bound. Avoids jOOQ's empty-`VALUES`
+rejection and matches the GraphQL contract of "applied no rows,
+returned no rows".
 
 ### Validator updates
 
-- Lift `MutationInputResolver.resolveInput`'s `foundTia.list()` rejection
-  arm; replace with the new Invariant #15 dispatch (list-input requires
-  list-return).
-- Tighten `FieldBuilder.classifyMutationInput` so the `Payload` arm
-  rejects `tia.list()` until list-payload assembly is designed (separate
-  follow-up, reuse R75 once it lands).
-- Update `GraphitronSchemaBuilderTest.DML_LIST_INPUT_DEFERRED` (currently
-  asserts the rejection) to instead assert successful classification, and
-  add a new case for the single-return + list-input mismatch.
+- Lift `MutationInputResolver.resolveInput`'s `foundTia.list()`
+  blanket rejection.
+- Add new structural Invariant #15 in
+  `FieldBuilder.classifyMutationInput`: `tia.list()` paired with
+  `EncodedSingle` or `ProjectedSingle` is rejected at classify time
+  (silent-data-loss footgun).
+- Add a parallel *deferred* rejection on the `Payload` arm:
+  `tia.list()` paired with `Payload` is "list-`@record` payloads are
+  not yet supported" — distinct category from #15, will lift when R75
+  (synthesize-payload-carrier, Backlog) lands.
+- Update `GraphitronSchemaBuilderTest.DML_LIST_INPUT_DEFERRED`
+  (currently asserts the blanket rejection): rename / split into one
+  case per new disposition — `*_INSERT_LIST_LIST_OK`, `*_INSERT_LIST_SINGLE_REJECTED`
+  (Invariant #15), and `*_PAYLOAD_LIST_DEFERRED` (the R75 gate).
 
 ## Tests
 
@@ -136,13 +167,16 @@ empty-`VALUES` rejection and matches the GraphQL contract of
   rewrite-design-principles).
 - **Compilation** — the four bulk fetchers compile under the
   `graphitron-sakila-example` Java 17 target.
-- **Execution** — four PostgreSQL execution-tier tests against Sakila:
+- **Execution** — PostgreSQL execution-tier tests against Sakila:
   `createFilms_insertsNRowsAndReturnsProjectedList`,
   `deleteFilms_deletesNRowsByLookupKeyTuple`,
   `updateFilms_updatesNRowsViaValuesJoin`, and
   `upsertFilms_writesNRowsAndReturnsProjectedList` (both insert and
-  update branches). Each verifies row count, RETURNING / projection
-  shape, and the empty-list short-circuit.
+  update branches). Each verifies row count and RETURNING / projection
+  shape. Plus one
+  `bulkDml_emptyListInput_doesNotRoundTripToDatabase` that exercises
+  the `in.isEmpty()` short-circuit on at least one verb (assert via
+  `QUERY_COUNT == 0`, the same pattern other execution tests use).
 
 ## Implementation sites
 
@@ -151,8 +185,15 @@ empty-`VALUES` rejection and matches the GraphQL contract of
 - [`FieldBuilder.classifyMutationInput`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java) —
   thread `tia.list()` into the existing four `case INSERT/UPDATE/DELETE/UPSERT` arms; reject bulk-input + non-list-return.
 - [`TypeFetcherGenerator.buildMutationInsertFetcher`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java) (and the three siblings) —
-  branch on `tia.list()` to emit the runtime row-loop; share an
-  `emitRowExtraction` helper across all four.
+  branch on `tia.list()` to emit the runtime row-loop. The four verbs
+  consume per-row data in three idiomatic shapes (INSERT/UPSERT
+  accumulate `.values(...)` clauses; DELETE collects `DSL.row(...)` for
+  the IN tuple; UPDATE collects rows for `DSL.values(...).asTable(...)`),
+  so the shared primitive is a `buildRowValuesBlock(tia, columns)`
+  helper that emits the `for (var row : in)` loop body producing a
+  `List<RowN<?>>` (or equivalent) at runtime — each verb wraps that
+  list in its own surrounding chain. Don't try to share a single helper
+  that also emits the chain.
 - [`TypeFetcherGenerator.buildDmlFetcher`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java) —
   flip the `env.getArgument(...)` cast to `List<Map<?,?>>` and emit the
   empty-list short-circuit when `tia.list()`.
@@ -169,8 +210,9 @@ empty-`VALUES` rejection and matches the GraphQL contract of
   (transactional). Per-row partial-success reporting is a separate
   design question covered by R12's evolution, not this item.
 - *Cross-dialect UPDATE-from-VALUES.* The plan emits the PostgreSQL
-  `UPDATE ... FROM (VALUES ...)` form and reuses R63's dialect
-  requirement; a portable fallback that runs N statements in
+  `UPDATE ... FROM (VALUES ...)` form and gates non-Postgres dialects
+  with an inline runtime guard (lifted onto typed `DialectRequirement`
+  by R63 later). A portable fallback that runs N statements in
   `dsl.batch(...)` is a follow-up, not blocking.
 - *Build-time INSERT column-coverage validation.* Same deferral as R22;
   unblocked when jOOQ's catalog reliably exposes NOT-NULL + default
