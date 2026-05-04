@@ -1,0 +1,97 @@
+= @externalField
+:description: Resolve a field's value with a developer-supplied static method that returns a jOOQ Field, in lieu of a column or join.
+:!toc:
+
+Marks a field as resolved by a static Java method instead of by direct column projection or by a `@reference` join. The method takes the parent table's jOOQ class as its sole argument and returns a `Field<T>` whose `T` matches the GraphQL scalar; the rewrite drops the returned `Field` into the parent's `SELECT` clause at the field's slot. The method name defaults to the GraphQL field name when `method:` is omitted from the reference, removing ceremony from the common case.
+
+`@externalField` is the seam for custom column-shaped logic: computed booleans, derived strings, vendor-specific SQL expressions, and jOOQ `Row.convertFrom(...)` lifts that fabricate typed records (e.g. lifting an FK column into a `Field<TableRecord<?>>` that subsequent child fields read through). It contrasts with xref:reference.adoc[`@reference`] (which traverses an FK chain) and with xref:service.adoc[`@service`] (which calls into a service for the entire payload): `@externalField` produces a single `Field<T>` and that's all.
+
+== SDL signature
+
+[source,graphql]
+----
+directive @externalField(reference: ExternalCodeReference!) on FIELD_DEFINITION
+----
+
+== Parameters
+
+[cols="1,1,1,3",options="header"]
+|===
+| Name | Type | Default | Description
+| `reference` | `ExternalCodeReference` | (required) | Points at the static Java method that produces the field's `Field<T>`. `className:` is required; `method:` defaults to the GraphQL field name when omitted. `argMapping:` on this reference is structurally inert and is rejected at parse time, the method's only formal parameter is the parent table's jOOQ class.
+|===
+
+== Canonical examples
+
+A computed boolean derived from a column on the parent table. The method name is omitted because it equals the GraphQL field name:
+
+[source,graphql]
+----
+type Film @table(name: "film") {
+    isEnglish: Boolean @externalField(reference: {
+        className: "com.example.FilmExtensions"
+    })
+}
+----
+
+[source,java]
+----
+public final class FilmExtensions {
+    public static Field<Boolean> isEnglish(Film film) {
+        return DSL.iif(film.ORIGINAL_LANGUAGE_ID.eq(1), inline(true), inline(false));
+    }
+}
+----
+
+A `Field<TableRecord<?>>` lift via `DSL.row(...).convertFrom(...)`. The lifted `FilmRecord` carries only the PK column, child fields on the resulting xref:record.adoc[`@record`] type read from the lifted record and the framework batch-fetches non-PK columns as needed:
+
+[source,graphql]
+----
+type Inventory @table(name: "inventory") {
+    inventoryId: Int! @field(name: "INVENTORY_ID")
+    filmRef: FilmCard @externalField(reference: {
+        className: "com.example.InventoryExtensions",
+        method:    "filmRef"
+    })
+}
+
+type FilmCard @record(record: {className: "com.example.jooq.tables.records.FilmRecord"}) {
+    filmId: Int @field(name: "film_id")
+}
+----
+
+A `Field<CustomJavaRecord>` lift returning a developer-defined record whose canonical accessor returns a typed jOOQ record. The classifier auto-derives an `AccessorKeyedSingle` batch key from the typed accessor, so a child `@table`-returning field on the wrapper resolves through a `DataLoader` keyed on the lifted record's PK:
+
+[source,graphql]
+----
+type Inventory @table(name: "inventory") {
+    filmCardData: FilmCardWrapper @externalField(reference: {
+        className: "com.example.InventoryExtensions",
+        method:    "filmCardData"
+    })
+}
+
+type FilmCardWrapper @record(record: {className: "com.example.services.FilmCardData"}) {
+    film: Film
+}
+----
+
+== Constraints
+
+* The parent type must be `@table`-bound. The static method's sole formal parameter is the parent table's jOOQ class; without that anchor, reflection has no shape to bind.
+* The GraphQL field name must not collide with a real SQL column on the parent table. The wiring side resolves the field by name via `DSL.field("<name>")` against the result `Record`, a collision shadows the actual column. Rename the field or use xref:field.adoc[`@field(name: ...)`] to disambiguate.
+* `className:` is required on the reference. A bare `@externalField` (no `reference:`, or a reference with no `className:`) surfaces as `external field reference could not be resolved — missing className`.
+* `method:` is optional. When omitted, the rewrite uses the GraphQL field name as the static-method name. Set `method:` only when the two diverge.
+* `argMapping:` on the `reference` is structurally inert and rejected at parse time. `@externalField` consumes no GraphQL-argument-bound parameters.
+* The static method must return `Field<T>` where `T` matches the GraphQL scalar, or one of the lift forms (`Field<TableRecord<?>>`, `Field<CustomJavaRecord>`) when the field's GraphQL type is an xref:record.adoc[`@record`].
+* The class must be discoverable as an `externalReferenceImports` entry in the Maven plugin's POM configuration. Reflection failures surface as `external field reference could not be resolved — <reflection error>`.
+* Combining `@externalField` with a `@reference` path (the condition-join lift form) is not yet supported, the build rejects this with a deferred-validation error pointing at the `computed-field-with-reference.md` roadmap item.
+
+== See also
+
+* xref:reference.adoc[`@reference`] is the FK-driven counterpart, choose it when the value comes from a chain of catalog joins, choose `@externalField` when the value is a custom expression or a typed lift.
+* xref:record.adoc[`@record`] is the natural target type for `Field<TableRecord<?>>` and `Field<CustomJavaRecord>` lift forms.
+* xref:field.adoc[`@field(name: ...)`] disambiguates the GraphQL-field-vs-SQL-column alias when names collide.
+* xref:../../how-to/external-code.adoc[How-to: Wiring external Java code] (Phase 3) covers the `externalReferenceImports` Maven configuration, method-name conventions, and the lift-into-typed-record patterns.
+
+xref:../index.adoc[← Reference index]
