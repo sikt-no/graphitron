@@ -89,7 +89,7 @@ type Query {
 * `tableMethodReference.className:` and `tableMethodReference.method:` are both required. Bare `@tableMethod` (no reference) and references missing `className:` or `method:` surface as `table method could not be resolved — ...`.
 * `argMapping:` is supported on `@tableMethod` and rebinds GraphQL argument names to differently-named Java parameters when conventions diverge. argMapping errors surface as `table method could not be resolved — @tableMethod ...`.
 * `contextArguments:` values must already be wired into the runtime `GraphQLContext` map. A typo surfaces as a `null` parameter at request time, not as a build error.
-* The class must be discoverable as an `externalReferenceImports` entry in the Maven plugin's POM configuration. Reflection failures surface as `table method could not be resolved — <reflection error>`.
+* `tableMethodReference.className:` must be a fully-qualified class name reachable on the rewrite Maven plugin's classpath (declare the carrying artifact under `<dependencies>` of the plugin's `<plugin>` block). Reflection failures surface as `table method could not be resolved — <reflection error>`.
 
 == See also
 
@@ -97,6 +97,6 @@ type Query {
 * xref:service.adoc[`@service`] is the alternative when the developer supplies the *entire* fetcher rather than just the source table.
 * xref:condition.adoc[`@condition`] layers explicit predicates on top of the chosen table, the two compose.
 * xref:reference.adoc[`@reference`] still controls the join path at child sites; the chosen table is the path's leaf.
-* xref:../../how-to/external-code.adoc[How-to: Wiring external Java code] (Phase 3) covers the `externalReferenceImports` Maven configuration shared across `@tableMethod`, `@externalField`, `@condition`, and `@service`.
+* xref:../../how-to/external-code.adoc[How-to: Wiring external Java code] (Phase 3) covers the rewrite plugin's classpath setup shared across `@tableMethod`, `@externalField`, `@condition`, and `@service`.
 
 xref:../index.adoc[← Reference index]

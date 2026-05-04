@@ -63,6 +63,6 @@ Subtype-specific fields may pull from joined tables. `FilmContent.rating` reache
 * xref:discriminator.adoc[`@discriminator`] is the per-implementer pair: it names the discriminator value that places a row in this subtype.
 * xref:table.adoc[`@table`] establishes the shared table the discriminator column resolves against.
 * xref:reference.adoc[`@reference`] for subtype-specific fields that pull from joined tables (such as `FilmContent.rating` in the example).
-* xref:../../how-to/polymorphism.adoc[How-to: Polymorphism] (Phase 3) for the choice between single-table and multi-table fetchers.
+* xref:../../how-to/polymorphic-types.adoc[How-to: Polymorphic types] (Phase 3) for the choice between single-table and multi-table fetchers.
 
 xref:../index.adoc[← Reference index]

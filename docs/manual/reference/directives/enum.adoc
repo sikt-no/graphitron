@@ -33,7 +33,7 @@ enum Mood @enum(enumReference: {className: "no.sikt.graphitron.codereferences.du
 
 Each member of the GraphQL `Mood` enum is paired with the same-named constant on `MoodEnum` at code-generation time. At read time the converter produces a `MoodEnum` instance from the column's stored representation; at write time the Java constant is converted back. Mismatches between the GraphQL enum members and the Java enum's constants surface as a build-time validation error.
 
-A short class reference works when the surrounding package is registered in the Maven plugin's `externalReferences`; otherwise spell out the FQCN.
+`className:` must be a fully-qualified class name; the carrying artifact must be on the rewrite Maven plugin's classpath (`<dependencies>` of the `<plugin>` block).
 
 == Constraints
 
@@ -47,6 +47,6 @@ A short class reference works when the surrounding package is registered in the 
 
 * xref:field.adoc[`@field`] on `ENUM_VALUE` is the alternative axis: a per-member literal binding (`@field(name: "DB_VALUE")`) without a converter.
 * `ExternalCodeReference` is the shared shape across xref:service.adoc[`@service`], `@tableMethod`, `@externalField`, and `@enum`. Only `className`/`method` carry meaning here.
-* xref:../../how-to/external-code.adoc[How-to: External code references] (Phase 3) covers the plugin's `externalReferences` mapping and FQCN-vs-short-name conventions.
+* xref:../../how-to/external-code.adoc[How-to: Wiring external Java code] (Phase 3) covers the rewrite plugin's classpath setup and the FQCN requirement.
 
 xref:../index.adoc[← Reference index]
