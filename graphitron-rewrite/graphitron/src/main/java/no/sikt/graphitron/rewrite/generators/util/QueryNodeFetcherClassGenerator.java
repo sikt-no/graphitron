@@ -65,7 +65,7 @@ public class QueryNodeFetcherClassGenerator {
     private static final ClassName BATCH_LOADER_ENV       = ClassName.get("org.dataloader", "BatchLoaderEnvironment");
     private static final ClassName CODE_REGISTRY_BLDR     = ClassName.get("graphql.schema", "GraphQLCodeRegistry", "Builder");
 
-    public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage, String jooqPackage) {
+    public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage) {
         var nodeTypes = schema.types().values().stream()
             .filter(t -> t instanceof NodeType)
             .map(t -> (NodeType) t)

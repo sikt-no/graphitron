@@ -49,7 +49,7 @@ public final class InlineTableFieldEmitter {
      *                     recursion, where each nesting level declares its own
      *                     {@code SelectedField} local to avoid JLS §14.4.2 shadowing.
      */
-    public static CodeBlock buildSwitchArmBody(ChildField.TableField tf, String parentAlias, String sfName, String outputPackage, String jooqPackage) {
+    public static CodeBlock buildSwitchArmBody(ChildField.TableField tf, String parentAlias, String sfName, String outputPackage) {
         if (JoinPathEmitter.hasConditionJoin(tf.joinPath())) {
             return CodeBlock.builder()
                 .addStatement("throw new $T($S)",
@@ -58,16 +58,14 @@ public final class InlineTableFieldEmitter {
                     + "cannot be emitted until classification-vocabulary item 5 resolves condition-method target tables")
                 .build();
         }
-        return buildFkOnlyArm(tf, parentAlias, sfName, outputPackage, jooqPackage);
+        return buildFkOnlyArm(tf, parentAlias, sfName, outputPackage);
     }
 
-    private static CodeBlock buildFkOnlyArm(ChildField.TableField tf, String parentAlias, String sfName, String outputPackage, String jooqPackage) {
+    private static CodeBlock buildFkOnlyArm(ChildField.TableField tf, String parentAlias, String sfName, String outputPackage) {
         List<JoinStep> path = tf.joinPath();
         TableRef terminalTable = tf.returnType().table();
         List<String> aliases = JoinPathEmitter.generateAliases(path, terminalTable);
         String terminalAlias = aliases.get(aliases.size() - 1);
-        ClassName tablesClass = ClassName.get(jooqPackage, "Tables");
-        ClassName keysClass = ClassName.get(jooqPackage, "Keys");
         ClassName typeClass = ClassName.get(outputPackage + ".types", tf.returnType().returnTypeName());
 
         var code = CodeBlock.builder();
@@ -81,12 +79,12 @@ public final class InlineTableFieldEmitter {
             JoinStep.FkJoin fk = (JoinStep.FkJoin) path.get(i);
             ClassName jooqTableClass = fk.targetTable().tableClass();
             code.addStatement("$T $L = $T.$L.as($L.getName() + $S)",
-                jooqTableClass, aliases.get(i), tablesClass, fk.targetTable().javaFieldName(),
+                jooqTableClass, aliases.get(i), fk.targetTable().constantsClass(), fk.targetTable().javaFieldName(),
                 parentAlias, "_" + aliases.get(i));
         }
 
         // Assemble the inner SELECT.
-        CodeBlock innerSelect = buildInnerSelect(tf, path, aliases, terminalAlias, typeClass, keysClass, parentAlias, sfName);
+        CodeBlock innerSelect = buildInnerSelect(tf, path, aliases, terminalAlias, typeClass, parentAlias, sfName);
 
         // Both cardinalities use DSL.multiset(...) uniformly. The single-cardinality path adds
         // .limit(1) to the inner SELECT (inside buildInnerSelect) and the registered DataFetcher
@@ -103,7 +101,7 @@ public final class InlineTableFieldEmitter {
      * here and is unwrapped on the read side.
      */
     private static CodeBlock buildInnerSelect(ChildField.TableField tf, List<JoinStep> path,
-            List<String> aliases, String terminalAlias, ClassName typeClass, ClassName keysClass,
+            List<String> aliases, String terminalAlias, ClassName typeClass,
             String parentAlias, String sfName) {
         boolean singleCardinality = tf.returnType().wrapper() instanceof FieldWrapper.Single;
 
@@ -121,7 +119,7 @@ public final class InlineTableFieldEmitter {
             JoinStep.FkJoin bridging = (JoinStep.FkJoin) path.get(i);
             String prevAlias = aliases.get(i - 1);
             sel.add("\n        .join($L).onKey($T.$L)",
-                prevAlias, keysClass, bridging.fkJavaConstant());
+                prevAlias, bridging.fk().keysClass(), bridging.fk().constantName());
         }
 
         // WHERE: step 0's correlation against parent, then whereFilter methods, then user filters.

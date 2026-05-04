@@ -59,7 +59,7 @@ final class SelectMethodBody {
 
     static MethodSpec buildMethod(
         EntityResolution entity, KeyAlternative alt, int altIndex,
-        String outputPackage, String jooqPackage
+        String outputPackage
     ) {
         String methodName = "select" + entity.typeName() + "Alt" + altIndex;
         var listOfBindings = ParameterizedTypeName.get(LIST,
@@ -70,13 +70,13 @@ final class SelectMethodBody {
             .addParameter(ENV, "env")
             .addParameter(DSL_CONTEXT, "dsl")
             .addParameter(ArrayTypeName.of(ClassName.get(Object.class)), "result")
-            .addCode(body(entity, alt, altIndex, outputPackage, jooqPackage))
+            .addCode(body(entity, alt, altIndex, outputPackage))
             .build();
     }
 
     private static CodeBlock body(
         EntityResolution entity, KeyAlternative alt, int altIndex,
-        String outputPackage, String jooqPackage
+        String outputPackage
     ) {
         var jooqTableClass = entity.table().tableClass();
         var typeClass = ClassName.get(outputPackage + ".types", entity.typeName());

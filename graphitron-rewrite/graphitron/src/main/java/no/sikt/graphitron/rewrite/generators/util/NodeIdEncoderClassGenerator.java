@@ -60,22 +60,22 @@ public class NodeIdEncoderClassGenerator {
     /**
      * Backwards-compatible no-arg generator: emits the encoder class with no per-Node helpers.
      * Retained only for callers that have not yet been threaded with the schema; production
-     * generation goes through {@link #generate(GraphitronSchema, String)}.
+     * generation goes through {@link #generate(GraphitronSchema)}.
      */
     public static List<TypeSpec> generate() {
-        return generate(List.of(), null);
+        return generate(List.of());
     }
 
     /** Emits the encoder class with per-Node {@code encode<TypeName>} / {@code decode<TypeName>} helpers. */
-    public static List<TypeSpec> generate(GraphitronSchema schema, String jooqPackage) {
+    public static List<TypeSpec> generate(GraphitronSchema schema) {
         var nodeTypes = schema.types().values().stream()
             .filter(t -> t instanceof NodeType)
             .map(t -> (NodeType) t)
             .collect(Collectors.toUnmodifiableList());
-        return generate(nodeTypes, jooqPackage);
+        return generate(nodeTypes);
     }
 
-    private static List<TypeSpec> generate(List<NodeType> nodeTypes, String jooqPackage) {
+    private static List<TypeSpec> generate(List<NodeType> nodeTypes) {
         var privateCtor = MethodSpec.constructorBuilder()
             .addModifiers(Modifier.PRIVATE)
             .build();
@@ -153,14 +153,12 @@ public class NodeIdEncoderClassGenerator {
             .addMethod(peekTypeId)
             .addMethod(decodeValues);
 
-        ClassName tablesClass = jooqPackage == null
-            ? null
-            : ClassName.get(jooqPackage, "Tables");
         for (NodeType nt : nodeTypes) {
             classBuilder.addMethod(buildPerTypeEncode(nt));
-            if (tablesClass != null) {
-                classBuilder.addMethod(buildPerTypeDecode(nt, tablesClass));
-            }
+            // Each NodeType's per-decode method references its own table's Tables class, so
+            // multi-schema codegen layouts produce schema-segmented references without per-class
+            // derivation.
+            classBuilder.addMethod(buildPerTypeDecode(nt, nt.table().constantsClass()));
         }
 
         return List.of(classBuilder.build());

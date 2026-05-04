@@ -75,7 +75,7 @@ public final class EntityFetcherDispatchClassGenerator {
 
     private EntityFetcherDispatchClassGenerator() {}
 
-    public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage, String jooqPackage) {
+    public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage) {
         var entities = schema.entitiesByType().values().stream()
             .sorted(Comparator.comparing(EntityResolution::typeName))
             .toList();
@@ -99,11 +99,11 @@ public final class EntityFetcherDispatchClassGenerator {
             .addMethod(buildContextHelper(graphitronContext));
 
         for (var entity : entities) {
-            spec.addMethod(buildHandleMethod(entity, outputPackage, jooqPackage, nodeIdEncoder));
+            spec.addMethod(buildHandleMethod(entity, outputPackage, nodeIdEncoder));
             for (int i = 0; i < entity.alternatives().size(); i++) {
                 var alt = entity.alternatives().get(i);
                 if (!alt.resolvable()) continue;
-                spec.addMethod(buildSelectMethod(entity, alt, i, outputPackage, jooqPackage));
+                spec.addMethod(buildSelectMethod(entity, alt, i, outputPackage));
             }
         }
 
@@ -227,16 +227,16 @@ public final class EntityFetcherDispatchClassGenerator {
     // below. Implementations are filled in by subsequent Edit operations to keep this file
     // composable in small chunks.
     private static MethodSpec buildHandleMethod(
-        EntityResolution entity, String outputPackage, String jooqPackage, ClassName nodeIdEncoder
+        EntityResolution entity, String outputPackage, ClassName nodeIdEncoder
     ) {
-        return new HandleMethodEmitter(entity, outputPackage, jooqPackage, nodeIdEncoder).build();
+        return new HandleMethodEmitter(entity, outputPackage, nodeIdEncoder).build();
     }
 
     private static MethodSpec buildSelectMethod(
         EntityResolution entity, KeyAlternative alt, int altIndex,
-        String outputPackage, String jooqPackage
+        String outputPackage
     ) {
-        return new SelectMethodEmitter(entity, alt, altIndex, outputPackage, jooqPackage).build();
+        return new SelectMethodEmitter(entity, alt, altIndex, outputPackage).build();
     }
 
     // ----- Inner emitter classes (lightweight; minimal state) -----
@@ -244,13 +244,11 @@ public final class EntityFetcherDispatchClassGenerator {
     private static final class HandleMethodEmitter {
         final EntityResolution entity;
         final String outputPackage;
-        final String jooqPackage;
         final ClassName nodeIdEncoder;
 
-        HandleMethodEmitter(EntityResolution entity, String outputPackage, String jooqPackage, ClassName nodeIdEncoder) {
+        HandleMethodEmitter(EntityResolution entity, String outputPackage, ClassName nodeIdEncoder) {
             this.entity = entity;
             this.outputPackage = outputPackage;
-            this.jooqPackage = jooqPackage;
             this.nodeIdEncoder = nodeIdEncoder;
         }
 
@@ -277,19 +275,17 @@ public final class EntityFetcherDispatchClassGenerator {
         final KeyAlternative alt;
         final int altIndex;
         final String outputPackage;
-        final String jooqPackage;
 
         SelectMethodEmitter(EntityResolution entity, KeyAlternative alt, int altIndex,
-                            String outputPackage, String jooqPackage) {
+                            String outputPackage) {
             this.entity = entity;
             this.alt = alt;
             this.altIndex = altIndex;
             this.outputPackage = outputPackage;
-            this.jooqPackage = jooqPackage;
         }
 
         MethodSpec build() {
-            return SelectMethodBody.buildMethod(entity, alt, altIndex, outputPackage, jooqPackage);
+            return SelectMethodBody.buildMethod(entity, alt, altIndex, outputPackage);
         }
     }
 }
