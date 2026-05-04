@@ -112,10 +112,20 @@ sealed interface DmlTableField extends MutationField {
 Each of the four DML records gains a `DialectRequirement dialectRequirement`
 component. The classifier (`FieldBuilder.buildDmlField`) populates:
 
-- INSERT/UPDATE/DELETE: `DialectRequirement.None.INSTANCE`.
+- INSERT/DELETE: `DialectRequirement.None.INSTANCE`.
+- UPDATE: `DialectRequirement.None.INSTANCE` for single-row; if R77 (bulk
+  DML) has shipped, the bulk arm carries
+  `RequiresFamily(SqlDialectFamily.POSTGRES, "...UPDATE...FROM (VALUES)
+  ...")` because jOOQ silently emulates `UPDATE...FROM` on non-Postgres
+  dialects with semantics drift. The classifier reads `tia.list()` to
+  pick.
 - UPSERT: `new DialectRequirement.RequiresFamily(SqlDialectFamily.POSTGRES,
   "...UPSERT...MERGE INTO...")`. The reason string carries the actionable
   message that today is hardcoded in the inline `CodeBlock`.
+
+If R77 ships first, the inline `postDslGuard` `CodeBlock` lives on both
+UPSERT and bulk-UPDATE call sites until R63 lifts both at once. The
+9-arg `buildDmlFetcher` overload deletion in this plan covers both.
 
 ## Emitter rewrite
 
@@ -191,7 +201,8 @@ Pure model refactor, not a behaviour change. Acceptance gates:
 - `model/MutationField.java`: `DmlTableField` interface gains
   `dialectRequirement()`; each of the four DML records gains the component.
 - `FieldBuilder.buildDmlField`: populate `DialectRequirement.None.INSTANCE`
-  by default, `RequiresFamily(POSTGRES, ...)` for UPSERT.
+  by default, `RequiresFamily(POSTGRES, ...)` for UPSERT and (if R77 has
+  shipped) for bulk UPDATE.
 - `TypeFetcherGenerator`:
   - Delete the 9-arg `buildDmlFetcher` overload.
   - Add `emitDialectGuard` private helper.
@@ -199,6 +210,8 @@ Pure model refactor, not a behaviour change. Acceptance gates:
   - `buildMutationUpsertFetcher` deletes the inline `postDslGuard`
     `CodeBlock`; the call site shrinks to the same shape as
     `buildMutationInsertFetcher` etc.
+  - If R77 has shipped, `buildMutationUpdateFetcher`'s bulk arm deletes
+    its inline `postDslGuard` symmetrically.
 - `MappingsConstantNameDedup` and any other site that rebuilds DML records:
   thread the new component through.
 
