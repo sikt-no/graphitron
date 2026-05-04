@@ -16,5 +16,6 @@ Recipe pages are authored in R68 Phase 3, one at a time. Landed pages are listed
 * xref:global-id.adoc[Global object IDs]: Relay Global Object Identification end to end. Stable-ID strategies, `keyColumns` migrations, composite-PK nodes, cross-type IDs from FK paths, decode-side argument and input contracts, and `Query.node`/`Query.nodes` dispatch.
 * xref:sort-results.adoc[Sort results]: pick a column source (`index:`, `fields:`, `primaryKey:`), mix static `@defaultOrder` with dynamic `@orderBy`, build stable keyset cursors with explicit tie-breakers, and avoid the collation and index-volatility pitfalls.
 * xref:connections.adoc[Cursor-paginated connections]: synthesised vs declared connection types, `connectionName:` dedup and its silent-element-mismatch case, what `totalCount` actually costs (and when it returns `null`), and what the rewrite does (and does not) cap on page size.
+* xref:condition-cascade.adoc[Stacking and overriding conditions]: when explicit `@condition` predicates stack with implicit ones, what `override: true` suppresses at argument vs field level, the `@table` cascade and the divergence from legacy "outer owns everything" semantics, the input-carrier rules for nested inputs, and how `contextArguments:` flow.
 
 xref:../index.adoc[← Back to the manual landing]

@@ -129,6 +129,6 @@ type Query {
 * xref:field.adoc[`@field(name: ...)`] is the column-binding axis, `@condition` and `@field` coexist on the same slot, `@field` drives the implicit predicate, `@condition` adds (or replaces) the explicit one.
 * xref:record.adoc[`@record`] / xref:table.adoc[`@table`] on input types determine the carrier the condition method reads from.
 * xref:service.adoc[`@service`] is the alternative when a *whole* fetcher is custom code, `@condition` is for adjusting a single predicate inside an otherwise generated query.
-* xref:../../how-to/condition-cascade.adoc[How-to: Stacking and overriding conditions] (Phase 3) covers the override cascade rules, nested-input record conventions, and the divergence from legacy semantics.
+* xref:../../how-to/condition-cascade.adoc[How-to: Stacking and overriding conditions] covers the override cascade rules, nested-input record conventions, and the divergence from legacy semantics.
 
 xref:../index.adoc[← Reference index]
