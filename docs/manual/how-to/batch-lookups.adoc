@@ -1,0 +1,145 @@
+= How-to: Batch lookups
+:description: Drive a positional batch fetch with @lookupKey across single, correlated, composite, NodeId-encoded, and per-parent shapes.
+:!toc:
+
+xref:../reference/directives/lookupKey.adoc[`@lookupKey`] turns a query into a batch lookup: the client sends a list of key values, the server returns a list of results in the same positions, and unmatched keys surface as `null` at the corresponding output index. The reference page covers the directive's signature and the four canonical shapes; this recipe walks the operational variations: correlated multi-arg keys, composite keys behind a `@table` input, NodeId-encoded keys and the failure-mode split they imply, the `@splitQuery` interaction (per-parent narrowed batches), and the constraints that bite when keys are too many, the wrong shape, or paired with the wrong directive.
+
+== The positional contract
+
+Every `@lookupKey` shape compiles to the same generator pattern: a `VALUES(idx, key1, key2, ...)` derived table joined against the target table on the key columns, ordered by `idx`. The output list is the same length as the input key list; unmatched keys produce `null` at their input position. xref:sort-results.adoc[Sorts] do not apply: the order is the input order, full stop. Adding xref:../reference/directives/asConnection.adoc[`@asConnection`] on top of a `@lookupKey` field is rejected by the classifier (`@asConnection on @lookupKey fields is invalid`); pagination would shift positions and break the positional contract.
+
+The Sakila example schema's root lookups exercise the common shapes. The simplest is a single-scalar key:
+
+[source,graphql]
+----
+type Query {
+    filmById(film_id: [ID] @lookupKey): [Film!]!
+    languageByKey(language_id: [Int] @lookupKey @field(name: "language_id")): [Language!]!
+}
+----
+
+A request `filmById(film_id: ["1", "999999", "2"]) { title }` returns three positions in input order: `{ "ACADEMY DINOSAUR" }`, `null`, `{ "ACE GOLDFINGER" }`. The empty-list case short-circuits before touching SQL: `filmById(film_id: [])` returns `[]` without dispatching a query.
+
+== Correlated multi-argument keys
+
+Two `@lookupKey` arguments at the same call site correlate by index. `customerById(customer_id: [ID] @lookupKey, store_id: ID @lookupKey)` matches `(customer_id[i], store_id[i])` per row; a scalar key broadcasts to every position, while two list keys must have the same length. The generator builds `VALUES(idx, customer_id, store_id) JOIN customer USING (customer_id, store_id)`.
+
+[source,graphql]
+----
+type Query {
+    customerById(customer_id: [ID] @lookupKey, store_id: ID @lookupKey): [Customer!]!
+}
+----
+
+A request `customerById(customer_id: ["1", "2", "4", "3"], store_id: "1")` joins each customer id against `store_id = "1"` (broadcast) and returns four positions, `null` where a `(customer_id, store_id)` pair has no match. Two list arguments of unequal length are a runtime contract violation; wrap them in a `@table` input to get framework-level enforcement.
+
+The argument-level `@lookupKey` shape is right when the keys are scalar lists at the call site and the caller can be trusted to supply correlated lists. When the pairing matters and you want the schema to enforce it, the input-type shape is preferable.
+
+== Composite keys via `@table` input
+
+A `@table`-bound input type with `@lookupKey` on each leaf scalar lets the schema enforce that the keys travel together as one record. Each input element is one row of the lookup; the generator materialises `VALUES(idx, film_id, actor_id)` and joins on the full composite key.
+
+[source,graphql]
+----
+type Query {
+    filmActorsByKey(key: [FilmActorKey!]! @lookupKey): [FilmActor!]!
+}
+
+input FilmActorKey @table(name: "film_actor") {
+    filmId:  Int! @field(name: "film_id")  @lookupKey
+    actorId: Int! @field(name: "actor_id") @lookupKey
+}
+----
+
+The contract: each `FilmActorKey` is one row of the `VALUES` table, the join is on the full key set, and the output preserves input order. `@lookupKey` on the argument itself (`key: [FilmActorKey!]! @lookupKey`) is the carrier marker; the per-leaf `@lookupKey` annotations are what bind individual fields into the key tuple. A leaf without `@lookupKey` is excluded from the key set and resolves like any other `@table`-bound input field.
+
+The same shape works for the `@mutation` directive's `UPDATE`/`DELETE`/`UPSERT` row identification, but that is a distinct use of `@lookupKey` on `INPUT_FIELD_DEFINITION` covered in xref:../reference/directives/mutation.adoc[`@mutation`].
+
+== NodeId-encoded keys
+
+Two flavors of NodeId-driven lookup exist and they differ in failure mode:
+
+*Synthesised lookup-key path* (`@lookupKey` on an `[ID]` arg whose target type carries `@node`). Each opaque base64 id decodes once per row at the arg layer to a `Record<N>` of the target's primary-key columns; the generator emits `VALUES(idx, pk_col1, pk_col2, ...)` keyed on the decoded composite. Decode failure (a wrong-typename or malformed id) is a contract violation: it surfaces as `GraphqlErrorException` via `CallSiteExtraction.NodeIdDecodeKeys.ThrowOnMismatch`.
+
+[source,graphql]
+----
+type Query {
+    filmActorByNodeId(id: [ID!]! @lookupKey): [FilmActor!]!
+}
+----
+
+The output list is one element per opaque id, ordered by input position; the FilmActor type's two-column primary key (`actor_id`, `film_id`) is encoded into each id and decoded into the `VALUES` row.
+
+*Same-table `@nodeId` arg path* (`@nodeId(typeName: T)` on an `[ID]` arg whose `T` matches the field's return type). Same lookup-by-id semantics, but with filter-style failure handling: a malformed id silently drops to "no row matches" via `CallSiteExtraction.NodeIdDecodeKeys.SkipMismatchedElement`. The classifier synthesises `isLookupKey: true` for this arm, so an explicit `@lookupKey` on the same arg is rejected (`@nodeId already implies @lookupKey for same-table; the explicit directive is redundant`).
+
+[source,graphql]
+----
+type Query {
+    filmsByNodeIdArg(ids: [ID!]! @nodeId(typeName: "Film")): [Film!]!
+}
+----
+
+`filmsByNodeIdArg(ids: [<film_2>, "garbage", <film_4>])` returns two films at positions 0 and 2 and skips position 1 entirely; the malformed id never reaches the SQL pass. This contrasts with the `@lookupKey + @nodeId(typeName:)` case the generator rejects up front: pick one. For decode-side guidance on stable IDs, xref:global-id.adoc[How-to: Global object IDs] covers the encoder/decoder layout.
+
+== `@splitQuery` + `@lookupKey` (per-parent narrowed batch)
+
+When a `@lookupKey` field hangs off a list parent and you want each parent to receive only its own filtered child list, combine `@splitQuery` with `@lookupKey`. The fetcher emits a flat `SELECT` joined against two `VALUES` tables: one for the per-parent dispatch keys (driven by the `DataLoader`), one for the caller-provided lookup keys.
+
+[source,graphql]
+----
+type Film @table(name: "film") {
+    actorsBySplitLookup(actor_id: [Int!] @lookupKey): [Actor!]! @splitQuery @reference(path: [
+        {key: "film_actor_film_id_fkey"},
+        {key: "film_actor_actor_id_fkey"}
+    ])
+}
+----
+
+Per request, the framework gathers every parent Film's `film_id`, dispatches one batched query that joins `film_actor` against the per-parent key set *and* the caller's `actor_id` list, then scatters rows back to their parents by `__idx__`. Each Film receives a list filtered by the caller's actor keys; absence of an actor in a film yields no row (not `null`) at the child position, since this is a list output, not a positional one.
+
+Without `@splitQuery`, the same `[Actor!]!` field with `@lookupKey` paginates across *all* parents in one wide SELECT: the lookup keys narrow the union of all parents' actors, not per-parent slices. That is rarely the right shape at the child level. The `actors(actor_id: [Int!] @lookupKey)` field on `Film` shows the inline (non-split) variant: it ships an inline correlated subquery per parent, useful when parent fan-out is small but wasteful at scale.
+
+The same composition applies at deeper nesting depths through plain-object `NestingField` parents. `Film.info.castByKey(actor_id: [Int!] @lookupKey)` (`info: FilmInfo`, `FilmInfo` plain-object) treats the nested arm as just another `SplitLookupTableField`: same DataLoader shape, deeper path.
+
+`@splitQuery` + `@lookupKey` + `@asConnection` is *not* a valid composition. The `@asConnection` rejection mentioned above applies to any `@lookupKey` field, including `@splitQuery` ones; combine `@splitQuery` + `@asConnection` (covered in xref:connections.adoc[connections]) for per-parent paginated children, or `@splitQuery` + `@lookupKey` for per-parent narrowed batches, but not all three at once.
+
+== `@lookupKey` on `@record` parents
+
+A `@record` parent reachable from `@service` is implicitly DataLoader-batched on its `@table`-typed children (`classifyChildFieldOnResultType` never inspects `@splitQuery` on record-parent table-bound fields). That same pattern admits `@lookupKey`: a `RecordLookupTableField` batches keyed by the parent record's PK and narrowed by the caller-provided lookup keys. Explicit `@splitQuery` is redundant on these fields, not rejected.
+
+[source,graphql]
+----
+type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) {
+    actorsByLookup(actor_id: [Int!] @lookupKey): [Actor!]! @reference(path: [
+        {key: "film_actor_film_id_fkey"},
+        {key: "film_actor_actor_id_fkey"}
+    ])
+}
+----
+
+The same VALUES-pair join applies; the difference is purely on the parent side, where the key extraction reads from the jOOQ record's accessor rather than from a `@table` parent's projected `__idx__` column. xref:../reference/directives/batchKeyLifter.adoc[`@batchKeyLifter`] is the analogous escape hatch when the `@record` parent is a *plain* Java record (no FK metadata), but the lookup-key plumbing on the child side is the same.
+
+== Constraints and pitfalls
+
+* `@asConnection` on a `@lookupKey` field is rejected. Pagination would shift positions, breaking the positional contract.
+* Single-cardinality `@lookupKey` is rejected. Pass a list-returning field, or drop `@lookupKey`.
+* Two layers of lists (e.g. `[InList] @lookupKey` where `InList { field: [String] }`) is rejected. The lookup operates over a flat keyset; flatten the input or drop the inner list.
+* Multiple `@lookupKey` arguments at the same call site must have the same length; values at the same index are correlated. A scalar argument broadcasts to every position. Wrap correlated keys in a `@table` input when the schema should enforce the pairing.
+* `@nodeId(typeName: T)` on the same arg implies `@lookupKey` when `T` matches the field's return type; the explicit `@lookupKey` is rejected as redundant. The decode failure mode is `Skip` (filter semantics, malformed ids drop silently). Synthesised lookup-key paths via `@lookupKey` on `[ID]` args use `Throw` (decode failure surfaces as `GraphqlErrorException`).
+* Composite keys cap at 21 columns plus the implicit `idx` cell. `ValuesJoinRowBuilder` enforces jOOQ's typed `Row<N+1>`/`Record<N+1>` arity limit of 22; exceeding it fails the build with the offending arity in the message.
+* Empty lookup-input short-circuits before SQL. Selecting `filmById(film_id: [])` returns `[]` without dispatching to the database.
+* Keys should uniquely identify a row. Multiple rows matching one key collapses to one returned row (driver-dependent which); use `@condition` for non-uniquely-keyed filtering, not `@lookupKey`.
+* `@lookupKey` args are exempt from the implicit `column = ?` predicate path. The cascade in xref:condition-cascade.adoc[Stacking and overriding conditions] excludes `@lookupKey`-bound names from `walkInputFieldConditions`, so a lookup arg doesn't double-filter via VALUES join AND a redundant `column IN (...)`.
+* Only arguments on root-level fields (or on their referenced input types) and on child fields with arguments may be keys. xref:../reference/directives/mutation.adoc[`@mutation`] uses `@lookupKey` separately to identify the target row for `UPDATE`/`DELETE`/`UPSERT`; that's a distinct use of the same directive on `INPUT_FIELD_DEFINITION`.
+
+== See also
+
+* xref:../reference/directives/lookupKey.adoc[`@lookupKey`] is the directive surface and the canonical-shapes catalog.
+* xref:../reference/directives/splitQuery.adoc[`@splitQuery`] composes with `@lookupKey` for per-parent narrowed child batches.
+* xref:../reference/directives/nodeId.adoc[`@nodeId`] supplies the encoded-id decode plumbing; same-table `@nodeId` args synthesise `@lookupKey` automatically.
+* xref:../reference/directives/batchKeyLifter.adoc[`@batchKeyLifter`] is the analogous escape hatch on plain-Java-record parents (no FK metadata).
+* xref:global-id.adoc[How-to: Global object IDs] covers stable-id strategies and the decode-side argument and input contracts that NodeId-keyed lookups depend on.
+* xref:condition-cascade.adoc[How-to: Stacking and overriding conditions] covers the `@lookupKey` exemption from the implicit-predicate path.
+* xref:connections.adoc[How-to: Cursor-paginated connections] covers the `@splitQuery` + `@asConnection` shape when paginated child slices are the goal instead of caller-narrowed keysets.
+
+xref:index.adoc[← How-to index]
