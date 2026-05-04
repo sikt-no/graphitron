@@ -1,0 +1,56 @@
+= @notGenerated
+:description: Legacy directive that suppressed data-fetcher generation. The rewrite no longer supports it; remove it from the schema.
+:!toc:
+
+`@notGenerated` was the legacy generator's escape hatch for fields whose data fetcher the developer wanted to wire by hand: the directive caused Graphitron to skip code generation for the field, leaving it to be bound through the runtime's `RuntimeWiring`. The rewrite no longer supports it. The schema must fully describe every field, fields are either generated from directives or explicitly delegated through xref:service.adoc[`@service`] / xref:externalField.adoc[`@externalField`] / xref:tableMethod.adoc[`@tableMethod`].
+
+The directive name is still parsed (so existing schemas don't fail with "unknown directive `@notGenerated`"), but every application is rejected with a clear message: `@notGenerated is no longer supported. Remove the directive; fields must be fully described by the schema.` Remove every occurrence from your schema and replace each one with the directive that names the actual data source.
+
+== SDL signature
+
+[source,graphql]
+----
+directive @notGenerated on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | INTERFACE | UNION
+----
+
+== Migration
+
+Replace each application with the directive that describes the field's actual data source:
+
+[cols="1,1,3",options="header"]
+|===
+| Original | Rewrite replacement | Notes
+| `field: T @notGenerated` on `Query` / `Mutation` | xref:service.adoc[`@service`] | Wire the resolver as a service method, the rewrite generates the data fetcher and dispatches to your code.
+| `field: T @notGenerated` on a child of a `@table` parent | xref:externalField.adoc[`@externalField`] (column-shaped) or xref:reference.adoc[`@reference`] (FK-driven) | Either return the value as a `Field<T>` from a static method, or join through the catalog.
+| `field: T @notGenerated` on a `@record` parent | xref:batchKeyLifter.adoc[`@batchKeyLifter`] or a typed Java accessor | The `@record` parent must expose the data either through a typed Java-record accessor or through an explicit lifter.
+| `field: T @splitQuery @notGenerated` (custom batch fetcher) | xref:service.adoc[`@service`] (with xref:splitQuery.adoc[`@splitQuery`] for non-root batching) | Service methods can be batched with xref:splitQuery.adoc[`@splitQuery`] at non-root sites; the developer-supplied method runs once per parent batch.
+| `interface T @notGenerated` / `union U @notGenerated` | (no replacement needed) | The legacy "skip interface/union wiring" axis was always tied to `RuntimeWiring`-side type resolvers, the rewrite always generates these from xref:discriminate.adoc[`@discriminate`] / xref:discriminator.adoc[`@discriminator`] and xref:multitableReference.adoc[`@multitableReference`]. Remove the directive.
+|===
+
+== Diagnostic
+
+Any application of `@notGenerated` produces a build-time rejection:
+
+[source,text]
+----
+@notGenerated is no longer supported. Remove the directive; fields must be fully described by the schema.
+----
+
+The rejection fires before the rest of the field's classification runs, so the message is the first thing the build emits for that field. Schemas that still carry `@notGenerated` annotations must remove every occurrence to compile under the rewrite.
+
+== Constraints
+
+* Every application is rejected at build time, regardless of position. There is no "warn-only" mode and no migration shim, the surface is hard-removed.
+* The directive is still *parsed* (the schema still validates against the SDL), so the migration is a one-step delete-and-replace, not a two-step "first remove, then add `@notGenerated` back later".
+* Input-field-level applications (rare in legacy schemas) are also rejected. The build messages identify which input field carries the directive: `input field '<name>': @notGenerated is no longer supported. Remove the directive; fields must be fully described by the schema.`
+* The directive is mentioned in the rewrite's `directives.graphqls` SDL only because removing the declaration would cause "unknown directive" parse errors on legacy schemas. Once your schema is fully migrated, the declaration is purely cosmetic.
+
+== See also
+
+* xref:service.adoc[`@service`] is the most common replacement: a developer-supplied resolver method for a whole field.
+* xref:externalField.adoc[`@externalField`] is the replacement for column-shaped custom logic on a `@table` parent.
+* xref:tableMethod.adoc[`@tableMethod`] is the replacement when the developer needs to choose the source jOOQ table at request time.
+* xref:batchKeyLifter.adoc[`@batchKeyLifter`] is the replacement when a `@record` parent needs a custom path to a child `@table`'s batch key.
+* xref:../../how-to/migrating-from-legacy.adoc[How-to: Migrating from the legacy generator] (Phase 3) covers the full directive-by-directive migration matrix, including the rejected-stub directives.
+
+xref:../index.adoc[← Reference index]
