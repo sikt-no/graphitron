@@ -1,0 +1,52 @@
+= @enum
+:description: Bind a GraphQL enum type to a Java enum class via a jOOQ converter.
+:!toc:
+
+Maps a GraphQL `enum` type to a Java enum class through a jOOQ converter. Pairs with the schema's database-bound enum columns: jOOQ's converter materialises rows as the Java enum, the GraphQL layer presents the same shape, and Graphitron generates the GraphQL ↔ Java translation. This is the type-level alternative to per-value xref:field.adoc[`@field`] mapping (which targets a column literal per `ENUM_VALUE`).
+
+== SDL signature
+
+[source,graphql]
+----
+directive @enum(enumReference: ExternalCodeReference!) on ENUM
+----
+
+== Parameters
+
+[cols="1,1,1,3",options="header"]
+|===
+| Name | Type | Default | Description
+| `enumReference` | `ExternalCodeReference!` | (required) | Points at the Java enum class (or a jOOQ converter for it). The directive uses `className:` (and optionally `method:`); other `ExternalCodeReference` slots are structurally inert. `argMapping:` is rejected at parse time.
+|===
+
+== Canonical example
+
+A GraphQL enum mapped to a Java enum class via a jOOQ converter:
+
+[source,graphql]
+----
+enum Mood @enum(enumReference: {className: "no.sikt.graphitron.codereferences.dummyreferences.MoodEnum"}) {
+    HAPPY
+    SAD
+}
+----
+
+Each member of the GraphQL `Mood` enum is paired with the same-named constant on `MoodEnum` at code-generation time. At read time the converter produces a `MoodEnum` instance from the column's stored representation; at write time the Java constant is converted back. Mismatches between the GraphQL enum members and the Java enum's constants surface as a build-time validation error.
+
+A short class reference works when the surrounding package is registered in the Maven plugin's `externalReferences`; otherwise spell out the FQCN.
+
+== Constraints
+
+* The argument is required; graphql-java rejects a no-arg `@enum` at parse time. Mirrors xref:service.adoc[`@service`], `@tableMethod`, and `@externalField`, which all take `ExternalCodeReference!`.
+* `argMapping:` on the `enumReference` is structurally inert and is rejected at parse time with "argMapping is not supported on `@enum`". `@enum` does not consume GraphQL-argument-bound parameters.
+* Each GraphQL enum member must correspond to a Java constant of the same name on the referenced class. Missing or extra constants fail the build.
+* `@enum` is mutually exclusive with per-value xref:field.adoc[`@field`]: declare `@enum` on the type for converter-based mapping, or `@field(name: ...)` on each `ENUM_VALUE` for column-literal mapping. Don't mix the two on the same enum.
+* Applies only to GraphQL `enum` types. The directive on any other site is rejected.
+
+== See also
+
+* xref:field.adoc[`@field`] on `ENUM_VALUE` is the alternative axis: a per-member literal binding (`@field(name: "DB_VALUE")`) without a converter.
+* `ExternalCodeReference` is the shared shape across xref:service.adoc[`@service`], `@tableMethod`, `@externalField`, and `@enum`. Only `className`/`method` carry meaning here.
+* xref:../../how-to/external-code.adoc[How-to: External code references] (Phase 3) covers the plugin's `externalReferences` mapping and FQCN-vs-short-name conventions.
+
+xref:../index.adoc[← Reference index]
