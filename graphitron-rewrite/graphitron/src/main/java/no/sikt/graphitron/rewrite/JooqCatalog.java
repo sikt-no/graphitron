@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
+import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import org.jooq.Catalog;
 import org.jooq.ForeignKey;
@@ -41,18 +42,118 @@ public class JooqCatalog {
     }
 
     /**
-     * Find a table by its SQL name. Returns both the {@link Table} instance and its Java field
-     * name in the generated {@code Tables} class (e.g. {@code "FILM"} for {@code Tables.FILM}).
+     * Find a table by its SQL name, with optional schema qualification. Accepts both
+     * unqualified ({@code "film"}) and qualified ({@code "public.film"}) values; the input is
+     * routed through {@link #parseQualifiedTableName(String)} and the appropriate two-arg
+     * form below.
+     *
+     * <p>For unqualified values, the lookup scans all schemas and applies the strict ambiguity
+     * policy: when the same table name appears in two or more schemas, the lookup returns
+     * empty rather than first-schema-wins. Callers distinguish "not in catalog" from
+     * "ambiguous" via {@link #findCandidateSchemasFor(String)}.
+     *
+     * <p>For qualified values, the lookup is scoped to the named schema and returns empty
+     * when either the schema or the table-within-schema is missing. Schema and table matching
+     * is case-insensitive on both halves (consistent with {@link #findColumn}).
+     *
+     * <p>Single-schema setups behave identically to the prior first-wins semantics. Multi-
+     * schema setups with non-colliding table names also behave identically. Only collision
+     * sites are forced to qualify.
      */
     public Optional<TableEntry> findTable(String sqlName) {
+        return parseQualifiedTableName(sqlName).flatMap(qn -> qn.isQualified()
+            ? findTable(qn.schema().get(), qn.table())
+            : findUnqualifiedTable(qn.table()));
+    }
+
+    /**
+     * Two-arg lookup form: scopes resolution to the named schema directly, never re-parses,
+     * never scans across schemas. Used by callers that already hold a resolved schema (or
+     * that have split a qualified name themselves) and need a stable, case-insensitive
+     * table-within-schema lookup. The single-arg {@link #findTable(String)} delegates here
+     * once parsing is done.
+     *
+     * <p>Returns empty when the schema is not in the catalog or the table-within-schema does
+     * not exist; both halves are matched case-insensitively.
+     */
+    public Optional<TableEntry> findTable(String schemaSqlName, String tableSqlName) {
         if (catalog == null) return Optional.empty();
         return catalog.schemaStream()
-            .flatMap(schema -> tablesClass(schema).stream())
+            .filter(s -> s.getName().equalsIgnoreCase(schemaSqlName))
+            .findFirst()
+            .flatMap(s -> entriesIn(s)
+                .filter(e -> e.table().getName().equalsIgnoreCase(tableSqlName))
+                .findFirst());
+    }
+
+    /**
+     * Returns the SQL schema names that contain a table with the given (unqualified) SQL
+     * name, in catalog iteration order. Empty when the name is not in any schema; one element
+     * when unique; two or more when ambiguous. Used by classifiers to distinguish "not in
+     * catalog" from "ambiguous" when {@link #findTable(String)} returns empty for an
+     * unqualified directive value.
+     */
+    public List<String> findCandidateSchemasFor(String unqualifiedSqlName) {
+        if (catalog == null) return List.of();
+        return catalog.schemaStream()
+            .filter(s -> entriesIn(s).anyMatch(e -> e.table().getName().equalsIgnoreCase(unqualifiedSqlName)))
+            .map(Schema::getName)
+            .toList();
+    }
+
+    private Optional<TableEntry> findUnqualifiedTable(String unqualifiedSqlName) {
+        if (catalog == null) return Optional.empty();
+        var matches = catalog.schemaStream()
+            .flatMap(s -> entriesIn(s)
+                .filter(e -> e.table().getName().equalsIgnoreCase(unqualifiedSqlName)))
+            .limit(2)
+            .toList();
+        return matches.size() == 1 ? Optional.of(matches.get(0)) : Optional.empty();
+    }
+
+    private java.util.stream.Stream<TableEntry> entriesIn(Schema schema) {
+        return tablesClass(schema).stream()
             .flatMap(cls -> Arrays.stream(cls.getFields()))
             .filter(f -> Table.class.isAssignableFrom(f.getType()))
-            .map(f -> new TableEntry(f.getName(), (Table<?>) fieldValue(f)))
-            .filter(e -> e.table().getName().equalsIgnoreCase(sqlName))
-            .findFirst();
+            .map(f -> new TableEntry(f.getName(), (Table<?>) fieldValue(f), this));
+    }
+
+    /**
+     * Parses a {@code @table(name:)} directive value into schema and table components.
+     * Splits on the first {@code .}: {@code "public.film"} → schema {@code "public"}, table
+     * {@code "film"}; {@code "film"} → schema empty, table {@code "film"}.
+     *
+     * <p>Returns empty for malformed input: {@code null}, blank, {@code "film."}, or
+     * {@code ".film"}. Both halves must be non-empty when a {@code .} is present;
+     * quoted-identifier syntax with literal dots ({@code "my.schema"."weird.table"}) is out
+     * of scope for R78 and parses as malformed (the unmatched quote leaves a blank half).
+     *
+     * <p>Inputs with multiple dots ({@code "a.b.c"}) parse as schema {@code "a"}, table
+     * {@code "b.c"}; the resulting two-arg lookup will return empty because PostgreSQL
+     * identifiers can't contain unquoted dots, so the classifier routes such values to
+     * {@link no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType}.
+     */
+    public static Optional<QualifiedTableName> parseQualifiedTableName(String value) {
+        if (value == null || value.isBlank()) return Optional.empty();
+        int dotIdx = value.indexOf('.');
+        if (dotIdx < 0) {
+            return Optional.of(new QualifiedTableName(Optional.empty(), value));
+        }
+        String schema = value.substring(0, dotIdx);
+        String table = value.substring(dotIdx + 1);
+        if (schema.isBlank() || table.isBlank()) return Optional.empty();
+        return Optional.of(new QualifiedTableName(Optional.of(schema), table));
+    }
+
+    /**
+     * A {@code @table(name:)} directive value parsed into its (optional schema, table) pair.
+     * {@code schema} is empty for unqualified values; both halves are case-preserved from the
+     * input so error messages can echo what the user wrote.
+     */
+    public record QualifiedTableName(Optional<String> schema, String table) {
+        public boolean isQualified() {
+            return schema.isPresent();
+        }
     }
 
     /**
@@ -103,7 +204,7 @@ public class JooqCatalog {
             .flatMap(schema -> tablesClass(schema).stream())
             .flatMap(cls -> Arrays.stream(cls.getFields()))
             .filter(f -> Table.class.isAssignableFrom(f.getType()))
-            .map(f -> new TableEntry(f.getName(), (Table<?>) fieldValue(f)))
+            .map(f -> new TableEntry(f.getName(), (Table<?>) fieldValue(f), this))
             .filter(e -> e.table().getRecordType().equals(recordClass))
             .findFirst();
     }
@@ -571,7 +672,71 @@ public class JooqCatalog {
         return s.isEmpty() ? s : Character.toLowerCase(s.charAt(0)) + s.substring(1);
     }
 
-    public record TableEntry(String javaFieldName, Table<?> table) {}
+    /**
+     * A table resolved from the jOOQ catalog: the {@link Table} instance, its Java field name in
+     * the schema's {@code Tables} constants class (e.g. {@code "FILM"}), and a back-reference to
+     * the catalog used for derived lookups (PK columns, the schema's {@code Tables} class).
+     *
+     * <p>The accessor methods ({@link #tableClass()}, {@link #recordClass()},
+     * {@link #constantsClass()}, {@link #pkColumnRefs()}) replace the per-emit-site reflection
+     * and {@code <jooqPackage>}-concatenation that R78 retires. Each accessor reads schema-
+     * correct values from the resolved {@link Table}, so single-schema and multi-schema
+     * catalog layouts produce the same call shape with no per-caller derivation.
+     *
+     * <p>The catalog reference is intentionally part of the record's identity — within a build
+     * all entries come from one {@code JooqCatalog} instance, so its presence in {@code equals}
+     * is a no-op for normal use; tests that compare entries across separate catalog instances
+     * should compare {@link #table()} or {@link #javaFieldName()} explicitly.
+     */
+    public record TableEntry(String javaFieldName, Table<?> table, JooqCatalog catalog) {
+        /**
+         * The {@link ClassName} of the jOOQ-generated table class
+         * (e.g. {@code multischema_a.tables.Widget}). Read directly from the live class via
+         * reflection, so multi-schema layouts produce schema-segmented FQNs without per-caller
+         * derivation.
+         */
+        public ClassName tableClass() {
+            return ClassName.get(table.getClass());
+        }
+
+        /**
+         * The {@link ClassName} of the jOOQ-generated record class
+         * (e.g. {@code multischema_a.tables.records.WidgetRecord}). Sourced from
+         * {@link Table#getRecordType()}, which is schema-correct for both single- and
+         * multi-schema codegen.
+         */
+        public ClassName recordClass() {
+            return ClassName.get(table.getRecordType());
+        }
+
+        /**
+         * The {@link ClassName} of the schema's {@code Tables} constants class
+         * (e.g. {@code multischema_a.Tables}). Empty when the schema package contains no
+         * generated {@code Tables} class — a degenerate consumer-side codegen state that
+         * R78 surfaces as {@link no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType}
+         * instead of hiding behind an empty-string fallback.
+         */
+        public Optional<ClassName> constantsClass() {
+            return catalog.tablesClass(table.getSchema()).map(ClassName::get);
+        }
+
+        /**
+         * The primary-key columns of this table in key-field order, materialised as
+         * {@link ColumnRef}s with the typed Java field names, SQL names, and column-class
+         * FQNs. Empty list when the table has no primary key. Same shape as
+         * {@link JooqCatalog#findPkColumns(String)} but scoped to this resolved entry without
+         * a second catalog lookup.
+         */
+        public List<ColumnRef> pkColumnRefs() {
+            var pk = table.getPrimaryKey();
+            if (pk == null) return List.of();
+            return pk.getFields().stream()
+                .map(f -> catalog.findColumn(table, f.getName()))
+                .<ColumnEntry>flatMap(Optional::stream)
+                .map(ce -> new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass()))
+                .toList();
+        }
+    }
 
     /**
      * Node-identity metadata read from a table class by {@link #nodeIdMetadata(String)}.
