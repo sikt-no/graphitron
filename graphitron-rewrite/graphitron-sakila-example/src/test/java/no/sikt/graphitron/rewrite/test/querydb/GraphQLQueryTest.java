@@ -266,17 +266,23 @@ class GraphQLQueryTest {
     }
 
     @Test
-    void inventoryById_filmCardData_firesAccessorKeyedManyLiftThroughCustomJavaRecord() {
+    void inventoryById_filmCardData_firesAccessorKeyedSingleLiftThroughCustomJavaRecord() {
         // R61 execution-tier fixture: @externalField returning Field<CustomJavaRecord>
-        // where the custom record (FilmCardData) carries a typed List<FilmRecord> accessor.
-        // The classifier picks the canonical films() accessor on FilmCardData and produces
-        // an AccessorKeyedMany BatchKey for the GraphQL child field `films: [Film!]!`. The
-        // framework batches dispatch via loader.loadMany(keys, env) keyed on the element
-        // table's PK (Record1<Integer>) and returns one Film row per key — full columns
-        // this time, so Film.title resolves from the framework-fetched record (the lifted
-        // FilmRecord only carried the PK).
+        // where the custom record (FilmCardData) carries a typed FilmRecord accessor.
+        // The classifier picks the canonical film() accessor on FilmCardData and produces
+        // an AccessorKeyedSingle BatchKey for the GraphQL child field `film: Film`. The
+        // framework batches dispatch via loader.load(key, env) keyed on the element table's
+        // PK (Record1<Integer>) and returns one Film row per key — full columns this time,
+        // so Film.title resolves from the framework-fetched record (the lifted FilmRecord
+        // only carried the PK).
+        //
+        // R61 lifted Invariant #10 (the single-cardinality RecordTableField rejection at
+        // GraphitronSchemaValidator.validateRecordParentSingleCardinalityRejected) by
+        // extending RecordTableField.emitsSingleRecordPerKey() to also be true for
+        // single-cardinality fields, so this test exercises the AccessorKeyedSingle path
+        // end-to-end against PostgreSQL.
         Map<String, Object> data = execute(
-            "{ inventoryById(inventory_id: [1, 2, 3]) { inventoryId filmCardData { films { filmId title } } } }");
+            "{ inventoryById(inventory_id: [1, 2, 3]) { inventoryId filmCardData { film { filmId title } } } }");
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("inventoryById");
         assertThat(rows).hasSize(3);
@@ -290,9 +296,7 @@ class GraphQLQueryTest {
             @SuppressWarnings("unchecked")
             Map<String, Object> filmCardData = (Map<String, Object>) row.get("filmCardData");
             @SuppressWarnings("unchecked")
-            List<Map<String, Object>> films = (List<Map<String, Object>>) filmCardData.get("films");
-            assertThat(films).hasSize(1);
-            Map<String, Object> film = films.get(0);
+            Map<String, Object> film = (Map<String, Object>) filmCardData.get("film");
             assertThat(film).extractingByKey("filmId").isEqualTo(inventoryId);
             assertThat(film).extractingByKey("title").isEqualTo(expectedTitleByFilmId.get(inventoryId));
         }

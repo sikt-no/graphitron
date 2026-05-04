@@ -1693,6 +1693,25 @@ class GraphitronSchemaBuilderTest {
             @Override public Set<Class<?>> variants() { return Set.of(RecordField.class); }
         },
 
+        RECORD_TABLE_FIELD_SINGLE_CARDINALITY(
+            "@record parent + @table return + single cardinality → RecordTableField (R61 lifted Invariant #10)",
+            """
+            type Language @table(name: "language") { name: String }
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+              language: Language @reference(path: [{key: "film_language_id_fkey"}])
+            }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var f = (RecordTableField) schema.field("FilmDetails", "language");
+                assertThat(f.returnType().wrapper()).isInstanceOf(no.sikt.graphitron.rewrite.model.FieldWrapper.Single.class);
+                assertThat(f.batchKey()).isInstanceOf(no.sikt.graphitron.rewrite.model.BatchKey.RowKeyed.class);
+                assertThat(f.emitsSingleRecordPerKey()).isTrue();
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
+        },
+
         SERVICE_TABLE_FIELD_ON_RECORD_PARENT(
             "@record parent + @service + @table return type → ServiceTableField",
             """

@@ -790,8 +790,6 @@ public class GraphitronSchemaValidator {
     private void validateRecordTableField(no.sikt.graphitron.rewrite.model.ChildField.RecordTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
         validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
-        validateRecordParentSingleCardinalityRejected(field.qualifiedName(), field.location(),
-            field.returnType().wrapper(), "RecordTableField", errors);
     }
     private void validateRecordLookupTableField(no.sikt.graphitron.rewrite.model.ChildField.RecordLookupTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
@@ -803,31 +801,6 @@ public class GraphitronSchemaValidator {
             ));
         }
         validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
-        validateRecordParentSingleCardinalityRejected(field.qualifiedName(), field.location(),
-            field.returnType().wrapper(), "RecordLookupTableField", errors);
-    }
-
-    /**
-     * Invariant #10: {@link no.sikt.graphitron.rewrite.model.ChildField.RecordTableField}
-     * and {@link no.sikt.graphitron.rewrite.model.ChildField.RecordLookupTableField} reject
-     * single-cardinality returns at build time. The rows-method emitter has no arm for the single
-     * shape on these variants, so a classifier acceptance must be promoted to an
-     * {@link RejectionKind#AUTHOR_ERROR} here rather than degrade into a runtime stub.
-     *
-     * <p>When list-emission for single returns ships, this gate flips off in the same landing as
-     * the new emitter arm.
-     */
-    private void validateRecordParentSingleCardinalityRejected(
-            String fieldName, SourceLocation location,
-            no.sikt.graphitron.rewrite.model.FieldWrapper wrapper, String variantName,
-            List<ValidationError> errors) {
-        if (wrapper instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Single) {
-            errors.add(new ValidationError(
-                fieldName,
-            Rejection.structural("Field '" + fieldName + "': " + variantName + " returns a single-cardinality value; "
-                    + "only list returns ('[T]') are supported in this release"),
-                location));
-        }
     }
     private void validateRecordField(no.sikt.graphitron.rewrite.model.ChildField.RecordField field, List<ValidationError> errors) {}
 
