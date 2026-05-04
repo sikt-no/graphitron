@@ -1613,10 +1613,10 @@ class GraphitronSchemaBuilderTest {
         },
 
         RECORD_TABLE_FIELD(
-            "@record parent (typed POJO) + @table return type (no @lookupKey) → RecordTableField",
+            "@record parent (jOOQ TableRecord) + @table return type (no @lookupKey) → RecordTableField",
             """
             type Language @table(name: "language") { name: String }
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) {
               language: Language @reference(path: [{key: "film_language_id_fkey"}])
             }
             type Film @table(name: "film") { details: FilmDetails }
@@ -1627,10 +1627,10 @@ class GraphitronSchemaBuilderTest {
         },
 
         RECORD_LOOKUP_TABLE_FIELD(
-            "@record parent (typed POJO) + @table return type + @lookupKey → RecordLookupTableField with populated BatchKey",
+            "@record parent (jOOQ TableRecord) + @table return type + @lookupKey → RecordLookupTableField with populated BatchKey",
             """
             type Language @table(name: "language") { name: String }
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) {
               language(language_id: ID! @lookupKey): Language @reference(path: [{key: "film_language_id_fkey"}])
             }
             type Film @table(name: "film") { details: FilmDetails }
@@ -1642,6 +1642,45 @@ class GraphitronSchemaBuilderTest {
                 assertThat(((no.sikt.graphitron.rewrite.model.BatchKey.RowKeyed) f.batchKey()).parentKeyColumns()).isNotEmpty();
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(RecordLookupTableField.class); }
+        },
+
+        POJO_PARENT_WITH_CATALOG_FK_DEFERRED(
+            "@record parent (typed POJO) + catalog FK on a batched child field → UnclassifiedField Deferred rejection (R71)",
+            """
+            type Language @table(name: "language") { name: String }
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+              language: Language @reference(path: [{key: "film_language_id_fkey"}])
+            }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var f = (UnclassifiedField) schema.field("FilmDetails", "language");
+                assertThat(f.rejection()).isInstanceOf(no.sikt.graphitron.rewrite.model.Rejection.Deferred.class);
+                var d = (no.sikt.graphitron.rewrite.model.Rejection.Deferred) f.rejection();
+                assertThat(d.planSlug()).isEqualTo("recordn-key-parity-lifter-and-non-jooq-record-parents");
+                assertThat(d.summary()).contains("non-jOOQ class").contains("RecordN");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
+        },
+
+        JAVA_RECORD_PARENT_WITH_CATALOG_FK_DEFERRED(
+            "@record parent (Java record) + catalog FK on a batched child field → UnclassifiedField Deferred rejection (R71)",
+            """
+            type Language @table(name: "language") { name: String }
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.TestRecordDto"}) {
+              language: Language @reference(path: [{key: "film_language_id_fkey"}])
+            }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var f = (UnclassifiedField) schema.field("FilmDetails", "language");
+                assertThat(f.rejection()).isInstanceOf(no.sikt.graphitron.rewrite.model.Rejection.Deferred.class);
+                var d = (no.sikt.graphitron.rewrite.model.Rejection.Deferred) f.rejection();
+                assertThat(d.planSlug()).isEqualTo("recordn-key-parity-lifter-and-non-jooq-record-parents");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
         },
 
         IMPLICIT_REFERENCE_RECORD_TABLE(

@@ -208,8 +208,25 @@ public final class SplitRowsMethodEmitter {
         body.addStatement("$T k = keys.get(i)", keyElement);
         var rowArgs = CodeBlock.builder();
         rowArgs.add("$T.inline(i)", DSL);
+        // RecordN keys (RowKeyed / AccessorRowKeyedSingle / AccessorRowKeyedMany after R61) carry
+        // both Field references and the per-record values; field<N>() returns the source-table
+        // column reference, which would render as the column name in the VALUES table instead of
+        // the value. value<N>() extracts the actual scalar; we wrap with DSL.val so the argument
+        // is rendered as a bind parameter (matching pre-R61 behavior — Row1 keys constructed via
+        // DSL.row(value) carried bind-parameter Fields). Wrapping in a Field also typechecks
+        // against jOOQ's Field-based DSL.row overload alongside the inline-i first argument.
+        //
+        // LifterRowKeyed keys stay on RowN per R61's deferred scope (R71); RowN doesn't expose
+        // value<N>(), so the lifter arm uses field<N>() — this works because the lifter
+        // constructs RowN keys via DSL.row(value, ...) where field<N>() returns a bind-parameter
+        // Field<T> rather than a column reference.
+        boolean isLifter = batchKey instanceof BatchKey.LifterRowKeyed;
         for (int i = 0; i < pkCols.size(); i++) {
-            rowArgs.add(", k.field$L()", i + 1);
+            if (isLifter) {
+                rowArgs.add(", k.field$L()", i + 1);
+            } else {
+                rowArgs.add(", $T.val(k.value$L())", DSL, i + 1);
+            }
         }
         body.addStatement("parentRows[i] = $T.row($L)", DSL, rowArgs.build());
         body.endControlFlow();

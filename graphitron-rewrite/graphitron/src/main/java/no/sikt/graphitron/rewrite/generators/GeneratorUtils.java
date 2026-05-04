@@ -137,9 +137,10 @@ class GeneratorUtils {
     // -----------------------------------------------------------------------
 
     /**
-     * Emits the {@code RowN<...> key = ...} (or {@code List<RowN<...>> keys = ...}) statement
-     * for a {@link ChildField.RecordTableField} DataFetcher, extracting the batch-key value(s)
-     * from the {@code @record} parent.
+     * Emits the {@code RecordN<...> key = ...} (or {@code List<RecordN<...>> keys = ...})
+     * statement for a {@link ChildField.RecordTableField} DataFetcher, extracting the batch-key
+     * value(s) from the {@code @record} parent. {@link BatchKey.LifterRowKeyed} stays on
+     * {@code RowN<...>} per the lifter contract (deferred to R71).
      *
      * <p>The narrowed parameter type is exhaustive over {@link BatchKey.RecordParentBatchKey}
      * — the four permits ({@link BatchKey.RowKeyed}, {@link BatchKey.LifterRowKeyed},
@@ -148,13 +149,13 @@ class GeneratorUtils {
      * ({@link BatchKey.RecordKeyed} et al.) is a compile error, not a runtime
      * {@code IllegalStateException}.
      *
-     * <p>{@link BatchKey.RowKeyed} arm reads from the parent's backing Java object via the
-     * accessor per {@link GraphitronType.ResultType} variant:
+     * <p>{@link BatchKey.RowKeyed} arm builds a {@code RecordN<...>} via {@code record.into(...)}
+     * over typed {@code Field} references; the {@link GraphitronType.JavaRecordType} and
+     * {@link GraphitronType.PojoResultType} parent combinations are rejected by
+     * {@code FieldBuilder.deriveBatchKeyForResultType} (R71-deferred):
      * <ul>
-     *   <li>{@link GraphitronType.JooqTableRecordType}: {@code ((Record) env.getSource()).get(Tables.T.FK_COL)}</li>
-     *   <li>{@link GraphitronType.JooqRecordType}: {@code ((Record) env.getSource()).get("sql_name")}</li>
-     *   <li>{@link GraphitronType.JavaRecordType}: {@code ((BackingClass) env.getSource()).lowerCamelCase()}</li>
-     *   <li>{@link GraphitronType.PojoResultType} (non-null class): {@code ((BackingClass) env.getSource()).getLowerCamelCase()}</li>
+     *   <li>{@link GraphitronType.JooqTableRecordType}: {@code ((Record) env.getSource()).into(Tables.T.FK_COL1, ...)}</li>
+     *   <li>{@link GraphitronType.JooqRecordType}: {@code ((Record) env.getSource()).into(DSL.field("sql_name", ColType.class), ...)}</li>
      * </ul>
      *
      * <p>{@link BatchKey.LifterRowKeyed} arm calls the developer-supplied static lifter on the
@@ -162,18 +163,18 @@ class GeneratorUtils {
      *
      * <p>{@link BatchKey.AccessorRowKeyedSingle} arm reads a single concrete {@code TableRecord}
      * from a typed instance accessor on the parent's backing class and projects it to the
-     * element table's PK columns: <pre>{@code
+     * element table's PK columns via {@code record.into(...)}: <pre>{@code
      *   ElementRecord __elt = ((BackingClass) env.getSource()).<accessor>();
-     *   RowN<...> key = DSL.row(__elt.<pk1>(), __elt.<pk2>());
+     *   RecordN<...> key = __elt.into(Tables.T.PK1, Tables.T.PK2);
      * }</pre>
      *
      * <p>{@link BatchKey.AccessorRowKeyedMany} arm reads a {@code List<X>} or {@code Set<X>}
-     * from the typed accessor and projects each element to a {@code RowN<...>} key via a typed
-     * for-loop over {@code Iterable} (uniform across the {@code List} and {@code Set} declarations
-     * the parent class may carry): <pre>{@code
-     *   List<RowN<...>> keys = new ArrayList<>();
+     * from the typed accessor and projects each element to a {@code RecordN<...>} key via a
+     * typed for-loop over {@code Iterable} (uniform across the {@code List} and {@code Set}
+     * declarations the parent class may carry): <pre>{@code
+     *   List<RecordN<...>> keys = new ArrayList<>();
      *   for (ElementRecord __elt : ((BackingClass) env.getSource()).<accessor>()) {
-     *       RowN<...> __k = DSL.row(__elt.<pk1>(), __elt.<pk2>());
+     *       RecordN<...> __k = __elt.into(Tables.T.PK1, Tables.T.PK2);
      *       keys.add(__k);
      *   }
      * }</pre>
@@ -186,38 +187,43 @@ class GeneratorUtils {
         return switch (batchKey) {
             case BatchKey.RowKeyed rk                -> buildFkRowKey(rk, keyType, resultType, jooqPackage);
             case BatchKey.LifterRowKeyed lrk         -> buildLifterRowKey(lrk, keyType, resultType);
-            case BatchKey.AccessorRowKeyedSingle ars -> buildAccessorRowKeySingle(ars, keyType);
-            case BatchKey.AccessorRowKeyedMany arm   -> buildAccessorRowKeyMany(arm, keyType);
+            case BatchKey.AccessorRowKeyedSingle ars -> buildAccessorRowKeySingle(ars, keyType, jooqPackage);
+            case BatchKey.AccessorRowKeyedMany arm   -> buildAccessorRowKeyMany(arm, keyType, jooqPackage);
         };
     }
 
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "rowkeyed-record-parent-is-jooq-record",
+        reliesOn = "FieldBuilder.deriveBatchKeyForResultType rejects RecordParent + RowKeyed when "
+            + "the parent resultType is JavaRecordType or PojoResultType (R61 ships RecordN keys "
+            + "for the four jOOQ-Record-sourced arms; the JavaRecord/Pojo combo is deferred to "
+            + "R71 with a structured rejection at classify time). The two arms below for those "
+            + "result types are unreachable defensive throws preserved for sealed-switch "
+            + "exhaustiveness; live emission only flows through the Jooq* arms.")
     private static CodeBlock buildFkRowKey(
             BatchKey.RowKeyed batchKey, TypeName keyType,
             GraphitronType.ResultType resultType, String jooqPackage) {
         List<ColumnRef> fkCols = batchKey.parentKeyColumns();
-        var rowArgs = CodeBlock.builder();
+        var intoArgs = CodeBlock.builder();
         for (int i = 0; i < fkCols.size(); i++) {
-            if (i > 0) rowArgs.add(", ");
+            if (i > 0) intoArgs.add(", ");
             ColumnRef col = fkCols.get(i);
             if (resultType instanceof GraphitronType.JooqTableRecordType jtt) {
                 var tablesClass = ResolvedTableNames.ofTable(jtt.table(), jooqPackage).tablesClass();
-                rowArgs.add("(($T) env.getSource()).get($T.$L.$L)",
-                    RECORD, tablesClass, jtt.table().javaFieldName(), col.javaName());
+                intoArgs.add("$T.$L.$L", tablesClass, jtt.table().javaFieldName(), col.javaName());
             } else if (resultType instanceof GraphitronType.JooqRecordType) {
-                rowArgs.add("(($T) env.getSource()).get($S)", RECORD, col.sqlName());
-            } else if (resultType instanceof GraphitronType.JavaRecordType jrt) {
-                var backingClass = ClassName.bestGuess(jrt.fqClassName());
-                rowArgs.add("(($T) env.getSource()).$L()", backingClass, toCamelCase(col.sqlName()));
+                ClassName colType = ClassName.bestGuess(col.columnClass());
+                intoArgs.add("$T.field($S, $T.class)", DSL, col.sqlName(), colType);
             } else {
-                var prt = (GraphitronType.PojoResultType) resultType;
-                var backingClass = ClassName.bestGuess(prt.fqClassName());
-                var accessorBase = toCamelCase(col.sqlName());
-                var getter = "get" + Character.toUpperCase(accessorBase.charAt(0)) + accessorBase.substring(1);
-                rowArgs.add("(($T) env.getSource()).$L()", backingClass, getter);
+                throw new IllegalStateException(
+                    "buildFkRowKey: RecordParent RowKeyed with " + resultType.getClass().getSimpleName()
+                    + " parent is rejected by FieldBuilder.deriveBatchKeyForResultType (R61); "
+                    + "this arm is unreachable. See R71 (recordn-key-parity-lifter-and-non-jooq-record-parents) "
+                    + "for the deferred construction strategy.");
             }
         }
         return CodeBlock.builder()
-            .addStatement("$T key = $T.row($L)", keyType, DSL, rowArgs.build())
+            .addStatement("$T key = (($T) env.getSource()).into($L)", keyType, RECORD, intoArgs.build())
             .build();
     }
 
@@ -246,23 +252,27 @@ class GeneratorUtils {
             + "(name, zero-arg, non-bridge, non-synthetic, non-static), and the element class "
             + "(extends TableRecord, mapped table identical to the field's @table return). The "
             + "emitted body casts env.getSource() to the resolved backing class and invokes the "
-            + "accessor by name without instanceof guards or null checks; PK projection reads "
-            + "the column accessors on the element record by the catalog's javaName().")
+            + "accessor by name without instanceof guards or null checks; the RecordN<...> key is "
+            + "built via __elt.into(Tables.X.PK1, ...) over typed Field references on the element "
+            + "table.")
     private static CodeBlock buildAccessorRowKeySingle(
-            BatchKey.AccessorRowKeyedSingle ars, TypeName keyType) {
+            BatchKey.AccessorRowKeyedSingle ars, TypeName keyType, String jooqPackage) {
         var accessor = ars.accessor();
         ClassName backingClass = accessor.parentBackingClass();
         ClassName elementClass = accessor.elementClass();
-        var rowArgs = CodeBlock.builder();
+        TableRef elementTable = ars.hop().targetTable();
+        var tablesClass = ResolvedTableNames.ofTable(elementTable, jooqPackage).tablesClass();
+        String tableField = elementTable.javaFieldName();
+        var intoArgs = CodeBlock.builder();
         var pkCols = ars.targetKeyColumns();
         for (int i = 0; i < pkCols.size(); i++) {
-            if (i > 0) rowArgs.add(", ");
-            rowArgs.add("__elt.$L()", recordGetter(pkCols.get(i).sqlName()));
+            if (i > 0) intoArgs.add(", ");
+            intoArgs.add("$T.$L.$L", tablesClass, tableField, pkCols.get(i).javaName());
         }
         return CodeBlock.builder()
             .addStatement("$T __elt = (($T) env.getSource()).$L()",
                 elementClass, backingClass, accessor.methodName())
-            .addStatement("$T key = $T.row($L)", keyType, DSL, rowArgs.build())
+            .addStatement("$T key = __elt.into($L)", keyType, intoArgs.build())
             .build();
     }
 
@@ -272,46 +282,38 @@ class GeneratorUtils {
             + "only after reflection has confirmed the parent backing class, the accessor "
             + "(name, zero-arg, non-bridge, non-synthetic, non-static), and the element class "
             + "(extends TableRecord, mapped table identical to the field's @table return). The "
-            + "emitted stream casts env.getSource() to the resolved backing class, invokes the "
+            + "emitted for-loop casts env.getSource() to the resolved backing class, invokes the "
             + "accessor by name without instanceof guards or null checks, and projects each "
-            + "element to a RowN<...> via the catalog's javaName() accessors.")
+            + "element to a RecordN<...> via __elt.into(Tables.X.PK1, ...) over typed Field "
+            + "references on the element table.")
     private static CodeBlock buildAccessorRowKeyMany(
-            BatchKey.AccessorRowKeyedMany arm, TypeName keyType) {
+            BatchKey.AccessorRowKeyedMany arm, TypeName keyType, String jooqPackage) {
         var accessor = arm.accessor();
         ClassName backingClass = accessor.parentBackingClass();
         ClassName elementClass = accessor.elementClass();
+        TableRef elementTable = arm.hop().targetTable();
+        var tablesClass = ResolvedTableNames.ofTable(elementTable, jooqPackage).tablesClass();
+        String tableField = elementTable.javaFieldName();
         TypeName keysListType = ParameterizedTypeName.get(LIST, keyType);
         ClassName arrayList = ClassName.get("java.util", "ArrayList");
-        var rowArgs = CodeBlock.builder();
+        var intoArgs = CodeBlock.builder();
         var pkCols = arm.targetKeyColumns();
         for (int i = 0; i < pkCols.size(); i++) {
-            if (i > 0) rowArgs.add(", ");
-            rowArgs.add("__elt.$L()", recordGetter(pkCols.get(i).sqlName()));
+            if (i > 0) intoArgs.add(", ");
+            intoArgs.add("$T.$L.$L", tablesClass, tableField, pkCols.get(i).javaName());
         }
-        // For-loop over Iterable, not stream + .toList(): jOOQ's overloaded DSL.row(...) confuses
-        // lambda return-type inference (the Object... varargs overload competes with the typed
-        // RowN overload), and a typed local in a for-loop pins the inference cheaply. Iterating
-        // works uniformly for the List<X> and Set<X> declarations the parent class may carry;
-        // the output is always a List<RowN<...>> because DataLoader.loadMany takes a List.
+        // For-loop over Iterable, not stream + .toList(): a typed local in a for-loop pins the
+        // inference cheaply, and iterating works uniformly across the List<X> and Set<X>
+        // declarations the parent class may carry. The output is always a List<RecordN<...>>
+        // because DataLoader.loadMany takes a List.
         var b = CodeBlock.builder()
             .addStatement("$T keys = new $T<>()", keysListType, arrayList)
             .beginControlFlow("for ($T __elt : (($T) env.getSource()).$L())",
                 elementClass, backingClass, accessor.methodName())
-            .addStatement("$T __k = $T.row($L)", keyType, DSL, rowArgs.build())
+            .addStatement("$T __k = __elt.into($L)", keyType, intoArgs.build())
             .addStatement("keys.add(__k)")
             .endControlFlow();
         return b.build();
-    }
-
-    /**
-     * Returns the JavaBean-style getter name for a jOOQ {@code TableRecord} column with the
-     * given SQL name. Mirrors the pattern used by {@code buildFkRowKey}'s {@code PojoResultType}
-     * arm: SQL {@code film_id} → {@code getFilmId}. The jOOQ codegen emits these getters on
-     * every {@code TableRecord} subtype.
-     */
-    private static String recordGetter(String sqlName) {
-        var camel = toCamelCase(sqlName);
-        return "get" + Character.toUpperCase(camel.charAt(0)) + camel.substring(1);
     }
 
     private static ClassName backingClassOf(GraphitronType.ResultType resultType) {
@@ -330,9 +332,14 @@ class GeneratorUtils {
      * Companion to {@link #buildKeyExtraction} for single-cardinality
      * {@code @splitQuery} fetchers where the BatchKey's columns sit on the parent's FK side.
      * Extracts each key column into a typed local and returns {@code CompletableFuture.completedFuture(null)}
-     * before building the {@code RowN} key if any component is {@code null} — a {@code NULL} FK
+     * before building the {@code RecordN} key if any component is {@code null} — a {@code NULL} FK
      * on the parent can never match {@code terminal.pk = parentInput.fk_value}, so dispatching
      * to the DataLoader is a wasted round-trip.
+     *
+     * <p>After the null-check passes, the key is built with {@code record.into(table.col1, ...)}
+     * (re-reading from the same {@code (Record) env.getSource()} via typed {@code Field}
+     * references). The redundant read is O(1) and keeps the null-check shape uniform with
+     * {@link #buildKeyExtraction}'s emit.
      *
      * <p>Only the {@link BatchKey.RowKeyed} variant is handled; single-cardinality
      * {@code @splitQuery} on a {@code @table} parent is the only caller today.
@@ -348,7 +355,7 @@ class GeneratorUtils {
         List<ColumnRef> pkCols = rk.parentKeyColumns();
         TypeName keyType = batchKey.keyElementType();
         var out = CodeBlock.builder();
-        var rowArgs = CodeBlock.builder();
+        var intoArgs = CodeBlock.builder();
         var nullCheck = CodeBlock.builder();
         for (int i = 0; i < pkCols.size(); i++) {
             ColumnRef col = pkCols.get(i);
@@ -358,53 +365,40 @@ class GeneratorUtils {
                 colType, local, RECORD, tablesClass, tableField, col.javaName());
             if (i > 0) {
                 nullCheck.add(" || ");
-                rowArgs.add(", ");
+                intoArgs.add(", ");
             }
             nullCheck.add("$L == null", local);
-            rowArgs.add("$L", local);
+            intoArgs.add("$T.$L.$L", tablesClass, tableField, col.javaName());
         }
         out.beginControlFlow("if ($L)", nullCheck.build());
         out.addStatement("return $T.completedFuture(null)",
             ClassName.get("java.util.concurrent", "CompletableFuture"));
         out.endControlFlow();
-        out.addStatement("$T key = $T.row($L)", keyType, DSL, rowArgs.build());
+        out.addStatement("$T key = (($T) env.getSource()).into($L)", keyType, RECORD, intoArgs.build());
         return out.build();
     }
 
     /**
-     * Emits the {@code RowN<...> key = ...} or {@code RecordN<...> key = ...} statement for a
-     * {@code @table}-parent {@code @splitQuery} fetcher. Parameter narrowed to
+     * Emits the {@code RecordN<...> key = ((Record) env.getSource()).into(table.col1, ...)}
+     * statement for a {@code @table}-parent {@code @splitQuery} fetcher. Parameter narrowed to
      * {@link BatchKey.ParentKeyed}: the four catalog-resolvable permits are the only routes
      * here, and {@link BatchKey.LifterRowKeyed} is excluded by the type system, not by a
-     * defensive {@code IllegalStateException} arm.
+     * defensive {@code IllegalStateException} arm. The row-vs-record axis previously forked here
+     * collapsed to a single {@code record.into(...)} emit (R61): all four permits now produce
+     * {@code RecordN<...>} keys so the developer's view at the rows-method boundary is uniform.
      */
     static CodeBlock buildKeyExtraction(BatchKey.ParentKeyed batchKey, TableRef parentTable, String jooqPackage) {
         TypeName keyType = batchKey.keyElementType();
         var tablesClass = ResolvedTableNames.ofTable(parentTable, jooqPackage).tablesClass();
         String tableField = parentTable.javaFieldName();
         List<ColumnRef> pkCols = batchKey.parentKeyColumns();
-        return switch (batchKey) {
-            case BatchKey.RowKeyed _, BatchKey.MappedRowKeyed _ -> {
-                var rowArgs = CodeBlock.builder();
-                for (int i = 0; i < pkCols.size(); i++) {
-                    if (i > 0) rowArgs.add(", ");
-                    rowArgs.add("(($T) env.getSource()).get($T.$L.$L)",
-                        RECORD, tablesClass, tableField, pkCols.get(i).javaName());
-                }
-                yield CodeBlock.builder()
-                    .addStatement("$T key = $T.row($L)", keyType, DSL, rowArgs.build())
-                    .build();
-            }
-            case BatchKey.RecordKeyed _, BatchKey.MappedRecordKeyed _ -> {
-                var intoArgs = CodeBlock.builder();
-                for (int i = 0; i < pkCols.size(); i++) {
-                    if (i > 0) intoArgs.add(", ");
-                    intoArgs.add("$T.$L.$L", tablesClass, tableField, pkCols.get(i).javaName());
-                }
-                yield CodeBlock.builder()
-                    .addStatement("$T key = (($T) env.getSource()).into($L)", keyType, RECORD, intoArgs.build())
-                    .build();
-            }
-        };
+        var intoArgs = CodeBlock.builder();
+        for (int i = 0; i < pkCols.size(); i++) {
+            if (i > 0) intoArgs.add(", ");
+            intoArgs.add("$T.$L.$L", tablesClass, tableField, pkCols.get(i).javaName());
+        }
+        return CodeBlock.builder()
+            .addStatement("$T key = (($T) env.getSource()).into($L)", keyType, RECORD, intoArgs.build())
+            .build();
     }
 }

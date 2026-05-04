@@ -82,19 +82,21 @@ public sealed interface BatchKey
      * {@code List} vs. mapped {@code Set}) lives at each call site, not here.
      *
      * <ul>
-     *   <li>{@link RowKeyed} / {@link MappedRowKeyed} / {@link LifterRowKeyed} /
-     *       {@link AccessorRowKeyedSingle} / {@link AccessorRowKeyedMany} →
-     *       {@code RowN<A, B, ...>}</li>
-     *   <li>{@link RecordKeyed} / {@link MappedRecordKeyed} → {@code RecordN<A, B, ...>}</li>
+     *   <li>{@link RowKeyed} / {@link MappedRowKeyed} / {@link AccessorRowKeyedSingle} /
+     *       {@link AccessorRowKeyedMany} / {@link RecordKeyed} / {@link MappedRecordKeyed} →
+     *       {@code RecordN<A, B, ...>}</li>
+     *   <li>{@link LifterRowKeyed} → {@code RowN<A, B, ...>} (pinned by the
+     *       {@code @batchKeyLifter}-annotated method's return-type contract; deferred to R71
+     *       for parity)</li>
      * </ul>
      */
     default TypeName keyElementType() {
         return switch (this) {
-            case RowKeyed rk                -> rowNType(rk.parentKeyColumns());
-            case MappedRowKeyed mrk         -> rowNType(mrk.parentKeyColumns());
+            case RowKeyed rk                -> recordNType(rk.parentKeyColumns());
+            case MappedRowKeyed mrk         -> recordNType(mrk.parentKeyColumns());
             case LifterRowKeyed lrk         -> rowNType(lrk.targetKeyColumns());
-            case AccessorRowKeyedSingle ars -> rowNType(ars.targetKeyColumns());
-            case AccessorRowKeyedMany arm   -> rowNType(arm.targetKeyColumns());
+            case AccessorRowKeyedSingle ars -> recordNType(ars.targetKeyColumns());
+            case AccessorRowKeyedMany arm   -> recordNType(arm.targetKeyColumns());
             case RecordKeyed rk             -> recordNType(rk.parentKeyColumns());
             case MappedRecordKeyed mrk      -> recordNType(mrk.parentKeyColumns());
         };
@@ -150,10 +152,12 @@ public sealed interface BatchKey
          * Side-aware key columns for the rows-method prelude's parent-input VALUES table:
          * parent-side PK/FK columns on the catalog-FK arm ({@link RowKeyed}), target-side
          * columns on the lifter / accessor arms ({@link LifterRowKeyed},
-         * {@link AccessorRowKeyedSingle}, {@link AccessorRowKeyedMany}). All four produce
-         * {@code RowN<...>} of the same Java types as the JOIN target columns: for
-         * {@link LifterRowKeyed} that is the lifter contract; for the accessor permits it is
-         * the element table's PK by construction.
+         * {@link AccessorRowKeyedSingle}, {@link AccessorRowKeyedMany}). The three
+         * {@code RecordN}-keyed arms ({@link RowKeyed}, {@link AccessorRowKeyedSingle},
+         * {@link AccessorRowKeyedMany}) produce {@code RecordN<...>} of the same Java types
+         * as the JOIN target columns; {@link LifterRowKeyed} stays on {@code RowN<...>} per
+         * the lifter contract (deferred to R71). For the accessor permits the columns are the
+         * element table's PK by construction.
          *
          * <p>This capability lives on {@code RecordParentBatchKey} rather than on
          * {@link BatchKey} because the {@code @service}-only permits ({@link RecordKeyed},
@@ -197,8 +201,8 @@ public sealed interface BatchKey
     enum LoaderDispatch { LOAD_ONE, LOAD_MANY }
 
     /**
-     * Column-based batch key using {@code DSL.row()} key construction with a positional
-     * {@code List<RowN<...>>} sources parameter; drives {@code newDataLoader(...)}.
+     * Column-based batch key using {@code record.into(...)} key construction with a positional
+     * {@code List<RecordN<...>>} sources parameter; drives {@code newDataLoader(...)}.
      *
      * <p>The only catalog-resolvable permit that participates in both sub-hierarchies: it
      * carries parent-side PK/FK columns ({@link ParentKeyed}) and is reachable from
@@ -207,7 +211,7 @@ public sealed interface BatchKey
     record RowKeyed(List<ColumnRef> parentKeyColumns) implements ParentKeyed, RecordParentBatchKey {
         @Override
         public String javaTypeName() {
-            return containerType("List", "Row", parentKeyColumns);
+            return containerType("List", "Record", parentKeyColumns);
         }
         @Override
         public List<ColumnRef> preludeKeyColumns() {
@@ -231,16 +235,16 @@ public sealed interface BatchKey
     }
 
     /**
-     * Mapped variant of {@link RowKeyed}: column-based batch key using {@code DSL.row()} key
-     * construction with a {@code Set<RowN<...>>} sources parameter; drives
-     * {@code newMappedDataLoader(...)}. Both {@code Set<RowN<...>>} and
-     * {@code Set<TableRecord>} classify here; the DataLoader key type stays {@code RowN}
+     * Mapped variant of {@link RowKeyed}: column-based batch key using {@code record.into(...)}
+     * key construction with a {@code Set<RecordN<...>>} sources parameter; drives
+     * {@code newMappedDataLoader(...)}. Both {@code Set<RecordN<...>>} and
+     * {@code Set<TableRecord>} classify here; the DataLoader key type stays {@code RecordN}
      * regardless of the user's declared element type.
      */
     record MappedRowKeyed(List<ColumnRef> parentKeyColumns) implements ParentKeyed {
         @Override
         public String javaTypeName() {
-            return containerType("Set", "Row", parentKeyColumns);
+            return containerType("Set", "Record", parentKeyColumns);
         }
     }
 
@@ -332,7 +336,7 @@ public sealed interface BatchKey
 
         @Override
         public String javaTypeName() {
-            return containerType("List", "Row", hop.targetColumns());
+            return containerType("List", "Record", hop.targetColumns());
         }
 
         @Override
@@ -383,7 +387,7 @@ public sealed interface BatchKey
 
         @Override
         public String javaTypeName() {
-            return containerType("List", "Row", hop.targetColumns());
+            return containerType("List", "Record", hop.targetColumns());
         }
 
         @Override
