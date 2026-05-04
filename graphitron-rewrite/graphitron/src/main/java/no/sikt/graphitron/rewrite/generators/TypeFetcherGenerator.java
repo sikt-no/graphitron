@@ -1048,7 +1048,7 @@ public class TypeFetcherGenerator {
                                                              String outputPackage, String jooqPackage) {
         var tableRef = qstf.returnType().table();
         var recordClass = ClassName.get(jooqPackage + ".tables.records",
-            tableRef.javaClassName() + "Record");
+            tableRef.tableClass().simpleName() + "Record");
         boolean isList = qstf.returnType().wrapper().isList();
         TypeName returnType = isList
             ? ParameterizedTypeName.get(RESULT, recordClass)
@@ -1116,7 +1116,7 @@ public class TypeFetcherGenerator {
                                                                 String outputPackage, String jooqPackage) {
         var tableRef = mstf.returnType().table();
         var recordClass = ClassName.get(jooqPackage + ".tables.records",
-            tableRef.javaClassName() + "Record");
+            tableRef.tableClass().simpleName() + "Record");
         boolean isList = mstf.returnType().wrapper().isList();
         TypeName returnType = isList
             ? ParameterizedTypeName.get(RESULT, recordClass)
@@ -1375,7 +1375,7 @@ public class TypeFetcherGenerator {
                                                           String outputPackage, String jooqPackage) {
         var tia = f.tableInputArg();
         var tableRef = tia.inputTable();
-        var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef, jooqPackage);
+        var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
         String tableLocal = tablesOnly.tableLocalName();
 
         var dmlChain = CodeBlock.builder()
@@ -1412,7 +1412,7 @@ public class TypeFetcherGenerator {
                                                           String outputPackage, String jooqPackage) {
         var tia = f.tableInputArg();
         var tableRef = tia.inputTable();
-        var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef, jooqPackage);
+        var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
         String tableLocal = tablesOnly.tableLocalName();
 
         var fields = tia.fields();
@@ -1465,7 +1465,7 @@ public class TypeFetcherGenerator {
                                                           String outputPackage, String jooqPackage) {
         var tia = f.tableInputArg();
         var tableRef = tia.inputTable();
-        var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef, jooqPackage);
+        var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
         String tableLocal = tablesOnly.tableLocalName();
 
         var setClause = CodeBlock.builder();
@@ -1514,7 +1514,7 @@ public class TypeFetcherGenerator {
                                                           String outputPackage, String jooqPackage) {
         var tia = f.tableInputArg();
         var tableRef = tia.inputTable();
-        var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef, jooqPackage);
+        var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
         String tableLocal = tablesOnly.tableLocalName();
 
         var fields = tia.fields();
@@ -2350,7 +2350,7 @@ public class TypeFetcherGenerator {
                 "    .computeIfAbsent(name, k -> $T.$L($L));\n",
                 loaderType, DATA_LOADER_FACTORY, factoryMethod, lambdaBlock);
 
-        methodBuilder.addCode(GeneratorUtils.buildKeyExtraction(batchKey, prt, jooqPackage));
+        methodBuilder.addCode(GeneratorUtils.buildKeyExtraction(batchKey, prt));
         return methodBuilder
             .addCode(CodeBlock.builder()
                 .add("return loader.load(key, env)\n")
@@ -2507,9 +2507,9 @@ public class TypeFetcherGenerator {
         // and no `terminal.pk = parentInput.fk_value` match can exist under ANSI NULL semantics —
         // skip the DataLoader round-trip and return null directly.
         if (isList) {
-            methodBuilder.addCode(GeneratorUtils.buildKeyExtraction(batchKey, parentTable, jooqPackage));
+            methodBuilder.addCode(GeneratorUtils.buildKeyExtraction(batchKey, parentTable));
         } else {
-            methodBuilder.addCode(GeneratorUtils.buildKeyExtractionWithNullCheck(batchKey, parentTable, jooqPackage));
+            methodBuilder.addCode(GeneratorUtils.buildKeyExtractionWithNullCheck(batchKey, parentTable));
         }
         return methodBuilder
             .addCode(CodeBlock.builder()
@@ -2616,7 +2616,7 @@ public class TypeFetcherGenerator {
                 "$T loader = env.getDataLoaderRegistry()\n" +
                 "    .computeIfAbsent(name, k -> $T.newDataLoader($L));\n",
                 loaderType, DATA_LOADER_FACTORY, lambdaBlock)
-            .addCode(GeneratorUtils.buildRecordParentKeyExtraction(batchKey, resultType, jooqPackage))
+            .addCode(GeneratorUtils.buildRecordParentKeyExtraction(batchKey, resultType))
             .addCode(CodeBlock.builder()
                 .add(dispatchCall)
                 .add("    ").add(asyncWrapTail(resultValueType, outputPackage, Optional.empty())).add(";\n")

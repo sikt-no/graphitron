@@ -17,6 +17,7 @@ import java.util.List;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.assertHasKind;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.rewrite.TestFixtures;
 
 /**
  * Validates {@link QueryUnionField} (the multi-table polymorphic root case for unions).
@@ -27,15 +28,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 @UnitTier
 class QueryUnionFieldValidationTest {
 
-    private static final TableRef FILM = new TableRef("film", "FILM", "Film",
+    private static final TableRef FILM = TestFixtures.tableRef("film", "FILM", "Film",
         List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer")));
-    private static final TableRef ACTOR = new TableRef("actor", "ACTOR", "Actor",
+    private static final TableRef ACTOR = TestFixtures.tableRef("actor", "ACTOR", "Actor",
         List.of(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer")));
-    private static final TableRef BAR = new TableRef("bar", "BAR", "Bar",
+    private static final TableRef BAR = TestFixtures.tableRef("bar", "BAR", "Bar",
         List.of(
             new ColumnRef("id_1", "ID_1", "java.lang.Integer"),
             new ColumnRef("id_2", "ID_2", "java.lang.Integer")));
-    private static final TableRef NO_PK = new TableRef("kpis", "KPIS", "Kpis", List.of());
+    private static final TableRef NO_PK = TestFixtures.tableRef("kpis", "KPIS", "Kpis", List.of());
 
     @Test
     void wellFormed_twoSameArityParticipants_noErrors() {

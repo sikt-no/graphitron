@@ -16,6 +16,7 @@ import java.util.List;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
+import no.sikt.graphitron.rewrite.TestFixtures;
 
 @UnitTier
 class QueryTableMethodTableFieldValidationTest {
@@ -24,7 +25,7 @@ class QueryTableMethodTableFieldValidationTest {
 
         VALID("single cardinality — passes validation (Invariants §1 Connection-rejection enforced at classifier time)",
             new QueryTableMethodTableField("Query", "filmsByMethod", null,
-                new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", List.of()), new FieldWrapper.Single(true)),
+                new ReturnTypeRef.TableBoundReturnType("Film", TestFixtures.tableRef("film", "FILM", "Film", List.of()), new FieldWrapper.Single(true)),
                 new MethodRef.Basic("com.example.TableMethods", "filmsByMethod", ClassName.get("org.jooq", "Table"), List.of())),
             List.of());
 

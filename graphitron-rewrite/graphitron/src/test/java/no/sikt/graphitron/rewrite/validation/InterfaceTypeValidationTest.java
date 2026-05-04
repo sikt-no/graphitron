@@ -14,6 +14,7 @@ import java.util.Optional;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
+import no.sikt.graphitron.rewrite.TestFixtures;
 
 @UnitTier
 class InterfaceTypeValidationTest {
@@ -29,8 +30,8 @@ class InterfaceTypeValidationTest {
             + "(see QueryInterfaceFieldValidationTest) so the Node interface (heterogeneous "
             + "PK arities, dispatched via QueryNodeFetcher) does not trip a false rejection",
             new InterfaceType("Media", null, List.of(
-                new ParticipantRef.TableBound("Film", new TableRef("film", "FILM", "Film", List.of()), null),
-                new ParticipantRef.TableBound("Actor", new TableRef("actor", "ACTOR", "Actor", List.of()), null)
+                new ParticipantRef.TableBound("Film", TestFixtures.tableRef("film", "FILM", "Film", List.of()), null),
+                new ParticipantRef.TableBound("Actor", TestFixtures.tableRef("actor", "ACTOR", "Actor", List.of()), null)
             )),
             List.of());
 

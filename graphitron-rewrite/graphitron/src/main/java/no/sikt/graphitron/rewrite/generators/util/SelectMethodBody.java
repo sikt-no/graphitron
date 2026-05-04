@@ -78,7 +78,7 @@ final class SelectMethodBody {
         EntityResolution entity, KeyAlternative alt, int altIndex,
         String outputPackage, String jooqPackage
     ) {
-        var jooqTableClass = ClassName.get(jooqPackage + ".tables", entity.table().javaClassName());
+        var jooqTableClass = entity.table().tableClass();
         var typeClass = ClassName.get(outputPackage + ".types", entity.typeName());
         String tableLocal = "t";
         String inputAlias = decap(entity.typeName()) + "Alt" + altIndex + "Input";

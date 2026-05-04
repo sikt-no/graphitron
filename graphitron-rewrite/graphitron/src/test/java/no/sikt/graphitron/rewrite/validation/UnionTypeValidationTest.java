@@ -14,6 +14,7 @@ import java.util.Optional;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
+import no.sikt.graphitron.rewrite.TestFixtures;
 
 @UnitTier
 class UnionTypeValidationTest {
@@ -27,8 +28,8 @@ class UnionTypeValidationTest {
         ALL_BOUND("all member types are table-bound — type-level validator stays no-op; "
             + "R36 Track B's PK constraints run at field level (see QueryUnionFieldValidationTest)",
             new UnionType("SearchResult", null, List.of(
-                new ParticipantRef.TableBound("Film", new TableRef("film", "FILM", "Film", List.of()), null),
-                new ParticipantRef.TableBound("Category", new TableRef("category", "CATEGORY", "Category", List.of()), null)
+                new ParticipantRef.TableBound("Film", TestFixtures.tableRef("film", "FILM", "Film", List.of()), null),
+                new ParticipantRef.TableBound("Category", TestFixtures.tableRef("category", "CATEGORY", "Category", List.of()), null)
             )),
             List.of());
 

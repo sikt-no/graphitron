@@ -102,8 +102,7 @@ final class ExternalFieldDirectiveResolver {
         // field name. The static-method-name-equals-field-name convention is the common case;
         // requiring `method:` only when it diverges removes ceremony from the schema.
         String resolvedMethodName = extRef.methodName() != null ? extRef.methodName() : name;
-        ClassName parentTableClass = ClassName.get(
-            ctx.ctx().jooqPackage() + ".tables", parentTable.javaClassName());
+        ClassName parentTableClass = parentTable.tableClass();
         var extResult = svc.reflectExternalField(extClassName, resolvedMethodName, parentTableClass);
         if (extResult.failed()) {
             return new Resolved.Rejected(extResult.rejection().prefixedWith("external field reference could not be resolved — "));

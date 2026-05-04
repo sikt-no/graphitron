@@ -26,12 +26,13 @@ import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.st
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
+import no.sikt.graphitron.rewrite.TestFixtures;
 
 @UnitTier
 class NestingFieldValidationTest {
 
-    private static final TableRef FILM_TABLE = new TableRef("film", "FILM", "Film", List.of());
-    private static final TableRef ADVERTISEMENT_TABLE = new TableRef("advertisement", "ADVERTISEMENT", "Advertisement", List.of());
+    private static final TableRef FILM_TABLE = TestFixtures.tableRef("film", "FILM", "Film", List.of());
+    private static final TableRef ADVERTISEMENT_TABLE = TestFixtures.tableRef("advertisement", "ADVERTISEMENT", "Advertisement", List.of());
 
     private static NestingField nestingField(String parent, String name, List<ChildField> nested, TableRef parentTable) {
         return new NestingField(parent, name, null,
@@ -50,7 +51,7 @@ class NestingFieldValidationTest {
         EMPTY("nesting field with no nested fields — no error",
             new NestingField("Film", "nested", null,
                 new ReturnTypeRef.TableBoundReturnType("Film",
-                    new TableRef("film", "FILM", "Film", List.of()),
+                    TestFixtures.tableRef("film", "FILM", "Film", List.of()),
                     new FieldWrapper.Single(true)),
                 List.of()),
             List.of()),
@@ -58,7 +59,7 @@ class NestingFieldValidationTest {
         LIST_CARDINALITY_REJECTED("list cardinality on a NestingField → error",
             new NestingField("Film", "tags", null,
                 new ReturnTypeRef.TableBoundReturnType("Tag",
-                    new TableRef("film", "FILM", "Film", List.of()),
+                    TestFixtures.tableRef("film", "FILM", "Film", List.of()),
                     new FieldWrapper.List(false, false)),
                 List.of()),
             List.of("Field 'Film.tags': list cardinality on a plain-object nesting field is not supported")),
@@ -66,28 +67,28 @@ class NestingFieldValidationTest {
         STUBBED_NESTED_LEAF_ROLLS_UP("a stubbed variant (ColumnReferenceField) at nested depth surfaces the stubbed error at the nested leaf",
             new NestingField("Film", "details", null,
                 new ReturnTypeRef.TableBoundReturnType("FilmDetails",
-                    new TableRef("film", "FILM", "Film", List.of()),
+                    TestFixtures.tableRef("film", "FILM", "Film", List.of()),
                     new FieldWrapper.Single(true)),
                 List.of(new ColumnReferenceField("FilmDetails", "languageName", null, "languageName",
                     new ColumnRef("NAME", "", ""),
                     List.of(new JoinStep.FkJoin("film_language_id_fkey", "", null, List.of(),
-                        new TableRef("language", "", "", List.of()), List.of(), null, "")),
+                        TestFixtures.joinTarget("language"), List.of(), null, "")),
                     new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct()))),
             List.of(stubbedError("FilmDetails.languageName", ColumnReferenceField.class))),
 
         STUBBED_NESTED_LEAF_INSIDE_NESTED_NESTING("stubbed variant inside a NestingField inside a NestingField → recursive walk surfaces it",
             new NestingField("Film", "details", null,
                 new ReturnTypeRef.TableBoundReturnType("FilmDetails",
-                    new TableRef("film", "FILM", "Film", List.of()),
+                    TestFixtures.tableRef("film", "FILM", "Film", List.of()),
                     new FieldWrapper.Single(true)),
                 List.of(new NestingField("FilmDetails", "meta", null,
                     new ReturnTypeRef.TableBoundReturnType("FilmMeta",
-                        new TableRef("film", "FILM", "Film", List.of()),
+                        TestFixtures.tableRef("film", "FILM", "Film", List.of()),
                         new FieldWrapper.Single(true)),
                     List.of(new ColumnReferenceField("FilmMeta", "languageName", null, "languageName",
                         new ColumnRef("NAME", "", ""),
                         List.of(new JoinStep.FkJoin("film_language_id_fkey", "", null, List.of(),
-                            new TableRef("language", "", "", List.of()), List.of(), null, "")),
+                            TestFixtures.joinTarget("language"), List.of(), null, "")),
                         new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct()))))),
             List.of(stubbedError("FilmMeta.languageName", ColumnReferenceField.class)));
 
@@ -217,12 +218,12 @@ class NestingFieldValidationTest {
         var columnRefFirst = new ColumnReferenceField("FilmDetails", "langName", null, "langName",
             new ColumnRef("NAME", "", ""),
             List.of(new JoinStep.FkJoin("film_language_id_fkey", "", null, List.of(),
-                new TableRef("language", "", "", List.of()), List.of(), null, "")),
+                TestFixtures.joinTarget("language"), List.of(), null, "")),
             new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct());
         var columnRefSecond = new ColumnReferenceField("FilmDetails", "langName", null, "langName",
             new ColumnRef("NAME", "", ""),
             List.of(new JoinStep.FkJoin("advertisement_language_id_fkey", "", null, List.of(),
-                new TableRef("language", "", "", List.of()), List.of(), null, "")),
+                TestFixtures.joinTarget("language"), List.of(), null, "")),
             new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct());
         var schema = twoParentSchema(List.of(columnRefFirst), List.of(columnRefSecond));
         // Shape check reports "not yet supported" for the shared non-column leaf. The per-field

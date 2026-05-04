@@ -479,7 +479,7 @@ public final class MultiTablePolymorphicEmitter {
         var tablesClass = ClassName.get(jooqPackage, "Tables");
 
         for (var participant : participants) {
-            var jooqTableClass = ClassName.get(jooqPackage + ".tables", participant.table().javaClassName());
+            var jooqTableClass = participant.table().tableClass();
             String alias = "stage1_" + participant.typeName();
             b.addStatement("$T $L = $T.$L", jooqTableClass, alias, tablesClass, participant.table().javaFieldName());
         }
@@ -547,7 +547,7 @@ public final class MultiTablePolymorphicEmitter {
         // Declare per-participant table aliases for stage 1. Stage-1 aliases are distinct from
         // any stage-2 locals (the stage-2 helpers declare their own t inside their method body).
         for (var participant : participants) {
-            var jooqTableClass = ClassName.get(jooqPackage + ".tables", participant.table().javaClassName());
+            var jooqTableClass = participant.table().tableClass();
             String alias = "stage1_" + participant.typeName();
             b.addStatement("$T $L = $T.$L", jooqTableClass, alias, tablesClass, participant.table().javaFieldName());
         }
@@ -822,7 +822,7 @@ public final class MultiTablePolymorphicEmitter {
         // Per-participant table aliases for stage 1.
         var tablesClass = ClassName.get(jooqPackage, "Tables");
         for (var participant : participants) {
-            var jooqTableClass = ClassName.get(jooqPackage + ".tables", participant.table().javaClassName());
+            var jooqTableClass = participant.table().tableClass();
             String alias = "stage1_" + participant.typeName();
             b.addStatement("$T $L = $T.$L", jooqTableClass, alias, tablesClass, participant.table().javaFieldName());
         }
@@ -1066,7 +1066,7 @@ public final class MultiTablePolymorphicEmitter {
             String fieldName, ParticipantRef.TableBound participant,
             boolean includeSortKey,
             String outputPackage, String jooqPackage) {
-        var jooqTableClass = ClassName.get(jooqPackage + ".tables", participant.table().javaClassName());
+        var jooqTableClass = participant.table().tableClass();
         var typeClass = ClassName.get(outputPackage + ".types", participant.typeName());
         var tablesClass = ClassName.get(jooqPackage, "Tables");
 

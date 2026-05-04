@@ -22,12 +22,13 @@ import java.util.Optional;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
+import no.sikt.graphitron.rewrite.TestFixtures;
 
 @UnitTier
 class TableFieldValidationTest {
 
     private static ReturnTypeRef.TableBoundReturnType actorReturn(FieldWrapper wrapper) {
-        return new ReturnTypeRef.TableBoundReturnType("Actor", new TableRef("actor", "ACTOR", "Actor", List.of()), wrapper);
+        return new ReturnTypeRef.TableBoundReturnType("Actor", TestFixtures.tableRef("actor", "ACTOR", "Actor", List.of()), wrapper);
     }
 
     enum Case implements ValidatorCase {
@@ -38,7 +39,7 @@ class TableFieldValidationTest {
 
         WITH_FK_PATH("explicit FK path — key resolved to a jOOQ ForeignKey",
             new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)),
-                List.of(new JoinStep.FkJoin("film_actor_film_id_fkey", "", null, List.of(), new TableRef("film_actor", "", "", List.of()), List.of(), null, "")),
+                List.of(new JoinStep.FkJoin("film_actor_film_id_fkey", "", null, List.of(), TestFixtures.joinTarget("film_actor"), List.of(), null, "")),
                 List.of(), new OrderBySpec.None(), null),
             List.of()),
 
