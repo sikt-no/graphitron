@@ -1,0 +1,78 @@
+= @batchKeyLifter
+:description: Supply a static lift function that extracts batch-key values from a plain-record parent, replacing the FK metadata the catalog would otherwise provide.
+:!toc:
+
+Provides a DTO-to-batch-key lifting function for a child field whose xref:record.adoc[`@record`] parent has no FK metadata in the jOOQ catalog. Applies when the parent's backing class is a plain Java record / POJO (not a jOOQ `Record` / `TableRecord`); the lifter extracts the key value(s) from the parent instance, the rewrite matches the lifted `RowN` against the named columns on the child's xref:table.adoc[`@table`] return type, and a column-keyed `DataLoader` drives the batch.
+
+Pairs with xref:record.adoc[`@record(record:)`] supplying the parent class. The directive is rejected on xref:table.adoc[`@table`] parents (use xref:reference.adoc[`@reference`] there) and on jOOQ-record parents (the catalog already supplies the path).
+
+== SDL signature
+
+[source,graphql]
+----
+directive @batchKeyLifter(
+    lifter: ExternalCodeReference!
+    targetColumns: [String!]!
+) on FIELD_DEFINITION
+----
+
+== Parameters
+
+[cols="1,1,1,3",options="header"]
+|===
+| Name | Type | Default | Description
+| `lifter` | `ExternalCodeReference!` | (required) | Static Java method (`className`, `method`) that takes the parent's backing class and returns a jOOQ `Row1..RowN`. The arity must equal `targetColumns.size()`; each `RowN` type argument must equal the corresponding `targetColumn`'s Java column class. `argMapping:` is structurally inert here.
+| `targetColumns` | `[String!]!` | (required) | SQL names of columns on the field's xref:table.adoc[`@table`] return type. Lifted `RowN` values match these columns positionally; the rows-method emitter uses them as the JOIN target on a single-hop `JoinStep.LiftedHop`.
+|===
+
+== Canonical example
+
+A plain-Java-record parent (`CreateFilmPayload`) needs to fetch a child `[Language!]!`. The catalog has no FK metadata for the hand-written class, so a lifter extracts `languageId` from each parent instance and `targetColumns: ["language_id"]` matches it against `language.language_id`:
+
+[source,graphql]
+----
+type CreateFilmPayload @record(record: {className: "no.sikt.graphitron.rewrite.test.services.CreateFilmPayload"}) {
+    languageId: Int!
+    language: [Language!]!
+        @batchKeyLifter(
+            lifter: {
+                className: "no.sikt.graphitron.rewrite.test.services.CreateFilmPayloadLifter",
+                method: "liftLanguageId"
+            },
+            targetColumns: ["language_id"]
+        )
+}
+----
+
+The Java side:
+
+[source,java]
+----
+public final class CreateFilmPayloadLifter {
+    public static Row1<Integer> liftLanguageId(CreateFilmPayload p) {
+        return DSL.row(p.languageId());
+    }
+}
+----
+
+Per request the framework collects every `CreateFilmPayload` parent, calls `liftLanguageId` once per parent, gathers the resulting `Row1<Integer>` keys, and dispatches a single `language_id IN (...)` batch keyed on those values. Each parent receives the matching `Language` row(s) at scatter time.
+
+Multi-column lifts use `Row2..RowN` with `targetColumns` listing all key columns positionally. The lifter's return type must match — a `Row2<A, B>` lifter against `targetColumns: ["a", "b"]` resolves the `A`/`B` Java types against the column types on the target table at build time.
+
+== Constraints
+
+* Required when a field on a non-table-backed `@record` parent returns a `@table` type and would otherwise be rejected as `RecordTableField (or RecordLookupTableField) requires a FK join path and a typed backing class for batch key extraction`.
+* The parent's `@record(record: {className: ...})` must declare a backing class. The directive is rejected on bare `@record` parents with no class.
+* Rejected on xref:table.adoc[`@table`] parents — there's no DTO to lift from. Use xref:reference.adoc[`@reference`] for catalog-driven joins instead.
+* Rejected on jOOQ-record parents (`JooqTableRecordType` / `JooqRecordType`) — the catalog record already drives batching, and a typed accessor or jOOQ-record FK supplies the key.
+* `targetColumns.size()` must equal the lifter's `RowN` arity. A mismatch fails the build with the offending arity in the message.
+* Each entry in `targetColumns` must resolve to a column on the field's `@table` return type; column-type compatibility with the corresponding `RowN` element is checked at build time.
+* The directive is structurally inert for `argMapping:` on the `lifter` reference; that field is rejected at parse time, mirroring xref:record.adoc[`@record`] and xref:enum.adoc[`@enum`].
+
+== See also
+
+* xref:record.adoc[`@record`] is the parent-side directive that decides whether a lifter is needed: jOOQ-backed `@record` types skip it; plain-Java-record types reach for it.
+* xref:reference.adoc[`@reference`] is the catalog-driven counterpart on `@table` parents.
+* xref:../../how-to/result-types.adoc[How-to: Result-type variants] (Phase 3) covers `JavaRecordType` parents, accessor inference, and when to reach for `@batchKeyLifter`.
+
+xref:../index.adoc[← Reference index]
