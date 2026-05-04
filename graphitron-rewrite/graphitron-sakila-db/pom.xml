@@ -15,7 +15,7 @@
 
     <properties>
         <!-- Increment when init.sql changes to force jOOQ regeneration on incremental builds -->
-        <jooq.codegen.schema.version>1.3</jooq.codegen.schema.version>
+        <jooq.codegen.schema.version>1.4</jooq.codegen.schema.version>
         <db.url>jdbc:tc:postgresql:18:///rewrite_test?TC_TMPFS=/testtmpfs:rw&amp;TC_INITSCRIPT=file:${project.basedir}/src/main/resources/init.sql</db.url>
         <db.username>postgres</db.username>
         <db.password>postgres</db.password>
@@ -138,6 +138,40 @@
                                 </database>
                                 <target>
                                     <packageName>no.sikt.graphitron.rewrite.idreffixture</packageName>
+                                    <directory>${project.build.directory}/generated-sources/jooq</directory>
+                                </target>
+                            </generator>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <!-- Multi-schema fixture for R78: two schemas (multischema_a, multischema_b)
+                             with one cross-schema FK (gadget -> widget) and one shared table name
+                             ('event' in both). No <inputSchema> filter — jOOQ falls into multi-
+                             schema mode and produces a per-schema sub-package layout
+                             (<root>.multischema_a.tables.X, <root>.multischema_b.tables.X), which
+                             is what real consumer projects with multiple schemas hit. The single-
+                             schema fixtures above pin one schema each so they don't reproduce the
+                             bug R78 fixes. Stock JavaGenerator — no NodeId metadata extension
+                             needed here. -->
+                        <id>jooq-codegen-multischema-fixture</id>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>generate</goal>
+                        </goals>
+                        <configuration>
+                            <jdbc>
+                                <driver>${db.driver}</driver>
+                                <url>${db.url}</url>
+                                <user>${db.username}</user>
+                                <password>${db.password}</password>
+                            </jdbc>
+                            <generator>
+                                <database>
+                                    <includes>multischema_a\..*|multischema_b\..*</includes>
+                                    <schemaVersionProvider>${jooq.codegen.schema.version}</schemaVersionProvider>
+                                </database>
+                                <target>
+                                    <packageName>no.sikt.graphitron.rewrite.multischemafixture</packageName>
                                     <directory>${project.build.directory}/generated-sources/jooq</directory>
                                 </target>
                             </generator>
