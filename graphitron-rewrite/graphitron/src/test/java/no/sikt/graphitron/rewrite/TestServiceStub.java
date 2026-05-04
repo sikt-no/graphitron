@@ -101,7 +101,8 @@ class TestServiceStub {
 
     /**
      * Takes a {@code List<FilmRecord>} — a jOOQ {@code TableRecord} subtype. Used to verify
-     * that a {@code TableRecord} element type classifies as {@link no.sikt.graphitron.rewrite.model.BatchKey.RowKeyed}.
+     * that a {@code TableRecord} element type classifies as {@link no.sikt.graphitron.rewrite.model.BatchKey.TableRecordKeyed}
+     * (carrying the typed record class on the variant).
      */
     public static Result<FilmRecord> getFilmsWithTableRecordSources(java.util.List<FilmRecord> keys) {
         throw new UnsupportedOperationException();
@@ -125,8 +126,8 @@ class TestServiceStub {
 
     /**
      * Takes a {@code Set<FilmRecord>} — verifies that a {@code TableRecord} element type with
-     * a {@code Set} container classifies as {@link no.sikt.graphitron.rewrite.model.BatchKey.MappedRowKeyed}
-     * (driving {@code newMappedDataLoader}).
+     * a {@code Set} container classifies as {@link no.sikt.graphitron.rewrite.model.BatchKey.MappedTableRecordKeyed}
+     * (carrying the typed record class on the variant; drives {@code newMappedDataLoader}).
      */
     public static Result<FilmRecord> getFilmsWithSetOfTableRecordSources(java.util.Set<FilmRecord> keys) {
         throw new UnsupportedOperationException();

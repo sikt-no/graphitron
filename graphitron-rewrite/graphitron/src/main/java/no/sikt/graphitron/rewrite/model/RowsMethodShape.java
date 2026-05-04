@@ -84,7 +84,8 @@ public final class RowsMethodShape {
      */
     public static TypeName outerRowsReturnType(TypeName perKey, ReturnTypeRef returnType, BatchKey.ParentKeyed batchKey) {
         boolean isMapped = batchKey instanceof BatchKey.MappedRowKeyed
-                        || batchKey instanceof BatchKey.MappedRecordKeyed;
+                        || batchKey instanceof BatchKey.MappedRecordKeyed
+                        || batchKey instanceof BatchKey.MappedTableRecordKeyed;
         boolean isList = returnType.wrapper().isList();
         TypeName valuePerKey = isList ? ParameterizedTypeName.get(LIST, perKey) : perKey;
         if (isMapped) {

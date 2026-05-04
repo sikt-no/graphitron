@@ -155,6 +155,10 @@ final class ServiceDirectiveResolver {
                 return new Resolved.Rejected(Rejection.invalidSchema(invariant));
             }
         } else {
+            String parentTableMismatch = validateTableRecordSourceParentTable(parentTypeName, method);
+            if (parentTableMismatch != null) {
+                return new Resolved.Rejected(Rejection.structural(parentTableMismatch));
+            }
             String mismatch = validateChildServiceReturnType(returnType, method);
             if (mismatch != null) {
                 return new Resolved.Rejected(Rejection.structural(mismatch));
@@ -162,6 +166,39 @@ final class ServiceDirectiveResolver {
         }
 
         return projectReturnType(returnType, method, fieldDef, parentTypeName);
+    }
+
+    /**
+     * Parent-table consistency check for the typed-{@code TableRecord} source-shape arms
+     * ({@link BatchKey.TableRecordKeyed} / {@link BatchKey.MappedTableRecordKeyed}). When the
+     * developer declares {@code Set<X>} or {@code List<X>} where {@code X extends TableRecord},
+     * {@code X} must be the parent type's expected record class — otherwise the emitted
+     * {@code ((Record) env.getSource()).into(Tables.X)} extraction would silently project the
+     * parent's runtime record into a wrong-typed {@code TableRecord}. Other batch-key arms
+     * (RowN / RecordN sources, accessor-keyed @record parents, etc.) are unaffected: their
+     * key shapes don't carry a typed record class to mismatch.
+     */
+    private String validateTableRecordSourceParentTable(String parentTypeName, MethodRef method) {
+        var sourced = method.params().stream()
+            .filter(MethodRef.Param.Sourced.class::isInstance)
+            .map(MethodRef.Param.Sourced.class::cast)
+            .findFirst()
+            .orElse(null);
+        if (sourced == null) return null;
+        Class<? extends org.jooq.TableRecord<?>> elementClass = switch (sourced.batchKey()) {
+            case BatchKey.TableRecordKeyed trk -> trk.elementClass();
+            case BatchKey.MappedTableRecordKeyed mtrk -> mtrk.elementClass();
+            default -> null;
+        };
+        if (elementClass == null) return null;
+        var expected = ctx.recordClassForTypeName(parentTypeName).orElse(null);
+        if (expected == null || expected.equals(elementClass)) return null;
+        return "method '" + method.methodName() + "' in class '" + method.className()
+            + "' takes Sources element type '" + elementClass.getSimpleName()
+            + "' but the parent type '" + parentTypeName
+            + "' is backed by '" + expected.getSimpleName()
+            + "' — change the Sources element to '" + expected.getSimpleName()
+            + "', or use a Row1/Record1 source-shape if the typed record isn't needed";
     }
 
     private Resolved projectReturnType(ReturnTypeRef returnType, MethodRef method,

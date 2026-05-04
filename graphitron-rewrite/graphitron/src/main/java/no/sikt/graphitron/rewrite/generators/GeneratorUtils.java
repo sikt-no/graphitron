@@ -380,9 +380,14 @@ class GeneratorUtils {
      * defensive {@code IllegalStateException} arm. The row-vs-record axis is the developer's
      * source-shape choice (Row1 source classifies to {@link BatchKey.RowKeyed} /
      * {@link BatchKey.MappedRowKeyed}; Record1 source to {@link BatchKey.RecordKeyed} /
-     * {@link BatchKey.MappedRecordKeyed}); the emit forks accordingly:
-     * {@code DSL.row((Record) env.getSource().get(table.col), ...)} for Row arms,
-     * {@code ((Record) env.getSource()).into(table.col, ...)} for Record arms.
+     * {@link BatchKey.MappedRecordKeyed}; typed {@code TableRecord} source to
+     * {@link BatchKey.TableRecordKeyed} / {@link BatchKey.MappedTableRecordKeyed}); the emit
+     * forks accordingly: {@code DSL.row((Record) env.getSource().get(table.col), ...)} for Row
+     * arms, {@code ((Record) env.getSource()).into(table.col, ...)} for RecordN arms,
+     * {@code ((Record) env.getSource()).into(Tables.X)} for typed-{@code TableRecord} arms.
+     * The resolver-side parent-table consistency check guarantees the variant's
+     * {@code elementClass} matches the parent's table, so the extraction's projection target
+     * is the parent table itself.
      */
     static CodeBlock buildKeyExtraction(BatchKey.ParentKeyed batchKey, TableRef parentTable, String jooqPackage) {
         TypeName keyType = batchKey.keyElementType();
@@ -411,6 +416,10 @@ class GeneratorUtils {
                     .addStatement("$T key = (($T) env.getSource()).into($L)", keyType, RECORD, intoArgs.build())
                     .build();
             }
+            case BatchKey.TableRecordKeyed _, BatchKey.MappedTableRecordKeyed _ -> CodeBlock.builder()
+                .addStatement("$T key = (($T) env.getSource()).into($T.$L)",
+                    keyType, RECORD, tablesClass, tableField)
+                .build();
         };
     }
 }

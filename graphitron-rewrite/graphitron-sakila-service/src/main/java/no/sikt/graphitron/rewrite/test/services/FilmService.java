@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.test.services;
 
 import no.sikt.graphitron.rewrite.test.jooq.tables.Film;
+import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord;
 import org.jooq.DSLContext;
 import org.jooq.Record1;
 import org.jooq.Row1;
@@ -83,5 +84,44 @@ public final class FilmService {
             result.put(DSL.row(entry.getKey()), entry.getValue().toLowerCase());
         }
         return result;
+    }
+
+    /**
+     * R70 sibling fixture exercising the typed-{@link FilmRecord} source-shape arm. The
+     * developer signs {@code Set<FilmRecord>} on the parameter and {@code Map<FilmRecord, String>}
+     * on the return, which classifies as {@link no.sikt.graphitron.rewrite.model.BatchKey.MappedTableRecordKeyed}
+     * (the variant carries the typed record class). The framework's emitted lambda extracts the
+     * parent's {@code FilmRecord} via {@code env.getSource().into(Tables.FILM)} and calls this
+     * method directly with the typed-record set.
+     *
+     * <p>Reads each {@code FilmRecord}'s {@code title} via {@link FilmRecord#getTitle()} and
+     * returns the title-case rendition. No SQL fetch is required because the typed record
+     * already carries every column on the parent table.
+     */
+    public static Map<FilmRecord, String> titleTitlecase(Set<FilmRecord> films) {
+        Map<FilmRecord, String> result = new LinkedHashMap<>();
+        for (FilmRecord film : films) {
+            String title = film.getTitle();
+            result.put(film, title == null ? null : toTitleCase(title));
+        }
+        return result;
+    }
+
+    private static String toTitleCase(String s) {
+        StringBuilder out = new StringBuilder(s.length());
+        boolean nextUpper = true;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (Character.isWhitespace(c)) {
+                out.append(c);
+                nextUpper = true;
+            } else if (nextUpper) {
+                out.append(Character.toUpperCase(c));
+                nextUpper = false;
+            } else {
+                out.append(Character.toLowerCase(c));
+            }
+        }
+        return out.toString();
     }
 }
