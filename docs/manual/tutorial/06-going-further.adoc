@@ -8,10 +8,10 @@ This page lists the four how-to recipes most worth reading next, then points at 
 
 == Recipes most relevant after this tutorial
 
-The four topics below are the ones to read next. Three have landed recipes; the fourth (custom conditions) is in flight. The xref:../how-to/index.adoc[how-to landing] lists every available recipe.
+The four topics below are the ones to read next. The xref:../how-to/index.adoc[how-to landing] lists every available recipe.
 
 Add custom conditions::
-The `active` filter you used on page 3 is the simplest case of an argument-driven `WHERE`. The `@condition` directive lets you wire arbitrary jOOQ predicates onto fields and arguments: `WHERE rental_rate < ?`, `WHERE title ILIKE ?`, conjunctive filters across multiple input fields, override semantics, anything jOOQ can express. This is the most-used directive after `@table` and `@field`. Until the dedicated recipe lands, xref:../how-to/condition-cascade.adoc[How-to: Stacking and overriding conditions] covers the cascade and override mechanics.
+The `active` filter you used on page 3 is the simplest case of an argument-driven `WHERE`. The `@condition` directive lets you wire arbitrary jOOQ predicates onto fields and arguments: `WHERE rental_rate < ?`, `WHERE title ILIKE ?`, conjunctive filters across multiple input fields, anything jOOQ can express. xref:../how-to/add-custom-conditions.adoc[How-to: Add custom conditions] walks through the Java method shape and the three placement axes; xref:../how-to/condition-cascade.adoc[How-to: Stacking and overriding conditions] covers the override flag and the divergence from legacy semantics.
 
 Pagination and sorting::
 The `customers` query you ran returns all five rows. Real schemas paginate: Graphitron supports both Relay-style cursor pagination (`@asConnection`, `first`/`after`) and dynamic ordering (`@orderBy`, `@order`). xref:../how-to/connections.adoc[How-to: Cursor-paginated connections] walks through turning a list field into a connection; xref:../how-to/sort-results.adoc[How-to: Sort results] covers tie-breakers, `@defaultOrder`, and keyset semantics.
