@@ -344,13 +344,13 @@ type FilmCard @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.
 }
 
 type FilmCardWrapper @record(record: {className: "no.sikt.graphitron.rewrite.test.services.FilmCardData"}) {
-    # AccessorKeyedMany: the canonical Java-record accessor `films()` on FilmCardData returns
-    # List<FilmRecord> (typed accessor matching this field's @table return). The framework
-    # auto-derives the BatchKey, batches dispatch via `loader.loadMany(keys, env)` keyed on
-    # the element table's PK, and returns one Film row per key. List cardinality sidesteps
-    # the validator's single-cardinality RecordTableField rejection (Invariant #10); each
-    # inventory's FilmCardData contains exactly one FilmRecord by construction.
-    films: [Film!]!
+    # AccessorKeyedSingle: the canonical Java-record accessor `film()` on FilmCardData returns
+    # FilmRecord (typed accessor matching this field's @table return). The framework
+    # auto-derives the BatchKey, batches dispatch via `loader.load(key, env)` keyed on the
+    # element table's PK, and returns one Film row per key. R61 lifted Invariant #10 (the
+    # single-cardinality RecordTableField rejection) so this fixture exercises the
+    # AccessorKeyedSingle path end-to-end.
+    film: Film
 }
 
 type Category @table(name: "category") {

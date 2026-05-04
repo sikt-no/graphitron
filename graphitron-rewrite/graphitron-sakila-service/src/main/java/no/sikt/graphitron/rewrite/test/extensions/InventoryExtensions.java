@@ -6,8 +6,6 @@ import no.sikt.graphitron.rewrite.test.services.FilmCardData;
 import org.jooq.Converter;
 import org.jooq.Field;
 
-import java.util.List;
-
 /**
  * R61 execution-tier fixtures: {@code @externalField} methods returning
  * {@code Field<TableRecord<?>>} and {@code Field<CustomJavaRecord>} where the custom record
@@ -39,19 +37,17 @@ public final class InventoryExtensions {
 
     /**
      * Per-inventory {@code Field<FilmCardData>} where {@link FilmCardData} is a Java record
-     * carrying a typed {@code List<FilmRecord> films} component. The classifier picks the
-     * canonical {@code films()} accessor on {@code FilmCardData} and produces an
-     * {@link no.sikt.graphitron.rewrite.model.BatchKey.AccessorKeyedMany} BatchKey for the
-     * GraphQL child field {@code films: [Film!]!}, lifting the embedded records back into
-     * Graphitron scope so the framework can batch-fetch the full Film rows by PK at request
-     * time. Each inventory contributes a singleton list (one film per inventory) by
-     * construction; {@code loadMany} batches across all inventories.
+     * carrying a single typed {@code FilmRecord film} component. The classifier picks the
+     * canonical {@code film()} accessor on {@code FilmCardData} and produces an
+     * {@link no.sikt.graphitron.rewrite.model.BatchKey.AccessorKeyedSingle} BatchKey for the
+     * GraphQL child field {@code film: Film}, lifting the embedded record back into Graphitron
+     * scope so the framework can batch-fetch the full Film row by PK at request time.
      */
     public static Field<FilmCardData> filmCardData(Inventory table) {
         return table.FILM_ID.convert(Converter.from(Integer.class, FilmCardData.class, filmId -> {
             FilmRecord f = new FilmRecord();
             f.setFilmId(filmId);
-            return new FilmCardData(List.of(f));
+            return new FilmCardData(f);
         }));
     }
 }
