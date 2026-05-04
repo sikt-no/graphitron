@@ -86,6 +86,6 @@ The framework constructs the service with whatever it can resolve from the reque
 * xref:../../how-to/handle-services.adoc[How-to: Handle services] covers nested-input mapping, response shaping, and the `@splitQuery` pattern in depth.
 * xref:mutation.adoc[`@mutation`] for the framework-generated alternative.
 * xref:tableMethod.adoc[`@tableMethod`] for the lighter-weight "developer returns a `Table` and the framework projects" variant.
-* xref:../../how-to/test-your-schema.adoc[How-to: Test your schema] (Phase 3) for the consumer test pattern with services in play.
+* xref:../../how-to/test-your-schema.adoc[How-to: Test your schema] for the consumer test pattern with services in play.
 
 xref:../index.adoc[← Reference index]
