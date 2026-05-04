@@ -32,29 +32,25 @@ class RecordLookupTableFieldValidationTest {
         return new ReturnTypeRef.TableBoundReturnType("Film", FILM_TABLE, wrapper);
     }
 
-    // Validator messages for RecordLookupTableField. SINGLE_CARDINALITY_GATE comes from the
-    // dedicated validator helper validateRecordParentSingleCardinalityRejected (R1 Phase 2e
-    // Invariant #10); CONDITION_JOIN_STUB comes from the SplitRowsMethodEmitter.unsupportedReason
-    // delegation. Kept inline — a change to either production string breaks this test loudly and
-    // must be updated in the same commit.
-    private static final String SINGLE_CARDINALITY_GATE =
-        "Field 'Language.film': RecordLookupTableField returns a single-cardinality value; "
-        + "only list returns ('[T]') are supported in this release";
+    // Validator messages for RecordLookupTableField. CONDITION_JOIN_STUB comes from the
+    // SplitRowsMethodEmitter.unsupportedReason delegation; the single-cardinality gate
+    // (Invariant #10) was lifted in R61 alongside emitsSingleRecordPerKey extending to
+    // single-cardinality fields.
     private static final String CONDITION_JOIN_STUB =
         "Field 'Language.films': RecordLookupTableField 'Language.films' with a condition-join step "
         + "cannot be emitted until classification-vocabulary item 5 resolves condition-method target tables";
 
     enum Case implements ValidatorCase {
 
-        SINGLE_NO_PATH("single cardinality, empty joinPath — single-cardinality validator gate fires",
+        SINGLE_NO_PATH("single cardinality, empty joinPath — emittable post-R61",
             new RecordLookupTableField("Language", "film", null, filmReturn(new FieldWrapper.Single(true)), List.of(), List.of(), new OrderBySpec.None(), null, BATCH_KEY, EMPTY_LOOKUP),
-            List.of(SINGLE_CARDINALITY_GATE)),
+            List.of()),
 
-        SINGLE_WITH_FK_PATH("single cardinality with FK path — single-cardinality validator gate fires",
+        SINGLE_WITH_FK_PATH("single cardinality with FK path — emittable post-R61",
             new RecordLookupTableField("Language", "film", null, filmReturn(new FieldWrapper.Single(true)),
                 List.of(new JoinStep.FkJoin("language_film_id_fkey", "", null, List.of(), new TableRef("film", "", "", List.of()), List.of(), null, "")),
                 List.of(), new OrderBySpec.None(), null, BATCH_KEY, EMPTY_LOOKUP),
-            List.of(SINGLE_CARDINALITY_GATE)),
+            List.of()),
 
         LIST_WITH_CONDITION_ONLY("list cardinality with condition-only join step — condition-join stub surfaces as build error",
             new RecordLookupTableField("Language", "films", null, filmReturn(new FieldWrapper.List(true, true)),

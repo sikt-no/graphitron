@@ -429,7 +429,14 @@ public sealed interface ChildField extends GraphitronField
         }
         @Override
         public boolean emitsSingleRecordPerKey() {
-            return batchKey() instanceof BatchKey.AccessorKeyedMany;
+            // Two structurally distinct triggers fold onto the same router decision in
+            // SplitRowsMethodEmitter.buildForRecordTable: (a) single-cardinality fields whose
+            // data-fetcher wants `Record` per key (one row per parent), and (b)
+            // AccessorKeyedMany whose loadMany contract returns `Record` per element-PK key.
+            // Both produce the flat-join + scatterSingleByIdx shape; both route through
+            // buildSingleMethod.
+            return !returnType().wrapper().isList()
+                || batchKey() instanceof BatchKey.AccessorKeyedMany;
         }
         @Override public Rejection.EmitBlockReason emitBlockReason() {
             return Rejection.EmitBlockReason.RECORD_TABLE_FIELD_CONDITION_JOIN_STEP;
@@ -452,6 +459,13 @@ public sealed interface ChildField extends GraphitronField
         @Override
         public String rowsMethodName() {
             return "rows" + Character.toUpperCase(name().charAt(0)) + name().substring(1);
+        }
+        @Override
+        public boolean emitsSingleRecordPerKey() {
+            // Mirrors RecordTableField: single-cardinality fields fold onto the same
+            // single-record-per-key arm as AccessorKeyedMany.
+            return !returnType().wrapper().isList()
+                || batchKey() instanceof BatchKey.AccessorKeyedMany;
         }
         @Override public Rejection.EmitBlockReason emitBlockReason() {
             return Rejection.EmitBlockReason.RECORD_LOOKUP_TABLE_FIELD_CONDITION_JOIN_STEP;
