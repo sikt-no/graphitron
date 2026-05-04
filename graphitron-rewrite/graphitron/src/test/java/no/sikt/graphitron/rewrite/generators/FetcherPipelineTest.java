@@ -534,7 +534,7 @@ class FetcherPipelineTest {
     }
 
     private java.util.Map<String, CodeBlock> fetcherBodies(String sdl) {
-        return FetcherRegistrationsEmitter.emit(buildSchema(sdl), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+        return FetcherRegistrationsEmitter.emit(buildSchema(sdl), DEFAULT_OUTPUT_PACKAGE);
     }
 
     private GraphitronSchema buildSchema(String schemaText) {

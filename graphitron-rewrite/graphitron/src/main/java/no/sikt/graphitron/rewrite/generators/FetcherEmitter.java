@@ -47,12 +47,11 @@ public final class FetcherEmitter {
      *                      {@code null} when the parent is not table-backed
      * @param resultType    the parent type's {@code @record} backing, or {@code null}
      * @param outputPackage the base output package (e.g. {@code no.sikt.graphql})
-     * @param jooqPackage   the jOOQ-generated package (e.g. {@code no.sikt.jooq})
      */
     public static CodeBlock dataFetcherValue(
             GraphitronField field, ClassName fetchersClass,
             TableRef parentTable, GraphitronType.ResultType resultType,
-            String outputPackage, String jooqPackage) {
+            String outputPackage) {
         if (field instanceof ChildField.ConstructorField) {
             return CodeBlock.of("($T env) -> env.getSource()", DATA_FETCHING_ENV);
         }
@@ -69,10 +68,10 @@ public final class FetcherEmitter {
             return CodeBlock.of("$T.fetching($S)", propertyDataFetcher, field.name());
         }
         if (field instanceof ChildField.PropertyField pf && resultType != null) {
-            return propertyOrRecordValue(pf.columnName(), pf.column(), resultType, outputPackage, jooqPackage);
+            return propertyOrRecordValue(pf.columnName(), pf.column(), resultType, outputPackage);
         }
         if (field instanceof ChildField.RecordField rf && resultType != null) {
-            return propertyOrRecordValue(rf.columnName(), rf.column(), resultType, outputPackage, jooqPackage);
+            return propertyOrRecordValue(rf.columnName(), rf.column(), resultType, outputPackage);
         }
         if (field instanceof ChildField.ColumnField cf && parentTable != null) {
             if (cf.compaction() instanceof CallSiteCompaction.NodeIdEncodeKeys enc) {
@@ -82,21 +81,19 @@ public final class FetcherEmitter {
                 // either from a raw typeId string at emission time.
                 var encoderClass = enc.encodeMethod().encoderClass();
                 var recordClass = ClassName.get("org.jooq", "Record");
-                var tablesClass = ClassName.get(jooqPackage, "Tables");
                 return CodeBlock.builder()
                     .add("($T env) -> {\n", DATA_FETCHING_ENV)
                     .add("    $T r = ($T) env.getSource();\n", recordClass, recordClass)
                     .add("    return $T.$L(r.get($T.$L.$L));\n",
                         encoderClass, enc.encodeMethod().methodName(),
-                        tablesClass, parentTable.javaFieldName(), cf.column().javaName())
+                        parentTable.constantsClass(), parentTable.javaFieldName(), cf.column().javaName())
                     .add("}")
                     .build();
             }
             var columnFetcherClass = ClassName.get(outputPackage + ".util",
                 ColumnFetcherClassGenerator.CLASS_NAME);
-            var tablesClass = ClassName.get(jooqPackage, "Tables");
             return CodeBlock.of("new $T<>($T.$L.$L)",
-                columnFetcherClass, tablesClass,
+                columnFetcherClass, parentTable.constantsClass(),
                 parentTable.javaFieldName(), cf.column().javaName());
         }
         if (field instanceof ChildField.CompositeColumnField ccf && parentTable != null) {
@@ -107,7 +104,6 @@ public final class FetcherEmitter {
             var enc = ccf.compaction();
             var encoderClass = enc.encodeMethod().encoderClass();
             var recordClass = ClassName.get("org.jooq", "Record");
-            var tablesClass = ClassName.get(jooqPackage, "Tables");
             var body = CodeBlock.builder()
                 .add("($T env) -> {\n", DATA_FETCHING_ENV)
                 .add("    $T r = ($T) env.getSource();\n", recordClass, recordClass)
@@ -115,7 +111,7 @@ public final class FetcherEmitter {
             for (int i = 0; i < ccf.columns().size(); i++) {
                 if (i > 0) body.add(", ");
                 body.add("r.get($T.$L.$L)",
-                    tablesClass, parentTable.javaFieldName(), ccf.columns().get(i).javaName());
+                    parentTable.constantsClass(), parentTable.javaFieldName(), ccf.columns().get(i).javaName());
             }
             body.add(");\n").add("}");
             return body.build();
@@ -188,14 +184,13 @@ public final class FetcherEmitter {
 
     private static CodeBlock propertyOrRecordValue(
             String columnName, ColumnRef column, GraphitronType.ResultType resultType,
-            String outputPackage, String jooqPackage) {
+            String outputPackage) {
         var columnFetcherClass = ClassName.get(outputPackage + ".util",
             ColumnFetcherClassGenerator.CLASS_NAME);
         if (resultType instanceof GraphitronType.JooqTableRecordType jtrt
                 && column != null && jtrt.table() != null) {
-            var tablesClass = ClassName.get(jooqPackage, "Tables");
             return CodeBlock.of("new $T<>($T.$L.$L)",
-                columnFetcherClass, tablesClass, jtrt.table().javaFieldName(), column.javaName());
+                columnFetcherClass, jtrt.table().constantsClass(), jtrt.table().javaFieldName(), column.javaName());
         }
         if (resultType instanceof GraphitronType.JooqTableRecordType
                 || resultType instanceof GraphitronType.JooqRecordType) {
