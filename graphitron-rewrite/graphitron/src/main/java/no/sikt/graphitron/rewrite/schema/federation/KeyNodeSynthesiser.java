@@ -6,6 +6,7 @@ import graphql.language.Directive;
 import graphql.language.ObjectTypeDefinition;
 import graphql.language.SDLDefinition;
 import graphql.language.StringValue;
+import graphql.language.TypeDefinition;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.rewrite.schema.input.FederationLinkApplier;
 
@@ -53,7 +54,7 @@ public final class KeyNodeSynthesiser {
      */
     public static void apply(TypeDefinitionRegistry registry) {
         var replacements = new ArrayList<Replacement>();
-        for (var def : registry.types().values()) {
+        for (TypeDefinition<?> def : registry.types().values()) {
             if (def instanceof ObjectTypeDefinition obj
                 && hasNodeDirective(obj)
                 && !hasIdKeyDirective(obj)) {
