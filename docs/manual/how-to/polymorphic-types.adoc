@@ -1,0 +1,140 @@
+= How-to: Polymorphic types
+:description: Map GraphQL interfaces and unions onto single-table or multi-table layouts, with discriminator-value pitfalls and the pagination contract.
+:!toc:
+
+GraphQL gives you two ways to spell "this field returns one of several object types": an `interface` whose implementers each `implements` it, and a `union` that lists member types. Graphitron supports both and projects each onto one of two layouts. *Single-table* polymorphism: every subtype shares one jOOQ table, and a discriminator column says which row belongs to which subtype. *Multi-table* polymorphism: each subtype has its own table, and the generator stitches results together with a two-stage `UNION ALL` fetcher. Pick by where the rows actually live; the directives follow from that choice.
+
+== Choose the layout
+
+Single-table fits when the rows literally share a table and a column tells you the subtype. The classic shape is an `entity_type` discriminator with subtype-specific columns nullable on the rows that don't use them. One `SELECT` against the shared table covers every subtype; row-mapping branches at the discriminator value.
+
+Multi-table fits when subtypes are stored in *different* tables (heterogeneous shape, separate PKs, separate indexes). There is no shared discriminator column to pivot on; the generator emits a stage-1 narrow `UNION ALL` projecting `(__typename, __pk__, __sort__)` across the participants and a stage-2 per-typename batched lookup that hydrates each branch's full row.
+
+The two layouts are not mutually exclusive across a schema: a single GraphQL schema can carry single-table interfaces (e.g. `Content`) and multi-table interfaces (e.g. `Searchable`) side by side. Each interface or union picks its own layout independently of the others.
+
+== Single-table: `@discriminate` + `@discriminator`
+
+The interface carries xref:../reference/directives/table.adoc[`@table`] (the shared table) and xref:../reference/directives/discriminate.adoc[`@discriminate(on:)`] (the column that selects the subtype). Each implementer carries the same xref:../reference/directives/table.adoc[`@table`] and xref:../reference/directives/discriminator.adoc[`@discriminator(value:)`] pinned to the column's literal value:
+
+[source,graphql]
+----
+interface Content @table(name: "content") @discriminate(on: "CONTENT_TYPE") {
+    contentId: Int!    @field(name: "CONTENT_ID")
+    title:     String! @field(name: "TITLE")
+}
+
+type FilmContent implements Content @table(name: "content") @discriminator(value: "FILM") {
+    contentId: Int!       @field(name: "CONTENT_ID")
+    title:     String!    @field(name: "TITLE")
+    length:    Int        @field(name: "LENGTH")
+    rating:    MpaaRating @reference(path: [{key: "content_film_id_fkey"}]) @field(name: "RATING")
+}
+
+type ShortContent implements Content @table(name: "content") @discriminator(value: "SHORT") {
+    contentId:   Int!    @field(name: "CONTENT_ID")
+    title:       String! @field(name: "TITLE")
+    description: String  @field(name: "SHORT_DESCRIPTION")
+}
+----
+
+A query selecting `... on FilmContent { length }` and `... on ShortContent { description }` produces one `SELECT content.content_id, content.title, content.length, content.short_description, content.content_type FROM content`. The row mapper inspects `content_type` per row and dispatches to the matching type. Subtype-specific fields are read from the unified projection as nullable; the row mapper ignores them on the wrong branch.
+
+Subtype-only fields can still pull from joined tables. `FilmContent.rating` reaches into `film` via `content_film_id_fkey`; the generator emits a conditional `LEFT JOIN` gated by `content_type = 'FILM'`, so non-`FILM` rows never trigger the join.
+
+== Multi-table: omit `@discriminate`
+
+When the implementers live on different tables, drop `@discriminate` from the interface (or use a union, which never carries one). The interface itself stays unbound; it carries no xref:../reference/directives/table.adoc[`@table`], because there is no shared backing storage:
+
+[source,graphql]
+----
+interface Searchable {
+    name: String!
+}
+
+type Film implements Searchable @table(name: "film") {
+    name: String! @field(name: "TITLE")
+    # ...
+}
+
+type Actor implements Searchable @table(name: "actor") {
+    name: String! @field(name: "FIRST_NAME")
+    # ...
+}
+
+union Document = Film | Actor
+----
+
+The interface field `name` is synthetic on the GraphQL side; each implementer remaps its own meaningful column to it via xref:../reference/directives/field.adoc[`@field(name:)`]. The union form `Document = Film | Actor` produces the same fetcher path as the interface form; the generator's `MultiTablePolymorphicEmitter` is shared between them.
+
+At request time the rewrite emits a two-stage fetcher. Stage 1 is a narrow `UNION ALL` projecting `(__typename, __pk__, __sort__)` per branch; stage 2 dispatches per typename to a batched lookup that hydrates the full row. The records carry `__typename` so the GraphQL `TypeResolver` routes per row without a discriminator column.
+
+== Polymorphic child fields
+
+A polymorphic interface or union can be the return type of a child field, not just a root query. Two shapes are common.
+
+*Auto-discovered per-branch FK back to the parent.* If each implementer has exactly one FK back to the parent table, the rewrite infers the per-branch `WHERE` clause without any `@reference` on the child field:
+
+[source,graphql]
+----
+type Address @table(name: "address") {
+    addressId: Int! @field(name: "ADDRESS_ID")
+    occupants: [AddressOccupant!]!
+}
+
+union AddressOccupant = Customer | Staff
+----
+
+Both `customer.address_id` and `staff.address_id` FK back to `address.address_id`, so the multi-table polymorphic emitter projects per-branch `WHERE customer.address_id = parent.address_id` and `WHERE staff.address_id = parent.address_id` in stage 1's narrow `UNION ALL`. No directive is needed on `Address.occupants`.
+
+*FK chain to a single-table interface.* If the field returns a single-table polymorphic interface reached through one FK chain, use a regular xref:../reference/directives/reference.adoc[`@reference`]:
+
+[source,graphql]
+----
+type Film @table(name: "film") {
+    filmContent: Content @reference(path: [{key: "content_film_id_fkey"}])
+}
+----
+
+`content.film_id` FKs back to `film.film_id`; the per-parent fetcher conditions on the FK and projects `CONTENT_TYPE` so the row mapper still routes per row.
+
+*Multi-table with explicit per-implementation routes.* If the multi-table case has more than one FK between participating tables, or each implementer needs a different join shape, use xref:../reference/directives/multitableReference.adoc[`@multitableReference`] with one route per implementer.
+
+[NOTE]
+====
+The rewrite generator currently *stubs* `@multitableReference` on record-based outputs: the directive is recognised and the field validator emits `@multitableReference is not supported in record-based output` plus a stub fetcher. The legacy `graphitron-codegen-parent` generator implements it fully; if you need it today, stay on the legacy modules. Auto-discovered per-branch FK and `@reference`-to-single-table-interface (the two shapes above) work in the rewrite today.
+====
+
+== Pagination across polymorphism
+
+Both layouts compose with xref:../reference/directives/asConnection.adoc[`@asConnection`]. For multi-table polymorphism the connection emitter wraps the per-branch `UNION ALL` in a derived table so `.seek/.limit` and cursor encoding apply uniformly across the union; per-typename stage 2 additionally projects `__sort__` so cursor decoding can read it back per edge. Composite-PK participants project `DSL.jsonbArray(k1, k2)` as the synthetic `__sort__` column, typed as JSONB so PostgreSQL's lexicographic ordering reproduces the multi-column ordering.
+
+For single-table polymorphism, pagination works the same way as for non-polymorphic `@table` fields: the discriminator column is just another projected column, and the row mapper still branches per row. The connection's order-by and cursor contract are unchanged.
+
+== Discriminator-value pitfalls
+
+Single-table layouts hinge on the literal database value matching xref:../reference/directives/discriminator.adoc[`@discriminator(value:)`] verbatim. Common gotchas:
+
+* *Case sensitivity.* `value: "FILM"` does not match a stored `'film'`. Match the column's storage exactly.
+* *Whitespace.* Trailing spaces on `CHAR(N)` columns are part of the stored value. Either trim at write time or include the padding in the `value:`.
+* *Duplicate values.* Two implementers with the same `value:` collapse to one branch; the second is unreachable. The build does not currently reject this, so audit for it.
+* *Unknown values.* A row whose discriminator column carries a value no implementer claims fails to map and surfaces as a runtime error. Either backfill the column or add an implementer.
+* *Mixing tables.* Every implementer must declare the interface's `@table`. An implementer on a different table is rejected at classify time; for cross-table layouts, omit `@discriminate` and use the multi-table fetcher instead.
+* *Missing column.* `@discriminate(on:)` must name a real column on the shared table. The build fails to resolve if it does not exist.
+
+== Constraints
+
+* The single-table layout requires every implementer to share the interface's xref:../reference/directives/table.adoc[`@table`]. Mixing tables breaks the contract.
+* The multi-table layout requires that each implementer be xref:../reference/directives/table.adoc[`@table`]-bound; the interface or union itself is not.
+* Subtype-specific fields on a single-table interface may pull from joined tables via xref:../reference/directives/reference.adoc[`@reference`]; the generator emits a conditional `LEFT JOIN` gated by the discriminator value.
+* xref:../reference/directives/multitableReference.adoc[`@multitableReference`] is stubbed on record-based outputs in the rewrite. Auto-discovered per-branch FK paths (the `AddressOccupant` shape) are the supported multi-table-child idiom today.
+* For composite-PK multi-table polymorphism with xref:../reference/directives/asConnection.adoc[`@asConnection`], all participating tables must share the same composite-PK shape; the polymorphic emitter projects a single typed `__sort__` column across the branches.
+
+== See also
+
+* xref:../reference/directives/discriminate.adoc[`@discriminate`] declares the interface or union's discriminator column.
+* xref:../reference/directives/discriminator.adoc[`@discriminator`] pins each implementer to a value.
+* xref:../reference/directives/multitableReference.adoc[`@multitableReference`] declares per-implementation routes when auto-discovery is not enough (currently stubbed in the rewrite for record-based outputs).
+* xref:../reference/directives/reference.adoc[`@reference`] for cross-table joins on subtype-specific fields and for FK-chain access to single-table polymorphic interfaces.
+* xref:../reference/directives/asConnection.adoc[`@asConnection`] for cursor pagination across either layout.
+
+xref:index.adoc[← How-to index]
