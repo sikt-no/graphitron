@@ -22,7 +22,7 @@ directive @asConnection(
 |===
 | Name | Type | Default | Description
 | `defaultFirstValue` | `Int` | `100` | Page size used when the client omits `first:`. Not a cap on `first:`; clients that supply a value get exactly what they ask for.
-| `connectionName` | `String` | `{ParentType}{FieldName}Connection` | Override the synthesized connection type's name. Set when two fields would otherwise generate the same connection name, or to keep an existing name stable across schema renames.
+| `connectionName` | `String` | `{ParentType}{FieldName}Connection` | *Deprecated.* Override the synthesized connection type's name. Each connection field should own its own type; sharing a Connection across fields conflates distinct semantic contexts (different parents, filters, orders) at the type level. The override remains supported as a transition mechanism for legacy schemas but is permanently discouraged. See xref:../../how-to/connections.adoc[How-to: Cursor-paginated connections].
 |===
 
 == Canonical examples
@@ -83,7 +83,7 @@ The cursor encodes the active order columns (the `@orderBy` selection if the cli
 
 * Applies to list-typed fields. The runtime cardinality must be a list; single-cardinality `@asConnection` is rejected at classify time.
 * The field must have a stable order. Either xref:defaultOrder.adoc[`@defaultOrder`] is set on the field, or xref:orderBy.adoc[`@orderBy`] is required at runtime; without one of these, keyset pagination has no anchor and the build fails.
-* The synthesized connection type's name (default or via `connectionName:`) must not collide with another type already declared in the schema. Two `@asConnection` fields that would default to the same name must set `connectionName:` on at least one of them.
+* The synthesized connection type's name must not collide with another type already declared in the schema. The default `<ParentType><FieldName>Connection` shape rarely collides because parent and field names jointly disambiguate; collisions usually mean two carriers should be split into distinct fields rather than coalesced. The deprecated `connectionName:` override exists as a transition escape hatch.
 * `defaultFirstValue:` is the page size used when the client omits `first:`; it is not a cap. The rewrite plugin does not ship a server-side maximum on `first:`/`last:` (the legacy generator's `<maxAllowedPageSize>` setting was excised); enforce caps at the API layer if needed. See xref:../../how-to/connections.adoc[How-to: Cursor-paginated connections].
 * Composes with xref:splitQuery.adoc[`@splitQuery`]: when both are present, the connection is materialized per-parent through a `DataLoader` keyed on the parent's PK or FK. Without `@splitQuery` on a parent-keyed list, all parents' rows are paginated in a single SQL pass (the `PARTITION BY` envelope is omitted).
 * Inline `TableField` placement is not allowed under interface-or-union return types unless the surrounding type axis supports the multi-table emitter; the generator rejects mismatched placements at classify time. (See `rewrite-design-principles.adoc` for the "no generator-side invariant goes unchecked at validate time" rule that backs this.)
@@ -93,6 +93,6 @@ The cursor encodes the active order columns (the `@orderBy` selection if the cli
 * xref:splitQuery.adoc[`@splitQuery`] dispatches per-parent connections through a `DataLoader` for nested-depth pagination.
 * xref:defaultOrder.adoc[`@defaultOrder`] anchors the cursor when the client omits `@orderBy`.
 * xref:orderBy.adoc[`@orderBy`] supplies dynamic order; the cursor encodes the active selection.
-* xref:../../how-to/connections.adoc[How-to: Cursor-paginated connections] covers `connectionName:` collisions, `totalCount` performance, and what the rewrite does about page-size caps.
+* xref:../../how-to/connections.adoc[How-to: Cursor-paginated connections] covers the one-field-one-connection rule, `totalCount` performance, and what the rewrite does about page-size caps.
 
 xref:../index.adoc[← Reference index]

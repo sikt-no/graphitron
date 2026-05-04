@@ -146,6 +146,6 @@ For single-table polymorphism, ordering is unchanged from the non-polymorphic ca
 * xref:../reference/directives/orderBy.adoc[`@orderBy`] activates a runtime argument.
 * xref:../reference/directives/order.adoc[`@order`] attaches a sort spec to each enum value.
 * xref:../reference/directives/asConnection.adoc[`@asConnection`] is the cursor-pagination wrapper that consumes the resolved order.
-* xref:connections.adoc[How-to: Cursor-paginated connections] covers `connectionName:` collisions, `totalCount` performance, and what the rewrite does about page-size caps.
+* xref:connections.adoc[How-to: Cursor-paginated connections] covers the one-field-one-connection rule, `totalCount` performance, and what the rewrite does about page-size caps.
 
 xref:index.adoc[← How-to index]
