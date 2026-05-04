@@ -13,6 +13,7 @@ import java.util.List;
  * line-by-line output. The dev-loop formatter intercepts this exception and replaces that
  * emission with grouped output; see {@code WatchErrorFormatter}.
  */
+@SuppressWarnings("serial") // thrown and caught in-process; ValidationError is not Serializable
 public class ValidationFailedException extends RuntimeException {
 
     private final List<ValidationError> errors;

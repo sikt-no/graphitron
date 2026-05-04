@@ -719,7 +719,7 @@ class GraphitronSchemaBuilderTest {
                 var f = (SplitTableField) schema.field("Customer", "address");
                 assertThat(f.returnType().wrapper()).isInstanceOf(FieldWrapper.Single.class);
                 assertThat(f.joinPath()).hasSize(1);
-                var rk = (BatchKey.RowKeyed) f.batchKey();
+                var rk = f.batchKey();
                 assertThat(rk.parentKeyColumns()).extracting(ColumnRef::sqlName)
                     .containsExactly("address_id");
             }) {
@@ -736,7 +736,7 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var f = (SplitTableField) schema.field("Customer", "address");
                 assertThat(f.joinPath()).hasSize(1);
-                var rk = (BatchKey.RowKeyed) f.batchKey();
+                var rk = f.batchKey();
                 assertThat(rk.parentKeyColumns()).extracting(ColumnRef::sqlName)
                     .containsExactly("address_id");
             }) {
@@ -1223,8 +1223,7 @@ class GraphitronSchemaBuilderTest {
         assertThat(castField).isInstanceOf(SplitTableField.class);
         var stf = (SplitTableField) castField;
         assertThat(stf.parentTypeName()).isEqualTo("FilmInfo");
-        assertThat(stf.batchKey()).isInstanceOf(BatchKey.RowKeyed.class);
-        var rk = (BatchKey.RowKeyed) stf.batchKey();
+        var rk = stf.batchKey();
         assertThat(rk.parentKeyColumns()).extracting(ColumnRef::javaName).containsExactly("FILM_ID");
     }
 

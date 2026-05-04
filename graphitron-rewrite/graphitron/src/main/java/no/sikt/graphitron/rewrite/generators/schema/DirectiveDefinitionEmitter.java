@@ -65,7 +65,7 @@ public final class DirectiveDefinitionEmitter {
                 .add("$T.newArgument()", ARGUMENT)
                 .add(".name($S)", arg.getName())
                 .add(".type(")
-                .add(AppliedDirectiveEmitter.emitInputType((graphql.schema.GraphQLInputType) arg.getType()))
+                .add(AppliedDirectiveEmitter.emitInputType(arg.getType()))
                 .add(")");
             if (arg.getDescription() != null && !arg.getDescription().isEmpty()) {
                 block.add(".description($S)", arg.getDescription());

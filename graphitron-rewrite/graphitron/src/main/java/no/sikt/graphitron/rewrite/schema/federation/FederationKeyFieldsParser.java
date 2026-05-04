@@ -59,6 +59,8 @@ public final class FederationKeyFieldsParser {
      * suitable for inclusion in a user-facing {@code ValidationError}.
      */
     public static final class ParseException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
         public ParseException(String message) {
             super(message);
         }

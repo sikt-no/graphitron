@@ -1,7 +1,7 @@
 package no.sikt.graphitron.sakila.example.app;
 
 import io.quarkus.test.common.QuarkusTestResourceLifecycleManager;
-import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -18,7 +18,7 @@ import java.util.Map;
  */
 public class SmokeTestPostgresResource implements QuarkusTestResourceLifecycleManager {
 
-    private PostgreSQLContainer<?> container;
+    private PostgreSQLContainer container;
 
     @Override
     public Map<String, String> start() {
@@ -31,7 +31,7 @@ public class SmokeTestPostgresResource implements QuarkusTestResourceLifecycleMa
             overrides.put("quarkus.datasource.password",
                 System.getProperty("test.db.password", "postgres"));
         } else {
-            container = new PostgreSQLContainer<>("postgres:18-alpine").withInitScript("init.sql");
+            container = new PostgreSQLContainer("postgres:18-alpine").withInitScript("init.sql");
             container.start();
             overrides.put("quarkus.datasource.jdbc.url", container.getJdbcUrl());
             overrides.put("quarkus.datasource.username", container.getUsername());

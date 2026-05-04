@@ -211,7 +211,10 @@ public class DeferBehaviorTest {
 
         drain(((IncrementalExecutionResult) result).getIncrementalItemPublisher());
 
-        assertThat((Object) capturedPaymentsEnv.getSource())
+        // Bind to Object before asserting: getSource() returns generic T, which would otherwise
+        // make assertThat(IntPredicate) and assertThat(Predicate<T>) both applicable.
+        Object source = capturedPaymentsEnv.getSource();
+        assertThat(source)
             .as("deferred DataFetcher must receive the parent Customer record as its source")
             .isInstanceOf(Map.class)
             .isEqualTo(Map.of("id", "42"));
@@ -231,7 +234,8 @@ public class DeferBehaviorTest {
             .map(DeferPayload.class::cast)
             .toList();
         assertThat(payloads).hasSize(1);
-        assertThat((Object) payloads.get(0).getData())
+        Object data = payloads.get(0).getData(); // bind to Object to disambiguate assertThat overloads
+        assertThat(data)
             .as("deferred payload must contain the payments sub-tree")
             .isNotNull();
     }

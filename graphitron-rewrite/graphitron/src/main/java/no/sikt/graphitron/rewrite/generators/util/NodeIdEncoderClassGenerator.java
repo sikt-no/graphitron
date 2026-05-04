@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.generators.util;
 
+import no.sikt.graphitron.javapoet.AnnotationSpec;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeName;
@@ -133,8 +134,18 @@ public class NodeIdEncoderClassGenerator {
             .addStatement("return parts")
             .build();
 
+        // The decode helpers route the wire-format String into the column's typed slot via
+        // DataType.convert(Object), which jOOQ deprecated for removal in 3.20.0. The
+        // recommended replacement (Field.getConverter().from) does not accept Object input,
+        // and the only public Object→T coercion path (org.jooq.tools.Convert) is itself
+        // marked for removal. Until jOOQ ships a public successor, suppress here so consumer
+        // builds stay clean; revisit when DataType.convert(Object) is actually removed.
+        var suppressRemoval = AnnotationSpec.builder(SuppressWarnings.class)
+            .addMember("value", "{$S, $S}", "deprecation", "removal")
+            .build();
         var classBuilder = TypeSpec.classBuilder(CLASS_NAME)
             .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
+            .addAnnotation(suppressRemoval)
             .addJavadoc("Relay nodeId encode/decode helpers. Static, non-extendable\n"
                 + "by design — see {@link NodeIdEncoderClassGenerator}.\n")
             .addMethod(privateCtor)

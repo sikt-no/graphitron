@@ -13,7 +13,7 @@ import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -38,7 +38,7 @@ import static org.assertj.core.api.InstanceOfAssertFactories.MAP;
 @ExecutionTier
 class MatchQueryExampleTest {
 
-    static PostgreSQLContainer<?> postgres;
+    static PostgreSQLContainer postgres;
     static DSLContext dsl;
     static GraphQL graphql;
 
@@ -50,7 +50,7 @@ class MatchQueryExampleTest {
                 System.getProperty("test.db.username", "postgres"),
                 System.getProperty("test.db.password", "postgres"));
         } else {
-            postgres = new PostgreSQLContainer<>("postgres:18-alpine").withInitScript("init.sql");
+            postgres = new PostgreSQLContainer("postgres:18-alpine").withInitScript("init.sql");
             postgres.start();
             dsl = DSL.using(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
         }
