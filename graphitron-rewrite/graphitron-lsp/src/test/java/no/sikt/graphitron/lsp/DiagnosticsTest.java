@@ -73,8 +73,7 @@ class DiagnosticsTest {
     }
 
     @Test
-    void sqlColumnNameProducesWarning() {
-        // SQL names are accepted but flagged: the author should use the Java field name.
+    void sqlColumnNameProducesNoDiagnostic() {
         var file = file("""
             type Foo @table(name: "film") {
                 bar: Int @field(name: "title")
@@ -83,9 +82,7 @@ class DiagnosticsTest {
 
         var diags = Diagnostics.compute(file, filmCatalog());
 
-        assertThat(diags).hasSize(1);
-        assertThat(diags.get(0).getSeverity()).isEqualTo(DiagnosticSeverity.Warning);
-        assertThat(diags.get(0).getMessage()).contains("title").contains("TITLE");
+        assertThat(diags).isEmpty();
     }
 
     @Test

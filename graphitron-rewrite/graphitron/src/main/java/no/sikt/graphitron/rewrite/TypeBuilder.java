@@ -561,10 +561,6 @@ class TypeBuilder {
         // when unresolvable (the validator will report the bad column name).
         JooqCatalog.ColumnEntry discriminatorEntry = discriminatorRaw == null ? null
             : ctx.catalog.findColumn(tableOpt.get().tableName(), discriminatorRaw).orElse(null);
-        if (discriminatorEntry != null && !discriminatorRaw.equals(discriminatorEntry.javaName())) {
-            LOGGER.warn("@discriminate(on: '{}') on '{}' resolved via SQL name; prefer Java field name '{}'",
-                discriminatorRaw, name, discriminatorEntry.javaName());
-        }
         String discriminatorColumn = discriminatorEntry != null ? discriminatorEntry.sqlName() : discriminatorRaw;
         return new TableInterfaceType(name, location, discriminatorColumn, tableOpt.get(), List.of());
     }

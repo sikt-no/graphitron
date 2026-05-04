@@ -85,10 +85,6 @@ public final class Diagnostics {
         if (matched.isEmpty()) {
             out.add(diagnostic(file, argValue, DiagnosticSeverity.Error,
                 "Unknown column '" + columnName + "' on table '" + tableName.get() + "'."));
-        } else if (!columnName.equals(matched.get().name())) {
-            out.add(diagnostic(file, argValue, DiagnosticSeverity.Warning,
-                "'" + columnName + "' is a SQL column name; prefer the Java field name '"
-                    + matched.get().name() + "'."));
         }
     }
 
