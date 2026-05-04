@@ -172,6 +172,6 @@ Both entry points only project the fields the client actually selects. The frame
 * xref:../reference/directives/nodeId.adoc[`@nodeId`] marks each encode/decode slot.
 * xref:../reference/directives/reference.adoc[`@reference`] supplies the FK path for cross-type IDs.
 * xref:../reference/directives/lookupKey.adoc[`@lookupKey`] is the dispatch path for `[ID!]`-keyed argument lookups; same-table NodeId arguments imply it.
-* xref:batch-lookups.adoc[How-to: Batch lookups] (Phase 3) covers the broader `@lookupKey` patterns including non-NodeId keys.
+* xref:batch-lookups.adoc[How-to: Batch lookups] covers the broader `@lookupKey` patterns including non-NodeId keys.
 
 xref:index.adoc[← How-to index]

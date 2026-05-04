@@ -8,19 +8,19 @@ This page lists the four how-to recipes most worth reading next, then points at 
 
 == Recipes most relevant after this tutorial
 
-The four recipes below are the ones to read next. All four are authored under R68 Phase 3; until they land, the xref:../how-to/index.adoc[how-to landing] points at substitute material.
+The four topics below are the ones to read next. Three have landed recipes; the fourth (custom conditions) is in flight. The xref:../how-to/index.adoc[how-to landing] lists every available recipe.
 
 Add custom conditions::
-The `active` filter you used on page 3 is the simplest case of an argument-driven `WHERE`. The `@condition` directive lets you wire arbitrary jOOQ predicates onto fields and arguments: `WHERE rental_rate < ?`, `WHERE title ILIKE ?`, conjunctive filters across multiple input fields, override semantics, anything jOOQ can express. This is the most-used directive after `@table` and `@field`.
+The `active` filter you used on page 3 is the simplest case of an argument-driven `WHERE`. The `@condition` directive lets you wire arbitrary jOOQ predicates onto fields and arguments: `WHERE rental_rate < ?`, `WHERE title ILIKE ?`, conjunctive filters across multiple input fields, override semantics, anything jOOQ can express. This is the most-used directive after `@table` and `@field`. Until the dedicated recipe lands, xref:../how-to/condition-cascade.adoc[How-to: Stacking and overriding conditions] covers the cascade and override mechanics.
 
 Pagination and sorting::
-The `customers` query you ran returns all five rows. Real schemas paginate: Graphitron supports both Relay-style cursor pagination (`@asConnection`, `first`/`after`) and dynamic ordering (`@orderBy`, `@order`). The recipe walks through turning a list field into a connection, declaring sort enums, and wiring `@defaultOrder`.
+The `customers` query you ran returns all five rows. Real schemas paginate: Graphitron supports both Relay-style cursor pagination (`@asConnection`, `first`/`after`) and dynamic ordering (`@orderBy`, `@order`). xref:../how-to/connections.adoc[How-to: Cursor-paginated connections] walks through turning a list field into a connection; xref:../how-to/sort-results.adoc[How-to: Sort results] covers tie-breakers, `@defaultOrder`, and keyset semantics.
 
 Error handling::
-The mutations on page 5 happily commit anything that PostgreSQL accepts. Real mutations need to surface validation errors (constraint violations, business-rule failures) as typed GraphQL errors, not opaque exceptions. The `@error` directive and the `Error` interface are how Graphitron makes that ergonomic: every mutation can return either its payload or a typed error, and the generator threads the error channel through to the response.
+The mutations on page 5 happily commit anything that PostgreSQL accepts. Real mutations need to surface validation errors (constraint violations, business-rule failures) as typed GraphQL errors, not opaque exceptions. xref:../how-to/error-channel.adoc[How-to: The errors channel] covers union vs single-type carriers, the cause-chain dispatch loop, and the redact-with-correlation-id fallback.
 
 Test your schema::
-The example module's own tests under `src/test/java/.../querydb/` are the recommended pattern for pinning your schema's behaviour against a real PostgreSQL. The recipe walks through copying that pattern into your own project: how to build a `GraphQL` engine in a JUnit test, how to assert on response shapes (match style and approval style), and how to keep the suite fast despite using a real database.
+The example module's own tests under `src/test/java/.../querydb/` are the recommended pattern for pinning your schema's behaviour against a real PostgreSQL. xref:../how-to/test-your-schema.adoc[How-to: Test your schema] walks through copying that pattern into your own project: how to wire `GraphitronContext` against Testcontainers, how to assert on response shapes, and how to use the `QUERY_COUNT`/`SQL_LOG` listeners to ratchet round-trip counts.
 
 == Where the rest of the manual sits
 
