@@ -210,6 +210,28 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void films_titleLowercase_resolvesViaServiceRecordFieldDataLoader_row1Source() {
+        // R61 L6 sibling: identical wiring to titleUppercase but the developer-side method
+        // takes Set<Row1<Integer>> (Row source-shape) and returns Map<Row1<Integer>, String>.
+        // The classifier routes Row1 sources to MappedRowKeyed (vs MappedRecordKeyed for the
+        // Record1 sibling); the framework's MappedRowKeyed.keyElementType() = Row1<Integer>
+        // matches the developer's declaration. Confirms the field<N>()-based dispatch path
+        // round-trips cleanly through the SQL VALUES table to the database and back, with
+        // value-based Row.equals/hashCode joining the developer's response Map to the
+        // framework's input keys.
+        Map<String, Object> data = execute("{ films { title titleLowercase } }");
+        assertThat(data).extractingByKey("films", as(list(Map.class)))
+            .hasSize(5)
+            .allSatisfy(f -> {
+                var title = (String) f.get("title");
+                var titleLowercase = (String) f.get("titleLowercase");
+                assertThat(titleLowercase)
+                    .as("titleLowercase must equal title.toLowerCase() for film '%s'", title)
+                    .isEqualTo(title.toLowerCase());
+            });
+    }
+
+    @Test
     void films_titleUppercase_resolvesViaServiceRecordFieldDataLoader() {
         // R49 Phase B (R32): @service child field with a scalar return. The generator-emitted
         // rows-method body calls FilmService.titleUppercase via the parameterised

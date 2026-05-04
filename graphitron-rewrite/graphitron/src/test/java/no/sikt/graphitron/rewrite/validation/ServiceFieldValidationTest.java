@@ -201,6 +201,18 @@ class ServiceFieldValidationTest {
             serviceField(new BatchKey.RecordKeyed(FILM_TABLE_COMPOSITE_PK.primaryKeyColumns())),
             List.of()),
 
+        MAPPED_ROW_KEYED_SINGLE_PK(
+            "MappedRowKeyed — Set<Row1<Integer>> source classifies cleanly (R61 dual-shape acceptance)",
+            filmTableType(FILM_TABLE_SINGLE_PK),
+            serviceField(new BatchKey.MappedRowKeyed(FILM_TABLE_SINGLE_PK.primaryKeyColumns())),
+            List.of()),
+
+        MAPPED_RECORD_KEYED_SINGLE_PK(
+            "MappedRecordKeyed — Set<Record1<Integer>> source classifies cleanly (R61 dual-shape acceptance)",
+            filmTableType(FILM_TABLE_SINGLE_PK),
+            serviceField(new BatchKey.MappedRecordKeyed(FILM_TABLE_SINGLE_PK.primaryKeyColumns())),
+            List.of()),
+
         MULTIPLE_SOURCES_ROW_KEYED(
             "two RowKeyed SOURCES params — no errors when parent has PK",
             filmTableType(FILM_TABLE_SINGLE_PK),
