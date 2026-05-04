@@ -33,7 +33,7 @@ class TagApplierTest {
 
         TagApplier.apply(registry, inputs);
 
-        var field = ((ObjectTypeDefinition) registry.getType("Foo").orElseThrow())
+        var field = registry.getTypeOrNull("Foo", ObjectTypeDefinition.class)
             .getFieldDefinitions().getFirst();
         assertThat(tagValue(field)).isEqualTo("enrollment");
     }
@@ -52,7 +52,7 @@ class TagApplierTest {
 
         TagApplier.apply(registry, inputs);
 
-        var field = ((ObjectTypeDefinition) registry.getType("Foo").orElseThrow())
+        var field = registry.getTypeOrNull("Foo", ObjectTypeDefinition.class)
             .getFieldDefinitions().getFirst();
         assertThat(field.getDirectives()).hasSize(1);
         assertThat(tagValue(field)).isEqualTo("explicit");
@@ -69,7 +69,7 @@ class TagApplierTest {
 
         TagApplier.apply(registry, inputs);
 
-        var field = ((ObjectTypeDefinition) registry.getType("Foo").orElseThrow())
+        var field = registry.getTypeOrNull("Foo", ObjectTypeDefinition.class)
             .getFieldDefinitions().getFirst();
         assertThat(field.getDirectives()).isEmpty();
     }
@@ -85,7 +85,7 @@ class TagApplierTest {
 
         TagApplier.apply(registry, inputs);
 
-        var field = ((InputObjectTypeDefinition) registry.getType("FooInput").orElseThrow())
+        var field = registry.getTypeOrNull("FooInput", InputObjectTypeDefinition.class)
             .getInputValueDefinitions().getFirst();
         assertThat(tagValue(field)).isEqualTo("x");
     }
@@ -101,7 +101,7 @@ class TagApplierTest {
 
         TagApplier.apply(registry, inputs);
 
-        var values = ((EnumTypeDefinition) registry.getType("Color").orElseThrow())
+        var values = registry.getTypeOrNull("Color", EnumTypeDefinition.class)
             .getEnumValueDefinitions();
         assertThat(tagValue(values.getFirst())).isEqualTo("x");
         assertThat(tagValue(values.get(1))).isEqualTo("x");
@@ -118,7 +118,7 @@ class TagApplierTest {
 
         TagApplier.apply(registry, inputs);
 
-        var field = ((ObjectTypeDefinition) registry.getType("Foo").orElseThrow())
+        var field = registry.getTypeOrNull("Foo", ObjectTypeDefinition.class)
             .getFieldDefinitions().getFirst();
         var arg = field.getInputValueDefinitions().getFirst();
         assertThat(tagValue(arg)).isEqualTo("x");
@@ -139,7 +139,7 @@ class TagApplierTest {
 
         TagApplier.apply(registry, inputs);
 
-        var union = (UnionTypeDefinition) registry.getType("AB").orElseThrow();
+        var union = registry.getTypeOrNull("AB", UnionTypeDefinition.class);
         assertThat(tagValue(union)).isEqualTo("ab-tag");
     }
 
@@ -154,7 +154,7 @@ class TagApplierTest {
 
         TagApplier.apply(registry, inputs);
 
-        var field = ((InterfaceTypeDefinition) registry.getType("Named").orElseThrow())
+        var field = registry.getTypeOrNull("Named", InterfaceTypeDefinition.class)
             .getFieldDefinitions().getFirst();
         assertThat(tagValue(field)).isEqualTo("iface-tag");
     }
@@ -175,10 +175,10 @@ class TagApplierTest {
 
         TagApplier.apply(registry, inputs);
 
-        assertThat((java.util.List<?>) registry.getType("Foo").orElseThrow().getDirectives()).isEmpty();
-        assertThat((java.util.List<?>) registry.getType("Bar").orElseThrow().getDirectives()).isEmpty();
-        assertThat((java.util.List<?>) registry.getType("Baz").orElseThrow().getDirectives()).isEmpty();
-        assertThat((java.util.List<?>) registry.getType("Qux").orElseThrow().getDirectives()).isEmpty();
+        assertThat((java.util.List<?>) registry.getTypeOrNull("Foo").getDirectives()).isEmpty();
+        assertThat((java.util.List<?>) registry.getTypeOrNull("Bar").getDirectives()).isEmpty();
+        assertThat((java.util.List<?>) registry.getTypeOrNull("Baz").getDirectives()).isEmpty();
+        assertThat((java.util.List<?>) registry.getTypeOrNull("Qux").getDirectives()).isEmpty();
     }
 
     @Test
@@ -248,7 +248,7 @@ class TagApplierTest {
         TagApplier.apply(registry, inputs);
 
         // Base field is untouched (untagged source).
-        var base = (ObjectTypeDefinition) registry.getType("Foo").orElseThrow();
+        var base = registry.getTypeOrNull("Foo", ObjectTypeDefinition.class);
         assertThat(base.getFieldDefinitions().getFirst().getDirectives()).isEmpty();
 
         // Extension's new field carries the tag, and the extension is still in
@@ -273,7 +273,7 @@ class TagApplierTest {
 
         TagApplier.apply(registry, inputs);
 
-        var base = (InterfaceTypeDefinition) registry.getType("Named").orElseThrow();
+        var base = registry.getTypeOrNull("Named", InterfaceTypeDefinition.class);
         assertThat(base.getFieldDefinitions().getFirst().getDirectives()).isEmpty();
 
         var extensions = registry.interfaceTypeExtensions().get("Named");
@@ -296,7 +296,7 @@ class TagApplierTest {
 
         TagApplier.apply(registry, inputs);
 
-        var base = (InputObjectTypeDefinition) registry.getType("FooInput").orElseThrow();
+        var base = registry.getTypeOrNull("FooInput", InputObjectTypeDefinition.class);
         assertThat(base.getInputValueDefinitions().getFirst().getDirectives()).isEmpty();
 
         var extensions = registry.inputObjectTypeExtensions().get("FooInput");
@@ -319,7 +319,7 @@ class TagApplierTest {
 
         TagApplier.apply(registry, inputs);
 
-        var base = (EnumTypeDefinition) registry.getType("Color").orElseThrow();
+        var base = registry.getTypeOrNull("Color", EnumTypeDefinition.class);
         assertThat(base.getEnumValueDefinitions().getFirst().getDirectives()).isEmpty();
 
         var extensions = registry.enumTypeExtensions().get("Color");
@@ -353,7 +353,7 @@ class TagApplierTest {
 
         TagApplier.apply(registry, inputs);
 
-        var base = (UnionTypeDefinition) registry.getType("AB").orElseThrow();
+        var base = registry.getTypeOrNull("AB", UnionTypeDefinition.class);
         assertThat(base.getDirectives()).isEmpty();
 
         var extensions = registry.unionTypeExtensions().get("AB");
@@ -373,7 +373,7 @@ class TagApplierTest {
 
         TagApplier.apply(registry, inputs);
 
-        var field = ((ObjectTypeDefinition) registry.getType("Foo").orElseThrow())
+        var field = registry.getTypeOrNull("Foo", ObjectTypeDefinition.class)
             .getFieldDefinitions().getFirst();
         assertThat(tagValue(field)).isEqualTo(tricky);
     }
