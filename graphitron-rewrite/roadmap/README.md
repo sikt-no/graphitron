@@ -14,6 +14,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Plan |
 |---|---|---|---|
+| `R77` | Bulk DML mutations: listed @table input arguments | Spec | [plan](bulk-dml-mutations.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
 | `R15` | Sweep doc drift between rewrite docs and `model/` taxonomy <sub>blocked by: [docs-site-asciidoc](docs-site-asciidoc.md)</sub> | Spec | [plan](fix-legacy-refs-in-rewrite-docs.md) |
 | `R3` | Classification vocabulary follow-ups | Spec | [plan](classification-vocabulary-followups.md) |
@@ -37,7 +38,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 ### Architecture
 
-- `R77` [**Bulk DML mutations: listed @table input arguments**](bulk-dml-mutations.md): R22 shipped single-row INSERT / UPDATE / DELETE / UPSERT and explicitly carved out listed `@table` input arguments (`in: [FilmInput!]!`) as *Out of scope and tracked separately*; the rejection at [`MutationInputResolver.java:250-255`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/MutationInputResolver.java) points authors at this roadmap gap. This item lifts the restriction across all four DML verbs so a single mutation invocation can write N rows in one statement, in scope: INSERT, UPDATE, UPSERT, DELETE.
 - `R56` [**Extract `ConnectionPromoter` from `GraphitronSchemaBuilder`**](extract-connection-promoter.md): `GraphitronSchemaBuilder.java` (622 lines) is mostly orchestration glue, but it bundles ~150 lines of one cohesive sub-concern: turning `@asConnection` carrier fields into proper Connection-typed fields and synthesising the supporting Connection / Edge / PageInfo types. The pieces are spread across `promoteConnectionTypes`, `rewriteCarrierField`, `buildSynthesisedPageInfo`, `resolveDefaultFirstValue`, `resolveConnectionName`, plus the small `baseTypeName` / `capitalize` helpers. Lifting this into a `ConnectionPromoter` class gives the concern its own file and its own focused test surface (today's coverage is shaped around the schema-build pipeline, not the promotion logic). This is a smaller-scale instance of R6's "state 2" pattern (a cohesive concern factored as private methods rather than its own type), filed separately because the motivation here is testability and scope clarity, not the cross-arm duplication that drives R6. Not blocking anything; pick up if and when someone is in `GraphitronSchemaBuilder` for an unrelated reason.
 - `R78` [**Typed jOOQ class references for multi-schema correctness (TableRef, KeyRef)**](jooq-multi-schema-typed-references.md): Generated code does not compile against multi-schema jOOQ codegen. Imports are emitted as `<jooqPackage>.tables.X` and `<jooqPackage>.tables.records.XRecord`, with `Tables.X` and `Keys.<FK>` referenced from `<jooqPackage>.Tables` / `<jooqPackage>.Keys`. In a multi-schema layout jOOQ generates one package per schema, so the correct fully-qualified names carry a schema segment (e.g. `<jooqPackage>.<schemaName>.tables.X`). Single-schema setups using the PostgreSQL `public` default, including all in-tree fixtures, happen to flatten and mask the bug; consumer projects with multiple schemas cannot compile the generated output.
 - `R5` [**Composite-key `@lookupKey` on list-of-input-object arguments**](composite-key-lookupkey.md): Add `ArgumentRef.CompositeLookupArg` carrying `(input-field-name, target-column)` pairs resolved from `@field(name:)` directives; `buildInputRowsMethod` already handles arbitrary-arity VALUES + JOIN.
@@ -113,7 +113,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### mutations-errors
 
-- `R77` [**Bulk DML mutations: listed @table input arguments**](bulk-dml-mutations.md) — Backlog, architecture
+- `R77` [**Bulk DML mutations: listed @table input arguments**](bulk-dml-mutations.md) — Spec, architecture
 - `R12` [**Error-handling parity: emit per-fetcher error channels from `@error`**](error-handling-parity.md) — Ready, architecture
 - `R75` [**Synthesize payload carrier for canonical data+errors shapes**](synthesize-payload-carrier.md) — Backlog, architecture, blocked by [error-handling-parity](error-handling-parity.md)
 - `R63` [**Type UPSERT dialect requirement on the model**](dml-dialect-requirement-on-model.md) — Spec, architecture
