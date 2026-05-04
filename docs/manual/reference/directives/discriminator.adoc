@@ -58,6 +58,6 @@ Each implementer also carries `@table(name: "content")` (the same table as the i
 
 * xref:discriminate.adoc[`@discriminate`] is the interface-side counterpart that names the column.
 * xref:table.adoc[`@table`] establishes the shared table.
-* xref:../../how-to/polymorphism.adoc[How-to: Polymorphism] (Phase 3) covers single-table vs multi-table layouts and discriminator-value pitfalls.
+* xref:../../how-to/polymorphic-types.adoc[How-to: Polymorphic types] (Phase 3) covers single-table vs multi-table layouts and discriminator-value pitfalls.
 
 xref:../index.adoc[← Reference index]

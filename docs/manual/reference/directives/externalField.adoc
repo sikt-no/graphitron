@@ -84,7 +84,7 @@ type FilmCardWrapper @record(record: {className: "com.example.services.FilmCardD
 * `method:` is optional. When omitted, the rewrite uses the GraphQL field name as the static-method name. Set `method:` only when the two diverge.
 * `argMapping:` on the `reference` is structurally inert and rejected at parse time. `@externalField` consumes no GraphQL-argument-bound parameters.
 * The static method must return `Field<T>` where `T` matches the GraphQL scalar, or one of the lift forms (`Field<TableRecord<?>>`, `Field<CustomJavaRecord>`) when the field's GraphQL type is an xref:record.adoc[`@record`].
-* The class must be discoverable as an `externalReferenceImports` entry in the Maven plugin's POM configuration. Reflection failures surface as `external field reference could not be resolved — <reflection error>`.
+* `className:` must be a fully-qualified class name reachable on the rewrite Maven plugin's classpath (declare the carrying artifact under `<dependencies>` of the plugin's `<plugin>` block). Reflection failures surface as `external field reference could not be resolved — <reflection error>`.
 * Combining `@externalField` with a `@reference` path (the condition-join lift form) is not yet supported, the build rejects this with a deferred-validation error pointing at the `computed-field-with-reference.md` roadmap item.
 
 == See also
@@ -92,6 +92,6 @@ type FilmCardWrapper @record(record: {className: "com.example.services.FilmCardD
 * xref:reference.adoc[`@reference`] is the FK-driven counterpart, choose it when the value comes from a chain of catalog joins, choose `@externalField` when the value is a custom expression or a typed lift.
 * xref:record.adoc[`@record`] is the natural target type for `Field<TableRecord<?>>` and `Field<CustomJavaRecord>` lift forms.
 * xref:field.adoc[`@field(name: ...)`] disambiguates the GraphQL-field-vs-SQL-column alias when names collide.
-* xref:../../how-to/external-code.adoc[How-to: Wiring external Java code] (Phase 3) covers the `externalReferenceImports` Maven configuration, method-name conventions, and the lift-into-typed-record patterns.
+* xref:../../how-to/external-code.adoc[How-to: Wiring external Java code] (Phase 3) covers the rewrite plugin's classpath setup, method-name conventions, and the lift-into-typed-record patterns.
 
 xref:../index.adoc[← Reference index]
