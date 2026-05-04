@@ -320,7 +320,7 @@ then follow the six pages to a working query. No rewrite of legacy
 content yet; the tutorial is new prose because the legacy README has
 nothing tutorial-shaped to lift.
 
-### Phase 2: Reference (directives) absorbs the legacy README
+### Phase 2: Reference (directives) absorbs the legacy README — shipped at `8f7d412`
 
 Port every legacy README directive section into `/docs/manual/reference/
 directives/<name>.adoc`, one file per directive. Each page has a fixed
