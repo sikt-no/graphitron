@@ -94,8 +94,8 @@ public final class MultiTablePolymorphicEmitter {
             String fieldName,
             List<ParticipantRef> participants,
             boolean isList,
-            String outputPackage, String jooqPackage) {
-        return emitMethods(fieldName, participants, Map.of(), isList, outputPackage, jooqPackage);
+            String outputPackage) {
+        return emitMethods(fieldName, participants, Map.of(), isList, outputPackage);
     }
 
     /**
@@ -114,17 +114,17 @@ public final class MultiTablePolymorphicEmitter {
             List<ParticipantRef> participants,
             Map<String, List<JoinStep>> participantJoinPaths,
             boolean isList,
-            String outputPackage, String jooqPackage) {
+            String outputPackage) {
         var tableBoundParticipants = participants.stream()
             .filter(p -> p instanceof ParticipantRef.TableBound)
             .map(p -> (ParticipantRef.TableBound) p)
             .toList();
         var methods = new ArrayList<MethodSpec>();
         methods.add(buildMainFetcher(fieldName, tableBoundParticipants,
-            participantJoinPaths, isList, outputPackage, jooqPackage));
+            participantJoinPaths, isList, outputPackage));
         for (var participant : tableBoundParticipants) {
             methods.add(buildPerTypenameSelect(fieldName, participant, false,
-                outputPackage, jooqPackage));
+                outputPackage));
         }
         return methods;
     }
@@ -177,7 +177,7 @@ public final class MultiTablePolymorphicEmitter {
             Map<String, List<JoinStep>> participantJoinPaths,
             int defaultPageSize,
             TableRef parentTable,
-            String outputPackage, String jooqPackage) {
+            String outputPackage) {
         var tableBoundParticipants = participants.stream()
             .filter(p -> p instanceof ParticipantRef.TableBound)
             .map(p -> (ParticipantRef.TableBound) p)
@@ -187,16 +187,16 @@ public final class MultiTablePolymorphicEmitter {
         // emit a non-throwing empty payload when participants is empty.
         if (parentTable != null && !tableBoundParticipants.isEmpty()) {
             methods.add(buildBatchedConnectionFetcher(fieldName, parentTable,
-                outputPackage, jooqPackage));
+                outputPackage));
             methods.add(buildBatchedConnectionRowsMethod(fieldName, tableBoundParticipants,
-                participantJoinPaths, defaultPageSize, parentTable, outputPackage, jooqPackage));
+                participantJoinPaths, defaultPageSize, parentTable, outputPackage));
         } else {
             methods.add(buildRootConnectionFetcher(fieldName, tableBoundParticipants,
-                defaultPageSize, outputPackage, jooqPackage));
+                defaultPageSize, outputPackage));
         }
         for (var participant : tableBoundParticipants) {
             methods.add(buildPerTypenameSelect(fieldName, participant, true,
-                outputPackage, jooqPackage));
+                outputPackage));
         }
         return methods;
     }
@@ -216,7 +216,7 @@ public final class MultiTablePolymorphicEmitter {
     private static MethodSpec buildMainFetcher(
             String fieldName, List<ParticipantRef.TableBound> participants,
             Map<String, List<JoinStep>> participantJoinPaths,
-            boolean isList, String outputPackage, String jooqPackage) {
+            boolean isList, String outputPackage) {
 
         // Return shape: List<Record> for both list and single cardinality. Per-branch
         // typed Records project different field shapes; graphql-java traverses the
@@ -255,7 +255,7 @@ public final class MultiTablePolymorphicEmitter {
 
         // Stage 1: narrow UNION ALL of (typename, pk0..pkN, sort) per branch. For the child
         // fetcher form, each branch carries a parent-FK WHERE predicate.
-        builder.addCode(buildStage1Block(participants, participantJoinPaths, jooqPackage));
+        builder.addCode(buildStage1Block(participants, participantJoinPaths));
 
         // Stage 1.5: group stage-1 rows by __typename into (idx, pks) bindings.
         int pkArity = participants.get(0).table().primaryKeyColumns().size();
@@ -327,7 +327,7 @@ public final class MultiTablePolymorphicEmitter {
      */
     private static MethodSpec buildRootConnectionFetcher(
             String fieldName, List<ParticipantRef.TableBound> participants,
-            int defaultPageSize, String outputPackage, String jooqPackage) {
+            int defaultPageSize, String outputPackage) {
 
         var connectionResultClass = ClassName.get(outputPackage + ".util",
             no.sikt.graphitron.rewrite.generators.util.ConnectionResultClassGenerator.CLASS_NAME);
@@ -408,7 +408,7 @@ public final class MultiTablePolymorphicEmitter {
             pageRequestClass, connectionHelperClass, defaultPageSize, LIST);
 
         // Stage 1: UNION ALL of branches as derived table; outer SELECT applies .orderBy/.seek/.limit.
-        builder.addCode(buildStage1ConnectionBlock(participants, jooqPackage));
+        builder.addCode(buildStage1ConnectionBlock(participants));
 
         // Stage 1.5: group stage-1 rows by __typename into (idx, pks) bindings. Reads all
         // {@code __pk0__..__pkN__} columns per row so the per-typename helper has the full PK
@@ -473,15 +473,13 @@ public final class MultiTablePolymorphicEmitter {
      * connections have no parent restriction.
      */
     private static CodeBlock buildStage1ConnectionBlock(
-            List<ParticipantRef.TableBound> participants,
-            String jooqPackage) {
+            List<ParticipantRef.TableBound> participants) {
         var b = CodeBlock.builder();
-        var tablesClass = ClassName.get(jooqPackage, "Tables");
 
         for (var participant : participants) {
             var jooqTableClass = participant.table().tableClass();
             String alias = "stage1_" + participant.typeName();
-            b.addStatement("$T $L = $T.$L", jooqTableClass, alias, tablesClass, participant.table().javaFieldName());
+            b.addStatement("$T $L = $T.$L", jooqTableClass, alias, participant.table().constantsClass(), participant.table().javaFieldName());
         }
 
         var tableWildcard = ParameterizedTypeName.get(TABLE, WildcardTypeName.subtypeOf(Object.class));
@@ -540,16 +538,15 @@ public final class MultiTablePolymorphicEmitter {
      * uniform Record-iterable shape that the dispatch loop can consume without raw types.
      */
     private static CodeBlock buildStage1Block(List<ParticipantRef.TableBound> participants,
-            Map<String, List<JoinStep>> participantJoinPaths, String jooqPackage) {
+            Map<String, List<JoinStep>> participantJoinPaths) {
         var b = CodeBlock.builder();
-        var tablesClass = ClassName.get(jooqPackage, "Tables");
 
         // Declare per-participant table aliases for stage 1. Stage-1 aliases are distinct from
         // any stage-2 locals (the stage-2 helpers declare their own t inside their method body).
         for (var participant : participants) {
             var jooqTableClass = participant.table().tableClass();
             String alias = "stage1_" + participant.typeName();
-            b.addStatement("$T $L = $T.$L", jooqTableClass, alias, tablesClass, participant.table().javaFieldName());
+            b.addStatement("$T $L = $T.$L", jooqTableClass, alias, participant.table().constantsClass(), participant.table().javaFieldName());
         }
 
         var resultBound = ParameterizedTypeName.get(RESULT,
@@ -656,7 +653,7 @@ public final class MultiTablePolymorphicEmitter {
      */
     private static MethodSpec buildBatchedConnectionFetcher(
             String fieldName, TableRef parentTable,
-            String outputPackage, String jooqPackage) {
+            String outputPackage) {
 
         var connectionResultClass = ClassName.get(outputPackage + ".util",
             no.sikt.graphitron.rewrite.generators.util.ConnectionResultClassGenerator.CLASS_NAME);
@@ -695,8 +692,6 @@ public final class MultiTablePolymorphicEmitter {
             .add("}")
             .build();
 
-        var tablesClass = ClassName.get(jooqPackage, "Tables");
-
         var builder = MethodSpec.methodBuilder(fieldName)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(asyncResultType(valueType))
@@ -720,7 +715,7 @@ public final class MultiTablePolymorphicEmitter {
         for (int i = 0; i < parentKeyArity; i++) {
             ColumnRef pk = pkCols.get(i);
             builder.addStatement("$T fk$L = (($T) env.getSource()).get($T.$L.$L)",
-                parentPkClasses[i], i, RECORD, tablesClass, parentTable.javaFieldName(), pk.javaName());
+                parentPkClasses[i], i, RECORD, parentTable.constantsClass(), parentTable.javaFieldName(), pk.javaName());
             if (i > 0) keyArgs.add(", ");
             keyArgs.add("fk$L", i);
         }
@@ -781,7 +776,7 @@ public final class MultiTablePolymorphicEmitter {
             String fieldName, List<ParticipantRef.TableBound> participants,
             Map<String, List<JoinStep>> participantJoinPaths,
             int defaultPageSize, TableRef parentTable,
-            String outputPackage, String jooqPackage) {
+            String outputPackage) {
 
         var connectionResultClass = ClassName.get(outputPackage + ".util",
             no.sikt.graphitron.rewrite.generators.util.ConnectionResultClassGenerator.CLASS_NAME);
@@ -820,11 +815,10 @@ public final class MultiTablePolymorphicEmitter {
         b.addStatement("$T dsl = graphitronContext(env).getDslContext(env)", DSL_CONTEXT);
 
         // Per-participant table aliases for stage 1.
-        var tablesClass = ClassName.get(jooqPackage, "Tables");
         for (var participant : participants) {
             var jooqTableClass = participant.table().tableClass();
             String alias = "stage1_" + participant.typeName();
-            b.addStatement("$T $L = $T.$L", jooqTableClass, alias, tablesClass, participant.table().javaFieldName());
+            b.addStatement("$T $L = $T.$L", jooqTableClass, alias, participant.table().constantsClass(), participant.table().javaFieldName());
         }
 
         // VALUES (idx, parent_pk0, ..., parent_pkN-1) → typed Row<N+1><Integer, T1...Tn>.
@@ -1065,10 +1059,9 @@ public final class MultiTablePolymorphicEmitter {
     private static MethodSpec buildPerTypenameSelect(
             String fieldName, ParticipantRef.TableBound participant,
             boolean includeSortKey,
-            String outputPackage, String jooqPackage) {
+            String outputPackage) {
         var jooqTableClass = participant.table().tableClass();
         var typeClass = ClassName.get(outputPackage + ".types", participant.typeName());
-        var tablesClass = ClassName.get(jooqPackage, "Tables");
 
         var listOfBindings = ParameterizedTypeName.get(LIST, ArrayTypeName.of(ClassName.get(Object.class)));
         String tableLocal = "t";
@@ -1078,7 +1071,7 @@ public final class MultiTablePolymorphicEmitter {
 
         var b = CodeBlock.builder();
         b.addStatement("if (bindings.isEmpty()) return");
-        b.addStatement("$T $L = $T.$L", jooqTableClass, tableLocal, tablesClass, participant.table().javaFieldName());
+        b.addStatement("$T $L = $T.$L", jooqTableClass, tableLocal, participant.table().constantsClass(), participant.table().javaFieldName());
 
         // Typed Row<N+1>[] declaration delegated to ValuesJoinRowBuilder. The for-loop body
         // unpacks the dispatcher's (idx, pks) binding tuple into row cells.

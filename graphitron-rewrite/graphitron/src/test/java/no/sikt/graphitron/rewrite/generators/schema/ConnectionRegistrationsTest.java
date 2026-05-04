@@ -64,7 +64,7 @@ class ConnectionRegistrationsTest {
     private static String bodyFor(String sdl, String connectionTypeName) {
         GraphitronSchema schema = TestSchemaHelper.buildSchema(sdl);
         Map<String, CodeBlock> bodies = FetcherRegistrationsEmitter.emit(
-            schema, DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            schema, DEFAULT_OUTPUT_PACKAGE);
         var block = bodies.get(connectionTypeName);
         if (block == null) {
             throw new AssertionError("no registration body for connection type '"
