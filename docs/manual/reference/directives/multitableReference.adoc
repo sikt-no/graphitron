@@ -1,0 +1,73 @@
+= @multitableReference
+:description: Declare per-implementation join paths for fields that return a union or interface.
+:!toc:
+
+Declares a separate `@reference`-shaped path for each implementation of a multitable union or interface field. Used when a single field returns rows drawn from more than one table and a single FK path therefore cannot describe the join.
+
+[NOTE]
+====
+The rewrite generator currently *stubs* `@multitableReference` on record-based outputs: the directive is recognised and the field validator emits `Field 'X.y': @multitableReference is not supported in record-based output` plus a stub fetcher for now. The legacy generator implements it fully; if you need it today, stay on the legacy `graphitron-codegen-parent` modules. Tracking item: `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java`.
+====
+
+== SDL signature
+
+[source,graphql]
+----
+directive @multitableReference(
+    routes: [ReferencesForType!]
+) on FIELD_DEFINITION
+
+input ReferencesForType {
+    typeName: String!
+    path: [ReferenceElement!]!
+}
+----
+
+== Parameters
+
+[cols="1,1,1,3",options="header"]
+|===
+| Name | Type | Default | Description
+| `routes` | `[ReferencesForType!]` | inferred when unambiguous | One route per implementation type. Each route names the GraphQL type and lists the `ReferenceElement` hops from the parent table to that implementation's table.
+|===
+
+`ReferencesForType` fields:
+
+[cols="1,1,1,3",options="header"]
+|===
+| Name | Type | Default | Description
+| `typeName` | `String!` | (required) | Name of the GraphQL implementation type. Case-sensitive.
+| `path` | `[ReferenceElement!]!` | (required) | Ordered list of hops from the parent table to the implementation type's table. Same shape as xref:reference.adoc[`@reference`'s `path`].
+|===
+
+== Canonical example
+
+(Legacy README example, from a fixture-shaped Sakila variant. The rewrite stubs this until the tracked work lands.)
+
+[source,graphql]
+----
+type Payment @table {
+    staffAndCustomers: [PersonWithEmail] @splitQuery @multitableReference(routes: [
+        {typeName: "Staff", path: [{key: "PAYMENT__PAYMENT_STAFF_ID_FKEY"}]},
+        {typeName: "Customer", path: [{table: "CUSTOMER"}]}
+    ])
+}
+----
+
+`PersonWithEmail` is a union (or an interface) implemented by `Staff` and `Customer`, each backed by a different table. The two `routes` describe how to reach each: `Staff` via the FK constraint, `Customer` via an inferred FK on the `customer` table.
+
+== Constraints
+
+* Cannot be combined with `@reference` on the same field. The two are mutually exclusive: pick one based on whether the target is a single concrete type or a multitable union/interface.
+* The field's return type must be a union or an interface with multiple `@table`-backed implementations.
+* `routes` is optional; the generator attempts to infer FK paths for omitted implementations. Implementations whose FK is ambiguous still need an explicit route.
+* Each `path` element follows the same rules as xref:reference.adoc[`@reference`]: `key` for FK constraint name (required when ambiguous), `table` for jOOQ table identifier, `condition` for an external join condition.
+* Currently rejected on record-based output in the rewrite (see the note above). Targeting the legacy generator avoids the stub.
+
+== See also
+
+* xref:reference.adoc[`@reference`] for the single-table variant.
+* xref:../../how-to/polymorphic-types.adoc[How-to: Polymorphic types] (Phase 3) covers union and interface patterns end-to-end.
+* xref:discriminate.adoc[`@discriminate`] and xref:discriminator.adoc[`@discriminator`] for type-resolution on the multitable side.
+
+xref:../index.adoc[← Reference index]
