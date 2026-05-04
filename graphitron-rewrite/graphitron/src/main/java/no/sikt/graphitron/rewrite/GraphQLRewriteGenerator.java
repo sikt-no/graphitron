@@ -153,8 +153,8 @@ public class GraphQLRewriteGenerator {
         Set<Path> emittedThisRun = new LinkedHashSet<>();
         write(GraphitronValuesClassGenerator.generate(),                                          "util",       emittedThisRun);
         write(ColumnFetcherClassGenerator.generate(),                                             "util",       emittedThisRun);
-        write(NodeIdEncoderClassGenerator.generate(schema, jooqPackage),                          "util",       emittedThisRun);
-        write(EntityFetcherDispatchClassGenerator.generate(schema, outputPackage, jooqPackage),   "util",       emittedThisRun);
+        write(NodeIdEncoderClassGenerator.generate(schema),                                       "util",       emittedThisRun);
+        write(EntityFetcherDispatchClassGenerator.generate(schema, outputPackage),                "util",       emittedThisRun);
         write(ConnectionResultClassGenerator.generate(outputPackage),                             "util",       emittedThisRun);
         write(ConnectionHelperClassGenerator.generate(outputPackage),                             "util",       emittedThisRun);
         write(OrderByResultClassGenerator.generate(),                                             "util",       emittedThisRun);
@@ -171,7 +171,7 @@ public class GraphQLRewriteGenerator {
         write(TypeConditionsGenerator.generate(schema, outputPackage, jooqPackage),               "conditions", emittedThisRun);
         write(QueryConditionsGenerator.generate(schema, outputPackage, jooqPackage),             "conditions", emittedThisRun);
         write(fetcherClasses,                                                                      "fetchers",   emittedThisRun);
-        write(QueryNodeFetcherClassGenerator.generate(schema, outputPackage, jooqPackage),         "fetchers",   emittedThisRun);
+        write(QueryNodeFetcherClassGenerator.generate(schema, outputPackage),                      "fetchers",   emittedThisRun);
         sweepOrphans(emittedThisRun);
     }
 

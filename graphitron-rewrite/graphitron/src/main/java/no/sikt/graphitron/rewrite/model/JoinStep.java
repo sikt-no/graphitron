@@ -86,9 +86,10 @@ public sealed interface JoinStep permits JoinStep.FkJoin, JoinStep.ConditionJoin
      * cardinality invariant). All fields are pre-resolved at build time from the jOOQ catalog.
      *
      * <p>{@code fkName} is the SQL constraint name (e.g. {@code "film_language_id_fkey"}), retained
-     * for error messages and debugging. {@code fkJavaConstant} is the Java constant name in the
-     * generated {@code Keys} class (e.g. {@code "FK_FILM__FILM_LANGUAGE_ID_FKEY"}); it may be
-     * empty when the jOOQ catalog is not available (unit tests).
+     * for error messages and debugging. {@code fk} is the resolved {@link ForeignKeyRef} carrying
+     * the schema-correct {@code Keys} class plus the Java constant name; it is {@code null} when
+     * the jOOQ catalog is not available (unit tests). Emitters consume it as
+     * {@code .onKey($T.$L)} with {@code fk.keysClass()} / {@code fk.constantName()}.
      *
      * <p>{@code sourceColumns} resolves to the columns <em>holding</em> the FK (e.g.
      * {@code film.language_id}); {@code targetTable} / {@code targetColumns} resolve to the
@@ -121,7 +122,7 @@ public sealed interface JoinStep permits JoinStep.FkJoin, JoinStep.ConditionJoin
      */
     record FkJoin(
         String fkName,
-        String fkJavaConstant,
+        ForeignKeyRef fk,
         TableRef originTable,
         List<ColumnRef> sourceColumns,
         TableRef targetTable,

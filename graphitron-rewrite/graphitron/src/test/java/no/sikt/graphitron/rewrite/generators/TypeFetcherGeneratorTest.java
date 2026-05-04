@@ -259,7 +259,7 @@ class TypeFetcherGeneratorTest {
         return new ChildField.SplitTableField(parentType, name, null,
             tableBoundFilm(nonNullList()),
             List.of(new no.sikt.graphitron.rewrite.model.JoinStep.FkJoin(
-                "film_language_id_fkey", "", LANGUAGE_TABLE, List.of(),
+                "film_language_id_fkey", null, LANGUAGE_TABLE, List.of(),
                 FILM_TABLE, List.of(), null, name + "_0")),
             List.of(), new OrderBySpec.None(), null,
             new BatchKey.RowKeyed(List.of(languageIdCol())));
@@ -1129,7 +1129,7 @@ class TypeFetcherGeneratorTest {
         // Fixture: parent (Language) holds the FK → child (Film) PK.
         // FkJoin: source=Film(language_id), target=Language(language_id).
         List<JoinStep> joinPath = List.of(new JoinStep.FkJoin(
-            "film_language_id_fkey", "", LANGUAGE_TABLE,
+            "film_language_id_fkey", null, LANGUAGE_TABLE,
             List.of(languageIdCol()), FILM_TABLE, List.of(languageIdCol()), null, name + "_0"));
         return new ChildField.TableInterfaceField("Language", name, null, returnType,
             "FILM_TYPE", List.of("FILM", "SHORT"), List.of(),
@@ -1176,7 +1176,7 @@ class TypeFetcherGeneratorTest {
     void tableInterfaceField_emptyKnownValues_noInFilter() {
         var returnType = tableBoundFilm(nonNullList());
         List<JoinStep> joinPath = List.of(new JoinStep.FkJoin(
-            "film_language_id_fkey", "", LANGUAGE_TABLE,
+            "film_language_id_fkey", null, LANGUAGE_TABLE,
             List.of(languageIdCol()), FILM_TABLE, List.of(languageIdCol()), null, "content_0"));
         var field = new ChildField.TableInterfaceField("Language", "content", null, returnType,
             "FILM_TYPE", List.of(), List.of(), joinPath, List.of(), new OrderBySpec.None(), null);
@@ -1203,7 +1203,7 @@ class TypeFetcherGeneratorTest {
     void tableInterfaceField_participants_emitFieldsCalls() {
         var returnType = tableBoundFilm(nonNullList());
         List<JoinStep> joinPath = List.of(new JoinStep.FkJoin(
-            "film_language_id_fkey", "", LANGUAGE_TABLE,
+            "film_language_id_fkey", null, LANGUAGE_TABLE,
             List.of(languageIdCol()), FILM_TABLE, List.of(languageIdCol()), null, "content_0"));
         var participants = List.<ParticipantRef>of(
             new ParticipantRef.TableBound("FilmContent", filmTable(), "FILM"),
@@ -1228,7 +1228,7 @@ class TypeFetcherGeneratorTest {
     private static ParticipantRef.TableBound.CrossTableField filmContentRatingCrossTable() {
         var ratingCol = new ColumnRef("rating", "RATING", "java.lang.String");
         var contentToFilmFk = new JoinStep.FkJoin(
-            "content_film_id_fkey", "", joinTarget("content"),
+            "content_film_id_fkey", null, joinTarget("content"),
             List.of(filmIdCol()),       // FK on content (sourceColumns)
             filmTableWithPk(),          // film (targetTable)
             List.of(filmIdCol()),       // film.film_id (targetColumns)
@@ -1319,7 +1319,7 @@ class TypeFetcherGeneratorTest {
         // emission applies at the child site too.
         var returnType = tableBoundFilm(nonNullList());
         List<JoinStep> joinPath = List.of(new JoinStep.FkJoin(
-            "film_language_id_fkey", "", LANGUAGE_TABLE,
+            "film_language_id_fkey", null, LANGUAGE_TABLE,
             List.of(languageIdCol()), FILM_TABLE, List.of(languageIdCol()), null, "content_0"));
         var participants = List.<ParticipantRef>of(
             new ParticipantRef.TableBound("FilmContent", filmTable(), "FILM",
@@ -1892,10 +1892,10 @@ class TypeFetcherGeneratorTest {
         var actorTable = TestFixtures.tableRef("actor", "ACTOR", "Actor",
             List.of(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer")));
         // FK direction: film_actor (source/FK holder) → film (target/PK side) and similarly for actor.
-        var filmFk = new JoinStep.FkJoin("film_actor_film_id_fkey", "",
+        var filmFk = new JoinStep.FkJoin("film_actor_film_id_fkey", null,
             filmActorTable, List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer")),
             filmTable, List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer")), null, "related_0");
-        var actorFk = new JoinStep.FkJoin("film_actor_actor_id_fkey", "",
+        var actorFk = new JoinStep.FkJoin("film_actor_actor_id_fkey", null,
             filmActorTable, List.of(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer")),
             actorTable, List.of(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer")), null, "related_1");
         return java.util.Map.of(
@@ -2212,7 +2212,7 @@ class TypeFetcherGeneratorTest {
                 new ColumnRef("project_id", "PROJECT_ID", "java.lang.Integer")));
         // FK: ProjectNote.(org_id, project_id) -> Project.(org_id, project_id) — composite,
         // position-aligned per the fkJoin.sourceColumns()/targetColumns() contract.
-        var noteFk = new JoinStep.FkJoin("project_note_project_fkey", "",
+        var noteFk = new JoinStep.FkJoin("project_note_project_fkey", null,
             note,
             List.of(new ColumnRef("org_id", "ORG_ID", "java.lang.Integer"),
                     new ColumnRef("project_id", "PROJECT_ID", "java.lang.Integer")),
@@ -2220,7 +2220,7 @@ class TypeFetcherGeneratorTest {
             List.of(new ColumnRef("org_id", "ORG_ID", "java.lang.Integer"),
                     new ColumnRef("project_id", "PROJECT_ID", "java.lang.Integer")),
             null, "items_0");
-        var eventFk = new JoinStep.FkJoin("project_event_project_fkey", "",
+        var eventFk = new JoinStep.FkJoin("project_event_project_fkey", null,
             event,
             List.of(new ColumnRef("org_id", "ORG_ID", "java.lang.Integer"),
                     new ColumnRef("project_id", "PROJECT_ID", "java.lang.Integer")),

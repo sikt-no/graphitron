@@ -71,7 +71,7 @@ class NestingFieldValidationTest {
                     new FieldWrapper.Single(true)),
                 List.of(new ColumnReferenceField("FilmDetails", "languageName", null, "languageName",
                     new ColumnRef("NAME", "", ""),
-                    List.of(new JoinStep.FkJoin("film_language_id_fkey", "", null, List.of(),
+                    List.of(new JoinStep.FkJoin("film_language_id_fkey", null, null, List.of(),
                         TestFixtures.joinTarget("language"), List.of(), null, "")),
                     new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct()))),
             List.of(stubbedError("FilmDetails.languageName", ColumnReferenceField.class))),
@@ -87,7 +87,7 @@ class NestingFieldValidationTest {
                         new FieldWrapper.Single(true)),
                     List.of(new ColumnReferenceField("FilmMeta", "languageName", null, "languageName",
                         new ColumnRef("NAME", "", ""),
-                        List.of(new JoinStep.FkJoin("film_language_id_fkey", "", null, List.of(),
+                        List.of(new JoinStep.FkJoin("film_language_id_fkey", null, null, List.of(),
                             TestFixtures.joinTarget("language"), List.of(), null, "")),
                         new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct()))))),
             List.of(stubbedError("FilmMeta.languageName", ColumnReferenceField.class)));
@@ -217,12 +217,12 @@ class NestingFieldValidationTest {
     void multiParentCompat_nonColumnLeaf_rejectedAcrossParents() {
         var columnRefFirst = new ColumnReferenceField("FilmDetails", "langName", null, "langName",
             new ColumnRef("NAME", "", ""),
-            List.of(new JoinStep.FkJoin("film_language_id_fkey", "", null, List.of(),
+            List.of(new JoinStep.FkJoin("film_language_id_fkey", null, null, List.of(),
                 TestFixtures.joinTarget("language"), List.of(), null, "")),
             new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct());
         var columnRefSecond = new ColumnReferenceField("FilmDetails", "langName", null, "langName",
             new ColumnRef("NAME", "", ""),
-            List.of(new JoinStep.FkJoin("advertisement_language_id_fkey", "", null, List.of(),
+            List.of(new JoinStep.FkJoin("advertisement_language_id_fkey", null, null, List.of(),
                 TestFixtures.joinTarget("language"), List.of(), null, "")),
             new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct());
         var schema = twoParentSchema(List.of(columnRefFirst), List.of(columnRefSecond));

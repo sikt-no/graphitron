@@ -1,7 +1,7 @@
 ---
 id: R78
 title: "Typed jOOQ class references for multi-schema correctness (TableRef, ForeignKeyRef)"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 3
 theme: model-cleanup

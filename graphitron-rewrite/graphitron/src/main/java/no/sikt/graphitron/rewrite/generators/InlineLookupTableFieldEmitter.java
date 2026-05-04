@@ -60,7 +60,7 @@ public final class InlineLookupTableFieldEmitter {
      *                     recursion, where each nesting level declares its own
      *                     {@code SelectedField} local to avoid JLS §14.4.2 shadowing.
      */
-    public static CodeBlock buildSwitchArmBody(ChildField.LookupTableField lf, String parentAlias, String sfName, String outputPackage, String jooqPackage) {
+    public static CodeBlock buildSwitchArmBody(ChildField.LookupTableField lf, String parentAlias, String sfName, String outputPackage) {
         if (JoinPathEmitter.hasConditionJoin(lf.joinPath())) {
             return CodeBlock.builder()
                 .addStatement("throw new $T($S)",
@@ -69,14 +69,12 @@ public final class InlineLookupTableFieldEmitter {
                     + "cannot be emitted until classification-vocabulary item 5 resolves condition-method target tables")
                 .build();
         }
-        return buildFkOnlyArm(lf, parentAlias, sfName, outputPackage, jooqPackage);
+        return buildFkOnlyArm(lf, parentAlias, sfName, outputPackage);
     }
 
-    private static CodeBlock buildFkOnlyArm(ChildField.LookupTableField lf, String parentAlias, String sfName, String outputPackage, String jooqPackage) {
+    private static CodeBlock buildFkOnlyArm(ChildField.LookupTableField lf, String parentAlias, String sfName, String outputPackage) {
         List<JoinStep> path = lf.joinPath();
         TableRef terminalTable = lf.returnType().table();
-        ClassName tablesClass = ClassName.get(jooqPackage, "Tables");
-        ClassName keysClass = ClassName.get(jooqPackage, "Keys");
         ClassName typeClass = ClassName.get(outputPackage + ".types", lf.returnType().returnTypeName());
 
         var code = CodeBlock.builder();
@@ -91,7 +89,7 @@ public final class InlineLookupTableFieldEmitter {
             terminalAlias = "lk0";
             ClassName jooqTableClass = terminalTable.tableClass();
             code.addStatement("$T $L = $T.$L.as($L.getName() + $S)",
-                jooqTableClass, terminalAlias, tablesClass, terminalTable.javaFieldName(),
+                jooqTableClass, terminalAlias, terminalTable.constantsClass(), terminalTable.javaFieldName(),
                 parentAlias, "_" + lf.name() + "_" + terminalAlias);
         } else {
             aliases = JoinPathEmitter.generateAliases(path, terminalTable);
@@ -103,7 +101,7 @@ public final class InlineLookupTableFieldEmitter {
                 JoinStep.FkJoin fk = (JoinStep.FkJoin) path.get(i);
                 ClassName jooqTableClass = fk.targetTable().tableClass();
                 code.addStatement("$T $L = $T.$L.as($L.getName() + $S)",
-                    jooqTableClass, aliases.get(i), tablesClass, fk.targetTable().javaFieldName(),
+                    jooqTableClass, aliases.get(i), fk.targetTable().constantsClass(), fk.targetTable().javaFieldName(),
                     parentAlias, "_" + aliases.get(i));
             }
         }
@@ -162,7 +160,7 @@ public final class InlineLookupTableFieldEmitter {
         }
 
         CodeBlock innerSelect = buildInnerSelect(lf, path, aliases, terminalAlias, typeClass,
-            keysClass, parentAlias, onCondition.build(), sfName);
+            parentAlias, onCondition.build(), sfName);
         code.addStatement("fields.add($T.multiset($L).as($S))", DSL, innerSelect, lf.name());
         code.endControlFlow();
 
@@ -175,7 +173,7 @@ public final class InlineLookupTableFieldEmitter {
      * ORDER BY {@code input.idx} preserves input-row order.
      */
     private static CodeBlock buildInnerSelect(ChildField.LookupTableField lf, List<JoinStep> path,
-            List<String> aliases, String terminalAlias, ClassName typeClass, ClassName keysClass,
+            List<String> aliases, String terminalAlias, ClassName typeClass,
             String parentAlias, CodeBlock onCondition, String sfName) {
         var sel = CodeBlock.builder();
         sel.add("$T.select($T.$$fields($L.getSelectionSet(), $L, env))",
@@ -189,7 +187,7 @@ public final class InlineLookupTableFieldEmitter {
             JoinStep.FkJoin bridging = (JoinStep.FkJoin) path.get(i);
             String prevAlias = aliases.get(i - 1);
             sel.add("\n        .join($L).onKey($T.$L)",
-                prevAlias, keysClass, bridging.fkJavaConstant());
+                prevAlias, bridging.fk().keysClass(), bridging.fk().constantName());
         }
 
         // JOIN the VALUES derived table on the lookup keyset (explicit ON — see buildFkOnlyArm).

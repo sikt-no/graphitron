@@ -139,10 +139,8 @@ public final class SplitRowsMethodEmitter {
             String fieldName,
             BatchKey.RecordParentBatchKey batchKey,
             ReturnTypeRef.TableBoundReturnType returnType,
-            List<JoinStep> joinPath,
-            String jooqPackage) {
+            List<JoinStep> joinPath) {
         TableRef terminalTable = returnType.table();
-        ClassName tablesClass = ClassName.get(jooqPackage, "Tables");
 
         // Side-aware column list, polymorphically: RowKeyed's preludeKeyColumns delegates to
         // parentKeyColumns (catalog-FK side); LifterRowKeyed / AccessorKeyedSingle /
@@ -246,7 +244,7 @@ public final class SplitRowsMethodEmitter {
             JoinStep.WithTarget step = (JoinStep.WithTarget) joinPath.get(i);
             ClassName jooqTableClass = step.targetTable().tableClass();
             body.addStatement("$T $L = $T.$L.as($S)",
-                jooqTableClass, aliases.get(i), tablesClass, step.targetTable().javaFieldName(),
+                jooqTableClass, aliases.get(i), step.targetTable().constantsClass(), step.targetTable().javaFieldName(),
                 fieldName + "_" + aliases.get(i));
         }
 
@@ -264,7 +262,7 @@ public final class SplitRowsMethodEmitter {
      * caller in {@code TypeFetcherGenerator} already has the concrete field type, so no
      * capability-typed dispatcher is needed at this seam.
      */
-    static MethodSpec buildForSplitTable(ChildField.SplitTableField stf, String outputPackage, String jooqPackage) {
+    static MethodSpec buildForSplitTable(ChildField.SplitTableField stf, String outputPackage) {
         var stubReason = unsupportedReason(stf);
         if (stubReason.isPresent()) {
             return buildRuntimeStub(stf.rowsMethodName(), stf.batchKey(), stf.returnType(), stubReason.get().message(), outputPackage);
@@ -272,17 +270,17 @@ public final class SplitRowsMethodEmitter {
         if (stf.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Single) {
             return buildSingleMethod(
                 stf.name(), stf.rowsMethodName(), stf.returnType(),
-                stf.joinPath(), stf.filters(), stf.batchKey(), outputPackage, jooqPackage);
+                stf.joinPath(), stf.filters(), stf.batchKey(), outputPackage);
         }
         if (stf.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
             return buildConnectionMethod(
                 stf.name(), stf.rowsMethodName(), stf.returnType(),
-                stf.joinPath(), stf.filters(), stf.batchKey(), stf.orderBy(), conn, outputPackage, jooqPackage);
+                stf.joinPath(), stf.filters(), stf.batchKey(), stf.orderBy(), conn, outputPackage);
         }
         return buildListMethod(
             stf.name(), stf.rowsMethodName(), stf.returnType(),
             stf.joinPath(), stf.filters(), stf.batchKey(),
-            /* lookupMapping */ null, outputPackage, jooqPackage);
+            /* lookupMapping */ null, outputPackage);
     }
 
     /**
@@ -324,7 +322,7 @@ public final class SplitRowsMethodEmitter {
     // -----------------------------------------------------------------------
 
     /** See {@link #buildForSplitTable} for the entry-point convention. */
-    static MethodSpec buildForSplitLookupTable(ChildField.SplitLookupTableField slf, String outputPackage, String jooqPackage) {
+    static MethodSpec buildForSplitLookupTable(ChildField.SplitLookupTableField slf, String outputPackage) {
         var stubReason = unsupportedReason(slf);
         if (stubReason.isPresent()) {
             return buildRuntimeStub(slf.rowsMethodName(), slf.batchKey(), slf.returnType(), stubReason.get().message(), outputPackage);
@@ -333,7 +331,7 @@ public final class SplitRowsMethodEmitter {
         return buildListMethod(
             slf.name(), slf.rowsMethodName(), slf.returnType(),
             slf.joinPath(), slf.filters(), slf.batchKey(),
-            slf.lookupMapping(), outputPackage, jooqPackage);
+            slf.lookupMapping(), outputPackage);
     }
 
     // -----------------------------------------------------------------------
@@ -341,7 +339,7 @@ public final class SplitRowsMethodEmitter {
     // -----------------------------------------------------------------------
 
     /** See {@link #buildForSplitTable} for the entry-point convention. */
-    static MethodSpec buildForRecordTable(ChildField.RecordTableField rtf, String outputPackage, String jooqPackage) {
+    static MethodSpec buildForRecordTable(ChildField.RecordTableField rtf, String outputPackage) {
         var stubReason = unsupportedReason(rtf);
         if (stubReason.isPresent()) {
             return buildRuntimeStub(rtf.rowsMethodName(), rtf.batchKey(), rtf.returnType(), stubReason.get().message(), outputPackage);
@@ -357,12 +355,12 @@ public final class SplitRowsMethodEmitter {
             return buildSingleMethod(
                 rtf.name(), rtf.rowsMethodName(), rtf.returnType(),
                 rtf.joinPath(), rtf.filters(), rtf.batchKey(),
-                outputPackage, jooqPackage);
+                outputPackage);
         }
         return buildListMethod(
             rtf.name(), rtf.rowsMethodName(), rtf.returnType(),
             rtf.joinPath(), rtf.filters(), rtf.batchKey(),
-            /* lookupMapping */ null, outputPackage, jooqPackage);
+            /* lookupMapping */ null, outputPackage);
     }
 
     // -----------------------------------------------------------------------
@@ -370,7 +368,7 @@ public final class SplitRowsMethodEmitter {
     // -----------------------------------------------------------------------
 
     /** See {@link #buildForSplitTable} for the entry-point convention. */
-    static MethodSpec buildForRecordLookupTable(ChildField.RecordLookupTableField rltf, String outputPackage, String jooqPackage) {
+    static MethodSpec buildForRecordLookupTable(ChildField.RecordLookupTableField rltf, String outputPackage) {
         var stubReason = unsupportedReason(rltf);
         if (stubReason.isPresent()) {
             return buildRuntimeStub(rltf.rowsMethodName(), rltf.batchKey(), rltf.returnType(), stubReason.get().message(), outputPackage);
@@ -382,7 +380,7 @@ public final class SplitRowsMethodEmitter {
         return buildListMethod(
             rltf.name(), rltf.rowsMethodName(), rltf.returnType(),
             rltf.joinPath(), rltf.filters(), rltf.batchKey(),
-            rltf.lookupMapping(), outputPackage, jooqPackage);
+            rltf.lookupMapping(), outputPackage);
     }
 
 
@@ -400,9 +398,7 @@ public final class SplitRowsMethodEmitter {
             List<WhereFilter> filters,
             BatchKey.RecordParentBatchKey batchKey,
             LookupMapping lookupMapping,
-            String outputPackage,
-            String jooqPackage) {
-        ClassName keysClass = ClassName.get(jooqPackage, "Keys");
+            String outputPackage) {
         ClassName typeClass = ClassName.get(
             outputPackage + ".types",
             returnType.returnTypeName());
@@ -412,7 +408,7 @@ public final class SplitRowsMethodEmitter {
 
         var body = CodeBlock.builder();
         PreludeBindings p = emitParentInputAndFkChain(
-            body, fieldName, batchKey, returnType, joinPath, jooqPackage);
+            body, fieldName, batchKey, returnType, joinPath);
         List<JoinStep> path = joinPath;
         List<String> aliases = p.aliases();
         String terminalAlias = p.terminalAlias();
@@ -487,7 +483,7 @@ public final class SplitRowsMethodEmitter {
             JoinStep.FkJoin bridging = (JoinStep.FkJoin) path.get(i);
             String prevAlias = aliases.get(i - 1);
             sel.add(".join($L).onKey($T.$L)\n",
-                prevAlias, keysClass, bridging.fkJavaConstant());
+                prevAlias, bridging.fk().keysClass(), bridging.fk().constantName());
         }
         // JOIN parentInput on step 0's source columns (target/terminal side for list cardinality).
         // parentInput.field(n, Class<T>) returns Field<T>, matching the FK column's type in
@@ -590,8 +586,7 @@ public final class SplitRowsMethodEmitter {
             List<JoinStep> joinPath,
             List<WhereFilter> filters,
             BatchKey.RecordParentBatchKey batchKey,
-            String outputPackage,
-            String jooqPackage) {
+            String outputPackage) {
         ClassName typeClass = ClassName.get(
             outputPackage + ".types",
             returnType.returnTypeName());
@@ -604,7 +599,7 @@ public final class SplitRowsMethodEmitter {
         // [LiftedHop] joinPath in FieldBuilder), so the shared prelude's FK-chain loop emits
         // exactly one declaration.
         PreludeBindings p = emitParentInputAndFkChain(
-            body, fieldName, batchKey, returnType, joinPath, jooqPackage);
+            body, fieldName, batchKey, returnType, joinPath);
         String firstAlias = p.firstAlias();
         // Two routes reach this method: SplitTableField single-cardinality (FkJoin first hop,
         // parent-holds-FK) and RecordTableField with AccessorKeyedMany (LiftedHop first hop,
@@ -710,10 +705,8 @@ public final class SplitRowsMethodEmitter {
             BatchKey.RecordParentBatchKey batchKey,
             no.sikt.graphitron.rewrite.model.OrderBySpec orderBy,
             no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn,
-            String outputPackage,
-            String jooqPackage) {
+            String outputPackage) {
 
-        ClassName keysClass = ClassName.get(jooqPackage, "Keys");
         ClassName typeClass = ClassName.get(
             outputPackage + ".types",
             returnType.returnTypeName());
@@ -731,7 +724,7 @@ public final class SplitRowsMethodEmitter {
 
         var body = CodeBlock.builder();
         PreludeBindings p = emitParentInputAndFkChain(
-            body, fieldName, batchKey, returnType, joinPath, jooqPackage);
+            body, fieldName, batchKey, returnType, joinPath);
         List<JoinStep> path = joinPath;
         List<String> aliases = p.aliases();
         String terminalAlias = p.terminalAlias();
@@ -806,7 +799,7 @@ public final class SplitRowsMethodEmitter {
             JoinStep.FkJoin bridging = (JoinStep.FkJoin) path.get(i);
             String prevAlias = aliases.get(i - 1);
             inner.add(".join($L).onKey($T.$L)\n",
-                prevAlias, keysClass, bridging.fkJavaConstant());
+                prevAlias, bridging.fk().keysClass(), bridging.fk().constantName());
         }
         // joinOnCols: FkJoin.sourceColumns() on the catalog-FK path or LiftedHop.targetColumns()
         // on the lifter path; both addressable via firstAlias on the terminal side.

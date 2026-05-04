@@ -80,7 +80,7 @@ public class QueryConditionsGenerator {
             List<WhereFilter> filters,
             String outputPackage, String jooqPackage) {
         var tableRef = returnType.table();
-        var names = GeneratorUtils.ResolvedTableNames.of(tableRef, returnType.returnTypeName(), outputPackage, jooqPackage);
+        var names = GeneratorUtils.ResolvedTableNames.of(tableRef, returnType.returnTypeName(), outputPackage);
         var jooqTableClass = names.jooqTableClass();
 
         var builder = MethodSpec.methodBuilder(conditionMethodName(fieldName))
