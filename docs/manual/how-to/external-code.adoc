@@ -1,0 +1,129 @@
+= How-to: Wire external Java code
+:description: Plug a custom Java method into a directive that takes `ExternalCodeReference!`.
+:!toc:
+
+Seven of the rewrite's directives (`@service`, `@externalField`, `@tableMethod`, `@condition`, `@batchKeyLifter`, `@enum`, `@record`) hand the resolution of a slot off to a developer-supplied Java target. The mechanics are uniform across all seven: a fully-qualified class name on the rewrite plugin's classpath, an optional method name that defaults to the GraphQL field name, and an optional `argMapping:` for renaming Java parameters. This recipe walks through each piece once.
+
+== Make the class reachable
+
+The rewrite's Maven plugin reflects on the named class at code-generation time (via `Class.forName(...)`). The class therefore has to be on the *plugin's* classpath, not the consumer module's compile classpath. Declare the carrying artifact under the plugin's own `<dependencies>` block:
+
+[source,xml]
+----
+<plugin>
+    <groupId>no.sikt</groupId>
+    <artifactId>graphitron-maven</artifactId>
+    <version>${graphitron.version}</version>
+    <executions>
+        <execution>
+            <goals><goal>generate</goal></goals>
+        </execution>
+    </executions>
+    <dependencies>
+        <!-- Carries the @service / @externalField / @tableMethod / @condition /
+             @batchKeyLifter / @enum / @record target classes. -->
+        <dependency>
+            <groupId>com.example</groupId>
+            <artifactId>my-services</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+    </dependencies>
+</plugin>
+----
+
+The dependency is plugin-scoped: the consumer module never imports the artifact at compile time (the generator emits sources that wire in via `DSLContext`-mediated reflection bindings, not via direct `import` statements). Putting the artifact in the *outer* `<dependencies>` block instead would compile the consumer module against it for no benefit and pollute the runtime jar.
+
+`graphitron-sakila-example` follows this pattern: the example POM declares `graphitron-sakila-service` (which carries `SampleQueryService`, `FilmService`, `InventoryExtensions`, etc.) under the `<plugin>...<dependencies>` block of the `graphitron-maven` plugin in `graphitron-rewrite/graphitron-sakila-example/pom.xml`, not under the module's outer dependency list.
+
+== Reference the class from the schema
+
+`className:` must be a fully-qualified class name. `method:` defaults to the GraphQL field name when omitted, so the common case is identity:
+
+[source,graphql]
+----
+type Query {
+    filmCount: Int!
+        @service(service: {
+            className: "com.example.services.SampleQueryService"
+            # method defaults to "filmCount" (the field name).
+        })
+}
+----
+
+Set `method:` only when the Java method's name diverges from the field name:
+
+[source,graphql]
+----
+type Query {
+    popularFilms(minRentalRate: Float!): [Film!]!
+        @tableMethod(tableMethodReference: {
+            className: "com.example.services.SampleQueryService",
+            method:    "popularFilmsAboveRate"
+        })
+}
+----
+
+Reflection failures (class not on the plugin classpath, method not present, signature does not match the directive's expected shape) surface at build time with a directive-specific message: `service method could not be resolved — <reason>` for `@service`, `table method could not be resolved — <reason>` for `@tableMethod`, and so on. The `<reason>` is the underlying reflection exception when the class or method is missing, or a constraint message when the signature is wrong.
+
+== Map GraphQL arguments to Java parameter names
+
+When the GraphQL argument name and the Java parameter name diverge, use `argMapping:` to rebind. The syntax is `"javaParam: graphqlArg"`, comma-separated for multiple entries:
+
+[source,graphql]
+----
+type Query {
+    filmsByServiceRenamed(ids: [Int!]!): [Film!]!
+        @service(service: {
+            className: "com.example.services.SampleQueryService",
+            method:    "filmsByServiceRenamed",
+            argMapping: "filmIds: ids"
+        })
+}
+----
+
+[source,java]
+----
+public final class SampleQueryService {
+    public Result<FilmRecord> filmsByServiceRenamed(DSLContext ctx, List<Integer> filmIds) { ... }
+}
+----
+
+The Java parameter `filmIds` receives the GraphQL argument `ids`. Unmentioned Java parameters bind to a GraphQL argument of the same name; an empty `argMapping:` is identity for every parameter. Whitespace around `:` and `,` is tolerated, and multi-line text-block input is accepted for long mappings.
+
+`argMapping:` is meaningful on `@service`, `@tableMethod`, and `@condition` (the directives whose Java targets receive GraphQL arguments). It is structurally inert on `@externalField`, `@enum`, and `@record`, where the Java target consumes no GraphQL-argument-bound parameters; applying it on those three is rejected at parse time.
+
+== Per-directive slot names
+
+Each directive's `ExternalCodeReference!` parameter has its own name, but the contents are identical:
+
+[cols="1,2,2",options="header"]
+|===
+| Directive | Slot name | Reference page
+| `@service` | `service:` | xref:../reference/directives/service.adoc[`@service`]
+| `@externalField` | `reference:` | xref:../reference/directives/externalField.adoc[`@externalField`]
+| `@tableMethod` | `tableMethodReference:` | xref:../reference/directives/tableMethod.adoc[`@tableMethod`]
+| `@condition` | `condition:` | xref:../reference/directives/condition.adoc[`@condition`]
+| `@batchKeyLifter` | `lifter:` | xref:../reference/directives/batchKeyLifter.adoc[`@batchKeyLifter`]
+| `@enum` | `enumReference:` | xref:../reference/directives/enum.adoc[`@enum`]
+| `@record` | `record:` | xref:../reference/directives/record.adoc[`@record`]
+|===
+
+The slot names are historical (each directive was named before the shape was unified). Mechanically all seven slots accept the same `ExternalCodeReference` input.
+
+== Constraints
+
+* `className:` must be a fully-qualified class name. Package-prefix short-name resolution is on the roadmap as `R47` (Backlog) but is not yet implemented; spell out the FQCN for now.
+* The carrying artifact must be on the *plugin's* classpath (the `<plugin>...<dependencies>` block), not the module's outer `<dependencies>`. The generator runs at build time and only sees what the plugin can load.
+* Reflection runs at code-generation time, not at server startup. A typo in `className:` or `method:` fails the `mvn install` that builds the consumer module, not at request time.
+* `argMapping:` is `"javaParam: graphqlArg"`, not `"graphqlArg: javaParam"`. The Java side comes first because that is what the reflected method signature reads.
+* `ExternalCodeReference.name:` (a deprecated short alias resolved via the Mojo's `<namedReferences>` config) is still parsed for legacy schemas in transition, but new schemas should use `className:` directly. The deprecation warning surfaces during the rewrite-generate Maven goal.
+
+== See also
+
+* xref:../reference/directives/service.adoc[`@service`] is the most common consumer of this surface: a developer-supplied resolver method for a whole field.
+* xref:../reference/directives/externalField.adoc[`@externalField`] uses a static method that returns a jOOQ `Field<T>` plugged into the parent's `SELECT` projection.
+* xref:../reference/directives/tableMethod.adoc[`@tableMethod`] uses a static method that returns a jOOQ `Table<R>` chosen at request time.
+* xref:../reference/directives/condition.adoc[`@condition`] uses a static method that returns a jOOQ `Condition` to splice into a query's `WHERE` clause.
+* xref:../reference/directives/batchKeyLifter.adoc[`@batchKeyLifter`] uses a static method that supplies the per-parent batch key for a `@record`-typed parent.
+
+xref:index.adoc[← How-to index]
