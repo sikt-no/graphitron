@@ -134,13 +134,9 @@ class FetcherPipelineTest {
 
     // ===== @record parent — RecordTableField =====
 
-    // Backing class is the real jOOQ FilmRecord so the parent classifies as JooqTableRecordType.
-    // Post-R61 a JavaRecord/typed-Pojo parent + catalog FK on a RecordTableField is rejected
-    // (deferred to R71); the live FK-derived path requires a jOOQ Record source at env.getSource()
-    // to construct the RecordN<...> key via record.into(...).
     private static final String RECORD_TABLE_SDL = """
             type Language @table(name: "language") { name: String }
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) {
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
               language: Language @reference(path: [{key: "film_language_id_fkey"}])
             }
             type Film @table(name: "film") { details: FilmDetails }

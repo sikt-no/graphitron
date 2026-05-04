@@ -82,18 +82,26 @@ public sealed interface BatchKey
      * {@code List} vs. mapped {@code Set}) lives at each call site, not here.
      *
      * <ul>
-     *   <li>{@link RowKeyed} / {@link MappedRowKeyed} / {@link AccessorRowKeyedSingle} /
-     *       {@link AccessorRowKeyedMany} / {@link RecordKeyed} / {@link MappedRecordKeyed} →
-     *       {@code RecordN<A, B, ...>}</li>
-     *   <li>{@link LifterRowKeyed} → {@code RowN<A, B, ...>} (pinned by the
-     *       {@code @batchKeyLifter}-annotated method's return-type contract; deferred to R71
-     *       for parity)</li>
+     *   <li>{@link RowKeyed} / {@link MappedRowKeyed} / {@link LifterRowKeyed} →
+     *       {@code RowN<A, B, ...>} — the developer-facing shape on the @service-source
+     *       classification path (Row source declarations classify here) and the framework's
+     *       FK-derived shape on @record parents.</li>
+     *   <li>{@link RecordKeyed} / {@link MappedRecordKeyed} / {@link AccessorRowKeyedSingle} /
+     *       {@link AccessorRowKeyedMany} → {@code RecordN<A, B, ...>} — the developer-facing
+     *       shape on the @service-source Record path, and the auto-derived shape on
+     *       accessor-keyed @record parents (no developer-facing source on those arms).</li>
      * </ul>
+     *
+     * <p>R61 added Record support without displacing Row: developers continue to choose
+     * {@code Set<Row1<…>>} (Row surface, no {@code value1()}) or {@code Set<Record1<…>>}
+     * (Record surface, with {@code value1()} value access). The classifier in
+     * {@code ServiceCatalog} routes the source declaration to the matching variant; each
+     * variant's {@code keyElementType()} reflects the developer's choice.
      */
     default TypeName keyElementType() {
         return switch (this) {
-            case RowKeyed rk                -> recordNType(rk.parentKeyColumns());
-            case MappedRowKeyed mrk         -> recordNType(mrk.parentKeyColumns());
+            case RowKeyed rk                -> rowNType(rk.parentKeyColumns());
+            case MappedRowKeyed mrk         -> rowNType(mrk.parentKeyColumns());
             case LifterRowKeyed lrk         -> rowNType(lrk.targetKeyColumns());
             case AccessorRowKeyedSingle ars -> recordNType(ars.targetKeyColumns());
             case AccessorRowKeyedMany arm   -> recordNType(arm.targetKeyColumns());
@@ -152,12 +160,12 @@ public sealed interface BatchKey
          * Side-aware key columns for the rows-method prelude's parent-input VALUES table:
          * parent-side PK/FK columns on the catalog-FK arm ({@link RowKeyed}), target-side
          * columns on the lifter / accessor arms ({@link LifterRowKeyed},
-         * {@link AccessorRowKeyedSingle}, {@link AccessorRowKeyedMany}). The three
-         * {@code RecordN}-keyed arms ({@link RowKeyed}, {@link AccessorRowKeyedSingle},
-         * {@link AccessorRowKeyedMany}) produce {@code RecordN<...>} of the same Java types
-         * as the JOIN target columns; {@link LifterRowKeyed} stays on {@code RowN<...>} per
-         * the lifter contract (deferred to R71). For the accessor permits the columns are the
-         * element table's PK by construction.
+         * {@link AccessorRowKeyedSingle}, {@link AccessorRowKeyedMany}). {@link RowKeyed} and
+         * {@link LifterRowKeyed} produce {@code RowN<...>} keys of the same Java types as the
+         * JOIN target columns; {@link AccessorRowKeyedSingle} and {@link AccessorRowKeyedMany}
+         * produce {@code RecordN<...>} keys (no developer-facing source on these auto-derived
+         * arms). For the lifter permit the column tuple is the lifter contract; for the
+         * accessor permits the columns are the element table's PK by construction.
          *
          * <p>This capability lives on {@code RecordParentBatchKey} rather than on
          * {@link BatchKey} because the {@code @service}-only permits ({@link RecordKeyed},
@@ -201,8 +209,8 @@ public sealed interface BatchKey
     enum LoaderDispatch { LOAD_ONE, LOAD_MANY }
 
     /**
-     * Column-based batch key using {@code record.into(...)} key construction with a positional
-     * {@code List<RecordN<...>>} sources parameter; drives {@code newDataLoader(...)}.
+     * Column-based batch key using {@code DSL.row(...)} key construction with a positional
+     * {@code List<RowN<...>>} sources parameter; drives {@code newDataLoader(...)}.
      *
      * <p>The only catalog-resolvable permit that participates in both sub-hierarchies: it
      * carries parent-side PK/FK columns ({@link ParentKeyed}) and is reachable from
@@ -211,7 +219,7 @@ public sealed interface BatchKey
     record RowKeyed(List<ColumnRef> parentKeyColumns) implements ParentKeyed, RecordParentBatchKey {
         @Override
         public String javaTypeName() {
-            return containerType("List", "Record", parentKeyColumns);
+            return containerType("List", "Row", parentKeyColumns);
         }
         @Override
         public List<ColumnRef> preludeKeyColumns() {
@@ -235,16 +243,16 @@ public sealed interface BatchKey
     }
 
     /**
-     * Mapped variant of {@link RowKeyed}: column-based batch key using {@code record.into(...)}
-     * key construction with a {@code Set<RecordN<...>>} sources parameter; drives
-     * {@code newMappedDataLoader(...)}. Both {@code Set<RecordN<...>>} and
-     * {@code Set<TableRecord>} classify here; the DataLoader key type stays {@code RecordN}
+     * Mapped variant of {@link RowKeyed}: column-based batch key using {@code DSL.row(...)} key
+     * construction with a {@code Set<RowN<...>>} sources parameter; drives
+     * {@code newMappedDataLoader(...)}. Both {@code Set<RowN<...>>} and
+     * {@code Set<TableRecord>} classify here; the DataLoader key type stays {@code RowN}
      * regardless of the user's declared element type.
      */
     record MappedRowKeyed(List<ColumnRef> parentKeyColumns) implements ParentKeyed {
         @Override
         public String javaTypeName() {
-            return containerType("Set", "Record", parentKeyColumns);
+            return containerType("Set", "Row", parentKeyColumns);
         }
     }
 
