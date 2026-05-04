@@ -46,24 +46,12 @@ class ServiceCatalog {
     // ===== Table and column resolution =====
 
     Optional<TableRef> resolveTable(String sqlName) {
-        return ctx.catalog.findTable(sqlName).map(e -> buildTableRef(e, sqlName));
+        return ctx.catalog.findTable(sqlName).flatMap(e -> e.toTableRef(sqlName));
     }
 
     Optional<TableRef> resolveTableByRecordClass(Class<?> recordClass) {
         return ctx.catalog.findTableByRecordClass(recordClass)
-            .map(e -> buildTableRef(e, e.table().getName()));
-    }
-
-    private TableRef buildTableRef(JooqCatalog.TableEntry e, String sqlName) {
-        var pk = e.table().getPrimaryKey();
-        List<ColumnRef> pkColumns = pk == null
-            ? List.of()
-            : pk.getFields().stream()
-                .map(f -> ctx.catalog.findColumn(e.table(), f.getName()))
-                .<JooqCatalog.ColumnEntry>flatMap(Optional::stream)
-                .map(ce -> new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass()))
-                .toList();
-        return new TableRef(sqlName, e.javaFieldName(), e.table().getClass().getSimpleName(), pkColumns);
+            .flatMap(e -> e.toTableRef(e.table().getName()));
     }
 
     Optional<ColumnRef> resolveKeyColumn(String colName, String tableSqlName) {

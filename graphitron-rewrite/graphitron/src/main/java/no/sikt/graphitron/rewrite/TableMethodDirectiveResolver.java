@@ -127,7 +127,7 @@ final class TableMethodDirectiveResolver {
         // a deferred stub (TableMethodField with scalar/enum return); see
         // graphitron-rewrite/roadmap/tablemethod-scalar-return.md.
         ClassName expectedReturnClass = returnType instanceof ReturnTypeRef.TableBoundReturnType tbr
-            ? ClassName.get(ctx.ctx().jooqPackage() + ".tables", tbr.table().javaClassName())
+            ? tbr.table().tableClass()
             : null;
 
         var result = svc.reflectTableMethod(

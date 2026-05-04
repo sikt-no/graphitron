@@ -128,9 +128,7 @@ public class TypeClassGenerator {
         var allLookupFields = new ArrayList<ChildField.LookupTableField>(lookupTableFields);
         collectNestedLookupFields(nestingFields, allLookupFields);
         for (var lf : allLookupFields) {
-            var targetJooqTableClass = ClassName.get(
-                jooqPackage + ".tables",
-                lf.returnType().table().javaClassName());
+            var targetJooqTableClass = lf.returnType().table().tableClass();
             builder.addMethod(LookupValuesJoinEmitter.buildChildInputRowsMethod(lf, targetJooqTableClass));
         }
         return builder.build();

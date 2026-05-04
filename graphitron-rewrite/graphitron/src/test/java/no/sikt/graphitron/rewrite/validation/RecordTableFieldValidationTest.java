@@ -19,12 +19,13 @@ import java.util.List;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
+import no.sikt.graphitron.rewrite.TestFixtures;
 
 @UnitTier
 class RecordTableFieldValidationTest {
 
     private static ReturnTypeRef.TableBoundReturnType filmReturn(FieldWrapper wrapper) {
-        return new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", List.of()), wrapper);
+        return new ReturnTypeRef.TableBoundReturnType("Film", TestFixtures.tableRef("film", "FILM", "Film", List.of()), wrapper);
     }
 
     private static final BatchKey.RecordParentBatchKey BATCH_KEY = new BatchKey.RowKeyed(List.of());
@@ -48,7 +49,7 @@ class RecordTableFieldValidationTest {
 
         SINGLE_WITH_FK_PATH("single cardinality with FK path — emittable post-R61",
             new RecordTableField("FilmDetails", "film", null, filmReturn(new FieldWrapper.Single(true)),
-                List.of(new JoinStep.FkJoin("language_film_id_fkey", "", null, List.of(), new TableRef("film", "", "", List.of()), List.of(), null, "")),
+                List.of(new JoinStep.FkJoin("language_film_id_fkey", "", null, List.of(), TestFixtures.joinTarget("film"), List.of(), null, "")),
                 List.of(), new OrderBySpec.None(), null, BATCH_KEY),
             List.of()),
 
@@ -66,7 +67,7 @@ class RecordTableFieldValidationTest {
 
         LIST_WITH_FK_PATH("list cardinality with FK path — emittable, no validation error",
             new RecordTableField("FilmDetails", "films", null, filmReturn(new FieldWrapper.List(true, true)),
-                List.of(new JoinStep.FkJoin("language_film_id_fkey", "", null, List.of(), new TableRef("film", "", "", List.of()), List.of(), null, "")),
+                List.of(new JoinStep.FkJoin("language_film_id_fkey", "", null, List.of(), TestFixtures.joinTarget("film"), List.of(), null, "")),
                 List.of(), new OrderBySpec.None(), null, BATCH_KEY),
             List.of());
 

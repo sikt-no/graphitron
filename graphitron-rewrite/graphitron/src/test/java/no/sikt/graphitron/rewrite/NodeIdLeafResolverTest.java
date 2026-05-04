@@ -70,7 +70,7 @@ class NodeIdLeafResolverTest {
         var barField = ((GraphQLObjectType) bctx.schema.getType("Query"))
             .getFieldDefinition("barsByBaz");
         GraphQLArgument arg = barField.getArgument("bazIds");
-        var barTable = bctx.resolveTable("bar");
+        var barTable = bctx.resolveTable("bar").orElseThrow();
 
         var resolved = resolver.resolve(arg, "bazIds", barTable);
 
@@ -103,7 +103,7 @@ class NodeIdLeafResolverTest {
         var queryField = ((GraphQLObjectType) bctx.schema.getType("Query"))
             .getFieldDefinition("childRefsByParent");
         GraphQLArgument arg = queryField.getArgument("parentIds");
-        var childRefTable = bctx.resolveTable("child_ref");
+        var childRefTable = bctx.resolveTable("child_ref").orElseThrow();
 
         var resolved = resolver.resolve(arg, "parentIds", childRefTable);
 
@@ -133,7 +133,7 @@ class NodeIdLeafResolverTest {
 
         var inputType = (GraphQLInputObjectType) bctx.schema.getType("BarFilterInput");
         GraphQLInputObjectField leaf = inputType.getFieldDefinition("bazIds");
-        var barTable = bctx.resolveTable("bar");
+        var barTable = bctx.resolveTable("bar").orElseThrow();
 
         var resolved = resolver.resolve(leaf, "bazIds", barTable);
 

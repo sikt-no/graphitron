@@ -66,19 +66,35 @@ class GeneratorUtils {
      */
     record ResolvedTableNames(ClassName tablesClass, ClassName jooqTableClass, ClassName typeClass) {
 
-        static ResolvedTableNames of(TableRef tableRef, String returnTypeName, String outputPackage, String jooqPackage) {
+        static ResolvedTableNames of(TableRef tableRef, String returnTypeName, String outputPackage) {
             return new ResolvedTableNames(
-                ClassName.get(jooqPackage, "Tables"),
-                ClassName.get(jooqPackage + ".tables", tableRef.javaClassName()),
+                tableRef.constantsClass(),
+                tableRef.tableClass(),
                 ClassName.get(outputPackage + ".types", returnTypeName));
         }
 
+        // Legacy overload kept for the Phase 2b transition. Phase 3 / follow-up sweeps the
+        // remaining call sites (~50 in TypeFetcherGenerator and the *DirectiveResolver family)
+        // and removes this. The String parameter is retained without a name so that no caller
+        // can read or pass through a leftover jooqPackage value.
+        @Deprecated
+        static ResolvedTableNames of(TableRef tableRef, String returnTypeName, String outputPackage,
+                                     @SuppressWarnings("unused") String legacyJooqPackage) {
+            return of(tableRef, returnTypeName, outputPackage);
+        }
+
         /** Resolves only {@link #tablesClass} and {@link #jooqTableClass} — use when the type class is not needed. */
-        static ResolvedTableNames ofTable(TableRef tableRef, String jooqPackage) {
+        static ResolvedTableNames ofTable(TableRef tableRef) {
             return new ResolvedTableNames(
-                ClassName.get(jooqPackage, "Tables"),
-                ClassName.get(jooqPackage + ".tables", tableRef.javaClassName()),
+                tableRef.constantsClass(),
+                tableRef.tableClass(),
                 null);
+        }
+
+        @Deprecated
+        static ResolvedTableNames ofTable(TableRef tableRef,
+                                          @SuppressWarnings("unused") String legacyJooqPackage) {
+            return ofTable(tableRef);
         }
 
         /**
@@ -185,27 +201,26 @@ class GeneratorUtils {
      */
     static CodeBlock buildRecordParentKeyExtraction(
             BatchKey.RecordParentBatchKey batchKey,
-            GraphitronType.ResultType resultType,
-            String jooqPackage) {
+            GraphitronType.ResultType resultType) {
         TypeName keyType = batchKey.keyElementType();
         return switch (batchKey) {
-            case BatchKey.RowKeyed rk                -> buildFkRowKey(rk, keyType, resultType, jooqPackage);
+            case BatchKey.RowKeyed rk                -> buildFkRowKey(rk, keyType, resultType);
             case BatchKey.LifterRowKeyed lrk         -> buildLifterRowKey(lrk, keyType, resultType);
-            case BatchKey.AccessorKeyedSingle ars -> buildAccessorKeySingle(ars, keyType, jooqPackage);
-            case BatchKey.AccessorKeyedMany arm   -> buildAccessorKeyMany(arm, keyType, jooqPackage);
+            case BatchKey.AccessorKeyedSingle ars -> buildAccessorKeySingle(ars, keyType);
+            case BatchKey.AccessorKeyedMany arm   -> buildAccessorKeyMany(arm, keyType);
         };
     }
 
     private static CodeBlock buildFkRowKey(
             BatchKey.RowKeyed batchKey, TypeName keyType,
-            GraphitronType.ResultType resultType, String jooqPackage) {
+            GraphitronType.ResultType resultType) {
         List<ColumnRef> fkCols = batchKey.parentKeyColumns();
         var rowArgs = CodeBlock.builder();
         for (int i = 0; i < fkCols.size(); i++) {
             if (i > 0) rowArgs.add(", ");
             ColumnRef col = fkCols.get(i);
             if (resultType instanceof GraphitronType.JooqTableRecordType jtt) {
-                var tablesClass = ResolvedTableNames.ofTable(jtt.table(), jooqPackage).tablesClass();
+                var tablesClass = jtt.table().constantsClass();
                 rowArgs.add("(($T) env.getSource()).get($T.$L.$L)",
                     RECORD, tablesClass, jtt.table().javaFieldName(), col.javaName());
             } else if (resultType instanceof GraphitronType.JooqRecordType) {
@@ -255,12 +270,12 @@ class GeneratorUtils {
             + "built via __elt.into(Tables.X.PK1, ...) over typed Field references on the element "
             + "table.")
     private static CodeBlock buildAccessorKeySingle(
-            BatchKey.AccessorKeyedSingle ars, TypeName keyType, String jooqPackage) {
+            BatchKey.AccessorKeyedSingle ars, TypeName keyType) {
         var accessor = ars.accessor();
         ClassName backingClass = accessor.parentBackingClass();
         ClassName elementClass = accessor.elementClass();
         TableRef elementTable = ars.hop().targetTable();
-        var tablesClass = ResolvedTableNames.ofTable(elementTable, jooqPackage).tablesClass();
+        var tablesClass = elementTable.constantsClass();
         String tableField = elementTable.javaFieldName();
         var intoArgs = CodeBlock.builder();
         var pkCols = ars.targetKeyColumns();
@@ -286,12 +301,12 @@ class GeneratorUtils {
             + "element to a RecordN<...> via __elt.into(Tables.X.PK1, ...) over typed Field "
             + "references on the element table.")
     private static CodeBlock buildAccessorKeyMany(
-            BatchKey.AccessorKeyedMany arm, TypeName keyType, String jooqPackage) {
+            BatchKey.AccessorKeyedMany arm, TypeName keyType) {
         var accessor = arm.accessor();
         ClassName backingClass = accessor.parentBackingClass();
         ClassName elementClass = accessor.elementClass();
         TableRef elementTable = arm.hop().targetTable();
-        var tablesClass = ResolvedTableNames.ofTable(elementTable, jooqPackage).tablesClass();
+        var tablesClass = elementTable.constantsClass();
         String tableField = elementTable.javaFieldName();
         TypeName keysListType = ParameterizedTypeName.get(LIST, keyType);
         ClassName arrayList = ClassName.get("java.util", "ArrayList");
@@ -338,13 +353,13 @@ class GeneratorUtils {
      * <p>Only the {@link BatchKey.RowKeyed} variant is handled; single-cardinality
      * {@code @splitQuery} on a {@code @table} parent is the only caller today.
      */
-    static CodeBlock buildKeyExtractionWithNullCheck(BatchKey batchKey, TableRef parentTable, String jooqPackage) {
+    static CodeBlock buildKeyExtractionWithNullCheck(BatchKey batchKey, TableRef parentTable) {
         if (!(batchKey instanceof BatchKey.RowKeyed rk)) {
             throw new IllegalArgumentException(
                 "buildKeyExtractionWithNullCheck supports BatchKey.RowKeyed only, got "
                 + batchKey.getClass().getSimpleName());
         }
-        var tablesClass = ResolvedTableNames.ofTable(parentTable, jooqPackage).tablesClass();
+        var tablesClass = parentTable.constantsClass();
         String tableField = parentTable.javaFieldName();
         List<ColumnRef> pkCols = rk.parentKeyColumns();
         TypeName keyType = batchKey.keyElementType();
@@ -389,9 +404,9 @@ class GeneratorUtils {
      * {@code elementClass} matches the parent's table, so the extraction's projection target
      * is the parent table itself.
      */
-    static CodeBlock buildKeyExtraction(BatchKey.ParentKeyed batchKey, TableRef parentTable, String jooqPackage) {
+    static CodeBlock buildKeyExtraction(BatchKey.ParentKeyed batchKey, TableRef parentTable) {
         TypeName keyType = batchKey.keyElementType();
-        var tablesClass = ResolvedTableNames.ofTable(parentTable, jooqPackage).tablesClass();
+        var tablesClass = parentTable.constantsClass();
         String tableField = parentTable.javaFieldName();
         List<ColumnRef> pkCols = batchKey.parentKeyColumns();
         return switch (batchKey) {

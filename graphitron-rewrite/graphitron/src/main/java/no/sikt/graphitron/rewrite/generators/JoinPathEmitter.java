@@ -25,14 +25,14 @@ public final class JoinPathEmitter {
     private JoinPathEmitter() {}
 
     /**
-     * Generates deterministic per-hop aliases from each step's target-table {@code javaClassName},
+     * Generates deterministic per-hop aliases from each step's target-table simple class name,
      * one alias per hop. Format: first character lowercased + hop index (e.g. {@code "l0"} for
      * {@code Language}, {@code "c1"} for {@code Country} at index 1). When two hops in the same
      * chain share a first character, the later hop falls back to two lowercased characters
      * ({@code "fi0"} when {@code Film} and {@code FilmActor} collide).
      *
      * <p>Callers that need the aliased table typed class name (for {@code Tables.X.as(alias)})
-     * should separately read {@link TableRef#javaClassName()} from each step.
+     * should separately read {@link TableRef#tableClass()} from each step.
      *
      * @param path           the full join path
      * @param terminalTable  terminal target table (needed when the last step is a condition-join
@@ -55,13 +55,13 @@ public final class JoinPathEmitter {
 
     private static String targetJavaClassName(JoinStep step, int index, int size, TableRef terminalTable) {
         return switch (step) {
-            case JoinStep.FkJoin fk -> fk.targetTable().javaClassName();
-            case JoinStep.LiftedHop lh -> lh.targetTable().javaClassName();
+            case JoinStep.FkJoin fk -> fk.targetTable().tableClass().simpleName();
+            case JoinStep.LiftedHop lh -> lh.targetTable().tableClass().simpleName();
             case JoinStep.ConditionJoin cj ->
                 // ConditionJoin does not carry a resolved TableRef (see classification-vocab item 5).
                 // When this is the terminal step and the caller knows the terminal table, use it;
                 // otherwise we cannot emit a usable alias and the caller must branch.
-                (index == size - 1 && terminalTable != null) ? terminalTable.javaClassName() : "";
+                (index == size - 1 && terminalTable != null) ? terminalTable.tableClass().simpleName() : "";
         };
     }
 

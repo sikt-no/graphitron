@@ -16,6 +16,7 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
+import no.sikt.graphitron.rewrite.TestFixtures;
 
 /**
  * Structural tests for {@link TypeConditionsGenerator#buildConditionMethod}. The pipeline-level
@@ -25,7 +26,7 @@ import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 @UnitTier
 class TypeConditionsGeneratorTest {
 
-    private static final TableRef FILM_TABLE = new TableRef("film", "FILM", "Film", List.of());
+    private static final TableRef FILM_TABLE = TestFixtures.tableRef("film", "FILM", "Film", List.of());
     private static final ColumnRef FILM_ID = new ColumnRef("film_id", "FILM_ID", "java.lang.Integer");
     private static final ColumnRef FILM_TITLE = new ColumnRef("title", "TITLE", "java.lang.String");
 

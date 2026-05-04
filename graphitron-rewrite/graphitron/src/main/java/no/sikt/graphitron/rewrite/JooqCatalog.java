@@ -736,6 +736,26 @@ public class JooqCatalog {
                 .map(ce -> new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass()))
                 .toList();
         }
+
+        /**
+         * Materialises a {@link no.sikt.graphitron.rewrite.model.TableRef} from this entry. The
+         * {@code sqlName} argument is the directive-supplied form (case-preserved for error
+         * messages), not {@code entry.table().getName()} — the catalog lookup key is preserved
+         * from the user-visible name even when jOOQ canonicalises differently.
+         *
+         * <p>Empty when {@link #constantsClass()} is empty (a degenerate consumer-side
+         * codegen state where the schema package has no generated {@code Tables} class). The
+         * caller routes empty to {@link no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType}.
+         */
+        public Optional<no.sikt.graphitron.rewrite.model.TableRef> toTableRef(String sqlName) {
+            return constantsClass().map(cc -> new no.sikt.graphitron.rewrite.model.TableRef(
+                sqlName,
+                javaFieldName,
+                tableClass(),
+                recordClass(),
+                cc,
+                pkColumnRefs()));
+        }
     }
 
     /**

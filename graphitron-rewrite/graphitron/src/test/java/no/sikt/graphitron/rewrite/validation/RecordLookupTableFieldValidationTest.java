@@ -20,11 +20,12 @@ import java.util.List;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
+import no.sikt.graphitron.rewrite.TestFixtures;
 
 @UnitTier
 class RecordLookupTableFieldValidationTest {
 
-    private static final TableRef FILM_TABLE = new TableRef("film", "FILM", "Film", List.of());
+    private static final TableRef FILM_TABLE = TestFixtures.tableRef("film", "FILM", "Film", List.of());
     private static final LookupMapping EMPTY_LOOKUP = new LookupMapping.ColumnMapping(List.of(), FILM_TABLE);
     private static final BatchKey.RecordParentBatchKey BATCH_KEY = new BatchKey.RowKeyed(List.of());
 
@@ -48,7 +49,7 @@ class RecordLookupTableFieldValidationTest {
 
         SINGLE_WITH_FK_PATH("single cardinality with FK path — emittable post-R61",
             new RecordLookupTableField("Language", "film", null, filmReturn(new FieldWrapper.Single(true)),
-                List.of(new JoinStep.FkJoin("language_film_id_fkey", "", null, List.of(), new TableRef("film", "", "", List.of()), List.of(), null, "")),
+                List.of(new JoinStep.FkJoin("language_film_id_fkey", "", null, List.of(), TestFixtures.joinTarget("film"), List.of(), null, "")),
                 List.of(), new OrderBySpec.None(), null, BATCH_KEY, EMPTY_LOOKUP),
             List.of()),
 
@@ -60,7 +61,7 @@ class RecordLookupTableFieldValidationTest {
 
         LIST_WITH_FK_PATH("list cardinality with FK path — emittable, no validation error",
             new RecordLookupTableField("Language", "films", null, filmReturn(new FieldWrapper.List(true, true)),
-                List.of(new JoinStep.FkJoin("language_film_id_fkey", "", null, List.of(), new TableRef("film", "", "", List.of()), List.of(), null, "")),
+                List.of(new JoinStep.FkJoin("language_film_id_fkey", "", null, List.of(), TestFixtures.joinTarget("film"), List.of(), null, "")),
                 List.of(), new OrderBySpec.None(), null, BATCH_KEY, EMPTY_LOOKUP),
             List.of()),
 

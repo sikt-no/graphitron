@@ -18,6 +18,7 @@ import java.util.Optional;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
+import no.sikt.graphitron.rewrite.TestFixtures;
 
 @UnitTier
 class QueryTableFieldValidationTest {
@@ -29,7 +30,7 @@ class QueryTableFieldValidationTest {
 
     /** Resolved return type backed by {@code film} (has a primary key). */
     private static ReturnTypeRef.TableBoundReturnType filmReturn(FieldWrapper wrapper) {
-        return new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", List.of()), wrapper);
+        return new ReturnTypeRef.TableBoundReturnType("Film", TestFixtures.tableRef("film", "FILM", "Film", List.of()), wrapper);
     }
 
     enum Case implements ValidatorCase {

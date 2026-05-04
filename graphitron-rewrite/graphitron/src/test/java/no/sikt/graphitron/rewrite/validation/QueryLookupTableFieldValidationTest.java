@@ -22,12 +22,13 @@ import java.util.List;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
+import no.sikt.graphitron.rewrite.TestFixtures;
 
 @UnitTier
 class QueryLookupTableFieldValidationTest {
 
     private static final ColumnRef FILM_ID_COL = new ColumnRef("film_id", "FILM_ID", "java.lang.Integer");
-    private static final TableRef FILM_TABLE = new TableRef("film", "FILM", "Film", List.of());
+    private static final TableRef FILM_TABLE = TestFixtures.tableRef("film", "FILM", "Film", List.of());
     private static final LookupMapping EMPTY_LOOKUP = new LookupMapping.ColumnMapping(List.of(), FILM_TABLE);
 
     private static GeneratedConditionFilter columnFilter(String name, boolean nonNull, boolean list) {
@@ -41,7 +42,7 @@ class QueryLookupTableFieldValidationTest {
 
     private static QueryLookupTableField singleReturn(List<WhereFilter> filters, OrderBySpec orderBy) {
         return new QueryLookupTableField("Query", "filmById", null,
-            new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", List.of()), new FieldWrapper.Single(true)),
+            new ReturnTypeRef.TableBoundReturnType("Film", TestFixtures.tableRef("film", "FILM", "Film", List.of()), new FieldWrapper.Single(true)),
             filters, orderBy, null, EMPTY_LOOKUP);
     }
 
@@ -67,7 +68,7 @@ class QueryLookupTableFieldValidationTest {
 
         LIST_RETURN_NO_LIST_ARG("list return with no list filter — cardinality mismatch",
             new QueryLookupTableField("Query", "filmById", null,
-                new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", List.of()), new FieldWrapper.List(true, true)),
+                new ReturnTypeRef.TableBoundReturnType("Film", TestFixtures.tableRef("film", "FILM", "Film", List.of()), new FieldWrapper.List(true, true)),
                 List.of(), new OrderBySpec.None(), null, EMPTY_LOOKUP),
             List.of("Field 'Query.filmById': result type does not match input cardinality")),
 
@@ -77,7 +78,7 @@ class QueryLookupTableFieldValidationTest {
 
         CONNECTION_RETURN("connection return — never valid on lookup",
             new QueryLookupTableField("Query", "filmById", null,
-                new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", List.of()), new FieldWrapper.Connection(true, 100)),
+                new ReturnTypeRef.TableBoundReturnType("Film", TestFixtures.tableRef("film", "FILM", "Film", List.of()), new FieldWrapper.Connection(true, 100)),
                 List.of(), new OrderBySpec.None(), null, EMPTY_LOOKUP),
             List.of("Field 'Query.filmById': lookup fields must not return a connection")),
 
@@ -87,7 +88,7 @@ class QueryLookupTableFieldValidationTest {
 
         CONNECTION_AND_ORDERBY("connection return AND @orderBy — two independent errors",
             new QueryLookupTableField("Query", "filmById", null,
-                new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", List.of()), new FieldWrapper.Connection(true, 100)),
+                new ReturnTypeRef.TableBoundReturnType("Film", TestFixtures.tableRef("film", "FILM", "Film", List.of()), new FieldWrapper.Connection(true, 100)),
                 List.of(), new OrderBySpec.Argument("order", "FilmOrder", false, false, "sortField", "direction", List.of(), new OrderBySpec.None()), null, EMPTY_LOOKUP),
             List.of(
                 "Field 'Query.filmById': lookup fields must not return a connection",

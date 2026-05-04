@@ -17,6 +17,7 @@ import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.st
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
+import no.sikt.graphitron.rewrite.TestFixtures;
 
 @UnitTier
 class ColumnReferenceFieldValidationTest {
@@ -25,13 +26,13 @@ class ColumnReferenceFieldValidationTest {
 
         RESOLVED_IMPLICIT("no @field — column name defaults to the GraphQL field name; path resolved via FK (stubbed)",
             new ColumnReferenceField("Film", "languageName", null, "languageName", new ColumnRef("NAME", "", ""),
-                List.of(new JoinStep.FkJoin("film_language_id_fkey", "", null, List.of(), new TableRef("language", "", "", List.of()), List.of(), null, "")),
+                List.of(new JoinStep.FkJoin("film_language_id_fkey", "", null, List.of(), TestFixtures.joinTarget("language"), List.of(), null, "")),
                 new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct()),
             List.of(stubbedError("Film.languageName", ColumnReferenceField.class))),
 
         RESOLVED_EXPLICIT("@field(name:) overrides the column name; path resolved via FK (stubbed)",
             new ColumnReferenceField("Film", "languageName", null, "language_name", new ColumnRef("NAME", "", ""),
-                List.of(new JoinStep.FkJoin("film_language_id_fkey", "", null, List.of(), new TableRef("language", "", "", List.of()), List.of(), null, "")),
+                List.of(new JoinStep.FkJoin("film_language_id_fkey", "", null, List.of(), TestFixtures.joinTarget("language"), List.of(), null, "")),
                 new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct()),
             List.of(stubbedError("Film.languageName", ColumnReferenceField.class))),
 

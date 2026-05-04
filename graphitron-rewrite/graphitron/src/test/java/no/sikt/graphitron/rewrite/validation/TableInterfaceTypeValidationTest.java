@@ -14,6 +14,7 @@ import java.util.Optional;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
+import no.sikt.graphitron.rewrite.TestFixtures;
 
 @UnitTier
 class TableInterfaceTypeValidationTest {
@@ -21,15 +22,15 @@ class TableInterfaceTypeValidationTest {
     enum Case implements TypeValidatorCase {
 
         RESOLVED("table name resolved — no implementing types",
-            new TableInterfaceType("FilmStatus", null, "status_type", new TableRef("film_status", "FILM_STATUS", "FilmStatus", List.of()), List.of()),
+            new TableInterfaceType("FilmStatus", null, "status_type", TestFixtures.tableRef("film_status", "FILM_STATUS", "FilmStatus", List.of()), List.of()),
             List.of()),
 
         RESOLVED_WITH_BOUND_PARTICIPANTS("resolved table with table-bound implementing types — valid",
             new TableInterfaceType("FilmStatus", null, "status_type",
-                new TableRef("film_status", "FILM_STATUS", "FilmStatus", List.of()),
+                TestFixtures.tableRef("film_status", "FILM_STATUS", "FilmStatus", List.of()),
                 List.of(
-                    new ParticipantRef.TableBound("NewFilm", new TableRef("film", "FILM", "Film", List.of()), null),
-                    new ParticipantRef.TableBound("OldFilm", new TableRef("film", "FILM", "Film", List.of()), null)
+                    new ParticipantRef.TableBound("NewFilm", TestFixtures.tableRef("film", "FILM", "Film", List.of()), null),
+                    new ParticipantRef.TableBound("OldFilm", TestFixtures.tableRef("film", "FILM", "Film", List.of()), null)
                 )),
             List.of());
 

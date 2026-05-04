@@ -15,6 +15,7 @@ import java.util.List;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
+import no.sikt.graphitron.rewrite.TestFixtures;
 
 @UnitTier
 class QueryTableInterfaceFieldValidationTest {
@@ -22,7 +23,7 @@ class QueryTableInterfaceFieldValidationTest {
     enum Case implements ValidatorCase {
 
         SINGLE_CARDINALITY("single cardinality — implemented, no errors expected",
-            new QueryTableInterfaceField("Query", "statuses", null, new ReturnTypeRef.TableBoundReturnType("Film", new TableRef("film", "FILM", "Film", List.of()), new FieldWrapper.Single(true)), "FILM_TYPE", List.of(), List.of(), List.of(), new OrderBySpec.None(), null),
+            new QueryTableInterfaceField("Query", "statuses", null, new ReturnTypeRef.TableBoundReturnType("Film", TestFixtures.tableRef("film", "FILM", "Film", List.of()), new FieldWrapper.Single(true)), "FILM_TYPE", List.of(), List.of(), List.of(), new OrderBySpec.None(), null),
             List.of());
 
         private final String description;

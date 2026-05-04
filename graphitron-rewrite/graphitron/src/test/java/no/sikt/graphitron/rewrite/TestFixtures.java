@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
+import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
@@ -19,12 +20,37 @@ public final class TestFixtures {
 
     // ===== TableRef =====
 
+    /**
+     * Stable synthetic root for test-only TableRef typed-class fields. Matches
+     * {@code TestConfiguration.DEFAULT_JOOQ_PACKAGE} so synthetic helpers built here line up
+     * with the FQNs tests already assert against (e.g. {@code <root>.tables.Film},
+     * {@code <root>.tables.records.FilmRecord}, {@code <root>.Tables}).
+     */
+    private static final String TEST_JOOQ_ROOT = "no.sikt.graphitron.rewrite.test.jooq";
+
+    /**
+     * Builds a {@link TableRef} with the typed-class fields synthesised from {@code TEST_JOOQ_ROOT}
+     * + {@code simpleClassName} (e.g. {@code Film}). Use this for any test that needs a TableRef
+     * rooted in a single notional schema; cross-schema scenarios should use the real
+     * multischemafixture catalog via {@link JooqCatalog} instead.
+     */
+    public static TableRef tableRef(String sqlName, String javaFieldName, String simpleClassName,
+                                    List<ColumnRef> pkColumns) {
+        return new TableRef(
+            sqlName,
+            javaFieldName,
+            ClassName.get(TEST_JOOQ_ROOT + ".tables", simpleClassName),
+            ClassName.get(TEST_JOOQ_ROOT + ".tables.records", simpleClassName + "Record"),
+            ClassName.get(TEST_JOOQ_ROOT, "Tables"),
+            pkColumns);
+    }
+
     public static TableRef filmTable() {
-        return new TableRef("film", "FILM", "Film", List.of());
+        return tableRef("film", "FILM", "Film", List.of());
     }
 
     public static TableRef filmTable(List<ColumnRef> pkColumns) {
-        return new TableRef("film", "FILM", "Film", pkColumns);
+        return tableRef("film", "FILM", "Film", pkColumns);
     }
 
     public static TableRef filmTableWithPk() {
@@ -32,24 +58,40 @@ public final class TestFixtures {
     }
 
     public static TableRef languageTable() {
-        return new TableRef("language", "LANGUAGE", "Language", List.of());
+        return tableRef("language", "LANGUAGE", "Language", List.of());
     }
 
     public static TableRef languageTableWithPk() {
-        return new TableRef("language", "LANGUAGE", "Language", List.of(languageIdCol()));
+        return tableRef("language", "LANGUAGE", "Language", List.of(languageIdCol()));
     }
 
     public static TableRef actorTable() {
-        return new TableRef("actor", "ACTOR", "Actor", List.of());
+        return tableRef("actor", "ACTOR", "Actor", List.of());
     }
 
     public static TableRef categoryTable() {
-        return new TableRef("category", "CATEGORY", "Category", List.of());
+        return tableRef("category", "CATEGORY", "Category", List.of());
     }
 
-    /** Stub TableRef for join targets (no javaName/className needed). */
+    /**
+     * Stub TableRef for join targets where the typed-class fields are not under test. Synthesises
+     * the typed fields from the SQL name (e.g. sqlName "language" → simpleClass "Language"); tests
+     * that assert specific FQNs should use {@link #tableRef} with explicit values instead.
+     */
     public static TableRef joinTarget(String sqlName) {
-        return new TableRef(sqlName, "", "", List.of());
+        String simpleClass = simpleNameFromSqlName(sqlName);
+        return tableRef(sqlName, sqlName.toUpperCase(), simpleClass, List.of());
+    }
+
+    private static String simpleNameFromSqlName(String sqlName) {
+        // snake_case → PascalCase, e.g. "child_ref" → "ChildRef"
+        var parts = sqlName.split("_");
+        var sb = new StringBuilder();
+        for (var p : parts) {
+            if (p.isEmpty()) continue;
+            sb.append(Character.toUpperCase(p.charAt(0))).append(p.substring(1).toLowerCase());
+        }
+        return sb.toString();
     }
 
     // ===== ColumnRef =====

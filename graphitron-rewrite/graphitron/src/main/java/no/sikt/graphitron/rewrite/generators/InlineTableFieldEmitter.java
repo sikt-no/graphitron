@@ -79,9 +79,7 @@ public final class InlineTableFieldEmitter {
         // giving globally unique aliases at every depth.
         for (int i = 0; i < path.size(); i++) {
             JoinStep.FkJoin fk = (JoinStep.FkJoin) path.get(i);
-            ClassName jooqTableClass = ClassName.get(
-                jooqPackage + ".tables",
-                fk.targetTable().javaClassName());
+            ClassName jooqTableClass = fk.targetTable().tableClass();
             code.addStatement("$T $L = $T.$L.as($L.getName() + $S)",
                 jooqTableClass, aliases.get(i), tablesClass, fk.targetTable().javaFieldName(),
                 parentAlias, "_" + aliases.get(i));
