@@ -1,0 +1,69 @@
+# Publishes Graphitron to the Sikt GitLab Packages Maven registry as a
+# secondary distribution channel alongside Maven Central.
+# See https://platon.sikt.no/tjenester/package_registry
+#
+# Triggers:
+#   - tags matching v<MAJOR>.<MINOR>.<PATCH>  -> release deploy
+#   - pushes to the default branch            -> SNAPSHOT deploy
+#
+# Auth uses CI_JOB_TOKEN, which has write access to this project's
+# package registry by default; no manual secrets required.
+#
+# Tests are skipped here. Tests and javadoc generation run in the GitHub
+# CI build that gates merges to main and tags. The GitLab pipeline only
+# republishes the same source tree to GitLab Packages as a secondary
+# distribution channel, so re-running tests adds no value and would
+# require Docker-in-Docker for the jOOQ codegen testcontainer.
+#
+# NOTE: SNAPSHOT cleanup must be configured in the GitLab UI under
+# Settings > Packages and registries > Package Registry > Cleanup policy,
+# otherwise every default-branch push accumulates a new snapshot version.
+
+default:
+  image: maven:3.9-eclipse-temurin-21
+
+variables:
+  MAVEN_OPTS: >-
+    -Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository
+    -Dorg.slf4j.simpleLogger.log.org.apache.maven.cli.transfer.Slf4jMavenTransferListener=warn
+  MAVEN_CLI_OPTS: "--batch-mode --errors --show-version"
+  MAVEN_SKIP_OPTS: "-Dmaven.test.skip=true -Djooq.codegen.skip=true"
+
+cache:
+  key:
+    files:
+      - "**/pom.xml"
+  paths:
+    - .m2/repository
+
+.maven-publish:
+  before_script:
+    - |
+      cat > ci_settings.xml <<'EOF'
+      <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0">
+        <servers>
+          <server>
+            <id>gitlab-maven</id>
+            <username>gitlab-ci-token</username>
+            <password>${env.CI_JOB_TOKEN}</password>
+          </server>
+        </servers>
+      </settings>
+      EOF
+
+publish:snapshot:
+  extends: .maven-publish
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  script:
+    - mvn $MAVEN_CLI_OPTS $MAVEN_SKIP_OPTS -s ci_settings.xml clean deploy -P gitlab
+
+publish:release:
+  extends: .maven-publish
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
+  script:
+    - VERSION=${CI_COMMIT_TAG#v}
+    - echo "Releasing version $VERSION to GitLab Packages"
+    - mvn $MAVEN_CLI_OPTS versions:set -DnewVersion=$VERSION -DgenerateBackupPoms=false
+    - mvn $MAVEN_CLI_OPTS $MAVEN_SKIP_OPTS -s ci_settings.xml clean deploy -P gitlab
