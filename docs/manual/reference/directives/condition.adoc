@@ -1,0 +1,134 @@
+= @condition
+:description: Add (or override) a SQL predicate at a field, argument, or input field by reflecting a developer-supplied static method.
+:!toc:
+
+Attaches a developer-supplied predicate to a field, an argument, or an input field. The reflected static method takes the surrounding table and the relevant scalar values, and returns a jOOQ `Condition`. The rewrite folds that `Condition` into the generated `WHERE` clause: by default *in addition to* the implicit `column = ?` predicates the rewrite would otherwise emit, or *replacing them* when `override: true`.
+
+`@condition` is the escape hatch for predicates Graphitron can't infer from the catalog: regex matches, range filters, date arithmetic, joins through correlated subqueries, vendor-specific predicates, multi-column boolean shapes. It also drives the dynamic `enclosingOverride` cascade at field level: an outer field-level `@condition(override: true)` suppresses the implicit-column predicates from a `@table`-typed input, but inner argument-level `@condition` annotations *still fire*. (The rewrite preserves inner explicit conditions, the legacy generator dropped them, see `filmsOuterOverrideTableInput` in the example schema for the test that pins this divergence.)
+
+== SDL signature
+
+[source,graphql]
+----
+directive @condition(
+    condition:        ExternalCodeReference
+    override:         Boolean = false
+    contextArguments: [String!]
+) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
+----
+
+== Parameters
+
+[cols="1,1,1,3",options="header"]
+|===
+| Name | Type | Default | Description
+| `condition` | `ExternalCodeReference` | (required in practice) | Points at the static Java method that returns the `Condition`. `className:` and `method:` are both required, the rewrite reflects the method's parameter list against (in order) the surrounding table, the input or scalar parameters, and any `contextArguments`. `argMapping:` rebinds GraphQL argument names to differently-named Java parameters when the conventions diverge.
+| `override` | `Boolean` | `false` | When `true`, suppresses the rewrite's automatic equality predicates *for the affected element only*: at argument level, the implicit `column = ?` for that one argument; at field level, the implicit predicates for every direct argument *and* the column-equality predicates inside `@table` inputs. Inner explicit `@condition` annotations are preserved on either axis.
+| `contextArguments` | `[String!]` | `[]` | Names of values to pull from the GraphQL `GraphQLContext` at runtime. Each named context value becomes a Java parameter the reflected method receives, alongside the table and the input arguments. Wire the values into `GraphQLContext` in your servlet bootstrap.
+|===
+
+== Canonical examples
+
+Argument-level, no override (the explicit predicate is `AND`-ed with the implicit `column IN (...)`):
+
+[source,graphql]
+----
+type Query {
+    citiesByName(
+        cityNames: [String!] @field(name: "CITY")
+            @condition(condition: {className: "com.example.CityConditions", method: "cityMethod"})
+    ): [City]
+}
+----
+
+Field-level, no override (the explicit predicate is `AND`-ed with the implicit predicates for every argument):
+
+[source,graphql]
+----
+type Query {
+    cities(
+        countryId: String! @field(name: "COUNTRY_ID"),
+        cityNames: [String!] @field(name: "CITY")
+    ): [City] @condition(condition: {className: "com.example.CityConditions", method: "cityMethod"})
+}
+----
+
+Field-level, `override: true` on a `@table` input. The outer `@condition` runs, the implicit column-equality predicates from `FilmConditionInput` are suppressed, *but* an inner `@condition` on `FilmConditionInput.filmId` still fires:
+
+[source,graphql]
+----
+type Query {
+    filmsOuterOverrideTableInput(filter: FilmConditionInput): [Film!]!
+        @condition(
+            condition: {
+                className: "com.example.conditions.InputFieldConditionFixtures",
+                method:    "outerOverrideMethod"
+            },
+            override: true
+        )
+}
+
+input FilmConditionInput @table(name: "film") {
+    filmId: Int @field(name: "FILM_ID")
+        @condition(condition: {
+            className: "com.example.conditions.InputFieldConditionFixtures",
+            method:    "filmIdCondition"
+        })
+}
+----
+
+Net effect: `(film_id >= 2) AND (film_id = 1)` — both the outer override and the inner explicit `@condition` are honoured, even though the outer override is `true`.
+
+Multi-segment input path with a plain (non-`@table`) input. The two-level nested input lets a leaf-level `@condition` reference its enclosing-input field by path:
+
+[source,graphql]
+----
+input NestedFilmInput {
+    inner: InnerFilmInput
+}
+
+input InnerFilmInput {
+    filmId: Int @condition(condition: {
+        className: "com.example.conditions.PlainFilmIdConditions",
+        method:    "filmIdCondition"
+    })
+}
+----
+
+The rewrite extracts `inner.filmId` from the outer argument map and passes it to `filmIdCondition` as the bound parameter.
+
+Context-argument flow. The reflected method receives the table, any explicit input parameters, *and* the named context values:
+
+[source,graphql]
+----
+type Query {
+    citiesForCurrentUser: [City]
+        @condition(
+            condition:        {className: "com.example.CityConditions", method: "tenantScoped"},
+            contextArguments: ["tenantId"]
+        )
+}
+----
+
+`tenantScoped(City table, UUID tenantId)` runs at request time with `tenantId` pulled from `GraphQLContext`.
+
+== Constraints
+
+* Applies on `FIELD_DEFINITION`, `ARGUMENT_DEFINITION`, and `INPUT_FIELD_DEFINITION`. The element type fixes the predicate's scope: argument-level conditions can only see *their own* argument and any context arguments, field-level conditions see *all* of the field's arguments, input-field-level conditions see the input's enclosing argument map (the rewrite extracts the leaf value via the path from the outer argument).
+* `condition.className:` and `condition.method:` are both required for a meaningful directive. A `@condition` whose reference resolves to no method (missing `className:` or `method:`) surfaces as `field '<name>' @condition: ...` or `argument '<name>' @condition: ...`.
+* `argMapping:` is *supported* on `@condition` (unlike on `@externalField`, `@enum`, `@record`, `@batchKeyLifter`). Use it to rebind a GraphQL argument name to a differently-named Java parameter, the rewrite carries the mapping into the reflected method's parameter list.
+* `contextArguments:` values must already be wired into the runtime `GraphQLContext` map, the rewrite passes the listed keys through unmodified. A typo here surfaces as a `null` parameter at request time, not as a build error.
+* Field-level `override: true` suppresses the implicit predicates from the field's direct arguments *and* from any `@table`-bound input nested under those arguments. Inner explicit `@condition` annotations on the input's fields are *preserved*, override does not cascade through them. (Divergence from the legacy generator: legacy semantics dropped them. The rewrite's behaviour is the intended one and `filmsOuterOverrideTableInput` pins it as a regression-fence.)
+* Argument-level `override: true` is local: it suppresses the implicit `column = ?` for that one argument, nothing else.
+* Nested input types must be carrier-mapped to flow through `@condition`. A `@table` input maps to a jOOQ record (only at the leaf, jOOQ records can not contain other records), an xref:record.adoc[`@record`] input maps to the named Java record (and any input above it must also be a Java record). Leaving the input unmapped routes through the `PojoInputType` path, which still works for plain scalar paths.
+* Listed nested input types (`[InnerInput]` inside an outer record) require a Java record carrier on the outer input, the rewrite needs a stable Java type for the list element.
+
+== See also
+
+* xref:reference.adoc[`@reference`] supplies catalog-driven joins that `@condition` can layer additional filtering on.
+* xref:field.adoc[`@field(name: ...)`] is the column-binding axis, `@condition` and `@field` coexist on the same slot, `@field` drives the implicit predicate, `@condition` adds (or replaces) the explicit one.
+* xref:record.adoc[`@record`] / xref:table.adoc[`@table`] on input types determine the carrier the condition method reads from.
+* xref:service.adoc[`@service`] is the alternative when a *whole* fetcher is custom code, `@condition` is for adjusting a single predicate inside an otherwise generated query.
+* xref:../../how-to/condition-cascade.adoc[How-to: Stacking and overriding conditions] (Phase 3) covers the override cascade rules, nested-input record conventions, and the divergence from legacy semantics.
+
+xref:../index.adoc[← Reference index]
