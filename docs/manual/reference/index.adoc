@@ -6,7 +6,7 @@ Authoritative descriptions of every directive, every Maven plugin parameter, eve
 
 == Status: directive reference, in progress
 
-The first wave of per-directive pages (the six the tutorial uses) is published below. The remaining ~20 directives ship in subsequent commits of R68 Phase 2; their descriptions still live in the legacy https://github.com/sikt-no/graphitron/tree/main/graphitron-codegen-parent/graphitron-java-codegen/README.md[`graphitron-java-codegen` README] until they land here. The Mojo parameter reference, the runtime API reference, and the diagnostics glossary are authored in Phase 4 and Phase 5.
+Eleven of 26 directives are published below: the six tutorial-anchor mappings (`@table`, `@field`, `@reference`, `@multitableReference`, `@mutation`, `@service`) and the five batch/sort directives (`@lookupKey`, `@orderBy`, `@order`, `@defaultOrder`, `@index`). The remaining ~15 directives ship in subsequent commits of R68 Phase 2; their descriptions still live in the legacy https://github.com/sikt-no/graphitron/tree/main/graphitron-codegen-parent/graphitron-java-codegen/README.md[`graphitron-java-codegen` README] until they land here. The Mojo parameter reference, the runtime API reference, and the diagnostics glossary are authored in Phase 4 and Phase 5.
 
 The directive list below mirrors the rewrite's `directives.graphqls` and is therefore correct for the current branch even when an individual page is still pending.
 
@@ -18,7 +18,7 @@ a|
 * `@asConnection` _(pending)_
 * `@batchKeyLifter` _(pending)_
 * `@condition` _(pending)_
-* `@defaultOrder` _(pending)_
+* xref:directives/defaultOrder.adoc[`@defaultOrder`]
 * `@discriminate` _(pending)_
 * `@discriminator` _(pending)_
 * `@enum` _(pending)_
@@ -26,15 +26,15 @@ a|
 * `@experimental_constructType` _(pending)_
 * `@externalField` _(pending)_
 * xref:directives/field.adoc[`@field`]
-* `@index` _(pending; deprecated, use `@order(index:)`)_
-* `@lookupKey` _(pending)_
+* xref:directives/index.adoc[`@index`] _(deprecated, use `@order(index:)`)_
+* xref:directives/lookupKey.adoc[`@lookupKey`]
 * xref:directives/multitableReference.adoc[`@multitableReference`]
 * xref:directives/mutation.adoc[`@mutation`]
 * `@node` _(pending)_
 * `@nodeId` _(pending)_
 * `@notGenerated` _(pending; rejected, remove from the schema)_
-* `@order` _(pending)_
-* `@orderBy` _(pending)_
+* xref:directives/order.adoc[`@order`]
+* xref:directives/orderBy.adoc[`@orderBy`]
 * `@record` _(pending)_
 * xref:directives/reference.adoc[`@reference`]
 * xref:directives/service.adoc[`@service`]
@@ -52,13 +52,13 @@ xref:directives/table.adoc[`@table`], xref:directives/field.adoc[`@field`], `@en
 xref:directives/reference.adoc[`@reference`], xref:directives/multitableReference.adoc[`@multitableReference`], `@batchKeyLifter`
 
 *Querying* +
-`@asConnection`, `@condition`, `@lookupKey`, `@splitQuery`, `@externalField`, `@tableMethod`, `@experimental_constructType`
+`@asConnection`, `@condition`, xref:directives/lookupKey.adoc[`@lookupKey`], `@splitQuery`, `@externalField`, `@tableMethod`, `@experimental_constructType`
 
 *Mutating* +
 xref:directives/mutation.adoc[`@mutation`], xref:directives/service.adoc[`@service`]
 
 *Sorting* +
-`@orderBy`, `@order`, `@defaultOrder`, `@index` (deprecated)
+xref:directives/orderBy.adoc[`@orderBy`], xref:directives/order.adoc[`@order`], xref:directives/defaultOrder.adoc[`@defaultOrder`], xref:directives/index.adoc[`@index`] (deprecated)
 
 *Error handling* +
 `@error`
