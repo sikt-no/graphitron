@@ -210,6 +210,31 @@ class ServiceCatalogTest {
     }
 
     @Test
+    void reflectServiceMethod_compositeKeyTableRecordSources_classifiedAsMappedTableRecordKeyed() {
+        // Mirrors the consumer-side regelverk_exp.graphqls case where the @service source
+        // is a typed record over a multi-column composite primary key. The classifier must
+        // route Set<X> for composite-PK X to MappedTableRecordKeyed (carrying the typed
+        // record class), not collapse to MappedRowKeyed which would pin the validator's
+        // expected outer return to Map<RowN<...>, V> rather than the developer's
+        // Map<X, V>.
+        var filmActorPk = List.of(
+            new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer"),
+            new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"));
+        var result = newCatalog().reflectServiceMethod(
+            STUB_CLASS, "getFilmActorsCompositeKey", bindings(Map.of()), Set.of(), filmActorPk, null);
+
+        assertThat(result.failed()).isFalse();
+        var sourced = result.ref().params().stream()
+            .filter(p -> p instanceof MethodRef.Param.Sourced)
+            .map(p -> (MethodRef.Param.Sourced) p)
+            .findFirst()
+            .orElseThrow();
+        assertThat(sourced.batchKey()).isEqualTo(
+            new BatchKey.MappedTableRecordKeyed(filmActorPk,
+                no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmActorRecord.class));
+    }
+
+    @Test
     void reflectServiceMethod_setOfTableRecordSources_classifiedAsMappedTableRecordKeyed() {
         var filmPk = List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"));
         var result = newCatalog().reflectServiceMethod(
