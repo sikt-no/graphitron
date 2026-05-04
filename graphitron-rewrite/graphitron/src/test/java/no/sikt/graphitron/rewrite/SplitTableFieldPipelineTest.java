@@ -87,7 +87,7 @@ class SplitTableFieldPipelineTest {
             .isEqualTo("java.util.List<java.util.List<org.jooq.Record>>");
         assertThat(rowsMethod.parameters()).extracting(p -> p.type().toString())
             .containsExactly(
-                "java.util.List<org.jooq.Record1<java.lang.Integer>>",
+                "java.util.List<org.jooq.Row1<java.lang.Integer>>",
                 "graphql.schema.DataFetchingEnvironment");
     }
 

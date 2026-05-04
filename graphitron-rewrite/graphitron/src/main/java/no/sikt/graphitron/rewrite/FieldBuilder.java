@@ -2693,55 +2693,27 @@ class FieldBuilder {
      * {@link no.sikt.graphitron.rewrite.model.ChildField.RecordLookupTableField}) by reading the FK
      * source columns from the join path's first {@link JoinStep.FkJoin} step.
      *
-     * <p>Returns {@link FkDerivation.Skipped} (→ caller falls through to typed-accessor derivation)
-     * when:
+     * <p>Returns {@code null} (→ caller falls through to typed-accessor derivation) when:
      * <ul>
      *   <li>the join path is empty or its first step is not an {@link JoinStep.FkJoin}</li>
      *   <li>the parent is an untyped {@link GraphitronType.PojoResultType} with a {@code null} class
      *       (cannot generate a typed cast for key extraction)</li>
      * </ul>
      *
-     * <p>Returns {@link FkDerivation.Rejected} when the parent is a {@link GraphitronType.JavaRecordType}
-     * or a typed {@link GraphitronType.PojoResultType} (non-null {@code fqClassName}) with a catalog
-     * FK in the join path: post-R61, the {@code RowKeyed} arm of {@code GeneratorUtils.buildFkRowKey}
-     * builds the {@code RecordN<...>} key via {@code record.into(...)} from a jOOQ {@code Record}
-     * source, which these parent types don't carry at runtime. Construction strategy for this combo
-     * is deferred to R71 ({@code recordn-key-parity-lifter-and-non-jooq-record-parents}).
+     * <p>Otherwise returns a {@link BatchKey.RowKeyed} with the FK source columns. {@link BatchKey.RowKeyed}
+     * produces {@code RowN<...>} keys; {@code GeneratorUtils.buildFkRowKey} forks per parent
+     * {@link GraphitronType.ResultType} (jOOQ table record / jOOQ record / Java record / typed POJO)
+     * to extract scalar values and build the key via {@code DSL.row(...)}.
      */
-    private sealed interface FkDerivation {
-        record Resolved(BatchKey.RecordParentBatchKey batchKey) implements FkDerivation {}
-        record Skipped() implements FkDerivation {}
-        record Rejected(Rejection rejection) implements FkDerivation {}
-    }
-
-    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
-        key = "rowkeyed-record-parent-is-jooq-record",
-        description = "Returns FkDerivation.Resolved(RowKeyed) only when the parent resultType is "
-            + "JooqTableRecordType or JooqRecordType (parents that carry a jOOQ Record at "
-            + "env.getSource() at runtime). JavaRecordType and typed PojoResultType parents are "
-            + "deferred via FkDerivation.Rejected pointing at R71 "
-            + "(recordn-key-parity-lifter-and-non-jooq-record-parents). The defensive throw arm in "
-            + "GeneratorUtils.buildFkRowKey for JavaRecord/Pojo parents depends on this gate; "
-            + "without it, the emitter would have no Record source to build the RecordN<...> key.")
-    private static FkDerivation deriveBatchKeyForResultType(
+    private static BatchKey.RecordParentBatchKey deriveBatchKeyForResultType(
             List<JoinStep> joinPath, GraphitronType.ResultType parentResultType) {
         if (joinPath.isEmpty() || !(joinPath.get(0) instanceof JoinStep.FkJoin fkJoin)) {
-            return new FkDerivation.Skipped();
+            return null;
         }
         if (parentResultType instanceof GraphitronType.PojoResultType prt && prt.fqClassName() == null) {
-            return new FkDerivation.Skipped();
+            return null;
         }
-        if (parentResultType instanceof GraphitronType.JavaRecordType
-                || parentResultType instanceof GraphitronType.PojoResultType) {
-            return new FkDerivation.Rejected(Rejection.deferred(
-                "@record parent backed by a non-jOOQ class (" + parentResultType.getClass().getSimpleName()
-                + ") with a catalog FK on a batched child field cannot construct a RecordN<...> "
-                + "DataLoader key without a jOOQ Record source. R61 ships RecordN keys for the four "
-                + "jOOQ-Record-sourced arms; this combo is deferred until a construction strategy "
-                + "(DSLContext round-trip or runtime helper) is picked.",
-                "recordn-key-parity-lifter-and-non-jooq-record-parents"));
-        }
-        return new FkDerivation.Resolved(new BatchKey.RowKeyed(fkJoin.sourceColumns()));
+        return new BatchKey.RowKeyed(fkJoin.sourceColumns());
     }
 
     /**
@@ -2774,16 +2746,8 @@ class FieldBuilder {
             String fieldName, ReturnTypeRef.TableBoundReturnType tb,
             List<JoinStep> joinPath, GraphitronType.ResultType parentResultType,
             String fieldKindLabel) {
-        var fk = deriveBatchKeyForResultType(joinPath, parentResultType);
-        switch (fk) {
-            case FkDerivation.Resolved r -> {
-                return new RecordBatchKeyResolution.Resolved(r.batchKey(), joinPath);
-            }
-            case FkDerivation.Rejected rej -> {
-                return new RecordBatchKeyResolution.Rejected(rej.rejection());
-            }
-            case FkDerivation.Skipped _ -> { /* fall through to accessor derivation */ }
-        }
+        var fkBk = deriveBatchKeyForResultType(joinPath, parentResultType);
+        if (fkBk != null) return new RecordBatchKeyResolution.Resolved(fkBk, joinPath);
 
         var derived = deriveBatchKeyFromTypedAccessor(fieldName, tb, parentResultType);
         return switch (derived) {
