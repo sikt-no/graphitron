@@ -1,0 +1,59 @@
+= @orderBy
+:description: Mark an argument as the dynamic-ordering input for the field.
+:!toc:
+
+Marks an argument whose value selects a sort order at runtime. The argument's input type must contain exactly one `SortDirection` enum field and exactly one enum field whose values carry xref:order.adoc[`@order`] directives. The generator picks each up by GraphQL type, not by field name.
+
+== SDL signature
+
+[source,graphql]
+----
+directive @orderBy on ARGUMENT_DEFINITION
+----
+
+`@orderBy` takes no parameters.
+
+== Canonical example
+
+The example schema's `filmsOrderedConnection` exposes a dynamic order argument:
+
+[source,graphql]
+----
+type Query {
+    filmsOrderedConnection(
+        rating: MpaaRating @field(name: "RATING"),
+        order: [FilmOrderBy] @orderBy,
+        first: Int, last: Int, after: String, before: String
+    ): FilmsConnection! @defaultOrder(primaryKey: true)
+}
+
+input FilmOrderBy {
+    field:     FilmSort!
+    direction: SortDirection
+}
+
+enum FilmSort {
+    FILM_ID @order(primaryKey: true)
+    TITLE   @order(fields: [{name: "title"}])
+}
+
+enum SortDirection { ASC, DESC }
+----
+
+A client requesting `order: [{ field: TITLE, direction: ASC }]` gets the films sorted by `film.title` ascending. The `[FilmOrderBy]` list shape lets the client compose multi-key orderings; `FILM_ID` after `TITLE` ties the keyset cursor onto the primary key for stable pagination.
+
+== Constraints
+
+* Applies only to arguments. Putting `@orderBy` on a field, input field, or enum value is rejected.
+* The argument's input type must contain exactly one field whose type is the project's `SortDirection` enum (declared by name, looked up by type) and exactly one field whose type is an enum carrying xref:order.adoc[`@order`] on every value. Field names are free; the generator binds by type.
+* Every value of the bound enum must declare exactly one of `index`, `fields`, or `primaryKey` via xref:order.adoc[`@order`]. Missing or ambiguous specifications fail the build.
+* `@orderBy` and xref:defaultOrder.adoc[`@defaultOrder`] coexist on the same field. When the client supplies a value the dynamic order wins; when omitted, `@defaultOrder` applies.
+* Connection fields (xref:asConnection.adoc[`@asConnection`] or hand-written `*Connection` types) integrate `@orderBy` with keyset pagination automatically; the cursor encodes the active sort columns.
+
+== See also
+
+* xref:order.adoc[`@order`] specifies how each enum value maps to database sort columns.
+* xref:defaultOrder.adoc[`@defaultOrder`] supplies the fallback sort when the client omits the `@orderBy` argument.
+* xref:../../how-to/sort-results.adoc[How-to: Sort results] (Phase 3) covers multi-key orderings and keyset pagination interactions.
+
+xref:../index.adoc[← Reference index]
