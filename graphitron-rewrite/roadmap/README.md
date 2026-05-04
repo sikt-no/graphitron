@@ -23,7 +23,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R13` | Faceted search on `@asConnection` | Spec | [plan](faceted-search.md) |
 | `R63` | Type UPSERT dialect requirement on the model | Spec | [plan](dml-dialect-requirement-on-model.md) |
 | `R12` | Error-handling parity: emit per-fetcher error channels from `@error` | Ready | [plan](error-handling-parity.md) |
-| `R61` | Emit Record1<T> instead of Row1<T> for single-column DataLoader keys | In Progress | [plan](emit-record1-keys-instead-of-row1.md) |
+| `R61` | Emit Record1<T> instead of Row1<T> for single-column DataLoader keys | In Review | [plan](emit-record1-keys-instead-of-row1.md) |
 | `R8` | Docs as an index into classification tests | Ready (deferred) | [plan](docs-as-index-into-tests.md) |
 | `R26` | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` <sub>blocked by: [graphitron-lsp](graphitron-lsp.md)</sub> | In Progress | [plan](retire-maven-plugin.md) |
 | `R18` | Java LSP rewrite + introspect retirement + `dev` goal | Ready | [plan](graphitron-lsp.md) |
@@ -102,7 +102,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R45` [**Typed context-value registry for `@service`**](typed-context-value-registry.md) — Spec, architecture
 - `R46` [**Multi-tenant fan-out for `@service`**](service-multi-tenant-fanout.md) — Backlog, architecture, blocked by [typed-context-value-registry](typed-context-value-registry.md)
 - `R11` [**`DSLContext` on `@condition` / `@tableMethod` methods**](dslcontext-on-condition-tablemethod.md) — Backlog, architecture
-- `R61` [**Emit Record1<T> instead of Row1<T> for single-column DataLoader keys**](emit-record1-keys-instead-of-row1.md) — In Progress, architecture
+- `R61` [**Emit Record1<T> instead of Row1<T> for single-column DataLoader keys**](emit-record1-keys-instead-of-row1.md) — In Review, architecture
 - `R71` [**RecordN-key parity for LifterRowKeyed and non-jOOQ-Record record parents**](recordn-key-parity-lifter-and-non-jooq-record-parents.md) — Backlog, architecture, blocked by [emit-record1-keys-instead-of-row1](emit-record1-keys-instead-of-row1.md)
 
 ### mutations-errors
