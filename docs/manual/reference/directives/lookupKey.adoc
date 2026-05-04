@@ -1,0 +1,65 @@
+= @lookupKey
+:description: Mark arguments or input fields as batch-lookup keys so a single query returns one result per input position.
+:!toc:
+
+Promotes a query into a batch-lookup: the client sends a list of key values and the resolver returns a list of results in the same order, with `null` for unmatched positions. The generator emits a `VALUES`-derived table joined against the target table so all keys resolve in a single round trip.
+
+== SDL signature
+
+[source,graphql]
+----
+directive @lookupKey on ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
+----
+
+`@lookupKey` takes no parameters; presence on an argument or input field is the entire signal.
+
+== Canonical example
+
+The example schema's root lookups cover the common shapes:
+
+[source,graphql]
+----
+type Query {
+    filmById(film_id: [ID] @lookupKey): [Film!]!
+
+    languageByKey(language_id: [Int] @lookupKey @field(name: "language_id")): [Language!]!
+
+    customerById(customer_id: [ID] @lookupKey, store_id: ID @lookupKey): [Customer!]!
+
+    filmActorsByKey(key: [FilmActorKey!]! @lookupKey): [FilmActor!]!
+}
+
+input FilmActorKey {
+    filmId:  Int! @field(name: "film_id")  @lookupKey
+    actorId: Int! @field(name: "actor_id") @lookupKey
+}
+----
+
+`filmById` keys on a single scalar list. `customerById` shows two correlated keys: each pair `(customer_id[i], store_id[i])` matches one row. `filmActorsByKey` wraps a composite key in an input type, with `@lookupKey` re-applied per leaf field; the generator builds `VALUES(idx, film_id, actor_id)` and joins on both PK columns. Unmatched keys surface as `null` at the corresponding output index.
+
+A client query against `filmById`:
+
+[source,graphql]
+----
+query {
+    filmById(film_id: ["1", "999999", "2"]) { title }
+}
+----
+
+returns three positions in input order: `{ title: "ACADEMY DINOSAUR" }`, `null`, `{ title: "ACE GOLDFINGER" }`.
+
+== Constraints
+
+* Keys must be one-dimensional lists. Two layers of lists (e.g. `[InList] @lookupKey` where `InList { field: [String] }`) is rejected: the lookup operates over a flat keyset.
+* Multiple `@lookupKey` arguments at the same call site must have the same length, and values at the same index are correlated. Wrap them in an input type when the framework should enforce that pairing.
+* `@lookupKey` on an input type (the argument itself) applies to every leaf scalar field of that input. `@lookupKey` on an individual input field applies only to that field; the rest of the input behaves normally.
+* Keys should uniquely identify a row. If multiple rows match the same key, only one is returned.
+* Only arguments on root-level fields (or on their referenced input types) may be keys. The xref:mutation.adoc[`@mutation`] directive uses `@lookupKey` separately to identify the row to `UPDATE`, `DELETE`, or `UPSERT`; that's a distinct use of the same directive on `INPUT_FIELD_DEFINITION`.
+
+== See also
+
+* xref:mutation.adoc[`@mutation`] uses `@lookupKey` on input fields to identify the target row for `UPDATE`, `DELETE`, and `UPSERT`.
+* xref:../../how-to/batch-lookups.adoc[How-to: Batch lookups] (Phase 3) covers correlated-key shapes, NodeId-keyed lookups, and `@splitQuery` interactions.
+* xref:../../tutorial/03-first-query.adoc[Tutorial page 3: A first query] introduces `@lookupKey` on a single-key example.
+
+xref:../index.adoc[← Reference index]

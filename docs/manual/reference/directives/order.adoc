@@ -1,0 +1,92 @@
+= @order
+:description: Map an enum value to a database sort specification (index, fields, or primary key).
+:!toc:
+
+Attaches a sort specification to an enum value used by an xref:orderBy.adoc[`@orderBy`] argument. Exactly one of `index`, `fields`, or `primaryKey` must be set on each enum value; together they tell the generator which columns to emit in `ORDER BY`.
+
+== SDL signature
+
+[source,graphql]
+----
+directive @order(
+    index: String,
+    fields: [FieldSort!],
+    primaryKey: Boolean = false
+) on ENUM_VALUE
+
+input FieldSort {
+    name:    String!
+    collate: String
+}
+----
+
+== Parameters
+
+[cols="1,1,1,3",options="header"]
+|===
+| Name | Type | Default | Description
+| `index` | `String` | none | Name of a database index. The generator looks up the index on the parent table at build time and emits its column list. Index code generation must be enabled in jOOQ (`<includeIndexes>true</includeIndexes>`).
+| `fields` | `[FieldSort!]` | none | One or more column specifications. Each `FieldSort` carries a required `name` (the column name in the jOOQ table) and an optional `collate` (database-specific collation name, e.g. `"xdanish_ai"`).
+| `primaryKey` | `Boolean` | `false` | When `true`, sorts by the parent table's primary key columns in declaration order. Useful for stable pagination cursors.
+|===
+
+== Canonical example
+
+[source,graphql]
+----
+enum FilmSort {
+    FILM_ID @order(primaryKey: true)
+    TITLE   @order(fields: [{name: "title"}])
+}
+
+enum ActorSort {
+    ACTOR_ID   @order(primaryKey: true)
+    FIRST_NAME @order(fields: [{name: "first_name"}])
+    LAST_NAME  @order(fields: [{name: "last_name"}])
+}
+----
+
+`FILM_ID @order(primaryKey: true)` sorts by `film.film_id`, the primary key of the bound table. `TITLE @order(fields: [{name: "title"}])` sorts by the `title` column without requiring a database index.
+
+Index-based sorting (with optional multi-column index):
+
+[source,graphql]
+----
+enum FilmOrderByField {
+    LANGUAGE        @order(index: "IDX_FK_LANGUAGE_ID")
+    TITLE           @order(index: "IDX_TITLE")
+    STORE_ID_FILM_ID @order(index: "idx_store_id_film_id")
+}
+----
+
+Field-based sorting with collation:
+
+[source,graphql]
+----
+enum PersonOrderByField {
+    NAME_NORSK @order(fields: [
+        {name: "LAST_NAME",  collate: "xdanish_ai"},
+        {name: "FIRST_NAME", collate: "xdanish_ai"}
+    ])
+    STATUS @order(fields: [{name: "ACTIVE"}])
+}
+----
+
+The enum's parent type is determined by where the enum is referenced from (the xref:orderBy.adoc[`@orderBy`] argument); column names resolve against that type's `@table`.
+
+== Constraints
+
+* Exactly one of `index`, `fields`, or `primaryKey` must be set per enum value. Setting two, or none, fails the build.
+* `index` requires jOOQ index generation. With `<includeIndexes>true</includeIndexes>` disabled, the lookup throws at startup with a "no matching index" error.
+* `fields[].name` must be a real column on the bound table. Resolution mirrors xref:field.adoc[`@field`]: case-sensitive against the jOOQ-generated identifiers.
+* `collate` is passed verbatim to the database; misspelled collations surface only at query time.
+* `@order` applies to enum values only. Use it on every value of an enum referenced by xref:orderBy.adoc[`@orderBy`]; missing values fail the build.
+* xref:index.adoc[`@index`] is the deprecated single-purpose alias for `@order(index:)`. New code should use `@order`.
+
+== See also
+
+* xref:orderBy.adoc[`@orderBy`] is the entry point that activates `@order`-bearing enums.
+* xref:defaultOrder.adoc[`@defaultOrder`] reuses the same `index` / `fields` / `primaryKey` shape on the field rather than the enum.
+* xref:index.adoc[`@index`] is deprecated; migrate to `@order(index:)`.
+
+xref:../index.adoc[← Reference index]
