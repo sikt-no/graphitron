@@ -140,9 +140,9 @@ projection terminator):
      need it (idempotent).
 
   Once the guards pass, build the chain programmatically: walk
-  `tia.setFields()` in declaration order and emit a codegen-time
-  `if (firstKeys.contains(cf.name())) { ... }` for each `cf` on
-  three parallel sequences — the SET clause
+  `tia.setFields()` at codegen time in declaration order and emit
+  a runtime `if (firstKeys.contains(cf.name())) { ... }` for each
+  `cf` on three parallel sequences — the SET clause
   (`stmt = stmt.set(Tables.X.COL, vTable.field(Tables.X.COL))`),
   the v-table column-name list (`colNames.add(Tables.X.COL.getName())`),
   and the per-row v-table cell list
@@ -172,10 +172,15 @@ projection terminator):
   `.set(...)` calls and jOOQ would render an invalid `UPDATE t FROM
   v WHERE ...` with an empty SET.
 
-  Existing inline Oracle-dialect runtime guard preserved verbatim
-  on the bulk arm via `postDslGuard`, emitted between `dsl` bind
-  and the `in` cast. R63 will lift it onto typed `DialectRequirement`
-  later; until then UPDATE and UPSERT both carry their inline guards.
+  Bulk UPDATE adds a *new* inline Oracle-dialect runtime guard
+  on the bulk arm via `postDslGuard`, emitted between `dsl`
+  bind and the `in` cast. The guard is genuinely new code:
+  single-row UPDATE today is portable (`UPDATE t SET ... WHERE
+  ...` runs on every dialect jOOQ targets) and stays unguarded;
+  only the bulk arm's `UPDATE ... FROM (VALUES ...)` form is
+  Postgres-only. The new guard mirrors UPSERT's existing inline
+  Oracle guard. R63 will lift the new bulk-UPDATE guard and
+  UPSERT's existing one onto typed `DialectRequirement` later.
 - **UPSERT** — multi-row INSERT with `ON CONFLICT (keys) DO UPDATE SET
   c = EXCLUDED.c`. Same `.values(...)` loop as INSERT (so the same
   per-row `containsKey` dispatch on missing-vs-null applies; see
@@ -230,6 +235,20 @@ mechanisms:
 - *DELETE* — has no value columns; only the lookup-key bindings, which
   must be present (validated upstream). N/A.
 
+### Behavior change on single-row mutations
+
+R77 ships two pre-existing single-row bug fixes alongside the bulk
+lift, because both share primitives with the bulk emit: single-row
+INSERT/UPSERT now binds `DEFAULT` for omitted columns (was: typed
+null on every `tia.fields()` entry), and single-row UPDATE now
+leaves omitted columns alone (was: typed null on every
+`tia.setFields()` entry). Callers that relied on the old "always
+write typed null" behavior need to set the field to explicit `null`
+in the input map. Execution-tier tests at
+`createFilm_omittedFieldUsesColumnDefault_explicitNullWritesNull`
+and `updateFilm_omittedFieldLeavesColumnAlone_explicitNullWritesNull`
+lock the new semantics in.
+
 ### Input parsing
 
 `buildDmlFetcher`'s prelude flips from
@@ -258,10 +277,11 @@ INSERT/UPSERT, `.set(...).where(...)` for UPDATE,
    described above (`containsKey` → `defaultValue` vs `val`) instead
    of the unconditional `DSL.val(in.get(...), ...)` walk.
 2. UPDATE emits the dynamic SET clause described in the UPDATE
-   bullet — a codegen-time `if (in.containsKey(cf.name()))` chain
-   walking `tia.setFields()`. Absent fields drop out of the SET
-   clause; the lookup-key WHERE is unchanged. Both single-row and
-   bulk arms share the no-set-fields-present runtime check.
+   bullet — a runtime `if (in.containsKey(cf.name()))` chain
+   walking `tia.setFields()` at codegen time. Absent fields drop
+   out of the SET clause; the lookup-key WHERE is unchanged.
+   Both single-row and bulk arms share the no-set-fields-present
+   runtime check.
 3. The fetcher's declared return generic narrows from `Object` to a
    per-arm typed value (see *Empty-list contract* below for the typed
    shape). The bulk arm and the single-row arm share this lift.
@@ -470,19 +490,22 @@ sharpening.
   single-row arm is unchanged.
 - [`TypeFetcherGenerator.buildMutationUpdateFetcher`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java) —
   rewrite both arms to emit the dynamic SET clause. Walk
-  `tia.setFields()` in declaration order and for each `cf` emit a
-  codegen-time `if (presentKeys.contains("name")) { ... }` block on
-  three parallel sequences: the SET clause, the v-table column-name
-  list (bulk arm only), and the per-row v-table cell list (bulk arm
-  only). `presentKeys` is `firstKeys` on the bulk arm (after the
+  `tia.setFields()` at codegen time in declaration order and for
+  each `cf` emit a runtime `if (presentKeys.contains("name")) { ... }`
+  block guarding three parallel sequences: the SET clause, the
+  v-table column-name list (bulk arm only), and the per-row v-table
+  cell list (bulk arm only). `presentKeys` is `firstKeys` on the
+  bulk arm (after the
   uniformity guard runs) and `in.keySet()` on the single-row arm.
   Lookup-key columns are unconditional (validated upstream).
   Both arms emit the no-set-fields-present runtime check
   immediately before chain construction. The bulk arm additionally
   emits the empty-list short-circuit, the uniformity guard, and the
   duplicate-lookup-key guard via the new `postInGuard` slot (see
-  `buildDmlFetcher` below). Existing inline Oracle-dialect guard
-  continues to ride `postDslGuard` on the bulk arm.
+  `buildDmlFetcher` below). A new inline Oracle-dialect guard
+  rides `postDslGuard` on the bulk arm only (mirrors UPSERT's
+  existing pattern; single-row UPDATE is portable and stays
+  unguarded).
 - [`TypeFetcherGenerator.buildDmlFetcher`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java) —
   three changes:
   1. Cast: emit `Map<?,?> in = ...` when `tia.list() == false`,
@@ -549,10 +572,11 @@ value-cell emit dispatches on `row.containsKey("col")`
 (`DSL.defaultValue(dataType)` when absent, `DSL.val(value, dataType)`
 when present) — the classifier guarantees `tia.fields()` is the
 canonical column list and never widens at runtime. UPDATE's
-annotation gains three clauses: (a) the SET clause is built from a
-codegen-time `if (presentKeys.contains(name))` walk over
-`tia.setFields()` rather than baked unconditionally, (b) the bulk
-arm's uniform-shape guard makes `firstKeys` a stable witness for the
+annotation gains three clauses: (a) the SET clause is built from
+a runtime `if (presentKeys.contains(name))` walk over
+`tia.setFields()` (walked at codegen, evaluated at runtime)
+rather than baked unconditionally, (b) the bulk arm's
+uniform-shape guard makes `firstKeys` a stable witness for the
 present-key set across all rows, and (c) the bulk arm's
 duplicate-tuple guard rejects same-lookup-key inputs before the
 chain executes.
