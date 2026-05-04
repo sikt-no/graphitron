@@ -148,7 +148,7 @@ public class GraphQLRewriteGenerator {
         String jooqPackage   = ctx.jooqPackage();
 
         var fetcherClasses = TypeFetcherGenerator.generate(schema, outputPackage, jooqPackage);
-        var fetcherBodies  = FetcherRegistrationsEmitter.emit(schema, outputPackage, jooqPackage);
+        var fetcherBodies  = FetcherRegistrationsEmitter.emit(schema, outputPackage);
 
         Set<Path> emittedThisRun = new LinkedHashSet<>();
         write(GraphitronValuesClassGenerator.generate(),                                          "util",       emittedThisRun);
