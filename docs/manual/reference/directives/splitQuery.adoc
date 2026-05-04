@@ -53,7 +53,7 @@ type Film @table(name: "film") {
 }
 ----
 
-Self-referencing FK (mandatory for self-joins — without `@splitQuery`, the generator can't distinguish the self-join from staying in the same table context):
+Self-referencing FK (split is *available* for fan-out reduction; not structurally required since the inline emitter handles self-joins via parent-prefixed alias names):
 
 [source,graphql]
 ----
@@ -71,7 +71,7 @@ type City @table(name: "city") {
 }
 ----
 
-Combined with xref:asConnection.adoc[`@asConnection`] (per-parent paginated child connection — `ROW_NUMBER() OVER (PARTITION BY parentInput.idx)` envelope gives each parent its own slice):
+Combined with xref:asConnection.adoc[`@asConnection`] (per-parent paginated child connection: `ROW_NUMBER() OVER (PARTITION BY parentInput.idx)` envelope gives each parent its own slice):
 
 [source,graphql]
 ----
@@ -91,11 +91,11 @@ type Film @table(name: "film") {
 * Single-cardinality `@splitQuery` is restricted to a *single-hop* xref:reference.adoc[`@reference`] path. Multi-hop single-cardinality is rejected at build time with the offending path's hop count in the message.
 * List-cardinality `@splitQuery` supports any hop count, including junction-table chains (`@reference(path: [..., ...])`).
 * Implicit on `@table`-typed fields of a xref:record.adoc[`@record`] parent reachable from xref:service.adoc[`@service`]: re-entry queries are emitted automatically. Explicit `@splitQuery` on those fields is redundant but not rejected. (`classifyChildFieldOnResultType` never inspects `@splitQuery` on record-parent table-bound fields.)
-* Required for self-referencing FKs (e.g. `film.sequel → film.film_id`). Without it, the join can't be distinguished from staying in the same table context. *Reverse* self-references (listing rows pointing at the current row via the same FK) aren't auto-resolved; use a custom xref:condition.adoc[`@condition`] as a workaround.
-* Required when xref:service.adoc[`@service`] is used on a non-root field (the service fetches the row independently of the parent's SELECT — the split is the contract).
+* Self-referencing FKs work *inline* in the rewrite. `InlineTableFieldEmitter` prefixes alias names with the parent alias's runtime name so recursive subselects don't collide; `Category.parent` and `Category.children` in the example schema cover this end-to-end. `@splitQuery` is available on self-FKs for the same fan-out-reduction reasons as any other reference, but is not required.
+* Required when xref:service.adoc[`@service`] is used on a non-root field (the service fetches the row independently of the parent's SELECT; the split is the contract).
 * Composes with xref:asConnection.adoc[`@asConnection`]: the per-parent partition envelope is added to the connection's pagination shape.
 * Composes with xref:lookupKey.adoc[`@lookupKey`]: the lookup key narrows the per-parent batch (each parent's child list filtered by the caller-provided keys).
-* On root (`Query`/`Mutation`) fields and on fields with arguments, `@splitQuery` is irrelevant — those always have explicit data fetchers. The directive is silently ignored there.
+* On root (`Query`/`Mutation`) fields and on fields with arguments, `@splitQuery` is irrelevant; those always have explicit data fetchers. The directive is silently ignored there.
 * Nullable FKs on parent-holds-FK single-cardinality fields short-circuit to `null` *before* dispatching to the DataLoader (saves a round-trip when no parents have a non-null FK value).
 
 == See also
@@ -104,6 +104,6 @@ type Film @table(name: "film") {
 * xref:asConnection.adoc[`@asConnection`] adds per-parent Relay pagination on top of a split fetch.
 * xref:lookupKey.adoc[`@lookupKey`] narrows the per-parent batch to caller-provided keys.
 * xref:record.adoc[`@record`] parents reachable from xref:service.adoc[`@service`] get implicit `@splitQuery` on `@table`-typed children.
-* xref:../../how-to/split-vs-inline.adoc[How-to: When to split queries] (Phase 3) covers the round-trip-vs-fan-out trade-off, self-FK rules, and DataLoader caching behaviour.
+* xref:../../how-to/split-vs-inline.adoc[How-to: When to split queries] covers the round-trip-vs-fan-out trade-off, self-FK rules, and DataLoader caching behaviour.
 
 xref:../index.adoc[← Reference index]
