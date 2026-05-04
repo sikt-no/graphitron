@@ -197,7 +197,7 @@ directive @asConnection(
   """Default page size when the client omits the 'first' argument."""
   defaultFirstValue: Int = 100
   """Override the generated Connection type name (default: {ParentType}{FieldName}Connection)."""
-  connectionName: String
+  connectionName: String @deprecated(reason: "Each connection field should own its own Connection type. Sharing one type across fields conflates distinct semantic contexts (different parents, filters, orders) at the type level. The override exists only as a transition mechanism for legacy schemas and remains supported but discouraged.")
 ) on FIELD_DEFINITION
 
 """Handle this input argument as orderBy functionality"""
