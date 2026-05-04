@@ -51,6 +51,6 @@ The rejection fires before the rest of the field's classification runs, so the m
 * xref:externalField.adoc[`@externalField`] is the replacement for column-shaped custom logic on a `@table` parent.
 * xref:tableMethod.adoc[`@tableMethod`] is the replacement when the developer needs to choose the source jOOQ table at request time.
 * xref:batchKeyLifter.adoc[`@batchKeyLifter`] is the replacement when a `@record` parent needs a custom path to a child `@table`'s batch key.
-* xref:../../how-to/migrating-from-legacy.adoc[How-to: Migrating from the legacy generator] (Phase 3) covers the full directive-by-directive migration matrix, including the rejected-stub directives.
+* xref:../../how-to/migrating-from-legacy.adoc[How-to: Migrating from the legacy generator] covers the full directive-by-directive migration matrix, including the rejected-stub directives.
 
 xref:../index.adoc[← Reference index]
