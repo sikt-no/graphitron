@@ -1,0 +1,149 @@
+= How-to: The errors channel
+:description: Wire a service payload's `errors:` field through @error types so business exceptions flow as typed data alongside the rest of the response.
+:!toc:
+
+xref:../reference/directives/error.adoc[`@error`] turns a Java exception into a typed GraphQL error appended to a service payload's `errors:` list, instead of failing the resolver. The reference page covers signature and constraints. This recipe addresses three operational questions the directive raises: when to use a union of `@error` types vs a single error type for the carrier, what the rewrite does with the handler's `description:` field vs the exception's own message, and what the synthesised `path:` slot actually contains at runtime.
+
+== Carrier shapes: union vs single type
+
+The carrier is the `errors:` field on the payload type. Two shapes work:
+
+[source,graphql]
+----
+type FilmPayload @record(record: {className: "com.example.FilmPayload"}) {
+    film:   Film
+    errors: [FilmError]
+}
+
+union FilmError = YearOutOfRange | NotAllowed | DbError
+----
+
+vs:
+
+[source,graphql]
+----
+type FilmPayload @record(record: {className: "com.example.FilmPayload"}) {
+    film:   Film
+    errors: [SimpleError]
+}
+
+type SimpleError @error(handlers: [...]) {
+    path:    [String!]!
+    message: String!
+}
+----
+
+The classifier treats both the same way: `ErrorChannel.mappedErrorTypes` is a `List<ErrorType>`, populated with the union members in the union case and a one-element list in the single-type case. The runtime dispatch (`ErrorRouterClassGenerator.buildDispatchMethod`) walks that list once per thrown exception; cardinality of the list does not change the matching algorithm.
+
+The choice is semantic, not structural:
+
+* *Union* fits when distinct error classes carry distinct *fields*. `YearOutOfRange` might want a `validRange: String` slot; `DbError` might want a `constraint: String`. Each member is its own object type with its own SDL field set, and graphql-java's type resolver dispatches on the runtime instance. Use a union when clients should branch on `__typename` to read shape-specific fields.
+* *Single type* fits when every error has the same shape and only the `message:` (and `path:`) varies. The handler list on the single `@error` type can still cover many distinct exception classes — the union pattern is for distinct *result shapes*, not distinct *handlers*.
+
+The rewrite doesn't pick a side: a `@record` payload whose canonical constructor declares a parameter typed `List<? super FilmError>` (or `List<SimpleError>`) is recognised either way. The classifier reflects on the canonical constructor and locates the unique parameterised `List`/`Iterable`/`Collection` slot whose element bound is compatible with every channel error type.
+
+The Sakila example schema currently has no `@error` types; the canonical fixtures live in `/home/user/graphitron/graphitron-rewrite/graphitron/src/test/java/no/sikt/graphitron/rewrite/ErrorChannelClassificationTest.java` (alongside the synthetic `SakPayload` record at `no.sikt.graphitron.codereferences.dummyreferences.SakPayload`). When you wire your first error channel, that test class's setup is the right shape to copy.
+
+== Handler dispatch: source order, cause-chain unwrap
+
+The router's match loop is straightforward:
+
+[source,java]
+----
+for (Mapping mapping : mappings) {
+    for (Throwable t = thrown; t != null; t = t.getCause()) {
+        if (mapping.match(t)) {
+            return DataFetcherResult.<P>newResult().data(payloadFactory.apply(List.of(t))).build();
+        }
+    }
+}
+return redact(thrown, env);
+----
+
+(`ErrorRouterClassGenerator.java:347-358`.)
+
+Two facts to internalise:
+
+* *Source order wins.* Mappings are walked in the order the channel's types appear in the SDL (and within a type, in `handlers:` declaration order). The first mapping that returns `true` from `match(t)` is the answer. Order matters when one handler is more specific than another — declare the narrow one first.
+* *The cause chain is unwrapped per mapping.* For each mapping, the loop walks the thrown exception, then `getCause()`, then the cause's cause, and so on. The result is "first (mapping, throwable-in-chain) pair that matches", not "first throwable matched against any mapping". A `RuntimeException` wrapping a `DataAccessException` will match a `DATABASE` handler attached to the inner exception even if the outer exception class isn't itself in any handler. This is the intended shape: business exceptions surfaced through framework wrappers route to the typed channel.
+
+The classifier rejects duplicate handler tuples across the channel (`Rule 8`). Two handlers with identical `(handler, className, code, sqlState, matches)` are unreachable for the second declaration; the build fails rather than silently picking one. Cross-variant overlap is allowed: a `GENERIC` handler for `IllegalArgumentException` and a `DATABASE` handler for `sqlState: "23514"` can coexist on the same channel because their match predicates inspect orthogonal fields.
+
+`VALIDATION` is special-cased. There is at most one `VALIDATION` handler per channel (`Rule 7`); a Bean Validation failure runs as a *pre-execution wrapper*, never enters the dispatch loop, and the resulting `GraphQLError` is routed straight into the errors slot.
+
+== `description:` is captured but currently unused
+
+The reference page lists `description: String` on each handler entry. Today, the value is captured at emit time on the per-handler `Mapping` instance and exposed through a `description()` accessor, but it is not consulted at dispatch:
+
+[quote, ErrorRouterClassGenerator.java:342-344]
+The `description` field on each `Mapping` is currently unused at the dispatch site; the description-overriding facade is a follow-on emitter concern.
+
+The dispatch loop above propagates the matched `Throwable` directly: `payloadFactory.apply(List.of(t))`. The `message:` field on the error type (described next) reads from the live exception, not from the handler's `description:`. The practical consequence: setting `description:` on a handler today is a no-op for what reaches the client; the exception's own `getMessage()` is what shows up.
+
+This is captured rather than removed because the description-overriding facade is a planned follow-up: at landing, it will wrap the matched exception in an adapter that returns `description` from `getMessage()` (preserving the rest of the throwable's identity for logging and observability). Until then, write the user-facing message into the exception itself when you want a stable string surfaced to clients, and treat `description:` as documentation for the SDL reader rather than runtime behaviour.
+
+== `path:`, `message:` field fetchers
+
+Every `@error` type's `path: [String!]!` and `message: String!` slots get synthesised data fetchers. The slots are matched by *name*; an `@error` type without one of them is rejected at classify time.
+
+`path:` reads the GraphQL execution step path for non-validation sources (`GraphitronSchemaClassGenerator.buildErrorTypeFieldFetchers:425-456`):
+
+[source,java]
+----
+return env.getExecutionStepInfo().getPath().toList().stream().map(String::valueOf).toList();
+----
+
+For `VALIDATION` sources (which are `GraphQLError` instances pre-built by the Bean-Validation wrapper), `path:` reads from the error itself — `ge.getPath().stream().map(String::valueOf).toList()` — so the per-element constraint paths recorded by `ConstraintViolations.toGraphQLError` survive intact.
+
+The path is the GraphQL *response* path, not the mutation argument path. For:
+
+[source,graphql]
+----
+mutation { createFilm(input: {...}) { film { title } errors { path message } } }
+----
+
+an exception thrown by `createFilm` and matched into `errors[0]` produces `path: ["createFilm"]` (or `["createFilm", "<some-subfield>"]` if the throw happened during nested resolution). To convey *which input field* triggered the error, encode that into the exception itself (the constraint or the validation-handler payload) and surface it through `message:` or a custom field on the error type.
+
+`message:` always reads `getMessage()` from the source — `Throwable.getMessage()` for the dispatched exception, `GraphQLError.getMessage()` for VALIDATION sources. The handler's `description:` is *not* consulted here today (see the previous section). If you want a localised or sanitised message at the boundary, override `getMessage()` in the exception class (or wrap the throw in a `MessageScrubbingException` of your own).
+
+== Unmatched exceptions: redact and correlate
+
+When no handler matches, the router runs the redact path (`ErrorRouterClassGenerator.redactBody:361`):
+
+[source,java]
+----
+UUID correlationId = UUID.randomUUID();
+LOGGER.error("Unmatched exception in fetcher; correlation id = {}", correlationId, thrown);
+return DataFetcherResult.<P>newResult()
+    .data(null)
+    .error(GraphqlErrorBuilder.newError(env)
+        .message("An error occurred. Reference: " + correlationId + ".")
+        .build())
+    .build();
+----
+
+Two consequences:
+
+* *Untyped exceptions don't leak details to clients.* The user-facing message is "An error occurred. Reference: <UUID>."; the original message stays in the server log. This is the fallback behaviour, intentional: only exceptions you've explicitly opted into via `@error` flow as data.
+* *The correlation ID joins the log line and the client response.* Operations can grep the logs for the UUID a customer reports back, see the original stack, and decide whether to add a handler. This is the shape any new error category goes through before earning a typed channel slot.
+
+Add a typed channel slot when an untyped fallthrough turns out to be a regular, expected condition (not a bug). Leave it as a fallthrough when it really is a bug: the redacted shape is exactly what you want for a 500-class condition.
+
+== Pitfalls
+
+* *Source order is significant.* Declare narrow handlers (with `matches:` substrings, more specific `className:` subclasses) before broad ones. The first match wins, not the most specific.
+* *`description:` is documentation today.* Don't rely on it changing the wire-side message; carry the customer-visible string in the exception itself. The override facade is a planned follow-up; this recipe will be amended when it lands.
+* *`path:` is the response path.* If you need to point at an input argument, encode it in the exception or in a custom field on the error type. The synthesised fetcher reads `env.getExecutionStepInfo().getPath()` and can't distinguish argument positions.
+* *`VALIDATION` runs pre-execution.* The Bean-Validation handler intercepts before the service method runs; its results bypass the dispatch loop and route straight into the errors slot. There's at most one `VALIDATION` handler per channel.
+* *Cause-chain unwrap is per mapping, not per source-order step.* If a wrapping exception declares a handler at the channel and the wrapped exception declares a different one, the *wrapping* exception wins for any mapping it matches first — even if the wrapped exception would match a later mapping more specifically. Keep handler tuples disjoint across the wrap boundary.
+* *Unmatched flows redact.* If a developer expects a specific exception class to surface to the client and it doesn't, the most likely cause is "no `@error` type covers it"; check the redaction log for a correlation ID, then add the handler.
+* *No payload, no channel.* `@error` only takes effect when the type appears as (or in a union behind) an `errors:` field on a payload reachable from a `@service` field. A standalone `@error` type with no carrier is rejected at classify time.
+
+== See also
+
+* xref:../reference/directives/error.adoc[`@error`] is the directive surface and the handler-tuple specification.
+* xref:../reference/directives/service.adoc[`@service`] is the upstream of the errors channel: only service-returned payloads carry one.
+* xref:../reference/directives/record.adoc[`@record`] backs the payload type that exposes the `errors:` field.
+* xref:result-types.adoc[How-to: Result-type variants] covers the payload's backing-class shape, which the channel classifier reflects on to find the errors slot.
+
+xref:index.adoc[← How-to index]
