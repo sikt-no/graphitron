@@ -268,6 +268,14 @@ INSERT INTO film_actor (actor_id, film_id) VALUES
     (2, 4),
     (3, 5);
 
+-- R61 execution-tier fixture: inventory rows linked to films 1, 2, 3 (one row per film).
+-- Used by GraphQLQueryTest.inventoryById_filmRef_resolvesViaExternalFieldReturningTableRecord
+-- and the FilmCardWrapper sibling test exercising the AccessorKeyedSingle lift.
+INSERT INTO inventory (inventory_id, film_id, store_id) VALUES
+    (1, 1, 1),
+    (2, 2, 1),
+    (3, 3, 1);
+
 -- content seed data: two FilmContent rows linked to films 1 and 2, two ShortContent rows.
 -- short_description is populated only on SHORT rows so per-participant column isolation tests
 -- can verify NULL on FILM rows.

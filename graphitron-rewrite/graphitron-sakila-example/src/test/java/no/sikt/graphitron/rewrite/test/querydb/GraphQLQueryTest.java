@@ -242,6 +242,63 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void inventoryById_filmRef_resolvesViaExternalFieldReturningFieldOfTableRecord() {
+        // R61 execution-tier fixture: @externalField returning Field<TableRecord<?>>.
+        // InventoryExtensions.filmRef(table) projects inventory.film_id via DSL.row(...).
+        // convertFrom(...), constructing a FilmRecord with only the PK populated. The
+        // GraphQL FilmCard type is @record-backed by FilmRecord; FilmCard.filmId is read
+        // from the lifted FilmRecord at request time. Confirms a Field<X> where X is a
+        // jOOQ TableRecord round-trips end-to-end through the existing @externalField
+        // resolver (no production change in R61) and the convertFrom trick lifts a typed
+        // value at SQL time.
+        Map<String, Object> data = execute(
+            "{ inventoryById(inventory_id: [1, 2, 3]) { inventoryId filmRef { filmId } } }");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("inventoryById");
+        assertThat(rows).hasSize(3);
+        // Seed: inventory_id N -> film_id N for N in {1, 2, 3}.
+        for (var row : rows) {
+            int inventoryId = (Integer) row.get("inventoryId");
+            @SuppressWarnings("unchecked")
+            Map<String, Object> filmRef = (Map<String, Object>) row.get("filmRef");
+            assertThat(filmRef).extractingByKey("filmId").isEqualTo(inventoryId);
+        }
+    }
+
+    @Test
+    void inventoryById_filmCardData_firesAccessorKeyedManyLiftThroughCustomJavaRecord() {
+        // R61 execution-tier fixture: @externalField returning Field<CustomJavaRecord>
+        // where the custom record (FilmCardData) carries a typed List<FilmRecord> accessor.
+        // The classifier picks the canonical films() accessor on FilmCardData and produces
+        // an AccessorKeyedMany BatchKey for the GraphQL child field `films: [Film!]!`. The
+        // framework batches dispatch via loader.loadMany(keys, env) keyed on the element
+        // table's PK (Record1<Integer>) and returns one Film row per key — full columns
+        // this time, so Film.title resolves from the framework-fetched record (the lifted
+        // FilmRecord only carried the PK).
+        Map<String, Object> data = execute(
+            "{ inventoryById(inventory_id: [1, 2, 3]) { inventoryId filmCardData { films { filmId title } } } }");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("inventoryById");
+        assertThat(rows).hasSize(3);
+        // Seeded film titles by film_id 1..3.
+        Map<Integer, String> expectedTitleByFilmId = Map.of(
+            1, "ACADEMY DINOSAUR",
+            2, "ACE GOLDFINGER",
+            3, "ADAPTATION HOLES");
+        for (var row : rows) {
+            int inventoryId = (Integer) row.get("inventoryId");
+            @SuppressWarnings("unchecked")
+            Map<String, Object> filmCardData = (Map<String, Object>) row.get("filmCardData");
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> films = (List<Map<String, Object>>) filmCardData.get("films");
+            assertThat(films).hasSize(1);
+            Map<String, Object> film = films.get(0);
+            assertThat(film).extractingByKey("filmId").isEqualTo(inventoryId);
+            assertThat(film).extractingByKey("title").isEqualTo(expectedTitleByFilmId.get(inventoryId));
+        }
+    }
+
+    @Test
     void films_filteredBySameTableNodeId_returnsRowsMatchingDecodedIds() {
         // self-table-nodeid-filter.md: [ID!] @nodeId(typeName: "Film") on a film-bound input
         // → primary-key IN predicate. Encode 2 of the 5 PKs, expect exactly those 2 rows.
