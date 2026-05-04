@@ -26,11 +26,11 @@ public interface BatchKeyField {
      *
      * <p>True iff the field is single-cardinality
      * ({@link ChildField.SplitTableField} with {@code !returnType().wrapper().isList()}) or
-     * carries {@link BatchKey.AccessorRowKeyedMany} (the {@code loader.loadMany} contract: one
+     * carries {@link BatchKey.AccessorKeyedMany} (the {@code loader.loadMany} contract: one
      * record per element-PK key, regardless of the field's GraphQL cardinality). False for
      * list-cardinality {@code SplitTableField} / {@code SplitLookupTableField} /
      * {@code RecordLookupTableField}, single-key {@code RecordTableField}
-     * ({@code RowKeyed} / {@code LifterRowKeyed} / {@code AccessorRowKeyedSingle}, which return
+     * ({@code RowKeyed} / {@code LifterRowKeyed} / {@code AccessorKeyedSingle}, which return
      * a {@code List<Record>} per key).
      *
      * <p>The two consumer sites are

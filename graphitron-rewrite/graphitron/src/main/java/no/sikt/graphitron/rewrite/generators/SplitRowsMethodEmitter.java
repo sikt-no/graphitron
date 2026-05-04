@@ -145,8 +145,8 @@ public final class SplitRowsMethodEmitter {
         ClassName tablesClass = ClassName.get(jooqPackage, "Tables");
 
         // Side-aware column list, polymorphically: RowKeyed's preludeKeyColumns delegates to
-        // parentKeyColumns (catalog-FK side); LifterRowKeyed / AccessorRowKeyedSingle /
-        // AccessorRowKeyedMany delegate to targetKeyColumns (target side via the LiftedHop). All
+        // parentKeyColumns (catalog-FK side); LifterRowKeyed / AccessorKeyedSingle /
+        // AccessorKeyedMany delegate to targetKeyColumns (target side via the LiftedHop). All
         // four produce RowN<...> of the same Java types as the JOIN target columns. The parameter
         // type RecordParentBatchKey makes "only the four prelude-reachable permits reach this
         // site" a compile-time guarantee instead of a switch with a default-throw arm.
@@ -212,13 +212,13 @@ public final class SplitRowsMethodEmitter {
         // where field<N>() returns a bind-parameter Field<T> wrapping the value, so passing
         // k.field<N>() into the parent VALUES row renders the value (not a column reference).
         //
-        // RecordN-keyed arms (AccessorRowKeyedSingle / AccessorRowKeyedMany) construct keys via
+        // RecordN-keyed arms (AccessorKeyedSingle / AccessorKeyedMany) construct keys via
         // record.into(table.col, ...): field<N>() returns the source-table column reference,
         // which would leak into the VALUES table as the column name instead of the value. We
         // pull the scalar via value<N>() and wrap it in DSL.val(...) so the argument typechecks
         // against jOOQ's Field-based DSL.row overload alongside the inline-i first argument.
-        boolean isAccessor = batchKey instanceof BatchKey.AccessorRowKeyedSingle
-                          || batchKey instanceof BatchKey.AccessorRowKeyedMany;
+        boolean isAccessor = batchKey instanceof BatchKey.AccessorKeyedSingle
+                          || batchKey instanceof BatchKey.AccessorKeyedMany;
         for (int i = 0; i < pkCols.size(); i++) {
             if (isAccessor) {
                 rowArgs.add(", $T.val(k.value$L())", DSL, i + 1);
@@ -367,7 +367,7 @@ public final class SplitRowsMethodEmitter {
             return buildRuntimeStub(rtf.rowsMethodName(), rtf.batchKey(), rtf.returnType(), stubReason.get().message(), outputPackage);
         }
         // RecordTableField fields whose rows-method emits 1 record per key (today, only
-        // AccessorRowKeyedMany: each accessor-derived element-PK key maps to exactly one
+        // AccessorKeyedMany: each accessor-derived element-PK key maps to exactly one
         // terminal record) route through buildSingleMethod, which produces the flat join +
         // scatterSingleByIdx shape required by the loader.loadMany dispatch (loader value
         // type Record, returning List<Record> 1:1 with keys, not List<List<Record>>). The
@@ -626,7 +626,7 @@ public final class SplitRowsMethodEmitter {
             body, fieldName, batchKey, returnType, joinPath, jooqPackage);
         String firstAlias = p.firstAlias();
         // Two routes reach this method: SplitTableField single-cardinality (FkJoin first hop,
-        // parent-holds-FK) and RecordTableField with AccessorRowKeyedMany (LiftedHop first hop,
+        // parent-holds-FK) and RecordTableField with AccessorKeyedMany (LiftedHop first hop,
         // key-equals-target-PK). Both implement WithTarget; the column-reference reads
         // uniformly. The whereFilter slot is FkJoin-only and is conditional below.
         JoinStep.WithTarget firstHop = (JoinStep.WithTarget) joinPath.get(0);
@@ -645,7 +645,7 @@ public final class SplitRowsMethodEmitter {
         // Both FkJoin and LiftedHop expose the terminal-side columns through targetColumns():
         // for FkJoin this is the parent's FK target on the terminal (single-cardinality
         // SplitTableField); for LiftedHop this is the element table's PK (loadMany contract for
-        // AccessorRowKeyedMany). Same column-class invariant either way.
+        // AccessorKeyedMany). Same column-class invariant either way.
         var onCond = CodeBlock.builder();
         for (int i = 0; i < firstHop.targetColumns().size(); i++) {
             if (i > 0) onCond.add(".and(");

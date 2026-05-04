@@ -538,7 +538,7 @@ public class TypeFetcherGenerator {
         // Single-cardinality sibling: scatterSingleByIdx returns List<Record> (one slot per key,
         // null where no match) rather than List<List<Record>>. Gated on the BatchKeyField
         // capability emitsSingleRecordPerKey, which folds two structurally unrelated triggers
-        // (single-cardinality Split* fields, RecordTableField with AccessorRowKeyedMany) onto
+        // (single-cardinality Split* fields, RecordTableField with AccessorKeyedMany) onto
         // one uniform answer. A future variant whose rows-method emits 1 record per key
         // implements the capability and reaches this gate without a third disjunct here.
         boolean hasSingleRecordPerKeyField = fields.stream()
@@ -2555,12 +2555,12 @@ public class TypeFetcherGenerator {
      */
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "accessor-rowkey-cardinality-matches-field",
-        reliesOn = "FieldBuilder.deriveBatchKeyFromTypedAccessor produces AccessorRowKeyedMany "
-            + "only on list fields and AccessorRowKeyedSingle only on single fields. The "
+        reliesOn = "FieldBuilder.deriveBatchKeyFromTypedAccessor produces AccessorKeyedMany "
+            + "only on list fields and AccessorKeyedSingle only on single fields. The "
             + "valueType rule below ((dispatch == LOAD_MANY || !isList) → Record) folds the "
             + "two cases that emit a per-key value of Record (LOAD_MANY's loadMany contract; "
             + "single-cardinality LOAD_ONE) and otherwise emits List<Record>. An "
-            + "AccessorRowKeyedMany on a non-list field would emit code expecting List<Record> "
+            + "AccessorKeyedMany on a non-list field would emit code expecting List<Record> "
             + "from a loadMany that supplies Record, miscompiling generated *Fetchers.")
     private static <T extends ChildField.TableTargetField & BatchKeyField> MethodSpec
             buildRecordBasedDataFetcher(T field, BatchKey.RecordParentBatchKey batchKey,
@@ -2575,7 +2575,7 @@ public class TypeFetcherGenerator {
         // field's cardinality directly. The pairing of dispatch and field cardinality is the
         // contract: a LOAD_MANY on a non-list field would emit code expecting List<Record> from
         // a loadMany that supplies Record. The classifier upholds this contract by producing
-        // AccessorRowKeyedMany (LOAD_MANY) only on list fields; the typed dispatch projection
+        // AccessorKeyedMany (LOAD_MANY) only on list fields; the typed dispatch projection
         // makes that contract a property of the model, not a string-name convention.
         TypeName valueType = (dispatch == BatchKey.LoaderDispatch.LOAD_MANY || !isList)
             ? RECORD

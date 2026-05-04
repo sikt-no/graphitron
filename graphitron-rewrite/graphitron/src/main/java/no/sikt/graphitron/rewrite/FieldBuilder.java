@@ -2753,11 +2753,11 @@ class FieldBuilder {
         return switch (derived) {
             case AccessorDerivation.Ok ok -> {
                 JoinStep.LiftedHop hop = switch (ok.batchKey()) {
-                    case BatchKey.AccessorRowKeyedSingle ars -> ars.hop();
-                    case BatchKey.AccessorRowKeyedMany arm -> arm.hop();
+                    case BatchKey.AccessorKeyedSingle ars -> ars.hop();
+                    case BatchKey.AccessorKeyedMany arm -> arm.hop();
                     case BatchKey.RowKeyed _, BatchKey.LifterRowKeyed _ -> throw new IllegalStateException(
-                        "deriveBatchKeyFromTypedAccessor must produce only AccessorRowKeyedSingle or "
-                        + "AccessorRowKeyedMany; got " + ok.batchKey().getClass().getSimpleName());
+                        "deriveBatchKeyFromTypedAccessor must produce only AccessorKeyedSingle or "
+                        + "AccessorKeyedMany; got " + ok.batchKey().getClass().getSimpleName());
                 };
                 yield new RecordBatchKeyResolution.Resolved(ok.batchKey(), List.of(hop));
             }
@@ -2804,19 +2804,19 @@ class FieldBuilder {
             + "single matching public zero-arg non-bridge non-synthetic instance accessor on the "
             + "parent backing class, (b) returning X, List<X>, or Set<X> for a concrete X "
             + "extending org.jooq.TableRecord, and (c) X's mapped jOOQ table identical to the "
-            + "field's @table return. The two emitter arms (buildAccessorRowKeySingle / "
-            + "buildAccessorRowKeyMany in GeneratorUtils) cast env.getSource() to the resolved "
+            + "field's @table return. The two emitter arms (buildAccessorKeySingle / "
+            + "buildAccessorKeyMany in GeneratorUtils) cast env.getSource() to the resolved "
             + "backing class and invoke the accessor by name without instanceof guards or null "
             + "checks; TypeFetcherGenerator.buildRecordBasedDataFetcher materialises the loader "
             + "value type as Record without defending against a wider declared accessor return.")
     @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
         key = "accessor-rowkey-cardinality-matches-field",
-        description = "Returns AccessorRowKeyedSingle only when "
-            + "field.returnType().wrapper().isList() is false; returns AccessorRowKeyedMany only "
+        description = "Returns AccessorKeyedSingle only when "
+            + "field.returnType().wrapper().isList() is false; returns AccessorKeyedMany only "
             + "when it is true; mismatched cells become AccessorDerivation.CardinalityMismatch "
             + "rejections. TypeFetcherGenerator.buildRecordBasedDataFetcher's "
             + "((dispatch == LOAD_MANY || !isList) → valueType = Record) rule depends on this; "
-            + "an AccessorRowKeyedMany on a non-list field would emit code expecting List<Record> "
+            + "an AccessorKeyedMany on a non-list field would emit code expecting List<Record> "
             + "from a loadMany that supplies Record, miscompiling generated *Fetchers.")
     private AccessorDerivation deriveBatchKeyFromTypedAccessor(
             String fieldName, ReturnTypeRef.TableBoundReturnType tb,
@@ -2927,14 +2927,14 @@ class FieldBuilder {
                 ClassName.bestGuess(parentFqClassName),
                 s.method().getName(),
                 ClassName.bestGuess(s.elementClass().getName()));
-            return new AccessorDerivation.Ok(new BatchKey.AccessorRowKeyedSingle(hop, ref));
+            return new AccessorDerivation.Ok(new BatchKey.AccessorKeyedSingle(hop, ref));
         }
         var mm = (AccessorMatch.Many) only;
         var ref = new AccessorRef(
             ClassName.bestGuess(parentFqClassName),
             mm.method().getName(),
             ClassName.bestGuess(mm.elementClass().getName()));
-        return new AccessorDerivation.Ok(new BatchKey.AccessorRowKeyedMany(hop, ref));
+        return new AccessorDerivation.Ok(new BatchKey.AccessorKeyedMany(hop, ref));
     }
 
     private record ReturnAxis(ServiceCatalog.ContainerKind container, Class<?> elementClass) {}

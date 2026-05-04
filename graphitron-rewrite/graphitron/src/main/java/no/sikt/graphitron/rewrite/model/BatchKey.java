@@ -20,7 +20,7 @@ import java.util.stream.Collectors;
  *       {@code record.into(...)}). Each variant exposes
  *       {@link ParentKeyed#parentKeyColumns()}: PK/FK columns on the parent side.</li>
  *   <li>{@link RecordParentBatchKey} ({@code @record}-parent permits): {@link RowKeyed},
- *       {@link LifterRowKeyed}, {@link AccessorRowKeyedSingle}, {@link AccessorRowKeyedMany}.
+ *       {@link LifterRowKeyed}, {@link AccessorKeyedSingle}, {@link AccessorKeyedMany}.
  *       Used as the parameter type for {@code GeneratorUtils.buildRecordParentKeyExtraction};
  *       mis-routing a {@code @service}-only permit there is a compile error rather than a
  *       runtime {@code IllegalStateException}.</li>
@@ -30,11 +30,11 @@ import java.util.stream.Collectors;
  * {@code DataLoaderFactory.newDataLoader(BatchLoaderWithContext)};
  * {@link MappedRowKeyed} and {@link MappedRecordKeyed} drive
  * {@code DataLoaderFactory.newMappedDataLoader(MappedBatchLoaderWithContext)}.
- * {@link LifterRowKeyed} and {@link AccessorRowKeyedSingle} drive the same column-keyed
+ * {@link LifterRowKeyed} and {@link AccessorKeyedSingle} drive the same column-keyed
  * DataLoader path as {@link RowKeyed}; the key-extraction call site (developer-supplied lifter
  * vs. typed accessor on the parent backing class) and the join-path identity
  * ({@link JoinStep.LiftedHop} instead of {@link JoinStep.FkJoin}) differ.
- * {@link AccessorRowKeyedMany} drives {@code loader.loadMany(keys, env)} with loader value type
+ * {@link AccessorKeyedMany} drives {@code loader.loadMany(keys, env)} with loader value type
  * {@code Record} (one record per element-PK key); each parent contributes N keys via the
  * accessor's {@code List<X>} / {@code Set<X>} return.
  *
@@ -86,8 +86,8 @@ public sealed interface BatchKey
      *       {@code RowN<A, B, ...>} — the developer-facing shape on the @service-source
      *       classification path (Row source declarations classify here) and the framework's
      *       FK-derived shape on @record parents.</li>
-     *   <li>{@link RecordKeyed} / {@link MappedRecordKeyed} / {@link AccessorRowKeyedSingle} /
-     *       {@link AccessorRowKeyedMany} → {@code RecordN<A, B, ...>} — the developer-facing
+     *   <li>{@link RecordKeyed} / {@link MappedRecordKeyed} / {@link AccessorKeyedSingle} /
+     *       {@link AccessorKeyedMany} → {@code RecordN<A, B, ...>} — the developer-facing
      *       shape on the @service-source Record path, and the auto-derived shape on
      *       accessor-keyed @record parents (no developer-facing source on those arms).</li>
      * </ul>
@@ -103,8 +103,8 @@ public sealed interface BatchKey
             case RowKeyed rk                -> rowNType(rk.parentKeyColumns());
             case MappedRowKeyed mrk         -> rowNType(mrk.parentKeyColumns());
             case LifterRowKeyed lrk         -> rowNType(lrk.targetKeyColumns());
-            case AccessorRowKeyedSingle ars -> recordNType(ars.targetKeyColumns());
-            case AccessorRowKeyedMany arm   -> recordNType(arm.targetKeyColumns());
+            case AccessorKeyedSingle ars -> recordNType(ars.targetKeyColumns());
+            case AccessorKeyedMany arm   -> recordNType(arm.targetKeyColumns());
             case RecordKeyed rk             -> recordNType(rk.parentKeyColumns());
             case MappedRecordKeyed mrk      -> recordNType(mrk.parentKeyColumns());
         };
@@ -146,23 +146,23 @@ public sealed interface BatchKey
     /**
      * Sub-hierarchy: keys produced for {@code @record} (non-table) parents. Permits
      * {@link RowKeyed} (catalog FK on a record parent), {@link LifterRowKeyed}
-     * (developer-supplied lifter), {@link AccessorRowKeyedSingle} (auto-derived from a
+     * (developer-supplied lifter), {@link AccessorKeyedSingle} (auto-derived from a
      * single-cardinality typed accessor on the parent backing class), and
-     * {@link AccessorRowKeyedMany} (auto-derived from a list / set typed accessor). This is
+     * {@link AccessorKeyedMany} (auto-derived from a list / set typed accessor). This is
      * the input type for {@code GeneratorUtils.buildRecordParentKeyExtraction}; any future
      * caller routing a {@link RecordKeyed} or mapped variant here is a compile error rather
      * than a runtime {@code IllegalStateException}.
      */
     sealed interface RecordParentBatchKey extends BatchKey
-            permits RowKeyed, LifterRowKeyed, AccessorRowKeyedSingle, AccessorRowKeyedMany {
+            permits RowKeyed, LifterRowKeyed, AccessorKeyedSingle, AccessorKeyedMany {
 
         /**
          * Side-aware key columns for the rows-method prelude's parent-input VALUES table:
          * parent-side PK/FK columns on the catalog-FK arm ({@link RowKeyed}), target-side
          * columns on the lifter / accessor arms ({@link LifterRowKeyed},
-         * {@link AccessorRowKeyedSingle}, {@link AccessorRowKeyedMany}). {@link RowKeyed} and
+         * {@link AccessorKeyedSingle}, {@link AccessorKeyedMany}). {@link RowKeyed} and
          * {@link LifterRowKeyed} produce {@code RowN<...>} keys of the same Java types as the
-         * JOIN target columns; {@link AccessorRowKeyedSingle} and {@link AccessorRowKeyedMany}
+         * JOIN target columns; {@link AccessorKeyedSingle} and {@link AccessorKeyedMany}
          * produce {@code RecordN<...>} keys (no developer-facing source on these auto-derived
          * arms). For the lifter permit the column tuple is the lifter contract; for the
          * accessor permits the columns are the element table's PK by construction.
@@ -181,10 +181,10 @@ public sealed interface BatchKey
         /**
          * The DataLoader dispatch shape this variant produces:
          * {@link LoaderDispatch#LOAD_ONE} for the three single-key arms ({@link RowKeyed},
-         * {@link LifterRowKeyed}, {@link AccessorRowKeyedSingle}) — emit
+         * {@link LifterRowKeyed}, {@link AccessorKeyedSingle}) — emit
          * {@code loader.load(key, env)} with loader value type {@code Record} or
          * {@code List<Record>} depending on field cardinality;
-         * {@link LoaderDispatch#LOAD_MANY} for {@link AccessorRowKeyedMany} — emit
+         * {@link LoaderDispatch#LOAD_MANY} for {@link AccessorKeyedMany} — emit
          * {@code loader.loadMany(keys, env)} with loader value type {@code Record} (one record
          * per element-PK key, regardless of the field's GraphQL cardinality).
          *
@@ -325,13 +325,13 @@ public sealed interface BatchKey
      * so the rows-method prelude reads {@code targetTable} and {@code targetColumns}
      * polymorphically through {@link JoinStep.WithTarget}.
      *
-     * <p>Sibling of {@link AccessorRowKeyedMany} (list / set accessor) and {@link LifterRowKeyed}
+     * <p>Sibling of {@link AccessorKeyedMany} (list / set accessor) and {@link LifterRowKeyed}
      * (developer-supplied static lifter producing a {@code RowN<...>}). The cardinality split
      * between {@code Single} and {@code Many} is in the type system rather than a stored enum so
      * the dispatch in {@code TypeFetcherGenerator.buildRecordBasedDataFetcher} reads variant
      * identity, not a discriminator field.
      */
-    record AccessorRowKeyedSingle(JoinStep.LiftedHop hop, AccessorRef accessor) implements RecordParentBatchKey {
+    record AccessorKeyedSingle(JoinStep.LiftedHop hop, AccessorRef accessor) implements RecordParentBatchKey {
 
         /**
          * Target-side key columns: the element table's PK. Delegates to
@@ -369,7 +369,7 @@ public sealed interface BatchKey
      * and returns one record per key.
      *
      * <p>The {@code List<X>} vs {@code Set<X>} split the parent class declares is not preserved
-     * on the variant: {@code GeneratorUtils.buildAccessorRowKeyMany} iterates any {@code Iterable}
+     * on the variant: {@code GeneratorUtils.buildAccessorKeyMany} iterates any {@code Iterable}
      * via a typed for-loop and the loader dispatch is the same regardless. Should a future feature
      * fork emission on the container (preserving order, dedupe, parallel iteration), introduce
      * the split at that point with a real emit divergence behind it.
@@ -377,11 +377,11 @@ public sealed interface BatchKey
      * <p>Auto-derived by {@code FieldBuilder.classifyChildFieldOnResultType} when no FK is
      * available in the catalog but the parent class's list / set accessor matches the field's
      * {@code @table} return. The classifier guarantees
-     * {@code field.returnType().wrapper().isList() == true} for every {@code AccessorRowKeyedMany}
+     * {@code field.returnType().wrapper().isList() == true} for every {@code AccessorKeyedMany}
      * it produces (paired {@link no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck}
      * key {@code accessor-rowkey-cardinality-matches-field}).
      */
-    record AccessorRowKeyedMany(JoinStep.LiftedHop hop, AccessorRef accessor)
+    record AccessorKeyedMany(JoinStep.LiftedHop hop, AccessorRef accessor)
             implements RecordParentBatchKey {
 
         /**
