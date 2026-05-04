@@ -410,19 +410,23 @@ class BuildContext {
 
     /**
      * Resolves a SQL table name to a {@link TableRef} by looking it up in the jOOQ catalog.
-     * Returns a minimal {@code TableRef} (SQL name only, empty PK columns) when the catalog is
-     * unavailable or the table cannot be found.
+     * Accepts both unqualified ({@code "film"}) and schema-qualified ({@code "public.film"})
+     * directive values, routed through {@link JooqCatalog#findTable(String)}.
+     *
+     * <p>Returns empty when:
+     * <ul>
+     *   <li>the catalog is unavailable</li>
+     *   <li>the (qualified or unique-unqualified) name does not match any table</li>
+     *   <li>the name is unqualified and matches tables in two or more schemas</li>
+     *   <li>the schema package has no generated {@code Tables} class (degenerate codegen)</li>
+     * </ul>
+     *
+     * <p>Callers route empty to {@link no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType}
+     * or {@link no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedField}; emitters never
+     * see a partial ref.
      */
-    TableRef resolveTable(String sqlName) {
-        return catalog.findTable(sqlName).map(e -> {
-            var pk = e.table().getPrimaryKey();
-            List<ColumnRef> pkColumns = pk == null ? List.of() : pk.getFields().stream()
-                .map(f -> catalog.findColumn(e.table(), f.getName()))
-                .<JooqCatalog.ColumnEntry>flatMap(Optional::stream)
-                .map(ce -> new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass()))
-                .toList();
-            return new TableRef(sqlName, e.javaFieldName(), e.table().getClass().getSimpleName(), pkColumns);
-        }).orElse(new TableRef(sqlName, "", "", List.of()));
+    Optional<TableRef> resolveTable(String sqlName) {
+        return catalog.findTable(sqlName).flatMap(e -> e.toTableRef(sqlName));
     }
 
     /**
@@ -497,7 +501,13 @@ class BuildContext {
                 && !startSqlTableName.equalsIgnoreCase(targetSqlTableName)) {
             var fks = catalog.findForeignKeysBetweenTables(startSqlTableName, targetSqlTableName);
             if (fks.size() == 1) {
-                resolvedElements.add(synthesizeFkJoin(fks.get(0), startSqlTableName, fieldName, 0, null));
+                Optional<FkJoin> step = synthesizeFkJoin(fks.get(0), startSqlTableName, fieldName, 0, null);
+                if (step.isEmpty()) {
+                    return new ParsedPath(List.of(),
+                        "FK '" + fks.get(0).getName() + "' between '" + startSqlTableName + "' and '"
+                        + targetSqlTableName + "' touches a table whose schema package is not generated");
+                }
+                resolvedElements.add(step.get());
             } else {
                 return new ParsedPath(List.of(),
                     fkCountMessage(startSqlTableName, targetSqlTableName, fks, /*directiveAbsent=*/true));
@@ -517,19 +527,29 @@ class BuildContext {
      * {@code whereFilter} is {@code null} for pure inference; the {@code {table:}} and
      * {@code {key:}} branches in {@link #parsePathElement} may pass a resolved {@link MethodRef}
      * when the element carries a {@code condition:} sub-argument.
+     *
+     * <p>Returns empty when either FK endpoint cannot be resolved through the catalog
+     * (catalog-miss on a table that the FK touches, e.g. a partial codegen state). All four
+     * call sites pre-resolve the FK via {@link JooqCatalog#findForeignKey} or
+     * {@link JooqCatalog#findForeignKeysBetweenTables}, so this is the structural
+     * "schema present, no Tables class" case handled by {@link JooqCatalog.TableEntry#toTableRef}.
      */
-    FkJoin synthesizeFkJoin(ForeignKey<?, ?> f, String sourceSqlName, String fieldName,
+    Optional<FkJoin> synthesizeFkJoin(ForeignKey<?, ?> f, String sourceSqlName, String fieldName,
             int stepIndex, MethodRef whereFilter) {
         String fkSideTable  = f.getTable().getName();
         String keySideTable = f.getKey().getTable().getName();
         String targetSqlName = sourceSqlName.equalsIgnoreCase(fkSideTable) ? keySideTable : fkSideTable;
         String fkJavaConstant = catalog.fkJavaConstantName(f.getName()).orElse("");
-        TableRef targetTable = resolveTable(targetSqlName);
-        TableRef originTable = resolveTable(sourceSqlName);
+        Optional<TableRef> targetTable = resolveTable(targetSqlName);
+        Optional<TableRef> originTable = resolveTable(sourceSqlName);
+        if (targetTable.isEmpty() || originTable.isEmpty()) {
+            return Optional.empty();
+        }
         List<ColumnRef> sourceColumns = resolveFkColumnRefs(f.getTable(), f.getFields());
         List<ColumnRef> targetColumns = resolveFkColumnRefs(f.getKey().getTable(), f.getKey().getFields());
         String alias = fieldName + "_" + stepIndex;
-        return new FkJoin(f.getName(), fkJavaConstant, originTable, sourceColumns, targetTable, targetColumns, whereFilter, alias);
+        return Optional.of(new FkJoin(f.getName(), fkJavaConstant, originTable.get(),
+            sourceColumns, targetTable.get(), targetColumns, whereFilter, alias));
     }
 
     /**
@@ -623,7 +643,12 @@ class BuildContext {
                 }
                 whereFilter = res.ref();
             }
-            out.add(synthesizeFkJoin(f, effectiveSourceSqlName, fieldName, stepIndex, whereFilter));
+            Optional<FkJoin> keyStep = synthesizeFkJoin(f, effectiveSourceSqlName, fieldName, stepIndex, whereFilter);
+            if (keyStep.isEmpty()) {
+                errors.add("key '" + f.getName() + "' touches a table whose schema package is not generated");
+                return;
+            }
+            out.add(keyStep.get());
             return;
         }
         if (tableName.isPresent()) {
@@ -645,7 +670,13 @@ class BuildContext {
                 }
                 whereFilter = res.ref();
             }
-            out.add(synthesizeFkJoin(fks.get(0), currentSourceSqlName, fieldName, stepIndex, whereFilter));
+            Optional<FkJoin> tableStep = synthesizeFkJoin(fks.get(0), currentSourceSqlName, fieldName, stepIndex, whereFilter);
+            if (tableStep.isEmpty()) {
+                errors.add("FK '" + fks.get(0).getName() + "' between '" + currentSourceSqlName + "' and '"
+                    + tableName.get() + "' touches a table whose schema package is not generated");
+                return;
+            }
+            out.add(tableStep.get());
             return;
         }
         if (hasCondition) {
@@ -935,7 +966,13 @@ class BuildContext {
                     "@nodeId(typeName:) type '" + refTypeName
                     + "' is not a node type (missing @node or KjerneJooqGenerator metadata)");
             }
-            TableRef targetTable = resolveTable(targetTableName);
+            Optional<TableRef> targetTableOpt2 = resolveTable(targetTableName);
+            if (targetTableOpt2.isEmpty()) {
+                return new InputFieldResolution.Unresolved(name, null,
+                    "@nodeId(typeName: '" + refTypeName + "') targets table '" + targetTableName
+                    + "' which is not in the jOOQ catalog");
+            }
+            TableRef targetTable = targetTableOpt2.get();
             var nodeRefPath = parsePath(field, name, resolvedTable.tableName(), targetTable.tableName());
             if (nodeRefPath.hasError()) {
                 return new InputFieldResolution.Unresolved(name, null, nodeRefPath.errorMessage());
@@ -1083,12 +1120,17 @@ class BuildContext {
                         return new InputFieldResolution.Unresolved(name, null,
                             "synthesis shim FK '" + shimFkName + "' not found in catalog");
                     }
-                    var shimFkStep = synthesizeFkJoin(shimFkOpt.get(), tableName, name, 0, null);
-                    List<JoinStep> shimJoinPath = List.of(shimFkStep);
-                    TableRef shimTargetTable = resolveTable(targetTableOpt.get());
+                    Optional<FkJoin> shimFkStepOpt = synthesizeFkJoin(shimFkOpt.get(), tableName, name, 0, null);
+                    Optional<TableRef> shimTargetTableOpt = resolveTable(targetTableOpt.get());
+                    if (shimFkStepOpt.isEmpty() || shimTargetTableOpt.isEmpty()) {
+                        return new InputFieldResolution.Unresolved(name, null,
+                            "synthesis shim target '" + targetTableOpt.get()
+                            + "' is not a fully resolved table in the jOOQ catalog");
+                    }
+                    List<JoinStep> shimJoinPath = List.of(shimFkStepOpt.get());
                     return buildInputNodeIdReference(
                         parentTypeName, name, locationOf(field), typeName, nonNull, list,
-                        shimTargetTable, targetTypeOpt.get(), targetTableOpt.get(),
+                        shimTargetTableOpt.get(), targetTypeOpt.get(), targetTableOpt.get(),
                         shimTargetMeta.get().typeId(), shimTargetMeta.get().keyColumns(),
                         shimJoinPath, shimRefCond);
                 }

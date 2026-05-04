@@ -20,6 +20,7 @@ import java.util.Optional;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
+import no.sikt.graphitron.rewrite.TestFixtures;
 
 @UnitTier
 class MutationDeleteTableFieldValidationTest {
@@ -36,7 +37,7 @@ class MutationDeleteTableFieldValidationTest {
                         List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Long")))),
                 ArgumentRef.InputTypeArg.TableInputArg.of(
                     "in", "FilmKey", true, false,
-                    new TableRef("film", "FILM", "Film", List.of()),
+                    TestFixtures.tableRef("film", "FILM", "Film", List.of()),
                     List.of(new InputColumnBinding.MapBinding(
                         "filmId",
                         new ColumnRef("film_id", "FILM_ID", "java.lang.Long"),

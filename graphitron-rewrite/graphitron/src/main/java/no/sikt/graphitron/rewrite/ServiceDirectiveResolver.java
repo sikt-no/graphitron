@@ -265,7 +265,7 @@ final class ServiceDirectiveResolver {
             case ReturnTypeRef.TableBoundReturnType tb -> {
                 ClassName recordCls = ClassName.get(
                     ctx.ctx().jooqPackage() + ".tables.records",
-                    tb.table().javaClassName() + "Record");
+                    tb.table().tableClass().simpleName() + "Record");
                 yield isList
                     ? ParameterizedTypeName.get(ClassName.get("org.jooq", "Result"), recordCls)
                     : recordCls;

@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.rewrite.TestFixtures;
 
 /**
  * Captures the invariants of the {@link BatchKey} sealed hierarchy, with focus on the two
@@ -22,9 +23,9 @@ class BatchKeyTest {
     private static final ColumnRef LANGUAGE_ID =
         new ColumnRef("language_id", "LANGUAGE_ID", "java.lang.Integer");
     private static final TableRef FILM_TABLE =
-        new TableRef("film", "FILM", "Film", List.of(FILM_ID));
+        TestFixtures.tableRef("film", "FILM", "Film", List.of(FILM_ID));
     private static final TableRef LANGUAGE_TABLE =
-        new TableRef("language", "LANGUAGE", "Language", List.of(LANGUAGE_ID));
+        TestFixtures.tableRef("language", "LANGUAGE", "Language", List.of(LANGUAGE_ID));
 
     private static final AccessorRef SINGLE_ACCESSOR = new AccessorRef(
         ClassName.bestGuess("com.example.Payload"),
@@ -48,7 +49,7 @@ class BatchKeyTest {
     void accessorKeyedManyJavaTypeNameForCompositePk() {
         var compositePkA = new ColumnRef("a_id", "A_ID", "java.lang.Long");
         var compositePkB = new ColumnRef("b_id", "B_ID", "java.lang.Integer");
-        var compositeTable = new TableRef("composite", "COMPOSITE", "Composite",
+        var compositeTable = TestFixtures.tableRef("composite", "COMPOSITE", "Composite",
             List.of(compositePkA, compositePkB));
         var hop = new JoinStep.LiftedHop(compositeTable, compositeTable.primaryKeyColumns(), "items_0");
         var bk = new BatchKey.AccessorKeyedMany(hop, MANY_ACCESSOR);

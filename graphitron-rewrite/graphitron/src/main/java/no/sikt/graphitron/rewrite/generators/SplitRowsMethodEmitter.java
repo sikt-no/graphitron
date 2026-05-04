@@ -244,9 +244,7 @@ public final class SplitRowsMethodEmitter {
         // targetColumns / alias, so the loop body needs no per-accessor sealed switch.
         for (int i = 0; i < joinPath.size(); i++) {
             JoinStep.WithTarget step = (JoinStep.WithTarget) joinPath.get(i);
-            ClassName jooqTableClass = ClassName.get(
-                jooqPackage + ".tables",
-                step.targetTable().javaClassName());
+            ClassName jooqTableClass = step.targetTable().tableClass();
             body.addStatement("$T $L = $T.$L.as($S)",
                 jooqTableClass, aliases.get(i), tablesClass, step.targetTable().javaFieldName(),
                 fieldName + "_" + aliases.get(i));

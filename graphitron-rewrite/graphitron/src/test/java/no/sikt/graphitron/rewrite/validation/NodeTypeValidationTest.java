@@ -17,11 +17,12 @@ import java.util.Optional;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
+import no.sikt.graphitron.rewrite.TestFixtures;
 
 @UnitTier
 class NodeTypeValidationTest {
 
-    private static final TableRef RESOLVED_FILM = new TableRef("film", "FILM", "Film", List.of());
+    private static final TableRef RESOLVED_FILM = TestFixtures.tableRef("film", "FILM", "Film", List.of());
     private static final ClassName ENC = ClassName.get("test.util", "NodeIdEncoder");
 
     private static NodeType node(String name, String typeId, List<ColumnRef> keys) {

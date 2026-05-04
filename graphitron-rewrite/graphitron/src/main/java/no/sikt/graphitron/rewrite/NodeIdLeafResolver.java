@@ -245,7 +245,13 @@ final class NodeIdLeafResolver {
         if (joinPath.error() != null) {
             return new Resolved.Rejected(Rejection.structural(joinPath.error()));
         }
-        TableRef targetTable = ctx.resolveTable(targetTableName);
+        Optional<TableRef> targetTableOpt = ctx.resolveTable(targetTableName);
+        if (targetTableOpt.isEmpty()) {
+            return new Resolved.Rejected(Rejection.structural(
+                "@nodeId(typeName: '" + refTypeName + "') target table '" + targetTableName
+                + "' is not in the jOOQ catalog"));
+        }
+        TableRef targetTable = targetTableOpt.get();
         var fkJoin = (FkJoin) joinPath.path().get(0);
         if (sameColumnsBySqlName(fkJoin.targetColumns(), keys.keyColumns())) {
             return new Resolved.FkTarget.DirectFk(
@@ -383,8 +389,13 @@ final class NodeIdLeafResolver {
                 "FK '" + fkName + "' on table '" + containingTable.tableName()
                 + "' not found in catalog");
         }
-        var fkStep = ctx.synthesizeFkJoin(
+        Optional<FkJoin> fkStepOpt = ctx.synthesizeFkJoin(
             fkOpt.get(), containingTable.tableName(), leafName, 0, null);
-        return new JoinPathResult(List.of(fkStep), null);
+        if (fkStepOpt.isEmpty()) {
+            return new JoinPathResult(null,
+                "FK '" + fkName + "' on table '" + containingTable.tableName()
+                + "' touches a table whose schema package is not generated");
+        }
+        return new JoinPathResult(List.of(fkStepOpt.get()), null);
     }
 }

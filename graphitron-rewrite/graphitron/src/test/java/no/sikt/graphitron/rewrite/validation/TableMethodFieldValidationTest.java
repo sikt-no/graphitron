@@ -18,6 +18,7 @@ import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.st
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
+import no.sikt.graphitron.rewrite.TestFixtures;
 
 @UnitTier
 class TableMethodFieldValidationTest {
@@ -31,7 +32,7 @@ class TableMethodFieldValidationTest {
 
         WITH_FK_PATH("explicit FK path — key resolved to a jOOQ ForeignKey (stubbed)",
             new TableMethodField("Film", "filteredActors", null, new ReturnTypeRef.ScalarReturnType("Film", new FieldWrapper.Single(true)), List.of(
-                new JoinStep.FkJoin("film_actor_film_id_fkey", "", null, List.of(), new TableRef("film_actor", "", "", List.of()), List.of(), null, "")),
+                new JoinStep.FkJoin("film_actor_film_id_fkey", "", null, List.of(), TestFixtures.joinTarget("film_actor"), List.of(), null, "")),
                 new MethodRef.Basic("com.example.TableMethods", "filteredActors", ClassName.get("org.jooq", "Table"), List.of())),
             List.of(stubbedError("Film.filteredActors", TableMethodField.class))),
 

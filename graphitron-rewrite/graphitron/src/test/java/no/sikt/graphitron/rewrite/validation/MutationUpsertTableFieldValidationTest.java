@@ -15,6 +15,7 @@ import java.util.Optional;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
+import no.sikt.graphitron.rewrite.TestFixtures;
 
 @UnitTier
 class MutationUpsertTableFieldValidationTest {
@@ -27,7 +28,7 @@ class MutationUpsertTableFieldValidationTest {
                 new DmlReturnExpression.ProjectedSingle("Film"),
                 ArgumentRef.InputTypeArg.TableInputArg.of(
                     "in", "FilmInput", true, false,
-                    new TableRef("film", "FILM", "Film", List.of()),
+                    TestFixtures.tableRef("film", "FILM", "Film", List.of()),
                     List.of(),
                     Optional.empty(),
                     List.of()),

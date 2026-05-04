@@ -23,6 +23,7 @@ import java.util.List;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
+import no.sikt.graphitron.rewrite.TestFixtures;
 
 /**
  * Validates filter entries on SQL-generating fields. The validator does not currently inspect
@@ -33,7 +34,7 @@ class ArgumentValidationTest {
 
     private static final ReturnTypeRef.TableBoundReturnType FILM_RETURN =
         new ReturnTypeRef.TableBoundReturnType("Film",
-            new TableRef("film", "FILM", "Film", List.of()),
+            TestFixtures.tableRef("film", "FILM", "Film", List.of()),
             new FieldWrapper.Single(true));
 
     private static TableField tableField(List<WhereFilter> filters) {
@@ -48,7 +49,7 @@ class ArgumentValidationTest {
 
         WITH_COLUMN_FILTER("GeneratedConditionFilter scalar",
             tableField(List.of(new GeneratedConditionFilter("TestConditions", "actorsCondition",
-                new TableRef("film", "FILM", "Film", List.of()),
+                TestFixtures.tableRef("film", "FILM", "Film", List.of()),
                 List.of(new CallParam("id", new CallSiteExtraction.Direct(), false, "java.lang.Integer")),
                 List.of(new BodyParam.Eq("id", new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"),
                     "java.lang.Integer", false, new CallSiteExtraction.Direct()))))),

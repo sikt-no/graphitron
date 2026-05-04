@@ -20,12 +20,13 @@ import java.util.List;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
+import no.sikt.graphitron.rewrite.TestFixtures;
 
 @UnitTier
 class SplitTableFieldValidationTest {
 
     private static ReturnTypeRef.TableBoundReturnType actorReturn(FieldWrapper wrapper) {
-        return new ReturnTypeRef.TableBoundReturnType("Actor", new TableRef("actor", "ACTOR", "Actor", List.of()), wrapper);
+        return new ReturnTypeRef.TableBoundReturnType("Actor", TestFixtures.tableRef("actor", "ACTOR", "Actor", List.of()), wrapper);
     }
 
     private static final BatchKey.RowKeyed PARENT_BATCH_KEY = new BatchKey.RowKeyed(List.of());
@@ -45,7 +46,7 @@ class SplitTableFieldValidationTest {
         // GraphitronSchemaBuilderTest, not here.
         SINGLE_CARDINALITY_EMITTABLE("single cardinality with one-hop FK path — emittable, no errors",
             new SplitTableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)),
-                List.of(new JoinStep.FkJoin("film_actor_film_id_fkey", "", null, List.of(), new TableRef("film_actor", "", "", List.of()), List.of(), null, "")),
+                List.of(new JoinStep.FkJoin("film_actor_film_id_fkey", "", null, List.of(), TestFixtures.joinTarget("film_actor"), List.of(), null, "")),
                 List.of(), new OrderBySpec.None(), null, PARENT_BATCH_KEY),
             List.of()),
 
@@ -60,14 +61,14 @@ class SplitTableFieldValidationTest {
         // cursor encoding hashes an empty tuple and pages silently non-deterministically.
         CONNECTION_EMPTY_ORDERBY_NONE("Connection + OrderBySpec.None — build error, non-empty ORDER BY required",
             new SplitTableField("Film", "actors", null, actorReturn(new FieldWrapper.Connection(false, 100)),
-                List.of(new JoinStep.FkJoin("film_actor_film_id_fkey", "", null, List.of(), new TableRef("film_actor", "", "", List.of()), List.of(), null, "")),
+                List.of(new JoinStep.FkJoin("film_actor_film_id_fkey", "", null, List.of(), TestFixtures.joinTarget("film_actor"), List.of(), null, "")),
                 List.of(), new OrderBySpec.None(), null, PARENT_BATCH_KEY),
             List.of("Field 'Film.actors': @splitQuery connections require a non-empty ORDER BY "
                 + "(add @defaultOrder, @orderBy, or a primary key on the target table)")),
 
         CONNECTION_EMPTY_ORDERBY_FIXED("Connection + empty OrderBySpec.Fixed — same rejection",
             new SplitTableField("Film", "actors", null, actorReturn(new FieldWrapper.Connection(false, 100)),
-                List.of(new JoinStep.FkJoin("film_actor_film_id_fkey", "", null, List.of(), new TableRef("film_actor", "", "", List.of()), List.of(), null, "")),
+                List.of(new JoinStep.FkJoin("film_actor_film_id_fkey", "", null, List.of(), TestFixtures.joinTarget("film_actor"), List.of(), null, "")),
                 List.of(), new OrderBySpec.Fixed(List.of(), "asc"), null, PARENT_BATCH_KEY),
             List.of("Field 'Film.actors': @splitQuery connections require a non-empty ORDER BY "
                 + "(add @defaultOrder, @orderBy, or a primary key on the target table)"));

@@ -1477,7 +1477,7 @@ class TypeFetcherGeneratorTest {
         return List.of(
             new ParticipantRef.TableBound("Film", filmTableWithPk(), null),
             new ParticipantRef.TableBound("Actor",
-                new TableRef("actor", "ACTOR", "Actor",
+                TestFixtures.tableRef("actor", "ACTOR", "Actor",
                     List.of(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer"))),
                 null));
     }
@@ -1601,7 +1601,7 @@ class TypeFetcherGeneratorTest {
         // R36 plan: composite-key sort projects DSL.jsonbArray(pk1, pk2, ...).as("__sort__").
         // JSONB arrays compare element-wise in PostgreSQL, so composite ordering reduces to a
         // single comparable column at no extra Java cost.
-        var compositeTable = new TableRef("bar", "BAR", "Bar",
+        var compositeTable = TestFixtures.tableRef("bar", "BAR", "Bar",
             List.of(
                 new ColumnRef("id_1", "ID_1", "java.lang.Integer"),
                 new ColumnRef("id_2", "ID_2", "java.lang.Integer")));
@@ -1794,7 +1794,7 @@ class TypeFetcherGeneratorTest {
         // column is then projected as DSL.jsonbArray(...) per branch (see branchProjection +
         // buildPerTypenameSelect) and PostgreSQL's lexicographic JSONB ordering reproduces the
         // multi-column ordering across the union.
-        var compositeTable = new TableRef("paged_a", "PAGED_A", "PagedA",
+        var compositeTable = TestFixtures.tableRef("paged_a", "PAGED_A", "PagedA",
             List.of(
                 new ColumnRef("k1", "K1", "java.lang.Integer"),
                 new ColumnRef("k2", "K2", "java.lang.Integer")));
@@ -1816,7 +1816,7 @@ class TypeFetcherGeneratorTest {
         // __sort__ alias on each typed Record so ConnectionHelper.encodeCursor reads the same
         // JSONB value the stage-1 sort key produced. Without this, page-2 cursors would decode
         // back to a partial sort key and the seek predicate would skip or repeat rows.
-        var compositeTable = new TableRef("paged_a", "PAGED_A", "PagedA",
+        var compositeTable = TestFixtures.tableRef("paged_a", "PAGED_A", "PagedA",
             List.of(
                 new ColumnRef("k1", "K1", "java.lang.Integer"),
                 new ColumnRef("k2", "K2", "java.lang.Integer")));
@@ -1837,7 +1837,7 @@ class TypeFetcherGeneratorTest {
         // Stage-1 outer SELECT projects every __pk_i__ column so the dispatch loop has the full
         // PK tuple for ValuesJoinRowBuilder. With pkArity > 1, the loop emits an Object[] of all
         // PK slots; with pkArity == 1, it stays at __pk0__.
-        var compositeTable = new TableRef("paged_a", "PAGED_A", "PagedA",
+        var compositeTable = TestFixtures.tableRef("paged_a", "PAGED_A", "PagedA",
             List.of(
                 new ColumnRef("k1", "K1", "java.lang.Integer"),
                 new ColumnRef("k2", "K2", "java.lang.Integer")));
@@ -1885,11 +1885,11 @@ class TypeFetcherGeneratorTest {
     private static java.util.Map<String, List<JoinStep>> filmActorChildJoinPaths() {
         // film_actor → film via film_actor_film_id_fkey: source columns sit on film_actor side.
         // film_actor → actor via film_actor_actor_id_fkey: same shape.
-        var filmActorTable = new TableRef("film_actor", "FILM_ACTOR", "FilmActor",
+        var filmActorTable = TestFixtures.tableRef("film_actor", "FILM_ACTOR", "FilmActor",
             List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"),
                     new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer")));
         var filmTable = filmTableWithPk();
-        var actorTable = new TableRef("actor", "ACTOR", "Actor",
+        var actorTable = TestFixtures.tableRef("actor", "ACTOR", "Actor",
             List.of(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer")));
         // FK direction: film_actor (source/FK holder) → film (target/PK side) and similarly for actor.
         var filmFk = new JoinStep.FkJoin("film_actor_film_id_fkey", "",
@@ -1909,7 +1909,7 @@ class TypeFetcherGeneratorTest {
         var participants = List.<ParticipantRef>of(
             new ParticipantRef.TableBound("Film", filmTableWithPk(), null),
             new ParticipantRef.TableBound("Actor",
-                new TableRef("actor", "ACTOR", "Actor",
+                TestFixtures.tableRef("actor", "ACTOR", "Actor",
                     List.of(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer"))),
                 null));
         return new ChildField.InterfaceField(parentType, name, null,
@@ -1922,7 +1922,7 @@ class TypeFetcherGeneratorTest {
         var participants = List.<ParticipantRef>of(
             new ParticipantRef.TableBound("Film", filmTableWithPk(), null),
             new ParticipantRef.TableBound("Actor",
-                new TableRef("actor", "ACTOR", "Actor",
+                TestFixtures.tableRef("actor", "ACTOR", "Actor",
                     List.of(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer"))),
                 null));
         return new ChildField.UnionField(parentType, name, null,
@@ -1935,7 +1935,7 @@ class TypeFetcherGeneratorTest {
         // stage-1 branch can reference parent PK values in its WHERE predicate.
         var field = childInterfaceField("FilmActor", "related", true);
         var spec = TypeFetcherGenerator.generateTypeSpec("FilmActor",
-            new TableRef("film_actor", "FILM_ACTOR", "FilmActor", List.of()),
+            TestFixtures.tableRef("film_actor", "FILM_ACTOR", "FilmActor", List.of()),
             null, List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
         var body = method(spec, "related").code().toString();
         assertThat(body)
@@ -1949,7 +1949,7 @@ class TypeFetcherGeneratorTest {
         // .where(participant.<fk> = parentRecord.<parent_pk>) predicate.
         var field = childInterfaceField("FilmActor", "related", true);
         var spec = TypeFetcherGenerator.generateTypeSpec("FilmActor",
-            new TableRef("film_actor", "FILM_ACTOR", "FilmActor", List.of()),
+            TestFixtures.tableRef("film_actor", "FILM_ACTOR", "FilmActor", List.of()),
             null, List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
         var body = method(spec, "related").code().toString();
         assertThat(body)
@@ -1967,7 +1967,7 @@ class TypeFetcherGeneratorTest {
         // a future drift in either path fails fast.
         var field = childUnionField("FilmActor", "related", true);
         var spec = TypeFetcherGenerator.generateTypeSpec("FilmActor",
-            new TableRef("film_actor", "FILM_ACTOR", "FilmActor", List.of()),
+            TestFixtures.tableRef("film_actor", "FILM_ACTOR", "FilmActor", List.of()),
             null, List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
         var body = method(spec, "related").code().toString();
         assertThat(body).contains("parentRecord = (org.jooq.Record) env.getSource()");
@@ -2002,7 +2002,7 @@ class TypeFetcherGeneratorTest {
         var participants = List.<ParticipantRef>of(
             new ParticipantRef.TableBound("Film", filmTableWithPk(), null),
             new ParticipantRef.TableBound("Actor",
-                new TableRef("actor", "ACTOR", "Actor",
+                TestFixtures.tableRef("actor", "ACTOR", "Actor",
                     List.of(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer"))),
                 null));
         return new ChildField.InterfaceField(parentType, name, null,
@@ -2016,7 +2016,7 @@ class TypeFetcherGeneratorTest {
         var participants = List.<ParticipantRef>of(
             new ParticipantRef.TableBound("Film", filmTableWithPk(), null),
             new ParticipantRef.TableBound("Actor",
-                new TableRef("actor", "ACTOR", "Actor",
+                TestFixtures.tableRef("actor", "ACTOR", "Actor",
                     List.of(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer"))),
                 null));
         return new ChildField.UnionField(parentType, name, null,
@@ -2030,7 +2030,7 @@ class TypeFetcherGeneratorTest {
      * generator output. Picking a single-column PK keeps the v1 batched path engaged.
      */
     private static TableRef filmActorParentTableForBatched() {
-        return new TableRef("film_actor", "FILM_ACTOR", "FilmActor",
+        return TestFixtures.tableRef("film_actor", "FILM_ACTOR", "FilmActor",
             List.of(new ColumnRef("last_update", "LAST_UPDATE", "java.sql.Timestamp")));
     }
 
@@ -2187,25 +2187,25 @@ class TypeFetcherGeneratorTest {
     // composite FK.
 
     private static TableRef compositePkParentTable() {
-        return new TableRef("project", "PROJECT", "Project",
+        return TestFixtures.tableRef("project", "PROJECT", "Project",
             List.of(
                 new ColumnRef("org_id", "ORG_ID", "java.lang.Integer"),
                 new ColumnRef("project_id", "PROJECT_ID", "java.lang.Integer")));
     }
 
     private static TableRef compositeFkParticipant(String tableName, String tableUpper, String typeName, String pkSqlName, String pkUpper) {
-        return new TableRef(tableName, tableUpper, typeName,
+        return TestFixtures.tableRef(tableName, tableUpper, typeName,
             List.of(new ColumnRef(pkSqlName, pkUpper, "java.lang.Integer")));
     }
 
     private static java.util.Map<String, List<JoinStep>> compositePkParentJoinPaths() {
         var parent = compositePkParentTable();
-        var note = new TableRef("project_note", "PROJECT_NOTE", "ProjectNote",
+        var note = TestFixtures.tableRef("project_note", "PROJECT_NOTE", "ProjectNote",
             List.of(
                 new ColumnRef("note_id", "NOTE_ID", "java.lang.Integer"),
                 new ColumnRef("org_id", "ORG_ID", "java.lang.Integer"),
                 new ColumnRef("project_id", "PROJECT_ID", "java.lang.Integer")));
-        var event = new TableRef("project_event", "PROJECT_EVENT", "ProjectEvent",
+        var event = TestFixtures.tableRef("project_event", "PROJECT_EVENT", "ProjectEvent",
             List.of(
                 new ColumnRef("event_id", "EVENT_ID", "java.lang.Integer"),
                 new ColumnRef("org_id", "ORG_ID", "java.lang.Integer"),

@@ -26,6 +26,7 @@ import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.st
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
+import no.sikt.graphitron.rewrite.TestFixtures;
 
 @UnitTier
 class ServiceFieldValidationTest {
@@ -81,7 +82,7 @@ class ServiceFieldValidationTest {
         SOURCES_CORRECT_TYPE("SOURCES param is RowKeyed — no error (parent is RootType, no PK cross-check)",
             new ServiceTableField("Film", "externalChild", null,
                 new ReturnTypeRef.TableBoundReturnType("Film",
-                    new TableRef("film", "FILM", "Film", List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"))),
+                    TestFixtures.tableRef("film", "FILM", "Film", List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"))),
                     new FieldWrapper.Single(true)),
                 List.of(), List.of(), new OrderBySpec.None(), null,
                 new MethodRef.Basic("com.example.FilmService", "getFilms", TypeName.OBJECT,
@@ -92,7 +93,7 @@ class ServiceFieldValidationTest {
         NO_SOURCES_PARAM("no Sources param — missing DataLoader batch key error",
             new ServiceTableField("Film", "externalChild", null,
                 new ReturnTypeRef.TableBoundReturnType("Film",
-                    new TableRef("film", "FILM", "Film", List.of()),
+                    TestFixtures.tableRef("film", "FILM", "Film", List.of()),
                     new FieldWrapper.Single(true)),
                 List.of(), List.of(), new OrderBySpec.None(), null,
                 new MethodRef.Basic("com.example.FilmService", "getFilms", TypeName.OBJECT, List.of()),
@@ -141,17 +142,17 @@ class ServiceFieldValidationTest {
     }
 
     private static final TableRef FILM_TABLE_SINGLE_PK =
-        new TableRef("film", "FILM", "Film",
+        TestFixtures.tableRef("film", "FILM", "Film",
             List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer")));
 
     private static final TableRef FILM_TABLE_COMPOSITE_PK =
-        new TableRef("film", "FILM", "Film",
+        TestFixtures.tableRef("film", "FILM", "Film",
             List.of(
                 new ColumnRef("film_id",    "FILM_ID",    "java.lang.Integer"),
                 new ColumnRef("language_id","LANGUAGE_ID","java.lang.Integer")));
 
     private static final TableRef FILM_TABLE_NO_PK =
-        new TableRef("film", "FILM", "Film", List.of());
+        TestFixtures.tableRef("film", "FILM", "Film", List.of());
 
     private static GraphitronType.TableType filmTableType(TableRef tableRef) {
         return new GraphitronType.TableType("Film", null, tableRef);

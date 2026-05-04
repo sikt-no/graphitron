@@ -89,9 +89,7 @@ public final class InlineLookupTableFieldEmitter {
         if (path.isEmpty()) {
             aliases = List.of();
             terminalAlias = "lk0";
-            ClassName jooqTableClass = ClassName.get(
-                jooqPackage + ".tables",
-                terminalTable.javaClassName());
+            ClassName jooqTableClass = terminalTable.tableClass();
             code.addStatement("$T $L = $T.$L.as($L.getName() + $S)",
                 jooqTableClass, terminalAlias, tablesClass, terminalTable.javaFieldName(),
                 parentAlias, "_" + lf.name() + "_" + terminalAlias);
@@ -103,9 +101,7 @@ public final class InlineLookupTableFieldEmitter {
             // never shadow each other's aliases.
             for (int i = 0; i < path.size(); i++) {
                 JoinStep.FkJoin fk = (JoinStep.FkJoin) path.get(i);
-                ClassName jooqTableClass = ClassName.get(
-                    jooqPackage + ".tables",
-                    fk.targetTable().javaClassName());
+                ClassName jooqTableClass = fk.targetTable().tableClass();
                 code.addStatement("$T $L = $T.$L.as($L.getName() + $S)",
                     jooqTableClass, aliases.get(i), tablesClass, fk.targetTable().javaFieldName(),
                     parentAlias, "_" + aliases.get(i));
