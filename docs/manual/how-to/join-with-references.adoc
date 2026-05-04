@@ -1,0 +1,244 @@
+= How-to: Join with references
+:description: Pin foreign-key paths between table-bound types so the generator emits a JOIN, including the implicit-FK shortcut, multi-hop chains, junction tables, the `table:` short form, inline column references, and the input-field variant.
+:!toc:
+
+xref:../reference/directives/reference.adoc[`@reference`] declares a foreign-key path between the field's parent table and its target table. The generator threads the path through jOOQ's catalog and emits a JOIN whenever the field is selected. The reference page covers signature and constraints; this recipe walks the variants the directive surface supports: when you can omit it entirely, multi-hop chains and junction-table traversals, the two ways to pin a hop (by `key:` or by `table:`), inline cross-table column references, the input-field position, and the current state of the `condition:` form.
+
+For the surrounding question of "when does the join fire vs DataLoader-batch instead of inline", see xref:split-vs-inline.adoc[How-to: When to split queries]. This recipe assumes the field is inline-joinable (no `@splitQuery`); the path mechanics are the same either way.
+
+== Single-hop FK references
+
+The canonical case: name the FK constraint, the generator joins through it.
+
+[source,graphql]
+----
+type Customer @table(name: "customer") {
+    address: Address @reference(path: [{key: "customer_address_id_fkey"}])
+}
+----
+
+`customer_address_id_fkey` is the constraint declared in the schema's DDL. A query selecting `customers { address { district } }` emits one statement:
+
+[source,sql]
+----
+SELECT customer.first_name AS "firstName",
+       address.district    AS "district"
+  FROM customer
+  LEFT JOIN address ON customer.address_id = address.address_id
+----
+
+The JOIN fires only when the selection set traverses through `address`; selecting only `firstName` skips it. This is the projection-narrowing the rewrite applies to every reachable path: nothing is fetched that the request didn't ask for.
+
+The `key:` value accepts two forms, both resolving to the same FK:
+
+* *Lowercase SQL constraint name.* `"customer_address_id_fkey"` matches what `psql \d customer` shows.
+* *Java-constant style.* `"CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"` matches the constant generated into jOOQ's `Keys` class.
+
+Either works; pick whichever your team's style guide prefers. The classifier walks both indices in parallel.
+
+== Implicit references: when the catalog disambiguates
+
+When exactly one foreign key exists between two tables, `@reference` is unnecessary and the generator picks the path automatically:
+
+[source,graphql]
+----
+type Store @table(name: "store") {
+    customers: [Customer!]! @defaultOrder(primaryKey: true)
+}
+----
+
+There is exactly one FK between `customer` and `store` (`customer.store_id`), so the join is implicit. The `@table`-bound parent type plus the `@table`-bound return type plus a unique FK between them is enough; the catalog finds the path. This is the recommended shape when it applies; explicit `@reference` is noise when the catalog can resolve the path.
+
+The generator does not guess when more than one FK exists. The Sakila `store ↔ staff` pair has two FKs (`store.manager_staff_id` and `staff.store_id`), so any field crossing it must declare which one:
+
+[source,graphql]
+----
+type Store @table(name: "store") {
+    manager: Staff @splitQuery @reference(path: [{key: "store_manager_staff_id_fkey"}])
+}
+----
+
+Without `@reference` here, the build fails at classify time with an ambiguous-reference diagnostic listing both candidate FKs. The fix is always one of two things: name the FK with `key:`, or use `table:` if the disambiguation goes the other direction.
+
+== Multi-hop chains
+
+`@reference` accepts a list of hops; the generator chains them into one JOIN sequence.
+
+[source,graphql]
+----
+type Customer @table(name: "customer") {
+    storeAddress: Address @reference(path: [
+        {key: "customer_store_id_fkey"},
+        {key: "store_address_id_fkey"}
+    ])
+}
+----
+
+The path is `customer.store_id → store.store_id → store.address_id → address.address_id`: two FKs and three tables touched in one SQL statement. Each hop's `key:` pins one of the FKs; the generator infers the intermediate tables from the FK target metadata.
+
+Multi-hop chains are how junction tables work too. A many-to-many through `film_actor` is two FKs in sequence:
+
+[source,graphql]
+----
+type Film @table(name: "film") {
+    actors(actor_id: [Int!] @lookupKey): [Actor!]! @reference(path: [
+        {key: "film_actor_film_id_fkey"},
+        {key: "film_actor_actor_id_fkey"}
+    ])
+}
+----
+
+The first hop joins `film` to `film_actor` via the film_id FK; the second joins `film_actor` to `actor` via the actor_id FK. The junction table itself does not appear in the GraphQL schema; it's purely path infrastructure. The same shape works on connections (`actorsConnection: ActorsConnection!`) and under `@splitQuery` (`actorsBySplitLookup: ...`).
+
+The number of hops is unbounded; chains of three, four, or more FKs work the same way. Each hop is independent and resolves against the previous hop's destination table.
+
+== `table:` as a short form
+
+The reference's `ReferenceElement` accepts `table:` as an alternative to `key:`. When exactly one FK exists between the source and destination tables for that hop, `table:` is enough:
+
+[source,graphql]
+----
+type Customer @table(name: "customer") {
+    district: String @reference(path: [{table: "address"}])
+}
+----
+
+This resolves to the same FK as `{key: "customer_address_id_fkey"}` because `customer ↔ address` has exactly one FK between them. When the table pair is ambiguous, `table:` fails:
+
+[source,graphql]
+----
+# Customer ↔ Address has only one FK; this works.
+district: String @reference(path: [{table: "address"}])
+
+# Film ↔ Language has only one FK; this works.
+languageName: String @field(name: "name") @reference(path: [{table: "language"}])
+----
+
+But two `language`-pointing FKs (e.g. a hypothetical `original_language_id` alongside `language_id`) would make the second example ambiguous, and the build would reject it as an `UnclassifiedField` with the same ambiguous-reference diagnostic. The `table:` form is the catalog-driven shortcut; the `key:` form is the explicit one. Use whichever expresses the intent more clearly:
+
+* `key:` when the constraint name is the source of truth (DBA-managed schemas, named-constraint conventions).
+* `table:` when the destination is what's interesting and the FK choice is unambiguous.
+
+Setting both `key:` and `table:` is allowed but redundant; the generator validates they agree.
+
+== Inline cross-table columns
+
+`@reference` is most often seen on object-typed fields, but it works on scalar fields too: the parent type pulls a column from a referenced table directly into its own shape, with no intermediate object.
+
+[source,graphql]
+----
+type Film @table(name: "film") {
+    languageName: String @field(name: "name") @reference(path: [{key: "film_language_id_fkey"}])
+}
+----
+
+`Film.languageName` projects `language.name` (joined through `film.language_id`) directly onto the film type. The classifier produces a `ColumnReferenceField`; the emitter joins through the FK and projects the target column under the requested alias. No intermediate `language` object appears; clients see `Film { languageName }` as a flat scalar.
+
+This is useful when the schema wants to expose a foreign column without the indirection cost of nesting through the linked type. The trade-off: every `Film` selection that includes `languageName` triggers the join. A field that already nests through `language` (e.g. `Film { language { name } }`) is preferred when other language columns are also exposed; the `languageName` shortcut is for the "expose exactly one column" case.
+
+The shortcut also accepts the multi-hop and `table:` forms:
+
+[source,graphql]
+----
+type Customer @table(name: "customer") {
+    storeManagerName: String
+        @field(name: "first_name")
+        @reference(path: [
+            {key: "customer_store_id_fkey"},
+            {key: "store_manager_staff_id_fkey"}
+        ])
+}
+----
+
+Same shape as a multi-hop object reference; the only difference is the parent type's projection list at SQL time, which gets `staff.first_name` aliased to `storeManagerName`.
+
+== Input-field references
+
+`@reference` also applies to `INPUT_FIELD_DEFINITION` (and `ARGUMENT_DEFINITION`), letting an input shape carry a value that resolves through a foreign-key path against the implicit return table.
+
+[source,graphql]
+----
+input Input {
+    district: String! @reference(path: [{table: "address"}])
+}
+
+type Customer @table(name: "customer") {
+    customerId: Int! @field(name: "customer_id")
+}
+
+type Query {
+    query(in: Input!): Customer
+}
+----
+
+The query's return type `Customer` has `@table(name: "customer")`, so the input type `Input` is implicitly bound to the `customer` table for the duration of this argument site. The `@reference(path: [{table: "address"}])` on the `district` input field resolves the customer→address FK and threads the input value as a predicate against `address.district`. The classifier emits a `ColumnReferenceField` for input fields the same way it emits one for object fields, just with the predicate-shape instead of projection-shape at runtime.
+
+This is the input-side mirror of the inline-column shape: the input field carries a value that the generator resolves through the FK path, not by name on the parent table. The full set of input-field directives (`@field`, `@condition`, `@reference`) interoperate; see xref:condition-cascade.adoc[How-to: Stacking and overriding conditions] for the input-carrier rules and how the input's `@table` cascade interacts with the per-field directives.
+
+== The `condition:` form (classify-only today)
+
+`ReferenceElement` has a third option: `condition:` is an `ExternalCodeReference` to a Java method that returns a `org.jooq.Condition` to use as the join predicate. The classifier accepts it, but the generator's emitter for `ConditionJoin` paths is currently a runtime-throwing stub:
+
+[source,graphql]
+----
+type Category @table(name: "category") {
+    similar: Category @reference(path: [{condition: {
+        className: "no.sikt.graphitron.rewrite.test.conditions.CategoryConditions",
+        method:    "sameNamePrefix"
+    }}])
+}
+----
+
+The Java side:
+
+[source,java]
+----
+public static Condition sameNamePrefix(Table<?> src, Table<?> tgt) {
+    return DSL.noCondition();
+}
+----
+
+The classifier produces a `JoinStep.ConditionJoin` and the schema validates, but selecting `Category.similar` at request time throws `UnsupportedOperationException` until the emitter ships a real body. This shape is reserved for non-FK joins: catalog-derived predicates (e.g. "category whose name shares a prefix with this one"), date-range overlaps, computed predicates with no FK constraint to anchor against. Today, treat the schema as a placeholder; production schemas should not include `condition:`-only references.
+
+When the runtime arm lands, the contract will be: the method receives the source and target table aliases (both as `Table<?>`) and returns the `Condition` to use on the JOIN's `ON` clause. The framework wraps that into the JOIN at SQL emit time. Mixed paths that combine a `key:` hop with a `condition:`-only terminal hop are also reserved.
+
+== `@splitQuery` on a referenced field
+
+Adding `@splitQuery` switches the field from inline-JOIN dispatch to per-parent `DataLoader` batching. The `@reference` path stays the same; only the runtime shape changes.
+
+[source,graphql]
+----
+type Customer @table(name: "customer") {
+    address:      Address @reference(path: [{key: "customer_address_id_fkey"}])
+    addressSplit: Address @splitQuery @reference(path: [{key: "customer_address_id_fkey"}])
+}
+----
+
+`address` resolves inline as part of the customer query (one SQL statement, JOIN-projected columns).
+
+`addressSplit` resolves via a `DataLoader`: the customer query runs first, then a per-request batched address lookup keyed on `customer.address_id` runs in a second statement, fanned out to all parents that selected `addressSplit`.
+
+The choice is operational, not semantic; xref:split-vs-inline.adoc[How-to: When to split queries] covers when round-trip cost beats fan-out cost (typically: deep paths, many sibling parents, large parent projections). The path itself is identical.
+
+== Pitfalls
+
+* *`path:` must be non-empty.* `@reference(path: [])` fails graphql-java parsing. Every reference declares at least one hop.
+* *Multi-FK pairs require explicit `key:` or `table:`.* When more than one FK exists between two tables for a given hop, the build fails with an ambiguous-reference diagnostic. Pick one with `key:` (preferred when the FK has a stable name) or `table:` (preferred when the FK is unique-but-unnamed in your conventions, and the destination disambiguates).
+* *`table:` requires unique-FK-between-the-pair.* Otherwise the field classifies as `UnclassifiedField` and the build rejects. The diagnostic spells out the candidate FKs; switch to `key:` to disambiguate.
+* *Implicit references work only when one FK exists.* The example schema's `Store.customers` works without `@reference` because `customer ↔ store` has exactly one FK; `Store.manager` cannot omit `@reference` because `store ↔ staff` has two FKs.
+* *Inline column references join the linked table.* `languageName: String @field(name: "name") @reference(...)` adds a JOIN to `language` whenever `languageName` is selected. If the schema also exposes `Film.language { name }` and clients tend to select via the nested form, the inline shortcut is redundant cost.
+* *`condition:`-only paths classify but throw at request time today.* Use only as a placeholder pending the runtime arm; production schemas should stick to `key:` and `table:` forms.
+* *Junction tables are path-only, never types.* The `film_actor` join table is two FKs in sequence; it does not appear as a GraphQL type. Adding it as a `@table`-bound type would be valid (FilmActor exists in the example schema for `@nodeId` purposes), but client-facing many-to-many fields use the path form.
+* *FK constraint names are catalog-bound.* A migration that renames a constraint without updating the schema's `key:` value breaks the build. The `table:` form is more migration-resilient when the FK pair stays unique; the `key:` form is more explicit when constraint names are the contract.
+* *Cannot combine with xref:../reference/directives/multitableReference.adoc[`@multitableReference`].* The reference page makes this explicit; the union/interface variant has its own surface.
+
+== See also
+
+* xref:../reference/directives/reference.adoc[`@reference`] is the directive surface this recipe expands.
+* xref:../reference/directives/table.adoc[`@table`] establishes the table binding both endpoints rely on.
+* xref:../reference/directives/multitableReference.adoc[`@multitableReference`] for the union/interface variant.
+* xref:split-vs-inline.adoc[How-to: When to split queries] covers the inline-JOIN vs per-parent batch trade-off; the `@reference` path is shared across both.
+* xref:condition-cascade.adoc[How-to: Stacking and overriding conditions] covers the input-carrier rules and how input-field references interact with the condition cascade.
+* xref:../tutorial/04-joining-tables.adoc[Tutorial page 4: Joining tables] introduces single-hop and multi-hop references in narrative form.
+
+xref:index.adoc[← How-to index]
