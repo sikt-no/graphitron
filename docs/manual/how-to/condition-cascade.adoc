@@ -1,0 +1,206 @@
+= How-to: Stacking and overriding conditions
+:description: Layer @condition with implicit equality predicates, control the cascade with override:true at argument and field level, pick the right input-type carrier for nested inputs, and recognise the rewrite's divergence from legacy "outer owns everything" semantics.
+:!toc:
+
+xref:../reference/directives/condition.adoc[`@condition`] is the escape hatch for SQL predicates the catalog can't infer: regex, ranges, date arithmetic, vendor-specific shapes, multi-column boolean expressions. By default the explicit predicate is `AND`-ed with the implicit `column = ?` predicates the rewrite would have emitted on its own; `override: true` flips that to "explicit only". The `override:` flag interacts with field-level vs argument-level placement, with `@table`-bound vs plain inputs, and with how nested input types pass values down. This recipe walks through the cascade end-to-end, names the input-carrier choices that make nested `@condition` flow correctly, and pins the rewrite's intentional divergence from the legacy generator's "outer owns everything" semantics.
+
+For the directive's signature, parameter list, and canonical examples, see xref:../reference/directives/condition.adoc[`@condition`]. This recipe assumes you've read it.
+
+== The default: stack, don't replace
+
+Without `override: true`, every `@condition` is *additive*. The rewrite folds the developer-supplied `Condition` into the `WHERE` clause alongside whatever it would otherwise emit:
+
+[source,graphql]
+----
+type Query {
+    citiesByName(
+        cityNames: [String!] @field(name: "CITY")
+            @condition(condition: {className: "com.example.CityConditions", method: "cityMethod"})
+    ): [City]
+}
+----
+
+Two predicates make it into SQL: the implicit `CITY IN (?, ?, ...)` from `@field(name: "CITY")` plus a list-typed argument, *and* the explicit `cityMethod(table, cityNames)` predicate. The two are `AND`-ed. This is usually what you want: the explicit method runs additional filtering on the same column, e.g. case-insensitive matching, normalised whitespace, locale-aware comparison.
+
+Field-level `@condition` (without `override:`) is the same shape, just at a different scope: the explicit predicate is `AND`-ed with the implicit predicates for *every* direct argument and (for `@table`-bound input arguments) every implicit column-equality predicate the input would otherwise contribute.
+
+== Argument-level `override: true`: scoped to one argument
+
+The narrow override:
+
+[source,graphql]
+----
+type Query {
+    cities(countryId: String! @field(name: "COUNTRY_ID")
+              @condition(condition: {...}, override: true)): [City]
+}
+----
+
+`override: true` on the argument suppresses *that argument's* implicit `column = ?` and lets the explicit condition method own the predicate alone. Other arguments on the same field are unaffected: their implicit predicates still fire, their explicit `@condition` annotations (if any) still fire on top.
+
+The implementation key is `ScalarArg.suppressedByFieldOverride() || argCondition.override()` in `FieldBuilder.projectFilters`: only the argument's own `BodyParam` is skipped; sibling arguments build their own `BodyParam` independently.
+
+== Field-level `override: true`: scoped to all direct arguments
+
+The wide override:
+
+[source,graphql]
+----
+type Query {
+    cities(
+        countryId: String! @field(name: "COUNTRY_ID"),
+        cityNames: [String!] @field(name: "CITY")
+    ): [City] @condition(condition: {...}, override: true)
+}
+----
+
+Field-level `override: true` suppresses the implicit predicates for *every* direct argument and, when an argument is a `@table`-bound input, every implicit column-equality predicate inside the input. The explicit method runs alone (in this example, alongside whatever inner explicit `@condition` annotations might be on the input's fields, but those are already covered by argument-level conditions; on a flat scalar arg list, there's just the field's own method).
+
+This is the right shape when the developer's condition method takes over completely: a multi-column boolean expression that the implicit equality decomposition would interfere with.
+
+== `@table` input + outer `override: true`: the cascade rule
+
+The non-obvious case. An outer field-level `@condition(override: true)` on a query whose argument is a `@table`-bound input:
+
+[source,graphql]
+----
+type Query {
+    filmsOuterOverrideTableInput(filter: FilmConditionInput): [Film!]!
+        @condition(
+            condition: {className: "...InputFieldConditionFixtures", method: "outerOverrideMethod"},
+            override: true
+        )
+}
+
+input FilmConditionInput @table(name: "film") {
+    filmId: Int @field(name: "FILM_ID")
+        @condition(condition: {
+            className: "...InputFieldConditionFixtures",
+            method: "filmIdCondition"
+        })
+}
+----
+
+Three things happen at request time:
+
+1. `outerOverrideMethod(filmTable)` runs (the outer explicit method, returning `film_id >= 2` in the fixture).
+2. The implicit `filmTable.FILM_ID = ?` that the rewrite would normally derive from `filter.filmId` is *suppressed*.
+3. The inner `filmIdCondition(filmTable, filmId)` runs *anyway* (the inner explicit method, returning `film_id = ?` for the supplied value).
+
+Net SQL `WHERE`: `(film_id >= 2) AND (film_id = 1)`. With the fixture data (`filmId: "1"`), no rows match. This is the rewrite's intended behavior: `override: true` *suppresses implicit predicates*, not explicit ones. Inner `@condition` annotations are preserved through any number of override layers above.
+
+The implementation key is `walkInputFieldConditions` in `FieldBuilder`: every `case` arm adds the `cf.condition()` filter to `out` unconditionally, while the implicit `BodyParam` is gated on `!enclosingOverride && cf.condition().isEmpty()`. The two paths are independent.
+
+The same shape applies recursively to nested input types: a `NestingField` propagates `enclosingOverride = enclosingOverride || (this nesting's @condition has override:true)` to its children. Implicit predicates anywhere below an override layer are suppressed; explicit predicates anywhere below are preserved.
+
+== Divergence from legacy semantics
+
+The legacy generator interpreted `override: true` as "outer owns everything": the inner explicit `@condition` annotations were *dropped*, and the outer method ran alone. The rewrite preserves the inner explicit conditions deliberately. The Sakila example schema has a regression-fence around this: `filmsOuterOverrideTableInput` (above) is paired with the `filmsOuterOverridePlainInput` fixture and a comment in the schema that says, verbatim:
+
+[quote]
+____
+A regression to legacy semantics breaks this test by name.
+____
+
+The reason for the divergence: under the legacy reading, an inner `@condition` was meaningless once any ancestor used `override: true`, which made schema review brittle (an outer override meant inner annotations were silently inert). Under the rewrite's reading, every `@condition` always fires; only the rewrite's own implicit predicates are negotiable. This makes the directive composable and the schema readable: each `@condition` you write produces SQL.
+
+If you've been migrating from the legacy generator and you have an outer `@condition(override: true)` whose inner fields also carry `@condition`, audit them. The legacy generator silently dropped the inner ones; the rewrite runs them. You may need to add `override: true` to the inner annotation, or remove the inner annotation entirely if it was redundant with the outer method.
+
+== Plain (non-`@table`) inputs and implicit predicates
+
+When the argument is a plain input (no `@table` on the input type), the rewrite does *not* synthesise implicit `column = ?` predicates from the input's fields. Only explicit `@condition` annotations contribute. This is `PlainInputArg`'s job in `FieldBuilder.projectFilters`:
+
+[source,java]
+----
+case ArgumentRef.InputTypeArg.PlainInputArg pia -> {
+    pia.argCondition().ifPresent(ac -> argConditions.add(ac.filter()));
+    walkInputFieldConditions(pia.fields(), pia.name(), List.of(),
+        false, Set.of(), null, argConditions);  // null implicitBodyParams
+}
+----
+
+The `null` argument means no implicit `BodyParam` ever materialises. The walker still descends and collects every explicit `@condition` it finds, but no implicit predicates contribute. This is why xref:../reference/directives/condition.adoc[`@condition`] on a plain input field is the *only* way to filter through that field; the implicit-equality fallback is unavailable.
+
+The same fixture pattern mirrors the `@table` case: `filmsOuterOverridePlainInput(filter: PlainFilmIdInput)` with outer `@condition(override: true)` and an inner `@condition` on `filter.filmId`. Both methods fire; outer-only semantics would fail the same regression fence.
+
+== Nested-input record conventions
+
+The `@condition` reference page lists the carrier rules in two lines; here's the operational shape, with the carriers spelled out.
+
+GraphQL input types classify into one of five carriers in the rewrite:
+
+* *xref:../reference/directives/table.adoc[`@table`]-bound* (`TableInputType`): Graphitron owns the column projection and DML. Most `@condition` fixtures sit here.
+* *xref:../reference/directives/record.adoc[`@record`]-bound to a Java record* (`JavaRecordInputType`): the developer supplies a record class; the rewrite binds GraphQL fields to its components.
+* *`@record`-bound to a jOOQ record* (`JooqRecordInputType`) or a jOOQ `TableRecord` (`JooqTableRecordInputType`): the carrier is a jOOQ-generated row type.
+* *Plain* (`PojoInputType`): the fallback when no `@table` and no `@record` apply, or when `@record` is present without a `className:`. The carrier is `Map<String, Object>` at runtime.
+
+The non-obvious composition rules around `@condition`:
+
+* *jOOQ records can't contain other records.* A `@table` input or a jOOQ-record input can have a leaf-level `@condition`, but it cannot nest a child input that requires its own jOOQ-record carrier. That's a carrier-shape limitation, not a `@condition` one: there is no jOOQ class that carries a nested record.
+* *Java-record carriers cascade upward.* If a leaf input is `@record`-backed by a Java record, every input *above it* in the nesting chain must also be Java-record-backed. The rewrite needs a stable Java type to hold the nested record. Mixing carriers (e.g. `@table` outer with `@record` inner) does not compose: the outer `@table` input has no slot for the inner record.
+* *Listed nested inputs require a Java record carrier.* `[InnerInput]` inside an outer input means the outer carrier must be a Java record (so the list element has a stable Java type to deserialise into). A `@table` outer with `[InnerInput]` inside is rejected at classify time.
+* *Plain `PojoInputType` works for shallow scalar paths.* The runtime `Map<String, Object>` traversal handles any depth of plain inputs whose leaves are scalars and `@condition`-annotated. The example schema's `NestedFilmInput @table` outer / `InnerFilmInput` plain inner / `filmId @condition` leaf composition exercises this; the multi-segment path `["inner", "filmId"]` is extracted at runtime via `NestedInputField`.
+
+The conservative default: when in doubt, use `@table` on the outermost input (so the rewrite can drive implicit predicates) and plain inputs on inner nesting layers (so the rewrite's `Map`-traversal handles the descent). Only reach for `@record` when a service method's input shape demands a typed Java carrier, or when listed nested inputs are involved.
+
+== Lookup-key arguments are exempt
+
+A `@condition` does not interfere with xref:../reference/directives/lookupKey.adoc[`@lookupKey`]: lookup-key arguments are consumed upstream by `LookupValuesJoinEmitter`, not by the `WHERE`-clause projection. The implementation key is in `FieldBuilder.projectFilters`:
+
+[source,java]
+----
+if (!autoSuppressed && !ca.isLookupKey()) {
+    bodyParams.add(...);
+}
+----
+
+Lookup-key args bypass the `BodyParam` path entirely. The `lookupBoundNames` set passed into `walkInputFieldConditions` skips them on the input-side too, so an input field that backs a lookup key never emits an implicit predicate even when the input is `@table`-bound and `enclosingOverride` is false.
+
+If you `@condition` a lookup-key arg, the explicit predicate runs alongside the `VALUES + JOIN` lookup path. `override: true` on a lookup-key arg has no effect on the lookup itself (it's not a `WHERE`-clause predicate to suppress); it only affects the implicit `column = ?` that would otherwise pair with a non-lookup-key arg of the same shape.
+
+== `contextArguments:` flow
+
+Values pulled from `GraphQLContext` arrive as additional Java parameters on the reflected method, after the table and the input parameters:
+
+[source,graphql]
+----
+type Query {
+    citiesForCurrentUser: [City]
+        @condition(
+            condition: {className: "...", method: "tenantScoped"},
+            contextArguments: ["tenantId"]
+        )
+}
+----
+
+`tenantScoped(City table, UUID tenantId)` runs at request time. Two consequences:
+
+* *No build-time validation that the context key is wired.* A typo in `contextArguments` surfaces as a `null` parameter at request time, not at build time. Test the wiring (or log on null in the condition method).
+* *`contextArguments:` and `argMapping:` are independent.* `argMapping:` rebinds GraphQL argument names to differently-named Java parameters; `contextArguments:` adds parameters from the request context. They compose: a method can take `(table, mapped GraphQL args, context args)` in that order.
+
+The signing-side context-argument story (tenant scoping, request-id propagation, current-user filtering) is a recurring need; the recipe in xref:../../architecture/getting-started.adoc[Getting started with the rewrite runtime] (under federation, custom scalars, tenant scoping) covers the bootstrap side.
+
+== Constraints and pitfalls
+
+* *Default is additive.* Without `override: true`, an explicit `@condition` is `AND`-ed with the implicit `column = ?` predicates. Reach for `override:` only when the explicit method takes over completely.
+* *Argument-level `override: true` is local.* Suppresses just that argument's implicit predicate, nothing else.
+* *Field-level `override: true` cascades through `@table` inputs.* Suppresses implicit predicates on direct args and inside `@table`-bound input arguments. Inner `@condition` annotations are *preserved*.
+* *Inner explicit `@condition` always runs.* The rewrite never drops a `@condition` annotation regardless of how many `override: true` layers sit above it. Migrators from the legacy generator should audit fields where outer `override: true` and inner `@condition` coexist; legacy semantics dropped the inner ones.
+* *Plain inputs have no implicit predicates.* Only explicit `@condition` annotations contribute. Without one, a plain input field is silently a no-op on the SQL side.
+* *jOOQ records cannot contain other records.* `@record`-backed-by-jOOQ inputs can have leaf `@condition`s but cannot nest a sibling jOOQ-record input.
+* *Java-record carriers cascade upward.* If any input in a nesting chain is `@record`-backed by a Java record, every input above it must also be Java-record-backed.
+* *Listed nested inputs (`[InnerInput]`) require a Java record carrier on the outer input.*
+* *`contextArguments:` is unvalidated at build time.* Typos surface as `null` at request time.
+* *`@lookupKey` args bypass the implicit-predicate path.* `override:` has no effect on lookup-key dispatch; explicit `@condition` on a lookup-key arg runs alongside the `VALUES + JOIN`.
+
+== See also
+
+* xref:../reference/directives/condition.adoc[`@condition`] is the directive's reference page.
+* xref:../reference/directives/field.adoc[`@field`] supplies the implicit predicate that `@condition` either stacks with or replaces.
+* xref:../reference/directives/record.adoc[`@record`] / xref:../reference/directives/table.adoc[`@table`] determine the input carrier the condition method reads from.
+* xref:../reference/directives/lookupKey.adoc[`@lookupKey`] is exempt from the implicit-predicate path.
+* xref:../reference/directives/service.adoc[`@service`] is the alternative when an *entire* fetcher is custom code.
+* xref:external-code.adoc[How-to: Wire external Java code] covers the FQCN requirement, classpath setup, and `argMapping:` syntax shared with `@condition`.
+* xref:map-types-to-tables.adoc[How-to: Map types to tables] covers the input-type binding side that `@condition` builds on.
+
+xref:index.adoc[← How-to index]
