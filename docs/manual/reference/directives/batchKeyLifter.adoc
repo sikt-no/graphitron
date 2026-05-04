@@ -73,6 +73,6 @@ Multi-column lifts use `Row2..RowN` with `targetColumns` listing all key columns
 
 * xref:record.adoc[`@record`] is the parent-side directive that decides whether a lifter is needed: jOOQ-backed `@record` types skip it; plain-Java-record types reach for it.
 * xref:reference.adoc[`@reference`] is the catalog-driven counterpart on `@table` parents.
-* xref:../../how-to/result-types.adoc[How-to: Result-type variants] (Phase 3) covers `JavaRecordType` parents, accessor inference, and when to reach for `@batchKeyLifter`.
+* xref:../../how-to/result-types.adoc[How-to: Result-type variants] covers `JavaRecordType` parents, accessor inference, and when to reach for `@batchKeyLifter`.
 
 xref:../index.adoc[← Reference index]
