@@ -208,16 +208,14 @@ public final class ArgCallEmitter {
         ClassName collectors = ClassName.get(java.util.stream.Collectors.class);
 
         if (list) {
-            // Pattern: (wire) instanceof List _nl ? ((List<?>)_nl).stream()
+            // Pattern: (wire) instanceof List<?> _nl ? _nl.stream()
             //          .map(decode).filter(nonNull)[.map(value1) | .map(Record::valuesRow)]
             //          .collect(toList()) : null
             // wireExpr is wrapped in outer parens so the instanceof binds at the right
             // precedence (ternary `?:` is right-associative; instanceof binds tighter).
-            // Pattern variable uses raw List to keep -source 17 compatibility — the cast
-            // to List<?> happens explicitly before .stream() so the type is Object-safe.
             var stream = CodeBlock.builder()
-                .add("($L) instanceof $T _nl ? (($T<?>) _nl).stream().map(s -> $T.$L((String) s))",
-                    wireExpr, ClassName.get(List.class), ClassName.get(List.class),
+                .add("($L) instanceof $T<?> _nl ? _nl.stream().map(s -> $T.$L((String) s))",
+                    wireExpr, ClassName.get(List.class),
                     encoderClass, methodName);
             if (throwOnMismatch) {
                 stream.add(".map(r -> { if (r == null) throw new $T($S); return r; })",
