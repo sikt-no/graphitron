@@ -6,7 +6,7 @@ Authoritative descriptions of every directive, every Maven plugin parameter, eve
 
 == Status: directive reference, in progress
 
-Seventeen of 26 directives are published below: the six tutorial-anchor mappings (`@table`, `@field`, `@reference`, `@multitableReference`, `@mutation`, `@service`), the five batch/sort directives (`@lookupKey`, `@orderBy`, `@order`, `@defaultOrder`, `@index`), the polymorphism pair (`@discriminate`, `@discriminator`), the global-ID pair (`@node`, `@nodeId`), and the two carrier-mapping directives (`@enum`, `@record`). The remaining ~9 directives ship in subsequent commits of R68 Phase 2; their descriptions still live in the legacy https://github.com/sikt-no/graphitron/tree/main/graphitron-codegen-parent/graphitron-java-codegen/README.md[`graphitron-java-codegen` README] until they land here. The Mojo parameter reference, the runtime API reference, and the diagnostics glossary are authored in Phase 4 and Phase 5.
+Nineteen of 26 directives are published below: the six tutorial-anchor mappings (`@table`, `@field`, `@reference`, `@multitableReference`, `@mutation`, `@service`), the five batch/sort directives (`@lookupKey`, `@orderBy`, `@order`, `@defaultOrder`, `@index`), the polymorphism pair (`@discriminate`, `@discriminator`), the global-ID pair (`@node`, `@nodeId`), the two carrier-mapping directives (`@enum`, `@record`), the lifter (`@batchKeyLifter`), and the error-channel entry point (`@error`). The remaining ~7 directives ship in subsequent commits of R68 Phase 2; their descriptions still live in the legacy https://github.com/sikt-no/graphitron/tree/main/graphitron-codegen-parent/graphitron-java-codegen/README.md[`graphitron-java-codegen` README] until they land here. The Mojo parameter reference, the runtime API reference, and the diagnostics glossary are authored in Phase 4 and Phase 5.
 
 The directive list below mirrors the rewrite's `directives.graphqls` and is therefore correct for the current branch even when an individual page is still pending.
 
@@ -16,13 +16,13 @@ a|
 === Alphabetical
 
 * `@asConnection` _(pending)_
-* `@batchKeyLifter` _(pending)_
+* xref:directives/batchKeyLifter.adoc[`@batchKeyLifter`]
 * `@condition` _(pending)_
 * xref:directives/defaultOrder.adoc[`@defaultOrder`]
 * xref:directives/discriminate.adoc[`@discriminate`]
 * xref:directives/discriminator.adoc[`@discriminator`]
 * xref:directives/enum.adoc[`@enum`]
-* `@error` _(pending)_
+* xref:directives/error.adoc[`@error`]
 * `@experimental_constructType` _(pending)_
 * `@externalField` _(pending)_
 * xref:directives/field.adoc[`@field`]
@@ -49,7 +49,7 @@ a|
 xref:directives/table.adoc[`@table`], xref:directives/field.adoc[`@field`], xref:directives/enum.adoc[`@enum`], xref:directives/record.adoc[`@record`]
 
 *Joining* +
-xref:directives/reference.adoc[`@reference`], xref:directives/multitableReference.adoc[`@multitableReference`], `@batchKeyLifter`
+xref:directives/reference.adoc[`@reference`], xref:directives/multitableReference.adoc[`@multitableReference`], xref:directives/batchKeyLifter.adoc[`@batchKeyLifter`]
 
 *Querying* +
 `@asConnection`, `@condition`, xref:directives/lookupKey.adoc[`@lookupKey`], `@splitQuery`, `@externalField`, `@tableMethod`, `@experimental_constructType`
@@ -61,7 +61,7 @@ xref:directives/mutation.adoc[`@mutation`], xref:directives/service.adoc[`@servi
 xref:directives/orderBy.adoc[`@orderBy`], xref:directives/order.adoc[`@order`], xref:directives/defaultOrder.adoc[`@defaultOrder`], xref:directives/index.adoc[`@index`] (deprecated)
 
 *Error handling* +
-`@error`
+xref:directives/error.adoc[`@error`]
 
 *Polymorphism* +
 xref:directives/discriminate.adoc[`@discriminate`], xref:directives/discriminator.adoc[`@discriminator`]

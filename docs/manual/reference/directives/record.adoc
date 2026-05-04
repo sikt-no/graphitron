@@ -79,7 +79,7 @@ input EditCustomerInput @record(record: {className: "some.path.JavaCustomerRecor
 * A child `@table`-returning field on a *plain-Java-record* parent (no jOOQ FK metadata) requires either:
 +
 ** a typed accessor on the backing class returning the corresponding jOOQ table record (the classifier auto-derives an `AccessorKeyed` batch key), or
-** an explicit `@batchKeyLifter` supplying the lift function and target columns.
+** an explicit xref:batchKeyLifter.adoc[`@batchKeyLifter`] supplying the lift function and target columns.
 +
 A bare child reference on such a parent is rejected with `RecordTableField (or RecordLookupTableField) requires a FK join path and a typed backing class for batch key extraction`.
 * `@batchKeyLifter` is rejected on jOOQ-record parents — the catalog already supplies the path. Use xref:reference.adoc[`@reference`] there instead.
@@ -89,7 +89,7 @@ A bare child reference on such a parent is rejected with `RecordTableField (or R
 
 * xref:table.adoc[`@table`] is the catalog-bound counterpart. Choose `@table` when jOOQ already represents the backing class; choose `@record` when the carrier is a hand-written Java record/POJO or you want a different jOOQ row type than `@table` would resolve.
 * xref:service.adoc[`@service`] is the most common upstream of `@record` output types: the service method returns the Java class, and the resolver projects through it.
-* `@batchKeyLifter` supplies the missing FK path for child `@table` fields on plain-Java-record parents.
+* xref:batchKeyLifter.adoc[`@batchKeyLifter`] supplies the missing FK path for child `@table` fields on plain-Java-record parents.
 * xref:../../explanation/result-types.adoc[Explanation: Result-type variants] (Phase 4) covers `JavaRecordType` / `PojoResultType` / `JooqRecordType` / `JooqTableRecordType` and how the rewrite picks among them.
 
 xref:../index.adoc[← Reference index]
