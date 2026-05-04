@@ -100,6 +100,6 @@ The `typeId: "C"` keeps existing IDs valid even if `Person` is later renamed to 
 * xref:nodeId.adoc[`@nodeId`] is the field-level counterpart that encodes and decodes the ID.
 * xref:table.adoc[`@table`] supplies the columns embedded in the ID.
 * xref:lookupKey.adoc[`@lookupKey`] on `[ID!]` decodes opaque node IDs into typed batch keys (composite-PK NodeId lookups).
-* xref:../../how-to/global-id.adoc[How-to: Global object IDs] (Phase 3) covers stable-ID strategies, `keyColumns` migrations, and `Query.node`/`Query.nodes` dispatch.
+* xref:../../how-to/global-id.adoc[How-to: Global object IDs] covers stable-ID strategies, `keyColumns` migrations, and `Query.node`/`Query.nodes` dispatch.
 
 xref:../index.adoc[← Reference index]

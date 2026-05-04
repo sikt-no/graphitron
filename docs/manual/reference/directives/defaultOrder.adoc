@@ -96,6 +96,6 @@ type Query {
 * xref:orderBy.adoc[`@orderBy`] supplies the dynamic counterpart.
 * xref:order.adoc[`@order`] reuses the `index` / `fields` / `primaryKey` shape on enum values.
 * xref:asConnection.adoc[`@asConnection`] for connection synthesis; `@defaultOrder` is required for stable pagination on synthesised connections.
-* xref:../../how-to/sort-results.adoc[How-to: Sort results] (Phase 3) covers tie-breakers, collation pitfalls, and pagination semantics.
+* xref:../../how-to/sort-results.adoc[How-to: Sort results] covers tie-breakers, collation pitfalls, and pagination semantics.
 
 xref:../index.adoc[← Reference index]

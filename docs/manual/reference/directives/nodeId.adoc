@@ -89,6 +89,6 @@ On the decode side the rewrite verifies the ID's embedded `typeId` against the d
 * xref:node.adoc[`@node`] configures the owning type (`typeId`, `keyColumns`).
 * xref:reference.adoc[`@reference`] supplies the JOIN path when an ID is encoded from a *different* row than the parent.
 * xref:lookupKey.adoc[`@lookupKey`] is the dispatch path for `[ID!]`-keyed argument lookups; same-table NodeId arguments imply it.
-* xref:../../how-to/global-id.adoc[How-to: Global object IDs] (Phase 3) covers cross-type IDs, decode-error handling, and same-table-nodeid filter inputs.
+* xref:../../how-to/global-id.adoc[How-to: Global object IDs] covers cross-type IDs, decode-error handling, and same-table-nodeid filter inputs.
 
 xref:../index.adoc[← Reference index]

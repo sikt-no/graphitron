@@ -67,7 +67,7 @@ type Payment @table {
 == See also
 
 * xref:reference.adoc[`@reference`] for the single-table variant.
-* xref:../../how-to/polymorphic-types.adoc[How-to: Polymorphic types] (Phase 3) covers union and interface patterns end-to-end.
+* xref:../../how-to/polymorphic-types.adoc[How-to: Polymorphic types] covers union and interface patterns end-to-end.
 * xref:discriminate.adoc[`@discriminate`] and xref:discriminator.adoc[`@discriminator`] for type-resolution on the multitable side.
 
 xref:../index.adoc[← Reference index]

@@ -47,6 +47,6 @@ Each member of the GraphQL `Mood` enum is paired with the same-named constant on
 
 * xref:field.adoc[`@field`] on `ENUM_VALUE` is the alternative axis: a per-member literal binding (`@field(name: "DB_VALUE")`) without a converter.
 * `ExternalCodeReference` is the shared shape across xref:service.adoc[`@service`], `@tableMethod`, `@externalField`, and `@enum`. Only `className`/`method` carry meaning here.
-* xref:../../how-to/external-code.adoc[How-to: Wiring external Java code] (Phase 3) covers the rewrite plugin's classpath setup and the FQCN requirement.
+* xref:../../how-to/external-code.adoc[How-to: Wiring external Java code] covers the rewrite plugin's classpath setup and the FQCN requirement.
 
 xref:../index.adoc[← Reference index]
