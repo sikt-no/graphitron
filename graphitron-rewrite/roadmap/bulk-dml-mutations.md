@@ -92,27 +92,35 @@ projection terminator):
   same SQL, simpler emitted Java. One statement either way.
 - **UPDATE** — emits a PostgreSQL-flavoured `UPDATE t SET c = v.c FROM
   (VALUES (...), (...)) AS v(k, c1, c2, ...) WHERE t.k = v.k` via
-  `dsl.update(t).set(c, vTable.field(...)).from(vTable).where(...)`,
-  where `vTable` is `DSL.values(rows...).asTable("v", "k", "c1", ...)`
-  (typed derived table; columns referenced through it rather than via
-  raw-string `DSL.field("v.c")`). One statement. Carries two runtime
-  guards in the emitted fetcher prelude:
+  `dsl.update(t).set(c, vTable.field(t.C)).from(vTable).where(t.K.eq(vTable.field(t.K)))`,
+  where `vTable` is `DSL.values(rows...).asTable("v", colNames...)`.
+  The alias columns in `asTable` use each target column's SQL name
+  verbatim (`Tables.FILM.LANGUAGE_ID.getName()` etc.), so jOOQ's typed
+  `Table.field(Field<T>)` overload returns the matching v-column with
+  the target column's type — no string lookup, no cast, no
+  `DSL.field("v.c")`. The result is a typed `Field<X>` that drops into
+  `set(...)` and `where(...)` without further widening. One statement.
+  Carries two runtime guards in the emitted fetcher prelude:
   1. *Oracle-dialect guard*, analogous to UPSERT's: jOOQ silently
      emulates `UPDATE...FROM` on non-Postgres dialects with semantics
      drift, and the OSS distribution omits commercial-only dialect enum
      values, so a name-prefix check on `dsl.dialect().name()` matches
-     today's UPSERT pattern. Threads through the existing 9-arg
-     `buildDmlFetcher(... postDslGuard)` overload. R63 will lift this
-     onto the typed `DialectRequirement` slot alongside UPSERT's when
-     it ships; until then both arms carry their inline guards.
+     today's UPSERT pattern. Threads through the existing 10-arg
+     `buildDmlFetcher(... postDslGuard)` overload at
+     [`TypeFetcherGenerator.java:1636-1646`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java).
+     R63 will lift this onto the typed `DialectRequirement` slot
+     alongside UPSERT's when it ships; until then both arms carry
+     their inline guards.
   2. *Duplicate-lookup-key guard*. `UPDATE ... FROM (VALUES …)` joins
      `t` to `v` on the lookup-key columns; if two input rows share
      the same lookup key, PostgreSQL silently picks one v-row's
      columns (implementation-defined join), losing the other row's
      data. That's the same silent-data-loss footgun Invariant #15
      prevents on the return side, so we shed it at runtime here:
-     before binding `vTable`, build a `Set` of lookup-key tuples from
-     `in` and throw `IllegalArgumentException` if `set.size() != in.size()`.
+     before binding `vTable`, build a `HashSet<List<Object>>` keyed on
+     `List.of(row.get("k1"), row.get("k2"), ...)` (value-equal tuple,
+     not `Object[]` reference equality) and throw
+     `IllegalArgumentException` if `set.size() != in.size()`.
      Message names the field and points at the duplicate-tuple count.
      UPSERT doesn't need the same guard (PostgreSQL hard-errors on
      duplicate `ON CONFLICT` keys with "command cannot affect row a
@@ -146,14 +154,40 @@ The single-row path (`tia.list() == false`) is unchanged: same
 same emitted bytes for any schema that compiled before R77. The bulk
 arm is purely additive.
 
+Per-row missing-key semantics: when a row's `Map` omits an optional
+field, `row.get("col")` returns `null`, which `DSL.val(null, dataType)`
+binds as a typed-null parameter. This inverts the single-row contract
+where missing fields are *skipped* from the column list entirely, but
+matches what bulk has to do — the column list is fixed at codegen time
+across all rows, so every row contributes a value at every column
+position. NOT NULL violations therefore surface at execution time
+rather than codegen time, same as any other null write under the bulk
+arm.
+
 ### Empty-list contract
 
 Define `in.isEmpty()` as a no-op short-circuit: the fetcher returns
 the empty list without round-tripping to the database (the only
-admitted return shapes for bulk are `*List` per Invariant #15). Emit
-the guard immediately after `in` is bound. Avoids jOOQ's empty-`VALUES`
-rejection and matches the GraphQL contract of "applied no rows,
-returned no rows".
+admitted return shapes for bulk are `*List` per Invariant #15). Avoids
+jOOQ's empty-`VALUES` rejection and matches the GraphQL contract of
+"applied no rows, returned no rows".
+
+The guard lands inside `buildDmlFetcher` gated on `tia.list()`,
+immediately after `in` is bound and before the `tableLocal` declaration
+that feeds `emitDmlReturnExpression`. It bypasses the projection
+terminator entirely with its own early return:
+
+```java
+if (in.isEmpty()) {
+    return DataFetcherResult.<List<T>>newResult().data(List.of()).build();
+}
+```
+
+i.e. the same `DataFetcherResult` shape `returnSyncSuccess` would have
+emitted, but binding `data(List.of())` directly rather than walking
+through `emitDmlReturnExpression` with an empty `payload` local. The
+boxed value type comes from the same `boxed(valueType)` call that
+`returnSyncSuccess` already uses.
 
 ### Validator updates
 
@@ -178,8 +212,11 @@ returned no rows".
   so the deferred message anchors to R75. Distinct category from #15,
   will lift when R75 lands.
 - Update `GraphitronSchemaBuilderTest.DML_LIST_INPUT_DEFERRED`
-  (currently asserts the blanket rejection): rename / split into one
-  case per new disposition. At minimum:
+  (currently asserts the blanket rejection; its description string
+  mislabels it `(Invariant #11)` — #11 is unrelated, the original
+  rejection was unnumbered). Rename / split into one case per new
+  disposition; the rejected-arm cases label `(Invariant #15)` and the
+  Payload arm labels `(deferred, R75)`. At minimum:
   - `DML_INSERT_LIST_LIST_OK` (input `[FilmInput!]!`, return `[Film!]!` —
     classifies cleanly).
   - `DML_UPDATE_LIST_LIST_OK`, `DML_DELETE_LIST_LIST_OK`,
@@ -249,17 +286,41 @@ returned no rows".
 - [`TypeFetcherGenerator.buildDmlFetcher`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java) —
   flip the `env.getArgument(...)` cast to `List<Map<?,?>>` and emit the
   empty-list short-circuit when `tia.list()`.
+- [`graphitron-sakila-example/src/main/resources/graphql/schema.graphqls`](../graphitron-sakila-example/src/main/resources/graphql/schema.graphqls) —
+  add four bulk-variant `Mutation` fields alongside the existing
+  single-row `createFilm` / `updateFilm` / `upsertFilm`:
+  - `createFilms(in: [FilmCreateInput!]!): [Film!]! @mutation(typeName: INSERT)`
+  - `updateFilms(in: [FilmUpdateInput!]!): [Film!]! @mutation(typeName: UPDATE)`
+  - `upsertFilms(in: [FilmUpsertInput!]!): [Film!]! @mutation(typeName: UPSERT)`
+  - `deleteFilms(in: [FilmDeleteInput!]!): [ID!]! @mutation(typeName: DELETE)`
+
+  `FilmDeleteInput` is new — `@table(name: "film")` carrying a single
+  `filmId: ID! @lookupKey` field. (Sakila has no single-row DELETE
+  mutation today; this surface is the first DELETE test fixture.)
+  The four return shapes deliberately mix `[Film!]!` (`ProjectedList`)
+  and `[ID!]!` (`EncodedList`) so the execution tests cover both
+  terminator arms.
 - New unit test cases in `GraphitronSchemaBuilderTest`; new
   `DmlBulkMutationsExecutionTest` in `graphitron-sakila-example`.
+- `graphitron-fixtures` needs no new fixtures: the existing
+  `Film` / `FilmCreateInput` etc. surface already covers the listed
+  input-arg shape (the change is in argument cardinality, not field
+  shape). Pipeline tests reuse those fixtures and assert structural
+  shape on the bulk arm.
 
 The `@DependsOnClassifierCheck` annotations on the four
 `buildMutation*Fetcher` methods are the canonical home for invariant
 guarantees the emitter relies on (the R22-era `roadmap/mutations.md`
 plan file was deleted on Done; cite the changelog and these
-annotations rather than the missing file). Update the four
-annotations' `reliesOn` strings to reflect that `env.getArgument` may
-be cast to `List<Map<?,?>>` when `tia.list()`, and that Invariant #15
-guarantees the return shape is list-cardinality whenever the input is.
+annotations rather than the missing file). The four annotations'
+existing `reliesOn` strings each carry a monolithic clause like
+"casts `env.getArgument(tia.name())` to `Map<?,?>` with no guard";
+rewrite each as a `tia.list()` conditional — "casts to `Map<?,?>`
+when `tia.list() == false`, `List<Map<?,?>>` when `tia.list() ==
+true` (Invariant #15 then guarantees the return shape is
+list-cardinality, so the projection terminator binds the matching
+`*List` arm)". UPDATE's annotation also gains the duplicate-tuple
+guard line on the bulk arm.
 
 ## Non-goals and out-of-scope
 
