@@ -173,6 +173,9 @@
                                 <copy todir="${project.build.directory}/staging/manual/reference/css" overwrite="true" failonerror="false">
                                     <fileset dir="${project.build.directory}/staging/css"/>
                                 </copy>
+                                <copy todir="${project.build.directory}/staging/manual/reference/directives/css" overwrite="true" failonerror="false">
+                                    <fileset dir="${project.build.directory}/staging/css"/>
+                                </copy>
                                 <copy todir="${project.build.directory}/staging/manual/explanation/css" overwrite="true" failonerror="false">
                                     <fileset dir="${project.build.directory}/staging/css"/>
                                 </copy>
@@ -222,6 +225,12 @@
                                     </fileset>
                                 </copy>
                                 <copy todir="${project.build.directory}/staging/manual/reference" overwrite="true" failonerror="false">
+                                    <fileset dir="${project.basedir}/_theme">
+                                        <include name="docinfo-header.html"/>
+                                        <include name="docinfo-footer.html"/>
+                                    </fileset>
+                                </copy>
+                                <copy todir="${project.build.directory}/staging/manual/reference/directives" overwrite="true" failonerror="false">
                                     <fileset dir="${project.basedir}/_theme">
                                         <include name="docinfo-header.html"/>
                                         <include name="docinfo-footer.html"/>

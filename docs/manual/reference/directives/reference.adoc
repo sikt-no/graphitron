@@ -1,0 +1,101 @@
+= @reference
+:description: Declare a foreign-key path between two table-bound types so the generator can emit a JOIN.
+:!toc:
+
+Declares an explicit foreign-key path between the field's parent table and the field's target table. The generator threads the path through jOOQ's catalog and emits a JOIN whenever the field is selected.
+
+== SDL signature
+
+[source,graphql]
+----
+directive @reference(
+  path: [ReferenceElement!]!
+) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
+
+input ReferenceElement {
+  table: String,
+  key: String,
+  condition: ExternalCodeReference
+}
+----
+
+== Parameters
+
+[cols="1,1,1,3",options="header"]
+|===
+| Name | Type | Default | Description
+| `path` | `[ReferenceElement!]!` | (required) | Ordered list of hops from the parent table to the target table. Each element pins one hop by table name, foreign-key constraint name, or an external join condition.
+|===
+
+`ReferenceElement` fields:
+
+[cols="1,1,1,3",options="header"]
+|===
+| Name | Type | Default | Description
+| `table` | `String` | inferred from the field's target type | The jOOQ table identifier for this hop's destination. Overrides the type-level `@table` if both are present.
+| `key` | `String` | inferred when unique | The foreign-key constraint name (matching jOOQ's `Keys` class). Required when more than one foreign key exists between the source and destination tables for a hop.
+| `condition` | `ExternalCodeReference` | none | An external Java method that returns a `org.jooq.Condition` to add to the join. Acts as an `ON` condition when neither `table` nor `key` is set, otherwise as an extra `WHERE` constraint on the joined hop.
+|===
+
+== Canonical example
+
+The tutorial's `Customer.address` is a single-hop reference along a named foreign key:
+
+[source,graphql]
+----
+type Customer @table(name: "customer") {
+    address: Address @reference(path: [{key: "customer_address_id_fkey"}])
+}
+----
+
+`customer_address_id_fkey` is the FK constraint declared in `init.sql` as `address_id int NOT NULL REFERENCES address(address_id)`. A query selecting `customers { address { district } }` emits:
+
+[source,sql]
+----
+SELECT customer.first_name AS "firstName",
+       address.district    AS "district"
+  FROM customer
+  LEFT JOIN address ON customer.address_id = address.address_id
+----
+
+The JOIN is added only when the selection set traverses through `address`; selecting only `firstName` skips it.
+
+`@reference` chains across hops. From the same `Customer` type:
+
+[source,graphql]
+----
+storeAddress: Address @reference(path: [
+    {key: "customer_store_id_fkey"},
+    {key: "store_address_id_fkey"}
+])
+----
+
+The path is `customer.store_id → store.store_id → store.address_id → address.address_id` — two FKs and three tables touched, but still a single SQL statement with the same projection-narrowing.
+
+When exactly one foreign key exists between two tables, `@reference` is unnecessary and the generator picks the path automatically:
+
+[source,graphql]
+----
+type Store @table(name: "store") {
+    customers: [Customer!]! @defaultOrder(primaryKey: true)
+}
+----
+
+There is exactly one FK between `customer` and `store` (`customer.store_id`), so the join is implicit. Multiple-FK cases must declare the path explicitly: the generator does not guess.
+
+== Constraints
+
+* `path` must be non-empty. A `@reference` with `path: []` fails graphql-java parsing.
+* When more than one foreign key exists between the source and destination tables for a given hop, `key` is required. The build fails with an ambiguous-reference error otherwise.
+* When `key` is provided alone, `table` is inferred from the FK target. When `table` is provided alone, `key` is inferred when unique. Setting both is allowed but redundant.
+* A `condition`-only hop (no `table`, no `key`) is treated as a join `ON` condition; the generator joins the field's target table and applies the condition. Use this when the join is non-FK or computed.
+* Cannot be combined with `@multitableReference` on the same field.
+
+== See also
+
+* xref:../../tutorial/04-joining-tables.adoc[Tutorial page 4: Joining tables] introduces single-hop and multi-hop references.
+* xref:../../how-to/join-with-references.adoc[How-to: Join with references] for recipe-shaped variants.
+* xref:multitableReference.adoc[`@multitableReference`] for the union/interface variant.
+* xref:table.adoc[`@table`] establishes the table binding both endpoints rely on.
+
+xref:../index.adoc[← Reference index]

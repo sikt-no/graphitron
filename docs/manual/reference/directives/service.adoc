@@ -1,0 +1,91 @@
+= @service
+:description: Hand off the database operation for a field to a custom Java method.
+:!toc:
+
+Replaces the generated DB operation for a field with a call to an external Java method. Use it when the operation cannot be expressed by the directive surface — multi-statement transactions, business-logic-heavy reads, third-party calls, or shapes the framework does not (yet) cover.
+
+== SDL signature
+
+[source,graphql]
+----
+directive @service(
+    service: ExternalCodeReference!,
+    contextArguments: [String!]
+) on FIELD_DEFINITION
+
+input ExternalCodeReference {
+    className: String
+    method: String
+    argMapping: String
+}
+----
+
+== Parameters
+
+[cols="1,1,1,3",options="header"]
+|===
+| Name | Type | Default | Description
+| `service` | `ExternalCodeReference!` | (required) | The Java target. `className` is the implementing class (FQCN, or simple name when an `externalReferences` import covers the package); `method` defaults to the GraphQL field name when omitted; `argMapping` rebinds GraphQL argument names to Java parameter names (`"javaParam: graphqlArg, …"`).
+| `contextArguments` | `[String!]` | none | Names of values pulled from the request `GraphQLContext` and threaded into the Java method as additional arguments. The runtime must place each named value on the context per request.
+|===
+
+== Canonical example
+
+The example schema's root services hand off three different return shapes:
+
+[source,graphql]
+----
+type Query {
+    filmsByService(ids: [Int!]!): [Film!]!
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
+            method: "filmsByService"
+        })
+
+    filmsByServiceRenamed(ids: [Int!]!): [Film!]!
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
+            method: "filmsByServiceRenamed",
+            argMapping: "filmIds: ids"
+        })
+
+    filmCount: Int!
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
+            method: "filmCount"
+        })
+}
+----
+
+`filmsByService` returns a `Result<FilmRecord>` directly; the framework treats jOOQ records as already-populated rows and skips its own projection. `filmsByServiceRenamed` shows `argMapping`: the GraphQL arg `ids` binds to the Java parameter `filmIds` because the service method's signature reads more naturally that way. `filmCount` returns a plain scalar.
+
+The Java surface for the first method:
+
+[source,java]
+----
+public class SampleQueryService {
+    public SampleQueryService(DSLContext context) { … }
+
+    public Result<FilmRecord> filmsByService(List<Integer> ids) { … }
+}
+----
+
+The framework constructs the service with whatever it can resolve from the request context (a `DSLContext` for the request's database session is the most common parameter); the rest of the method signature is the field's GraphQL arguments, mapped by name (or by `argMapping` overrides).
+
+== Constraints
+
+* `service.className` is required. graphql-java rejects a no-arg `@service` at parse time.
+* `service.method` defaults to the GraphQL field name. Set it only when the Java method's name diverges.
+* `argMapping` is parsed as `"javaParam: graphqlArg"` entries, comma-separated. Whitespace around `:` and `,` is tolerated; multi-line text-block input is accepted. Empty string is identity.
+* `@service` and xref:mutation.adoc[`@mutation`] are mutually exclusive on the same field. Use `@mutation` for fully-generated DB writes, `@service` for custom logic.
+* On non-root fields, `@service` requires `@splitQuery`: the parent's selection set is collected first, the service method receives a `Set` of parent records (only their primary-key columns populated), and returns a `Map` from those keys to results. Single-statement nested resolution is not supported on the service path.
+* Conditions and other DB-customisation directives on the same field are ignored: the service is opaque and the generator does not splice generated SQL into a custom method's body.
+
+== See also
+
+* xref:../../how-to/handle-services.adoc[How-to: Handle services] (Phase 3) covers nested-input mapping, response shaping, and the `@splitQuery` pattern in depth.
+* xref:mutation.adoc[`@mutation`] for the framework-generated alternative.
+* xref:tableMethod.adoc[`@tableMethod`] for the lighter-weight "developer returns a `Table` and the framework projects" variant.
+* xref:../../how-to/test-your-schema.adoc[How-to: Test your schema] (Phase 3) for the consumer test pattern with services in play.
+
+xref:../index.adoc[← Reference index]

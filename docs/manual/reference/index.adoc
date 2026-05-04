@@ -4,56 +4,58 @@
 
 Authoritative descriptions of every directive, every Maven plugin parameter, every runtime API entry point, and every diagnostic code Graphitron emits.
 
-== Status: directive index draft
+== Status: directive reference, in progress
 
-Per-directive pages, the Mojo parameter reference, the runtime API reference, and the diagnostics glossary are authored in R68 Phase 2 and Phase 4. Until they land, this page lists the directive surface so readers can see the shape; descriptions live in the legacy https://github.com/sikt-no/graphitron/tree/main/graphitron-codegen-parent/graphitron-java-codegen/README.md[`graphitron-java-codegen` README]. The directive list below mirrors the rewrite's `directives.graphqls` and is therefore correct for the current branch even when individual descriptions still live in the legacy file.
+The first wave of per-directive pages (the six the tutorial uses) is published below. The remaining ~20 directives ship in subsequent commits of R68 Phase 2; their descriptions still live in the legacy https://github.com/sikt-no/graphitron/tree/main/graphitron-codegen-parent/graphitron-java-codegen/README.md[`graphitron-java-codegen` README] until they land here. The Mojo parameter reference, the runtime API reference, and the diagnostics glossary are authored in Phase 4 and Phase 5.
+
+The directive list below mirrors the rewrite's `directives.graphqls` and is therefore correct for the current branch even when an individual page is still pending.
 
 [cols="1,1",frame=none,grid=none]
 |===
 a|
 === Alphabetical
 
-* `@asConnection`
-* `@batchKeyLifter`
-* `@condition`
-* `@defaultOrder`
-* `@discriminate`
-* `@discriminator`
-* `@enum`
-* `@error`
-* `@experimental_constructType`
-* `@externalField`
-* `@field`
-* `@index` (deprecated; use `@order(index:)`)
-* `@lookupKey`
-* `@multitableReference`
-* `@mutation`
-* `@node`
-* `@nodeId`
-* `@notGenerated` (rejected; remove from the schema)
-* `@order`
-* `@orderBy`
-* `@record`
-* `@reference`
-* `@service`
-* `@splitQuery`
-* `@table`
-* `@tableMethod`
+* `@asConnection` _(pending)_
+* `@batchKeyLifter` _(pending)_
+* `@condition` _(pending)_
+* `@defaultOrder` _(pending)_
+* `@discriminate` _(pending)_
+* `@discriminator` _(pending)_
+* `@enum` _(pending)_
+* `@error` _(pending)_
+* `@experimental_constructType` _(pending)_
+* `@externalField` _(pending)_
+* xref:directives/field.adoc[`@field`]
+* `@index` _(pending; deprecated, use `@order(index:)`)_
+* `@lookupKey` _(pending)_
+* xref:directives/multitableReference.adoc[`@multitableReference`]
+* xref:directives/mutation.adoc[`@mutation`]
+* `@node` _(pending)_
+* `@nodeId` _(pending)_
+* `@notGenerated` _(pending; rejected, remove from the schema)_
+* `@order` _(pending)_
+* `@orderBy` _(pending)_
+* `@record` _(pending)_
+* xref:directives/reference.adoc[`@reference`]
+* xref:directives/service.adoc[`@service`]
+* `@splitQuery` _(pending)_
+* xref:directives/table.adoc[`@table`]
+* `@tableMethod` _(pending)_
 
 a|
 === By category
 
 *Mapping* +
-`@table`, `@field`, `@enum`, `@record`
+xref:directives/table.adoc[`@table`], xref:directives/field.adoc[`@field`], `@enum`, `@record`
 
 *Joining* +
-`@reference`, `@multitableReference`, `@batchKeyLifter`
+xref:directives/reference.adoc[`@reference`], xref:directives/multitableReference.adoc[`@multitableReference`], `@batchKeyLifter`
 
 *Querying* +
 `@asConnection`, `@condition`, `@lookupKey`, `@splitQuery`, `@externalField`, `@tableMethod`, `@experimental_constructType`
 
 *Mutating* +
-`@mutation`, `@service`
+xref:directives/mutation.adoc[`@mutation`], xref:directives/service.adoc[`@service`]
 
 *Sorting* +
 `@orderBy`, `@order`, `@defaultOrder`, `@index` (deprecated)
