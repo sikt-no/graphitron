@@ -1,0 +1,117 @@
+= @error
+:description: Map specific Java exceptions to a GraphQL error type carried by a service payload's errors channel.
+:!toc:
+
+Marks a GraphQL `OBJECT` type as the typed home for one or more Java exceptions. When a xref:service.adoc[`@service`]-returned payload exposes an `errors:` field of an `@error` type (or a `union` of `@error` types), the rewrite generates an *error channel*: at runtime the service method's exception is caught, matched against the type's `handlers:`, and the matched type is appended to the payload's `errors` list.
+
+`@error` is the entry point to Graphitron's "errors-as-data" path. It contrasts with throwing: a thrown exception ends the resolver; a mapped exception flows through the GraphQL response as a typed error alongside the rest of the data.
+
+== SDL signature
+
+[source,graphql]
+----
+directive @error(handlers: [ErrorHandler!]!) on OBJECT
+
+input ErrorHandler {
+    handler:     ErrorHandlerType!     # GENERIC | DATABASE | VALIDATION
+    className:   String                # FQCN of the exception (required for GENERIC; defaults to org.jooq.exception.DataAccessException for DATABASE)
+    code:        String                # Vendor-specific DB error code (DATABASE only)
+    sqlState:    String                # Standardized SQL state (DATABASE only)
+    matches:     String                # Substring the exception message must contain
+    description: String                # Override message returned to the client
+}
+
+enum ErrorHandlerType { GENERIC, DATABASE, VALIDATION }
+----
+
+== Parameters
+
+[cols="1,1,1,3",options="header"]
+|===
+| Name | Type | Default | Description
+| `handlers` | `[ErrorHandler!]!` | (required) | One or more handler entries describing which Java exceptions map to this error type. Multiple entries on a single type are an "OR" — any matching entry assigns the exception to this type. The first entry whose criteria match (across all `@error` types reachable from the same channel) wins.
+|===
+
+`ErrorHandler` fields:
+
+[cols="1,1,3",options="header"]
+|===
+| Field | Required | Description
+| `handler` | yes | Selector. `DATABASE` matches `org.jooq.exception.DataAccessException` (or a configured subclass) by `code`/`sqlState`/`matches`. `GENERIC` matches by `className` plus optional `matches`. `VALIDATION` matches Bean Validation failures.
+| `className` | for `GENERIC` | Fully qualified exception class name. Required for `GENERIC`; defaults to `org.jooq.exception.DataAccessException` for `DATABASE`; ignored for `VALIDATION`.
+| `code` | no (`DATABASE` only) | Vendor-specific error code as returned by `SQLException.getErrorCode()`. PostgreSQL always returns `0`; Oracle uses meaningful codes. Pair with `sqlState` when matching across vendors.
+| `sqlState` | no (`DATABASE` only) | Standardized SQL state from `SQLException.getSQLState()` (e.g. `"23503"` for foreign-key violation, `"23514"` for check-constraint violation).
+| `matches` | no | Substring the exception message must contain. Useful to narrow a broad `className` or `sqlState` to one specific error.
+| `description` | no | Static error message returned to the client. Defaults to the exception's `getMessage()`.
+|===
+
+== Canonical example
+
+A service payload with a typed errors channel:
+
+[source,graphql]
+----
+type FilmPayload @record(record: {className: "com.example.FilmPayload"}) {
+    film:   Film
+    errors: [FilmError]
+}
+
+union FilmError = YearOutOfRange | NotAllowed | DbError
+
+type YearOutOfRange @error(handlers: [
+    {handler: DATABASE, sqlState: "23514", matches: "year_check",
+     description: "Release year must be between 1901 and 2155"}
+]) {
+    path:    [String!]!
+    message: String!
+}
+
+type NotAllowed @error(handlers: [
+    {handler: GENERIC, className: "com.example.NotAllowedException",
+     description: "You are not allowed to do this"}
+]) {
+    path:    [String!]!
+    message: String!
+}
+
+type DbError @error(handlers: [
+    {handler: DATABASE, sqlState: "23503"}
+]) {
+    path:    [String!]!
+    message: String!
+}
+
+type Mutation {
+    createFilm(input: CreateFilmInput!): FilmPayload @service(service: {className: "com.example.FilmService"})
+}
+----
+
+When the service method throws a `DataAccessException` whose `sqlState` is `23514` and whose message contains `year_check`, the rewrite catches it, builds a `YearOutOfRange` instance with `message = description` (or the exception's own message when `description:` is absent), and appends it to `FilmPayload.errors`. The `data` field still streams to the client; only `film` is `null` for that request.
+
+`VALIDATION` handles a Bean-Validation failure raised before the service method runs:
+
+[source,graphql]
+----
+type ValidationErr @error(handlers: [{handler: VALIDATION}]) {
+    path:    [String!]!
+    message: String!
+}
+----
+
+== Constraints
+
+* `@error` only takes effect when the type appears as (or in a union behind) an `errors:` field on a payload reachable from a xref:service.adoc[`@service`] field. A standalone `@error` type with no carrier is rejected at classify time.
+* The handler list is order-insensitive within a type; across types of the same channel, ties are broken by handler-tuple equality. Two `@error` types declaring the same handler tuple (same `handler`, `className`, `code`, `sqlState`, `matches`) collapse — the second is unreachable. The build rejects duplicate tuples.
+* `matches:` makes two otherwise-identical handlers distinct: `(GENERIC, IllegalArgumentException, matches: "foo")` and `(GENERIC, IllegalArgumentException)` (no `matches`) are both reachable, with the more-specific match running first.
+* For `GENERIC`, `className:` is required. The build rejects a `GENERIC` handler without it.
+* For `DATABASE`, supply at least one of `code:`, `sqlState:`, or `matches:` (otherwise every `DataAccessException` on the channel routes to this type, which is rarely the intent).
+* `code:` and `sqlState:` may be combined; both must match on the exception. Vendor portability: prefer `sqlState` (PostgreSQL is specific, Oracle is generic) or pair both with a `matches:` substring.
+* Applies only to `OBJECT`. Interfaces and unions cannot carry `@error` directly — the union-of-error-types pattern works because the union *members* are individually `@error`-decorated.
+
+== See also
+
+* xref:service.adoc[`@service`] is the upstream of the errors channel: only service-returned payloads carry one.
+* xref:record.adoc[`@record`] backs the payload type that exposes the `errors:` field.
+* xref:../../how-to/error-channel.adoc[How-to: The errors channel] (Phase 3) covers union vs single-type carriers, `description:` vs exception message, and the `path:` slot's contents.
+
+xref:../index.adoc[← Reference index]
