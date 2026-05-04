@@ -20,6 +20,9 @@ type Query {
     customerById(customer_id: [ID] @lookupKey, store_id: ID @lookupKey): [Customer!]!
     storeById(store_id: [Int] @lookupKey @field(name: "store_id")): [Store!]!
     categoryById(category_id: [Int] @lookupKey @field(name: "category_id")): [Category!]!
+    # R61 execution-tier fixture: lookup inventories by id to exercise the @externalField
+    # TableRecord-lift paths (Inventory.filmRef and Inventory.filmCardData).
+    inventoryById(inventory_id: [Int!]! @lookupKey @field(name: "inventory_id")): [Inventory!]!
     # argres Phase 3: composite-key lookup via @table input type. Each FilmActorKey carries
     # two @lookupKey scalar fields (film_id, actor_id); the generator materialises a VALUES
     # derived table with columns (idx, film_id, actor_id) and joins on both keys.
@@ -309,6 +312,45 @@ type Staff @table(name: "staff") {
     staffId:   Int!    @field(name: "STAFF_ID")
     firstName: String! @field(name: "FIRST_NAME")
     lastName:  String! @field(name: "LAST_NAME")
+}
+
+# R61 execution-tier fixture: @externalField returning Field<TableRecord<?>> and
+# Field<CustomJavaRecord> where the custom record carries a typed TableRecord accessor.
+# Both methods use jOOQ's Row.convertFrom(...) to lift inventory.film_id into a typed
+# FilmRecord (or a custom record wrapping one). Only the PK is set on the lifted
+# FilmRecord; the framework batch-fetches non-PK columns on demand via the standard
+# @record-parent paths.
+type Inventory @table(name: "inventory") {
+    inventoryId:  Int!     @field(name: "INVENTORY_ID")
+    # Field<FilmRecord> via DSL.row(...).convertFrom(...). Children of FilmCard read
+    # from the lifted FilmRecord (PK only); the GraphQL field shape exposes filmId
+    # which the ColumnFetcher resolves from the FilmRecord's setFilmId-populated value.
+    filmRef:      FilmCard      @externalField(reference: {
+        className: "no.sikt.graphitron.rewrite.test.extensions.InventoryExtensions",
+        method:    "filmRef"
+    })
+    # Field<FilmCardData> where FilmCardData is record FilmCardData(FilmRecord film).
+    # The classifier picks the canonical film() accessor on FilmCardData and produces
+    # an AccessorKeyedSingle BatchKey for the GraphQL child field `film: Film`,
+    # batch-fetching the full Film row by PK at request time.
+    filmCardData: FilmCardWrapper @externalField(reference: {
+        className: "no.sikt.graphitron.rewrite.test.extensions.InventoryExtensions",
+        method:    "filmCardData"
+    })
+}
+
+type FilmCard @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) {
+    filmId: Int @field(name: "film_id")
+}
+
+type FilmCardWrapper @record(record: {className: "no.sikt.graphitron.rewrite.test.services.FilmCardData"}) {
+    # AccessorKeyedMany: the canonical Java-record accessor `films()` on FilmCardData returns
+    # List<FilmRecord> (typed accessor matching this field's @table return). The framework
+    # auto-derives the BatchKey, batches dispatch via `loader.loadMany(keys, env)` keyed on
+    # the element table's PK, and returns one Film row per key. List cardinality sidesteps
+    # the validator's single-cardinality RecordTableField rejection (Invariant #10); each
+    # inventory's FilmCardData contains exactly one FilmRecord by construction.
+    films: [Film!]!
 }
 
 type Category @table(name: "category") {
