@@ -76,20 +76,23 @@ Concrete shape per verb (all share the existing `buildDmlFetcher`
 skeleton — try/catch envelope, `dsl` bind, optional dialect guard,
 projection terminator):
 
-- **INSERT** — `dsl.insertInto(t, c1, c2, ...)` followed by a runtime loop
-  `for (var row : in) step = step.values(DSL.val(row.get("c1"), ...), ...)`.
-  Single statement, single round trip; jOOQ renders multi-row VALUES.
-  Returning is unchanged.
+- **INSERT** — `dsl.insertInto(t, c1, c2, ...)` followed by a runtime
+  loop that picks `DSL.val(row.get("col"), dataType)` when the row's Map
+  contains the field name and `DSL.defaultValue(dataType)` when it
+  doesn't (see *Per-field missing-vs-null semantics* below). Single
+  statement, single round trip; jOOQ renders multi-row VALUES with mixed
+  bind / DEFAULT cells per column. Returning is unchanged.
 - **DELETE** — keyed on `tia.fieldBindings()` (same primitive
   `buildLookupWhere` walks for the single-row path: each binding pairs
   the input-field name with the target column, so the LHS gets the
-  target columns and the RHS reads `r.get(binding.fieldName())`). With
-  N ≥ 2 lookup-key columns:
+  target columns and the RHS reads `r.get(binding.fieldName())`).
+  Always row-tuple form, regardless of key arity:
   `dsl.deleteFrom(t).where(DSL.row(<targetCols>).in(in.stream()
   .map(r -> DSL.row(DSL.val(r.get(<inputName>), <colDataType>)...))
-  .toList()))`. Degenerate single-key case (the common one): emit
-  `<targetCol>.in(<vals>)` instead of `DSL.row(k).in(DSL.row(v)...)` —
-  same SQL, simpler emitted Java. One statement either way.
+  .toList()))`. PostgreSQL renders 1-key `(col) IN ((v1), (v2))`
+  identically to `col IN (v1, v2)`, so a 1-key fast path adds emitter
+  branching without paying for itself; one shape, one execution-tier
+  test. One statement.
 - **UPDATE** — emits a PostgreSQL-flavoured `UPDATE t SET c = v.c FROM
   (VALUES (...), (...)) AS v(k, c1, c2, ...) WHERE t.k = v.k` via
   `dsl.update(t).set(c, vTable.field(t.C)).from(vTable).where(t.K.eq(vTable.field(t.K)))`,
@@ -105,30 +108,86 @@ projection terminator):
      emulates `UPDATE...FROM` on non-Postgres dialects with semantics
      drift, and the OSS distribution omits commercial-only dialect enum
      values, so a name-prefix check on `dsl.dialect().name()` matches
-     today's UPSERT pattern. Threads through the existing 10-arg
+     today's UPSERT pattern. Threads through the existing
      `buildDmlFetcher(... postDslGuard)` overload at
-     [`TypeFetcherGenerator.java:1636-1646`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java).
-     R63 will lift this onto the typed `DialectRequirement` slot
-     alongside UPSERT's when it ships; until then both arms carry
-     their inline guards.
+     [`TypeFetcherGenerator.java:1636-1646`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java),
+     emitted between `dsl` bind and the `in` cast. R63 will lift this
+     onto the typed `DialectRequirement` slot alongside UPSERT's when
+     it ships; until then both arms carry their inline guards.
   2. *Duplicate-lookup-key guard*. `UPDATE ... FROM (VALUES …)` joins
      `t` to `v` on the lookup-key columns; if two input rows share
      the same lookup key, PostgreSQL silently picks one v-row's
      columns (implementation-defined join), losing the other row's
      data. That's the same silent-data-loss footgun Invariant #15
-     prevents on the return side, so we shed it at runtime here:
-     before binding `vTable`, build a `HashSet<List<Object>>` keyed on
-     `List.of(row.get("k1"), row.get("k2"), ...)` (value-equal tuple,
+     prevents on the return side, so we shed it at runtime *before*
+     building the `vTable` SQL — the check is a pure set operation on
+     the row Maps and shouldn't ride inside the jOOQ DML chain.
+     Build a `HashSet<List<Object>>` keyed on
+     `List.of(row.get(b1.fieldName()), row.get(b2.fieldName()), ...)`
+     for each `binding` in `tia.fieldBindings()` (value-equal tuple,
      not `Object[]` reference equality) and throw
-     `IllegalArgumentException` if `set.size() != in.size()`.
-     Message names the field and points at the duplicate-tuple count.
-     UPSERT doesn't need the same guard (PostgreSQL hard-errors on
-     duplicate `ON CONFLICT` keys with "command cannot affect row a
-     second time"), and DELETE doesn't need it (idempotent).
+     `IllegalArgumentException` if `set.size() != in.size()`. Message
+     names the field and points at the duplicate-tuple count. The
+     guard runs *after* `in` is bound and *before* the `dmlChain`
+     executes, so it can't piggyback on `postDslGuard` (which is
+     emitted before the `in` cast). The cleanest wiring is a sibling
+     `postInGuard` slot on `buildDmlFetcher`, threaded the same way
+     `postDslGuard` is, but emitted between the `in` cast and
+     `tableLocal`. That same slot also carries the bulk arm's
+     empty-list short-circuit (see *Empty-list contract* below), so
+     the two `tia.list()`-gated runtime checks share one injection
+     point. UPSERT doesn't need the duplicate-key guard (PostgreSQL
+     hard-errors on duplicate `ON CONFLICT` keys with "command cannot
+     affect row a second time"), and DELETE doesn't need it
+     (idempotent).
 - **UPSERT** — multi-row INSERT with `ON CONFLICT (keys) DO UPDATE SET
-  c = EXCLUDED.c`. Same `.values(...)` loop as INSERT plus the existing
-  conflict-key chain; `.doNothing()` branch unchanged. Existing inline
-  Oracle-dialect runtime guard preserved verbatim; R63 lifts it later.
+  c = EXCLUDED.c`. Same `.values(...)` loop as INSERT (so the same
+  per-row `containsKey` dispatch on missing-vs-null applies; see
+  below) plus the existing conflict-key chain; `.doNothing()` branch
+  unchanged. Existing inline Oracle-dialect runtime guard preserved
+  verbatim; R63 lifts it later.
+
+### Per-field missing-vs-null semantics
+
+Today's single-row INSERT/UPDATE/UPSERT walk `tia.fields()` /
+`tia.setFields()` and emit `DSL.val(in.get("col"), dataType)`
+unconditionally. `Map.get` returns `null` for absent keys, so the
+emit conflates two distinct GraphQL inputs:
+
+- *field omitted* — author wrote `{title: "X"}`, leaving `description`
+  unset. Author intent: "use the column's default" (insert) or "leave
+  the column alone" (update).
+- *field explicitly null* — author wrote `{title: "X", description:
+  null}`. Author intent: "write SQL NULL".
+
+Legacy graphitron has had bugs from collapsing these two cases; the
+rewrite has inherited the same conflation today (verified against
+`buildMutationInsertFetcher`/`buildMutationUpdateFetcher` at
+[`TypeFetcherGenerator.java:1421-1432`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java)
+and 1471-1477). R77 fixes this for INSERT and UPSERT in the same pass
+that lifts the bulk arm, since both paths share the value-emission
+walk and we don't want bulk to inherit a known-buggy primitive:
+
+- *INSERT / UPSERT* — emit `row.containsKey("col") ? DSL.val(row.get("col"),
+  dataType) : DSL.defaultValue(dataType)` per column, per row. jOOQ
+  renders `DEFAULT` as the `VALUES` cell, so omitted fields take the
+  column's DB-side default (NOT NULL + no default still surfaces as a
+  runtime constraint violation, same as today). Single-row INSERT/
+  UPSERT collapse to one row of the same dispatch. graphql-java's
+  argument coercion preserves the absent-vs-null distinction in the
+  resulting Map (omitted fields are absent keys, explicit nulls are
+  present-with-null), so `containsKey` is the right discriminator.
+
+- *UPDATE* — out of scope for R77. Correct PATCH semantics on UPDATE
+  ("omitted field → don't touch the column") need a dynamic SET-clause
+  shape that the bulk `UPDATE ... FROM (VALUES ...)` form can't
+  express row-by-row (the v-table column shape is fixed across all
+  rows). Single-row UPDATE keeps today's "missing-collapses-to-null"
+  behaviour for parity, with the legacy bug intact and called out as a
+  follow-up. Tracked under *Non-goals* below.
+
+- *DELETE* — has no value columns; only the lookup-key bindings, which
+  must be present (validated upstream). N/A.
 
 ### Input parsing
 
@@ -149,22 +208,24 @@ when `tia.list()`. Per-row field access (`row.get("col")`) replaces
 dispatches once on `tia.list()` and threads the chosen `in` shape
 through `dmlChain`.
 
-The single-row path (`tia.list() == false`) is unchanged: same
-`Map<?,?>` cast, same one-shot `.values(...)` / `.set(...)` chain,
-same emitted bytes for any schema that compiled before R77. The bulk
-arm is purely additive.
+The single-row path (`tia.list() == false`) keeps the same
+`Map<?,?>` cast and the same one-shot `.values(...)` / `.set(...)` /
+`.where(...)` chain shape. Two differences from R22 bytes:
 
-Per-row missing-key semantics: when a row's `Map` omits an optional
-field, `row.get("col")` returns `null`, which `DSL.val(null, dataType)`
-binds as a typed-null parameter. This inverts the single-row contract
-where missing fields are *skipped* from the column list entirely, but
-matches what bulk has to do — the column list is fixed at codegen time
-across all rows, so every row contributes a value at every column
-position. NOT NULL violations therefore surface at execution time
-rather than codegen time, same as any other null write under the bulk
-arm.
+1. INSERT and UPSERT emit the missing-vs-null dispatch described above
+   (`containsKey` → `defaultValue` vs `val`) instead of the unconditional
+   `DSL.val(in.get(...), ...)` walk. UPDATE keeps today's emit verbatim.
+2. The fetcher's declared return generic narrows from `Object` to a
+   per-arm typed value (see *Empty-list contract* below for the typed
+   shape). The bulk arm and the single-row arm share this lift.
 
-### Empty-list contract
+Per-row, the column list is fixed at codegen time across all rows, so
+every row contributes a cell at every column position. The cell is
+either a typed value-bind (present, possibly null) or a typed
+`DEFAULT` (absent). NOT NULL violations on a present-null cell surface
+at execution time, same as any other null write.
+
+### Empty-list contract and typed value generic
 
 Define `in.isEmpty()` as a no-op short-circuit: the fetcher returns
 the empty list without round-tripping to the database (the only
@@ -172,22 +233,50 @@ admitted return shapes for bulk are `*List` per Invariant #15). Avoids
 jOOQ's empty-`VALUES` rejection and matches the GraphQL contract of
 "applied no rows, returned no rows".
 
-The guard lands inside `buildDmlFetcher` gated on `tia.list()`,
-immediately after `in` is bound and before the `tableLocal` declaration
-that feeds `emitDmlReturnExpression`. It bypasses the projection
-terminator entirely with its own early return:
+The guard rides the `postInGuard` slot introduced for the UPDATE
+duplicate-tuple guard (see UPDATE bullet above) — same injection
+point, same `tia.list()` gate, two emissions sharing one slot. It
+lands after the `in` cast and before `tableLocal`, bypassing the
+projection terminator entirely with its own early return.
+
+The current `buildDmlFetcher` derives `valueType` as `ClassName.OBJECT`
+for every non-`Payload` arm (`TypeFetcherGenerator.java:1648-1651`),
+so the fetcher's declared return is `DataFetcherResult<Object>` and
+the empty-list short-circuit can't produce a typed `List<X>` literal
+without losing the generic. R77 lifts `valueType` per arm:
+
+| arm             | typed `valueType`           | runtime payload       |
+|-----------------|-----------------------------|------------------------|
+| `EncodedSingle` | `String`                    | encoded Node ID        |
+| `EncodedList`   | `List<String>`              | encoded Node IDs       |
+| `ProjectedSingle` | `org.jooq.Record`         | jOOQ row               |
+| `ProjectedList` | `List<org.jooq.Record>`     | jOOQ rows              |
+| `Payload`       | `assembly.payloadClass()`   | (unchanged)            |
+
+The encoder helpers all return `String` (see
+`NodeIdEncoderClassGenerator`'s `static String encode<TypeName>(...)`
+emit), and the projection terminators use `.fetch(r -> r)` /
+`.fetchOne(r -> r)` against `returningResult(SelectField<?>[])`, which
+in jOOQ produces `Result<Record>` / `Record`. Both types are nameable
+at codegen time; neither requires reflective fishing.
+
+The empty-list short-circuit then emits exactly the shape
+`returnSyncSuccess` produces, with `List.of()` substituted for the
+`payload` local:
 
 ```java
 if (in.isEmpty()) {
-    return DataFetcherResult.<List<T>>newResult().data(List.of()).build();
+    return DataFetcherResult.<List<String>>newResult().data(List.of()).build();
+    //                       ^^^^^^^^^^^^ EncodedList; ProjectedList swaps in List<Record>
 }
 ```
 
-i.e. the same `DataFetcherResult` shape `returnSyncSuccess` would have
-emitted, but binding `data(List.of())` directly rather than walking
-through `emitDmlReturnExpression` with an empty `payload` local. The
-boxed value type comes from the same `boxed(valueType)` call that
-`returnSyncSuccess` already uses.
+The lift narrows the `DataFetcherResult` parameter for *every* DML
+fetcher (single-row and bulk), so any consumer that treated the
+fetcher's declared return as `DataFetcherResult<Object>` re-types
+implicitly. Inside graphql-java the field-resolver layer takes the
+payload as `Object` regardless, so this is a generator-internal
+sharpening.
 
 ### Validator updates
 
@@ -202,15 +291,16 @@ boxed value type comes from the same `boxed(valueType)` call that
   pass `tia.list()` through. The rule is verb-neutral, so it lives
   upstream of the four `case INSERT/UPDATE/DELETE/UPSERT` arms rather
   than threaded into each.
-- Add a parallel *deferred* rejection on the `Payload` arm in the
-  same widened `validateReturnType` (or a sibling step in
-  `FieldBuilder.buildDmlField` after `resolveDmlPayloadAssembly`,
-  whichever reads cleaner): `tia.list()` paired with a `ResultReturnType`
-  is "list-`@record` payloads are not yet supported". Use
+- Add a parallel *deferred* rejection on the `Payload` arm in
+  `FieldBuilder.buildDmlField` after `resolveDmlPayloadAssembly`:
+  `tia.list()` paired with a `ResultReturnType` is "list-`@record`
+  payloads are not yet supported". Use
   `Rejection.deferred("…", "synthesize-payload-carrier")`
   ([factory at `Rejection.java:239`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/model/Rejection.java))
-  so the deferred message anchors to R75. Distinct category from #15,
-  will lift when R75 lands.
+  so the deferred message anchors to R75. Kept out of
+  `validateReturnType` so that function stays purely structural
+  (Invariant #14 + new #15); the deferred Payload+list rule is "not
+  yet supported", a distinct category that lifts when R75 lands.
 - Update `GraphitronSchemaBuilderTest.DML_LIST_INPUT_DEFERRED`
   (currently asserts the blanket rejection; its description string
   mislabels it `(Invariant #11)` — #11 is unrelated, the original
@@ -236,24 +326,37 @@ boxed value type comes from the same `boxed(valueType)` call that
   `MutationDeleteTableField` / etc. with `tableInputArg().list() == true`
   for each verb; `Invariant #15` rejects bulk-input + single-return.
 - **Pipeline** — emitted method bodies for each of the four verbs read
-  `List<Map<?,?>>` and contain a row-loop (no code-string assertions on
-  the generated SQL chain itself; structural assertions only, per
-  rewrite-design-principles).
+  `List<Map<?,?>>` on the bulk arm and contain a row-loop, the typed
+  `valueType` lift narrows the fetcher's declared return generic away
+  from `Object`, and INSERT/UPSERT emit a `containsKey`-gated value
+  cell (DEFAULT vs typed-null) rather than the unconditional `DSL.val`
+  walk (no code-string assertions on the generated SQL chain itself;
+  structural assertions only, per rewrite-design-principles).
 - **Compilation** — the four bulk fetchers compile under the
   `graphitron-sakila-example` Java 17 target.
 - **Execution** — PostgreSQL execution-tier tests against Sakila:
-  `createFilms_insertsNRowsAndReturnsProjectedList`,
-  `deleteFilms_deletesNRowsByLookupKeyTuple`,
-  `updateFilms_updatesNRowsViaValuesJoin`, and
-  `upsertFilms_writesNRowsAndReturnsProjectedList` (both insert and
-  update branches). Each verifies row count and RETURNING / projection
-  shape. Plus one
-  `bulkDml_emptyListInput_doesNotRoundTripToDatabase` that exercises
-  the `in.isEmpty()` short-circuit on at least one verb (assert via
-  `QUERY_COUNT == 0`, the same pattern other execution tests use), and
-  `updateFilms_duplicateLookupKeys_throwsBeforeStatement` that asserts
-  the bulk-UPDATE duplicate-tuple guard fires (assert via
-  `IllegalArgumentException` plus `QUERY_COUNT == 0`).
+  - `createFilms_insertsNRowsAndReturnsProjectedList`,
+    `deleteFilms_deletesNRowsByLookupKeyTuple`,
+    `updateFilms_updatesNRowsViaValuesJoin`, and
+    `upsertFilms_writesNRowsAndReturnsProjectedList` (both insert and
+    update branches). Each verifies row count and RETURNING /
+    projection shape.
+  - `createFilms_omittedFieldUsesColumnDefault_explicitNullWritesNull`
+    — one bulk INSERT call with two rows: row A omits a column with a
+    DB default (e.g. `rentalDuration`), row B sets the same column to
+    explicit `null`. Asserts row A reads back the DB default and row B
+    reads back NULL (or surfaces the NOT NULL violation if the column
+    is NOT NULL without a default). The single-row analogue
+    `createFilm_omittedFieldUsesColumnDefault_explicitNullWritesNull`
+    runs the same shape on the single-row INSERT to lock in the
+    legacy-bug fix.
+  - `bulkDml_emptyListInput_doesNotRoundTripToDatabase` — exercises
+    the `in.isEmpty()` short-circuit on at least one verb (assert via
+    `QUERY_COUNT == 0`, the same pattern other execution tests use).
+  - `updateFilms_duplicateLookupKeys_throwsBeforeStatement` — asserts
+    the bulk-UPDATE duplicate-tuple guard fires (assert via
+    `IllegalArgumentException` plus `QUERY_COUNT == 0`, so the throw
+    is observed *before* any SQL is dispatched).
 
 ## Implementation sites
 
@@ -261,31 +364,53 @@ boxed value type comes from the same `boxed(valueType)` call that
   delete the `foundTia.list()` rejection arm (line 250-255).
 - [`MutationInputResolver.validateReturnType`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/MutationInputResolver.java) —
   widen the signature to `(returnType, kind, boolean listInput)` and
-  add Invariant #15 (bulk-input + single-return rejection) plus the
-  deferred Payload+list rejection
-  (`Rejection.deferred("…", "synthesize-payload-carrier")`).
+  add Invariant #15 (bulk-input + single-return rejection). Stays
+  purely structural; the deferred Payload+list rejection lands in
+  `FieldBuilder.buildDmlField` instead (see below).
 - [`FieldBuilder.classifyMutationField`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java) —
   pass `tia.list()` through to the widened `validateReturnType` call
   at line 2374. No changes inside the four `case INSERT/UPDATE/DELETE/UPSERT`
   dispatch arms; the new invariant is verb-neutral.
-- [`TypeFetcherGenerator.buildMutationInsertFetcher`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java) (and the three siblings) —
-  branch on `tia.list()` to emit the runtime row-loop. The four verbs
-  consume per-row data in three idiomatic shapes (INSERT/UPSERT
-  accumulate `.values(...)` clauses; DELETE collects `DSL.row(...)` for
-  the IN tuple; UPDATE collects rows for `DSL.values(...).asTable(...)`),
-  so the shared primitive is a `buildRowValuesBlock(tia, columns)`
-  helper that emits the `for (var row : in)` loop body producing a
-  `List<? extends Row>` at runtime — each verb wraps that list in its
-  own surrounding chain. Don't try to share a single helper that also
-  emits the chain.
+- [`FieldBuilder.buildDmlField`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java) —
+  after `resolveDmlPayloadAssembly`, emit the deferred Payload+list
+  rejection via
+  `Rejection.deferred("list @record payload returns are not yet supported", "synthesize-payload-carrier")`
+  when `tia.list() && returnType instanceof ResultReturnType`.
+- [`TypeFetcherGenerator.buildMutationInsertFetcher`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java) (and `buildMutationUpsertFetcher`) —
+  on the `tia.list()` arm, emit a `for (var row : in)` row-loop that
+  accumulates `.values(...)` calls on the running `step` local. On
+  *both* arms (single-row and bulk), replace the unconditional
+  `DSL.val(in.get("col"), dataType)` cell with the
+  `containsKey`-gated `DEFAULT vs val` dispatch (see *Per-field
+  missing-vs-null semantics*); for single-row, the "row" is `in`
+  itself.
+- [`TypeFetcherGenerator.buildMutationDeleteFetcher`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java) —
+  on the `tia.list()` arm, emit
+  `dsl.deleteFrom(t).where(DSL.row(<targetCols>).in(in.stream().map(r -> DSL.row(...)).toList()))`.
+  Always row-form, regardless of `tia.fieldBindings().size()`. The
+  single-row arm is unchanged.
 - [`TypeFetcherGenerator.buildMutationUpdateFetcher`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java) —
   on the `tia.list()` arm, emit the duplicate-lookup-key runtime guard
-  before the DML chain (build a `Set` of lookup-key tuples; throw
-  `IllegalArgumentException` if `set.size() != in.size()`). Threads
-  through `postDslGuard` alongside the existing Oracle-dialect guard.
+  via the new `postInGuard` slot (see `buildDmlFetcher` below) — build
+  a `HashSet<List<Object>>` keyed on the lookup-key tuple, throw
+  `IllegalArgumentException` if `set.size() != in.size()`. Then emit
+  the `UPDATE ... FROM (VALUES ...)` chain. Existing inline
+  Oracle-dialect runtime guard continues to ride `postDslGuard`.
 - [`TypeFetcherGenerator.buildDmlFetcher`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java) —
-  flip the `env.getArgument(...)` cast to `List<Map<?,?>>` and emit the
-  empty-list short-circuit when `tia.list()`.
+  three changes:
+  1. Cast: emit `Map<?,?> in = ...` when `tia.list() == false`,
+     `List<Map<?,?>> in = ...` when `tia.list() == true`.
+  2. Add a `postInGuard` `CodeBlock` parameter alongside the existing
+     `postDslGuard`, emitted between the `in` cast and the
+     `tableLocal` declaration. Carries (a) the bulk arm's empty-list
+     short-circuit and (b) UPDATE's bulk-arm dup-tuple guard.
+  3. Lift `valueType` from `ClassName.OBJECT` to a per-arm typed
+     value: `ClassName.get(String.class)` for `EncodedSingle`,
+     `ParameterizedTypeName.get(List.class, String.class)` for
+     `EncodedList`, jOOQ's `Record` (single) / `List<Record>` (list)
+     for the projected arms, and the existing
+     `assembly.payloadClass()` for `Payload`. The fetcher's declared
+     return type and the inner `payload` local re-type implicitly.
 - [`graphitron-sakila-example/src/main/resources/graphql/schema.graphqls`](../graphitron-sakila-example/src/main/resources/graphql/schema.graphqls) —
   add four bulk-variant `Mutation` fields alongside the existing
   single-row `createFilm` / `updateFilm` / `upsertFilm`:
@@ -319,8 +444,13 @@ rewrite each as a `tia.list()` conditional — "casts to `Map<?,?>`
 when `tia.list() == false`, `List<Map<?,?>>` when `tia.list() ==
 true` (Invariant #15 then guarantees the return shape is
 list-cardinality, so the projection terminator binds the matching
-`*List` arm)". UPDATE's annotation also gains the duplicate-tuple
-guard line on the bulk arm.
+`*List` arm)". INSERT and UPSERT also gain a clause stating that the
+value-cell emit dispatches on `row.containsKey("col")`
+(`DSL.defaultValue(dataType)` when absent, `DSL.val(value, dataType)`
+when present) — the classifier guarantees `tia.fields()` /
+`tia.setFields()` is the canonical column list and never widens at
+runtime. UPDATE's annotation also gains the duplicate-tuple guard
+line on the bulk arm.
 
 ## Non-goals and out-of-scope
 
@@ -343,3 +473,14 @@ guard line on the bulk arm.
   `MutationServiceRecordField` already accept whatever the service
   signature declares; bulk service mutations are an author-side concern,
   not a generator-side gap.
+- *UPDATE missing-field PATCH semantics.* R77 fixes the missing-vs-null
+  conflation for INSERT and UPSERT (where `DEFAULT` is the right
+  per-row choice for an absent field). Correct PATCH semantics on
+  UPDATE — "field omitted means leave the column alone" — need a
+  dynamic SET-clause shape that the bulk `UPDATE ... FROM (VALUES ...)`
+  form can't express (the v-table column list is fixed across all
+  rows). Single-row UPDATE keeps today's "missing collapses to null"
+  emit for parity with bulk; the legacy bug remains, tracked as a
+  follow-up that may need a different bulk-UPDATE shape (e.g. one
+  statement per distinct SET-column set, or a switch to
+  `dsl.batch(...)`).
