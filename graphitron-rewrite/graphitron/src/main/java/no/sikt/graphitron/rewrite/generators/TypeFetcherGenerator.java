@@ -346,11 +346,11 @@ public class TypeFetcherGenerator {
                 }
                 case ChildField.SplitTableField stf -> {
                     builder.addMethod(buildSplitQueryDataFetcher(stf, stf.returnType(), parentTable, outputPackage, jooqPackage));
-                    builder.addMethod(SplitRowsMethodEmitter.buildRowsMethod(stf, outputPackage, jooqPackage));
+                    builder.addMethod(SplitRowsMethodEmitter.buildForSplitTable(stf, outputPackage, jooqPackage));
                 }
                 case ChildField.SplitLookupTableField slf -> {
                     builder.addMethod(buildSplitQueryDataFetcher(slf, slf.returnType(), parentTable, outputPackage, jooqPackage));
-                    builder.addMethod(SplitRowsMethodEmitter.buildRowsMethod(slf, outputPackage, jooqPackage));
+                    builder.addMethod(SplitRowsMethodEmitter.buildForSplitLookupTable(slf, outputPackage, jooqPackage));
                     // Emit the VALUES-building input-rows helper alongside the rows method.
                     // Phase 2a's env-based variant (buildInputRowsMethod) reads args from
                     // env.getArgument(name) — correct for a Split* fetcher whose @lookupKey args
@@ -423,11 +423,11 @@ public class TypeFetcherGenerator {
                 case ChildField.ParticipantColumnReferenceField ignored -> { }
                 case ChildField.RecordTableField rtf -> {
                     builder.addMethod(buildRecordBasedDataFetcher(rtf, rtf.batchKey(), resultType, jooqPackage, outputPackage));
-                    builder.addMethod(SplitRowsMethodEmitter.buildRowsMethod(rtf, outputPackage, jooqPackage));
+                    builder.addMethod(SplitRowsMethodEmitter.buildForRecordTable(rtf, outputPackage, jooqPackage));
                 }
                 case ChildField.RecordLookupTableField rltf -> {
                     builder.addMethod(buildRecordBasedDataFetcher(rltf, rltf.batchKey(), resultType, jooqPackage, outputPackage));
-                    builder.addMethod(SplitRowsMethodEmitter.buildRowsMethod(rltf, outputPackage, jooqPackage));
+                    builder.addMethod(SplitRowsMethodEmitter.buildForRecordLookupTable(rltf, outputPackage, jooqPackage));
                     // Input-rows helper identical in shape to SplitLookupTableField's — reads
                     // @lookupKey args from env.getArgument(name) and emits the typed Row<M+1>[].
                     if (rltf.lookupMapping() instanceof no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) {
@@ -2555,12 +2555,12 @@ public class TypeFetcherGenerator {
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "accessor-rowkey-cardinality-matches-field",
         reliesOn = "FieldBuilder.deriveBatchKeyFromTypedAccessor produces AccessorKeyedMany "
-            + "only on list fields and AccessorKeyedSingle only on single fields. The "
-            + "valueType rule below ((dispatch == LOAD_MANY || !isList) → Record) folds the "
-            + "two cases that emit a per-key value of Record (LOAD_MANY's loadMany contract; "
-            + "single-cardinality LOAD_ONE) and otherwise emits List<Record>. An "
-            + "AccessorKeyedMany on a non-list field would emit code expecting List<Record> "
-            + "from a loadMany that supplies Record, miscompiling generated *Fetchers.")
+            + "only on list fields and AccessorKeyedSingle only on single fields. The valueType "
+            + "rule below (field.emitsSingleRecordPerKey() → Record else List<Record>) folds "
+            + "the two cases that emit a per-key value of Record (LOAD_MANY's loadMany "
+            + "contract; single-cardinality LOAD_ONE). An AccessorKeyedMany on a non-list "
+            + "field would emit code expecting List<Record> from a loadMany that supplies "
+            + "Record, miscompiling generated *Fetchers.")
     private static <T extends ChildField.TableTargetField & BatchKeyField> MethodSpec
             buildRecordBasedDataFetcher(T field, BatchKey.RecordParentBatchKey batchKey,
                     GraphitronType.ResultType resultType, String jooqPackage, String outputPackage) {
@@ -2568,15 +2568,12 @@ public class TypeFetcherGenerator {
         boolean isList = field.returnType().wrapper().isList();
         BatchKey.LoaderDispatch dispatch = batchKey.dispatch();
 
-        // For LOAD_MANY, the loader's per-key value is a single Record (each element-PK key
-        // maps to exactly one element record); loadMany returns CompletableFuture<List<Record>>
-        // which already matches the list-field shape. For LOAD_ONE, the value follows the
-        // field's cardinality directly. The pairing of dispatch and field cardinality is the
-        // contract: a LOAD_MANY on a non-list field would emit code expecting List<Record> from
-        // a loadMany that supplies Record. The classifier upholds this contract by producing
-        // AccessorKeyedMany (LOAD_MANY) only on list fields; the typed dispatch projection
-        // makes that contract a property of the model, not a string-name convention.
-        TypeName valueType = (dispatch == BatchKey.LoaderDispatch.LOAD_MANY || !isList)
+        // The loader's per-key value is `Record` whenever the rows-method emits one record per
+        // key (single-cardinality fields, or the LOAD_MANY loadMany contract on list fields);
+        // otherwise `List<Record>`. Single source of truth lives on the field as
+        // {@link BatchKeyField#emitsSingleRecordPerKey} — the same predicate the rows-method
+        // router and the scatterSingleByIdx helper-emission gate consult.
+        TypeName valueType = field.emitsSingleRecordPerKey()
             ? RECORD
             : ParameterizedTypeName.get(LIST, RECORD);
         // The fetcher's overall result follows the field's cardinality regardless of dispatch.
