@@ -1,0 +1,84 @@
+= @experimental_constructType
+:description: Project a child object type's fields directly from the parent table's columns, without giving the child its own @table or @field directives.
+:!toc:
+
+Constructs a nested object type from columns on the *parent's* table. The directive's `selection:` argument lists the child type's fields and the parent-table columns they read from, using a syntax close to a GraphQL selection set. The constructed type does not need its own xref:table.adoc[`@table`], and its fields do not need individual xref:field.adoc[`@field`] directives, the directive supplies the mapping inline at the call site.
+
+`@experimental_constructType` is a niche tool for two specific patterns: re-using a single small object type across multiple parents that map its fields to *differently-named* columns (so a per-parent xref:field.adoc[`@field`] axis would be more verbose), and shaping the keys for non-resolvable Federation entities where the GraphQL type can't carry a `@table` because its data lives in another service. The "experimental" in the name signals limited support: the directive is shipped, but its guarantees are narrower than the rest of the directive surface, expect more rejections than xref:field.adoc[`@field`] would produce on the same field.
+
+== SDL signature
+
+[source,graphql]
+----
+directive @experimental_constructType(selection: String) on FIELD_DEFINITION
+----
+
+== Parameters
+
+[cols="1,1,1,3",options="header"]
+|===
+| Name | Type | Default | Description
+| `selection` | `String` | (required in practice) | A pseudo-selection string mapping the child type's fields to columns on the parent's table. `fieldName: COLUMN_NAME` maps a field to a differently-named column. `fieldName` (no colon) reads from a column with the same name. Whitespace, commas, and triple-quoted multiline strings are all accepted. No arguments, variables, or nested selections.
+|===
+
+== Canonical examples
+
+A re-used `CustomerInfo` type whose fields are projected from `customer` columns at the call site:
+
+[source,graphql]
+----
+type Customer @table(name: "customer") {
+    info: CustomerInfo @experimental_constructType(selection: "label: FIRST_NAME, detail: EMAIL")
+}
+
+type CustomerInfo {
+    label:  String
+    detail: String
+}
+----
+
+A multiline `selection` (the directive accepts whitespace and triple-quoted strings unchanged):
+
+[source,graphql]
+----
+type Customer @table(name: "customer") {
+    info: CustomerInfo @experimental_constructType(selection: """
+        label:  FIRST_NAME,
+        detail: EMAIL
+    """)
+}
+----
+
+Mapping a same-named column without an explicit colon, useful when the GraphQL field name already matches the column:
+
+[source,graphql]
+----
+type Staff @table(name: "staff") {
+    summary: StaffSummary @experimental_constructType(selection: "first_name, last_name")
+}
+
+type StaffSummary {
+    first_name: String
+    last_name:  String
+}
+----
+
+== Constraints
+
+* The containing type must have access to a table, either by carrying its own xref:table.adoc[`@table`] directive or inheriting one through the call chain. Without a parent table, the column references in `selection:` have no surrounding source.
+* The constructed type must *not* carry xref:table.adoc[`@table`]. The whole point of the directive is to project a non-table-bound type from the parent's columns, a `@table`-bound child has its own SQL source and would conflict with the inline projection.
+* `@experimental_constructType` does not compose with xref:field.adoc[`@field`] or xref:externalField.adoc[`@externalField`] on the same field. The three are mutually exclusive: pick a column-mapping axis (`@field`), a custom-method axis (`@externalField`), or an inline-projection axis (`@experimental_constructType`).
+* Nested object types inside the constructed type are not supported. The `selection:` syntax is column-list-only, no `{ ... }` blocks, no further `@experimental_constructType` on inner fields. Compose `@experimental_constructType` only at the leaf where columns project to scalars / enums.
+* Every field name in `selection:` must exist on the constructed type. Unknown field names are rejected at parse time.
+* Fields on the constructed type that are *not* listed in `selection:` resolve to `null` at runtime, the directive does not require an exhaustive selection. (This is convenient when the constructed type is large and only a few fields are needed at this call site.)
+* `selection:` does not accept GraphQL arguments, variables, or nested selection sets. The syntax is intentionally narrower than GraphQL's, the goal is column projection, not query language.
+* The directive is `experimental_` for a reason: the constraints above are tighter than xref:field.adoc[`@field`]'s, and the surface may shift in future Graphitron versions. Prefer xref:field.adoc[`@field`] (per-field on a `@table`-bound child) when both axes are available.
+
+== See also
+
+* xref:field.adoc[`@field`] is the per-field column-mapping axis, choose it when the constructed type has its own xref:table.adoc[`@table`] or when you want individual mapping per field.
+* xref:table.adoc[`@table`] is the catalog-binding axis. `@experimental_constructType` exists precisely because the constructed type *can't* carry `@table`.
+* xref:externalField.adoc[`@externalField`] is the alternative when the projection needs custom Java logic rather than a column list.
+* xref:../../how-to/federation-keys.adoc[How-to: Federation key fields] (Phase 3) covers the non-resolvable-entity pattern that motivates `@experimental_constructType`.
+
+xref:../index.adoc[← Reference index]

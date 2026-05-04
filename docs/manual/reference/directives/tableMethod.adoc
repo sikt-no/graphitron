@@ -1,0 +1,102 @@
+= @tableMethod
+:description: Replace the catalog-resolved jOOQ table for a field with one returned from a developer-supplied static method.
+:!toc:
+
+Lets a static Java method choose which jOOQ table backs a field's `SELECT`. The reflected method receives the field's GraphQL arguments (and any `contextArguments:`) and returns a generated jOOQ table class; the rewrite then projects `Type.$fields(...)` against that table exactly as if `@table` had named it directly. At root, this is a developer-driven equivalent of `@table` on a `Query` field; at child sites, it switches the SQL source mid-tree based on argument values.
+
+`@tableMethod` is the seam for table selection that depends on argument values: returning a sharded table by tenant, picking between archived and live history tables, or resolving any catalog choice that can't be expressed statically. The directive composes with xref:reference.adoc[`@reference`] (at child sites) and with xref:condition.adoc[`@condition`] (the standard predicate axis still applies on top of the chosen table).
+
+== SDL signature
+
+[source,graphql]
+----
+directive @tableMethod(
+    tableMethodReference: ExternalCodeReference!
+    contextArguments:     [String!]
+) on FIELD_DEFINITION
+----
+
+== Parameters
+
+[cols="1,1,1,3",options="header"]
+|===
+| Name | Type | Default | Description
+| `tableMethodReference` | `ExternalCodeReference` | (required) | Points at the static Java method that returns the jOOQ table. Both `className:` and `method:` are required. `argMapping:` rebinds GraphQL argument names to differently-named Java parameters (the rewrite reflects the method's parameter list against the field's arguments after applying the mapping).
+| `contextArguments` | `[String!]` | `[]` | Names of values to pull from the GraphQL `GraphQLContext` at runtime. Each named context value becomes a Java parameter the reflected method receives, alongside the field's GraphQL arguments. Wire the values into `GraphQLContext` in your servlet bootstrap.
+|===
+
+== Canonical examples
+
+A `@table`-typed root query whose backing table is chosen by argument value. The method returns a `Table<FilmRecord>` and the rewrite projects `FilmType.$fields(...)` against the chosen table:
+
+[source,graphql]
+----
+type Query {
+    popularFilms(minRentalRate: Float!): [Film!]!
+        @tableMethod(tableMethodReference: {
+            className: "com.example.services.SampleQueryService",
+            method:    "popularFilms"
+        })
+}
+----
+
+[source,java]
+----
+public final class SampleQueryService {
+    public static Table<FilmRecord> popularFilms(BigDecimal minRentalRate) {
+        return DSL.selectFrom(FILM).where(FILM.RENTAL_RATE.ge(minRentalRate)).asTable("popular_films");
+    }
+}
+----
+
+A child-site `@tableMethod` that swaps the source table for a single field while leaving its siblings on the parent's `@table`:
+
+[source,graphql]
+----
+type Customer @table(name: "customer") {
+    rentals(after: Timestamp!): [Rental!]!
+        @tableMethod(tableMethodReference: {
+            className: "com.example.services.RentalService",
+            method:    "recentRentals"
+        })
+}
+----
+
+`@tableMethod` with `contextArguments:`. The reflected method receives the GraphQL argument *and* the named context values:
+
+[source,graphql]
+----
+type Query {
+    tenantBills(month: String!): [Bill!]!
+        @tableMethod(
+            tableMethodReference: {
+                className: "com.example.services.BillService",
+                method:    "byTenantAndMonth"
+            },
+            contextArguments: ["tenantId"]
+        )
+}
+----
+
+`byTenantAndMonth(String month, UUID tenantId)` runs at request time with `tenantId` pulled from `GraphQLContext`.
+
+== Constraints
+
+* At root sites, the field's return type must be `@table`-bound. A non-`@table` return (scalar, enum, plain `@record`, polymorphic) at root is rejected with `@tableMethod requires a @table-annotated return type`.
+* At root sites, `Connection`-wrapped return types are rejected: `@tableMethod at the root does not support Connection return types — use [T] or T instead`. Use plain `[Film!]!` or `Film` at the field, the rewrite does not synthesise a Connection envelope around a developer-chosen table.
+* At child sites, scalar / enum return types route to a deferred stub variant (`TableMethodField` carrying a non-table-bound return), the runtime path lands with a future roadmap item.
+* The reflected method's *exact* return type must equal the generated jOOQ table class for the field's element type, not a wider `Table<R>`. The strict invariant catches catalog-vs-method-signature drift at build time. (At child sites with non-table-bound returns the strictness check is skipped: there's no expected jOOQ table class to compare against.)
+* `tableMethodReference.className:` and `tableMethodReference.method:` are both required. Bare `@tableMethod` (no reference) and references missing `className:` or `method:` surface as `table method could not be resolved — ...`.
+* `argMapping:` is supported on `@tableMethod` and rebinds GraphQL argument names to differently-named Java parameters when conventions diverge. argMapping errors surface as `table method could not be resolved — @tableMethod ...`.
+* `contextArguments:` values must already be wired into the runtime `GraphQLContext` map. A typo surfaces as a `null` parameter at request time, not as a build error.
+* The class must be discoverable as an `externalReferenceImports` entry in the Maven plugin's POM configuration. Reflection failures surface as `table method could not be resolved — <reflection error>`.
+
+== See also
+
+* xref:table.adoc[`@table`] is the catalog-driven counterpart, choose `@table` when the same jOOQ table always backs the field, choose `@tableMethod` when the table is selected at request time.
+* xref:service.adoc[`@service`] is the alternative when the developer supplies the *entire* fetcher rather than just the source table.
+* xref:condition.adoc[`@condition`] layers explicit predicates on top of the chosen table, the two compose.
+* xref:reference.adoc[`@reference`] still controls the join path at child sites; the chosen table is the path's leaf.
+* xref:../../how-to/external-code.adoc[How-to: Wiring external Java code] (Phase 3) covers the `externalReferenceImports` Maven configuration shared across `@tableMethod`, `@externalField`, `@condition`, and `@service`.
+
+xref:../index.adoc[← Reference index]
