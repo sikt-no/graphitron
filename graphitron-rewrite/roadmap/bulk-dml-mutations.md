@@ -94,52 +94,88 @@ projection terminator):
   branching without paying for itself; one shape, one execution-tier
   test. One statement.
 - **UPDATE** — emits a PostgreSQL-flavoured `UPDATE t SET c = v.c FROM
-  (VALUES (...), (...)) AS v(k, c1, c2, ...) WHERE t.k = v.k` via
-  `dsl.update(t).set(c, vTable.field(t.C)).from(vTable).where(t.K.eq(vTable.field(t.K)))`,
-  where `vTable` is `DSL.values(rows...).asTable("v", colNames...)`.
-  The alias columns in `asTable` use each target column's SQL name
-  verbatim (`Tables.FILM.LANGUAGE_ID.getName()` etc.), so jOOQ's typed
-  `Table.field(Field<T>)` overload returns the matching v-column with
-  the target column's type — no string lookup, no cast, no
-  `DSL.field("v.c")`. The result is a typed `Field<X>` that drops into
-  `set(...)` and `where(...)` without further widening. One statement.
-  Carries two runtime guards in the emitted fetcher prelude:
-  1. *Oracle-dialect guard*, analogous to UPSERT's: jOOQ silently
-     emulates `UPDATE...FROM` on non-Postgres dialects with semantics
-     drift, and the OSS distribution omits commercial-only dialect enum
-     values, so a name-prefix check on `dsl.dialect().name()` matches
-     today's UPSERT pattern. Threads through the existing
-     `buildDmlFetcher(... postDslGuard)` overload at
-     [`TypeFetcherGenerator.java:1636-1646`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java),
-     emitted between `dsl` bind and the `in` cast. R63 will lift this
-     onto the typed `DialectRequirement` slot alongside UPSERT's when
-     it ships; until then both arms carry their inline guards.
-  2. *Duplicate-lookup-key guard*. `UPDATE ... FROM (VALUES …)` joins
-     `t` to `v` on the lookup-key columns; if two input rows share
-     the same lookup key, PostgreSQL silently picks one v-row's
-     columns (implementation-defined join), losing the other row's
-     data. That's the same silent-data-loss footgun Invariant #15
-     prevents on the return side, so we shed it at runtime *before*
-     building the `vTable` SQL — the check is a pure set operation on
-     the row Maps and shouldn't ride inside the jOOQ DML chain.
-     Build a `HashSet<List<Object>>` keyed on
+  (VALUES ...) AS v(k, c1, c2, ...) WHERE t.k = v.k`, but the SET
+  column list and the v-table column list are **derived per-call at
+  runtime** from the input rows' present-key set rather than baked
+  from `tia.setFields()` at codegen. This is what makes PATCH
+  semantics correct: a field omitted from the input drops out of the
+  SET clause entirely ("leave the column alone"), and a field set to
+  explicit `null` binds typed null. INSERT/UPSERT can mix `DEFAULT`
+  and bound-null per cell because each VALUES row is independent;
+  UPDATE can't (one SET clause is applied to every joined row), so
+  the variability shifts from per-cell to per-call.
+
+  The bulk arm requires all rows to share the same present-key set —
+  the uniformity guard below. Rows that diverge can't share one SET
+  clause, so they're rejected at runtime; authors split into
+  multiple bulk calls or pad rows to a uniform shape. Auto-grouping
+  divergent shapes into multiple statements is option 3 in the
+  design discussion; R77 takes option 1 and defers grouping.
+
+  Three runtime guards fire from the `postInGuard` slot before the
+  chain executes, in order:
+  1. *Empty-list short-circuit* — covered in *Empty-list contract
+     and typed value generic* below.
+  2. *Uniform-shape guard* — `firstKeys = in.get(0).keySet()`,
+     validate every later row's `keySet().equals(firstKeys)`. Reject
+     `IllegalArgumentException` on divergence with a message naming
+     the offending row index, its key set, and `firstKeys`.
+  3. *Duplicate-lookup-key guard*. `UPDATE ... FROM (VALUES …)`
+     joins `t` to `v` on the lookup-key columns; if two input rows
+     share the same lookup key, PostgreSQL silently picks one v-row
+     (implementation-defined join), losing the other row's data —
+     the same silent-data-loss footgun Invariant #15 prevents on
+     the return side. Build a `HashSet<List<Object>>` keyed on
      `List.of(row.get(b1.fieldName()), row.get(b2.fieldName()), ...)`
      for each `binding` in `tia.fieldBindings()` (value-equal tuple,
      not `Object[]` reference equality) and throw
-     `IllegalArgumentException` if `set.size() != in.size()`. Message
-     names the field and points at the duplicate-tuple count. The
-     guard runs *after* `in` is bound and *before* the `dmlChain`
-     executes, so it can't piggyback on `postDslGuard` (which is
-     emitted before the `in` cast). The cleanest wiring is a sibling
-     `postInGuard` slot on `buildDmlFetcher`, threaded the same way
-     `postDslGuard` is, but emitted between the `in` cast and
-     `tableLocal`. That same slot also carries the bulk arm's
-     empty-list short-circuit (see *Empty-list contract* below), so
-     the two `tia.list()`-gated runtime checks share one injection
-     point. UPSERT doesn't need the duplicate-key guard (PostgreSQL
-     hard-errors on duplicate `ON CONFLICT` keys with "command cannot
-     affect row a second time"), and DELETE doesn't need it
-     (idempotent).
+     `IllegalArgumentException` if `set.size() != in.size()`. The
+     guard runs *after* `in` is bound and *before* the chain
+     executes, so it can't piggyback on `postDslGuard` (emitted
+     before the `in` cast); `postInGuard` is the right slot,
+     threaded the same way as `postDslGuard` and emitted between
+     the `in` cast and `tableLocal`. UPSERT doesn't need this guard
+     (PostgreSQL hard-errors on duplicate `ON CONFLICT` keys with
+     "command cannot affect row a second time"), and DELETE doesn't
+     need it (idempotent).
+
+  Once the guards pass, build the chain programmatically: walk
+  `tia.setFields()` in declaration order and emit a codegen-time
+  `if (firstKeys.contains(cf.name())) { ... }` for each `cf` on
+  three parallel sequences — the SET clause
+  (`stmt = stmt.set(Tables.X.COL, vTable.field(Tables.X.COL))`),
+  the v-table column-name list (`colNames.add(Tables.X.COL.getName())`),
+  and the per-row v-table cell list
+  (`cells.add(DSL.val(row.get("col"), Tables.X.COL.getDataType()))`).
+  The lookup-key columns are unconditional (always present, validated
+  upstream) and emitted outside the conditional. The alias names in
+  `asTable("v", colNames...)` use each target column's SQL name
+  verbatim (`Tables.FILM.LANGUAGE_ID.getName()` etc.), so jOOQ's
+  typed `Table.field(Field<T>)` overload returns the matching
+  v-column with the target column's type — no string lookup, no
+  cast.
+
+  Single-row UPDATE shares the dynamic-SET emit: same three
+  parallel walks, but reading `in.keySet()` instead of `firstKeys`
+  and skipping the uniformity guard (one Map, nothing to compare).
+  Single-row UPDATE keeps `dsl.update(t).set(...).where(<lookupWhere>)`
+  shape (no v-table, no `FROM`) — the per-cell value-bind is
+  `DSL.val(in.get("col"), dataType)` directly. This fixes the
+  legacy missing-vs-null bug on single-row UPDATE in the same pass.
+
+  Both arms share a fourth runtime check, evaluated immediately
+  before chain construction: if every `tia.setFields()` entry is
+  absent from the present-key set, there's nothing to update —
+  throw `IllegalArgumentException` ("@mutation(typeName: UPDATE)
+  call has no settable fields present; only @lookupKey fields were
+  provided"). Without this, the dynamic SET clause would emit zero
+  `.set(...)` calls and jOOQ would render an invalid `UPDATE t FROM
+  v WHERE ...` with an empty SET.
+
+  Existing inline Oracle-dialect runtime guard preserved verbatim
+  on the bulk arm via `postDslGuard`, emitted between `dsl` bind
+  and the `in` cast. R63 will lift it onto typed `DialectRequirement`
+  later; until then UPDATE and UPSERT both carry their inline guards.
 - **UPSERT** — multi-row INSERT with `ON CONFLICT (keys) DO UPDATE SET
   c = EXCLUDED.c`. Same `.values(...)` loop as INSERT (so the same
   per-row `containsKey` dispatch on missing-vs-null applies; see
@@ -164,9 +200,9 @@ Legacy graphitron has had bugs from collapsing these two cases; the
 rewrite has inherited the same conflation today (verified against
 `buildMutationInsertFetcher`/`buildMutationUpdateFetcher` at
 [`TypeFetcherGenerator.java:1421-1432`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java)
-and 1471-1477). R77 fixes this for INSERT and UPSERT in the same pass
-that lifts the bulk arm, since both paths share the value-emission
-walk and we don't want bulk to inherit a known-buggy primitive:
+and 1471-1477). R77 fixes this for all three verbs (INSERT, UPDATE,
+UPSERT) in the same pass that lifts the bulk arm, with two
+mechanisms:
 
 - *INSERT / UPSERT* — emit `row.containsKey("col") ? DSL.val(row.get("col"),
   dataType) : DSL.defaultValue(dataType)` per column, per row. jOOQ
@@ -178,13 +214,18 @@ walk and we don't want bulk to inherit a known-buggy primitive:
   resulting Map (omitted fields are absent keys, explicit nulls are
   present-with-null), so `containsKey` is the right discriminator.
 
-- *UPDATE* — out of scope for R77. Correct PATCH semantics on UPDATE
-  ("omitted field → don't touch the column") need a dynamic SET-clause
-  shape that the bulk `UPDATE ... FROM (VALUES ...)` form can't
-  express row-by-row (the v-table column shape is fixed across all
-  rows). Single-row UPDATE keeps today's "missing-collapses-to-null"
-  behaviour for parity, with the legacy bug intact and called out as a
-  follow-up. Tracked under *Non-goals* below.
+- *UPDATE* — different mechanism, same intent. UPDATE's one SET
+  clause is shared across all matched rows, so per-cell `DEFAULT` /
+  `val` mixing isn't expressible. Instead, the SET column list is
+  derived from the present-key set at runtime: an absent field
+  drops out of the SET clause entirely (= "leave the column
+  alone"), and a present-null field binds typed null. Bulk UPDATE
+  adds a uniformity guard requiring all rows to share the same
+  present-key set (see UPDATE bullet above); single-row UPDATE has
+  no analogue and just reads `in.keySet()`. Both arms gain a
+  "no-set-fields-present" runtime check that throws when only
+  `@lookupKey` fields are provided. This fixes the legacy
+  missing-vs-null bug on single-row UPDATE alongside the bulk lift.
 
 - *DELETE* — has no value columns; only the lookup-key bindings, which
   must be present (validated upstream). N/A.
@@ -209,21 +250,30 @@ dispatches once on `tia.list()` and threads the chosen `in` shape
 through `dmlChain`.
 
 The single-row path (`tia.list() == false`) keeps the same
-`Map<?,?>` cast and the same one-shot `.values(...)` / `.set(...)` /
-`.where(...)` chain shape. Two differences from R22 bytes:
+`Map<?,?>` cast and the same outer chain shape (`.values(...)` for
+INSERT/UPSERT, `.set(...).where(...)` for UPDATE,
+`.where(...)` for DELETE). Three differences from R22 bytes:
 
-1. INSERT and UPSERT emit the missing-vs-null dispatch described above
-   (`containsKey` → `defaultValue` vs `val`) instead of the unconditional
-   `DSL.val(in.get(...), ...)` walk. UPDATE keeps today's emit verbatim.
-2. The fetcher's declared return generic narrows from `Object` to a
+1. INSERT and UPSERT emit the per-cell missing-vs-null dispatch
+   described above (`containsKey` → `defaultValue` vs `val`) instead
+   of the unconditional `DSL.val(in.get(...), ...)` walk.
+2. UPDATE emits the dynamic SET clause described in the UPDATE
+   bullet — a codegen-time `if (in.containsKey(cf.name()))` chain
+   walking `tia.setFields()`. Absent fields drop out of the SET
+   clause; the lookup-key WHERE is unchanged. Both single-row and
+   bulk arms share the no-set-fields-present runtime check.
+3. The fetcher's declared return generic narrows from `Object` to a
    per-arm typed value (see *Empty-list contract* below for the typed
    shape). The bulk arm and the single-row arm share this lift.
 
-Per-row, the column list is fixed at codegen time across all rows, so
-every row contributes a cell at every column position. The cell is
-either a typed value-bind (present, possibly null) or a typed
-`DEFAULT` (absent). NOT NULL violations on a present-null cell surface
-at execution time, same as any other null write.
+Per-row on the INSERT/UPSERT bulk arm, the column list is fixed at
+codegen time across all rows, so every row contributes a cell at
+every column position — typed value-bind (present, possibly null)
+or typed `DEFAULT` (absent). NOT NULL violations on a present-null
+cell surface at execution time, same as any other null write. On
+the UPDATE bulk arm the column list is fixed *per-call* (uniform
+present-key set across rows) but varies between calls; the
+uniformity guard makes that variability legible.
 
 ### Empty-list contract and typed value generic
 
@@ -325,13 +375,16 @@ sharpening.
 - **Unit** — classifier produces `MutationInsertTableField` /
   `MutationDeleteTableField` / etc. with `tableInputArg().list() == true`
   for each verb; `Invariant #15` rejects bulk-input + single-return.
-- **Pipeline** — emitted method bodies for each of the four verbs read
-  `List<Map<?,?>>` on the bulk arm and contain a row-loop, the typed
-  `valueType` lift narrows the fetcher's declared return generic away
-  from `Object`, and INSERT/UPSERT emit a `containsKey`-gated value
-  cell (DEFAULT vs typed-null) rather than the unconditional `DSL.val`
-  walk (no code-string assertions on the generated SQL chain itself;
-  structural assertions only, per rewrite-design-principles).
+- **Pipeline** — emitted method bodies for each of the four verbs
+  read `List<Map<?,?>>` on the bulk arm and contain a row-loop; the
+  typed `valueType` lift narrows the fetcher's declared return generic
+  away from `Object`; INSERT/UPSERT emit a `containsKey`-gated value
+  cell (DEFAULT vs typed-null); and UPDATE emits a codegen-time
+  `if (firstKeys.contains(name))` (bulk) or `if (in.containsKey(name))`
+  (single-row) walk over `tia.setFields()` for the SET clause, the
+  v-table column-name list, and the per-row v-table cells (no
+  code-string assertions on the generated SQL chain itself; structural
+  assertions only, per rewrite-design-principles).
 - **Compilation** — the four bulk fetchers compile under the
   `graphitron-sakila-example` Java 17 target.
 - **Execution** — PostgreSQL execution-tier tests against Sakila:
@@ -350,6 +403,24 @@ sharpening.
     `createFilm_omittedFieldUsesColumnDefault_explicitNullWritesNull`
     runs the same shape on the single-row INSERT to lock in the
     legacy-bug fix.
+  - `updateFilm_omittedFieldLeavesColumnAlone_explicitNullWritesNull`
+    — one single-row UPDATE call: row sets `title` to `"X"` and
+    omits `description`; asserts post-state `title == "X"` and
+    `description` is unchanged from the pre-state. A sibling case
+    sets `description: null` and asserts the column reads back NULL.
+    Locks in the dynamic-SET legacy-bug fix.
+  - `updateFilms_omittedFieldLeavesColumnAlone_explicitNullWritesNull`
+    — bulk analogue with two rows sharing the same uniform shape;
+    same per-row assertions.
+  - `updateFilms_divergentInputShapes_throwsBeforeStatement` —
+    bulk UPDATE with row A having `{filmId, title}` and row B having
+    `{filmId, title, description}`; asserts `IllegalArgumentException`
+    plus `QUERY_COUNT == 0`. Message contains the offending row index
+    and both key sets.
+  - `updateFilms_onlyLookupKeyFields_throwsBeforeStatement` (and the
+    single-row analogue `updateFilm_onlyLookupKeyFields_throws`) —
+    asserts the no-set-fields-present runtime check fires when the
+    input contains only `@lookupKey` fields.
   - `bulkDml_emptyListInput_doesNotRoundTripToDatabase` — exercises
     the `in.isEmpty()` short-circuit on at least one verb (assert via
     `QUERY_COUNT == 0`, the same pattern other execution tests use).
@@ -390,12 +461,20 @@ sharpening.
   Always row-form, regardless of `tia.fieldBindings().size()`. The
   single-row arm is unchanged.
 - [`TypeFetcherGenerator.buildMutationUpdateFetcher`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java) —
-  on the `tia.list()` arm, emit the duplicate-lookup-key runtime guard
-  via the new `postInGuard` slot (see `buildDmlFetcher` below) — build
-  a `HashSet<List<Object>>` keyed on the lookup-key tuple, throw
-  `IllegalArgumentException` if `set.size() != in.size()`. Then emit
-  the `UPDATE ... FROM (VALUES ...)` chain. Existing inline
-  Oracle-dialect runtime guard continues to ride `postDslGuard`.
+  rewrite both arms to emit the dynamic SET clause. Walk
+  `tia.setFields()` in declaration order and for each `cf` emit a
+  codegen-time `if (presentKeys.contains("name")) { ... }` block on
+  three parallel sequences: the SET clause, the v-table column-name
+  list (bulk arm only), and the per-row v-table cell list (bulk arm
+  only). `presentKeys` is `firstKeys` on the bulk arm (after the
+  uniformity guard runs) and `in.keySet()` on the single-row arm.
+  Lookup-key columns are unconditional (validated upstream).
+  Both arms emit the no-set-fields-present runtime check
+  immediately before chain construction. The bulk arm additionally
+  emits the empty-list short-circuit, the uniformity guard, and the
+  duplicate-lookup-key guard via the new `postInGuard` slot (see
+  `buildDmlFetcher` below). Existing inline Oracle-dialect guard
+  continues to ride `postDslGuard` on the bulk arm.
 - [`TypeFetcherGenerator.buildDmlFetcher`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java) —
   three changes:
   1. Cast: emit `Map<?,?> in = ...` when `tia.list() == false`,
@@ -403,7 +482,9 @@ sharpening.
   2. Add a `postInGuard` `CodeBlock` parameter alongside the existing
      `postDslGuard`, emitted between the `in` cast and the
      `tableLocal` declaration. Carries (a) the bulk arm's empty-list
-     short-circuit and (b) UPDATE's bulk-arm dup-tuple guard.
+     short-circuit, (b) UPDATE's uniform-shape guard, (c) UPDATE's
+     dup-tuple guard, and (d) UPDATE's no-set-fields-present check
+     (the last one fires on both arms, so it isn't `tia.list()`-gated).
   3. Lift `valueType` from `ClassName.OBJECT` to a per-arm typed
      value: `ClassName.get(String.class)` for `EncodedSingle`,
      `ParameterizedTypeName.get(List.class, String.class)` for
@@ -447,10 +528,15 @@ list-cardinality, so the projection terminator binds the matching
 `*List` arm)". INSERT and UPSERT also gain a clause stating that the
 value-cell emit dispatches on `row.containsKey("col")`
 (`DSL.defaultValue(dataType)` when absent, `DSL.val(value, dataType)`
-when present) — the classifier guarantees `tia.fields()` /
-`tia.setFields()` is the canonical column list and never widens at
-runtime. UPDATE's annotation also gains the duplicate-tuple guard
-line on the bulk arm.
+when present) — the classifier guarantees `tia.fields()` is the
+canonical column list and never widens at runtime. UPDATE's
+annotation gains three clauses: (a) the SET clause is built from a
+codegen-time `if (presentKeys.contains(name))` walk over
+`tia.setFields()` rather than baked unconditionally, (b) the bulk
+arm's uniform-shape guard makes `firstKeys` a stable witness for the
+present-key set across all rows, and (c) the bulk arm's
+duplicate-tuple guard rejects same-lookup-key inputs before the
+chain executes.
 
 ## Non-goals and out-of-scope
 
@@ -473,14 +559,10 @@ line on the bulk arm.
   `MutationServiceRecordField` already accept whatever the service
   signature declares; bulk service mutations are an author-side concern,
   not a generator-side gap.
-- *UPDATE missing-field PATCH semantics.* R77 fixes the missing-vs-null
-  conflation for INSERT and UPSERT (where `DEFAULT` is the right
-  per-row choice for an absent field). Correct PATCH semantics on
-  UPDATE — "field omitted means leave the column alone" — need a
-  dynamic SET-clause shape that the bulk `UPDATE ... FROM (VALUES ...)`
-  form can't express (the v-table column list is fixed across all
-  rows). Single-row UPDATE keeps today's "missing collapses to null"
-  emit for parity with bulk; the legacy bug remains, tracked as a
-  follow-up that may need a different bulk-UPDATE shape (e.g. one
-  statement per distinct SET-column set, or a switch to
-  `dsl.batch(...)`).
+- *Auto-grouping divergent UPDATE shapes.* Bulk UPDATE rejects rows
+  with non-uniform present-key sets at runtime; authors split into
+  multiple bulk calls or pad rows. Auto-grouping by present-key set
+  and emitting one statement per group (option 3 in the design
+  discussion) is a follow-up if the rejection proves painful in
+  practice; it's the same dynamic-SET primitive applied N times,
+  with a partition step in front.
