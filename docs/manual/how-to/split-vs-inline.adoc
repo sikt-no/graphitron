@@ -1,0 +1,87 @@
+= How-to: When to split queries
+:description: Choose between inline correlated subqueries and DataLoader-batched split fetches based on round-trip cost, fan-out shape, and per-parent semantics.
+:!toc:
+
+xref:../reference/directives/splitQuery.adoc[`@splitQuery`] turns a child field into a `DataLoader`-batched fetch instead of an inline correlated subquery. The reference page lists the canonical shapes and the classifier rejections; this recipe addresses the operational question the directive raises: when to inline (default), when to split, and what the DataLoader's caching contract actually looks like.
+
+== Two emission shapes
+
+The classifier picks between two emission shapes for an `@reference`-pathed `@table`-typed child:
+
+* *Inline (default).* The field's child SELECT is embedded into the parent's SELECT as a `DSL.multiset(...)` correlated subquery. One round trip per request; the join travels to the database, no Java-side fan-out. The parent's `$fields()` method drops the `multiset(SELECT child_cols FROM child JOIN ... WHERE child.fk = parent.pk).as("fieldName")` term into the projection list, and graphql-java reads the multiset cell back at field-resolution time. (Source-of-truth: `InlineTableFieldEmitter.buildFkOnlyArm`, line 64.)
+* *Split (`@splitQuery`).* The field's child SELECT is hoisted into a separate, batched `SELECT` dispatched through a `DataLoader`. Per request, sibling parents' BatchKey columns are gathered, one batched query runs against the child table joined to a `VALUES (idx, parent_pk...)` derived table, and rows scatter back to their parents by `__idx__`. (Source-of-truth: `SplitRowsMethodEmitter.buildListMethod` and `TypeFetcherGenerator.buildSplitQueryDataFetcher`.)
+
+The switch between shapes is purely directive-driven for `@table`-parent children: `@splitQuery` present → split; absent → inline. The classifier rejects the inline path's `@asConnection` composition (`@asConnection on inline (non-@splitQuery) TableField is not supported; add @splitQuery for batched connection semantics`, `FieldBuilder.classifyObjectReturnChildField:478`).
+
+For `@record`-parent children that return a `@table` type, the classifier batches via `DataLoader` *unconditionally* (the parent doesn't sit inside a SQL `JOIN`, so an inline correlated subquery has nothing to bind against). `@splitQuery` on those fields is redundant but not rejected; `classifyChildFieldOnResultType` never inspects the directive.
+
+== The round-trip vs fan-out trade-off
+
+Inline and split exchange round trips for SQL width, and the right pick depends on parent fan-out:
+
+* *Inline cost is per-row, not per-field.* The parent SELECT carries one `multiset` cell per inline child; PostgreSQL evaluates each multiset per parent row. Total work scales with `parents × children-per-parent × column-count`. One round trip, but the bytes shipped back are the full nested projection. Inline is right when the parent fan-out is bounded (small parent list, single-cardinality parent, top-level lookup) and the child cardinality is low.
+* *Split cost is per-batch, not per-parent.* Per `@splitQuery` boundary, the framework gathers all parents' keys into one batched query: one round trip per boundary, narrower SQL per query (no nested multiset, no per-parent re-evaluation). Total work scales with `unique-parents × children-per-batch`. Split is right when the parent fan-out is large or unbounded (top-level list, deep nesting) and per-parent inline projection would balloon the response.
+* *Cumulative round trips.* A request that traverses three `@splitQuery` boundaries pays four round trips (one root + three split). Inline keeps the count at one but bills it in projection volume.
+
+The Sakila example schema shows both shapes at the same logical position. `Film.actors(actor_id: [Int!] @lookupKey)` (no `@splitQuery`) emits an inline `multiset` correlated subquery: each parent Film carries its own filtered actor list as a nested cell in the outer SELECT. `Film.actorsBySplitLookup(actor_id: [Int!] @lookupKey) @splitQuery` emits a separate batched query, one round trip for all parents' actor lists combined. At low parent fan-out (a single Film, a small Film list) inline is cheaper. At high fan-out (a 1000-row Film list, or Film inside another deep nesting) split amortises across the whole batch.
+
+== When the classifier *requires* split
+
+`@splitQuery` is required (not optional) in three operational cases:
+
+* *Single-cardinality multi-hop reference.* A `@reference(path: [a, b, c])` field returning `T` (not `[T!]`) without `@splitQuery` is rejected: `Single-cardinality @splitQuery requires a single-hop parent-holds-FK reference path; multi-hop paths are not yet supported on single cardinality` (`FieldBuilder.classifyObjectReturnChildField:469`). Multi-hop single-cardinality is currently only supported via the split path.
+* *Non-root `@service`.* A child field with `@service` does not derive its data from the parent SELECT (the service runs independently). Without `@splitQuery`, there's no way to dispatch the service per parent. The reference page documents this as a structural requirement; in practice the example schema's `City.filmsFromCity: [Film!]! @splitQuery @service(...)` shows the canonical shape.
+* *`@asConnection` on a child of a `@table` parent.* Inline correlated subqueries can't carry per-parent pagination (the `multiset` cell would have to encode the entire connection state, including a cursor that isn't known until parents are resolved). The classifier rejects `@asConnection` on a non-split TableField with a directive-conflict diagnostic; combining `@asConnection + @splitQuery` is the supported shape (covered in xref:connections.adoc[connections]).
+
+Self-referencing FKs (e.g. `Category.parent: Category @reference(path: [{key: "category_parent_category_id_fkey"}])`) work *inline* in the rewrite. The `InlineTableFieldEmitter` prefixes alias names with the parent alias's runtime name so recursive subselects don't collide (line 75-88), and the live `Category.parent` / `Category.children` fixtures cover this in `GraphQLQueryTest` (the "self-referential recursion" suite). Reach for `@splitQuery` on a self-FK only when the same fan-out arguments above apply; the directive is not structurally required for self-joins.
+
+== `DataLoader` cache key and lifecycle
+
+Every `@splitQuery` fetcher registers a `DataLoader` under a name built at request time:
+
+[source,java]
+----
+String name = graphitronContext(env).getTenantId(env) + "/" + String.join("/",
+    env.getExecutionStepInfo().getPath().getKeysOnly());
+DataLoader<K, V> loader = env.getDataLoaderRegistry()
+    .computeIfAbsent(name, k -> DataLoaderFactory.newDataLoader(...));
+----
+
+(`TypeFetcherGenerator.buildDataLoaderName:2537`.)
+
+Three operational facts follow:
+
+* *Cache key is path-scoped, not name-scoped.* `getKeysOnly()` returns the named segments of the result path with list indices stripped: `/films/0/actors` and `/films/1/actors` both map to `[films, actors]`, so all parents in the same list share one DataLoader. Two unrelated fields that happen to be named `actors` on different parents (e.g. `Film.actors`, `Store.actors`) get distinct paths and distinct loaders. Aliased uses get distinct paths *because* aliases land in `getKeysOnly()`: a query selecting `{ heroes: actors { name }, villains: actors { name } }` runs two separate batched queries, not one. This is by design; the alias splits the result tree.
+* *Cache scope is the request.* The `DataLoaderRegistry` lives on the `DataFetchingEnvironment`, which graphql-java rebuilds per request. There is no inter-request caching; each request starts with an empty registry, populates it lazily via `computeIfAbsent`, and discards it on completion. Two requests that select the same field do not share a loader.
+* *Per-tenant key prefix.* `graphitronContext(env).getTenantId(env)` prefixes the name, so multi-tenant deployments running on shared `DataLoaderRegistry` instances (rare but possible) keep tenants' batches separate. With the standard request-scoped registry this is redundant; with a session-scoped or shared registry it prevents cross-tenant key collisions.
+
+The combination "path-scoped, request-scoped, tenant-prefixed" means inline-style mistakes (a per-parent loop calling the same loader with one key at a time) still cost only one batched query per loader, because the loader gathers keys until the framework dispatches. The framework dispatches at the natural barrier graphql-java provides (between selection-set evaluation and field resolution), so split fetchers work correctly under any client query shape.
+
+== Composition with other directives
+
+* *`@lookupKey`.* A `@splitQuery + @lookupKey` field narrows the per-parent batch to caller-provided keys: each parent gets the intersection of "rows that match this parent" AND "rows whose key matches the caller's list". Two `VALUES` tables join into one batched query. Without `@splitQuery`, the same `[T!]! @lookupKey` field paginates across all parents in one wide SELECT; rarely the right semantic at the child level. xref:batch-lookups.adoc[Batch lookups] covers this composition in detail.
+* *`@asConnection`.* `@splitQuery + @asConnection` produces a per-parent paginated child connection. The fetcher emits a `ROW_NUMBER() OVER (PARTITION BY parentInput.idx ORDER BY ...)` envelope so each parent's connection page is its own slice; xref:connections.adoc[connections] covers cursor stability and the `totalCount` consequence (split-connection carriers return `null` for `totalCount` until per-parent count plumbing lands).
+* *`@orderBy`.* A `@splitQuery` fetcher accepts a runtime `@orderBy` argument and threads it into the per-parent batched query. The emitted helper takes the FK-chain terminal alias as a parameter so column refs resolve against the split query's aliased table instance rather than a hard-coded canonical alias. Inline correlated subqueries can also carry `@orderBy`, but the order applies *across* all parents' rows, not per-parent.
+* *`@reference`.* Both shapes need a path. The classifier reads the catalog FK metadata, falls back to the directive-stated `path: [...]`, and rejects ambiguous auto-discovery with a diagnostic. `@reference` is orthogonal to the inline/split decision; it supplies the join, the directive picks the emission shape.
+
+== Constraints and pitfalls
+
+* *Aliased uses don't share batches.* `{ heroes: actors { name }, villains: actors { name } }` runs two separate `DataLoader` dispatches because their result paths differ. If you need both shapes to share a batch, drop the alias or refactor the schema so they resolve through the same path.
+* *Inline child fan-out compounds.* Three levels of inline `@table` children with `[T!]!` cardinality each at depth 100 produce a `multiset` cell of 100³ rows in the outer SELECT. Inline is fine for narrow children at low depth; reach for split at any of those frontiers.
+* *`@splitQuery` registers a `DataLoader` even when the parent list is empty.* `computeIfAbsent` runs on first invocation; an empty parent list means no key is ever supplied, but the loader still occupies a slot in the registry. Memory cost is the closure plus the empty key list; it goes away when the request ends.
+* *Cache lifetime is one request only.* Don't expect cross-request memoisation; that would require a custom `DataLoaderRegistry` and the framework doesn't ship one. For cross-request caching, layer a custom cache *inside* the rows method (e.g. read-through against a shared LRU keyed by parent PK).
+* *Per-parent ordering on inline children isn't expressible.* Inline correlated subqueries can carry an `ORDER BY`, but the order applies to the whole multiset cell uniformly. If a child's order needs to depend on per-parent state (e.g. a parent's preference column), the inline path can't carry that and `@splitQuery` is required.
+* *DataLoader name length is unbounded.* Deep paths with many ancestors produce long names: `/films/details/actors/films/details/actors/...`. There's no truncation; long paths just produce long keys in the registry's `HashMap`. Memory cost is linear in path depth × parent fan-out.
+* *Nested `@splitQuery` boundaries multiply round trips.* A `@splitQuery` field whose child has another `@splitQuery` field pays one round trip per boundary. Three nested boundaries = four round trips total. Acceptable when batches are large; expensive when each level's parent fan-out is small.
+
+== See also
+
+* xref:../reference/directives/splitQuery.adoc[`@splitQuery`] is the directive surface and the canonical-shapes catalog.
+* xref:../reference/directives/reference.adoc[`@reference`] supplies the FK chain for both inline and split paths.
+* xref:../reference/directives/asConnection.adoc[`@asConnection`] composes with `@splitQuery` for per-parent paginated child connections.
+* xref:../reference/directives/lookupKey.adoc[`@lookupKey`] composes with `@splitQuery` for per-parent narrowed child batches.
+* xref:batch-lookups.adoc[How-to: Batch lookups] covers the `@lookupKey` composition shapes in operational detail.
+* xref:connections.adoc[How-to: Cursor-paginated connections] covers the `@splitQuery + @asConnection` shape and the split-connection `totalCount: null` consequence.
+* xref:sort-results.adoc[How-to: Sort results] covers the cursor-stability, tie-breaker, and `@orderBy` issues that affect both split and inline paginated children.
+
+xref:index.adoc[← How-to index]
