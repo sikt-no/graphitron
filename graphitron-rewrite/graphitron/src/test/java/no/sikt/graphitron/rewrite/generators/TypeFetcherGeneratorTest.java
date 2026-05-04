@@ -312,7 +312,7 @@ class TypeFetcherGeneratorTest {
         var m = method(specWithSplitQuery("Language", "films"), "rowsFilms");
         assertThat(m.parameters()).extracting(p -> p.type().toString())
             .containsExactly(
-                "java.util.List<org.jooq.Row1<java.lang.Integer>>",
+                "java.util.List<org.jooq.Record1<java.lang.Integer>>",
                 "graphql.schema.DataFetchingEnvironment");
         assertThat(m.parameters()).extracting(p -> p.name())
             .containsExactly("keys", "env");
@@ -411,7 +411,7 @@ class TypeFetcherGeneratorTest {
         var body = method(specWithMappedServiceField("Language", "films", true, mappedRowKey()), "films").code().toString();
         assertThat(body).contains("newMappedDataLoader(");
         assertThat(body).doesNotContain("newDataLoaderWithContext");
-        assertThat(body).contains("java.util.Set<org.jooq.Row1<java.lang.Integer>> keys");
+        assertThat(body).contains("java.util.Set<org.jooq.Record1<java.lang.Integer>> keys");
     }
 
     @Test
@@ -435,17 +435,17 @@ class TypeFetcherGeneratorTest {
         var m = method(specWithMappedServiceField("Language", "films", true, mappedRowKey()), "loadFilms");
         assertThat(m.parameters()).extracting(p -> p.type().toString())
             .containsExactly(
-                "java.util.Set<org.jooq.Row1<java.lang.Integer>>",
+                "java.util.Set<org.jooq.Record1<java.lang.Integer>>",
                 "graphql.schema.DataFetchingEnvironment");
         assertThat(m.returnType().toString())
-            .isEqualTo("java.util.Map<org.jooq.Row1<java.lang.Integer>, java.util.List<org.jooq.Record>>");
+            .isEqualTo("java.util.Map<org.jooq.Record1<java.lang.Integer>, java.util.List<org.jooq.Record>>");
     }
 
     @Test
     void serviceField_mappedRow_single_rowsMethodReturnsScalarMap() {
         var m = method(specWithMappedServiceField("Language", "film", false, mappedRowKey()), "loadFilm");
         assertThat(m.returnType().toString())
-            .isEqualTo("java.util.Map<org.jooq.Row1<java.lang.Integer>, org.jooq.Record>");
+            .isEqualTo("java.util.Map<org.jooq.Record1<java.lang.Integer>, org.jooq.Record>");
     }
 
     @Test
@@ -1436,7 +1436,7 @@ class TypeFetcherGeneratorTest {
         // rowsMethodName follows ServiceTableField's "load<Pascal>" convention.
         var rows = method(specWith(field), "loadDisplayNames");
         assertThat(rows.returnType().toString())
-            .isEqualTo("java.util.Map<org.jooq.Row1<java.lang.Integer>, java.util.List<java.lang.String>>");
+            .isEqualTo("java.util.Map<org.jooq.Record1<java.lang.Integer>, java.util.List<java.lang.String>>");
     }
 
     @Test
