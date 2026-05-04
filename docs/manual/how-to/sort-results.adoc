@@ -1,0 +1,151 @@
+= How-to: Sort results
+:description: Pick a sort source, give clients dynamic ordering, build a stable keyset cursor, and avoid the common pagination pitfalls.
+:!toc:
+
+Three directives carry the sort surface: xref:../reference/directives/defaultOrder.adoc[`@defaultOrder`] sets a static fallback on a field, xref:../reference/directives/orderBy.adoc[`@orderBy`] takes a runtime argument, and xref:../reference/directives/order.adoc[`@order`] attaches a sort spec to each value of the bound enum. All three share the same column-source shape: exactly one of `index:`, `fields:`, or `primaryKey:`. This recipe covers picking among them, mixing static and dynamic ordering on the same field, cursor stability under pagination, and the collation and tie-breaker pitfalls that bite at scale.
+
+== Pick the column source
+
+The three column sources are mutually exclusive on any one directive site; the build rejects setting two or none. Pick by which kind of identity the sort needs:
+
+* *`primaryKey: true`* when the order is "stable, in declaration order". This is the default for any paginated `@table` field that omits `@defaultOrder`, so most fields do not need to spell it out. Spell it out explicitly when you want the intent to survive a refactor that adds `@orderBy`.
+* *`fields:`* when the order is "by these named columns, in this order". Optional `collate:` per column. The columns resolve against the *return-type's* `@table`, not the parent's.
+* *`index:`* when an existing database index already projects the right column list (often a multi-column index that pairs the sort key with frequently-filtered columns). Requires `<includeIndexes>true</includeIndexes>` on the jOOQ generator; otherwise the catalog lookup throws "no matching index" at startup.
+
+A field-based order with a tie-breaker on the PK is the safe default for "humans want this column":
+
+[source,graphql]
+----
+type Query {
+    customers: [Customer!]! @asConnection
+        @defaultOrder(fields: [
+            {name: "LAST_NAME",  collate: "case_insensitive"},
+            {name: "FIRST_NAME", collate: "case_insensitive"},
+            {name: "CUSTOMER_ID"}
+        ])
+}
+----
+
+`CUSTOMER_ID` at the end pins the cursor onto a unique key so two rows with identical `(last_name, first_name)` pages deterministically. Without it, the cursor will jitter between two rows that compare equal on every preceding column. The rewrite does *not* auto-append a PK tie-breaker; it is a schema-author responsibility.
+
+== Static order: `@defaultOrder`
+
+xref:../reference/directives/defaultOrder.adoc[`@defaultOrder`] is the field-level "this is how this list comes back when nobody asks otherwise". Every example-schema connection field uses it:
+
+[source,graphql]
+----
+type Query {
+    stores: [Store!]! @asConnection @defaultOrder(primaryKey: true)
+    filmsConnection(
+        first: Int, last: Int, after: String, before: String
+    ): FilmsConnection! @defaultOrder(primaryKey: true)
+}
+----
+
+The `direction:` argument is global across the spec: every column in the list sorts the same way. There is no per-column direction surface on `@defaultOrder` itself; if your design needs per-column direction (e.g. `LAST_NAME ASC, RECENT_LOGIN DESC`), you have already crossed into "this should be a client choice", and the right tool is `@orderBy` (each row of the input list carries its own `SortDirection`).
+
+`@defaultOrder` is *required* on xref:../reference/directives/asConnection.adoc[`@asConnection`] fields that don't carry `@orderBy`; keyset pagination has no anchor without one and the build fails. Connections that only accept dynamic order (`@orderBy` with no fallback) are not a supported shape; supply `@defaultOrder` as the fallback for the no-argument case.
+
+== Dynamic order: `@orderBy` and `@order`
+
+xref:../reference/directives/orderBy.adoc[`@orderBy`] activates a runtime argument whose input type binds two fields by *type*, not by name: one `SortDirection` enum (the project's, declared once and reused) and one enum whose values carry xref:../reference/directives/order.adoc[`@order`]. The example schema exposes the dynamic shape on `filmsOrderedConnection`:
+
+[source,graphql]
+----
+type Query {
+    filmsOrderedConnection(
+        rating: MpaaRating @field(name: "RATING"),
+        order: [FilmOrderBy] @orderBy,
+        first: Int, last: Int, after: String, before: String
+    ): FilmsConnection! @defaultOrder(primaryKey: true)
+}
+
+input FilmOrderBy {
+    field:     FilmSort!
+    direction: SortDirection
+}
+
+enum FilmSort {
+    FILM_ID @order(primaryKey: true)
+    TITLE   @order(fields: [{name: "title"}])
+}
+
+enum SortDirection { ASC, DESC }
+----
+
+A request asking `order: [{ field: TITLE, direction: ASC }, { field: FILM_ID, direction: ASC }]` sorts by `title` then `film_id`; the rewrite emits a per-element `case "TITLE" -> ... case "FILM_ID" -> ...` switch in the generated `<fieldName>OrderBy(env, srcAlias)` helper, building a `List<SortField<?>>` plus a parallel `List<Field<?>>` of the same columns for cursor encoding.
+
+The list shape `[FilmOrderBy]` lets clients compose multi-key orderings; a singular `FilmOrderBy` argument also works when only one column is ever needed. Either way the cursor binds onto whichever ordering was active for that request.
+
+When `@orderBy` and `@defaultOrder` coexist on the same field, the dynamic argument wins when the client supplies it; `@defaultOrder` fills in when the argument is null or absent. This is why the example field has both: `filmsOrderedConnection` falls back to PK order when `order:` is not supplied, and uses the client's order when it is.
+
+== Stable cursors and tie-breakers
+
+xref:../reference/directives/asConnection.adoc[`@asConnection`] emits keyset pagination using the active order. The cursor is a base64-encoded NUL-separated tuple of the sort columns' values for the last row of the page; jOOQ's `.seek(Field<?>...)` consumes the decoded values. Two consequences:
+
+. *The order columns are part of the cursor's wire bytes.* Adding a column to `@defaultOrder` or to an `@order` enum value invalidates cursors clients have already issued. New cursors decode against the new column list; old cursors decode the wrong number of values and the request fails. Treat the column list and order as part of the public cursor contract.
+. *Determinism gates "the next page is always the next page".* If two rows compare equal on every order column, the seek can step over either. A field-based order without a tie-breaker on a unique key is unstable: identical-name rows shuffle between pages on retries, and a row can appear twice or be skipped. The rewrite does not synthesise a tie-breaker; append the PK explicitly to every non-PK order, on both `@defaultOrder` and per-`@order` enum values.
+
+Backward pagination (`last:`/`before:`) reuses the same cursor encoding; the rewrite reverses each `SortField`'s direction via jOOQ's `$field()`/`$sortOrder()` model API, runs the seek, and returns rows in the original order. This means a cursor issued from a `first:` page round-trips correctly through a `before:` request and vice versa, without any per-direction encoding split.
+
+== Collation pitfalls
+
+`fields[].collate:` is passed verbatim to the database. PostgreSQL applies the collation per column at sort time:
+
+[source,graphql]
+----
+enum PersonOrderByField {
+    NAME_NORSK @order(fields: [
+        {name: "LAST_NAME",  collate: "xdanish_ai"},
+        {name: "FIRST_NAME", collate: "xdanish_ai"}
+    ])
+}
+----
+
+Three things to know before reaching for collation:
+
+* *Misspelled collations surface only at query time*, not at build time. The catalog does not validate collation names. A typo emits valid SQL that the database rejects when the request runs.
+* *Indexes follow collations.* An index built without `COLLATE "xdanish_ai"` will not be used for an ordering that names that collation; the planner falls back to a sort. Either build the index with the matching collation or accept the per-page sort cost.
+* *Cursor stability survives collation changes only if both ends agree.* If a database upgrade reweights `case_insensitive`'s tertiary tiebreak, cursors issued before the upgrade may decode to a position that no longer corresponds to the same row. This is rare and database-specific; the recipe is "treat collation changes as a hard cursor cut", same as `keyColumns` in xref:global-id.adoc[`@node`].
+
+== Index-based sorting
+
+`@order(index: "IDX_TITLE")` and `@defaultOrder(index: "IDX_TITLE")` reuse a database index's column list as the sort spec. The lookup happens at build time against the jOOQ-generated catalog, so the column list is fixed at generator time and stays in sync with the schema migration that created the index.
+
+Use indexed orders when:
+
+* The index already exists for query-planner reasons (it pairs the sort columns with the most common filter columns) and you want the GraphQL order to ride on the same column list. Single source of truth for "what's the canonical order for this list".
+* The index encodes a multi-column order that would be tedious to maintain twice (in DDL and in a `fields:` list).
+
+Avoid them when:
+
+* The index might be dropped, renamed, or rebuilt with a different column list during operations. The build resolves the index name at generator time; a subsequent DDL change that drops the index makes the next build fail with "no matching index". For volatile indexes, prefer `fields:`.
+* `<includeIndexes>true</includeIndexes>` is not enabled on the jOOQ generator. The catalog lookup returns nothing in that case and the directive cannot resolve.
+
+== Sort across polymorphism
+
+For xref:polymorphic-types.adoc[multi-table polymorphic] connections, the rewrite emits a single typed `__sort__` column per branch in the stage-1 `UNION ALL`, projected as JSONB for composite-PK participants. This means *every participating table must agree on the order's shape*: same column count, same types, same effective collation. The `MultiTablePolymorphicEmitter` projects one `__sort__` value per branch in stage 1, and the connection emitter sorts and seeks on that single column at the union level. Mixing a `(LAST_NAME, FIRST_NAME)` ordering for `Customer` with a `(FIRST_NAME, LAST_NAME)` ordering for `Staff` does not compose; pick one shared order, or run two separate connections.
+
+For single-table polymorphism, ordering is unchanged from the non-polymorphic case: the discriminator column is just another projected column, and the sort spec applies to the shared backing table.
+
+== Constraints and pitfalls
+
+* Exactly one of `index:`, `fields:`, or `primaryKey:` per `@order` value and per `@defaultOrder` directive. Multiple or none fails the build.
+* `@orderBy` argument input types bind by *type*, not by name. The input must contain exactly one `SortDirection`-typed field and exactly one `@order`-bearing enum field. Field names are free.
+* Every value of an `@orderBy`-bound enum must declare a sort spec. Missing values fail the build with a per-value diagnostic.
+* `@defaultOrder.direction:` is global across the spec; per-column direction is only available through `@orderBy` (each list element carries its own `SortDirection`).
+* Cursor wire format embeds the active order's columns. Adding, removing, or reordering columns in `@defaultOrder` or in an `@order` enum value invalidates outstanding cursors.
+* The rewrite does not auto-append a PK tie-breaker on non-PK orders. Append the PK explicitly; otherwise keyset pagination is non-deterministic on equal-key rows.
+* `index:` requires jOOQ index generation. With it disabled, the lookup yields no columns and the directive fails to resolve.
+* `fields[].name` resolves against the field's return-type `@table`, not the parent's. Case-sensitive against the jOOQ-generated identifiers.
+* `collate:` is unvalidated at build time; misspellings surface as runtime database errors.
+
+== See also
+
+* xref:../reference/directives/defaultOrder.adoc[`@defaultOrder`] sets the static order on a field.
+* xref:../reference/directives/orderBy.adoc[`@orderBy`] activates a runtime argument.
+* xref:../reference/directives/order.adoc[`@order`] attaches a sort spec to each enum value.
+* xref:../reference/directives/asConnection.adoc[`@asConnection`] is the cursor-pagination wrapper that consumes the resolved order.
+* xref:connections.adoc[How-to: Cursor-paginated connections] (Phase 3) covers `connectionName:` collisions, `totalCount` performance, and the `maxAllowedPageSize` cap.
+
+xref:index.adoc[← How-to index]

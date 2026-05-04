@@ -13,5 +13,6 @@ Recipe pages are authored in R68 Phase 3, one at a time. Landed pages are listed
 * xref:external-code.adoc[Wire external Java code]: the shared mechanics for `@service`, `@externalField`, `@tableMethod`, `@condition`, `@batchKeyLifter`, `@enum`, and `@record`. Plugin classpath, FQCN requirement, method-name defaults, `argMapping:` syntax.
 * xref:polymorphic-types.adoc[Polymorphic types]: choose between single-table (`@discriminate` + `@discriminator`) and multi-table (no discriminator, two-stage `UNION ALL` fetcher) layouts for GraphQL interfaces and unions. Includes polymorphic child fields and pagination contract.
 * xref:global-id.adoc[Global object IDs]: Relay Global Object Identification end to end. Stable-ID strategies, `keyColumns` migrations, composite-PK nodes, cross-type IDs from FK paths, decode-side argument and input contracts, and `Query.node`/`Query.nodes` dispatch.
+* xref:sort-results.adoc[Sort results]: pick a column source (`index:`, `fields:`, `primaryKey:`), mix static `@defaultOrder` with dynamic `@orderBy`, build stable keyset cursors with explicit tie-breakers, and avoid the collation and index-volatility pitfalls.
 
 xref:../index.adoc[← Back to the manual landing]
