@@ -429,7 +429,7 @@ public sealed interface ChildField extends GraphitronField
         }
         @Override
         public boolean emitsSingleRecordPerKey() {
-            return batchKey() instanceof BatchKey.AccessorRowKeyedMany;
+            return batchKey() instanceof BatchKey.AccessorKeyedMany;
         }
         @Override public Rejection.EmitBlockReason emitBlockReason() {
             return Rejection.EmitBlockReason.RECORD_TABLE_FIELD_CONDITION_JOIN_STEP;

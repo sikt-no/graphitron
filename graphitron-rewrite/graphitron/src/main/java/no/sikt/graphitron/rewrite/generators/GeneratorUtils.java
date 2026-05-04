@@ -141,13 +141,13 @@ class GeneratorUtils {
      * variants) statement for a {@link ChildField.RecordTableField} DataFetcher, extracting the
      * batch-key value(s) from the {@code @record} parent. {@link BatchKey.RowKeyed} and
      * {@link BatchKey.LifterRowKeyed} produce {@code RowN<...>} keys via {@code DSL.row(...)};
-     * {@link BatchKey.AccessorRowKeyedSingle} / {@link BatchKey.AccessorRowKeyedMany} produce
+     * {@link BatchKey.AccessorKeyedSingle} / {@link BatchKey.AccessorKeyedMany} produce
      * {@code RecordN<...>} keys via {@code record.into(...)} (auto-derived; no developer-facing
      * source on these arms).
      *
      * <p>The narrowed parameter type is exhaustive over {@link BatchKey.RecordParentBatchKey}
      * — the four permits ({@link BatchKey.RowKeyed}, {@link BatchKey.LifterRowKeyed},
-     * {@link BatchKey.AccessorRowKeyedSingle}, {@link BatchKey.AccessorRowKeyedMany}) are the
+     * {@link BatchKey.AccessorKeyedSingle}, {@link BatchKey.AccessorKeyedMany}) are the
      * only routes here. Mis-routing a {@code @service}-only permit
      * ({@link BatchKey.RecordKeyed} et al.) is a compile error, not a runtime
      * {@code IllegalStateException}.
@@ -165,14 +165,14 @@ class GeneratorUtils {
      * <p>{@link BatchKey.LifterRowKeyed} arm calls the developer-supplied static lifter on the
      * parent's backing class: {@code Row1<Long> key = Lifters.method((BackingClass) env.getSource())}.
      *
-     * <p>{@link BatchKey.AccessorRowKeyedSingle} arm reads a single concrete {@code TableRecord}
+     * <p>{@link BatchKey.AccessorKeyedSingle} arm reads a single concrete {@code TableRecord}
      * from a typed instance accessor on the parent's backing class and projects it to the
      * element table's PK columns via {@code record.into(...)}: <pre>{@code
      *   ElementRecord __elt = ((BackingClass) env.getSource()).<accessor>();
      *   RecordN<...> key = __elt.into(Tables.T.PK1, Tables.T.PK2);
      * }</pre>
      *
-     * <p>{@link BatchKey.AccessorRowKeyedMany} arm reads a {@code List<X>} or {@code Set<X>}
+     * <p>{@link BatchKey.AccessorKeyedMany} arm reads a {@code List<X>} or {@code Set<X>}
      * from the typed accessor and projects each element to a {@code RecordN<...>} key via a
      * typed for-loop over {@code Iterable} (uniform across the {@code List} and {@code Set}
      * declarations the parent class may carry): <pre>{@code
@@ -191,8 +191,8 @@ class GeneratorUtils {
         return switch (batchKey) {
             case BatchKey.RowKeyed rk                -> buildFkRowKey(rk, keyType, resultType, jooqPackage);
             case BatchKey.LifterRowKeyed lrk         -> buildLifterRowKey(lrk, keyType, resultType);
-            case BatchKey.AccessorRowKeyedSingle ars -> buildAccessorRowKeySingle(ars, keyType, jooqPackage);
-            case BatchKey.AccessorRowKeyedMany arm   -> buildAccessorRowKeyMany(arm, keyType, jooqPackage);
+            case BatchKey.AccessorKeyedSingle ars -> buildAccessorKeySingle(ars, keyType, jooqPackage);
+            case BatchKey.AccessorKeyedMany arm   -> buildAccessorKeyMany(arm, keyType, jooqPackage);
         };
     }
 
@@ -246,7 +246,7 @@ class GeneratorUtils {
 
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "accessor-rowkey-shape-resolved",
-        reliesOn = "FieldBuilder.deriveBatchKeyFromTypedAccessor produces AccessorRowKeyedSingle "
+        reliesOn = "FieldBuilder.deriveBatchKeyFromTypedAccessor produces AccessorKeyedSingle "
             + "only after reflection has confirmed the parent backing class, the accessor "
             + "(name, zero-arg, non-bridge, non-synthetic, non-static), and the element class "
             + "(extends TableRecord, mapped table identical to the field's @table return). The "
@@ -254,8 +254,8 @@ class GeneratorUtils {
             + "accessor by name without instanceof guards or null checks; the RecordN<...> key is "
             + "built via __elt.into(Tables.X.PK1, ...) over typed Field references on the element "
             + "table.")
-    private static CodeBlock buildAccessorRowKeySingle(
-            BatchKey.AccessorRowKeyedSingle ars, TypeName keyType, String jooqPackage) {
+    private static CodeBlock buildAccessorKeySingle(
+            BatchKey.AccessorKeyedSingle ars, TypeName keyType, String jooqPackage) {
         var accessor = ars.accessor();
         ClassName backingClass = accessor.parentBackingClass();
         ClassName elementClass = accessor.elementClass();
@@ -277,7 +277,7 @@ class GeneratorUtils {
 
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "accessor-rowkey-shape-resolved",
-        reliesOn = "FieldBuilder.deriveBatchKeyFromTypedAccessor produces AccessorRowKeyedMany "
+        reliesOn = "FieldBuilder.deriveBatchKeyFromTypedAccessor produces AccessorKeyedMany "
             + "only after reflection has confirmed the parent backing class, the accessor "
             + "(name, zero-arg, non-bridge, non-synthetic, non-static), and the element class "
             + "(extends TableRecord, mapped table identical to the field's @table return). The "
@@ -285,8 +285,8 @@ class GeneratorUtils {
             + "accessor by name without instanceof guards or null checks, and projects each "
             + "element to a RecordN<...> via __elt.into(Tables.X.PK1, ...) over typed Field "
             + "references on the element table.")
-    private static CodeBlock buildAccessorRowKeyMany(
-            BatchKey.AccessorRowKeyedMany arm, TypeName keyType, String jooqPackage) {
+    private static CodeBlock buildAccessorKeyMany(
+            BatchKey.AccessorKeyedMany arm, TypeName keyType, String jooqPackage) {
         var accessor = arm.accessor();
         ClassName backingClass = accessor.parentBackingClass();
         ClassName elementClass = accessor.elementClass();
