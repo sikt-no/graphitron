@@ -1,0 +1,109 @@
+= @splitQuery
+:description: Detach a child field's fetch from its parent's SELECT, dispatching it through a DataLoader keyed on the parent's PK or FK.
+:!toc:
+
+Splits the annotated field's resolution out of the surrounding parent SELECT into a separate, batched query. The rewrite emits a `DataLoader`-backed fetcher: per request, sibling parents' keys are gathered, one batched `SELECT` runs against the child table with a `VALUES`-keyed join, and rows scatter back to their original parent positions.
+
+`@splitQuery` is the directive that decouples query depth from query *breadth*. Without it, child references inline into the parent SELECT (one round-trip, joined SQL). With it, each `@splitQuery` boundary becomes a deferred `DataLoader` call (more round-trips, narrower SQL, batched across parents). It composes with xref:reference.adoc[`@reference`], xref:lookupKey.adoc[`@lookupKey`], xref:asConnection.adoc[`@asConnection`], and xref:service.adoc[`@service`].
+
+== SDL signature
+
+[source,graphql]
+----
+directive @splitQuery on FIELD_DEFINITION
+----
+
+The directive takes no arguments. The cardinality (single vs list), the FK direction (parent-holds-FK vs child-holds-FK), and the path's hop count are all read from the surrounding xref:reference.adoc[`@reference`] / catalog inference; the rewrite picks the appropriate `DataLoader` shape from those signals.
+
+== Canonical examples
+
+List child, child-holds-FK (`@splitQuery` keyed on parent's PK). The DataLoader's batch is `parent_id IN (...)`, distributing rows to parents by FK:
+
+[source,graphql]
+----
+type Language @table(name: "language") {
+    films: [Film!]! @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
+}
+----
+
+Single-cardinality, parent-holds-FK (`@splitQuery` keyed on parent's FK column). At least one parent may carry `NULL` in the FK; the rewrite short-circuits those to `null` without dispatching to the DataLoader:
+
+[source,graphql]
+----
+type Customer @table(name: "customer") {
+    addressSplit: Address @splitQuery @reference(path: [{key: "customer_address_id_fkey"}])
+}
+
+type Store @table(name: "store") {
+    manager: Staff @splitQuery @reference(path: [{key: "store_manager_staff_id_fkey"}])
+}
+----
+
+`Store.manager` traverses a *nullable* FK; the §4 null-FK short-circuit returns `null` without a round-trip when the column is `NULL`. The `@reference` is required even though `Customer.address_id` would auto-infer, because `store` and `staff` have two FKs between them and inference would be ambiguous.
+
+Multi-hop list with `@lookupKey` (`SplitLookupTableField` — flat `SELECT` + `VALUES+ON` keyset + per-parent scatter):
+
+[source,graphql]
+----
+type Film @table(name: "film") {
+    actorsBySplitLookup(actor_id: [Int!] @lookupKey): [Actor!]! @splitQuery @reference(path: [
+        {key: "film_actor_film_id_fkey"},
+        {key: "film_actor_actor_id_fkey"}
+    ])
+}
+----
+
+Self-referencing FK (mandatory for self-joins — without `@splitQuery`, the generator can't distinguish the self-join from staying in the same table context):
+
+[source,graphql]
+----
+type Film @table(name: "film") {
+    sequel: Film @splitQuery @reference(path: [{key: "FILM__SEQUEL_FKEY"}])
+}
+----
+
+Non-root xref:service.adoc[`@service`] (resolver-style fields without an FK chain back to the parent's table need an explicit split):
+
+[source,graphql]
+----
+type City @table(name: "city") {
+    filmsFromCity: [Film!]! @splitQuery @service(service: {className: "com.example.MockService"})
+}
+----
+
+Combined with xref:asConnection.adoc[`@asConnection`] (per-parent paginated child connection — `ROW_NUMBER() OVER (PARTITION BY parentInput.idx)` envelope gives each parent its own slice):
+
+[source,graphql]
+----
+type Film @table(name: "film") {
+    actorsConnection(first: Int, after: String): ActorsConnection!
+        @splitQuery
+        @reference(path: [
+            {key: "film_actor_film_id_fkey"},
+            {key: "film_actor_actor_id_fkey"}
+        ])
+        @defaultOrder(primaryKey: true)
+}
+----
+
+== Constraints
+
+* Single-cardinality `@splitQuery` is restricted to a *single-hop* xref:reference.adoc[`@reference`] path. Multi-hop single-cardinality is rejected at build time with the offending path's hop count in the message.
+* List-cardinality `@splitQuery` supports any hop count, including junction-table chains (`@reference(path: [..., ...])`).
+* Implicit on `@table`-typed fields of a xref:record.adoc[`@record`] parent reachable from xref:service.adoc[`@service`]: re-entry queries are emitted automatically. Explicit `@splitQuery` on those fields is redundant but not rejected. (`classifyChildFieldOnResultType` never inspects `@splitQuery` on record-parent table-bound fields.)
+* Required for self-referencing FKs (e.g. `film.sequel → film.film_id`). Without it, the join can't be distinguished from staying in the same table context. *Reverse* self-references (listing rows pointing at the current row via the same FK) aren't auto-resolved; use a custom `@condition` as a workaround.
+* Required when xref:service.adoc[`@service`] is used on a non-root field (the service fetches the row independently of the parent's SELECT — the split is the contract).
+* Composes with xref:asConnection.adoc[`@asConnection`]: the per-parent partition envelope is added to the connection's pagination shape.
+* Composes with xref:lookupKey.adoc[`@lookupKey`]: the lookup key narrows the per-parent batch (each parent's child list filtered by the caller-provided keys).
+* On root (`Query`/`Mutation`) fields and on fields with arguments, `@splitQuery` is irrelevant — those always have explicit data fetchers. The directive is silently ignored there.
+* Nullable FKs on parent-holds-FK single-cardinality fields short-circuit to `null` *before* dispatching to the DataLoader (saves a round-trip when no parents have a non-null FK value).
+
+== See also
+
+* xref:reference.adoc[`@reference`] supplies the FK chain; `@splitQuery` decides whether to inline or batch it.
+* xref:asConnection.adoc[`@asConnection`] adds per-parent Relay pagination on top of a split fetch.
+* xref:lookupKey.adoc[`@lookupKey`] narrows the per-parent batch to caller-provided keys.
+* xref:record.adoc[`@record`] parents reachable from xref:service.adoc[`@service`] get implicit `@splitQuery` on `@table`-typed children.
+* xref:../../how-to/split-vs-inline.adoc[How-to: When to split queries] (Phase 3) covers the round-trip-vs-fan-out trade-off, self-FK rules, and DataLoader caching behaviour.
+
+xref:../index.adoc[← Reference index]

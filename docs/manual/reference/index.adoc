@@ -6,7 +6,7 @@ Authoritative descriptions of every directive, every Maven plugin parameter, eve
 
 == Status: directive reference, in progress
 
-Nineteen of 26 directives are published below: the six tutorial-anchor mappings (`@table`, `@field`, `@reference`, `@multitableReference`, `@mutation`, `@service`), the five batch/sort directives (`@lookupKey`, `@orderBy`, `@order`, `@defaultOrder`, `@index`), the polymorphism pair (`@discriminate`, `@discriminator`), the global-ID pair (`@node`, `@nodeId`), the two carrier-mapping directives (`@enum`, `@record`), the lifter (`@batchKeyLifter`), and the error-channel entry point (`@error`). The remaining ~7 directives ship in subsequent commits of R68 Phase 2; their descriptions still live in the legacy https://github.com/sikt-no/graphitron/tree/main/graphitron-codegen-parent/graphitron-java-codegen/README.md[`graphitron-java-codegen` README] until they land here. The Mojo parameter reference, the runtime API reference, and the diagnostics glossary are authored in Phase 4 and Phase 5.
+Twenty-one of 26 directives are published below: the six tutorial-anchor mappings (`@table`, `@field`, `@reference`, `@multitableReference`, `@mutation`, `@service`), the five batch/sort directives (`@lookupKey`, `@orderBy`, `@order`, `@defaultOrder`, `@index`), the polymorphism pair (`@discriminate`, `@discriminator`), the global-ID pair (`@node`, `@nodeId`), the two carrier-mapping directives (`@enum`, `@record`), the lifter (`@batchKeyLifter`), the error-channel entry point (`@error`), and the pagination-shape pair (`@asConnection`, `@splitQuery`). The remaining ~5 directives ship in subsequent commits of R68 Phase 2; their descriptions still live in the legacy https://github.com/sikt-no/graphitron/tree/main/graphitron-codegen-parent/graphitron-java-codegen/README.md[`graphitron-java-codegen` README] until they land here. The Mojo parameter reference, the runtime API reference, and the diagnostics glossary are authored in Phase 4 and Phase 5.
 
 The directive list below mirrors the rewrite's `directives.graphqls` and is therefore correct for the current branch even when an individual page is still pending.
 
@@ -15,7 +15,7 @@ The directive list below mirrors the rewrite's `directives.graphqls` and is ther
 a|
 === Alphabetical
 
-* `@asConnection` _(pending)_
+* xref:directives/asConnection.adoc[`@asConnection`]
 * xref:directives/batchKeyLifter.adoc[`@batchKeyLifter`]
 * `@condition` _(pending)_
 * xref:directives/defaultOrder.adoc[`@defaultOrder`]
@@ -38,7 +38,7 @@ a|
 * xref:directives/record.adoc[`@record`]
 * xref:directives/reference.adoc[`@reference`]
 * xref:directives/service.adoc[`@service`]
-* `@splitQuery` _(pending)_
+* xref:directives/splitQuery.adoc[`@splitQuery`]
 * xref:directives/table.adoc[`@table`]
 * `@tableMethod` _(pending)_
 
@@ -52,7 +52,7 @@ xref:directives/table.adoc[`@table`], xref:directives/field.adoc[`@field`], xref
 xref:directives/reference.adoc[`@reference`], xref:directives/multitableReference.adoc[`@multitableReference`], xref:directives/batchKeyLifter.adoc[`@batchKeyLifter`]
 
 *Querying* +
-`@asConnection`, `@condition`, xref:directives/lookupKey.adoc[`@lookupKey`], `@splitQuery`, `@externalField`, `@tableMethod`, `@experimental_constructType`
+xref:directives/asConnection.adoc[`@asConnection`], `@condition`, xref:directives/lookupKey.adoc[`@lookupKey`], xref:directives/splitQuery.adoc[`@splitQuery`], `@externalField`, `@tableMethod`, `@experimental_constructType`
 
 *Mutating* +
 xref:directives/mutation.adoc[`@mutation`], xref:directives/service.adoc[`@service`]
