@@ -112,6 +112,6 @@ type ValidationErr @error(handlers: [{handler: VALIDATION}]) {
 
 * xref:service.adoc[`@service`] is the upstream of the errors channel: only service-returned payloads carry one.
 * xref:record.adoc[`@record`] backs the payload type that exposes the `errors:` field.
-* xref:../../how-to/error-channel.adoc[How-to: The errors channel] (Phase 3) covers union vs single-type carriers, `description:` vs exception message, and the `path:` slot's contents.
+* xref:../../how-to/error-channel.adoc[How-to: The errors channel] covers union vs single-type carriers, `description:` vs exception message, and the `path:` slot's contents.
 
 xref:../index.adoc[← Reference index]
