@@ -1,0 +1,213 @@
+= How-to: Migrating from the legacy generator
+:description: Walk a schema from the legacy graphitron-codegen-parent generator to the rewrite. Covers the hard removals, the synthesis shims that still warn but will retire, the deprecated arguments to phase out, and the one intentional behavior divergence.
+:!toc:
+
+The rewrite generator (`graphitron-rewrite`) is directive-compatible with the legacy generator (`graphitron-codegen-parent`): the same `@table`, `@field`, `@service`, `@reference`, `@asConnection`, `@nodeId`, `@condition` directives all do approximately the same thing on the rewrite, and a schema authored against the legacy generator's directive surface will mostly compile under the rewrite without changes. The "mostly" is what this recipe covers: the hard removals (build fails until you remove the directive), the synthesis shims (build succeeds with a WARN today, will fail later), the deprecated arguments (build succeeds with a deprecation notice from graphql-java), and the one behavior divergence the rewrite intentionally preserves over legacy semantics.
+
+This recipe is organised by *what changes for you*, not by which directive each topic touches. Run through the sections in order; each lands a class of migration steps before the next one introduces a new shape.
+
+== The hard removal: `@notGenerated`
+
+The single directive the rewrite refuses to accept. Legacy schemas used it to mark fields the developer would wire by hand through `RuntimeWiring`; the rewrite requires every field to be fully described by the schema. Any application is rejected at build time:
+
+[source,text]
+----
+@notGenerated is no longer supported. Remove the directive; fields must be fully described by the schema.
+----
+
+The directive is still *parsed* (so the SDL still validates), but every classify-time application fails with that message. The migration is a one-step delete-and-replace: remove the `@notGenerated` and add the directive that names the actual data source.
+
+[cols="2,2,3",options="header"]
+|===
+| Original site | Rewrite replacement | Notes
+| `field: T @notGenerated` on `Query` / `Mutation` | xref:../reference/directives/service.adoc[`@service`] | Wire the resolver as a service method; the rewrite generates the data fetcher and dispatches to your code. See xref:handle-services.adoc[How-to: Handle services] for the argument binding and return-shape rules.
+| `field: T @notGenerated` on a child of a `@table` parent | xref:../reference/directives/externalField.adoc[`@externalField`] (column-shaped) or xref:../reference/directives/reference.adoc[`@reference`] (FK-driven) | `@externalField` returns a `Field<T>` from a static method (the framework projects); `@reference` joins through the catalog. xref:join-with-references.adoc[How-to: Join with references] covers the FK-path mechanics.
+| `field: T @notGenerated` on a `@record` parent | xref:../reference/directives/batchKeyLifter.adoc[`@batchKeyLifter`] or a typed Java accessor | The `@record` parent must expose the data either through a typed Java-record accessor (auto-derived `BatchKey`) or through an explicit lifter. xref:result-types.adoc[How-to: Result-type variants] covers the four backing-class shapes.
+| `field: T @splitQuery @notGenerated` (custom batch fetcher) | xref:../reference/directives/service.adoc[`@service`] (with xref:../reference/directives/splitQuery.adoc[`@splitQuery`] for non-root batching) | Service methods can be batched with `@splitQuery` at non-root sites; the developer-supplied method runs once per parent batch. The contract is `Set<Key> → Map<Key, Value>`; see the `@splitQuery` section of xref:handle-services.adoc[How-to: Handle services].
+| `interface T @notGenerated` / `union U @notGenerated` | (no replacement needed) | The legacy "skip interface/union wiring" axis was always tied to `RuntimeWiring`-side type resolvers; the rewrite always generates these from xref:../reference/directives/discriminate.adoc[`@discriminate`] / xref:../reference/directives/discriminator.adoc[`@discriminator`] and xref:../reference/directives/multitableReference.adoc[`@multitableReference`]. Remove the directive.
+|===
+
+The xref:../reference/directives/notGenerated.adoc[`@notGenerated` reference page] carries the same matrix; this recipe expands the right-hand column with cross-links to the recipe each replacement is best documented in.
+
+== Synthesis shims: WARN today, error later
+
+Two paths still work in the rewrite for backwards compatibility but emit a per-occurrence WARN at build time. Plan to migrate them before the shim retirement gate fires (no committed date; tracked at `graphitron-rewrite/roadmap/retire-synthesis-shims.md`).
+
+=== Bare `id: ID!` on `@node` types
+
+Legacy schemas frequently relied on the generator inferring an opaque-ID carrier from a bare `ID!` field on a `@node` type. The rewrite still does this, but warns:
+
+[source,graphql]
+----
+# Legacy form, still works, emits a WARN
+type Customer implements Node @table(name: "customer") @node {
+    id: ID!
+    customerId: Int! @field(name: "CUSTOMER_ID")
+}
+----
+
+Migration: declare xref:../reference/directives/nodeId.adoc[`@nodeId`] explicitly on the carrier:
+
+[source,graphql]
+----
+# Canonical form, no WARN
+type Customer implements Node @table(name: "customer") @node {
+    id: ID! @nodeId
+    customerId: Int! @field(name: "CUSTOMER_ID")
+}
+----
+
+The WARN message names the field: `field 'Customer.id' synthesizes an `@nodeId` carrier without the directive; declare `@nodeId` explicitly.` It mentions the roadmap path so the team-internal trace from log line to migration ticket is one step.
+
+When the shim retires, the WARN flips to a classify-time rejection: the field reads as `UnclassifiedField` and the build fails with a "column 'id' could not be resolved" diagnostic.
+
+=== `[ID!] @field(name: "X_ID")` on `@table` input types
+
+Legacy `@table` input types let an `ID!` (or `[ID!]`) field carry a column name through `@field(name:)` and the FK qualifier was inferred from the catalog. The rewrite still does this, but warns. Migration: replace the `@field(name:)` annotation with an explicit xref:../reference/directives/nodeId.adoc[`@nodeId(typeName:)`].
+
+Before:
+
+[source,graphql]
+----
+# Legacy form, still works, emits a WARN
+input CustomerFilter @table(name: "customer") {
+    customerIds: [ID!] @field(name: "CUSTOMER_ID")
+}
+----
+
+After:
+
+[source,graphql]
+----
+# Canonical form
+input CustomerFilter @table(name: "customer") {
+    customerIds: [ID!] @nodeId(typeName: "Customer")
+}
+----
+
+When the FK is ambiguous (more than one path from the input's `@table` to the target), add an explicit `@reference(path: [{key: "fk_constraint_name"}])` alongside the `@nodeId`. The xref:join-with-references.adoc[`@reference` recipe] covers the FK-disambiguation mechanics; the migration is otherwise mechanical.
+
+=== `@table` no longer auto-promotes to `NodeType`
+
+Historical only: legacy versions of the rewrite would silently promote any `@table` SDL type to `NodeType` if its backing jOOQ class carried `__NODE_TYPE_ID` / `__NODE_KEY_COLUMNS` metadata, even without `implements Node @node`. This behavior was retired (the synthesis shim plan documents the trigger: a mass typeId collision between ~200 backing types each carrying `__NODE_TYPE_ID = "195"` produced a symmetric demotion to `UnclassifiedType`).
+
+The current rule: a `@table` type without `implements Node @node` is a regular `TableType`, regardless of catalog metadata. If a schema relied on the auto-promotion (the type was reachable via `Query.node` or carried `@nodeId` fields), add the explicit `implements Node @node` declaration. The fields inside the type that *do* depend on node behavior (the `@nodeId` synthesis shim from the previous section) will still warn until they're explicit.
+
+== Deprecated arguments: phase out at your leisure
+
+The directives below still accept these arguments, but graphql-java surfaces a deprecation notice every time the schema is parsed, and the long-term plan is to drop them. Migrate when you next touch the directive.
+
+=== `connectionName:` on `@asConnection`
+
+[source,graphql]
+----
+# Legacy override, deprecated
+movies: [Movie!]! @asConnection(connectionName: "SharedMoviesConnection")
+otherMovies: [Movie!]! @asConnection(connectionName: "SharedMoviesConnection")
+----
+
+The override coalesces multiple connection-bearing fields onto one synthesised type. The rewrite default produces one Connection type per field (`<ParentType><FieldName>Connection`); sharing a name across fields conflates distinct semantic contexts (different parents, filters, orders, cursor formats) at the type level.
+
+Migration: drop the argument and let each field own its synthesised connection type. The four reasons for the per-field default and the migration considerations live in xref:connections.adoc[How-to: Cursor-paginated connections] under "One field, one connection type".
+
+=== `name:` on `ExternalCodeReference`
+
+[source,graphql]
+----
+# Legacy form, deprecated
+@service(service: {name: "SampleQueryService", method: "filmsByService"})
+----
+
+Replaced with `className:`:
+
+[source,graphql]
+----
+# Canonical form
+@service(service: {className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService", method: "filmsByService"})
+----
+
+`className:` is the FQCN; the legacy `name:` was a short-name resolved through the plugin's `externalReferences:` config. Both still work, but only `className:` is the canonical form going forward. The migration is mechanical: copy the FQCN from the legacy `externalReferences:` entry into `className:` and drop the entry.
+
+=== `@index` on enum values
+
+[source,graphql]
+----
+# Legacy form, deprecated
+enum FilmSort {
+    BY_TITLE @index(name: "IDX_TITLE")
+}
+----
+
+Replaced with `@order(index:)`:
+
+[source,graphql]
+----
+# Canonical form
+enum FilmSort {
+    BY_TITLE @order(index: "IDX_TITLE")
+}
+----
+
+`@order` is the unified enum-value sort surface; it accepts `index:`, `fields:`, or `primaryKey:` (exactly one). xref:sort-results.adoc[How-to: Sort results] covers the column-source choice. `@index` still works on enum values today; the deprecation notice at parse time is the migration prompt.
+
+== Behavior divergence: `@condition` cascade
+
+The rewrite intentionally diverges from the legacy generator on one semantic point. Schemas that relied on the legacy reading need to be updated; schemas that didn't (or that already wrote schemas the rewrite reads correctly) are unaffected.
+
+*Legacy reading.* `@condition(override: true)` on an outer field meant "outer owns everything": all inner explicit `@condition` annotations on the input's fields were *dropped*, and the outer method's predicates ran alone.
+
+*Rewrite reading.* `@condition(override: true)` suppresses only the implicit `column = ?` predicates the rewrite would have emitted on its own. Inner explicit `@condition` annotations *still fire*: every `@condition` you write produces SQL.
+
+The rewrite's reading is the intended one. Under legacy semantics, an inner `@condition` was meaningless once any ancestor used `override: true`, which made schema review brittle (an outer override silently inert-ified inner annotations). The rewrite's reading is composable: each `@condition` always fires; only the rewrite's own implicit predicates are negotiable.
+
+Schemas that relied on the legacy "outer owns everything" silently dropping inner conditions will produce different SQL under the rewrite. The migration is to rewrite the schema so the inner `@condition` annotations describe what should fire (instead of relying on them being ignored), or to remove them if their absence is the intent.
+
+The example schema's `filmsOuterOverrideTableInput` and `filmsOuterOverridePlainInput` fixtures pin the rewrite's behavior as a regression-fence. The full mechanics live in xref:condition-cascade.adoc[How-to: Stacking and overriding conditions] under "Divergence from legacy semantics".
+
+== Things that didn't change
+
+Every other directive on the legacy surface reads under the rewrite the same way, with one nuance per directive worth flagging:
+
+* xref:../reference/directives/table.adoc[`@table`], xref:../reference/directives/field.adoc[`@field`], xref:../reference/directives/reference.adoc[`@reference`], xref:../reference/directives/multitableReference.adoc[`@multitableReference`]: unchanged; the catalog-driven mechanics are identical.
+* xref:../reference/directives/service.adoc[`@service`], xref:../reference/directives/tableMethod.adoc[`@tableMethod`], xref:../reference/directives/externalField.adoc[`@externalField`], xref:../reference/directives/enum.adoc[`@enum`], xref:../reference/directives/record.adoc[`@record`]: unchanged surface; the only change is the `name:` → `className:` migration on `ExternalCodeReference` (above).
+* xref:../reference/directives/discriminate.adoc[`@discriminate`] / xref:../reference/directives/discriminator.adoc[`@discriminator`]: unchanged; the rewrite generates the type resolvers and runtime dispatchers automatically (no `RuntimeWiring`-side wiring needed).
+* xref:../reference/directives/asConnection.adoc[`@asConnection`]: unchanged synth-vs-declared shape; only `connectionName:` is deprecated. The rewrite emits the same Relay connection contract.
+* xref:../reference/directives/orderBy.adoc[`@orderBy`], xref:../reference/directives/order.adoc[`@order`], xref:../reference/directives/defaultOrder.adoc[`@defaultOrder`]: unchanged; the rewrite recognises the same shapes. The cursor wire format is the same base64-encoded NUL-separated tuple.
+* xref:../reference/directives/node.adoc[`@node`], xref:../reference/directives/nodeId.adoc[`@nodeId`]: unchanged contract; the synthesis shims (above) are the only migration work. `keyColumns:` migration semantics carry over (cursor invalidation on key changes).
+* xref:../reference/directives/condition.adoc[`@condition`]: same surface; the cascade divergence (above) is the only behavior change.
+* xref:../reference/directives/error.adoc[`@error`]: same handler-tuple surface; the rewrite's classify-time rejection of duplicate tuples is new. xref:error-channel.adoc[How-to: The errors channel] covers the dispatch loop and what's currently a no-op (`description:` is captured but unused).
+* xref:../reference/directives/lookupKey.adoc[`@lookupKey`], xref:../reference/directives/splitQuery.adoc[`@splitQuery`]: unchanged. Mid-migration schemas that mixed `@splitQuery` with `@notGenerated` (the legacy custom-batch-fetcher pattern) need to migrate the body to `@service` (above).
+
+== Migration sequence
+
+The recommended order, from least invasive to most:
+
+. Run a `mvn install` to surface every `@notGenerated` rejection. Replace each with the directive named in the matrix above. The build won't compile under the rewrite until this lands.
+. Audit the build log for `synthesizes an `@nodeId` carrier without the directive` WARNs; declare `@nodeId` explicitly on each.
+. Audit input types for `[ID!] @field(name: "X_ID")` patterns; replace with `[ID!] @nodeId(typeName: "T")`.
+. Drop `connectionName:` arguments from `@asConnection` and let each field own its connection type.
+. Migrate `name:` to `className:` on `ExternalCodeReference` instances. Drop the corresponding entries from `externalReferences:` plugin config.
+. Migrate `@index` to `@order(index:)` on enum values.
+. If your schema uses `@condition(override: true)` with nested inputs that carry their own `@condition`, audit whether the legacy "outer owns everything" semantics were load-bearing. If they were, the SQL will change; rewrite the inner annotations to express the intended predicate set explicitly.
+
+Steps 1 is non-optional (the build fails). Steps 2-3 will become non-optional when the synthesis shims retire. Steps 4-6 produce deprecation notices but no failures. Step 7 only matters for schemas that relied on the divergence; most schemas don't.
+
+== Pitfalls
+
+* *`@notGenerated` is parsed but always rejected.* Removing the directive is the only fix; there is no warn-only mode and no migration shim. Schemas that still carry it will not compile.
+* *Synthesis shims run silently in IDE / language server contexts.* The WARN is a build-time log line; an IDE that loads the schema for completion may not surface it. Periodically grep your build logs for `synthesizes an` to catch shim-bearing fields.
+* *`@table` no longer auto-promotes to `NodeType`.* If a previously-promoted type breaks under the rewrite (typically: `Query.node` returns `null` for what used to resolve, or `@nodeId` synthesis stops firing), add `implements Node @node` to opt in explicitly.
+* *Deprecated arguments still work.* The deprecation notice from graphql-java is informational, not blocking. The migration is your call until the deprecation flips to removal in a future release.
+* *The `@condition` cascade divergence is a real SQL change.* Schemas that relied on legacy "outer owns everything" semantics produce different result sets under the rewrite, not different errors. Audit `override: true` sites with nested-input `@condition` annotations before promoting the rewrite to production.
+* *The rewrite is directive-compatible, not field-classifier-compatible.* A schema that compiled under legacy may surface new diagnostics under the rewrite (stricter classification for shapes the legacy generator silently accepted). The diagnostic always names the field; treat each as the rewrite's stricter-shape analysis catching what legacy would have produced as a runtime error.
+* *Plugin configuration migrates separately.* The schema-side migration is what this recipe covers; `<schemaInputs>`, `<outputDirectory>`, `<outputPackage>`, `<jooqPackage>`, and `<namedReferences>` on the rewrite Mojo do not have a 1:1 mapping with every legacy plugin parameter. The legacy `<maxAllowedPageSize>` was deliberately excised; xref:connections.adoc[How-to: Cursor-paginated connections] covers the alternative.
+
+== See also
+
+* xref:../reference/directives/notGenerated.adoc[`@notGenerated`] is the directive surface this recipe expands; it carries the abridged migration matrix in tabular form.
+* xref:condition-cascade.adoc[How-to: Stacking and overriding conditions] covers the `@condition` cascade divergence end-to-end.
+* xref:handle-services.adoc[How-to: Handle services] is the destination for most `@notGenerated` migrations on root and split-query fields.
+* xref:result-types.adoc[How-to: Result-type variants] covers the `@record`-parent migration path (accessor inference vs `@batchKeyLifter`).
+* xref:global-id.adoc[How-to: Global object IDs] covers the `@node` / `@nodeId` declaration shapes the synthesis shims migrate to.
+
+xref:index.adoc[← How-to index]
