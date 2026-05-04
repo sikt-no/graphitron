@@ -74,7 +74,7 @@ class BatchKeyTest {
     }
 
     /**
-     * Pins the post-R61 shape map across the seven {@link BatchKey} variants:
+     * Pins the shape map across the {@link BatchKey} variants:
      * <ul>
      *   <li>{@link BatchKey.RowKeyed}, {@link BatchKey.MappedRowKeyed}, {@link BatchKey.LifterRowKeyed}
      *       → {@code RowN<...>} (developer-facing Row source on the @service classifier path; the
@@ -83,12 +83,15 @@ class BatchKeyTest {
      *       {@link BatchKey.AccessorKeyedSingle}, {@link BatchKey.AccessorKeyedMany}
      *       → {@code RecordN<...>} (developer-facing Record source on @service; auto-derived from
      *       typed accessors on @record parents).</li>
+     *   <li>{@link BatchKey.TableRecordKeyed}, {@link BatchKey.MappedTableRecordKeyed}
+     *       → typed {@code TableRecord} subtype (developer wrote {@code Set<X>} / {@code List<X>}
+     *       where {@code X extends TableRecord}; the variant carries the typed class).</li>
      * </ul>
      * Captures both the {@code keyElementType()} TypeName and the {@code javaTypeName()} string
      * so a regression on either projection surfaces here, not at a downstream consumer.
      */
     @Test
-    void keyElementTypeShapeMapAcrossSevenVariants() {
+    void keyElementTypeShapeMapAcrossVariants() {
         var lifterHop = new JoinStep.LiftedHop(FILM_TABLE, List.of(FILM_ID), "f_0");
         var lifterRef = new LifterRef(ClassName.bestGuess("com.example.Lifters"), "extract");
 
@@ -103,6 +106,10 @@ class BatchKeyTest {
         BatchKey accessorMany = new BatchKey.AccessorKeyedMany(
             new JoinStep.LiftedHop(FILM_TABLE, List.of(FILM_ID), "films_0"),
             MANY_ACCESSOR);
+        BatchKey tableRecordKeyed = new BatchKey.TableRecordKeyed(List.of(FILM_ID),
+            no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord.class);
+        BatchKey mappedTableRecordKeyed = new BatchKey.MappedTableRecordKeyed(List.of(FILM_ID),
+            no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord.class);
 
         // RowN-keyed arms.
         assertThat(rowKeyed.keyElementType().toString())
@@ -122,6 +129,12 @@ class BatchKeyTest {
         assertThat(accessorMany.keyElementType().toString())
             .isEqualTo("org.jooq.Record1<java.lang.Integer>");
 
+        // Typed-TableRecord-keyed arms reflect the developer's source class identity.
+        assertThat(tableRecordKeyed.keyElementType().toString())
+            .isEqualTo("no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord");
+        assertThat(mappedTableRecordKeyed.keyElementType().toString())
+            .isEqualTo("no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord");
+
         // javaTypeName() mirrors the same shape map; container axis preserved per variant.
         assertThat(rowKeyed.javaTypeName())
             .isEqualTo("java.util.List<org.jooq.Row1<java.lang.Integer>>");
@@ -137,6 +150,10 @@ class BatchKeyTest {
             .isEqualTo("java.util.List<org.jooq.Record1<java.lang.Integer>>");
         assertThat(accessorMany.javaTypeName())
             .isEqualTo("java.util.List<org.jooq.Record1<java.lang.Integer>>");
+        assertThat(tableRecordKeyed.javaTypeName())
+            .isEqualTo("java.util.List<no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord>");
+        assertThat(mappedTableRecordKeyed.javaTypeName())
+            .isEqualTo("java.util.Set<no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord>");
     }
 
     /**

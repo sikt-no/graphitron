@@ -429,6 +429,16 @@ type Film implements Node & Searchable @table(name: "film") @node {
         className: "no.sikt.graphitron.rewrite.test.services.FilmService",
         method: "titleLowercase"
     })
+    # R70 sibling: identical wiring to titleUppercase / titleLowercase but the service method
+    # takes Set<FilmRecord> (typed-TableRecord source-shape) and returns
+    # Map<FilmRecord, String>. The classifier routes Set<X extends TableRecord> to
+    # MappedTableRecordKeyed (carrying the typed record class); the rows-method emitter
+    # passes through `keys` directly, the validator's expected outer return type comes out
+    # as Map<FilmRecord, String> from the variant's keyElementType().
+    titleTitlecase: String @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.FilmService",
+        method: "titleTitlecase"
+    })
     # NestingField fixture: plain-object summary type nested inside Film. Fields resolve
     # against the outer Film table via $fields recursion (Film.summary.title → FILM.TITLE).
     summary:     FilmSummary

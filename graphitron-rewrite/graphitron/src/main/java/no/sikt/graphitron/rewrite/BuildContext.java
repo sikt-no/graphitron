@@ -390,6 +390,25 @@ class BuildContext {
     }
 
     /**
+     * Resolves a GraphQL type name to its expected jOOQ {@code TableRecord} class via the
+     * {@code @table} directive on the type. Returns empty when the type isn't in the schema,
+     * isn't {@code @table}-annotated, or the catalog can't resolve the table name.
+     *
+     * <p>Used by {@link ServiceDirectiveResolver}'s parent-table consistency check: a
+     * {@code @service} child whose SOURCES element type is a typed {@code TableRecord}
+     * subtype must match the parent's expected record class.
+     */
+    Optional<Class<?>> recordClassForTypeName(String typeName) {
+        if (typeName == null) return Optional.empty();
+        var raw = schema.getType(typeName);
+        if (!(raw instanceof GraphQLObjectType obj) || !obj.hasAppliedDirective(DIR_TABLE)) {
+            return Optional.empty();
+        }
+        String tableName = argString(obj, DIR_TABLE, ARG_NAME).orElse(typeName.toLowerCase());
+        return catalog.findRecordClass(tableName);
+    }
+
+    /**
      * Resolves a SQL table name to a {@link TableRef} by looking it up in the jOOQ catalog.
      * Returns a minimal {@code TableRef} (SQL name only, empty PK columns) when the catalog is
      * unavailable or the table cannot be found.

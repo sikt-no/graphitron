@@ -64,7 +64,7 @@ The original R61 plan asked: "does `Row1` afford a tuple-IN planner hint that `R
 
 ## Out of scope
 
-- Element-shape conversion for `Set<TableRecord>` / `List<TableRecord>` developer signatures ([R70 / `service-rows-tablerecord-key-shape.md`](service-rows-tablerecord-key-shape.md)). Once Record source shape is supported, R70's element-shape adapter becomes a thin call-site step.
+- Element-shape conversion for `Set<TableRecord>` / `List<TableRecord>` developer signatures ([R70 / `service-rows-tablerecord-key-shape.md`](service-rows-tablerecord-key-shape.md)). **Closed by R70**: rather than emitting a conversion adapter, R70 extended the variant taxonomy with `TableRecordKeyed` / `MappedTableRecordKeyed` permits that carry the developer's typed `TableRecord` class on the variant itself; `keyElementType()` returns it directly, the validator's expected outer return type and the rows-method emitter's parameter shape come out as `Map<X, V>` / `Set<X>` automatically, and the emitter's `return ServiceClass.method(keys)` covers the new variants by construction.
 
 ## Roadmap entries (siblings / dependencies)
 
