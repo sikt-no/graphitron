@@ -1,0 +1,177 @@
+= How-to: Global object IDs
+:description: Set up Relay Global Object Identification, decide stable-ID strategy, decode IDs back into typed keys, and reason about migration when columns or types change.
+:!toc:
+
+Relay Global Object Identification gives every node a single opaque ID that identifies a row across the graph. Graphitron synthesises that ID from `(typeId, primary-key columns)` whenever a type carries xref:../reference/directives/node.adoc[`@node`] and an `id: ID!` field decorated with xref:../reference/directives/nodeId.adoc[`@nodeId`]. `Query.node(id:)` and `Query.nodes(ids:)` dispatch on the embedded `typeId` to fetch the underlying row. This recipe covers the choices that affect long-term ID stability, the contract for decoding IDs back into typed keys at argument and input sites, and the dispatch shape of the two root entry points.
+
+== Wire format and the opacity contract
+
+The opaque ID is base64-url-encoded `"typeId:v1,v2,..."` (no padding, UTF-8). Commas inside values are escaped as `%2C`. Generated `NodeIdEncoder.encode<TypeName>(...)` and `NodeIdEncoder.decode<TypeName>(base64Id)` helpers handle the round-trip.
+
+Two things follow from the wire format:
+
+* The `typeId`, the `keyColumns`, and the *order* of those columns are part of the public ID contract. Changing any of them invalidates IDs that clients have already cached or persisted.
+* Decoding errors stay opaque to clients on the dispatcher path. `Query.node(id:)` and `Query.nodes(ids:)` return `null` for malformed, unknown-typeId, or no-such-row IDs (Relay spec). On the *argument* path, decode errors surface as `GraphqlErrorException` because the request is asserting "these are valid IDs of *this* type"; see "Decode-side errors" below.
+
+== Stable-ID strategies
+
+xref:../reference/directives/node.adoc[`@node(typeId:)`] defaults to the GraphQL type name. Two reasons to set it explicitly.
+
+*Decouple from rename.* If `Customer` might one day be renamed to `Person`, set `typeId: "C"` (or `"customer"`, or any opaque token) at introduction time so the rename is a schema-only change:
+
+[source,graphql]
+----
+type Person implements Node @table(name: "customer") @node(typeId: "C") {
+    id: ID! @nodeId
+}
+----
+
+Already-issued IDs continue to decode after the rename because the wire format never carried the GraphQL name.
+
+*Shorter or namespaced IDs.* The `typeId` is part of every ID's wire bytes. Trimming `Customer` (8 bytes) to `C` (1 byte) compounds across batched lookups. Conversely, prefixing `typeId` per service (`shop:Customer`) is one way to keep IDs unique across federated subgraphs without coordinating on type names.
+
+The build rejects two `@node` types that share a `typeId` (whether explicit or defaulted): `Query.node(id:)` cannot dispatch unambiguously, and the rewrite refuses to compile rather than silently route to the wrong table.
+
+== `keyColumns` migrations
+
+The default xref:../reference/directives/node.adoc[`@node(keyColumns:)`] is the bound table's primary-key columns in declaration order. Override only when the PK is unstable (rare on production schemas) or when an alternate unique key is the better identity:
+
+[source,graphql]
+----
+type FilmByCode implements Node @table(name: "film") @node(keyColumns: ["FILM_CODE"]) {
+    id:       ID!     @nodeId
+    filmCode: String! @field(name: "FILM_CODE")
+}
+----
+
+`FILM_CODE` must be a unique key on `film` for the build to accept the directive; the build fails to resolve otherwise.
+
+When you genuinely need to migrate `keyColumns` (the underlying PK is being changed, or you're moving from PK-based IDs to a domain-key for stability), the safe sequence is:
+
+. Add the new candidate-key columns and a unique constraint, deploy, backfill.
+. *In a single release* swap `keyColumns:` to the new column list. Every client cache or persisted ID issued before this release stops decoding; plan accordingly.
+. Optionally retain the old type under a different `typeId` (and a deprecation marker) for one release cycle so old IDs continue to dispatch while clients refresh.
+
+The rewrite gives no automatic rolling-window for the wire format: a `keyColumns` change is a hard cut. If continuity matters, the right tool is a *second* `@node` type pinned to the old shape, not a graceful in-place migration.
+
+== Composite-PK nodes
+
+Composite primary keys work the same way; the synthesised ID embeds every column in declaration order:
+
+[source,graphql]
+----
+type FilmActor implements Node @table(name: "film_actor") @node {
+    id: ID! @nodeId
+    # ...
+}
+----
+
+`film_actor`'s PK is `(actor_id, film_id)`; the wire format is `base64-url("FilmActor:<actor_id>,<film_id>")`. xref:../reference/directives/lookupKey.adoc[`@lookupKey`] on `[ID!]!` keyed by `FilmActor` produces a `VALUES(idx, actor_id, film_id)` join over both PK columns; no per-element scatter is needed.
+
+Reordering the PK columns at the catalog level changes the ID's wire format. If your jOOQ catalog regenerates the columns in a different order (e.g. after a DDL rewrite), set `keyColumns:` explicitly to lock the order:
+
+[source,graphql]
+----
+type FilmActor implements Node @table(name: "film_actor")
+    @node(keyColumns: ["actor_id", "film_id"]) {
+    id: ID! @nodeId
+}
+----
+
+== Cross-type IDs from FK paths
+
+xref:../reference/directives/nodeId.adoc[`@nodeId`] without `typeName:` infers from the containing type when the field is on a `@node` type's own `id` slot. When the slot encodes a *different* row's identity, set `typeName:` explicitly and pair it with xref:../reference/directives/reference.adoc[`@reference`]:
+
+[source,graphql]
+----
+type Customer implements Node @table(name: "customer") @node {
+    id:            ID! @nodeId
+    addressNodeId: ID  @nodeId(typeName: "Address")
+                       @reference(path: [{key: "customer_address_id_fkey"}])
+}
+----
+
+`addressNodeId` produces an `Address` global ID from the FK column on `customer`. Two things happen at projection time. First, the FK-mirror collapse: because `customer.address_id == address.address_id`, the rewrite reads the PK columns directly from the `customer` row without joining to `address`. Second, the encoder uses `Address`'s typeId and `keyColumns`, not `Customer`'s. The result is a valid `Address` ID that `Query.node` will dispatch to the `address` table.
+
+The same pattern works for any FK that lands on a `@node` table. If two `@node` types bind to the same target table (rare but legal), set `typeName:` explicitly to disambiguate; inference rule (b) only fires when *exactly one* `@node` type matches.
+
+== Decode-side: arguments and inputs
+
+xref:../reference/directives/nodeId.adoc[`@nodeId`] on an argument or input field reverses the direction: it decodes an opaque ID back into typed key columns. Two shapes are common.
+
+*Same-table NodeId argument.* The argument decodes to the surrounding query's PK columns and feeds an `IN (...)` lookup. xref:../reference/directives/lookupKey.adoc[`@lookupKey`] is implicit on this shape:
+
+[source,graphql]
+----
+type Query {
+    filmsByNodeIdArg(ids: [ID!]! @nodeId(typeName: "Film")): [Film!]!
+}
+----
+
+The rewrite emits a `VALUES(idx, film_id) JOIN film ON film.film_id = values.film_id` shape, with each `id` decoded via `NodeIdEncoder.decodeFilm(...)` at request time. Adding an explicit `@lookupKey` is permitted but redundant.
+
+*Composite-PK NodeId argument.* When the keyed type has a composite PK, the same shape widens to a multi-column `VALUES`:
+
+[source,graphql]
+----
+type Query {
+    filmActorByNodeId(id: [ID!]! @lookupKey): [FilmActor!]!
+}
+----
+
+Here `@lookupKey` is explicit because the keyed type is inferred from the return type, not from `@nodeId(typeName:)`. The decoder yields `(actor_id, film_id)` per ID; the join is `VALUES(idx, actor_id, film_id) JOIN film_actor ON ... AND ...`.
+
+*Input-record field.* The same decode contract applies inside an `input` type used in a mutation or filter:
+
+[source,graphql]
+----
+input FilmSameTableNodeIdInput {
+    filmIds: [ID!] @nodeId(typeName: "Film")
+}
+----
+
+The rewrite materialises `filmIds` as `List<Integer>` (or the typed PK shape) on the input record, with decode happening at the boundary.
+
+== Decode-side errors
+
+Argument and input decoders use the `ThrowOnMismatch` contract: a malformed base64 ID, or an ID whose embedded `typeId` does not match the declared `typeName:`, fails the request as a `GraphqlErrorException` *before any SQL runs*. Clients see a structured GraphQL error pointing at the offending argument; the server never tries to use a half-decoded value as a query parameter.
+
+This is intentionally different from the dispatcher path. `Query.node(id:)` and `Query.nodes(ids:)` use the `NullOnMismatch` contract: a malformed or wrong-typeId ID returns `null` (per Relay's "if no such object exists, the field returns null"). The asymmetry is the opacity contract: clients should not be able to probe for valid IDs by mining server errors. Argument-typed `@nodeId` *asserts* the IDs are of the expected type; `Query.node(id:)` *queries* whether an ID resolves at all.
+
+== `Query.node` and `Query.nodes` dispatch
+
+The two Relay entry points are emitted automatically when at least one `@node` type is classified for the schema:
+
+[source,graphql]
+----
+type Query {
+    node(id: ID!): Node
+    nodes(ids: [ID!]!): [Node]
+}
+----
+
+`Query.node(id:)` peeks the typeId via `NodeIdEncoder.peekTypeId(id)`, dispatches through the entity-fetcher table for that type, and `SELECT`s the requested fields plus a synthetic `__typename` column. The `Node` `TypeResolver` reads `__typename` to route the row at scatter time. Null IDs, base64 errors, and unknown typeIds all return `null`.
+
+`Query.nodes(ids:)` is the batched form. The dispatcher groups IDs by typeId, fans out one batched `SELECT` per type (DataLoader-backed so siblings sharing a typeId collapse into one round trip), and scatters rows back to each request's original positions. Mixing `Customer`, `Address`, and `Film` IDs in one call still produces just three queries.
+
+Both entry points only project the fields the client actually selects. The framework knows the type's table from `@node`, so the projection respects xref:../reference/directives/field.adoc[`@field(name:)`] aliases, xref:../reference/directives/reference.adoc[`@reference`] joins, and the rest of the directive surface uniformly.
+
+== Constraints and pitfalls
+
+* `@node` requires the type to also carry xref:../reference/directives/table.adoc[`@table`] and to implement the `Node` interface. The build rejects bare `@node` and `@node` on non-`Node`-implementing types.
+* `id: ID!` plus xref:../reference/directives/nodeId.adoc[`@nodeId`] is required on every `@node` type. The directive on the type alone does not produce the ID; the field-level marker tells the generator which slot is the ID.
+* `keyColumns:` must form a primary key or another unique key. Reordering the columns changes the ID's wire format; treat the order as part of the public contract.
+* `typeId:` collisions across types are rejected at build time. If you need two GraphQL types to share a backing table, give each a distinct `typeId`.
+* `@nodeId` is a binding directive, not a projection. The slot's GraphQL type must be `ID!`, `ID`, `[ID!]`, or `[ID!]!`.
+* On argument decode, an ID's embedded `typeId` must match the declared `typeName:`; mismatches fail the request. On `Query.node`/`Query.nodes`, the same mismatch returns `null`.
+* On a same-table `@nodeId` argument, xref:../reference/directives/lookupKey.adoc[`@lookupKey`] is implicit; the rewrite emits the `VALUES`-join shape automatically. Explicit `@lookupKey` is permitted but redundant.
+
+== See also
+
+* xref:../reference/directives/node.adoc[`@node`] configures the owning type (`typeId`, `keyColumns`).
+* xref:../reference/directives/nodeId.adoc[`@nodeId`] marks each encode/decode slot.
+* xref:../reference/directives/reference.adoc[`@reference`] supplies the FK path for cross-type IDs.
+* xref:../reference/directives/lookupKey.adoc[`@lookupKey`] is the dispatch path for `[ID!]`-keyed argument lookups; same-table NodeId arguments imply it.
+* xref:batch-lookups.adoc[How-to: Batch lookups] (Phase 3) covers the broader `@lookupKey` patterns including non-NodeId keys.
+
+xref:index.adoc[← How-to index]
