@@ -1,0 +1,98 @@
+= @asConnection
+:description: Wrap a list field as a Relay cursor-paginated connection, synthesizing the Connection / Edge / PageInfo types and keyset-based fetchers.
+:!toc:
+
+Marks a list field as a https://relay.dev/graphql/connections.htm[Relay cursor connection]. The schema-transform stage rewrites the field's return type from `[T!]!` to a synthesized `TConnection` carrying `edges`, `nodes`, `pageInfo`, and `totalCount`; the generator emits keyset-based `seek/limit` SQL with `ROW_NUMBER() OVER (PARTITION BY ...)` for batched per-parent pagination. If the field doesn't already declare pagination arguments, forward-pagination args (`first: Int`, `after: String`) are added automatically; backward (`last`/`before`) and dynamic xref:orderBy.adoc[`@orderBy`] arguments coexist when present.
+
+`@asConnection` works on three field shapes that the rewrite recognises distinctly: bare list fields on `@table` parents (inline pagination), `@reference`-driven child lists (per-parent paginated children), and union/interface lists (multi-table polymorphic pagination). It also composes with xref:splitQuery.adoc[`@splitQuery`] to dispatch each parent's connection through a `DataLoader`.
+
+== SDL signature
+
+[source,graphql]
+----
+directive @asConnection(
+    defaultFirstValue: Int = 100
+    connectionName:    String
+) on FIELD_DEFINITION
+----
+
+== Parameters
+
+[cols="1,1,1,3",options="header"]
+|===
+| Name | Type | Default | Description
+| `defaultFirstValue` | `Int` | `100` | Page size used when the client omits `first:`. Capped at the plugin's `maxAllowedPageSize` setting.
+| `connectionName` | `String` | `{ParentType}{FieldName}Connection` | Override the synthesized connection type's name. Set when two fields would otherwise generate the same connection name, or to keep an existing name stable across schema renames.
+|===
+
+== Canonical examples
+
+A bare list on a `@table` parent (`Query.stores`): `@asConnection` rewrites the return type to `StoreConnection`, adds `first:`/`after:` arguments, and emits keyset pagination using xref:defaultOrder.adoc[`@defaultOrder`] for the cursor:
+
+[source,graphql]
+----
+type Query {
+    stores: [Store!]! @asConnection @defaultOrder(primaryKey: true)
+}
+----
+
+A union-typed list (`Address.occupantsConnection`): the multi-table polymorphic emitter wraps the per-branch `UNION ALL` in a derived table so `seek/limit` and cursor pagination apply across the union; `totalCount` counts only this parent's occupants:
+
+[source,graphql]
+----
+type Address @table(name: "address") {
+    occupants:           [AddressOccupant!]!
+    occupantsConnection: [AddressOccupant!]! @asConnection(defaultFirstValue: 5)
+}
+
+union AddressOccupant = Customer | Staff
+----
+
+Per-parent paginated children with xref:splitQuery.adoc[`@splitQuery`] (`Film.actorsConnection`): a `ROW_NUMBER() OVER (PARTITION BY parentInput.idx)` envelope gives each parent its own paginated slice, and a `DataLoader` batches the dispatch:
+
+[source,graphql]
+----
+type Film @table(name: "film") {
+    actorsConnection(
+        first: Int, last: Int, after: String, before: String
+    ): ActorsConnection! @splitQuery @reference(path: [
+        {key: "film_actor_film_id_fkey"},
+        {key: "film_actor_actor_id_fkey"}
+    ]) @defaultOrder(primaryKey: true)
+}
+----
+
+When the schema declares the connection type explicitly (the `ActorsConnection!` shape above), the rewrite reuses it instead of synthesising a fresh one. Otherwise, a `*Connection`, `*Edge`, and `PageInfo` are generated alongside the field.
+
+Dynamic order via xref:orderBy.adoc[`@orderBy`] composes naturally:
+
+[source,graphql]
+----
+actorsOrderedConnection(
+    order: [ActorOrderBy] @orderBy,
+    first: Int, last: Int, after: String, before: String
+): ActorsConnection! @splitQuery @reference(path: [
+    {key: "film_actor_film_id_fkey"},
+    {key: "film_actor_actor_id_fkey"}
+]) @defaultOrder(primaryKey: true)
+----
+
+The cursor encodes the active order columns (the `@orderBy` selection if the client supplied one, otherwise `@defaultOrder`); decoding rejects cursors whose embedded sort doesn't match the request's effective order.
+
+== Constraints
+
+* Applies to list-typed fields. The runtime cardinality must be a list — single-cardinality `@asConnection` is rejected at classify time.
+* The field must have a stable order. Either xref:defaultOrder.adoc[`@defaultOrder`] is set on the field, or xref:orderBy.adoc[`@orderBy`] is required at runtime; without one of these, keyset pagination has no anchor and the build fails.
+* The synthesized connection type's name (default or via `connectionName:`) must not collide with another type already declared in the schema. Two `@asConnection` fields that would default to the same name must set `connectionName:` on at least one of them.
+* `defaultFirstValue:` is capped by the plugin's `maxAllowedPageSize` setting; setting a value above the cap surfaces as a build warning and the cap takes precedence at runtime.
+* Composes with xref:splitQuery.adoc[`@splitQuery`]: when both are present, the connection is materialized per-parent through a `DataLoader` keyed on the parent's PK or FK. Without `@splitQuery` on a parent-keyed list, all parents' rows are paginated in a single SQL pass (the `PARTITION BY` envelope is omitted).
+* Inline `TableField` placement is not allowed under interface-or-union return types unless the surrounding type axis supports the multi-table emitter; the generator rejects mismatched placements at classify time. (See `rewrite-design-principles.adoc` for the "no generator-side invariant goes unchecked at validate time" rule that backs this.)
+
+== See also
+
+* xref:splitQuery.adoc[`@splitQuery`] dispatches per-parent connections through a `DataLoader` for nested-depth pagination.
+* xref:defaultOrder.adoc[`@defaultOrder`] anchors the cursor when the client omits `@orderBy`.
+* xref:orderBy.adoc[`@orderBy`] supplies dynamic order; the cursor encodes the active selection.
+* xref:../../how-to/connections.adoc[How-to: Cursor-paginated connections] (Phase 3) covers `connectionName:` collisions, `totalCount` performance, and the `maxAllowedPageSize` cap.
+
+xref:../index.adoc[← Reference index]
