@@ -1,7 +1,7 @@
 ---
 id: R77
 title: "Bulk DML mutations: listed @table input arguments"
-status: Backlog
+status: Spec
 bucket: architecture
 priority: 1
 theme: mutations-errors
@@ -44,7 +44,10 @@ The bulk-input + single-return combination resolves to "return the last row
 in the affected set" by jOOQ default; we should reject it at classify time
 (Invariant #15: `tia.list()` requires a list return — `EncodedList` or
 `ProjectedList`) so authors don't accidentally write `[FilmInput] → Film`
-and lose data silently.
+and lose data silently. The same silent-data-loss concern motivates the
+runtime duplicate-lookup-key guard on bulk UPDATE (see UPDATE bullet
+below): both checks exist so authors can't shed input rows without an
+error.
 
 Invariant #15 covers the structural rule. The `Payload` arm is
 list-`@record`-payload territory and stays single-cardinality at this
@@ -92,15 +95,28 @@ projection terminator):
   `dsl.update(t).set(c, vTable.field(...)).from(vTable).where(...)`,
   where `vTable` is `DSL.values(rows...).asTable("v", "k", "c1", ...)`
   (typed derived table; columns referenced through it rather than via
-  raw-string `DSL.field("v.c")`). One statement. Carries an inline
-  Oracle-dialect runtime guard analogous to UPSERT's: jOOQ silently
-  emulates `UPDATE...FROM` on non-Postgres dialects with semantics
-  drift, and the OSS distribution omits commercial-only dialect enum
-  values, so a name-prefix check on `dsl.dialect().name()` matches
-  today's UPSERT pattern. The guard threads through the existing 9-arg
-  `buildDmlFetcher(... postDslGuard)` overload. R63 will lift UPDATE's
-  guard onto the typed `DialectRequirement` slot alongside UPSERT's
-  when it ships; until then both arms carry their inline guards.
+  raw-string `DSL.field("v.c")`). One statement. Carries two runtime
+  guards in the emitted fetcher prelude:
+  1. *Oracle-dialect guard*, analogous to UPSERT's: jOOQ silently
+     emulates `UPDATE...FROM` on non-Postgres dialects with semantics
+     drift, and the OSS distribution omits commercial-only dialect enum
+     values, so a name-prefix check on `dsl.dialect().name()` matches
+     today's UPSERT pattern. Threads through the existing 9-arg
+     `buildDmlFetcher(... postDslGuard)` overload. R63 will lift this
+     onto the typed `DialectRequirement` slot alongside UPSERT's when
+     it ships; until then both arms carry their inline guards.
+  2. *Duplicate-lookup-key guard*. `UPDATE ... FROM (VALUES …)` joins
+     `t` to `v` on the lookup-key columns; if two input rows share
+     the same lookup key, PostgreSQL silently picks one v-row's
+     columns (implementation-defined join), losing the other row's
+     data. That's the same silent-data-loss footgun Invariant #15
+     prevents on the return side, so we shed it at runtime here:
+     before binding `vTable`, build a `Set` of lookup-key tuples from
+     `in` and throw `IllegalArgumentException` if `set.size() != in.size()`.
+     Message names the field and points at the duplicate-tuple count.
+     UPSERT doesn't need the same guard (PostgreSQL hard-errors on
+     duplicate `ON CONFLICT` keys with "command cannot affect row a
+     second time"), and DELETE doesn't need it (idempotent).
 - **UPSERT** — multi-row INSERT with `ON CONFLICT (keys) DO UPDATE SET
   c = EXCLUDED.c`. Same `.values(...)` loop as INSERT plus the existing
   conflict-key chain; `.doNothing()` branch unchanged. Existing inline
@@ -142,19 +158,40 @@ returned no rows".
 ### Validator updates
 
 - Lift `MutationInputResolver.resolveInput`'s `foundTia.list()`
-  blanket rejection.
-- Add new structural Invariant #15 in
-  `FieldBuilder.classifyMutationInput`: `tia.list()` paired with
-  `EncodedSingle` or `ProjectedSingle` is rejected at classify time
-  (silent-data-loss footgun).
-- Add a parallel *deferred* rejection on the `Payload` arm:
-  `tia.list()` paired with `Payload` is "list-`@record` payloads are
-  not yet supported" — distinct category from #15, will lift when R75
-  (synthesize-payload-carrier, Backlog) lands.
+  blanket rejection ([line 250-255](../graphitron/src/main/java/no/sikt/graphitron/rewrite/MutationInputResolver.java)).
+- Add new structural Invariant #15 by widening
+  `MutationInputResolver.validateReturnType` to take a third arg
+  `boolean listInput` and rejecting `listInput && !returnType.wrapper().isList()`
+  alongside today's #14 cases. That's the existing #14 home, called
+  from one site in `FieldBuilder.classifyMutationField`
+  ([line 2374](../graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java));
+  pass `tia.list()` through. The rule is verb-neutral, so it lives
+  upstream of the four `case INSERT/UPDATE/DELETE/UPSERT` arms rather
+  than threaded into each.
+- Add a parallel *deferred* rejection on the `Payload` arm in the
+  same widened `validateReturnType` (or a sibling step in
+  `FieldBuilder.buildDmlField` after `resolveDmlPayloadAssembly`,
+  whichever reads cleaner): `tia.list()` paired with a `ResultReturnType`
+  is "list-`@record` payloads are not yet supported". Use
+  `Rejection.deferred("…", "synthesize-payload-carrier")`
+  ([factory at `Rejection.java:239`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/model/Rejection.java))
+  so the deferred message anchors to R75. Distinct category from #15,
+  will lift when R75 lands.
 - Update `GraphitronSchemaBuilderTest.DML_LIST_INPUT_DEFERRED`
   (currently asserts the blanket rejection): rename / split into one
-  case per new disposition — `*_INSERT_LIST_LIST_OK`, `*_INSERT_LIST_SINGLE_REJECTED`
-  (Invariant #15), and `*_PAYLOAD_LIST_DEFERRED` (the R75 gate).
+  case per new disposition. At minimum:
+  - `DML_INSERT_LIST_LIST_OK` (input `[FilmInput!]!`, return `[Film!]!` —
+    classifies cleanly).
+  - `DML_UPDATE_LIST_LIST_OK`, `DML_DELETE_LIST_LIST_OK`,
+    `DML_UPSERT_LIST_LIST_OK` (one OK case per remaining verb so
+    four-verb coverage is visible at a glance).
+  - `DML_INSERT_LIST_SINGLE_T_REJECTED` (input `[FilmInput!]!`, return
+    `Film!` — Invariant #15, projected-single arm).
+  - `DML_INSERT_LIST_SINGLE_ID_REJECTED` (input `[FilmInput!]!`, return
+    `ID!` — Invariant #15, encoded-single arm; same footgun,
+    different return shape).
+  - `DML_INSERT_LIST_PAYLOAD_DEFERRED` (input `[FilmInput!]!`, return
+    `FilmPayload` (`@record`) — the R75 gate).
 
 ## Tests
 
@@ -176,14 +213,24 @@ returned no rows".
   shape. Plus one
   `bulkDml_emptyListInput_doesNotRoundTripToDatabase` that exercises
   the `in.isEmpty()` short-circuit on at least one verb (assert via
-  `QUERY_COUNT == 0`, the same pattern other execution tests use).
+  `QUERY_COUNT == 0`, the same pattern other execution tests use), and
+  `updateFilms_duplicateLookupKeys_throwsBeforeStatement` that asserts
+  the bulk-UPDATE duplicate-tuple guard fires (assert via
+  `IllegalArgumentException` plus `QUERY_COUNT == 0`).
 
 ## Implementation sites
 
-- [`MutationInputResolver.java`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/MutationInputResolver.java) —
-  delete the `foundTia.list()` rejection arm; add Invariant #15.
-- [`FieldBuilder.classifyMutationInput`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java) —
-  thread `tia.list()` into the existing four `case INSERT/UPDATE/DELETE/UPSERT` arms; reject bulk-input + non-list-return.
+- [`MutationInputResolver.resolveInput`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/MutationInputResolver.java) —
+  delete the `foundTia.list()` rejection arm (line 250-255).
+- [`MutationInputResolver.validateReturnType`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/MutationInputResolver.java) —
+  widen the signature to `(returnType, kind, boolean listInput)` and
+  add Invariant #15 (bulk-input + single-return rejection) plus the
+  deferred Payload+list rejection
+  (`Rejection.deferred("…", "synthesize-payload-carrier")`).
+- [`FieldBuilder.classifyMutationField`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java) —
+  pass `tia.list()` through to the widened `validateReturnType` call
+  at line 2374. No changes inside the four `case INSERT/UPDATE/DELETE/UPSERT`
+  dispatch arms; the new invariant is verb-neutral.
 - [`TypeFetcherGenerator.buildMutationInsertFetcher`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java) (and the three siblings) —
   branch on `tia.list()` to emit the runtime row-loop. The four verbs
   consume per-row data in three idiomatic shapes (INSERT/UPSERT
@@ -191,14 +238,28 @@ returned no rows".
   the IN tuple; UPDATE collects rows for `DSL.values(...).asTable(...)`),
   so the shared primitive is a `buildRowValuesBlock(tia, columns)`
   helper that emits the `for (var row : in)` loop body producing a
-  `List<RowN<?>>` (or equivalent) at runtime — each verb wraps that
-  list in its own surrounding chain. Don't try to share a single helper
-  that also emits the chain.
+  `List<? extends Row>` at runtime — each verb wraps that list in its
+  own surrounding chain. Don't try to share a single helper that also
+  emits the chain.
+- [`TypeFetcherGenerator.buildMutationUpdateFetcher`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java) —
+  on the `tia.list()` arm, emit the duplicate-lookup-key runtime guard
+  before the DML chain (build a `Set` of lookup-key tuples; throw
+  `IllegalArgumentException` if `set.size() != in.size()`). Threads
+  through `postDslGuard` alongside the existing Oracle-dialect guard.
 - [`TypeFetcherGenerator.buildDmlFetcher`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java) —
   flip the `env.getArgument(...)` cast to `List<Map<?,?>>` and emit the
   empty-list short-circuit when `tia.list()`.
 - New unit test cases in `GraphitronSchemaBuilderTest`; new
   `DmlBulkMutationsExecutionTest` in `graphitron-sakila-example`.
+
+The `@DependsOnClassifierCheck` annotations on the four
+`buildMutation*Fetcher` methods are the canonical home for invariant
+guarantees the emitter relies on (the R22-era `roadmap/mutations.md`
+plan file was deleted on Done; cite the changelog and these
+annotations rather than the missing file). Update the four
+annotations' `reliesOn` strings to reflect that `env.getArgument` may
+be cast to `List<Map<?,?>>` when `tia.list()`, and that Invariant #15
+guarantees the return shape is list-cardinality whenever the input is.
 
 ## Non-goals and out-of-scope
 
