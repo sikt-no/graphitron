@@ -2,7 +2,7 @@
 :description: Wrap a list as a Relay connection, name the synthesised types, account for totalCount cost, and understand what the rewrite does (and does not) cap.
 :!toc:
 
-xref:../reference/directives/asConnection.adoc[`@asConnection`] turns a list field into a Relay connection: the schema-transform stage rewrites `[T!]!` to a synthesised `TConnection`, the generator emits keyset SQL, and the runtime returns `edges`, `nodes`, `pageInfo`, and (when asked for) `totalCount`. The reference page covers signature, examples, and constraints. This recipe addresses three operational questions that bite teams in review: when to set `connectionName:`, what `totalCount` actually costs (and when it returns `null`), and what the rewrite does about page-size caps.
+xref:../reference/directives/asConnection.adoc[`@asConnection`] turns a list field into a Relay connection: the schema-transform stage rewrites `[T!]!` to a synthesised `TConnection`, the generator emits keyset SQL, and the runtime returns `edges`, `nodes`, `pageInfo`, and (when asked for) `totalCount`. The reference page covers signature, examples, and constraints. This recipe addresses three operational questions that bite teams in review: why each connection field should own its own Connection type, what `totalCount` actually costs (and when it returns `null`), and what the rewrite does about page-size caps.
 
 For the cursor-stability and tie-breaker side of pagination, see xref:sort-results.adoc[How-to: Sort results]. The sort spec and the connection are separate concerns: the order is what the cursor encodes, and the connection is what the cursor traverses.
 
@@ -15,15 +15,20 @@ Two paths produce a connection type, and the rewrite recognises both:
 
 The Sakila example schema uses both shapes intentionally: `Query.stores` exercises the synthesised path (`QueryStoresConnection`), and `Query.filmsConnection: FilmsConnection!` exercises the declared path. Both compile to the same kind of fetcher; the difference is purely which side owns the type's name.
 
-== `connectionName:` and the silent-dedup case
+== One field, one connection type
 
-The default name is `<ParentType><FieldName>Connection`. Override via `connectionName:` when:
+Each `@asConnection` field gets its own synthesised Connection type, named `<ParentType><FieldName>Connection`. The default is the recommended outcome: a field-specific type for a field-specific result set. The `connectionName:` argument that overrides the default is *deprecated*; reach for it only when migrating a legacy schema.
 
-* *Two carriers should share one connection type.* `Query.customers: [Customer!]! @asConnection(connectionName: "CustomersConnection")` and `Store.customers: [Customer!]! @asConnection(connectionName: "CustomersConnection")` register the same synthesised type once and reuse it for both carriers. Without the override, you get `QueryCustomersConnection` and `StoreCustomersConnection`: two distinct types in the API for the same element shape.
-* *The default name has already been used by something else.* If your SDL already declares a `QueryStoresConnection` (perhaps by hand for federation or a custom shape), the synthesis path would clash. Pin the carrier with `connectionName: "QueryStoresConnectionV2"` (or move to the structural path and use the declared type directly).
-* *You want the connection name to outlive a parent rename.* The default derives from the parent type; rename `Query` → `RootQuery` (or rename a domain object) and the synthesised connection name shifts with it, breaking any client that referenced the old name. Spell `connectionName:` to decouple the wire-side name from the schema-side parent.
+The reason is semantic, not syntactic. Two fields that paginate the same element type usually do *not* return the same logical result:
 
-The dedup behaviour is silent: when two carriers resolve to the same `connectionName:`, the second carrier reuses the first's already-promoted type without further validation. If the two carriers' element types disagree (`[A!]! @asConnection(connectionName: "FooConnection")` and `[B!]! @asConnection(connectionName: "FooConnection")`), the second registration is skipped and both carriers point at a connection whose `edges.node` is `A`. The second carrier's `B` becomes effectively unreachable through that connection. Don't lean on dedup to merge connections of different element types; either align the elements or use distinct names.
+* *Different parents.* `Query.customers` returns the global customer list; `Store.customers` returns one store's customers. The element type is `Customer` in both cases, but the result sets are scoped differently. A shared `CustomersConnection` would lie about that scoping at the type level: a tool inspecting the schema would see one connection and assume one filter contract, when the runtime contracts differ.
+* *Different filters and arguments.* A connection field's argument set is part of its identity. `Query.activeCustomers(active: Boolean = true)` and `Query.customers` produce different sub-populations of the same table; a shared Connection type would erase that distinction.
+* *Different orders, different cursors.* The cursor wire format embeds the active sort columns. Two fields that have different `@defaultOrder` (or different `@orderBy` enum spaces) cannot share cursors, even when they share an element type. Sharing the Connection type but not the cursor format produces a leaky abstraction at the schema boundary.
+* *Independent evolution.* Two fields that share a type evolve in lockstep: adding a column to one's order spec, adding a filter to one's element shape, or renaming one's edge metadata forces the other to follow. Field-owned Connections decouple that lifecycle.
+
+The synthesised default `<ParentType><FieldName>Connection` honours all four points by construction. `Query.customers` becomes `QueryCustomersConnection` and `Store.customers` becomes `StoreCustomersConnection`; they're separate types in the schema because they're separate things in the domain. Clients that need to pass both lists through the same UI component still can — the GraphQL types are independent, but the underlying `Customer` element shape is shared.
+
+The deprecated `connectionName:` override coalesces multiple carriers onto one type. It exists for one purpose: migrating a legacy schema where the wire-side name is already published and a rename would break clients. New schemas should not use it; legacy schemas should plan a transition off it. The dedup is also silent — two carriers with the same name but different element types reuse the first registration without validation, producing a connection whose `edges.node` doesn't match one of the carriers — which is a sharp edge worth avoiding for that reason alone.
 
 == `totalCount` is lazy and orthogonal
 
@@ -87,7 +92,7 @@ The `totalCount` consequence cited above applies here: split-connection carriers
 
 * `@asConnection` applies to list-typed fields. Single-cardinality `@asConnection` is rejected at classify time.
 * The field must have a stable order. Either xref:../reference/directives/defaultOrder.adoc[`@defaultOrder`] is set, or xref:../reference/directives/orderBy.adoc[`@orderBy`] is required at runtime; without one, keyset pagination has no anchor and the build fails.
-* `connectionName:` dedup is silent. Two carriers with the same name and different element types reuse the first registration; only the first carrier's element type appears under that connection's `edges.node`.
+* `connectionName:` is deprecated. Each connection field should own its own Connection type; the override exists as a transition mechanism for legacy schemas. When set, the dedup is silent — two carriers with the same name and different element types reuse the first registration and only the first carrier's element type appears under that connection's `edges.node`.
 * `totalCount` is `null` on split-connection and multi-table polymorphic carriers. Document this for clients; do not surface `0` as a substitute.
 * `totalCount` is lazy on selection but a separate SQL pass when selected. Treat it as observable extra cost; don't assume it's free.
 * No server-side page-size cap. `defaultFirstValue:` is the omitted-`first:` default, not a maximum. Enforce caps at the API layer if needed.
