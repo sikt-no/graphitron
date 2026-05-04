@@ -14,7 +14,6 @@ import no.sikt.graphitron.rewrite.RewriteContext;
 import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import org.eclipse.lsp4j.CompletionItem;
-import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.junit.jupiter.api.Test;
 import org.treesitter.TSParser;
 import org.treesitter.TSPoint;
@@ -114,18 +113,14 @@ class FixtureCatalogTest {
     }
 
     @Test
-    void sqlColumnNameProducesWarningNotError() {
-        // SQL names resolve (equalsIgnoreCase on the Java-name-keyed Column.name()),
-        // but the LSP emits a Warning suggesting the Java field name instead.
+    void sqlColumnNameProducesNoDiagnostic() {
         var file = new WorkspaceFile(1, """
             type Foo @table(name: "film") {
                 x: Int @field(name: "film_id")
             }
             """);
         var diags = Diagnostics.compute(file, catalog());
-        assertThat(diags).hasSize(1);
-        assertThat(diags.get(0).getSeverity()).isEqualTo(DiagnosticSeverity.Warning);
-        assertThat(diags.get(0).getMessage()).contains("film_id").contains("FILM_ID");
+        assertThat(diags).isEmpty();
     }
 
     @Test
