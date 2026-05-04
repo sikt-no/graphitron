@@ -79,6 +79,6 @@ type StaffSummary {
 * xref:field.adoc[`@field`] is the per-field column-mapping axis, choose it when the constructed type has its own xref:table.adoc[`@table`] or when you want individual mapping per field.
 * xref:table.adoc[`@table`] is the catalog-binding axis. `@experimental_constructType` exists precisely because the constructed type *can't* carry `@table`.
 * xref:externalField.adoc[`@externalField`] is the alternative when the projection needs custom Java logic rather than a column list.
-* xref:../../how-to/federation-keys.adoc[How-to: Federation key fields] (Phase 3) covers the non-resolvable-entity pattern that motivates `@experimental_constructType`.
+* xref:../../how-to/federation-keys.adoc[How-to: Federation key fields] covers the non-resolvable-entity pattern that motivates `@experimental_constructType`.
 
 xref:../index.adoc[← Reference index]
