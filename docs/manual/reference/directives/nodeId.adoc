@@ -1,0 +1,94 @@
+= @nodeId
+:description: Mark a slot as a Relay global ID that encodes or decodes a @node type's primary key.
+:!toc:
+
+Names a GraphQL slot as a Relay https://graphql.org/learn/global-object-identification/[Global Object Identification] ID. The site axis decides direction: on a `FIELD_DEFINITION` the directive *encodes* the parent's primary-key columns into the opaque ID; on `INPUT_FIELD_DEFINITION` and `ARGUMENT_DEFINITION` it *decodes* the ID back to typed key columns at the carrier. Pairs with xref:node.adoc[`@node`], which configures the type that owns the ID.
+
+== SDL signature
+
+[source,graphql]
+----
+directive @nodeId(
+    typeName: String
+) on FIELD_DEFINITION | INPUT_FIELD_DEFINITION | ARGUMENT_DEFINITION
+----
+
+== Parameters
+
+[cols="1,1,1,3",options="header"]
+|===
+| Name | Type | Default | Description
+| `typeName` | `String` | inferred | The xref:node.adoc[`@node`] type the ID belongs to. Case-sensitive. Required when the carrier site is ambiguous. Inferred when: (a) on a non-xref:reference.adoc[`@reference`] object field, the containing type is itself a `@node`; (b) on a xref:reference.adoc[`@reference`] field or jOOQ-record input field, exactly one `@node` type binds to the same target table.
+|===
+
+== Canonical example
+
+Producing IDs on a `@node` type's `id` slot (encode side):
+
+[source,graphql]
+----
+type Customer implements Node @table(name: "customer") @node {
+    id:         ID!  @nodeId
+    customerId: Int! @field(name: "CUSTOMER_ID")
+    # ...
+}
+
+type Address implements Node @table(name: "address") @node {
+    id: ID! @nodeId
+    # ...
+}
+----
+
+`@nodeId` here has no `typeName:` because case (a) applies: the containing type is a `@node`, so the inference is unambiguous. The selected `id` is base64-encoded `(typeId, primary-key columns)`.
+
+Cross-type reference (encode side, with explicit type):
+
+[source,graphql]
+----
+type Customer implements Node @table(name: "customer") @node {
+    addressNodeId: ID @nodeId(typeName: "Address")
+                      @reference(path: [{key: "customer_address_id_fkey"}])
+}
+----
+
+`addressNodeId` produces an `Address` ID from the FK on `customer.address_id`. The xref:reference.adoc[`@reference`] path points at the `address` row; `@nodeId(typeName: "Address")` encodes that row's PK columns under the `Address` typeId. (FK-mirror collapse means no extra JOIN: `customer.address_id == address.address_id`.)
+
+Decoding into typed keys at an argument or input field (decode side):
+
+[source,graphql]
+----
+type Query {
+    # Same-table @nodeId on an argument: decodes opaque IDs into film primary keys
+    # and feeds a (film_id) IN (...) lookup. @lookupKey is implicit on same-table
+    # @nodeId arguments.
+    filmsByNodeIdArg(ids: [ID!]! @nodeId(typeName: "Film")): [Film!]!
+
+    # Composite-PK NodeId @lookupKey: each opaque ID decodes to (actor_id, film_id),
+    # joined via VALUES(idx, actor_id, film_id) on both PK columns.
+    filmActorByNodeId(id: [ID!]! @lookupKey): [FilmActor!]!
+}
+
+input FilmSameTableNodeIdInput {
+    filmIds: [ID!] @nodeId(typeName: "Film")
+}
+----
+
+On the decode side the rewrite verifies the ID's embedded `typeId` against the declared `typeName:`; mismatched IDs surface as `GraphqlErrorException` via the ThrowOnMismatch contract before any SQL runs.
+
+== Constraints
+
+* The named or inferred type must carry xref:node.adoc[`@node`]. The build fails when `typeName:` resolves to a non-node type.
+* `typeName:` is required when neither inference rule fires: when the field's type is not the containing type and no `@reference` provides an unambiguous target table.
+* `@nodeId` does not stand alone on a non-`@node` field as the type's identity. Use it on the `id: ID!` field of a `@node` type, or on slots that *reference* a node from elsewhere.
+* On `[ID!]` arguments where `typeName` matches the surrounding query's return-type table, xref:lookupKey.adoc[`@lookupKey`] is implied; an explicit `@lookupKey` is permitted but redundant.
+* Decode-time ID/typeId mismatch fails the request with a GraphQL error; same with malformed base64.
+* `@nodeId` is a binding directive, not a projection. The slot's GraphQL type must be `ID!`, `ID`, `[ID!]`, or `[ID!]!` (lists are valid for batch decode).
+
+== See also
+
+* xref:node.adoc[`@node`] configures the owning type (`typeId`, `keyColumns`).
+* xref:reference.adoc[`@reference`] supplies the JOIN path when an ID is encoded from a *different* row than the parent.
+* xref:lookupKey.adoc[`@lookupKey`] is the dispatch path for `[ID!]`-keyed argument lookups; same-table NodeId arguments imply it.
+* xref:../../how-to/global-id.adoc[How-to: Global object IDs] (Phase 3) covers cross-type IDs, decode-error handling, and same-table-nodeid filter inputs.
+
+xref:../index.adoc[← Reference index]
