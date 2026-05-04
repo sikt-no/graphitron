@@ -1,0 +1,304 @@
+= How-to: Test your schema
+:description: Wire a consumer-side test class that runs full GraphQL requests against your generated facade and a real database, asserting both response shapes and round-trip counts.
+:!toc:
+
+The most useful tests for a graphitron-rewrite-generated schema are *consumer execution tests*: full GraphQL requests sent through your generated facade, against a real PostgreSQL instance (Testcontainers in CI, native local DB for the inner loop), with assertions on both the response shape (did the right rows come back) and the runtime cost (how many JDBC round-trips fired, what SQL ran, did `DataLoader` batches consolidate). The compilation tier (the rewrite checks this in the example module) and the pipeline tier (the rewrite checks this in `graphitron`) are upstream of you; what's left for the consumer is "the contract between SDL, Java service code, and the database is what I expect".
+
+This recipe walks the canonical setup: starting Postgres, building the schema, executing requests, and the two assertion families that capture what schema authors most need to verify. It's anchored on `GraphQLQueryTest` (`graphitron-sakila-example/src/test/java/no/sikt/graphitron/rewrite/test/querydb/GraphQLQueryTest.java`) which uses every shape the recipe describes; copy it as the starting template for your application.
+
+For the rewrite-internal tier model (unit/pipeline/compilation/execution), see `graphitron-rewrite/docs/testing.adoc`. This recipe is about the consumer's execution-tier setup, not the rewrite's tier choices.
+
+== The setup: Postgres + GraphitronContext + GraphQL
+
+Three things must be in place before a request runs:
+
+* A `DSLContext` pointing at a Postgres instance with your application's schema migrations applied. The example module uses Testcontainers in CI and accepts a `test.db.url` system property for the inner loop; either path produces a `DSLContext` against the same database shape.
+* A `GraphitronContext` per request, wrapping that `DSLContext` and any context arguments your `@service` and `@condition` methods need.
+* A `GraphQLSchema` produced by your generated `Graphitron.buildSchema(b -> {})` facade. The schema is built once per test class (`@BeforeAll`); requests reuse it.
+
+The skeleton:
+
+[source,java]
+----
+@ExecutionTier
+class GraphQLQueryTest {
+
+    static PostgreSQLContainer postgres;
+    static DSLContext dsl;
+    static GraphQL graphql;
+    static final AtomicInteger QUERY_COUNT = new AtomicInteger();
+    static final List<String> SQL_LOG = new CopyOnWriteArrayList<>();
+
+    @BeforeAll
+    static void startDatabase() throws Exception {
+        var localUrl = System.getProperty("test.db.url");
+        if (localUrl != null) {
+            dsl = DSL.using(localUrl,
+                System.getProperty("test.db.username", "postgres"),
+                System.getProperty("test.db.password", "postgres"));
+        } else {
+            postgres = new PostgreSQLContainer("postgres:18-alpine")
+                .withInitScript("init.sql");
+            postgres.start();
+            dsl = DSL.using(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
+        }
+
+        dsl.configuration().set(new DefaultExecuteListenerProvider(new ExecuteListener() {
+            @Override public void executeStart(ExecuteContext ctx) {
+                QUERY_COUNT.incrementAndGet();
+                var sql = ctx.sql();
+                if (sql != null) SQL_LOG.add(sql.toLowerCase(Locale.ROOT));
+            }
+        }));
+
+        GraphQLSchema schema = Graphitron.buildSchema(b -> {});
+        graphql = GraphQL.newGraphQL(schema).build();
+    }
+
+    @AfterAll
+    static void stopDatabase() {
+        if (postgres != null) postgres.stop();
+    }
+}
+----
+
+The `ExecuteListener` is what makes the round-trip-count and SQL-shape assertions possible: every JDBC statement increments `QUERY_COUNT` and adds its rendered SQL to `SQL_LOG`. Tests that need to assert "this was one batched query, not N per-parent queries" reset `QUERY_COUNT` before executing and assert on it after.
+
+The Testcontainers fallback runs Postgres 18 alpine with `init.sql` as the bootstrap; consumer tests use whatever migrations your application runs in production. The `test.db.url` system property is the inner-loop optimisation: when set, the test connects to a local Postgres without spinning a container, which shaves about 10 seconds per test class start.
+
+== Executing a request
+
+A helper method captures the request shape; tests call it with the GraphQL string:
+
+[source,java]
+----
+private Map<String, Object> execute(String query) {
+    var context = new GraphitronContext() {
+        @Override public DSLContext getDslContext(DataFetchingEnvironment env) { return dsl; }
+        @Override public <T> T getContextArgument(DataFetchingEnvironment env, String name) { return null; }
+    };
+
+    var input = ExecutionInput.newExecutionInput()
+        .query(query)
+        .graphQLContext(b -> b.put(GraphitronContext.class, context))
+        .dataLoaderRegistry(new DataLoaderRegistry())
+        .build();
+
+    var result = graphql.execute(input);
+    assertThat(result.getErrors()).isEmpty();
+    return result.getData();
+}
+----
+
+Three things to know about this helper:
+
+* *`GraphitronContext` is per-request.* The example wires the same `dsl` for every test, but production tests that exercise per-tenant routing build a new context per request whose `getDslContext` returns the tenant-specific `DSLContext`.
+* *`getContextArgument` is the runtime side of `contextArguments:`.* `@service` and `@condition` directives that declare `contextArguments: ["tenantId"]` read the value through this method per request. Tests that exercise context-argument paths need a non-null implementation; tests that don't use context arguments can return `null`.
+* *`DataLoaderRegistry` is mandatory.* graphql-java requires a registry per request even when the query touches nothing the rewrite would batch through `DataLoader`. The framework calls `computeIfAbsent` on it from every `Split*` fetcher; missing the registry causes an NPE at request time.
+
+The `assertThat(result.getErrors()).isEmpty()` line is the default safety net. Tests that *expect* an error (validation failure, redacted exception) use a sister method `executeRaw` that returns the raw `ExecutionResult` and asserts on the error list.
+
+== Value assertions: what came back
+
+The most direct shape: pull GraphQL response fields out of the `Map<String, Object>` and assert on them. AssertJ's `as(LIST)`, `as(MAP)`, `as(list(Map.class))` factories navigate the nested-map shape cleanly:
+
+[source,java]
+----
+@Test
+void customers_returnsAllCustomers() {
+    Map<String, Object> data = execute("{ customers { customerId firstName lastName } }");
+    assertThat(data).extractingByKey("customers", as(LIST)).hasSize(5);
+}
+
+@Test
+void customers_filteredByActive() {
+    Map<String, Object> data = execute("{ customers(active: true) { customerId firstName } }");
+    assertThat(data).extractingByKey("customers", as(list(Map.class)))
+        .hasSize(3)
+        .allSatisfy(c -> assertThat(c).containsKey("firstName"));
+}
+----
+
+Two patterns worth standardising on:
+
+* *Assert what came back, not what didn't.* `containsOnlyKeys("firstName", "lastName")` catches the regression where selection-set scoping leaks (e.g. customer rows accidentally projecting film columns). Plain `containsKey` doesn't.
+* *Cross-check with the seed data.* The example seeds five films with deterministic IDs; tests that depend on row counts (`hasSize(5)`) or specific titles (`containsExactly("ACADEMY DINOSAUR", ...)`) hard-code values from `init.sql`. This is fragile if the seed shifts but valuable as a contract: the test breaks loudly when the data-fixture and the schema-fixture diverge.
+
+For unions and interfaces, assert on `__typename` to verify the runtime type resolver routes correctly:
+
+[source,java]
+----
+@Test
+void search_returnsMixedTypes() {
+    Map<String, Object> data = execute("{ search { __typename ... on Film { title } ... on Actor { firstName } } }");
+    assertThat(data).extractingByKey("search", as(list(Map.class)))
+        .extracting(r -> r.get("__typename"))
+        .containsExactlyInAnyOrder("Film", "Film", "Actor", "Actor");
+}
+----
+
+== Performance assertions: how many round-trips fired
+
+This is what the `QUERY_COUNT` and `SQL_LOG` machinery exists for. The pattern: reset before, execute, assert after.
+
+[source,java]
+----
+@Test
+void splitTableField_multipleParents_scatterPerParent() {
+    QUERY_COUNT.set(0);
+    Map<String, Object> data = execute(
+        "{ languageByKey(language_id: [1, 2, 3]) { languageId films { filmId } } }");
+    // Expect 2 JDBC round-trips: 1 for languageByKey root + 1 batched for films.
+    // Unbatched scatter would fire 1 + N=3 = 4.
+    assertThat(QUERY_COUNT.get()).isEqualTo(2);
+    // Value assertions follow...
+}
+----
+
+The 2-vs-4 difference is the test's primary signal: a regression that breaks DataLoader batching turns 2 into 4, the value assertions still pass, and only the count assertion catches the regression. This is *the* canonical reason to write performance assertions: the user-visible response is the same, but per-request cost has gone up by a factor of N.
+
+`SQL_LOG` is the same idea at finer granularity: assert that a particular SQL shape did or didn't run.
+
+[source,java]
+----
+@Test
+void totalCount_isLazyOnSelection_noCountSqlWhenUnselected() {
+    SQL_LOG.clear();
+    execute("{ filmsConnection(first: 2) { nodes { title } pageInfo { hasNextPage } } }");
+    assertThat(SQL_LOG)
+        .as("no SELECT count statement should be issued when totalCount is not selected")
+        .noneMatch(s -> s.contains("select count"));
+}
+
+@Test
+void totalCount_selected_doesIssueCountSql() {
+    SQL_LOG.clear();
+    execute("{ filmsConnection { totalCount } }");
+    assertThat(SQL_LOG)
+        .filteredOn(s -> s.contains("select count"))
+        .as("selecting totalCount should issue exactly one SELECT count statement")
+        .hasSize(1);
+}
+----
+
+The pair is the regression-fence: one ratchets that the lazy-on-selection optimisation didn't break, the other ratchets that selecting the field still produces the count query. Without both, a regression that always fires the count query (or never fires it) passes one test and fails the other.
+
+Common patterns from the example:
+
+* *DataLoader batching.* Compare expected count to per-parent fan-out: `1 + 1` (one root + one batched child) vs `1 + N`.
+* *Empty-input short-circuits.* `actor_id: []` on a `@lookupKey` field should not issue a child query; `QUERY_COUNT == 1` (parent only) is the assertion.
+* *Connection cursor round-trip.* Page 1's `endCursor` fed back into a `first: N, after: <cursor>` request should pull page 2 with the right rows; the test pins both the cursor encoding and the seek's correctness.
+
+== Error-path tests
+
+`execute` asserts no errors. For tests that exercise error paths (validation failures, mapped exceptions through the `errors:` channel, redacted unmatched exceptions), use a raw helper:
+
+[source,java]
+----
+private ExecutionResult executeRaw(String query) {
+    var context = new GraphitronContext() {
+        @Override public DSLContext getDslContext(DataFetchingEnvironment env) { return dsl; }
+        @Override public <T> T getContextArgument(DataFetchingEnvironment env, String name) { return null; }
+    };
+
+    var input = ExecutionInput.newExecutionInput()
+        .query(query)
+        .graphQLContext(b -> b.put(GraphitronContext.class, context))
+        .build();
+
+    return graphql.execute(input);
+}
+----
+
+Then assert on the errors directly:
+
+[source,java]
+----
+@Test
+void connectionField_firstAndLast_areMutuallyExclusive() {
+    var result = executeRaw("{ filmsConnection(first: 2, last: 2) { totalCount } }");
+    assertThat(result.getErrors())
+        .as("Relay forbids mixing first and last on the same request")
+        .isNotEmpty();
+}
+----
+
+For typed errors flowing through the xref:error-channel.adoc[errors channel], the test asserts on the response data (the `errors:` field on the payload) rather than `result.getErrors()`. The framework redaction path (unmatched exceptions) shows up in `result.getErrors()` with the "An error occurred. Reference: <UUID>." message; tests that exercise the redact path assert the message format and that no original exception details leak.
+
+== Per-tenant context tests
+
+For `@service` or `@condition` paths that read context arguments, the test supplies a custom `GraphitronContext`:
+
+[source,java]
+----
+private Map<String, Object> executeWithContext(String query, GraphitronContext context) {
+    var input = ExecutionInput.newExecutionInput()
+        .query(query)
+        .graphQLContext(b -> b.put(GraphitronContext.class, context))
+        .dataLoaderRegistry(new DataLoaderRegistry())
+        .build();
+    var result = graphql.execute(input);
+    assertThat(result.getErrors()).isEmpty();
+    return result.getData();
+}
+
+@Test
+void perTenantDispatch_routesPerTenant() {
+    var perTenantContext = new GraphitronContext() {
+        @Override public DSLContext getDslContext(DataFetchingEnvironment env) {
+            String tenant = env.getGraphQlContext().get("tenantId");
+            return tenantContexts.get(tenant);
+        }
+        @Override public <T> T getContextArgument(DataFetchingEnvironment env, String name) {
+            if ("tenantId".equals(name)) return (T) env.getGraphQlContext().get("tenantId");
+            return null;
+        }
+    };
+    Map<String, Object> data = executeWithContext("{ tenants { ... } }", perTenantContext);
+    // Assertions specific to per-tenant routing
+}
+----
+
+The pattern is the same as the basic helper, just with a callable context builder. For full-on multi-tenant testing, also see xref:../../architecture/getting-started.adoc#tenant-scoping[Getting started: Tenant-scoping] for the framework-side wiring contract.
+
+== Federation entity tests
+
+If your schema declares federation `@key` directives, the `_entities` resolver dispatches representations through the runtime entity dispatcher. `FederationEntitiesDispatchTest` (in the example's `querydb` package) is the canonical template: same Testcontainers + `Graphitron.buildSchema` + `ExecuteListener` setup, with the request shape adjusted for federation:
+
+[source,java]
+----
+@Test
+void entities_resolveSingleNodeIdRep_returnsHydratedRow() {
+    String customerId = NodeIdEncoder.encode("Customer", 1);
+    Map<String, Object> data = execute(
+        "query Q($reps: [_Any!]!) { _entities(representations: $reps) { ... on Customer { firstName lastName } } }",
+        Map.of("reps", List.of(Map.of("__typename", "Customer", "id", customerId))));
+    var entities = (List<Map<String, Object>>) data.get("_entities");
+    assertThat(entities).singleElement(as(MAP))
+        .containsEntry("firstName", "MARY")
+        .containsEntry("lastName", "SMITH");
+}
+----
+
+The test passes representations via GraphQL variables, and asserts on the dispatched results. For multi-alternative dispatch, the same shape works with multiple representations in the input list and assertions on which alternative matched (typically by inference from the response shape, since the dispatcher is internal). xref:federation-keys.adoc[How-to: Federation key fields] covers the dispatch rules; the test confirms the rules behave as documented.
+
+== Pitfalls
+
+* *Forgetting `dataLoaderRegistry`.* graphql-java requires one even for queries that don't traverse `Split*` fields. NPE at request time, message buried in the error list. Add it to the helper unconditionally.
+* *Per-test connection leak.* `@AfterAll` stops the Testcontainers Postgres; a test that holds `dsl` references past class scope leaks a connection. Use `@BeforeAll` / `@AfterAll` (class-scoped) rather than `@BeforeEach` / `@AfterEach` for the database; per-test work happens inside the request.
+* *`QUERY_COUNT` and `SQL_LOG` are global.* They are static fields on the test class, mutated by the listener that fires on every JDBC statement. Tests that read them must reset (e.g. `QUERY_COUNT.set(0)`, `SQL_LOG.clear()`) immediately before executing the GraphQL query, and the test must run on its own (no parallel test in the class touching the same DB at the same time). The example uses JUnit 5's default sequential execution; if your test class enables parallel execution, switch to per-test counters.
+* *Seed-data drift breaks tests.* Hard-coded row counts (`hasSize(5)`) and specific values (`containsExactly("ACADEMY DINOSAUR", ...)`) tie tests to the seed. Either commit the seed alongside the tests (the example does this) or assert on shape-only (`size > 0`, `every row has a `firstName` key`); avoid the middle ground where the seed is shared but mutable.
+* *`init.sql` runs once per Testcontainers start.* The example's container starts in `@BeforeAll` and stops in `@AfterAll`, so the whole test class shares the same database state. Tests that mutate the data (mutations, deletes) must order their assertions accordingly, or use a per-test transaction rollback. The example uses read-only queries in most tests; mutation tests assert on the post-mutation state.
+* *Generated facade name is `Graphitron`.* The class your tests import is the rewrite-generated `Graphitron` (default class name from the Mojo's `<outputPackage>`). Federation-bearing schemas produce a separate `Graphitron` in the federation output package; the example imports both via fully-qualified package names so the two facades coexist.
+* *Compilation tier covers "did the source compile"; execution tier covers "does it run".* Don't add execution tests for purely structural concerns (fields exist, types are reachable); the compilation tier already catches those, and execution tests are slower. Reach for execution-tier tests when the contract is "this request returns this row" or "this DataLoader batches these parents".
+
+== See also
+
+* `GraphQLQueryTest` (`graphitron-rewrite/graphitron-sakila-example/src/test/java/no/sikt/graphitron/rewrite/test/querydb/GraphQLQueryTest.java`) is the canonical template; copy its `@BeforeAll` setup.
+* `FederationEntitiesDispatchTest` (same package) covers the federation-side test pattern.
+* xref:../../architecture/getting-started.adoc#federation[Getting started: Federation] covers the framework-level wiring this recipe assumes is in place.
+* xref:handle-services.adoc[How-to: Handle services] covers the `@service` argument-binding contract that consumer tests exercise.
+* xref:error-channel.adoc[How-to: The errors channel] covers asserting on typed errors that flow through a payload's `errors:` field vs the framework redaction path.
+* xref:federation-keys.adoc[How-to: Federation key fields] covers the dispatch rules a federation-side test verifies.
+
+xref:index.adoc[← How-to index]
