@@ -72,4 +72,23 @@
         </dependency>
     </dependencies>
 
+    <build>
+        <plugins>
+            <plugin>
+                <!--
+                  tree-sitter's JNI bindings write a few bytes directly to native stdout,
+                  which corrupts Surefire's default stdout-based IPC channel and triggers
+                  "Corrupted channel by directly writing to native stream in forked JVM".
+                  Switch to TCP/IP-based fork-node IPC so the test JVM's stdout stays free
+                  for the native library.
+                -->
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <forkNode implementation="org.apache.maven.plugin.surefire.extensions.SurefireForkNodeFactory"/>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
 </project>
