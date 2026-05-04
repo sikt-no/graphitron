@@ -22,6 +22,15 @@
      * 48px on desktop. Inherits the design system's 45rem / 64rem breakpoints
      * from sds-core.css, so this var changes value without a media query. */
     --site-content-pad: var(--sds-space-padding-large);
+    /* SDS declares `color-scheme: light dark` and resolves every token via
+     * light-dark(), so a dark-mode browser would auto-flip the page palette.
+     * Rouge's inlined syntax-highlight stylesheet (source-highlighter: rouge)
+     * is tuned for a white background — dark-blue strings, dark-red keywords,
+     * mid-gray comments — which become illegible on the darkened <pre>. The
+     * rest of the site (hero band, admonitions, footer, callouts) is also
+     * only designed for light. Pin the whole site to light until a real
+     * dark theme exists. */
+    color-scheme: light;
 }
 
 html, body {
