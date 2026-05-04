@@ -1,7 +1,7 @@
 ---
 id: R61
 title: "Add Record1<T> source-shape support alongside Row1<T>"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 7
 theme: service
