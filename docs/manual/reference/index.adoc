@@ -6,7 +6,7 @@ Authoritative descriptions of every directive, every Maven plugin parameter, eve
 
 == Status: directive reference, in progress
 
-Fifteen of 26 directives are published below: the six tutorial-anchor mappings (`@table`, `@field`, `@reference`, `@multitableReference`, `@mutation`, `@service`), the five batch/sort directives (`@lookupKey`, `@orderBy`, `@order`, `@defaultOrder`, `@index`), the polymorphism pair (`@discriminate`, `@discriminator`), and the global-ID pair (`@node`, `@nodeId`). The remaining ~11 directives ship in subsequent commits of R68 Phase 2; their descriptions still live in the legacy https://github.com/sikt-no/graphitron/tree/main/graphitron-codegen-parent/graphitron-java-codegen/README.md[`graphitron-java-codegen` README] until they land here. The Mojo parameter reference, the runtime API reference, and the diagnostics glossary are authored in Phase 4 and Phase 5.
+Seventeen of 26 directives are published below: the six tutorial-anchor mappings (`@table`, `@field`, `@reference`, `@multitableReference`, `@mutation`, `@service`), the five batch/sort directives (`@lookupKey`, `@orderBy`, `@order`, `@defaultOrder`, `@index`), the polymorphism pair (`@discriminate`, `@discriminator`), the global-ID pair (`@node`, `@nodeId`), and the two carrier-mapping directives (`@enum`, `@record`). The remaining ~9 directives ship in subsequent commits of R68 Phase 2; their descriptions still live in the legacy https://github.com/sikt-no/graphitron/tree/main/graphitron-codegen-parent/graphitron-java-codegen/README.md[`graphitron-java-codegen` README] until they land here. The Mojo parameter reference, the runtime API reference, and the diagnostics glossary are authored in Phase 4 and Phase 5.
 
 The directive list below mirrors the rewrite's `directives.graphqls` and is therefore correct for the current branch even when an individual page is still pending.
 
@@ -21,7 +21,7 @@ a|
 * xref:directives/defaultOrder.adoc[`@defaultOrder`]
 * xref:directives/discriminate.adoc[`@discriminate`]
 * xref:directives/discriminator.adoc[`@discriminator`]
-* `@enum` _(pending)_
+* xref:directives/enum.adoc[`@enum`]
 * `@error` _(pending)_
 * `@experimental_constructType` _(pending)_
 * `@externalField` _(pending)_
@@ -35,7 +35,7 @@ a|
 * `@notGenerated` _(pending; rejected, remove from the schema)_
 * xref:directives/order.adoc[`@order`]
 * xref:directives/orderBy.adoc[`@orderBy`]
-* `@record` _(pending)_
+* xref:directives/record.adoc[`@record`]
 * xref:directives/reference.adoc[`@reference`]
 * xref:directives/service.adoc[`@service`]
 * `@splitQuery` _(pending)_
@@ -46,7 +46,7 @@ a|
 === By category
 
 *Mapping* +
-xref:directives/table.adoc[`@table`], xref:directives/field.adoc[`@field`], `@enum`, `@record`
+xref:directives/table.adoc[`@table`], xref:directives/field.adoc[`@field`], xref:directives/enum.adoc[`@enum`], xref:directives/record.adoc[`@record`]
 
 *Joining* +
 xref:directives/reference.adoc[`@reference`], xref:directives/multitableReference.adoc[`@multitableReference`], `@batchKeyLifter`
