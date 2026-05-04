@@ -11,7 +11,7 @@ import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import java.util.List;
 import java.util.Map;
@@ -34,9 +34,10 @@ import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
  * <p>This verifies that the generated code actually works — not just that it compiles.
  */
 @ExecutionTier
+@SuppressWarnings("unchecked") // GraphQL responses are Map<String, Object>; casts to typed shapes are inherent to the assertion style
 class GraphQLQueryTest {
 
-    static PostgreSQLContainer<?> postgres;
+    static PostgreSQLContainer postgres;
     static DSLContext dsl;
     static GraphQL graphql;
     static final AtomicInteger QUERY_COUNT = new AtomicInteger();
@@ -55,7 +56,7 @@ class GraphQLQueryTest {
             var pass = System.getProperty("test.db.password", "postgres");
             dsl = DSL.using(localUrl, user, pass);
         } else {
-            postgres = new PostgreSQLContainer<>("postgres:18-alpine")
+            postgres = new PostgreSQLContainer("postgres:18-alpine")
                 .withInitScript("init.sql");
             postgres.start();
             dsl = DSL.using(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
@@ -66,7 +67,7 @@ class GraphQLQueryTest {
         // listener captures the rendered SQL of every statement into SQL_LOG; the totalCount
         // lazy-on-selection test asserts that no `select count` ran when the field wasn't picked.
         dsl.configuration().set(new org.jooq.impl.DefaultExecuteListenerProvider(
-            new org.jooq.impl.DefaultExecuteListener() {
+            new org.jooq.ExecuteListener() {
                 @Override
                 public void executeStart(org.jooq.ExecuteContext ctx) {
                     QUERY_COUNT.incrementAndGet();

@@ -470,7 +470,7 @@ class ServiceCatalogTest {
 
         assertThat(result.failed()).isFalse();
         // Captured return is the wider Table<?> raw class; the model still records it faithfully.
-        assertThat(((TypeName) result.ref().returnType()).toString()).isEqualTo("org.jooq.Table");
+        assertThat(result.ref().returnType().toString()).isEqualTo("org.jooq.Table");
     }
 
     // ===== R12 §4 declared-exception capture =====

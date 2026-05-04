@@ -74,14 +74,6 @@ class BatchKeyTest {
     }
 
     /**
-     * The sealed switch over {@link BatchKey.RecordParentBatchKey} is exhaustive across the
-     * four permits at compile time. This test is a pattern-matching switch with no
-     * {@code default} arm: if a future fifth permit is added without updating the switch, the
-     * test source fails to compile, surfacing the gap at the same site (and on the same build)
-     * the production switch does. A redundant runtime {@code default -> fail()} would only
-     * fire on shapes the compiler already rejects, so it adds no signal.
-     */
-    /**
      * Pins the post-R61 shape map across the seven {@link BatchKey} variants:
      * <ul>
      *   <li>{@link BatchKey.RowKeyed}, {@link BatchKey.MappedRowKeyed}, {@link BatchKey.LifterRowKeyed}
@@ -147,6 +139,14 @@ class BatchKeyTest {
             .isEqualTo("java.util.List<org.jooq.Record1<java.lang.Integer>>");
     }
 
+    /**
+     * The sealed switch over {@link BatchKey.RecordParentBatchKey} is exhaustive across the
+     * four permits at compile time. This test is a pattern-matching switch with no
+     * {@code default} arm: if a future fifth permit is added without updating the switch, the
+     * test source fails to compile, surfacing the gap at the same site (and on the same build)
+     * the production switch does. A redundant runtime {@code default -> fail()} would only
+     * fire on shapes the compiler already rejects, so it adds no signal.
+     */
     @Test
     void recordParentBatchKeyExhaustiveSwitchCompilesAcrossAllFourPermits() {
         BatchKey.RecordParentBatchKey row = new BatchKey.RowKeyed(List.of(FILM_ID));

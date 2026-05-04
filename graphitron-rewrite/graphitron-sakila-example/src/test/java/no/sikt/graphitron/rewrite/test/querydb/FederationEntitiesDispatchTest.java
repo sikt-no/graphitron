@@ -12,7 +12,7 @@ import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import java.util.List;
 import java.util.Map;
@@ -29,7 +29,7 @@ import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 @ExecutionTier
 class FederationEntitiesDispatchTest {
 
-    static PostgreSQLContainer<?> postgres;
+    static PostgreSQLContainer postgres;
     static DSLContext dsl;
     static GraphQL graphql;
     static final java.util.concurrent.atomic.AtomicInteger QUERY_COUNT = new java.util.concurrent.atomic.AtomicInteger();
@@ -43,13 +43,13 @@ class FederationEntitiesDispatchTest {
             var pass = System.getProperty("test.db.password", "postgres");
             dsl = DSL.using(localUrl, user, pass);
         } else {
-            postgres = new PostgreSQLContainer<>("postgres:18-alpine")
+            postgres = new PostgreSQLContainer("postgres:18-alpine")
                 .withInitScript("init.sql");
             postgres.start();
             dsl = DSL.using(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
         }
         dsl.configuration().set(new org.jooq.impl.DefaultExecuteListenerProvider(
-            new org.jooq.impl.DefaultExecuteListener() {
+            new org.jooq.ExecuteListener() {
                 @Override
                 public void executeStart(org.jooq.ExecuteContext ctx) {
                     QUERY_COUNT.incrementAndGet();

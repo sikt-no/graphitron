@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.generators.util;
 
+import no.sikt.graphitron.javapoet.AnnotationSpec;
 import no.sikt.graphitron.javapoet.ArrayTypeName;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.MethodSpec;
@@ -299,8 +300,16 @@ public class ConnectionHelperClassGenerator {
             .addStatement("return (($L) env.getSource()).cursor()", "Edge")
             .build();
 
+        // decodeCursor binds wire-format String tokens via DataType.convert(Object), which
+        // jOOQ deprecated for removal in 3.20.0. The recommended replacement does not accept
+        // Object input, and the only public Object→T coercion path (org.jooq.tools.Convert)
+        // is itself marked for removal. Suppress until jOOQ ships a public successor.
+        var suppressRemoval = AnnotationSpec.builder(SuppressWarnings.class)
+            .addMember("value", "{$S, $S}", "deprecation", "removal")
+            .build();
         var spec = TypeSpec.classBuilder(CLASS_NAME)
             .addModifiers(Modifier.PUBLIC)
+            .addAnnotation(suppressRemoval)
             .addType(edgeClass)
             .addType(pageRequestClass)
             .addMethod(encodeCursor)

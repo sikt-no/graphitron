@@ -251,7 +251,7 @@ public final class ObjectTypeGenerator {
         var block = CodeBlock.builder()
             .add("$T.newArgument()", ARGUMENT)
             .add(".name($S)", arg.getName())
-            .add(".type(").add(buildInputTypeRef((graphql.schema.GraphQLInputType) arg.getType())).add(")");
+            .add(".type(").add(buildInputTypeRef(arg.getType())).add(")");
         if (arg.getDescription() != null && !arg.getDescription().isEmpty()) {
             block.add(".description($S)", arg.getDescription());
         }
