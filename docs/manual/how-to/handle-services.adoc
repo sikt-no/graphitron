@@ -1,0 +1,239 @@
+= How-to: Handle services
+:description: Bind GraphQL arguments to Java parameters, shape the service response so the framework recognises it, and wire @service onto a child field via @splitQuery.
+:!toc:
+
+xref:../reference/directives/service.adoc[`@service`] hands the database operation for a field off to a custom Java method. The reference page covers signature, the `argMapping:` syntax, and the constraints. This recipe addresses the three operational topics it defers: how arguments (including nested input types and request-context values) flow into Java parameters, what return shapes the framework recognises and how to choose among them, and the contract the rewrite imposes when `@service` lands on a non-root field.
+
+For the surrounding context (when to reach for `@service` vs xref:../reference/directives/mutation.adoc[`@mutation`] vs xref:../reference/directives/tableMethod.adoc[`@tableMethod`]) see the reference's "Constraints" section. This recipe assumes the choice is already made.
+
+== Argument binding: from GraphQL to Java parameters
+
+The framework constructs the service class with whatever it can resolve from the request context (a `DSLContext` for the request's database session is the most common parameter), then calls the named method. Each remaining Java parameter is supplied from one of three sources:
+
+* *A GraphQL argument*, by name. The Java parameter `ids` matches the GraphQL argument `ids: [Int!]!`.
+* *An `argMapping:` rebinding.* `argMapping: "filmIds: ids"` means "the Java parameter `filmIds` receives the value of the GraphQL argument `ids`". Multiple entries are comma-separated; whitespace is tolerated.
+* *A request-context value*, when the parameter name matches an entry in `contextArguments:`. Each named value is pulled from the request `GraphQLContext` per request and threaded into the call as an additional argument.
+
+The example schema's three root services exercise the first two sources:
+
+[source,graphql]
+----
+type Query {
+    filmsByService(ids: [Int!]!): [Film!]!
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
+            method: "filmsByService"
+        })
+
+    filmsByServiceRenamed(ids: [Int!]!): [Film!]!
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
+            method: "filmsByServiceRenamed",
+            argMapping: "filmIds: ids"
+        })
+}
+----
+
+The Java surface:
+
+[source,java]
+----
+public static Result<FilmRecord> filmsByService(DSLContext dsl, List<Integer> ids) { ... }
+public static Result<FilmRecord> filmsByServiceRenamed(DSLContext dsl, List<Integer> filmIds) { ... }
+----
+
+Both bind the `[Int!]!` argument to the method's `List<Integer>` parameter; the rename version reads more naturally on the Java side because `filmIds` is unambiguous in a class that handles many entity types. Use `argMapping:` when the Java method's signature already exists with a name you cannot change (e.g., a shared service class) or when the GraphQL argument's name is opaque (e.g. `id` on an interface) and the Java side wants more specificity.
+
+=== Nested input types
+
+When a field takes an input-type argument, the framework passes the input through as a single Java parameter, not flattened into per-field parameters. A field declared as
+
+[source,graphql]
+----
+createFilm(in: FilmCreateInput!): Film
+    @service(service: {className: "...", method: "createFilm"})
+----
+
+binds to
+
+[source,java]
+----
+public static FilmRecord createFilm(DSLContext dsl, FilmCreateInput in) { ... }
+----
+
+where `FilmCreateInput` is a Java class (or `@record`-bound record) whose components correspond to the input-type's fields. graphql-java does the input deserialisation; the framework just hands the resulting object to the method. The Java side reads `in.title()`, `in.languageId()`, etc.
+
+If the input type is `@record`-bound (i.e. `input FilmCreateInput @record(record: {className: "..."})`), the backing class is the canonical home for the input shape. Without `@record`, the framework's input projection produces an `ImmutableMap<String, Object>` that the Java method must read by key; the typed-record shape is strongly preferred.
+
+`argMapping:` works for input arguments the same way it works for scalars: `argMapping: "input: in"` rebinds the Java parameter name. Field-level rebinding inside the input type is not part of `@service`'s surface; that's the input type's own concern (see xref:../reference/directives/field.adoc[`@field`] on input fields).
+
+=== `contextArguments`: pulling from request state
+
+`contextArguments:` is for values that aren't GraphQL arguments but live on the per-request `GraphQLContext`: tenant IDs, authenticated principals, feature-flag snapshots. Declaring `contextArguments: ["tenantId"]` in the directive means the framework looks up `env.getGraphQlContext().get("tenantId")` and threads the result as an additional Java parameter named `tenantId`:
+
+[source,graphql]
+----
+filmsForTenant(genre: String): [Film!]!
+    @service(
+        service: {className: "...", method: "filmsForTenant"},
+        contextArguments: ["tenantId"]
+    )
+----
+
+[source,java]
+----
+public static Result<FilmRecord> filmsForTenant(DSLContext dsl, String tenantId, String genre) { ... }
+----
+
+The runtime contract is "your servlet or webfilter must place each named value on the request context before the resolver runs". The framework does not validate context arguments at startup; a missing context value yields `null` at call time, which most code will then throw on. The classifier does check that the parameter exists on the Java method's signature.
+
+== Response shapes the framework recognises
+
+A `@service` method is opaque to the generator: no SQL is spliced, no projection is grafted on. The classifier inspects the *return type* and routes the result through one of four runtime paths.
+
+=== `Result<TableRecord>` (or `List<TableRecord>`): direct hand-off
+
+[source,java]
+----
+public static Result<FilmRecord> filmsByService(DSLContext dsl, List<Integer> ids) {
+    return dsl.selectFrom(Tables.FILM)
+        .where(Tables.FILM.FILM_ID.in(ids))
+        .orderBy(Tables.FILM.FILM_ID)
+        .fetch();
+}
+----
+
+When the return type is bound to a `@table` GraphQL type and the Java return is a `Result<X>` (or `List<X>`) of jOOQ records, the framework treats the records as already-projected rows and hands them straight to graphql-java. Each record carries every column the table emits; the per-field column fetchers walk the record without an additional SELECT.
+
+This is the right shape when the service has already produced the rows you want returned and no further projection is needed. The trade-off: the service is responsible for selecting *every column* the schema may eventually ask for. A field added to the GraphQL type later will read `null` from records that didn't include that column.
+
+=== Scalar return: graphql-java coerces
+
+[source,java]
+----
+public static Integer filmCount(DSLContext dsl) {
+    return dsl.fetchCount(Tables.FILM);
+}
+----
+
+When the return type is a non-table GraphQL scalar (or list of scalars), the Java return must be a value graphql-java can coerce. The framework wraps the result in a `DataFetcherResult` and lets graphql-java apply scalar coercion (e.g. `Integer` → `Int!`, `BigDecimal` → `Float`). No projection or batching is involved.
+
+=== `@record`-bound payload: accessor-derived or lifter-driven
+
+When the return type is a `@record` type (a custom payload), each row in the service's result has children that the framework still resolves. Two paths drive the child-fetch dispatch:
+
+* *Auto-derived from accessor.* If the payload's canonical record-component accessor returns the right shape (a `TableRecord` subclass, `List<TableRecord>`, or `Set<TableRecord>` whose element matches the child field's `@table`), the classifier auto-derives a `BatchKey.AccessorKeyedSingle`/`AccessorKeyedMany` for the field. No extra directive is needed.
+* *Explicit `@batchKeyLifter`.* When the catalog cannot derive the key (e.g. the payload carries a raw FK column instead of a typed record), declare a lifter that takes the parent and returns a `RowN` of the FK column values.
+
+The `recentlyCreatedFilms` example exercises the lifter path:
+
+[source,graphql]
+----
+type CreateFilmPayload @record(record: {className: "...CreateFilmPayload"}) {
+    languageId: Int!
+    language: [Language!]!
+        @batchKeyLifter(
+            lifter: {className: "...CreateFilmPayloadLifter", method: "liftLanguageId"},
+            targetColumns: ["language_id"]
+        )
+}
+
+type Query {
+    recentlyCreatedFilms: [CreateFilmPayload!]!
+        @service(service: {className: "...CreateFilmPayloadService", method: "recentlyCreatedFilms"})
+}
+----
+
+The service hand-rolls three payloads with `languageId`s `(1, 2, 1)`. The framework's lifter-driven `DataLoader` dispatches one batched language lookup with the deduplicated key set `{1, 2}`, not three. The full decision tree for which path applies (and the four backing-class variants) lives in xref:result-types.adoc[How-to: Result-type variants].
+
+=== `Map<Key, Value>`: child `@service` with the mapped-batch shape
+
+For `@service` on a child field (under `@splitQuery`, see next section), the return shape is a `Map<Key, Value>` indexed by the parent-key shape the classifier expects. The example schema's `FilmService.titleUppercase` exercises the `Record1<Integer>` arm:
+
+[source,java]
+----
+public static Map<Record1<Integer>, String> titleUppercase(Set<Record1<Integer>> filmIds, DSLContext dsl) {
+    List<Integer> ids = filmIds.stream().map(Record1::value1).toList();
+    Map<Integer, String> titlesById = dsl
+        .select(Film.FILM.FILM_ID, Film.FILM.TITLE)
+        .from(Film.FILM)
+        .where(Film.FILM.FILM_ID.in(ids))
+        .fetchMap(Film.FILM.FILM_ID, Film.FILM.TITLE);
+
+    Map<Record1<Integer>, String> result = new LinkedHashMap<>();
+    for (Record1<Integer> key : filmIds) {
+        result.put(key, titlesById.getOrDefault(key.value1(), "").toUpperCase());
+    }
+    return result;
+}
+----
+
+The `Set<Record1<Integer>>` parameter is the framework's batch: one entry per distinct parent the request touched. The returned `Map`'s keys must be the same instances (or value-equal substitutes) the framework supplied; the framework reads each parent's value out of the map by lookup. Missing keys yield `null` for the field on that parent.
+
+The accepted source shapes are `Set<Row<N>>`, `Set<Record<N>>`, and `Set<X extends TableRecord>`. The corresponding `BatchKey` variants (`MappedRowKeyed`, `MappedRecordKeyed`, `MappedTableRecordKeyed`) are emitted by `ServiceCatalog.classifySourcesType:600-639` based on the parameter's reflected type. `Row<N>` works (use `DSL.row(value)` to construct keys back); `Record<N>` lets you call `.value1()`/`.value2()` to extract column values directly; the typed-record arm hands you fully-populated parent records when the parent has a `@table`.
+
+== `@service` on a child field: the `@splitQuery` contract
+
+`@service` on a non-root field is allowed *only* under `@splitQuery`. Without it, the field's parent is fetched first as a single SQL pass and there is no batch dispatch shape; the classifier rejects the schema at build time.
+
+Under `@splitQuery`, the runtime contract is:
+
+. The framework runs the parent query first. The parent's selection set is collected into a `Set<KeyType>` where `KeyType` is one of `Row<N>` / `Record<N>` / a typed `TableRecord`. The `Set` carries only the parent's primary-key columns by default; it does not carry the rest of the parent's projected columns (the framework hasn't fetched them yet on the typed-record arm, though the typed-record arm is special-cased, see below).
+. The framework dispatches the child `@service` once per request with that `Set`.
+. The service returns a `Map<KeyType, ChildValue>`. The framework reads each parent's value from the map and resolves the child for that parent.
+
+The example schema wires three sibling `@service` children on `Film` for the three accepted source shapes:
+
+[source,graphql]
+----
+type Film @table(name: "film") {
+    titleUppercase: String @service(service: {className: "...FilmService", method: "titleUppercase"})
+    titleLowercase: String @service(service: {className: "...FilmService", method: "titleLowercase"})
+    titleTitlecase: String @service(service: {className: "...FilmService", method: "titleTitlecase"})
+}
+----
+
+[source,java]
+----
+public static Map<Record1<Integer>, String> titleUppercase(Set<Record1<Integer>> filmIds, DSLContext dsl) { ... }
+public static Map<Row1<Integer>,    String> titleLowercase(Set<Row1<Integer>>    filmIds, DSLContext dsl) { ... }
+public static Map<FilmRecord,       String> titleTitlecase(Set<FilmRecord>       films) { ... }
+----
+
+The classifier picks the variant by inspecting the `Set<E>`'s element type:
+
+* `Row<N>` → `MappedRowKeyed`. Keys carry no value accessors; reconstruct keys with `DSL.row(value)` if you need to read or rebuild them. Use this when the SQL side composes against the row (`DSL.row(FILM_ID).in(filmIds)`).
+* `Record<N>` → `MappedRecordKeyed`. Keys expose `.value1()`/`.value2()`/etc. Use this when the body needs to extract column values from each key.
+* `X extends TableRecord` → `MappedTableRecordKeyed`. The framework supplies fully-populated parent records (every column on the parent table), extracted via `env.getSource().into(Tables.FILM)`. Use this when the body needs columns beyond the parent's PK; `titleTitlecase` reads `film.getTitle()` straight off the record without a SELECT.
+
+The typed-record arm is the most powerful and the easiest to misuse: the framework supplies the parent's full record, but the parent record's columns came from whatever projection the parent's own fetcher emitted. If the parent is a synthesised connection, every column is present; if the parent is itself a `@service` returning a hand-rolled record, only the columns the service populated are populated. Plan accordingly.
+
+=== One DataLoader per request, per field
+
+The dispatch is `DataLoader`-batched: one invocation of the service method per request per field, regardless of how many parents the request touches. The cache key is path-scoped, request-scoped, and tenant-prefixed (see xref:split-vs-inline.adoc[How-to: When to split queries] for the full key shape and the consequences for aliased uses).
+
+The performance shape: one `Set<Key>`-input call, one `Map<Key, Value>`-output result, regardless of fan-out. A request that touches 200 films sees one `titleUppercase` invocation with a 200-element `Set`, not 200 calls; missing keys in the returned `Map` yield `null` for that parent's field.
+
+== Pitfalls
+
+* *Argument binding is by name.* GraphQL argument `ids` binds to Java parameter `ids` by default; rename via `argMapping:` when the Java method's parameter has a different name. Mismatches are caught at build time.
+* *Input types pass through whole.* A `FilmCreateInput!` argument becomes one Java parameter, not flattened into per-field parameters. Read the input's components on the Java side. Prefer `@record`-bound input types over the untyped `Map<String, Object>` projection.
+* *`contextArguments:` requires the request layer to set them.* The framework reads `env.getGraphQlContext().get(name)`; if the servlet/filter doesn't put the value there, the parameter is `null` at call time. The classifier doesn't validate the value is set; only that the Java parameter named to receive it exists.
+* *Non-root `@service` requires `@splitQuery`.* The classifier rejects a child `@service` without it. The shape on the child is `Set<Key>` → `Map<Key, Value>`, not `(Parent, Args) → Value`. Single-statement nested resolution is not supported on the service path.
+* *Map keys must round-trip.* The returned `Map` is read by `framework-supplied Set` element. If your body constructs new keys (not `Row<N>` instances backed by the same value-equals semantics), the lookup misses and the field returns `null` for every parent. Prefer to rebuild keys from the framework's `Set` rather than constructing fresh ones.
+* *`Result<TableRecord>` returns skip framework projection.* The service is responsible for selecting every column the schema may eventually ask for. A schema field added later that reads a column the service didn't include returns `null` from records that lack it.
+* *Child fields without typed-record source-shape pay an extra fetch.* `Row<N>`/`Record<N>` shapes do not carry parent column data; the body must SELECT what it needs. The typed-`TableRecord` shape is the only one where the framework supplies fully-populated parent records.
+* *Conditions on a `@service` field are ignored.* The reference is explicit: the generator does not splice generated SQL into a custom method's body. If the service needs filtering, take the filter as an argument or read it from the input type.
+* *`@service` and xref:../reference/directives/mutation.adoc[`@mutation`] are mutually exclusive.* One field can have one or the other, never both. Use `@mutation` when the framework should generate the INSERT/UPDATE/UPSERT; use `@service` when you need custom logic.
+
+== See also
+
+* xref:../reference/directives/service.adoc[`@service`] is the directive surface; this recipe expands its three deferred topics.
+* xref:../reference/directives/mutation.adoc[`@mutation`] for the framework-generated alternative on root mutation fields.
+* xref:../reference/directives/tableMethod.adoc[`@tableMethod`] for the lighter-weight "developer returns a `Table`, framework projects" variant.
+* xref:../reference/directives/splitQuery.adoc[`@splitQuery`] is the per-parent batch wrapper non-root services require.
+* xref:result-types.adoc[How-to: Result-type variants] covers the `@record` payload backing-class shape that the classifier reflects on to find children.
+* xref:split-vs-inline.adoc[How-to: When to split queries] covers the `DataLoader` cache-key shape and the aliased-uses-don't-share-batches consequence.
+* xref:error-channel.adoc[How-to: The errors channel] covers turning service-thrown exceptions into typed errors on a payload's `errors:` field.
+
+xref:index.adoc[← How-to index]
