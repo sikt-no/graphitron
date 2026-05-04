@@ -851,10 +851,6 @@ class FieldBuilder {
                 "column '" + columnName + "' could not be resolved in table '" + rt.tableName() + "'"
                     + candidateHint(columnName, ctx.catalog.columnJavaNamesOf(rt.tableName())));
         }
-        if (!columnName.equals(col.get().javaName())) {
-            LOG.warn("@field(name: '{}') on arg '{}' resolved via SQL name; prefer Java field name '{}'",
-                columnName, name, col.get().javaName());
-        }
         var columnRef = new ColumnRef(col.get().sqlName(), col.get().javaName(), col.get().columnClass());
         String enumClassName;
         switch (enumMappingResolver.validateEnumFilter(typeName, columnRef)) {
@@ -3113,10 +3109,6 @@ class FieldBuilder {
                     "column '" + columnName + "' could not be resolved in the jOOQ table",
                     columnName, candidates));
             }
-            if (!columnName.equals(column.get().javaName())) {
-                LOG.warn("@field(name: '{}') on field '{}.{}' resolved via SQL name; prefer Java field name '{}'",
-                    columnName, parentTypeName, name, column.get().javaName());
-            }
             return new ColumnReferenceField(parentTypeName, name, location, columnName, column.get(), refPath.elements(),
                 new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct());
         }
@@ -3143,10 +3135,6 @@ class FieldBuilder {
             return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.unknownColumn(
                 "column '" + columnName + "' could not be resolved in the jOOQ table",
                 columnName, ctx.catalog.columnJavaNamesOf(tableSqlName)));
-        }
-        if (!columnName.equals(column.get().javaName())) {
-            LOG.warn("@field(name: '{}') on field '{}.{}' resolved via SQL name; prefer Java field name '{}'",
-                columnName, parentTypeName, name, column.get().javaName());
         }
         return new ColumnField(parentTypeName, name, location, columnName, column.get(),
             new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct());
