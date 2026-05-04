@@ -2,7 +2,7 @@
 :description: Send a GraphQL query to the running Quarkus app and see PostgreSQL rows in the response.
 :!toc:
 
-With the server from xref:01-prerequisites.adoc[page 1] still running on `http://localhost:8080`, open a second terminal and send a query.
+With the server from xref:01-prerequisites.adoc[page 1] still running on `http://localhost:8080`, open a second terminal and send a query. (If you prefer the in-browser GraphiQL playground, open `http://localhost:8080/graphiql/` and paste the query body into the left pane instead of running curl.)
 
 == Send the query
 
