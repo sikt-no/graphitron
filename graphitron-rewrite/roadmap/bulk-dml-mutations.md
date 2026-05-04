@@ -335,8 +335,13 @@ sharpening.
 - Add new structural Invariant #15 by widening
   `MutationInputResolver.validateReturnType` to take a third arg
   `boolean listInput` and rejecting `listInput && !returnType.wrapper().isList()`
-  alongside today's #14 cases. That's the existing #14 home, called
-  from one site in `FieldBuilder.classifyMutationField`
+  on the `ScalarReturnType` and `TableBoundReturnType` arms only.
+  `ResultReturnType` is explicitly excluded from #15 so bulk-input +
+  single-payload (e.g. `[FilmInput!]! → FilmPayload`) falls through to
+  the deferred rejection in `FieldBuilder.buildDmlField` (see Payload
+  bullet below); bulk-input + list-payload is still caught by today's
+  #14 `r.wrapper().isList()` arm. The widened method is called from
+  one site in `FieldBuilder.classifyMutationField`
   ([line 2374](../graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java));
   pass `tia.list()` through. The rule is verb-neutral, so it lives
   upstream of the four `case INSERT/UPDATE/DELETE/UPSERT` arms rather
@@ -435,7 +440,10 @@ sharpening.
   delete the `foundTia.list()` rejection arm (line 250-255).
 - [`MutationInputResolver.validateReturnType`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/MutationInputResolver.java) —
   widen the signature to `(returnType, kind, boolean listInput)` and
-  add Invariant #15 (bulk-input + single-return rejection). Stays
+  add Invariant #15 (bulk-input + single-return rejection) on the
+  `ScalarReturnType` and `TableBoundReturnType` arms only.
+  `ResultReturnType` is excluded so bulk-input + single-payload routes
+  to the deferred rejection in `FieldBuilder.buildDmlField`. Stays
   purely structural; the deferred Payload+list rejection lands in
   `FieldBuilder.buildDmlField` instead (see below).
 - [`FieldBuilder.classifyMutationField`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java) —
@@ -501,7 +509,8 @@ sharpening.
   - `deleteFilms(in: [FilmDeleteInput!]!): [ID!]! @mutation(typeName: DELETE)`
 
   `FilmDeleteInput` is new — `@table(name: "film")` carrying a single
-  `filmId: ID! @lookupKey` field. (Sakila has no single-row DELETE
+  `filmId: Int! @field(name: "film_id") @lookupKey` field, matching the
+  existing `FilmUpdateInput` shape. (Sakila has no single-row DELETE
   mutation today; this surface is the first DELETE test fixture.)
   The four return shapes deliberately mix `[Film!]!` (`ProjectedList`)
   and `[ID!]!` (`EncodedList`) so the execution tests cover both
@@ -518,7 +527,17 @@ The `@DependsOnClassifierCheck` annotations on the four
 `buildMutation*Fetcher` methods are the canonical home for invariant
 guarantees the emitter relies on (the R22-era `roadmap/mutations.md`
 plan file was deleted on Done; cite the changelog and these
-annotations rather than the missing file). The four annotations'
+annotations rather than the missing file). Two stale Javadoc
+references to that deleted file survive on trunk and should be
+cleaned up in the same pass:
+[`DmlReturnExpression.java:10-23`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/model/DmlReturnExpression.java)
+("defined by Invariant #14 in `graphitron-rewrite/roadmap/mutations.md`")
+and the `buildMutationUpdateFetcher` method Javadoc at
+[`TypeFetcherGenerator.java:1448`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java)
+("See `graphitron-rewrite/roadmap/mutations.md` Phase 4"). Reword to
+cite Invariant #14/#15 directly without the missing file path.
+
+The four annotations'
 existing `reliesOn` strings each carry a monolithic clause like
 "casts `env.getArgument(tia.name())` to `Map<?,?>` with no guard";
 rewrite each as a `tia.list()` conditional — "casts to `Map<?,?>`
