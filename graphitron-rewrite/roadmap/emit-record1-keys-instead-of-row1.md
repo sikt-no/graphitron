@@ -1,7 +1,7 @@
 ---
 id: R61
 title: "Emit Record1<T> instead of Row1<T> for single-column DataLoader keys"
-status: In Review
+status: In Progress
 bucket: architecture
 priority: 7
 theme: service
@@ -29,7 +29,14 @@ Four `BatchKey` arms whose key-extraction site has a jOOQ `Record` source availa
 
 After this iteration, six of seven variants surface `RecordN` keys at the rows-method boundary. The seventh (`LifterRowKeyed`) stays on `RowN`; that asymmetry is intentional and tracked under the deferred follow-up below.
 
-Consumer-visible behavior change: a `@service` rows-method that signs `Set<Row1<Integer>> keys` against a `MappedRowKeyed` field will fail classification with the existing strict-return check after the flip; the validator's expected outer shape changes from `Map<Row1<Integer>, V>` to `Map<Record1<Integer>, V>`. The migration is mechanical (replace `Row1` with `Record1` in the developer's source-shape declarations); the existing `Set<Record1<Integer>>` workaround keeps classifying unchanged.
+R61 *adds* `RecordN` to the developer-facing surface; it does not replace `RowN`. A `@service` rows-method may still sign its source declaration with `Set<Row1<Integer>>` / `List<Row1<Integer>>` / the matching `Map<Row1<Integer>, V>` return; both shapes classify and dispatch cleanly. The framework emits `Record<N>` keys uniformly at the data-fetcher boundary and adapts at the developer-method call site:
+
+- The strict-return check at the @service classifier accepts either `Row<N>` or `Record<N>` at the key position (in the source-list element, the mapped-set element, and the mapped-Map key).
+- At the BatchLoader call site, when the developer's signature picked `Row<N>`, the framework converts the `Record<N>` keys via `Record::valuesRow` before invocation. `Record<N>.valuesRow()` returns a `Row<N>` whose `field<N>()` accessors carry the inline values (not column references), which is what the Row contract specifies.
+- For mapped-shape returns (`Map<Row<N>, V>` from the developer): the framework looks up each input `Record<N>`'s response by `record.valuesRow()` against the developer's map. jOOQ's `Row.equals` / `hashCode` are value-based, so the lookup composes.
+- For positional returns (`List<List<Record>>` / `List<Record>` etc.), there is no key in the return shape; no back-conversion needed.
+
+Developers thus pick the surface they want: `Set<Record1<Integer>>` for `value1()` access, `Set<Row1<Integer>>` for the lighter Row API.
 
 ## Out of scope (deferred)
 
@@ -48,15 +55,24 @@ Two arms cannot flip in this iteration without out-of-band changes; they're trac
 6. **Classifier rejection for the deferred combo.** In `FieldBuilder.deriveBatchKeyForResultType` (`FieldBuilder.java:2703-2712` — the sole site that constructs a `RowKeyed` for a `RecordParentBatchKey` parent today), reject the `JavaRecordType` / `PojoResultType` parent combination with a structured `Rejection` whose message names the deferred follow-up slug. The current null-return arm for untyped `PojoResultType` (`fqClassName() == null` at line 2708) stays; the new rejection covers the typed `JavaRecordType` and typed `PojoResultType` cases. Sibling unit-test coverage in the existing `*ValidationTest` set.
 7. **`GeneratorUtils.buildAccessorRowKeySingle` / `Many`.** Replace `DSL.row(__elt.<getter>(), ...)` with `__elt.into(table.col1, ...)`. The `__elt` local stays a typed `TableRecord`; `Record.into(Field<T1>, Field<T2>, ...)` returns the corresponding `RecordN`.
 8. **`@DependsOnClassifierCheck` annotation refresh.** The two checks under `buildAccessorRowKeySingle` / `Many` reference column accessors via `recordGetter(...)` ("javaName().") in their `reliesOn` text; update to reflect the `Field`-typed `into(...)` projection.
+9. **Validator: relax the @service strict-shape check at the key position.** The check that validates the developer's source-method signature against `BatchKey.keyElementType()` accepts either `Row<N>` or `Record<N>` at every key-typed slot:
+   - source-list element (`List<Row<N>>` / `List<Record<N>>`),
+   - mapped-set element (`Set<Row<N>>` / `Set<Record<N>>`),
+   - mapped-Map key position (`Map<Row<N>, V>` / `Map<Record<N>, V>` in the developer's return type).
+   The shape check still pins `N`, the column-class tuple, and the container axis (`List` vs `Set` vs `Map`); only the element/key Row-vs-Record axis becomes free. Capture the developer's choice on the BatchKey or on a sibling carrier so the dispatch site (step 10) can fork.
+10. **Dispatch-site `valuesRow` adapter.** At the BatchLoader call site emitted by `TypeFetcherGenerator`, when the developer's signature picked `Row<N>` (per step 9):
+    - **Forward** (framework `Set<Record<N>>` / `List<Record<N>>` → developer's `Set<Row<N>>` / `List<Row<N>>`): emit `keys.stream().map($T::valuesRow).collect(...)` before the developer-method invocation.
+    - **Mapped return** (developer's `Map<Row<N>, V>` → framework's `Map<Record<N>, V>` for the loader): for each input `Record<N>` in the original key set, look up its value via `developerMap.get(record.valuesRow())` and rebuild the loader-shaped Map. jOOQ's `Row.equals` / `hashCode` are value-based, so the lookup composes.
+    - **Positional return** (`List<List<Record>>` / `List<Record>`): no key in the return shape; no back-conversion needed.
 
 ## Tests
 
 - **L1 (`BatchKeyTest`).** Update `accessorRowKeyedSingleJavaTypeNameForSingleColumnPk` and `accessorRowKeyedManyJavaTypeNameForCompositePk` expectations to `Record1<...>` / `Record2<...>`.
 - **L1 (new).** `BatchKey.keyElementType()` / `javaTypeName()` per variant: `LifterRowKeyed` stays `Row1<...>`; the other six arms return the `RecordN` shape. Captures the post-R61 asymmetry directly.
-- **L3 (validator).** `ServiceFieldValidationTest`, `SplitTableFieldValidationTest`: existing strict-return cases that hard-code `Row1<...>` / `Row2<...>` expectations refresh to `Record1<...>` / `Record2<...>`. New rejection case for `RowKeyed` + `JavaRecordType` / `PojoResultType` parent.
-- **L4 (pipeline).** `ServiceRootFetcherPipelineTest`, `FetcherPipelineTest`, `SplitTableFieldPipelineTest`: snapshot or structural assertions on emitted rows-method signatures and key-extraction code refresh to `Record1<...>` / `record.into(...)`. `SplitTableFieldPipelineTest:90` (the `java.util.List<org.jooq.Row1<java.lang.Integer>>` literal) is one anchor.
-- **L5 (compile spec).** `TestServiceStub.java` source-shape stubs that take `List<Row1<Integer>>` flip to `List<Record1<Integer>>` (or stay on the `Record1` variants where they already do). The fixture `getFilmsWithSetOfRow1Sources` flips into a deliberately-mismatched validator case (now expected to reject) or refreshes its sources type.
-- **L6 (execution).** No new coverage; the existing `FilmService.titleUppercase` execution test confirms `value1()` keeps working under the new emission.
+- **L3 (validator).** `ServiceFieldValidationTest`, `SplitTableFieldValidationTest`: existing strict-return cases that hard-code `Row1<...>` / `Row2<...>` expectations stay valid (the relaxed check accepts both). New parameterized cases pin: same field with `Set<Row1<Integer>>` and `Set<Record1<Integer>>` source declarations both classify cleanly; same for `Map<Row1<Integer>, V>` / `Map<Record1<Integer>, V>` returns. New rejection case for `RowKeyed` + `JavaRecordType` / `PojoResultType` parent.
+- **L4 (pipeline).** `ServiceRootFetcherPipelineTest`, `FetcherPipelineTest`, `SplitTableFieldPipelineTest`: snapshot or structural assertions on emitted rows-method signatures and key-extraction code refresh to `Record1<...>` / `record.into(...)`. `SplitTableFieldPipelineTest:90` (the `java.util.List<org.jooq.Row1<java.lang.Integer>>` literal) is one anchor. New pipeline assertion: when the developer's source-shape is `Set<Row1<...>>`, the emitted BatchLoader applies the `Record::valuesRow` adapter before invoking the developer method (and rebuilds the mapped return).
+- **L5 (compile spec).** `TestServiceStub.java` keeps both `Row1`-source and `Record1`-source fixtures; both classify cleanly post-R61. The `getFilmsWithSetOfRow1Sources` and `getFilmsWithSetOfRecord1Sources` siblings remain as the dual-shape coverage anchor.
+- **L6 (execution).** Two passes: `FilmService.titleUppercase` (already a `Record1<Integer>`-source fixture) confirms `value1()` keeps working; a sibling fixture using `Row1<Integer>` source confirms the `valuesRow` adapter delivers value-bearing Row keys at runtime.
 
 ## Open question (closed in this iteration)
 
