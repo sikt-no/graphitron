@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
+import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmActorRecord;
 import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord;
 import no.sikt.graphitron.rewrite.test.jooq.tables.records.LanguageRecord;
 import org.jooq.DSLContext;
@@ -155,6 +156,18 @@ class TestServiceStub {
      * {@code List} variant (not the generic "unrecognized sources type" message).
      */
     public static Result<FilmRecord> getFilmsWithSetOfDtoSources(java.util.Set<TestDtoStub> keys) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Takes a {@code Set<FilmActorRecord>} — a composite-PK {@code TableRecord} subtype. Mirrors
+     * the consumer-side regelverk_exp.graphqls case where the `@service` source uses a typed
+     * record over a multi-column key. Used to verify that composite-PK typed-record sources
+     * classify as {@link no.sikt.graphitron.rewrite.model.BatchKey.MappedTableRecordKeyed}
+     * (carrying the typed record class) rather than collapsing to a {@code RowN}-keyed variant.
+     */
+    public static java.util.Map<FilmActorRecord, String>
+            getFilmActorsCompositeKey(java.util.Set<FilmActorRecord> keys) {
         throw new UnsupportedOperationException();
     }
 
