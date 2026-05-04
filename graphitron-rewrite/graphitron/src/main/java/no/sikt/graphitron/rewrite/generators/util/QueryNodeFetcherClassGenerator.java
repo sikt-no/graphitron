@@ -169,7 +169,7 @@ public class QueryNodeFetcherClassGenerator {
             .addCode("        return loader.load(id, idEnv);\n")
             .addCode("    })\n")
             .addCode("    .toList();\n")
-            .addCode("return $T.allOf(futures.toArray(new $T[0]))\n", COMPLETABLE_FUTURE, COMPLETABLE_FUTURE)
+            .addCode("return $T.allOf(futures.toArray(new $T<?>[0]))\n", COMPLETABLE_FUTURE, COMPLETABLE_FUTURE)
             .addCode("    .thenApply(v -> futures.stream().map($T::join).toList());\n", COMPLETABLE_FUTURE)
             .build();
 
