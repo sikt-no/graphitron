@@ -190,7 +190,6 @@ public class GraphQLRewriteGenerator {
                 throw new RuntimeException(e);
             }
         }
-        LOGGER.info("Rewrite: generated sources to: {}", packageName);
     }
 
     private void sweepOrphans(Set<Path> emittedThisRun) {
