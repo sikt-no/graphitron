@@ -14,10 +14,12 @@ import java.util.stream.Collectors;
  *
  * <ul>
  *   <li>{@link ParentKeyed} (catalog-resolvable): {@link RowKeyed}, {@link RecordKeyed},
- *       {@link MappedRowKeyed}, {@link MappedRecordKeyed}. The cross-product of two independent
- *       axes — container ({@code List<...>} positional vs. {@code Set<...>} mapped) and key
- *       shape ({@code RowN<...>} via {@code DSL.row(...)} vs. {@code RecordN<...>} via
- *       {@code record.into(...)}). Each variant exposes
+ *       {@link MappedRowKeyed}, {@link MappedRecordKeyed}, {@link TableRecordKeyed},
+ *       {@link MappedTableRecordKeyed}. The cross-product of three key shapes
+ *       ({@code RowN<...>} via {@code DSL.row(...)}, {@code RecordN<...>} via
+ *       {@code record.into(col, ...)}, typed {@code TableRecord} subtype via
+ *       {@code record.into(Table)}) and two containers ({@code List<...>} positional vs.
+ *       {@code Set<...>} mapped). Each variant exposes
  *       {@link ParentKeyed#parentKeyColumns()}: PK/FK columns on the parent side.</li>
  *   <li>{@link RecordParentBatchKey} ({@code @record}-parent permits): {@link RowKeyed},
  *       {@link LifterRowKeyed}, {@link AccessorKeyedSingle}, {@link AccessorKeyedMany}.
@@ -44,13 +46,14 @@ import java.util.stream.Collectors;
  * columns vs. target-side columns), so it does not exist; readers either switch on identity
  * or take a sub-interface-typed parameter.
  *
- * <p>Element-shape (whether the user wrote {@code Set<TableRecord>} or
- * {@code Set<RowN<...>>}) is <strong>not</strong> preserved on the variant; both classify
- * as {@code MappedRowKeyed}, mirroring how {@code List<TableRecord>} and
- * {@code List<RowN<...>>} both classify as {@code RowKeyed}. The DataLoader key type is
- * always {@code RowN}/{@code RecordN} for hashing reasons; element-shape recovery (for
- * the future rows-method body) happens at the body emitter via re-reflection of the
- * service method.
+ * <p>Element-shape <strong>is</strong> preserved on the variant: {@code Set<RowN<...>>}
+ * classifies as {@link MappedRowKeyed}, {@code Set<RecordN<...>>} as
+ * {@link MappedRecordKeyed}, and {@code Set<X>} where {@code X extends TableRecord} as
+ * {@link MappedTableRecordKeyed}; the {@code List} arms route to the corresponding
+ * positional permits. {@code keyElementType()} reflects the developer's choice exactly,
+ * which propagates through {@code RowsMethodShape.outerRowsReturnType} so the validator's
+ * expected outer return type and the rows-method emitter's parameter shapes match the
+ * developer's signature without conversion.
  */
 public sealed interface BatchKey
         permits BatchKey.ParentKeyed, BatchKey.RecordParentBatchKey {
@@ -90,6 +93,10 @@ public sealed interface BatchKey
      *       {@link AccessorKeyedMany} → {@code RecordN<A, B, ...>} — the developer-facing
      *       shape on the @service-source Record path, and the auto-derived shape on
      *       accessor-keyed @record parents (no developer-facing source on those arms).</li>
+     *   <li>{@link TableRecordKeyed} / {@link MappedTableRecordKeyed} → the typed
+     *       {@code TableRecord} subtype the developer wrote (e.g. {@code FilmRecord}). The
+     *       DataLoader key, the rows-method's outer {@code Map} key, and the SOURCES element
+     *       all share that single typed class.</li>
      * </ul>
      *
      * <p>R61 added Record support without displacing Row: developers continue to choose
@@ -100,13 +107,15 @@ public sealed interface BatchKey
      */
     default TypeName keyElementType() {
         return switch (this) {
-            case RowKeyed rk                -> rowNType(rk.parentKeyColumns());
-            case MappedRowKeyed mrk         -> rowNType(mrk.parentKeyColumns());
-            case LifterRowKeyed lrk         -> rowNType(lrk.targetKeyColumns());
-            case AccessorKeyedSingle ars -> recordNType(ars.targetKeyColumns());
-            case AccessorKeyedMany arm   -> recordNType(arm.targetKeyColumns());
-            case RecordKeyed rk             -> recordNType(rk.parentKeyColumns());
-            case MappedRecordKeyed mrk      -> recordNType(mrk.parentKeyColumns());
+            case RowKeyed rk                  -> rowNType(rk.parentKeyColumns());
+            case MappedRowKeyed mrk           -> rowNType(mrk.parentKeyColumns());
+            case LifterRowKeyed lrk           -> rowNType(lrk.targetKeyColumns());
+            case AccessorKeyedSingle ars      -> recordNType(ars.targetKeyColumns());
+            case AccessorKeyedMany arm        -> recordNType(arm.targetKeyColumns());
+            case RecordKeyed rk               -> recordNType(rk.parentKeyColumns());
+            case MappedRecordKeyed mrk        -> recordNType(mrk.parentKeyColumns());
+            case TableRecordKeyed trk         -> ClassName.get(trk.elementClass());
+            case MappedTableRecordKeyed mtrk  -> ClassName.get(mtrk.elementClass());
         };
     }
 
@@ -134,7 +143,8 @@ public sealed interface BatchKey
      * consumers cannot confuse it with target-side columns supplied by a lifter.
      */
     sealed interface ParentKeyed extends BatchKey
-            permits RowKeyed, RecordKeyed, MappedRowKeyed, MappedRecordKeyed {
+            permits RowKeyed, RecordKeyed, MappedRowKeyed, MappedRecordKeyed,
+                    TableRecordKeyed, MappedTableRecordKeyed {
 
         /**
          * PK/FK columns from the parent table. May be empty when the parent type is a root
@@ -210,7 +220,9 @@ public sealed interface BatchKey
 
     /**
      * Column-based batch key using {@code DSL.row(...)} key construction with a positional
-     * {@code List<RowN<...>>} sources parameter; drives {@code newDataLoader(...)}.
+     * {@code List<RowN<...>>} sources parameter; drives {@code newDataLoader(...)}. Only
+     * {@code List<RowN<...>>} classifies here; {@code List<X extends TableRecord>} routes to
+     * {@link TableRecordKeyed}.
      *
      * <p>The only catalog-resolvable permit that participates in both sub-hierarchies: it
      * carries parent-side PK/FK columns ({@link ParentKeyed}) and is reachable from
@@ -245,9 +257,9 @@ public sealed interface BatchKey
     /**
      * Mapped variant of {@link RowKeyed}: column-based batch key using {@code DSL.row(...)} key
      * construction with a {@code Set<RowN<...>>} sources parameter; drives
-     * {@code newMappedDataLoader(...)}. Both {@code Set<RowN<...>>} and
-     * {@code Set<TableRecord>} classify here; the DataLoader key type stays {@code RowN}
-     * regardless of the user's declared element type.
+     * {@code newMappedDataLoader(...)}. Only {@code Set<RowN<...>>} classifies here;
+     * {@code Set<X extends TableRecord>} routes to {@link MappedTableRecordKeyed}
+     * (variant identity tracks the developer's source shape).
      */
     record MappedRowKeyed(List<ColumnRef> parentKeyColumns) implements ParentKeyed {
         @Override
@@ -265,6 +277,42 @@ public sealed interface BatchKey
         @Override
         public String javaTypeName() {
             return containerType("Set", "Record", parentKeyColumns);
+        }
+    }
+
+    /**
+     * Positional variant for the typed {@code TableRecord} source shape: developer signs
+     * {@code List<X>} where {@code X extends TableRecord}, the rows-method's outer return is
+     * {@code List<V>} (single) or {@code List<List<V>>} (list). Drives
+     * {@code newDataLoader(...)} with {@code K = X}; key extraction projects through
+     * {@code Table<R>.into(...)} so the application-side key carries the developer's typed
+     * record.
+     *
+     * <p>{@code parentKeyColumns} stays the parent's PK/FK column tuple (used by the rows-method
+     * VALUES prelude where applicable); {@code elementClass} is the developer-declared
+     * {@code TableRecord} subtype that propagates through {@link #keyElementType()} into the
+     * outer return type and the rows-method parameter shape.
+     */
+    record TableRecordKeyed(
+            List<ColumnRef> parentKeyColumns,
+            Class<? extends org.jooq.TableRecord<?>> elementClass) implements ParentKeyed {
+        @Override
+        public String javaTypeName() {
+            return "java.util.List<" + elementClass.getName() + ">";
+        }
+    }
+
+    /**
+     * Mapped variant of {@link TableRecordKeyed}: developer signs {@code Set<X>} where
+     * {@code X extends TableRecord}, the rows-method's outer return is {@code Map<X, V>}.
+     * Drives {@code newMappedDataLoader(...)} with {@code K = X}.
+     */
+    record MappedTableRecordKeyed(
+            List<ColumnRef> parentKeyColumns,
+            Class<? extends org.jooq.TableRecord<?>> elementClass) implements ParentKeyed {
+        @Override
+        public String javaTypeName() {
+            return "java.util.Set<" + elementClass.getName() + ">";
         }
     }
 

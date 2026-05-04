@@ -2302,9 +2302,10 @@ public class TypeFetcherGenerator {
      *   <li>{@link BatchKey.RowKeyed}/{@link BatchKey.RecordKeyed} → {@code newDataLoader(...)}
      *       binds to {@code BatchLoaderWithContext<K, V>}; lambda keys parameter is
      *       {@code List<KeyType>}.</li>
-     *   <li>{@link BatchKey.MappedRowKeyed}/{@link BatchKey.MappedRecordKeyed} →
-     *       {@code newMappedDataLoader(...)} binds to {@code MappedBatchLoaderWithContext<K, V>};
-     *       lambda keys parameter is {@code Set<KeyType>}.</li>
+     *   <li>{@link BatchKey.MappedRowKeyed}/{@link BatchKey.MappedRecordKeyed}/{@link
+     *       BatchKey.MappedTableRecordKeyed} → {@code newMappedDataLoader(...)} binds to
+     *       {@code MappedBatchLoaderWithContext<K, V>}; lambda keys parameter is
+     *       {@code Set<KeyType>}.</li>
      * </ul>
      */
     private static MethodSpec buildServiceDataFetcher(
@@ -2322,7 +2323,8 @@ public class TypeFetcherGenerator {
 
         var batchKey = (BatchKey.ParentKeyed) bkf.batchKey();
         boolean isMapped = batchKey instanceof BatchKey.MappedRowKeyed
-                        || batchKey instanceof BatchKey.MappedRecordKeyed;
+                        || batchKey instanceof BatchKey.MappedRecordKeyed
+                        || batchKey instanceof BatchKey.MappedTableRecordKeyed;
         TypeName keyType = batchKey.keyElementType();
         var loaderType = ParameterizedTypeName.get(DATA_LOADER, keyType, valueType);
         String rowsMethodName = bkf.rowsMethodName();
@@ -2369,12 +2371,12 @@ public class TypeFetcherGenerator {
      *
      * <p>Signature follows the batch-loader contract:
      * <ul>
-     *   <li>{@link BatchKey.RowKeyed}/{@link BatchKey.RecordKeyed}: {@code keys} is
-     *       {@code List<KeyType>}; return is {@code List<List<V>>} (list field) or
+     *   <li>{@link BatchKey.RowKeyed}/{@link BatchKey.RecordKeyed}/{@link BatchKey.TableRecordKeyed}:
+     *       {@code keys} is {@code List<KeyType>}; return is {@code List<List<V>>} (list field) or
      *       {@code List<V>} (single).</li>
-     *   <li>{@link BatchKey.MappedRowKeyed}/{@link BatchKey.MappedRecordKeyed}: {@code keys}
-     *       is {@code Set<KeyType>}; return is {@code Map<KeyType, List<V>>} (list field) or
-     *       {@code Map<KeyType, V>} (single).</li>
+     *   <li>{@link BatchKey.MappedRowKeyed}/{@link BatchKey.MappedRecordKeyed}/{@link
+     *       BatchKey.MappedTableRecordKeyed}: {@code keys} is {@code Set<KeyType>}; return is
+     *       {@code Map<KeyType, List<V>>} (list field) or {@code Map<KeyType, V>} (single).</li>
      * </ul>
      *
      * <p>{@code V} is {@code org.jooq.Record} for {@code ServiceTableField} (caller passes
@@ -2388,7 +2390,9 @@ public class TypeFetcherGenerator {
             + "wildcard local. ServiceDirectiveResolver's child-only strict-return check "
             + "rejects developer methods whose declared return type doesn't match this exact "
             + "outer shape, so any mismatch surfaces at classify time rather than as a javac "
-            + "error on the generated source.")
+            + "error on the generated source. Covers RowKeyed / RecordKeyed / MappedRowKeyed / "
+            + "MappedRecordKeyed and TableRecordKeyed / MappedTableRecordKeyed for typed jOOQ "
+            + "TableRecord sources.")
     private static MethodSpec buildServiceRowsMethod(
             BatchKeyField bkf,
             MethodRef method,
@@ -2399,7 +2403,8 @@ public class TypeFetcherGenerator {
 
         var batchKey = (BatchKey.ParentKeyed) bkf.batchKey();
         boolean isMapped = batchKey instanceof BatchKey.MappedRowKeyed
-                        || batchKey instanceof BatchKey.MappedRecordKeyed;
+                        || batchKey instanceof BatchKey.MappedRecordKeyed
+                        || batchKey instanceof BatchKey.MappedTableRecordKeyed;
         TypeName keysContainerType = ParameterizedTypeName.get(isMapped ? SET : LIST, batchKey.keyElementType());
         TypeName returnType = no.sikt.graphitron.rewrite.model.RowsMethodShape
             .outerRowsReturnType(perKeyType, schemaReturnType, batchKey);
@@ -2420,12 +2425,6 @@ public class TypeFetcherGenerator {
         if (needsDsl) {
             builder.addStatement("$T dsl = graphitronContext(env).getDslContext(env)", dslContextClass);
         }
-        // Sources param passes through `keys` directly. Element-shape conversion (RowN ->
-        // TableRecord when the developer's signature takes Set<TableRecord>/List<TableRecord>)
-        // is deferred; the classifier accepts both shapes, but the conversion path is a
-        // separate emitter concern. Signatures using TableRecord as the Sources element type
-        // compile against `keys` only when the lambda key type matches; mismatches surface as
-        // javac errors at the call site.
         builder.addStatement("return $T.$L($L)",
             serviceClass,
             method.methodName(),

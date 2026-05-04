@@ -233,6 +233,47 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void films_titleTitlecase_resolvesViaServiceRecordFieldDataLoader_tableRecordSource() {
+        // R70 L6 sibling: identical wiring to titleUppercase / titleLowercase but the
+        // developer-side method takes Set<FilmRecord> (typed-TableRecord source-shape) and
+        // returns Map<FilmRecord, String>. The classifier routes Set<X extends TableRecord>
+        // to MappedTableRecordKeyed (carrying FilmRecord on the variant); the rows-method
+        // emitter passes through `keys` directly because the generated lambda's keys local is
+        // already typed Set<FilmRecord>. Confirms the typed extraction
+        // (env.getSource().into(Tables.FILM)) round-trips through the DataLoader and the
+        // developer can read column values via FilmRecord.getTitle() without an extra fetch.
+        Map<String, Object> data = execute("{ films { title titleTitlecase } }");
+        assertThat(data).extractingByKey("films", as(list(Map.class)))
+            .hasSize(5)
+            .allSatisfy(f -> {
+                var title = (String) f.get("title");
+                var titleTitlecase = (String) f.get("titleTitlecase");
+                String expected = expectedTitleCase(title);
+                assertThat(titleTitlecase)
+                    .as("titleTitlecase must equal title-cased version for film '%s'", title)
+                    .isEqualTo(expected);
+            });
+    }
+
+    private static String expectedTitleCase(String s) {
+        StringBuilder out = new StringBuilder(s.length());
+        boolean nextUpper = true;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (Character.isWhitespace(c)) {
+                out.append(c);
+                nextUpper = true;
+            } else if (nextUpper) {
+                out.append(Character.toUpperCase(c));
+                nextUpper = false;
+            } else {
+                out.append(Character.toLowerCase(c));
+            }
+        }
+        return out.toString();
+    }
+
+    @Test
     void films_titleUppercase_resolvesViaServiceRecordFieldDataLoader() {
         // R49 Phase B (R32): @service child field with a scalar return. The generator-emitted
         // rows-method body calls FilmService.titleUppercase via the parameterised

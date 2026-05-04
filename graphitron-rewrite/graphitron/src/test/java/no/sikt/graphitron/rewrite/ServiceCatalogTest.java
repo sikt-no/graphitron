@@ -116,7 +116,7 @@ class ServiceCatalogTest {
     }
 
     @Test
-    void reflectServiceMethod_tableRecordSources_classifiedAsRowKeyed() {
+    void reflectServiceMethod_tableRecordSources_classifiedAsTableRecordKeyed() {
         var filmPk = List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"));
         var result = newCatalog().reflectServiceMethod(
             STUB_CLASS, "getFilmsWithTableRecordSources", bindings(Map.of()), Set.of(), filmPk, null);
@@ -127,7 +127,9 @@ class ServiceCatalogTest {
             .map(p -> (MethodRef.Param.Sourced) p)
             .findFirst()
             .orElseThrow();
-        assertThat(sourced.batchKey()).isEqualTo(new BatchKey.RowKeyed(filmPk));
+        assertThat(sourced.batchKey()).isEqualTo(
+            new BatchKey.TableRecordKeyed(filmPk,
+                no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord.class));
     }
 
     @Test
@@ -208,7 +210,7 @@ class ServiceCatalogTest {
     }
 
     @Test
-    void reflectServiceMethod_setOfTableRecordSources_classifiedAsMappedRowKeyed() {
+    void reflectServiceMethod_setOfTableRecordSources_classifiedAsMappedTableRecordKeyed() {
         var filmPk = List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"));
         var result = newCatalog().reflectServiceMethod(
             STUB_CLASS, "getFilmsWithSetOfTableRecordSources", bindings(Map.of()), Set.of(), filmPk, null);
@@ -219,7 +221,9 @@ class ServiceCatalogTest {
             .map(p -> (MethodRef.Param.Sourced) p)
             .findFirst()
             .orElseThrow();
-        assertThat(sourced.batchKey()).isEqualTo(new BatchKey.MappedRowKeyed(filmPk));
+        assertThat(sourced.batchKey()).isEqualTo(
+            new BatchKey.MappedTableRecordKeyed(filmPk,
+                no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord.class));
     }
 
     @Test

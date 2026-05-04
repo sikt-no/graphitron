@@ -585,11 +585,12 @@ class ServiceCatalog {
      * a {@link BatchKey} variant, or returns {@link Optional#empty()} when the type is not
      * recognised.
      *
-     * <p>The container axis ({@code List} vs {@code Set}) and key-shape axis ({@code RowN} vs
-     * {@code RecordN}) combine into the four {@link BatchKey} variants. {@code List<?>} maps
-     * to the positional variants ({@link BatchKey.RowKeyed}/{@link BatchKey.RecordKeyed});
+     * <p>The container axis ({@code List} vs {@code Set}) and key-shape axis (one of
+     * {@code RowN}, {@code RecordN}, or {@code X extends TableRecord}) combine into six
+     * {@link BatchKey} variants. {@code List<?>} maps to the positional variants
+     * ({@link BatchKey.RowKeyed}/{@link BatchKey.RecordKeyed}/{@link BatchKey.TableRecordKeyed});
      * {@code Set<?>} maps to the mapped variants ({@link BatchKey.MappedRowKeyed}/
-     * {@link BatchKey.MappedRecordKeyed}).
+     * {@link BatchKey.MappedRecordKeyed}/{@link BatchKey.MappedTableRecordKeyed}).
      *
      * <p>For all variants, {@code parentPkColumns} is used as the authoritative key column
      * list. The column types from the parent PK are used in the generated method signature;
@@ -626,9 +627,12 @@ class ServiceCatalog {
             }
         } else if (elementType instanceof Class<?> elementClass
                 && org.jooq.TableRecord.class.isAssignableFrom(elementClass)) {
+            @SuppressWarnings("unchecked")
+            Class<? extends org.jooq.TableRecord<?>> tableRecordClass =
+                (Class<? extends org.jooq.TableRecord<?>>) elementClass;
             return Optional.of(isSet
-                ? new BatchKey.MappedRowKeyed(parentPkColumns)
-                : new BatchKey.RowKeyed(parentPkColumns));
+                ? new BatchKey.MappedTableRecordKeyed(parentPkColumns, tableRecordClass)
+                : new BatchKey.TableRecordKeyed(parentPkColumns, tableRecordClass));
         }
 
         return Optional.empty();
