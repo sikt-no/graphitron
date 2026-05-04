@@ -1,0 +1,191 @@
+= How-to: Add custom conditions
+:description: Wire a developer-supplied SQL predicate onto a field, an argument, or an input field via @condition, the rewrite reflects on a static Java method that returns a jOOQ Condition.
+:!toc:
+
+The xref:../reference/directives/condition.adoc[`@condition`] directive hands one piece of a generated `WHERE` clause off to a developer-supplied static method. Use it when the predicate isn't a plain `column = ?` (range filters, regex, date arithmetic, vendor-specific operators, multi-column boolean shapes) or when the column you want to filter on isn't reachable through `@field`. This recipe walks through writing the Java method, attaching the directive at each of the three SDL sites (argument, field, input field), and rebinding parameter names when GraphQL and Java conventions diverge. For the override cascade rules (stacking, suppression, the legacy-divergence trap), read xref:condition-cascade.adoc[How-to: Stacking and overriding conditions] after this recipe.
+
+The recipe assumes you've read xref:external-code.adoc[How-to: Wire external Java code] for the plugin-classpath and FQCN mechanics shared across all directives that point at Java code.
+
+== Write the Java method
+
+Every condition method has the same shape: a `static` method on a public class, returning a jOOQ `Condition`, taking the surrounding `Table<?>` first and the GraphQL argument values after. The example fixture filters films by primary key:
+
+[source,java]
+----
+package no.sikt.graphitron.rewrite.test.conditions;
+
+import no.sikt.graphitron.rewrite.test.jooq.tables.Film;
+import org.jooq.Condition;
+import org.jooq.Table;
+import org.jooq.impl.DSL;
+
+public final class InputFieldConditionFixtures {
+
+    private InputFieldConditionFixtures() {}
+
+    public static Condition filmIdCondition(Table<?> table, String filmId) {
+        if (filmId == null) {
+            return DSL.noCondition();
+        }
+        return table.field(Film.FILM.FILM_ID).eq(Integer.parseInt(filmId));
+    }
+}
+----
+
+Three things matter:
+
+* *The first parameter is the surrounding `Table<?>`.* The rewrite passes the aliased table the field's fetcher is selecting from. Resolve column references through `table.field(Film.FILM.FILM_ID)` rather than `Film.FILM.FILM_ID` directly, the alias-bearing handle keeps the predicate anchored in the caller's `FROM` and lets jOOQ render the `WHERE` against the correct alias.
+* *The remaining parameters bind by name.* The Java parameter named `filmId` receives the GraphQL argument named `filmId`. Names must agree; the rewrite reads them through reflection. Compile the Java module with `-parameters` so the parameter names survive into the bytecode (the example fixtures' `pom.xml` carries `<parameters>true</parameters>` for this reason).
+* *Return `DSL.noCondition()` to opt out.* When the GraphQL argument is null or absent, return the no-op so the predicate is structurally present but contributes nothing to the `WHERE` clause. This is the contract that lets optional filter inputs degrade cleanly to "unconstrained".
+
+Add the carrying artifact to the rewrite plugin's `<dependencies>` block, not your consumer module's compile classpath; the plugin reflects on the class via `Class.forName(...)` at code-generation time. xref:external-code.adoc[How-to: Wire external Java code] covers the plugin-classpath setup in full.
+
+== Attach the directive at one of three sites
+
+`@condition` is valid on `FIELD_DEFINITION`, `ARGUMENT_DEFINITION`, and `INPUT_FIELD_DEFINITION`. The placement determines what the Java method sees:
+
+[cols="1,1,3",options="header"]
+|===
+| Site | What the method sees | When to use
+| Argument | the table + the one argument's value | The predicate is local to one argument; other arguments are unaffected.
+| Field | the table + every direct argument | The predicate spans multiple arguments (conjunctive filter, multi-column boolean shape).
+| Input field | the table + the input's leaf scalar | The predicate filters by a value carried inside a `@table`-bound or plain input.
+|===
+
+=== Argument-level: filter by one input
+
+[source,graphql]
+----
+type Query {
+    citiesByName(
+        cityNames: [String!] @field(name: "CITY")
+            @condition(condition: {
+                className: "com.example.CityConditions",
+                method:    "cityMethod"
+            })
+    ): [City]
+}
+----
+
+The Java method takes `(City table, List<String> cityNames)`. The predicate is `AND`-ed with the implicit `CITY IN (?, ?, ...)` that `@field(name: "CITY")` would otherwise emit on its own. Argument-level conditions only see their own argument; the surrounding field's other arguments are invisible.
+
+=== Field-level: filter spanning every argument
+
+[source,graphql]
+----
+type Query {
+    cities(
+        countryId: String! @field(name: "COUNTRY_ID"),
+        cityNames: [String!] @field(name: "CITY")
+    ): [City] @condition(condition: {
+        className: "com.example.CityConditions",
+        method:    "cityMethod"
+    })
+}
+----
+
+The Java method's signature is `(City table, String countryId, List<String> cityNames)`, every direct argument is delivered. Reach for field-level placement when the predicate is conjunctive across arguments or when the explicit logic depends on more than one input value.
+
+=== Input-field-level: filter on an input's leaf scalar
+
+The example schema's `filmsWithInputFieldCondition` query exercises this at runtime. The query takes a `@table`-bound input whose `filmId` field carries `@condition`:
+
+[source,graphql]
+----
+type Query {
+    filmsWithInputFieldCondition(filter: FilmConditionInput): [Film!]!
+}
+
+input FilmConditionInput @table(name: "film") {
+    filmId: ID! @field(name: "film_id")
+        @condition(condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+            method:    "filmIdCondition"
+        })
+}
+----
+
+The Java method's signature is `(Film table, String filmId)`. The rewrite extracts `filter.filmId` from the GraphQL argument map at request time and passes it as the second parameter. A two-level nested input (`NestedFilmInput`'s `inner.filmId` in the same fixture set) walks the path `["inner", "filmId"]` to reach the leaf and binds the same way. The execution-tier test `inputFieldCondition_tableInput_filtersByFilmId` in `GraphQLQueryTest` runs the resulting query and asserts that `{filmId: "1"}` returns exactly one row.
+
+=== Pick a site
+
+The default is whichever site is closest to where the value is. An argument carrying a single GraphQL argument: argument-level. A field whose predicate involves several arguments: field-level. A value buried inside a structured input: input-field-level. Argument-level and field-level conditions can coexist on the same field; input-field-level conditions stack with both. xref:condition-cascade.adoc[How-to: Stacking and overriding conditions] covers the override flag and the divergence rules when implicit and explicit predicates disagree.
+
+== Rebind argument names with `argMapping`
+
+When the GraphQL argument name and the Java parameter name diverge, use `argMapping:` to rebind. The syntax is `"javaParam: graphqlArg"`, comma-separated; the Java side comes first because that is what the reflected method signature reads:
+
+[source,graphql]
+----
+type Query {
+    cities(cityNames: [String!]
+        @condition(condition: {
+            className: "com.example.CityConditions",
+            method:    "argConditionRenamed",
+            argMapping: "city: cityNames"
+        })): [City]
+}
+----
+
+The Java method `argConditionRenamed(Table<?> table, String city)` receives the GraphQL argument `cityNames` as its `city` parameter. Whitespace around `:` and `,` is tolerated, multi-line text-block input is accepted for long mappings, and an empty `argMapping:` is identity. `argMapping:` is supported on `@condition`, `@service`, and `@tableMethod`, the directives whose Java targets receive GraphQL arguments. It is structurally inert on `@externalField`, `@enum`, `@record`, and `@batchKeyLifter`; applying it on those is rejected at parse time.
+
+Field-level placement mirrors the argument-level shape, `argMapping:` rebinds every parameter that needs a different Java name:
+
+[source,graphql]
+----
+type Query {
+    cities(cityNames: [String!] @field(name: "CITY"),
+           countryId: String!  @field(name: "COUNTRY_ID")):
+        [City] @condition(condition: {
+            className: "com.example.CityConditions",
+            method:    "fieldConditionRenamed",
+            argMapping: "city: cityNames, country: countryId"
+        })
+}
+----
+
+The Java method `fieldConditionRenamed(Table<?> table, String city, String country)` receives both GraphQL arguments under their renamed Java identifiers. Unmentioned Java parameters bind to a GraphQL argument of the same name, so partial mappings are valid.
+
+== Pull request-context values via `contextArguments`
+
+When the predicate depends on values from the request context (current user, tenant ID, correlation ID), name them via `contextArguments:`. The rewrite appends one Java parameter per listed key, after the table and the GraphQL-argument parameters:
+
+[source,graphql]
+----
+type Query {
+    citiesForCurrentUser: [City]
+        @condition(
+            condition:        {className: "com.example.CityConditions", method: "tenantScoped"},
+            contextArguments: ["tenantId"]
+        )
+}
+----
+
+`tenantScoped(City table, UUID tenantId)` runs at request time with `tenantId` pulled from the runtime `GraphQLContext`. Wire the value into the context map at servlet bootstrap; the rewrite reads each named key with the runtime value's declared Java type. The companion architecture page xref:../../architecture/getting-started.adoc[Getting started with the rewrite runtime] covers the bootstrap-side wiring under the federation, custom scalars, and tenant scoping sections.
+
+Two consequences worth pinning:
+
+* *No build-time validation that the context key is wired.* A typo in `contextArguments` surfaces as a `null` parameter at request time, not as a build error. Either guard with a null check in the condition method (`if (tenantId == null) throw new IllegalStateException(...)`) or rely on a request-time integration test to catch wiring drift.
+* *`contextArguments:` and `argMapping:` compose.* A single method may take `(table, GraphQL args mapped through argMapping, context args in declared order)` and the rewrite assembles the call site accordingly.
+
+== Constraints
+
+* `condition.className:` and `condition.method:` are both required for a meaningful directive. A `@condition` whose reference resolves to no method surfaces with the diagnostic `field '<name>' @condition: ...` or `argument '<name>' @condition: ...`. The class must be on the rewrite plugin's classpath, not the consumer module's.
+* The first Java parameter is always the surrounding `Table<?>`. Resolve column references through `table.field(...)` rather than the static jOOQ-table handle, the alias-bearing accessor keeps the predicate anchored to the calling fetcher's `FROM` clause.
+* Parameter names bind GraphQL argument names. Compile the carrying module with `<parameters>true</parameters>` so the names survive reflection. Diverging names are reconciled by `argMapping:`, not by reordering the method.
+* `DSL.noCondition()` is the explicit no-op; return it for null or absent inputs. Returning `null` is undefined and currently throws at the predicate-folding site.
+* Argument-level placement sees only that argument; sibling arguments are invisible. Field-level placement sees every direct argument, including those bound to `@table` inputs (the input arrives as the carrier type the input is bound to). Input-field-level placement walks the GraphQL argument map by path and delivers the leaf scalar.
+* `argMapping:` is supported on `@condition`. It is not supported on `@externalField`, `@enum`, `@record`, or `@batchKeyLifter`.
+* `contextArguments:` keys flow through `GraphQLContext` unmodified; the runtime is responsible for placing each key. Typos surface as `null` at request time.
+* The override cascade and the divergence-from-legacy semantics live in xref:condition-cascade.adoc[How-to: Stacking and overriding conditions]. Read it before composing `@condition` with `override: true` across nested inputs.
+
+== See also
+
+* xref:../reference/directives/condition.adoc[`@condition`] is the directive's reference page; the parameter list, the `ExternalCodeReference` shape, and the per-site rejection messages live there.
+* xref:condition-cascade.adoc[How-to: Stacking and overriding conditions] covers the override flag, the implicit-vs-explicit cascade, the input-carrier rules for nested inputs, and the regression-fenced divergence from the legacy generator's "outer owns everything" semantics.
+* xref:external-code.adoc[How-to: Wire external Java code] covers the rewrite-plugin classpath, the FQCN requirement, and the `argMapping:` syntax that `@condition` shares with `@service` and `@tableMethod`.
+* xref:../reference/directives/field.adoc[`@field(name: ...)`] supplies the implicit equality predicate that `@condition` either stacks with or replaces.
+* xref:handle-services.adoc[How-to: Handle services] covers the alternative when the *whole* fetcher is custom code, `@condition` is for adjusting a single predicate inside an otherwise generated query.
+* xref:../reference/directives/lookupKey.adoc[`@lookupKey`] is exempt from the implicit-predicate path; `@condition` on a lookup-key arg runs alongside the `VALUES + JOIN` lookup but does not interact with it.
+
+xref:index.adoc[← How-to index]
