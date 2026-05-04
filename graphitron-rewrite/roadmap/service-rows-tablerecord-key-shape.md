@@ -1,7 +1,7 @@
 ---
 id: R70
 title: "Support TableRecord-keyed Map returns on @service rows methods"
-status: Spec
+status: Ready
 bucket: feature
 priority: 5
 theme: service
@@ -121,14 +121,16 @@ works for the new variants by construction: `keys` is locally typed `Set<Kvotesp
 - Add `TableRecordKeyed(parentKeyColumns, elementClass)` and `MappedTableRecordKeyed(parentKeyColumns, elementClass)` on `BatchKey.ParentKeyed`. `keyElementType()` returns `ClassName.get(elementClass)`; `javaTypeName()` mirrors the `containerType` helper used by sibling variants.
 - Reroute `ServiceCatalog.classifySourcesType` lines 627-632: the TableRecord element branch constructs the new variants, threading `elementClass`.
 - Tighten `MappedRowKeyed` / `RowKeyed` docstrings: drop the "Set<TableRecord> also classifies here" sentence on `MappedRowKeyed:247-251` (and any equivalent on `RowKeyed`). The variants are now shape-pure.
-- Add classifier-side parent-table consistency check: when the developer's `elementClass` is a `TableRecord` subtype, resolve the parent's expected `TableRecord` class via `BuildContext` and reject mismatches at classify time with a typed `Rejection.AuthorError.Structural` carrying a candidate-hint pointer at the expected simple name.
-- **Tests**: L1 (`BatchKeyTest`) — extend the per-variant `keyElementType()` / `javaTypeName()` parameterised cells with `TableRecordKeyed` / `MappedTableRecordKeyed`. L4 (`GraphitronSchemaBuilderTest`) — positive cell for `Set<KvotesporsmalRecord>` source classifying as `MappedTableRecordKeyed`; rejection cell for `Set<FilmRecord>` against a non-Film parent.
+- Add parent-table consistency check at the resolver site (`ServiceDirectiveResolver.resolve`, post-classify): the resolver already has `parentTypeName` and routes through `JooqCatalog.findRecordClass(parentTableSqlName)`; reject mismatches with `Rejection.structural` carrying a candidate-hint pointer at the parent's expected `TableRecord` simple name. The variant's `elementClass()` is the readable surface from the resolver. (Doing it at the classifier would force threading the parent record class through `ServiceCatalog.classifySourcesType` / `reflectServiceMethod`; the resolver has it already.)
+- Update existing `ServiceCatalogTest` cells: `reflectServiceMethod_tableRecordSources_classifiedAsRowKeyed` (line ~119) flips to assert `TableRecordKeyed`; `reflectServiceMethod_setOfTableRecordSources_classifiedAsMappedRowKeyed` (line ~211) flips to assert `MappedTableRecordKeyed` and renames accordingly.
+- **Tests**: L1 (`BatchKeyTest`) — extend the per-variant `keyElementType()` / `javaTypeName()` parameterised cells with `TableRecordKeyed` / `MappedTableRecordKeyed`. L4 (`GraphitronSchemaBuilderTest`) — positive cell for `Set<KvotesporsmalRecord>`-style source classifying as `MappedTableRecordKeyed`; rejection cell for `Set<FilmRecord>` against a non-Film parent.
 
 ### Phase 2 — key extraction + emitter sweep
 
 - `GeneratorUtils.buildKeyExtraction`: add the `TableRecordKeyed` / `MappedTableRecordKeyed` arm emitting `((Record) env.getSource()).into(Tables.X)`. Resolve `Tables.X` at emit time from the variant's `elementClass` (declaring `Tables` class + simple-name field).
 - `TypeFetcherGenerator.buildServiceRowsMethod`: drop the deferred-conversion comment block at `:2423-2428`; the existing `return ServiceClass.method(keys)` line covers the new variants by construction. Widen the `@DependsOnClassifierCheck` description by one phrase to mention the new permits.
-- Walk every `switch(batchKey)` site that pattern-matches on `ParentKeyed` permits and add the two new arms. The seal makes this exhaustive — `javac` lists every site as a missing-arm warning until covered (`isMapped` checks in `TypeFetcherGenerator`, `RowsMethodShape.outerRowsReturnType`, the DataLoader-factory dispatch, etc.).
+- Walk every `switch(batchKey)` site that pattern-matches on `ParentKeyed` permits and add the two new arms; the seal makes those exhaustive (`javac` lists every site as a missing-arm warning until covered, e.g. `GeneratorUtils.buildKeyExtraction`).
+- Three sites are `isMapped` *instanceof* checks, not switches, and must be widened by hand: `RowsMethodShape.outerRowsReturnType` (`:86-87`), `TypeFetcherGenerator.buildServiceDataFetcher` (`:2324-2325`, the DataLoader-factory dispatch), and `TypeFetcherGenerator.buildServiceRowsMethod` (`:2401-2402`). Each gains one disjunct for `MappedTableRecordKeyed`. Locate via `grep -n "instanceof BatchKey.MappedRowKeyed"`.
 - **Tests**: L4 (`TypeFetcherGeneratorTest` / `FetcherPipelineTest`) — pipeline assertions for the key-extraction emit (`(Record) env.getSource().into(Tables.KVOTESPORSMAL)`) and the rows-method signature `Map<KvotesporsmalRecord, V> name(Set<KvotesporsmalRecord>, DataFetchingEnvironment)`. L5 (compile spec) — `graphitron-sakila-example` fixture: one `@service` rows method `Map<FilmRecord, String> method(Set<FilmRecord>)`. L6 (execution) — `GraphQLQueryTest` query exercising the typed-record path end-to-end against the sakila PostgreSQL fixture, mirroring `films_titleUppercase_resolvesViaServiceRecordFieldDataLoader`.
 
 Phases 1 and 2 must land in the same trunk-bound push: between Phase 1 (new variants exist, classifier routes onto them) and Phase 2 (emitter handles them), the `switch` exhaustiveness errors break compilation. Treat the two phases as a single landing for review purposes.
