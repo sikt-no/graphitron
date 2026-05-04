@@ -34,7 +34,6 @@ import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
-import no.sikt.graphitron.rewrite.model.SqlGeneratingField;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import no.sikt.graphitron.rewrite.model.WhereFilter;
 
@@ -298,17 +297,6 @@ public class TypeFetcherGenerator {
         var builder = TypeSpec.classBuilder(className)
             .addModifiers(Modifier.PUBLIC);
 
-        // Emit the graphitronContext() helper whenever any field executes inline SQL —
-        // i.e., whenever any SqlGeneratingField is present, or a DML mutation that emits
-        // its own jOOQ statement inline (e.g. MutationDeleteTableField).
-        boolean needsGraphitronContextHelper = fields.stream().anyMatch(f ->
-            f instanceof SqlGeneratingField
-            || f instanceof MutationField.DmlTableField
-            || f instanceof QueryField.QueryInterfaceField
-            || f instanceof QueryField.QueryUnionField
-            || f instanceof ChildField.InterfaceField
-            || f instanceof ChildField.UnionField);
-
         for (var field : fields) {
             switch (field) {
                 case ChildField.ColumnField cf -> {
@@ -482,6 +470,13 @@ public class TypeFetcherGenerator {
             }
         }
 
+        // Post-scan over emitted method bodies so any caller of graphitronContext(env) — via
+        // buildDataLoaderName, inline SQL, validator lookup — picks up the helper without the
+        // gating predicate having to enumerate field variants. ServiceRecordField is the only
+        // BatchKeyField that doesn't extend SqlGeneratingField (via TableTargetField), and a
+        // predicate-style gate had silently dropped it.
+        boolean needsGraphitronContextHelper = builder.methodSpecs.stream()
+            .anyMatch(m -> m.code().toString().contains("graphitronContext(env)"));
         if (needsGraphitronContextHelper) {
             builder.addMethod(buildGraphitronContextHelper(outputPackage));
         }
