@@ -79,9 +79,15 @@ curl -s -X POST http://localhost:8080/graphql \
 
 A response of `{"data":{"__typename":"Query"}}` means the GraphQL engine is wired up and ready.
 
+== Use GraphiQL instead of curl (optional)
+
+The example bundles the GraphiQL playground: an in-browser editor with auto-complete, query history, and a one-click run button against the same `/graphql` endpoint. Open `http://localhost:8080/graphiql/` directly, or visit `http://localhost:8080/graphql` in a browser and you are redirected there automatically.
+
+Every query and mutation in the rest of this tutorial works in GraphiQL too: paste the GraphQL string (the part inside `"query":"..."` in each curl body) into the editor's left pane and hit run. We show curl in the prose because it copies cleanly into a terminal, but if you prefer a GUI the playground is the ergonomic choice.
+
 == You have just learned
 
-How the rewrite organises itself into the generator, the Sakila catalog, the example module, and the Quarkus runtime; how to load the example data into PostgreSQL; and how to build and run the example.
+How the rewrite organises itself into the generator, the Sakila catalog, the example module, and the Quarkus runtime; how to load the example data into PostgreSQL; how to build and run the example; and how to send queries with either curl or GraphiQL.
 
 == Next
 
