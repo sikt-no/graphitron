@@ -26,7 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>Cousin of {@link MutationPayloadLifterTest}: instead of the {@code @batchKeyLifter}
  * directive, the parent {@code @record} type {@code CreateFilmsPayload} carries a typed
  * zero-arg accessor returning {@code List<FilmRecord>}, and the classifier auto-derives
- * {@link no.sikt.graphitron.rewrite.model.BatchKey.AccessorRowKeyedMany} without any
+ * {@link no.sikt.graphitron.rewrite.model.BatchKey.AccessorKeyedMany} without any
  * directive. The DataFetcher dispatches via {@code DataLoader.loadMany}; the rows-method
  * returns one record per element-PK key (1:1 with keys) using {@code scatterSingleByIdx}.
  *

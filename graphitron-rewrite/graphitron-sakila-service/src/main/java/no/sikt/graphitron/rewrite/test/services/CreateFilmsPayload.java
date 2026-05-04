@@ -6,7 +6,7 @@ import java.util.List;
 
 /**
  * R60 fixture: free-form {@code @record} payload exposing a typed zero-arg accessor returning
- * {@code List<FilmRecord>}. The classifier auto-derives a {@code BatchKey.AccessorRowKeyedMany}
+ * {@code List<FilmRecord>}. The classifier auto-derives a {@code BatchKey.AccessorKeyedMany}
  * from the {@code films()} accessor (record-canonical) and the {@code FilmRecord}'s mapped
  * jOOQ table — no {@code @batchKeyLifter} directive needed.
  *

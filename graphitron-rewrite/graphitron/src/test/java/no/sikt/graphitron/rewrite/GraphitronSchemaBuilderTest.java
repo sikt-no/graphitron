@@ -2271,7 +2271,7 @@ class GraphitronSchemaBuilderTest {
      */
     enum AccessorDerivedBatchKeyCase implements ClassificationCase {
         ACCESSOR_ROWKEYED_MANY_LIST_FIELD_LIST_ACCESSOR(
-            "List field + list-of-TableRecord accessor → RecordTableField with AccessorRowKeyedMany",
+            "List field + list-of-TableRecord accessor → RecordTableField with AccessorKeyedMany",
             """
             type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
             type Payload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads$ListPayload"}) {
@@ -2281,8 +2281,8 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (RecordTableField) schema.field("Payload", "films");
-                assertThat(f.batchKey()).isInstanceOf(BatchKey.AccessorRowKeyedMany.class);
-                var arm = (BatchKey.AccessorRowKeyedMany) f.batchKey();
+                assertThat(f.batchKey()).isInstanceOf(BatchKey.AccessorKeyedMany.class);
+                var arm = (BatchKey.AccessorKeyedMany) f.batchKey();
                 assertThat(arm.accessor().methodName()).isEqualTo("films");
                 assertThat(arm.targetKeyColumns()).hasSize(1);
                 assertThat(arm.targetKeyColumns().get(0).sqlName()).isEqualTo("film_id");
@@ -2293,7 +2293,7 @@ class GraphitronSchemaBuilderTest {
         },
 
         ACCESSOR_ROWKEYED_MANY_LIST_FIELD_SET_ACCESSOR(
-            "List field + set-of-TableRecord accessor → RecordTableField with AccessorRowKeyedMany",
+            "List field + set-of-TableRecord accessor → RecordTableField with AccessorKeyedMany",
             """
             type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
             type Payload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads$SetPayload"}) {
@@ -2303,7 +2303,7 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (RecordTableField) schema.field("Payload", "films");
-                assertThat(f.batchKey()).isInstanceOf(BatchKey.AccessorRowKeyedMany.class);
+                assertThat(f.batchKey()).isInstanceOf(BatchKey.AccessorKeyedMany.class);
                 // The Set<X> vs List<X> split inside Many is not preserved on the variant; emit
                 // is uniform via Iterable. The fixture still exercises the Set classifier path.
             }) {
@@ -2311,7 +2311,7 @@ class GraphitronSchemaBuilderTest {
         },
 
         ACCESSOR_ROWKEYED_SINGLE_SINGLE_FIELD_SINGLE_ACCESSOR(
-            "Single field + single-TableRecord accessor → RecordTableField with AccessorRowKeyedSingle",
+            "Single field + single-TableRecord accessor → RecordTableField with AccessorKeyedSingle",
             """
             type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
             type Payload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads$SinglePayload"}) {
@@ -2321,8 +2321,8 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (RecordTableField) schema.field("Payload", "film");
-                assertThat(f.batchKey()).isInstanceOf(BatchKey.AccessorRowKeyedSingle.class);
-                var ars = (BatchKey.AccessorRowKeyedSingle) f.batchKey();
+                assertThat(f.batchKey()).isInstanceOf(BatchKey.AccessorKeyedSingle.class);
+                var ars = (BatchKey.AccessorKeyedSingle) f.batchKey();
                 assertThat(ars.accessor().methodName()).isEqualTo("film");
                 assertThat(ars.targetKeyColumns()).hasSize(1);
                 assertThat(ars.targetKeyColumns().get(0).sqlName()).isEqualTo("film_id");
