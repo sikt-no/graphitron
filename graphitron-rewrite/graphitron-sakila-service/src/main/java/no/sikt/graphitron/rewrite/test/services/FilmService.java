@@ -3,6 +3,8 @@ package no.sikt.graphitron.rewrite.test.services;
 import no.sikt.graphitron.rewrite.test.jooq.tables.Film;
 import org.jooq.DSLContext;
 import org.jooq.Record1;
+import org.jooq.Row1;
+import org.jooq.impl.DSL;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -47,6 +49,38 @@ public final class FilmService {
         for (Record1<Integer> key : filmIds) {
             String title = titlesById.get(key.value1());
             result.put(key, title != null ? title.toUpperCase() : null);
+        }
+        return result;
+    }
+
+    /**
+     * R61 sibling fixture exercising the {@code Set<Row1<Integer>>} source-shape arm of the
+     * @service classifier. {@link Row1} has no {@code value<N>()} accessor (that's
+     * {@link Record1}'s addition), so the developer composes against the column tuple via
+     * {@code DSL.row(...).in(filmIds)} at SQL time, then reconstructs each key by wrapping the
+     * fetched scalar in a fresh {@code DSL.row(value)} — value-based {@code equals}/
+     * {@code hashCode} on {@link Row1} make the result {@code Map}'s keys round-trip cleanly to
+     * the input keys.
+     *
+     * <p>Confirms the framework's {@code field<N>()}-based dispatch keeps working under the
+     * Row1-source path: values flow through the SQL VALUES table (the framework-side bind) and
+     * the developer-side response Map keyed on the same Row1 instances.
+     */
+    public static Map<Row1<Integer>, String> titleLowercase(Set<Row1<Integer>> filmIds, DSLContext dsl) {
+        if (filmIds.isEmpty()) return new LinkedHashMap<>();
+
+        @SuppressWarnings({"unchecked", "rawtypes"})
+        Row1<Integer>[] keysArray = filmIds.toArray(new Row1[0]);
+
+        Map<Integer, String> titlesById = dsl
+            .select(Film.FILM.FILM_ID, Film.FILM.TITLE)
+            .from(Film.FILM)
+            .where(DSL.row(Film.FILM.FILM_ID).in(keysArray))
+            .fetchMap(Film.FILM.FILM_ID, Film.FILM.TITLE);
+
+        Map<Row1<Integer>, String> result = new LinkedHashMap<>();
+        for (var entry : titlesById.entrySet()) {
+            result.put(DSL.row(entry.getKey()), entry.getValue().toLowerCase());
         }
         return result;
     }
