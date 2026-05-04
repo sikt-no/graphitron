@@ -107,12 +107,24 @@ public final class SplitRowsMethodEmitter {
      * target-column tuple by {@link BatchKey.LifterRowKeyed} construction). The prelude resolves
      * this fork once via a sealed switch and exports the ready list; the consumer iterates without
      * re-switching.
+     *
+     * <p>{@code joinOnParentCols} is parallel to {@code joinOnCols}: index {@code i} is the parent
+     * PK column that {@code joinOnCols.get(i)} references. On the catalog-FK path that is
+     * {@link JoinStep.FkJoin#targetColumns()} (the FK's parent-side referenced columns, paired
+     * with {@code sourceColumns} by FK declaration order); on the lifter path it is the same list
+     * as {@code joinOnCols} (the DataLoader key tuple IS the target-column tuple). Consumers use
+     * this to derive the {@code parentInput.field(...)} reference for each predicate slot — the
+     * FK's slot ordering may differ from the parent's {@code @node(keyColumns: [...])} ordering
+     * (which drives {@code pkCols}), so a positional lookup against {@code pkCols.get(i)} would
+     * mis-pair column types. Resolving against the parent column itself (sqlName + Java type)
+     * keeps the join predicate type-correct regardless of either ordering.
      */
     private record PreludeBindings(
         List<String> aliases,
         String terminalAlias,
         String firstAlias,
         List<ColumnRef> joinOnCols,
+        List<ColumnRef> joinOnParentCols,
         TypeName keyElement,
         List<ColumnRef> pkCols
     ) {}
@@ -186,6 +198,17 @@ public final class SplitRowsMethodEmitter {
                 "ConditionJoin cannot be the first hop of a Split/Record rows-method; "
                 + "unsupportedReason should have short-circuited upstream");
         };
+        // Parent-side column for each joinOnCols slot. FK declaration pairs sourceColumns[i] with
+        // targetColumns[i]; the lifter path stores both sides on the same list. Used to derive the
+        // parentInput.field(sqlName, type) reference per slot, sidestepping any positional mismatch
+        // between FK column ordering and @node(keyColumns: [...]) ordering.
+        List<ColumnRef> joinOnParentCols = switch (firstStep) {
+            case JoinStep.FkJoin fk          -> fk.targetColumns();
+            case JoinStep.LiftedHop lh       -> lh.targetColumns();
+            case JoinStep.ConditionJoin cj   -> throw new IllegalStateException(
+                "ConditionJoin cannot be the first hop of a Split/Record rows-method; "
+                + "unsupportedReason should have short-circuited upstream");
+        };
 
         // Empty-input short-circuit — before touching the DSL context.
         body.beginControlFlow("if (keys.isEmpty())");
@@ -248,7 +271,7 @@ public final class SplitRowsMethodEmitter {
                 fieldName + "_" + aliases.get(i));
         }
 
-        return new PreludeBindings(aliases, terminalAlias, firstAlias, joinOnCols, keyElement, pkCols);
+        return new PreludeBindings(aliases, terminalAlias, firstAlias, joinOnCols, joinOnParentCols, keyElement, pkCols);
     }
 
     // -----------------------------------------------------------------------
@@ -414,6 +437,7 @@ public final class SplitRowsMethodEmitter {
         String terminalAlias = p.terminalAlias();
         String firstAlias = p.firstAlias();
         List<ColumnRef> joinOnCols = p.joinOnCols();
+        List<ColumnRef> joinOnParentCols = p.joinOnParentCols();
         TypeName keyElement = p.keyElement();
         TypeName keysListType = ParameterizedTypeName.get(LIST, keyElement);
         List<ColumnRef> pkCols = p.pkCols();
@@ -486,24 +510,24 @@ public final class SplitRowsMethodEmitter {
                 prevAlias, bridging.fk().keysClass(), bridging.fk().constantName());
         }
         // JOIN parentInput on step 0's source columns (target/terminal side for list cardinality).
-        // parentInput.field(n, Class<T>) returns Field<T>, matching the FK column's type in
-        // .eq(...). Position mapping: index 0 is idx, indices 1..N are the parent PK columns
-        // in the order declared by BatchKey.RowKeyed.parentKeyColumns() (or
-        // LifterRowKeyed.targetKeyColumns() on the lifter path; same Java type per Invariant #4).
-        // ON rather than USING dodges junction-column collisions, as Phase 2a C2 established.
-        // joinOnCols is FkJoin.sourceColumns() on the catalog-FK path (FK-holder columns sitting
-        // on the terminal/firstAlias side for list cardinality) or LiftedHop.targetColumns() on
-        // the lifter path (target-side keys; firstAlias is the terminal). Either way the column
-        // is addressable via firstAlias.
+        // parentInput.field(sqlName, Class<T>) returns Field<T>, matching the FK column's type in
+        // .eq(...). Slot pairing comes from the FK declaration: joinOnCols.get(i) is the
+        // terminal-side column whose value equals the parent column joinOnParentCols.get(i)
+        // (FK targetColumns on the catalog-FK path, identical to joinOnCols on the lifter path).
+        // We resolve the parentInput field by sqlName + Java type rather than positional index,
+        // because @node(keyColumns: [...]) ordering may differ from FK column ordering — a
+        // positional .field(i+1, pkCols.get(i).columnClass) would mis-pair types when those
+        // orderings disagree (composite parent keys with different in-FK column order). ON
+        // rather than USING dodges junction-column collisions, as Phase 2a C2 established.
         var onCond = CodeBlock.builder();
         for (int i = 0; i < joinOnCols.size(); i++) {
             if (i > 0) onCond.add(".and(");
-            ColumnRef pk = pkCols.get(i);
-            ClassName pkType = ClassName.bestGuess(pk.columnClass());
-            onCond.add("$L.$L.eq(parentInput.field($L, $T.class))",
+            ColumnRef parentCol = joinOnParentCols.get(i);
+            ClassName parentColType = ClassName.bestGuess(parentCol.columnClass());
+            onCond.add("$L.$L.eq(parentInput.field($S, $T.class))",
                 firstAlias,
                 joinOnCols.get(i).javaName(),
-                i + 1, pkType);
+                parentCol.sqlName(), parentColType);
             if (i > 0) onCond.add(")");
         }
         sel.add(".join(parentInput).on($L)\n", onCond.build());
@@ -574,10 +598,12 @@ public final class SplitRowsMethodEmitter {
      * <p>The JOIN column reference differs from list-cardinality: list-cardinality's
      * {@code firstHop.sourceColumns()} sit on the target (terminal) table (the FK-holder is the
      * child); single-cardinality's {@code sourceColumns()} sit on the <em>parent</em>, so the
-     * emitter uses {@code firstHop.targetColumns()} to address the column on {@code firstAlias}.
-     * FK-vs-PK column types match by jOOQ invariant, so {@code pkCols.get(i).columnClass()}
-     * (the BatchKey's column type) is the right cast target for the typed
-     * {@code parentInput.field(i+1, Class<T>)} call.
+     * emitter uses {@code firstHop.targetColumns()} to address the column on {@code firstAlias}
+     * and {@code firstHop.sourceColumns()} (FkJoin) or the same {@code targetColumns()}
+     * (LiftedHop) as the parent-side column whose value drives the {@code parentInput.field(...)}
+     * lookup. The lookup is by sqlName + Java type rather than positional index, so an
+     * {@code @node(keyColumns: [...])} order that differs from the FK column order does not
+     * mis-pair column types.
      */
     private static MethodSpec buildSingleMethod(
             String fieldName,
@@ -620,17 +646,33 @@ public final class SplitRowsMethodEmitter {
         // JOIN: terminal.<target_col> = parentInput.<value>.
         // Both FkJoin and LiftedHop expose the terminal-side columns through targetColumns():
         // for FkJoin this is the parent's FK target on the terminal (single-cardinality
-        // SplitTableField); for LiftedHop this is the element table's PK (loadMany contract for
-        // AccessorKeyedMany). Same column-class invariant either way.
+        // SplitTableField, parent-holds-FK); for LiftedHop this is the element table's PK
+        // (loadMany contract for AccessorKeyedMany). The matching parent-side column for slot
+        // i differs by step type: FkJoin pairs targetColumns[i] with sourceColumns[i] by FK
+        // declaration; LiftedHop's DataLoader key tuple IS its target-column tuple by
+        // construction, so the parent column equals the terminal column. We resolve the
+        // parentInput field by sqlName + Java type rather than positional index, because
+        // @node(keyColumns: [...]) ordering may differ from the FK/lifter column ordering — a
+        // positional .field(i+1, pkCols.get(i).columnClass) would mis-pair types when those
+        // orderings disagree.
+        List<ColumnRef> singleParentCols;
+        if (firstHop instanceof JoinStep.FkJoin fkSingle) {
+            singleParentCols = fkSingle.sourceColumns();
+        } else if (firstHop instanceof JoinStep.LiftedHop lhSingle) {
+            singleParentCols = lhSingle.targetColumns();
+        } else {
+            throw new IllegalStateException(
+                "buildSingleMethod: unexpected first-hop type " + firstHop.getClass().getName());
+        }
         var onCond = CodeBlock.builder();
         for (int i = 0; i < firstHop.targetColumns().size(); i++) {
             if (i > 0) onCond.add(".and(");
-            ColumnRef parentCol = pkCols.get(i);
+            ColumnRef parentCol = singleParentCols.get(i);
             ClassName colType = ClassName.bestGuess(parentCol.columnClass());
-            onCond.add("$L.$L.eq(parentInput.field($L, $T.class))",
+            onCond.add("$L.$L.eq(parentInput.field($S, $T.class))",
                 firstAlias,
                 firstHop.targetColumns().get(i).javaName(),
-                i + 1, colType);
+                parentCol.sqlName(), colType);
             if (i > 0) onCond.add(")");
         }
 
@@ -730,6 +772,7 @@ public final class SplitRowsMethodEmitter {
         String terminalAlias = p.terminalAlias();
         String firstAlias = p.firstAlias();
         List<ColumnRef> joinOnCols = p.joinOnCols();
+        List<ColumnRef> joinOnParentCols = p.joinOnParentCols();
         TypeName keyElement = p.keyElement();
         TypeName keysListType = ParameterizedTypeName.get(LIST, keyElement);
         List<ColumnRef> pkCols = p.pkCols();
@@ -803,15 +846,20 @@ public final class SplitRowsMethodEmitter {
         }
         // joinOnCols: FkJoin.sourceColumns() on the catalog-FK path or LiftedHop.targetColumns()
         // on the lifter path; both addressable via firstAlias on the terminal side.
+        // joinOnParentCols pairs slot-by-slot with joinOnCols and identifies which parent column
+        // each terminal-side column references (FK targetColumns or, for the lifter path, the
+        // same target-column tuple). The parentInput field is resolved by sqlName + Java type
+        // rather than positional index, so an @node(keyColumns: [...]) ordering that disagrees
+        // with the FK column ordering does not mis-pair column types.
         var onCond = CodeBlock.builder();
         for (int i = 0; i < joinOnCols.size(); i++) {
             if (i > 0) onCond.add(".and(");
-            ColumnRef pk = pkCols.get(i);
-            ClassName pkType = ClassName.bestGuess(pk.columnClass());
-            onCond.add("$L.$L.eq(parentInput.field($L, $T.class))",
+            ColumnRef parentCol = joinOnParentCols.get(i);
+            ClassName parentColType = ClassName.bestGuess(parentCol.columnClass());
+            onCond.add("$L.$L.eq(parentInput.field($S, $T.class))",
                 firstAlias,
                 joinOnCols.get(i).javaName(),
-                i + 1, pkType);
+                parentCol.sqlName(), parentColType);
             if (i > 0) onCond.add(")");
         }
         inner.add(".join(parentInput).on($L)\n", onCond.build());
