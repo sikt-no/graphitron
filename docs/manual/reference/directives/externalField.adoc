@@ -92,6 +92,6 @@ type FilmCardWrapper @record(record: {className: "com.example.services.FilmCardD
 * xref:reference.adoc[`@reference`] is the FK-driven counterpart, choose it when the value comes from a chain of catalog joins, choose `@externalField` when the value is a custom expression or a typed lift.
 * xref:record.adoc[`@record`] is the natural target type for `Field<TableRecord<?>>` and `Field<CustomJavaRecord>` lift forms.
 * xref:field.adoc[`@field(name: ...)`] disambiguates the GraphQL-field-vs-SQL-column alias when names collide.
-* xref:../../how-to/external-code.adoc[How-to: Wiring external Java code] (Phase 3) covers the rewrite plugin's classpath setup, method-name conventions, and the lift-into-typed-record patterns.
+* xref:../../how-to/external-code.adoc[How-to: Wiring external Java code] covers the rewrite plugin's classpath setup, method-name conventions, and the lift-into-typed-record patterns.
 
 xref:../index.adoc[← Reference index]

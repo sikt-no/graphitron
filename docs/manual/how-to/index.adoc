@@ -4,9 +4,9 @@
 
 Task-indexed recipes for the day-to-day patterns Graphitron's directives unlock: mapping types to tables, joining via references, batch lookups, custom conditions, services, mutations, pagination and sorting, polymorphic types, error handling, global node identification, computed fields, Apollo federation, custom scalars, tenant scoping, and the recommended consumer test pattern.
 
-== Status: in flight
+== Status
 
-Recipe pages are authored in R68 Phase 3, one at a time. Landed pages are listed below; until the rest land, the closest material is in xref:../../architecture/getting-started.adoc[Getting started with the rewrite runtime] (federation, custom scalars, tenant scoping, hello world) and the worked examples in the legacy https://github.com/sikt-no/graphitron/tree/main/graphitron-codegen-parent/graphitron-java-codegen/README.md[`graphitron-java-codegen` README] (the rewrite is directive-compatible with that material; recipes will be reframed and cross-linked into source-of-truth tests as they land).
+Most recipes have landed; the remaining picks (custom conditions, computed fields, Apollo federation transport, custom scalars, tenant scoping) are in flight under R68 Phase 3. For runtime concerns (federation wiring, custom scalars, tenant scoping, the hello-world walkthrough) the immediate substitute is xref:../../architecture/getting-started.adoc[Getting started with the rewrite runtime]; the worked examples in the legacy https://github.com/sikt-no/graphitron/tree/main/graphitron-codegen-parent/graphitron-java-codegen/README.md[`graphitron-java-codegen` README] are directive-compatible with the rewrite and remain a useful cross-reference until each recipe is reframed against the rewrite's source-of-truth tests.
 
 == Available recipes
 

@@ -97,6 +97,6 @@ type Query {
 * xref:service.adoc[`@service`] is the alternative when the developer supplies the *entire* fetcher rather than just the source table.
 * xref:condition.adoc[`@condition`] layers explicit predicates on top of the chosen table, the two compose.
 * xref:reference.adoc[`@reference`] still controls the join path at child sites; the chosen table is the path's leaf.
-* xref:../../how-to/external-code.adoc[How-to: Wiring external Java code] (Phase 3) covers the rewrite plugin's classpath setup shared across `@tableMethod`, `@externalField`, `@condition`, and `@service`.
+* xref:../../how-to/external-code.adoc[How-to: Wiring external Java code] covers the rewrite plugin's classpath setup shared across `@tableMethod`, `@externalField`, `@condition`, and `@service`.
 
 xref:../index.adoc[← Reference index]

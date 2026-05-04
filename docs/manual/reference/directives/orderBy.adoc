@@ -54,6 +54,6 @@ A client requesting `order: [{ field: TITLE, direction: ASC }]` gets the films s
 
 * xref:order.adoc[`@order`] specifies how each enum value maps to database sort columns.
 * xref:defaultOrder.adoc[`@defaultOrder`] supplies the fallback sort when the client omits the `@orderBy` argument.
-* xref:../../how-to/sort-results.adoc[How-to: Sort results] (Phase 3) covers multi-key orderings and keyset pagination interactions.
+* xref:../../how-to/sort-results.adoc[How-to: Sort results] covers multi-key orderings and keyset pagination interactions.
 
 xref:../index.adoc[← Reference index]
