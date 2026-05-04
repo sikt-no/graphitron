@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.rewrite.model.ForeignKeyRef;
 import org.jooq.Catalog;
 import org.jooq.ForeignKey;
 import org.jooq.Schema;
@@ -246,13 +247,32 @@ public class JooqCatalog {
      * not depend on jOOQ codegen output) or when no matching key is found.
      */
     public Optional<String> fkJavaConstantName(String sqlConstraintName) {
+        return findForeignKeyByName(sqlConstraintName).map(ForeignKeyRef::constantName);
+    }
+
+    /**
+     * Resolves a foreign key by SQL constraint name into a typed {@link ForeignKeyRef} carrying
+     * the schema-correct {@code Keys} {@link ClassName} together with the Java constant name.
+     * Replaces per-emit-site {@code ClassName.get(jooqPackage, "Keys")} concatenation: the keys
+     * class is read from the live {@link Class} of the matching FK constant, so multi-schema
+     * codegen layouts produce schema-segmented FQNs (e.g. {@code multischema_a.Keys}) without
+     * any caller-side derivation.
+     *
+     * <p>Empty when the catalog or schema {@code Keys} class is unavailable, or when no FK with
+     * the given constraint name exists in any schema. The match is case-insensitive on the SQL
+     * name (consistent with {@link #findForeignKey(String)}).
+     */
+    public Optional<ForeignKeyRef> findForeignKeyByName(String sqlConstraintName) {
         if (catalog == null) return Optional.empty();
         return catalog.schemaStream()
             .flatMap(schema -> keysClass(schema).stream())
             .flatMap(cls -> Arrays.stream(cls.getFields()))
             .filter(f -> ForeignKey.class.isAssignableFrom(f.getType()))
             .filter(f -> ((ForeignKey<?, ?>) fieldValue(f)).getName().equalsIgnoreCase(sqlConstraintName))
-            .map(Field::getName)
+            .map(f -> new ForeignKeyRef(
+                ((ForeignKey<?, ?>) fieldValue(f)).getName(),
+                ClassName.get(f.getDeclaringClass()),
+                f.getName()))
             .findFirst();
     }
 

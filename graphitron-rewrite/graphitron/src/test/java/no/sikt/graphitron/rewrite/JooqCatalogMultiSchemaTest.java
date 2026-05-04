@@ -247,4 +247,28 @@ class JooqCatalogMultiSchemaTest {
         assertThat(fk.get().getTable().getSchema().getName()).isEqualTo("multischema_b");
         assertThat(fk.get().getKey().getTable().getSchema().getName()).isEqualTo("multischema_a");
     }
+
+    // ---- findForeignKeyByName: Phase 3 typed FK reference ----
+
+    @Test
+    void findForeignKeyByName_returnsSchemaSegmentedKeysClass() {
+        // The cross-schema FK is declared on multischema_b's Keys class — this is the
+        // multi-schema bug R78 fixes: a per-emit-site `ClassName.get(jooqPackage, "Keys")`
+        // with jooqPackage = root would compile to the non-existent root.Keys (no Keys
+        // class in the root package under multi-schema codegen). The typed lookup picks
+        // the FK-holder schema's Keys class.
+        var ref = multi().findForeignKeyByName("gadget_widget_id_fkey");
+        assertThat(ref).isPresent();
+        assertThat(ref.get().keysClass()).isEqualTo(ClassName.get(
+            "no.sikt.graphitron.rewrite.multischemafixture.multischema_b", "Keys"));
+        assertThat(ref.get().sqlName()).isEqualToIgnoringCase("gadget_widget_id_fkey");
+        // Stock JavaGenerator names the constant <TABLE>__<FK_NAME> (uppercased), not FK_<...>;
+        // pin the upper-cased SQL constraint name as the suffix to avoid coupling to the table prefix.
+        assertThat(ref.get().constantName()).endsWith("GADGET_WIDGET_ID_FKEY");
+    }
+
+    @Test
+    void findForeignKeyByName_unknownConstraintReturnsEmpty() {
+        assertThat(multi().findForeignKeyByName("not_a_fk")).isEmpty();
+    }
 }

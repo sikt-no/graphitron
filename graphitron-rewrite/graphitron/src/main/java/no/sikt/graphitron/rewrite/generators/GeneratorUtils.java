@@ -73,28 +73,12 @@ class GeneratorUtils {
                 ClassName.get(outputPackage + ".types", returnTypeName));
         }
 
-        // Legacy overload kept for the Phase 2b transition. Phase 3 / follow-up sweeps the
-        // remaining call sites (~50 in TypeFetcherGenerator and the *DirectiveResolver family)
-        // and removes this. The String parameter is retained without a name so that no caller
-        // can read or pass through a leftover jooqPackage value.
-        @Deprecated
-        static ResolvedTableNames of(TableRef tableRef, String returnTypeName, String outputPackage,
-                                     @SuppressWarnings("unused") String legacyJooqPackage) {
-            return of(tableRef, returnTypeName, outputPackage);
-        }
-
         /** Resolves only {@link #tablesClass} and {@link #jooqTableClass} — use when the type class is not needed. */
         static ResolvedTableNames ofTable(TableRef tableRef) {
             return new ResolvedTableNames(
                 tableRef.constantsClass(),
                 tableRef.tableClass(),
                 null);
-        }
-
-        @Deprecated
-        static ResolvedTableNames ofTable(TableRef tableRef,
-                                          @SuppressWarnings("unused") String legacyJooqPackage) {
-            return ofTable(tableRef);
         }
 
         /**

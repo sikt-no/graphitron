@@ -539,7 +539,7 @@ class BuildContext {
         String fkSideTable  = f.getTable().getName();
         String keySideTable = f.getKey().getTable().getName();
         String targetSqlName = sourceSqlName.equalsIgnoreCase(fkSideTable) ? keySideTable : fkSideTable;
-        String fkJavaConstant = catalog.fkJavaConstantName(f.getName()).orElse("");
+        var fkRef = catalog.findForeignKeyByName(f.getName()).orElse(null);
         Optional<TableRef> targetTable = resolveTable(targetSqlName);
         Optional<TableRef> originTable = resolveTable(sourceSqlName);
         if (targetTable.isEmpty() || originTable.isEmpty()) {
@@ -548,7 +548,7 @@ class BuildContext {
         List<ColumnRef> sourceColumns = resolveFkColumnRefs(f.getTable(), f.getFields());
         List<ColumnRef> targetColumns = resolveFkColumnRefs(f.getKey().getTable(), f.getKey().getFields());
         String alias = fieldName + "_" + stepIndex;
-        return Optional.of(new FkJoin(f.getName(), fkJavaConstant, originTable.get(),
+        return Optional.of(new FkJoin(f.getName(), fkRef, originTable.get(),
             sourceColumns, targetTable.get(), targetColumns, whereFilter, alias));
     }
 

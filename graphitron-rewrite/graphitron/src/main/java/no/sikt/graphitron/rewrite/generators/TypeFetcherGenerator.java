@@ -324,7 +324,7 @@ public class TypeFetcherGenerator {
                 case QueryField.QueryLookupTableField qlf -> {
                     var lookupTableRef = qlf.returnType().table();
                     var lookupTableClass = GeneratorUtils.ResolvedTableNames
-                        .of(lookupTableRef, qlf.returnType().returnTypeName(), outputPackage, jooqPackage).jooqTableClass();
+                        .of(lookupTableRef, qlf.returnType().returnTypeName(), outputPackage).jooqTableClass();
                     builder.addMethod(buildQueryLookupFetcher(qlf, outputPackage));
                     builder.addMethod(buildQueryLookupRowsMethod(qlf, outputPackage, jooqPackage));
                     builder.addMethod(LookupValuesJoinEmitter.buildInputRowsMethod(qlf, lookupTableClass));
@@ -346,11 +346,11 @@ public class TypeFetcherGenerator {
                 }
                 case ChildField.SplitTableField stf -> {
                     builder.addMethod(buildSplitQueryDataFetcher(stf, stf.returnType(), parentTable, outputPackage, jooqPackage));
-                    builder.addMethod(SplitRowsMethodEmitter.buildForSplitTable(stf, outputPackage, jooqPackage));
+                    builder.addMethod(SplitRowsMethodEmitter.buildForSplitTable(stf, outputPackage));
                 }
                 case ChildField.SplitLookupTableField slf -> {
                     builder.addMethod(buildSplitQueryDataFetcher(slf, slf.returnType(), parentTable, outputPackage, jooqPackage));
-                    builder.addMethod(SplitRowsMethodEmitter.buildForSplitLookupTable(slf, outputPackage, jooqPackage));
+                    builder.addMethod(SplitRowsMethodEmitter.buildForSplitLookupTable(slf, outputPackage));
                     // Emit the VALUES-building input-rows helper alongside the rows method.
                     // Phase 2a's env-based variant (buildInputRowsMethod) reads args from
                     // env.getArgument(name) — correct for a Split* fetcher whose @lookupKey args
@@ -359,14 +359,14 @@ public class TypeFetcherGenerator {
                     if (slf.lookupMapping() instanceof no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) {
                         var lookupTableRef = slf.returnType().table();
                         var lookupTableClass = GeneratorUtils.ResolvedTableNames
-                            .of(lookupTableRef, slf.returnType().returnTypeName(), outputPackage, jooqPackage).jooqTableClass();
+                            .of(lookupTableRef, slf.returnType().returnTypeName(), outputPackage).jooqTableClass();
                         builder.addMethod(LookupValuesJoinEmitter.buildInputRowsMethod(slf, lookupTableClass));
                     }
                 }
                 case QueryField.QueryNodeField f              -> builder.addMethod(buildQueryNodeFetcher(f, outputPackage));
                 case QueryField.QueryNodesField f             -> builder.addMethod(buildQueryNodesFetcher(f, outputPackage));
                 case QueryField.QueryTableMethodTableField f  -> builder.addMethod(buildQueryTableMethodFetcher(f, outputPackage, jooqPackage));
-                case QueryField.QueryServiceTableField f      -> builder.addMethod(buildQueryServiceTableFetcher(f, outputPackage, jooqPackage));
+                case QueryField.QueryServiceTableField f      -> builder.addMethod(buildQueryServiceTableFetcher(f, outputPackage));
                 case QueryField.QueryServiceRecordField f     -> builder.addMethod(buildQueryServiceRecordFetcher(f, outputPackage));
                 // Stub variants — see STUBBED_VARIANTS
                 case QueryField.QueryTableInterfaceField f    -> builder.addMethod(buildQueryTableInterfaceFieldFetcher(f, outputPackage, jooqPackage));
@@ -398,7 +398,7 @@ public class TypeFetcherGenerator {
                 case MutationField.MutationUpdateTableField f  -> builder.addMethod(buildMutationUpdateFetcher(f, outputPackage, jooqPackage));
                 case MutationField.MutationDeleteTableField f  -> builder.addMethod(buildMutationDeleteFetcher(f, outputPackage, jooqPackage));
                 case MutationField.MutationUpsertTableField f  -> builder.addMethod(buildMutationUpsertFetcher(f, outputPackage, jooqPackage));
-                case MutationField.MutationServiceTableField f -> builder.addMethod(buildMutationServiceTableFetcher(f, outputPackage, jooqPackage));
+                case MutationField.MutationServiceTableField f -> builder.addMethod(buildMutationServiceTableFetcher(f, outputPackage));
                 case MutationField.MutationServiceRecordField f -> builder.addMethod(buildMutationServiceRecordFetcher(f, outputPackage));
                 case ChildField.ColumnReferenceField f          -> {
                     if (f.compaction() instanceof CallSiteCompaction.NodeIdEncodeKeys) {
@@ -423,17 +423,17 @@ public class TypeFetcherGenerator {
                 case ChildField.ParticipantColumnReferenceField ignored -> { }
                 case ChildField.RecordTableField rtf -> {
                     builder.addMethod(buildRecordBasedDataFetcher(rtf, rtf.batchKey(), resultType, jooqPackage, outputPackage));
-                    builder.addMethod(SplitRowsMethodEmitter.buildForRecordTable(rtf, outputPackage, jooqPackage));
+                    builder.addMethod(SplitRowsMethodEmitter.buildForRecordTable(rtf, outputPackage));
                 }
                 case ChildField.RecordLookupTableField rltf -> {
                     builder.addMethod(buildRecordBasedDataFetcher(rltf, rltf.batchKey(), resultType, jooqPackage, outputPackage));
-                    builder.addMethod(SplitRowsMethodEmitter.buildForRecordLookupTable(rltf, outputPackage, jooqPackage));
+                    builder.addMethod(SplitRowsMethodEmitter.buildForRecordLookupTable(rltf, outputPackage));
                     // Input-rows helper identical in shape to SplitLookupTableField's — reads
                     // @lookupKey args from env.getArgument(name) and emits the typed Row<M+1>[].
                     if (rltf.lookupMapping() instanceof no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) {
                         var lookupTableRef = rltf.returnType().table();
                         var lookupTableClass = GeneratorUtils.ResolvedTableNames
-                            .of(lookupTableRef, rltf.returnType().returnTypeName(), outputPackage, jooqPackage).jooqTableClass();
+                            .of(lookupTableRef, rltf.returnType().returnTypeName(), outputPackage).jooqTableClass();
                         builder.addMethod(LookupValuesJoinEmitter.buildInputRowsMethod(rltf, lookupTableClass));
                     }
                 }
@@ -510,13 +510,13 @@ public class TypeFetcherGenerator {
             if (field instanceof QueryField.QueryTableField qtf
                     && qtf.orderBy() instanceof OrderBySpec.Argument arg) {
                 var tableRef = qtf.returnType().table();
-                var names = GeneratorUtils.ResolvedTableNames.of(tableRef, qtf.returnType().returnTypeName(), outputPackage, jooqPackage);
+                var names = GeneratorUtils.ResolvedTableNames.of(tableRef, qtf.returnType().returnTypeName(), outputPackage);
                 builder.addMethod(buildOrderByHelperMethod(qtf.name(), arg, names, tableRef, outputPackage));
             } else if (field instanceof ChildField.SplitTableField stf
                     && stf.returnType().wrapper() instanceof FieldWrapper.Connection
                     && stf.orderBy() instanceof OrderBySpec.Argument arg) {
                 var tableRef = stf.returnType().table();
-                var names = GeneratorUtils.ResolvedTableNames.of(tableRef, stf.returnType().returnTypeName(), outputPackage, jooqPackage);
+                var names = GeneratorUtils.ResolvedTableNames.of(tableRef, stf.returnType().returnTypeName(), outputPackage);
                 builder.addMethod(buildOrderByHelperMethod(stf.name(), arg, names, tableRef, outputPackage));
             }
         }
@@ -587,7 +587,7 @@ public class TypeFetcherGenerator {
      */
     private static MethodSpec buildQueryTableFetcher(QueryField.QueryTableField qtf, String outputPackage, String jooqPackage) {
         var tableRef = qtf.returnType().table();
-        var names = GeneratorUtils.ResolvedTableNames.of(tableRef, qtf.returnType().returnTypeName(), outputPackage, jooqPackage);
+        var names = GeneratorUtils.ResolvedTableNames.of(tableRef, qtf.returnType().returnTypeName(), outputPackage);
         boolean isList = qtf.returnType().wrapper().isList();
 
         var valueType = isList
@@ -665,7 +665,7 @@ public class TypeFetcherGenerator {
     private static MethodSpec buildQueryTableInterfaceFieldFetcher(
             QueryField.QueryTableInterfaceField qtif, String outputPackage, String jooqPackage) {
         var tableRef = qtif.returnType().table();
-        var names = GeneratorUtils.ResolvedTableNames.of(tableRef, qtif.returnType().returnTypeName(), outputPackage, jooqPackage);
+        var names = GeneratorUtils.ResolvedTableNames.of(tableRef, qtif.returnType().returnTypeName(), outputPackage);
         boolean isList = qtif.returnType().wrapper().isList();
         var valueType = isList ? (TypeName) ParameterizedTypeName.get(RESULT, RECORD) : RECORD;
 
@@ -732,7 +732,7 @@ public class TypeFetcherGenerator {
     private static MethodSpec buildTableInterfaceFieldFetcher(
             ChildField.TableInterfaceField tif, String outputPackage, String jooqPackage) {
         var tableRef = tif.returnType().table();
-        var names = GeneratorUtils.ResolvedTableNames.of(tableRef, tif.returnType().returnTypeName(), outputPackage, jooqPackage);
+        var names = GeneratorUtils.ResolvedTableNames.of(tableRef, tif.returnType().returnTypeName(), outputPackage);
         boolean isList = tif.returnType().wrapper().isList();
         var valueType = isList ? (TypeName) ParameterizedTypeName.get(RESULT, RECORD) : RECORD;
 
@@ -871,7 +871,7 @@ public class TypeFetcherGenerator {
             if (!(participant instanceof ParticipantRef.TableBound tb)) continue;
             if (tb.discriminatorValue() == null) continue;
             for (var ctf : tb.crossTableFields()) {
-                var names = GeneratorUtils.ResolvedTableNames.ofTable(ctf.targetTable(), jooqPackage);
+                var names = GeneratorUtils.ResolvedTableNames.ofTable(ctf.targetTable());
                 String aliasVar = ctf.aliasVarName();
                 b.addStatement("$T $L = null", names.jooqTableClass(), aliasVar);
                 b.beginControlFlow("if (env.getSelectionSet().contains($S))",
@@ -981,7 +981,7 @@ public class TypeFetcherGenerator {
     private static MethodSpec buildQueryTableMethodFetcher(QueryField.QueryTableMethodTableField qtmtf,
                                                             String outputPackage, String jooqPackage) {
         var tableRef = qtmtf.returnType().table();
-        var names = GeneratorUtils.ResolvedTableNames.of(tableRef, qtmtf.returnType().returnTypeName(), outputPackage, jooqPackage);
+        var names = GeneratorUtils.ResolvedTableNames.of(tableRef, qtmtf.returnType().returnTypeName(), outputPackage);
         boolean isList = qtmtf.returnType().wrapper().isList();
 
         TypeName valueType = isList ? ParameterizedTypeName.get(RESULT, RECORD) : RECORD;
@@ -1045,10 +1045,9 @@ public class TypeFetcherGenerator {
             + "buildQueryServiceRecordFetcher, whose PojoResultType / ScalarReturnType paths "
             + "do not depend on this guarantee — annotating the helper would overclaim.")
     private static MethodSpec buildQueryServiceTableFetcher(QueryField.QueryServiceTableField qstf,
-                                                             String outputPackage, String jooqPackage) {
+                                                             String outputPackage) {
         var tableRef = qstf.returnType().table();
-        var recordClass = ClassName.get(jooqPackage + ".tables.records",
-            tableRef.tableClass().simpleName() + "Record");
+        var recordClass = tableRef.recordClass();
         boolean isList = qstf.returnType().wrapper().isList();
         TypeName returnType = isList
             ? ParameterizedTypeName.get(RESULT, recordClass)
@@ -1113,10 +1112,9 @@ public class TypeFetcherGenerator {
             + "service-catalog strictness as buildQueryServiceTableFetcher; mutation services "
             + "share the same MethodRef strictness path through ServiceCatalog.reflectServiceMethod.")
     private static MethodSpec buildMutationServiceTableFetcher(MutationField.MutationServiceTableField mstf,
-                                                                String outputPackage, String jooqPackage) {
+                                                                String outputPackage) {
         var tableRef = mstf.returnType().table();
-        var recordClass = ClassName.get(jooqPackage + ".tables.records",
-            tableRef.tableClass().simpleName() + "Record");
+        var recordClass = tableRef.recordClass();
         boolean isList = mstf.returnType().wrapper().isList();
         TypeName returnType = isList
             ? ParameterizedTypeName.get(RESULT, recordClass)
@@ -1793,7 +1791,7 @@ public class TypeFetcherGenerator {
      */
     private static MethodSpec buildQueryConnectionFetcher(QueryField.QueryTableField qtf, String outputPackage, String jooqPackage) {
         var tableRef = qtf.returnType().table();
-        var names = GeneratorUtils.ResolvedTableNames.of(tableRef, qtf.returnType().returnTypeName(), outputPackage, jooqPackage);
+        var names = GeneratorUtils.ResolvedTableNames.of(tableRef, qtf.returnType().returnTypeName(), outputPackage);
         var connectionResultClass = ClassName.get(
             outputPackage + ".util", ConnectionResultClassGenerator.CLASS_NAME);
         var connectionHelperClass = ClassName.get(
@@ -2188,7 +2186,7 @@ public class TypeFetcherGenerator {
      */
     private static MethodSpec buildQueryLookupRowsMethod(QueryField.QueryLookupTableField field, String outputPackage, String jooqPackage) {
         var tableRef = field.returnType().table();
-        var names = GeneratorUtils.ResolvedTableNames.of(tableRef, field.returnType().returnTypeName(), outputPackage, jooqPackage);
+        var names = GeneratorUtils.ResolvedTableNames.of(tableRef, field.returnType().returnTypeName(), outputPackage);
 
         var builder = MethodSpec.methodBuilder(field.lookupMethodName())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)

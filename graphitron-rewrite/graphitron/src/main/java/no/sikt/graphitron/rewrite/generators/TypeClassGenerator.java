@@ -175,7 +175,7 @@ public class TypeClassGenerator {
             List<ChildField.ComputedField> computedFields,
             List<ColumnRef> requiredProjectionColumns,
             String outputPackage, String jooqPackage) {
-        var names = GeneratorUtils.ResolvedTableNames.ofTable(tableRef, jooqPackage);
+        var names = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
         var fieldWildcard = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
         var listOfField = ParameterizedTypeName.get(LIST, fieldWildcard);
         var entryType = ParameterizedTypeName.get(
@@ -253,12 +253,12 @@ public class TypeClassGenerator {
                 }
                 case ChildField.TableField tf -> {
                     builder.addCode("        case $S -> {\n", tf.name());
-                    builder.addCode("$L", InlineTableFieldEmitter.buildSwitchArmBody(tf, tableArg, sf, outputPackage, jooqPackage));
+                    builder.addCode("$L", InlineTableFieldEmitter.buildSwitchArmBody(tf, tableArg, sf, outputPackage));
                     builder.addCode("        }\n");
                 }
                 case ChildField.LookupTableField lf -> {
                     builder.addCode("        case $S -> {\n", lf.name());
-                    builder.addCode("$L", InlineLookupTableFieldEmitter.buildSwitchArmBody(lf, tableArg, sf, outputPackage, jooqPackage));
+                    builder.addCode("$L", InlineLookupTableFieldEmitter.buildSwitchArmBody(lf, tableArg, sf, outputPackage));
                     builder.addCode("        }\n");
                 }
                 case ChildField.NestingField nf -> {

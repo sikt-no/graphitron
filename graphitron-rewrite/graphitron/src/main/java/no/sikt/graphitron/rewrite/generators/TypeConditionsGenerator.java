@@ -92,7 +92,7 @@ public class TypeConditionsGenerator {
 
     static MethodSpec buildConditionMethod(GeneratedConditionFilter gcf, String outputPackage, String jooqPackage) {
         var tableRef = gcf.tableRef();
-        var jooqTableClass = GeneratorUtils.ResolvedTableNames.ofTable(tableRef, jooqPackage).jooqTableClass();
+        var jooqTableClass = GeneratorUtils.ResolvedTableNames.ofTable(tableRef).jooqTableClass();
 
         var builder = MethodSpec.methodBuilder(gcf.methodName())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
