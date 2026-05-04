@@ -255,38 +255,18 @@ public final class SplitRowsMethodEmitter {
         return new PreludeBindings(aliases, terminalAlias, firstAlias, joinOnCols, keyElement, pkCols);
     }
 
-    /**
-     * Builds the rows-method for a {@link ChildField.SplitTableField} or
-     * {@link ChildField.SplitLookupTableField}. The returned {@link MethodSpec} is complete
-     * (signature + body) and is added directly to the enclosing {@code *Fetchers} class.
-     *
-     * @param bkf  the batched field — must be one of {@link ChildField.SplitTableField},
-     *             {@link ChildField.SplitLookupTableField}, {@link ChildField.RecordTableField},
-     *             or {@link ChildField.RecordLookupTableField}. Other {@link BatchKeyField}
-     *             leaves throw {@link IllegalArgumentException}.
-     */
-    public static MethodSpec buildRowsMethod(BatchKeyField bkf, String outputPackage, String jooqPackage) {
-        if (bkf instanceof ChildField.SplitTableField stf) {
-            return buildForSplitTable(stf, outputPackage, jooqPackage);
-        }
-        if (bkf instanceof ChildField.SplitLookupTableField slf) {
-            return buildForSplitLookupTable(slf, outputPackage, jooqPackage);
-        }
-        if (bkf instanceof ChildField.RecordTableField rtf) {
-            return buildForRecordTable(rtf, outputPackage, jooqPackage);
-        }
-        if (bkf instanceof ChildField.RecordLookupTableField rltf) {
-            return buildForRecordLookupTable(rltf, outputPackage, jooqPackage);
-        }
-        throw new IllegalArgumentException(
-            "SplitRowsMethodEmitter does not handle " + bkf.getClass().getSimpleName());
-    }
-
     // -----------------------------------------------------------------------
     // SplitTableField
     // -----------------------------------------------------------------------
 
-    private static MethodSpec buildForSplitTable(ChildField.SplitTableField stf, String outputPackage, String jooqPackage) {
+    /**
+     * Builds the rows-method for a {@link ChildField.SplitTableField}. Sibling entry points
+     * {@link #buildForSplitLookupTable}, {@link #buildForRecordTable},
+     * {@link #buildForRecordLookupTable} cover the other three batched-field shapes; each
+     * caller in {@code TypeFetcherGenerator} already has the concrete field type, so no
+     * capability-typed dispatcher is needed at this seam.
+     */
+    static MethodSpec buildForSplitTable(ChildField.SplitTableField stf, String outputPackage, String jooqPackage) {
         var stubReason = unsupportedReason(stf);
         if (stubReason.isPresent()) {
             return buildRuntimeStub(stf.rowsMethodName(), stf.batchKey(), stf.returnType(), stubReason.get().message(), outputPackage);
@@ -345,7 +325,8 @@ public final class SplitRowsMethodEmitter {
     // SplitLookupTableField (C2)
     // -----------------------------------------------------------------------
 
-    private static MethodSpec buildForSplitLookupTable(ChildField.SplitLookupTableField slf, String outputPackage, String jooqPackage) {
+    /** See {@link #buildForSplitTable} for the entry-point convention. */
+    static MethodSpec buildForSplitLookupTable(ChildField.SplitLookupTableField slf, String outputPackage, String jooqPackage) {
         var stubReason = unsupportedReason(slf);
         if (stubReason.isPresent()) {
             return buildRuntimeStub(slf.rowsMethodName(), slf.batchKey(), slf.returnType(), stubReason.get().message(), outputPackage);
@@ -361,7 +342,8 @@ public final class SplitRowsMethodEmitter {
     // RecordTableField
     // -----------------------------------------------------------------------
 
-    private static MethodSpec buildForRecordTable(ChildField.RecordTableField rtf, String outputPackage, String jooqPackage) {
+    /** See {@link #buildForSplitTable} for the entry-point convention. */
+    static MethodSpec buildForRecordTable(ChildField.RecordTableField rtf, String outputPackage, String jooqPackage) {
         var stubReason = unsupportedReason(rtf);
         if (stubReason.isPresent()) {
             return buildRuntimeStub(rtf.rowsMethodName(), rtf.batchKey(), rtf.returnType(), stubReason.get().message(), outputPackage);
@@ -389,7 +371,8 @@ public final class SplitRowsMethodEmitter {
     // RecordLookupTableField
     // -----------------------------------------------------------------------
 
-    private static MethodSpec buildForRecordLookupTable(ChildField.RecordLookupTableField rltf, String outputPackage, String jooqPackage) {
+    /** See {@link #buildForSplitTable} for the entry-point convention. */
+    static MethodSpec buildForRecordLookupTable(ChildField.RecordLookupTableField rltf, String outputPackage, String jooqPackage) {
         var stubReason = unsupportedReason(rltf);
         if (stubReason.isPresent()) {
             return buildRuntimeStub(rltf.rowsMethodName(), rltf.batchKey(), rltf.returnType(), stubReason.get().message(), outputPackage);

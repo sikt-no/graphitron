@@ -431,12 +431,13 @@ public sealed interface ChildField extends GraphitronField
         public boolean emitsSingleRecordPerKey() {
             // Two structurally distinct triggers fold onto the same router decision in
             // SplitRowsMethodEmitter.buildForRecordTable: (a) single-cardinality fields whose
-            // data-fetcher wants `Record` per key (one row per parent), and (b)
-            // AccessorKeyedMany whose loadMany contract returns `Record` per element-PK key.
-            // Both produce the flat-join + scatterSingleByIdx shape; both route through
-            // buildSingleMethod.
+            // data-fetcher wants `Record` per key (one row per parent), and (b) the
+            // loader.loadMany contract whose per-key value is `Record` regardless of field
+            // cardinality. The {@link BatchKey.LoaderDispatch} projection is the single source
+            // of truth for (b) — TypeFetcherGenerator.buildRecordBasedDataFetcher reads the
+            // same predicate to decide its valueType, so the two emit sites cannot drift.
             return !returnType().wrapper().isList()
-                || batchKey() instanceof BatchKey.AccessorKeyedMany;
+                || batchKey().dispatch() == BatchKey.LoaderDispatch.LOAD_MANY;
         }
         @Override public Rejection.EmitBlockReason emitBlockReason() {
             return Rejection.EmitBlockReason.RECORD_TABLE_FIELD_CONDITION_JOIN_STEP;
@@ -463,9 +464,10 @@ public sealed interface ChildField extends GraphitronField
         @Override
         public boolean emitsSingleRecordPerKey() {
             // Mirrors RecordTableField: single-cardinality fields fold onto the same
-            // single-record-per-key arm as AccessorKeyedMany.
+            // single-record-per-key arm as the LOAD_MANY loadMany-contract dispatch. See
+            // RecordTableField.emitsSingleRecordPerKey for the single-source-of-truth notes.
             return !returnType().wrapper().isList()
-                || batchKey() instanceof BatchKey.AccessorKeyedMany;
+                || batchKey().dispatch() == BatchKey.LoaderDispatch.LOAD_MANY;
         }
         @Override public Rejection.EmitBlockReason emitBlockReason() {
             return Rejection.EmitBlockReason.RECORD_LOOKUP_TABLE_FIELD_CONDITION_JOIN_STEP;
