@@ -1,0 +1,68 @@
+= @discriminate
+:description: Mark an interface or union as single-table polymorphic with a discriminator column.
+:!toc:
+
+Declares that all rows of an interface (or union) live on a single jOOQ table and that one column tells the generator which subtype each row belongs to. Implementing objects pin themselves to that column's value via xref:discriminator.adoc[`@discriminator`]. The pair drives a single-table polymorphic fetcher: one `SELECT` against the shared table, branching by discriminator value at row-mapping time.
+
+Use xref:discriminator.adoc[`@discriminator`] together with this directive on every implementing type. For multi-table polymorphism (different tables per implementer), omit `@discriminate` entirely — the rewrite emits a multi-table fetcher when the interface has no discriminator column.
+
+== SDL signature
+
+[source,graphql]
+----
+directive @discriminate(on: String!) on INTERFACE | UNION
+----
+
+== Parameters
+
+[cols="1,1,1,3",options="header"]
+|===
+| Name | Type | Default | Description
+| `on` | `String!` | (required) | Name of the column on the interface's `@table` that carries the discriminator value. Each implementing type's xref:discriminator.adoc[`@discriminator(value:)`] is matched against this column at row-mapping time.
+|===
+
+== Canonical example
+
+The example schema's `Content` interface is single-table polymorphic: all rows live in `content`, and `CONTENT_TYPE` selects the subtype.
+
+[source,graphql]
+----
+interface Content @table(name: "content") @discriminate(on: "CONTENT_TYPE") {
+    contentId: Int!    @field(name: "CONTENT_ID")
+    title:     String! @field(name: "TITLE")
+}
+
+type FilmContent implements Content @table(name: "content") @discriminator(value: "FILM") {
+    contentId: Int!       @field(name: "CONTENT_ID")
+    title:     String!    @field(name: "TITLE")
+    length:    Int        @field(name: "LENGTH")
+    rating:    MpaaRating @reference(path: [{key: "content_film_id_fkey"}]) @field(name: "RATING")
+}
+
+type ShortContent implements Content @table(name: "content") @discriminator(value: "SHORT") {
+    contentId:   Int!    @field(name: "CONTENT_ID")
+    title:       String! @field(name: "TITLE")
+    description: String  @field(name: "SHORT_DESCRIPTION")
+}
+----
+
+A query selecting `... on FilmContent { length }` and `... on ShortContent { description }` produces a single `SELECT content.content_id, content.title, content.length, content.short_description, content.content_type FROM content`; the row mapper inspects `content_type` per row and dispatches to the matching type. Subtype-only fields are read as nullable from the unified projection (the row mapper ignores them on the wrong subtype).
+
+Subtype-specific fields may pull from joined tables. `FilmContent.rating` reaches into `film` via `content_film_id_fkey`; the generator emits a conditional `LEFT JOIN` gated by `content_type = 'FILM'`, so non-`FILM` rows never trigger the join.
+
+== Constraints
+
+* The interface (or union) must carry xref:table.adoc[`@table`]; without it there is no shared table to branch on.
+* The `on` column must exist on that table. The build fails if it does not resolve.
+* Every implementing object must declare xref:discriminator.adoc[`@discriminator(value:)`]. Implementers without one are rejected at classify time.
+* All implementers must share the interface's `@table` (single-table polymorphism). Implementers on a different table are rejected; for cross-table polymorphism, omit `@discriminate` and use the multi-table fetcher instead.
+* `@discriminate` cannot be combined with disjoint-table union members. The same single-table requirement applies.
+
+== See also
+
+* xref:discriminator.adoc[`@discriminator`] is the per-implementer pair: it names the discriminator value that places a row in this subtype.
+* xref:table.adoc[`@table`] establishes the shared table the discriminator column resolves against.
+* xref:reference.adoc[`@reference`] for subtype-specific fields that pull from joined tables (such as `FilmContent.rating` in the example).
+* xref:../../how-to/polymorphism.adoc[How-to: Polymorphism] (Phase 3) for the choice between single-table and multi-table fetchers.
+
+xref:../index.adoc[← Reference index]

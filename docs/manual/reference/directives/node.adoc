@@ -1,0 +1,105 @@
+= @node
+:description: Opt a type into Relay Global Object Identification, producing opaque, table-keyed global IDs.
+:!toc:
+
+Marks a type as a Relay https://graphql.org/learn/global-object-identification/[Global Object Identification] node. Every `@node`-decorated type gets a synthesised opaque ID encoding `(typeId, primary-key columns)`; xref:nodeId.adoc[`@nodeId`] fields encode and decode that ID. The `Query.node(id:)` and `Query.nodes(ids:)` entry points dispatch by `typeId` prefix to the matching `@node` type's table at runtime.
+
+`@node` only takes effect on types that also carry xref:table.adoc[`@table`]; the global ID embeds primary-key (or unique-key) columns from the bound table.
+
+== SDL signature
+
+[source,graphql]
+----
+directive @node(
+    typeId: String,
+    keyColumns: [String!]
+) on OBJECT
+----
+
+== Parameters
+
+[cols="1,1,1,3",options="header"]
+|===
+| Name | Type | Default | Description
+| `typeId` | `String` | type's GraphQL name | The discriminator embedded in the ID that tells `Query.node` which type (and table) to dispatch to. Defaults to the GraphQL type name. Set explicitly when you want shorter IDs, or stable IDs that survive a GraphQL type rename.
+| `keyColumns` | `[String!]` | primary-key columns | Ordered column list embedded in the ID. Must correspond to a primary key or another unique key on the bound table. Defaults to the primary key in declaration order. Set explicitly to decouple the ID from primary-key changes.
+|===
+
+== Canonical example
+
+The example schema's `Customer`, `Address`, and `Film` types all opt into Relay Node:
+
+[source,graphql]
+----
+interface Node { id: ID! }
+
+type Customer implements Node @table(name: "customer") @node {
+    id:         ID!     @nodeId
+    customerId: Int!    @field(name: "CUSTOMER_ID")
+    firstName:  String! @field(name: "FIRST_NAME")
+    # ...
+}
+
+type Address implements Node @table(name: "address") @node {
+    id:        ID! @nodeId
+    # ...
+}
+
+type Film implements Node @table(name: "film") @node {
+    id:    ID! @nodeId
+    # ...
+}
+----
+
+`@node` here uses every default: `typeId` falls back to `Customer`, `Address`, `Film`; `keyColumns` falls back to each table's primary key. The corresponding entry points:
+
+[source,graphql]
+----
+type Query {
+    node(id: ID!): Node
+    nodes(ids: [ID!]!): [Node]
+}
+----
+
+`Query.node(id:)` decodes the opaque ID, reads the embedded `typeId`, and dispatches to the matching `@node` type's table. `Query.nodes(ids:)` is the batched form: the rewrite groups IDs by `typeId`, fans out one batched `SELECT` per type, and scatters rows back to the request's original positions.
+
+Composite-PK nodes follow the same shape:
+
+[source,graphql]
+----
+type FilmActor implements Node @table(name: "film_actor") @node {
+    id:      ID! @nodeId
+    # ...
+}
+----
+
+`film_actor` has a composite `(actor_id, film_id)` primary key; the synthesised ID embeds both columns in declaration order. xref:lookupKey.adoc[`@lookupKey`] on `[ID!]!` keyed by the same node type produces the corresponding `VALUES` join over both PK columns.
+
+Set `typeId` explicitly when the GraphQL type name might change but the ID must remain stable:
+
+[source,graphql]
+----
+type Person implements Node @table(name: "customer") @node(typeId: "C") {
+    id: ID! @nodeId
+}
+----
+
+The `typeId: "C"` keeps existing IDs valid even if `Person` is later renamed to `User` or `Customer`.
+
+== Constraints
+
+* The decorated type must also carry xref:table.adoc[`@table`]; the bound table supplies the columns to embed.
+* The type must implement the `Node` interface (`type X implements Node ...`). Without the interface, `Query.node(id:)` cannot return the type.
+* The type must declare an `id: ID!` field decorated with xref:nodeId.adoc[`@nodeId`]. The directive on the type alone does not produce the ID; the field-level marker tells the generator which slot is the ID.
+* `keyColumns` must form a primary key or another unique key on the bound table. The build fails if the columns don't form a unique constraint.
+* `keyColumns` ordering matters and is part of the ID's wire format; reordering breaks already-issued IDs.
+* `typeId` collisions across types are rejected at startup. If two types share a `typeId` (whether explicit or defaulted), `Query.node(id:)` cannot dispatch unambiguously.
+
+== See also
+
+* xref:nodeId.adoc[`@nodeId`] is the field-level counterpart that encodes and decodes the ID.
+* xref:table.adoc[`@table`] supplies the columns embedded in the ID.
+* xref:lookupKey.adoc[`@lookupKey`] on `[ID!]` decodes opaque node IDs into typed batch keys (composite-PK NodeId lookups).
+* xref:../../how-to/global-id.adoc[How-to: Global object IDs] (Phase 3) covers stable-ID strategies, `keyColumns` migrations, and `Query.node`/`Query.nodes` dispatch.
+
+xref:../index.adoc[← Reference index]
