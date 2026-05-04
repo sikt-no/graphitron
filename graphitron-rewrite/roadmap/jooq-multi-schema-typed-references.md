@@ -26,7 +26,7 @@ Concretely (final shape to be settled in Spec phase):
 
 - `TableRef` carries the table class as `ClassName`, the schema's `Tables` class as `ClassName`, and the `Tables`-side field name as `String`. Catalog populates them from `Table<?>` reflection. Drops `jooqPackage` from every emitter that takes a `TableRef`.
 - New `TableRecordRef` for the record class — `ClassName` of the record — also catalog-populated. Replaces the `<jooqPackage>.tables.records.XRecord` concatenation in `TypeFetcherGenerator`, `ServiceDirectiveResolver`, etc.
-- New `KeyRef` for FK references: the `Keys` class as `ClassName` plus the FK constant name as `String`. Replaces the bare `String fkJavaConstant` on `JoinStep.FkJoin` and the `keysClass` lookup at every emit site. Multi-schema cross-FKs work automatically because each FK carries its own host class.
+- New `KeyRef` for FK references: the `Keys` class as `ClassName` plus the FK constant name as `String`. Replaces the bare `String fkJavaConstant` on `JoinStep.FkJoin` and the `keysClass` lookup at every emit site. The `Keys` class belongs to the FK origin table's schema, so each `KeyRef` carries its own host class and cross-schema FKs join correctly without any per-emitter schema arithmetic.
 - `JooqCatalog.TableEntry` exposes the catalog-side typed values (as `ClassName` or as plain methods over the wrapped `Table<?>`); `ServiceCatalog` / `BuildContext` hand them to `TableRef` and friends.
 
 This follows the existing precedent of `BatchKey` and `MethodRef` carrying javapoet `TypeName` values from parse time, so the model layer already crosses that boundary intentionally.
@@ -36,7 +36,7 @@ This follows the existing precedent of `BatchKey` and `MethodRef` carrying javap
 - Whether to put `ClassName` directly on the model records or wrap behind a domain-level `QualifiedClassRef` / `QualifiedFieldRef` (plain strings). `BatchKey` / `MethodRef` precedent argues for the typed form; a domain wrapper would be reusable across all "static member reference" facts.
 - Naming and shape of the ref hierarchy: separate `TableRecordRef` and `KeyRef` records, or fold record-class and keys into a shared `QualifiedClassRef` / `QualifiedFieldRef` pair?
 - Whether the `Keys` and `Tables` simple-name literals (`"Keys"` / `"Tables"`) are stored or treated as jOOQ codegen conventions kept at the consumer.
-- Test-fixture impact: ~50+ `new TableRef(...)` sites across the test tree need the new constructor shape. Worth a 4-arg convenience overload during the migration, or do all in one shot?
+- Test-fixture impact: 107 `new TableRef(...)` sites in the test tree (plus 3 in main) need the new constructor shape. Worth a convenience overload during migration to keep test diffs small, or do all in one shot?
 
 ## Touchpoints
 
@@ -51,6 +51,6 @@ Approximate scope from a `jooqPackage` audit (251 references in `graphitron/src/
 
 A multi-schema test fixture is missing; sakila uses only `public` and the `nodeidfixture` / `idreffixture` schemas live in their own package roots, so neither exercises the failure. Adding a fixture with two schemas under a shared base package, exercising at least table-class, record-class, `Tables.<FIELD>`, and `Keys.<FK>` references across the schema boundary, is in scope so the bug stays fixed. The compilation tier should fail without this change and pass with it.
 
-## Prior work in flight
+## Rejected alternative
 
-Two `wip:` commits on branch `claude/fix-jooq-imports-zigSN` (`ead3c20`, `bcc3b76`) explored an early approach that added a `String schemaPackage` field to `TableRef` with a `tablePackage(fallbackJooqPackage)` helper. That approach was rejected during design discussion because it kept reconstructing FQNs at every consumer instead of remembering typed references. The work is preserved in branch history but not on trunk; it will be reset before this item enters Spec.
+An earlier exploration added a `String schemaPackage` field to `TableRef` with a `tablePackage(fallbackJooqPackage)` helper. Rejected because it still reconstructed FQNs at every consumer; the design here remembers typed references instead. Captured for the record so a future Spec author does not retry it.
