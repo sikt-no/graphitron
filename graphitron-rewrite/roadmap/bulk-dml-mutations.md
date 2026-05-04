@@ -538,13 +538,43 @@ sharpening.
   The four return shapes deliberately mix `[Film!]!` (`ProjectedList`)
   and `[ID!]!` (`EncodedList`) so the execution tests cover both
   terminator arms.
+
+  Existing `FilmCreateInput` and `FilmUpdateInput` each grow one field
+  to make the missing-vs-null execution tests observable. As declared
+  on trunk, `FilmCreateInput` carries only `title` + `languageId`
+  (both `NOT NULL` with no default) and `FilmUpdateInput` carries only
+  `filmId` + `title` (PK + `NOT NULL` no-default), so neither input
+  has a column whose omit-vs-explicit-null distinction is visible
+  against the DB:
+  - `FilmCreateInput` adds `rentalDuration: Int @field(name: "rental_duration")`.
+    Sakila's `rental_duration` is `smallint NOT NULL DEFAULT 3`, so
+    row A's omission lets the column default land (`containsKey →
+    DEFAULT`) and reads back `3`, while row B's explicit `null`
+    surfaces an `IntegrityConstraintViolationException` (the NOT
+    NULL branch the missing-vs-null section explicitly accommodates).
+  - `FilmUpdateInput` adds `description: String @field(name: "description")`.
+    Sakila's `description` is `text` (nullable, no default), so the
+    omit arm drops the column out of the dynamic SET clause (leaving
+    the pre-state value untouched) and the explicit-`null` arm writes
+    SQL `NULL`; both branches succeed and are independently
+    observable, which is the cleaner shape for the dynamic-SET fix
+    test.
+
+  Both new fields are declared GraphQL-nullable (no trailing `!`) so
+  graphql-java's argument coercion preserves the absent-vs-present-null
+  distinction (`Map.containsKey` / `keySet`) the tests turn on. The
+  bulk variants reuse the same inputs, so the bulk execution tests
+  inherit the same observable surface.
 - New unit test cases in `GraphitronSchemaBuilderTest`; new
   `DmlBulkMutationsExecutionTest` in `graphitron-sakila-example`.
-- `graphitron-fixtures` needs no new fixtures: the existing
-  `Film` / `FilmCreateInput` etc. surface already covers the listed
-  input-arg shape (the change is in argument cardinality, not field
-  shape). Pipeline tests reuse those fixtures and assert structural
-  shape on the bulk arm.
+- `graphitron-fixtures` needs no new fixtures: pipeline tests assert
+  structural shape on the bulk arm (presence of a `for (var row : in)`
+  loop, the `containsKey`-gated value cell on INSERT/UPSERT, the
+  `presentKeys.contains(...)` walk on UPDATE) and don't depend on any
+  specific column-default semantics. The Sakila execution-tier
+  `FilmCreateInput` / `FilmUpdateInput` additions above are needed
+  only at the execution tier, where the missing-vs-null branches
+  have to be observable against real DB defaults.
 
 The `@DependsOnClassifierCheck` annotations on the four
 `buildMutation*Fetcher` methods are the canonical home for invariant
