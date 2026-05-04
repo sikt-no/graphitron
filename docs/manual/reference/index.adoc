@@ -4,11 +4,9 @@
 
 Authoritative descriptions of every directive, every Maven plugin parameter, every runtime API entry point, and every diagnostic code Graphitron emits.
 
-== Status: directive reference, in progress
+== Status: directive reference, complete
 
-Twenty-three of 26 directives are published below: the six tutorial-anchor mappings (`@table`, `@field`, `@reference`, `@multitableReference`, `@mutation`, `@service`), the five batch/sort directives (`@lookupKey`, `@orderBy`, `@order`, `@defaultOrder`, `@index`), the polymorphism pair (`@discriminate`, `@discriminator`), the global-ID pair (`@node`, `@nodeId`), the two carrier-mapping directives (`@enum`, `@record`), the lifter (`@batchKeyLifter`), the error-channel entry point (`@error`), the pagination-shape pair (`@asConnection`, `@splitQuery`), and the custom-code pair (`@externalField`, `@condition`). The remaining ~3 directives ship in subsequent commits of R68 Phase 2; their descriptions still live in the legacy https://github.com/sikt-no/graphitron/tree/main/graphitron-codegen-parent/graphitron-java-codegen/README.md[`graphitron-java-codegen` README] until they land here. The Mojo parameter reference, the runtime API reference, and the diagnostics glossary are authored in Phase 4 and Phase 5.
-
-The directive list below mirrors the rewrite's `directives.graphqls` and is therefore correct for the current branch even when an individual page is still pending.
+All 26 directives in the rewrite's `directives.graphqls` are described below. The Mojo parameter reference, the runtime API reference, and the diagnostics glossary are authored in Phase 4 and Phase 5.
 
 [cols="1,1",frame=none,grid=none]
 |===
@@ -23,7 +21,7 @@ a|
 * xref:directives/discriminator.adoc[`@discriminator`]
 * xref:directives/enum.adoc[`@enum`]
 * xref:directives/error.adoc[`@error`]
-* `@experimental_constructType` _(pending)_
+* xref:directives/experimental_constructType.adoc[`@experimental_constructType`]
 * xref:directives/externalField.adoc[`@externalField`]
 * xref:directives/field.adoc[`@field`]
 * xref:directives/index.adoc[`@index`] _(deprecated, use `@order(index:)`)_
@@ -32,7 +30,7 @@ a|
 * xref:directives/mutation.adoc[`@mutation`]
 * xref:directives/node.adoc[`@node`]
 * xref:directives/nodeId.adoc[`@nodeId`]
-* `@notGenerated` _(pending; rejected, remove from the schema)_
+* xref:directives/notGenerated.adoc[`@notGenerated`] _(rejected, remove from the schema)_
 * xref:directives/order.adoc[`@order`]
 * xref:directives/orderBy.adoc[`@orderBy`]
 * xref:directives/record.adoc[`@record`]
@@ -40,7 +38,7 @@ a|
 * xref:directives/service.adoc[`@service`]
 * xref:directives/splitQuery.adoc[`@splitQuery`]
 * xref:directives/table.adoc[`@table`]
-* `@tableMethod` _(pending)_
+* xref:directives/tableMethod.adoc[`@tableMethod`]
 
 a|
 === By category
@@ -52,7 +50,7 @@ xref:directives/table.adoc[`@table`], xref:directives/field.adoc[`@field`], xref
 xref:directives/reference.adoc[`@reference`], xref:directives/multitableReference.adoc[`@multitableReference`], xref:directives/batchKeyLifter.adoc[`@batchKeyLifter`]
 
 *Querying* +
-xref:directives/asConnection.adoc[`@asConnection`], xref:directives/condition.adoc[`@condition`], xref:directives/externalField.adoc[`@externalField`], xref:directives/lookupKey.adoc[`@lookupKey`], xref:directives/splitQuery.adoc[`@splitQuery`], `@tableMethod`, `@experimental_constructType`
+xref:directives/asConnection.adoc[`@asConnection`], xref:directives/condition.adoc[`@condition`], xref:directives/experimental_constructType.adoc[`@experimental_constructType`], xref:directives/externalField.adoc[`@externalField`], xref:directives/lookupKey.adoc[`@lookupKey`], xref:directives/splitQuery.adoc[`@splitQuery`], xref:directives/tableMethod.adoc[`@tableMethod`]
 
 *Mutating* +
 xref:directives/mutation.adoc[`@mutation`], xref:directives/service.adoc[`@service`]
@@ -68,6 +66,9 @@ xref:directives/discriminate.adoc[`@discriminate`], xref:directives/discriminato
 
 *Global ID* +
 xref:directives/node.adoc[`@node`], xref:directives/nodeId.adoc[`@nodeId`]
+
+*Rejected by the rewrite* +
+xref:directives/notGenerated.adoc[`@notGenerated`] (remove from the schema)
 
 |===
 
