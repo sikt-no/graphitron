@@ -9,6 +9,8 @@ package no.sikt.graphitron.rewrite.schema.input;
  * boundary without swallowing unrelated runtime failures.
  */
 public class SchemaInputException extends RuntimeException {
+    private static final long serialVersionUID = 1L;
+
     public SchemaInputException(String message) {
         super(message);
     }

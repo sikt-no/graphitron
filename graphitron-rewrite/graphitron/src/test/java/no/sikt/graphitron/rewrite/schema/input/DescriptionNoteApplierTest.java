@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import static java.util.Objects.requireNonNull;
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 
@@ -33,7 +34,7 @@ class DescriptionNoteApplierTest {
 
         DescriptionNoteApplier.apply(registry, inputs);
 
-        var field = ((ObjectTypeDefinition) registry.getType("Foo").orElseThrow())
+        var field = requireNonNull(registry.getTypeOrNull("Foo", ObjectTypeDefinition.class))
             .getFieldDefinitions().getFirst();
         assertThat(field.getDescription().getContent()).isEqualTo("The id.\n\nAn enrolment note.");
     }
@@ -49,7 +50,7 @@ class DescriptionNoteApplierTest {
 
         DescriptionNoteApplier.apply(registry, inputs);
 
-        var field = ((ObjectTypeDefinition) registry.getType("Foo").orElseThrow())
+        var field = requireNonNull(registry.getTypeOrNull("Foo", ObjectTypeDefinition.class))
             .getFieldDefinitions().getFirst();
         assertThat(field.getDescription().getContent()).isEqualTo("A note.");
     }
@@ -70,7 +71,7 @@ class DescriptionNoteApplierTest {
 
         DescriptionNoteApplier.apply(registry, inputs);
 
-        var field = ((ObjectTypeDefinition) registry.getType("Foo").orElseThrow())
+        var field = requireNonNull(registry.getTypeOrNull("Foo", ObjectTypeDefinition.class))
             .getFieldDefinitions().getFirst();
         assertThat(field.getDescription().getContent()).isEqualTo("Original.");
     }
@@ -87,7 +88,7 @@ class DescriptionNoteApplierTest {
 
         DescriptionNoteApplier.apply(registry, inputs);
 
-        var field = ((ObjectTypeDefinition) registry.getType("Foo").orElseThrow())
+        var field = requireNonNull(registry.getTypeOrNull("Foo", ObjectTypeDefinition.class))
             .getFieldDefinitions().getFirst();
         assertThat(field.getDescription().getContent()).isEqualTo(multiline);
     }
@@ -104,7 +105,7 @@ class DescriptionNoteApplierTest {
 
         DescriptionNoteApplier.apply(registry, inputs);
 
-        var field = ((ObjectTypeDefinition) registry.getType("Foo").orElseThrow())
+        var field = requireNonNull(registry.getTypeOrNull("Foo", ObjectTypeDefinition.class))
             .getFieldDefinitions().getFirst();
         assertThat(field.getDescription().getContent()).isEqualTo(tricky);
     }
@@ -123,7 +124,7 @@ class DescriptionNoteApplierTest {
 
         DescriptionNoteApplier.apply(registry, inputs);
 
-        var type = (ObjectTypeDefinition) registry.getType("Actor").orElseThrow();
+        var type = requireNonNull(registry.getTypeOrNull("Actor", ObjectTypeDefinition.class));
         assertThat(type.getDescription().getContent()).isEqualTo("An actor.\n\nPart of cinema.");
     }
 
@@ -141,7 +142,7 @@ class DescriptionNoteApplierTest {
 
         DescriptionNoteApplier.apply(registry, inputs);
 
-        var type = (InterfaceTypeDefinition) registry.getType("Named").orElseThrow();
+        var type = requireNonNull(registry.getTypeOrNull("Named", InterfaceTypeDefinition.class));
         assertThat(type.getDescription().getContent()).isEqualTo("Has a name.\n\nCommon.");
     }
 
@@ -159,7 +160,7 @@ class DescriptionNoteApplierTest {
 
         DescriptionNoteApplier.apply(registry, inputs);
 
-        var type = (EnumTypeDefinition) registry.getType("Color").orElseThrow();
+        var type = requireNonNull(registry.getTypeOrNull("Color", EnumTypeDefinition.class));
         assertThat(type.getDescription().getContent()).isEqualTo("A colour.\n\nVisible light only.");
     }
 
@@ -177,7 +178,7 @@ class DescriptionNoteApplierTest {
 
         DescriptionNoteApplier.apply(registry, inputs);
 
-        var type = (InputObjectTypeDefinition) registry.getType("ActorFilter").orElseThrow();
+        var type = requireNonNull(registry.getTypeOrNull("ActorFilter", InputObjectTypeDefinition.class));
         assertThat(type.getDescription().getContent()).isEqualTo("An actor filter.\n\nCinema feature.");
     }
 
@@ -197,7 +198,7 @@ class DescriptionNoteApplierTest {
 
         DescriptionNoteApplier.apply(registry, inputs);
 
-        var type = (UnionTypeDefinition) registry.getType("AB").orElseThrow();
+        var type = requireNonNull(registry.getTypeOrNull("AB", UnionTypeDefinition.class));
         assertThat(type.getDescription().getContent()).isEqualTo("A or B.\n\nWidened.");
     }
 
@@ -219,17 +220,17 @@ class DescriptionNoteApplierTest {
 
         DescriptionNoteApplier.apply(registry, inputs);
 
-        var foo = (ObjectTypeDefinition) registry.getType("Foo").orElseThrow();
+        var foo = requireNonNull(registry.getTypeOrNull("Foo", ObjectTypeDefinition.class));
         assertThat(foo.getDescription().getContent()).isEqualTo("note");
         foo.getFieldDefinitions().forEach(f ->
             assertThat(f.getDescription().getContent()).isEqualTo("note"));
 
-        var fi = (InputObjectTypeDefinition) registry.getType("FooInput").orElseThrow();
+        var fi = requireNonNull(registry.getTypeOrNull("FooInput", InputObjectTypeDefinition.class));
         assertThat(fi.getDescription().getContent()).isEqualTo("note");
         fi.getInputValueDefinitions().forEach(v ->
             assertThat(v.getDescription().getContent()).isEqualTo("note"));
 
-        var enm = (EnumTypeDefinition) registry.getType("Color").orElseThrow();
+        var enm = requireNonNull(registry.getTypeOrNull("Color", EnumTypeDefinition.class));
         assertThat(enm.getDescription().getContent()).isEqualTo("note");
         enm.getEnumValueDefinitions().forEach(v ->
             assertThat(v.getDescription().getContent()).isEqualTo("note"));
@@ -251,7 +252,7 @@ class DescriptionNoteApplierTest {
 
         DescriptionNoteApplier.apply(registry, inputs);
 
-        var base = (ObjectTypeDefinition) registry.getType("Foo").orElseThrow();
+        var base = requireNonNull(registry.getTypeOrNull("Foo", ObjectTypeDefinition.class));
         assertThat(base.getFieldDefinitions().getFirst().getDescription()).isNull();
 
         var extensions = registry.objectTypeExtensions().get("Foo");
@@ -274,7 +275,7 @@ class DescriptionNoteApplierTest {
 
         DescriptionNoteApplier.apply(registry, inputs);
 
-        var base = (InterfaceTypeDefinition) registry.getType("Named").orElseThrow();
+        var base = requireNonNull(registry.getTypeOrNull("Named", InterfaceTypeDefinition.class));
         assertThat(base.getFieldDefinitions().getFirst().getDescription()).isNull();
 
         var extensions = registry.interfaceTypeExtensions().get("Named");
@@ -296,7 +297,7 @@ class DescriptionNoteApplierTest {
 
         DescriptionNoteApplier.apply(registry, inputs);
 
-        var base = (InputObjectTypeDefinition) registry.getType("FooInput").orElseThrow();
+        var base = requireNonNull(registry.getTypeOrNull("FooInput", InputObjectTypeDefinition.class));
         assertThat(base.getInputValueDefinitions().getFirst().getDescription()).isNull();
 
         var extensions = registry.inputObjectTypeExtensions().get("FooInput");
@@ -318,7 +319,7 @@ class DescriptionNoteApplierTest {
 
         DescriptionNoteApplier.apply(registry, inputs);
 
-        var base = (EnumTypeDefinition) registry.getType("Color").orElseThrow();
+        var base = requireNonNull(registry.getTypeOrNull("Color", EnumTypeDefinition.class));
         assertThat(base.getEnumValueDefinitions().getFirst().getDescription()).isNull();
 
         var extensions = registry.enumTypeExtensions().get("Color");
@@ -349,7 +350,7 @@ class DescriptionNoteApplierTest {
 
         DescriptionNoteApplier.apply(registry, inputs);
 
-        var base = (UnionTypeDefinition) registry.getType("AB").orElseThrow();
+        var base = requireNonNull(registry.getTypeOrNull("AB", UnionTypeDefinition.class));
         assertThat(base.getDescription()).isNull();
 
         var extensions = registry.unionTypeExtensions().get("AB");
@@ -375,7 +376,7 @@ class DescriptionNoteApplierTest {
 
         DescriptionNoteApplier.apply(registry, inputs);
 
-        var field = ((ObjectTypeDefinition) registry.getType("Foo").orElseThrow())
+        var field = requireNonNull(registry.getTypeOrNull("Foo", ObjectTypeDefinition.class))
             .getFieldDefinitions().getFirst();
         assertThat(field.getDescription().getContent()).isEqualTo("Padded.\n\nnote");
     }

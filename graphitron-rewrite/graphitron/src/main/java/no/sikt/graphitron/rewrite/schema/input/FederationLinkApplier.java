@@ -130,9 +130,11 @@ public final class FederationLinkApplier {
 
     private static SourceLocation findExistingDeclarationLocation(TypeDefinitionRegistry registry, SDLDefinition<?> def, String name) {
         if (name == null) return null;
-        return def instanceof DirectiveDefinition
-                ? registry.getDirectiveDefinition(name).map(DirectiveDefinition::getSourceLocation).orElse(null)
-                : registry.getType(name).map(t -> t.getSourceLocation()).orElse(null);
+        if (def instanceof DirectiveDefinition) {
+            return registry.getDirectiveDefinition(name).map(DirectiveDefinition::getSourceLocation).orElse(null);
+        }
+        var type = registry.getTypeOrNull(name);
+        return type == null ? null : type.getSourceLocation();
     }
 
     /**

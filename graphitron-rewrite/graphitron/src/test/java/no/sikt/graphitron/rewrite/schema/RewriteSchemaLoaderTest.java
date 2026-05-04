@@ -39,8 +39,8 @@ class RewriteSchemaLoaderTest {
 
         var registry = RewriteSchemaLoader.load(List.of(schemaA.toString(), schemaB.toString()));
 
-        assertThat(registry.getType("Foo")).isPresent();
-        assertThat(registry.getType("Bar")).isPresent();
+        assertThat(registry.getTypeOrNull("Foo")).isNotNull();
+        assertThat(registry.getTypeOrNull("Bar")).isNotNull();
         // @table comes from the auto-injected directives.graphqls; if caller had to
         // supply it, parse of schemaA would have failed with "Unknown directive '@table'".
         assertThat(registry.getDirectiveDefinition("table")).isPresent();
@@ -66,7 +66,8 @@ class RewriteSchemaLoaderTest {
 
         var registry = RewriteSchemaLoader.load(List.of(first.toString(), second.toString()));
 
-        var bar = registry.getType("Bar").orElseThrow();
+        var bar = registry.getTypeOrNull("Bar");
+        assertThat(bar).isNotNull();
         var location = bar.getSourceLocation();
         assertThat(location).isNotNull();
         assertThat(location.getSourceName()).isEqualTo(second.toString());
@@ -92,7 +93,7 @@ class RewriteSchemaLoaderTest {
         // implicit in "no throw". Cheap and deterministic.
         for (int i = 0; i < 2000; i++) {
             var registry = RewriteSchemaLoader.load(List.of(schema.toString()));
-            assertThat(registry.getType("Foo")).isPresent();
+            assertThat(registry.getTypeOrNull("Foo")).isNotNull();
         }
     }
 
