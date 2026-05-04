@@ -1351,6 +1351,45 @@ class TypeFetcherGeneratorTest {
             .contains("env.getGraphQlContext().get(" + expectedFqn + ".class)");
     }
 
+    @Test
+    void graphitronContextHelper_emittedForServiceRecordOnlyClass() {
+        // Regression: ServiceRecordField is the only BatchKeyField that doesn't extend
+        // SqlGeneratingField via TableTargetField. The previous forward-declared classifier
+        // predicate enumerated SqlGeneratingField + a few interface/union/DML cases and silently
+        // dropped ServiceRecordField, so a *Fetchers class whose only field was a
+        // ServiceRecordField would emit a graphitronContext(env) call (via buildDataLoaderName)
+        // but no graphitronContext helper method, producing "cannot find symbol:
+        // graphitronContext(DataFetchingEnvironment)" downstream. Helper emission now post-scans
+        // the methods we just emitted, so any future call site picks up the helper without
+        // needing to enumerate field variants up-front.
+        var field = scalarServiceRecordField(
+            "Language", "displayName", false,
+            new BatchKey.RowKeyed(List.of(languageIdCol())),
+            ClassName.get(String.class));
+        var spec = specWith(field);
+        assertThat(method(spec, "displayName").code().toString())
+            .as("sanity: the ServiceRecordField fetcher body references graphitronContext(env)")
+            .contains("graphitronContext(env)");
+        assertThat(spec.methodSpecs())
+            .as("helper is emitted whenever any method body references graphitronContext(env)")
+            .extracting(MethodSpec::name)
+            .contains("graphitronContext");
+    }
+
+    @Test
+    void graphitronContextHelper_notEmittedWhenNoBodyReferencesIt() {
+        // Pins the negative direction of the invariant: if no emitted method body references
+        // graphitronContext(env), the helper is not emitted. ColumnField on a table-backed
+        // parent emits no method (wired via FetcherRegistrationsEmitter / ColumnFetcher), so
+        // the *Fetchers class has nothing to scan and nothing to need the helper.
+        var spec = TypeFetcherGenerator.generateTypeSpec("Film", FILM_TABLE,
+            List.of(columnField("title", "title", "TITLE", "java.lang.String")));
+        assertThat(spec.methodSpecs())
+            .as("no emitted methods → no graphitronContext helper")
+            .extracting(MethodSpec::name)
+            .doesNotContain("graphitronContext");
+    }
+
     // ===== R49: ServiceRecordField (scalar / @record-backed return) =====
     //
     // ServiceRecordField shares the DataLoader emitters with ServiceTableField; the only axis
