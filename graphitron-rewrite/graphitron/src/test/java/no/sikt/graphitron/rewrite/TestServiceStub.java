@@ -57,19 +57,19 @@ class TestServiceStub {
     public static Result<FilmRecord> getFilms() { throw new UnsupportedOperationException(); }
 
     /**
-     * Returns {@link FilmRecord} but takes a {@code List<Row1<Integer>>} parameter — classifies
+     * Returns {@link FilmRecord} but takes a {@code List<Record1<Integer>>} parameter — classifies
      * as {@link no.sikt.graphitron.rewrite.model.ParamSource.Sources}. Used to verify
      * Invariants §2 fires after the strict-return-type check passes.
      */
-    public static FilmRecord getFilmWithSources(java.util.List<org.jooq.Row1<Integer>> keys) {
+    public static FilmRecord getFilmWithSources(java.util.List<org.jooq.Record1<Integer>> keys) {
         throw new UnsupportedOperationException();
     }
 
     /**
-     * Returns a list of {@link FilmRecord} but takes a {@code List<Row1<Integer>>} parameter — used
+     * Returns a list of {@link FilmRecord} but takes a {@code List<Record1<Integer>>} parameter — used
      * for tests that target root-level {@code @service} on {@code [Film!]!} with a Sources param.
      */
-    public static Result<FilmRecord> getFilmsWithSources(java.util.List<org.jooq.Row1<Integer>> keys) {
+    public static Result<FilmRecord> getFilmsWithSources(java.util.List<org.jooq.Record1<Integer>> keys) {
         throw new UnsupportedOperationException();
     }
 
@@ -88,12 +88,12 @@ class TestServiceStub {
     // ===== Methods that intentionally violate return-type strictness =====
 
     /**
-     * Service method with a {@code List<Row1<Integer>>} parameter and a String return.
+     * Service method with a {@code List<Record1<Integer>>} parameter and a String return.
      * Used to verify the strict-return-type rejection path; if the method also took a Sources
      * param it would still be the strict-return-type rejection that fires first. For Sources-
      * specific tests use {@link #getFilmWithSources}.
      */
-    public static String getWithSources(java.util.List<org.jooq.Row1<Integer>> keys) {
+    public static String getWithSources(java.util.List<org.jooq.Record1<Integer>> keys) {
         throw new UnsupportedOperationException();
     }
 
@@ -205,11 +205,11 @@ class TestServiceStub {
     /**
      * Child {@code @service} fixture exercising the rejection arm of
      * {@code ServiceDirectiveResolver.validateChildServiceReturnType}: a {@code @table}-bound
-     * child field with a {@code List<Row1<Integer>>} Sources param + single cardinality
+     * child field with a {@code List<Record1<Integer>>} Sources param + single cardinality
      * structurally requires {@code List<org.jooq.Record>} per the rows-method shape. This
      * stub declares {@code LanguageRecord} instead, so classification rejects.
      */
-    public static no.sikt.graphitron.rewrite.test.jooq.tables.records.LanguageRecord childServiceRowKeyedWrongReturn(java.util.List<org.jooq.Row1<Integer>> keys) {
+    public static no.sikt.graphitron.rewrite.test.jooq.tables.records.LanguageRecord childServiceRowKeyedWrongReturn(java.util.List<org.jooq.Record1<Integer>> keys) {
         throw new UnsupportedOperationException();
     }
 
