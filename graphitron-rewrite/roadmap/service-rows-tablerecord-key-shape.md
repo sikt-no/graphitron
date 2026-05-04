@@ -12,7 +12,7 @@ depends-on: [emit-record1-keys-instead-of-row1]
 
 ## Motivation
 
-A child `@service` whose SOURCES parameter is typed `Set<X>` (X a jOOQ `TableRecord` subtype) classifies as `BatchKey.MappedRowKeyed` today; the variant's docstring says so explicitly: "Both `Set<RowN<...>>` and `Set<TableRecord>` classify here; the DataLoader key type stays `RowN` regardless of the user's declared element type" (`BatchKey.java:233-239`). The classifier accepts the typed-record shape on the input side, but the symmetric output side is not accepted: `RowsMethodShape.outerRowsReturnType` always builds the expected return type as `Map<RowN<...>, V>` from `BatchKey.keyElementType()` (`RowsMethodShape.java:85-96`), so the strict `TypeName.equals` check in `ServiceDirectiveResolver.validateChildServiceReturnType` (`ServiceDirectiveResolver.java:276-293`) rejects the natural counterpart `Map<X, V>` where the developer reused the same `TableRecord` across the parameter and the map key.
+A child `@service` whose SOURCES parameter is typed `Set<X>` (X a jOOQ `TableRecord` subtype) classifies as `BatchKey.MappedRowKeyed` today; the variant's docstring (`BatchKey.java:247-251`) admits the asymmetry: "Both `Set<RowN<...>>` and `Set<TableRecord>` classify here; the DataLoader key type stays `RowN` regardless of the user's declared element type." That fold is the only place R61's variant-identity-tracks-shape rule is broken — every other variant's `keyElementType()` reflects the developer's chosen shape exactly. The classifier accepts the typed-record element on the input side, but `RowsMethodShape.outerRowsReturnType` (`RowsMethodShape.java:85-96`) builds the expected outer return type as `Map<RowN<...>, V>` from the variant's `keyElementType()`, so the strict `TypeName.equals` check in `ServiceDirectiveResolver.validateChildServiceReturnType` (`ServiceDirectiveResolver.java:276-293`) rejects the natural counterpart `Map<X, V>` where the developer reused the same `TableRecord` across the parameter and the map key.
 
 The motivating real-world fixture, surfaced from a consumer schema (`regelverk_exp.graphqls`):
 
@@ -37,100 +37,126 @@ against a local `keys` whose declared type is `Set<RowN<...>>` (or `Set<RecordN<
 
 > element-shape conversion when the developer's `Sources` is `Set<TableRecord>` / `List<TableRecord>` (deferred until a real schema needs it; builds on top of R61)
 
-The motivating schema is the "real schema" the deferral was waiting on. R70 ships the conversion at the rows-method body and the symmetric validator acceptance, so the typed-record shape works end-to-end on both halves.
+The motivating schema is the "real schema" the deferral was waiting on. R70 closes the gap by extending `BatchKey.ParentKeyed` with two new permits — `TableRecordKeyed` and `MappedTableRecordKeyed` — that carry the developer's typed `TableRecord` element class on the variant itself. The classifier reroutes `Set<TableRecord>` / `List<TableRecord>` onto these new permits; `keyElementType()` then returns the typed `TableRecord` class directly, which propagates through `RowsMethodShape.outerRowsReturnType` to make the validator's expected outer return type `Map<KvotesporsmalRecord, V>` automatically. The emitter site needs no conversion: `keys` is already locally typed `Set<KvotesporsmalRecord>`, the developer's signature matches, and the existing `return ServiceClass.method(keys)` line type-checks. The asymmetry collapses by extending the variant taxonomy, not by papering over the mismatch in the emitter.
 
 ## Why this depends on R61
 
-R61 (`emit-record1-keys-instead-of-row1.md`) flips the framework's emitted DataLoader key type from `RowN<...>` to `RecordN<...>` for the five row-keyed `BatchKey` arms (`RowKeyed`, `MappedRowKeyed`, `LifterRowKeyed`, `AccessorKeyedSingle`, `AccessorKeyedMany`). That flip is the prerequisite for ergonomic `RowN ↔ TableRecord` conversion at the rows-method body, because `RecordN` exposes per-column value accessors (`record.value1()`, ...) and `record.into(Table)` for typed projection back into a `TableRecord`, while `Row1<T>` / `Row3<...>` are jOOQ SQL-expression types with no application-side accessors. The R61 plan-body §"open question" already commits to keeping `RowN` cardinality at the WHERE-clause boundary (where jOOQ's planner needs it for tuple-IN); only the developer-facing rows-method-parameter type changes.
+R61 (`emit-record1-keys-instead-of-row1.md`) established the design principle that **`BatchKey` variant identity tracks the developer's source shape**. After R61: `RowKeyed` / `MappedRowKeyed` / `LifterRowKeyed` carry `RowN<...>` keys (jOOQ SQL-expression types, no application-side accessors); `RecordKeyed` / `MappedRecordKeyed` / `AccessorKeyedSingle` / `AccessorKeyedMany` carry `RecordN<...>` keys (with `value1()` and `into(Table)`). Both Row and Record source shapes are first-class on `@service`; the developer chooses by writing `Set<Row1<...>>` vs `Set<Record1<...>>`, and `keyElementType()` is the single switch point that propagates the choice through the validator and emitter.
 
-R70 then writes the conversion using the value accessors R61 makes available. Implementing R70 before R61 would force a `record.field1()` lookup on every key plus a `(Class<T>) field.getType()`-style cast trail, neither of which is robust against arity changes or column-class drift in the catalog. The R61 → R70 sequence keeps each step's emission small and lets the conversion code read as if it were hand-written.
+R70 extends that taxonomy with two new permits — `TableRecordKeyed` and `MappedTableRecordKeyed` — for the third source shape `Set<X>` / `List<X>` where `X extends org.jooq.TableRecord`. Today's classifier (`ServiceCatalog.java:627-632`) folds `Set<TableRecord>` onto `MappedRowKeyed`, and the `MappedRowKeyed` docstring (`BatchKey.java:247-251`) admits the asymmetry: "Both `Set<RowN<...>>` and `Set<TableRecord>` classify here; the DataLoader key type stays `RowN`." That fold is the only place R61's variant-identity-tracks-shape rule is broken; R70 closes it by giving the typed-record source its own variants.
+
+R74 (`accessor-row-record-shapes.md:17`) decided the same question for the auto-lift accessor arm: distinct sealed permits per shape, rejecting an enum discriminator and rejecting fold-into-existing because the TableRecord arms carry different data ("an element class for the `__elt.into(...)` cast"). R70 mirrors R74's pattern on the developer-facing source side: each new permit carries `Class<? extends TableRecord> elementClass` alongside `parentKeyColumns`, and `keyElementType()` returns the typed `TableRecord` class directly.
+
+The Record-shape work landed in R61 is the prerequisite specifically because R70 reuses R61's `record.into(Table)` projection at the parent-key extraction site: `GeneratorUtils.buildKeyExtraction`'s new arm emits `((Record) env.getSource()).into(Tables.KVOTESPORSMAL)`, structurally identical to the existing `RecordKeyed` / `MappedRecordKeyed` arm but typed to the developer's element class. Implementing R70 before R61 would have forced inventing the typed-`into` projection from scratch on a `RowN`-only baseline.
 
 ## Design
 
-### Validator: accept the symmetric `TableRecord` map-key shape
+### New `BatchKey` permits
 
-`RowsMethodShape.outerRowsReturnType` is the single point of truth for "the rows-method's expected outer return type" (validator and emitter both call it; the `service-directive-resolver-strict-child-service-return` `@LoadBearingClassifierCheck` pairs them). The validator currently passes the per-key `V` from `RowsMethodShape.strictPerKeyType` and gets back exactly one expected `TypeName`; mismatches reject.
-
-Lift the validator from "exactly one expected type" to "an enumerated set of accepted shapes" for the mapped arms. Two key shapes are accepted when `batchKey instanceof BatchKey.MappedRowKeyed mrk`:
-
-1. The framework-internal shape: `Map<keyElementType, V>` (or `Map<keyElementType, List<V>>` for list cardinality). Today's behaviour, unchanged.
-2. The symmetric typed-record shape: `Map<X, V>` where `X` is the concrete `TableRecord` for the parent table backing `mrk.parentKeyColumns()`. Same list-cardinality wrapping rule.
-
-Both shapes are accepted because `BatchKey.MappedRowKeyed` already accepts both `Set<RowN<...>>` and `Set<TableRecord>` on the parameter side. The validator's job is to mirror the parameter classifier's tolerance on the return side, not to force the developer to pick one.
-
-To resolve "the concrete `TableRecord` for the parent table backing the PK columns," the validator needs the parent table reference. Today `BatchKey.MappedRowKeyed` carries only `parentKeyColumns: List<ColumnRef>`, and `ColumnRef` itself does not name its parent table (`ColumnRef.java:20`). The simplest plumbing is to thread the parent `TableRef` through the validator's signature alongside the existing `(returnType, method)` pair: `ServiceDirectiveResolver.resolve()` already knows the parent type (`parentTypeName: String` parameter, `parentPkColumns: List<ColumnRef>` carrying the PK), and `BuildContext` exposes the catalog mapping to a `TableRef` from a parent type name. Pass the parent `TableRef` (or `null` for `@record`-typed parents where it is N/A) into `validateChildServiceReturnType`; let `RowsMethodShape.outerRowsReturnTypeChoices` (a new method, sibling to `outerRowsReturnType`) build a small ordered list of `TypeName`s the validator will iterate against `method.returnType().equals(...)` until one matches.
-
-The same lift applies to `MappedRecordKeyed` (Set<RecordN<...>> → Set<TableRecord> equivalence is the same idea) and to the positional arms `RowKeyed` / `RecordKeyed` for completeness, since the developer can declare `List<X>` / `List<List<X>>` parameter shapes too. The cross-product is small (4 row-or-record-keyed arms × {framework-internal shape, typed-record shape} × {single, list}) and lives entirely in `RowsMethodShape.outerRowsReturnTypeChoices`.
-
-The validator's rejection message changes from "must return X" to "must return one of: X, Y" so the developer sees both accepted shapes in the error. The validator's `service-directive-resolver-strict-child-service-return` `@LoadBearingClassifierCheck` description is updated to note the multi-shape acceptance.
-
-### Emitter: convert `Set<RowN>` → `Set<TableRecord>` and `Map<TableRecord, V>` → `Map<RowN, V>`
-
-`TypeFetcherGenerator.buildServiceRowsMethod` is the single emit site for child-`@service` rows methods. It currently emits:
+Two new sealed permits on `BatchKey.ParentKeyed`, parallel in structure to the existing `RowKeyed` / `MappedRowKeyed` and `RecordKeyed` / `MappedRecordKeyed` pairs:
 
 ```java
-public static Map<RowN<...>, V> rowsMethodName(Set<RowN<...>> keys, DataFetchingEnvironment env) {
-    return ServiceClass.method(keys);
+sealed interface ParentKeyed extends BatchKey
+    permits RowKeyed,        RecordKeyed,
+            MappedRowKeyed,  MappedRecordKeyed,
+            TableRecordKeyed,         // new — List<X extends TableRecord>
+            MappedTableRecordKeyed;   // new — Set<X  extends TableRecord>
+
+record TableRecordKeyed(
+        List<ColumnRef> parentKeyColumns,
+        Class<? extends TableRecord> elementClass) implements ParentKeyed {
+    @Override public TypeName keyElementType() { return ClassName.get(elementClass); }
+    @Override public String   javaTypeName()   { return "List<" + elementClass.getSimpleName() + ">"; }
+}
+
+record MappedTableRecordKeyed(
+        List<ColumnRef> parentKeyColumns,
+        Class<? extends TableRecord> elementClass) implements ParentKeyed {
+    @Override public TypeName keyElementType() { return ClassName.get(elementClass); }
+    @Override public String   javaTypeName()   { return "Set<"  + elementClass.getSimpleName() + ">"; }
 }
 ```
 
-R70 makes the emitter inspect `method.returnType()` and `method.params()` to detect when the developer wrote the typed-record shape on either side. Three cases:
+`keyElementType()` returning the typed `TableRecord` class is what makes R70 collapse: `RowsMethodShape.outerRowsReturnType` already builds `Map<keyElementType, V>` (or `List<V>` / `List<List<V>>` for positional) from this single switch, so the validator's expected outer return type and the emitter's parameter / return shapes both come out as `Map<KvotesporsmalRecord, V>` automatically. No multi-shape acceptance, no `RowsCallShape`, no validator widening — the variant carries the shape and every site downstream reads it through the existing single-source-of-truth call.
 
-1. **Both halves typed-record** (motivating case): emit pre-conversion of `keys` into a typed local `Set<X> recordKeys` and post-conversion of the returned `Map<X, V>` back into `Map<RowN<...>, V>`. The pre-conversion uses `keys.stream().map(k -> Tables.X.newRecord(k.value1(), k.value2(), ...)).collect(toSet())` (post-R61, where `k` is a `RecordN<...>` with value accessors); the post-conversion uses `result.entrySet().stream().collect(toMap(e -> DSL.row(e.getKey().fieldN()...), Map.Entry::getValue))` (or `e.getKey().into(Tables.X.PK_COL_1, ...)` if a typed-row form fits cleanly).
-2. **Parameter typed-record, return framework-internal**: pre-conversion only.
-3. **Parameter framework-internal, return typed-record**: post-conversion only.
+### Classifier reroute
 
-The cross-product is encoded as a single sealed `RowsCallShape.{PassThrough | ConvertParam | ConvertReturn | ConvertBoth}` whose construction is a pure function of `(method.returnType(), method.params())` and the parent `TableRef`; the emitter switches on the variant and emits the right pre/post blocks. The shape construction lives in `model/RowsMethodShape.java` (so the validator's "what shapes are accepted" question and the emitter's "what conversion does each accepted shape need" question share a derivation path) and feeds an emit-side helper in `generators/RowsCallEmitter.java` (a new file, because `TypeFetcherGenerator.buildServiceRowsMethod` is already long enough that adding three branches inline would tip it over R6's "this method should be its own class" threshold). A `@DependsOnClassifierCheck` pairs the emitter with the new shape variants on the validator side.
+`ServiceCatalog.classifySourcesType:627-632` today routes the `Set<TableRecord>` / `List<TableRecord>` element branch to `MappedRowKeyed` / `RowKeyed`. The reroute changes those lines to construct `MappedTableRecordKeyed` / `TableRecordKeyed`, threading the `elementClass` local already in hand at line 628. `MappedRowKeyed`'s docstring (`BatchKey.java:247-251`) loses its "Set<TableRecord> also classifies here" sentence; the variant becomes shape-pure, matching its `RecordKeyed` sibling.
 
-The `Set<X>` ↔ `Map<X, V>` post-conversion's `DSL.row(record.field1(), ...)` call uses the column tuple from `mrk.parentKeyColumns()` to project the `TableRecord` back into a `RowN`; the column ordering matches the framework's expected `keyElementType()` ordering exactly (it is the same list, by construction).
+The classifier also gains a parent-table consistency check: when the developer's `elementClass` is a `TableRecord` subtype, look up the parent's expected `TableRecord` class (via `BuildContext.tableRecordClass(parentTypeName)`) and reject mismatches with a typed `Rejection.AuthorError.Structural` carrying a candidate-hint pointer at the expected `TableRecord` simple name. Without this check, `Set<FilmRecord>` against a `Kvotesporsmal` parent would compile through R70's typed extraction step and silently produce wrong-typed records.
+
+### Key extraction
+
+`GeneratorUtils.buildKeyExtraction`'s `ParentKeyed` switch grows one new pair of arms — `TableRecordKeyed` / `MappedTableRecordKeyed` both emit:
+
+```java
+((Record) env.getSource()).into(Tables.KVOTESPORSMAL)
+```
+
+The `Tables.KVOTESPORSMAL` reference is resolved from the variant's `elementClass` at emit time (the `TableRecord` subtype's declaring `Tables` class plus its simple-name field). The shape is structurally identical to the existing `RecordKeyed` / `MappedRecordKeyed` arm (`env.getSource().into(table.col1, ...)`), but projects through `Table<R>.into(...)` instead of column-tuple `into(...)` so the result is a typed `KvotesporsmalRecord` rather than a generic `Record3<String, String, String>`.
+
+### Emitter: zero conversion
+
+`TypeFetcherGenerator.buildServiceRowsMethod:2392-2435` becomes simpler, not more complex. Today's one-line body emission
+
+```java
+return ServiceClass.method(keys);
+```
+
+works for the new variants by construction: `keys` is locally typed `Set<KvotesporsmalRecord>` (from `batchKey.keyElementType()`), the developer signs `Set<KvotesporsmalRecord>`, the call type-checks. The deferred-conversion comment block at `TypeFetcherGenerator.java:2423-2428` ("Sources param passes through `keys` directly. Element-shape conversion … is deferred") drops out: there is nothing to convert. The `@DependsOnClassifierCheck` on `buildServiceRowsMethod` stays; its description widens by one phrase ("…and `TableRecordKeyed` / `MappedTableRecordKeyed` for typed jOOQ `TableRecord` sources").
 
 ### What stays unchanged
 
-- The DataLoader key type is still `RowN<...>` (post-R61: `RecordN<...>`). The R70 conversion is purely application-side, inside the rows-method body, and never reaches the `DataLoaderFactory` boundary. The DataLoader's hashing contract (a stable, value-equality-keyed type) remains the framework's concern.
-- The classifier's parameter-side acceptance of `Set<TableRecord>` (lines 626-630 of `ServiceCatalog.classifySourcesType`) is unchanged; today it succeeds in classify but miscompiles in emit, R70 closes the latter half.
-- `BatchKey.parentKeyColumns()` is unchanged; the `TableRef` plumbing is added alongside, not into, the variant.
-- Root-level `@service` validation (the `computeExpectedServiceReturnType` arm in `ServiceDirectiveResolver.java:220-249`) is unchanged; root has no DataLoader and no rows method, so the "TableRecord vs RowN" question doesn't exist there.
+- `MappedRowKeyed` / `RowKeyed`: their docstrings tighten to "only `Set<RowN<...>>` / `List<RowN<...>>` classify here." The variants are otherwise unchanged.
+- `MappedRecordKeyed` / `RecordKeyed`: untouched. They never accepted `Set<TableRecord>` and don't start now.
+- `LifterRowKeyed`: untouched (R71's surface).
+- `AccessorKeyedSingle` / `AccessorKeyedMany`: untouched (R74's surface; auto-derived, no developer-facing source).
+- DataLoader factory selection (`buildDataLoaderFactoryCall`'s `isMapped` switch on `MappedRowKeyed || MappedRecordKeyed`): gains one disjunct for `MappedTableRecordKeyed`. No shape change at the registration boundary; `K` becomes the typed `TableRecord` class but the factory call site is K-agnostic.
+- Root-level `@service` validation (the `computeExpectedServiceReturnType` arm in `ServiceDirectiveResolver.java:220-249`): unchanged. Root has no DataLoader, no rows method, no parent-keyed source.
 
 ## Implementation
 
-### Phase 1 — validator-side multi-shape acceptance (no emitter change yet)
+### Phase 1 — variants + classifier reroute
 
-- Add `RowsMethodShape.outerRowsReturnTypeChoices(perKey, returnType, batchKey, parentTable)` returning `List<TypeName>` of accepted outer types. For non-mapped variants and for `parentTable == null` it returns the singleton `[outerRowsReturnType(...)]` (today's shape); for mapped variants with a non-null `parentTable` it returns `[framework-internal shape, typed-record shape]`.
-- Update `ServiceDirectiveResolver.validateChildServiceReturnType` to iterate the choices and build a "must return one of: X, Y" message on no-match. Thread the parent `TableRef` from `BuildContext` through the validator entry point.
-- Tag the new acceptance with the `service-directive-resolver-strict-child-service-return` `@LoadBearingClassifierCheck`'s existing key (the description is rewritten; the key stays so paired emitter sites continue to refer to the same contract).
-- **Tests**: Pipeline-tier (`GraphitronSchemaBuilderTest`) — add a positive cell exercising the typed-record map-key shape on `MappedRowKeyed` ("Set<TableRecord> + Map<TableRecord, V>" classifies cleanly to the existing `ServiceTableField` / `ServiceRecordField` arm); refresh the existing `CHILD_SERVICE_TABLE_BOUND_WRONG_RETURN_REJECTED` and `CHILD_SERVICE_SCALAR_WRONG_VALUE_TYPE_REJECTED` assertions to the new "must return one of: ..." wording. Validator-tier (`ServiceFieldValidationTest.java` and siblings) — one positive cell for each mapped variant covering the typed-record shape; each rejection cell continues to exercise a genuinely-mismatched shape (e.g. wrong V-type, wrong cardinality wrap).
-- After Phase 1 ships, the validator no longer rejects the motivating fixture; the emitter still produces a miscompiling rows-method body; the build fails at the compile-spec tier (`graphitron-sakila-example` against real jOOQ) on the unmodified `return ServiceClass.method(keys)`. The strict ordering of phases keeps the pipeline tier honest before the compile tier closes, but the trunk-is-buildable invariant requires Phase 2 to land in the same trunk-bound push as Phase 1.
+- Add `TableRecordKeyed(parentKeyColumns, elementClass)` and `MappedTableRecordKeyed(parentKeyColumns, elementClass)` on `BatchKey.ParentKeyed`. `keyElementType()` returns `ClassName.get(elementClass)`; `javaTypeName()` mirrors the `containerType` helper used by sibling variants.
+- Reroute `ServiceCatalog.classifySourcesType` lines 627-632: the TableRecord element branch constructs the new variants, threading `elementClass`.
+- Tighten `MappedRowKeyed` / `RowKeyed` docstrings: drop the "Set<TableRecord> also classifies here" sentence on `MappedRowKeyed:247-251` (and any equivalent on `RowKeyed`). The variants are now shape-pure.
+- Add classifier-side parent-table consistency check: when the developer's `elementClass` is a `TableRecord` subtype, resolve the parent's expected `TableRecord` class via `BuildContext` and reject mismatches at classify time with a typed `Rejection.AuthorError.Structural` carrying a candidate-hint pointer at the expected simple name.
+- **Tests**: L1 (`BatchKeyTest`) — extend the per-variant `keyElementType()` / `javaTypeName()` parameterised cells with `TableRecordKeyed` / `MappedTableRecordKeyed`. L4 (`GraphitronSchemaBuilderTest`) — positive cell for `Set<KvotesporsmalRecord>` source classifying as `MappedTableRecordKeyed`; rejection cell for `Set<FilmRecord>` against a non-Film parent.
 
-### Phase 2 — emitter-side `RowsCallShape` conversion
+### Phase 2 — key extraction + emitter sweep
 
-- Add `RowsCallShape` sealed in `model/`: `{PassThrough | ConvertParam(parentTable, recordType) | ConvertReturn(parentTable, recordType) | ConvertBoth(parentTable, recordType)}`. Construction is a pure function of `(method.returnType(), method.params(), batchKey, parentTable)`; tested at unit-tier with a small cross-product.
-- Add `generators/RowsCallEmitter.buildCall(...)` returning `CodeBlock` for the body, taking the resolved `RowsCallShape`. `PassThrough` emits the existing one-liner; the three convert arms emit pre/post blocks against the `Set<X> recordKeys = ...` and `Map<X, V> result = ...` locals.
-- `TypeFetcherGenerator.buildServiceRowsMethod` resolves the shape and delegates the body to `RowsCallEmitter`; the surrounding `methodBuilder.addModifiers / .returns / .addParameter` plumbing stays.
-- The `@DependsOnClassifierCheck` on `buildServiceRowsMethod` gains a second `reliesOn` line covering the multi-shape acceptance the validator now provides.
-- **Tests**: Pipeline-tier — add structural coverage that the emitted method body contains the right `Set<X> recordKeys = keys.stream()...` shape for each `RowsCallShape` arm (no body-string assertions; assert at the `MethodSpec.code()` block level via JavaPoet's structural traversal, the same shape `TypeFetcherGeneratorTest` uses today). Compile-tier — add a fixture in `graphitron-sakila-example` whose `@service` rows method writes `Map<X, V> method(Set<X>)` for some sakila `TableRecord`; the existing `mvn compile -pl :graphitron-sakila-example -Plocal-db` gate then catches any miscompile. Execution-tier — extend `GraphQLQueryTest` with one query that exercises the typed-record path end-to-end against PostgreSQL, mirroring `films_titleUppercase_resolvesViaServiceRecordFieldDataLoader`'s shape.
+- `GeneratorUtils.buildKeyExtraction`: add the `TableRecordKeyed` / `MappedTableRecordKeyed` arm emitting `((Record) env.getSource()).into(Tables.X)`. Resolve `Tables.X` at emit time from the variant's `elementClass` (declaring `Tables` class + simple-name field).
+- `TypeFetcherGenerator.buildServiceRowsMethod`: drop the deferred-conversion comment block at `:2423-2428`; the existing `return ServiceClass.method(keys)` line covers the new variants by construction. Widen the `@DependsOnClassifierCheck` description by one phrase to mention the new permits.
+- Walk every `switch(batchKey)` site that pattern-matches on `ParentKeyed` permits and add the two new arms. The seal makes this exhaustive — `javac` lists every site as a missing-arm warning until covered (`isMapped` checks in `TypeFetcherGenerator`, `RowsMethodShape.outerRowsReturnType`, the DataLoader-factory dispatch, etc.).
+- **Tests**: L4 (`TypeFetcherGeneratorTest` / `FetcherPipelineTest`) — pipeline assertions for the key-extraction emit (`(Record) env.getSource().into(Tables.KVOTESPORSMAL)`) and the rows-method signature `Map<KvotesporsmalRecord, V> name(Set<KvotesporsmalRecord>, DataFetchingEnvironment)`. L5 (compile spec) — `graphitron-sakila-example` fixture: one `@service` rows method `Map<FilmRecord, String> method(Set<FilmRecord>)`. L6 (execution) — `GraphQLQueryTest` query exercising the typed-record path end-to-end against the sakila PostgreSQL fixture, mirroring `films_titleUppercase_resolvesViaServiceRecordFieldDataLoader`.
+
+Phases 1 and 2 must land in the same trunk-bound push: between Phase 1 (new variants exist, classifier routes onto them) and Phase 2 (emitter handles them), the `switch` exhaustiveness errors break compilation. Treat the two phases as a single landing for review purposes.
 
 ### Phase 3 — fixture parity sweep
 
-- The R32 changelog entry's "open follow-ups (deferred or tracked elsewhere)" calls out the deferral for `Set<TableRecord>` / `List<TableRecord>` developer signatures; once Phase 2 ships the deferral closes. Update the changelog to point at R70's landing commit (the changelog is append-only; R70 gets one entry summarising both phases on Done). The R32 follow-up bullet stays in place for historical accuracy; R61's "out of scope" bullet pointing at this item gets a "see R70" link.
-- `TestServiceStub`'s `getFilmsWithSetOfTableRecordSources` fixture currently exists only for parameter-side classification and throws on call. Once R70 ships, the same fixture is reused for the emit-side conversion test by adding one more stub method `Map<FilmRecord, String> filmTitleUppercaseRecordKeyed(Set<FilmRecord> keys)` on the existing dummy service class; both halves of the conversion are then under test from a single fixture.
+- R32 changelog entry's "open follow-ups" bullet ("element-shape conversion when the developer's `Sources` is `Set<TableRecord>` / `List<TableRecord>` — deferred until a real schema needs it; builds on top of R61"): closed by R70's landing. Append a new changelog entry for R70 summarising the variant addition + classifier reroute; the R32 follow-up bullet stays for historical accuracy.
+- R61's "out of scope" bullet ("Element-shape conversion for `Set<TableRecord>` / `List<TableRecord>` developer signatures") gets a "closed by R70" annotation.
+- `TestServiceStub.getFilmsWithSetOfTableRecordSources` currently exists only for parameter-side classification and throws on call. After Phase 2 it becomes a real fixture: add a sibling `Map<FilmRecord, String> filmTitleUppercaseTableRecordKeyed(Set<FilmRecord> keys)` on the same dummy service class to anchor compile- and execution-tier coverage.
 
 ## Tests
 
 The phased plan above lists tests inline. Aggregated by tier:
 
-- **Unit (L1)** — `RowsCallShapeTest`: cross-product of `(returnType, params, batchKey)` → expected variant. `RowsMethodShape.outerRowsReturnTypeChoicesTest`: choices size and ordering for each of the four mapped/positional `BatchKey.ParentKeyed` variants × `(parentTable null vs non-null)`.
-- **Pipeline (L4)** — `GraphitronSchemaBuilderTest`: positive cell per mapped variant × typed-record vs framework-internal map-key shape; refreshed rejection-message wording on the two existing rejection cells. `TypeFetcherGeneratorTest`: structural body coverage per `RowsCallShape` variant.
-- **Compile (L5)** — `graphitron-sakila-example` fixture: one `@service` rows method using `Map<TableRecord, V> method(Set<TableRecord>)`; the existing `mvn compile -Plocal-db` gate catches any miscompile.
+- **Unit (L1)** — `BatchKeyTest`: two new parameterised cells pin `TableRecordKeyed` / `MappedTableRecordKeyed` on `keyElementType() == ClassName.get(elementClass)` and the matching `javaTypeName()` shape, alongside the existing seven-variant cells.
+- **Pipeline (L4)** — `GraphitronSchemaBuilderTest`: positive cell per new variant × `(Set, List)` axis; rejection cell for the parent-table-mismatch case (e.g. `Set<FilmRecord>` against a non-Film parent). `TypeFetcherGeneratorTest` / `FetcherPipelineTest`: structural body coverage for the `((Record) env.getSource()).into(Tables.X)` extraction and the typed `Set<X>` rows-method parameter.
+- **Compile (L5)** — `graphitron-sakila-example` fixture: one `@service` rows method using `Map<FilmRecord, V> method(Set<FilmRecord>)`; the existing `mvn compile -Plocal-db` gate catches any miscompile.
 - **Execution (L6)** — `GraphQLQueryTest`: one query exercising the typed-record path end-to-end against the sakila PostgreSQL fixture.
 
 ## Open questions
 
-1. **Single-cardinality TableRecord parameter shape.** R70 covers `Set<X>` (mapped) and `List<X>` (positional). A future single-cardinality `@service` (`X method(X parentRecord)`) would also benefit from the same typed-record shape on the parameter side, but the rows-method shape there is positional `List<V>` / `List<List<V>>`, not `Map`, and the parent-key extraction emits `loader.load(key, env)` rather than batched fan-out. Confirm during Phase 2 whether the same `RowsCallShape` resolution covers single cardinality cleanly or whether single-cardinality is a separate item.
-2. **Custom-scalar V-types in the typed-record map.** `RowsMethodShape.strictPerKeyType` returns `null` for custom GraphQL scalars and enums (the typed-context-value-registry from R45 fills that in later). Today the validator skips the strict check on null; under R70's multi-shape acceptance, the skip arm extends to the typed-record shape too — i.e. neither shape is strict-checked, both are emitted as-passing. This is consistent with today's contract and does not regress, but it means a developer writing `Map<X, MyCustomScalar>` against a custom-scalar field gets no validator help; the failure surfaces at compile-tier as a javac error on the generated `return service.method(...)` line. Acceptable until R45 lands.
-3. **`MappedRecordKeyed` + `Set<TableRecord>` parameter classifier path.** Today `ServiceCatalog.classifySourcesType` maps `Set<TableRecord>` to `MappedRowKeyed` (line 628-629), not `MappedRecordKeyed`. The classification choice is structural (the parameter element is a `TableRecord`, not a `RecordN<...>`), so the typed-record shape always lands on the row-keyed arm by construction; `MappedRecordKeyed` is only reached when the developer explicitly writes `Set<RecordN<...>>`. R70 therefore touches `MappedRecordKeyed` only for the framework-internal-vs-typed-record symmetric acceptance on the return side; the parameter-side classification is unchanged. Document this asymmetry in `BatchKey.MappedRecordKeyed`'s javadoc on landing.
+1. **Single-cardinality `TableRecord` parameter shape (`X method(X parent)`).** R70 covers `Set<X>` (mapped) and `List<X>` (positional). A single-cardinality positional signature would be a different rows-method shape (`X` per parent rather than `List<X>` batched) driven by a `LoaderDispatch.LOAD_ONE` arm. Confirm during Phase 2 whether the same `TableRecordKeyed` permit covers single cardinality cleanly or whether it warrants a third permit.
+2. **`TableRecord` hashing / equality in the DataLoader.** `org.jooq.impl.AbstractRecord` implements `equals` / `hashCode` based on the record's value array, which is what the DataLoader needs for map-keyed batching. Confirm during Phase 2 that the sakila execution-tier test exercises duplicate keys (two parents pointing at the same FK target) and that the DataLoader correctly de-duplicates them at the load boundary.
+3. **Custom-scalar V-types in the typed-record map.** Same status as in any other variant: `RowsMethodShape.strictPerKeyType` returns `null` for custom GraphQL scalars and enums until R45 lands; the validator skips the strict check on null. R70 inherits this without regression.
 
 ## Roadmap entries (siblings / dependencies)
 
-- **Depends on** [`emit-record1-keys-instead-of-row1.md`](emit-record1-keys-instead-of-row1.md) (R61): R61 ships the `RecordN` keys whose value accessors R70's conversion code reads from. Without R61, the conversion would have to either fish column values out via `record.field1()`-style reflection on a `Row1` (no application-side accessor) or duplicate the `record.into(...)` form across the framework and the developer side.
-- **Closes deferral from** R32 (changelog entry under `service-rows-method-body`, commits `64b8e2c` + `e28540b` + `83bcfdf`): R32's "element-shape conversion when the developer's `Sources` is `Set<TableRecord>` / `List<TableRecord>` (deferred until a real schema needs it; builds on top of R61)" bullet is the open follow-up R70 closes.
-- **Coordinates with** [`typed-context-value-registry.md`](typed-context-value-registry.md) (R45): when R45 surfaces typed Java classes for custom GraphQL scalars and enums, the `strictPerKeyType` null arm shrinks; R70's multi-shape acceptance reuses whatever R45 produces without further work.
+- **Depends on** [`emit-record1-keys-instead-of-row1.md`](emit-record1-keys-instead-of-row1.md) (R61): R61 established the variant-identity-tracks-shape principle and shipped the `Record.into(Table)`-style key construction for the `RecordKeyed` / `MappedRecordKeyed` arms. R70's `((Record) env.getSource()).into(Tables.X)` extraction is a typed sibling of that pattern, and the new permits slot into the seal R61 left open for shape-pure variants.
+- **Mirrors design pattern from** [`accessor-row-record-shapes.md`](accessor-row-record-shapes.md) (R74): R74 added distinct sealed permits per shape on the auto-lift accessor side rather than folding shapes onto an enum or onto existing variants. R70 applies the same principle to the developer-facing source side; both items confine the `elementClass` carrier to the variants that actually need it.
+- **Closes deferral from** R32 (changelog entry under `service-rows-method-body`, commits `64b8e2c` + `e28540b` + `83bcfdf`): R32's "element-shape conversion when the developer's `Sources` is `Set<TableRecord>` / `List<TableRecord>` (deferred until a real schema needs it; builds on top of R61)" bullet is the open follow-up R70 closes — by removing the conversion entirely, not by emitting it.
+- **Coordinates with** [`typed-context-value-registry.md`](typed-context-value-registry.md) (R45): when R45 surfaces typed Java classes for custom GraphQL scalars and enums, the `strictPerKeyType` null arm shrinks; R70 inherits that automatically.
