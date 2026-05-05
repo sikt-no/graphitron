@@ -66,6 +66,8 @@ While we're touching emission for these methods:
   ```
   Each per-arg expression then starts from `filter` (and skips the per-arg rebind chain). The current shape rebinds `_m1` once per arg, evaluating the same `instanceof Map<?,?>` N times.
 
+- Drop the `Condition condition = DSL.noCondition(); condition = condition.and(<single call>); return condition;` boilerplate. Each `QueryConditions.<method>` wraps a single call to the user-written `<X>Conditions.<method>`, so the noCondition()-and-chain pattern only matters when there are *multiple* terms to AND. With one call, return it directly; with zero, return `DSL.noCondition()` directly.
+
 - Per (NodeId-type, arity) pair used by a `QueryConditions` class, emit one private static helper:
   ```java
   private static Row3<String, String, String> decodeKvotetypeRow(Object wire) {
