@@ -1,5 +1,6 @@
 package no.sikt.graphitron.lsp.server;
 
+import no.sikt.graphitron.lsp.completions.ClassNameCompletions;
 import no.sikt.graphitron.lsp.completions.FieldCompletions;
 import no.sikt.graphitron.lsp.completions.ReferenceCompletions;
 import no.sikt.graphitron.lsp.completions.TableCompletions;
@@ -156,6 +157,8 @@ public class GraphitronTextDocumentService implements TextDocumentService {
                 case "table" -> TableCompletions.generate(workspace.catalog(), directive, pos, file.source());
                 case "field" -> FieldCompletions.generate(workspace.catalog(), directive, pos, file.source());
                 case "reference" -> ReferenceCompletions.generate(workspace.catalog(), directive, pos, file.source());
+                case "service", "condition", "record" ->
+                    ClassNameCompletions.generate(workspace.catalog(), directive, pos, file.source(), directiveName);
                 default -> List.of();
             };
             return Either.forLeft(items);

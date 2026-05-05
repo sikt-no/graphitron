@@ -37,8 +37,49 @@ public final class Hovers {
             case "table" -> tableHover(directive, file, catalog, pos);
             case "field" -> fieldHover(directive, file, catalog, pos);
             case "reference" -> referenceHover(directive, file, catalog, pos);
+            case "service", "condition" -> classArgHover(directive, file, catalog, pos);
+            case "record" -> recordClassNameHover(directive, file, catalog, pos);
             default -> Optional.empty();
         };
+    }
+
+    private static Optional<Hover> classArgHover(
+        Directives.Directive directive, WorkspaceFile file, CompletionData catalog, Point pos
+    ) {
+        var argValue = stringArgValueAt(directive, "class", pos, file.source());
+        if (argValue == null) return Optional.empty();
+        String fqn = Nodes.unquote(Nodes.text(argValue, file.source()));
+        return findExternal(catalog, fqn).map(ref -> hover(file, argValue, formatClass(ref)));
+    }
+
+    private static Optional<Hover> recordClassNameHover(
+        Directives.Directive directive, WorkspaceFile file, CompletionData catalog, Point pos
+    ) {
+        for (var arg : directive.arguments()) {
+            if (!"record".equals(Nodes.text(arg.key(), file.source()))) continue;
+            Node field = innermostObjectFieldContaining(arg.value(), pos);
+            if (field == null) continue;
+            Node nameNode = childOfKind(field, "name");
+            Node valueNode = childOfKind(field, "value");
+            if (nameNode == null || valueNode == null) continue;
+            if (!"className".equals(Nodes.text(nameNode, file.source()))) continue;
+            if (!Nodes.contains(valueNode, pos)) continue;
+            String fqn = Nodes.unquote(Nodes.text(valueNode, file.source()));
+            return findExternal(catalog, fqn).map(ref -> hover(file, valueNode, formatClass(ref)));
+        }
+        return Optional.empty();
+    }
+
+    private static Optional<CompletionData.ExternalReference> findExternal(CompletionData catalog, String fqn) {
+        return catalog.externalReferences().stream()
+            .filter(r -> r.className().equals(fqn))
+            .findFirst();
+    }
+
+    private static String formatClass(CompletionData.ExternalReference ref) {
+        // Phase 5a payload: just the FQN. Method list and Javadoc fold in
+        // with 5b and the JavaParser phase respectively.
+        return "**Class** `" + ref.className() + "`";
     }
 
     private static Optional<Hover> tableHover(

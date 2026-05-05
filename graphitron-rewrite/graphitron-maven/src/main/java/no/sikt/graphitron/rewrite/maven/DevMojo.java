@@ -32,10 +32,10 @@ import java.util.Set;
  *       connects.</li>
  *   <li>Watches {@code <schemaInputs>} for {@code .graphqls} writes and
  *       re-runs the generator on every save (debounced).</li>
- *   <li>Watches the consumer's compiled jOOQ output for {@code .class}
- *       changes and rebuilds the in-process catalog atomically. Phase 2
- *       fills in the rebuild; today the wiring stands so a Phase 2 swap
- *       is mechanical.</li>
+ *   <li>Watches all of {@code target/classes} for {@code .class} changes
+ *       and rebuilds the in-process catalog atomically. Both jOOQ output
+ *       (tables / columns / FKs) and consumer service / condition /
+ *       record classes flow through the same rebuild trigger.</li>
  * </ul>
  *
  * <p>Stop with Ctrl+C. See {@code getting-started.md}'s "Dev loop" for the
@@ -138,7 +138,7 @@ public class DevMojo extends AbstractRewriteMojo {
         Set<Path> roots = resolveClasspathRoots(ctx);
         if (roots.isEmpty()) {
             getLog().info("graphitron:dev: skipping classpath watcher; "
-                + "no compiled jOOQ output yet at " + ctx.basedir().resolve("target/classes"));
+                + "no compiled output yet at " + ctx.basedir().resolve("target/classes"));
             return;
         }
         this.classpathDebounce = new DebounceExecutor(debounceMs);
@@ -260,12 +260,14 @@ public class DevMojo extends AbstractRewriteMojo {
     }
 
     private static Set<Path> resolveClasspathRoots(RewriteContext ctx) {
-        // jOOQ packages are dotted; the on-disk layout uses path separators.
+        // Phase 5a: watch all of target/classes, not just the jOOQ subtree.
+        // The catalog now indexes consumer service / condition / record
+        // classes under their own packages too, so any .class write in the
+        // tree is a potential catalog refresh trigger.
         Path classes = ctx.basedir().resolve("target/classes");
-        Path target = classes.resolve(ctx.jooqPackage().replace('.', '/'));
-        if (!java.nio.file.Files.isDirectory(target)) {
+        if (!java.nio.file.Files.isDirectory(classes)) {
             return Set.of();
         }
-        return Set.of(target);
+        return Set.of(classes);
     }
 }
