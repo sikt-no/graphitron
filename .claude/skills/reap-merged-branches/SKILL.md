@@ -5,7 +5,7 @@ description: Delete remote branches whose commits are all contained in the claud
 
 # Reap merged branches
 
-Delete remote branches on `origin` whose tip is reachable from `origin/claude/graphitron-rewrite` — i.e. every commit on the branch is already contained in trunk, so the branch is dead.
+Identify remote `claude/**` branches on `origin` whose tip is reachable from `origin/claude/graphitron-rewrite` — i.e. every commit on the branch is already contained in trunk, so the branch is dead. The skill prepares the list and emits a deletion command for the user to run; it does not delete branches itself, because the sandboxed git proxy rejects `git push --delete`.
 
 ## 1. Unshallow fetch
 
@@ -20,22 +20,24 @@ git fetch origin --prune
 
 ## 2. List candidate branches
 
-Remote branches whose tip is reachable from trunk, excluding trunk itself, `main`, and `HEAD`:
+Remote `claude/**` branches whose tip is reachable from trunk, excluding trunk itself:
 
 ```bash
 TRUNK=origin/claude/graphitron-rewrite
-git for-each-ref --format='%(refname:short)' --merged "$TRUNK" refs/remotes/origin/ \
-  | grep -vE '^origin/(HEAD|main|claude/graphitron-rewrite)$'
+git for-each-ref --format='%(refname:short)' --merged "$TRUNK" refs/remotes/origin/claude/ \
+  | grep -v '^origin/claude/graphitron-rewrite$'
 ```
 
-Review the output before step 3. Anything listed is safe to delete in the sense that no unique commits will be lost — every commit is already in trunk.
+Show the output to the user. Anything listed is safe to delete in the sense that no unique commits will be lost — every commit is already in trunk. Non-`claude/**` branches (`main`, `dependabot/...`, legacy `GG-...`, etc.) are intentionally excluded; this skill only reaps Claude-authored branches.
 
-## 3. Delete the branches
+## 3. Emit deletion command
+
+Do **not** run the deletion. Instead, print the following command in a fenced bash block for the user to copy-paste and run themselves:
 
 ```bash
 TRUNK=origin/claude/graphitron-rewrite
-git for-each-ref --format='%(refname:short)' --merged "$TRUNK" refs/remotes/origin/ \
-  | grep -vE '^origin/(HEAD|main|claude/graphitron-rewrite)$' \
+git for-each-ref --format='%(refname:short)' --merged "$TRUNK" refs/remotes/origin/claude/ \
+  | grep -v '^origin/claude/graphitron-rewrite$' \
   | sed 's|^origin/||' \
   | xargs -r -n1 git push origin --delete
 ```
