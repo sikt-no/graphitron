@@ -651,7 +651,17 @@ class BuildContext {
         TableRef targetTable = targetResolved.entry().toTableRef(targetSqlName);
         TableRef originTable = originResolved.entry().toTableRef(sourceSqlName);
         List<ColumnRef> fkSideCols  = resolveFkColumnRefs(f.getTable(), f.getFields());
-        List<ColumnRef> keySideCols = resolveFkColumnRefs(f.getKey().getTable(), f.getKey().getFields());
+        // The FK's *own* referenced-column list (third TableField[] arg passed to
+        // Internal.createForeignKey at codegen time, surfaced as ForeignKey.getKeyFields()) is
+        // parallel to getFields() by jOOQ's contract: position i of the referencing list pairs
+        // with position i of the referenced list. ForeignKey.getKey().getFields() returns the
+        // referenced UniqueKey's *own* declaration order, which for an FK whose referenced-column
+        // ordering differs from the parent PK's declaration order (e.g. PRIMARY KEY (a, b, c)
+        // referenced as REFERENCES parent (b, c, a)) does NOT pair positionally with getFields().
+        // Zipping the two non-parallel lists produced silent mis-paired slots — observable as
+        // Field<X>.eq(Field<Y>) compile errors in generated rows-method JOIN ON predicates when
+        // the FK column types are heterogeneous. See SynthesizeFkJoinReorderedKeysTest.
+        List<ColumnRef> keySideCols = resolveFkColumnRefs(f.getKey().getTable(), f.getKeyFields());
         // Synthesis-time orientation: bake the FK-direction decision into each slot pair so
         // emitter sites read direction-blind (target.<targetSide>.eq(source.<sourceSide>))
         // regardless of whether the FK lives on the source or the target table.

@@ -417,6 +417,40 @@ CREATE TABLE nodeidfixture.too_wide (
                  k13, k14, k15, k16, k17, k18, k19, k20, k21, k22, k23)
 );
 
+-- Reordered-FK fixture: composite FK whose own ordered referenced-column list
+-- (the third TableField[] arg jOOQ codegen passes to Internal.createForeignKey)
+-- differs from the parent's PRIMARY KEY declaration order. jOOQ's
+-- ForeignKey.getKeyFields() returns the FK's own list (parallel to getFields());
+-- ForeignKey.getKey().getFields() returns the referenced UniqueKey's own list
+-- (PK declaration order). The two CAN differ — and do here. Heterogeneous types
+-- (bigint + two varchar) make any positional pairing of the two non-parallel
+-- lists a Field<Long>↔Field<String> compile-time mismatch in emitted SQL.
+--
+-- Schema shape mirrors the failing downstream case (Kompetansekrav →
+-- Kompetansekrav_grunnlag composite FK with reordered referenced columns):
+--   reordered_pk_parent declares its PK in order (pk_a bigint, pk_b varchar,
+--     pk_c varchar);
+--   reordered_fk_child's FOREIGN KEY clause references the parent's PK columns
+--     in REVERSED order (pk_b, pk_c, pk_a), so the FK's own referenced-column
+--     list is (pk_b, pk_c, pk_a) while getKey().getFields() returns
+--     (pk_a, pk_b, pk_c).
+CREATE TABLE nodeidfixture.reordered_pk_parent (
+    pk_a bigint      NOT NULL,
+    pk_b varchar(50) NOT NULL,
+    pk_c varchar(50) NOT NULL,
+    PRIMARY KEY (pk_a, pk_b, pk_c)
+);
+
+CREATE TABLE nodeidfixture.reordered_fk_child (
+    child_id varchar(50) PRIMARY KEY,
+    fk_b     varchar(50) NOT NULL,
+    fk_c     varchar(50) NOT NULL,
+    fk_a     bigint      NOT NULL,
+    CONSTRAINT reordered_fk_child_parent_fkey
+        FOREIGN KEY (fk_b, fk_c, fk_a)
+        REFERENCES nodeidfixture.reordered_pk_parent (pk_b, pk_c, pk_a)
+);
+
 -- ===========================
 -- idreffixture schema
 -- ===========================
