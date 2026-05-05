@@ -24,7 +24,7 @@ import java.util.List;
  * encode the per-step list-shape decision, so the carrier is required (rewrite-design-principles
  * "Sub-taxonomies for resolution outcomes").
  */
-sealed interface PathExpr {
+public sealed interface PathExpr {
 
     /** The head segment name (the slot name at the directive's scope). */
     String headName();

@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
+import no.sikt.graphitron.rewrite.PathExpr;
+
 /**
  * Classifies the runtime source of a single parameter in a {@link MethodRef}.
  *
@@ -8,9 +10,8 @@ package no.sikt.graphitron.rewrite.model;
  *
  * <ul>
  *   <li>{@link Arg} — the parameter is a GraphQL field argument; bound via
- *       {@code DataFetchingEnvironment.getArgument(graphqlArgName)} where
- *       {@code graphqlArgName} may diverge from the enclosing {@link MethodRef.Param#name()}
- *       (the Java identifier) under {@code @field(name:)} on the argument site.</li>
+ *       {@code DataFetchingEnvironment.getArgument(path.headName())} for head-only paths, or
+ *       Map traversal from the outer argument for multi-segment paths (R84 path expressions).</li>
  *   <li>{@link Context} — the parameter is a context argument; bound via
  *       {@code GraphitronContext.getContextArgument(dfe, name)}.</li>
  *   <li>{@link Sources} — the DataLoader batch-key list; element type and construction strategy
@@ -23,29 +24,35 @@ package no.sikt.graphitron.rewrite.model;
  *
  * <p>The parameter name and Java type are held on the enclosing {@link MethodRef.Param} record;
  * they are not repeated here. For {@link Context} the parameter name equals the context key.
- * For {@link Arg} the parameter name is the Java identifier; the GraphQL argument key (which
- * may diverge under {@code @field(name:)} on the argument site) lives on
- * {@link Arg#graphqlArgName}.
+ * For {@link Arg} the parameter name is the Java identifier; the GraphQL slot (and any tail
+ * segments for path expressions) lives on {@link Arg#path}.
  */
 public sealed interface ParamSource
     permits ParamSource.Arg, ParamSource.Context, ParamSource.Sources,
             ParamSource.DslContext, ParamSource.Table, ParamSource.SourceTable {
 
     /**
-     * A GraphQL field argument bound via {@code DataFetchingEnvironment.getArgument(graphqlArgName)}.
+     * A GraphQL field argument bound via the directive's argMapping rule.
      *
-     * <p>{@code graphqlArgName} is the GraphQL argument key — equal to the enclosing
-     * {@link MethodRef.Param#name()} (the Java identifier) when no override is in effect, or the
-     * value supplied by {@code @field(name:)} on an {@code @service} / {@code @tableMethod}
-     * argument when the schema author binds a Java parameter to a differently-named GraphQL arg.
+     * <p>{@code path} is the resolved {@link PathExpr} for this binding. The single-segment
+     * {@link PathExpr.Head} case is the R53 baseline ({@code env.getArgument(path.headName())}).
+     * The multi-segment {@link PathExpr.Step} chain case (R84) walks from the outer argument's
+     * map through nested input-field keys to the leaf value, with intermediate-null
+     * short-circuit (any null in the chain produces a null leaf without an NPE).
      *
-     * <p>{@code extraction} is the pre-resolved strategy for extracting this argument's value
-     * from the GraphQL execution context. Set at classification time by
+     * <p>{@code extraction} is the pre-resolved strategy for transforming the leaf value once
+     * extracted. Set at classification time by
      * {@link no.sikt.graphitron.rewrite.ServiceCatalog} (jOOQ enum detection) and enriched by
      * {@link no.sikt.graphitron.rewrite.FieldBuilder} (text-map detection). Defaults to
      * {@link CallSiteExtraction.Direct} for plain scalar arguments.
      */
-    record Arg(CallSiteExtraction extraction, String graphqlArgName) implements ParamSource {}
+    record Arg(CallSiteExtraction extraction, PathExpr path) implements ParamSource {
+
+        /** Convenience: the GraphQL slot name (head segment of the path). */
+        public String graphqlArgName() {
+            return path.headName();
+        }
+    }
 
     /**
      * A context argument bound via {@code GraphitronContext.getContextArgument(dfe, name)}.

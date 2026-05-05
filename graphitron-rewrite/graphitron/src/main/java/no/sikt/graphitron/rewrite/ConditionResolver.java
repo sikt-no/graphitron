@@ -161,7 +161,7 @@ final class ConditionResolver {
             if (p.source() instanceof ParamSource.Arg arg) {
                 rewritten.add(new MethodRef.Param.Typed(p.name(), p.typeName(),
                     new ParamSource.Arg(new CallSiteExtraction.NestedInputField(outerArgName, leafPath),
-                        arg.graphqlArgName())));
+                        arg.path())));
             } else {
                 rewritten.add(p);
             }
