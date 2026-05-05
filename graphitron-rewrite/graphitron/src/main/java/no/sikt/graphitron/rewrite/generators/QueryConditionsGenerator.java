@@ -89,21 +89,36 @@ public class QueryConditionsGenerator {
             .addParameter(jooqTableClass, "table")
             .addParameter(ENV, "env");
 
-        builder.addStatement("$T condition = $T.noCondition()", CONDITION, DSL);
+        // Pre-lift any JooqConvert+list arg into a local before the (possibly reduced) body —
+        // the extraction expression references it as `<name>Keys` when building call args.
         for (var filter : filters) {
-            // Pre-lift any JooqConvert+list arg into a local; the extraction expression
-            // references it as `<name>Keys` when building the call args below.
             for (var param : filter.callParams()) {
                 if (param.extraction() instanceof CallSiteExtraction.JooqConvert && param.list()) {
                     builder.addStatement("$T<$T> $L = env.getArgument($S)",
                         LIST, String.class, toCamelCase(param.name()) + "Keys", param.name());
                 }
             }
-            var callArgs = ArgCallEmitter.buildCallArgs(filter.callParams(), filter.className(), "table");
-            builder.addStatement("condition = condition.and($T.$L($L))",
-                ClassName.bestGuess(filter.className()), filter.methodName(), callArgs);
         }
-        builder.addStatement("return condition");
+
+        // Reduce the noCondition()-and chain when there's nothing to compose. Zero filters land
+        // as `return DSL.noCondition()`; one filter folds to a direct return; two or more keep
+        // the seeded chain.
+        if (filters.isEmpty()) {
+            builder.addStatement("return $T.noCondition()", DSL);
+        } else if (filters.size() == 1) {
+            var only = filters.get(0);
+            var callArgs = ArgCallEmitter.buildCallArgs(only.callParams(), only.className(), "table");
+            builder.addStatement("return $T.$L($L)",
+                ClassName.bestGuess(only.className()), only.methodName(), callArgs);
+        } else {
+            builder.addStatement("$T condition = $T.noCondition()", CONDITION, DSL);
+            for (var filter : filters) {
+                var callArgs = ArgCallEmitter.buildCallArgs(filter.callParams(), filter.className(), "table");
+                builder.addStatement("condition = condition.and($T.$L($L))",
+                    ClassName.bestGuess(filter.className()), filter.methodName(), callArgs);
+            }
+            builder.addStatement("return condition");
+        }
         return builder.build();
     }
 }
