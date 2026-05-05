@@ -1,7 +1,11 @@
 package no.sikt.graphitron.rewrite;
 
+import no.sikt.graphitron.rewrite.selection.GraphQLSelectionParseException;
+import no.sikt.graphitron.rewrite.selection.GraphQLSelectionParser;
+
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -38,9 +42,16 @@ record ArgBindingMap(Map<String, PathExpr> byJavaName) {
         record UnknownArgRef(String message) implements Result {}
     }
 
-    /** Result of {@link #parseArgMapping}. */
+    /**
+     * Result of {@link #parseArgMapping}.
+     *
+     * <p>{@code overrides} keys are Java parameter names; values are dot-segment chains.
+     * R53-shaped single-name overrides arrive as one-element segment lists; R84 path
+     * expressions arrive as multi-element lists with the head segment first. Single-segment
+     * overrides preserve full R53 wire-compat at every consumer.
+     */
     sealed interface ParsedArgMapping {
-        record Ok(Map<String, String> overrides) implements ParsedArgMapping {}
+        record Ok(Map<String, List<String>> overrides) implements ParsedArgMapping {}
         record ParseError(String message) implements ParsedArgMapping {}
     }
 
@@ -88,47 +99,38 @@ record ArgBindingMap(Map<String, PathExpr> byJavaName) {
     }
 
     /**
-     * Parses {@code raw} as a comma-separated list of {@code javaParam: graphqlArg} entries.
-     * Whitespace (including newlines for text-block input) is permitted around {@code :} and
-     * {@code ,}. Empty/null/blank input returns an {@link ParsedArgMapping.Ok} with an empty
-     * map (identity-for-every-parameter).
+     * Parses {@code raw} as a comma-separated list of {@code javaParam: dotted.path} entries.
+     * Whitespace (including newlines for text-block input) and commas are insignificant
+     * between entries (standard GraphQL convention; the lexer in {@link GraphQLSelectionParser}
+     * already handles this). Empty/null/blank input returns an {@link ParsedArgMapping.Ok}
+     * with an empty map (identity-for-every-parameter).
      *
-     * <p>Returns {@link ParsedArgMapping.ParseError} on a malformed entry (missing {@code :},
-     * empty key or value after trimming) or a duplicate Java target across entries.
+     * <p>Single-name R53-shaped overrides (e.g. {@code "inputs: input"}) parse to a one-element
+     * segment chain {@code ["input"]}; path expressions (e.g.
+     * {@code "kvotesporsmal: input.kvotesporsmalId"}) parse to a multi-element chain
+     * {@code ["input", "kvotesporsmalId"]}.
+     *
+     * <p>Returns {@link ParsedArgMapping.ParseError} on a syntactic problem surfaced by
+     * {@link GraphQLSelectionParser#parseEntries(String)} (missing colon, missing value name,
+     * empty path segment) or a duplicate Java target across entries.
      */
     static ParsedArgMapping parseArgMapping(String raw) {
-        if (raw == null || raw.isBlank()) {
-            return new ParsedArgMapping.Ok(Map.of());
+        List<no.sikt.graphitron.rewrite.selection.ParsedEntry> entries;
+        try {
+            entries = GraphQLSelectionParser.parseEntries(raw);
+        } catch (GraphQLSelectionParseException e) {
+            return new ParsedArgMapping.ParseError(
+                "argMapping syntax error — " + e.getMessage()
+                + " (expected comma-separated 'javaParam: graphqlArg' or 'javaParam: input.field' pairs)");
         }
-        var entries = raw.split(",");
-        var overrides = new LinkedHashMap<String, String>();
-        for (var rawEntry : entries) {
-            var entry = rawEntry.strip();
-            if (entry.isEmpty()) {
+        var overrides = new LinkedHashMap<String, List<String>>();
+        for (var entry : entries) {
+            if (overrides.containsKey(entry.key())) {
                 return new ParsedArgMapping.ParseError(
-                    "argMapping has an empty entry — entries are comma-separated 'javaParam: graphqlArg' pairs");
-            }
-            int colon = entry.indexOf(':');
-            if (colon < 0) {
-                return new ParsedArgMapping.ParseError(
-                    "argMapping entry '" + entry + "' is missing ':' — expected 'javaParam: graphqlArg'");
-            }
-            String javaParam = entry.substring(0, colon).strip();
-            String graphqlArg = entry.substring(colon + 1).strip();
-            if (javaParam.isEmpty()) {
-                return new ParsedArgMapping.ParseError(
-                    "argMapping entry '" + entry + "' has an empty Java-parameter name before ':'");
-            }
-            if (graphqlArg.isEmpty()) {
-                return new ParsedArgMapping.ParseError(
-                    "argMapping entry '" + entry + "' has an empty GraphQL-argument name after ':'");
-            }
-            String prior = overrides.put(javaParam, graphqlArg);
-            if (prior != null) {
-                return new ParsedArgMapping.ParseError(
-                    "argMapping has duplicate entries for Java parameter '" + javaParam
+                    "argMapping has duplicate entries for Java parameter '" + entry.key()
                     + "' — each Java parameter may appear at most once");
             }
+            overrides.put(entry.key(), entry.segments());
         }
         return new ParsedArgMapping.Ok(Collections.unmodifiableMap(overrides));
     }

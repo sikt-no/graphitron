@@ -887,7 +887,8 @@ class BuildContext {
             return new ConditionResolution(null,
                 "path-step @condition: " + pe.message());
         }
-        Map<String, String> argMapping = ((ArgBindingMap.ParsedArgMapping.Ok) parsed).overrides();
+        var segmentChains = ((ArgBindingMap.ParsedArgMapping.Ok) parsed).overrides();
+        Map<String, String> argMapping = FieldBuilder.flattenSegments(segmentChains);
         var bindingResult = ArgBindingMap.of(Set.of(), argMapping);
         if (bindingResult instanceof ArgBindingMap.Result.UnknownArgRef u) {
             return new ConditionResolution(null,
@@ -952,7 +953,8 @@ class BuildContext {
         if (parsed instanceof ArgBindingMap.ParsedArgMapping.ParseError pe) {
             return new ConditionDirective(className, methodName, override, ctxArgs, Map.of(), pe.message());
         }
-        Map<String, String> argMapping = ((ArgBindingMap.ParsedArgMapping.Ok) parsed).overrides();
+        var segmentChains = ((ArgBindingMap.ParsedArgMapping.Ok) parsed).overrides();
+        Map<String, String> argMapping = FieldBuilder.flattenSegments(segmentChains);
         return new ConditionDirective(className, methodName, override, ctxArgs, argMapping, null);
     }
 
