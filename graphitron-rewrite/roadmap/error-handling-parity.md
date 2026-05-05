@@ -356,6 +356,20 @@ All five bullets below are R12 scope. The first three form a dependency chain
   triple: they are populated by the rewrite's own per-@error-type
   `DataFetcher`s, not by the source class.
 
+  *Use `ClassAccessorResolver` from R88* (`record-accessor-validation.md`)
+  rather than rolling a parallel reflective lookup here. R88 ships the
+  generalised `Resolved | Rejected` resolver covering the same lookup order
+  (`get<Camel>` / `is<Camel>` / bare `<camel>` / public field of that name),
+  matching graphql-java's `PropertyDataFetcher` conventions and the same
+  return-type-compatibility rule §2c describes. The R12 caller is the
+  per-handler iteration; the per-(channel, @error type, handler) loop calls
+  `ClassAccessorResolver.resolve(handlerSourceClass, sdlFieldName, sdlFieldJavaType, NO_ARGS)`
+  per declared SDL field and converts `Rejected` into the
+  `UnclassifiedField` reason. R88 is in Spec at the time of this writing;
+  this bullet's implementation should not start until R88 lands the resolver
+  (the dependency is partial — only this bullet within this phase blocks on
+  R88).
+
 - **§5 `extensions.constraint` field population.** *Gated on the accessor
   check above.* When the SDL `@error` type for a VALIDATION-handled channel
   declares an `extensions` field, the source-class accessor reflection check
