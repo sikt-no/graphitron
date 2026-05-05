@@ -8,6 +8,7 @@ import no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
+import no.sikt.graphitron.javapoet.Wrappers;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.Nullable;
 
@@ -349,29 +350,28 @@ public class MapperContext {
                 .add(fieldCode);
 
         if (createsDataFetchers) {
-            return isIterable ? wrapForIndexed(sourceName, code.build()) : code.build();
+            return code.applyIf(isIterable, wrapForIndexed(sourceName)).build();
         }
 
         if (hasSourceName()) {
             if (!isValidation && isIterable && (!mapsJavaRecord || hasRecordReference)) {
-                code.add(CodeBlock.statementOf("$N.add($N)", listedOutputPrefix(targetName), outputPrefix(targetName)));
+                code.addStatement("$N.add($N)", listedOutputPrefix(targetName), outputPrefix(targetName));
             } else if (isValidation && previousContext.isInitContext) {
                 code.addStatement("$N.addAll($T.validatePropertiesAndGenerateGraphQLErrors($N, $N, $N))", VAR_VALIDATION_ERRORS, RECORD_VALIDATOR.className, namedIteratorPrefixIf(sourceName, isIterable), VAR_PATHS_FOR_PROPERTIES, VAR_ENV);
             }
         }
 
-        var forCode = CodeBlock.builder().add(isIterable && hasSourceName() ? (isValidation || toRecord ? wrapForIndexed(sourceName, code.build()) : wrapFor(sourceName, code.build())) : code.build());
+        code.applyIf(isIterable && hasSourceName(), isValidation || toRecord ? wrapForIndexed(sourceName) : wrapFor(sourceName));
         if (isValidation || !previousContext.isInitContext && (toRecord || !mapsJavaRecord)) {
-            return forCode.build();
+            return code.build();
         }
 
         if (!previousContext.isInitContext) {
-            return forCode.add(getSetMappingBlock(outputPrefix(targetName))).build();
+            return code.add(getSetMappingBlock(outputPrefix(targetName))).build();
         }
 
-        return CodeBlock
-                .builder()
-                .add(hasSourceName() ? wrapNotNull(inputPrefix(sourceName), forCode.build()) : forCode.build())
+        return code
+                .applyIf(hasSourceName(), Wrappers.wrapNotNull(inputPrefix(sourceName)))
                 .addIf(toRecord && !mapsJavaRecord, () -> applyGlobalTransforms(targetName, targetType.getRecordClassName(), TransformScope.ALL_MUTATIONS)) // Note: This is done after records are filled.
                 .build();
     }

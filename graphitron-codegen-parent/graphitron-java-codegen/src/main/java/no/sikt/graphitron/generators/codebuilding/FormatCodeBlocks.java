@@ -20,6 +20,7 @@ import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.function.UnaryOperator;
 
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asListedName;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.recordTransformMethod;
@@ -410,32 +411,6 @@ public class FormatCodeBlocks {
     }
 
     /**
-     * @return CodeBlock that wraps the provided CodeBlock in a for loop.
-     */
-    @NotNull
-    public static CodeBlock wrapFor(String variable, CodeBlock code) {
-        return CodeBlock
-                .builder()
-                .beginControlFlow("for (var $L : $N)", namedIteratorPrefix(variable), inputPrefix(variable))
-                .add(code)
-                .endControlFlow()
-                .build();
-    }
-
-    /**
-     * @return CodeBlock that wraps the provided CodeBlock in an indexed for loop.
-     */
-    @NotNull
-    public static CodeBlock wrapForIndexed(String variable, CodeBlock code) {
-        return CodeBlock
-                .builder()
-                .beginControlFlow("for (int $1L = 0; $1N < $2N.size(); $1N++)", namedIndexIteratorPrefix(variable), inputPrefix(variable))
-                .add(code)
-                .endControlFlow()
-                .build();
-    }
-
-    /**
      * @return CodeBlock that wraps the provided CodeBlock in a jOOQ row.
      */
     @NotNull
@@ -465,6 +440,64 @@ public class FormatCodeBlocks {
     @NotNull
     public static CodeBlock wrapSelectIfRequested(String path, CodeBlock code) {
         return CodeBlock.of("$N.ifRequested($S, () -> $L)", VAR_SELECT, path, indentIfMultiline(code));
+    }
+
+    /**
+     * returns a transform that wraps the receiver builder's accumulated content in a {@code for}-each loop over the named variable.
+     */
+    public static UnaryOperator<CodeBlock.Builder> wrapFor(String variable) {
+        return b -> CodeBlock
+                .builder()
+                .beginControlFlow("for (var $L : $N)", namedIteratorPrefix(variable), inputPrefix(variable))
+                .add(b.build())
+                .endControlFlow();
+    }
+
+    /**
+     * returns a transform that wraps the receiver builder's accumulated content in an indexed {@code for} loop.
+     */
+    public static UnaryOperator<CodeBlock.Builder> wrapForIndexed(String variable) {
+        return b -> CodeBlock
+                .builder()
+                .beginControlFlow("for (int $1L = 0; $1N < $2N.size(); $1N++)", namedIndexIteratorPrefix(variable), inputPrefix(variable))
+                .add(b.build())
+                .endControlFlow();
+    }
+
+    /**
+     * returns a transform that wraps the receiver builder's accumulated content in {@code DSL.row(...)}. Returns an empty builder
+     * when the receiver is empty (matches {@link #wrapRow(CodeBlock)} behavior).
+     */
+    public static UnaryOperator<CodeBlock.Builder> wrapRow() {
+        return b -> {
+            var inner = b.build();
+            if (inner.isEmpty()) return CodeBlock.builder();
+            return CodeBlock.builder().add("$T.row($L)", DSL.className, indentIfMultiline(inner));
+        };
+    }
+
+    /**
+     * returns a transform that wraps the receiver builder's accumulated content in {@code QueryHelper.rowOfMap(...)}. Returns an
+     * empty builder when the receiver is empty.
+     */
+    public static UnaryOperator<CodeBlock.Builder> wrapRowOfMap() {
+        return b -> {
+            var inner = b.build();
+            if (inner.isEmpty()) return CodeBlock.builder();
+            return CodeBlock.builder().add("$T.rowOfMap($L)", QUERY_HELPER.className, indentIfMultiline(inner));
+        };
+    }
+
+    /**
+     * returns a transform that wraps the receiver builder's accumulated content in {@code DSL.coalesce(...)}. Returns an empty
+     * builder when the receiver is empty.
+     */
+    public static UnaryOperator<CodeBlock.Builder> wrapCoalesce() {
+        return b -> {
+            var inner = b.build();
+            if (inner.isEmpty()) return CodeBlock.builder();
+            return CodeBlock.builder().add("$T.coalesce($L)", DSL.className, indentIfMultiline(inner));
+        };
     }
 
     /**

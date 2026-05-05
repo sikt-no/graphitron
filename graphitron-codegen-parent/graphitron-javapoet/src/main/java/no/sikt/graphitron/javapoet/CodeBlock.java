@@ -25,6 +25,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
+import java.util.function.UnaryOperator;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collector;
@@ -1116,6 +1117,33 @@ public final class CodeBlock {
             formatParts.clear();
             args.clear();
             return this;
+        }
+
+        /**
+         * Applies a transform to this builder. Allows keeping a fluent chain intact when
+         * wrapping the accumulated content in additional code (e.g. an {@code if} guard,
+         * a {@code for} loop, or a {@code DSL.row(...)} call).
+         *
+         * <p>If the transform returns a different builder, its contents are folded back
+         * into this builder so the receiver always reflects the transformed state.
+         */
+        public Builder apply(UnaryOperator<Builder> transform) {
+            Builder result = transform.apply(this);
+            if (result != this) {
+                CodeBlock built = result.build();
+                clear();
+                formatParts.addAll(built.formatParts());
+                args.addAll(built.args());
+            }
+            return this;
+        }
+
+        /**
+         * Conditional variant of {@link #apply(UnaryOperator)}: runs the transform only when
+         * {@code predicate} is {@code true}, otherwise returns this builder unchanged.
+         */
+        public Builder applyIf(boolean predicate, UnaryOperator<Builder> transform) {
+            return predicate ? apply(transform) : this;
         }
 
         public CodeBlock build() {
