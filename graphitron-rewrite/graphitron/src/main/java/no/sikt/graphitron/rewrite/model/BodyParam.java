@@ -10,9 +10,11 @@ import java.util.List;
  *
  * <ul>
  *   <li>{@link #name()} — the parameter name (matches the GraphQL argument name).</li>
- *   <li>{@link #javaType()} — the fully qualified Java type for the method parameter
- *       (e.g. {@code "java.lang.String"} for scalars, the enum class name for
- *       {@link CallSiteExtraction.EnumValueOf}).</li>
+ *   <li>{@code javaType()} (on {@link Eq} / {@link In} only) — the fully qualified Java type
+ *       for the method parameter (e.g. {@code "java.lang.String"} for scalars, the enum class
+ *       name for {@link CallSiteExtraction.EnumValueOf}). Row-shape variants
+ *       ({@link RowEq} / {@link RowIn}) compute their parameter type from {@code columns}
+ *       directly — see {@link no.sikt.graphitron.rewrite.generators.TypeConditionsGenerator}.</li>
  *   <li>{@link #nonNull()} — when {@code true}, the null guard is omitted and the condition
  *       is always applied; when {@code false}, the condition is wrapped in a null check.</li>
  *   <li>{@link #list()} — whether the parameter is a list. Derived from the predicate-arm
@@ -40,9 +42,6 @@ public sealed interface BodyParam permits BodyParam.ColumnPredicate {
 
     /** Whether a runtime null guard is needed. */
     boolean nonNull();
-
-    /** Java type of the method parameter (e.g. {@code "java.lang.String"}). */
-    String javaType();
 
     /** How to extract the value at the fetcher call site (NestedInputField for input-type fields). */
     CallSiteExtraction extraction();
@@ -96,12 +95,12 @@ public sealed interface BodyParam permits BodyParam.ColumnPredicate {
     /**
      * Composite-key single-tuple equality. Emits
      * {@code DSL.row(c1, ..., cN).eq(DSL.row(v1, ..., vN))}. {@code columns.size() >= 2}; the
-     * arity-1 case routes to {@link Eq}.
+     * arity-1 case routes to {@link Eq}. The method parameter type is the typed
+     * {@code Row<N><T1, ..., TN>} computed from {@code columns} at emit time.
      */
     record RowEq(
         String name,
         List<ColumnRef> columns,
-        String javaType,
         boolean nonNull,
         CallSiteExtraction extraction
     ) implements ColumnPredicate {
@@ -119,12 +118,12 @@ public sealed interface BodyParam permits BodyParam.ColumnPredicate {
 
     /**
      * Composite-key row-IN. Emits {@code DSL.row(c1, ..., cN).in(rows)}.
-     * {@code columns.size() >= 2}; the arity-1 case routes to {@link In}.
+     * {@code columns.size() >= 2}; the arity-1 case routes to {@link In}. The method parameter
+     * type is {@code List<Row<N><T1, ..., TN>>} computed from {@code columns} at emit time.
      */
     record RowIn(
         String name,
         List<ColumnRef> columns,
-        String javaType,
         boolean nonNull,
         CallSiteExtraction extraction
     ) implements ColumnPredicate {

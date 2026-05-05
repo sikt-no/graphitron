@@ -209,7 +209,7 @@ public final class ArgCallEmitter {
 
         if (list) {
             // Pattern: (wire) instanceof List<?> _nl ? _nl.stream()
-            //          .map(decode).filter(nonNull)[.map(value1) | .map(Record::valuesRow)]
+            //          .map(decode).filter(nonNull)[.map(value1) | .map(RecordN::valuesRow)]
             //          .collect(toList()) : null
             // wireExpr is wrapped in outer parens so the instanceof binds at the right
             // precedence (ternary `?:` is right-associative; instanceof binds tighter).
@@ -228,8 +228,12 @@ public final class ArgCallEmitter {
                 // Arity-1: project to the typed scalar, body emits column.in(List<T>).
                 stream.add(".map(r -> r.value1())");
             } else {
-                // Arity-N: project Record -> RowN so body can do DSL.row(cols).in(List<RowN>).
-                stream.add(".map($T::valuesRow)", ClassName.get("org.jooq", "Record"));
+                // Arity-N: project the typed RecordN to its typed Row<N><...> via the
+                // RecordN-typed method reference. decode.returnType() is RecordN<T1, ..., TN>,
+                // so the resulting stream element is Row<N><T1, ..., TN>; body can do
+                // DSL.row(cols).in(List<Row<N><T1, ..., TN>>) without coercion.
+                ClassName recordN = ClassName.get("org.jooq", "Record" + arity);
+                stream.add(".map($T::valuesRow)", recordN);
             }
             stream.add(".collect($T.toList()) : null", collectors);
             return stream.build();
@@ -260,20 +264,36 @@ public final class ArgCallEmitter {
             return CodeBlock.of("($L) instanceof String _s && ((Object) $T.$L(_s)) instanceof $T _r ? ($T) _r.value1() : null",
                 wireExpr, encoderClass, methodName, recordRaw, valueClass);
         }
-        // arity > 1: project decoded Record into RowN via valuesRow().
-        ClassName recordCls = ClassName.get("org.jooq", "Record");
+        // arity > 1: raw RecordN pattern (Java-17 compatible, parameterized instanceof patterns
+        // are Java 21+) plus a cast to the typed Row<N><...>. The cast is unchecked but sound:
+        // decode.returnType() is RecordN<T1, ..., TN>, so _r.valuesRow() at runtime is a
+        // Row<N><T1, ..., TN>; the cast just teaches javac the parameterization. Mirrors the
+        // arity-1 raw-pattern + cast form a few lines up.
+        ClassName recordRaw = ClassName.get("org.jooq", "Record" + arity);
+        TypeName rowTyped = typedRowName(decode.outputColumnShape());
         if (throwOnMismatch) {
             return CodeBlock.of(
-                "($L) instanceof String _s ? ($T.$L(_s) instanceof $T _r ? (($T) _r).valuesRow() : "
+                "($L) instanceof String _s ? (((Object) $T.$L(_s)) instanceof $T _r ? ($T) _r.valuesRow() : "
                 + "(($T<?>) () -> { throw new $T($S); }).get()) : null",
-                wireExpr, encoderClass, methodName, decode.returnType(), recordCls,
+                wireExpr, encoderClass, methodName, recordRaw, rowTyped,
                 ClassName.get("java.util.function", "Supplier"),
                 ClassName.get("graphql", "GraphqlErrorException"),
                 "Decoded NodeId did not match the expected type for this argument");
         }
         return CodeBlock.of(
-            "($L) instanceof String _s && $T.$L(_s) instanceof $T _r ? (($T) _r).valuesRow() : null",
-            wireExpr, encoderClass, methodName, decode.returnType(), recordCls);
+            "($L) instanceof String _s && ((Object) $T.$L(_s)) instanceof $T _r ? ($T) _r.valuesRow() : null",
+            wireExpr, encoderClass, methodName, recordRaw, rowTyped);
+    }
+
+    /** Builds {@code Row<N><T1, ..., TN>} for the cast target. */
+    private static TypeName typedRowName(List<no.sikt.graphitron.rewrite.model.ColumnRef> columns) {
+        int n = columns.size();
+        ClassName rowN = ClassName.get("org.jooq", "Row" + n);
+        TypeName[] typeArgs = new TypeName[n];
+        for (int i = 0; i < n; i++) {
+            typeArgs[i] = ClassName.bestGuess(columns.get(i).columnClass());
+        }
+        return ParameterizedTypeName.get(rowN, typeArgs);
     }
 
     /**

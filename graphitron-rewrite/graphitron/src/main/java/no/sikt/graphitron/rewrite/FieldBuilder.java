@@ -1067,10 +1067,9 @@ class FieldBuilder {
                     // and NodeIdDecodeKeys extraction; LookupMappingResolver consumes the
                     // isLookupKey branch separately.
                     if (!autoSuppressed && !cca.isLookupKey()) {
-                        String javaType = "org.jooq.RowN";
                         bodyParams.add(cca.list()
-                            ? new BodyParam.RowIn(cca.name(), cca.columns(), javaType, cca.nonNull(), cca.extraction())
-                            : new BodyParam.RowEq(cca.name(), cca.columns(), javaType, cca.nonNull(), cca.extraction()));
+                            ? new BodyParam.RowIn(cca.name(), cca.columns(), cca.nonNull(), cca.extraction())
+                            : new BodyParam.RowEq(cca.name(), cca.columns(), cca.nonNull(), cca.extraction()));
                     }
                     cca.argCondition().ifPresent(ac -> argConditions.add(ac.filter()));
                 }
@@ -1109,10 +1108,9 @@ class FieldBuilder {
                     if (!autoSuppressed) {
                         var fkJoin = (JoinStep.FkJoin) ccra.joinPath().get(0);
                         List<ColumnRef> fkSourceColumns = fkJoin.sourceColumns();
-                        String javaType = "org.jooq.RowN";
                         bodyParams.add(ccra.list()
-                            ? new BodyParam.RowIn(ccra.name(), fkSourceColumns, javaType, ccra.nonNull(), ccra.extraction())
-                            : new BodyParam.RowEq(ccra.name(), fkSourceColumns, javaType, ccra.nonNull(), ccra.extraction()));
+                            ? new BodyParam.RowIn(ccra.name(), fkSourceColumns, ccra.nonNull(), ccra.extraction())
+                            : new BodyParam.RowEq(ccra.name(), fkSourceColumns, ccra.nonNull(), ccra.extraction()));
                     }
                     ccra.argCondition().ifPresent(ac -> argConditions.add(ac.filter()));
                 }
@@ -1125,7 +1123,7 @@ class FieldBuilder {
             String conditionsClassName = ctx.ctx().outputPackage() + ".conditions." + returnTypeName + "Conditions";
             String methodName = fieldDef.getName() + "Condition";
             var callParams = bodyParams.stream()
-                .map(bp -> new CallParam(bp.name(), bp.extraction(), bp.list(), bp.javaType()))
+                .map(bp -> new CallParam(bp.name(), bp.extraction(), bp.list(), bodyParamCallTypeName(bp)))
                 .toList();
             filters.add(new GeneratedConditionFilter(conditionsClassName, methodName, rt, callParams, List.copyOf(bodyParams)));
         }
@@ -1278,19 +1276,35 @@ class FieldBuilder {
      * or {@link InputField.CompositeColumnReferenceField}). Always pairs with a
      * {@link CallSiteExtraction.NodeIdDecodeKeys} leaf — the only multi-column extraction
      * arm. Body emission lands on {@link BodyParam.RowEq} (scalar) or
-     * {@link BodyParam.RowIn} (list) with {@code javaType = org.jooq.RowN}; the call-site
-     * extraction projects each decoded record to its {@code valuesRow()} so the params arrive
-     * shaped as untyped {@link org.jooq.RowN} (or {@code List<RowN>}).
+     * {@link BodyParam.RowIn} (list); the parameter type is the typed
+     * {@code Row<N><T1, ..., TN>} (or {@code List<Row<N><...>>}) computed at emit time from
+     * {@code columns}, and the call-site extraction projects each decoded record's typed
+     * {@code valuesRow()} into it.
      */
     private static BodyParam compositeImplicitBodyParam(List<ColumnRef> columns, String fieldName,
                                                         boolean nonNull, boolean list,
                                                         CallSiteExtraction.NodeIdDecodeKeys leaf,
                                                         String outerArgName, List<String> leafPath) {
-        String javaType = "org.jooq.RowN";
         var nested = new CallSiteExtraction.NestedInputField(outerArgName, leafPath, leaf);
         return list
-            ? new BodyParam.RowIn(fieldName, columns, javaType, nonNull, nested)
-            : new BodyParam.RowEq(fieldName, columns, javaType, nonNull, nested);
+            ? new BodyParam.RowIn(fieldName, columns, nonNull, nested)
+            : new BodyParam.RowEq(fieldName, columns, nonNull, nested);
+    }
+
+    /**
+     * Per-variant {@link CallParam#typeName()} for a {@link BodyParam}. Eq/In carry their own
+     * {@code javaType} string; row-shape variants synthesize {@code "org.jooq.Row<N>"} from the
+     * column tuple (the {@code CallParam.typeName} slot is unused on the NodeId-decode call-site
+     * path that row-shape body params take, but a non-null, accurate string keeps the contract
+     * tight).
+     */
+    private static String bodyParamCallTypeName(BodyParam bp) {
+        return switch (bp) {
+            case BodyParam.Eq eq -> eq.javaType();
+            case BodyParam.In in -> in.javaType();
+            case BodyParam.RowEq req -> "org.jooq.Row" + req.columns().size();
+            case BodyParam.RowIn rin -> "org.jooq.Row" + rin.columns().size();
+        };
     }
 
     // ===== Field classification =====
