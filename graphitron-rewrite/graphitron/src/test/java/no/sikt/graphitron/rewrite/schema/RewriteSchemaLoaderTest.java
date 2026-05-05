@@ -94,7 +94,10 @@ class RewriteSchemaLoaderTest {
             .isInstanceOf(RuntimeException.class)
             .hasMessageContaining(broken.toString())
             .hasMessageContaining("line ")
-            .hasMessageContaining("column ");
+            .hasMessageContaining("column ")
+            // Upstream's "Offending token 'X' at line N column M" tail is redundant
+            // once the file:line:column prefix is in place; we strip it.
+            .hasMessageNotContaining("Offending token");
     }
 
     @Test
