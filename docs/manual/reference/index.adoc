@@ -4,9 +4,15 @@
 
 Authoritative descriptions of every directive, every Maven plugin parameter, every runtime API entry point, and every diagnostic code Graphitron emits.
 
-== Status: directive reference, complete
+== Status: directive and runtime-API reference, complete
 
-All 26 directives in the rewrite's `directives.graphqls` are described below. The Mojo parameter reference, the runtime API reference, and the diagnostics glossary are authored in Phase 4 and Phase 5.
+All 26 directives in the rewrite's `directives.graphqls` are described below; the runtime-API reference covers the three classes Graphitron emits unconditionally into your generated sources. The Mojo parameter reference and the diagnostics glossary are authored in the rest of Phase 4 and in Phase 5.
+
+== Runtime API
+
+* xref:runtime-api.adoc[Runtime API reference]: the `Graphitron.buildSchema(...)` facade (single-arg and federation two-arg overloads), the `GraphitronContext` per-request interface (`getDslContext`, `getContextArgument`, `getTenantId`, `getValidator`), and the `NodeIdEncoder` utility (generic `encode`/`peekTypeId`/`decodeValues` plus per-Node `encode<TypeName>` and `decode<TypeName>` helpers).
+
+== Directives
 
 [cols="1,1",frame=none,grid=none]
 |===
