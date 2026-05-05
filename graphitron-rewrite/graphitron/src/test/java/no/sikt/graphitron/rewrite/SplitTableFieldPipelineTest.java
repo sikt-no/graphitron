@@ -3,7 +3,6 @@ package no.sikt.graphitron.rewrite;
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
 import org.junit.jupiter.api.Test;
 
-import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
@@ -32,7 +31,7 @@ class SplitTableFieldPipelineTest {
             type Query { film: Film }
             """);
 
-        var filmFetchers = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE).stream()
+        var filmFetchers = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("FilmFetchers"))
             .findFirst()
             .orElseThrow();
@@ -52,7 +51,7 @@ class SplitTableFieldPipelineTest {
             type Query { film: Film }
             """);
 
-        var fetcherMethod = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE).stream()
+        var fetcherMethod = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("FilmFetchers"))
             .findFirst().orElseThrow()
             .methodSpecs().stream()
@@ -76,7 +75,7 @@ class SplitTableFieldPipelineTest {
             type Query { film: Film }
             """);
 
-        var rowsMethod = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE).stream()
+        var rowsMethod = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("FilmFetchers"))
             .findFirst().orElseThrow()
             .methodSpecs().stream()
@@ -106,7 +105,7 @@ class SplitTableFieldPipelineTest {
             type Query { film: Film }
             """);
 
-        var filmFetchers = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE).stream()
+        var filmFetchers = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("FilmFetchers"))
             .findFirst()
             .orElseThrow();
@@ -131,7 +130,7 @@ class SplitTableFieldPipelineTest {
             type Query { film: Film }
             """);
 
-        var filmFetchers = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE).stream()
+        var filmFetchers = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("FilmFetchers"))
             .findFirst()
             .orElseThrow();
@@ -152,7 +151,7 @@ class SplitTableFieldPipelineTest {
             type Query { film: Film }
             """);
 
-        var plainFilmFetchers = TypeFetcherGenerator.generate(schemaPlain, DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE).stream()
+        var plainFilmFetchers = TypeFetcherGenerator.generate(schemaPlain, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("FilmFetchers"))
             .findFirst().orElseThrow();
 
@@ -177,7 +176,7 @@ class SplitTableFieldPipelineTest {
             type Query { customer: Customer }
             """);
 
-        var customerFetchers = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE).stream()
+        var customerFetchers = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("CustomerFetchers"))
             .findFirst().orElseThrow();
 
@@ -207,7 +206,7 @@ class SplitTableFieldPipelineTest {
             type Query { customer: Customer }
             """);
 
-        var fetcherMethod = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE).stream()
+        var fetcherMethod = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("CustomerFetchers"))
             .findFirst().orElseThrow()
             .methodSpecs().stream()
@@ -237,7 +236,7 @@ class SplitTableFieldPipelineTest {
             type Query { customer: Customer }
             """);
 
-        var customerFetchers = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE).stream()
+        var customerFetchers = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("CustomerFetchers"))
             .findFirst().orElseThrow();
 
@@ -255,7 +254,7 @@ class SplitTableFieldPipelineTest {
             type Query { film: Film }
             """);
 
-        var filmFetchers = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE).stream()
+        var filmFetchers = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("FilmFetchers"))
             .findFirst()
             .orElseThrow();
@@ -280,7 +279,7 @@ class SplitTableFieldPipelineTest {
             type Query { film: Film }
             """);
 
-        var filmFetchers = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE).stream()
+        var filmFetchers = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("FilmFetchers"))
             .findFirst().orElseThrow();
 
@@ -314,7 +313,7 @@ class SplitTableFieldPipelineTest {
             type Query { film: Film }
             """);
 
-        var filmFetchers = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE).stream()
+        var filmFetchers = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("FilmFetchers"))
             .findFirst().orElseThrow();
 
@@ -345,7 +344,7 @@ class SplitTableFieldPipelineTest {
             type Query { film: Film }
             """);
 
-        var filmFetchers = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE).stream()
+        var filmFetchers = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("FilmFetchers"))
             .findFirst().orElseThrow();
 
@@ -373,7 +372,7 @@ class SplitTableFieldPipelineTest {
             type Query { film: Film }
             """);
 
-        var all = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+        var all = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE);
 
         var filmInfoFetchers = all.stream()
             .filter(t -> t.name().equals("FilmInfoFetchers"))
@@ -396,7 +395,7 @@ class SplitTableFieldPipelineTest {
             type Query { film: Film }
             """);
 
-        var filmFetchers = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE).stream()
+        var filmFetchers = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("FilmFetchers"))
             .findFirst()
             .orElseThrow();

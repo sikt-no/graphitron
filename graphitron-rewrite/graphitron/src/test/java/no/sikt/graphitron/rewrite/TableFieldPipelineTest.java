@@ -33,7 +33,7 @@ class TableFieldPipelineTest {
             type Query { film: Film }
             """);
 
-        var filmClass = TypeClassGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE).stream()
+        var filmClass = TypeClassGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("Film"))
             .findFirst()
             .orElseThrow();
@@ -51,7 +51,7 @@ class TableFieldPipelineTest {
             type Query { film: Film }
             """);
 
-        var filmFetchers = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE).stream()
+        var filmFetchers = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("FilmFetchers"))
             .findFirst()
             .orElseThrow();
@@ -75,7 +75,7 @@ class TableFieldPipelineTest {
             type Query { film: Film }
             """);
 
-        var filmClass = TypeClassGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE).stream()
+        var filmClass = TypeClassGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("Film"))
             .findFirst()
             .orElseThrow();
