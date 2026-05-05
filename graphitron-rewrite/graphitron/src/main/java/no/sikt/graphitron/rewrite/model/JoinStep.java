@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.model;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -20,10 +21,11 @@ import java.util.List;
  * </ul>
  *
  * <p>{@link FkJoin} and {@link LiftedHop} share the {@link WithTarget} capability so the
- * rows-method prelude reads {@code targetTable}, {@code targetColumns}, and {@code alias}
- * uniformly without per-accessor sealed switches. The genuine identity fork (FK source-side
- * columns vs. lifter target-side columns for the JOIN-on predicate) stays a sealed switch.
- * Capabilities express what is uniformly true; sealed switches express what varies by identity.
+ * rows-method prelude reads {@code targetTable()}, {@code slots()}, and {@code alias()}
+ * uniformly without per-accessor sealed switches. The variant identity is carried by the
+ * slot subtype ({@link JoinSlot.FkSlot} vs. {@link JoinSlot.LifterSlot}), not by the
+ * carrier; capabilities express what is uniformly true, sealed switches express what
+ * varies by identity.
  *
  * <p><b>Variant contrast:</b>
  * <pre>
@@ -66,16 +68,57 @@ public sealed interface JoinStep permits JoinStep.FkJoin, JoinStep.ConditionJoin
 
     /**
      * Capability mixed in by hops that pre-resolve a target table the prelude joins to. Lets
-     * the rows-method prelude's FK-chain loop read {@code targetTable()},
-     * {@code targetColumns()}, and {@code alias()} polymorphically — exactly where the
-     * accessors mean the same thing on every implementor. The genuine identity fork (FK
-     * source-side columns vs. lifter target-side columns for the JOIN-on predicate) stays a
-     * sealed switch.
+     * emitters read {@link #targetTable()}, {@link #slots()}, and {@link #alias()}
+     * polymorphically — exactly where the accessors mean the same thing on every implementor.
+     *
+     * <p>{@link #slots()} returns {@link Iterable} rather than {@link List} on purpose: positional
+     * methods ({@code .get(i)}, {@code .getFirst()}, {@code .subList(...)}) become compile errors
+     * at the consumer rather than grep findings. Cardinality stays available through
+     * {@link #slotCount()}. The variant identity (FK pairing vs lifter identity) lives on the
+     * concrete {@link JoinSlot} permit returned by iteration; emitters iterate uniformly through
+     * {@link JoinSlot#sourceSide()} and {@link JoinSlot#targetSide()} regardless of permit.
      */
     interface WithTarget {
         TableRef targetTable();
-        List<ColumnRef> targetColumns();
         String alias();
+        Iterable<? extends JoinSlot> slots();
+        int slotCount();
+
+        /**
+         * Source-side columns for this hop, materialised as a {@link List} for readers that
+         * need the columns themselves (e.g. constructing a {@link BatchKey.RowKeyed} key tuple)
+         * rather than slot-by-slot iteration. The order matches {@link #slots()}; index {@code i}
+         * is {@code slots[i].sourceSide()}.
+         */
+        @LoadBearingClassifierCheck(
+            key = "fk-join.slots-oriented-source-and-target",
+            description = "BuildContext.synthesizeFkJoin orients each FkSlot at synthesis "
+                + "time using sourceSqlName.equalsIgnoreCase(f.getTable().getName()): "
+                + "sourceSide is always the column on the hop's source table, targetSide "
+                + "always the column on the hop's target table, regardless of which end of "
+                + "the catalog FK each maps to. Readers that previously consumed "
+                + "fk.sourceColumns() under an implicit FK-on-source precondition "
+                + "(parent-holds-FK in the older vocabulary) — to obtain 'the source-table "
+                + "column' for a JOIN predicate or BatchKey tuple — now read sourceSide() "
+                + "without the precondition: orientation is structural, not dispatched. "
+                + "LifterSlot folds both sides onto a single column by construction "
+                + "(DataLoader key tuple IS target-column tuple) so the same accessor reads "
+                + "uniformly across FkJoin and LiftedHop variants.")
+        default List<ColumnRef> sourceSideColumns() {
+            List<ColumnRef> out = new ArrayList<>(slotCount());
+            for (JoinSlot slot : slots()) out.add(slot.sourceSide());
+            return List.copyOf(out);
+        }
+
+        /**
+         * Target-side columns for this hop, materialised as a {@link List}. The order matches
+         * {@link #slots()}; index {@code i} is {@code slots[i].targetSide()}.
+         */
+        default List<ColumnRef> targetSideColumns() {
+            List<ColumnRef> out = new ArrayList<>(slotCount());
+            for (JoinSlot slot : slots()) out.add(slot.targetSide());
+            return List.copyOf(out);
+        }
     }
 
     /**
@@ -91,22 +134,23 @@ public sealed interface JoinStep permits JoinStep.FkJoin, JoinStep.ConditionJoin
      * the jOOQ catalog is not available (unit tests). Emitters consume it as
      * {@code .onKey($T.$L)} with {@code fk.keysClass()} / {@code fk.constantName()}.
      *
-     * <p>{@code sourceColumns} resolves to the columns <em>holding</em> the FK (e.g.
-     * {@code film.language_id}); {@code targetTable} / {@code targetColumns} resolve to the
-     * table and PK columns the FK <em>points to</em> (e.g. {@code language.language_id}).
-     * These are populated at build time from the jOOQ {@code ForeignKey}. Both column lists have
-     * equal arity by jOOQ invariant. When the jOOQ catalog is unavailable (unit tests) these
-     * fall back to an empty list.
+     * <p>{@code slots} carries the FK pairing as a list of {@link JoinSlot.FkSlot}, oriented at
+     * synthesis time: each slot's {@link JoinSlot#sourceSide()} is the column on the hop's source
+     * table (the side the join is entered from), and {@link JoinSlot#targetSide()} is the column
+     * on the hop's target table. The FK-direction question (which end of the catalog FK sits on
+     * which side) is answered once in {@code BuildContext.synthesizeFkJoin} and baked into the
+     * slot pair, so emitter sites read {@code targetAlias.<slot.targetSide()>.eq(sourceCtx.<slot.sourceSide()>)}
+     * uniformly without re-deriving direction. The list is empty when the jOOQ catalog is
+     * unavailable (unit tests).
      *
      * <p>{@code originTable} is the <em>traversal-origin</em> table of this hop — i.e. the side
      * the join enters <em>from</em>, which is the parent table for hop 0 and the previous hop's
-     * target for subsequent hops. This differs from {@code sourceColumns}'s side (the
-     * FK-holder): the two can sit on opposite sides of the FK when the join traverses
-     * child-to-parent. The field is not a direction signal — readers that need to know which
-     * side holds the FK must compare {@code sourceColumns}' owning table against
-     * {@code originTable}, or infer from the schema context (e.g. {@code @splitQuery}
-     * cardinality ⇒ FK direction; see {@code FieldBuilder.deriveSplitQueryBatchKey}). Falls back
-     * to an empty {@link TableRef} when the jOOQ catalog is unavailable.
+     * target for subsequent hops. Falls back to an empty {@link TableRef} when the jOOQ catalog
+     * is unavailable.
+     *
+     * <p>{@code targetTable} resolves to the table on the hop's target side (the side the join
+     * lands on). Combined with {@code slots[i].targetSide()}, this gives the fully-qualified
+     * target columns each slot pairs against.
      *
      * <p>{@code alias} is the unique table alias for this step within the enclosing query, computed
      * at build time as {@code fieldName + "_" + stepIndex} (e.g. {@code "language_0"} for the
@@ -124,12 +168,18 @@ public sealed interface JoinStep permits JoinStep.FkJoin, JoinStep.ConditionJoin
         String fkName,
         ForeignKeyRef fk,
         TableRef originTable,
-        List<ColumnRef> sourceColumns,
         TableRef targetTable,
-        List<ColumnRef> targetColumns,
+        List<JoinSlot.FkSlot> slots,
         MethodRef whereFilter,
         String alias
-    ) implements JoinStep, WithTarget {}
+    ) implements JoinStep, WithTarget {
+
+        public FkJoin {
+            slots = List.copyOf(slots);
+        }
+
+        @Override public int slotCount() { return slots.size(); }
+    }
 
     /**
      * One hop navigated by a user-supplied condition method (no FK constraint involved).
@@ -151,28 +201,29 @@ public sealed interface JoinStep permits JoinStep.FkJoin, JoinStep.ConditionJoin
 
     /**
      * One hop pre-keyed by a {@link BatchKey.LifterRowKeyed} — no foreign key, no traversal
-     * direction, no source-side columns. The DataLoader key tuple carried by the BatchKey
-     * <em>is</em> the target-column tuple, so the JOIN-on predicate of the rows-method becomes
-     * {@code target.<targetColumns[i]> = parentInput.field(i+1)} directly.
+     * direction, no source-side-distinct-from-target columns. The DataLoader key tuple carried
+     * by the BatchKey <em>is</em> the target-column tuple, encoded as a type fact: each slot is
+     * a {@link JoinSlot.LifterSlot} whose single {@code column} component answers both
+     * {@link JoinSlot#sourceSide()} and {@link JoinSlot#targetSide()}. The JOIN-on predicate of
+     * the rows-method becomes {@code target.<slot.targetSide()> = parentInput.field(i+1)}
+     * directly, identical in shape to the FK case.
      *
      * <p>{@link BatchKey.LifterRowKeyed} holds a single {@code LiftedHop} on its own record;
      * the classifier publishes the same instance through {@code joinPath = [hop]} for back-compat
      * with the existing rows-method loop, but the BatchKey is the source of truth. This makes
      * the single-hop invariant a type fact (one record, one hop) rather than a classifier
      * convention.
-     *
-     * <p>{@code targetTable} is the field's {@code @table} return; {@code targetColumns} is what
-     * the directive supplied (validated against the catalog); {@code alias} follows the same
-     * {@code fieldName + "_" + stepIndex} scheme as {@link FkJoin#alias}.
      */
     record LiftedHop(
         TableRef targetTable,
-        List<ColumnRef> targetColumns,
+        List<JoinSlot.LifterSlot> slots,
         String alias
     ) implements JoinStep, WithTarget {
 
         public LiftedHop {
-            targetColumns = List.copyOf(targetColumns);
+            slots = List.copyOf(slots);
         }
+
+        @Override public int slotCount() { return slots.size(); }
     }
 }
