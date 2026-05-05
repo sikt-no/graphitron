@@ -137,6 +137,56 @@ class HoversTest {
         return new Point(line, col + Math.max(1, token.length() / 2));
     }
 
+    @Test
+    void serviceClassHoverShowsClassFqn() {
+        var file = file("""
+            type Query {
+                x: Int @service(class: "com.example.FilmService", method: "list")
+            }
+            """);
+        var pos = pointAt(file, 1, "FilmService");
+
+        var hover = Hovers.compute(file, classCatalog("com.example.FilmService"), pos).orElseThrow();
+
+        var md = hover.getContents().getRight().getValue();
+        assertThat(md).contains("**Class** `com.example.FilmService`");
+    }
+
+    @Test
+    void recordClassNameHoverShowsClassFqn() {
+        var file = file("""
+            input FooInput @record(record: {className: "com.example.FooDto"}) {
+                bar: Int
+            }
+            """);
+        var pos = pointAt(file, 0, "FooDto");
+
+        var hover = Hovers.compute(file, classCatalog("com.example.FooDto"), pos).orElseThrow();
+
+        var md = hover.getContents().getRight().getValue();
+        assertThat(md).contains("**Class** `com.example.FooDto`");
+    }
+
+    @Test
+    void unknownServiceClassReturnsEmpty() {
+        var file = file("""
+            type Query {
+                x: Int @service(class: "com.example.Missing", method: "list")
+            }
+            """);
+        var pos = pointAt(file, 1, "Missing");
+
+        assertThat(Hovers.compute(file, classCatalog("com.example.Other"), pos)).isEmpty();
+    }
+
+    private static CompletionData classCatalog(String fqn) {
+        return new CompletionData(
+            List.of(),
+            List.of(),
+            List.of(new CompletionData.ExternalReference(fqn, fqn, "", List.of()))
+        );
+    }
+
     private static WorkspaceFile file(String source) {
         return new WorkspaceFile(1, source);
     }
