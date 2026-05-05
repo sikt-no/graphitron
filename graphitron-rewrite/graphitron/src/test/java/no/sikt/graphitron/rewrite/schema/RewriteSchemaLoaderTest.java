@@ -74,6 +74,30 @@ class RewriteSchemaLoaderTest {
     }
 
     @Test
+    void parseErrorMessageNamesOffendingFileAndLocation(@TempDir Path tmp) throws IOException {
+        // Two well-formed sources flank a malformed one; the parser sees one combined
+        // input, but with trackData(true) on MultiSourceReader the SourceLocation on
+        // the exception carries the source-relative file/line. RewriteSchemaLoader
+        // must surface that into the message; otherwise users get "line N column M"
+        // with no way to know which schema file is at fault.
+        Path good = tmp.resolve("good.graphqls");
+        Files.writeString(good, "type Foo { id: ID! }\n");
+        Path broken = tmp.resolve("broken.graphqls");
+        Files.writeString(broken, """
+            type Bar {
+              id: ID!
+            }
+            strayTokenHere
+            """);
+
+        assertThatThrownBy(() -> RewriteSchemaLoader.load(List.of(good.toString(), broken.toString())))
+            .isInstanceOf(RuntimeException.class)
+            .hasMessageContaining(broken.toString())
+            .hasMessageContaining("line ")
+            .hasMessageContaining("column ");
+    }
+
+    @Test
     void missingSourceThrowsRuntimeExceptionWithPathInMessage() {
         String missing = "/nope/absolutely-does-not-exist.graphqls";
         assertThatThrownBy(() -> RewriteSchemaLoader.load(List.of(missing)))

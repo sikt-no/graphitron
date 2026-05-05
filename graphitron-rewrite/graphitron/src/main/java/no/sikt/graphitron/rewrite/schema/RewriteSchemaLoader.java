@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.schema;
 
+import graphql.parser.InvalidSyntaxException;
 import graphql.parser.MultiSourceReader;
 import graphql.parser.Parser;
 import graphql.parser.ParserEnvironment;
@@ -44,9 +45,31 @@ public final class RewriteSchemaLoader {
                     .document(multi)
                     .build());
             return new SchemaParser().buildRegistry(document);
+        } catch (InvalidSyntaxException e) {
+            throw new RuntimeException(attributedMessage(e), e);
         } catch (IOException e) {
             throw new RuntimeException("Schema parse failed", e);
         }
+    }
+
+    /**
+     * Rewrites a graphql-java parser exception's message so it names the offending
+     * schema file. The upstream message reports only line/column; with
+     * {@link MultiSourceReader#trackData(boolean) trackData(true)} the parser
+     * populates {@link graphql.language.SourceLocation#getSourceName() sourceName}
+     * and source-relative line/column on the exception's location, but does not
+     * include them in {@code getMessage()}. Surfacing the source path turns
+     * "extra tokens ... at line 15 column 5" into a message that points at the
+     * actual file.
+     */
+    private static String attributedMessage(InvalidSyntaxException e) {
+        var location = e.getLocation();
+        if (location == null || location.getSourceName() == null) {
+            return "Schema parse failed: " + e.getMessage();
+        }
+        return "Schema parse failed in " + location.getSourceName()
+            + " at line " + location.getLine() + " column " + location.getColumn()
+            + ": " + e.getMessage();
     }
 
     private static void addDirectivesSource(MultiSourceReader.Builder builder) {
