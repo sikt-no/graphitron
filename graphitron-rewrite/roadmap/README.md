@@ -16,12 +16,12 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|
 | `R77` | Bulk DML mutations: listed @table input arguments | Spec | [plan](bulk-dml-mutations.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
+| `R81` | Sealed resolution outcomes for catalog table/FK lookups | Spec | [plan](catalog-resolution-sealed-outcomes.md) |
 | `R15` | Sweep doc drift between rewrite docs and `model/` taxonomy <sub>blocked by: [docs-site-asciidoc](docs-site-asciidoc.md)</sub> | Spec | [plan](fix-legacy-refs-in-rewrite-docs.md) |
-| `R81` | Sealed resolution outcomes for catalog table/FK lookups | In Progress | [plan](catalog-resolution-sealed-outcomes.md) |
-| `R82` | FK column pairing: typed slots over parallel ordered lists | Ready | [plan](fk-column-pairing-typed-slots.md) |
+| `R82` | FK column pairing: typed slots over parallel ordered lists | In Progress | [plan](fk-column-pairing-typed-slots.md) |
 | `R3` | Classification vocabulary follow-ups | Spec | [plan](classification-vocabulary-followups.md) |
+| `R84` | Path expressions in argMapping | Spec | [plan](argmapping-path-expressions.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
-| `R84` | Path expressions in argMapping | Ready | [plan](argmapping-path-expressions.md) |
 | `R70` | Support TableRecord-keyed Map returns on @service rows methods <sub>blocked by: [emit-record1-keys-instead-of-row1](emit-record1-keys-instead-of-row1.md)</sub> | In Review | [plan](service-rows-tablerecord-key-shape.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec | [plan](nestingfield-multiparent-tablefield.md) |
 | `R13` | Faceted search on `@asConnection` | Spec | [plan](faceted-search.md) |
@@ -29,11 +29,13 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R63` | Type UPSERT dialect requirement on the model | Spec | [plan](dml-dialect-requirement-on-model.md) |
 | `R12` | Error-handling parity: emit per-fetcher error channels from `@error` | Ready | [plan](error-handling-parity.md) |
 | `R61` | Add Record1<T> source-shape support alongside Row1<T> | In Review | [plan](emit-record1-keys-instead-of-row1.md) |
+| `R79` | Composite-key NodeId condition args: typed Row<N> end-to-end | Ready | [plan](query-conditions-composite-key-rown-call-site.md) |
 | `R8` | Docs as an index into classification tests | Ready (deferred) | [plan](docs-as-index-into-tests.md) |
 | `R26` | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` <sub>blocked by: [graphitron-lsp](graphitron-lsp.md)</sub> | In Progress | [plan](retire-maven-plugin.md) |
 | `R18` | Java LSP rewrite + introspect retirement + `dev` goal | Ready | [plan](graphitron-lsp.md) |
-| `R68` | Diataxis user manual: absorb legacy README into the docs site | In Review | [plan](diataxis-user-manual.md) |
+| `R68` | Diataxis user manual: absorb legacy README into the docs site | Ready | [plan](diataxis-user-manual.md) |
 | `R9` | Fold graphitron.sikt.no into the Maven build (AsciiDoc + GitHub Pages) | In Progress | [plan](docs-site-asciidoc.md) |
+| `R80` | Replace string-scan helper-emission gate in `TypeFetcherGenerator` | In Review | [plan](type-fetcher-helper-emission-gate.md) |
 
 ---
 
@@ -78,7 +80,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 - `R10` [**Drop the assembled-schema rebuild in favour of per-variant graphql-java forms**](drop-assembled-schema-rebuild.md): Phase 5 of [firstclass-connection-types](firstclass-connection-types.md) rebuilds the assembled `GraphQLSchema` via `SchemaTransformer` so directive-driven `@asConnection` carriers carry their rewritten return type and pagination args. The rebuild only runs at generate time and is never seen by the runtime (which reconstructs its schema from emitted `<TypeName>Type.type()` calls in `GraphitronSchema.build()`).
 - `R24` [**`NodeIdReferenceField` JOIN-projection form**](nodeidreferencefield-join-projection-form.md): R50 shipped two of the three rooted shapes named in *Variant-by-variant collapse → Single-hop emission, two shapes*: rooted-at-child emission (FK-mirror, no JOIN, parent's FK columns encode directly) and the classifier-side resolution for rooted-at-parent (phase g-B produces `ChildField.ColumnReferenceField` / `CompositeColumnReferenceField` with `compaction = NodeIdEncodeKeys` and a resolved `joinPath`). What did *not* ship is the matching emitter: `FetcherEmitter#dataFetcherValue` carries runtime `UnsupportedOperationException` stubs for both arms (lines 140-162), so a schema that reaches one of the rooted-at-parent shapes builds without a validator-side rejection but throws at runtime.
 - `R34` [**sis-graphql-spec migration to graphitron-rewrite**](sis-rewrite-migration.md): Track the consumer-side schema work needed to bring `sis-graphql-spec` cleanly onto graphitron-rewrite. This plan exists because sis is the canonical large-scale consumer; closing it out validates the rewrite's classification contracts end-to-end and lets us close courtesy windows on shims (notably [`retire-synthesis-shims`](retire-synthesis-shims.md), which gates on this work).
-- `R85` [**Emit graphitronContext helper into Conditions and Type classes**](helper-emission-non-fetcher-hosts.md): `@condition(contextArguments: [...])` is a documented feature (`docs/getting-started.adoc:198,226`, `runtime-extension-points.adoc:96-101`) but its generated output does not compile. The classifier produces `CallSiteExtraction.ContextArg` for context-bound filter parameters (`MethodRef.java:111`, exercised at `GraphitronSchemaBuilderTest.java:2768`); `ArgCallEmitter.buildArgExtraction`'s `ContextArg` arm emits `graphitronContext(env).getContextArgument(env, ...)`; the call lands in `<RootType>Conditions.<field>Condition()` (via `QueryConditionsGenerator`) or in `<TypeName>.$fields()` (via `InlineTableFieldEmitter` / `InlineLookupTableFieldEmitter`). Neither host class emits a `graphitronContext` helper, so the generated source fails at `mvn compile -pl :graphitron-sakila-example` with "cannot find symbol: graphitronContext". The bug is currently latent because no fixture in `graphitron-sakila-example` or `graphitron-fixtures-codegen` uses `contextArguments` on `@condition`.
+- `R85` [**Emit graphitronContext helper into Conditions and Type classes**](helper-emission-non-fetcher-hosts.md): `@condition(contextArguments: [...])` is a documented feature (`docs/getting-started.adoc:198,226`, `runtime-extension-points.adoc:96-101`) but its generated output does not compile. The classifier produces `CallSiteExtraction.ContextArg` for context-bound filter parameters (`MethodRef.java:111`, exercised at `GraphitronSchemaBuilderTest.java:2768`); `ArgCallEmitter.buildArgExtraction`'s `ContextArg` arm emits `graphitronContext(env).getContextArgument(env, ...)`; the call lands in `<RootType>Conditions.<field>Condition()` (via `QueryConditionsGenerator`) or in `<TypeName>.$fields()` (via `InlineTableFieldEmitter` / `InlineLookupTableFieldEmitter`). Neither host class emits a `graphitronContext` helper, so the generated source fails at `mvn compile -pl :graphitron-sakila-example` with "cannot find symbol: graphitronContext". The bug is currently latent because no fixture in `graphitron-sakila-example` or `graphitron-fixtures-codegen` uses `contextArguments` on `@condition`. _(blocked by [type-fetcher-helper-emission-gate](type-fetcher-helper-emission-gate.md))_
 
 ### Validation
 
@@ -102,11 +104,12 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### nodeid
 
 - `R57` [**FK-target argument @nodeId, JOIN-with-translation emission**](nodeid-fk-target-arg-join-translation.md) — Backlog, architecture
+- `R79` [**Composite-key NodeId condition args: typed Row<N> end-to-end**](query-conditions-composite-key-rown-call-site.md) — Ready, architecture
 - `R24` [**`NodeIdReferenceField` JOIN-projection form**](nodeidreferencefield-join-projection-form.md) — Backlog, cleanup
 
 ### service
 
-- `R84` [**Path expressions in argMapping**](argmapping-path-expressions.md) — Ready, feature
+- `R84` [**Path expressions in argMapping**](argmapping-path-expressions.md) — Spec, feature
 - `R54` [**Rename @externalField (parallel-support, deprecation, migration)**](rename-externalfield-directive.md) — Backlog, cleanup
 - `R70` [**Support TableRecord-keyed Map returns on @service rows methods**](service-rows-tablerecord-key-shape.md) — In Review, feature, blocked by [emit-record1-keys-instead-of-row1](emit-record1-keys-instead-of-row1.md)
 - `R45` [**Typed context-value registry for `@service`**](typed-context-value-registry.md) — Spec, architecture
@@ -133,9 +136,9 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R38` [**Unify `rowsMethodName()`**](unify-rowsmethodname.md) — Backlog, cleanup
 - `R39` [**Validate that list fields on tables without a PK require explicit ordering**](validate-list-fields-require-ordering.md) — Backlog, validation
 - `R4` [**Collapse `BatchKeyField` validator/emitter redundancy**](collapse-tabletargetfield-redundancy.md) — Backlog, cleanup
-- `R81` [**Sealed resolution outcomes for catalog table/FK lookups**](catalog-resolution-sealed-outcomes.md) — In Progress, architecture
+- `R81` [**Sealed resolution outcomes for catalog table/FK lookups**](catalog-resolution-sealed-outcomes.md) — Spec, architecture
 - `R5` [**Composite-key `@lookupKey` on list-of-input-object arguments**](composite-key-lookupkey.md) — Backlog, architecture
-- `R82` [**FK column pairing: typed slots over parallel ordered lists**](fk-column-pairing-typed-slots.md) — Ready, cleanup
+- `R82` [**FK column pairing: typed slots over parallel ordered lists**](fk-column-pairing-typed-slots.md) — In Progress, cleanup
 - `R42` [**Stub: `@reference` on a scalar (FK column) field (`ColumnReferenceField`)**](column-reference-on-scalar-field.md) — Backlog, stubs
 - `R43` [**Stub: `@tableMethod` with scalar/enum return (`TableMethodField`)**](tablemethod-scalar-return.md) — Backlog, stubs
 - `R16` [**`FkJoin` model cleanup: `JoinConditionRef` wrapper**](fkjoin-model-cleanup.md) — Backlog, cleanup
@@ -159,7 +162,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R17` [**Annotated walkthrough of a generated file**](generated-output-walkthrough.md) — Backlog, cleanup, blocked by [docs-site-asciidoc](docs-site-asciidoc.md)
 - `R35` [**Class-level Javadoc and `package-info.java` sweep**](source-orientation-javadocs.md) — Backlog, cleanup
 - `R8` [**Docs as an index into classification tests**](docs-as-index-into-tests.md) — Ready
-- `R68` [**Diataxis user manual: absorb legacy README into the docs site**](diataxis-user-manual.md) — In Review, architecture
+- `R68` [**Diataxis user manual: absorb legacy README into the docs site**](diataxis-user-manual.md) — Ready, architecture
 - `R9` [**Fold graphitron.sikt.no into the Maven build (AsciiDoc + GitHub Pages)**](docs-site-asciidoc.md) — In Progress, architecture
 
 ### testing
@@ -180,6 +183,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R85` [**Emit graphitronContext helper into Conditions and Type classes**](helper-emission-non-fetcher-hosts.md)
 - `R52` [**Lift lookup-vs-query operation taxonomy into the model**](lift-operation-taxonomy.md)
+- `R80` [**Replace string-scan helper-emission gate in `TypeFetcherGenerator`**](type-fetcher-helper-emission-gate.md)
 - `R51` [**Split PropertyField/RecordField on parent-kind instead of nullable column**](propertyfield-recordfield-nullable-column.md)
 
 
