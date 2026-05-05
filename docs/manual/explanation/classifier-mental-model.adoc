@@ -1,0 +1,76 @@
+= Classifier mental model
+:description: What the build's classification step does, in user-visible terms. Useful when reading rejection messages, understanding directive interactions, or diagnosing why a field surfaces as a stub.
+:!toc:
+
+The build doesn't blindly emit a fetcher for every field; it first sorts each field into a category based on its directives, its parent, and its return type. The sorting is the *classification* step, and most of the build's user-visible behaviour (rejection messages, directive interaction rules, batched-vs-correlated query shapes) traces back to it. This page explains the model in user terms; xref:../../architecture/getting-started.adoc[the architecture chapter] covers the contributor-facing detail.
+
+== Two axes describe every field
+
+Two independent properties decide what a field becomes:
+
+* *The parent context.* The type the field is defined on. Either the parent has xref:../reference/directives/table.adoc[`@table`] (table-bound, full SQL is fair game), or it has xref:../reference/directives/record.adoc[`@record`] (result-bound, a backing Java class carries the row), or it has neither (the field is on `Query` / `Mutation` / a plain output type, and the field's *return type* drives the binding instead).
+* *The return type.* What the field returns: another `@table`-bound type (a join is on the table), a `@record`-bound type (a backing class, no SQL until a new scope opens), a scalar/enum (a column or a service value), or a polymorphic interface/union (a runtime type-discrimination step).
+
+The pair `(parent context, return type)` plus the directives on the field decide which category the field falls into. The categories are the things you read about in the directive reference: a "scalar field on a `@table` parent" is one category, a "table-returning field on a `@table` parent" is another, a "field with `@lookupKey`" is yet another. The category determines what code the generator emits and what the validator demands of the field.
+
+== Why this matters for you
+
+Three user-visible consequences:
+
+* *Directives interact through the category.* Whether xref:../reference/directives/asConnection.adoc[`@asConnection`] composes with xref:../reference/directives/lookupKey.adoc[`@lookupKey`], whether xref:../reference/directives/splitQuery.adoc[`@splitQuery`] is redundant on a particular field, whether xref:../reference/directives/condition.adoc[`@condition`] applies, all flow from the category. The directive reference pages name "what category this puts the field in" and "what other directives are admitted in that category".
+* *Rejection messages reference categories.* When the validator says "field cannot have `@asConnection` and `@lookupKey` simultaneously" or "the parent must be `@table`-bound for this directive", it's reading the category off the field and reporting which categories admit which directive sets. The xref:../reference/diagnostics-glossary.adoc[diagnostics glossary] catalogues the closed-set rejection kinds; most of them are category-driven.
+* *Stubs versus errors.* When a category is recognised but not yet emitted, the validator records a *deferred* rejection with a `planSlug:` pointing at the roadmap entry. When a category isn't recognised at all (a directive set that no category admits), the validator records a *structural* rejection. The two outcomes look similar from outside; the diagnostics glossary names the difference.
+
+== A concrete walk-through
+
+Take this excerpt:
+
+[source,graphql]
+----
+type Query {
+    customers: [Customer!]!
+    customer(id: ID!): Customer
+}
+
+type Customer @table {
+    id: ID!
+    firstName: String! @field(name: "FIRST_NAME")
+    address: Address!                                          # <1>
+    rentals: [Rental!]! @splitQuery                            # <2>
+    activeRentalCount: Int! @externalField(...)                # <3>
+}
+
+type Address @table {
+    id: ID!
+    street: String! @field(name: "ADDRESS_")
+}
+
+type Rental @table {
+    id: ID!
+    rentalDate: DateTime!
+}
+----
+
+<1> *Table-returning child on a `@table` parent.* The classifier finds the foreign key from `customer` to `address` by the `@table` directive on `Address` and emits a join into the same scope as the parent; no DataLoader.
+<2> *Table-returning child with `@splitQuery`.* The classifier sees `@splitQuery` and opens a new scope: this becomes a DataLoader-backed batch keyed by the parent's primary key. xref:batching-model.adoc[The batching model] explains the mechanics.
+<3> *Computed field.* The classifier sees xref:../reference/directives/externalField.adoc[`@externalField`] and routes the field to the user-supplied jOOQ method instead of building a SQL projection. xref:../how-to/computed-fields.adoc[How-to: Computed fields] is the recipe.
+
+The same schema, same directives, three different generated outputs, all decided at the classification step. No runtime introspection ever asks "what category is this field"; the answer was baked into the emitted code at build time.
+
+== When the classifier surfaces an error
+
+Two rejection shapes are the most common things you'll see:
+
+* *Unknown name with candidate hint.* A `@field(name: "FIRST_NAMEZ")` typo against the `customer` table fails resolution against the jOOQ catalog; the rejection names the typo and the closest match. xref:../reference/diagnostics-glossary.adoc#kind-author-error[The `author-error` rejection kind] is the umbrella; the rejection's *attempt kind* says what was being looked up (a column, a foreign key, a service method, an enum constant, etc.).
+* *Directive conflict.* Two directives that don't compose, like `@service` + `@mutation` on the same field. The validator names both directives and explains why they don't compose. xref:../reference/diagnostics-glossary.adoc#kind-invalid-schema[The `invalid-schema` rejection kind] covers these.
+
+A third, less common shape: *deferred*. The validator recognises the field but the emitter hasn't been built yet. The rejection carries a `planSlug:` pointing at the roadmap entry that will close the gap; the runtime stub the generator emits in its place fails fast with the same plan slug.
+
+== See also
+
+* xref:how-it-works.adoc[How it works] is the wider pipeline; classification is one of its four steps.
+* xref:design-decisions.adoc[Design decisions] explains why specific category boundaries are where they are (why `@condition` methods take a table; why `@lookupKey` blocks pagination; etc.).
+* xref:../reference/diagnostics-glossary.adoc[Diagnostics glossary] is the canonical surface for the rejection messages the classifier produces.
+* xref:../../architecture/getting-started.adoc[Architecture: Getting started] covers the contributor-facing pipeline detail (sealed hierarchies, variant taxonomy, generator dispatch).
+
+xref:index.adoc[← Explanation index]

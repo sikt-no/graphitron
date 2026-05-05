@@ -1,0 +1,62 @@
+= The batching model
+:description: Why N+1 doesn't appear in Graphitron-generated code, what `@splitQuery` and `@lookupKey` actually do at runtime, and what the N × M contract demands of your custom conditions.
+:!toc:
+
+The classic GraphQL performance trap is N+1: a list query for N parents triggers one parent query plus one child query per parent. Graphitron's generated code never does this; every cross-scope child fetch is batched. This page covers what batching means, how the directives steer it, and the contract custom code must respect for the batching to stay correct.
+
+== The two scope shapes
+
+Graphitron generates SQL in *scopes*. A scope is one SQL statement; fields within a scope contribute to the same query, so the database does the heavy lifting once. xref:classifier-mental-model.adoc[The classifier] decides where the scope boundaries fall.
+
+* *Same-scope joins.* When a `@table`-bound type returns another `@table`-bound type and the foreign-key path can be expressed as a join, the child fields land in the parent's scope. One SELECT for both sides; no batching needed because the database already did the work.
+* *Cross-scope batches.* When the child has to be fetched separately (xref:../reference/directives/splitQuery.adoc[`@splitQuery`]; xref:../reference/directives/lookupKey.adoc[`@lookupKey`]; a child of a xref:../reference/directives/record.adoc[`@record`]-bound parent; a service-backed field), the build wires a *DataLoader*. At request time, every parent in the same execution batch contributes its key; the loader fires *one* query for the whole batch and routes the results back to the right parents.
+
+The user-facing payoff: query for N parents and you get one query for the parents and one query for each batched child, regardless of N. For schemas of any meaningful depth, this is the difference between a workable API and a non-starter.
+
+== `@splitQuery`: open a new scope
+
+xref:../reference/directives/splitQuery.adoc[`@splitQuery`] tells the classifier "this child does not belong in the parent's SQL". The generator emits a DataLoader; at runtime, all parent primary keys collected during the request flow into one batched child query. The result list is then redistributed back to the parents.
+
+The shape is keyed by the *parent's primary key* (or its FK columns). One row per parent in the loader's input; one row per matched child in the output (per `@splitQuery` field's natural cardinality). For one-to-many relations (`films` on `Customer`), the loader returns lists. For one-to-one (`address` on `Customer` when `address` is a separate scope), the loader returns single values.
+
+You reach for `@splitQuery` when the same-scope join would balloon the parent query (Cartesian explosion across two large child collections, say), or when the child must be filtered by something the parent's scope can't express. xref:../how-to/join-with-references.adoc[How-to: Join with references] covers the same-scope vs. split-scope decision.
+
+== `@lookupKey`: parameterised batches
+
+xref:../reference/directives/lookupKey.adoc[`@lookupKey`] adds a different shape: the field takes argument values that scope the child fetch, and Graphitron builds a *derived target table* from those values at runtime. For a field like `customer(id: ID!)` annotated with `@lookupKey`, every distinct `id:` argument across the batch contributes one row to a `VALUES (...)` derived table; the child query joins against it, and the results are dispatched back per argument.
+
+This is the batching shape that powers Relay-style `node(id: ID!)` queries (and Apollo Federation's `_entities` dispatch): a single query handles every node fetched in a request, regardless of which Node-implementing types are in play.
+
+A constraint that surprises people: *`@lookupKey` blocks pagination*. The result count is exactly N × M, where N is the number of parents in the batch and M is the number of lookup values per parent. Pagination would change the per-parent count non-uniformly, breaking the dispatch. Use `@splitQuery` for paginated relations.
+
+== The N × M contract
+
+When `@lookupKey` is on a field that *also* takes a xref:../reference/directives/condition.adoc[`@condition`] argument, the condition method has a contract: each `(parent, lookup-value)` pair produced by the derived target join is either kept in full or dropped in full, and no extra rows may be introduced. Two consequences:
+
+* *Predicates over the pair are fine.* A condition that says "this rental is overdue for *this* customer" is a per-pair test; either the row stays or it goes, no row count change beyond the dropped pair.
+* *Filters that change per-parent counts are not.* A condition that adds rows by joining onto a third table, or that filters non-uniformly across parents, breaks the dispatch (the runtime can't reattach rows to the right parent because the positional contract is gone).
+
+The validator does not enforce the contract at build time; it's a developer discipline. xref:../how-to/add-custom-conditions.adoc[How-to: Add custom conditions] frames the recipe; the symptom of a violation is rows showing up under the wrong parent at runtime.
+
+== DataLoader registry
+
+At request time, a fresh `DataLoaderRegistry` is created per request and stashed on `ExecutionInput.dataLoaderRegistry`. Graphitron's generated fetchers register their loaders against it; graphql-java drives the dispatch. The registry is per-request to avoid cross-request data leakage and to keep the batch boundary aligned with the request lifecycle.
+
+You don't author DataLoaders by hand; the generator does it. The xref:../reference/runtime-api.adoc[runtime API] documents the per-request `GraphitronContext` interface; the host application's job is just to provide the `DSLContext` and any context arguments. xref:../how-to/tenant-scoping.adoc[How-to: Tenant scoping] covers the per-request DSLContext partitioning when batching needs to stay per-tenant.
+
+== When you should care
+
+Most schemas don't need to think about batching at all; the rules are mechanical and the generator picks the right shape. You should look here when:
+
+* *A request runs more queries than expected.* Read the generated `*Fetchers.java` for the slow field. Either it's not batched (no `@splitQuery` / `@lookupKey` where one is needed), or its parent isn't part of the same execution batch.
+* *Rows show up under the wrong parent.* The N × M contract was violated by a `@condition` method on a `@lookupKey` field. The condition needs to be a per-pair predicate.
+* *DataLoader cache hits surprise you across requests.* They shouldn't; the registry is per-request. If you see cross-request leakage, the host application is reusing a registry across requests; that's a wiring bug.
+
+== See also
+
+* xref:how-it-works.adoc[How it works] frames the build-time decision and the runtime path.
+* xref:../reference/directives/splitQuery.adoc[`@splitQuery`] and xref:../reference/directives/lookupKey.adoc[`@lookupKey`] are the two directives that drive batching.
+* xref:../how-to/join-with-references.adoc[How-to: Join with references] covers the same-scope vs. split-scope decision per field.
+* xref:design-decisions.adoc[Design decisions] explains why `@lookupKey` blocks pagination and why `@condition` methods take a table.
+
+xref:index.adoc[← Explanation index]

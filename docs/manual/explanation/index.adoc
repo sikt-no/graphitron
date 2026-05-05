@@ -2,15 +2,32 @@
 :description: Background on the design decisions, the batching model, and how the pipeline fits together.
 :!toc:
 
-Background and rationale: how the pipeline fits together, why Graphitron is database-first, the batching/DataLoader model, and the design decisions that surface in user-visible behaviour (why `@condition` methods take a table; why `@lookupKey` forbids two-layer lists; why mutations require `@table` on the input type).
+Background and rationale, organised by what you might want to understand. None of these pages are required reading; they exist so you can build a mental model when something surprises you, or read up on a design choice before extending past it.
 
-== Status: placeholder
+== Architectural framing
 
-Explanation chapters are authored in R68 Phase 4. Until they land, the closest user-facing material lives in:
+* xref:why-database-first.adoc[Why Graphitron is database-first]: the schema, the constraints, and the relationships in your database are the source of truth; the GraphQL layer is a typed view onto them. Cross-links to xref:../../graphitron-principles.adoc[Graphitron principles].
+* xref:why-jooq-and-graphql-java.adoc[Why jOOQ and GraphQL-Java]: the two foundational dependencies, why they shape the developer experience, and where each surfaces in your work. Cross-links to xref:../../dependencies.adoc[Dependencies].
 
-* xref:../../graphitron-principles.adoc[Graphitron principles] — the design philosophy in plain prose.
-* xref:../../vision-and-goal.adoc[Vision and goal] — what problem Graphitron solves and how it approaches the solution.
-* xref:../../dependencies.adoc[Dependencies] — why jOOQ and graphql-java are foundational, and what that means for users.
-* xref:../../security.adoc[Security] — why authorization stays in the database.
+== How the build and the runtime fit together
+
+* xref:how-it-works.adoc[How it works]: the pipeline that turns your GraphQL schema and your jOOQ catalog into the resolvers your application serves. Build-time and request-time, in 30 seconds.
+* xref:classifier-mental-model.adoc[Classifier mental model]: what the build's classification step does, in user-visible terms. Useful when reading rejection messages or understanding directive interactions.
+* xref:batching-model.adoc[The batching model]: why N+1 doesn't appear in Graphitron-generated code, what xref:../reference/directives/splitQuery.adoc[`@splitQuery`] and xref:../reference/directives/lookupKey.adoc[`@lookupKey`] actually do at runtime, and what the N × M contract demands of your custom conditions.
+
+== Why specific things work the way they do
+
+* xref:design-decisions.adoc[Design decisions]: user-visible "why does it work that way" answers for the constraints that look surprising on first contact (why xref:../reference/directives/condition.adoc[`@condition`] methods take a table, why xref:../reference/directives/lookupKey.adoc[`@lookupKey`] blocks pagination, why mutations require xref:../reference/directives/table.adoc[`@table`] on the input type, and more).
+
+== The wider context
+
+The user-manual explanation chapter sits next to the deployed site's existing top-level explanation pages, which cover orientation rather than the manual-internal pipeline:
+
+* xref:../../graphitron-principles.adoc[Graphitron principles]: the design philosophy in plain prose.
+* xref:../../vision-and-goal.adoc[Vision and goal]: what problem Graphitron solves and how it approaches the solution.
+* xref:../../dependencies.adoc[Dependencies]: why jOOQ and graphql-java are foundational, and what that means for users.
+* xref:../../security.adoc[Security]: why authorization stays in the database.
+
+For contributor-facing material (sealed hierarchies, classification source map, generator dispatch, runtime extension points), see xref:../../architecture/getting-started.adoc[the architecture chapter] and the rewrite-internal docs at `graphitron-rewrite/docs/`.
 
 xref:../index.adoc[← Back to the manual landing]

@@ -1,0 +1,33 @@
+= Why Graphitron is database-first
+:description: The schema, the constraints, and the relationships in your database are the source of truth. Graphitron generates the API around them, not the other way around.
+:!toc:
+
+Most code-generation tools that touch GraphQL go in one direction: define the API, then figure out how to back it with data. Graphitron goes the other way. The database schema is the source of truth; the GraphQL schema is a typed view onto it; the generated code keeps the two in sync. This page explains why, and what it means for you.
+
+== Where the truth lives
+
+Relational databases have been around for fifty years for good reasons. A well-designed database enforces integrity (NOT NULL, foreign keys, check constraints, unique indexes) at the level closest to the data, where the constraints survive every application that ever talks to it. Authorization can live there too (row-level security, schema-level grants, view-based isolation). And databases tend to outlive the applications built on top of them.
+
+When Graphitron is asked which value goes in `customer.first_name`, the answer is whatever the database says, with whatever rules the database enforces. The GraphQL layer's job is to make that surface available to clients in a typed, batch-efficient, pageable, sortable way. The GraphQL layer does not own data semantics.
+
+== What this means in practice
+
+* *Mappings are explicit.* xref:../reference/directives/table.adoc[`@table`] and xref:../reference/directives/field.adoc[`@field`] declare how a GraphQL type or slot is backed. The directive says "this is the table" or "this is the column"; everything else flows from there. xref:../how-to/map-types-to-tables.adoc[How-to: Map types to tables] walks through the mapping vocabulary.
+* *The build fails fast on drift.* Rename a column without updating the GraphQL schema, and the build rejects the directive with a candidate hint pointing at the new name. The xref:../reference/diagnostics-glossary.adoc[Diagnostics glossary] catalogues every closed-set rejection the validator emits; the shape is "describe what's wrong, name where, suggest a fix".
+* *Authorization stays in the database.* Graphitron does not synthesize authorization checks in the generated code. The recommended pattern is row-level security (or equivalent) on the database side; the per-request `DSLContext` carries the principal that the database authorizes against. See xref:../../security.adoc[Security] for the database-level model and xref:../how-to/tenant-scoping.adoc[How-to: Tenant scoping] for the per-request wiring.
+* *jOOQ is where you extend.* When Graphitron's schema-driven surface needs a custom predicate, a computed column, or a hand-written join, you write jOOQ. The generated code calls into your jOOQ functions; you do not work around the framework. See xref:why-jooq-and-graphql-java.adoc[Why jOOQ and GraphQL-Java] for the dependency framing and xref:../how-to/add-custom-conditions.adoc[How-to: Add custom conditions] for the recipe.
+
+== When this is the right shape
+
+Database-first works best when the database schema is well-modelled and stable, the team has access to (or includes) people who understand the data, and the GraphQL schema is shaped to expose what's there rather than to hide a different model behind a flatter facade. xref:../../graphitron-principles.adoc[Graphitron principles] expands on the design philosophy; xref:../../vision-and-goal.adoc[Vision and goal] frames the problem this approach solves.
+
+It is *not* the right shape when the GraphQL schema is meant to look nothing like the underlying data (a heavy translation layer over multiple disparate sources, say), or when there is no relational database in the picture at all. Both cases exist; Graphitron is just not the tool for them.
+
+== See also
+
+* xref:../../graphitron-principles.adoc[Graphitron principles] is the design-philosophy companion to this page.
+* xref:../../security.adoc[Security] explains the database-level authorization model.
+* xref:why-jooq-and-graphql-java.adoc[Why jOOQ and GraphQL-Java] frames the dependencies that follow from the database-first stance.
+* xref:how-it-works.adoc[How it works] walks through the pipeline that turns the GraphQL schema and the directives into the generated code.
+
+xref:index.adoc[← Explanation index]
