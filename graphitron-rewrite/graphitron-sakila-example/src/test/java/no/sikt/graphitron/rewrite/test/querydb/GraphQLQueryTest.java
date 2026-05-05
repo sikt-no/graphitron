@@ -3612,4 +3612,96 @@ class GraphQLQueryTest {
         payload.containsEntry("title", "THE LOOKED-UP FILM");
         payload.extractingByKey("errors", as(LIST)).isEmpty();
     }
+
+    // ===== R12 mutation-side @error end-to-end =====
+    //
+    // Mirrors the query-side filmLookup tests on the mutation pillar. The submitFilmReview
+    // mutation classifies as MutationServiceRecordField (the same shape that the production
+    // BehandleSakPayload bug fired on) and shares buildServiceFetcherCommon with the query
+    // side, but the dispatch arm is wired through MutationFetchers rather than QueryFetchers.
+    // Pinning the codepath at execute-tier means a future regression in the mutation switch's
+    // try/catch wrapper or the per-fetcher dispatch fork lands as a build failure rather than
+    // a production schema break.
+    //
+    // The fixture intentionally leaves DML mutation @error coverage (insert/update/upsert/delete
+    // payload assemblies) to R12's Remaining work; those variants share the channel slot but
+    // emit different bodies (the DML payload-assembly arm), so an end-to-end fixture there
+    // belongs with the four named source-direct fixtures (SakPayload, DeleteFilmPayload, ...).
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void submitFilmReview_invalidRating_routesThroughBadRatingErrorType() {
+        // rating outside [1,10] throws FilmReviewBadRatingException; ErrorRouter.dispatch
+        // matches the ExceptionMapping for that class on ErrorMappings.FILM_REVIEW_PAYLOAD,
+        // places the throwable into the errors list, and constructs new FilmReviewPayload(
+        // null, errors). graphql-java walks the union via the source-class TypeResolver and
+        // resolves to FilmReviewBadRating.
+        Map<String, Object> data = execute("""
+            mutation {
+                submitFilmReview(filmId: 1, rating: 11) {
+                    reviewId
+                    errors {
+                        __typename
+                        ... on FilmReviewBadRating { path message }
+                        ... on FilmReviewMissingFilm { path message }
+                    }
+                }
+            }
+            """);
+        var payload = assertThat(data).extractingByKey("submitFilmReview", as(MAP));
+        // Catch arm constructs the payload with the reviewId slot defaulted (defaultLiteralFor
+        // boxed Integer == "null"); the dispatch route never produces a non-null reviewId.
+        payload.containsEntry("reviewId", null);
+        var only = payload.extractingByKey("errors", as(list(Map.class)))
+            .hasSize(1)
+            .element(0, as(MAP));
+        only.containsEntry("__typename", "FilmReviewBadRating");
+        only.containsEntry("message", "rating must be in [1, 10]; got 11");
+        only.extractingByKey("path", as(LIST))
+            .containsExactly("submitFilmReview", "errors", "0", "path");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void submitFilmReview_unknownFilm_routesThroughMissingFilmErrorType() {
+        // Second handler in source order: FilmReviewMissingFilmException → FilmReviewMissingFilm.
+        // Confirms multi-branch dispatch on the mutation pillar.
+        Map<String, Object> data = execute("""
+            mutation {
+                submitFilmReview(filmId: 999, rating: 5) {
+                    reviewId
+                    errors {
+                        __typename
+                        ... on FilmReviewMissingFilm { path message }
+                        ... on FilmReviewBadRating { path message }
+                    }
+                }
+            }
+            """);
+        var payload = assertThat(data).extractingByKey("submitFilmReview", as(MAP));
+        payload.containsEntry("reviewId", null);
+        var only = payload.extractingByKey("errors", as(list(Map.class)))
+            .hasSize(1)
+            .element(0, as(MAP));
+        only.containsEntry("__typename", "FilmReviewMissingFilm");
+        only.containsEntry("message", "film 999 not found");
+        only.extractingByKey("path", as(LIST))
+            .containsExactly("submitFilmReview", "errors", "0", "path");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void submitFilmReview_validInput_returnsHappyPathPayload() {
+        // Happy path: service returns FilmReviewPayload directly; no catch arm fires. Confirms
+        // the per-fetcher try/catch wrapper on the mutation switch doesn't perturb non-error
+        // returns. reviewId = rating * 10000 + filmId = 5 * 10000 + 42 = 50042.
+        Map<String, Object> data = execute("""
+            mutation {
+                submitFilmReview(filmId: 42, rating: 5) { reviewId errors { __typename } }
+            }
+            """);
+        var payload = assertThat(data).extractingByKey("submitFilmReview", as(MAP));
+        payload.containsEntry("reviewId", 50042);
+        payload.extractingByKey("errors", as(LIST)).isEmpty();
+    }
 }

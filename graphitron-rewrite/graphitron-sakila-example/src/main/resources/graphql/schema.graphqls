@@ -300,6 +300,34 @@ type FilmLookupPayload @record(record: {className: "no.sikt.graphitron.rewrite.t
     errors: [FilmLookupError]
 }
 
+# R12 fixture (error-handling-parity.md): mutation-side counterpart to FilmLookupError. Drives
+# the MutationServiceRecordField emit path through compile-spec + execute-spec; mirrors the
+# production bug shape (a @service-backed mutation returning a @record payload with an errors
+# union slot, like BehandleSakPayload) so the same TypeResolver / per-@error path-message
+# DataFetcher / ErrorRouter.dispatch wiring is exercised end-to-end on the mutation pillar.
+type FilmReviewBadRating @error(handlers: [{
+        handler: GENERIC,
+        className: "no.sikt.graphitron.rewrite.test.services.FilmReviewBadRatingException"
+    }]) {
+    path: [String!]!
+    message: String!
+}
+
+type FilmReviewMissingFilm @error(handlers: [{
+        handler: GENERIC,
+        className: "no.sikt.graphitron.rewrite.test.services.FilmReviewMissingFilmException"
+    }]) {
+    path: [String!]!
+    message: String!
+}
+
+union FilmReviewError = FilmReviewBadRating | FilmReviewMissingFilm
+
+type FilmReviewPayload @record(record: {className: "no.sikt.graphitron.rewrite.test.services.FilmReviewPayload"}) {
+    reviewId: Int
+    errors: [FilmReviewError]
+}
+
 type Customer implements Node @table(name: "customer") @node {
     id:         ID!      @nodeId
     customerId: Int!     @field(name: "CUSTOMER_ID")
@@ -922,4 +950,15 @@ type Mutation {
     #  .returningResult(<$fields>).fetchOne(r -> r)`. Generated method runtime-guards against
     # the Oracle dialect (jOOQ silently translates ON CONFLICT to MERGE).
     upsertFilm(in: FilmUpsertInput!): Film @mutation(typeName: UPSERT)
+
+    # R12 fixture (error-handling-parity.md): mutation-side @error end-to-end. The
+    # @service-backed mutation classifies as MutationServiceRecordField (same shape that
+    # BehandleSakPayload took in production); the per-fetcher try/catch wrapper routes
+    # thrown exceptions through ErrorRouter.dispatch into the typed payload's errors slot.
+    # See FilmReviewService.submit and the execute-tier driver in GraphQLQueryTest.
+    submitFilmReview(filmId: Int!, rating: Int!): FilmReviewPayload
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService",
+            method: "submit"
+        })
 }
