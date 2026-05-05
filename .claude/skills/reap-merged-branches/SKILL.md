@@ -23,8 +23,7 @@ git fetch origin --prune
 Remote `claude/**` branches whose tip is reachable from trunk, excluding trunk itself:
 
 ```bash
-TRUNK=origin/claude/graphitron-rewrite
-git for-each-ref --format='%(refname:short)' --merged "$TRUNK" refs/remotes/origin/claude/ \
+git for-each-ref --format='%(refname:short)' --merged origin/claude/graphitron-rewrite refs/remotes/origin/claude/ \
   | grep -v '^origin/claude/graphitron-rewrite$'
 ```
 
@@ -35,8 +34,7 @@ Show the output to the user. Anything listed is safe to delete in the sense that
 Do **not** run the deletion. Instead, print the following command in a fenced bash block for the user to copy-paste and run themselves:
 
 ```bash
-TRUNK=origin/claude/graphitron-rewrite
-git for-each-ref --format='%(refname:short)' --merged "$TRUNK" refs/remotes/origin/claude/ \
+git for-each-ref --format='%(refname:short)' --merged origin/claude/graphitron-rewrite refs/remotes/origin/claude/ \
   | grep -v '^origin/claude/graphitron-rewrite$' \
   | sed 's|^origin/||' \
   | xargs -r -n1 git push origin --delete
