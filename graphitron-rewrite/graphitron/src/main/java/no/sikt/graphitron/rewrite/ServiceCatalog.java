@@ -153,6 +153,13 @@ class ServiceCatalog {
             + "parameterised return type doesn't match the expected record class for the field's "
             + "@table-bound return type. Lets the emitter declare a typed Result<XRecord> "
             + "(or XRecord) return rather than Object.")
+    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
+        key = "service-catalog-instance-service-holder-shape",
+        description = "The checkServiceInstanceHolderShape arm rejects instance @service methods "
+            + "whose enclosing class is abstract / an interface, or lacks a public single-arg "
+            + "DSLContext constructor. Lets the emitter unconditionally emit "
+            + "`new ServiceClass(dsl).method(...)` for non-static methods without checking the "
+            + "holder shape at emit time.")
     ServiceReflectionResult reflectServiceMethod(String className, String methodName,
             ArgBindingMap argBindings, Set<String> ctxKeys, List<ColumnRef> parentPkColumns,
             TypeName expectedReturnType) {
@@ -183,6 +190,13 @@ class ServiceCatalog {
                     Rejection.structural("method '" + methodName + "' in class '" + className
                     + "' must return '" + TypeNames.simple(expectedReturnType)
                     + "' to match the field's declared return type — got '" + TypeNames.simple(actualReturnType) + "'"));
+            }
+            boolean isStatic = java.lang.reflect.Modifier.isStatic(javaMethod.getModifiers());
+            if (!isStatic) {
+                String instanceRejection = checkServiceInstanceHolderShape(cls, methodName, className);
+                if (instanceRejection != null) {
+                    return new ServiceReflectionResult(null, Rejection.structural(instanceRejection));
+                }
             }
             if (Arrays.stream(javaMethod.getParameters()).anyMatch(p -> !p.isNamePresent())) {
                 emitParametersWarning();
@@ -258,11 +272,44 @@ class ServiceCatalog {
             }
             return new ServiceReflectionResult(
                 new MethodRef.Basic(className, methodName, actualReturnType, List.copyOf(params),
-                    declaredExceptionFqns(javaMethod)),
+                    declaredExceptionFqns(javaMethod), isStatic),
                 null);
         } catch (ClassNotFoundException e) {
             return new ServiceReflectionResult(null, Rejection.structural("class '" + className + "' could not be loaded"));
         }
+    }
+
+    /**
+     * Validates that an instance {@code @service} method's enclosing class is a usable holder:
+     * the class must be concrete (not abstract or an interface) and expose a public constructor
+     * taking exactly one {@link org.jooq.DSLContext} parameter (matching the legacy generator's
+     * {@code new Service(ctx)} pattern). Returns {@code null} when the shape is acceptable, or a
+     * concrete actionable rejection message naming the option to either make the method
+     * {@code static} or add the constructor.
+     *
+     * <p>The single-DSLContext-constructor contract mirrors the legacy generator's
+     * {@code new ServiceName(_iv_transform.getCtx())} call site; widening to other constructor
+     * shapes (no-arg, multi-param) is out of scope here and would need its own design pass.
+     */
+    private static String checkServiceInstanceHolderShape(Class<?> cls, String methodName, String className) {
+        int classMods = cls.getModifiers();
+        if (java.lang.reflect.Modifier.isAbstract(classMods) || cls.isInterface()) {
+            return "method '" + methodName + "' in class '" + className
+                + "' is an instance method, but its enclosing class is abstract or an interface"
+                + " — make the method static, or move it to a concrete class with a public"
+                + " constructor taking a single org.jooq.DSLContext parameter";
+        }
+        boolean hasDslCtor = Arrays.stream(cls.getDeclaredConstructors())
+            .filter(c -> java.lang.reflect.Modifier.isPublic(c.getModifiers()))
+            .anyMatch(c -> c.getParameterCount() == 1
+                && org.jooq.DSLContext.class.isAssignableFrom(c.getParameterTypes()[0]));
+        if (!hasDslCtor) {
+            return "method '" + methodName + "' in class '" + className
+                + "' is an instance method but the class has no public constructor taking a"
+                + " single org.jooq.DSLContext parameter — add `public " + cls.getSimpleName()
+                + "(DSLContext ctx)`, or make the method static";
+        }
+        return null;
     }
 
     /**

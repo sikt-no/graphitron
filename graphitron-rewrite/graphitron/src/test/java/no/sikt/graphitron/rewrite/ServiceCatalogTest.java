@@ -534,4 +534,44 @@ class ServiceCatalogTest {
         assertThat(result.failed()).isFalse();
         assertThat(((MethodRef.Basic) result.ref()).declaredExceptions()).isEmpty();
     }
+
+    // ===== Instance-method services =====
+
+    @Test
+    void reflectServiceMethod_staticMethod_isStaticTrue() {
+        var result = newCatalog().reflectServiceMethod(
+            STUB_CLASS, "get", bindings(Map.of()), Set.of(), List.of(), null);
+
+        assertThat(result.failed()).isFalse();
+        assertThat(((MethodRef.Basic) result.ref()).isStatic()).isTrue();
+    }
+
+    @Test
+    void reflectServiceMethod_instanceMethodWithDslContextCtor_isStaticFalse() {
+        // Holder class exposes a public (DSLContext) constructor — matches the legacy
+        // generator's `new ServiceName(_iv_transform.getCtx())` pattern. Instance methods
+        // on this shape classify cleanly with `isStatic == false`.
+        var result = newCatalog().reflectServiceMethod(
+            "no.sikt.graphitron.rewrite.TestInstanceServiceStub", "getFilm",
+            bindings(Map.of()), Set.of(), List.of(), null);
+
+        assertThat(result.failed()).isFalse();
+        assertThat(((MethodRef.Basic) result.ref()).isStatic()).isFalse();
+    }
+
+    @Test
+    void reflectServiceMethod_instanceMethodWithoutDslContextCtor_rejectedWithActionableMessage() {
+        // Holder class has only a no-arg constructor. The emitter has no way to thread a
+        // DSLContext into the holder, so the classifier rejects with both options spelled out
+        // (make the method static, or add a (DSLContext) constructor).
+        var result = newCatalog().reflectServiceMethod(
+            "no.sikt.graphitron.rewrite.TestInstanceServiceStubNoCtor", "getFilm",
+            bindings(Map.of()), Set.of(), List.of(), null);
+
+        assertThat(result.failed()).isTrue();
+        assertThat(result.rejection().message())
+            .contains("instance method")
+            .contains("no public constructor taking a single org.jooq.DSLContext")
+            .contains("make the method static");
+    }
 }
