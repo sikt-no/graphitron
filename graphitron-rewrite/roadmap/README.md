@@ -17,6 +17,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R77` | Bulk DML mutations: listed @table input arguments | Spec | [plan](bulk-dml-mutations.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
 | `R15` | Sweep doc drift between rewrite docs and `model/` taxonomy <sub>blocked by: [docs-site-asciidoc](docs-site-asciidoc.md)</sub> | Spec | [plan](fix-legacy-refs-in-rewrite-docs.md) |
+| `R82` | FK column pairing: typed slots over parallel ordered lists | Spec | [plan](fk-column-pairing-typed-slots.md) |
 | `R3` | Classification vocabulary follow-ups | Spec | [plan](classification-vocabulary-followups.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
 | `R70` | Support TableRecord-keyed Map returns on @service rows methods <sub>blocked by: [emit-record1-keys-instead-of-row1](emit-record1-keys-instead-of-row1.md)</sub> | In Review | [plan](service-rows-tablerecord-key-shape.md) |
@@ -63,7 +64,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 - `R38` [**Unify `rowsMethodName()`**](unify-rowsmethodname.md): Lift the `"rows" + capitalize(name())` copy-paste from four `BatchKeyField` leaves to a default method on the interface.
 - `R4` [**Collapse `BatchKeyField` validator/emitter redundancy**](collapse-tabletargetfield-redundancy.md): Promote `unsupportedReason()` from four parallel static overloads on `SplitRowsMethodEmitter` to a default method on `BatchKeyField`, so the validator's four-arm chain at `GraphitronSchemaValidator.java:160-180` collapses to a single `instanceof BatchKeyField` check and the emitter/validator lock-step (currently convention-enforced) becomes compiler-enforced.
-- `R82` [**FK column pairing: typed slots over parallel ordered lists**](fk-column-pairing-typed-slots.md): Two emitters (`SplitRowsMethodEmitter` and `MultiTablePolymorphicEmitter`) recently shipped fixes for the same bug: a `JOIN parentInput ON ...` predicate that paired one column list at index `i` against another column list at index `i`, on the unstated assumption that the two lists were in the same order. They are not, in general, and a real consumer schema (composite-PK parent, FK declared in a column order different from the parent's PK declaration order) tripped a `Field<String>.eq(Field<Long>)` compile error in the generated source.
 - `R33` [**Shared interface for `QueryField` / `ChildField` table-bound parallels**](shared-interface-queryfield-childfield.md): Root variants drop `joinPath` but share `filters · orderBy · pagination`.
 - `R54` [**Rename @externalField (parallel-support, deprecation, migration)**](rename-externalfield-directive.md): `@externalField` lifted to `IMPLEMENTED_LEAVES` end-to-end in `computed-field-with-reference` (R48, shipped; see [`changelog.md`](changelog.md)). The directive's name is the surviving historical artefact: it predates the `ChildField.ComputedField` model variant and reads as "field resolved by external code" rather than the narrower behaviour the lift settled on (a `Field<X>` returned by a static method, inlined into the SELECT projection at the alias). A clearer name ships in this plan; the old name stays accepted for one consumer-migration window.
 - `R27` [**Retire `@nodeId` and `IdReferenceField` synthesis shims**](retire-synthesis-shims.md): Two parallel shims survive in the classifier so legacy SDL keeps building. Both should retire on the same gate (sis migration to canonical SDL); their wire shape is independent but the user-visible migration is one piece of work, so the two retirements ship together. _(blocked by [sis-rewrite-migration](sis-rewrite-migration.md))_
@@ -134,7 +134,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R4` [**Collapse `BatchKeyField` validator/emitter redundancy**](collapse-tabletargetfield-redundancy.md) — Backlog, cleanup
 - `R81` [**Sealed resolution outcomes for catalog table/FK lookups**](catalog-resolution-sealed-outcomes.md) — Backlog, architecture
 - `R5` [**Composite-key `@lookupKey` on list-of-input-object arguments**](composite-key-lookupkey.md) — Backlog, architecture
-- `R82` [**FK column pairing: typed slots over parallel ordered lists**](fk-column-pairing-typed-slots.md) — Backlog, cleanup
+- `R82` [**FK column pairing: typed slots over parallel ordered lists**](fk-column-pairing-typed-slots.md) — Spec, cleanup
 - `R42` [**Stub: `@reference` on a scalar (FK column) field (`ColumnReferenceField`)**](column-reference-on-scalar-field.md) — Backlog, stubs
 - `R43` [**Stub: `@tableMethod` with scalar/enum return (`TableMethodField`)**](tablemethod-scalar-return.md) — Backlog, stubs
 - `R16` [**`FkJoin` model cleanup: `JoinConditionRef` wrapper**](fkjoin-model-cleanup.md) — Backlog, cleanup
