@@ -1,6 +1,6 @@
 package no.sikt.graphitron.lsp.parsing;
 
-import org.treesitter.TSNode;
+import io.github.treesitter.jtreesitter.Node;
 
 import java.util.Optional;
 import java.util.Set;
@@ -32,14 +32,14 @@ public final class TypeContext {
      * Returns empty if {@code inner} is at the top level (e.g. the cursor sits
      * on a directive applied to a schema-level element with no enclosing type).
      */
-    public static Optional<TSNode> enclosingTypeDefinition(TSNode inner) {
-        TSNode node = inner;
-        while (node != null && !node.isNull()) {
+    public static Optional<Node> enclosingTypeDefinition(Node inner) {
+        Node node = inner;
+        while (node != null) {
             if (TYPE_DEFINITION_KINDS.contains(node.getType())) {
                 return Optional.of(node);
             }
-            TSNode parent = node.getParent();
-            if (parent == null || parent.isNull() || parent.equals(node)) {
+            Node parent = node.getParent().orElse(null);
+            if (parent == null || parent.equals(node)) {
                 return Optional.empty();
             }
             node = parent;
@@ -53,13 +53,13 @@ public final class TypeContext {
      * quotes from the string literal. Only inspects directives directly
      * on {@code typeDef} (not directives on nested field definitions).
      */
-    public static Optional<String> tableNameOf(TSNode typeDef, byte[] source) {
-        TSNode directives = childOfKind(typeDef, "directives");
+    public static Optional<String> tableNameOf(Node typeDef, byte[] source) {
+        Node directives = childOfKind(typeDef, "directives");
         if (directives == null) return Optional.empty();
         for (int i = 0; i < directives.getChildCount(); i++) {
-            TSNode child = directives.getChild(i);
+            Node child = directives.getChild(i).orElse(null);
             if (!"directive".equals(child.getType())) continue;
-            TSNode nameNode = childOfKind(child, "name");
+            Node nameNode = childOfKind(child, "name");
             if (nameNode == null || !"table".equals(Nodes.text(nameNode, source))) continue;
             String value = stringArg(child, "name", source);
             if (value != null) return Optional.of(value);
@@ -72,24 +72,24 @@ public final class TypeContext {
      * node. Returns {@code null} when the argument is absent or its value is
      * not a string literal.
      */
-    public static String stringArg(TSNode directive, String argName, byte[] source) {
-        TSNode arguments = childOfKind(directive, "arguments");
+    public static String stringArg(Node directive, String argName, byte[] source) {
+        Node arguments = childOfKind(directive, "arguments");
         if (arguments == null) return null;
         for (int i = 0; i < arguments.getChildCount(); i++) {
-            TSNode argNode = arguments.getChild(i);
+            Node argNode = arguments.getChild(i).orElse(null);
             if (!"argument".equals(argNode.getType())) continue;
-            TSNode keyNode = childOfKind(argNode, "name");
+            Node keyNode = childOfKind(argNode, "name");
             if (keyNode == null || !argName.equals(Nodes.text(keyNode, source))) continue;
-            TSNode valueNode = childOfKind(argNode, "value");
+            Node valueNode = childOfKind(argNode, "value");
             if (valueNode == null) return null;
             return Nodes.unquote(Nodes.text(valueNode, source));
         }
         return null;
     }
 
-    private static TSNode childOfKind(TSNode parent, String kind) {
+    private static Node childOfKind(Node parent, String kind) {
         for (int i = 0; i < parent.getChildCount(); i++) {
-            TSNode child = parent.getChild(i);
+            Node child = parent.getChild(i).orElse(null);
             if (kind.equals(child.getType())) return child;
         }
         return null;

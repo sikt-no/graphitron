@@ -1,9 +1,9 @@
 package no.sikt.graphitron.lsp;
 
 import org.junit.jupiter.api.Test;
-import org.treesitter.TSParser;
-import org.treesitter.TSTree;
-import org.treesitter.TreeSitterGraphql;
+import io.github.treesitter.jtreesitter.Parser;
+import io.github.treesitter.jtreesitter.Tree;
+import io.github.treesitter.jtreesitter.Language;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -17,11 +17,11 @@ class TreeSitterSmokeTest {
 
     @Test
     void parsesMinimalSchema() {
-        var parser = new TSParser();
-        parser.setLanguage(new TreeSitterGraphql());
+        var parser = new Parser();
+        parser.setLanguage(no.sikt.graphitron.lsp.parsing.GraphqlLanguage.get());
 
         var source = "type Foo { bar: Int }";
-        TSTree tree = parser.parseString(null, source);
+        Tree tree = parser.parse(source).orElseThrow();
 
         assertThat(tree).isNotNull();
         assertThat(tree.getRootNode().hasError()).isFalse();

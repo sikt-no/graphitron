@@ -3,9 +3,9 @@ package no.sikt.graphitron.lsp;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.NestedArgs;
 import org.junit.jupiter.api.Test;
-import org.treesitter.TSParser;
-import org.treesitter.TSPoint;
-import org.treesitter.TreeSitterGraphql;
+import io.github.treesitter.jtreesitter.Parser;
+import io.github.treesitter.jtreesitter.Point;
+import io.github.treesitter.jtreesitter.Language;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -28,7 +28,7 @@ class NestedArgsTest {
         int line = 1;
         int col = lines[line].indexOf('"') + 1;
 
-        var nested = resolveNested(source, new TSPoint(line, col));
+        var nested = resolveNested(source, new Point(line, col));
 
         assertThat(nested.outerArgumentName()).isEqualTo("path");
         assertThat(nested.nestedFieldNameText()).isEqualTo("key");
@@ -46,7 +46,7 @@ class NestedArgsTest {
         int line = 0;
         int col = lines[line].indexOf("\"\"") + 1;
 
-        var nested = resolveNested(source, new TSPoint(line, col));
+        var nested = resolveNested(source, new Point(line, col));
 
         assertThat(nested.outerArgumentName()).isEqualTo("record");
         assertThat(nested.nestedFieldNameText()).isEqualTo("className");
@@ -61,8 +61,8 @@ class NestedArgsTest {
             }
             """;
         int col = source.indexOf("FILM") + 1;
-        var directive = parseAndFindDirective(source, new TSPoint(0, col));
-        var nested = NestedArgs.findContaining(directive, new TSPoint(0, col),
+        var directive = parseAndFindDirective(source, new Point(0, col));
+        var nested = NestedArgs.findContaining(directive, new Point(0, col),
             source.getBytes(java.nio.charset.StandardCharsets.UTF_8));
         assertThat(nested).isEmpty();
     }
@@ -82,7 +82,7 @@ class NestedArgsTest {
         int secondPair = lines[line].indexOf("\"\"", firstQuote + 1);
         int col = secondPair + 1;
 
-        var nested = resolveNested(source, new TSPoint(line, col));
+        var nested = resolveNested(source, new Point(line, col));
 
         assertThat(nested.nestedFieldNameText()).isEqualTo("key");
         // Second element's value is empty (just two quotes); confirm we
@@ -92,17 +92,17 @@ class NestedArgsTest {
         assertThat(rawValue).isEqualTo("\"\"");
     }
 
-    private static NestedArgs.Nested resolveNested(String source, TSPoint cursor) {
+    private static NestedArgs.Nested resolveNested(String source, Point cursor) {
         var directive = parseAndFindDirective(source, cursor);
         var bytes = source.getBytes(java.nio.charset.StandardCharsets.UTF_8);
         return NestedArgs.findContaining(directive, cursor, bytes)
             .orElseThrow(() -> new AssertionError("expected nested match at cursor"));
     }
 
-    private static Directives.Directive parseAndFindDirective(String source, TSPoint cursor) {
-        var parser = new TSParser();
-        parser.setLanguage(new TreeSitterGraphql());
-        var tree = parser.parseString(null, source);
+    private static Directives.Directive parseAndFindDirective(String source, Point cursor) {
+        var parser = new Parser();
+        parser.setLanguage(no.sikt.graphitron.lsp.parsing.GraphqlLanguage.get());
+        var tree = parser.parse(source).orElseThrow();
         return Directives.findContaining(tree.getRootNode(), cursor)
             .orElseThrow(() -> new AssertionError("expected directive at cursor"));
     }

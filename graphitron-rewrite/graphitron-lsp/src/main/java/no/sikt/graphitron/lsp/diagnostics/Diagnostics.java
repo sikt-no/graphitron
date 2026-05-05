@@ -9,7 +9,7 @@ import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.Range;
-import org.treesitter.TSNode;
+import io.github.treesitter.jtreesitter.Node;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -51,7 +51,7 @@ public final class Diagnostics {
     private static void validateTable(
         Directives.Directive directive, WorkspaceFile file, CompletionData catalog, List<Diagnostic> out
     ) {
-        TSNode argValue = stringArgValueNode(directive, "name", file.source());
+        Node argValue = stringArgValueNode(directive, "name", file.source());
         if (argValue == null) return;
         String tableName = Nodes.unquote(Nodes.text(argValue, file.source()));
         if (tableName.isEmpty()) return;
@@ -64,7 +64,7 @@ public final class Diagnostics {
     private static void validateField(
         Directives.Directive directive, WorkspaceFile file, CompletionData catalog, List<Diagnostic> out
     ) {
-        TSNode argValue = stringArgValueNode(directive, "name", file.source());
+        Node argValue = stringArgValueNode(directive, "name", file.source());
         if (argValue == null) return;
         String columnName = Nodes.unquote(Nodes.text(argValue, file.source()));
         if (columnName.isEmpty()) return;
@@ -96,8 +96,8 @@ public final class Diagnostics {
         for (var arg : directive.arguments()) {
             if (!"path".equals(Nodes.text(arg.key(), file.source()))) continue;
             forEachObjectField(arg.value(), (field) -> {
-                TSNode nameNode = childOfKind(field, "name");
-                TSNode valueNode = childOfKind(field, "value");
+                Node nameNode = childOfKind(field, "name");
+                Node valueNode = childOfKind(field, "value");
                 if (nameNode == null || valueNode == null) return;
                 String fieldName = Nodes.text(nameNode, file.source());
                 String value = Nodes.unquote(Nodes.text(valueNode, file.source()));
@@ -112,7 +112,7 @@ public final class Diagnostics {
     }
 
     private static void validateReferenceKey(
-        TSNode valueNode, String fkName,
+        Node valueNode, String fkName,
         WorkspaceFile file, CompletionData catalog, List<Diagnostic> out
     ) {
         // Look across every table's references for a matching FK name.
@@ -125,7 +125,7 @@ public final class Diagnostics {
     }
 
     private static void validateReferenceTable(
-        TSNode valueNode, String tableName,
+        Node valueNode, String tableName,
         WorkspaceFile file, CompletionData catalog, List<Diagnostic> out
     ) {
         if (catalog.getTable(tableName).isEmpty()) {
@@ -144,7 +144,7 @@ public final class Diagnostics {
         return names;
     }
 
-    private static TSNode stringArgValueNode(Directives.Directive directive, String argName, byte[] source) {
+    private static Node stringArgValueNode(Directives.Directive directive, String argName, byte[] source) {
         for (var arg : directive.arguments()) {
             if (argName.equals(Nodes.text(arg.key(), source))) {
                 return arg.value();
@@ -153,7 +153,7 @@ public final class Diagnostics {
         return null;
     }
 
-    private static Diagnostic diagnostic(WorkspaceFile file, TSNode node, DiagnosticSeverity severity, String message) {
+    private static Diagnostic diagnostic(WorkspaceFile file, Node node, DiagnosticSeverity severity, String message) {
         var start = Positions.toLspPosition(file.source(), node.getStartByte());
         var end = Positions.toLspPosition(file.source(), node.getEndByte());
         var d = new Diagnostic(new Range(start, end), message);
@@ -162,28 +162,28 @@ public final class Diagnostics {
         return d;
     }
 
-    private static Diagnostic diagnostic(WorkspaceFile file, TSNode node, String message) {
+    private static Diagnostic diagnostic(WorkspaceFile file, Node node, String message) {
         return diagnostic(file, node, DiagnosticSeverity.Error, message);
     }
 
     @FunctionalInterface
     private interface NodeConsumer {
-        void accept(TSNode node);
+        void accept(Node node);
     }
 
-    private static void forEachObjectField(TSNode root, NodeConsumer consumer) {
-        if (root == null || root.isNull()) return;
+    private static void forEachObjectField(Node root, NodeConsumer consumer) {
+        if (root == null) return;
         if ("object_field".equals(root.getType())) {
             consumer.accept(root);
         }
         for (int i = 0; i < root.getChildCount(); i++) {
-            forEachObjectField(root.getChild(i), consumer);
+            forEachObjectField(root.getChild(i).orElse(null), consumer);
         }
     }
 
-    private static TSNode childOfKind(TSNode parent, String kind) {
+    private static Node childOfKind(Node parent, String kind) {
         for (int i = 0; i < parent.getChildCount(); i++) {
-            TSNode child = parent.getChild(i);
+            Node child = parent.getChild(i).orElse(null);
             if (kind.equals(child.getType())) return child;
         }
         return null;

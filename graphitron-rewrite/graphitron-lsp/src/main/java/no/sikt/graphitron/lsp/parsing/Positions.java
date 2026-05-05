@@ -1,6 +1,6 @@
 package no.sikt.graphitron.lsp.parsing;
 
-import org.treesitter.TSPoint;
+import io.github.treesitter.jtreesitter.Point;
 
 /**
  * Converts LSP positions (line + UTF-16 code-unit character offset) into
@@ -23,7 +23,7 @@ public final class Positions {
     private Positions() {}
 
     /** Result of resolving an LSP position against a UTF-8 source buffer. */
-    public record Resolved(int byteOffset, TSPoint tsPoint) {}
+    public record Resolved(int byteOffset, Point tsPoint) {}
 
     /**
      * Resolve an LSP {@code (line, charUtf16)} pair against the source
@@ -59,7 +59,7 @@ public final class Positions {
             utf16Consumed += utf16Units;
             byteOffset += codepointBytes;
         }
-        return new Resolved(byteOffset, new TSPoint(line, byteOffset - lineStart));
+        return new Resolved(byteOffset, new Point(line, byteOffset - lineStart));
     }
 
     /**

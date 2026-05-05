@@ -10,8 +10,8 @@ import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.MarkupContent;
 import org.eclipse.lsp4j.MarkupKind;
 import org.eclipse.lsp4j.Range;
-import org.treesitter.TSNode;
-import org.treesitter.TSPoint;
+import io.github.treesitter.jtreesitter.Node;
+import io.github.treesitter.jtreesitter.Point;
 
 import java.util.Optional;
 
@@ -28,7 +28,7 @@ public final class Hovers {
 
     private Hovers() {}
 
-    public static Optional<Hover> compute(WorkspaceFile file, CompletionData catalog, TSPoint pos) {
+    public static Optional<Hover> compute(WorkspaceFile file, CompletionData catalog, Point pos) {
         var directiveOpt = Directives.findContaining(file.tree().getRootNode(), pos);
         if (directiveOpt.isEmpty()) return Optional.empty();
         var directive = directiveOpt.get();
@@ -42,7 +42,7 @@ public final class Hovers {
     }
 
     private static Optional<Hover> tableHover(
-        Directives.Directive directive, WorkspaceFile file, CompletionData catalog, TSPoint pos
+        Directives.Directive directive, WorkspaceFile file, CompletionData catalog, Point pos
     ) {
         var argValue = stringArgValueAt(directive, "name", pos, file.source());
         if (argValue == null) return Optional.empty();
@@ -51,7 +51,7 @@ public final class Hovers {
     }
 
     private static Optional<Hover> fieldHover(
-        Directives.Directive directive, WorkspaceFile file, CompletionData catalog, TSPoint pos
+        Directives.Directive directive, WorkspaceFile file, CompletionData catalog, Point pos
     ) {
         var argValue = stringArgValueAt(directive, "name", pos, file.source());
         if (argValue == null) return Optional.empty();
@@ -70,16 +70,16 @@ public final class Hovers {
     }
 
     private static Optional<Hover> referenceHover(
-        Directives.Directive directive, WorkspaceFile file, CompletionData catalog, TSPoint pos
+        Directives.Directive directive, WorkspaceFile file, CompletionData catalog, Point pos
     ) {
         // Find the innermost object_field containing the cursor; then
         // produce hover content keyed on the nested-field name.
         for (var arg : directive.arguments()) {
             if (!"path".equals(Nodes.text(arg.key(), file.source()))) continue;
-            TSNode field = innermostObjectFieldContaining(arg.value(), pos);
+            Node field = innermostObjectFieldContaining(arg.value(), pos);
             if (field == null) continue;
-            TSNode nameNode = childOfKind(field, "name");
-            TSNode valueNode = childOfKind(field, "value");
+            Node nameNode = childOfKind(field, "name");
+            Node valueNode = childOfKind(field, "value");
             if (nameNode == null || valueNode == null) continue;
             if (!Nodes.contains(valueNode, pos)) continue;
             String fieldName = Nodes.text(nameNode, file.source());
@@ -94,7 +94,7 @@ public final class Hovers {
     }
 
     private static Optional<Hover> referenceKeyHover(
-        WorkspaceFile file, TSNode valueNode, String fkName, CompletionData catalog
+        WorkspaceFile file, Node valueNode, String fkName, CompletionData catalog
     ) {
         for (var table : catalog.tables()) {
             for (var ref : table.references()) {
@@ -109,7 +109,7 @@ public final class Hovers {
     }
 
     private static Optional<Hover> referenceTableHover(
-        WorkspaceFile file, TSNode valueNode, String tableName, CompletionData catalog
+        WorkspaceFile file, Node valueNode, String tableName, CompletionData catalog
     ) {
         return catalog.getTable(tableName).map(t -> hover(file, valueNode, formatTable(t)));
     }
@@ -143,8 +143,8 @@ public final class Hovers {
      * Returns the directive's argument value node for {@code argName} when
      * the cursor is inside that value, otherwise {@code null}.
      */
-    private static TSNode stringArgValueAt(
-        Directives.Directive directive, String argName, TSPoint pos, byte[] source
+    private static Node stringArgValueAt(
+        Directives.Directive directive, String argName, Point pos, byte[] source
     ) {
         for (var arg : directive.arguments()) {
             if (!arg.contains(pos)) continue;
@@ -155,27 +155,27 @@ public final class Hovers {
         return null;
     }
 
-    private static Hover hover(WorkspaceFile file, TSNode rangeNode, String markdown) {
+    private static Hover hover(WorkspaceFile file, Node rangeNode, String markdown) {
         var content = new MarkupContent(MarkupKind.MARKDOWN, markdown);
         var start = Positions.toLspPosition(file.source(), rangeNode.getStartByte());
         var end = Positions.toLspPosition(file.source(), rangeNode.getEndByte());
         return new Hover(content, new Range(start, end));
     }
 
-    private static TSNode innermostObjectFieldContaining(TSNode node, TSPoint pos) {
-        if (node == null || node.isNull() || !Nodes.contains(node, pos)) return null;
-        TSNode best = null;
+    private static Node innermostObjectFieldContaining(Node node, Point pos) {
+        if (node == null || !Nodes.contains(node, pos)) return null;
+        Node best = null;
         if ("object_field".equals(node.getType())) best = node;
         for (int i = 0; i < node.getChildCount(); i++) {
-            TSNode descendant = innermostObjectFieldContaining(node.getChild(i), pos);
+            Node descendant = innermostObjectFieldContaining(node.getChild(i).orElse(null), pos);
             if (descendant != null) best = descendant;
         }
         return best;
     }
 
-    private static TSNode childOfKind(TSNode parent, String kind) {
+    private static Node childOfKind(Node parent, String kind) {
         for (int i = 0; i < parent.getChildCount(); i++) {
-            TSNode child = parent.getChild(i);
+            Node child = parent.getChild(i).orElse(null);
             if (kind.equals(child.getType())) return child;
         }
         return null;

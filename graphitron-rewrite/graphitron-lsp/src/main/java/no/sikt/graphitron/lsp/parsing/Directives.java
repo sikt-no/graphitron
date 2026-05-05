@@ -1,12 +1,13 @@
 package no.sikt.graphitron.lsp.parsing;
 
-import org.treesitter.TSNode;
-import org.treesitter.TSPoint;
-import org.treesitter.TSQuery;
-import org.treesitter.TSQueryCapture;
-import org.treesitter.TSQueryCursor;
-import org.treesitter.TSQueryMatch;
+import io.github.treesitter.jtreesitter.Node;
+import io.github.treesitter.jtreesitter.Point;
+import io.github.treesitter.jtreesitter.Query;
+import io.github.treesitter.jtreesitter.QueryCapture;
+import io.github.treesitter.jtreesitter.QueryCursor;
+import io.github.treesitter.jtreesitter.QueryMatch;
 
+import java.lang.foreign.Arena;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -32,16 +33,16 @@ public final class Directives {
           )@outer
         """;
 
-    private static final TSQuery DIRECTIVES_QUERY =
-        new TSQuery(GraphqlLanguage.get(), DIRECTIVES_QUERY_TEXT);
+    private static final Query DIRECTIVES_QUERY =
+        new Query(GraphqlLanguage.get(), DIRECTIVES_QUERY_TEXT);
 
     private Directives() {}
 
     /**
      * Argument node within a directive: {@code name: value}.
      */
-    public record Argument(TSNode full, TSNode key, TSNode value) {
-        public boolean contains(TSPoint point) {
+    public record Argument(Node full, Node key, Node value) {
+        public boolean contains(Point point) {
             return Nodes.contains(full, point);
         }
     }
@@ -49,8 +50,8 @@ public final class Directives {
     /**
      * Directive node: {@code @name(arg: value, ...)}.
      */
-    public record Directive(TSNode outer, TSNode nameNode, List<Argument> arguments) {
-        public boolean contains(TSPoint point) {
+    public record Directive(Node outer, Node nameNode, List<Argument> arguments) {
+        public boolean contains(Point point) {
             return Nodes.contains(outer, point);
         }
     }
@@ -58,42 +59,45 @@ public final class Directives {
     /**
      * All directives reachable from {@code root}.
      */
-    public static List<Directive> findAll(TSNode root) {
-        var cursor = new TSQueryCursor();
-        cursor.exec(DIRECTIVES_QUERY, root);
-
-        var matches = new ArrayList<Directive>();
-        TSQueryMatch match = new TSQueryMatch();
-        while (cursor.nextMatch(match)) {
-            collect(match).ifPresent(matches::add);
+    public static List<Directive> findAll(Node root) {
+        // jtreesitter ties a match's captured Nodes to the SegmentAllocator passed
+        // into findMatches. Closing the cursor frees its internal arena, so we
+        // route captures into Arena.ofAuto() — backed by a Cleaner — which
+        // outlives the cursor and stays reachable as long as the returned
+        // Directive records do.
+        Arena captureArena = Arena.ofAuto();
+        try (var cursor = new QueryCursor(DIRECTIVES_QUERY)) {
+            return cursor.findMatches(root, captureArena, null)
+                .map(Directives::collect)
+                .filter(Optional::isPresent)
+                .map(Optional::get)
+                .toList();
         }
-        return matches;
     }
 
     /**
      * Innermost directive whose range contains {@code pos}, if any.
      * Mirrors {@code get_directive_node} in the Rust LSP.
      */
-    public static Optional<Directive> findContaining(TSNode root, TSPoint pos) {
+    public static Optional<Directive> findContaining(Node root, Point pos) {
         return findAll(root).stream()
             .filter(d -> d.contains(pos))
             .findFirst();
     }
 
-    private static Optional<Directive> collect(TSQueryMatch match) {
-        TSNode nameNode = null;
-        TSNode outer = null;
-        var keys = new ArrayList<TSNode>();
-        var values = new ArrayList<TSNode>();
-        var fulls = new ArrayList<TSNode>();
-        for (TSQueryCapture capture : match.getCaptures()) {
-            String name = DIRECTIVES_QUERY.getCaptureNameForId(capture.getIndex());
-            switch (name) {
-                case "directive-name" -> nameNode = capture.getNode();
-                case "outer" -> outer = capture.getNode();
-                case "name" -> keys.add(capture.getNode());
-                case "value" -> values.add(capture.getNode());
-                case "argument-full" -> fulls.add(capture.getNode());
+    private static Optional<Directive> collect(QueryMatch match) {
+        Node nameNode = null;
+        Node outer = null;
+        var keys = new ArrayList<Node>();
+        var values = new ArrayList<Node>();
+        var fulls = new ArrayList<Node>();
+        for (QueryCapture capture : match.captures()) {
+            switch (capture.name()) {
+                case "directive-name" -> nameNode = capture.node();
+                case "outer" -> outer = capture.node();
+                case "name" -> keys.add(capture.node());
+                case "value" -> values.add(capture.node());
+                case "argument-full" -> fulls.add(capture.node());
                 default -> { /* ignore arguments-full */ }
             }
         }
