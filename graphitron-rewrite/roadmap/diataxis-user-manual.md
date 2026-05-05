@@ -284,7 +284,7 @@ Read-simply test runs on the deployed
 lands. If the four-quadrant page or the directive index fails the
 test, revise here in 1a; do not start 1b until both pass.
 
-### Phase 1b: Tutorial prose and Quick Start rework
+### Phase 1b: Tutorial prose and Quick Start rework — shipped at `fa36dbc` + `d0c63c4`
 
 Author the tutorial chapter once Phase 1a's IA has cleared the
 read-simply test. Files:
@@ -319,6 +319,35 @@ Phase 1b ships when a beginner can complete the tutorial against
 then follow the six pages to a working query. No rewrite of legacy
 content yet; the tutorial is new prose because the legacy README has
 nothing tutorial-shaped to lift.
+
+*Shipped at `fa36dbc` (six tutorial pages plus index) + `d0c63c4`
+(`TutorialSmokeTest` plus a GraphiQL note). Deviation from the plan's
+"Tests" section: the smoke test is a `@QuarkusTest` inside the
+existing `graphitron-sakila-example` test source (replaying each
+tutorial page's HTTP query against the live JAX-RS endpoint and
+asserting on the response shape) rather than a new `tutorial-smoke-test`
+Maven module wrapping a shell script around `mvn quarkus:dev`. The
+in-module shape exercises the same endpoint and bean wiring that
+`mvn quarkus:dev` would, runs naturally inside the existing
+`mvn verify -Plocal-db` invocation that CI already runs from the
+rewrite reactor, and gives a single-class diff site for future
+tutorial pages. The drift surfaces the plan named (HTTP endpoint
+shape, directive existence, query shape) are all covered; "mvn flags"
+drift is covered by the surrounding build itself. Six tests on the
+class (page 1 introspection, page 3 customers + active filter, page
+4 single-hop and multi-hop `@reference` joins, page 5 createFilm +
+updateFilm round-trip); `@AfterEach` cleans up `film` rows above the
+seeded id range so `ApprovalQueryExampleTest` continues to pin five
+films. The Quick Start rework reduces to "the page already pointed
+at `graphitron-sakila-example` from R67 Stage 3"; no further edit
+landed in 1b. The tutorial-page list shipped with two divergences
+from the plan's worked-example sketch: the closing query uses
+`address { address district }` rather than `address { addressLine1 }`
+(matches the example schema, which doesn't carry `addressLine1`),
+and the "going further" page points at `add-custom-conditions`,
+`connections` + `sort-results` (the post-Phase-3 split for
+"pagination and sorting"), `error-channel`, and `test-your-schema`,
+matching the recipes that actually exist.*
 
 ### Phase 2: Reference (directives) absorbs the legacy README — shipped at `8f7d412`
 
@@ -486,7 +515,7 @@ README cannot handle (no centralised error reference, scattered deprecation
 notes); the rewrite's classifier-driven model makes them cheap to keep
 honest because the source of truth is code.
 
-### Phase 6: Cutover and stub
+### Phase 6: Cutover and stub — shipped at `863d8be`
 
 Gated on Phase 2 only; can land before Phases 3-5 complete. When Phase 2
 ships, `/docs/quick-start.adoc`'s pointer to the legacy README on GitHub
@@ -497,6 +526,18 @@ legacy-modules commit to a one-paragraph "this directive reference has
 moved to graphitron.sikt.no/manual/reference/" stub. That companion
 commit lives outside this plan; this plan is responsible for making the
 migration possible by ensuring the new reference is complete and correct.
+
+*Shipped at `863d8be`: `quick-start.adoc:15` flipped from the legacy
+GitHub README pointer (`graphitron-codegen-parent/graphitron-java-codegen/README.md`)
+to the in-tree `xref:manual/reference/directives/index.adoc` so readers
+land on the live, drift-protected reference. Other legacy-codegen-parent
+mentions in `/docs/` are correct as-is and did not move: fallback notes
+for features the rewrite stubs (`@multitableReference`, the polymorphic
+union pattern), the migration recipe itself (`how-to/migrating-from-legacy.adoc`),
+and the how-to landing's note that the legacy README's worked examples
+remain a useful cross-reference until R26 retires the legacy modules.
+The legacy-side stub redirect remains the Sikt-maintainer companion
+commit the original phase body called out.*
 
 ## Tests
 
