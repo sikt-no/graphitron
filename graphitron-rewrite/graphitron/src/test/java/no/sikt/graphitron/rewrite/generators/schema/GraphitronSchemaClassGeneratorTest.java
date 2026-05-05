@@ -476,6 +476,26 @@ class GraphitronSchemaClassGeneratorTest {
     }
 
     @Test
+    void build_errorTypeFieldFetchers_castDisambiguatesDataFetcherOverloadAndUsesGetSource() {
+        // GraphQLCodeRegistry.Builder.dataFetcher(FieldCoordinates, ...) has two overloads
+        // (DataFetcher<?> and DataFetcherFactory<?>) that an implicitly-typed lambda can't
+        // pick between. The emitted lambdas must therefore carry an explicit DataFetcher<Object>
+        // cast, and read the source via DataFetchingEnvironment.getSource() (the canonical
+        // accessor on DataFetchingEnvironment in graphql-java 25; getObject() exists only
+        // on TypeResolutionEnvironment, used by typeResolver lambdas).
+        var body = buildBody(ERROR_UNION_SDL);
+        // Cast appears at every dataFetcher call site (one per @error field fetcher).
+        assertThat(body).contains("(graphql.schema.DataFetcher<java.lang.Object>) env -> {");
+        // Each dataFetcher block reads the source via getSource() and not via the absent getObject().
+        var pathStart = body.indexOf("FieldCoordinates.coordinates(\"ValidationErr\", \"path\")");
+        var pathEnd = body.indexOf("});", pathStart);
+        assertThat(pathStart).isGreaterThanOrEqualTo(0);
+        var pathBlock = body.substring(pathStart, pathEnd);
+        assertThat(pathBlock).contains("env.getSource()");
+        assertThat(pathBlock).doesNotContain("env.getObject()");
+    }
+
+    @Test
     void build_errorTypeResolversAlphabeticallyOrdered_beforeSchemaBuilder() {
         // The @error TypeResolver loop preserves the existing ordering invariant: registrations
         // happen alphabetically and before .query()/.codeRegistry() seal the schema.
