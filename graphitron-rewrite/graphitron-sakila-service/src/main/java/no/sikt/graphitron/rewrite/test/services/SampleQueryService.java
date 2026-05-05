@@ -70,4 +70,18 @@ public final class SampleQueryService {
             .orderBy(Tables.FILM.FILM_ID)
             .fetch();
     }
+
+    /**
+     * R84 fixture: same logic as {@link #filmsByServiceRenamed} but the GraphQL argument is a
+     * Relay-style wrapper input (`FilmsByPathInput { ids }`) and the binding uses a path
+     * expression (`filmIds: input.ids`). The Java signature stays GraphQL-input-shape-agnostic;
+     * the generator emits the Map traversal from `env.getArgument("input")` to the leaf `ids`
+     * with intermediate-null short-circuit.
+     */
+    public static Result<FilmRecord> filmsByPath(DSLContext dsl, List<Integer> filmIds) {
+        return dsl.selectFrom(Tables.FILM)
+            .where(Tables.FILM.FILM_ID.in(filmIds))
+            .orderBy(Tables.FILM.FILM_ID)
+            .fetch();
+    }
 }
