@@ -5,7 +5,7 @@ status: Spec
 bucket: cleanup
 priority: 3
 theme: docs
-depends-on: [docs-site-asciidoc]
+depends-on: []
 ---
 
 # Sweep doc drift between rewrite docs and `model/` taxonomy
@@ -22,10 +22,23 @@ because R58's new "Wire-format encoding is a boundary concern" section
 table at `code-generation-triggers.adoc:266` and the intro paragraph at
 `rewrite-design-principles.adoc:31` as the two laggards.
 
+Re-audited 2026-05-05 against trunk `994e780` (post-R68 UX-review landings). Findings since
+the last sweep: the "five rewrite modules" Legacy-refs bullet has shipped (the count claim
+is gone and the module list at `rewrite-design-principles.adoc:155` is complete);
+`candidateHint` usage stats need a fresh number set (the 2026-05-02 update was already
+stale on its own terms). New drift items added in this pass: `ChildField.ParticipantColumnReferenceField`
+and `ChildField.ErrorsField` are missing from the Child Fields tables in
+`code-generation-triggers.adoc`, and `BatchKey`'s permits list at the source-map row
+(line 263) is post-R7-stale (the doc lists 5; the model carries at least 8 across the
+two `ParentKeyed` / `RecordParentBatchKey` axis hierarchies). The `depends-on:
+[docs-site-asciidoc]` front-matter entry was incorrect (the rewrite-internal docs are
+not blocked on the user-manual site move) and has been dropped.
+
 The original scope of this item was a pure legacy-ref grep ("`graphitron-common`" + module
 count). That scope is preserved at the bottom; the larger driver now is variant-taxonomy
-drift caused by federation, the Relay `nodes(ids)` auto-emit, and the `@condition`-on-input-
-field work shipping under their own plans without a doc pass.
+drift caused by federation, the Relay `nodes(ids)` auto-emit, the `@condition`-on-input-
+field work, and the recent `BatchKey` and `ChildField` permit additions, all shipping
+under their own plans without a doc pass.
 
 ## Landed (2026-05-02 commit)
 
@@ -109,6 +122,25 @@ One commit, one focused diff. Each row below is a single edit.
   `OrderByArg` / `PaginationArgRef` / `UnclassifiedArg`. Three R50-introduced carriers
   (`CompositeColumnArg`, `ColumnReferenceArg`, `CompositeColumnReferenceArg`) plus the two
   intermediate sealed groupers (`ScalarArg`, `InputTypeArg`) are absent from the prose.
+- **`ChildField.ParticipantColumnReferenceField` is missing from the docs.** Listed in
+  `model/ChildField.java`'s permits clause (`ChildField.java:13`) as a scalar-field
+  carrier on `TableInterfaceType` participants, but absent from the Child Fields tables
+  at `code-generation-triggers.adoc:158-188`. Add a row in the appropriate sub-table
+  (scalar/enum return type) with the directive pattern that produces it.
+- **`ChildField.ErrorsField` is missing from the docs.** Listed in `ChildField.java:23`
+  as a permit; carries the typed error-channel slot on a service payload. The Type
+  Classification table at `code-generation-triggers.adoc:109` mentions `ErrorType` (the
+  type-side variant) but the field-side carrier has no row in the Child Fields tables.
+- **`BatchKey` source-map row lists 5 permits, has at least 8.**
+  `code-generation-triggers.adoc:263` says "`RowKeyed` / `RecordKeyed` / `MappedRowKeyed`
+  / `MappedRecordKeyed` / `LifterRowKeyed`". The model splits across two axis sub-hierarchies:
+  `ParentKeyed.{RowKeyed | RecordKeyed | MappedRowKeyed | MappedRecordKeyed | TableRecordKeyed
+  | MappedTableRecordKeyed}` (six), plus `RecordParentBatchKey.{RowKeyed | LifterRowKeyed |
+  AccessorKeyedSingle | AccessorKeyedMany}` (four; `RowKeyed` repeats across both axes).
+  Eight unique permits today. Either rephrase the source-map cell to point at the two axes
+  rather than enumerate, or list all eight; the BatchKey Javadoc opens with "Seven permits
+  across two axis sub-hierarchies" (out of date by one) so the doc cell and the Javadoc
+  should be updated together.
 
 ## Principles-doc claims overtaken by structural changes
 
@@ -130,12 +162,18 @@ the code. The principle's spirit is intact in each; only the cited evidence is s
   `JooqCatalog`; the only direct consumers of raw jOOQ types are `BuildContext` (for
   validation-message FK enumeration) and the LSP-side `catalog/CatalogBuilder` snapshot;
   classifier code consumes the classified output."
-- **`candidateHint` usage stats are stale.** `rewrite-design-principles.adoc:171`:
+- **`candidateHint` usage stats are stale.** `rewrite-design-principles.adoc:181`:
   "Used in 14 places (5 in `FieldBuilder`, 5 in `TypeBuilder`, 2 in `BuildContext`,
-  2 in `ServiceCatalog`)." Today: at least six files reference it (those four plus
-  `BatchKeyLifterDirectiveResolver` and `EnumMappingResolver`), with shifted per-file
-  counts. Refresh the stats; the principle is healthier than the numbers suggest because
-  more sites adopted the helper.
+  2 in `ServiceCatalog`)." Today: 17 occurrences across 5 files (7 in `BuildContext`,
+  3 in `TypeBuilder`, 3 in `Rejection`, 2 in `FieldBuilder`, 2 in `EnumMappingResolver`);
+  `ServiceCatalog` and `BatchKeyLifterDirectiveResolver` no longer reference it directly.
+  The shape of the principle is healthier than the original numbers suggest because the
+  Levenshtein-suggestion contract has consolidated onto `BuildContext` and `Rejection`
+  (the rejection construction site), with classifier-side callers thinning out as
+  rejections are produced through the typed sealed-result path. Refresh the stats and
+  rephrase the location list as "the rejection-construction sites and the classifiers
+  that produce candidate lists" if a future re-audit will be cheap; otherwise enumerate
+  the five files with their current counts.
 
 ## Legacy refs (original scope, preserved)
 
@@ -153,11 +191,11 @@ the code. The principle's spirit is intact in each; only the cited evidence is s
   `https://github.com/sikt-no/graphitron/tree/main/graphitron-codegen-parent/graphitron-java-codegen/README.md`,
   the legacy module's README. Either re-point at the rewrite-side doc or drop the link
   if no rewrite-side equivalent exists yet. Paired edit with the line above.
-- `rewrite-design-principles.adoc:145` says "builds the **five** rewrite modules" and lists
-  five. The aggregator now has eight (adds `graphitron-fixtures-codegen`, `graphitron-lsp`,
-  `roadmap-tool`). Update count and list.
-- Anywhere "five rewrite modules" or `verify-standalone-build.sh`'s forbidden-coords list
-  is paraphrased inconsistently: a final grep pass.
+- *(Landed.) The "five rewrite modules" claim at `rewrite-design-principles.adoc:155`
+  has been corrected; the doc now lists all nine modules and omits the count claim.*
+- Anywhere `verify-standalone-build.sh`'s forbidden-coords list is paraphrased
+  inconsistently: a final grep pass (the 2026-05-05 grep finds only one matching site
+  and it is correct, so this can probably collapse into "no action").
 
 ## Out of scope
 
