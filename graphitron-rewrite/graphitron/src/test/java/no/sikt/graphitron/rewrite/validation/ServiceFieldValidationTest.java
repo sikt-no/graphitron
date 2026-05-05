@@ -20,6 +20,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
+import java.util.Optional;
 
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.schema;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.stubbedError;
@@ -40,14 +41,14 @@ class ServiceFieldValidationTest {
     enum RecordCase implements ValidatorCase {
 
         NO_PATH("no @reference — passes validation now that ServiceRecordField is implemented (Phase A)",
-            new ServiceRecordField("Film", "externalChild", null, new ReturnTypeRef.ResultReturnType("Film", new FieldWrapper.Single(true), null), List.of(), RESOLVED_METHOD, RESOLVED_BATCH_KEY),
+            new ServiceRecordField("Film", "externalChild", null, new ReturnTypeRef.ResultReturnType("Film", new FieldWrapper.Single(true), null), List.of(), RESOLVED_METHOD, RESOLVED_BATCH_KEY, Optional.empty()),
             List.of()),
 
         WITH_LIFT_CONDITION("lift condition with a resolved method — DEFERRED until the lift form ships",
             new ServiceRecordField("Film", "externalChild", null, new ReturnTypeRef.ResultReturnType("Film", new FieldWrapper.Single(true), null), List.of(
                 new JoinStep.ConditionJoin(new MethodRef.Basic("com.example.Conditions", "liftCondition", ClassName.get("org.jooq", "Condition"),
                     List.of(new MethodRef.Param.Typed("ctx", "org.jooq.DSLContext", new ParamSource.DslContext()))), "")),
-                RESOLVED_METHOD, RESOLVED_BATCH_KEY),
+                RESOLVED_METHOD, RESOLVED_BATCH_KEY, Optional.empty()),
             List.of("Field 'Film.externalChild': @service with a @reference path "
                 + "(condition-join lift form) is not yet supported — see "
                 + "graphitron-rewrite/roadmap/service-record-field.md"));
@@ -87,7 +88,8 @@ class ServiceFieldValidationTest {
                 List.of(), List.of(), new OrderBySpec.None(), null,
                 new MethodRef.Basic("com.example.FilmService", "getFilms", TypeName.OBJECT,
                     List.of(new MethodRef.Param.Sourced("filmKeys", new BatchKey.RowKeyed(List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer")))))),
-                new BatchKey.RowKeyed(List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer")))),
+                new BatchKey.RowKeyed(List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"))),
+                Optional.empty()),
             List.of()),
 
         NO_SOURCES_PARAM("no Sources param — missing DataLoader batch key error",
@@ -97,7 +99,8 @@ class ServiceFieldValidationTest {
                     new FieldWrapper.Single(true)),
                 List.of(), List.of(), new OrderBySpec.None(), null,
                 new MethodRef.Basic("com.example.FilmService", "getFilms", TypeName.OBJECT, List.of()),
-                null),
+                null,
+                Optional.empty()),
             List.of("Field 'Film.externalChild': @service on a table-bound return type requires a Sources parameter for DataLoader batching"));
 
         private final String description;
@@ -166,7 +169,7 @@ class ServiceFieldValidationTest {
             List.of(), List.of(), new OrderBySpec.None(), null,
             new MethodRef.Basic("com.example.FilmService", "getFilms", TypeName.OBJECT,
                 List.of(new MethodRef.Param.Sourced("filmKeys", batchKey))),
-            batchKey);
+            batchKey, Optional.empty());
     }
 
     enum TablePkValidationCase implements TablePkCase {
@@ -223,7 +226,8 @@ class ServiceFieldValidationTest {
                     List.of(
                         new MethodRef.Param.Sourced("filmKeys1", new BatchKey.RowKeyed(FILM_TABLE_SINGLE_PK.primaryKeyColumns())),
                         new MethodRef.Param.Sourced("filmKeys2", new BatchKey.RowKeyed(FILM_TABLE_SINGLE_PK.primaryKeyColumns())))),
-                new BatchKey.RowKeyed(FILM_TABLE_SINGLE_PK.primaryKeyColumns())),
+                new BatchKey.RowKeyed(FILM_TABLE_SINGLE_PK.primaryKeyColumns()),
+                Optional.empty()),
             List.of());
 
         private final String description;

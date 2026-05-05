@@ -12,6 +12,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
+import java.util.Optional;
 
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -26,7 +27,8 @@ class QueryTableMethodTableFieldValidationTest {
         VALID("single cardinality — passes validation (Invariants §1 Connection-rejection enforced at classifier time)",
             new QueryTableMethodTableField("Query", "filmsByMethod", null,
                 new ReturnTypeRef.TableBoundReturnType("Film", TestFixtures.tableRef("film", "FILM", "Film", List.of()), new FieldWrapper.Single(true)),
-                new MethodRef.Basic("com.example.TableMethods", "filmsByMethod", ClassName.get("org.jooq", "Table"), List.of())),
+                new MethodRef.Basic("com.example.TableMethods", "filmsByMethod", ClassName.get("org.jooq", "Table"), List.of()),
+                Optional.empty()),
             List.of());
 
         private final String description;

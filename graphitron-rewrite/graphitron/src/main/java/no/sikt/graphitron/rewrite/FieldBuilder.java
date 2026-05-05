@@ -2042,6 +2042,44 @@ class FieldBuilder {
     }
 
     /**
+     * Variant of {@link #buildWithChannel} for child {@code @service} variants and root + child
+     * {@code @tableMethod} variants: resolves the {@link ErrorChannel} against the field's return
+     * type, runs the §4 declared-checked-exception match check against the resolved channel, and
+     * forwards the channel to {@code builder}. Replaces the six call sites that previously passed
+     * {@code Optional.empty()} for the channel because their variants didn't carry an
+     * {@code errorChannel} slot; the lift adds the slot uniformly so the §4 check runs against a
+     * populated channel wherever the field's payload declares an {@code errors} field.
+     *
+     * <p>Sibling of {@link #buildServiceField}: that helper additionally resolves the
+     * {@link no.sikt.graphitron.rewrite.model.ResultAssembly} for root service variants whose
+     * payload may also declare a result slot. Child {@code @service} and {@code @tableMethod}
+     * variants don't carry an assembly slot, so this helper omits the second resolution.
+     *
+     * <p>Both helpers call into the same {@link #checkDeclaredCheckedExceptions} utility; the
+     * {@code service-method.declared-exceptions-covered} {@link no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck}
+     * annotation lives on {@link #buildServiceField} as the canonical producer.
+     */
+    private GraphitronField buildMethodBackedWithChannel(
+            ReturnTypeRef returnType, no.sikt.graphitron.rewrite.model.MethodRef method,
+            String parentTypeName, String fieldName,
+            SourceLocation location, GraphQLFieldDefinition fieldDef,
+            java.util.function.Function<Optional<ErrorChannel>, GraphitronField> builder) {
+        Optional<ErrorChannel> channel;
+        switch (resolveErrorChannel(returnType)) {
+            case ErrorChannelResult.NoChannel ignored -> channel = Optional.empty();
+            case ErrorChannelResult.Channel c -> channel = Optional.of(c.channel());
+            case ErrorChannelResult.Reject r -> {
+                return new UnclassifiedField(parentTypeName, fieldName, location, fieldDef, Rejection.structural(r.reason()));
+            }
+        }
+        String reason = checkDeclaredCheckedExceptions(method, channel);
+        if (reason != null) {
+            return new UnclassifiedField(parentTypeName, fieldName, location, fieldDef, Rejection.structural(reason));
+        }
+        return builder.apply(channel);
+    }
+
+    /**
      * Variant of {@link #buildWithChannel} for service-backed root fields: resolves both the
      * {@link ErrorChannel} (catch-arm dispatch recipe) and the {@link no.sikt.graphitron.rewrite.model.ResultAssembly}
      * (success-arm payload-construction recipe) and forwards both to {@code builder}. Used by
@@ -2281,16 +2319,10 @@ class FieldBuilder {
             return switch (tableMethodResolver.resolve(parentTypeName, fieldDef, true)) {
                 case TableMethodDirectiveResolver.Resolved.Rejected r ->
                     new UnclassifiedField(parentTypeName, name, location, fieldDef, r.rejection());
-                case TableMethodDirectiveResolver.Resolved.TableBound tb -> {
-                    // @tableMethod variants don't carry an ErrorChannel slot today, so the §4
-                    // match check runs with Optional.empty() and rejects any non-exempt
-                    // declared checked exception. A future enhancement can lift channel
-                    // support onto these variants and pass the resolved channel here.
-                    String reason = checkDeclaredCheckedExceptions(tb.method(), Optional.empty());
-                    yield reason != null
-                        ? new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(reason))
-                        : new QueryField.QueryTableMethodTableField(parentTypeName, name, location, tb.returnType(), tb.method());
-                }
+                case TableMethodDirectiveResolver.Resolved.TableBound tb ->
+                    buildMethodBackedWithChannel(tb.returnType(), tb.method(),
+                        parentTypeName, name, location, fieldDef,
+                        ch -> new QueryField.QueryTableMethodTableField(parentTypeName, name, location, tb.returnType(), tb.method(), ch));
                 // NonTableBound is rejected inside the resolver when isRoot=true; the arm exists
                 // to satisfy switch exhaustiveness over the shared sealed Resolved type.
                 case TableMethodDirectiveResolver.Resolved.NonTableBound nb ->
@@ -2571,17 +2603,12 @@ class FieldBuilder {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(servicePath.errorMessage()));
             }
             return switch ((ServiceDirectiveResolver.Resolved.Success) resolved) {
-                case ServiceDirectiveResolver.Resolved.TableBound tb -> {
-                    // Child @service variants don't carry an ErrorChannel slot today; the §4
-                    // match check runs with Optional.empty() so any non-exempt declared checked
-                    // exception is unmatched.
-                    String reason = checkDeclaredCheckedExceptions(tb.method(), Optional.empty());
-                    yield reason != null
-                        ? new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(reason))
-                        : new ServiceTableField(parentTypeName, name, location, tb.returnType(),
+                case ServiceDirectiveResolver.Resolved.TableBound tb ->
+                    buildMethodBackedWithChannel(tb.returnType(), tb.method(),
+                        parentTypeName, name, location, fieldDef,
+                        ch -> new ServiceTableField(parentTypeName, name, location, tb.returnType(),
                             servicePath.elements(), List.of(), new OrderBySpec.None(), null,
-                            tb.method(), extractBatchKey(tb.method()));
-                }
+                            tb.method(), extractBatchKey(tb.method()), ch));
                 // @service on a @record-typed parent returning scalar/record is DEFERRED:
                 // deriving the batch key would require lifting through the parent chain to the
                 // rooted @table whose PK provides the key columns, which is its own design
@@ -3021,26 +3048,22 @@ class FieldBuilder {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(servicePath.errorMessage()));
             }
             return switch ((ServiceDirectiveResolver.Resolved.Success) resolved) {
-                case ServiceDirectiveResolver.Resolved.TableBound tb -> {
-                    String reason = checkDeclaredCheckedExceptions(tb.method(), Optional.empty());
-                    yield reason != null
-                        ? new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(reason))
-                        : new ServiceTableField(parentTypeName, name, location, tb.returnType(),
+                case ServiceDirectiveResolver.Resolved.TableBound tb ->
+                    buildMethodBackedWithChannel(tb.returnType(), tb.method(),
+                        parentTypeName, name, location, fieldDef,
+                        ch -> new ServiceTableField(parentTypeName, name, location, tb.returnType(),
                             servicePath.elements(), List.of(), new OrderBySpec.None(), null,
-                            tb.method(), extractBatchKey(tb.method()));
-                }
-                case ServiceDirectiveResolver.Resolved.Result r -> {
-                    String reason = checkDeclaredCheckedExceptions(r.method(), Optional.empty());
-                    yield reason != null
-                        ? new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(reason))
-                        : new ServiceRecordField(parentTypeName, name, location, r.returnType(), servicePath.elements(), r.method(), extractBatchKey(r.method()));
-                }
-                case ServiceDirectiveResolver.Resolved.Scalar s -> {
-                    String reason = checkDeclaredCheckedExceptions(s.method(), Optional.empty());
-                    yield reason != null
-                        ? new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(reason))
-                        : new ServiceRecordField(parentTypeName, name, location, s.returnType(), servicePath.elements(), s.method(), extractBatchKey(s.method()));
-                }
+                            tb.method(), extractBatchKey(tb.method()), ch));
+                case ServiceDirectiveResolver.Resolved.Result r ->
+                    buildMethodBackedWithChannel(r.returnType(), r.method(),
+                        parentTypeName, name, location, fieldDef,
+                        ch -> new ServiceRecordField(parentTypeName, name, location, r.returnType(),
+                            servicePath.elements(), r.method(), extractBatchKey(r.method()), ch));
+                case ServiceDirectiveResolver.Resolved.Scalar s ->
+                    buildMethodBackedWithChannel(s.returnType(), s.method(),
+                        parentTypeName, name, location, fieldDef,
+                        ch -> new ServiceRecordField(parentTypeName, name, location, s.returnType(),
+                            servicePath.elements(), s.method(), extractBatchKey(s.method()), ch));
             };
         }
 
@@ -3065,18 +3088,14 @@ class FieldBuilder {
             return switch (tableMethodResolver.resolve(parentTypeName, fieldDef, false)) {
                 case TableMethodDirectiveResolver.Resolved.Rejected r ->
                     new UnclassifiedField(parentTypeName, name, location, fieldDef, r.rejection());
-                case TableMethodDirectiveResolver.Resolved.TableBound tb -> {
-                    String reason = checkDeclaredCheckedExceptions(tb.method(), Optional.empty());
-                    yield reason != null
-                        ? new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(reason))
-                        : new TableMethodField(parentTypeName, name, location, tb.returnType(), tableMethodPath.elements(), tb.method());
-                }
-                case TableMethodDirectiveResolver.Resolved.NonTableBound nb -> {
-                    String reason = checkDeclaredCheckedExceptions(nb.method(), Optional.empty());
-                    yield reason != null
-                        ? new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(reason))
-                        : new TableMethodField(parentTypeName, name, location, nb.returnType(), tableMethodPath.elements(), nb.method());
-                }
+                case TableMethodDirectiveResolver.Resolved.TableBound tb ->
+                    buildMethodBackedWithChannel(tb.returnType(), tb.method(),
+                        parentTypeName, name, location, fieldDef,
+                        ch -> new TableMethodField(parentTypeName, name, location, tb.returnType(), tableMethodPath.elements(), tb.method(), ch));
+                case TableMethodDirectiveResolver.Resolved.NonTableBound nb ->
+                    buildMethodBackedWithChannel(nb.returnType(), nb.method(),
+                        parentTypeName, name, location, fieldDef,
+                        ch -> new TableMethodField(parentTypeName, name, location, nb.returnType(), tableMethodPath.elements(), nb.method(), ch));
             };
         }
 

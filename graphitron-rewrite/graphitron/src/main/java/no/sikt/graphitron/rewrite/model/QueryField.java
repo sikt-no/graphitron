@@ -70,8 +70,9 @@ public sealed interface QueryField extends RootField
         String name,
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
-        MethodRef method
-    ) implements QueryField, MethodBackedField {}
+        MethodRef method,
+        Optional<ErrorChannel> errorChannel
+    ) implements QueryField, MethodBackedField, WithErrorChannel {}
 
     record QueryNodeField(
         String parentTypeName,

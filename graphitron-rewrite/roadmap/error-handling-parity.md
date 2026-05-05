@@ -366,19 +366,26 @@ All five bullets below are R12 scope. The first three form a dependency chain
 
 *Independent:*
 
-- **Lift `errorChannel` onto child `@service` and `@tableMethod` variants.**
-  *Not gated; surfaces today.* `ServiceTableField` / `ServiceRecordField`
-  (child `@service`) and `TableMethodField` / `QueryTableMethodTableField`
-  (root + child `@tableMethod`) don't carry an `errorChannel` slot, so
-  `FieldBuilder.checkDeclaredCheckedExceptions` runs with `Optional.empty()`
-  channel at six of its eight call sites and blanket-rejects any non-exempt
-  declared checked exception on those variants. Until the lift lands, schema
-  authors of those fields must keep service method signatures clean of
-  non-exempt checked exceptions, which is friction the §4 design already
-  contemplates as temporary. The lift is also the natural collapse of those
-  six `Optional.empty()` literals into a single `MethodBackedField`-capability
-  validation pass (the same shape `MappingsConstantNameDedup` already runs as
-  a cross-field post-classify pass).
+- **Lift `errorChannel` onto child `@service` and `@tableMethod` variants:
+  landed.** `ChildField.ServiceTableField` / `ChildField.ServiceRecordField`
+  (child `@service`) and `ChildField.TableMethodField` /
+  `QueryField.QueryTableMethodTableField` (root + child `@tableMethod`) all
+  carry an `Optional<ErrorChannel>` slot and implement `WithErrorChannel`.
+  The six former `Optional.empty()` literals at the construction sites collapse
+  into one `FieldBuilder.buildMethodBackedWithChannel` helper that resolves
+  the channel via `resolveErrorChannel`, runs the §4 declared-checked-exception
+  match check against the resolved channel, and forwards the channel to the
+  variant constructor. The shared sync-wrapper (`buildQueryTableMethodFetcher`)
+  and the shared async-tail (`asyncWrapTail` on the child-`@service`
+  DataLoader path) consume the slot directly, so any thrown exception that
+  matches a handler on a populated channel routes through `ErrorRouter.dispatch`
+  instead of `ErrorRouter.redact`. `MappingsConstantNameDedup.withResolvedChannel`
+  gains arms for the four new variants so the cross-field hash-suffix dedup
+  rewrites their channels in place. Channel resolution is `NoChannel` for
+  table-bound returns (the only present case for `@tableMethod` and child
+  `@service` table-bound), so the lift is observable today on
+  `ServiceRecordField` payload returns; the table-bound variants get the
+  uniform shape so the §4 check is no longer blanket-rejecting.
 
 - **Test fixture updates for source-direct dispatch.** *Not gated.*
   `SakPayload` and `DeleteFilmPayload` errors slots become `List<Object>`
