@@ -1,0 +1,43 @@
+= Why jOOQ and GraphQL-Java
+:description: Two foundational dependencies shape how Graphitron-generated code looks, what you can extend, and how you debug it.
+:!toc:
+
+Graphitron sits on top of two libraries that you'll feel constantly while working with it: jOOQ for typed SQL, and GraphQL-Java for query execution. Neither is incidental; both shape what the generated code looks like and where you go when you need to extend it.
+
+== jOOQ is where you work
+
+Graphitron generates types, fetchers, and join paths against jOOQ's catalog of typed table classes. When you need custom logic (a filter predicate, a computed column, a join the schema can't express), you write it as a jOOQ method, and Graphitron's directives point at it.
+
+jOOQ has been actively maintained since 2009, stays close to SQL rather than hiding it, and produces code that reads like the SQL you'd write by hand. That last property matters: when something is wrong with a generated query, you can read the jOOQ DSL chain that built it and the SQL it emitted, side by side, without a translation layer in between.
+
+* *Custom conditions* (xref:../how-to/add-custom-conditions.adoc[How-to: Add custom conditions]) are jOOQ `Condition` methods you author and `@condition` directives you attach.
+* *Computed fields* (xref:../how-to/computed-fields.adoc[How-to: Computed fields]) are jOOQ `Field<T>` methods bound via xref:../reference/directives/externalField.adoc[`@externalField`].
+* *Service-backed mutations* (xref:../how-to/handle-services.adoc[How-to: Services]) accept and return jOOQ `Record` types when the row needs to round-trip through the database.
+
+The cost is that jOOQ is the second framework you need fluency in. Reading generated code, debugging, and extending all assume jOOQ literacy. xref:../../dependencies.adoc[Dependencies] covers licensing (the open-source edition supports many engines; commercial databases require a commercial jOOQ licence).
+
+== GraphQL-Java is under the hood
+
+GraphQL-Java is the reference Java implementation of GraphQL. It parses your schema, plans queries, and provides the `DataFetcher` and `TypeResolver` interfaces Graphitron implements. You will rarely write GraphQL-Java code directly; the integration runs through xref:../reference/runtime-api.adoc[`Graphitron.buildSchema(...)`], which hands you a wired `GraphQLSchema` ready to drop into a `GraphQL` engine.
+
+Where GraphQL-Java surfaces in your work:
+
+* The xref:../how-to/custom-scalars.adoc[custom-scalar registration recipe] uses GraphQL-Java's `GraphQLScalarType` because that is the type the engine wants.
+* The per-request context xref:../reference/runtime-api.adoc[`GraphitronContext`] is what your application implements to carry the `DSLContext`, the tenant principal, and any context arguments down to data fetchers.
+* xref:../how-to/apollo-federation.adoc[Apollo Federation] support is wired through GraphQL-Java's Federation utilities; Graphitron generates the `_entities` dispatch and the `@key` resolution against them.
+
+The cost is much lower than for jOOQ: most consumers can ignore GraphQL-Java's API entirely and just call `Graphitron.buildSchema(...)`. Where it matters (custom scalars, federation, request-scoped context), the recipes name what to import and what to wire.
+
+== What the choice constrains
+
+Database-first (xref:why-database-first.adoc[Why database-first]) plus jOOQ plus GraphQL-Java together pin the shape of the generated output: typed against the catalog, executed against a `DSLContext`, served by a `DataFetcher` registered against `graphql-java`'s schema. That triple is rigid by design. The benefit is that the generated code is mechanical and readable; you can drop into any layer (the catalog, a custom condition, the per-request context, the GraphQL engine) without crossing a magic boundary.
+
+The triple also means Graphitron is *not* a good fit when the application backing isn't relational, when the data access layer must be something other than jOOQ, or when the GraphQL engine of choice isn't graphql-java.
+
+== See also
+
+* xref:../../dependencies.adoc[Dependencies] expands on the licensing and version policy.
+* xref:why-database-first.adoc[Why database-first] explains the architectural stance the dependency choice supports.
+* xref:how-it-works.adoc[How it works] traces the pipeline from your schema to the generated `DataFetcher` calling into jOOQ.
+
+xref:index.adoc[← Explanation index]
