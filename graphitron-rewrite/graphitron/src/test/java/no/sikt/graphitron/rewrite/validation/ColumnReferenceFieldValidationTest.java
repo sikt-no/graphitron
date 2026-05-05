@@ -26,13 +26,13 @@ class ColumnReferenceFieldValidationTest {
 
         RESOLVED_IMPLICIT("no @field — column name defaults to the GraphQL field name; path resolved via FK (stubbed)",
             new ColumnReferenceField("Film", "languageName", null, "languageName", new ColumnRef("NAME", "", ""),
-                List.of(TestFixtures.fkJoin("film_language_id_fkey", null, null, List.of(), TestFixtures.joinTarget("language"), List.of(), null, "")),
+                List.of(TestFixtures.fkJoin(TestFixtures.foreignKeyRef("film_language_id_fkey"), null, List.of(), TestFixtures.joinTarget("language"), List.of(), null, "")),
                 new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct()),
             List.of(stubbedError("Film.languageName", ColumnReferenceField.class))),
 
         RESOLVED_EXPLICIT("@field(name:) overrides the column name; path resolved via FK (stubbed)",
             new ColumnReferenceField("Film", "languageName", null, "language_name", new ColumnRef("NAME", "", ""),
-                List.of(TestFixtures.fkJoin("film_language_id_fkey", null, null, List.of(), TestFixtures.joinTarget("language"), List.of(), null, "")),
+                List.of(TestFixtures.fkJoin(TestFixtures.foreignKeyRef("film_language_id_fkey"), null, List.of(), TestFixtures.joinTarget("language"), List.of(), null, "")),
                 new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct()),
             List.of(stubbedError("Film.languageName", ColumnReferenceField.class))),
 

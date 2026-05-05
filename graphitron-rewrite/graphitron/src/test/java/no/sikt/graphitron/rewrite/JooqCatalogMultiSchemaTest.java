@@ -11,9 +11,10 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R78 phase 2a coverage for {@link JooqCatalog}'s strict-resolution multi-schema API:
+ * R78 phase 2a coverage for {@link JooqCatalog}'s strict-resolution multi-schema API,
+ * lifted by R81 onto the {@link JooqCatalog.TableResolution} sealed sub-taxonomy:
  * {@link JooqCatalog#parseQualifiedTableName}, {@link JooqCatalog#findTable(String)},
- * {@link JooqCatalog#findTable(String, String)}, {@link JooqCatalog#findCandidateSchemasFor},
+ * {@link JooqCatalog#findTable(String, String)},
  * and {@link JooqCatalog.TableEntry}'s typed accessors ({@code tableClass},
  * {@code recordClass}, {@code constantsClass}, {@code pkColumnRefs}).
  *
@@ -78,64 +79,81 @@ class JooqCatalogMultiSchemaTest {
         assertThat(JooqCatalog.parseQualifiedTableName(null)).isEmpty();
     }
 
-    // ---- findTable(String) — unqualified, unique table ----
+    // ---- findTable(String) — sealed TableResolution ----
+
+    private static JooqCatalog.TableEntry resolved(JooqCatalog.TableResolution r) {
+        return ((JooqCatalog.TableResolution.Resolved) r).entry();
+    }
 
     @Test
-    void findTable_unqualifiedUnique_resolvesToSingleSchema() {
+    void findTable_unqualifiedUnique_isResolved() {
         var found = multi().findTable("widget");
-        assertThat(found).isPresent();
-        assertThat(found.get().table().getSchema().getName()).isEqualTo("multischema_a");
-        assertThat(found.get().table().getName()).isEqualTo("widget");
+        assertThat(found).isInstanceOf(JooqCatalog.TableResolution.Resolved.class);
+        var entry = resolved(found);
+        assertThat(entry.table().getSchema().getName()).isEqualTo("multischema_a");
+        assertThat(entry.table().getName()).isEqualTo("widget");
     }
 
     @Test
     void findTable_unqualifiedUnique_caseInsensitive() {
-        assertThat(multi().findTable("WIDGET")).isPresent();
-        assertThat(multi().findTable("Widget")).isPresent();
+        assertThat(multi().findTable("WIDGET"))
+            .isInstanceOf(JooqCatalog.TableResolution.Resolved.class);
+        assertThat(multi().findTable("Widget"))
+            .isInstanceOf(JooqCatalog.TableResolution.Resolved.class);
     }
-
-    // ---- findTable(String) — unqualified, ambiguous ----
 
     @Test
-    void findTable_unqualifiedAmbiguous_returnsEmpty() {
-        // 'event' is defined in both multischema_a and multischema_b.
-        // Strict resolution requires qualification — no first-schema-wins fallback.
-        assertThat(multi().findTable("event")).isEmpty();
+    void findTable_unqualifiedAmbiguous_isAmbiguousNamingBothSchemas() {
+        // 'event' is defined in both multischema_a and multischema_b — the spec's
+        // central R81 case: callers see Ambiguous(["multischema_a", "multischema_b"]) so the
+        // diagnostic builder can suggest qualified forms inline.
+        var result = multi().findTable("event");
+        assertThat(result).isInstanceOf(JooqCatalog.TableResolution.Ambiguous.class);
+        assertThat(((JooqCatalog.TableResolution.Ambiguous) result).schemas())
+            .containsExactlyInAnyOrder("multischema_a", "multischema_b");
     }
 
-    // ---- findTable(String) — qualified ----
+    @Test
+    void findTable_unqualifiedMissing_isNotInCatalog() {
+        assertThat(multi().findTable("nonexistent_table"))
+            .isInstanceOf(JooqCatalog.TableResolution.NotInCatalog.class);
+    }
 
     @Test
     void findTable_qualified_resolvesToNamedSchema() {
         var aEvent = multi().findTable("multischema_a.event");
         var bEvent = multi().findTable("multischema_b.event");
-        assertThat(aEvent).isPresent();
-        assertThat(bEvent).isPresent();
-        assertThat(aEvent.get().table().getSchema().getName()).isEqualTo("multischema_a");
-        assertThat(bEvent.get().table().getSchema().getName()).isEqualTo("multischema_b");
+        assertThat(aEvent).isInstanceOf(JooqCatalog.TableResolution.Resolved.class);
+        assertThat(bEvent).isInstanceOf(JooqCatalog.TableResolution.Resolved.class);
+        assertThat(resolved(aEvent).table().getSchema().getName()).isEqualTo("multischema_a");
+        assertThat(resolved(bEvent).table().getSchema().getName()).isEqualTo("multischema_b");
         // The two qualified resolutions yield distinct tables.
-        assertThat(aEvent.get().table().getRecordType())
-            .isNotEqualTo(bEvent.get().table().getRecordType());
+        assertThat(resolved(aEvent).table().getRecordType())
+            .isNotEqualTo(resolved(bEvent).table().getRecordType());
     }
 
     @Test
-    void findTable_qualifiedSchemaUnknown_returnsEmpty() {
-        assertThat(multi().findTable("nonexistent.widget")).isEmpty();
+    void findTable_qualifiedSchemaUnknown_isNotInCatalog() {
+        assertThat(multi().findTable("nonexistent.widget"))
+            .isInstanceOf(JooqCatalog.TableResolution.NotInCatalog.class);
     }
 
     @Test
-    void findTable_qualifiedTableMissingFromSchema_returnsEmpty() {
+    void findTable_qualifiedTableMissingFromSchema_isNotInCatalog() {
         // 'gadget' lives in multischema_b only.
-        assertThat(multi().findTable("multischema_a.gadget")).isEmpty();
+        assertThat(multi().findTable("multischema_a.gadget"))
+            .isInstanceOf(JooqCatalog.TableResolution.NotInCatalog.class);
     }
 
     @Test
     void findTable_qualifiedCaseInsensitiveBothHalves() {
-        assertThat(multi().findTable("MULTISCHEMA_A.WIDGET")).isPresent();
-        assertThat(multi().findTable("MultiSchema_B.Event")).isPresent();
+        assertThat(multi().findTable("MULTISCHEMA_A.WIDGET"))
+            .isInstanceOf(JooqCatalog.TableResolution.Resolved.class);
+        assertThat(multi().findTable("MultiSchema_B.Event"))
+            .isInstanceOf(JooqCatalog.TableResolution.Resolved.class);
     }
 
-    // ---- findTable(schema, table) — two-arg ----
+    // ---- findTable(schema, table) — two-arg, still Optional<TableEntry> ----
 
     @Test
     void findTable_twoArg_scopesToNamedSchemaDirectly() {
@@ -155,30 +173,21 @@ class JooqCatalogMultiSchemaTest {
         assertThat(multi().findTable("multischema_a", "gadget")).isEmpty();
     }
 
-    // ---- findCandidateSchemasFor ----
+    // ---- TableResolution.asEntry() projection ----
 
     @Test
-    void findCandidateSchemasFor_unique_returnsSingleton() {
-        assertThat(multi().findCandidateSchemasFor("widget"))
-            .containsExactly("multischema_a");
+    void asEntry_resolvedProjectsToOptionalOfEntry() {
+        assertThat(multi().findTable("widget").asEntry()).isPresent();
     }
 
     @Test
-    void findCandidateSchemasFor_ambiguous_returnsBothSchemas() {
-        assertThat(multi().findCandidateSchemasFor("event"))
-            .containsExactlyInAnyOrder("multischema_a", "multischema_b");
+    void asEntry_ambiguousProjectsToEmpty() {
+        assertThat(multi().findTable("event").asEntry()).isEmpty();
     }
 
     @Test
-    void findCandidateSchemasFor_unknown_returnsEmpty() {
-        assertThat(multi().findCandidateSchemasFor("nonexistent")).isEmpty();
-    }
-
-    @Test
-    void findCandidateSchemasFor_caseInsensitive() {
-        assertThat(multi().findCandidateSchemasFor("WIDGET")).containsExactly("multischema_a");
-        assertThat(multi().findCandidateSchemasFor("EVENT"))
-            .containsExactlyInAnyOrder("multischema_a", "multischema_b");
+    void asEntry_notInCatalogProjectsToEmpty() {
+        assertThat(multi().findTable("nonexistent").asEntry()).isEmpty();
     }
 
     // ---- TableEntry typed accessors ----
@@ -257,19 +266,33 @@ class JooqCatalogMultiSchemaTest {
         // with jooqPackage = root would compile to the non-existent root.Keys (no Keys
         // class in the root package under multi-schema codegen). The typed lookup picks
         // the FK-holder schema's Keys class.
-        var ref = multi().findForeignKeyByName("gadget_widget_id_fkey");
-        assertThat(ref).isPresent();
-        assertThat(ref.get().keysClass()).isEqualTo(ClassName.get(
+        var resolution = multi().findForeignKeyByName("gadget_widget_id_fkey");
+        assertThat(resolution).isInstanceOf(JooqCatalog.ForeignKeyResolution.Resolved.class);
+        var ref = ((JooqCatalog.ForeignKeyResolution.Resolved) resolution).ref();
+        assertThat(ref.keysClass()).isEqualTo(ClassName.get(
             "no.sikt.graphitron.rewrite.multischemafixture.multischema_b", "Keys"));
-        assertThat(ref.get().sqlName()).isEqualToIgnoringCase("gadget_widget_id_fkey");
+        assertThat(ref.sqlName()).isEqualToIgnoringCase("gadget_widget_id_fkey");
         // Stock JavaGenerator names the constant <TABLE>__<FK_NAME> (uppercased), not FK_<...>;
         // pin the upper-cased SQL constraint name as the suffix to avoid coupling to the table prefix.
-        assertThat(ref.get().constantName()).endsWith("GADGET_WIDGET_ID_FKEY");
+        assertThat(ref.constantName()).endsWith("GADGET_WIDGET_ID_FKEY");
     }
 
     @Test
-    void findForeignKeyByName_unknownConstraintReturnsEmpty() {
-        assertThat(multi().findForeignKeyByName("not_a_fk")).isEmpty();
+    void findForeignKeyByName_unknownConstraint_isNotInCatalog() {
+        assertThat(multi().findForeignKeyByName("not_a_fk"))
+            .isInstanceOf(JooqCatalog.ForeignKeyResolution.NotInCatalog.class);
+    }
+
+    @Test
+    void foreignKeyResolution_asRef_projectsResolvedToOptional() {
+        var resolved = multi().findForeignKeyByName("gadget_widget_id_fkey");
+        assertThat(resolved.asRef()).isPresent();
+    }
+
+    @Test
+    void foreignKeyResolution_asRef_projectsNotInCatalogToEmpty() {
+        var missing = multi().findForeignKeyByName("not_a_fk");
+        assertThat(missing.asRef()).isEmpty();
     }
 
     // ---- BuildContext.unknownTableRejection: ambiguity-aware rejection wrap ----
@@ -304,11 +327,117 @@ class JooqCatalogMultiSchemaTest {
     @Test
     void unknownTableRejection_qualifiedMiss_fallsThroughToUnknownTable() {
         var ctx = new BuildContext(null, multi(), null);
-        // Qualified name where the schema is unknown; never matches findCandidateSchemasFor
-        // (which compares against bare table names), so the ambiguity branch is skipped.
+        // Qualified name where the schema is unknown; the qualified form parses to a two-arg
+        // findTable miss, so the ambiguity branch is skipped (qualified lookups never produce
+        // Ambiguous by construction).
         var rejection = ctx.unknownTableRejection("nonexistent.widget");
         assertThat(rejection).isInstanceOf(no.sikt.graphitron.rewrite.model.Rejection.AuthorError.UnknownName.class);
         assertThat(rejection.message())
             .startsWith("table 'nonexistent.widget' could not be resolved in the jOOQ catalog");
+    }
+
+    // ---- BuildContext.unknownForeignKeyRejection: FK-name miss diagnostic ----
+
+    @Test
+    void unknownForeignKeyRejection_namesMissingFkAndCarriesFkAttemptKind() {
+        var ctx = new BuildContext(null, multi(), null);
+        var rejection = ctx.unknownForeignKeyRejection("not_a_fk");
+        // UnknownName variant routes Levenshtein candidates over the catalog's FK names; the
+        // attempt kind tags the rejection so LSP fix-its can scope candidate sets.
+        assertThat(rejection).isInstanceOf(no.sikt.graphitron.rewrite.model.Rejection.AuthorError.UnknownName.class);
+        assertThat(((no.sikt.graphitron.rewrite.model.Rejection.AuthorError.UnknownName) rejection).attemptKind())
+            .isEqualTo(no.sikt.graphitron.rewrite.model.Rejection.AttemptKind.FOREIGN_KEY);
+        assertThat(rejection.message())
+            .startsWith("foreign key 'not_a_fk' could not be resolved in the jOOQ catalog");
+    }
+
+    // ---- Catalog-construction precondition ----
+
+    @Test
+    void verifyTablesClassPresent_missingPackageThrowsWithSchemaName() {
+        // The static helper is the unit-testable shape of the precondition the constructor
+        // applies to every schema in the live jOOQ catalog. A real catalog with a missing
+        // Tables class is hard to forge without bespoke codegen, so the helper takes the
+        // (schemaName, packageName) pair the constructor would extract.
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                () -> JooqCatalog.verifyTablesClassPresent("synthetic_schema", "no.such.package"))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("synthetic_schema")
+            .hasMessageContaining("<tables>true</tables>")
+            .hasMessageContaining("no.such.package.Tables");
+    }
+
+    @Test
+    void verifyTablesClassPresent_existingPackageAcceptsSilently() {
+        // Real fixture package: this should not throw.
+        JooqCatalog.verifyTablesClassPresent("multischema_a",
+            "no.sikt.graphitron.rewrite.multischemafixture.multischema_a");
+    }
+
+    @Test
+    void constructor_realCatalogWithAllTablesClassesSucceeds() {
+        // Sanity check: the multischema fixture has Tables in every schema, so the constructor's
+        // precondition pass over schemaStream() does not throw.
+        new JooqCatalog(MULTI_PACKAGE);
+    }
+
+    // ---- synthesizeFkJoin: FkJoinResolution sub-taxonomy ----
+
+    @Test
+    void synthesizeFkJoin_resolvedHappyPath() {
+        var ctx = new BuildContext(null, multi(), null);
+        var fk = multi().findForeignKey("gadget_widget_id_fkey").orElseThrow();
+        var result = ctx.synthesizeFkJoin(fk, "gadget", "fieldName", 0, null, /*selfRefFkOnSource=*/false);
+        assertThat(result).isInstanceOf(BuildContext.FkJoinResolution.Resolved.class);
+        var resolved = ((BuildContext.FkJoinResolution.Resolved) result).fkJoin();
+        assertThat(resolved.fk().sqlName()).isEqualToIgnoringCase("gadget_widget_id_fkey");
+        // Non-null fk is enforced by the FkJoin canonical constructor; existence of the
+        // Resolved variant proves the type-encoded guarantee here.
+        assertThat(resolved.fk()).isNotNull();
+    }
+
+    @Test
+    void synthesizeFkJoin_unknownEndpointTableSurfacesUnknownTable() {
+        // Force the source-side endpoint to a fabricated name. The FK still resolves, but the
+        // origin findTable call hits NotInCatalog, so synthesizeFkJoin propagates UnknownTable
+        // carrying the failing TableResolution variant.
+        var ctx = new BuildContext(null, multi(), null);
+        var fk = multi().findForeignKey("gadget_widget_id_fkey").orElseThrow();
+        var result = ctx.synthesizeFkJoin(fk, "fabricated_source", "fieldName", 0, null, /*selfRefFkOnSource=*/false);
+        assertThat(result).isInstanceOf(BuildContext.FkJoinResolution.UnknownTable.class);
+        var u = (BuildContext.FkJoinResolution.UnknownTable) result;
+        // Either endpoint can fail first; the requested name on the carry slot is the one
+        // synthesizeFkJoin tried to look up and could not resolve.
+        assertThat(u.failure()).isInstanceOf(JooqCatalog.TableResolution.NotInCatalog.class);
+    }
+
+    @Test
+    void fkJoinResolution_unknownForeignKey_carriesFkNameAndProjectsToEmpty() {
+        // The {@link BuildContext.FkJoinResolution.UnknownForeignKey} arm covers the structural
+        // case where {@code findForeignKeyByName} returns {@code NotInCatalog} despite the input
+        // {@link org.jooq.ForeignKey} being non-null — defensive against catalog-vs-FK mismatch.
+        // Current production callers (parsePath / parsePathElement / NodeIdLeafResolver / the
+        // IdReference shim) all pre-resolve the FK via {@link JooqCatalog#findForeignKey}, so the
+        // arm is unreachable from the existing call graph; the taxonomy still expresses the
+        // structural completeness so future call sites must handle the shape.
+        var resolution = new BuildContext.FkJoinResolution.UnknownForeignKey("fabricated_fk");
+        assertThat(resolution.fkName()).isEqualTo("fabricated_fk");
+        assertThat(resolution.asFkJoin()).isEmpty();
+    }
+
+    @Test
+    void fkJoinResolution_resolved_projectsToOptionalOfFkJoin() {
+        var ctx = new BuildContext(null, multi(), null);
+        var fk = multi().findForeignKey("gadget_widget_id_fkey").orElseThrow();
+        var result = ctx.synthesizeFkJoin(fk, "gadget", "fieldName", 0, null, /*selfRefFkOnSource=*/false);
+        assertThat(result.asFkJoin()).isPresent();
+    }
+
+    @Test
+    void fkJoinResolution_unknownTable_projectsToEmpty() {
+        var ctx = new BuildContext(null, multi(), null);
+        var fk = multi().findForeignKey("gadget_widget_id_fkey").orElseThrow();
+        var result = ctx.synthesizeFkJoin(fk, "fabricated_source", "fieldName", 0, null, /*selfRefFkOnSource=*/false);
+        assertThat(result.asFkJoin()).isEmpty();
     }
 }

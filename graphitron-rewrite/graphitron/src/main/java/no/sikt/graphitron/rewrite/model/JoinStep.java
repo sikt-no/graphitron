@@ -128,11 +128,13 @@ public sealed interface JoinStep permits JoinStep.FkJoin, JoinStep.ConditionJoin
      * it is an INNER or LEFT JOIN depends on the surrounding query structure (see the interface-level
      * cardinality invariant). All fields are pre-resolved at build time from the jOOQ catalog.
      *
-     * <p>{@code fkName} is the SQL constraint name (e.g. {@code "film_language_id_fkey"}), retained
-     * for error messages and debugging. {@code fk} is the resolved {@link ForeignKeyRef} carrying
-     * the schema-correct {@code Keys} class plus the Java constant name; it is {@code null} when
-     * the jOOQ catalog is not available (unit tests). Emitters consume it as
-     * {@code .onKey($T.$L)} with {@code fk.keysClass()} / {@code fk.constantName()}.
+     * <p>{@code fk} is the resolved {@link ForeignKeyRef} carrying the SQL constraint name, the
+     * schema-correct {@code Keys} class, and the Java constant name. Non-null by the type system:
+     * the {@link no.sikt.graphitron.rewrite.BuildContext#synthesizeFkJoin} resolver routes a
+     * catalog-miss on the FK name into a {@code FkJoinResolution.UnknownForeignKey} arm rather
+     * than producing an {@code FkJoin} with a null FK. Emitters consume it as
+     * {@code .onKey($T.$L)} with {@code fk.keysClass()} / {@code fk.constantName()}; readers that
+     * need the SQL constraint name use {@code fk.sqlName()}.
      *
      * <p>{@code slots} carries the FK pairing as a list of {@link JoinSlot.FkSlot}, oriented at
      * synthesis time: each slot's {@link JoinSlot#sourceSide()} is the column on the hop's source
@@ -165,7 +167,6 @@ public sealed interface JoinStep permits JoinStep.FkJoin, JoinStep.ConditionJoin
      * {@code null} when no {@code condition} argument was specified alongside the key.
      */
     record FkJoin(
-        String fkName,
         ForeignKeyRef fk,
         TableRef originTable,
         TableRef targetTable,
@@ -175,6 +176,11 @@ public sealed interface JoinStep permits JoinStep.FkJoin, JoinStep.ConditionJoin
     ) implements JoinStep, WithTarget {
 
         public FkJoin {
+            if (fk == null) {
+                throw new NullPointerException(
+                    "FkJoin.fk must not be null; resolution failures route through"
+                    + " BuildContext.synthesizeFkJoin's FkJoinResolution sub-taxonomy.");
+            }
             slots = List.copyOf(slots);
         }
 

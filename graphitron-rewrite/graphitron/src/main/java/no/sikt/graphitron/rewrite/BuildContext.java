@@ -428,39 +428,62 @@ class BuildContext {
      * see a partial ref.
      */
     Optional<TableRef> resolveTable(String sqlName) {
-        return catalog.findTable(sqlName).flatMap(e -> e.toTableRef(sqlName));
+        return catalog.findTable(sqlName).asEntry().map(e -> e.toTableRef(sqlName));
     }
 
     /**
-     * Builds the {@link Rejection} to attach to an {@code UnclassifiedType} / {@code UnclassifiedField}
-     * when {@link #resolveTable(String)} returned empty. Branches on the failure mode the catalog
-     * actually saw, since the three resolution failures (missing entirely, ambiguous unqualified
-     * name, qualified miss) want different prose:
+     * Builds the {@link Rejection} to attach to an {@code UnclassifiedType} /
+     * {@code UnclassifiedField} when a table-name lookup did not produce a {@code Resolved}
+     * variant. Switches over the {@link JooqCatalog.TableResolution} sub-taxonomy directly:
      *
      * <ul>
-     *   <li>If the (unqualified) name lives in two or more schemas, the user typed something
-     *       legitimate but we cannot pick a winner without more information; emit a structural
-     *       ambiguity rejection that names the colliding schemas and suggests qualified forms.</li>
-     *   <li>Otherwise, fall through to the generic "could not be resolved" rejection with the
-     *       Levenshtein-ranked candidate hint over every table in the catalog. Covers genuinely
-     *       missing names, qualified misses (the qualified form never matches
-     *       {@code findCandidateSchemasFor}, which compares against bare table names), and the
-     *       degenerate single-schema-with-no-{@code Tables}-class case.</li>
+     *   <li>{@link JooqCatalog.TableResolution.Ambiguous} → structural rejection that names the
+     *       colliding schemas and suggests qualified forms (the user typed something legitimate
+     *       but we cannot pick a winner without more information).</li>
+     *   <li>{@link JooqCatalog.TableResolution.NotInCatalog} → {@link Rejection#unknownTable}
+     *       rejection with the Levenshtein-ranked candidate hint over every table in the catalog.
+     *       Covers genuinely missing names and qualified misses (the qualified form never matches
+     *       any schema's bare-name candidate set).</li>
      * </ul>
+     *
+     * <p>The string-arg overload looks the table up itself; the variant-arg overload is wired
+     * directly from rejection sites that already hold a {@link JooqCatalog.TableResolution}
+     * result so they avoid a redundant catalog query.
      */
     Rejection unknownTableRejection(String sqlName) {
-        List<String> schemas = catalog.findCandidateSchemasFor(sqlName);
-        if (schemas.size() >= 2) {
-            String qualifiedHints = schemas.stream()
-                .map(s -> "'" + s + "." + sqlName + "'")
-                .collect(Collectors.joining(", "));
-            return Rejection.structural(
-                "@table(name: '" + sqlName + "') is ambiguous: defined in schemas " + schemas
-                    + "; qualify as " + qualifiedHints);
-        }
-        return Rejection.unknownTable(
-            "table '" + sqlName + "' could not be resolved in the jOOQ catalog",
-            sqlName, catalog.allTableSqlNames());
+        return unknownTableRejection(catalog.findTable(sqlName), sqlName);
+    }
+
+    Rejection unknownTableRejection(JooqCatalog.TableResolution failure, String sqlName) {
+        return switch (failure) {
+            case JooqCatalog.TableResolution.Resolved r -> throw new IllegalArgumentException(
+                "unknownTableRejection called for resolved table '" + sqlName + "'");
+            case JooqCatalog.TableResolution.NotInCatalog n -> Rejection.unknownTable(
+                "table '" + sqlName + "' could not be resolved in the jOOQ catalog",
+                sqlName, catalog.allTableSqlNames());
+            case JooqCatalog.TableResolution.Ambiguous a -> {
+                String qualifiedHints = a.schemas().stream()
+                    .map(s -> "'" + s + "." + sqlName + "'")
+                    .collect(Collectors.joining(", "));
+                yield Rejection.structural(
+                    "@table(name: '" + sqlName + "') is ambiguous: defined in schemas " + a.schemas()
+                        + "; qualify as " + qualifiedHints);
+            }
+        };
+    }
+
+    /**
+     * Builds the {@link Rejection} for an FK-name lookup that did not produce a
+     * {@link JooqCatalog.ForeignKeyResolution.Resolved} variant. Sibling of
+     * {@link #unknownTableRejection}; surfaces a Levenshtein-ranked candidate hint over every
+     * FK constraint name in the catalog so a typo in {@code @reference(key: "...")} (or in the
+     * inferred FK name picked up by the {@code IdReference} synthesis shim) reaches the schema
+     * author with a fix-it suggestion rather than just a "not in catalog" string.
+     */
+    Rejection unknownForeignKeyRejection(String fkName) {
+        return Rejection.unknownForeignKey(
+            "foreign key '" + fkName + "' could not be resolved in the jOOQ catalog",
+            fkName, catalog.allForeignKeySqlNames());
     }
 
     /**
@@ -547,13 +570,18 @@ class BuildContext {
                 && !startSqlTableName.equalsIgnoreCase(targetSqlTableName)) {
             var fks = catalog.findForeignKeysBetweenTables(startSqlTableName, targetSqlTableName);
             if (fks.size() == 1) {
-                Optional<FkJoin> step = synthesizeFkJoin(fks.get(0), startSqlTableName, fieldName, 0, null, /*selfRefFkOnSource=*/!isList);
-                if (step.isEmpty()) {
-                    return new ParsedPath(List.of(),
-                        "FK '" + fks.get(0).getName() + "' between '" + startSqlTableName + "' and '"
-                        + targetSqlTableName + "' touches a table whose schema package is not generated");
+                var stepResolution = synthesizeFkJoin(fks.get(0), startSqlTableName, fieldName, 0, null, /*selfRefFkOnSource=*/!isList);
+                switch (stepResolution) {
+                    case FkJoinResolution.Resolved r -> resolvedElements.add(r.fkJoin());
+                    case FkJoinResolution.UnknownTable u -> {
+                        return new ParsedPath(List.of(),
+                            unknownTableRejection(u.failure(), u.requestedName()).message());
+                    }
+                    case FkJoinResolution.UnknownForeignKey uf -> {
+                        return new ParsedPath(List.of(),
+                            unknownForeignKeyRejection(uf.fkName()).message());
+                    }
                 }
-                resolvedElements.add(step.get());
             } else {
                 return new ParsedPath(List.of(),
                     fkCountMessage(startSqlTableName, targetSqlTableName, fks, /*directiveAbsent=*/true));
@@ -564,21 +592,29 @@ class BuildContext {
 
     /**
      * Builds an {@link FkJoin} step for a foreign key that connects {@code sourceSqlName} to some
-     * other table. Traversal direction is inferred from which side of the FK the source name
-     * touches (case-insensitive). The step alias follows the explicit-path convention,
-     * {@code fieldName + "_" + stepIndex}, so inferred and explicit position-0 steps produce
-     * record-equivalent {@code FkJoin} values for the same shape.
+     * other table, or surfaces the catalog-failure shape when one of the resolution inputs
+     * (endpoint table, FK constraint name) is missing. Traversal direction is inferred from which
+     * side of the FK the source name touches (case-insensitive). The step alias follows the
+     * explicit-path convention, {@code fieldName + "_" + stepIndex}, so inferred and explicit
+     * position-0 steps produce record-equivalent {@code FkJoin} values for the same shape.
      *
      * <p>{@code sourceSqlName} must be non-null; callers gate inference on that precondition.
      * {@code whereFilter} is {@code null} for pure inference; the {@code {table:}} and
      * {@code {key:}} branches in {@link #parsePathElement} may pass a resolved {@link MethodRef}
      * when the element carries a {@code condition:} sub-argument.
      *
-     * <p>Returns empty when either FK endpoint cannot be resolved through the catalog
-     * (catalog-miss on a table that the FK touches, e.g. a partial codegen state). All four
-     * call sites pre-resolve the FK via {@link JooqCatalog#findForeignKey} or
-     * {@link JooqCatalog#findForeignKeysBetweenTables}, so this is the structural
-     * "schema present, no Tables class" case handled by {@link JooqCatalog.TableEntry#toTableRef}.
+     * <p>Returns:
+     * <ul>
+     *   <li>{@link FkJoinResolution.Resolved} when both endpoint tables and the FK constraint name
+     *       resolve through the catalog;</li>
+     *   <li>{@link FkJoinResolution.UnknownTable} carrying the failing
+     *       {@link JooqCatalog.TableResolution} (always {@code NotInCatalog} or {@code Ambiguous})
+     *       when an endpoint cannot be resolved;</li>
+     *   <li>{@link FkJoinResolution.UnknownForeignKey} when the FK constraint name itself is
+     *       absent from every schema's {@code Keys} class.</li>
+     * </ul>
+     * Callers switch over this result and route each failure shape through the matching diagnostic
+     * builder ({@link #unknownTableRejection} / {@link #unknownForeignKeyRejection}).
      */
     /**
      * @param selfRefFkOnSource for self-referential FKs (where {@code f.getTable()} equals
@@ -588,7 +624,7 @@ class BuildContext {
      *     (list-cardinality traversal, e.g. {@code category.children}). Ignored for non-self-ref
      *     FKs, where the table-name comparison resolves direction.
      */
-    Optional<FkJoin> synthesizeFkJoin(ForeignKey<?, ?> f, String sourceSqlName, String fieldName,
+    FkJoinResolution synthesizeFkJoin(ForeignKey<?, ?> f, String sourceSqlName, String fieldName,
             int stepIndex, MethodRef whereFilter, boolean selfRefFkOnSource) {
         String fkSideTable  = f.getTable().getName();
         String keySideTable = f.getKey().getTable().getName();
@@ -597,12 +633,23 @@ class BuildContext {
             ? selfRefFkOnSource
             : sourceSqlName.equalsIgnoreCase(fkSideTable);
         String targetSqlName = fkOnSource ? keySideTable : fkSideTable;
-        var fkRef = catalog.findForeignKeyByName(f.getName()).orElse(null);
-        Optional<TableRef> targetTable = resolveTable(targetSqlName);
-        Optional<TableRef> originTable = resolveTable(sourceSqlName);
-        if (targetTable.isEmpty() || originTable.isEmpty()) {
-            return Optional.empty();
+
+        var fkResolution = catalog.findForeignKeyByName(f.getName());
+        if (!(fkResolution instanceof JooqCatalog.ForeignKeyResolution.Resolved fkResolved)) {
+            return new FkJoinResolution.UnknownForeignKey(f.getName());
         }
+
+        var targetResolution = catalog.findTable(targetSqlName);
+        if (!(targetResolution instanceof JooqCatalog.TableResolution.Resolved targetResolved)) {
+            return new FkJoinResolution.UnknownTable(targetSqlName, targetResolution);
+        }
+        var originResolution = catalog.findTable(sourceSqlName);
+        if (!(originResolution instanceof JooqCatalog.TableResolution.Resolved originResolved)) {
+            return new FkJoinResolution.UnknownTable(sourceSqlName, originResolution);
+        }
+
+        TableRef targetTable = targetResolved.entry().toTableRef(targetSqlName);
+        TableRef originTable = originResolved.entry().toTableRef(sourceSqlName);
         List<ColumnRef> fkSideCols  = resolveFkColumnRefs(f.getTable(), f.getFields());
         List<ColumnRef> keySideCols = resolveFkColumnRefs(f.getKey().getTable(), f.getKey().getFields());
         // Synthesis-time orientation: bake the FK-direction decision into each slot pair so
@@ -617,8 +664,43 @@ class BuildContext {
                 : new JoinSlot.FkSlot(keyCol, fkCol));
         }
         String alias = fieldName + "_" + stepIndex;
-        return Optional.of(new FkJoin(f.getName(), fkRef, originTable.get(),
-            targetTable.get(), slots, whereFilter, alias));
+        return new FkJoinResolution.Resolved(new FkJoin(fkResolved.ref(), originTable,
+            targetTable, slots, whereFilter, alias));
+    }
+
+    /**
+     * Sub-taxonomy of outcomes for {@link #synthesizeFkJoin}. Lifts the prior
+     * {@code Optional<FkJoin>} return into a typed switch over the three catalog-failure shapes
+     * an FK-join construction can hit. Diagnostic builders read the carried failure data
+     * directly: {@link UnknownTable#failure} routes through {@link #unknownTableRejection};
+     * {@link UnknownForeignKey#fkName} routes through {@link #unknownForeignKeyRejection}.
+     */
+    public sealed interface FkJoinResolution {
+        /** Both endpoint tables and the FK name resolved; the {@link FkJoin} is ready. */
+        record Resolved(FkJoin fkJoin) implements FkJoinResolution {}
+
+        /**
+         * One of the FK's endpoint tables did not resolve. {@code requestedName} is the SQL
+         * name of the failing endpoint (the one that produced a non-{@code Resolved} variant);
+         * {@code failure} carries the {@link JooqCatalog.TableResolution} so the diagnostic
+         * builder can pick {@code unknownTable} vs. {@code structural} ambiguity prose.
+         */
+        record UnknownTable(String requestedName, JooqCatalog.TableResolution failure)
+                implements FkJoinResolution {}
+
+        /**
+         * The FK constraint name itself is absent from every schema's {@code Keys} class.
+         * {@code fkName} is the SQL constraint name the caller asked for.
+         */
+        record UnknownForeignKey(String fkName) implements FkJoinResolution {}
+
+        /**
+         * Project to {@link Optional}{@code <FkJoin>} for callers that ignore the failure
+         * sub-taxonomy. Diagnostic-bearing callers must switch on the variant instead.
+         */
+        default Optional<FkJoin> asFkJoin() {
+            return this instanceof Resolved r ? Optional.of(r.fkJoin()) : Optional.empty();
+        }
     }
 
     /**
@@ -712,12 +794,14 @@ class BuildContext {
                 }
                 whereFilter = res.ref();
             }
-            Optional<FkJoin> keyStep = synthesizeFkJoin(f, effectiveSourceSqlName, fieldName, stepIndex, whereFilter, /*selfRefFkOnSource=*/!isList);
-            if (keyStep.isEmpty()) {
-                errors.add("key '" + f.getName() + "' touches a table whose schema package is not generated");
-                return;
+            var keyResolution = synthesizeFkJoin(f, effectiveSourceSqlName, fieldName, stepIndex, whereFilter, /*selfRefFkOnSource=*/!isList);
+            switch (keyResolution) {
+                case FkJoinResolution.Resolved r -> out.add(r.fkJoin());
+                case FkJoinResolution.UnknownTable u ->
+                    errors.add(unknownTableRejection(u.failure(), u.requestedName()).message());
+                case FkJoinResolution.UnknownForeignKey uf ->
+                    errors.add(unknownForeignKeyRejection(uf.fkName()).message());
             }
-            out.add(keyStep.get());
             return;
         }
         if (tableName.isPresent()) {
@@ -739,13 +823,14 @@ class BuildContext {
                 }
                 whereFilter = res.ref();
             }
-            Optional<FkJoin> tableStep = synthesizeFkJoin(fks.get(0), currentSourceSqlName, fieldName, stepIndex, whereFilter, /*selfRefFkOnSource=*/!isList);
-            if (tableStep.isEmpty()) {
-                errors.add("FK '" + fks.get(0).getName() + "' between '" + currentSourceSqlName + "' and '"
-                    + tableName.get() + "' touches a table whose schema package is not generated");
-                return;
+            var tableStepResolution = synthesizeFkJoin(fks.get(0), currentSourceSqlName, fieldName, stepIndex, whereFilter, /*selfRefFkOnSource=*/!isList);
+            switch (tableStepResolution) {
+                case FkJoinResolution.Resolved r -> out.add(r.fkJoin());
+                case FkJoinResolution.UnknownTable u ->
+                    errors.add(unknownTableRejection(u.failure(), u.requestedName()).message());
+                case FkJoinResolution.UnknownForeignKey uf ->
+                    errors.add(unknownForeignKeyRejection(uf.fkName()).message());
             }
-            out.add(tableStep.get());
             return;
         }
         if (hasCondition) {
@@ -1035,13 +1120,13 @@ class BuildContext {
                     "@nodeId(typeName:) type '" + refTypeName
                     + "' is not a node type (missing @node or KjerneJooqGenerator metadata)");
             }
-            Optional<TableRef> targetTableOpt2 = resolveTable(targetTableName);
-            if (targetTableOpt2.isEmpty()) {
+            var targetTableResolution = catalog.findTable(targetTableName);
+            if (!(targetTableResolution instanceof JooqCatalog.TableResolution.Resolved targetTableResolved)) {
                 return new InputFieldResolution.Unresolved(name, null,
                     "@nodeId(typeName: '" + refTypeName + "') targets table '" + targetTableName
-                    + "' which is not in the jOOQ catalog");
+                    + "': " + unknownTableRejection(targetTableResolution, targetTableName).message());
             }
-            TableRef targetTable = targetTableOpt2.get();
+            TableRef targetTable = targetTableResolved.entry().toTableRef(targetTableName);
             var nodeRefPath = parsePath(field, name, resolvedTable.tableName(), targetTable.tableName());
             if (nodeRefPath.hasError()) {
                 return new InputFieldResolution.Unresolved(name, null, nodeRefPath.errorMessage());
@@ -1192,17 +1277,26 @@ class BuildContext {
                     // Synthesis shim is for input-side NodeId refs; the parent (input field's
                     // backing table) holds the FK by the shim's invariant, so selfRefFkOnSource
                     // is fixed at true.
-                    Optional<FkJoin> shimFkStepOpt = synthesizeFkJoin(shimFkOpt.get(), tableName, name, 0, null, /*selfRefFkOnSource=*/true);
-                    Optional<TableRef> shimTargetTableOpt = resolveTable(targetTableOpt.get());
-                    if (shimFkStepOpt.isEmpty() || shimTargetTableOpt.isEmpty()) {
-                        return new InputFieldResolution.Unresolved(name, null,
-                            "synthesis shim target '" + targetTableOpt.get()
-                            + "' is not a fully resolved table in the jOOQ catalog");
+                    var shimFkResolution = synthesizeFkJoin(shimFkOpt.get(), tableName, name, 0, null, /*selfRefFkOnSource=*/true);
+                    var shimTargetResolution = catalog.findTable(targetTableOpt.get());
+                    if (!(shimFkResolution instanceof FkJoinResolution.Resolved shimFkResolved)) {
+                        return switch (shimFkResolution) {
+                            case FkJoinResolution.UnknownTable u -> new InputFieldResolution.Unresolved(name, null,
+                                unknownTableRejection(u.failure(), u.requestedName()).message());
+                            case FkJoinResolution.UnknownForeignKey uf -> new InputFieldResolution.Unresolved(name, null,
+                                unknownForeignKeyRejection(uf.fkName()).message());
+                            case FkJoinResolution.Resolved r -> throw new IllegalStateException("unreachable");
+                        };
                     }
-                    List<JoinStep> shimJoinPath = List.of(shimFkStepOpt.get());
+                    if (!(shimTargetResolution instanceof JooqCatalog.TableResolution.Resolved shimTargetResolved)) {
+                        return new InputFieldResolution.Unresolved(name, null,
+                            unknownTableRejection(shimTargetResolution, targetTableOpt.get()).message());
+                    }
+                    List<JoinStep> shimJoinPath = List.of(shimFkResolved.fkJoin());
                     return buildInputNodeIdReference(
                         parentTypeName, name, locationOf(field), typeName, nonNull, list,
-                        shimTargetTableOpt.get(), targetTypeOpt.get(), targetTableOpt.get(),
+                        shimTargetResolved.entry().toTableRef(targetTableOpt.get()),
+                        targetTypeOpt.get(), targetTableOpt.get(),
                         shimTargetMeta.get().typeId(), shimTargetMeta.get().keyColumns(),
                         shimJoinPath, shimRefCond);
                 }
