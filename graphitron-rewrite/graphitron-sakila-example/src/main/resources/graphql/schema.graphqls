@@ -153,6 +153,25 @@ type Query {
             method: "filmsByPath",
             argMapping: "filmIds: input.ids"
         })
+    # R84 Phase D-list: path with an intermediate list segment. The schema field
+    # `input.items` is `[FilmIdItem!]!`, so the walker streams each item and pulls its `id`,
+    # producing the List<Integer> the service signature expects.
+    filmsByListPath(input: FilmsByListPathInput!): [Film!]!
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
+            method: "filmsByListPath",
+            argMapping: "filmIds: input.items.id"
+        })
+    # R84 Phase D-list: path with two intermediate list segments. `input.groups` is
+    # [FilmIdGroup!]!, each group's `items` is [FilmIdItem!]!, each item's `id` is Int. The
+    # walker emits doubly nested streams producing List<List<Integer>>; the service flattens
+    # the groups for the actual SQL.
+    filmsByNestedListPath(input: FilmsByNestedListPathInput!): [Film!]!
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
+            method: "filmsByNestedListPath",
+            argMapping: "filmIdGroups: input.groups.items.id"
+        })
     # plan-service-root-fetchers.md: @service root fetcher with scalar return.
     filmCount: Int!
         @service(service: {
@@ -797,6 +816,28 @@ input FilmImplicitInput @table(name: "film") {
 # (List<Integer> filmIds, not the wrapper map).
 input FilmsByPathInput {
     ids: [Int!]!
+}
+
+# R84 Phase D-list: wrapper input whose nested list of items each carries the id to extract.
+# The argMapping expression `filmIds: input.items.id` emits an outer Map traversal into
+# `items`, streams each element through a Map cast, and projects `(Integer) item.id`.
+input FilmsByListPathInput {
+    items: [FilmIdItem!]!
+}
+
+input FilmIdItem {
+    id: Int!
+}
+
+# R84 Phase D-list (two-list-deep): outer list of groups, each group itself has an inner
+# list of items. The argMapping expression `filmIdGroups: input.groups.items.id` produces a
+# List<List<Integer>> via doubly nested streams.
+input FilmsByNestedListPathInput {
+    groups: [FilmIdGroup!]!
+}
+
+input FilmIdGroup {
+    items: [FilmIdItem!]!
 }
 
 # self-table-nodeid-filter.md: same-table @nodeId filter input. Each base64 ID decodes

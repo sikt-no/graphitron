@@ -2280,6 +2280,34 @@ class GraphQLQueryTest {
         assertThat(films).extracting(f -> f.get("filmId")).containsExactly(1, 2);
     }
 
+    @Test
+    @SuppressWarnings("unchecked")
+    void queryServiceTable_filmsByListPath_argMappingWalksThroughIntermediateList() {
+        // R84 Phase D-list: argMapping `filmIds: input.items.id` has an intermediate list
+        // segment (`items: [FilmIdItem!]!`). The generated fetcher must `.stream().map(...)`
+        // each item, project its `id`, and `.toList()` to produce the List<Integer> the
+        // service expects. Proves element-wise list traversal at emit time.
+        Map<String, Object> data = execute(
+            "{ filmsByListPath(input: {items: [{id: 1}, {id: 3}]}) { filmId title } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmsByListPath");
+        assertThat(films).extracting(f -> f.get("filmId")).containsExactly(1, 3);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void queryServiceTable_filmsByNestedListPath_argMappingWalksTwoIntermediateLists() {
+        // R84 Phase D-list (two-list-deep): argMapping `filmIdGroups: input.groups.items.id`
+        // streams once over `groups` and once over each group's `items`, producing a
+        // List<List<Integer>>. The service flattens before the SQL `IN (...)`.
+        Map<String, Object> data = execute(
+            "{ filmsByNestedListPath(input: {groups: ["
+            + "{items: [{id: 2}, {id: 4}]}, "
+            + "{items: [{id: 5}]}"
+            + "]}) { filmId title } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmsByNestedListPath");
+        assertThat(films).extracting(f -> f.get("filmId")).containsExactly(2, 4, 5);
+    }
+
     // ===== TableInterfaceType (Track A) =====
 
     @Test
