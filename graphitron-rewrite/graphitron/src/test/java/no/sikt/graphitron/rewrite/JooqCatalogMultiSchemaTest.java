@@ -271,4 +271,44 @@ class JooqCatalogMultiSchemaTest {
     void findForeignKeyByName_unknownConstraintReturnsEmpty() {
         assertThat(multi().findForeignKeyByName("not_a_fk")).isEmpty();
     }
+
+    // ---- BuildContext.unknownTableRejection: ambiguity-aware rejection wrap ----
+
+    @Test
+    void unknownTableRejection_unqualifiedAmbiguous_namesSchemasAndQualifiedForms() {
+        var ctx = new BuildContext(null, multi(), null);
+        var rejection = ctx.unknownTableRejection("event");
+        // Author-error structural variant: rule violation with structured prose, not a closed-set
+        // "did you mean" lookup. The candidate-hint shape doesn't fit because the user spelled
+        // the name correctly; what they need is a qualified form, not a typo correction.
+        assertThat(rejection).isInstanceOf(no.sikt.graphitron.rewrite.model.Rejection.AuthorError.Structural.class);
+        assertThat(rejection.message())
+            .contains("@table(name: 'event') is ambiguous: defined in schemas")
+            .contains("multischema_a")
+            .contains("multischema_b")
+            .contains("'multischema_a.event'")
+            .contains("'multischema_b.event'");
+    }
+
+    @Test
+    void unknownTableRejection_unqualifiedMissing_fallsThroughToUnknownTable() {
+        var ctx = new BuildContext(null, multi(), null);
+        var rejection = ctx.unknownTableRejection("nonexistent");
+        // Missing-name path: route through Rejection.unknownTable so the candidate hint
+        // surfaces a typo fix.
+        assertThat(rejection).isInstanceOf(no.sikt.graphitron.rewrite.model.Rejection.AuthorError.UnknownName.class);
+        assertThat(rejection.message())
+            .startsWith("table 'nonexistent' could not be resolved in the jOOQ catalog");
+    }
+
+    @Test
+    void unknownTableRejection_qualifiedMiss_fallsThroughToUnknownTable() {
+        var ctx = new BuildContext(null, multi(), null);
+        // Qualified name where the schema is unknown; never matches findCandidateSchemasFor
+        // (which compares against bare table names), so the ambiguity branch is skipped.
+        var rejection = ctx.unknownTableRejection("nonexistent.widget");
+        assertThat(rejection).isInstanceOf(no.sikt.graphitron.rewrite.model.Rejection.AuthorError.UnknownName.class);
+        assertThat(rejection.message())
+            .startsWith("table 'nonexistent.widget' could not be resolved in the jOOQ catalog");
+    }
 }

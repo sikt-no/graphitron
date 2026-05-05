@@ -23,6 +23,7 @@ import no.sikt.graphitron.rewrite.model.ConditionFilter;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
+import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType.InterfaceType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.NodeType;
@@ -427,6 +428,38 @@ class BuildContext {
      */
     Optional<TableRef> resolveTable(String sqlName) {
         return catalog.findTable(sqlName).flatMap(e -> e.toTableRef(sqlName));
+    }
+
+    /**
+     * Builds the {@link Rejection} to attach to an {@code UnclassifiedType} / {@code UnclassifiedField}
+     * when {@link #resolveTable(String)} returned empty. Branches on the failure mode the catalog
+     * actually saw, since the three resolution failures (missing entirely, ambiguous unqualified
+     * name, qualified miss) want different prose:
+     *
+     * <ul>
+     *   <li>If the (unqualified) name lives in two or more schemas, the user typed something
+     *       legitimate but we cannot pick a winner without more information; emit a structural
+     *       ambiguity rejection that names the colliding schemas and suggests qualified forms.</li>
+     *   <li>Otherwise, fall through to the generic "could not be resolved" rejection with the
+     *       Levenshtein-ranked candidate hint over every table in the catalog. Covers genuinely
+     *       missing names, qualified misses (the qualified form never matches
+     *       {@code findCandidateSchemasFor}, which compares against bare table names), and the
+     *       degenerate single-schema-with-no-{@code Tables}-class case.</li>
+     * </ul>
+     */
+    Rejection unknownTableRejection(String sqlName) {
+        List<String> schemas = catalog.findCandidateSchemasFor(sqlName);
+        if (schemas.size() >= 2) {
+            String qualifiedHints = schemas.stream()
+                .map(s -> "'" + s + "." + sqlName + "'")
+                .collect(Collectors.joining(", "));
+            return Rejection.structural(
+                "@table(name: '" + sqlName + "') is ambiguous: defined in schemas " + schemas
+                    + "; qualify as " + qualifiedHints);
+        }
+        return Rejection.unknownTable(
+            "table '" + sqlName + "' could not be resolved in the jOOQ catalog",
+            sqlName, catalog.allTableSqlNames());
     }
 
     /**

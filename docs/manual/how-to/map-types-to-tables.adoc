@@ -33,7 +33,9 @@ type CurrentEvent @table(name: "public.event") {           # qualified
 }
 ----
 
-When the bare table name appears in two or more schemas, an *unqualified* lookup fails the build with the standard "table '...' could not be resolved in the jOOQ catalog" rejection (the catalog returns empty rather than picking whichever schema iterated first). The candidate hint then lists every matching name in the catalog, but the fix is to qualify, not to rename. Single-schema consumers see no change; only collision sites are forced to qualify, so adding a non-default schema to a previously single-schema project only forces edits where a name actually collides.
+When the bare table name appears in two or more schemas, an *unqualified* lookup fails the build with `@table(name: 'event') is ambiguous: defined in schemas [archive, public]; qualify as 'archive.event', 'public.event'` (the catalog returns empty rather than picking whichever schema iterated first; the rejection names the colliding schemas and the qualified forms inline). The fix is to pick the right schema and qualify; the message tells you both options. Single-schema consumers see no change; only collision sites are forced to qualify, so adding a non-default schema to a previously single-schema project only forces edits where a name actually collides.
+
+A genuinely missing name (the value isn't in any schema) takes a different path: the standard `table 'X' could not be resolved in the jOOQ catalog` rejection with a Levenshtein-ranked candidate hint pointing at near matches. The two messages distinguish "this column was renamed" from "this column lives somewhere; pick which one".
 
 The same syntax applies on input types and interfaces; `@table(name: "schema.table")` is valid wherever bare `@table(name:)` was. Schema and table halves of the qualified value are both case-insensitive (consistent with the unqualified form).
 
