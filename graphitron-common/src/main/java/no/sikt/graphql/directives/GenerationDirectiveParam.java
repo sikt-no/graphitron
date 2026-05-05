@@ -41,7 +41,8 @@ public enum GenerationDirectiveParam {
     DIRECTION("direction"),
     SELECTION("selection"),
     PROCEDURE("procedure"),
-    ARGUMENTS("arguments");
+    ARGUMENTS("arguments"),
+    TARGET("target");
 
     private final String name;
 

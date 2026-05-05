@@ -231,18 +231,17 @@ class TableValidator extends AbstractSchemaValidator {
     }
 
     private void validateTableFieldsExist(JOOQMapping currentTable, Collection<ObjectField> fields) {
-        for (var field : getFieldsInTableContext(fields, currentTable)) {
+        var contextFields = getFieldsInTableContext(fields, currentTable)
+                .stream()
+                .filter(it -> !it.hasProcedureCall())
+                .filter(it -> !schema.isObject(it) || !it.hasSelectConstruct())
+                .toList();
+        for (var field : contextFields) {
             if (schema.isObject(field)) {
-                if (field.hasSelectConstruct()) {
-                    continue;
-                }
                 validateTableFieldsExist(currentTable, schema.getObject(field).getFields());
-                continue;
+            } else {
+                validateFieldExists(currentTable.getMappingName(), field);
             }
-            if (field.hasProcedureCall()) {
-                continue;
-            }
-            validateFieldExists(currentTable.getMappingName(), field);
         }
     }
 

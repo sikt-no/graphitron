@@ -1,29 +1,40 @@
 package no.sikt.graphitron.validation;
 
+import no.sikt.graphitron.definitions.fields.AbstractField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
+import no.sikt.graphitron.definitions.helpers.ProcedureCall;
+import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.mappings.RoutineReflection;
+import no.sikt.graphql.directives.GenerationDirective;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.jooq.Parameter;
 
-import java.util.LinkedHashSet;
-import java.util.List;
+import java.util.*;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.mappings.TableReflection.getJavaFieldName;
-import static no.sikt.graphitron.mappings.TableReflection.tableExists;
 import static no.sikt.graphitron.validation.ValidationHandler.addErrorMessage;
 import static no.sikt.graphitron.validation.messages.ProcedureCallError.*;
 import static no.sikt.graphql.directives.GenerationDirective.*;
-import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_MUTATION;
-import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_QUERY;
 
 /**
  * Validates usage of the {@code @experimental_procedureCall} directive.
+ * <p>
+ * The directive has two modes, distinguished by the presence of the {@code target} parameter.
+ * If it is set, the input is GraphQL arguments, else it is jOOQ columns.
  */
 class ProcedureCallValidator extends AbstractSchemaValidator {
+    private final static Map<GenerationDirective, Function<GenerationField, Boolean>> ILLEGAL_COMBINATIONS = new LinkedHashMap<>(
+            Map.of(
+                    FIELD, GenerationField::hasFieldDirective,
+                    EXTERNAL_FIELD, GenerationField::isExternalField,
+                    REFERENCE, (it) -> !it.getFieldReferences().isEmpty()
+            )
+    );
 
     ProcedureCallValidator(ProcessedSchema schema, List<ObjectField> allFields) {
         super(schema, allFields);
@@ -55,53 +66,133 @@ class ProcedureCallValidator extends AbstractSchemaValidator {
     }
 
     private void validateProcedureCallField(ObjectField field, ObjectDefinition object) {
-        checkContext(field, object);
-        rejectIllegalDirectiveCombinations(field);
+        var fieldPath = field.formatPath();
+        ILLEGAL_COMBINATIONS
+                .entrySet()
+                .stream()
+                .filter(it -> it.getValue().apply(field))
+                .forEach(it -> directiveCombinationError(fieldPath, it.getKey()));
 
         var call = field.getProcedureCall();
-        var procedureName = call.procedureName();
-        var argumentMap = call.argumentMap();
+        if (call.hasTarget()) {
+            validateTarget(field, call);
+        } else {
+            validateInline(field, object, call);
+        }
+    }
 
-        // Every mapped column must exist on the surrounding table. Requires a surrounding table to even attempt.
-        if (schema.hasTableObjectForObject(object)) {
-            var tableJavaName = schema.getPreviousTableObjectForObject(object).getTable().getMappingName();
-            if (tableExists(tableJavaName)) {
-                argumentMap
-                        .entrySet()
-                        .stream()
-                        .filter(entry -> getJavaFieldName(tableJavaName, entry.getValue()).isEmpty())
-                        .forEach(entry -> addErrorMessage(NONEXISTENT_COLUMN, field.formatPath(), entry.getKey(), entry.getValue(), tableJavaName));
-            }
+    private void validateInline(ObjectField field, ObjectDefinition object, ProcedureCall call) {
+        var fieldPath = field.formatPath();
+        if (object.isOperationRoot()) {
+            addErrorMessage(ON_ROOT_OPERATION, fieldPath, object.getName());
         }
 
-        // Routine exists and is unique.
+        if (requireTable(field, object)) {
+            checkInputs(field, call, schema.getPreviousTableObjectForObject(object).getTable().getMappingName());
+        }
+
+        if (!schema.isScalar(field.getTypeName())) {
+            addErrorMessage(ON_NON_SCALAR_FIELD_TYPE, fieldPath, field.getTypeName());
+        }
+
+        validateRoutine(fieldPath, call, field.getTypeClass(), field.getTypeName());
+    }
+
+    private void validateTarget(ObjectField field, ProcedureCall call) {
+        var targetName = call.targetField();
+
+        if (!field.createsDataFetcher() && !field.isRootField()) {
+            addErrorMessage(TARGET_MODE_REQUIRES_DATA_FETCHER, field.formatPath(), targetName);
+            return;
+        }
+
+        if (!schema.isObject(field)) {
+            addErrorMessage(TARGET_MODE_REQUIRES_OBJECT_RETURN_TYPE, field.formatPath(), targetName, field.getTypeName());
+            return;
+        }
+
+        var returnTypeObject = schema.getObject(field);
+        requireTable(field, returnTypeObject);
+
+        checkInputs(field, call, null);
+
+        var fieldPath = field.formatPath();
+        var targetField = returnTypeObject.getFieldByName(targetName);
+        var returnName = returnTypeObject.getName();
+        if (targetField == null) {
+            addErrorMessage(UNKNOWN_TARGET_FIELD, fieldPath, targetName, returnName);
+            return;
+        }
+
+        ILLEGAL_COMBINATIONS
+                .entrySet()
+                .stream()
+                .filter(it -> it.getValue().apply(targetField))
+                .forEach(it -> targetDirectiveCombinationError(fieldPath, targetName, returnName, it.getKey()));
+        if (targetField.hasProcedureCall()) {
+            targetDirectiveCombinationError(fieldPath, targetName, returnName, PROCEDURE_CALL);
+        }
+
+        if (!schema.isScalar(targetField.getTypeName())) {
+            addErrorMessage(TARGET_FIELD_NOT_SCALAR, fieldPath, targetName, returnName, targetField.getTypeName());
+        }
+
+        validateRoutine(fieldPath, call, targetField.getTypeClass(), targetField.getTypeName());
+    }
+
+    private static void checkInputs(ObjectField field, ProcedureCall call, String tableJavaName) {
+        var isTarget = call.hasTarget();
+        var message = isTarget
+                ? "no such GraphQL argument on field '" + field.getName() + "'"
+                : "no such column on table '" + tableJavaName + "'";
+        var argNames = !isTarget ? Set.of() : field
+                .getArguments()
+                .stream()
+                .map(AbstractField::getName)
+                .collect(Collectors.toSet());
+        call
+                .argumentMap()
+                .entrySet()
+                .stream()
+                .filter(entry -> isTarget ? !argNames.contains(entry.getValue()) : getJavaFieldName(tableJavaName, entry.getValue()).isEmpty())
+                .forEach(entry -> addErrorMessage(
+                        ARGUMENT_NOT_FOUND,
+                        field.formatPath(),
+                        entry.getKey(),
+                        entry.getValue(),
+                        message
+                ));
+    }
+
+    private void validateRoutine(String fieldPath, ProcedureCall call, TypeName expectedFieldType, String expectedFieldTypeName) {
+        var procedureName = call.procedureName();
+
         var matches = RoutineReflection.resolveRoutine(procedureName);
         if (matches.size() > 1) {
             var candidateSchemas = matches.stream().map(RoutineReflection::schemaFromProcedure).sorted().collect(Collectors.joining(", "));
-            addErrorMessage(AMBIGUOUS_ROUTINE, field.formatPath(), procedureName, candidateSchemas);
+            addErrorMessage(AMBIGUOUS_ROUTINE, fieldPath, procedureName, candidateSchemas);
             return;
         }
         if (matches.isEmpty()) {
-            addErrorMessage(UNKNOWN_ROUTINE, field.formatPath(), procedureName);
+            addErrorMessage(UNKNOWN_ROUTINE, fieldPath, procedureName);
             return;
         }
         var resolvedRoutineName = matches.get(0);
 
-        // Must be a function (has return value) and have no OUT params.
         var isFunction = RoutineReflection.isFunction(resolvedRoutineName);
         var outParams = RoutineReflection.getOutParameters(resolvedRoutineName);
         if (!isFunction || !outParams.isEmpty()) {
-            addErrorMessage(NOT_A_FUNCTION, field.formatPath(), procedureName);
+            addErrorMessage(NOT_A_FUNCTION, fieldPath, procedureName);
             return;
         }
 
-        // Argument map symmetry against IN parameters.
         var paramNames = RoutineReflection
                 .getInParameters(resolvedRoutineName)
                 .stream()
                 .map(Parameter::getName)
                 .collect(Collectors.toCollection(LinkedHashSet::new));
 
+        var argumentMap = call.argumentMap();
         var invalidArguments = argumentMap
                 .keySet()
                 .stream()
@@ -109,58 +200,46 @@ class ProcedureCallValidator extends AbstractSchemaValidator {
                 .toList();
         if (!invalidArguments.isEmpty()) {
             var joinedParams = String.join(", ", paramNames);
-            invalidArguments.forEach(it -> addErrorMessage(UNKNOWN_PARAMETER, field.formatPath(), it, procedureName, joinedParams));
+            invalidArguments.forEach(it -> addErrorMessage(UNKNOWN_PARAMETER, fieldPath, it, procedureName, joinedParams));
         }
         paramNames
                 .stream()
                 .filter(it -> !argumentMap.containsKey(it))
-                .forEach(it -> addErrorMessage(MISSING_PARAMETER, field.formatPath(), it, procedureName));
+                .forEach(it -> addErrorMessage(MISSING_PARAMETER, fieldPath, it, procedureName));
 
-        // Return-type compatibility with the GraphQL field type.
         var returnTypeOptional = RoutineReflection.getReturnType(resolvedRoutineName);
         if (returnTypeOptional.isEmpty()) {
             return;
         }
 
         var returnType = returnTypeOptional.get();
-        var fieldType = field.getTypeClass();
-        if (!isCompatibleReturnType(fieldType, returnType)) {
+        if (!isCompatibleReturnType(expectedFieldType, returnType)) {
             addErrorMessage(
                     RETURN_TYPE_MISMATCH,
-                    field.formatPath(),
+                    fieldPath,
                     procedureName,
                     returnType.getName(),
-                    field.getTypeName(),
-                    fieldType.toString()
+                    expectedFieldTypeName,
+                    expectedFieldType.toString()
             );
         }
     }
 
-    private void checkContext(ObjectField field, ObjectDefinition object) {
-        if (object.getName().equals(SCHEMA_QUERY.getName())) {
-            addErrorMessage(ON_ROOT_OPERATION, field.formatPath(), SCHEMA_QUERY.getName());
-        }
-        if (object.getName().equals(SCHEMA_MUTATION.getName())) {
-            addErrorMessage(ON_ROOT_OPERATION, field.formatPath(), SCHEMA_MUTATION.getName());
-        }
-        if (!schema.isScalar(field.getTypeName())) {
-            addErrorMessage(ON_NON_SCALAR_FIELD_TYPE, field.formatPath(), field.getTypeName());
-        }
-        if (!schema.hasTableObjectForObject(object)) {
-            addErrorMessage(MISSING_TABLE, field.formatPath());
-        }
+    private static void targetDirectiveCombinationError(String fieldPath, String targetName, String returnName, GenerationDirective illegal) {
+        addErrorMessage(TARGET_FIELD_HAS_ILLEGAL_DIRECTIVE, fieldPath, targetName, returnName, illegal.getName());
     }
 
-    private void rejectIllegalDirectiveCombinations(ObjectField field) {
-        if (field.hasFieldDirective()) {
-            addErrorMessage(ILLEGAL_COMBINATION, field.formatPath(), FIELD.getName());
+    private static void directiveCombinationError(String fieldPath, GenerationDirective illegal) {
+        addErrorMessage(ILLEGAL_COMBINATION, fieldPath, illegal.getName());
+    }
+
+    private boolean requireTable(ObjectField field, ObjectDefinition object) {
+        if (schema.hasTableObjectForObject(object)) {
+            return true;
         }
-        if (field.isExternalField()) {
-            addErrorMessage(ILLEGAL_COMBINATION, field.formatPath(), EXTERNAL_FIELD.getName());
-        }
-        if (!field.getFieldReferences().isEmpty()) {
-            addErrorMessage(ILLEGAL_COMBINATION, field.formatPath(), REFERENCE.getName());
-        }
+
+        addErrorMessage(MISSING_TABLE, field.formatPath());
+        return false;
     }
 
     /**
