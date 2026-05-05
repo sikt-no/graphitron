@@ -82,11 +82,12 @@ Take ownership of the existing `selection/` package (`GraphQLSelectionParser`, `
 
 The R53-era `parseArgMapping` in `ArgBindingMap` is too thin to host the path-walking logic and should be retired in favour of the rewritten `selection/` parser.
 
-## Open questions for Spec
+## Error-message extension
 
-1. **Error-message shape.** R59 sharpened `ServiceCatalog`'s parameter-mismatch messages with concrete `argMapping: "<javaParam>: <graphqlArg>"` suggestions. Extend the same machinery: when the Java parameter's type does not match any flat slot **but does** match a reachable nested path, suggest the dot-path remediation in the rejection.
-2. **Wire-through inventory.** R53 enumerated seven reflect call sites (`resolveServiceField`, two `@tableMethod` arms, `buildArgCondition`, `buildFieldCondition`, `BuildContext.resolveConditionRef`, `buildInputFieldCondition`). Each must learn to walk a path, not just look up a slot. Path-step `@condition` keeps its empty-slot guard.
-3. **Emitter shape for null coalescing.** The cleanest expression in generated code is `Optional.ofNullable(input).map(A::getB).orElse(null)` style chains, but with `List<>` segments the chain has to flatMap-stream-collect. Settle the emitter idiom during Spec; consider a small generator helper if the inline form gets unreadable.
+R59 sharpened `ServiceCatalog`'s parameter-mismatch messages with concrete `argMapping: "<javaParam>: <graphqlArg>"` suggestions. Extend the same machinery so the rejection mentions path expressions:
+
+- **Floor:** every parameter-mismatch rejection that already prints an `argMapping` example also mentions that the right-hand side may be a dot-path into a nested input field, so an author who hits the error has a pointer to the capability without having to find it in the docs.
+- **Stretch:** when the unmatched Java parameter's type matches a reachable nested path under one of the available slots **unambiguously**, pre-fill the path in the suggestion (e.g. `argMapping: "kvotesporsmal: input.kvotesporsmalId"`). If multiple paths reach a compatible leaf, fall back to the floor hint rather than guess.
 
 ## Out of scope for this item
 
