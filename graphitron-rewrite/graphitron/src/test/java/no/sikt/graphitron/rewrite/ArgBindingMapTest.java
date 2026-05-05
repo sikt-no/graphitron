@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -30,18 +31,20 @@ class ArgBindingMapTest {
     }
 
     @Test
-    void parseArgMapping_singleEntry_parsesJavaParamAndGraphqlArg() {
+    void parseArgMapping_singleEntry_parsesAsOneSegmentChain() {
         var result = ArgBindingMap.parseArgMapping("inputs: input");
         assertThat(result).isInstanceOf(ArgBindingMap.ParsedArgMapping.Ok.class);
         assertThat(((ArgBindingMap.ParsedArgMapping.Ok) result).overrides())
-            .containsExactly(Map.entry("inputs", "input"));
+            .containsExactly(Map.entry("inputs", List.of("input")));
     }
 
     @Test
     void parseArgMapping_multipleEntries_preservesOrder() {
         var result = ArgBindingMap.parseArgMapping("city: cityNames, country: countryId");
         assertThat(((ArgBindingMap.ParsedArgMapping.Ok) result).overrides())
-            .containsExactly(Map.entry("city", "cityNames"), Map.entry("country", "countryId"));
+            .containsExactly(
+                Map.entry("city", List.of("cityNames")),
+                Map.entry("country", List.of("countryId")));
     }
 
     @Test
@@ -51,15 +54,19 @@ class ArgBindingMapTest {
             country: countryId
             """);
         assertThat(((ArgBindingMap.ParsedArgMapping.Ok) result).overrides())
-            .containsExactly(Map.entry("city", "cityNames"), Map.entry("country", "countryId"));
+            .containsExactly(
+                Map.entry("city", List.of("cityNames")),
+                Map.entry("country", List.of("countryId")));
     }
 
     @Test
-    void parseArgMapping_missingColon_isParseError() {
-        var result = ArgBindingMap.parseArgMapping("inputs input");
-        assertThat(result).isInstanceOf(ArgBindingMap.ParsedArgMapping.ParseError.class);
-        assertThat(((ArgBindingMap.ParsedArgMapping.ParseError) result).message())
-            .contains("missing ':'");
+    void parseArgMapping_dottedRhs_parsesAsSegmentChain() {
+        var result = ArgBindingMap.parseArgMapping(
+            "kvotesporsmal: input.kvotesporsmalId, algoritme: input.kvotesporsmalAlgoritmeId");
+        assertThat(((ArgBindingMap.ParsedArgMapping.Ok) result).overrides())
+            .containsExactly(
+                Map.entry("kvotesporsmal", List.of("input", "kvotesporsmalId")),
+                Map.entry("algoritme", List.of("input", "kvotesporsmalAlgoritmeId")));
     }
 
     @Test
@@ -67,15 +74,49 @@ class ArgBindingMapTest {
         var result = ArgBindingMap.parseArgMapping(": input");
         assertThat(result).isInstanceOf(ArgBindingMap.ParsedArgMapping.ParseError.class);
         assertThat(((ArgBindingMap.ParsedArgMapping.ParseError) result).message())
-            .contains("empty Java-parameter name");
+            .contains("argMapping syntax error")
+            .contains("expected an entry key");
     }
 
     @Test
-    void parseArgMapping_emptyGraphqlArg_isParseError() {
+    void parseArgMapping_redundantCommas_areInsignificantWhitespace() {
+        // Standard GraphQL convention: commas are insignificant whitespace. The R53-era
+        // string-split parser rejected "a: b, , c: d" as an empty entry; the lexer-based parser
+        // treats redundant commas as just more whitespace and accepts the input. This is a
+        // small UX relaxation that matches Apollo Connectors' parsing behavior.
+        var result = ArgBindingMap.parseArgMapping("inputs: input, , dryRun: dryRun");
+        assertThat(result).isInstanceOf(ArgBindingMap.ParsedArgMapping.Ok.class);
+        assertThat(((ArgBindingMap.ParsedArgMapping.Ok) result).overrides())
+            .containsExactly(
+                Map.entry("inputs", List.of("input")),
+                Map.entry("dryRun", List.of("dryRun")));
+    }
+
+    @Test
+    void parseArgMapping_missingColon_isParseError() {
+        var result = ArgBindingMap.parseArgMapping("inputs input");
+        assertThat(result).isInstanceOf(ArgBindingMap.ParsedArgMapping.ParseError.class);
+        assertThat(((ArgBindingMap.ParsedArgMapping.ParseError) result).message())
+            .contains("argMapping syntax error")
+            .contains("expected ':'");
+    }
+
+    @Test
+    void parseArgMapping_missingValueAfterColon_isParseError() {
         var result = ArgBindingMap.parseArgMapping("inputs:");
         assertThat(result).isInstanceOf(ArgBindingMap.ParsedArgMapping.ParseError.class);
         assertThat(((ArgBindingMap.ParsedArgMapping.ParseError) result).message())
-            .contains("empty GraphQL-argument name");
+            .contains("argMapping syntax error")
+            .contains("expected a value name after ':'");
+    }
+
+    @Test
+    void parseArgMapping_emptyPathSegment_isParseError() {
+        var result = ArgBindingMap.parseArgMapping("k: input..foo");
+        assertThat(result).isInstanceOf(ArgBindingMap.ParsedArgMapping.ParseError.class);
+        assertThat(((ArgBindingMap.ParsedArgMapping.ParseError) result).message())
+            .contains("argMapping syntax error")
+            .contains("empty path segment");
     }
 
     @Test
@@ -84,12 +125,6 @@ class ArgBindingMapTest {
         assertThat(result).isInstanceOf(ArgBindingMap.ParsedArgMapping.ParseError.class);
         assertThat(((ArgBindingMap.ParsedArgMapping.ParseError) result).message())
             .contains("duplicate entries for Java parameter 'inputs'");
-    }
-
-    @Test
-    void parseArgMapping_emptyEntryBetweenCommas_isParseError() {
-        var result = ArgBindingMap.parseArgMapping("inputs: input, , dryRun: dryRun");
-        assertThat(result).isInstanceOf(ArgBindingMap.ParsedArgMapping.ParseError.class);
     }
 
     // ===== of(Set<String>, Map<String, String>) =====
