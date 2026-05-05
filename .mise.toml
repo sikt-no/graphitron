@@ -45,3 +45,14 @@ sources = ["graphitron-example/graphitron-example-spec/src/main/resources/graphq
 [tasks.debug-generate]
 description = "Debug generate for graphitron-example"
 run = "mvnDebug install -pl :graphitron-example-spec"
+
+[tasks.test-variant]
+description = "Run ApprovalQueryTest against a codegen variant. Takes variant name (matches a 'variant-<name>' Maven profile in graphitron-example/pom.xml). Example: 'mise r test-variant upsert-as-merge'."
+run = "mvn -Pvariant-{{arg(index=0)}} verify -pl :graphitron-example-server -am -Dtest=ApprovalQueryTest -Dsurefire.failIfNoSpecifiedTests=false"
+
+[tasks.test-variants]
+description = "Run example-server tests against all known codegen variants."
+run = [
+  "mise r test-variant upsert-as-merge",
+  "mise r test-variant jdbc-batching",
+]

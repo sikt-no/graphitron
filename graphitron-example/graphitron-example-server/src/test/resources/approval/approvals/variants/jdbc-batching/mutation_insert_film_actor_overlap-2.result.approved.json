@@ -1,0 +1,22 @@
+{
+    "errors": [
+        {
+            "message": "An exception occurred. The error has been logged with id [UUID]: Required field cannot be empty",
+            "locations": [
+                {
+                    "line": 2,
+                    "column": 5
+                }
+            ],
+            "path": [
+                "insertFilmActor"
+            ],
+            "extensions": {
+                "classification": "DataFetchingException"
+            }
+        }
+    ],
+    "data": {
+        "insertFilmActor": null
+    }
+}

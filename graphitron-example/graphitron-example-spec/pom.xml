@@ -83,17 +83,17 @@
                                 <externalReferenceImport>no.sikt.graphitron.example.service.CustomerWithExternalFields</externalReferenceImport>
                             </externalReferenceImports>
                             <makeNodeStrategy>true</makeNodeStrategy>
-                            <generateUpsertAsStore>true</generateUpsertAsStore>
+                            <generateUpsertAsStore>${graphitron.generateUpsertAsStore}</generateUpsertAsStore>
                             <scalars>
                                 <class>
                                     <fullyQualifiedClassName>no.sikt.graphitron.example.service.ConsumerProvidedScalars</fullyQualifiedClassName>
                                 </class>
                             </scalars>
-                            <useJdbcBatchingForDeletes>false</useJdbcBatchingForDeletes>
-                            <useJdbcBatchingForInserts>false</useJdbcBatchingForInserts>
+                            <useJdbcBatchingForDeletes>${graphitron.useJdbcBatchingForDeletes}</useJdbcBatchingForDeletes>
+                            <useJdbcBatchingForInserts>${graphitron.useJdbcBatchingForInserts}</useJdbcBatchingForInserts>
                             <optionalSelect>
-                                <onSubqueryReferences>true</onSubqueryReferences>
-                                <onExternalFields>true</onExternalFields>
+                                <onSubqueryReferences>${graphitron.optionalSelect.onSubqueryReferences}</onSubqueryReferences>
+                                <onExternalFields>${graphitron.optionalSelect.onExternalFields}</onExternalFields>
                             </optionalSelect>
                         </configuration>
                     </execution>
