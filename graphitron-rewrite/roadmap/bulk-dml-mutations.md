@@ -141,6 +141,22 @@ projection terminator):
      "command cannot affect row a second time"), and DELETE doesn't
      need it (idempotent).
 
+  *Guard exception routing.* All throw-form guards (`postInGuard`'s
+  uniformity, duplicate-lookup-key, and no-set-fields-present
+  checks, plus `postDslGuard`'s dialect guard) execute *inside*
+  `buildDmlFetcher`'s existing try-catch — the try opens before
+  the `dsl` bind, so every slot lands inside it
+  ([`TypeFetcherGenerator.java:1655`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java)
+  is the `beginControlFlow("try")`). The `IllegalArgumentException` /
+  `UnsupportedOperationException` throws therefore route through
+  `catchArm` → `ErrorRouter.redact` (no channel) or
+  `ErrorRouter.dispatch` (with a channel), the same path SQL
+  execution failures take. Empty-list short-circuit is unaffected
+  (it executes a `return` from inside the try, not a throw).
+  Execution-tier tests must assert on the routed error envelope
+  (message string, channel mapping) plus `QUERY_COUNT == 0`, not
+  on a raw exception bubbling out of the fetcher.
+
   Once the guards pass, build the chain programmatically: walk
   `tia.setFields()` at codegen time in declaration order and emit
   a runtime `if (firstKeys.contains(cf.name())) { ... }` for each
@@ -155,7 +171,9 @@ projection terminator):
   verbatim (`Tables.FILM.LANGUAGE_ID.getName()` etc.), so jOOQ's
   typed `Table.field(Field<T>)` overload returns the matching
   v-column with the target column's type — no string lookup, no
-  cast.
+  cast. (`asTable(String, String...)` is varargs over `String[]`,
+  so the accumulated list is passed as
+  `colNames.toArray(new String[0])`.)
 
   Single-row UPDATE shares the dynamic-SET emit: same three
   parallel walks, but reading `in.keySet()` instead of `firstKeys`
@@ -532,11 +550,12 @@ sharpening.
       the alignment between UPSERT update branch and UPDATE
       verb's PATCH semantics; ensures `c = EXCLUDED.c` did not
       sneak back in for omitted columns.
-    - `upsertFilms_divergentInputShapes_throwsBeforeStatement`
+    - `upsertFilms_divergentInputShapes_routesGuardError`
       — bulk UPSERT with row A having `{filmId, title}` and row
       B having `{filmId, title, description}` (and
       `tia.setFields()` non-empty so `.doUpdate()` mode is in
-      play); asserts `IllegalArgumentException` plus
+      play); asserts the routed error envelope (`IllegalArgumentException`
+      message reaches the response via `ErrorRouter`) plus
       `QUERY_COUNT == 0`.
     - `upsertFilms_doNothingMode_skipsUniformityGuard` — bulk
       UPSERT against a fixture with `tia.setFields()` empty
@@ -545,28 +564,34 @@ sharpening.
       and that `QUERY_COUNT == 1` (one INSERT … ON CONFLICT DO
       NOTHING dispatched). Locks in the gating that the
       uniformity guard fires only when `.doUpdate()` is in play.
-  - `updateFilms_divergentInputShapes_throwsBeforeStatement` —
-    bulk UPDATE with row A having `{filmId, title}` and row B
-    having `{filmId, title, description}`; asserts
-    `IllegalArgumentException` plus `QUERY_COUNT == 0`. Message
-    contains the offending row index and both key sets.
-  - `updateFilms_onlyLookupKeyFields_throwsBeforeStatement` (and the
-    single-row analogue `updateFilm_onlyLookupKeyFields_throws`) —
-    asserts the no-set-fields-present runtime check fires when the
-    input contains only `@lookupKey` fields. Mirrored on UPSERT for
-    `.doUpdate()` mode (`upsertFilms_onlyLookupKeyFields_throwsBeforeStatement`,
-    single-row analogue `upsertFilm_onlyLookupKeyFields_throws`).
-  - `bulkDml_emptyListInput_doesNotRoundTripToDatabase` — exercises
-    the `in.isEmpty()` short-circuit on at least one verb (assert
-    via `QUERY_COUNT == 0`, the same pattern other execution tests
-    use).
-  - `updateFilms_duplicateLookupKeys_throwsBeforeStatement` —
-    asserts the bulk-UPDATE duplicate-tuple guard fires (assert via
-    `IllegalArgumentException` plus `QUERY_COUNT == 0`, so the
-    throw is observed *before* any SQL is dispatched). UPSERT has
-    no analogue: PostgreSQL hard-errors on duplicate `ON CONFLICT`
-    keys with "command cannot affect row a second time", so client-
-    side detection would only duplicate the engine's check.
+  - `updateFilms_divergentInputShapes_routesGuardError` — bulk
+    UPDATE with row A having `{filmId, title}` and row B having
+    `{filmId, title, description}`; asserts the routed error
+    envelope (`IllegalArgumentException` message reaches the
+    response via `ErrorRouter`, naming the offending row index
+    and both key sets) plus `QUERY_COUNT == 0`.
+  - `updateFilms_onlyLookupKeyFields_routesGuardError` (and the
+    single-row analogue `updateFilm_onlyLookupKeyFields_routesGuardError`)
+    — asserts the no-set-fields-present runtime check fires when
+    the input contains only `@lookupKey` fields, surfacing the
+    routed envelope. Mirrored on UPSERT for `.doUpdate()` mode
+    (`upsertFilms_onlyLookupKeyFields_routesGuardError`, single-row
+    analogue `upsertFilm_onlyLookupKeyFields_routesGuardError`).
+  - Empty-list short-circuit, one test per verb (the contract is
+    uniform across all four; lock each so a regression in one arm
+    can't pass silently):
+    `createFilms_emptyListInput_doesNotRoundTrip`,
+    `updateFilms_emptyListInput_doesNotRoundTrip`,
+    `deleteFilms_emptyListInput_doesNotRoundTrip`,
+    `upsertFilms_emptyListInput_doesNotRoundTrip`. Each asserts
+    the response carries an empty list and `QUERY_COUNT == 0`.
+  - `updateFilms_duplicateLookupKeys_routesGuardError` — asserts
+    the bulk-UPDATE duplicate-tuple guard fires; assert via the
+    routed error envelope plus `QUERY_COUNT == 0`, so the guard
+    is observed *before* any SQL is dispatched. UPSERT has no
+    analogue: PostgreSQL hard-errors on duplicate `ON CONFLICT`
+    keys with "command cannot affect row a second time", so
+    client-side detection would only duplicate the engine's check.
 
 ## Implementation sites
 
@@ -589,86 +614,25 @@ sharpening.
   rejection via
   `Rejection.deferred("list @record payload returns are not yet supported", "synthesize-payload-carrier")`
   when `tia.list() && returnType instanceof ResultReturnType`.
-- [`TypeFetcherGenerator.buildMutationInsertFetcher`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java) —
-  on the `tia.list()` arm, emit a `for (var row : in)` row-loop that
-  accumulates `.values(...)` calls on the running `step` local. On
-  *both* arms (single-row and bulk), replace the unconditional
-  `DSL.val(in.get("col"), dataType)` cell with the
-  `containsKey`-gated `DEFAULT vs val` dispatch (see *Per-field
-  missing-vs-null semantics*); for single-row, the "row" is `in`
-  itself.
-- [`TypeFetcherGenerator.buildMutationDeleteFetcher`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java) —
-  on the `tia.list()` arm, emit
-  `dsl.deleteFrom(t).where(DSL.row(<targetCols>).in(in.stream().map(r -> DSL.row(...)).toList()))`.
-  Always row-form, regardless of `tia.fieldBindings().size()`. The
-  single-row arm is unchanged.
-- [`TypeFetcherGenerator.buildMutationUpdateFetcher`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java) —
-  rewrite both arms to emit the dynamic SET clause. Walk
-  `tia.setFields()` at codegen time in declaration order and for
-  each `cf` emit a runtime `if (presentKeys.contains("name")) { ... }`
-  block guarding three parallel sequences: the SET clause, the
-  v-table column-name list (bulk arm only), and the per-row v-table
-  cell list (bulk arm only). `presentKeys` is `firstKeys` on the
-  bulk arm (after the
-  uniformity guard runs) and `in.keySet()` on the single-row arm.
-  Lookup-key columns are unconditional (validated upstream).
-  Both arms emit the no-set-fields-present runtime check
-  immediately before chain construction. The bulk arm additionally
-  emits the empty-list short-circuit, the uniformity guard, and the
-  duplicate-lookup-key guard via the new `postInGuard` slot (see
-  `buildDmlFetcher` below). A new inline Oracle-dialect guard
-  rides `postDslGuard` on the bulk arm only (mirrors UPSERT's
-  existing pattern; single-row UPDATE is portable and stays
-  unguarded).
-- [`TypeFetcherGenerator.buildMutationUpsertFetcher`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java) —
-  rewrite both arms. Insert-side cells (the `.values(...)` walk)
-  use the same `containsKey`-gated `DEFAULT vs val` dispatch as
-  INSERT (single-row reuses the bulk primitive with one-row
-  collapse). On the `.doUpdate()` mode (`tia.setFields()` non-
-  empty), the `DO UPDATE SET` clause becomes the same dynamic
-  SET as UPDATE: walk `tia.setFields()` at codegen time and emit
-  `if (presentKeys.contains("name")) { ... }` blocks accumulating
-  `.set(Tables.X.COL, EXCLUDED.field(Tables.X.COL))` calls.
-  `presentKeys` is `firstKeys` on the bulk arm (after the
-  uniformity guard) and `in.keySet()` on the single-row arm. The
-  no-set-fields-present runtime check fires on both arms in
-  `.doUpdate()` mode. The bulk arm emits the empty-list short-
-  circuit and the uniformity guard via `postInGuard`; the
-  duplicate-lookup-key guard does *not* fire on UPSERT (PostgreSQL
-  hard-errors on duplicate `ON CONFLICT` keys). On the
-  `.doNothing()` mode (`tia.setFields()` empty), no SET clause is
-  emitted, the dynamic-SET walk is skipped entirely, and only the
-  empty-list short-circuit fires from `postInGuard` — divergent
-  input shapes are fine in `.doNothing()` mode because no SET
-  clause shares state across rows. The existing inline Oracle-
-  dialect guard rides `postDslGuard` unchanged (R63 lifts it
-  later).
-- [`TypeFetcherGenerator.buildDmlFetcher`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java) —
-  three changes:
-  1. Cast: emit `Map<?,?> in = ...` when `tia.list() == false`,
-     `List<Map<?,?>> in = ...` when `tia.list() == true`.
-  2. Add a `postInGuard` `CodeBlock` parameter alongside the existing
-     `postDslGuard`, emitted between the `in` cast and the
-     `tableLocal` declaration. Carries (a) the bulk arm's empty-list
-     short-circuit (INSERT/UPDATE/DELETE/UPSERT all use it),
-     (b) UPDATE's and bulk-UPSERT's uniform-shape guard
-     (UPSERT only when `tia.setFields()` is non-empty;
-     `.doNothing()` mode skips), (c) UPDATE's dup-tuple guard
-     (UPSERT excluded; PostgreSQL hard-errors on duplicate ON
-     CONFLICT keys), and (d) UPDATE's and bulk-UPSERT's
-     no-set-fields-present check (UPDATE on both arms always;
-     UPSERT only in `.doUpdate()` mode). Items (b) and (d) are
-     `tia.list()`-gated for the uniformity-related parts; item (a)
-     is `tia.list()`-gated; item (d) on the single-row UPDATE arm
-     fires unconditionally in `.doUpdate()` mode regardless of
-     `tia.list()`.
-  3. Lift `valueType` from `ClassName.OBJECT` to a per-arm typed
-     value: `ClassName.get(String.class)` for `EncodedSingle`,
-     `ParameterizedTypeName.get(List.class, String.class)` for
-     `EncodedList`, jOOQ's `Record` (single) / `List<Record>` (list)
-     for the projected arms, and the existing
-     `assembly.payloadClass()` for `Payload`. The fetcher's declared
-     return type and the inner `payload` local re-type implicitly.
+- [`TypeFetcherGenerator`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java)
+  — rewrite the four `buildMutation{Insert,Delete,Update,Upsert}Fetcher`
+  methods per *Emitter rewrite (per verb)* above. Each gains a
+  `tia.list()` arm with the per-verb chain shape; INSERT/UPSERT also
+  apply the `containsKey`-gated DEFAULT-vs-val dispatch on insert-side
+  cells across both arms, and UPDATE/UPSERT apply the dynamic-SET walk
+  across both arms. UPDATE's bulk arm gains a new inline Oracle-dialect
+  `postDslGuard` (R63 lifts later); UPSERT's existing one is preserved
+  verbatim.
+- [`TypeFetcherGenerator.buildDmlFetcher`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java)
+  — three changes: cast `in` as `Map<?,?>` or `List<Map<?,?>>` per
+  `tia.list()`; add a `postInGuard` `CodeBlock` parameter alongside
+  `postDslGuard`, emitted between the `in` cast and `tableLocal`
+  (inside the existing try-catch — see *Guard exception routing*
+  above for the consequences); lift `valueType` from `ClassName.OBJECT`
+  to a per-arm typed value (`ClassName.get(String.class)` /
+  `ParameterizedTypeName.get(List.class, String.class)` for the
+  encoded arms, jOOQ's `Record` / `List<Record>` for the projected
+  arms, existing `assembly.payloadClass()` for `Payload`).
 - [`graphitron-sakila-example/src/main/resources/graphql/schema.graphqls`](../graphitron-sakila-example/src/main/resources/graphql/schema.graphqls) —
   add four bulk-variant `Mutation` fields alongside the existing
   single-row `createFilm` / `updateFilm` / `upsertFilm`:
@@ -711,6 +675,14 @@ sharpening.
   distinction (`Map.containsKey` / `keySet`) the tests turn on. The
   bulk variants reuse the same inputs, so the bulk execution tests
   inherit the same observable surface.
+- [`graphitron-rewrite/roadmap/changelog.md`](changelog.md) — record
+  the three breaking semantics changes on single-row
+  INSERT/UPDATE/UPSERT (omitted columns now bind `DEFAULT` on
+  insert-side cells / drop out of the SET clause on update-side
+  branches; was: typed null on every `tia.fields()` /
+  `tia.setFields()` entry). Migration note: callers that relied
+  on the old "always write SQL NULL" behavior must set the field
+  to explicit `null` in the input map.
 - New unit test cases in `GraphitronSchemaBuilderTest`; new
   `DmlBulkMutationsExecutionTest` in `graphitron-sakila-example`.
 - `graphitron-fixtures` needs no new fixtures: pipeline tests assert
