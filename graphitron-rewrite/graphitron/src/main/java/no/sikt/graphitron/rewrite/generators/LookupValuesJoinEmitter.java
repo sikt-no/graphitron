@@ -392,7 +392,7 @@ final class LookupValuesJoinEmitter {
      * @param field                the lookup field
      * @param typeFieldsCallStatic the JavaPoet expression for {@code <TypeName>.$fields(env.getSelectionSet(), table, env)}.
      */
-    static CodeBlock buildFetcherBody(LookupField field, CodeBlock typeFieldsCall, String srcAlias) {
+    static CodeBlock buildFetcherBody(TypeFetcherEmissionContext ctx, LookupField field, CodeBlock typeFieldsCall, String srcAlias) {
         ColumnMapping cm = (ColumnMapping) field.lookupMapping();
         List<Slot> slots = flattenSlots(cm);
         String alias = inputTableAlias(field);
@@ -408,8 +408,8 @@ final class LookupValuesJoinEmitter {
             .addStatement("$T rows = $L(env, $L)",
                 ValuesJoinRowBuilder.rowArrayType(slots, Slot::targetColumn, DIRECTIVE_CONTEXT),
                 inputRowsMethodName(field), srcAlias)
-            .addStatement("$T dsl = graphitronContext(env).getDslContext(env)",
-                ClassName.get("org.jooq", "DSLContext"))
+            .addStatement("$T dsl = $L.getDslContext(env)",
+                ClassName.get("org.jooq", "DSLContext"), ctx.graphitronContextCall())
             .add("if (rows.length == 0) return dsl.newResult();\n")
             .addStatement("$T input = $T.values(rows).as($L)",
                 ValuesJoinRowBuilder.inputTableType(slots, Slot::targetColumn, DIRECTIVE_CONTEXT), DSL, aliasArgs)
