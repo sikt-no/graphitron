@@ -36,7 +36,7 @@ public final class ArgCallEmitter {
      * local.
      */
     public static CodeBlock buildCallArgs(TypeFetcherEmissionContext ctx, List<CallParam> params, String conditionsClassName, String srcAlias) {
-        return buildCallArgs(ctx, params, conditionsClassName, srcAlias, null);
+        return buildCallArgs(ctx, params, conditionsClassName, srcAlias, null, null);
     }
 
     /**
@@ -50,10 +50,25 @@ public final class ArgCallEmitter {
      */
     public static CodeBlock buildCallArgs(TypeFetcherEmissionContext ctx, List<CallParam> params,
             String conditionsClassName, String srcAlias, CompositeDecodeHelperRegistry registry) {
+        return buildCallArgs(ctx, params, conditionsClassName, srcAlias, registry, null);
+    }
+
+    /**
+     * Variant that additionally accepts {@code liftedOuters}, a per-method map from
+     * {@link CallSiteExtraction.NestedInputField#outerArgName()} to a local-variable name
+     * that already holds the {@code Map<?, ?>} cast of {@code env.getArgument(outerArg)}.
+     * When an extraction's outer arg is in the map, the depth-0 step of the chain skips
+     * the {@code instanceof Map<?, ?> _m1} rebind in favour of a {@code <local> != null}
+     * guard against the lifted local. Used by {@link QueryConditionsGenerator} to dedupe
+     * the rebind when ≥2 body params on a single method share an outer arg.
+     */
+    public static CodeBlock buildCallArgs(TypeFetcherEmissionContext ctx, List<CallParam> params,
+            String conditionsClassName, String srcAlias, CompositeDecodeHelperRegistry registry,
+            Map<String, String> liftedOuters) {
         var args = CodeBlock.builder();
         args.add("$L", srcAlias);
         for (var param : params) {
-            args.add(", $L", buildArgExtraction(ctx, param, conditionsClassName, srcAlias, registry));
+            args.add(", $L", buildArgExtraction(ctx, param, conditionsClassName, srcAlias, registry, liftedOuters));
         }
         return args.build();
     }
@@ -156,7 +171,7 @@ public final class ArgCallEmitter {
     }
 
     public static CodeBlock buildArgExtraction(TypeFetcherEmissionContext ctx, CallParam param, String conditionsClassName, String srcAlias) {
-        return buildArgExtraction(ctx, param, conditionsClassName, srcAlias, null);
+        return buildArgExtraction(ctx, param, conditionsClassName, srcAlias, null, null);
     }
 
     /**
@@ -165,6 +180,16 @@ public final class ArgCallEmitter {
      */
     public static CodeBlock buildArgExtraction(TypeFetcherEmissionContext ctx, CallParam param,
             String conditionsClassName, String srcAlias, CompositeDecodeHelperRegistry registry) {
+        return buildArgExtraction(ctx, param, conditionsClassName, srcAlias, registry, null);
+    }
+
+    /**
+     * Lift-aware variant; see
+     * {@link #buildCallArgs(TypeFetcherEmissionContext, List, String, String, CompositeDecodeHelperRegistry, Map)}.
+     */
+    public static CodeBlock buildArgExtraction(TypeFetcherEmissionContext ctx, CallParam param,
+            String conditionsClassName, String srcAlias, CompositeDecodeHelperRegistry registry,
+            Map<String, String> liftedOuters) {
         return switch (param.extraction()) {
             case CallSiteExtraction.Direct ignored ->
                 CodeBlock.of("env.getArgument($S)", param.name());
@@ -188,7 +213,7 @@ public final class ArgCallEmitter {
                     srcAlias, jc.columnJavaName(), param.name());
             case CallSiteExtraction.NestedInputField nif ->
                 buildNestedInputFieldExtraction(nif.outerArgName(), nif.path(), nif.leaf(),
-                    param.typeName(), param.list(), registry);
+                    param.typeName(), param.list(), registry, liftedOuters);
             case CallSiteExtraction.NodeIdDecodeKeys nidk ->
                 buildNodeIdDecodeExtraction(
                     CodeBlock.of("env.getArgument($S)", param.name()),
@@ -359,16 +384,22 @@ public final class ArgCallEmitter {
      */
     private static CodeBlock buildNestedInputFieldExtraction(String outerArgName, List<String> path,
             CallSiteExtraction leaf, String leafTypeName, boolean list,
-            CompositeDecodeHelperRegistry registry) {
+            CompositeDecodeHelperRegistry registry, Map<String, String> liftedOuters) {
         // For a Direct leaf the Map.get value is cast directly to the parameter type. For a
         // NodeIdDecodeKeys leaf the leaf cast is omitted -- the decode chain takes Object and
         // its own instanceof guard validates the runtime shape -- so the inner pattern stays
         // "conditional" under -source 17 (no `(List<String>) ... instanceof List` chain).
         boolean nodeIdLeaf = leaf instanceof CallSiteExtraction.NodeIdDecodeKeys;
-        CodeBlock root = CodeBlock.of("env.getArgument($S)", outerArgName);
+        // When the outer arg has already been lifted to a typed Map<?, ?> local (R79 §5),
+        // depth 0 of the chain references the local directly under a null-check; otherwise
+        // it falls back to the inline `env.getArgument(outer) instanceof Map<?, ?> _m1` rebind.
+        String topBinding = liftedOuters != null ? liftedOuters.get(outerArgName) : null;
+        CodeBlock root = topBinding != null
+            ? CodeBlock.of("$L", topBinding)
+            : CodeBlock.of("env.getArgument($S)", outerArgName);
 
         if (nodeIdLeaf) {
-            CodeBlock mapChain = buildMapChain(root, path, 0, /* leafType= */ null);
+            CodeBlock mapChain = buildMapChain(root, path, 0, /* leafType= */ null, topBinding);
             return buildNodeIdDecodeExtraction(mapChain, (CallSiteExtraction.NodeIdDecodeKeys) leaf,
                 leafTypeName, list, registry);
         }
@@ -376,16 +407,32 @@ public final class ArgCallEmitter {
         TypeName castTarget = list
             ? ParameterizedTypeName.get(ClassName.get(List.class), rawLeaf)
             : rawLeaf;
-        return buildMapChain(root, path, 0, castTarget);
+        return buildMapChain(root, path, 0, castTarget, topBinding);
     }
 
-    private static CodeBlock buildMapChain(CodeBlock currentExpr, List<String> path, int depth, TypeName leafType) {
-        String binding = "_m" + (depth + 1);
+    /**
+     * Builds the depth-0 step's ternary, recursing for inner steps. When {@code topBinding} is
+     * non-null it names a local that is already a {@code Map<?, ?>} (R79 §5 lift), so depth 0
+     * skips the {@code instanceof Map<?, ?> _m1} check and emits {@code <topBinding> != null ?
+     * (..._)  : null} instead. Inner steps always rebind via {@code _m2, _m3, ...}.
+     */
+    private static CodeBlock buildMapChain(CodeBlock currentExpr, List<String> path, int depth,
+            TypeName leafType, String topBinding) {
         String key = path.get(depth);
         boolean isLeaf = depth == path.size() - 1;
+        boolean liftedHead = topBinding != null && depth == 0;
+        String binding = liftedHead ? topBinding : "_m" + (depth + 1);
+
         if (isLeaf) {
             // leafType == null means "do not cast the Map.get result" -- the consumer applies its
             // own runtime guard (used by the NodeIdDecodeKeys leaf path).
+            if (liftedHead) {
+                if (leafType == null) {
+                    return CodeBlock.of("$L != null ? $L.get($S) : null", binding, binding, key);
+                }
+                return CodeBlock.of("$L != null ? ($T) $L.get($S) : null",
+                    binding, leafType, binding, key);
+            }
             if (leafType == null) {
                 return CodeBlock.of("$L instanceof $T<?, ?> $L ? $L.get($S) : null",
                     currentExpr, Map.class, binding, binding, key);
@@ -394,8 +441,12 @@ public final class ArgCallEmitter {
                 currentExpr, Map.class, binding, leafType, binding, key);
         }
         CodeBlock next = CodeBlock.of("$L.get($S)", binding, key);
+        if (liftedHead) {
+            return CodeBlock.of("$L != null ? ($L) : null",
+                binding, buildMapChain(next, path, depth + 1, leafType, null));
+        }
         return CodeBlock.of("$L instanceof $T<?, ?> $L ? ($L) : null",
-            currentExpr, Map.class, binding, buildMapChain(next, path, depth + 1, leafType));
+            currentExpr, Map.class, binding, buildMapChain(next, path, depth + 1, leafType, null));
     }
 
     private static String rawComponent(String typeName) {
