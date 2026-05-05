@@ -398,6 +398,25 @@ CREATE TABLE nodeidfixture.child_ref (
     note            varchar(50)
 );
 
+-- 23-column-PK NodeType for the R79 §6 arity > 22 rejection test. jOOQ's typed
+-- Record/Row tops out at Row22, so a NodeType with > 22 key columns must be
+-- rejected at classification time by NodeIdLeafResolver.resolve. This fixture is
+-- deliberately the smallest > 22 case (23 keys); changing the column list requires
+-- a matching update in NodeIdFixtureGenerator.METADATA so the synthetic
+-- __NODE_TYPE_ID / __NODE_KEY_COLUMNS metadata stays consistent.
+CREATE TABLE nodeidfixture.too_wide (
+    k1  varchar(20) NOT NULL, k2  varchar(20) NOT NULL, k3  varchar(20) NOT NULL,
+    k4  varchar(20) NOT NULL, k5  varchar(20) NOT NULL, k6  varchar(20) NOT NULL,
+    k7  varchar(20) NOT NULL, k8  varchar(20) NOT NULL, k9  varchar(20) NOT NULL,
+    k10 varchar(20) NOT NULL, k11 varchar(20) NOT NULL, k12 varchar(20) NOT NULL,
+    k13 varchar(20) NOT NULL, k14 varchar(20) NOT NULL, k15 varchar(20) NOT NULL,
+    k16 varchar(20) NOT NULL, k17 varchar(20) NOT NULL, k18 varchar(20) NOT NULL,
+    k19 varchar(20) NOT NULL, k20 varchar(20) NOT NULL, k21 varchar(20) NOT NULL,
+    k22 varchar(20) NOT NULL, k23 varchar(20) NOT NULL,
+    PRIMARY KEY (k1, k2, k3, k4, k5, k6, k7, k8, k9, k10, k11, k12,
+                 k13, k14, k15, k16, k17, k18, k19, k20, k21, k22, k23)
+);
+
 -- ===========================
 -- idreffixture schema
 -- ===========================
