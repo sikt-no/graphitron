@@ -595,6 +595,34 @@ Both drafts land in Phase 1a, before any tutorial prose or directive
 page is authored. If either one fails the read-simply test, the IA
 changes inside Phase 1a; Phase 1b does not start until both pass.
 
+## Pending content additions
+
+Documentation gaps surfaced after a phase shipped, to be folded in when
+the touched chapter is next under hand.
+
+- *Multi-schema `@table(name:)` syntax* (surfaced by R78). R78 added
+  qualified-name resolution: `@table(name: "schema.table")` for
+  consumers whose jOOQ codegen straddles multiple schemas, plus a
+  structured ambiguity rejection (`"@table(name: 'film') is ambiguous:
+  defined in schemas [public, archive]; qualify as 'public.film' or
+  'archive.film'"`) when an unqualified name collides across schemas.
+  Single-schema consumers see no change. R78 shipped without the docs
+  delta; both touchpoints sit inside R68's surface area, so they ride
+  along when those pages are next edited:
+  * Phase 2 — `reference/directives/table.adoc`: the `Parameters`
+    table grows a sentence under `name:` describing the qualified
+    form, and `Constraints` grows a bullet covering the ambiguity
+    rejection (with the exact error message so a search lands on this
+    page).
+  * Phase 3 — `how-to/map-types-to-tables.adoc`: a short subsection
+    "Tables in non-default schemas" covering when to qualify and the
+    failure mode when you don't. The recipe is two SDL snippets plus
+    one paragraph of guidance; it does not warrant its own how-to
+    page.
+  Both pieces are content edits, not structural; no IA change, no new
+  verifier wiring. R78's spec is preserved in commit history
+  (last at `64405d6`) for the implementer who picks them up.
+
 ## Out of scope
 
 - Editing the legacy README itself. Legacy modules are out of AI edit
