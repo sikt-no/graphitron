@@ -1,7 +1,7 @@
 ---
 id: R82
 title: "FK column pairing: typed slots over parallel ordered lists"
-status: In Progress
+status: In Review
 bucket: cleanup
 priority: 4
 theme: model-cleanup
@@ -41,74 +41,70 @@ Three principles are relevant:
 - **Sub-taxonomies for resolution outcomes** / **narrow component types over broad interfaces**. `sourceColumns` and `targetColumns` are two `List<ColumnRef>` parallel lists with an "expect equal arity" precondition (`JoinPathEmitter.emitCorrelationWhere:97`). A `List<JoinSlot>` ; where `JoinSlot` is a record carrying two `ColumnRef`s paired by equality at slot `i` ; would make positional misuse a compile error and the equal-arity check structural.
 - **Classifier guarantees shape emitter assumptions** / **load-bearing classifier checks.** The implicit invariant "FK declaration order matches the parent's PK declaration order" was load-bearing for the pre-fix emitters' correctness but never declared, never tested, never validated. A consumer schema that violated it surfaced the bug as a downstream Java compile error, not at validate time. Either the invariant gets retired (which is what the recent fixes did, by switching to nominal lookup) and the supporting guarantee comes off the books, or it gets declared properly with `@LoadBearingClassifierCheck` and a test fixture that exercises a violating schema.
 
-## Implementation plan
 
-1. **Lift the FK pairing into the model, oriented at synthesis time.** Replace `sourceColumns: List<ColumnRef>` / `targetColumns: List<ColumnRef>` on `JoinStep.FkJoin` with `slots: List<JoinSlot>`, where `JoinSlot` is a sealed interface declaring `sourceSide()` and `targetSide()`, with two permits: `FkSlot(ColumnRef sourceSide, ColumnRef targetSide)` for catalog-FK pairings, and `LifterSlot(ColumnRef column)` whose `sourceSide()` and `targetSide()` both return `column`. `LifterSlot` carries the load-bearing fact "DataLoader key tuple IS target-column tuple" as a type identity (one component, structural equality) rather than the runtime equality on two parallel components a single record would force ; the sub-taxonomy is the right shape now, not deferred until the duplicate-component smell forces it.
+## Shipped at `1da849b` + `14261ca`
 
-   **Vocabulary.** *Source* and *target* name the **field's** (or hop's) endpoint tables: source is the table the parent type is bound to (the hop's traversal entry), target is the table the target type is bound to (the hop's traversal exit). For a chain hop `n > 0`, source is hop `n-1`'s target. This generalises to every hop without leaning on the parent/child framing that gets fuzzy past hop 0. `JoinSlot.sourceSide` is always the column on the hop's source table; `JoinSlot.targetSide` is always the column on the hop's target table; the FK-direction question becomes "which FK end lives on which side", answered once at synthesis time and baked into the slot pair.
+The slot lift landed across two commits. `1da849b` (marked `wip:` because the
+emit-side migration was still outstanding) introduced the `JoinSlot` sealed
+interface with `FkSlot`/`LifterSlot` permits, refactored `JoinStep.FkJoin` and
+`JoinStep.LiftedHop` to carry slot lists, expanded the `WithTarget` capability
+with `slots()` (`Iterable<? extends JoinSlot>` to ban positional access at the
+type level), `slotCount()`, and default `sourceSideColumns()` /
+`targetSideColumns()` materialisers, oriented slots at synthesis time inside
+`BuildContext.synthesizeFkJoin`, and migrated the non-emitter readers
+(`FieldBuilder.deriveSplitQueryBatchKey`, `deriveBatchKeyForResultType`,
+`fkMirrorSourceColumns`, `projectFilters`'s switch arms; the `LiftedHop`
+constructor sites in `BatchKeyLifterDirectiveResolver` and `FieldBuilder`).
+`14261ca` finished the emit sites: `JoinPathEmitter.emitCorrelationWhere`
+dropped the `parentHoldsFk` parameter and the arity-mismatch throw,
+`InlineTableFieldEmitter` and `InlineLookupTableFieldEmitter` and
+`TypeFetcherGenerator` retired their `parentHoldsFk` derivations,
+`MultiTablePolymorphicEmitter`'s `matchingParticipantCol` retired whole and
+both arms iterate `slots()` on a single shape, `SplitRowsMethodEmitter`'s
+`buildSingleMethod` if/instanceof block at `:653-660` collapsed to a
+single-iteration through `WithTarget`, `NodeIdLeafResolver`'s DirectFk arm
+reads `targetSideColumns`/`sourceSideColumns`, and `BatchKey`'s
+`LifterRowKeyed` / `AccessorKeyedSingle` / `AccessorKeyedMany` arms read
+`hop.targetSideColumns()`. The load-bearing pair landed at
+`fk-join.slots-oriented-source-and-target` (producer on
+`WithTarget.sourceSideColumns()`, consumers on each migrated reader and emit
+site that reads slot orientations directly). Test fixtures across nine files
+migrated through the new `TestFixtures.fkJoin` / `liftedHop` helpers; the two
+body-string regressions added at `fdfec353` retired in favour of the
+structural model-tier coverage in `JoinSlotOrientationTest` (5 new tests) plus
+the existing compile-tier check at `graphitron-sakila-example`. The
+`rewrite-design-principles.adoc:228` DTO-parent batching recipe updated to the
+slot-shaped vocabulary in the same commit.
 
-   **Synthesis-time orientation.** `BuildContext.synthesizeFkJoin` already has everything it needs to decide the per-hop fork: `sourceSqlName.equalsIgnoreCase(f.getTable().getName())` is the FK-direction test. No new parameter, no caller-supplied hint, no signature change.
-   - **FK defined on source** (`sourceSqlName == f.getTable().getName()`): source table holds the FK ; `sourceSide = FK source col`, `targetSide = FK target col`.
-   - **FK defined on target** (`sourceSqlName == f.getKey().getTable().getName()`): target table holds the FK ; `sourceSide = FK target col`, `targetSide = FK source col`.
+Build at `14261ca`: 10/10 modules SUCCESS under `mvn install -Plocal-db`,
+1318 tests pass, including the model-tier orientation test.
 
-   `FkJoin.slots: List<FkSlot>`; `LiftedHop.slots: List<LifterSlot>`. `WithTarget.slots()` returns `List<? extends JoinSlot>` so consumers iterate uniformly through `slot.sourceSide()` / `slot.targetSide()` regardless of variant. The prose-only invariant in `JoinStep.java:152-156` ("DataLoader key tuple IS the target-column tuple") retires ; `LifterSlot.column()` is the same fact as a type identity.
+### Deviation from spec — surfaced for In Review
 
-   **Convergence at emit sites.** Every JOIN predicate becomes `<targetAlias>.<slot.targetSide()>.eq(<sourceContext>.<slot.sourceSide()>)` for both FK directions, where `<sourceContext>` is the parent VALUES table on the @splitQuery path or the parent alias on the correlated-subquery path. The flat-batch shape specifically: `firstAlias.<slot.targetSide().javaName()>.eq(parentInput.field(slot.sourceSide().sqlName(), slot.sourceSide().columnClass()))`. No emitter rederives FK direction; orientation is baked into the slot. What retires by name: `matchingParticipantCol` (whole method, `MultiTablePolymorphicEmitter`); the arity-mismatch throw at `JoinPathEmitter.emitCorrelationWhere:97-101`; the `if/instanceof` over `firstHop` at `SplitRowsMethodEmitter:653-660` (both `FkJoin` and `LiftedHop` now expose `slots()` uniformly through `WithTarget`, so the cast at `:631` stays but the discrimination block collapses to a single iteration); the `joinOnParentCols` switch on `PreludeBindings`; and the `parentHoldsFk` parameter on `JoinPathEmitter.emitCorrelationWhere:95-96` and the four derivations that compute it (`MultiTablePolymorphicEmitter:606, :1043`, `TypeFetcherGenerator:794`, `InlineTableFieldEmitter:131`).
+The spec promised "no signature change, no caller-supplied hint" on
+`synthesizeFkJoin`, deriving orientation from
+`sourceSqlName.equalsIgnoreCase(f.getTable().getName())` alone. That test is
+ambiguous for self-referential FKs: `category.parent` and `category.children`
+navigate the same FK constraint in opposite directions, and the table-name
+comparison cannot distinguish them. Two execution-tier tests caught this
+(`inlineTableField_selfRef_listCardinality_returnsChildren`,
+`inlineTableField_selfRef_nonRootCategory_hasNoChildren`).
 
-   **Non-emitter reader migration.** Every site that today reads `fk.sourceColumns()` / `fk.targetColumns()` does so under an implicit *FK-on-source* precondition (parent-holds-FK in the older vocabulary), so FK source/target maps to source-side/target-side directly:
+The fix threads a `selfRefFkOnSource` boolean through `parsePath` →
+`parsePathElement` → `synthesizeFkJoin`, derived from the field's
+list-cardinality at the call site. It's consulted only when the FK is
+self-referential (`f.getTable() == f.getKey().getTable()`); for non-self-refs
+the table-name comparison resolves direction unchanged. Sites that already
+had cardinality at hand (the table-bound child-field classifier in
+`FieldBuilder`) thread it explicitly; sites that don't (NodeId leafs,
+synthesis shim, service paths) pass `true` (parent-holds-FK, the typical case
+for those paths). The hint is ignored for non-self-ref FKs, so those defaults
+are safe.
 
-   | Reader | Today | Under slots |
-   |---|---|---|
-   | `FieldBuilder.deriveSplitQueryBatchKey:2695` (single-card) | `fk.sourceColumns()` | `fk.slots().stream().map(JoinSlot::sourceSide).toList()` |
-   | `FieldBuilder.deriveBatchKeyForResultType:2726` (record parent) | `fk.sourceColumns()` | same |
-   | `FieldBuilder.fkMirrorSourceColumns:3232-3238` | `fk.targetColumns()` for compare; `fk.sourceColumns()` returned | targetSide compare; sourceSide returned |
-   | `FieldBuilder.projectFilters:1094, 1110` (the `ColumnReferenceArg` / `CompositeColumnReferenceArg` switch arms) | `fk.sourceColumns()` for `BodyParam.{Eq,In,RowEq,RowIn}` | sourceSide |
-   | `NodeIdLeafResolver:268, 271` (DirectFk) | `fk.targetColumns()` for invariant; `fk.sourceColumns()` for predicate body | targetSide; sourceSide |
-   | `BatchKey.LifterRowKeyed.targetKeyColumns()` and the four `hop.targetColumns()` reads at `BatchKey.java:344, 354, 390, 400` | `hop.targetColumns()` | `slot.column()` (the `LifterSlot` accessor; `sourceSide()` and `targetSide()` are also available and return the same value by type) |
-
-   The explicit precondition (FK-on-source at every catalog-FK reader of `sourceColumns`/`targetColumns`) is what makes the migration mechanical; if a future reader needed the FK-declaration-oriented view under a child-holds-FK case, it would have to recover it through `fk.fk()` against the catalog, but no such reader exists today.
-
-   **`WithTarget` kept; expanded to `{targetTable, alias, slots}`.** Post-lift, `slots()` is uniformly true across `FkJoin` and `LiftedHop` ; the variant identity is carried by the slot subtype (`FkSlot` vs `LifterSlot`), not by the carrier ; so all three accessors read uniformly through the capability, which is precisely the "Capability interfaces and sealed switches serve different roles" shape (capabilities express what is *uniformly true*; sealed switches express what *varies by identity*). The validator at `GraphitronSchemaValidator:487` (target-table compare) and the chain-alias loop at `SplitRowsMethodEmitter:265` keep their `WithTarget` reads unchanged. The third runtime cast at `SplitRowsMethodEmitter:631` ; today's identity fork between `FkJoin.sourceColumns()` and `LiftedHop.targetColumns()` for `buildSingleMethod`'s first hop ; loses its discrimination because both variants now expose `slots()` uniformly: the `if/instanceof` block at `:653-660` collapses to a single `firstHop.slots()` iteration. The genuine identity fork retires with the lift; the capability stays, with three accessors all carrying their weight.
-
-   One structural change, all four emit-site convergences, the non-emitter-reader migration, and the direction-flip retirement in the same commit.
-2. **Make positional access on slots structural, not disciplinary.** The accessor exposed to emitter code returns `Iterable<? extends JoinSlot>`, not `List<? extends JoinSlot>`: positional methods (`.get(i)`, `.getFirst()`, `.getLast()`, `.subList(...)`, `SequencedCollection`-shape access) become *compile errors* at the consumer rather than grep findings. Cardinality stays available through a separate `slotCount()` accessor on the capability. The implementer's choice of how to back this in Java (record component as `List<JoinSlot>` with the public accessor narrowed to `Iterable` on `WithTarget`; a default method on the capability that wraps the list; etc.) is open, but the *contract surface* emitters see is iteration-only. This makes "emitters iterate, synthesis decides arity" structural, in line with the spec's own framing that model invariants belong in the type system, not in prose preconditions.
-
-   Single-slot assertions live at the construction site inside `BuildContext.synthesizeFkJoin`, declared with `@LoadBearingClassifierCheck` so that any emitter site relying on "this FK is single-slot" wears the matching `@DependsOnClassifierCheck` and the `LoadBearingGuaranteeAuditTest` audit flags orphaned consumers if the producer is later relaxed. If a call site genuinely handles only single-slot FKs, that's a structural property of the variant or a synthesis-time gate, with the audit-guarded annotation pair documenting the dependency.
-
-   The non-emitter readers in the migration table sit under an implicit *FK-on-source* precondition (parent-holds-FK in the older vocabulary). That precondition is itself load-bearing for the source/target → sourceSide/targetSide mechanical mapping, so it lands as `@LoadBearingClassifierCheck(key = "fk-join.fk-on-source-at-non-emitter-readers")` declared on the construction-site method that makes the precondition concrete; each migrated non-emitter reader (`FieldBuilder.deriveSplitQueryBatchKey`, `FieldBuilder.deriveBatchKeyForResultType`, `FieldBuilder.fkMirrorSourceColumns`, `FieldBuilder.projectFilters`'s two switch arms, `NodeIdLeafResolver`'s DirectFk arm, `BatchKey.LifterRowKeyed`'s lifter accessors) wears `@DependsOnClassifierCheck` for the same key. A future reader that needs the FK-declaration-oriented view under a child-holds-FK case has to recover it through `fk.fk()` against the catalog and declare a new producer; the audit flags any new reader that consumes `sourceSide`/`targetSide` without an annotated precondition.
-
-   The audit step that motivated the closure rule today (`\.slots\(\)\.(get|getFirst|getLast|set|removeFirst|removeLast|subList)\(`, plus the wider `\.get\(0\)` / `\.get\(i\)` sweep over `sourceColumns`, `targetColumns`, `parentKeyColumns`, `primaryKeyColumns`, `nodeKeyColumns`, `slotColumns`, `lookupCols`) becomes a one-time migration audit, not a standing rule: once the type bans positional access at the capability surface, the rule is structural. Each site classifies as: same-list iteration (fine, e.g. `InlineLookupTableFieldEmitter`), one list paired against another by FK construction (now structural under slots), or one list paired against another whose ordering is *separately* derived (the bug shape, fixed by slots). The named offender today is `MultiTablePolymorphicEmitter.branchParentFkWhere:600-617` (the `.get(0)` hardcodes at :608, :609, :611, :612), a hardcoded single-slot read with no slots loop at all, asymmetric with `batchedBranchJoinPredicate`'s composite-FK loop. Under the lift it converges with the batched path on the same `for (var slot : slots)` shape, with the type system preventing the same asymmetry from re-emerging anywhere else.
-3. **Pipeline-tier coverage of the slot lift; compile-tier fixture for the type-mismatch class; retire the body-string greps.** The slot lift is a *structural model change*, so the primary behavioural assertion sits at the SDL → classified model layer per **Pipeline tests are the primary behavioural tier**: a fixture schema with a composite-PK parent + child FK declared in different column order than the parent PK runs through `BuildContext.synthesizeFkJoin` and the test asserts the resulting `JoinStep.FkJoin.slots()` carry the correct sourceSide/targetSide pairing per slot. That assertion catches the regression class where slot orientation is wrong but slot types happen to be compatible (two `Field<Integer>` columns with semantically swapped values), which the compile tier alone wouldn't catch.
-
-   The compile tier complements it for the `Field<Integer>.eq(Field<String>)` type-mismatch class: a fixture in `graphitron-sakila-db`'s `init.sql` (same composite-PK / reordered-FK shape) exercises the bug end-to-end with `mvn compile -pl :graphitron-sakila-example` as the assertion ; test databases are recreated clean per run, no migration scaffolding needed ; per **Compilation against real jOOQ is a test tier**.
-
-   The unit-tier regression tests added in `fdfec353` (`splitTableField_listRowsMethod_reorderedHeteroFk_pairsBySqlNameAndType`, `childInterfaceField_connection_reorderedCompositeFk_pairsBySqlNameAndType`) assert against emitted method bodies via `assertThat(rows).contains("p0.PROJECT_ID.eq(parentInput.field(\"project_id\", java.lang.Integer.class))")`-style string greps. Per **Pipeline tests are the primary behavioural tier** ("Code-string assertions on generated method bodies are banned at every tier; they test implementation, not behaviour, and break on every refactor"), these are the exact pattern the principles forbid. The same commit also re-engineered the existing `childInterfaceField_emitsParentFkConditionPerBranch` fixture (both FKs now source from `last_update`) so the assertions still match ; an integration-style test bent around the body-content shape instead of testing behaviour. The slot-shape work deletes the body-string regressions in favour of the pipeline-tier and compile-tier coverage above, or recasts them against the public emitter contract (`MethodSpec` shape, parameter types) rather than method-body strings.
-
-## Pre-step cleanup ; shipped at `e8e9b76`
-
-The dead `pkCols` plumbing in `SplitRowsMethodEmitter` (the `PreludeBindings.pkCols` record component, the three unused locals in `buildListMethod` / `buildSingleMethod` / `buildConnectionMethod`, and the two explanatory comments referencing `pkCols.get(i).columnClass`) has shipped to trunk at `e8e9b76`. The local inside `emitParentInputAndFkChain` stays where it's actually used (parent-VALUES sizing, typed `parentRowTypeArgs`, the row-builder loop, the parent-input alias). The slot lift below builds on top of the cleaned-up `PreludeBindings` shape.
-
-## Touchpoints
-
-- `JoinStep.FkJoin` (record shape: `sourceColumns` / `targetColumns` lifted to `slots: List<FkSlot>`, where `FkSlot(ColumnRef sourceSide, ColumnRef targetSide)` is the catalog-FK permit of the sealed `JoinSlot` interface; the structural lift target).
-- `JoinStep.LiftedHop` (target-equals-source today via prose; gets `slots: List<LifterSlot>` per Q1, where `LifterSlot(ColumnRef column)` is one of the two `JoinSlot` permits and encodes "DataLoader key tuple IS target-column tuple" as a type fact ; `sourceSide()` and `targetSide()` both delegate to `column()`).
-- `JoinStep.WithTarget` (capability interface on `FkJoin` and `LiftedHop`; **kept; expanded to `{targetTable, alias, slots, slotCount}`** ; all accessors are uniformly true across both permits post-lift. The reads at `GraphitronSchemaValidator:487` and `SplitRowsMethodEmitter:265` are unchanged; the cast at `SplitRowsMethodEmitter:631` stays but the `if/instanceof` discrimination block at `:653-660` collapses to a single `firstHop.slots()` iteration. The slot accessor exposed through the capability is `Iterable<? extends JoinSlot>` so positional access fails to compile at consumers ; see Q2 for the closure rule's structural form. Doc-only comments at `JoinStep.java:22`, `BatchKey.java:374`, and `FieldBuilder.java:2742` update from `targetColumns`-shape to slots-shape but the interface stays).
-- `BuildContext.synthesizeFkJoin` (the structural construction site and the home of the closure rule's arity gate; under synthesis-time orientation, the place where `sourceSqlName.equalsIgnoreCase(f.getTable().getName())` decides per-hop which FK end becomes `sourceSide` vs `targetSide` per slot. **No signature change** ; the existing `sourceSqlName` argument already carries the FK-direction information).
-- `FieldBuilder.deriveSplitQueryBatchKey:2693-2697`, `FieldBuilder.deriveBatchKeyForResultType:2718-2727`, `FieldBuilder.fkMirrorSourceColumns:3227-3239`, `FieldBuilder.projectFilters:1090-1116` (the `ColumnReferenceArg` / `CompositeColumnReferenceArg` switch arms) (non-emitter readers per Q1's migration table; each one is under the FK-on-source precondition implicit in its caller, so FK source/target maps to source-side/target-side directly).
-- `NodeIdLeafResolver:268-271` (DirectFk discrimination; `fkJoin.targetColumns()` becomes targetSide for the invariant compare, `fkJoin.sourceColumns()` becomes sourceSide for the predicate body).
-- `BatchKey.LifterRowKeyed.{targetKeyColumns, keyContainerType, ...}` and the four `hop.targetColumns()` reads at `BatchKey.java:344, 354, 390, 400` (`LifterSlot.column()` is the canonical accessor; `sourceSide()` and `targetSide()` resolve to the same value by type, not by runtime equality).
-- `JoinPathEmitter.emitCorrelationWhere` (the only correctly-paired consumer today). The arity-mismatch throw at `:97-101` becomes structurally impossible once slots replace parallel lists and is deletable; the `parentHoldsFk` parameter at `:95-96` retires too, since slots arrive pre-oriented. The `noCondition()` empty-catalog fallback at `:104-110` stays (an empty `slots()` list still wants the same DSL-runtime stub).
-- `SplitRowsMethodEmitter` ; `buildListMethod`, `buildSingleMethod`, `buildConnectionMethod`, plus the `joinOnParentCols` field on `PreludeBindings`. The dead `pkCols` plumbing already shipped at `e8e9b76`.
-- `MultiTablePolymorphicEmitter` ; `batchedBranchJoinPredicate` (composite-FK loop) and `matchingParticipantCol` (sqlName lookup that disappears entirely with the lift), `branchParentFkWhere:600-617` (the `.get(0)` hardcodes that become a structural `slots()` loop). The `parentHoldsFk` derivations at `:606` and `:1043` (`fkJoin.targetTable().tableName().equalsIgnoreCase(participant.table().tableName())`) retire ; the orientation question is answered at synthesis, not at every emit site.
-- `TypeFetcherGenerator:794` and `InlineTableFieldEmitter:131-132` (the other two `parentHoldsFk` derivations ; `fkJoin.targetTable().tableName().equals(childTableName)` and `boolean parentHoldsFk = singleCardinality;` respectively. Both retire alongside the `emitCorrelationWhere` parameter).
-- `BatchKey.ParentKeyed.parentKeyColumns()` (the authority for "what order is the DataLoader key tuple in"; not changed by R82 ; the parent-VALUES tuple ordering question is split out to a separate backlog item).
-- `GraphitronType.NodeType.nodeKeyColumns` (the SDL-author-chosen identity ordering).
-- `LoadBearingClassifierCheck` / `DependsOnClassifierCheck` (two new keys land with R82: any single-slot arity assertion at `BuildContext.synthesizeFkJoin`, and `fk-join.fk-on-source-at-non-emitter-readers` declared on the construction-site method that makes the FK-on-source precondition concrete, with each migrated non-emitter reader in the migration table wearing the matching `@DependsOnClassifierCheck`. Emitter-side positional access on `slots()` is structurally banned at the type level ; not via classifier check ; so that surface stays on the synthesis side).
-- `rewrite-design-principles.adoc:228` (the "DTO-parent batching" recipe names `JoinStep.WithTarget` and `targetColumns`; the doc updates to slot-shaped vocabulary ; "target accessors come from `WithTarget.slots()`, key extraction from the lifter call" ; in the same commit per the "Documentation names only live tests/code" rule).
-
-## Out of scope
-
-- Changing how node IDs are encoded on the wire. `@node(keyColumns)` order remains the encoding source of truth. This item only addresses how the *internal* column orderings flow through the model and the rows-method emitters.
-- The `BatchKey` column-tuple authority question (catalog PK vs `@node(keyColumns)` for `BatchKey.RowKeyed.parentKeyColumns()` and the parent-VALUES aliasing it drives). The slot lift is independent of which side wins, because under the lift `SplitRowsMethodEmitter`'s JOIN predicate becomes `firstAlias.<slot.targetSide()>.eq(parentInput.field(slot.sourceSide().sqlName(), slot.sourceSide().columnClass()))` ; nominal lookup against `parentInput` by sqlName, not positional. The parent-VALUES tuple's aliasing order then becomes purely a sizing/aliasing concern at prelude time, not a pairing concern at the JOIN predicate, so R82 and the BatchKey ordering item can ship in either order. Tracked separately as a backlog item.
-- The FK-direction *check itself* (FK-on-source vs FK-on-target) ; already a sealed identity decision in `BuildContext.synthesizeFkJoin` (`sourceSqlName.equalsIgnoreCase(f.getTable().getName())` etc.) and not changed by this item; what changes is *where* the check runs and *how often*. Today it runs at every JOIN-predicate emit site. Under synthesis-time slot orientation, it runs once per FK constraint inside `synthesizeFkJoin` and bakes the decision into `slot.sourceSide()` / `slot.targetSide()`; emitters become direction-blind. The slot accessor is coherent across both FK directions by construction, which is what makes the typed shape pay off.
-
+This is a one-parameter signature change against the spec's prose. The
+underlying structural lift is unchanged. The reviewer should weigh whether
+threading cardinality through is the right shape, or whether self-ref
+disambiguation should live elsewhere (e.g. a follow-up to add a self-ref
+classifier check + reject ambiguous cases at validate time, or a separate
+slot-orientation hint on `JoinStep.FkJoin` set by the field classifier
+post-synthesis).
