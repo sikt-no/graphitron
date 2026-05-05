@@ -84,4 +84,34 @@ public final class SampleQueryService {
             .orderBy(Tables.FILM.FILM_ID)
             .fetch();
     }
+
+    /**
+     * R84 Phase D-list fixture: argMapping {@code filmIds: input.items.id} walks through an
+     * intermediate list segment ({@code items: [FilmIdItem!]!}) and projects each item's
+     * {@code id} to produce the {@code List<Integer>} expected here. The Java signature is
+     * identical to {@link #filmsByPath} on purpose; the difference lives entirely on the
+     * schema and argMapping side.
+     */
+    public static Result<FilmRecord> filmsByListPath(DSLContext dsl, List<Integer> filmIds) {
+        return dsl.selectFrom(Tables.FILM)
+            .where(Tables.FILM.FILM_ID.in(filmIds))
+            .orderBy(Tables.FILM.FILM_ID)
+            .fetch();
+    }
+
+    /**
+     * R84 Phase D-list fixture (two-list-deep): argMapping
+     * {@code filmIdGroups: input.groups.items.id} walks two intermediate list segments
+     * ({@code groups: [FilmIdGroup!]!} then {@code items: [FilmIdItem!]!}) and projects each
+     * item's {@code id}, yielding a {@code List<List<Integer>>}. The service flattens the
+     * outer list before the SQL predicate; the test asserts the same films come back
+     * regardless of how the ids are grouped on the wire.
+     */
+    public static Result<FilmRecord> filmsByNestedListPath(DSLContext dsl, List<List<Integer>> filmIdGroups) {
+        var ids = filmIdGroups.stream().flatMap(List::stream).toList();
+        return dsl.selectFrom(Tables.FILM)
+            .where(Tables.FILM.FILM_ID.in(ids))
+            .orderBy(Tables.FILM.FILM_ID)
+            .fetch();
+    }
 }

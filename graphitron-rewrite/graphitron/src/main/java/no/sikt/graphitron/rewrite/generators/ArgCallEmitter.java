@@ -141,47 +141,46 @@ public final class ArgCallEmitter {
      * unchanged. The downstream emitter dispatches on {@code Direct} / {@code EnumValueOf} /
      * {@code TextMapLookup} / {@code JooqConvert} as today.
      *
-     * <p>Multi-segment path: wraps the original extraction as the {@code leaf} of a
-     * {@code NestedInputField} whose {@code outerArgName} is the head segment and whose
-     * {@code path} is the tail segment list. The existing
+     * <p>Multi-segment path with no intermediate list segments: wraps the original extraction
+     * as the {@code leaf} of a {@code NestedInputField} whose {@code outerArgName} is the head
+     * segment and whose {@code path} is the tail segment list. The existing
      * {@link #buildNestedInputFieldExtraction} machinery handles null-safe Map traversal at
      * every level. The leaf step's {@code liftsList} flag is irrelevant for emit (the Map
-     * traversal returns the list value directly to the Java parameter). Intermediate steps
-     * with {@code liftsList=true} (a list-typed field followed by more segments) require
-     * element-wise traversal and are not yet supported; emit throws an
-     * {@link IllegalStateException} so a build-time error surfaces clearly.
+     * traversal returns the list value directly to the Java parameter).
+     *
+     * <p>Paths with intermediate {@code liftsList=true} segments are handled separately by
+     * {@link #buildListAwarePathExtraction} (routed in {@link #emitForParam} before this helper
+     * is reached), so this method does not need to consider that case.
      */
-    private static CallSiteExtraction extractionForArg(ParamSource.Arg arg, String paramDisplayName) {
+    private static CallSiteExtraction extractionForArg(ParamSource.Arg arg) {
         if (arg.path().isHead()) {
             return arg.extraction();
         }
         var segments = arg.path().segments();
-        // Only intermediate steps (not the last) require element-wise traversal when
-        // liftsList=true. The terminal step's liftsList flag is informational; the leaf value
-        // is whatever Map.get returns — already a List<...> in shape.
-        for (int i = 1; i < segments.size() - 1; i++) {
-            if (segments.get(i).liftsList()) {
-                throw new IllegalStateException(
-                    "argMapping path expression with intermediate list segment is not yet supported"
-                    + " at emit time (param '" + paramDisplayName + "', path '" + arg.path().asString()
-                    + "'); list-element-wise traversal lands in a follow-up phase");
-            }
-        }
         var tail = segments.subList(1, segments.size()).stream().map(PathExpr.Segment::name).toList();
         return new CallSiteExtraction.NestedInputField(arg.path().headName(), tail, arg.extraction());
+    }
+
+    /**
+     * True when {@code path} contains at least one non-terminal {@code liftsList=true} segment.
+     * Such paths require element-wise list traversal in the emitted expression, which is
+     * structurally distinct from the {@link CallSiteExtraction.NestedInputField} Map-only chain.
+     * Terminal-list segments do not count: at the leaf the value is whatever {@code Map.get}
+     * returns and is handed straight to the Java parameter (a {@code List} cast).
+     */
+    private static boolean hasIntermediateListSegment(PathExpr path) {
+        var segments = path.segments();
+        for (int i = 1; i < segments.size() - 1; i++) {
+            if (segments.get(i).liftsList()) return true;
+        }
+        return false;
     }
 
     private static CodeBlock emitForParam(TypeFetcherEmissionContext ctx, MethodRef.Param param, CodeBlock tableExpression,
             CodeBlock sourcesExpression, String conditionsClassName) {
         var source = param.source();
         return switch (source) {
-            case ParamSource.Arg arg -> buildArgExtraction(
-                ctx,
-                new CallParam(arg.graphqlArgName(),
-                    extractionForArg(arg, param.name()),
-                    false, param.typeName()),
-                conditionsClassName,
-                null);
+            case ParamSource.Arg arg -> emitArgExpression(ctx, arg, param, conditionsClassName);
             case ParamSource.Context ignored ->
                 CodeBlock.of("$L.getContextArgument(env, $S)", ctx.graphitronContextCall(), param.name());
             case ParamSource.DslContext ignored ->
@@ -209,6 +208,37 @@ public final class ArgCallEmitter {
                     "ParamSource.SourceTable reached buildMethodBackedCallArgs — SourceTable is a child-field concept, unreachable at root: param '"
                     + param.name() + "'");
         };
+    }
+
+    /**
+     * Per-{@link ParamSource.Arg} dispatcher used by {@link #emitForParam}. Routes paths with
+     * an intermediate {@code liftsList=true} segment through {@link #buildListAwarePathExtraction}
+     * (element-wise list traversal); routes everything else through the existing
+     * {@link #extractionForArg} → {@link #buildArgExtraction} chain (head-only or Map-only
+     * traversal). Paths with intermediate-list segments and a non-{@link CallSiteExtraction.Direct}
+     * leaf (e.g. enum / text-map / NodeId decode) are rejected with a clear message; that
+     * combination has not yet been needed and would require interleaving the leaf transform with
+     * the list-element walk.
+     */
+    private static CodeBlock emitArgExpression(TypeFetcherEmissionContext ctx, ParamSource.Arg arg,
+            MethodRef.Param param, String conditionsClassName) {
+        if (hasIntermediateListSegment(arg.path())) {
+            if (!(arg.extraction() instanceof CallSiteExtraction.Direct)) {
+                throw new IllegalStateException(
+                    "argMapping path expression '" + arg.path().asString() + "' on parameter '"
+                    + param.name() + "' has an intermediate list segment combined with a "
+                    + arg.extraction().getClass().getSimpleName() + " leaf transform — "
+                    + "element-wise list traversal currently supports only Direct leaves");
+            }
+            return buildListAwarePathExtraction(arg.path(), param.typeName());
+        }
+        return buildArgExtraction(
+            ctx,
+            new CallParam(arg.graphqlArgName(),
+                extractionForArg(arg),
+                false, param.typeName()),
+            conditionsClassName,
+            null);
     }
 
     public static CodeBlock buildArgExtraction(TypeFetcherEmissionContext ctx, CallParam param, String conditionsClassName, String srcAlias) {
@@ -493,5 +523,122 @@ public final class ArgCallEmitter {
     private static String rawComponent(String typeName) {
         int lt = typeName.indexOf('<');
         return lt < 0 ? typeName : typeName.substring(0, lt);
+    }
+
+    /**
+     * Emits a list-aware nested traversal for an R84 path expression that contains one or more
+     * intermediate {@code liftsList=true} segments. Each intermediate list lifts the rest of
+     * the walk into a {@code .stream().map(...).toList()} producing one extra {@code List<>}
+     * dimension on the result; the terminal segment, list-shaped or not, just casts the
+     * {@code Map.get} value (a list-shaped terminal contributes its own {@code List<>}
+     * dimension via the cast, not via streaming).
+     *
+     * <p>Path {@code [head, items*, id]} where {@code items*} is list-shaped and {@code id} is
+     * scalar (Java parameter type {@code List<Integer>}) emits roughly:
+     * <pre>
+     *     env.getArgument("head") instanceof Map&lt;?, ?&gt; _m1
+     *         ? (_m1.get("items") instanceof List&lt;?&gt; _l2
+     *             ? _l2.stream()
+     *                 .map(_e3 -&gt; _e3 instanceof Map&lt;?, ?&gt; _m4
+     *                     ? (Integer) _m4.get("id") : null)
+     *                 .toList()
+     *             : null)
+     *         : null
+     * </pre>
+     *
+     * <p>Path {@code [head, groups*, items*, id]} (Java parameter {@code List<List<Integer>>})
+     * emits a doubly nested stream: the outer over groups produces inner lists, and the inner
+     * stream over each group's items produces {@code List<Integer>}. Null at any depth
+     * short-circuits to {@code null} at that depth.
+     *
+     * <p>Restrictions:
+     * <ul>
+     *   <li>The leaf transform must be {@link CallSiteExtraction.Direct}; the dispatcher
+     *       {@link #emitArgExpression} rejects other leaf shapes before reaching this helper.</li>
+     *   <li>The Java parameter type's {@code List<>} wrap count must equal the number of
+     *       {@code liftsList=true} segments on the path. The classifier (R84 path resolution
+     *       in {@link no.sikt.graphitron.rewrite.ArgBindingMap}) trusts the schema; if the
+     *       Java type drifts from the schema shape, the cast inside the lambda will fail at
+     *       runtime — which is the same failure mode as a wrong R53 binding.</li>
+     * </ul>
+     */
+    private static CodeBlock buildListAwarePathExtraction(PathExpr path, String leafTypeName) {
+        var segments = path.segments();
+        String headName = segments.get(0).name();
+        int liftCount = 0;
+        for (int i = 1; i < segments.size(); i++) {
+            if (segments.get(i).liftsList()) liftCount++;
+        }
+        // Java parameter type wraps in one List<> for each liftsList=true segment (intermediate or
+        // terminal). Strip those wraps to find the innermost element type (e.g. "java.lang.Integer").
+        String innerLeafType = stripListWraps(leafTypeName, liftCount);
+        var tail = segments.subList(1, segments.size());
+        return walkSegments(
+            CodeBlock.of("env.getArgument($S)", headName),
+            tail,
+            innerLeafType,
+            new int[]{0});
+    }
+
+    /**
+     * Strips {@code n} leading {@code java.util.List<...>} wraps from {@code typeName}, returning
+     * the inner type. {@code stripListWraps("java.util.List<java.util.List<java.lang.Integer>>", 2)}
+     * returns {@code "java.lang.Integer"}. If the wrap count exceeds the actual nesting (which
+     * indicates a classifier/schema drift), the helper stops at the innermost {@code <>} pair
+     * found rather than throwing — the resulting cast may fail at runtime, which surfaces the
+     * mismatch loudly enough.
+     */
+    private static String stripListWraps(String typeName, int n) {
+        String t = typeName;
+        for (int i = 0; i < n; i++) {
+            int lt = t.indexOf('<');
+            int gt = t.lastIndexOf('>');
+            if (lt < 0 || gt < 0) return t;
+            t = t.substring(lt + 1, gt).trim();
+        }
+        return t;
+    }
+
+    /**
+     * Recursive emit for the list-aware walker. {@code currentExpr} is the {@code Object}-typed
+     * value at the current depth; {@code tail} is the remaining segments to traverse from there;
+     * {@code innerLeafType} is the cast target for the innermost {@code Map.get} (after
+     * {@code List<>} wraps have been stripped); {@code counter} is shared across recursive calls
+     * so binding names {@code _m1, _l2, _e3, ...} stay distinct within the same expression.
+     */
+    private static CodeBlock walkSegments(CodeBlock currentExpr, List<PathExpr.Segment> tail,
+            String innerLeafType, int[] counter) {
+        var seg = tail.get(0);
+        var rest = tail.subList(1, tail.size());
+        boolean isLast = rest.isEmpty();
+        int mNum = ++counter[0];
+        String mBind = "_m" + mNum;
+
+        if (isLast) {
+            ClassName rawLeaf = ClassName.bestGuess(rawComponent(innerLeafType));
+            TypeName castTarget = seg.liftsList()
+                ? ParameterizedTypeName.get(ClassName.get(List.class), rawLeaf)
+                : rawLeaf;
+            return CodeBlock.of("$L instanceof $T<?, ?> $L ? ($T) $L.get($S) : null",
+                currentExpr, Map.class, mBind, castTarget, mBind, seg.name());
+        }
+
+        if (seg.liftsList()) {
+            int lNum = ++counter[0];
+            String lBind = "_l" + lNum;
+            int eNum = ++counter[0];
+            String eBind = "_e" + eNum;
+            CodeBlock recursed = walkSegments(CodeBlock.of("$L", eBind), rest, innerLeafType, counter);
+            return CodeBlock.of(
+                "$L instanceof $T<?, ?> $L ? ($L.get($S) instanceof $T<?> $L "
+                + "? $L.stream().map($L -> $L).toList() : null) : null",
+                currentExpr, Map.class, mBind, mBind, seg.name(),
+                List.class, lBind, lBind, eBind, recursed);
+        }
+
+        CodeBlock next = CodeBlock.of("$L.get($S)", mBind, seg.name());
+        CodeBlock recursed = walkSegments(next, rest, innerLeafType, counter);
+        return CodeBlock.of("$L instanceof $T<?, ?> $L ? ($L) : null",
+            currentExpr, Map.class, mBind, recursed);
     }
 }
