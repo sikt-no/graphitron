@@ -17,7 +17,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R77` | Bulk DML mutations: listed @table input arguments | Spec | [plan](bulk-dml-mutations.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
 | `R15` | Sweep doc drift between rewrite docs and `model/` taxonomy <sub>blocked by: [docs-site-asciidoc](docs-site-asciidoc.md)</sub> | Spec | [plan](fix-legacy-refs-in-rewrite-docs.md) |
-| `R81` | Sealed resolution outcomes for catalog table/FK lookups | Ready | [plan](catalog-resolution-sealed-outcomes.md) |
+| `R81` | Sealed resolution outcomes for catalog table/FK lookups | In Progress | [plan](catalog-resolution-sealed-outcomes.md) |
 | `R82` | FK column pairing: typed slots over parallel ordered lists | Ready | [plan](fk-column-pairing-typed-slots.md) |
 | `R3` | Classification vocabulary follow-ups | Spec | [plan](classification-vocabulary-followups.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
@@ -135,7 +135,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R38` [**Unify `rowsMethodName()`**](unify-rowsmethodname.md) — Backlog, cleanup
 - `R39` [**Validate that list fields on tables without a PK require explicit ordering**](validate-list-fields-require-ordering.md) — Backlog, validation
 - `R4` [**Collapse `BatchKeyField` validator/emitter redundancy**](collapse-tabletargetfield-redundancy.md) — Backlog, cleanup
-- `R81` [**Sealed resolution outcomes for catalog table/FK lookups**](catalog-resolution-sealed-outcomes.md) — Ready, architecture
+- `R81` [**Sealed resolution outcomes for catalog table/FK lookups**](catalog-resolution-sealed-outcomes.md) — In Progress, architecture
 - `R5` [**Composite-key `@lookupKey` on list-of-input-object arguments**](composite-key-lookupkey.md) — Backlog, architecture
 - `R82` [**FK column pairing: typed slots over parallel ordered lists**](fk-column-pairing-typed-slots.md) — Ready, cleanup
 - `R42` [**Stub: `@reference` on a scalar (FK column) field (`ColumnReferenceField`)**](column-reference-on-scalar-field.md) — Backlog, stubs
