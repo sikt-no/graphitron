@@ -46,7 +46,9 @@ class ServiceCatalogTest {
 
     /** Test-side shorthand: wrap a raw Java-target → GraphQL-arg map as an {@link ArgBindingMap}. */
     private static ArgBindingMap bindings(Map<String, String> map) {
-        return new ArgBindingMap(map);
+        var byJavaName = new java.util.LinkedHashMap<String, PathExpr>();
+        map.forEach((k, v) -> byJavaName.put(k, PathExpr.head(v)));
+        return new ArgBindingMap(byJavaName);
     }
 
     @Test

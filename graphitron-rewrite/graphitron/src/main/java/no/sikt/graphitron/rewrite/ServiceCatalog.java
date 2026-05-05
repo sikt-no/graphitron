@@ -216,10 +216,10 @@ class ServiceCatalog {
                 String pName = p.isNamePresent() ? p.getName() : null;
                 String displayName = pName != null ? pName : p.getType().getSimpleName();
                 String typeName = p.getParameterizedType().getTypeName();
-                String resolvedArgName = pName != null ? argByJavaName.get(pName) : null;
-                if (resolvedArgName != null) {
+                PathExpr resolvedPath = pName != null ? argByJavaName.get(pName) : null;
+                if (resolvedPath != null) {
                     params.add(new MethodRef.Param.Typed(displayName, typeName,
-                        new ParamSource.Arg(argExtraction(typeName), resolvedArgName)));
+                        new ParamSource.Arg(argExtraction(typeName), resolvedPath.headName())));
                 } else if (pName != null && ctxKeys.contains(pName)) {
                     params.add(new MethodRef.Param.Typed(displayName, typeName, new ParamSource.Context()));
                 } else {
@@ -337,7 +337,7 @@ class ServiceCatalog {
      * identity entry produces the existing per-parameter "does not match any GraphQL argument"
      * error inside the main loop, which is already actionable.
      */
-    private static String checkOverrideTargets(Map<String, String> argByJavaName,
+    private static String checkOverrideTargets(Map<String, PathExpr> argByJavaName,
                                                java.lang.reflect.Method javaMethod,
                                                String methodName, String className) {
         var paramNames = Arrays.stream(javaMethod.getParameters())
@@ -346,10 +346,10 @@ class ServiceCatalog {
             .collect(Collectors.toCollection(java.util.LinkedHashSet::new));
         for (var entry : argByJavaName.entrySet()) {
             String javaTarget = entry.getKey();
-            String argName = entry.getValue();
-            if (javaTarget.equals(argName)) continue;
+            PathExpr path = entry.getValue();
+            if (path.isHead() && javaTarget.equals(path.headName())) continue;
             if (!paramNames.contains(javaTarget)) {
-                return "argMapping entry '" + javaTarget + ": " + argName
+                return "argMapping entry '" + javaTarget + ": " + path.asString()
                     + "' references Java parameter '" + javaTarget
                     + "', but method '" + methodName + "' in class '" + className
                     + "' has parameters " + formatNameSet(paramNames);
@@ -445,10 +445,10 @@ class ServiceCatalog {
                         + "' — compile with -parameters flag (see warning above for instructions)"));
                 }
                 String typeName = p.getParameterizedType().getTypeName();
-                String resolvedArgName = argByJavaName.get(pName);
-                if (resolvedArgName != null) {
+                PathExpr resolvedPath = argByJavaName.get(pName);
+                if (resolvedPath != null) {
                     params.add(new MethodRef.Param.Typed(pName, typeName,
-                        new ParamSource.Arg(argExtraction(typeName), resolvedArgName)));
+                        new ParamSource.Arg(argExtraction(typeName), resolvedPath.headName())));
                 } else if (ctxKeys.contains(pName)) {
                     params.add(new MethodRef.Param.Typed(pName, typeName, new ParamSource.Context()));
                 } else {
@@ -560,7 +560,7 @@ class ServiceCatalog {
      * at the {@code Table<?>} parameter slot, then defers to the same logic as
      * {@link #checkOverrideTargets} for missing-parameter detection.
      */
-    private static String checkTableMethodOverrideTargets(Map<String, String> argByJavaName,
+    private static String checkTableMethodOverrideTargets(Map<String, PathExpr> argByJavaName,
                                                           java.lang.reflect.Method javaMethod,
                                                           String methodName, String className) {
         var tableParamNames = Arrays.stream(javaMethod.getParameters())
@@ -570,10 +570,10 @@ class ServiceCatalog {
             .collect(Collectors.toCollection(java.util.LinkedHashSet::new));
         for (var entry : argByJavaName.entrySet()) {
             String javaTarget = entry.getKey();
-            String argName = entry.getValue();
-            if (javaTarget.equals(argName)) continue;
+            PathExpr path = entry.getValue();
+            if (path.isHead() && javaTarget.equals(path.headName())) continue;
             if (tableParamNames.contains(javaTarget)) {
-                return "argMapping entry '" + javaTarget + ": " + argName
+                return "argMapping entry '" + javaTarget + ": " + path.asString()
                     + "' targets the Table<?> parameter of @tableMethod '" + methodName
                     + "' in class '" + className + "' — the Table<?> slot is reserved and cannot be"
                     + " bound to a GraphQL argument";
