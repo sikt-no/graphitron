@@ -1,0 +1,138 @@
+= Diagnostics glossary
+:description: Every closed-set diagnostic code the rewrite validator emits, organised by category. Covers the three top-level rejection kinds, the nine name-lookup attempt kinds, and the four deferred emit-block reasons.
+:!toc:
+
+The rewrite validator emits each schema-validation error in a `[<kind>] <message>` shape. The kind is a kebab-case prefix from a closed set (the only top-level signal that survives intact through every formatter); the message is a single-sentence rendering of a typed `Rejection` variant carrying structured data the LSP, the watch-mode formatter, and downstream tooling can read without re-parsing prose. Some variants carry their own closed-set sub-codes (the `attempt-kind` of an `unknown-name` error; the `emit-block-reason` of a `deferred` error); those round out the verifiable surface.
+
+This page is the alphabetical reference for every closed-set code, organised by category. Most everyday `[invalid-schema]` and `[author-error]` errors are `Structural` variants whose messages are produced ad-hoc at the classifier site; those are not enumerable here, but the kind-level entries below describe what reading them looks like.
+
+== Top-level kinds
+
+Every validator error line begins with one of these three prefixes. The prefix is the kebab-case form of `RejectionKind`:
+
+[#kind-author-error]
+=== author-error
+
+Author-correctable: a name typo, a missing `@table` somewhere it's needed, a directive pointed at something the jOOQ catalog or SDL registry doesn't know about. Most messages name the offending element and (when the lookup is against a closed set) include a `did you mean: ...` hint with up to five candidates ranked by Levenshtein distance.
+
+The fix is in the schema or the consumer code (a column rename, an FK declaration, a `<namedReference>` entry, etc.); no Graphitron-internal change is needed. When you can't tell whether an error is `[author-error]` or `[invalid-schema]`, the rule of thumb is "could a column rename in the SDL fix it?" Yes → `[author-error]`. No → `[invalid-schema]`.
+
+[#kind-invalid-schema]
+=== invalid-schema
+
+Structural: the directive combination cannot work, period. Two sub-shapes:
+
+* `DirectiveConflict` reports two or more directives that co-occur in a combination the classifier rejects (`@asConnection` on a non-`@splitQuery` field, `@discriminate` mixed with `@reference`, etc.). The error names the conflicting directives.
+* `Structural` reports rules that don't reduce to a clean directive enumeration ("lookup fields must not return a connection", "result type does not match input cardinality").
+
+The fix is to drop or replace one of the directives, or restructure the schema so the combination doesn't arise. Renames don't help; this is a hard "no".
+
+[#kind-deferred]
+=== deferred
+
+Recognised but not yet generator-supported. The classifier understands what the schema asks for, the rewrite roadmap tracks the work, but emission is stubbed until the relevant plan ships. The error message includes the roadmap path (`see graphitron-rewrite/roadmap/<plan-slug>.md`) when a plan is associated.
+
+The fix is to either drop the unsupported shape (and revisit when the plan ships), or contribute the missing emission to the rewrite. The roadmap entry names the variant class or feature shape; a non-empty `planSlug` plus a `StubKey` (variant class or `EmitBlockReason`) attaches every `deferred` error to a tracked work item.
+
+== Name-lookup attempt kinds
+
+When an `[author-error]` carries an `UnknownName` variant (a closed-set name lookup that didn't resolve), the message contains a `did you mean: ...` suffix when there were close candidates. The variant's `attempt-kind` field names *what kind of thing the classifier was looking up*; the LSP fix-its read this typed value to offer the right action ("rename column", "add `<namedReference>` entry", etc.).
+
+[#attempt-column]
+=== column
+
+The `@field` directive's `name:` argument did not match any column on the `@table`-bound parent. Candidates are columns on the same table; the typical typo is case (`firstName` vs `FIRST_NAME`) or a stale rename (column dropped at the database side, schema not updated). xref:directives/field.adoc[`@field` directive reference] covers the column-name resolution rules.
+
+[#attempt-table]
+=== table
+
+The `@table` directive's `name:` argument did not match any table in the jOOQ-generated catalog. Candidates are tables under the configured `<jooqPackage>`. The typical fix is correcting case or schema prefix; if the table is genuinely missing, regenerate the jOOQ catalog from the database first.
+
+[#attempt-foreign-key]
+=== foreign-key
+
+A `@reference` directive's `key:` argument did not match any FK declared on the parent table. Candidates are the FK constants on the relevant table's `Keys` class. If the FK exists in the database but not in the catalog, regenerate jOOQ; if it doesn't exist, declare it (`ALTER TABLE ... ADD FOREIGN KEY`) or pin the join with `table:` instead of `key:`. xref:directives/reference.adoc[`@reference` directive reference] covers both pinning shapes.
+
+[#attempt-service-method]
+=== service-method
+
+The `@service` (or `@externalField`, `@tableMethod`) directive's `methodName:` argument (or the field-name default) did not match any static method on the resolved class. Candidates are the public static methods on that class with matching arity; the typical typo is method-name capitalisation or a stale signature. xref:../how-to/external-code.adoc[How-to: Wire external Java code] covers the FQCN + method-name contract.
+
+[#attempt-lifter-method]
+=== lifter-method
+
+The `@batchKeyLifter` directive's `methodName:` argument did not match any static method on the resolved class. Candidates are the lifter-shape static methods (`(Set<Key>) -> Map<Key, Value>`) on that class. xref:directives/batchKeyLifter.adoc[`@batchKeyLifter` directive reference] covers the lifter signature.
+
+[#attempt-enum-constant]
+=== enum-constant
+
+A jOOQ-typed `@enum` mapping referenced a Java enum constant the resolved enum class doesn't carry. Candidates are the enum's actual values; the typical fix is correcting the constant name or updating the jOOQ catalog if the database enum changed.
+
+[#attempt-type-name]
+=== type-name
+
+A `@nodeId` directive's `typeName:` argument (or a similar refType lookup) did not match any GraphQL type in the assembled SDL. Candidates are the declared types; the typical fix is correcting case or pulling in the missing schema file.
+
+[#attempt-nodeid-key-column]
+=== nodeid-key-column
+
+A `@node` directive's `keyColumns:` argument named a column the bound table doesn't carry. Candidates are columns on the table; the typical fix is correcting case (jOOQ-generated identifiers are usually upper-snake) or updating `keyColumns:` after a schema change. xref:directives/node.adoc[`@node` directive reference] covers the `keyColumns:` contract.
+
+[#attempt-dml-kind]
+=== dml-kind
+
+A `@mutation` directive's `typeName:` argument did not match the closed set of supported DML kinds. Candidates are the supported values (`INSERT`, `UPDATE`, `DELETE`, ...); the typical fix is correcting case. xref:directives/mutation.adoc[`@mutation` directive reference] covers the supported DML kinds.
+
+== Deferred emit-block reasons
+
+When a `[deferred]` error carries an `EmitBlock` `StubKey` (the emitter recognises the shape but no `Variant` class is yet stubbed for it), the variant carries one of these closed-set reasons. Each names a specific shape inside the split-rows / record emitter that doesn't yet have an emit path. The reason value is a typed enum so plan-tracking tooling can pivot the codebase against the surface:
+
+[#emit-block-split-table-field-condition-join-step]
+=== split-table-field-condition-join-step
+
+A `@splitQuery`-batched fetch reaches a `TableField` carrying a `@condition` that requires a join step the split-batch emitter does not yet emit. Tracked alongside the broader `@condition`-cascade work in the rewrite roadmap.
+
+[#emit-block-split-lookup-table-field-condition-join-step]
+=== split-lookup-table-field-condition-join-step
+
+A `@splitQuery`-batched lookup reaches a `TableField` lookup with a `@condition` requiring a join step the split-lookup emitter does not yet emit. Same family as above; the lookup-shape sub-arm.
+
+[#emit-block-record-table-field-condition-join-step]
+=== record-table-field-condition-join-step
+
+A `@record`-parent fetch reaches a `TableField` carrying a `@condition` whose join step the record-parent emitter does not yet emit. Same family, record-parent shape.
+
+[#emit-block-record-lookup-table-field-condition-join-step]
+=== record-lookup-table-field-condition-join-step
+
+A `@record`-parent lookup reaches a `TableField` lookup whose `@condition` requires a join step the record-parent lookup emitter does not yet emit. The remaining quadrant of the shape: `record` parent + `lookup` site.
+
+== Where to read each error
+
+Every emitted error line takes one of three forms; pattern-match by prefix and recover the structured pieces:
+
+[source]
+----
+[author-error] <message> [; did you mean: A, B, C]
+[invalid-schema] <message>
+[deferred] <message> [— see graphitron-rewrite/roadmap/<plan-slug>.md]
+----
+
+The `did you mean: ...` suffix only appears for `UnknownName` variants (the nine attempt-kinds above); a structural `[author-error]` carries no candidate list. The roadmap path only appears for `Deferred` variants whose `planSlug` is non-empty.
+
+Watch-mode (`mvn graphitron:dev`) groups errors by file and coordinate, then prints them under one heading per element; the `[<kind>]` prefix is preserved through the grouping so the typed signal is still legible.
+
+== Drift protection
+
+A bidirectional coverage test (`DiagnosticsDocCoverageTest` in `graphitron-sakila-example`) asserts every value of `RejectionKind`, `Rejection.AttemptKind`, and `Rejection.EmitBlockReason` has an anchored `=== <kebab-case-name>` heading on this page, and every such heading corresponds to an enum value. A new diagnostic added to one of these enums cannot land green without a doc paragraph; an obsolete code's removal forces the heading's removal.
+
+Structural variants (`AuthorError.Structural`, `InvalidSchema.Structural`, `InvalidSchema.DirectiveConflict`) carry ad-hoc messages produced at the classifier site and are not enumerable; the kind-level entries above describe how to read those.
+
+== See also
+
+* xref:directives/index.adoc[Directive reference] is the SDL-side companion: every closed-set name lookup that produces an `unknown-name` error resolves against a directive's argument, and the directive page covers the resolution contract.
+* xref:mojo-configuration.adoc[Maven plugin configuration] covers the `validate` goal that runs the validator without emitting code; useful for a CI gate that surfaces these errors without the full code-generation cost.
+* xref:../how-to/migrating-from-legacy.adoc[How-to: Migrating from the legacy generator] covers diagnostics specific to the legacy-to-rewrite transition (the `@notGenerated` rejection, the synthesis shims that warn but classify, the `@condition` cascade divergence).
+* xref:../../architecture/rewrite-design-principles.adoc[Rewrite design principles] covers the typed-rejection rationale (why a sealed hierarchy rather than a flat enum, why structured candidates rather than parsing prose).
+
+xref:index.adoc[← Reference index]
