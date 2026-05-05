@@ -71,4 +71,9 @@ How `@table` binds a GraphQL type to a jOOQ-modelled PostgreSQL table, and how `
 
 xref:03-first-query.adoc[Page 3: Running your first query] sends a real GraphQL query to the running server and gets `customer` rows back.
 
-xref:index.adoc[← Tutorial overview]
+[.pagenav,cols="<,^,>",frame=none,grid=none]
+|===
+| xref:01-prerequisites.adoc[← Previous: Prerequisites]
+| xref:index.adoc[↑ Tutorial overview]
+| xref:03-first-query.adoc[Next: Running your first query →]
+|===

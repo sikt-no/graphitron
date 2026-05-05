@@ -102,4 +102,9 @@ How `@reference(path: ...)` declares a foreign-key join by constraint name; how 
 
 xref:05-mutations.adoc[Page 5: A first mutation] turns from reading data to writing it: a single directive flips a query into an `INSERT`.
 
-xref:index.adoc[← Tutorial overview]
+[.pagenav,cols="<,^,>",frame=none,grid=none]
+|===
+| xref:03-first-query.adoc[← Previous: Running your first query]
+| xref:index.adoc[↑ Tutorial overview]
+| xref:05-mutations.adoc[Next: A first mutation →]
+|===
