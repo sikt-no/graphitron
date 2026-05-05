@@ -61,15 +61,28 @@ public final class RewriteSchemaLoader {
      * include them in {@code getMessage()}. Surfacing the source path turns
      * "extra tokens ... at line 15 column 5" into a message that points at the
      * actual file.
+     *
+     * <p>The upstream message format is
+     * {@code "Invalid syntax encountered. <subclass-detail>. Offending token '<X>' at line N column M"}
+     * (see graphql-java's {@code InvalidSyntaxException.toMessage}). We take only
+     * the first sentence: the subclass-detail and trailing offending-token line/column
+     * are redundant once we have the file path and source-relative coordinates.
      */
     private static String attributedMessage(InvalidSyntaxException e) {
         var location = e.getLocation();
+        var brief = firstSentence(e.getMessage());
         if (location == null || location.getSourceName() == null) {
-            return "Schema parse failed: " + e.getMessage();
+            return "Schema parse failed: " + brief;
         }
         return "Schema parse failed in " + location.getSourceName()
             + " at line " + location.getLine() + " column " + location.getColumn()
-            + ": " + e.getMessage();
+            + ": " + brief;
+    }
+
+    private static String firstSentence(String message) {
+        if (message == null) return "";
+        int cut = message.indexOf(". ");
+        return cut > 0 ? message.substring(0, cut + 1) : message;
     }
 
     private static void addDirectivesSource(MultiSourceReader.Builder builder) {
