@@ -202,8 +202,9 @@ public final class InlineLookupTableFieldEmitter {
         } else {
             JoinStep.FkJoin first = (JoinStep.FkJoin) path.get(0);
             String firstAlias = aliases.get(0);
-            // List-only cardinality (Single is rejected for @lookupKey) → parent is PK side.
-            where.add("$L", JoinPathEmitter.emitCorrelationWhere(first, firstAlias, parentAlias, false));
+            // Slot orientation at synthesis time bakes the FK-direction decision into each slot
+            // pair, so the emitter is direction-blind regardless of cardinality.
+            where.add("$L", JoinPathEmitter.emitCorrelationWhere(first, firstAlias, parentAlias));
         }
         for (JoinStep step : path) {
             if (step instanceof JoinStep.FkJoin fk && fk.whereFilter() != null) {

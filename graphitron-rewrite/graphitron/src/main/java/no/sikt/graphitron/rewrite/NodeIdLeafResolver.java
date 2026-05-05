@@ -108,14 +108,14 @@ final class NodeIdLeafResolver {
          * {@code In} / {@code RowIn} / {@code Eq} / {@code RowEq} body params.
          *
          * <p>Sealed into two arms on the positional-correspondence question between the FK's
-         * {@code targetColumns} and {@code T}'s {@code keyColumns}:
+         * target-side columns and {@code T}'s {@code keyColumns}:
          *
          * <ul>
-         *   <li>{@link DirectFk} — FK target columns positionally match {@code T}'s key columns.
-         *       Emission binds decoded keys directly against {@code joinPath[0].sourceColumns()}
-         *       on the field's own table; no JOIN, no translation. This is the only shape any
-         *       projection arm emits today.</li>
-         *   <li>{@link TranslatedFk} — FK target columns differ from {@code T}'s key columns
+         *   <li>{@link DirectFk} — FK target-side columns positionally match {@code T}'s key
+         *       columns. Emission binds decoded keys directly against
+         *       {@code joinPath[0].sourceSideColumns()} on the field's own table; no JOIN, no
+         *       translation. This is the only shape any projection arm emits today.</li>
+         *   <li>{@link TranslatedFk} — FK target-side columns differ from {@code T}'s key columns
          *       (e.g. parent_node + child_ref where the FK targets parent.alt_key but the
          *       NodeType key is parent.pk_id). Emission requires JOIN-with-translation; deferred
          *       (see graphitron-rewrite/roadmap/nodeid-fk-target-arg-join-translation.md and
@@ -130,11 +130,11 @@ final class NodeIdLeafResolver {
             List<JoinStep> joinPath();
 
             /**
-             * Direct-FK arm: FK target columns positionally match {@code T}'s key columns.
+             * Direct-FK arm: FK target-side columns positionally match {@code T}'s key columns.
              * The body emitter binds decoded keys directly against {@code fkSourceColumns}
-             * (which are also reachable as {@code joinPath[0].sourceColumns()}; both are kept
-             * on the carrier so the emitter consumes the load-bearing slot directly without
-             * re-extracting it through the join path).
+             * (which are also reachable as {@code joinPath[0].sourceSideColumns()}; both are
+             * kept on the carrier so the emitter consumes the load-bearing slot directly
+             * without re-extracting it through the join path).
              *
              * @param refTypeName     the resolved (or inferred) GraphQL type name of {@code T}
              * @param targetTable     resolved {@link TableRef} for {@code T.table()}
@@ -199,15 +199,21 @@ final class NodeIdLeafResolver {
      */
     @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
         key = "nodeid-fk.direct-fk-keys-match",
-        description = "FK target columns positionally match NodeType key columns;"
-                    + " emission can bind decoded keys directly against fkSourceColumns."
+        description = "FK target-side columns positionally match NodeType key columns;"
+                    + " emission can bind decoded keys directly against the source-side columns."
                     + " The resolver picks Resolved.FkTarget.DirectFk only when this holds;"
                     + " the pathological case (FK target ≠ NodeType key) is sorted to"
                     + " TranslatedFk and rejected at projection time. The projection arms for"
                     + " ColumnReferenceArg / CompositeColumnReferenceArg /"
-                    + " InputField.{Column,CompositeColumn}ReferenceField read fkSourceColumns"
-                    + " straight into BodyParam.{Eq,In,RowEq,RowIn} and assume positional"
+                    + " InputField.{Column,CompositeColumn}ReferenceField read those source-side"
+                    + " columns straight into BodyParam.{Eq,In,RowEq,RowIn} and assume positional"
                     + " correspondence with the decoded NodeType keys.")
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "fk-join.slots-oriented-source-and-target",
+        reliesOn = "Reads fkJoin.targetSideColumns() to test the keyColumns-mirror predicate "
+            + "and fkJoin.sourceSideColumns() to populate Resolved.FkTarget.DirectFk's "
+            + "fkSourceColumns; depends on synthesis-time slot orientation so the same call "
+            + "works whether the parent or the child holds the FK constraint.")
     Resolved resolve(GraphQLDirectiveContainer leaf, String leafName, TableRef containingTable) {
         var typeNameInference = inferTypeName(leaf, containingTable);
         if (typeNameInference.error() != null) {
@@ -265,10 +271,10 @@ final class NodeIdLeafResolver {
         }
         TableRef targetTable = targetTableOpt.get();
         var fkJoin = (FkJoin) joinPath.path().get(0);
-        if (sameColumnsBySqlName(fkJoin.targetColumns(), keys.keyColumns())) {
+        if (sameColumnsBySqlName(fkJoin.targetSideColumns(), keys.keyColumns())) {
             return new Resolved.FkTarget.DirectFk(
                 refTypeName, targetTable, decodeMethod, keys.keyColumns(),
-                fkJoin.sourceColumns(), joinPath.path());
+                fkJoin.sourceSideColumns(), joinPath.path());
         }
         return new Resolved.FkTarget.TranslatedFk(
             refTypeName, targetTable, decodeMethod, keys.keyColumns(), joinPath.path());
@@ -401,8 +407,10 @@ final class NodeIdLeafResolver {
                 "FK '" + fkName + "' on table '" + containingTable.tableName()
                 + "' not found in catalog");
         }
+        // NodeId leafs are single-cardinality decoded keys against the parent's own table; the
+        // shim's invariant places the FK on the parent (source) side, so selfRefFkOnSource=true.
         Optional<FkJoin> fkStepOpt = ctx.synthesizeFkJoin(
-            fkOpt.get(), containingTable.tableName(), leafName, 0, null);
+            fkOpt.get(), containingTable.tableName(), leafName, 0, null, /*selfRefFkOnSource=*/true);
         if (fkStepOpt.isEmpty()) {
             return new JoinPathResult(null,
                 "FK '" + fkName + "' on table '" + containingTable.tableName()
