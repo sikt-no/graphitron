@@ -116,6 +116,39 @@ class NodeIdLeafResolverTest {
     }
 
     @Test
+    void rejects_whenNodeTypeKeyArityExceeds22() {
+        // jOOQ's typed Record/Row caps at Row22. A NodeType with > 22 key columns cannot be
+        // expressed as a typed Record<N>, so NodeIdLeafResolver.resolve must reject at
+        // classification time rather than letting the emitter crash. The nodeidfixture
+        // catalog carries a deliberately oversized NodeType (`too_wide`, 23-column PK) for
+        // this guard; see NodeIdFixtureGenerator.METADATA and init.sql.
+        String sdl = """
+            type Bar implements Node @table(name: "bar") @node { id: ID! }
+            type TooWide implements Node @table(name: "too_wide") @node { id: ID! }
+            type Query {
+                barsByTooWide(tooWideIds: [ID!]! @nodeId(typeName: "TooWide")): [Bar!]!
+            }
+            """;
+        var bctx = buildBuildContext(sdl);
+        var resolver = bctx.nodeIdLeafResolver();
+
+        var barField = ((GraphQLObjectType) bctx.schema.getType("Query"))
+            .getFieldDefinition("barsByTooWide");
+        GraphQLArgument arg = barField.getArgument("tooWideIds");
+        var barTable = bctx.resolveTable("bar").orElseThrow();
+
+        var resolved = resolver.resolve(arg, "tooWideIds", barTable);
+
+        assertThat(resolved).isInstanceOf(NodeIdLeafResolver.Resolved.Rejected.class);
+        var rejected = (NodeIdLeafResolver.Resolved.Rejected) resolved;
+        assertThat(rejected.rejection().message())
+            .contains("TooWide")
+            .contains("tooWideIds")
+            .contains("23 key columns")
+            .contains("Row22 cap");
+    }
+
+    @Test
     void directFk_alsoDrivesInputFieldSideClassification() {
         // The same DirectFk variant arises whether the @nodeId leaf is a top-level argument
         // or an input field on a @table-bound input type. Build the resolver once against an
