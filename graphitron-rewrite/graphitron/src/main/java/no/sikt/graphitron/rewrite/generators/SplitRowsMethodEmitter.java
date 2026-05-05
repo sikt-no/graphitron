@@ -109,15 +109,13 @@ public final class SplitRowsMethodEmitter {
      * re-switching.
      *
      * <p>{@code joinOnParentCols} is parallel to {@code joinOnCols}: index {@code i} is the parent
-     * PK column that {@code joinOnCols.get(i)} references. On the catalog-FK path that is
+     * column that {@code joinOnCols.get(i)} references. On the catalog-FK path that is
      * {@link JoinStep.FkJoin#targetColumns()} (the FK's parent-side referenced columns, paired
      * with {@code sourceColumns} by FK declaration order); on the lifter path it is the same list
-     * as {@code joinOnCols} (the DataLoader key tuple IS the target-column tuple). Consumers use
-     * this to derive the {@code parentInput.field(...)} reference for each predicate slot — the
-     * FK's slot ordering may differ from the parent's {@code @node(keyColumns: [...])} ordering
-     * (which drives {@code pkCols}), so a positional lookup against {@code pkCols.get(i)} would
-     * mis-pair column types. Resolving against the parent column itself (sqlName + Java type)
-     * keeps the join predicate type-correct regardless of either ordering.
+     * as {@code joinOnCols} (the DataLoader key tuple IS the target-column tuple). Consumers
+     * resolve the {@code parentInput.field(...)} reference for each predicate slot by
+     * sqlName + Java type, sidestepping any positional mismatch between FK column ordering and
+     * the parent VALUES table's aliasing order.
      */
     private record PreludeBindings(
         List<String> aliases,
@@ -125,8 +123,7 @@ public final class SplitRowsMethodEmitter {
         String firstAlias,
         List<ColumnRef> joinOnCols,
         List<ColumnRef> joinOnParentCols,
-        TypeName keyElement,
-        List<ColumnRef> pkCols
+        TypeName keyElement
     ) {}
 
     /**
@@ -272,7 +269,7 @@ public final class SplitRowsMethodEmitter {
                 fieldName + "_" + aliases.get(i));
         }
 
-        return new PreludeBindings(aliases, terminalAlias, firstAlias, joinOnCols, joinOnParentCols, keyElement, pkCols);
+        return new PreludeBindings(aliases, terminalAlias, firstAlias, joinOnCols, joinOnParentCols, keyElement);
     }
 
     // -----------------------------------------------------------------------
@@ -442,7 +439,6 @@ public final class SplitRowsMethodEmitter {
         List<ColumnRef> joinOnParentCols = p.joinOnParentCols();
         TypeName keyElement = p.keyElement();
         TypeName keysListType = ParameterizedTypeName.get(LIST, keyElement);
-        List<ColumnRef> pkCols = p.pkCols();
 
         // Projection: $fields(env.getSelectionSet(), terminalAlias, env) + idx.as("__idx__").
         // env.getSelectionSet() is the child-selection for the Split field itself — exactly what
@@ -517,9 +513,7 @@ public final class SplitRowsMethodEmitter {
         // terminal-side column whose value equals the parent column joinOnParentCols.get(i)
         // (FK targetColumns on the catalog-FK path, identical to joinOnCols on the lifter path).
         // We resolve the parentInput field by sqlName + Java type rather than positional index,
-        // because @node(keyColumns: [...]) ordering may differ from FK column ordering — a
-        // positional .field(i+1, pkCols.get(i).columnClass) would mis-pair types when those
-        // orderings disagree (composite parent keys with different in-FK column order). ON
+        // because @node(keyColumns: [...]) ordering may differ from FK column ordering. ON
         // rather than USING dodges junction-column collisions, as Phase 2a C2 established.
         var onCond = CodeBlock.builder();
         for (int i = 0; i < joinOnCols.size(); i++) {
@@ -637,7 +631,6 @@ public final class SplitRowsMethodEmitter {
         JoinStep.WithTarget firstHop = (JoinStep.WithTarget) joinPath.get(0);
         TypeName keyElement = p.keyElement();
         TypeName keysListType = ParameterizedTypeName.get(LIST, keyElement);
-        List<ColumnRef> pkCols = p.pkCols();
 
         TypeName wildField = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
         TypeName listOfField = ParameterizedTypeName.get(LIST, wildField);
@@ -655,9 +648,7 @@ public final class SplitRowsMethodEmitter {
         // declaration; LiftedHop's DataLoader key tuple IS its target-column tuple by
         // construction, so the parent column equals the terminal column. We resolve the
         // parentInput field by sqlName + Java type rather than positional index, because
-        // @node(keyColumns: [...]) ordering may differ from the FK/lifter column ordering — a
-        // positional .field(i+1, pkCols.get(i).columnClass) would mis-pair types when those
-        // orderings disagree.
+        // @node(keyColumns: [...]) ordering may differ from the FK/lifter column ordering.
         List<ColumnRef> singleParentCols;
         if (firstHop instanceof JoinStep.FkJoin fkSingle) {
             singleParentCols = fkSingle.sourceColumns();
@@ -779,7 +770,6 @@ public final class SplitRowsMethodEmitter {
         List<ColumnRef> joinOnParentCols = p.joinOnParentCols();
         TypeName keyElement = p.keyElement();
         TypeName keysListType = ParameterizedTypeName.get(LIST, keyElement);
-        List<ColumnRef> pkCols = p.pkCols();
 
         // Extract pagination args up front. Invariant: same values across every key in the batch,
         // because the DataLoader name is path-scoped and graphql-java resolves args per-field-path.
