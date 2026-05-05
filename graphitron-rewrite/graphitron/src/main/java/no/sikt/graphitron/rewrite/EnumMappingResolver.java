@@ -215,7 +215,7 @@ final class EnumMappingResolver {
                 + arg.graphqlArgName().toUpperCase() + "_MAP";
             return (MethodRef.Param) new MethodRef.Param.Typed(p.name(), p.typeName(),
                 new ParamSource.Arg(new CallSiteExtraction.TextMapLookup(mapFieldName, textMapping),
-                    arg.graphqlArgName()));
+                    arg.path()));
         }).toList();
         return new MethodRef.Basic(method.className(), method.methodName(),
             method.returnType(), newParams, method.declaredExceptions(), method.isStatic());

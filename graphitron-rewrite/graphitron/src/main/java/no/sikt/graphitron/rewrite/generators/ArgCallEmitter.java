@@ -4,6 +4,7 @@ import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
+import no.sikt.graphitron.rewrite.PathExpr;
 import no.sikt.graphitron.rewrite.model.CallParam;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.MethodRef;
@@ -132,13 +133,48 @@ public final class ArgCallEmitter {
         return args.build();
     }
 
+    /**
+     * Resolves the effective {@link CallSiteExtraction} for a {@link ParamSource.Arg} by routing
+     * multi-segment R84 path expressions through {@link CallSiteExtraction.NestedInputField}.
+     *
+     * <p>Single-segment {@link PathExpr.Head} (R53 baseline): returns {@code arg.extraction()}
+     * unchanged. The downstream emitter dispatches on {@code Direct} / {@code EnumValueOf} /
+     * {@code TextMapLookup} / {@code JooqConvert} as today.
+     *
+     * <p>Multi-segment path: wraps the original extraction as the {@code leaf} of a
+     * {@code NestedInputField} whose {@code outerArgName} is the head segment and whose
+     * {@code path} is the tail segment list. The existing
+     * {@link #buildNestedInputFieldExtraction} machinery handles null-safe Map traversal at
+     * every level. {@code Step.liftsList=true} segments (intermediate-list traversal) are not
+     * yet supported and surface as an {@link IllegalStateException} at emit time; the
+     * classifier rejects them at the binding boundary.
+     */
+    private static CallSiteExtraction extractionForArg(ParamSource.Arg arg, String paramDisplayName) {
+        if (arg.path().isHead()) {
+            return arg.extraction();
+        }
+        var segments = arg.path().segments();
+        for (var s : segments.subList(1, segments.size())) {
+            if (s.liftsList()) {
+                throw new IllegalStateException(
+                    "argMapping path expression with intermediate list segment is not yet supported"
+                    + " at emit time (param '" + paramDisplayName + "', path '" + arg.path().asString()
+                    + "'); list-element-wise traversal lands in a follow-up phase");
+            }
+        }
+        var tail = segments.subList(1, segments.size()).stream().map(PathExpr.Segment::name).toList();
+        return new CallSiteExtraction.NestedInputField(arg.path().headName(), tail, arg.extraction());
+    }
+
     private static CodeBlock emitForParam(TypeFetcherEmissionContext ctx, MethodRef.Param param, CodeBlock tableExpression,
             CodeBlock sourcesExpression, String conditionsClassName) {
         var source = param.source();
         return switch (source) {
             case ParamSource.Arg arg -> buildArgExtraction(
                 ctx,
-                new CallParam(arg.graphqlArgName(), arg.extraction(), false, param.typeName()),
+                new CallParam(arg.graphqlArgName(),
+                    extractionForArg(arg, param.name()),
+                    false, param.typeName()),
                 conditionsClassName,
                 null);
             case ParamSource.Context ignored ->

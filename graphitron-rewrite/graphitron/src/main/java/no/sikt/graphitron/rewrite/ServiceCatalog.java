@@ -219,7 +219,7 @@ class ServiceCatalog {
                 PathExpr resolvedPath = pName != null ? argByJavaName.get(pName) : null;
                 if (resolvedPath != null) {
                     params.add(new MethodRef.Param.Typed(displayName, typeName,
-                        new ParamSource.Arg(argExtraction(typeName), resolvedPath.headName())));
+                        new ParamSource.Arg(argExtraction(typeName), resolvedPath)));
                 } else if (pName != null && ctxKeys.contains(pName)) {
                     params.add(new MethodRef.Param.Typed(displayName, typeName, new ParamSource.Context()));
                 } else {
@@ -448,7 +448,7 @@ class ServiceCatalog {
                 PathExpr resolvedPath = argByJavaName.get(pName);
                 if (resolvedPath != null) {
                     params.add(new MethodRef.Param.Typed(pName, typeName,
-                        new ParamSource.Arg(argExtraction(typeName), resolvedPath.headName())));
+                        new ParamSource.Arg(argExtraction(typeName), resolvedPath)));
                 } else if (ctxKeys.contains(pName)) {
                     params.add(new MethodRef.Param.Typed(pName, typeName, new ParamSource.Context()));
                 } else {
