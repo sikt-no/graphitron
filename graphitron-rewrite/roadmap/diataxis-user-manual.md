@@ -424,6 +424,7 @@ Two parallel deliverables:
   input type). Some material lifts from
   `graphitron-rewrite/docs/rewrite-design-principles.adoc`, but rewritten
   for users (no "the classifier emits an `UnclassifiedField`" jargon).
+  *Outstanding.*
 - *Mojo + runtime reference*. `reference/mojo-configuration.adoc` lists
   every Maven plugin parameter (legacy "General settings", "Validation",
   "Query generation", "Code references" plus the rewrite-mojo additions
@@ -437,18 +438,38 @@ Two parallel deliverables:
   page is hand-written prose; if drift becomes a real problem, a
   follow-up can lift signatures from `graphitron-sakila-example`'s
   generated `Graphitron.java` via an AsciiDoc include.
+  *Shipped at `868593a` (runtime-api) and `d796c4c` (mojo + verifier).*
 
-### Phase 5: Diagnostics glossary and deprecation index
+### Phase 5: Diagnostics glossary and deprecation index — shipped
 
 `reference/diagnostics-glossary.adoc`: alphabetical list of every error
 code the validator emits, with one paragraph of guidance per code. The
 list is generated from the validator's enum (`Diagnostic` /
 `AuthorErrorCode` or its successor) so a new code added in the rewrite
 lands in the doc automatically and an obsolete code disappears.
+*Shipped at `3f6ec55`*; the closed-set surface is `RejectionKind` (3) +
+`Rejection.AttemptKind` (9) + `Rejection.EmitBlockReason` (4) = 16
+codes after the R58 lift to the sealed `Rejection` hierarchy. The
+verifier (`DiagnosticsDocCoverageTest`) reflects on the three enums
+and asserts bidirectional coverage.
 
 `reference/deprecations.adoc`: aggregator table of every deprecated
 directive parameter with target removal version. Generated from the
 `@Deprecated` annotations on the directive-classification model.
+*Shipped at `<TBD>`*. Two deviations from the plan: (1) the rewrite's
+source of truth is the SDL `@deprecated()` marker in
+`directives.graphqls`, not Java `@Deprecated` annotations on a
+classification model; the legacy classification model lives in the
+out-of-AI-scope legacy modules. (2) The plan's "target removal version"
+column is dropped: the rewrite's `@deprecated(reason:)` markers do not
+carry a structured removal version, and there is no separate
+directive-surface versioning cadence to anchor it on. The page leads
+with an honest deviation note acknowledging both. The verifier
+(`DeprecationsDocCoverageTest`) extracts qualified
+`<parent>.<member>` keys from the SDL and asserts every key has a row;
+whole-directive deprecations (which the GraphQL spec disallows
+`@deprecated` on) are covered via a small allow-list (currently
+`@index`).
 
 Both pages are the natural successors of the failure modes the legacy
 README cannot handle (no centralised error reference, scattered deprecation
