@@ -132,7 +132,7 @@ R59 sharpened `ServiceCatalog`'s parameter-mismatch messages with concrete `argM
 
 ## Implementation progress
 
-Phases A through D have shipped to trunk; D-list, E, and F remain. Each phase preserves R53 wire-compat for non-dotted inputs.
+Phases A through E and D-list have shipped to trunk; F remains. Each phase preserves R53 wire-compat for non-dotted inputs.
 
 | Phase | Scope | Trunk SHA |
 |-------|-------|-----------|
@@ -140,8 +140,8 @@ Phases A through D have shipped to trunk; D-list, E, and F remain. Each phase pr
 | B | `selection.parseEntries(raw)` lexer-driven entry point; `ArgBindingMap.parseArgMapping` returns `Map<String, List<String>>` segment chains | `d3653fd` |
 | C | `ArgBindingMap.of(slotTypes, segmentChains)` walks segment chains against the GraphQL schema, populates `PathExpr.Step.liftsList`; new `Result.PathRejected` arm; carrier types retyped to carry segments through `ExternalRef.argMapping` and `ConditionDirective.argMapping` | `0bfe949` |
 | D | `ParamSource.Arg` retyped to carry `PathExpr path`; multi-segment paths route through the existing `CallSiteExtraction.NestedInputField` machinery for null-safe Map traversal | `d5555f2` |
-| D-list | (deferred) intermediate-list traversal in emit (`Step.liftsList=true` segments). Today guarded by an `IllegalStateException` in `ArgCallEmitter.extractionForArg`; lifts when `buildMapChain` learns to emit `.stream().map(...)` for list intermediates | — |
-| E | Tests at four tiers (pipeline Relay-mutation, execution sakila fixture, unit extensions). Compilation tier fires automatically | — |
+| E | Execution-tier sakila fixture (`filmsByPath` via `input.ids`); leaf-vs-intermediate list bug fix in `ArgCallEmitter.extractionForArg` | `035c7f8` |
+| D-list | Element-wise list traversal in emit: a parallel `buildListAwarePathExtraction` walker emits `.stream().map(...).toList()` for intermediate `liftsList=true` segments; one-list-deep and two-list-deep sakila fixtures (`filmsByListPath` via `input.items.id` → `List<Integer>`; `filmsByNestedListPath` via `input.groups.items.id` → `List<List<Integer>>`); the `IllegalStateException` guard in `extractionForArg` is replaced by a dispatcher in `emitForParam` that routes intermediate-list paths through the new walker | (this commit) |
 | F | Error-message extension (floor + stretch) for path-expression hints in `ServiceCatalog` parameter-mismatch messages | — |
 
 ### Seam decisions taken (with the rationale that surfaced from the implementation)
@@ -154,22 +154,27 @@ Phases A through D have shipped to trunk; D-list, E, and F remain. Each phase pr
 
 4. **`Result.PathRejected` instead of a `pathError` carrier slot.** The original spec asked for `pathError` on `ExternalRef` / `ConditionDirective` next to `argMappingError`. In the implemented shape, path resolution lives in `ArgBindingMap.of` (the call sites already switch on the `Result` arm), so a separate carrier slot would be redundant metadata that no consumer reads. Each call site's `if (... instanceof Result.PathRejected p)` branch wraps the message with site context just like `UnknownArgRef`.
 
-### Phase D-list deferral
+### Phase D-list as shipped
 
-R84's spec includes the array-projection case (`in.b.c` where `b: [B]` and `c: [C]` produces `List<List<C>>`). Phase A–D ships the *non-list* path: scalar leaves under non-list intermediates (the spec's primary trigger from the Sikt admissio→opptak migration). The classifier still resolves `liftsList=true` from the schema in Phase C and the test suite covers that resolution; the gap is on the emit side, where `ArgCallEmitter.extractionForArg` throws `IllegalStateException` if it sees a `liftsList=true` segment.
+The chosen seam was a parallel walker in `ArgCallEmitter` rather than augmenting `CallSiteExtraction.NestedInputField`. Reasoning: `NestedInputField`'s `path: List<String>` and `buildMapChain` recursion are Map-only by construction; threading per-segment `liftsList` through the carrier and recursion would have rippled into every non-R84 NestedInputField site (R63 input-field-condition machinery) for a flag those sites would always set to `false`. The new helper `buildListAwarePathExtraction` in `ArgCallEmitter` is invoked from a small dispatcher (`emitArgExpression`) that runs before `extractionForArg`; head-only and intermediate-flat paths still go through the existing chain.
 
-Phase D-list will:
+Per-segment shape rules in the walker:
 
-- Extend `buildMapChain` (or fork a list-aware variant) to emit `.stream().map(...)` for list intermediates.
-- Apply the leaf lifter under `List<>` wrappers in the right element-wise spot.
-- Drop the `IllegalStateException` guard in `extractionForArg`.
-- Add execution-tier coverage for one-list-deep and two-list-deep paths.
+- Head segment: starts at `env.getArgument(headName)`, cast to `Map<?, ?>` via `instanceof` ternary.
+- Intermediate `liftsList=true`: `m.get(name) instanceof List<?> _l ? _l.stream().map(_e -> <recurse>).toList() : null`. Each such segment adds one `List<>` dimension to the result.
+- Intermediate `liftsList=false`: `m.get(name) instanceof Map<?, ?> _m_next ? <recurse> : null`. Continues Map descent.
+- Terminal segment: casts the Map.get value directly to the inner leaf type (or `List<leafType>` if the terminal is itself list-shaped); no streaming. The terminal-list dimension is contributed by the cast, not by an extra stream.
 
-This split keeps Phase D reviewable as one commit and gives a clean handle for the list-element-wise change.
+The leaf-element type is derived by stripping `n` `List<>` wraps from the Java parameter type, where `n` is the count of `liftsList=true` segments (intermediate plus terminal). For `List<List<Integer>>` and two list segments, the inner cast target is `Integer`. The walker rejects intermediate-list paths whose extraction is anything other than `Direct` (interleaving an enum / text-map / NodeId leaf with element-wise streaming has not been needed and would require carrying the leaf transform inside the lambda).
+
+What remains deferred:
+
+- **Non-Direct leaves under intermediate-list paths.** No live consumer; the dispatcher rejects this combination with an actionable message at emit time.
+- **Schema-shape ↔ Java-shape verifier.** The classifier (Phase C) resolves `liftsList` from the schema and the walker derives leaf type from the parameter; today there is no cross-check that the Java parameter's `List<>` wrap count exactly matches the resolved `liftsList` count. A drift produces a runtime `ClassCastException` inside the lambda, which is the same failure mode as a wrong R53 binding. A pre-emit shape check is straightforward but adds a fifth cross-check to the resolver; deferring until a real misuse comes through.
 
 ### Open questions for the reviewer
 
-- **Phase D-list scope.** Is deferring intermediate-list traversal acceptable? The spec's primary trigger is non-list (Relay-mutation Single wrapper input → two `@nodeId` fields), so Phases A–D cover the trigger end-to-end. List-walking is real R84 scope but unblocks no live consumer today. Deferring keeps the architectural cut clean and lets the reviewer evaluate the carrier shape before committing to the more involved emit work.
+- **Parallel walker vs. carrier augmentation.** Phase D-list took the parallel-walker route (new helper in `ArgCallEmitter`, no change to `CallSiteExtraction`). Augmenting `NestedInputField` with per-segment `liftsList` would arguably be the more sealed-hierarchy-shaped move. Trade-off: the carrier-augmentation route propagates a flag every R63 site has to thread through (always `false`) for one R84 feature. Comfortable with the parallel-walker call?
 - **R69 dependency record.** R84 declares `depends-on: []`. After Phase B, R69 silently consumes `selection.parseEntries(...)`. Should R69's plan body get a one-line note ("parser entry point lands in R84") to record the inverse dependency, or is the implicit one-parser-two-binders shared assumption strong enough?
 - **Spec-deviation: skipped `pathError` carrier slot.** The implemented shape replaces it with `Result.PathRejected`. Want to acknowledge or amend the spec text?
 
