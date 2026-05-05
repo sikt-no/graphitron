@@ -32,7 +32,6 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Optional;
 
-import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static no.sikt.graphitron.rewrite.TestFixtures.*;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -511,7 +510,7 @@ class TypeFetcherGeneratorTest {
         // canonical tableLocal) and Split+Connection callers (pass the FK-chain terminal alias).
         // See plan-split-query-connection.md §2.
         var field = queryTableFieldWithOrderByArg("films");
-        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field), DEFAULT_OUTPUT_PACKAGE);
         assertThat(method(spec, "filmsOrderBy").parameters())
             .extracting(p -> p.type().toString())
             .containsExactly(
@@ -653,7 +652,7 @@ class TypeFetcherGeneratorTest {
         var field = new QueryField.QueryTableMethodTableField("Query", "popularFilms", null,
             TestFixtures.tableBoundFilm(nonNullList()), method);
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
-            List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            List.of(field), DEFAULT_OUTPUT_PACKAGE);
 
         var fetcher = method(spec, "popularFilms");
         assertThat(fetcher.parameters()).extracting(p -> p.type().toString())
@@ -681,7 +680,7 @@ class TypeFetcherGeneratorTest {
         var field = new QueryField.QueryServiceTableField("Query", "filmsByService", null,
             TestFixtures.tableBoundFilm(nonNullList()), method, Optional.empty(), Optional.empty());
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
-            List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            List.of(field), DEFAULT_OUTPUT_PACKAGE);
 
         assertThat(method(spec, "filmsByService").returnType().toString())
             .isEqualTo("graphql.execution.DataFetcherResult<org.jooq.Result<no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord>>");
@@ -701,7 +700,7 @@ class TypeFetcherGeneratorTest {
         var field = new QueryField.QueryServiceRecordField("Query", "filmCount", null,
             new ReturnTypeRef.ScalarReturnType("Int", single()), method, Optional.empty(), Optional.empty());
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
-            List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            List.of(field), DEFAULT_OUTPUT_PACKAGE);
 
         // R12 §3 wraps every fetcher's return in DataFetcherResult<P>; ScalarReturnType still
         // surfaces the developer's reflected return type as the inner P.
@@ -720,7 +719,7 @@ class TypeFetcherGeneratorTest {
         var field = new QueryField.QueryServiceRecordField("Query", "filmCount", null,
             new ReturnTypeRef.ScalarReturnType("Int", single()), method, Optional.empty(), Optional.empty());
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
-            List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            List.of(field), DEFAULT_OUTPUT_PACKAGE);
 
         assertThat(method(spec, "filmCount").returnType().toString())
             .isEqualTo("graphql.execution.DataFetcherResult<java.lang.Integer>");
@@ -736,7 +735,7 @@ class TypeFetcherGeneratorTest {
         var field = new QueryField.QueryServiceRecordField("Query", "tags", null,
             new ReturnTypeRef.ScalarReturnType("Tags", single()), method, Optional.empty(), Optional.empty());
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
-            List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            List.of(field), DEFAULT_OUTPUT_PACKAGE);
 
         assertThat(method(spec, "tags").returnType().toString())
             .isEqualTo("graphql.execution.DataFetcherResult<java.lang.String[]>");
@@ -755,7 +754,7 @@ class TypeFetcherGeneratorTest {
         var field = new QueryField.QueryServiceRecordField("Query", "stats", null,
             new ReturnTypeRef.ScalarReturnType("Stats", single()), method, Optional.empty(), Optional.empty());
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
-            List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            List.of(field), DEFAULT_OUTPUT_PACKAGE);
 
         assertThat(method(spec, "stats").returnType().toString())
             .isEqualTo("graphql.execution.DataFetcherResult<java.util.Map<java.lang.String, java.lang.Integer>>");
@@ -773,7 +772,7 @@ class TypeFetcherGeneratorTest {
         var field = new QueryField.QueryServiceRecordField("Query", "nums", null,
             new ReturnTypeRef.ScalarReturnType("Nums", single()), method, Optional.empty(), Optional.empty());
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
-            List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            List.of(field), DEFAULT_OUTPUT_PACKAGE);
 
         assertThat(method(spec, "nums").returnType().toString())
             .isEqualTo("graphql.execution.DataFetcherResult<java.util.List<? extends java.lang.Number>>");
@@ -809,7 +808,7 @@ class TypeFetcherGeneratorTest {
             new ReturnTypeRef.ScalarReturnType("SakPayload", single()), method,
             Optional.of(sakPayloadChannel()), Optional.empty());
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
-            List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            List.of(field), DEFAULT_OUTPUT_PACKAGE);
 
         var body = method(spec, "sak").code().toString();
         assertThat(body).contains("ErrorRouter.dispatch");
@@ -830,7 +829,7 @@ class TypeFetcherGeneratorTest {
         var field = new QueryField.QueryServiceRecordField("Query", "filmCount", null,
             new ReturnTypeRef.ScalarReturnType("Int", single()), method, Optional.empty(), Optional.empty());
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
-            List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            List.of(field), DEFAULT_OUTPUT_PACKAGE);
 
         var body = method(spec, "filmCount").code().toString();
         assertThat(body).contains("ErrorRouter.redact(e, env)");
@@ -849,7 +848,7 @@ class TypeFetcherGeneratorTest {
         var field = new QueryField.QueryServiceTableField("Query", "getFilm", null,
             tableBoundFilm(single()), method, Optional.of(sakPayloadChannel()), Optional.empty());
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
-            List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            List.of(field), DEFAULT_OUTPUT_PACKAGE);
 
         var body = method(spec, "getFilm").code().toString();
         assertThat(body).contains("ErrorRouter.dispatch");
@@ -878,7 +877,7 @@ class TypeFetcherGeneratorTest {
         var field = new MutationField.MutationServiceTableField("Mutation", "createFilm", null,
             tableBoundFilm(single()), method, Optional.empty(), Optional.empty());
         var spec = TypeFetcherGenerator.generateTypeSpec("Mutation", null, null,
-            List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            List.of(field), DEFAULT_OUTPUT_PACKAGE);
 
         var emitted = method(spec, "createFilm");
         assertThat(emitted.returnType().toString())
@@ -903,7 +902,7 @@ class TypeFetcherGeneratorTest {
         var field = new MutationField.MutationServiceTableField("Mutation", "createFilms", null,
             tableBoundFilm(nonNullList()), method, Optional.empty(), Optional.empty());
         var spec = TypeFetcherGenerator.generateTypeSpec("Mutation", null, null,
-            List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            List.of(field), DEFAULT_OUTPUT_PACKAGE);
 
         assertThat(method(spec, "createFilms").returnType().toString())
             .isEqualTo("graphql.execution.DataFetcherResult<org.jooq.Result<no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord>>");
@@ -918,7 +917,7 @@ class TypeFetcherGeneratorTest {
             new ReturnTypeRef.ScalarReturnType("Int", single()), method,
             Optional.empty(), Optional.empty());
         var spec = TypeFetcherGenerator.generateTypeSpec("Mutation", null, null,
-            List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            List.of(field), DEFAULT_OUTPUT_PACKAGE);
 
         var emitted = method(spec, "doThing");
         assertThat(emitted.returnType().toString())
@@ -940,7 +939,7 @@ class TypeFetcherGeneratorTest {
             new ReturnTypeRef.ResultReturnType("Film", single(), "com.example.Film"), method,
             Optional.empty(), Optional.empty());
         var spec = TypeFetcherGenerator.generateTypeSpec("Mutation", null, null,
-            List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            List.of(field), DEFAULT_OUTPUT_PACKAGE);
 
         assertThat(method(spec, "createFilm").returnType().toString())
             .isEqualTo("graphql.execution.DataFetcherResult<com.example.Film>");
@@ -959,7 +958,7 @@ class TypeFetcherGeneratorTest {
             new ReturnTypeRef.ScalarReturnType("SakPayload", single()), method,
             Optional.of(sakPayloadChannel()), Optional.empty());
         var spec = TypeFetcherGenerator.generateTypeSpec("Mutation", null, null,
-            List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            List.of(field), DEFAULT_OUTPUT_PACKAGE);
 
         var body = method(spec, "createSak").code().toString();
         assertThat(body).contains("ErrorRouter.dispatch");
@@ -980,7 +979,7 @@ class TypeFetcherGeneratorTest {
             new ReturnTypeRef.ScalarReturnType("Int", single()), method,
             Optional.empty(), Optional.empty());
         var spec = TypeFetcherGenerator.generateTypeSpec("Mutation", null, null,
-            List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            List.of(field), DEFAULT_OUTPUT_PACKAGE);
 
         var body = method(spec, "doThing").code().toString();
         assertThat(body).contains("ErrorRouter.redact(e, env)");
@@ -1013,7 +1012,7 @@ class TypeFetcherGeneratorTest {
             new ReturnTypeRef.ScalarReturnType("SakPayload", single()), method,
             Optional.of(channel), Optional.empty());
         var spec = TypeFetcherGenerator.generateTypeSpec("Mutation", null, null,
-            List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            List.of(field), DEFAULT_OUTPUT_PACKAGE);
 
         var body = method(spec, "createSak").code().toString();
         // The validator pre-step appears ahead of the try; the order is asserted here by
@@ -1115,7 +1114,7 @@ class TypeFetcherGeneratorTest {
             "content_type", List.of("FILM", "SHORT"), participants,
             List.of(), new OrderBySpec.None(), null);
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
-            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            DEFAULT_OUTPUT_PACKAGE);
         var code = method(spec, "allContent").code().toString();
         assertThat(code).contains("FilmContent.$fields(");
         assertThat(code).contains("ShortContent.$fields(");
@@ -1212,7 +1211,7 @@ class TypeFetcherGeneratorTest {
             "content_type", List.of("FILM", "SHORT"), participants,
             joinPath, List.of(), new OrderBySpec.None(), null);
         var spec = TypeFetcherGenerator.generateTypeSpec("Language", LANGUAGE_TABLE, null,
-            List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            List.of(field), DEFAULT_OUTPUT_PACKAGE);
         var code = method(spec, "content").code().toString();
         assertThat(code).contains("FilmContent.$fields(");
         assertThat(code).contains("ShortContent.$fields(");
@@ -1248,7 +1247,7 @@ class TypeFetcherGeneratorTest {
             "content_type", List.of("FILM", "SHORT"), participants,
             List.of(), new OrderBySpec.None(), null);
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
-            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            DEFAULT_OUTPUT_PACKAGE);
         var code = method(spec, "allContent").code().toString();
         assertThat(code)
             .as("type-scoped selection-set check gates per-participant cross-table column fetch")
@@ -1265,7 +1264,7 @@ class TypeFetcherGeneratorTest {
             "content_type", List.of("FILM"), participants,
             List.of(), new OrderBySpec.None(), null);
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
-            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            DEFAULT_OUTPUT_PACKAGE);
         var code = method(spec, "allContent").code().toString();
         assertThat(code)
             .as("LEFT JOIN to the cross table is gated by the alias-presence check")
@@ -1288,7 +1287,7 @@ class TypeFetcherGeneratorTest {
             "content_type", List.of("FILM"), participants,
             List.of(), new OrderBySpec.None(), null);
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
-            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            DEFAULT_OUTPUT_PACKAGE);
         var code = method(spec, "allContent").code().toString();
         assertThat(code)
             .as("cross-table column is projected with the alias so the per-field DataFetcher reads it back by name")
@@ -1305,7 +1304,7 @@ class TypeFetcherGeneratorTest {
             "content_type", List.of("FILM", "SHORT"), participants,
             List.of(), new OrderBySpec.None(), null);
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
-            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            DEFAULT_OUTPUT_PACKAGE);
         var code = method(spec, "allContent").code().toString();
         assertThat(code)
             .as("no LEFT JOIN when no participant declares cross-table fields")
@@ -1328,7 +1327,7 @@ class TypeFetcherGeneratorTest {
             "content_type", List.of("FILM"), participants,
             joinPath, List.of(), new OrderBySpec.None(), null);
         var spec = TypeFetcherGenerator.generateTypeSpec("Language", LANGUAGE_TABLE, null,
-            List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            List.of(field), DEFAULT_OUTPUT_PACKAGE);
         var code = method(spec, "content").code().toString();
         assertThat(code).contains("env.getSelectionSet().contains(\"FilmContent.rating\")");
         assertThat(code).contains("step = step.leftJoin(FilmContent_rating_alias).on(");
@@ -1340,7 +1339,7 @@ class TypeFetcherGeneratorTest {
         // generated <outputPackage>.schema package, and the key from the string
         // "graphitronContext" to the typed GraphitronContext.class lookup.
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
-            List.of(queryTableField("film", false)), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            List.of(queryTableField("film", false)), DEFAULT_OUTPUT_PACKAGE);
         var helper = method(spec, "graphitronContext");
         var expectedFqn = DEFAULT_OUTPUT_PACKAGE + ".schema.GraphitronContext";
         assertThat(helper.returnType().toString())
@@ -1525,7 +1524,7 @@ class TypeFetcherGeneratorTest {
     void queryInterfaceField_list_returnsListOfRecord() {
         var field = queryInterfaceField("search", true, filmAndActorParticipants());
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
-            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            DEFAULT_OUTPUT_PACKAGE);
         assertThat(method(spec, "search").returnType().toString())
             .isEqualTo("graphql.execution.DataFetcherResult<java.util.List<org.jooq.Record>>");
     }
@@ -1534,7 +1533,7 @@ class TypeFetcherGeneratorTest {
     void queryInterfaceField_single_returnsRecord() {
         var field = queryInterfaceField("documentById", false, filmAndActorParticipants());
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
-            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            DEFAULT_OUTPUT_PACKAGE);
         assertThat(method(spec, "documentById").returnType().toString())
             .isEqualTo("graphql.execution.DataFetcherResult<org.jooq.Record>");
     }
@@ -1545,7 +1544,7 @@ class TypeFetcherGeneratorTest {
         // Stage 2: per-typename dispatch into select<Participant>For<Field> helpers.
         var field = queryInterfaceField("search", true, filmAndActorParticipants());
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
-            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            DEFAULT_OUTPUT_PACKAGE);
         var body = method(spec, "search").code().toString();
         assertThat(body)
             .as("stage 1: narrow UNION ALL of per-branch projections")
@@ -1569,7 +1568,7 @@ class TypeFetcherGeneratorTest {
     void queryInterfaceField_stage1ProjectsTypenameAndPksPerBranch() {
         var field = queryInterfaceField("search", true, filmAndActorParticipants());
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
-            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            DEFAULT_OUTPUT_PACKAGE);
         var body = method(spec, "search").code().toString();
         assertThat(body)
             .as("each branch projects DSL.inline(\"<Type>\")")
@@ -1587,7 +1586,7 @@ class TypeFetcherGeneratorTest {
         // Selection-set narrowing works at full strength only with $fields, not asterisk().
         var field = queryInterfaceField("search", true, filmAndActorParticipants());
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
-            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            DEFAULT_OUTPUT_PACKAGE);
         var film = method(spec, "selectFilmForSearch");
         var actor = method(spec, "selectActorForSearch");
         assertThat(film.code().toString()).contains("Film.$fields(env.getSelectionSet(), t, env)");
@@ -1601,7 +1600,7 @@ class TypeFetcherGeneratorTest {
         // USING would collapse joined columns and risk colliding with $fields-emitted projections.
         var field = queryInterfaceField("search", true, filmAndActorParticipants());
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
-            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            DEFAULT_OUTPUT_PACKAGE);
         var body = method(spec, "selectFilmForSearch").code().toString();
         assertThat(body)
             .as("dispatcher shape uses .on(...) for the values-derived join")
@@ -1618,7 +1617,7 @@ class TypeFetcherGeneratorTest {
         // each row back to its concrete GraphQL type.
         var field = queryInterfaceField("search", true, filmAndActorParticipants());
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
-            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            DEFAULT_OUTPUT_PACKAGE);
         var body = method(spec, "selectFilmForSearch").code().toString();
         assertThat(body).contains("inline(\"Film\")")
             .contains(".as(\"__typename\")");
@@ -1628,7 +1627,7 @@ class TypeFetcherGeneratorTest {
     void queryInterfaceField_perTypenameHelpers_arePrivateStatic() {
         var field = queryInterfaceField("search", true, filmAndActorParticipants());
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
-            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            DEFAULT_OUTPUT_PACKAGE);
         assertThat(method(spec, "selectFilmForSearch").modifiers())
             .containsExactlyInAnyOrder(
                 javax.lang.model.element.Modifier.PRIVATE,
@@ -1648,7 +1647,7 @@ class TypeFetcherGeneratorTest {
             new ParticipantRef.TableBound("Bar", compositeTable, null));
         var field = queryInterfaceField("compositeSearch", true, participants);
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
-            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            DEFAULT_OUTPUT_PACKAGE);
         var body = method(spec, "compositeSearch").code().toString();
         assertThat(body)
             .as("composite PK sort key uses jsonbArray(...)")
@@ -1664,7 +1663,7 @@ class TypeFetcherGeneratorTest {
         // fails fast.
         var field = queryUnionField("search", true, filmAndActorParticipants());
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
-            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            DEFAULT_OUTPUT_PACKAGE);
         var body = method(spec, "search").code().toString();
         assertThat(body).contains(".unionAll(");
         assertThat(body).contains("\"__typename\"");
@@ -1714,7 +1713,7 @@ class TypeFetcherGeneratorTest {
     void queryInterfaceField_connection_returnsDataFetcherResultOfConnectionResult() {
         var field = queryInterfaceConnectionField("searchConnection", filmAndActorParticipants(), 5);
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
-            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            DEFAULT_OUTPUT_PACKAGE);
         assertThat(method(spec, "searchConnection").returnType().toString())
             .isEqualTo("graphql.execution.DataFetcherResult<" + DEFAULT_OUTPUT_PACKAGE
                 + ".util.ConnectionResult>");
@@ -1727,7 +1726,7 @@ class TypeFetcherGeneratorTest {
         // selection). The default page size threads from FieldWrapper.Connection.defaultPageSize().
         var field = queryInterfaceConnectionField("searchConnection", filmAndActorParticipants(), 5);
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
-            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            DEFAULT_OUTPUT_PACKAGE);
         var body = method(spec, "searchConnection").code().toString();
         assertThat(body).contains("ConnectionHelper.pageRequest(first, last, after, before, 5,");
     }
@@ -1740,7 +1739,7 @@ class TypeFetcherGeneratorTest {
         // pins the divergence.
         var field = queryInterfaceConnectionField("searchConnection", filmAndActorParticipants(), 5);
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
-            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            DEFAULT_OUTPUT_PACKAGE);
         var body = method(spec, "searchConnection").code().toString();
         assertThat(body).contains(".asTable(\"pages\")");
         assertThat(body).contains(".unionAll(");
@@ -1750,7 +1749,7 @@ class TypeFetcherGeneratorTest {
     void queryInterfaceField_connection_appliesSeekAndLimit() {
         var field = queryInterfaceConnectionField("searchConnection", filmAndActorParticipants(), 5);
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
-            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            DEFAULT_OUTPUT_PACKAGE);
         var body = method(spec, "searchConnection").code().toString();
         assertThat(body)
             .contains(".orderBy(page.effectiveOrderBy())")
@@ -1766,7 +1765,7 @@ class TypeFetcherGeneratorTest {
         // start/endCursor.
         var field = queryInterfaceConnectionField("searchConnection", filmAndActorParticipants(), 5);
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
-            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            DEFAULT_OUTPUT_PACKAGE);
         var film = method(spec, "selectFilmForSearchConnection").code().toString();
         assertThat(film)
             .as("Film stage-2 helper aliases its PK as __sort__")
@@ -1785,7 +1784,7 @@ class TypeFetcherGeneratorTest {
         // wired for child connections) live inside the union, so the outer condition is a no-op.
         var field = queryInterfaceConnectionField("searchConnection", filmAndActorParticipants(), 5);
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
-            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            DEFAULT_OUTPUT_PACKAGE);
         var body = method(spec, "searchConnection").code().toString();
         assertThat(body).contains(".util.ConnectionResult(payload, page, pagesTable, org.jooq.impl.DSL.noCondition())");
     }
@@ -1798,7 +1797,7 @@ class TypeFetcherGeneratorTest {
         // UNION ALL, doubling the emission size.
         var field = queryInterfaceConnectionField("searchConnection", filmAndActorParticipants(), 5);
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
-            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            DEFAULT_OUTPUT_PACKAGE);
         var body = method(spec, "searchConnection").code().toString();
         assertThat(body)
             .as("UNION-ALL is materialized as a local Table<?>")
@@ -1816,7 +1815,7 @@ class TypeFetcherGeneratorTest {
         // The emitter appends __typename ASC as a secondary ordering and cursor seek field.
         var field = queryInterfaceConnectionField("searchConnection", filmAndActorParticipants(), 5);
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
-            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            DEFAULT_OUTPUT_PACKAGE);
         var body = method(spec, "searchConnection").code().toString();
         assertThat(body)
             .as("orderBy combines sort key + typename tiebreaker")
@@ -1841,7 +1840,7 @@ class TypeFetcherGeneratorTest {
             new ParticipantRef.TableBound("PagedA", compositeTable, null));
         var field = queryInterfaceConnectionField("compositeConnection", participants, 5);
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
-            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            DEFAULT_OUTPUT_PACKAGE);
         var body = method(spec, "compositeConnection").code().toString();
         assertThat(body)
             .as("sortField is typed as Field<JSONB> for composite-PK participants")
@@ -1863,7 +1862,7 @@ class TypeFetcherGeneratorTest {
             new ParticipantRef.TableBound("PagedA", compositeTable, null));
         var field = queryInterfaceConnectionField("compositeConnection", participants, 5);
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
-            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            DEFAULT_OUTPUT_PACKAGE);
         var perTypename = method(spec, "selectPagedAForCompositeConnection").code().toString();
         assertThat(perTypename)
             .as("per-typename helper projects jsonbArray(...) as __sort__ on each typed Record")
@@ -1884,7 +1883,7 @@ class TypeFetcherGeneratorTest {
             new ParticipantRef.TableBound("PagedA", compositeTable, null));
         var field = queryInterfaceConnectionField("compositeConnection", participants, 5);
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
-            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            DEFAULT_OUTPUT_PACKAGE);
         var body = method(spec, "compositeConnection").code().toString();
         assertThat(body)
             .as("stage-1 outer SELECT projects __pk0__ and __pk1__")
@@ -1903,7 +1902,7 @@ class TypeFetcherGeneratorTest {
         // list path does in queryUnionField_emitsTwoStageStructure_likeInterfaceField.
         var field = queryUnionConnectionField("documentsConnection", filmAndActorParticipants(), 5);
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
-            DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            DEFAULT_OUTPUT_PACKAGE);
         var body = method(spec, "documentsConnection").code().toString();
         assertThat(body)
             .contains(".asTable(\"pages\")")
@@ -1980,7 +1979,7 @@ class TypeFetcherGeneratorTest {
         var field = childInterfaceField("FilmActor", "related", true);
         var spec = TypeFetcherGenerator.generateTypeSpec("FilmActor",
             TestFixtures.tableRef("film_actor", "FILM_ACTOR", "FilmActor", List.of()),
-            null, List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            null, List.of(field), DEFAULT_OUTPUT_PACKAGE);
         var body = method(spec, "related").code().toString();
         assertThat(body)
             .as("child fetcher reads parent Record from env.getSource()")
@@ -1997,7 +1996,7 @@ class TypeFetcherGeneratorTest {
         var field = childInterfaceField("FilmActor", "related", true);
         var spec = TypeFetcherGenerator.generateTypeSpec("FilmActor",
             TestFixtures.tableRef("film_actor", "FILM_ACTOR", "FilmActor", List.of()),
-            null, List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            null, List.of(field), DEFAULT_OUTPUT_PACKAGE);
         var body = method(spec, "related").code().toString();
         assertThat(body)
             .as("Film branch's WHERE references stage1 alias and typed parentRecord read of the FK source column")
@@ -2015,7 +2014,7 @@ class TypeFetcherGeneratorTest {
         var field = childUnionField("FilmActor", "related", true);
         var spec = TypeFetcherGenerator.generateTypeSpec("FilmActor",
             TestFixtures.tableRef("film_actor", "FILM_ACTOR", "FilmActor", List.of()),
-            null, List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            null, List.of(field), DEFAULT_OUTPUT_PACKAGE);
         var body = method(spec, "related").code().toString();
         assertThat(body).contains("parentRecord = (org.jooq.Record) env.getSource()");
         assertThat(body).contains(".unionAll(");
@@ -2089,7 +2088,7 @@ class TypeFetcherGeneratorTest {
         var field = childInterfaceConnectionField("FilmActor", "relatedConnection", 5);
         var spec = TypeFetcherGenerator.generateTypeSpec("FilmActor",
             filmActorParentTableForBatched(),
-            null, List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            null, List.of(field), DEFAULT_OUTPUT_PACKAGE);
         var body = method(spec, "relatedConnection").code().toString();
         assertThat(body)
             .as("DataLoader name: tenant-scoped path key")
@@ -2117,7 +2116,7 @@ class TypeFetcherGeneratorTest {
         var field = childInterfaceConnectionField("FilmActor", "relatedConnection", 5);
         var spec = TypeFetcherGenerator.generateTypeSpec("FilmActor",
             filmActorParentTableForBatched(),
-            null, List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            null, List.of(field), DEFAULT_OUTPUT_PACKAGE);
         var rows = method(spec, "rowsRelatedConnection").code().toString();
         assertThat(rows)
             .as("empty-input short-circuit")
@@ -2140,7 +2139,7 @@ class TypeFetcherGeneratorTest {
         var field = childInterfaceConnectionField("FilmActor", "relatedConnection", 5);
         var spec = TypeFetcherGenerator.generateTypeSpec("FilmActor",
             filmActorParentTableForBatched(),
-            null, List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            null, List.of(field), DEFAULT_OUTPUT_PACKAGE);
         var rows = method(spec, "rowsRelatedConnection").code().toString();
         assertThat(rows)
             .as("Film branch JOINs parentInput on FILM_ID")
@@ -2161,7 +2160,7 @@ class TypeFetcherGeneratorTest {
         var field = childInterfaceConnectionField("FilmActor", "relatedConnection", 5);
         var spec = TypeFetcherGenerator.generateTypeSpec("FilmActor",
             filmActorParentTableForBatched(),
-            null, List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            null, List.of(field), DEFAULT_OUTPUT_PACKAGE);
         var rows = method(spec, "rowsRelatedConnection").code().toString();
         assertThat(rows)
             .as("pagesTable derived table")
@@ -2187,7 +2186,7 @@ class TypeFetcherGeneratorTest {
         var field = childInterfaceConnectionField("FilmActor", "relatedConnection", 5);
         var spec = TypeFetcherGenerator.generateTypeSpec("FilmActor",
             filmActorParentTableForBatched(),
-            null, List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            null, List.of(field), DEFAULT_OUTPUT_PACKAGE);
         var rows = method(spec, "rowsRelatedConnection").code().toString();
         assertThat(rows)
             .as("parallel parentIdxByOuter array populated from stage1's __idx__")
@@ -2207,7 +2206,7 @@ class TypeFetcherGeneratorTest {
         var field = childUnionConnectionField("FilmActor", "relatedConnection", 5);
         var spec = TypeFetcherGenerator.generateTypeSpec("FilmActor",
             filmActorParentTableForBatched(),
-            null, List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            null, List.of(field), DEFAULT_OUTPUT_PACKAGE);
         var fetcher = method(spec, "relatedConnection").code().toString();
         var rows = method(spec, "rowsRelatedConnection").code().toString();
         assertThat(fetcher)
@@ -2299,7 +2298,7 @@ class TypeFetcherGeneratorTest {
         var field = compositePkChildInterfaceConnectionField();
         var spec = TypeFetcherGenerator.generateTypeSpec("Project",
             compositePkParentTable(),
-            null, List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            null, List.of(field), DEFAULT_OUTPUT_PACKAGE);
         var fetcher = method(spec, "itemsConnection").code().toString();
         assertThat(fetcher)
             .as("DataLoader<Row2<Integer, Integer>, ConnectionResult>")
@@ -2321,7 +2320,7 @@ class TypeFetcherGeneratorTest {
         var field = compositePkChildInterfaceConnectionField();
         var spec = TypeFetcherGenerator.generateTypeSpec("Project",
             compositePkParentTable(),
-            null, List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            null, List.of(field), DEFAULT_OUTPUT_PACKAGE);
         var rows = method(spec, "rowsItemsConnection").code().toString();
         assertThat(rows)
             .as("Row3<Integer, Integer, Integer>[] parentRows for idx + 2 parent PK columns")
@@ -2341,7 +2340,7 @@ class TypeFetcherGeneratorTest {
         var field = compositePkChildInterfaceConnectionField();
         var spec = TypeFetcherGenerator.generateTypeSpec("Project",
             compositePkParentTable(),
-            null, List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            null, List.of(field), DEFAULT_OUTPUT_PACKAGE);
         var rows = method(spec, "rowsItemsConnection").code().toString();
         assertThat(rows)
             .as("ProjectNote branch JOINs on (org_id AND project_id)")
@@ -2416,7 +2415,7 @@ class TypeFetcherGeneratorTest {
                 new ColumnRef("project_id", "PROJECT_ID", "java.lang.Integer"))));
         var spec = TypeFetcherGenerator.generateTypeSpec("Project",
             heteroPkParentTable(),
-            null, List.of((GraphitronField) field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            null, List.of((GraphitronField) field), DEFAULT_OUTPUT_PACKAGE);
         var rows = method(spec, "rowsNotes").code().toString();
         // JoinPathEmitter.generateAliases derives the join-step alias from the target table
         // class's first letter; this single-step path joins to the Project parent table, so
@@ -2466,7 +2465,7 @@ class TypeFetcherGeneratorTest {
             participants, joinPaths);
         var spec = TypeFetcherGenerator.generateTypeSpec("Project",
             heteroPkParentTable(),
-            null, List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            null, List.of(field), DEFAULT_OUTPUT_PACKAGE);
         var rows = method(spec, "rowsItemsConnection").code().toString();
         assertThat(rows)
             .as("ProjectNote branch: ORG_CODE pairs with org_code (String) by FK slot")

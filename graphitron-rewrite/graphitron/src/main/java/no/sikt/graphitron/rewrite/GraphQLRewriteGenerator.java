@@ -145,9 +145,8 @@ public class GraphQLRewriteGenerator {
         }
 
         String outputPackage = ctx.outputPackage();
-        String jooqPackage   = ctx.jooqPackage();
 
-        var fetcherClasses = TypeFetcherGenerator.generate(schema, outputPackage, jooqPackage);
+        var fetcherClasses = TypeFetcherGenerator.generate(schema, outputPackage);
         var fetcherBodies  = FetcherRegistrationsEmitter.emit(schema, outputPackage);
 
         Set<Path> emittedThisRun = new LinkedHashSet<>();
@@ -167,9 +166,9 @@ public class GraphQLRewriteGenerator {
         write(ObjectTypeGenerator.generate(schema, assembled, fetcherBodies),                     "schema",     emittedThisRun);
         write(GraphitronSchemaClassGenerator.generate(schema, assembled, fetcherBodies.keySet(), outputPackage, federationLink), "schema", emittedThisRun);
         write(GraphitronFacadeGenerator.generate(outputPackage, federationLink),                  "",           emittedThisRun);
-        write(TypeClassGenerator.generate(schema, outputPackage, jooqPackage),                   "types",      emittedThisRun);
-        write(TypeConditionsGenerator.generate(schema, outputPackage, jooqPackage),               "conditions", emittedThisRun);
-        write(QueryConditionsGenerator.generate(schema, outputPackage, jooqPackage),             "conditions", emittedThisRun);
+        write(TypeClassGenerator.generate(schema, outputPackage),                                 "types",      emittedThisRun);
+        write(TypeConditionsGenerator.generate(schema, outputPackage),                            "conditions", emittedThisRun);
+        write(QueryConditionsGenerator.generate(schema, outputPackage),                           "conditions", emittedThisRun);
         write(fetcherClasses,                                                                      "fetchers",   emittedThisRun);
         write(QueryNodeFetcherClassGenerator.generate(schema, outputPackage),                      "fetchers",   emittedThisRun);
         sweepOrphans(emittedThisRun);
