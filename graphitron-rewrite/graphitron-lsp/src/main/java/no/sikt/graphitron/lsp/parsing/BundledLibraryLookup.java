@@ -82,13 +82,21 @@ public final class BundledLibraryLookup implements NativeLibraryLookup {
         if (os.contains("linux") && (arch.equals("amd64") || arch.equals("x86_64"))) {
             dir = "linux-x86_64";
             libName = "libtree-sitter-graphql.so";
+        } else if (os.contains("mac") && (arch.equals("amd64") || arch.equals("x86_64"))) {
+            dir = "macos-x86_64";
+            libName = "libtree-sitter-graphql.dylib";
+        } else if (os.contains("mac") && arch.equals("aarch64")) {
+            dir = "macos-aarch64";
+            libName = "libtree-sitter-graphql.dylib";
         } else {
-            // Other platforms land in Phase 6 step 4. Fail fast with a message
-            // that points at the missing build profile rather than a confusing
+            // Windows lands in a follow-up; until build-native.bat and the matching
+            // Maven profile exist, fail fast with a message that points at the
+            // missing build infrastructure rather than a confusing
             // UnsatisfiedLinkError later.
             throw new UnsupportedOperationException(
                 "no bundled tree-sitter-graphql native library for os.name=" + os
-                    + ", os.arch=" + arch + "; only linux-x86_64 ships today (R18 Phase 6 step 2)");
+                    + ", os.arch=" + arch + "; supported: linux-x86_64, macos-x86_64, "
+                    + "macos-aarch64. Windows is a follow-up to R18 Phase 6.");
         }
         return "lib/" + dir + "/" + libName;
     }

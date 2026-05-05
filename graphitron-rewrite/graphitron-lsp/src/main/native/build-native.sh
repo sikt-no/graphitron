@@ -9,8 +9,8 @@
 # default `SymbolLookup.libraryLookup` can find it without per-platform
 # branching.
 #
-# Linux-only today (`cc` invocation). Phase 6 step 4 generalises this to
-# macOS x86_64 / macOS arm64 / Windows x86_64.
+# Linux and macOS today; Windows builds through `build-native.bat` (a
+# follow-up roadmap item; see `UPSTREAM.md`).
 
 set -euo pipefail
 
@@ -28,9 +28,20 @@ grammar_dir="$native_root/grammars/graphql"
 
 uname_s="$(uname -s)"
 case "$uname_s" in
-  Linux) lib_name="libtree-sitter-graphql.so" ;;
+  Linux)
+    lib_name="libtree-sitter-graphql.so"
+    extra_flags=()
+    ;;
+  Darwin)
+    lib_name="libtree-sitter-graphql.dylib"
+    # `-undefined dynamic_lookup` is the historic macOS flag for shared libs that
+    # call back into the loader's symbol set; we don't use it because the lib is
+    # self-contained. `-fvisibility=default` is the default on macOS too.
+    extra_flags=()
+    ;;
   *)
-    echo "build-native.sh: unsupported host OS '$uname_s'; Linux only for now" >&2
+    echo "build-native.sh: unsupported host OS '$uname_s' (this script handles" \
+         "Linux + macOS; Windows is a follow-up)" >&2
     exit 1
     ;;
 esac
@@ -39,6 +50,7 @@ cc -shared -fPIC -O2 \
   -std=c11 \
   -D_POSIX_C_SOURCE=200112L \
   -D_DEFAULT_SOURCE \
+  "${extra_flags[@]}" \
   -I "$runtime_dir/lib/include" \
   -I "$runtime_dir/lib/src" \
   -I "$grammar_dir" \
