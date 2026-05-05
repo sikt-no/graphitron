@@ -72,14 +72,50 @@ Semantics, generation-time:
 Apollo Connectors' mapping language (`@connect(... selection: "...", body: """ $args.input { id quantity } """)`) is the closest existing design in the GraphQL ecosystem. What we borrow and what we don't:
 
 - **Dot-path heads.** Apollo prefixes paths with `$args`, `$this`, `$config`. We have only one scope per directive site, so the prefix is redundant; bare-name heads matching today's R53 syntax are sufficient.
-- **Array projection.** Apollo's `$args.filters.value` lifts to `[V]` when an intermediate segment is list-typed. We adopt the same rule, transposed to our static type system: each `[X]` segment adds a `List<>` wrapper. Apollo resolves this at runtime against JSON; we resolve it at generation time against the GraphQL schema.
+- **Array projection.** Apollo's `$args.filters.value` lifts to `[V]` when an intermediate segment is list-typed. We adopt the same rule, transposed to our static type system: each `[X]` segment adds a `List<>` wrapper. Apollo resolves this at runtime against JSON; we resolve the *type* at generation time against the GraphQL schema (so the Java parameter type is fixed at build time) and emit *value-walking* code that runs at request time over the input map (intermediate-null short-circuit, list element-wise traversal).
 - **Subselection blocks** (`$args.input { id quantity }`) and **methods** (`->first`, `->match`, etc.) are not adopted; subselection is a natural follow-up once the flat dot-path lands, methods are a runtime-transform language and have no place in a generation-time parameter binder.
 
 ## Parser
 
-Take ownership of the existing `selection/` package (`GraphQLSelectionParser`, `Lexer`, `Token`, `TokenKind`, `ParsedField`, `ParsedArgument`, `ParsedValue`) and rewrite it to serve both `@experimental_constructType(selection: ...)` (R69) and `argMapping` path expressions. The two grammars are the same shape — comma-separated `key: <expression>` entries where the right-hand side resolves to a typed value (a column reference today, a path expression with this item) — and the lexer already handles the relevant tokens. One parser, two binders. If the grammars later diverge enough that the shared parser starts costing more than it saves, fork at that point; do not pre-emptively split.
+Take ownership of the existing `selection/` package (`GraphQLSelectionParser`, `Lexer`, `Token`, `TokenKind`, `ParsedField`, `ParsedArgument`, `ParsedValue`) and rewrite it to serve both `@experimental_constructType(selection: ...)` (R69) and `argMapping` path expressions. The two grammars are the same shape: comma-separated `key: <expression>` entries where the right-hand side resolves to a typed value (a column reference today, a path expression with this item), and the lexer already handles the relevant tokens. One parser, two binders. If the grammars later diverge enough that the shared parser starts costing more than it saves, fork at that point; do not pre-emptively split.
 
 The R53-era `parseArgMapping` in `ArgBindingMap` is too thin to host the path-walking logic and should be retired in favour of the rewritten `selection/` parser.
+
+## Model carrier
+
+R53's `ArgBindingMap.byJavaName: Map<String, String>` stores `javaParam → graphqlArgName`. With path expressions the value side is no longer a single name; it carries a head segment and zero-or-more child segments, plus the list-lifting count along the path. The carrier extension:
+
+- A new sealed type `PathExpr` under `no.sikt.graphitron.rewrite` (alongside `ArgBindingMap`) with two arms: `PathExpr.Head(String name)` for today's bare-name case (preserves R53 wire-compat for every existing fixture) and `PathExpr.Step(PathExpr parent, String fieldName, boolean liftsList)` for each `.<name>` segment. The boolean records whether the schema type at that depth was list-shaped, so list-lifting is precomputed and the emitter never re-asks the GraphQL schema. A leaf-resolution helper produces the final Java type by walking the segment chain, applying the same lifters R53 already applies (nodeId → `XRecord`, table-leaf → row record, scalar → mapped Java type), wrapped in a `List<>` for each `liftsList` segment.
+- `ArgBindingMap.byJavaName` retypes from `Map<String, String>` to `Map<String, PathExpr>`. The R53 identity entries become `PathExpr.Head(argName)`. Override entries that today produce `String` produce `PathExpr.Head` (single-segment override) or a `Step` chain (path override).
+- Failure shape. `ArgBindingMap.Result` gains a third arm `Result.PathRejected(String message)` for structural rejections produced while resolving a `PathExpr` against the slot's input type; the existing `UnknownArgRef` arm continues to cover "head segment names a slot that doesn't exist." Per the rewrite-design-principles "Builder-step results are sealed" rule, every distinct rejection mode is its own arm rather than a string flag. The structural rejections carried by `PathRejected`:
+  - segment names a field that does not exist on the input type at that depth ; pre-fill the closest match via `BuildContext.candidateHint` per the `Error quality` emitter convention;
+  - intermediate segment is a scalar, enum, union, or interface (cannot walk into);
+  - leaf type cannot be lifted to the Java parameter's type (the same shape R53 already rejects, with the path attached for context).
+- Failure precedence (extends R53's `lookupError > argMappingError`): parse-time errors from the rewritten selection parser preempt structural rejections, which preempt the post-reflection per-parameter type-mismatch error. The implementer adds `pathError` to the `ExternalRef` / `ConditionDirective` carriers next to the existing `argMappingError` slot.
+
+The `PathExpr` carrier is an instance of "Sub-taxonomies for resolution outcomes" (rewrite-design-principles): the value side of `byJavaName` previously meant "GraphQL slot name" and the path-expression case can't be expressed as a string without reintroducing a parallel parser at every consumer.
+
+## Touchpoints
+
+The path-expression wire-through threads through every call site R53 already wired:
+
+- `ArgBindingMap.parseArgMapping` retires; the rewritten `selection/` parser replaces it. `ArgBindingMap.of(Set<String>, Map<String, PathExpr>)` retypes accordingly.
+- `FieldBuilder.parseExternalRef` (the seam at lines around `ArgBindingMap.parseArgMapping(rawArgMapping)`) feeds the new parser and stores `Map<String, PathExpr>` on `ExternalRef`.
+- `BuildContext.resolveConditionRef` and `BuildContext.buildInputFieldCondition` parse via the new parser and call `ArgBindingMap.of(...)` with the slot set in scope.
+- `ServiceCatalog.reflectServiceMethod` and `ServiceCatalog.reflectTableMethod` consume the `PathExpr` value side and apply the leaf-type lifter (which already exists for the head-only case) under any `List<>` wrappers.
+- `FieldBuilder.buildArgCondition` and `FieldBuilder.buildFieldCondition` ride the same parser path; no fork from the service / `@tableMethod` arms.
+- The five `parseExternalRef` structural-inertness rejections R53 introduced (`@externalField`, `@record` × 2, `@enum`) keep their existing rejection shape; path expressions don't change *whether* `argMapping` is allowed at those sites, only what the right-hand side may contain.
+
+The R53 changelog enumerates the same seven sites (`resolveServiceField`, the two `@tableMethod` arms, `buildArgCondition`, `buildFieldCondition`, `BuildContext.resolveConditionRef`, `buildInputFieldCondition`); they are the canonical list and this item touches all of them.
+
+## Tests
+
+Per the "Pipeline tests are the primary behavioural tier" principle, the feature earns coverage at every tier R53 covered:
+
+- *Unit (`ArgBindingMapTest` plus a new `GraphQLSelectionParserTest` extension):* dot-path with one segment, two segments, three segments; each `[X]` projection step; structural rejection through scalar / enum / union / interface; head segment naming a non-existent slot; leaf-type lifter applied under list wrappers (`@nodeId` leaf inside two list segments); two argMapping entries resolving to the same leaf path (the R53 same-slot rule); duplicate Java target across path-bearing entries; whitespace and text-block input parity with R53's parser-input fixtures.
+- *Pipeline (`GraphitronSchemaBuilderTest`):* the Relay-mutation shape from this item's trigger (Java signature `(KvotesporsmalRecord, KvotesporsmalAlgoritmeRecord)`, schema input wrapper with two `@nodeId`-tagged sub-fields) classifies cleanly; sibling cases for an `argMapping` walking through a scalar, walking into a list (single and double `[X]`), and binding two Java params to two paths under the same wrapper.
+- *Execution (`GraphQLQueryTest`):* a sakila or admissio-shaped fixture with a service method that takes two typed parameters bound to nested input fields; round-trips end-to-end through PostgreSQL. Models on the `filmsByServiceRenamed` precedent established by R53 (`graphitron-sakila-service/.../SampleQueryService.java`, `graphitron-sakila-example/.../GraphQLQueryTest.java:queryServiceTable_filmsByServiceRenamed_overrideBindsArgToDifferentlyNamedJavaParam`).
+- *Compilation (`mvn compile -pl :graphitron-sakila-example -Plocal-db`):* the existing tier verifies that the emitted code typechecks against the real jOOQ catalog, including the `List<List<XRecord>>` shapes path expressions can produce. No new assertions; the tier fires automatically.
 
 ## Error-message extension
 
