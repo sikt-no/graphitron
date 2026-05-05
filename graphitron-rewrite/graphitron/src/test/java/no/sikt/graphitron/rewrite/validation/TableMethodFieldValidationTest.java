@@ -13,6 +13,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
+import java.util.Optional;
 
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.stubbedError;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
@@ -27,19 +28,22 @@ class TableMethodFieldValidationTest {
 
         NO_PATH("no @reference — FK auto-inference will be attempted at code-generation time (stubbed)",
             new TableMethodField("Film", "filteredActors", null, new ReturnTypeRef.ScalarReturnType("Film", new FieldWrapper.Single(true)),
-                List.of(), new MethodRef.Basic("com.example.TableMethods", "filteredActors", ClassName.get("org.jooq", "Table"), List.of())),
+                List.of(), new MethodRef.Basic("com.example.TableMethods", "filteredActors", ClassName.get("org.jooq", "Table"), List.of()),
+                Optional.empty()),
             List.of(stubbedError("Film.filteredActors", TableMethodField.class))),
 
         WITH_FK_PATH("explicit FK path — key resolved to a jOOQ ForeignKey (stubbed)",
             new TableMethodField("Film", "filteredActors", null, new ReturnTypeRef.ScalarReturnType("Film", new FieldWrapper.Single(true)), List.of(
                 TestFixtures.fkJoin(TestFixtures.foreignKeyRef("film_actor_film_id_fkey"), null, List.of(), TestFixtures.joinTarget("film_actor"), List.of(), null, "")),
-                new MethodRef.Basic("com.example.TableMethods", "filteredActors", ClassName.get("org.jooq", "Table"), List.of())),
+                new MethodRef.Basic("com.example.TableMethods", "filteredActors", ClassName.get("org.jooq", "Table"), List.of()),
+                Optional.empty()),
             List.of(stubbedError("Film.filteredActors", TableMethodField.class))),
 
         WITH_CONDITION_ONLY("condition method only — no FK (stubbed)",
             new TableMethodField("Film", "filteredActors", null, new ReturnTypeRef.ScalarReturnType("Film", new FieldWrapper.Single(true)), List.of(
                 new JoinStep.ConditionJoin(new MethodRef.Basic("com.example.Conditions", "actorCondition", ClassName.get("org.jooq", "Condition"), List.of()), "")),
-                new MethodRef.Basic("com.example.TableMethods", "filteredActors", ClassName.get("org.jooq", "Table"), List.of())),
+                new MethodRef.Basic("com.example.TableMethods", "filteredActors", ClassName.get("org.jooq", "Table"), List.of()),
+                Optional.empty()),
             List.of(stubbedError("Film.filteredActors", TableMethodField.class)));
 
         private final String description;
