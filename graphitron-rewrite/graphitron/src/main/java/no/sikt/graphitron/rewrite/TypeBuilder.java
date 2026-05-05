@@ -358,9 +358,7 @@ class TypeBuilder {
         String tableName = argString(objType, DIR_TABLE, ARG_NAME).orElse(name.toLowerCase());
         Optional<TableRef> tableOpt = svc.resolveTable(tableName);
         if (tableOpt.isEmpty()) {
-            return new UnclassifiedType(name, location, Rejection.unknownTable(
-                "table '" + tableName + "' could not be resolved in the jOOQ catalog",
-                tableName, ctx.catalog.allTableSqlNames()));
+            return new UnclassifiedType(name, location, ctx.unknownTableRejection(tableName));
         }
         TableRef tableRef = tableOpt.get();
 
@@ -551,9 +549,7 @@ class TypeBuilder {
         String tableName = argString(iface, DIR_TABLE, ARG_NAME).orElse(name.toLowerCase());
         Optional<TableRef> tableOpt = svc.resolveTable(tableName);
         if (tableOpt.isEmpty()) {
-            return new UnclassifiedType(name, location, Rejection.unknownTable(
-                "table '" + tableName + "' could not be resolved in the jOOQ catalog",
-                tableName, ctx.catalog.allTableSqlNames()));
+            return new UnclassifiedType(name, location, ctx.unknownTableRejection(tableName));
         }
         String discriminatorRaw = argString(iface, DIR_DISCRIMINATE, ARG_ON).orElse(null);
         // Resolve to the SQL column name so generators can use DSL.name(col) with the correct
@@ -655,9 +651,7 @@ class TypeBuilder {
             String tableName = argString(inputType, DIR_TABLE, ARG_NAME).orElse(name.toLowerCase());
             Optional<TableRef> tableOpt = svc.resolveTable(tableName);
             if (tableOpt.isEmpty()) {
-                return new UnclassifiedType(name, location, Rejection.unknownTable(
-                    "table '" + tableName + "' could not be resolved in the jOOQ catalog",
-                    tableName, ctx.catalog.allTableSqlNames()));
+                return new UnclassifiedType(name, location, ctx.unknownTableRejection(tableName));
             }
             return buildTableInputType(name, location, inputType.getFieldDefinitions(), tableOpt.get(), inputType);
         }

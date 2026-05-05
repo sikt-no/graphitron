@@ -601,16 +601,16 @@ Documentation gaps surfaced after a phase shipped, to be folded in when
 the touched chapter is next under hand.
 
 (none currently open; the R78 qualified-`@table` delta landed in this
-plan's Phase 2 + Phase 3 commits. The actual user-facing rejection on
-ambiguity is the generic `table 'X' could not be resolved in the jOOQ
-catalog` plus a candidate hint, not the structured ambiguity message
-the original carry-forward note quoted; the docs reflect what the
-implementation does today, and a future polish pass on
-`BuildContext.buildTableType` could surface a friendlier
-`is ambiguous: defined in schemas [...]` message by routing through
-`JooqCatalog.findCandidateSchemasFor` before falling back to
-`unknownTable`. That polish is a small Backlog candidate, not a
-blocker.)
+plan's Phase 2 + Phase 3 commits. The structured ambiguity rejection
+the original carry-forward note quoted (`@table(name: 'film') is
+ambiguous: defined in schemas [public, archive]; qualify as
+'public.film', 'archive.film'`) was wired in alongside the docs via
+the new `BuildContext.unknownTableRejection` helper, which routes
+through `JooqCatalog.findCandidateSchemasFor` before falling back to
+`Rejection.unknownTable`. The three `@table`-directive sites in
+`TypeBuilder` (`buildTableType`, `buildTableInterfaceType`,
+`buildTableInputType`) all use it, so the better message reaches
+authors at every site that resolves a directive `name:` argument.)
 
 ## Out of scope
 
