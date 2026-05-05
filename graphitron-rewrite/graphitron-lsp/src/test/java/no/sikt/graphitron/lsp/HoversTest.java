@@ -179,6 +179,50 @@ class HoversTest {
         assertThat(Hovers.compute(file, classCatalog("com.example.Other"), pos)).isEmpty();
     }
 
+    @Test
+    void serviceMethodHoverShowsSignature() {
+        var file = file("""
+            type Query {
+                x: Int @service(class: "com.example.FilmService", method: "list")
+            }
+            """);
+        var pos = pointAt(file, 1, "list");
+
+        var hover = Hovers.compute(file, classWithMethodCatalog(), pos).orElseThrow();
+
+        var md = hover.getContents().getRight().getValue();
+        assertThat(md).contains("**Method** `list`");
+        assertThat(md).contains("`com.example.FilmService`");
+        assertThat(md).contains("List list(int limit)");
+    }
+
+    @Test
+    void serviceMethodHoverWithUnknownMethodReturnsEmpty() {
+        var file = file("""
+            type Query {
+                x: Int @service(class: "com.example.FilmService", method: "missing")
+            }
+            """);
+        var pos = pointAt(file, 1, "missing");
+
+        assertThat(Hovers.compute(file, classWithMethodCatalog(), pos)).isEmpty();
+    }
+
+    private static CompletionData classWithMethodCatalog() {
+        var listMethod = new CompletionData.Method(
+            "list", "List", "",
+            List.of(new CompletionData.Parameter("limit", "int", null, ""))
+        );
+        return new CompletionData(
+            List.of(),
+            List.of(),
+            List.of(new CompletionData.ExternalReference(
+                "com.example.FilmService", "com.example.FilmService", "",
+                List.of(listMethod)
+            ))
+        );
+    }
+
     private static CompletionData classCatalog(String fqn) {
         return new CompletionData(
             List.of(),

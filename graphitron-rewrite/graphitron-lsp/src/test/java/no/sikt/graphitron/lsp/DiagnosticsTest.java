@@ -231,6 +231,45 @@ class DiagnosticsTest {
     }
 
     @Test
+    void unknownMethodOnKnownClassProducesError() {
+        var file = file("""
+            type Query {
+                x: Int @service(class: "com.example.FilmService", method: "ghost")
+            }
+            """);
+
+        var diags = Diagnostics.compute(file, classWithListMethod());
+
+        assertThat(diags).hasSize(1);
+        assertThat(diags.get(0).getMessage()).contains("ghost").contains("FilmService");
+    }
+
+    @Test
+    void knownMethodOnKnownClassProducesNoError() {
+        var file = file("""
+            type Query {
+                x: Int @service(class: "com.example.FilmService", method: "list")
+            }
+            """);
+
+        var diags = Diagnostics.compute(file, classWithListMethod());
+
+        assertThat(diags).isEmpty();
+    }
+
+    private static CompletionData classWithListMethod() {
+        var listMethod = new CompletionData.Method("list", "List", "", List.of());
+        return new CompletionData(
+            List.of(),
+            List.of(),
+            List.of(new CompletionData.ExternalReference(
+                "com.example.FilmService", "com.example.FilmService", "",
+                List.of(listMethod)
+            ))
+        );
+    }
+
+    @Test
     void emptyExternalReferencesSuppressesUnknownClassDiagnostic() {
         // Pre-`mvn compile` state: the scanner has nothing yet. Reporting
         // every reference as unknown in that state would be noise.
@@ -246,10 +285,14 @@ class DiagnosticsTest {
     }
 
     private static CompletionData catalogWithKnownClass(String fqn) {
+        // The class diagnostic now also validates the sibling `method:` slot
+        // when the class resolves; include the method names referenced by
+        // the per-test happy paths so unrelated diagnostics don't fire.
+        var foo = new CompletionData.Method("foo", "String", "", List.of());
         return new CompletionData(
             List.of(),
             List.of(),
-            List.of(new CompletionData.ExternalReference(fqn, fqn, "", List.of()))
+            List.of(new CompletionData.ExternalReference(fqn, fqn, "", List.of(foo)))
         );
     }
 

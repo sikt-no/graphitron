@@ -2,6 +2,7 @@ package no.sikt.graphitron.lsp.server;
 
 import no.sikt.graphitron.lsp.completions.ClassNameCompletions;
 import no.sikt.graphitron.lsp.completions.FieldCompletions;
+import no.sikt.graphitron.lsp.completions.MethodCompletions;
 import no.sikt.graphitron.lsp.completions.ReferenceCompletions;
 import no.sikt.graphitron.lsp.completions.TableCompletions;
 import no.sikt.graphitron.lsp.definition.Definitions;
@@ -136,6 +137,24 @@ public class GraphitronTextDocumentService implements TextDocumentService {
         });
     }
 
+    /**
+     * For {@code @service} / {@code @condition}, the cursor decides whether
+     * we offer class-name FQNs (when in {@code class:}) or method names off
+     * the sibling class (when in {@code method:}). One of the two providers
+     * returns non-empty; the other returns empty.
+     */
+    private static List<CompletionItem> serviceOrConditionCompletions(
+        no.sikt.graphitron.lsp.state.Workspace workspace,
+        no.sikt.graphitron.lsp.parsing.Directives.Directive directive,
+        io.github.treesitter.jtreesitter.Point pos,
+        byte[] source,
+        String directiveName
+    ) {
+        var classItems = ClassNameCompletions.generate(workspace.catalog(), directive, pos, source, directiveName);
+        if (!classItems.isEmpty()) return classItems;
+        return MethodCompletions.generate(workspace.catalog(), directive, pos, source);
+    }
+
     @Override
     public CompletableFuture<Either<List<CompletionItem>, CompletionList>> completion(CompletionParams params) {
         return CompletableFuture.supplyAsync(() -> {
@@ -157,7 +176,8 @@ public class GraphitronTextDocumentService implements TextDocumentService {
                 case "table" -> TableCompletions.generate(workspace.catalog(), directive, pos, file.source());
                 case "field" -> FieldCompletions.generate(workspace.catalog(), directive, pos, file.source());
                 case "reference" -> ReferenceCompletions.generate(workspace.catalog(), directive, pos, file.source());
-                case "service", "condition", "record" ->
+                case "service", "condition" -> serviceOrConditionCompletions(workspace, directive, pos, file.source(), directiveName);
+                case "record" ->
                     ClassNameCompletions.generate(workspace.catalog(), directive, pos, file.source(), directiveName);
                 default -> List.of();
             };

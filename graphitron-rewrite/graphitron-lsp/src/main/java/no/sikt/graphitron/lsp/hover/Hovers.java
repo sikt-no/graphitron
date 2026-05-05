@@ -46,10 +46,54 @@ public final class Hovers {
     private static Optional<Hover> classArgHover(
         Directives.Directive directive, WorkspaceFile file, CompletionData catalog, Point pos
     ) {
-        var argValue = stringArgValueAt(directive, "class", pos, file.source());
-        if (argValue == null) return Optional.empty();
-        String fqn = Nodes.unquote(Nodes.text(argValue, file.source()));
-        return findExternal(catalog, fqn).map(ref -> hover(file, argValue, formatClass(ref)));
+        var classValue = stringArgValueAt(directive, "class", pos, file.source());
+        if (classValue != null) {
+            String fqn = Nodes.unquote(Nodes.text(classValue, file.source()));
+            return findExternal(catalog, fqn).map(ref -> hover(file, classValue, formatClass(ref)));
+        }
+        var methodValue = stringArgValueAt(directive, "method", pos, file.source());
+        if (methodValue != null) {
+            return methodHoverContent(directive, file, catalog, methodValue);
+        }
+        return Optional.empty();
+    }
+
+    private static Optional<Hover> methodHoverContent(
+        Directives.Directive directive, WorkspaceFile file, CompletionData catalog, Node methodValue
+    ) {
+        String methodName = Nodes.unquote(Nodes.text(methodValue, file.source()));
+        if (methodName.isEmpty()) return Optional.empty();
+        String classFqn = readSiblingClassFqn(directive, file.source());
+        if (classFqn == null || classFqn.isEmpty()) return Optional.empty();
+        var refOpt = findExternal(catalog, classFqn);
+        if (refOpt.isEmpty()) return Optional.empty();
+        return refOpt.get().methods().stream()
+            .filter(m -> m.name().equals(methodName))
+            .findFirst()
+            .map(method -> hover(file, methodValue, formatMethod(refOpt.get(), method)));
+    }
+
+    private static String readSiblingClassFqn(Directives.Directive directive, byte[] source) {
+        for (var arg : directive.arguments()) {
+            if (!"class".equals(Nodes.text(arg.key(), source))) continue;
+            return Nodes.unquote(Nodes.text(arg.value(), source));
+        }
+        return null;
+    }
+
+    private static String formatMethod(CompletionData.ExternalReference ref, CompletionData.Method method) {
+        var sb = new StringBuilder();
+        sb.append("**Method** `").append(method.name()).append("`")
+          .append(" on `").append(ref.className()).append("`")
+          .append("\n\n```\n")
+          .append(method.returnType()).append(' ').append(method.name()).append('(');
+        for (int i = 0; i < method.parameters().size(); i++) {
+            if (i > 0) sb.append(", ");
+            var p = method.parameters().get(i);
+            sb.append(p.type()).append(' ').append(p.name());
+        }
+        sb.append(")\n```");
+        return sb.toString();
     }
 
     private static Optional<Hover> recordClassNameHover(
