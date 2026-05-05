@@ -227,6 +227,18 @@ type Query {
             className: "no.sikt.graphitron.rewrite.test.services.CreateFilmsPayloadService",
             method: "recentlyCreatedFilmsBatched"
         })
+
+    # R12 fixture (error-handling-parity.md): query-side @error end-to-end. Drives the
+    # GraphitronSchema.java emit path (per-@error path/message DataFetchers, source-class
+    # union TypeResolver, and ErrorRouter.dispatch via the per-fetcher catch arm) through
+    # both compile-spec (sakila-example mvn compile) and execute-spec (PostgreSQL round-trip
+    # via GraphQLQueryTest). Closes the visibility gap that let an ambiguous-overload +
+    # removed-DataFetchingEnvironment.getObject() bug ship to production.
+    filmLookup(id: Int!): FilmLookupPayload
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmLookupService",
+            method: "lookup"
+        })
 }
 
 # R1 Phase 2f fixture: free-form (non-table-backed) @record payload. The backing class is a
@@ -256,6 +268,36 @@ type CreateFilmsPayload @record(record: {className: "no.sikt.graphitron.rewrite.
     # AccessorKeyedMany(LIST). Each parent contributes N keys (one per FilmRecord); loadMany
     # supplies one record per element-PK key, returned as List<Record> matching the field shape.
     films: [Film!]!
+}
+
+# R12 fixture (error-handling-parity.md): query-side @error end-to-end. Two @error types
+# in a union so the source-class TypeResolver dispatch ladder and the per-@error path/
+# message DataFetcher emission both have multi-branch coverage; the carrier classifier
+# resolves an ErrorChannel against the canonical (String, List<Object>) constructor on
+# FilmLookupPayload, and the per-fetcher catch arm routes through ErrorRouter.dispatch.
+# See Query.filmLookup and FilmLookupService.lookup; the execute-tier driver lives in
+# GraphQLQueryTest.
+type FilmLookupNotFound @error(handlers: [{
+        handler: GENERIC,
+        className: "no.sikt.graphitron.rewrite.test.services.FilmLookupNotFoundException"
+    }]) {
+    path: [String!]!
+    message: String!
+}
+
+type FilmLookupInvalid @error(handlers: [{
+        handler: GENERIC,
+        className: "no.sikt.graphitron.rewrite.test.services.FilmLookupInvalidIdException"
+    }]) {
+    path: [String!]!
+    message: String!
+}
+
+union FilmLookupError = FilmLookupNotFound | FilmLookupInvalid
+
+type FilmLookupPayload @record(record: {className: "no.sikt.graphitron.rewrite.test.services.FilmLookupPayload"}) {
+    title: String
+    errors: [FilmLookupError]
 }
 
 type Customer implements Node @table(name: "customer") @node {
