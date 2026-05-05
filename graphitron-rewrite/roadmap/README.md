@@ -16,7 +16,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|
 | `R77` | Bulk DML mutations: listed @table input arguments | Spec | [plan](bulk-dml-mutations.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
-| `R81` | Sealed resolution outcomes for catalog table/FK lookups | In Review | [plan](catalog-resolution-sealed-outcomes.md) |
 | `R87` | Tighten instance-service @service design after architect review | Spec | [plan](instance-service-design-cleanup.md) |
 | `R3` | Classification vocabulary follow-ups | Spec | [plan](classification-vocabulary-followups.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
@@ -134,7 +133,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R38` [**Unify `rowsMethodName()`**](unify-rowsmethodname.md) — Backlog, cleanup
 - `R39` [**Validate that list fields on tables without a PK require explicit ordering**](validate-list-fields-require-ordering.md) — Backlog, validation
 - `R4` [**Collapse `BatchKeyField` validator/emitter redundancy**](collapse-tabletargetfield-redundancy.md) — Backlog, cleanup
-- `R81` [**Sealed resolution outcomes for catalog table/FK lookups**](catalog-resolution-sealed-outcomes.md) — In Review, architecture
 - `R5` [**Composite-key `@lookupKey` on list-of-input-object arguments**](composite-key-lookupkey.md) — Backlog, architecture
 - `R42` [**Stub: `@reference` on a scalar (FK column) field (`ColumnReferenceField`)**](column-reference-on-scalar-field.md) — Backlog, stubs
 - `R43` [**Stub: `@tableMethod` with scalar/enum return (`TableMethodField`)**](tablemethod-scalar-return.md) — Backlog, stubs
