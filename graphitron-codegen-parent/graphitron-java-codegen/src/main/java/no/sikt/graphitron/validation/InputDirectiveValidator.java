@@ -6,8 +6,8 @@ import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.List;
 
-import static no.sikt.graphitron.validation.ValidationHandler.addWarningMessage;
-import static no.sikt.graphitron.validation.messages.InputDirectiveWarning.RECORD_TYPE_CONFLICT;
+import static no.sikt.graphitron.validation.ValidationHandler.addErrorMessage;
+import static no.sikt.graphitron.validation.messages.InputDirectiveError.RECORD_TYPE_CONFLICT;
 
 /**
  * Validates directive combinations on input types.
@@ -27,6 +27,6 @@ class InputDirectiveValidator extends AbstractSchemaValidator {
         schema.getInputTypes().values().stream()
                 .filter(RecordObjectDefinition::hasTable)
                 .filter(RecordObjectDefinition::hasJavaRecordReference)
-                .forEach(input -> addWarningMessage(RECORD_TYPE_CONFLICT, input.getName()));
+                .forEach(input -> addErrorMessage(RECORD_TYPE_CONFLICT, input.getName()));
     }
 }

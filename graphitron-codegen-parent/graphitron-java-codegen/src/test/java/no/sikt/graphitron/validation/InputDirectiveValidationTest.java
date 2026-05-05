@@ -15,10 +15,10 @@ public class InputDirectiveValidationTest extends ValidationTest {
     }
 
     @Test
-    @DisplayName("Input with both @table and @record should log warning")
+    @DisplayName("Input with both @table and @record should throw error")
     void tableAndRecord() {
-        getProcessedSchema("tableAndRecord");
-        assertWarningsContain(
+        assertErrorsContain(
+                "tableAndRecord",
                 String.format(
                         "Input types can only be mapped to one record category (either a jOOQ record via @%1$s or a " +
                                 "Java record via @%2$s), but input type 'TestInput' has both directives. Remove @%1$s to " +
