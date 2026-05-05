@@ -1172,6 +1172,13 @@ public class TypeFetcherGenerator {
      * {@code ErrorRouter.dispatch} with the channel's mapping table and synthesized payload
      * factory; an absent channel routes through {@code ErrorRouter.redact}.
      */
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "service-catalog-instance-service-holder-shape",
+        reliesOn = "Emits `new ServiceClass(dsl).method(...)` for non-static @service methods "
+            + "without checking the holder shape at emit time. ServiceCatalog rejects instance "
+            + "methods whose enclosing class is abstract / an interface or lacks the required "
+            + "public single-arg DSLContext constructor, so the emitter can lean on the existence "
+            + "of that constructor unconditionally.")
     private static MethodSpec buildServiceFetcherCommon(TypeFetcherEmissionContext ctx, String fieldName, MethodRef method,
                                                         String parentTypeName, TypeName valueType,
                                                         Optional<ErrorChannel> errorChannel,
@@ -1181,8 +1188,13 @@ public class TypeFetcherGenerator {
         var serviceClass = ClassName.bestGuess(method.className());
         String conditionsClassName = outputPackage + ".conditions."
             + parentTypeName + QueryConditionsGenerator.CLASS_NAME_SUFFIX;
-        boolean needsDsl = method.params().stream()
-            .anyMatch(p -> p.source() instanceof ParamSource.DslContext);
+        // Instance services need a `dsl` local for the constructor regardless of whether the
+        // method itself declares a DSLContext parameter, since the holder is constructed via
+        // `new Service(dsl).method(...)`. Static services keep the previous "only when needed"
+        // policy.
+        boolean needsDsl = !method.isStatic()
+            || method.params().stream().anyMatch(p -> p.source() instanceof ParamSource.DslContext);
+        CodeBlock callTarget = serviceCallTarget(method, serviceClass);
 
         var builder = MethodSpec.methodBuilder(fieldName)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -1204,18 +1216,18 @@ public class TypeFetcherGenerator {
             // "Service returns the domain object" shape: capture the service return in a typed
             // local and assemble the payload around it via a positional constructor walk.
             var ra = resultAssembly.get();
-            builder.addStatement("$T __row = $T.$L($L)",
+            builder.addStatement("$T __row = $L.$L($L)",
                 ra.resultSlotType(),
-                serviceClass,
+                callTarget,
                 method.methodName(),
                 ArgCallEmitter.buildMethodBackedCallArgs(ctx, method, null, conditionsClassName));
             builder.addCode(buildSuccessPayload(valueType, ra, errorChannel, "__row"));
         } else {
             // Legacy passthrough: service method returns the SDL payload class directly. The
             // emitter forwards the return value into the DataFetcherResult without assembly.
-            builder.addStatement("$T payload = $T.$L($L)",
+            builder.addStatement("$T payload = $L.$L($L)",
                 valueType,
-                serviceClass,
+                callTarget,
                 method.methodName(),
                 ArgCallEmitter.buildMethodBackedCallArgs(ctx, method, null, conditionsClassName));
         }
@@ -1225,6 +1237,21 @@ public class TypeFetcherGenerator {
         builder.endControlFlow();
 
         return builder.build();
+    }
+
+    /**
+     * Builds the call-target {@link CodeBlock} for a service method invocation: either the bare
+     * class name {@code ServiceClass} for static methods, or a fresh-instance expression
+     * {@code new ServiceClass(dsl)} for instance methods. The caller appends {@code .methodName(args)}.
+     *
+     * <p>The instance form requires the surrounding method to declare a {@code DSLContext dsl}
+     * local in scope before the call site; the root-fetcher and rows-method emitters both gate
+     * that local on {@link MethodRef#isStatic()}.
+     */
+    private static CodeBlock serviceCallTarget(MethodRef method, ClassName serviceClass) {
+        return method.isStatic()
+            ? CodeBlock.of("$T", serviceClass)
+            : CodeBlock.of("new $T(dsl)", serviceClass);
     }
 
     /**
@@ -2389,6 +2416,11 @@ public class TypeFetcherGenerator {
             + "error on the generated source. Covers RowKeyed / RecordKeyed / MappedRowKeyed / "
             + "MappedRecordKeyed and TableRecordKeyed / MappedTableRecordKeyed for typed jOOQ "
             + "TableRecord sources.")
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "service-catalog-instance-service-holder-shape",
+        reliesOn = "Emits `new ServiceClass(dsl).method(...)` for non-static @service methods on "
+            + "the rows-method path without checking the holder shape at emit time; same "
+            + "guarantee as buildServiceFetcherCommon's static-vs-instance fork.")
     private static MethodSpec buildServiceRowsMethod(
             TypeFetcherEmissionContext ctx,
             BatchKeyField bkf,
@@ -2410,8 +2442,11 @@ public class TypeFetcherGenerator {
         var serviceClass = ClassName.bestGuess(method.className());
         String conditionsClassName = outputPackage + ".conditions."
             + parentTypeName + QueryConditionsGenerator.CLASS_NAME_SUFFIX;
-        boolean needsDsl = method.params().stream()
-            .anyMatch(p -> p.source() instanceof ParamSource.DslContext);
+        // Mirror buildServiceFetcherCommon: instance services need a `dsl` local for the
+        // constructor regardless of whether the method itself takes a DSLContext parameter.
+        boolean needsDsl = !method.isStatic()
+            || method.params().stream().anyMatch(p -> p.source() instanceof ParamSource.DslContext);
+        CodeBlock callTarget = serviceCallTarget(method, serviceClass);
 
         var builder = MethodSpec.methodBuilder(bkf.rowsMethodName())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -2422,8 +2457,8 @@ public class TypeFetcherGenerator {
         if (needsDsl) {
             builder.addStatement("$T dsl = $L.getDslContext(env)", dslContextClass, ctx.graphitronContextCall());
         }
-        builder.addStatement("return $T.$L($L)",
-            serviceClass,
+        builder.addStatement("return $L.$L($L)",
+            callTarget,
             method.methodName(),
             ArgCallEmitter.buildMethodBackedCallArgs(ctx, method, null, CodeBlock.of("keys"), conditionsClassName));
 
