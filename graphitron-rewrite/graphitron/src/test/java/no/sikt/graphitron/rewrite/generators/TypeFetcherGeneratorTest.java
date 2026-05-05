@@ -1923,19 +1923,24 @@ class TypeFetcherGeneratorTest {
 
     private static java.util.Map<String, List<JoinStep>> filmActorChildJoinPaths() {
         // film_actor → film via film_actor_film_id_fkey: source columns sit on film_actor side.
-        // film_actor → actor via film_actor_actor_id_fkey: same shape.
+        // film_actor → actor via film_actor_actor_id_fkey: same shape. The FK source columns on
+        // the parent (FilmActor) side must coincide with FilmActor's PK by sqlName so the
+        // batched-connection emitter can resolve each parent PK slot to a real FK target column;
+        // the synthetic batched parent PK is a single-column [last_update] (see
+        // filmActorParentTableForBatched), so both FKs source from last_update on the parent
+        // side. The participant-side targetColumns name and type are immaterial to the unit test
+        // (the emitter does not consume them for the parent-input lookup).
         var filmActorTable = TestFixtures.tableRef("film_actor", "FILM_ACTOR", "FilmActor",
-            List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"),
-                    new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer")));
+            List.of(new ColumnRef("last_update", "LAST_UPDATE", "java.sql.Timestamp")));
         var filmTable = filmTableWithPk();
         var actorTable = TestFixtures.tableRef("actor", "ACTOR", "Actor",
             List.of(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer")));
         // FK direction: film_actor (source/FK holder) → film (target/PK side) and similarly for actor.
         var filmFk = new JoinStep.FkJoin("film_actor_film_id_fkey", null,
-            filmActorTable, List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer")),
+            filmActorTable, List.of(new ColumnRef("last_update", "LAST_UPDATE", "java.sql.Timestamp")),
             filmTable, List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer")), null, "related_0");
         var actorFk = new JoinStep.FkJoin("film_actor_actor_id_fkey", null,
-            filmActorTable, List.of(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer")),
+            filmActorTable, List.of(new ColumnRef("last_update", "LAST_UPDATE", "java.sql.Timestamp")),
             actorTable, List.of(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer")), null, "related_1");
         return java.util.Map.of(
             "Film", List.<JoinStep>of(filmFk),
@@ -1985,18 +1990,21 @@ class TypeFetcherGeneratorTest {
     @Test
     void childInterfaceField_emitsParentFkConditionPerBranch() {
         // R36 plan B3 acceptance test: each branch of the stage-1 UNION ALL carries its own
-        // .where(participant.<fk> = parentRecord.<parent_pk>) predicate.
+        // .where(participant.<fk> = parentRecord.<parent_pk>) predicate. The synthetic fixture
+        // sources both FKs from the parent's single PK column last_update (see
+        // filmActorChildJoinPaths), so each branch reads the same parentRecord column even
+        // though the participant-side FK column differs.
         var field = childInterfaceField("FilmActor", "related", true);
         var spec = TypeFetcherGenerator.generateTypeSpec("FilmActor",
             TestFixtures.tableRef("film_actor", "FILM_ACTOR", "FilmActor", List.of()),
             null, List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
         var body = method(spec, "related").code().toString();
         assertThat(body)
-            .as("Film branch's WHERE references stage1 alias and typed parentRecord film_id read")
-            .contains("stage1_Film.FILM_ID.eq(parentRecord.get(org.jooq.impl.DSL.name(\"film_id\"), java.lang.Integer.class))");
+            .as("Film branch's WHERE references stage1 alias and typed parentRecord read of the FK source column")
+            .contains("stage1_Film.FILM_ID.eq(parentRecord.get(org.jooq.impl.DSL.name(\"last_update\"), java.sql.Timestamp.class))");
         assertThat(body)
-            .as("Actor branch's WHERE references stage1 alias and typed parentRecord actor_id read")
-            .contains("stage1_Actor.ACTOR_ID.eq(parentRecord.get(org.jooq.impl.DSL.name(\"actor_id\"), java.lang.Integer.class))");
+            .as("Actor branch's WHERE references stage1 alias and typed parentRecord read of the FK source column")
+            .contains("stage1_Actor.ACTOR_ID.eq(parentRecord.get(org.jooq.impl.DSL.name(\"last_update\"), java.sql.Timestamp.class))");
     }
 
     @Test
@@ -2011,8 +2019,8 @@ class TypeFetcherGeneratorTest {
         var body = method(spec, "related").code().toString();
         assertThat(body).contains("parentRecord = (org.jooq.Record) env.getSource()");
         assertThat(body).contains(".unionAll(");
-        assertThat(body).contains("stage1_Film.FILM_ID.eq(parentRecord.get(org.jooq.impl.DSL.name(\"film_id\"), java.lang.Integer.class))");
-        assertThat(body).contains("stage1_Actor.ACTOR_ID.eq(parentRecord.get(org.jooq.impl.DSL.name(\"actor_id\"), java.lang.Integer.class))");
+        assertThat(body).contains("stage1_Film.FILM_ID.eq(parentRecord.get(org.jooq.impl.DSL.name(\"last_update\"), java.sql.Timestamp.class))");
+        assertThat(body).contains("stage1_Actor.ACTOR_ID.eq(parentRecord.get(org.jooq.impl.DSL.name(\"last_update\"), java.sql.Timestamp.class))");
         assertThat(body).contains("selectFilmForRelated(")
             .contains("selectActorForRelated(");
     }
@@ -2343,5 +2351,136 @@ class TypeFetcherGeneratorTest {
             .as("ProjectEvent branch JOINs on (org_id AND project_id) — same AND-chain shape")
             .contains("stage1_ProjectEvent.ORG_ID.eq(parentInput.field(\"org_id\", java.lang.Integer.class))"
                 + ".and(stage1_ProjectEvent.PROJECT_ID.eq(parentInput.field(\"project_id\", java.lang.Integer.class)))");
+    }
+
+    // ===== FK column ordering not aligned with parent @node keyColumns =====
+    //
+    // Regression fixtures: parent type "Project" with @node(keyColumns: [org_id, project_id])
+    // (in that order) referenced by FKs that declare their columns in the OPPOSITE order
+    // (project_id, org_id). The FK's source/target column lists are aligned with each other by
+    // FK declaration; neither side is necessarily aligned with the parent's keyColumns
+    // ordering. Pre-fix, both SplitRowsMethodEmitter and MultiTablePolymorphicEmitter paired
+    // joinOnCols.get(i) with pkCols.get(i) positionally, which mis-paired columns whenever the
+    // two orderings disagreed (Field<String>.eq(Field<Long>) compile errors when the parent PK
+    // had heterogeneous types, semantically swapped JOINs when types happened to coincide).
+    // Post-fix, both emitters resolve the parent column for each FK slot via the FK's own
+    // declared pairing, so the JOIN predicate is correct regardless of either ordering.
+
+    private static TableRef heteroPkParentTable() {
+        // Parent @node(keyColumns: [org_code (String), project_id (Integer)]) — heterogeneous
+        // types so a positional mis-pairing surfaces as a compile-time
+        // Field<String>.eq(Field<Integer>) when emitted incorrectly.
+        return TestFixtures.tableRef("project", "PROJECT", "Project",
+            List.of(
+                new ColumnRef("org_code", "ORG_CODE", "java.lang.String"),
+                new ColumnRef("project_id", "PROJECT_ID", "java.lang.Integer")));
+    }
+
+    private static JoinStep.FkJoin reorderedHeteroFkOnNote() {
+        // Child table holds the FK; FK columns declared in REVERSE order from parent's
+        // keyColumns. sourceColumns and targetColumns stay paired with each other by FK
+        // declaration order; both reverse the parent's keyColumns order.
+        var note = TestFixtures.tableRef("project_note", "PROJECT_NOTE", "ProjectNote",
+            List.of(
+                new ColumnRef("note_id", "NOTE_ID", "java.lang.Integer"),
+                new ColumnRef("project_id", "PROJECT_ID", "java.lang.Integer"),
+                new ColumnRef("org_code", "ORG_CODE", "java.lang.String")));
+        return new JoinStep.FkJoin("project_note_project_fkey", null,
+            note,
+            List.of(new ColumnRef("project_id", "PROJECT_ID", "java.lang.Integer"),
+                    new ColumnRef("org_code", "ORG_CODE", "java.lang.String")),
+            heteroPkParentTable(),
+            List.of(new ColumnRef("project_id", "PROJECT_ID", "java.lang.Integer"),
+                    new ColumnRef("org_code", "ORG_CODE", "java.lang.String")),
+            null, "notes_0");
+    }
+
+    @Test
+    void splitTableField_listRowsMethod_reorderedHeteroFk_pairsBySqlNameAndType() {
+        // SplitRowsMethodEmitter.buildListMethod with parent @node(keyColumns: [org_code: String,
+        // project_id: Integer]) and FK declared (project_id, org_code). Pre-fix: positional
+        // pairing emitted notes_0.PROJECT_ID.eq(parentInput.field(1, String.class)) — types
+        // (Field<Integer> vs Field<String>) mismatched and the generated source would not
+        // compile. Post-fix: each FK slot's parent-side column drives both the sqlName lookup
+        // and the typed cast, so notes_0.PROJECT_ID.eq(parentInput.field("project_id",
+        // Integer.class)) is type-correct and semantically pairs the same database columns the
+        // FK constraint pairs.
+        var field = new ChildField.SplitTableField("Project", "notes", null,
+            new ReturnTypeRef.TableBoundReturnType("ProjectNote",
+                TestFixtures.tableRef("project_note", "PROJECT_NOTE", "ProjectNote", List.of()),
+                nonNullList()),
+            List.of((JoinStep) reorderedHeteroFkOnNote()),
+            List.of(), new OrderBySpec.None(), null,
+            new BatchKey.RowKeyed(List.of(
+                new ColumnRef("org_code", "ORG_CODE", "java.lang.String"),
+                new ColumnRef("project_id", "PROJECT_ID", "java.lang.Integer"))));
+        var spec = TypeFetcherGenerator.generateTypeSpec("Project",
+            heteroPkParentTable(),
+            null, List.of((GraphitronField) field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+        var rows = method(spec, "rowsNotes").code().toString();
+        // JoinPathEmitter.generateAliases derives the join-step alias from the target table
+        // class's first letter; this single-step path joins to the Project parent table, so
+        // the alias is "p0".
+        assertThat(rows)
+            .as("PROJECT_ID FK column pairs with parent project_id (Integer), not parent org_code (String)")
+            .contains("p0.PROJECT_ID.eq(parentInput.field(\"project_id\", java.lang.Integer.class))");
+        assertThat(rows)
+            .as("ORG_CODE FK column pairs with parent org_code (String), not parent project_id (Integer)")
+            .contains("p0.ORG_CODE.eq(parentInput.field(\"org_code\", java.lang.String.class))");
+        assertThat(rows)
+            .as("no positional .field(1, ...) / .field(2, ...) calls survive on the join predicate")
+            .doesNotContain("parentInput.field(1, java.lang.")
+            .doesNotContain("parentInput.field(2, java.lang.");
+    }
+
+    @Test
+    void childInterfaceField_connection_reorderedCompositeFk_pairsBySqlNameAndType() {
+        // MultiTablePolymorphicEmitter.batchedBranchJoinPredicate previously paired
+        // participantCols.get(i) with parentPkCols.get(i) positionally. With FK declared
+        // (project_id, org_code) but parent keyColumns [(org_code, project_id)], that emit:
+        //   stage1_ProjectNote.PROJECT_ID.eq(parentInput.field("org_code", String.class))
+        // which fails to compile (Field<Integer> vs Field<String>) and pairs the wrong
+        // semantic columns. Post-fix, each parent PK column is matched against the FK's
+        // parent-side slot by sqlName so the participant column comes from the same FK slot.
+        var note = TestFixtures.tableRef("project_note", "PROJECT_NOTE", "ProjectNote",
+            List.of(new ColumnRef("note_id", "NOTE_ID", "java.lang.Integer")));
+        var event = TestFixtures.tableRef("project_event", "PROJECT_EVENT", "ProjectEvent",
+            List.of(new ColumnRef("event_id", "EVENT_ID", "java.lang.Integer")));
+        var participants = List.<ParticipantRef>of(
+            new ParticipantRef.TableBound("ProjectNote", note, null),
+            new ParticipantRef.TableBound("ProjectEvent", event, null));
+        var eventFk = new JoinStep.FkJoin("project_event_project_fkey", null,
+            event,
+            List.of(new ColumnRef("project_id", "PROJECT_ID", "java.lang.Integer"),
+                    new ColumnRef("org_code", "ORG_CODE", "java.lang.String")),
+            heteroPkParentTable(),
+            List.of(new ColumnRef("project_id", "PROJECT_ID", "java.lang.Integer"),
+                    new ColumnRef("org_code", "ORG_CODE", "java.lang.String")),
+            null, "items_1");
+        java.util.Map<String, List<JoinStep>> joinPaths = java.util.Map.of(
+            "ProjectNote", List.<JoinStep>of(reorderedHeteroFkOnNote()),
+            "ProjectEvent", List.<JoinStep>of(eventFk));
+        var field = new ChildField.InterfaceField("Project", "itemsConnection", null,
+            new ReturnTypeRef.PolymorphicReturnType("ProjectItem",
+                new FieldWrapper.Connection(false, 5)),
+            participants, joinPaths);
+        var spec = TypeFetcherGenerator.generateTypeSpec("Project",
+            heteroPkParentTable(),
+            null, List.of(field), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+        var rows = method(spec, "rowsItemsConnection").code().toString();
+        assertThat(rows)
+            .as("ProjectNote branch: ORG_CODE pairs with org_code (String) by FK slot")
+            .contains("stage1_ProjectNote.ORG_CODE.eq(parentInput.field(\"org_code\", java.lang.String.class))");
+        assertThat(rows)
+            .as("ProjectNote branch: PROJECT_ID pairs with project_id (Integer) by FK slot")
+            .contains("stage1_ProjectNote.PROJECT_ID.eq(parentInput.field(\"project_id\", java.lang.Integer.class))");
+        assertThat(rows)
+            .as("ProjectEvent branch shares the same per-FK-slot pairing")
+            .contains("stage1_ProjectEvent.ORG_CODE.eq(parentInput.field(\"org_code\", java.lang.String.class))")
+            .contains("stage1_ProjectEvent.PROJECT_ID.eq(parentInput.field(\"project_id\", java.lang.Integer.class))");
+        assertThat(rows)
+            .as("predicate must not type-mismatch (e.g. PROJECT_ID.eq(field(\"org_code\", String.class)))")
+            .doesNotContain("PROJECT_ID.eq(parentInput.field(\"org_code\"")
+            .doesNotContain("ORG_CODE.eq(parentInput.field(\"project_id\"");
     }
 }

@@ -1019,18 +1019,25 @@ public final class MultiTablePolymorphicEmitter {
      * {@link JoinStep.FkJoin#targetTable()} matching the participant table (parent-holds-FK
      * case) or not (the standard child-holds-FK shape).
      *
-     * <p>Composite-FK assumption: {@code fkJoin.sourceColumns()} and
-     * {@code fkJoin.targetColumns()} are position-aligned with the parent table's PK columns;
-     * slot {@code i} on each side maps to {@code parentPkCols.get(i)}. This is the same
-     * position-pairing convention {@code SplitRowsMethodEmitter} relies on for batched
-     * single-cardinality and connection-mode parent-input JOINs.
+     * <p>{@code fkJoin.sourceColumns()} and {@code fkJoin.targetColumns()} are position-aligned
+     * with each other by FK declaration order, but neither side is necessarily aligned with
+     * {@code parentPkCols} (which follows the parent's {@code @node(keyColumns: [...])}
+     * ordering). For each {@code parentPkCols.get(i)} we look up the matching slot on the
+     * parent side of the FK ({@code targetColumns()} for child-holds-FK, {@code sourceColumns()}
+     * for parent-holds-FK) by sqlName, and pull the participant-side column from the same slot
+     * on the opposite side. A positional pairing would mis-pair columns when a multi-column FK
+     * declares its columns in a different order than the parent's keyColumns directive,
+     * emitting type-incompatible jOOQ {@code .eq(...)} arguments.
      */
     private static CodeBlock batchedBranchJoinPredicate(ParticipantRef.TableBound participant,
             Map<String, List<JoinStep>> participantJoinPaths, List<ColumnRef> parentPkCols) {
         var path = participantJoinPaths.get(participant.typeName());
         var fkJoin = (JoinStep.FkJoin) path.get(0);
         boolean parentHoldsFk = fkJoin.targetTable().tableName().equalsIgnoreCase(participant.table().tableName());
-        List<ColumnRef> participantCols = parentHoldsFk
+        List<ColumnRef> fkParentCols = parentHoldsFk
+            ? fkJoin.sourceColumns()
+            : fkJoin.targetColumns();
+        List<ColumnRef> fkParticipantCols = parentHoldsFk
             ? fkJoin.targetColumns()
             : fkJoin.sourceColumns();
         String tableAlias = "stage1_" + participant.typeName();
@@ -1038,15 +1045,35 @@ public final class MultiTablePolymorphicEmitter {
         for (int i = 0; i < parentPkCols.size(); i++) {
             ColumnRef parentCol = parentPkCols.get(i);
             ClassName parentColClass = ClassName.bestGuess(parentCol.columnClass());
+            ColumnRef participantCol = matchingParticipantCol(parentCol, fkParentCols, fkParticipantCols, participant.typeName());
             if (i == 0) {
                 b.add("$L.$L.eq(parentInput.field($S, $T.class))",
-                    tableAlias, participantCols.get(i).javaName(), parentCol.sqlName(), parentColClass);
+                    tableAlias, participantCol.javaName(), parentCol.sqlName(), parentColClass);
             } else {
                 b.add(".and($L.$L.eq(parentInput.field($S, $T.class)))",
-                    tableAlias, participantCols.get(i).javaName(), parentCol.sqlName(), parentColClass);
+                    tableAlias, participantCol.javaName(), parentCol.sqlName(), parentColClass);
             }
         }
         return b.build();
+    }
+
+    /**
+     * For a parent PK column, finds the participant-side FK column that pairs with it through the
+     * FK constraint. The two FK column lists are position-aligned with each other (slot {@code k}
+     * on each side is the same FK pair); we locate the slot by matching the parent column's
+     * sqlName against {@code fkParentCols}, then read the same slot from {@code fkParticipantCols}.
+     */
+    private static ColumnRef matchingParticipantCol(ColumnRef parentCol,
+            List<ColumnRef> fkParentCols, List<ColumnRef> fkParticipantCols, String typeName) {
+        for (int k = 0; k < fkParentCols.size(); k++) {
+            if (fkParentCols.get(k).sqlName().equalsIgnoreCase(parentCol.sqlName())) {
+                return fkParticipantCols.get(k);
+            }
+        }
+        throw new IllegalStateException(
+            "Parent PK column '" + parentCol.sqlName() + "' has no matching FK slot for participant '"
+            + typeName + "' (FK parent-side columns: "
+            + fkParentCols.stream().map(ColumnRef::sqlName).toList() + ")");
     }
 
     /**
