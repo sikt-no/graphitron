@@ -133,7 +133,7 @@ dependency, because the call only exists as a return value of that helper.
   presence, no body strings.
 - **Add a pipeline fixture** covering a service-record-only type. The schema
   in `graphitron-sakila-example` already has `@service` scalars on
-  `FilmDetails` (`schema.graphqls:418`), but `FilmDetails` carries other
+  `Film` (`schema.graphqls:424,433,443`), but `Film` carries many other
   field shapes too. Add a small type whose only field is a `@service` scalar
   with a batch key, so its `*Fetchers` class would have been the regression
   shape pre-fix. Compile-tier coverage in `graphitron-sakila-example` then
