@@ -1,6 +1,8 @@
 # Graphitron Project - Claude Code Reference
 
-Rules and constraints for working in this repo. **Scope: [`graphitron-rewrite/`](graphitron-rewrite/) and [`docs/`](docs/).** The legacy modules at the repo root (`graphitron-codegen-parent`, `graphitron-common`, `graphitron-example`, `graphitron-maven-plugin`, `graphitron-schema-transform`, `graphitron-servlet-parent`) are out of scope for AI work; do not modify them. `/docs/` is the source for the public documentation site at `graphitron.sikt.no` (during migration: also `sikt-no.github.io/graphitron`); see [Documentation site](#documentation-site) below. Background and architecture for the rewrite live in [`graphitron-rewrite/docs/README.adoc`](graphitron-rewrite/docs/README.adoc).
+Rules and constraints for working in this repo. **Scope: `graphitron-rewrite/` and `docs/`.** The legacy modules at the repo root (`graphitron-codegen-parent`, `graphitron-common`, `graphitron-example`, `graphitron-maven-plugin`, `graphitron-schema-transform`, `graphitron-servlet-parent`) are out of scope for AI work; do not modify them. `/docs/` is the source for the public documentation site at `graphitron.sikt.no` (during migration: also `sikt-no.github.io/graphitron`); see [Documentation site](#documentation-site) below.
+
+Links elsewhere in this file point at deep references. **Don't fetch them up front;** open one only when its stated trigger applies to the task at hand. The rules and commands here are meant to be self-contained for routine work.
 
 ## What graphitron-rewrite is
 
@@ -31,7 +33,7 @@ mvn -version  # confirm Java 25
 
 Both steps are needed when a session inherits `JAVA_HOME=/usr/lib/jvm/java-21-...`: `apt-get install` switches `update-alternatives` (so `java`/`javac` on PATH point at 25) but does not touch `JAVA_HOME`, and Maven honours `JAVA_HOME` over PATH. Setting `JAVA_HOME` is the reliable step; the alternatives switch is a happy side-effect of `apt-get install`. The parent pom's `requireJavaVersion` enforcer fails with a clear "Detected JDK ... is version 21.x.x which is not in the allowed range [25,)" when this is wrong, so a stale `JAVA_HOME` is loud, not silent.
 
-**Claude Code Web:** see [`.claude/web-environment.md`](.claude/web-environment.md) for the web-sandbox setup (no Docker, native PostgreSQL via `-Plocal-db`).
+**Claude Code Web:** uses a web-sandbox setup (no Docker, native PostgreSQL via `-Plocal-db`). If `mvn` fails with PostgreSQL or Testcontainers errors on the web sandbox, see `.claude/web-environment.md`.
 
 ## Common commands
 
@@ -47,9 +49,13 @@ The full install is fast; prefer it over targeted `-pl` builds. If you do need `
 
 ## Building and testing
 
-Full pipeline (build-fixtures → test → compile-spec → execute-spec): [`.claude/web-environment.md`](.claude/web-environment.md). Test-tier conventions (no code-string assertions on generated bodies; unit vs pipeline vs compilation vs execution): [`graphitron-rewrite/docs/rewrite-design-principles.adoc`](graphitron-rewrite/docs/rewrite-design-principles.adoc). Architectural orientation (sealed variant hierarchy, classification taxonomy, runtime extension points): [`graphitron-rewrite/docs/README.adoc`](graphitron-rewrite/docs/README.adoc).
+The `mvn install -Plocal-db` command above runs the full pipeline (build-fixtures → test → compile-spec → execute-spec). Reach for the deeper docs only when the task requires it:
 
-**Footgun: catalog-jar clobber.** Any `mvn install` that builds `graphitron-sakila-db` without `-Plocal-db` silently re-emits the jar with an empty jOOQ catalog, cascading into `UnclassifiedType`, `NoSuchElement`, or "table … could not be resolved" failures across pipeline tests. Always include `-Plocal-db`. Recovery: rerun the full install command above. Full symptom list and rationale: [`.claude/web-environment.md`](.claude/web-environment.md).
+- Adding/structuring tests, or unsure which tier (unit vs pipeline vs compilation vs execution) to put a test in: `graphitron-rewrite/docs/rewrite-design-principles.adoc`.
+- Navigating the sealed variant hierarchy, classification taxonomy, or runtime extension points: `graphitron-rewrite/docs/README.adoc`.
+- Diagnosing build/test failures specific to the web sandbox: `.claude/web-environment.md`.
+
+**Footgun: catalog-jar clobber.** Any `mvn install` that builds `graphitron-sakila-db` without `-Plocal-db` silently re-emits the jar with an empty jOOQ catalog, cascading into `UnclassifiedType`, `NoSuchElement`, or "table … could not be resolved" failures across pipeline tests. Always include `-Plocal-db`. Recovery: rerun the full install command above.
 
 ## Writing style
 
@@ -69,13 +75,13 @@ To skip the AsciiDoctor render in a local build (saves ~10s of JRuby startup):
 mvn -f graphitron-rewrite/pom.xml install -P!docs -Plocal-db
 ```
 
-The migration plan is roadmap item `R9` ([`graphitron-rewrite/roadmap/docs-site-asciidoc.md`](graphitron-rewrite/roadmap/docs-site-asciidoc.md)).
+If you're working on the docs migration itself, the plan is roadmap item `R9` (`graphitron-rewrite/roadmap/docs-site-asciidoc.md`).
 
 ## Development Workflow
 
-Every change moves Backlog → Spec → Ready → In Progress → In Review → Done. Each item has its own file in [`graphitron-rewrite/roadmap/`](graphitron-rewrite/roadmap/) carrying YAML front-matter (`status:`, `bucket:`, etc.); [`graphitron-rewrite/roadmap/README.md`](graphitron-rewrite/roadmap/README.md) is the rendered roll-up, regenerated by `mvn -f graphitron-rewrite/pom.xml -pl roadmap-tool exec:java -q`. Reviewer must be a different party than the author (for Spec → Ready) and the implementer (for In Review → Done). Any session can add Backlog items.
+Every change moves Backlog → Spec → Ready → In Progress → In Review → Done. Each item has its own file in `graphitron-rewrite/roadmap/` carrying YAML front-matter (`status:`, `bucket:`, etc.); `graphitron-rewrite/roadmap/README.md` is the rendered roll-up, regenerated by `mvn -f graphitron-rewrite/pom.xml -pl roadmap-tool exec:java -q`. Reviewer must be a different party than the author (for Spec → Ready) and the implementer (for In Review → Done). Any session can add Backlog items.
 
-Full spec, state table, file conventions, canonical path: [`graphitron-rewrite/docs/workflow.adoc`](graphitron-rewrite/docs/workflow.adoc). Read it once; it's short.
+When transitioning a roadmap item between states, or unsure of the file conventions for a new item, consult `graphitron-rewrite/docs/workflow.adoc` for the full state table and canonical paths.
 
 ## Git Workflow
 
