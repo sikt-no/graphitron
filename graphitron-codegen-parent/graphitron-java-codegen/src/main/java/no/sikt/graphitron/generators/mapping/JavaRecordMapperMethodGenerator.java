@@ -6,7 +6,6 @@ import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphitron.definitions.mapping.MethodMapping;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.abstractions.AbstractMapperMethodGenerator;
-import no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks;
 import no.sikt.graphitron.generators.context.MapperContext;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
@@ -38,12 +37,17 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
         return getMapperSpecBuilder(target).build();
     }
 
+
+    @Override
+    protected CodeBlock iterateRecords(MapperContext context){
+        return iterateRecords(context, VAR_ARGS);
+    }
+
     /**
      * @return Code for setting the record data from input types.
      */
     @NotNull
-    @Override
-    protected CodeBlock iterateRecords(MapperContext context) {
+    protected CodeBlock iterateRecords(MapperContext context, String argumentSetName) {
         if (context.isIterable() && !context.hasRecordReference()) {
             return CodeBlock.empty(); // Can not allow this, because input type may contain multiple fields. These can not be mapped to a single field in any reasonable way.
         }
@@ -81,6 +85,11 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
                     innerCode.add(innerContext.getFieldSetMappingBlock());
                 } else if (innerContext.hasRecordReference()) {
                     innerCode.add(innerContext.getRecordSetMappingBlock());
+                } else if (toRecord) {
+                    var nextArgsVar = nextArgPresenceVar();
+                    innerCode.
+                            declare(nextArgsVar, "$N.child($S)", argumentSetName, innerField.getName()).
+                            add(iterateRecords(innerContext, nextArgsVar));
                 } else {
                     innerCode.add(iterateRecords(innerContext));
                 }
@@ -91,10 +100,22 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
             if (!innerCode.isEmpty()) {
                 var notAlreadyDefined = innerContext.variableNotAlreadyDeclared();
                 var shouldDeclareVariable = notAlreadyDefined || innerContext.getTarget().createsDataFetcher();
-                var nullBlock = CodeBlock.ofIf(shouldDeclareVariable, "$N != null && ", varName);
+                var nullBlock = CodeBlock.ofIf(shouldDeclareVariable, "$N != null", varName);
+                var isWrapperWithoutRecord = innerContext.targetIsType() && !innerContext.hasRecordReference() && !innerContext.getTarget().createsDataFetcher();
+
+                var presenceCheck = isWrapperWithoutRecord && toRecord
+                        ? CodeBlock.empty()
+                        : toRecord
+                            ? CodeBlock.of("$L.hasField($S)", argumentSetName, innerField.getName())
+                            : selectionSetLookup(innerContext.getPath(), false, false);
+                var condition = !shouldDeclareVariable
+                        ? presenceCheck
+                        : presenceCheck.isEmpty()
+                            ? nullBlock
+                            : CodeBlock.join(" && ", nullBlock, presenceCheck);
                 fieldCode
                         .declareIf(shouldDeclareVariable, varName, innerContext.getSourceGetCallBlock())
-                        .beginControlFlow("if ($L$L)", nullBlock, toRecord ? argumentPresenceLookup(innerContext.getPath(), false) : selectionSetLookup(innerContext.getPath(), false, false))
+                        .beginControlFlow("if ($L)", condition)
                         .add(innerCode.build())
                         .endControlFlow()
                         .add("\n");
@@ -205,9 +226,8 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
             var listVarName = mapperNodeInputPrefix(field.getName());
             listVarNames.add(listVarName);
             var getterMapping = new MethodMapping(field.getName());
-            var fieldPath = context.getPath().isEmpty() ? field.getName() : context.getPath() + "/" + field.getName();
             code.declare(listVarName,
-                    "$L ? $L : null", FormatCodeBlocks.argumentPresenceLookup(fieldPath, false),
+                    "$L.hasField($S) ? $L : null", VAR_ARGS, field.getName(),
                     asMethodCall(inputVar, getterMapping.asGet()));
         }
 
@@ -273,9 +293,8 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
         var inputVar = namedIteratorPrefix(sourceName);
         var getterMapping = new MethodMapping(field.getName());
 
-        var fieldPath = context.getPath().isEmpty() ? field.getName() : context.getPath() + "/" + field.getName();
         return CodeBlock.builder()
-                .beginControlFlow("if ($L)", FormatCodeBlocks.argumentPresenceLookup(fieldPath, false))
+                .beginControlFlow("if ($N.hasField($S))", VAR_ARGS, field.getName())
                 .declare(VAR_NODE_ID_VALUE, asMethodCall(inputVar, getterMapping.asGet()))
                 .add(
                         wrapNotNull(

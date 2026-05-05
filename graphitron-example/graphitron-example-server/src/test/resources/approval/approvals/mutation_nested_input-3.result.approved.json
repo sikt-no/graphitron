@@ -1,0 +1,14 @@
+{
+    "data": {
+        "testingNestedInputType": [
+            {
+                "id": "Q3VzdG9tZXI6MTAy",
+                "email": "CRYSTAL.FORD@sakilacustomer.org",
+                "name": {
+                    "firstName": "JustFirst",
+                    "lastName": "FORD"
+                }
+            }
+        ]
+    }
+}

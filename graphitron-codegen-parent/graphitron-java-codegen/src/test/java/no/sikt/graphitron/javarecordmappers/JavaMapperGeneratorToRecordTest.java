@@ -63,10 +63,20 @@ public class JavaMapperGeneratorToRecordTest extends GeneratorTest {
     void containingNonRecordWrapper() {
         assertGeneratedContentContains(
                 "containingNonRecordWrapper",
-                "inner = _nit_address.getInner();" +
-                        "if (_mi_inner != null && _iv_args.hasField(\"inner\")) {" +
-                        "if (_iv_args.child(\"inner\").hasField(\"postalCode\")) {" +
-                        "_mo_mapperAddressJavaRecord.setPostalCode(_mi_inner.getPostalCode());"
+                """
+                        var _nit_address = _mi_address.get(_niit_address);
+                        var _iv_args = _iv_argPresence.itemAt(_niit_address);
+                        if (_nit_address == null) continue;
+                        var _mo_mapperAddressJavaRecord = new MapperAddressJavaRecord();
+                        var _mi_inner = _nit_address.getInner();
+                        if (_mi_inner != null) {
+                            var _iv_nextArgs0 = _iv_args.child("inner");
+                            if (_iv_nextArgs0.hasField("postalCode")) {
+                                _mo_mapperAddressJavaRecord.setPostalCode(_mi_inner.getPostalCode());
+                            }
+                        }
+                        _mlo_mapperAddressJavaRecord.add(_mo_mapperAddressJavaRecord);
+                        """
         );
     }
 
@@ -75,11 +85,20 @@ public class JavaMapperGeneratorToRecordTest extends GeneratorTest {
     void containingDoubleNonRecordWrapper() {
         assertGeneratedContentContains(
                 "containingDoubleNonRecordWrapper",
-                        "if (_mi_inner0 != null && _iv_args.hasField(\"inner0\")) {" +
-                        "var _mi_inner1 = _mi_inner0.getInner1();" +
-                        "if (_mi_inner1 != null && _iv_args.child(\"inner0\").hasField(\"inner1\")) {" +
-                        "if (_iv_args.child(\"inner0\").child(\"inner1\").hasField(\"postalCode\")) {" +
-                        "_mo_mapperAddressJavaRecord.setPostalCode(_mi_inner1.getPostalCode());"
+                """
+                        var _mi_inner0 = _nit_address.getInner0();
+                        if (_mi_inner0 != null) {
+                            var _iv_nextArgs0 = _iv_args.child("inner0");
+                            var _mi_inner1 = _mi_inner0.getInner1();
+                            if (_mi_inner1 != null) {
+                                var _iv_nextArgs1 = _iv_nextArgs0.child("inner1");
+                                if (_iv_nextArgs1.hasField("postalCode")) {
+                                    _mo_mapperAddressJavaRecord.setPostalCode(_mi_inner1.getPostalCode());
+                                }
+                            }
+                        }
+                        _mlo_mapperAddressJavaRecord.add(_mo_mapperAddressJavaRecord);
+                        """
         );
     }
 
@@ -89,12 +108,14 @@ public class JavaMapperGeneratorToRecordTest extends GeneratorTest {
     void nestingWithDuplicateFieldName() {
         assertGeneratedContentContains(
                 "nestingWithDuplicateFieldName",
-                "inner = itAddress.getInner();" +
-                        "if (inner != null && _iv_args.hasField(\"inner\")) {" +
-                        "var inner = inner.getInner();" +
-                        "if (inner != null && _iv_args.child(\"inner\").hasField(\"inner\")) {" +
-                        "if (_iv_args.child(\"inner\").child(\"inner\").hasField(\"postalCode\")) {" +
-                        "mapperAddressJavaRecord.setPostalCode(inner.getPostalCode()"
+                """
+                        var _mi_inner = _nit_address.getInner();
+                        if (_mi_inner != null) {
+                            var _iv_nextArgs0 = _iv_args.child("inner");
+                            var _mi_inner = _mi_inner.getInner();
+                            if (_mi_inner != null) {
+                                var _iv_nextArgs1 = _iv_nextArgs0.child("inner");
+                        """
         );
     }
 
