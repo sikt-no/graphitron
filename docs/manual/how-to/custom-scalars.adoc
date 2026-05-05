@@ -1,0 +1,98 @@
+= How-to: Custom scalars
+:description: Declare a custom scalar in the SDL and register a graphql-java GraphQLScalarType through Graphitron.buildSchema's customizer hook.
+:!toc:
+
+GraphQL leans on a small set of built-in scalars (`Int`, `Float`, `String`, `Boolean`, `ID`); real schemas usually need more (`UUID`, `Date`, `DateTime`, `JSON`, `Long`). Graphitron itself never coerces values; it leaves coercion to graphql-java by emitting `GraphQLTypeReference.typeRef("<name>")` everywhere a scalar is referenced. Whatever scalar names appear in your SDL must be registered against the schema builder before it builds, or graphql-java's native "unresolved type" check fails the build with the offending scalar named alongside its referencing types.
+
+This recipe walks through declaring the scalar in the SDL, registering its `GraphQLScalarType` through the `Graphitron.buildSchema(...)` customizer, and the constraints the customizer hook imposes.
+
+== Declare the scalar in your SDL
+
+Add a `scalar` declaration to one of your `.graphqls` files and use the name in field signatures, argument types, and `@field`-mapped columns just as you would a built-in:
+
+[source,graphql]
+----
+scalar UUID
+scalar DateTime
+
+type Customer @table(name: "customer") {
+    id:        UUID     @field(name: "customer_id")
+    createdAt: DateTime @field(name: "create_date")
+}
+----
+
+The rewrite resolves `UUID` and `DateTime` against the assembled SDL, treats them as named scalar types alongside the built-ins, and emits `GraphQLTypeReference.typeRef("UUID")` / `typeRef("DateTime")` at every reference site. Nothing about the generator changes when you add a scalar; the *resolution* of the reference is what the runtime supplies.
+
+== Register the `GraphQLScalarType` via the customizer
+
+The single `Graphitron.buildSchema(Consumer<GraphQLSchema.Builder>)` entry point exposes the underlying `GraphQLSchema.Builder` to a customizer lambda. Call `additionalType(...)` once per scalar:
+
+[source,java]
+----
+import graphql.scalars.ExtendedScalars;
+
+GraphQLSchema schema = Graphitron.buildSchema(b -> b
+    .additionalType(ExtendedScalars.UUID)
+    .additionalType(ExtendedScalars.DateTime));
+----
+
+`graphql-java-extended-scalars` ships ready-made scalars covering most common shapes (`UUID`, `Date`, `DateTime`, `LocalDate`, `LocalTime`, `Url`, `Object`, `Json`, `PositiveInt`, etc.). Add the dependency to your consumer module, pick the constants you need, and pass each one through `additionalType(...)`. The library's `Coercing` implementations handle parse/serialise for both literal and variable values; you write nothing else.
+
+When the scalar isn't covered by an existing library, build a `GraphQLScalarType` directly:
+
+[source,java]
+----
+import graphql.schema.GraphQLScalarType;
+import graphql.schema.Coercing;
+
+GraphQLScalarType epochSeconds = GraphQLScalarType.newScalar()
+    .name("EpochSeconds")
+    .description("Unix epoch seconds, signed 64-bit.")
+    .coercing(new Coercing<Long, Long>() { /* serialize / parseValue / parseLiteral */ })
+    .build();
+
+GraphQLSchema schema = Graphitron.buildSchema(b -> b.additionalType(epochSeconds));
+----
+
+The `Coercing<Internal, External>` parameters let you choose the Java side (`Internal`) and the wire side (`External`) independently; the graphql-java javadoc covers the contract for each method. `name()` must match the SDL `scalar` declaration; the runtime resolves `typeRef("EpochSeconds")` against this exact name.
+
+== One customizer, one builder
+
+The customizer runs once at schema build, not per request. Per-request runtime values (the `DSLContext`, context arguments, the tenant id) flow through `GraphitronContext` on the `ExecutionInput.graphQLContext`, not through the customizer. xref:../tutorial/02-fresh-checkout.adoc[Tutorial page 2: fresh checkout] and the architecture page xref:../../architecture/getting-started.adoc[Getting started with the rewrite runtime] cover the request-time wiring.
+
+The customizer hook is *additive*. Calling any of the following inside it is unsupported and breaks the assembled schema:
+
+* `.query(...)`, `.mutation(...)`, `.subscription(...)` -- replaces the root types Graphitron just wired.
+* `.clearDirectives()` -- drops the directive set Graphitron emits for federation, authorization, and validation.
+* The replace overload `.codeRegistry(GraphQLCodeRegistry)` -- replaces the fetcher registry Graphitron just populated.
+
+The transform overload `.codeRegistry(UnaryOperator)` is fine and is the supported extension point for adding type resolvers to interfaces and unions whose Java types Graphitron cannot infer (hand-rolled domain types, pulled-in subgraphs, polymorphic shapes outside the catalog). xref:polymorphic-types.adoc[How-to: Polymorphic types] covers the type-resolver shape.
+
+== When the scalar is missing
+
+Reference a scalar without registering it and graphql-java rejects the schema at `b.build()`:
+
+[listing]
+----
+SchemaProblem{errors=['UUID' type not found,
+referenced from 'Customer.id', 'Customer.createdAt']}
+----
+
+The error names the scalar and every referencing field, so the fix is mechanical: add `additionalType(...)` for the missing scalar to the customizer. There is no degraded "treat unknown scalar as String" mode; the build fails so the type-mismatch can't reach runtime.
+
+== Constraints
+
+* The SDL `scalar <Name>` declaration is what makes the name resolvable in the SDL; the runtime `additionalType(<scalarType>)` is what makes the *reference* resolvable in the built schema. Both are required, and the names must match exactly.
+* The customizer must be additive only. `query`/`mutation`/`subscription`/`clearDirectives` and the replace `codeRegistry` overload are unsupported; the transform overload `.codeRegistry(UnaryOperator)` is the supported extension point.
+* The customizer runs once per schema build. Per-request scalar coercion is the `Coercing` implementation's responsibility; per-request runtime data (DSLContext, tenant id, context-argument values) flows through `GraphitronContext` on the `ExecutionInput.graphQLContext`, not through the customizer.
+* `graphql-java-extended-scalars` is the recommended source for common shapes. Pick its constants when they fit; build a custom `GraphQLScalarType` only when the shape is unique to your domain.
+* Federation-namespaced custom scalars (e.g. `_FieldSet`) are wired automatically when the SDL declares an Apollo Federation `@link`. xref:federation-keys.adoc[How-to: Federation key fields] covers the federation directive surface.
+
+== See also
+
+* xref:../tutorial/02-fresh-checkout.adoc[Tutorial page 2: fresh checkout] is the first place a reader meets `Graphitron.buildSchema(...)`; the tutorial uses only built-in scalars but the wiring shape is the same.
+* xref:../../architecture/getting-started.adoc[Getting started with the rewrite runtime] covers the broader runtime surface (context arguments, tenant scoping, federation, the dev loop) the customizer interacts with.
+* xref:federation-keys.adoc[How-to: Federation key fields] covers federation entity declaration; federation-namespaced scalars are wired by the federation transform, not by `additionalType(...)`.
+* xref:polymorphic-types.adoc[How-to: Polymorphic types] covers the supported `.codeRegistry(UnaryOperator)` extension point for type resolvers on hand-rolled interfaces and unions.
+
+xref:index.adoc[← How-to index]
