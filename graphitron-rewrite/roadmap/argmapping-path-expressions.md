@@ -51,8 +51,18 @@ Allow the right-hand side of an `argMapping` entry to be a **dot-path expression
 Semantics, generation-time:
 
 - The head segment names a slot at the directive's scope (a GraphQL argument for `@service` / `@tableMethod` / argument-level `@condition`; an input field for input-field-level `@condition`).
-- Each subsequent segment names a field on the resolved type at that depth. Walking through a non-input-object type (scalar, enum, list, union, interface) is a structural rejection.
-- The leaf type is what binds to the Java parameter, subject to the same lifters that already apply to top-level slots: an `ID! @nodeId(typeName: "X")` leaf binds to `XRecord` (via the existing nodeId-decode lifter), a `@table` leaf binds to its row record, a plain scalar binds to its Java mapping, and so on.
+- Each subsequent segment names a field on the resolved input-object type at that depth. Walking through a scalar, enum, union, or interface is a structural rejection.
+- **List segments lift naturally.** Each `[X]` segment along the path adds a `List<>` wrapper to the leaf type:
+  ```graphql
+  input A { a: String, b: [B] }
+  input B { b: String,  c: [C] }
+  input C { c: String }
+  ```
+  - path `a` → `String` (scalar)
+  - path `b` → `List<B-leaf>`
+  - path `b.c` → `List<List<C-leaf>>`
+- **Null coalescing along the path.** Any intermediate-segment null short-circuits the whole leaf to null; no NPE, no per-element exception. If `b` is null on a given input, `b.c` is null for that input. List segments map element-wise; an element-level null inside a list propagates as a null entry in the resulting list (consistent with GraphQL's own input-list nullability).
+- The leaf type is what binds to the Java parameter, subject to the same lifters that already apply to top-level slots: an `ID! @nodeId(typeName: "X")` leaf binds to `XRecord` (via the existing nodeId-decode lifter), a `@table` leaf binds to its row record, a plain scalar binds to its Java mapping. Lifters apply *under* the `List<>` wrapper, so `b.c` with a `@nodeId`-tagged `c` still produces `List<List<XRecord>>`.
 - Two argMapping entries may resolve to the same leaf path (legal under the same "two overrides binding to the same slot" rule R53 already permits).
 
 ## Prior art: Apollo Connectors
@@ -60,22 +70,26 @@ Semantics, generation-time:
 Apollo Connectors' mapping language (`@connect(... selection: "...", body: """ $args.input { id quantity } """)`) is the closest existing design in the GraphQL ecosystem. Useful traits to borrow:
 
 - **Dot-path with a scope head.** Apollo prefixes paths with `$args`, `$this`, `$config`. We have only one scope per directive site (the slot set), so the prefix is redundant; bare-name heads (matching today's R53 syntax) are sufficient and keep the migration trivial.
-- **Subselection blocks.** Apollo lets `$args.input { id quantity }` pick multiple fields from a common parent in one go. This is real ergonomic value for the wrapper-input case; worth folding into the Spec discussion as an optional second iteration once the flat dot-path lands.
+- **Array projection.** Apollo's `$args.filters.value` lifts to `[V]` when an intermediate segment is list-typed. We adopt the same rule, transposed onto our static type system: each `[X]` segment along the path adds a `List<>` wrapper to the resolved type (see "What the extension is" above). Apollo handles this at runtime against JSON; we resolve it at generation time against the GraphQL schema.
+- **Subselection blocks.** Apollo lets `$args.input { id quantity }` pick multiple fields from a common parent in one go. Real ergonomic value for the wrapper-input case; out of scope for this item but a natural follow-up once the flat dot-path lands.
 - **Methods (`->first`, `->match`, etc.).** Out of scope. We are binding typed parameters to typed GraphQL slots at generation time; runtime transforms have no place here.
 
-What we explicitly do **not** take from Apollo: array projection (`$args.filters.value` → `[V, V, V]`), inline JSON literals, and the `$.` shorthand. Each is a distinct can of worms (list-input semantics, identity rules) and none of them is needed to unblock the trigger case.
+What we explicitly do **not** take from Apollo: inline JSON literals and the `$.` shorthand. Neither is needed to unblock the trigger case.
+
+## Parser
+
+Take ownership of the existing `selection/` package (`GraphQLSelectionParser`, `Lexer`, `Token`, `TokenKind`, `ParsedField`, `ParsedArgument`, `ParsedValue`) and rewrite it to serve both `@experimental_constructType(selection: ...)` (R69) and `argMapping` path expressions. The two grammars are the same shape — comma-separated `key: <expression>` entries where the right-hand side resolves to a typed value (a column reference today, a path expression with this item) — and the lexer already handles the relevant tokens. One parser, two binders. If the grammars later diverge enough that the shared parser starts costing more than it saves, fork at that point; do not pre-emptively split.
+
+The R53-era `parseArgMapping` in `ArgBindingMap` is too thin to host the path-walking logic and should be retired in favour of the rewritten `selection/` parser.
 
 ## Open questions for Spec
 
-1. **List inputs.** What does `argMapping: "id: ids.itemId"` mean if `ids` is `[InnerInput!]!`? Reject as structural? Lift to `List<X>`? Apollo lifts; we likely reject in v1 and revisit alongside the bulk-mutation work tracked separately.
-2. **Nullability propagation.** If an intermediate path segment is nullable (e.g. `input.optionalSubInput.field`), should the Java parameter type widen to nullable, or should we reject the path and require the author to flatten the input? Lean toward the latter: the lifter set is keyed on leaf type, and "nullable along the path" is a separate axis we don't model today.
-3. **Parser home.** The `selection/` package already houses the `@experimental_constructType(selection: ...)` parser (R30 audit, R69). Path expressions could live in a sibling parser or share lexer infrastructure. Decide during Spec; the existing `parseArgMapping` in `ArgBindingMap` is too thin to host this without a rewrite.
-4. **Error-message shape.** R59 sharpened `ServiceCatalog`'s parameter-mismatch messages with concrete `argMapping: "<javaParam>: <graphqlArg>"` suggestions. Extend the same machinery: when the Java parameter's type does not match any flat slot **but does** match a reachable nested path, suggest the dot-path remediation in the rejection.
-5. **Wire-through inventory.** R53 enumerated seven reflect call sites (`resolveServiceField`, two `@tableMethod` arms, `buildArgCondition`, `buildFieldCondition`, `BuildContext.resolveConditionRef`, `buildInputFieldCondition`). Each must learn to walk a path, not just look up a slot. Path-step `@condition` keeps its empty-slot guard.
+1. **Error-message shape.** R59 sharpened `ServiceCatalog`'s parameter-mismatch messages with concrete `argMapping: "<javaParam>: <graphqlArg>"` suggestions. Extend the same machinery: when the Java parameter's type does not match any flat slot **but does** match a reachable nested path, suggest the dot-path remediation in the rejection.
+2. **Wire-through inventory.** R53 enumerated seven reflect call sites (`resolveServiceField`, two `@tableMethod` arms, `buildArgCondition`, `buildFieldCondition`, `BuildContext.resolveConditionRef`, `buildInputFieldCondition`). Each must learn to walk a path, not just look up a slot. Path-step `@condition` keeps its empty-slot guard.
+3. **Emitter shape for null coalescing.** The cleanest expression in generated code is `Optional.ofNullable(input).map(A::getB).orElse(null)` style chains, but with `List<>` segments the chain has to flatMap-stream-collect. Settle the emitter idiom during Spec; consider a small generator helper if the inline form gets unreadable.
 
 ## Out of scope for this item
 
 - Subselection blocks (`input { id, name }`); revisit as a follow-up once the dot-path lands.
-- Methods / runtime transforms.
-- List/array projection across path segments.
+- Methods / runtime transforms (Apollo's `->first`, `->match`, etc.).
 - Renaming or stabilising the directive surface.
