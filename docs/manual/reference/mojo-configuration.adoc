@@ -95,12 +95,9 @@ The CLI properties take precedence over `<configuration>` values, so `mvn graphi
 
 === Quarkus dev-mode interaction
 
-Consumers running their app under `quarkus:dev` alongside `graphitron:dev` may find that schema edits regenerate sources but the running app keeps serving the old `GraphQLSchema` until they press `s` in the Quarkus console. The cause is Quarkus's bytecode-instrumentation hot-swap: it sees the regenerated `.java` files, decides the changes are method-body-compatible, and replaces classes in place rather than restarting. The schema bean is built once at startup, so a hot-swap doesn't rebuild it.
+Consumers running their app under `quarkus:dev` alongside `graphitron:dev` may find that schema edits regenerate sources but the running app keeps serving the old `GraphQLSchema` until they press `s` in the Quarkus console. The cause is Quarkus's bytecode-instrumentation hot-swap: it sees the regenerated `.java` files, decides the changes are method-body-compatible, and replaces classes in place rather than restarting. The schema bean is built once at startup, so a hot-swap doesn't rebuild it. The matching log line is `Files changed but restart not needed - notified extensions`: Quarkus saw the change, asked its extensions, and none claimed it as restart-worthy.
 
-Two consumer-side knobs fix this without any graphitron change:
-
-* `quarkus.live-reload.instrumentation=false` in `application.properties` disables instrumentation hot-swap entirely. Every change triggers a full restart, including the schema rebuild. Simple and reliable; the cost is losing hot-swap on hand-edited Java.
-* `quarkus.live-reload.watched-paths=<path-to-.graphqls>` tells Quarkus to treat schema-file edits as a resource change, which forces a full restart even when the regenerated `.java` would otherwise ride the hot-swap path. Point this at the `.graphqls` files, not at `target/generated-sources/graphitron/`: the generated sources are already source-watched, and adding them as a resource path does not override Quarkus's hot-swap-vs-restart decision on source files. If the schema already lives under `src/main/resources/` it is watched by default and no override is needed.
+Set `quarkus.live-reload.instrumentation=false` in `application.properties` to disable instrumentation hot-swap entirely. Every change triggers a full restart, including the schema rebuild. The cost is losing hot-swap on hand-edited Java; for a schema-driven app that is usually the right trade. Putting the `.graphqls` files on a watched path does not help on its own — Quarkus already watches `src/main/resources/`, but a change there is still classified by extension claims, and no shipped Quarkus extension claims `.graphqls` as restart-worthy.
 
 [#schemainput-binding]
 == `<schemaInput>` binding
