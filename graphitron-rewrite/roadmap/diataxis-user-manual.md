@@ -600,28 +600,17 @@ changes inside Phase 1a; Phase 1b does not start until both pass.
 Documentation gaps surfaced after a phase shipped, to be folded in when
 the touched chapter is next under hand.
 
-- *Multi-schema `@table(name:)` syntax* (surfaced by R78). R78 added
-  qualified-name resolution: `@table(name: "schema.table")` for
-  consumers whose jOOQ codegen straddles multiple schemas, plus a
-  structured ambiguity rejection (`"@table(name: 'film') is ambiguous:
-  defined in schemas [public, archive]; qualify as 'public.film' or
-  'archive.film'"`) when an unqualified name collides across schemas.
-  Single-schema consumers see no change. R78 shipped without the docs
-  delta; both touchpoints sit inside R68's surface area, so they ride
-  along when those pages are next edited:
-  * Phase 2 — `reference/directives/table.adoc`: the `Parameters`
-    table grows a sentence under `name:` describing the qualified
-    form, and `Constraints` grows a bullet covering the ambiguity
-    rejection (with the exact error message so a search lands on this
-    page).
-  * Phase 3 — `how-to/map-types-to-tables.adoc`: a short subsection
-    "Tables in non-default schemas" covering when to qualify and the
-    failure mode when you don't. The recipe is two SDL snippets plus
-    one paragraph of guidance; it does not warrant its own how-to
-    page.
-  Both pieces are content edits, not structural; no IA change, no new
-  verifier wiring. R78's spec is preserved in commit history
-  (last at `64405d6`) for the implementer who picks them up.
+(none currently open; the R78 qualified-`@table` delta landed in this
+plan's Phase 2 + Phase 3 commits. The actual user-facing rejection on
+ambiguity is the generic `table 'X' could not be resolved in the jOOQ
+catalog` plus a candidate hint, not the structured ambiguity message
+the original carry-forward note quoted; the docs reflect what the
+implementation does today, and a future polish pass on
+`BuildContext.buildTableType` could surface a friendlier
+`is ambiguous: defined in schemas [...]` message by routing through
+`JooqCatalog.findCandidateSchemasFor` before falling back to
+`unknownTable`. That polish is a small Backlog candidate, not a
+blocker.)
 
 ## Out of scope
 

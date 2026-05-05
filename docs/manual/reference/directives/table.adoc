@@ -16,7 +16,7 @@ directive @table(name: String) on OBJECT | INPUT_OBJECT | INTERFACE
 [cols="1,1,1,3",options="header"]
 |===
 | Name | Type | Default | Description
-| `name` | `String` | type name (case-insensitive) | The jOOQ table identifier. Must match the SQL identifier as it appears in jOOQ's catalog. Omit when the GraphQL type name already equals the table name.
+| `name` | `String` | type name (case-insensitive) | The jOOQ table identifier. Must match the SQL identifier as it appears in jOOQ's catalog. Omit when the GraphQL type name already equals the table name. For jOOQ catalogs that span multiple schemas, the value can be qualified as `"schema.table"` to scope the lookup; an unqualified value is only accepted when exactly one schema in the catalog contains a table with that name.
 |===
 
 == Canonical example
@@ -49,6 +49,7 @@ input FilmCreateInput @table(name: "film") {
 * The `name` parameter must resolve to a real jOOQ table; the generator fails the build with an unclassified-type error if the catalog has no matching `Table` class. Use the same case the jOOQ generator emits (typically uppercase for PostgreSQL identifiers, but follow your project's catalog).
 * When omitted, the generator looks up the jOOQ table by GraphQL type name (case-insensitive). A type named `Customer` therefore resolves to the `customer` table without explicit configuration.
 * Containing fields default to the type's table for column lookup. A nested `@table` re-binds; an `@reference`-annotated field hops into the joined table for the duration of that field's subquery.
+* For multi-schema catalogs, an unqualified `name:` must be unique across schemas. When the same bare name exists in two or more schemas (`event` in `public` and `archive`, say), the lookup returns empty and the build fails with the standard `table 'event' could not be resolved in the jOOQ catalog` rejection. Disambiguate by qualifying explicitly: `@table(name: "public.event")`. Single-schema consumers see no change; only collision sites are forced to qualify.
 
 == See also
 
