@@ -18,6 +18,12 @@
         <version.lsp4j>0.24.0</version.lsp4j>
         <version.tree-sitter>0.22.6</version.tree-sitter>
         <version.tree-sitter-graphql>master-a</version.tree-sitter-graphql>
+        <!--
+          jtreesitter is the official FFM-based binding (JDK 23+); we are in
+          the middle of swapping bonede for it (R18 Phase 6). Until the swap
+          is complete this dep sits alongside bonede with no consumer code.
+        -->
+        <version.jtreesitter>0.26.0</version.jtreesitter>
     </properties>
 
     <dependencies>
@@ -42,6 +48,11 @@
             <groupId>io.github.bonede</groupId>
             <artifactId>tree-sitter-graphql</artifactId>
             <version>${version.tree-sitter-graphql}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.github.tree-sitter</groupId>
+            <artifactId>jtreesitter</artifactId>
+            <version>${version.jtreesitter}</version>
         </dependency>
 
         <dependency>
