@@ -31,10 +31,19 @@ class TypeConditionsGeneratorTest {
 
     private static GeneratedConditionFilter filter(List<BodyParam> bodyParams) {
         var callParams = bodyParams.stream()
-            .map(bp -> new CallParam(bp.name(), bp.extraction(), bp.list(), bp.javaType()))
+            .map(bp -> new CallParam(bp.name(), bp.extraction(), bp.list(), callTypeName(bp)))
             .toList();
         return new GeneratedConditionFilter("FilmConditions", "filmCondition", FILM_TABLE,
             callParams, bodyParams);
+    }
+
+    private static String callTypeName(BodyParam bp) {
+        return switch (bp) {
+            case BodyParam.Eq eq -> eq.javaType();
+            case BodyParam.In in -> in.javaType();
+            case BodyParam.RowEq req -> "org.jooq.Row" + req.columns().size();
+            case BodyParam.RowIn rin -> "org.jooq.Row" + rin.columns().size();
+        };
     }
 
     private static HelperRef.Decode decodeHelper(String typeName, List<ColumnRef> outputCols) {
@@ -52,7 +61,7 @@ class TypeConditionsGeneratorTest {
     private static BodyParam.RowIn nodeIdRowIn(String name, List<ColumnRef> cols, String typeName) {
         var leaf = new CallSiteExtraction.SkipMismatchedElement(decodeHelper(typeName, cols));
         var ext = new CallSiteExtraction.NestedInputField("filter", List.of("filter", name), leaf);
-        return new BodyParam.RowIn(name, cols, "org.jooq.RowN", false, ext);
+        return new BodyParam.RowIn(name, cols, false, ext);
     }
 
     private static BodyParam columnEq(String name, ColumnRef col, boolean list) {
@@ -72,15 +81,30 @@ class TypeConditionsGeneratorTest {
     }
 
     @Test
-    void nodeIdInFilter_compositeColumns_emitsRowInWithUntypedRowN() {
+    void nodeIdInFilter_compositeColumns_emitsTypedRowIn() {
         var col1 = new ColumnRef("id_1", "ID_1", "java.lang.Integer");
         var col2 = new ColumnRef("id_2", "ID_2", "java.lang.Integer");
         var gcf = filter(List.of(nodeIdRowIn("ids", List.of(col1, col2), "Bar")));
         var method = TypeConditionsGenerator.buildConditionMethod(
             gcf, DEFAULT_OUTPUT_PACKAGE);
         var body = method.code().toString();
-        // The Field<?>[] form picks the untyped RowN overload of DSL.row(...)
-        assertThat(body).contains("DSL.row(new org.jooq.Field<?>[]{table.ID_1, table.ID_2}).in(ids)");
+        // The typed Field<T> overload of DSL.row(...) returns Row<N><T1, ..., TN>, matching the
+        // method parameter exactly — no Field<?>[] erasure trick.
+        assertThat(body).contains("DSL.row(table.ID_1, table.ID_2).in(ids)");
+    }
+
+    @Test
+    void nodeIdInFilter_compositeColumns_methodParamIsListOfTypedRowN() {
+        var col1 = new ColumnRef("id_1", "ID_1", "java.lang.Integer");
+        var col2 = new ColumnRef("id_2", "ID_2", "java.lang.Integer");
+        var gcf = filter(List.of(nodeIdRowIn("ids", List.of(col1, col2), "Bar")));
+        var method = TypeConditionsGenerator.buildConditionMethod(
+            gcf, DEFAULT_OUTPUT_PACKAGE);
+        var idsParam = method.parameters().stream()
+            .filter(p -> p.name().equals("ids")).findFirst().orElseThrow();
+        // R79: the parameter is now List<Row2<Integer, Integer>>, not List<RowN>.
+        assertThat(idsParam.type().toString())
+            .isEqualTo("java.util.List<org.jooq.Row2<java.lang.Integer, java.lang.Integer>>");
     }
 
     @Test
