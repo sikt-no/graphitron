@@ -1,0 +1,63 @@
+= Deprecations
+:description: Every deprecated directive parameter, input field, and whole directive in the rewrite, with migration guidance.
+:!toc:
+
+Aggregator for every deprecated surface element the rewrite carries: directive arguments, input fields, and whole directives. The per-directive reference page is the canonical migration guide; this page is the index.
+
+== Source of truth
+
+Two distinct sources feed this page:
+
+* *SDL `@deprecated()` markers* on directive arguments and input fields. The rewrite's `directives.graphqls` carries them inline; the GraphQL spec only allows the marker on `FIELD_DEFINITION`, `ARGUMENT_DEFINITION`, `INPUT_FIELD_DEFINITION`, and `ENUM_VALUE`, so this is the machine-detectable surface.
+* *Whole-directive deprecations*, which the GraphQL spec cannot mark inline (the `@deprecated` directive is not allowed on a directive definition). These are documented prose-side on the directive's reference page and aggregated below in a separate section.
+
+The `DeprecationsDocCoverageTest` verifier asserts every SDL `@deprecated()` marker has a row in the table below; whole-directive deprecations are an explicit hand-maintained list (the verifier covers them via a small allow-list).
+
+[NOTE]
+====
+*Honest deviation from the R68 plan.* The plan called for a "target removal version" column. The rewrite's `@deprecated(reason:)` markers do not carry a structured removal version, and the project does not currently version directive surface as a separate cadence. Until the rewrite ships a versioned directive contract, "Status" carries the practical signal (discouraged, transitional, removed) and "Migration" names the replacement.
+====
+
+== Deprecated arguments and input fields
+
+[cols="2,2,1,3",options="header"]
+|===
+| Site | Status | Since | Migration
+
+| xref:directives/asConnection.adoc[`@asConnection(connectionName:)`]
+| Discouraged transition mechanism
+| Rewrite v1
+| Drop the override and let the generator synthesize `{ParentType}{FieldName}Connection`. Each connection field should own its own Connection type; sharing one across fields conflates distinct semantic contexts (different parents, filters, orders) at the type level.
+
+| xref:directives/record.adoc[`ExternalCodeReference.name`]
+| Phased out
+| Rewrite v1
+| Use `className:` instead. `name:` was a Norwegian-language alias kept for backward compatibility with legacy schemas; `className:` is the canonical key on `ExternalCodeReference` (used by xref:directives/record.adoc[`@record`], xref:directives/service.adoc[`@service`], xref:directives/error.adoc[`@error`], and other directive sites that reference external Java code).
+|===
+
+== Deprecated whole directives
+
+The GraphQL spec does not allow `@deprecated` on a directive definition, so these are documented in the directive's own reference page and listed here for visibility.
+
+[cols="2,2,1,3",options="header"]
+|===
+| Directive | Status | Since | Migration
+
+| xref:directives/index.adoc[`@index`]
+| Backward-compatibility alias
+| Rewrite v1
+| Replace `@index(name: "X")` with xref:directives/order.adoc[`@order(index: "X")`]. The two forms generate identical code; only the directive name and parameter key change. xref:directives/order.adoc[`@order`] also offers `fields:` and `primaryKey:` modes that `@index` cannot express.
+|===
+
+== Rejected, not deprecated
+
+These directives parse but the rewrite refuses to generate against them. They are *not* deprecations (a deprecated surface still works); they are explicit rejections that fail the build with a structured diagnostic. Listed here because users sometimes confuse the categories:
+
+* xref:directives/notGenerated.adoc[`@notGenerated`] is rejected. Remove it from the schema; the rewrite has no equivalent escape hatch.
+
+== See also
+
+* xref:diagnostics-glossary.adoc[Diagnostics glossary] catalogues the closed-set rejection kinds the validator emits.
+* xref:directives/index.adoc[`@index`] and xref:directives/asConnection.adoc[`@asConnection`] carry their own deprecation prose at the canonical site.
+
+xref:index.adoc[← Reference index]
