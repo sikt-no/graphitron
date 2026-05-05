@@ -7,7 +7,6 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
-import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
@@ -100,14 +99,14 @@ class TablePipelineTest {
     // ===== Helpers =====
 
     private no.sikt.graphitron.javapoet.TypeSpec findSpec(String className, String sdl) {
-        return TypeClassGenerator.generate(buildSchema(sdl), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE).stream()
+        return TypeClassGenerator.generate(buildSchema(sdl), DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals(className))
             .findFirst()
             .orElseThrow(() -> new AssertionError("Class not found: " + className));
     }
 
     private List<String> generate(String sdl) {
-        return TypeClassGenerator.generate(buildSchema(sdl), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE).stream()
+        return TypeClassGenerator.generate(buildSchema(sdl), DEFAULT_OUTPUT_PACKAGE).stream()
             .map(t -> t.name())
             .toList();
     }

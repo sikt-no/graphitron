@@ -48,16 +48,16 @@ public class QueryConditionsGenerator {
 
     public static final String CLASS_NAME_SUFFIX = "Conditions";
 
-    public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage, String jooqPackage) {
+    public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage) {
         var out = new ArrayList<TypeSpec>();
         for (var type : schema.types().values()) {
             if (!(type instanceof GraphitronType.RootType rootType)) continue;
             var methods = new ArrayList<MethodSpec>();
             for (var field : schema.fieldsOf(rootType.name())) {
                 if (field instanceof QueryField.QueryTableField qtf) {
-                    methods.add(buildConditionMethod(qtf.name(), qtf.returnType(), qtf.filters(), outputPackage, jooqPackage));
+                    methods.add(buildConditionMethod(qtf.name(), qtf.returnType(), qtf.filters(), outputPackage));
                 } else if (field instanceof QueryField.QueryTableInterfaceField qtif) {
-                    methods.add(buildConditionMethod(qtif.name(), qtif.returnType(), qtif.filters(), outputPackage, jooqPackage));
+                    methods.add(buildConditionMethod(qtif.name(), qtif.returnType(), qtif.filters(), outputPackage));
                 }
             }
             if (methods.isEmpty()) continue;
@@ -78,7 +78,7 @@ public class QueryConditionsGenerator {
             String fieldName,
             ReturnTypeRef.TableBoundReturnType returnType,
             List<WhereFilter> filters,
-            String outputPackage, String jooqPackage) {
+            String outputPackage) {
         var tableRef = returnType.table();
         var names = GeneratorUtils.ResolvedTableNames.of(tableRef, returnType.returnTypeName(), outputPackage);
         var jooqTableClass = names.jooqTableClass();

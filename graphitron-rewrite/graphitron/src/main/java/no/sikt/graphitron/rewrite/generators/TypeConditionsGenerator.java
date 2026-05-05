@@ -39,7 +39,7 @@ public class TypeConditionsGenerator {
 
     // CONDITION and DSL come from GeneratorUtils via static import.
 
-    public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage, String jooqPackage) {
+    public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage) {
         // Collect GeneratedConditionFilters grouped by their conditions class name
         var filtersByClass = new LinkedHashMap<String, List<GeneratedConditionFilter>>();
         for (var type : schema.types().values()) {
@@ -53,7 +53,7 @@ public class TypeConditionsGenerator {
 
         return filtersByClass.entrySet().stream()
             .sorted(Comparator.comparing(e -> e.getKey()))
-            .map(e -> generateConditionsClass(e.getKey(), e.getValue(), outputPackage, jooqPackage))
+            .map(e -> generateConditionsClass(e.getKey(), e.getValue(), outputPackage))
             .toList();
     }
 
@@ -72,14 +72,14 @@ public class TypeConditionsGenerator {
     }
 
     private static TypeSpec generateConditionsClass(String fqClassName, List<GeneratedConditionFilter> filters,
-                                                    String outputPackage, String jooqPackage) {
+                                                    String outputPackage) {
         // Class simple name is the last segment of the fully qualified name
         String simpleName = fqClassName.substring(fqClassName.lastIndexOf('.') + 1);
         var builder = TypeSpec.classBuilder(simpleName)
             .addModifiers(Modifier.PUBLIC);
 
         for (var gcf : filters) {
-            builder.addMethod(buildConditionMethod(gcf, outputPackage, jooqPackage));
+            builder.addMethod(buildConditionMethod(gcf, outputPackage));
             for (var bp : gcf.bodyParams()) {
                 if (bp.extraction() instanceof CallSiteExtraction.TextMapLookup tl) {
                     builder.addField(buildTextEnumMapField(tl));
@@ -90,7 +90,7 @@ public class TypeConditionsGenerator {
         return builder.build();
     }
 
-    static MethodSpec buildConditionMethod(GeneratedConditionFilter gcf, String outputPackage, String jooqPackage) {
+    static MethodSpec buildConditionMethod(GeneratedConditionFilter gcf, String outputPackage) {
         var tableRef = gcf.tableRef();
         var jooqTableClass = GeneratorUtils.ResolvedTableNames.ofTable(tableRef).jooqTableClass();
 

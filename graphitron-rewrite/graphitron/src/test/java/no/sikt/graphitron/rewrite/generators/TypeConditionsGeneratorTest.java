@@ -12,7 +12,6 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
-import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
@@ -67,7 +66,7 @@ class TypeConditionsGeneratorTest {
     void nodeIdInFilter_singleColumn_emitsColumnInWithDecodedList() {
         var gcf = filter(List.of(nodeIdInList("ids", FILM_ID, "Film")));
         var method = TypeConditionsGenerator.buildConditionMethod(
-            gcf, DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            gcf, DEFAULT_OUTPUT_PACKAGE);
         var body = method.code().toString();
         assertThat(body).contains("table.FILM_ID.in(ids)");
     }
@@ -78,7 +77,7 @@ class TypeConditionsGeneratorTest {
         var col2 = new ColumnRef("id_2", "ID_2", "java.lang.Integer");
         var gcf = filter(List.of(nodeIdRowIn("ids", List.of(col1, col2), "Bar")));
         var method = TypeConditionsGenerator.buildConditionMethod(
-            gcf, DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            gcf, DEFAULT_OUTPUT_PACKAGE);
         var body = method.code().toString();
         // The Field<?>[] form picks the untyped RowN overload of DSL.row(...)
         assertThat(body).contains("DSL.row(new org.jooq.Field<?>[]{table.ID_1, table.ID_2}).in(ids)");
@@ -88,7 +87,7 @@ class TypeConditionsGeneratorTest {
     void nodeIdInFilter_singleColumn_methodParamIsListOfTypedColumnClass() {
         var gcf = filter(List.of(nodeIdInList("ids", FILM_ID, "Film")));
         var method = TypeConditionsGenerator.buildConditionMethod(
-            gcf, DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            gcf, DEFAULT_OUTPUT_PACKAGE);
         var idsParam = method.parameters().stream()
             .filter(p -> p.name().equals("ids")).findFirst().orElseThrow();
         // Post-R50 the call-site decodes wire-format String -> column-typed scalar; the
@@ -102,7 +101,7 @@ class TypeConditionsGeneratorTest {
             columnEq("title", FILM_TITLE, false),
             nodeIdInList("ids", FILM_ID, "Film")));
         var method = TypeConditionsGenerator.buildConditionMethod(
-            gcf, DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
+            gcf, DEFAULT_OUTPUT_PACKAGE);
         var body = method.code().toString();
         // ColumnEq still emits its scalar-eq form
         assertThat(body).contains("table.TITLE.eq");
